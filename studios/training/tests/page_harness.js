@@ -13,7 +13,8 @@
 // refresh asked for that many times at once, {hidden: true or false} for the tab put behind
 // another or brought back, {timer: a function's name} for the last timer the page set to
 // call it, {tick: the name of a check box} for a click on that box, and {hold: the name of
-// a control} to follow that very node: each
+// a control} to follow that very node, and {edit: a material's Edit control} to open it for
+// editing where it is not open already: each
 // snapshot then says, in `still`, which of those held are still on the page, and in `asked`
 // how many requests had been made by then. A box that is filled is left as a
 // person leaves it, unless the step says {stay: true}: then they are still typing in it. A chosen file is {name, text} or {name,
@@ -821,6 +822,13 @@ async function app(file) {
       }
       if (step.snapshot) shots[step.snapshot] = snapshot();
       if (step.click) control(step.click, step.index || 0).click();
+      // {edit: a material's Edit control}: open it for editing unless it is open already, as
+      // it is while it holds recovered or unsaved text.
+      if (step.edit) {
+        const open = document.body.querySelectorAll('button').filter(visible)
+          .find((node) => name(node) === step.edit);
+        if (open) open.click();
+      }
       if (step.type !== undefined) {
         const held = document.getElementById('note-text');
         held.value = step.type;

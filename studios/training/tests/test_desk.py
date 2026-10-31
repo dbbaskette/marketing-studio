@@ -6897,6 +6897,24 @@ DESK_LEDE = ('Each level’s materials, built from the shared research. Edit any
              'Nothing is ready until you mark it.')
 NOTHING_NEEDED = 'Nothing needed from you. Each material opens here as it is ready.'
 A_DRAFT = 'A draft. Nothing is ready until you mark it.'
+# runner/drafts.py `standing` for two levels whose drafts are all written and whose level 101
+# deck keeps a major review finding (test_training_standing makes the same with the runner).
+STANDING_ATTENTION = {
+    'state': 'needs-you', 'phase': 'attention', 'words': 'Needs attention',
+    'sentence': 'The level 101 slide deck needs attention before it can be marked ready. '
+                'Still to do: 9 drafts to mark ready.',
+    'level': '101',
+    'counts': {'materials': 10, 'to_write': 0, 'updating': 0, 'drafts': 9, 'attention': 1,
+               'decision': 0, 'ready': 0},
+    'levels': {'101': {'materials': 5, 'to_write': 0, 'updating': 0, 'drafts': 4,
+                       'attention': 1, 'decision': 0, 'ready': 0},
+               '201': {'materials': 5, 'to_write': 0, 'updating': 0, 'drafts': 5,
+                       'attention': 0, 'decision': 0, 'ready': 0}},
+    'next': {'kind': 'material', 'label': 'Review the level 101 slide deck',
+             'material': 'deck@101', 'level': '101', 'slide': 'what-it-does'},
+    'kinds': {'blueprint': ['draft', 'draft'], 'document': ['draft', 'draft'],
+              'brief': ['draft', 'draft'], 'deck': ['needs', 'draft'],
+              'scenario': ['draft', 'draft']}}
 DESK_START_STEPS = ['1. Goal and audience', '2. Materials and levels', '3. Sources and settings']
 
 
@@ -6959,7 +6977,13 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
                                'GET /api/run': [run or a_desk_run()],
                                'GET /api/drafts': [desk_answer], **more})
 
+    # The material a journey types in: it opens to read, so its Edit control is pressed first.
+    editing: str | None = None
+
     def open_desk(self, answers: dict, steps: list, **plan) -> dict:
+        editing = getattr(self, 'editing', None)   # a borrowing class may have none
+        if editing:
+            steps = [{'edit': f'Edit {editing}'}, *steps]
         return self.run_page(answers, steps, state={'screen': 'run', 'path': str(self.root)},
                              **plan)
 
@@ -6984,6 +7008,7 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         self.assertFalse(self.posts(result), 'Opening Stop asks without starting another job')
 
     def test_finishing_toolbar_opens_tools_and_applies_a_note_without_a_job(self):
+        self.editing = 'Guide'
         desk, card_view = self.editable()
         proposal = {'job': 'a' * 32, 'kind': 'finish-coverage', 'items': [
             {'id': 'p1', 'part': 'abcd1234', 'before': 'Some text.',
@@ -7037,6 +7062,7 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         self.assertEqual([route for route, body in self.posts(result)], ['/api/drafts/finish'])
 
     def test_finishing_flush_refusal_keeps_pending_text_and_starts_nothing(self):
+        self.editing = 'Guide'
         desk, card_view = self.editable()
         result = self.open_desk(self.on_desk(desk, **{
             'GET /api/drafts/card': [ok(card_view)],
@@ -7078,6 +7104,7 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
             ('/api/drafts/stop-updates', {'path': str(self.root), 'chain': 'chain-1'})])
 
     def test_stop_updates_does_not_wait_for_invalid_pending_text(self):
+        self.editing = 'Guide'
         desk, card_view = self.editable()
         desk['body']['sources']['updates'] = {
             'chain': {'id': 'chain-1', 'level': None, 'status': 'working'}}
@@ -7535,7 +7562,7 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         self.assertIn('Research & sources', shot['buttons'])
         self.assertEqual(shot['filled'], ['Mark this level ready'])
         self.assertEqual([control['name'] for control in shot['toolbar']],
-                         ['Mark this level ready', 'Download', 'Google Doc', 'Finishing'])
+                         ['Mark this level ready', 'Download level 101', 'Google Doc', 'Finishing'])
         self.assertIn('Back', shot['buttons'])
         self.assertEqual(shot['heading'], 'Rolling restarts')
         for name in ('blueprint@101', 'deck@201'):
@@ -7545,6 +7572,366 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         self.assertEqual(result['snapshots']['other']['pressed'], ['201'])
         # Each card is marked ready on its own, with the version shown on it.
         self.assertEqual(shot['buttons'].count('Mark ready'), 1)
+
+    def standing_listed(self, told: dict, **counts) -> dict:
+        """The list as the runner gives it for a desk training whose run is done, said from
+        `told`, the runner's one standing (test_training_standing checks its shape)."""
+        found = self.listed('done', 'Everything is made.')
+        for item in found['body']['trainings']:
+            if item['path'] == str(self.root):
+                item['run']['flow'] = 'desk'
+                item.update(state=told['state'], sentence=told['sentence'], standing=told,
+                            ready=False, waiting={'artifact': None, 'label': None,
+                                                  'question': None, 'recorded': False},
+                            **counts)
+        found['body']['needs'] = 1
+        return found
+
+    def test_row_194_home_status_and_desk_say_one_standing_for_a_finished_job(self):
+        self.started('--levels', '101,201')
+        cards = [a_card(f'{base}@{level}') for level in ('101', '201')
+                 for base, _ in DESK_KINDS]
+        reviewing = ('This deck has unresolved review issues. Review the affected slides '
+                     'below before marking it ready.')
+        cards[3] = a_card('deck@101', 'needs', reviewing, ('download',),)
+        cards[3]['needs'] = ['Major on what-it-does: One of two equal labels is larger.']
+        told = {**STANDING_ATTENTION}
+        listing = self.standing_listed(told, to_make=0, to_write=0, to_review=9, attention=1)
+        desk_view = a_desk(*cards, running=False, needs=['the level 101 slide deck'],
+                           standing=told)
+        status = ok({'limit': 1, 'elsewhere': [], 'runs': [
+            {'path': str(self.root), 'id': 'rolling-restarts', 'title': 'Rolling restarts',
+             'state': 'done', 'sentence': 'Everything is made.', 'queue': None,
+             'needs': False, 'spent': {'dollars': 1.5, 'tokens': None}, 'notice': None,
+             'driver': None}]})
+        answers = self.answers(**{'GET /api/trainings': [listing], 'GET /api/status': [status],
+                                  'GET /api/run': [a_desk_run('done', 'Everything is made.')],
+                                  'GET /api/drafts': [desk_view]})
+        result = self.run_page(answers, [
+            {'snapshot': 'home'}, {'click': 'Trainings'}, {'snapshot': 'trainings'},
+            {'click': 'Status'}, {'snapshot': 'status'}, {'click': 'Home'},
+            {'click': 'Review the level 101 slide deck'}, {'snapshot': 'desk'}])
+        shots = result['snapshots']
+        home = shots['home']
+        self.assertIn('One thing needs you.', home['text'])
+        self.assertNotIn('Nothing needs you right now', home['text'])
+        self.assertEqual(home['filled'], ['Review the level 101 slide deck'])
+        for name in ('home', 'trainings', 'status'):
+            with self.subTest(screen=name):
+                self.assertIn(told['sentence'], shots[name]['text'])
+                self.assertNotIn('Finished here', shots[name]['text'])
+                self.assertNotIn('Still to make', shots[name]['text'])
+        self.assertIn('Needs attention', shots['trainings']['text'])
+        status_text = shots['status']['text'].replace('\n', '')
+        self.assertIn('To review and mark ready: 9 · Needs attention: 1', status_text)
+        self.assertNotIn('Still to write', status_text)
+        self.assertIn('It needs you.', status_text)
+        desk_shot = shots['desk']
+        self.assertIn('Deck · Needs attention', desk_shot['buttons'])
+        self.assertIn('Level 101: 0 of 5 materials ready · 4 drafts to mark ready · 1 needs '
+                      'attention.', desk_shot['text'])
+        self.assertIn(reviewing, desk_shot['text'])
+        self.assertEqual(desk_shot['pressed'], ['101'])
+        # Opening a screen asked for nothing to be made.
+        self.assertEqual(self.posts(result), [])
+
+    def test_marking_drafts_ready_one_by_one_tells_the_person_once(self):
+        self.started('--levels', '101,201')
+        drafts = {**STANDING_ATTENTION, 'phase': 'drafts', 'words': 'Drafts to mark ready',
+                  'next': {'kind': 'material', 'label': 'Review the level 101 blueprint',
+                           'material': 'blueprint@101', 'level': '101', 'slide': None}}
+        listings = [self.standing_listed({**drafts, 'sentence': f'{left} drafts to read and '
+                                                                 'mark ready.'})
+                    for left in (10, 9, 8)]
+        attention = self.standing_listed(STANDING_ATTENTION)
+        answers = self.answers(**{'GET /api/trainings': [*listings, attention]})
+        result = self.run_page(answers, [
+            {'snapshot': 'home'}, {'poll': True}, {'poll': True}, {'snapshot': 'marked'},
+            {'poll': True}, {'snapshot': 'attention'}], notifications='granted')
+        # The first look tells nothing new; each Mark ready changes only how many are left.
+        self.assertEqual(result['snapshots']['marked']['toasts'], [])
+        # Something else needing the person is news, told once, and only that.
+        said = 'Rolling restarts: ' + STANDING_ATTENTION['sentence']
+        self.assertEqual(result['snapshots']['attention']['toasts'], [said])
+        self.assertEqual(result['notifications'],
+                         [{'title': 'Training Studio needs you', 'body': said}])
+
+    def test_row_196_a_deck_waiting_for_its_text_says_so_with_a_way_to_the_decision(self):
+        plan = a_card('blueprint@101')
+        guide = a_card('document@101', state='queued', seen=None, actions=[],
+                       says='Not written yet. Nothing is writing it while the training '
+                            'waits for you or is paused.')
+        deck = a_card('deck@101', state='decide', seen=None, actions=[],
+                      says='Needs your text approval. Read its slide text, then approve it or '
+                           'ask for changes. Nothing is designed until you decide.')
+        run = a_desk_run('waiting', 'What the level 101 slide deck says is waiting for your '
+                         'review.')
+        run['body']['outline'] = {'content_first': True, 'waiting': True, 'level': '101',
+                                  'sha256': 'a' * 64, 'slides': [
+                                      {'title': 'Why restarts roll', 'points': ['Capacity']}]}
+        result = self.open_desk(self.on_desk(a_desk(plan, guide, deck, levels=('101',),
+                                                    running=False), run), [
+            {'click': 'Deck · Needs your text approval'}, {'snapshot': 'deck'},
+            {'click': 'Review slide text'}, {'snapshot': 'review'}])
+        shot = result['snapshots']['deck']
+        self.assertIn('Guide · Not written yet', shot['buttons'])
+        self.assertNotIn('Writing', ' '.join(shot['buttons']))
+        self.assertIn('Review slide text', shot['buttons'])
+        self.assertNotIn('Mark this level ready', shot['buttons'])
+        self.assertEqual(result['snapshots']['review']['focus'], 'Review slide text · Level 101')
+        self.assertEqual(self.posts(result), [])
+
+    def readable(self, name='document@101', text='Some **bold** text.\n\n- One point\n'):
+        material = a_card(name)
+        return material, {**material, 'revision': 3, 'opening': '', 'sections': [
+            {'id': 'abcd1234', 'heading': 'When capacity holds', 'text': text,
+             'covers': ['O1', 'K1.1']},
+            {'id': 'abcd5678', 'heading': 'Rolling a deploy', 'text': 'Second section.'}],
+            'versions': {'abcd1234': 1}, 'working': None, 'jobs': []}
+
+    def test_a_whole_material_note_from_finishing_opens_where_it_can_be_edited(self):
+        guide, guide_view = self.readable()
+        desk = a_desk(guide, levels=('101',), running=False)
+        guide_view['desk'] = desk['body']
+        proposal = {'job': 'a' * 32, 'kind': 'finish-coverage', 'items': [
+            {'id': 'p1', 'part': 'abcd1234', 'before': 'Some text.',
+             'note': 'O2 is not taught.', 'instruction': 'Teach O2 across the guide.',
+             'state': 'open', 'present': True}]}
+        checked = {**guide_view, 'finishing': {'coverage': proposal}}
+        result = self.open_desk(self.on_desk(desk, **{
+            'GET /api/drafts/card': [ok(guide_view)],
+            'POST /api/drafts/finish': [ok(checked)],
+            'POST /api/drafts/apply': [ok({**checked, 'whole': True,
+                                           'note': {'text': 'Teach O2 across the guide.'}})]}), [
+            {'click': 'Finishing'}, {'click': 'Coverage'}, {'click': 'Check coverage'},
+            {'click': 'Apply'}, {'snapshot': 'note'}, {'click': 'Done editing'},
+            {'snapshot': 'kept'}])
+        note = result['snapshots']['note']
+        self.assertEqual(note['fields']['Note for the whole guide'], 'Teach O2 across the guide.')
+        self.assertEqual(note['focus'], 'Note for the whole guide')
+        # Done editing never folds an unsent note away, and says why it stays.
+        kept = result['snapshots']['kept']
+        self.assertEqual(kept['fields']['Note for the whole guide'], 'Teach O2 across the guide.')
+        self.assertIn('A change note is written and not sent, so it stays open for editing.',
+                      kept['text'])
+
+    def test_a_material_opens_to_read_and_edit_keeps_typed_text_across_tabs(self):
+        guide, guide_view = self.readable()
+        brief, brief_view = self.readable('brief@101', 'A brief.')
+        desk = a_desk(guide, brief, levels=('101',), running=False)
+        guide_view['desk'] = brief_view['desk'] = desk['body']
+        result = self.open_desk(self.on_desk(desk, **{
+            'GET /api/drafts/card': [ok(guide_view), ok(brief_view), ok(guide_view)],
+            'POST /api/drafts/save': [{'pending': True}]}), [
+            {'snapshot': 'read'}, {'click': 'Edit Guide'}, {'snapshot': 'edit'},
+            {'fill': 'Text of When capacity holds', 'value': 'Typed, not saved yet.',
+             'stay': True},
+            {'click': 'Brief · Draft'}, {'click': 'Guide · Draft'}, {'snapshot': 'back'}])
+        read = result['snapshots']['read']
+        # Learners' text, rendered on the reading surface: no raw Markdown, no edit box.
+        self.assertIn('Some bold text.', read['text'])
+        self.assertNotIn('**bold**', read['text'])
+        self.assertNotIn('Text of When capacity holds', read['fields'])
+        self.assertIn('Copy text', read['buttons'])
+        self.assertIn('Teaching details', read['buttons'])
+        self.assertIn('Edit Guide', read['buttons'])
+        self.assertNotIn('Change the whole guide', read['buttons'])
+        self.assertIn('Download the level 101 learner guide, as saved', read['buttons'])
+        edit = result['snapshots']['edit']
+        self.assertEqual(edit['fields']['Text of When capacity holds'],
+                         'Some **bold** text.\n\n- One point\n')
+        self.assertIn('Done editing', edit['buttons'])
+        back = result['snapshots']['back']
+        self.assertEqual(back['fields']['Text of When capacity holds'], 'Typed, not saved yet.')
+
+    def test_finishing_opens_on_the_material_shown_with_all_materials_apart(self):
+        guide, guide_view = self.readable()
+        brief, brief_view = self.readable('brief@101', 'A brief.')
+        desk = a_desk(guide, brief, levels=('101',), running=False)
+        guide_view['desk'] = brief_view['desk'] = desk['body']
+        card = '/api/drafts/card?' + urlencode({'path': str(self.root), 'name': '{}'})
+        result = self.open_desk(self.on_desk(desk, **{
+            'GET ' + card.replace('%7B%7D', 'document%40101'): [ok(guide_view)],
+            'GET ' + card.replace('%7B%7D', 'brief%40101'): [ok(brief_view)]}), [
+            {'click': 'Brief · Draft'}, {'click': 'Guide · Draft'}, {'click': 'Finishing'},
+            {'snapshot': 'finishing'}, {'click': 'Finishing: choose another material'},
+            {'snapshot': 'all'}])
+        shot = result['snapshots']['finishing']
+        self.assertNotIn('Choose the material to check.', shot['text'] + shot['sheet'])
+        self.assertIn('Checking Guide only.', shot['text'])
+        self.assertTrue(any(name.startswith('Coverage') for name in shot['buttons']))
+        every = result['snapshots']['all']['sheet']
+        self.assertIn('Choose the material to check.', every)
+        self.assertIn('Brief', every)
+        self.assertEqual(self.posts(result), [])
+
+    def test_the_level_s_download_and_a_material_s_own_are_named_apart(self):
+        guide, guide_view = self.readable()
+        desk = a_desk(guide, levels=('101',), running=False)
+        guide_view['desk'] = desk['body']
+        result = self.open_desk(self.on_desk(desk, **{
+            'GET /api/drafts/card': [ok(guide_view)]}), [
+            {'click': 'Download level 101'}, {'snapshot': 'sheet'}])
+        sheet = result['snapshots']['sheet']['sheet']
+        self.assertIn('Download level 101', sheet)
+        self.assertIn('exactly as it is saved now', sheet)
+        self.assertIn('One material alone downloads from its own card.', sheet)
+        self.assertEqual(self.posts(result), [])
+
+    def test_a_slide_text_decision_opens_on_the_deck_with_no_editor_beside_it(self):
+        plan, plan_view = self.readable('blueprint@101', 'The plan.')
+        deck = a_card('deck@101', state='decide', seen=None, actions=[],
+                      says='Needs your text approval. Read its slide text, then approve it or '
+                           'ask for changes. Nothing is designed until you decide.')
+        run = a_desk_run('waiting', 'What the level 101 slide deck says is waiting for your '
+                         'review.')
+        run['body']['outline'] = {'content_first': True, 'waiting': True, 'level': '101',
+                                  'sha256': 'a' * 64, 'slides': [
+                                      {'title': 'Why restarts roll', 'points': ['Capacity']}]}
+        desk = a_desk(plan, deck, levels=('101',), running=False)
+        plan_view['desk'] = desk['body']
+        result = self.open_desk(self.on_desk(desk, run, **{
+            'GET /api/drafts/card': [ok(plan_view)]}), [{'snapshot': 'open'}], narrow=True)
+        shot = result['snapshots']['open']
+        # On a phone too: the decision, and the deck it is about, with no editor beside it.
+        self.assertIn('Review slide text', shot['buttons'])
+        self.assertEqual(list(shot['fields']), ['Changes to slide text'])
+
+    def a_doc(self, name='document@101', **more) -> dict:
+        """runner/drafts.py `doc_view` of a guide in a training made with local copies."""
+        return {'artifact': name, 'label': 'the level 101 learner guide', 'seen': seen_of(name),
+                'title': 'Rolling restarts: learner guide (101)', 'action': 'create',
+                'url': None, 'current': False, 'conflict': False, 'automatic': False,
+                'uncertain': False, 'receipt': None, 'problem': None, **more}
+
+    def test_row_197_a_local_guide_gets_one_google_doc_of_the_version_shown(self):
+        guide, guide_view = self.readable()
+        doc = self.a_doc()
+        desk = a_desk(guide, levels=('101',), running=False, docs={'document@101': doc})
+        guide_view['desk'] = desk['body']
+        receipt = {'artifact': 'document@101', 'label': 'the level 101 learner guide',
+                   'result': 'created', 'url': 'https://docs.google.com/document/d/abc/edit',
+                   'title': doc['title'], 'sha256': doc['seen'], 'at': '2030-01-02T03:04:05Z'}
+        after = {**desk['body'], 'docs': {'document@101': {
+            **doc, 'action': 'update', 'current': True, 'url': receipt['url'],
+            'receipt': receipt}}, 'doc': receipt}
+        result = self.open_desk(self.on_desk(desk, **{
+            'GET /api/drafts/card': [ok(guide_view)],
+            'GET /api/drafts/doc-preview': [ok(doc)],
+            'POST /api/drafts/doc': [ok(after)]}), [
+            {'click': 'Google Doc'}, {'snapshot': 'sheet'},
+            {'click': 'Make a Google Doc of the level 101 learner guide'},
+            {'snapshot': 'confirm'}, {'click': 'Make the Doc'}, {'snapshot': 'done'}],
+            narrow=True)
+        sheet = result['snapshots']['sheet']['sheet']
+        self.assertIn('Ready is your approval here and sends nothing.', sheet)
+        self.assertIn('No Google Doc yet. Your download stays as it is.', sheet)
+        self.assertNotIn('A Ready material is sent by itself', sheet)
+        confirm = result['snapshots']['confirm']['sheet']
+        for said in ('The level 101 learner guide', seen_of('document@101')[:8],
+                     'A new Google Doc named “Rolling restarts: learner guide (101)”',
+                     'It makes one new Doc of exactly this version.',
+                     'Nothing is marked ready'):
+            self.assertIn(said, confirm)
+        self.assertEqual(result['snapshots']['confirm']['filled'], ['Make the Doc'])
+        self.assertEqual(self.posts(result), [('/api/drafts/doc', {
+            'path': str(self.root), 'name': 'document@101', 'seen': seen_of('document@101'),
+            'again': False, 'fresh': False})])
+        done = result['snapshots']['done']
+        self.assertIn('Made “Rolling restarts: learner guide (101)”', done['sheet'])
+        self.assertIn({'name': 'Open the Google Doc of the level 101 learner guide, in a new tab',
+                       'href': receipt['url'], 'rel': 'noopener noreferrer',
+                       'target': '_blank'}, done['links'])
+
+    def test_without_google_set_up_the_sheet_says_what_to_do_and_offers_no_send(self):
+        guide, guide_view = self.readable()
+        problem = ('Google access is not set up on this computer: the gcloud command was not '
+                   'found. Install the Google Cloud CLI, run `gcloud auth login '
+                   '--enable-gdrive-access` in a terminal, then try the copies again.')
+        desk = a_desk(guide, levels=('101',), running=False,
+                      docs={'document@101': self.a_doc(problem=problem)})
+        guide_view['desk'] = desk['body']
+        result = self.open_desk(self.on_desk(desk, **{
+            'GET /api/drafts/card': [ok(guide_view)]}), [
+            {'click': 'Google Doc'}, {'snapshot': 'sheet'}])
+        shot = result['snapshots']['sheet']
+        self.assertIn(problem, shot['sheet'])
+        self.assertNotIn('Make a Google Doc of the level 101 learner guide', shot['buttons'])
+        self.assertIn('Download the level 101 learner guide, as saved', shot['buttons'])
+
+    def test_after_an_uncertain_answer_only_make_it_anyway_sends_again(self):
+        guide, guide_view = self.readable()
+        doc = self.a_doc(uncertain=True)
+        desk = a_desk(guide, levels=('101',), running=False, docs={'document@101': doc})
+        guide_view['desk'] = desk['body']
+        result = self.open_desk(self.on_desk(desk, **{
+            'GET /api/drafts/card': [ok(guide_view)],
+            'GET /api/drafts/doc-preview': [ok(doc)],
+            'POST /api/drafts/doc': [{'status': 409, 'body': {'error': 'Not this time.'}}]}), [
+            {'click': 'Google Doc'},
+            {'click': 'Make a Google Doc of the level 101 learner guide'},
+            {'snapshot': 'confirm'}, {'click': 'Make the Doc anyway'}, {'snapshot': 'refused'}])
+        confirm = result['snapshots']['confirm']['sheet']
+        self.assertIn('Look in Google Drive first.', confirm)
+        self.assertEqual(self.posts(result)[0][1]['again'], True)
+        self.assertIn('Not this time.', result['snapshots']['refused']['sheet'])
+
+    def test_an_uncertain_answer_redraws_the_sheet_with_make_it_anyway(self):
+        guide, guide_view = self.readable()
+        doc = self.a_doc()
+        desk = a_desk(guide, levels=('101',), running=False, docs={'document@101': doc})
+        guide_view['desk'] = desk['body']
+        unsure = ('It is not known whether Google made the Doc (Google Drive did not answer as '
+                  'it should have: TimeoutError). Look in Google Drive for “Rolling restarts: '
+                  'learner guide (101)” before making another, so that no second Doc is made.')
+        result = self.open_desk(self.on_desk(desk, **{
+            'GET /api/drafts/card': [ok(guide_view)],
+            'GET /api/drafts/doc-preview': [ok(doc), ok({**doc, 'uncertain': True})],
+            'POST /api/drafts/doc': [{'status': 409, 'body': {'error': unsure}}]}), [
+            {'click': 'Google Doc'},
+            {'click': 'Make a Google Doc of the level 101 learner guide'},
+            {'click': 'Make the Doc'}, {'snapshot': 'after'}])
+        after = result['snapshots']['after']
+        self.assertIn(unsure, after['sheet'])
+        self.assertEqual(after['filled'], ['Make the Doc anyway'])
+        self.assertNotIn('Make the Doc', [name for name in after['buttons']
+                                          if name == 'Make the Doc'])
+
+    def test_a_doc_changed_in_google_offers_its_changes_or_a_new_doc(self):
+        guide, guide_view = self.readable()
+        doc = self.a_doc(action='update', url='https://docs.google.com/document/d/abc/edit',
+                         changed=True)
+        desk = a_desk(guide, levels=('101',), running=False, docs={'document@101': doc})
+        guide_view['desk'] = desk['body']
+        both = ('The level 101 learner guide was changed here and in its Google Doc. The Doc’s '
+                'text is kept beside it; nothing was replaced. Choose which to keep.')
+        receipt = {'artifact': 'document@101', 'label': 'the level 101 learner guide',
+                   'result': 'created', 'url': 'https://docs.google.com/document/d/new/edit',
+                   'title': doc['title'], 'sha256': doc['seen'], 'at': '2030-01-02T03:04:05Z'}
+        result = self.open_desk(self.on_desk(desk, **{
+            'GET /api/drafts/card': [ok(guide_view)],
+            'GET /api/drafts/doc-preview': [ok(doc)],
+            'POST /api/copies': [ok({'said': both}), ok({'said': 'Brought in.'})],
+            'POST /api/drafts/doc': [ok({**desk['body'], 'doc': receipt})]}), [
+            {'click': 'Google Doc'}, {'snapshot': 'sheet'},
+            {'click': 'Bring the Doc’s changes in of the level 101 learner guide'},
+            {'snapshot': 'both'}, {'click': 'Use the Google Doc’s version'},
+            {'click': 'Close'}, {'click': 'Google Doc'},
+            {'click': 'Make a new Google Doc of the level 101 learner guide'},
+            {'snapshot': 'fresh'}, {'click': 'Make a new Doc'}])
+        sheet = result['snapshots']['sheet']['sheet']
+        self.assertIn('the edited Doc is kept either way', sheet)
+        self.assertNotIn('try the copies again', sheet)
+        self.assertIn('Your version on the desk stays in History.',
+                      result['snapshots']['both']['sheet'])
+        self.assertIn('The Doc that was changed in Google is left exactly as it is',
+                      result['snapshots']['fresh']['sheet'])
+        self.assertEqual(self.posts(result), [
+            ('/api/copies', {'path': str(self.root), 'pull': 'document@101'}),
+            ('/api/copies', {'path': str(self.root), 'pull': 'document@101', 'choose': 'theirs'}),
+            ('/api/drafts/doc', {'path': str(self.root), 'name': 'document@101',
+                                 'seen': seen_of('document@101'), 'again': False,
+                                 'fresh': True})])
 
     def test_readiness_is_not_offered_while_a_level_material_is_being_written(self):
         plan = a_card('blueprint@101')
@@ -7567,6 +7954,7 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         return desk, card_view
 
     def test_watch_preserves_the_revision_of_unsaved_text(self):
+        self.editing = 'Guide'
         job = {'id': 'job1', 'part': 'abcd1234', 'status': 'working'}
         desk, card_view = self.editable(working=job, jobs=[job])
         landed = {**card_view, 'revision': 4, 'working': None, 'jobs': [], 'sections': [
@@ -7585,6 +7973,7 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
                          'Corrected text.')
 
     def test_stop_change_is_available_with_invalid_pending_text(self):
+        self.editing = 'Guide'
         job = {'id': 'job1', 'part': 'abcd1234', 'status': 'working'}
         desk, card_view = self.editable(working=job, jobs=[job])
         result = self.open_desk(self.on_desk(desk, **{
@@ -7598,6 +7987,7 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         self.assertEqual(result['snapshots']['stopped']['fields']['Text of When capacity holds'], '```')
 
     def test_stop_training_is_available_with_invalid_pending_text(self):
+        self.editing = 'Guide'
         desk, card_view = self.editable()
         result = self.open_desk(self.on_desk(desk, **{
             'GET /api/drafts/card': [ok(card_view)],
@@ -7609,6 +7999,7 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         self.assertEqual(result['snapshots']['stopped']['fields']['Text of When capacity holds'], '```')
 
     def test_pagehide_sends_pending_text_with_keepalive_and_keeps_failed_text(self):
+        self.editing = 'Guide'
         desk, card_view = self.editable()
         answers = self.on_desk(desk, **{
             'GET /api/drafts/card': [ok(card_view)],
@@ -7627,6 +8018,7 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         self.assertEqual(self.posts(reopened), [])
 
     def test_stop_does_not_wait_for_a_stalled_save(self):
+        self.editing = 'Guide'
         desk, card_view = self.editable()
         result = self.open_desk(self.on_desk(desk, **{
             'GET /api/drafts/card': [ok(card_view)],
@@ -7637,6 +8029,7 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         self.assertIn(('/api/run', {'path': str(self.root), 'action': 'stop'}), self.posts(result))
 
     def test_pagehide_starts_the_latest_save_without_waiting_for_an_older_save(self):
+        self.editing = 'Guide'
         desk, card_view = self.editable()
         result = self.open_desk(self.on_desk(desk, **{
             'GET /api/drafts/card': [ok(card_view)],
@@ -7651,6 +8044,7 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         self.assertIn('Latest.', json.dumps(result['storage']))
 
     def test_large_unload_edits_recover_and_storage_failure_prevents_closing(self):
+        self.editing = 'Guide'
         desk, card_view = self.editable()
         answers = self.on_desk(desk, **{'GET /api/drafts/card': [ok(card_view)]})
         result = self.open_desk(answers, [
@@ -7665,6 +8059,7 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         self.assertTrue(failed['closePrevented'])
 
     def test_a_clean_tab_cannot_remove_another_tabs_recovery(self):
+        self.editing = 'Guide'
         desk, card_view = self.editable()
         answers = self.on_desk(desk, **{
             'GET /api/drafts/card': [ok(card_view)],
@@ -7683,6 +8078,7 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
                          '``` Tab A')
 
     def test_acknowledging_one_tabs_edit_preserves_another_tabs_recovery(self):
+        self.editing = 'Guide'
         desk, card_view = self.editable()
         answers = self.on_desk(desk, **{
             'GET /api/drafts/card': [ok(card_view)],
@@ -7706,6 +8102,7 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         self.assertEqual(reopened['storage'], first['storage'])
 
     def test_recovering_an_old_snapshot_cannot_delete_a_newer_tab_snapshot(self):
+        self.editing = 'Guide'
         desk, card_view = self.editable()
         answers = self.on_desk(desk, **{
             'GET /api/drafts/card': [ok(card_view)],
@@ -7727,6 +8124,7 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         self.assertIn('Newer draft.', json.dumps(closing['storage']))
 
     def test_editing_one_recovered_part_does_not_review_the_others(self):
+        self.editing = 'Guide'
         desk, card_view = self.editable(opening='An opening.')
         answers = self.on_desk(desk, **{
             'GET /api/drafts/card': [ok(card_view)],
@@ -7758,6 +8156,7 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         self.assertEqual(reviewed['storage'], {})
 
     def test_successful_unload_save_clears_recovery_and_shares(self):
+        self.editing = 'Guide'
         desk, card_view = self.editable()
         result = self.open_desk(self.on_desk(desk, **{
             'GET /api/drafts/card': [ok(card_view)],
@@ -7769,6 +8168,7 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         self.assertEqual(result['storage'], {})
 
     def test_whole_guide_menu_progress_and_note_placement(self):
+        self.editing = 'Guide'
         job = {'id': 'job1', 'part': 'abcd1234', 'status': 'working', 'chain': True,
                'index': 1, 'total': 4}
         desk, card_view = self.editable()
@@ -7784,6 +8184,7 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         self.assertEqual(self.posts(result)[0][0], '/api/drafts/write-whole')
 
     def test_typing_saves_a_second_after_the_last_key(self):
+        self.editing = 'Guide'
         desk, card_view = self.editable()
         result = self.open_desk(self.on_desk(desk, **{
             'GET /api/drafts/card': [ok(card_view)],
@@ -7799,6 +8200,7 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         self.assertEqual(posts[0][1]['seen'], 3)
 
     def test_history_compares_and_restores(self):
+        self.editing = 'Guide'
         desk, card_view = self.editable()
         versions = [{'source': source, 'text': text, 'words': 2} for source, text in
                     [('rewrite', 'First text.'), ('google', 'Second text.'),
@@ -7816,6 +8218,7 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         self.assertEqual(self.posts(result)[0][1]['index'], 1)
 
     def test_the_selection_bar_offers_five_actions(self):
+        self.editing = 'Guide'
         desk, card_view = self.editable()
         result = self.open_desk(self.on_desk(desk, **{
             'GET /api/drafts/card': [ok(card_view)],
@@ -7857,6 +8260,7 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         self.started('--levels', '101,201')
         for name, own in [('scenario:main@101', True), ('yoodli:main@101', False)]:
             with self.subTest(name=name):
+                self.editing = 'Practice' if own else 'Yoodli'
                 desk, card_view = self.editable(name, opening='# Practice', sections=[],
                     whole=True, own=own, fields=[{'heading': ['Context'], 'text': 'Practice.',
                                                  'limit': 10000}])
@@ -7873,6 +8277,7 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
                     self.assertIn('10,000 characters', shot['text'])
 
     def test_stopping_the_training_attempts_save_without_delaying_the_run_route(self):
+        self.editing = 'Guide'
         desk, card_view = self.editable()
         result = self.open_desk(self.on_desk(desk, **{
             'GET /api/drafts/card': [ok(card_view)],
@@ -7886,6 +8291,7 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
                               if route == '/api/run'), 'stop')
 
     def test_a_plan_has_only_a_whole_plan_note(self):
+        self.editing = 'Plan'
         desk, card_view = self.editable('blueprint@101')
         result = self.open_desk(self.on_desk(desk, **{
             'GET /api/drafts/card': [ok(card_view)],
@@ -7900,6 +8306,7 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
             'name': 'blueprint@101', 'seen': 3, 'note': 'Shorter.'})
 
     def test_mark_ready_flushes_typing_and_uses_its_new_revision(self):
+        self.editing = 'Guide'
         desk, card_view = self.editable()
         saved = {**card_view, 'revision': 4, 'seen': 'new-file'}
         result = self.open_desk(self.on_desk(desk, **{
@@ -7911,6 +8318,7 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         self.assertEqual(self.posts(result)[1][1]['seen'], 'new-file')
 
     def test_a_failed_save_keeps_typing_and_does_not_start_a_job(self):
+        self.editing = 'Guide'
         desk, card_view = self.editable()
         result = self.open_desk(self.on_desk(desk, **{
             'GET /api/drafts/card': [ok(card_view)],
@@ -7922,6 +8330,7 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         self.assertIn('Save your text before starting a change.', result['snapshots']['failed']['text'])
 
     def test_polling_keeps_pending_typing_and_refreshes_settled_cards(self):
+        self.editing = 'Guide'
         desk, card_view = self.editable()
         changed = {**card_view, 'revision': 5, 'sections': [
             {**card_view['sections'][0], 'text': 'Changed elsewhere.'}]}
@@ -7941,6 +8350,7 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         self.assertGreaterEqual(len(self.asked(result, 'drafts/card')), 2)
 
     def test_section_note_and_sources_on_the_card(self):
+        self.editing = 'Guide'
         material = a_card('document@101')
         desk = a_desk(material, levels=('101',))
         card_view = {**material, 'revision': 3, 'opening': '', 'sections': [
@@ -8066,7 +8476,7 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
             self.assertNotIn(absent, shot['buttons'])
         self.assertEqual([label for label in shot['fields'] if 'note' in label.lower()], [])
         self.assertIn('Take it over', shot['buttons'])
-        self.assertIn('Download', shot['buttons'])
+        self.assertIn('Download level 101', shot['buttons'])
 
     def test_the_desk_on_a_phone(self):
         result = self.open_desk(self.on_desk(a_desk()), [
@@ -8754,11 +9164,11 @@ class TeamScreenTests(ScriptedPage, PageCase):
         status = shots['status']
         text = status['text'].replace('\n', '')
         # One table, each training once: a run the list knows is its row, with the list's
-        # own count of what is still to make; a run the list does not know is a row of its
+        # own count of what is still to write; a run the list does not know is a row of its
         # own. A working run's last activity is now; a run with no record here says so.
         for shown in ('Trainings on this computer', 'Up to 2 trainings work at once on this '
                       'computer. Any more wait their turn.',
-                      'Rolling restartsWorking on its own' + going + 'Still to make: ',
+                      'Rolling restartsWorking on its own' + going + 'Still to write: ',
                       '$1.25Working nowOpen', 'Canary releasesWaiting its turnWaiting for its turn.'
                       'It is waiting its turn: 1 training is ahead of it.',
                       'when its turn comes.' + broken + '5,200 tokensnot recorded',
@@ -8846,7 +9256,7 @@ class TeamScreenTests(ScriptedPage, PageCase):
         self.assertIn('Trainings on this computer', text)
         self.assertIn('Up to 2 trainings work at once on this computer. Any more wait their '
                       'turn.', text)
-        self.assertIn('Rolling restartsWorking on its own' + going + 'Still to make: 6'
+        self.assertIn('Rolling restartsWorking on its own' + going + 'Still to write: 6'
                       '$1.25Working now', text)
         self.assertIn('HeldIn progress' + stuck + 'In the way: 2 things—3 hours ago', text)
         self.assertIn('DoneFinished' + ready + '—5 minutes ago', text)

@@ -222,7 +222,7 @@ PART_LIMIT = 1_000_000   # bytes: one part of the largest size, as JSON
 READS = ('/api/capabilities', '/api/setup', '/api/agents', '/api/models', '/api/run',
          '/api/download', '/api/slide', '/api/status', '/api/published', '/api/delete', '/api/deck-draft-ticket',
          DRAFTS, CARD, VERSIONS, f'{DRAFTS}/update-preview', f'{DRAFTS}/slide-versions', f'{DRAFTS}/source-price',
-         f'{DRAFTS}/proofread', f'{DRAFTS}/migration-preview')
+         f'{DRAFTS}/proofread', f'{DRAFTS}/migration-preview', f'{DRAFTS}/doc-preview')
 WRITES = ('/api/training-plan', '/api/research-sources', '/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/answer',
           '/api/documents', '/api/copies', '/api/share', '/api/outline', '/api/review', '/api/drive',
           '/api/publish', '/api/adopt', '/api/fetch', '/api/delete', '/api/companions',
@@ -233,7 +233,8 @@ WRITES = ('/api/training-plan', '/api/research-sources', '/api/setup/check', '/a
           f'{DRAFTS}/finding', f'{DRAFTS}/slide-restore', f'{DRAFTS}/look-samples',
           f'{DRAFTS}/look', f'{DRAFTS}/draw-here', f'{DRAFTS}/deck-note', f'{DRAFTS}/deck-stop',
           f'{DRAFTS}/slide-selection', f'{DRAFTS}/slide-selection-settle', f'{DRAFTS}/deck-outline', f'{DRAFTS}/deck-outline-price',
-          f'{DRAFTS}/source', f'{DRAFTS}/finish', f'{DRAFTS}/apply', f'{DRAFTS}/skip', *DECIDED, *TYPED, *JOBS)
+          f'{DRAFTS}/source', f'{DRAFTS}/finish', f'{DRAFTS}/apply', f'{DRAFTS}/skip',
+          f'{DRAFTS}/doc', *DECIDED, *TYPED, *JOBS)
 KINDS = {
     '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
     '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -336,6 +337,12 @@ class RunnerPage(desk.Page):
             root = self.on_desk(one('path'))
             with self.engine.files:
                 return desk.as_json(HTTPStatus.OK, drafts.source_price(root, drafts.run_of(root)))
+        if path == f'{DRAFTS}/doc-preview':
+            root = self.on_desk(one('path'))
+            try:
+                return desk.as_json(HTTPStatus.OK, self.engine.doc_preview(root, one('name')))
+            except WorkspaceError as refusal:
+                raise desk.Refusal(HTTPStatus.CONFLICT, str(refusal))
         if path == f'{DRAFTS}/update-preview':
             root = self.on_desk(one('path'))
             with self.engine.files:
@@ -634,7 +641,32 @@ class RunnerPage(desk.Page):
                                  'question': found['question'], 'recorded': False})
         elif item.get('state') == 'in-progress' and found['state'] != 'done':
             item['sentence'] = found['sentence']
+        if found['mine'] and found.get('flow') == drafts.FLOW:
+            self.with_standing(item)
         return item
+
+    def with_standing(self, item: dict) -> None:
+        """Say a desk training as its desk does, from the one reading of its materials:
+        Home, Trainings and Status then agree with the desk on what needs the person, what
+        is still to write and what is waiting for Mark ready."""
+        try:
+            told = drafts.standing(self.engine, Path(item['path']))
+        except (WorkspaceError, OSError):
+            return   # what the list already says is kept
+        if told is None:
+            return
+        counts = told['counts']
+        item.update(standing=told, state=told['state'], sentence=told['sentence'],
+                    ready=told['phase'] == 'ready',
+                    # Still to make counted unapproved drafts too; these are told apart.
+                    to_make=counts['to_write'], to_write=counts['to_write'],
+                    to_review=counts['drafts'], attention=counts['attention'],
+                    stages=drafts.stage_row(item.get('stages') or [], told))
+        if told['state'] == 'needs-you' and not isinstance(item.get('waiting'), dict):
+            item['waiting'] = {'artifact': None, 'label': None, 'question': None,
+                               'recorded': False}
+        elif told['state'] != 'needs-you':
+            item['waiting'] = None
 
     # --- the desk's changes --------------------------------------------------------------
 
@@ -763,6 +795,19 @@ class RunnerPage(desk.Page):
             return desk.as_json(HTTPStatus.OK, self.engine.share())
         if path == ASSET:
             return desk.as_json(HTTPStatus.OK, self.asset(sent))
+        if path == f'{DRAFTS}/doc':
+            # One explicit Google Doc of one version of one guide or brief.
+            root = self.on_desk(desk.text(sent, 'path'))
+            again, fresh = sent.get('again', False), sent.get('fresh', False)
+            if not isinstance(again, bool) or not isinstance(fresh, bool):
+                raise desk.Refusal(HTTPStatus.BAD_REQUEST, 'Say yes or no to making it anyway '
+                                   'and to making a new Doc.')
+            try:
+                done = self.engine.deliver_doc(root, desk.text(sent, 'name'),
+                                               desk.text(sent, 'seen'), again, fresh)
+            except WorkspaceError as refusal:
+                raise desk.Refusal(HTTPStatus.CONFLICT, str(refusal))
+            return desk.as_json(HTTPStatus.OK, {**drafts.view(self.engine, root), **done})
         if path == f'{DRAFTS}/source':
             root = self.on_desk(desk.text(sent, 'path'))
             files = sent.get('files')

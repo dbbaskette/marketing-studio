@@ -99,6 +99,40 @@ image tool. Sign-in, usage limits, invalid images and an unavailable image tool 
 say what to do next. Nothing is retried, and live generation and editing remain a
 separate acceptance step.
 
+## Unreleased: Training Studio standing on every screen
+
+A training made on the desk now has one standing that Home, Trainings, Status and the desk
+all read: working on its own, needs your decision, needs attention, drafts to mark ready,
+ready, or stopped. A finished writing job with a retained review finding is listed under
+Needs you with a button straight to its level, material and slide, and is never called
+Finished. Status counts drafts still to write apart from drafts to review and mark ready
+and what needs attention. A deck whose slide text waits says Needs your text approval, and
+materials nothing is writing say Not written yet. Saved runs keep their own words, and
+reading any screen starts no work. A desk training whose drafts are all written but not yet
+marked ready now sits under Needs you, existing ones included, and is told once rather than
+again after each Mark ready.
+
+## Unreleased: Training Studio material review
+
+A material on the Training Studio desk opens to read, as learners receive it, with its
+formatting rendered and its teaching details folded away; **Edit** opens its parts, and text
+not saved yet keeps it open across tabs and levels. Copy text copies a section's exact saved
+text. Finishing opens on the material in front of you, with All materials for another. The
+toolbar's download says it is the level's, and each material's own is on its card. While a
+deck's slide text waits for approval, the desk opens on that deck with no editor beside it.
+
+## Unreleased: Training Studio Google Doc after local creation
+
+A training made on the Training Studio desk with local copies only can make a Google Doc
+of a guide or brief later, from Google Doc on the desk. The sheet names the material, the
+version and the Doc it makes; the one explicit action sends exactly that version and gives
+its link. Nothing is marked ready, no job starts, the file is kept, and the training is not
+switched to Google Docs, so Ready still sends nothing by itself. Update the Google Doc
+sends a newer version to the same Doc and never writes over changes made in Google;
+those can be brought in, or a new Doc made beside the edited one. After
+an uncertain answer from Google, another Doc is made only when you choose Make the Doc
+anyway. Trainings started with Google Docs keep updating them as they are marked Ready.
+
 ## Unreleased: research citation handoffs
 
 Research workers are explicitly told which saved source IDs to cite. If a worker

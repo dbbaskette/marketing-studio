@@ -184,6 +184,67 @@ def pandoc(source: Path, target: Path) -> None:
     workspace.pandoc(source, target, PANDOC_SAYS)
 
 
+# --- one Doc, as the person asked on the desk -----------------------------------------------
+
+UNCERTAIN = ('It is not known whether Google made the Doc ({why}). Look in Google Drive for '
+             '“{title}” before making another, so that no second Doc is made.')
+READ_BACK = ('The Google Doc was made, but Google did not give it back to be checked. Its '
+             'link is kept: update it from here to finish, and no second Doc is made.')
+
+
+class Uncertain(WorkspaceError):
+    """Google may or may not have made the Doc: a retry must not make a second one blindly."""
+
+
+def google_problem(google=None) -> str | None:
+    """Why no Google Doc can be made from this computer, in a sentence to act on; None when
+    one can be tried. Nothing is asked of Google."""
+    return NOT_SET_UP if google is None and shutil.which('gcloud') is None else None
+
+
+def doc_title(root: Path, name: str) -> str:
+    """The name a new Google Doc of `name` is given, or the name its linked Doc has."""
+    root = Path(root).resolve()
+    session, _, _ = gdocs.target(root, name)
+    return gdocs.titled(session, name, gdocs.read_links(root)['docs'].get(name), None)
+
+
+def deliver(root: Path, name: str, google=None) -> dict:
+    """Make one new Google Doc of a guide or brief exactly as its file stands, or bring the
+    Doc it is linked to up to date: the one explicit delivery the desk asks for, whatever
+    copies the training keeps. Returns {'result': 'created' or 'updated', 'url', 'title'}.
+
+    A Doc someone changed is never written over. A refusal before anything reached Google
+    (no gcloud, no sign-in) is a WorkspaceError; where Google may have made a Doc without
+    saying so it is `Uncertain`, so the caller can keep a retry from making a second one."""
+    root = Path(root).resolve()
+    problem = google_problem(google)
+    if problem:
+        raise WorkspaceError(problem)
+    google = google or gdocs.GcloudTransport()
+    title = doc_title(root, name)
+    before = name in gdocs.read_links(root)['docs']
+    try:
+        made = gdocs.push(root, name, google)
+    except WorkspaceError as refusal:
+        said = str(refusal)
+        if name in gdocs.read_links(root)['docs'] and not before:
+            raise WorkspaceError(READ_BACK) from None
+        reworded = next((ours for theirs, ours in REWORDED if theirs in said), None)
+        if reworded or before or 'gcloud' in said or 'sign-in' in said:
+            raise WorkspaceError(reworded or said) from None   # nothing was made
+        raise Uncertain(UNCERTAIN.format(why=said.rstrip('.'), title=title)) from None
+    except Exception as failure:  # Drive's own words could hold anything
+        if name in gdocs.read_links(root)['docs'] and not before:
+            raise WorkspaceError(READ_BACK) from None
+        why = f'Google Drive did not answer as it should have: {type(failure).__name__}'
+        if before:
+            raise WorkspaceError(f'{why}. The Doc was left as it was. '
+                                 f'{workspace.sentence(AGAIN)}.') from None
+        raise Uncertain(UNCERTAIN.format(why=why, title=title)) from None
+    return {'result': made['result'], 'url': made['url'], 'title': made['title']}
+
+
 def remake(root: Path, name: str, google=None) -> dict:
     """Make a new Google Doc of an approved file whose Doc Google cannot find: the old link
     is removed, and the Doc is made again from the file as it stands. The old Doc, if there
