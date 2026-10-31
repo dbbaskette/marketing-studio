@@ -231,6 +231,36 @@ async function post(route, body) {
     assert.equal(await again, false, how + ' resolves without a choice');
     assert.equal(used.length, before, how + ' sends nothing');
   }
+  // A studio names its own work, and a row it cannot use (its own kept export) is shown as
+  // unavailable: it cannot be ticked, and Select all matching leaves it out.
+  {
+    const own = kit.pick({ ...adapter, noun: 'infographic',
+      unavailable: (row) => (row.id === 'doc-1' ? { label: 'This infographic', detail: 'Its own approved page cannot be a source for it.' } : null) });
+    await settle();
+    const open = document.body.children.find((n) => n.tagName === 'dialog');
+    assert.ok(all(open).some((n) => /^Choose documents for this infographic only\..*A new infographic starts with none\.$/.test(n.textContent)));
+    const box = find(open, 'library-tick-doc-1');
+    assert.ok(box.disabled, 'its own export cannot be ticked');
+    assert.equal(box.attributes['aria-label'], 'Synthetic <b>document</b> 1 is unavailable: This infographic');
+    assert.ok(all(open).some((n) => n.textContent === 'This infographic'));
+    // Select all on this page leaves it out too.
+    await tick(find(open, 'library-select-page'), true);
+    assert.ok(!find(open, 'library-tick-doc-1').checked, 'select page skips its own export');
+    assert.ok(find(open, 'library-tick-doc-5').checked);
+    await tick(find(open, 'library-select-page'), false);
+    await tick(find(open, 'library-tick-doc-5'), true);
+    await click(find(open, 'library-all-matching'));
+    assert.match(all(open).find((n) => n.className === 'selection-count').text, /2 selected/);
+    await click(find(open, 'library-cancel'));
+    assert.equal(await own, false);
+    const plainSheet = kit.pick(adapter);
+    await settle();
+    const usual = document.body.children.find((n) => n.tagName === 'dialog');
+    assert.ok(all(usual).some((n) => /^Choose documents for this project only\./.test(n.textContent)), 'the default noun is project');
+    assert.ok(!find(usual, 'library-tick-doc-1').disabled);
+    await click(find(usual, 'library-cancel'));
+    assert.equal(await plainSheet, false);
+  }
   // While Use selected is landing, Cancel, Close and Escape wait; then focus goes where the
   // page says (its redrawn Add from library).
   let land;

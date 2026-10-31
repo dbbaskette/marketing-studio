@@ -6,6 +6,7 @@ connection and complete native installation remain their own later issues.
 from __future__ import annotations
 
 from contextlib import contextmanager
+from copy import deepcopy
 import fcntl
 import hashlib
 import json
@@ -20,7 +21,7 @@ import threading
 from studio_core import studios_config, workspace_setup
 
 from .contracts import (MAX_ASSET_BYTES, MAX_RECORD_BYTES, PRODUCT, Invalid,
-                        advance, canonical, new_project)
+                        advance, canonical, new_project, renamed, renaming)
 from .validation import identifier, image_size, relative_path, require, sha, validate_project
 
 NOFOLLOW = getattr(os, 'O_NOFOLLOW', 0)
@@ -296,11 +297,35 @@ class Store:
             return project
 
     def edit_brief(self, ident: str, brief: dict, *, expected_revision: int) -> dict:
+        """Save the brief. A change to the working title alone is a rename that clears
+        nothing (`contracts.renamed`); any other change clears the story, page and approval
+        built from the earlier brief, under the input rules. Captured facts stay either way."""
         with self.locked():
-            project = advance(self.read(ident), {'brief': brief},
+            current = self.read(ident)
+            if renaming(current, brief):
+                return self._rename_locked(current, brief['title'], expected_revision)
+            project = advance(current, {'brief': brief},
                               expected_revision=expected_revision, owner=self.owner)
             self._publish(project)
             return project
+
+    def _rename_locked(self, current: dict, title, expected_revision) -> dict:
+        self.expect(current, expected_revision)
+        require(not any(a['state'] in ('queued', 'running', 'unknown') for a in current['attempts']),
+                'An image request is still pending or uncertain. Rename this infographic once '
+                'Image work needs attention is resolved.')
+        from .visual_review import latest     # imported here: visual_review reads this module
+        review = latest(self, current)
+        candidate = deepcopy(current)
+        candidate['brief']['title'] = title
+        already = latest(self, candidate)     # a review kept from when it last had this title
+        result, carried = renamed(current, title, review,
+                                  sequence=(already or {}).get('sequence', 0))
+        if carried is not None:
+            self.write_blob(current['id'], 'jobs/visual_' + secrets.token_hex(12) + '/review.json',
+                            canonical(carried))
+        self._publish(result)
+        return result
 
     def expect(self, project: dict, revision: int):
         require(type(revision) is int and revision == project['revision'],

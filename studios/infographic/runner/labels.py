@@ -86,6 +86,34 @@ def _content(project):
     return digest({key: project[key] for key in _CONTENT})
 
 
+_BRIEF = (('title', 'working title'), ('audience', 'audience'), ('purpose', 'desired takeaway'),
+          ('must_show', 'must-show ideas'), ('locked_words', 'exact wording'),
+          ('exclusions', 'leave out'), ('direction', 'story direction'), ('preset', 'page size'))
+
+
+def joined(words):
+    """'a', 'a and b', 'a, b and c'."""
+    words = list(words)
+    return ' and '.join(words) if len(words) < 3 else ', '.join(words[:-1]) + ' and ' + words[-1]
+
+
+def cleared(previous, current):
+    """The finished work that existed before a change and is gone after it, in words."""
+    return [words for words, gone in (
+        ('facts', previous['facts'] and not current['facts']),
+        ('story', previous['stories'] and not current['stories']),
+        ('page', previous['scene'] is not None and current['scene'] is None),
+        ('approval', previous['approval'] is not None and current['approval'] is None)) if gone]
+
+
+def _renamed(previous, current):
+    """Only the working title changed, and nothing was cleared."""
+    rest = lambda brief: {k: v for k, v in brief.items() if k != 'title'}
+    return (previous['brief']['title'] != current['brief']['title']
+            and rest(previous['brief']) == rest(current['brief'])
+            and all(previous[key] == current[key] for key in _CONTENT if key != 'brief'))
+
+
 def change(previous, current, earlier=(), fingerprint=None):
     """What one saved revision did, in words, with the content it affected.
 
@@ -99,11 +127,23 @@ def change(previous, current, earlier=(), fingerprint=None):
     lost = previous['approval'] is not None and current['approval'] is None
     if current['approval'] is not None and previous['approval'] is None:
         summary = 'Approved this exact revision'
+    elif _renamed(previous, current):
+        summary = 'Renamed to “' + current['brief']['title'] + '”'
     elif changed and (fingerprint or _content(current)) in earlier:
         # Content equal to an older revision: a restore, or words typed back exactly.
         summary = 'Restored an earlier revision as new work'
     elif changed == ['scene'] and previous['scene'] and current['scene']:
         summary, affected = _scene_change(previous, current)
+    elif changed and changed[0] in ('brief', 'sources'):
+        # Which brief fields changed, and what the change cleared that existed before it.
+        summary = 'Added or updated sources' if changed[0] == 'sources' else (
+            'Edited the brief: ' + joined([words for key, words in _BRIEF
+                                           if previous['brief'].get(key) != current['brief'].get(key)]
+                                          or ['its details']))
+        gone = cleared(previous, current)
+        if gone:
+            summary += '; cleared the ' + joined(gone)
+            lost = False
     elif changed:
         summary = {'brief': 'Edited the brief', 'sources': 'Added or updated sources', 'facts': 'Captured facts',
                    'stories': 'Proposed or revised stories', 'selected_story': 'Chose a story',

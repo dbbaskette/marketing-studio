@@ -2032,6 +2032,15 @@ p.fact > .bead {
   animation: slide-out 240ms ease forwards;
 }
 
+/* A toast with one action (Undo): it can be pointed at and reached by the keyboard. */
+.toast-action {
+  pointer-events: auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.75rem;
+}
+
 @keyframes slide-in {
   from {
     opacity: 0;
