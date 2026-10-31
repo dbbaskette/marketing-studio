@@ -26,25 +26,33 @@ this repository.
 
 ## Remaining release decisions
 
-- **#152 — Codex live execution.** With explicit authorization, generate a PNG using
+- **#152 — Codex live execution.** The scoped generate/reference-edit adapter and its
+  normalized outcomes (missing image tool, sign-in, quota, malformed asset, timeout)
+  are implemented and covered with stubbed event streams; only live acceptance remains.
+  With explicit authorization, generate a PNG using
   the native confined adapter and the selected signed-in Codex model. Perform a
   reference-guided edit and inspect actual returned and composed images. Saved
   events, owned bytes and the normalized outcome must agree. Never replace an
   uncertain attempt with an automatic duplicate request.
-- **#171 — Illustration owner acceptance.** Present actual artwork and composed
+- **#223 — Visual editor and owner illustration acceptance** (consolidates #171). The
+  persistent visual editor, human element names, revision states and readable history
+  are implemented and covered with disposable fixtures. What remains is the visual and
+  accessibility acceptance with actual artwork: present actual artwork and composed
   outputs for a conceptual illustration, illustrated process and mixed chart/art
   page. Inspect meaning, object counts/relationships, style, crop, resolution,
   label clearance, brand and factual implications. The owner makes the decision;
   renderer markers, empty artwork regions and fixture images cannot pass this gate.
-- **#172 — Both live routes and final sign-off.** Codex and Claude Code/Gemini each
+- **#224 — Review to delivery and final sign-off** (consolidates #172 and #143). The
+  roadmap, combined review/checks and approval/file preparation, and per-format delivery
+  receipts are implemented and covered with fake adapters. The release gate remains: Codex and Claude Code/Gemini each
   need generation, reference editing and actual-pixel inspection. Gemini requires
   an explicitly selected image-capable model and server-side credential with
   separately authorized API usage. Missing access is an unfulfilled gate. Record
   sanitized conclusions and limitations; never write credentials or private output
   into issues or this repository.
 
-Provider epic #139 remains open while #152 is unfulfilled. Readiness epic #143 and
-milestone 2 remain open until #171/#172 pass. There is no automatic release tag,
+Provider epic #139 remains open while #152 is unfulfilled. Milestone 2 remains open
+until #223 and #224 pass; #171, #172 and #143 are superseded by them. There is no automatic release tag,
 public package publication or production upgrade as part of a code merge.
 
 ## Acceptance sequence
@@ -60,7 +68,7 @@ public package publication or production upgrade as part of a code merge.
    checks and obtain the owner's explicit decision. No assistant grants approval.
 5. Exercise exact-revision approval, PNG/PDF/SVG/text downloads and invalidation
    after a source/brand/text/art edit. Keep old approved exports as history.
-6. Link sanitized acceptance conclusions to #152/#171/#172, close verified gates
+6. Link sanitized acceptance conclusions to #152/#223/#224, close verified gates
    and the milestone, then follow separately authorized publication instructions.
 
 ## Testing the merged app

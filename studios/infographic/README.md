@@ -108,7 +108,20 @@ and capability discovery are not proof of account access or successful generatio
 The desk exposes direct copy edits, a named-block or whole-story revision, a precise
 saved image brief, reference-guided artwork edits, pixel inspection, findings,
 comparison, history, restore and all four downloads. Earlier deliveries are labeled
-when they no longer match current content. Required content, locked wording, located
+when they no longer match current content.
+
+The visual editor keeps the page preview beside **Edit words**. Choose an element by
+its name (Page heading, Section 2 heading, Section 1, step 3 label) or select it on the
+page; it is outlined on the preview and its place is described. Element IDs are under
+Advanced. Saving keeps the element, focus and scroll position, confirms the new revision
+and says whether the preview is out of date, with **Update preview**. Unsaved words are
+kept for each infographic and element in that browser tab, including across a reload,
+opening another infographic and a refused save. Saving unchanged words makes no revision. Three states stay distinct: current work, the rendered preview and the last
+approved delivery. **Saved files** keeps every rendered revision's downloads; approved
+files never change. **History** says what each revision did (for example Edited words,
+Ran checks, Approved this exact revision, Restored an earlier revision), what it
+changed and when, beside its revision number and exact identity. Home shows each
+infographic's working state with its revision. Required content, locked wording, located
 facts, exact calculations, readable fit and actual fonts are checked. Unknown units,
 periods or denominators block quantitative comparisons rather than being invented.
 Print body/source floors are 12/9 pt; digital floors are 24/18 px. A selected brand
@@ -151,11 +164,27 @@ separate release gates, never inferred from fixture success.
    text copy. Word means `.docx`, without OCR, linked-resource reads or embedded-object analysis.
 2. Set the audience, takeaway and must-show information. Choose a story, build the page,
    edit, inspect actual pixels, run checks and approve the exact revision.
+   **Where this stands** shows the route (Story, Draft page, Review and checks, Approved
+   delivery) with the current step, what is complete, what needs you and what you can
+   download; the toolbar offers that one next action. **Review and finish** has three
+   parts: your review of the actual page (required; recording it runs the local checks
+   straight after), the checks (on this computer, starting no assistant or image request),
+   and approval (your decision). Assistant inspection is optional and separate.
+   **Approve revision N and prepare files** approves that exact checked revision and then
+   prepares its final files locally in the same action, so the page never shows the
+   approved revision as a new draft. If the files cannot be prepared (for example no
+   renderer), the approval is kept, no approved file is offered, and **Prepare approved
+   files** retries on this computer.
 3. **Deliver Google Doc or PDF** offers either or both. PDF is the exact approved one-page
    local render. Google delivery creates a new native Doc containing the approved page image
    with alt text, plus editable accessible text and source notes. Artwork/layout in Docs is
    raster; the local SVG retains editable labels/charts. Inspect Google conversion in Docs
    before relying on its layout. The original source Doc is never overwritten or shared.
+   A **Delivery receipt** lists every format you chose for that revision with what happened:
+   the PDF as downloaded (with **Download PDF again**) and the Google Doc as delivered
+   (**Open Google Doc**), not confirmed or not delivered. A partial result keeps what
+   succeeded; retrying the PDF is local and sends nothing to Google, and **Check again
+   without resending** only reads.
 
 Google actions use the existing sign-in without an email prompt. Optional account/folder
 overrides remain in advanced defaults. Delivery starts with Marketing Studio’s shared
@@ -176,11 +205,18 @@ public work runs in supplied-only mode. Missing or changed captures block claims
 Presentation Studio or Training Studio `hub.json` folder. Select one file and review its
 preview. Refresh/replacement is explicit and creates a new source revision.
 
-**Team library** shows the last explicitly synced copy, its shared driver and omitted or
+**Team library** uses the shared repository in shared settings. With none set, it says so
+and offers **Configure shared repository**, which opens Shared settings at Your workspace.
+Saving or choosing Back returns to the same infographic and reopens Team library; nothing
+connects until you choose **Connect team library**. A configured library shows its
+repository, branch, connection and last sync, read locally without fetching, so an offline
+or signed-out connection still lists its last copy. Access, missing-repository and network
+failures each name a recovery step without repeating Git's output or any credential, and
+a failed first connection can be retried. It shows the last explicitly synced copy, its shared driver and omitted or
 missing private inputs. Default sharing includes approved delivery files and a title only.
 Editable project, source captures and artwork require separate selection and confirmation;
 image briefs, prompts and job records are excluded. Set your shared display name and native
 **Team Git email** before committing. Sync never force-pushes, resets or discards conflicts.
-Failed pushes keep their commit for **Retry pending team push**. Takeover changes the driver;
+Failed pushes keep their commit; the library counts it and offers **Retry pending team push**. Takeover changes the driver;
 importing its supported editable copy creates local work without approval. A local copy
 already present is preserved. Unshared private inputs remain unavailable until supplied.

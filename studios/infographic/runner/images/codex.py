@@ -19,6 +19,50 @@ _ACTIVE = {}
 _ACTIVE_LOCK = threading.Lock()
 
 
+def terminal_failures(raw):
+    """The events that ended the run: any turn.failed, and error events with no later
+    turn.completed. Codex reports retried stream errors ("Reconnecting... 1/5") as error
+    events; when a turn completes after them they were recovered, not a failure.
+    """
+    events = list(_events(raw))
+    last_completed = max((i for i, e in enumerate(events) if e.get('type') == 'turn.completed'), default=-1)
+    return [e for i, e in enumerate(events) if e.get('type') == 'turn.failed'
+            or e.get('type') == 'error' and i > last_completed]
+
+
+def failure_reason(done, stderr=''):
+    """A normalized reason from failed-run diagnostics only, never from the model's prose.
+
+    Returns None for a clean completed turn. Terminal failures count even when the
+    process exited 0, so a refused or limited turn is never collected as an image.
+    """
+    from ..assistant_failure import classify
+    failures = terminal_failures(done.get('events', ''))
+    if not done.get('returncode') and not failures:
+        return None
+    terminal = '\n'.join(json.dumps(e) for e in failures)
+    diagnostics = (stderr + '\n' + terminal).casefold()
+    if 'please run /login' in diagnostics:
+        return 'sign-in-required'
+    found = classify({**done, 'state': 'complete', 'events': terminal}, stderr)
+    if found in ('sign-in', 'quota'):
+        return {'sign-in': 'sign-in-required', 'quota': 'quota'}[found]
+    # An installed Codex that cannot expose its image tool in this execution mode.
+    if 'image_generation' in diagnostics or 'image generation' in diagnostics or found == 'incompatible':
+        return 'image-tool-unavailable'
+    return 'provider-refusal' if found in ('model', 'connection') else 'image-tool-unavailable'
+
+
+def _events(raw):
+    for line in raw.splitlines():
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(event, dict):
+            yield event
+
+
 def generated_root():
     return Path(os.environ.get('CODEX_HOME') or Path.home() / '.codex') / 'generated_images'
 
@@ -39,7 +83,7 @@ def saved_output(folder, *, root=None):
     require(len(threads) == 1 and isinstance(threads[0], str)
             and re.fullmatch(r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}', threads[0])
             and any(event.get('type') == 'turn.completed' for event in parsed)
-            and not any(event.get('type') in ('turn.failed', 'error') for event in parsed),
+            and not terminal_failures(events),
             'A completed owned image thread is required for local recovery.')
     output = Path(root) / threads[0] if root is not None else generated_root() / threads[0]
     require(output.is_dir() and not any(p.is_symlink() for p in (output, *output.parents)),
@@ -169,12 +213,21 @@ class Codex:
             return result('codex', operation, attempt_id, state='unknown', reason='timeout')
         if done['state'] in ('cancelled', 'unknown'):
             return result('codex', operation, attempt_id, state=done['state'], reason='stopped' if done['state'] == 'cancelled' else 'timeout')
-        if done['returncode']:
-            events = done.get('events', '').lower()
-            reason = 'sign-in-required' if any(w in events for w in ('not logged in', 'unauthorized', 'please run /login')) else (
-                'quota' if any(w in events for w in ('usage limit', 'rate limit', 'quota')) else 'image-tool-unavailable')
-            return result('codex', operation, attempt_id, state='failed', reason=reason)
+        reason = failure_reason(done, self._stderr())
+        if done['returncode'] or reason:
+            return result('codex', operation, attempt_id, state='failed', reason=reason or 'image-tool-unavailable')
         return self._collect(operation, attempt_id, done.get('events', ''))
+
+    def _stderr(self):
+        """The worker's own bounded diagnostics; never shown, only classified."""
+        path = self.folder / 'stderr.txt'
+        if not path.is_file() or path.is_symlink():
+            return ''
+        from ..workspace import _read
+        try:
+            return _read(self.folder, 'stderr.txt', 4_000_000).decode('utf-8', errors='replace')
+        except (OSError, ValueError):
+            return ''
 
     def recover(self, *, attempt_id, operation='generate'):
         """Collect already completed output only; this method never executes a worker."""
@@ -196,20 +249,25 @@ class Codex:
                     and not path.is_symlink() for path in paths), 'The generated image output is unsafe or unbounded.')
             # Older workers could iterate. Keep their originals, collect the final saved PNG.
             path = max(paths, key=lambda p: (p.stat().st_mtime_ns, p.name))
-            assets = [save_asset(self.folder, _read(output, path.name, MAX_ASSET_BYTES), 'image/png')]
-            usage = None
-            for line in events.splitlines():
-                try:
-                    event = json.loads(line)
-                except ValueError:
-                    continue
-                if event.get('type') == 'turn.completed':
-                    used = event.get('usage') or {}
-                    usage = {'cost': None, 'currency': None, 'input_tokens': used.get('input_tokens'),
-                             'output_tokens': used.get('output_tokens')}
-            return result('codex', operation, attempt_id, state='complete', assets=assets, usage=usage)
         except (ValueError, OSError, TypeError):
             return result('codex', operation, attempt_id, state='failed', reason='image-tool-unavailable')
+        try:
+            # A present file that is not a bounded valid PNG is a bad asset, not a missing tool.
+            assets = [save_asset(self.folder, _read(output, path.name, MAX_ASSET_BYTES), 'image/png')]
+        except (ValueError, OSError, TypeError):
+            return result('codex', operation, attempt_id, state='failed', reason='invalid-asset')
+        usage = None
+        for event in _events(events):
+            used = event.get('usage') if event.get('type') == 'turn.completed' else None
+            if isinstance(used, dict):
+                usage = {'cost': None, 'currency': None,
+                         **{key: used[key] if type(used.get(key)) is int and used[key] >= 0 else None
+                            for key in ('input_tokens', 'output_tokens')}}
+        try:
+            return result('codex', operation, attempt_id, state='complete', assets=assets, usage=usage)
+        except (ValueError, TypeError):
+            # Unreadable reported usage stays unknown; it never discards the collected image.
+            return result('codex', operation, attempt_id, state='complete', assets=assets)
 
     def status(self, *, attempt_id):
         return result('codex', 'status', attempt_id, state='unknown')

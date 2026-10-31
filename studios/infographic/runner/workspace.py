@@ -374,6 +374,15 @@ class Store:
             result.append(saved)
         return sorted(result, key=lambda item: item['revision'])
 
+    def saved_at(self, ident: str, revision: int, fingerprint: str):
+        """When an immutable revision was written, from its own file; None if unknown."""
+        from datetime import datetime, timezone
+        require(type(revision) is int and revision >= 0 and sha(fingerprint), 'Name one exact saved revision.')
+        path = self._project(ident) / 'versions' / f'{revision}-{fingerprint}.json'
+        if path.is_symlink() or not path.is_file():
+            return None
+        return datetime.fromtimestamp(path.stat().st_mtime, timezone.utc).isoformat(timespec='seconds')
+
     def listing(self) -> list[dict]:
         projects = self.root / 'projects'
         if projects.is_symlink():
@@ -384,8 +393,9 @@ class Store:
                 continue
             try:
                 project = self.read(folder.name)
+                from .progress import readiness
                 result.append({'id': project['id'], 'title': project['brief']['title'],
-                               'revision': project['revision']})
+                               'revision': project['revision'], 'readiness': readiness(project)})
             except Invalid:
                 result.append({'id': folder.name, 'problem': 'This infographic cannot be read safely.'})
         return result

@@ -262,6 +262,28 @@ else:
                                       env=env, text=True, capture_output=True, timeout=15)
                 self.assertEqual(done.returncode, 0, done.stderr)
 
+    def test_a_studio_can_open_one_listed_settings_part(self):
+        import shutil
+        import subprocess
+        if not shutil.which('node'):
+            self.skipTest('needs Node.js')
+        repo = Path(__file__).resolve().parents[1]
+        script = r'''const fs = require('node:fs'), vm = require('node:vm'), assert = require('node:assert/strict');
+const source = fs.readFileSync(process.argv[1], 'utf8');
+const entry = /function launchPart\(options, known\) \{[\s\S]*?\n\}/.exec(source)[0];
+const pick = hash => vm.runInNewContext(entry + '; launchPart(new URLSearchParams(hash), known);',
+  {URLSearchParams, hash, known: ['assistant-part', 'workspace-part']});
+assert.equal(pick('token=k&view=settings&part=workspace-part'), 'workspace-part');
+assert.equal(pick('token=k&view=settings'), '');
+assert.equal(pick('part=installations'), '');
+assert.equal(pick('part=workspace-part%22%3E'), '');
+'''
+        done = subprocess.run(['node', '-e', script, str(repo / 'core/studio_core/setup_web/app.js')],
+                              text=True, capture_output=True, timeout=10)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        # The Workspace part, which holds the shared repository, is a listed part.
+        self.assertIn('data-part="workspace-part"', (repo / 'core/studio_core/setup_web/index.html').read_text())
+
     def test_browser_finish_loads_native_page_even_when_setup_uses_root(self):
         import subprocess
         repo = Path(__file__).resolve().parents[1]

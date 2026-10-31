@@ -102,15 +102,13 @@ def execute(
     from . import settings
 
     defaults = settings.snapshot()["google"]
-    if folder is None:
-        folder = defaults["folder"]
-    if not account:
-        account = defaults["account"]
     root = store._project(ident) / "jobs" / ("google_" + request_id)
     with file_lock(root / "operation.lock"):
         intent_path = root / "delivery-intent.json"
         if intent_path.exists():
             intent = _json(root, "delivery-intent.json")
+            if folder is None:
+                folder = intent["folder"]
             if not account:
                 account = intent["account"]
             require(
@@ -131,6 +129,10 @@ def execute(
                 }
         else:
             require(not reconcile, "There is no saved Google delivery to reconcile.")
+            if folder is None:
+                folder = defaults["folder"]
+            if not account:
+                account = defaults["account"]
             project, delivery = approved(store, ident, export_id, expected_revision)
             client = client or Client(account)
             account = valid_account(account or client.selected_account())

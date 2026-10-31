@@ -67,6 +67,7 @@ function card(title, ...parts) { return add(make('section', 'card stack'), make(
 function detail(title, ...parts) { return add(make('details'), make('summary', '', title), ...parts); }
 let fieldNumber = 0;
 function field(label, value='', kind='input') { const wrap = make('label', 'field'); const input = make(kind, 'input'); input.value = value; const caption=make('span','field-label',label);caption.id='field-caption-'+(++fieldNumber);input.id='field-'+fieldNumber;wrap.htmlFor=input.id;input.setAttribute('aria-labelledby',caption.id);add(wrap, caption, input); return {wrap, input}; }
+function stateLine(kind,words){const bead=make('span','bead');bead.dataset.state=kind;bead.setAttribute('aria-hidden','true');return add(make('p','state'),bead,document.createTextNode(words));}
 function lines(value) { return value.split('\n').map(v => v.trim()).filter(Boolean); }
 function list(items) { return add(make('ul'), ...items.map(item => make('li', '', item))); }
 function sheet(title, ...nodes) { $('sheet-body').replaceChildren(add(make('div', 'ig-sheet stack'), make('h2', 'sheet-title', title))); $('sheet-body').firstChild.firstChild.id = 'sheet-title'; const status=make('section','callout ig-work');status.dataset.workStatus='';status.setAttribute('role','status');status.setAttribute('aria-live','polite');const problem=make('p','problem');problem.dataset.workError='';problem.hidden=true;problem.setAttribute('role','alert');$('sheet-body').firstChild.append(status,problem,...nodes); if (!$('sheet').open) $('sheet').showModal(); paintWork(); }
@@ -75,6 +76,8 @@ let work = null, workTimer = null;
 const workLabels = {'suggest':'Finding the story','build':'Building the page','art-direct':'Writing the art direction','image-start':'Generating artwork','inspect-images':'Inspecting the page','revise-story':'Revising the story','revise-art':'Revising the artwork','repair':'Repairing the page','preview':'Rendering the preview','export':'Preparing your files','google-deliver':'Delivering the Google Doc'};
 workLabels['image-recover']='Recovering saved artwork locally';
 workLabels['visual-layout']='Building the visual diagram layout';
+workLabels['approve']='Approving and preparing your files';
+workLabels['review']='Recording your review and running checks';
 function paintWork() {
   $('main').setAttribute('aria-busy',String(!!work));
   for(const surface of document.querySelectorAll('[data-work-status]')) {
@@ -140,7 +143,16 @@ async function request(route, data) {
     const answer = await response.json(); if (!response.ok){const failure=Error(answer.error || 'This request could not be completed.');failure.status=response.status;throw failure;}return answer;
   }finally{if(owner)endWork(owner);}
 }
-async function action(verb, values={}, revision=null) {
+// Normalized image outcomes. Each says what happened and the next safe step; nothing is retried.
+const imageProblems={
+  'image-tool-unavailable':'The image worker finished without handing back a usable image. Your installed Codex may not offer its image tool here. Check Image work needs attention for local recovery.',
+  'sign-in-required':'Sign in to your selected assistant on this computer, then start the image request again. Your earlier work is kept.',
+  'quota':'The image provider reported a usage or rate limit. Your earlier work is kept. Try again when your allowance resets.',
+  'invalid-asset':'The returned image was not a usable PNG, so it was not added. Your earlier work is kept.',
+  'gemini-key-required':'Set GEMINI_API_KEY in the server launch environment before starting image work.',
+  'image-model-unavailable':'Choose a Gemini image model available to your account in Settings.'
+};
+async function action(verb, values={}, revision=null, options={}) {
   if (busy) return; busy = true; error(''); const id = held.project.id;
   const label=verb==='suggest'&&held.planning_response?.available&&!values.fresh?'Checking the saved proposal':workLabels[verb];
   const unlock=lockControls(),owner=beginWork(label||'Saving your changes');
@@ -148,7 +160,7 @@ async function action(verb, values={}, revision=null) {
   const polling=setInterval(async()=>{if(checking)return;checking=true;try{progressNotice(await request('/api/activity?id='+encodeURIComponent(id)),owner,id);}catch(f){connectionUncertain(owner);}finally{checking=false;}},2000);
   try {
     const answer = await request('/api/action', {action:verb, id, expected_revision:revision??held.project.revision, ...values});
-    closeSheet(); await openProject(id); if(answer.result?.state==='unknown')error('The image worker did not confirm completion. Check Image work needs attention for saved artwork or cancellation. No request was repeated.'); else if(answer.result?.state==='failed')error(answer.result.reason==='image-tool-unavailable'?'The image worker finished without handing back a usable image. Check Image work needs attention for local recovery.':'The image provider could not finish. Your earlier work is kept.'); else if(answer.result?.state==='outdated')toast('The earlier result was kept privately and did not replace newer work.');else toast('Saved.'); return answer.result;
+    closeSheet(); await openProject(id); if(options.quiet)return answer.result; if(answer.result?.state==='unknown')error('The image worker did not confirm completion. Check Image work needs attention for saved artwork or cancellation. No request was repeated.'); else if(answer.result?.state==='failed')error(imageProblems[answer.result.reason]||'The image provider could not finish. Your earlier work is kept.'); else if(answer.result?.state==='outdated')toast('The earlier result was kept privately and did not replace newer work.');else toast('Saved.'); return answer.result;
   } catch (failure) {
     if(workLabels[verb]&&(!failure.status||failure.status>=500)){
       clearInterval(polling);connectionUncertain(owner);
@@ -158,7 +170,7 @@ async function action(verb, values={}, revision=null) {
   finally { clearInterval(polling); endWork(owner);busy = false;unlock(); }
 }
 function heading(title, ...actions) { for(const id of ['home','settings']){if((id==='settings')===title.startsWith('Settings'))$(id).setAttribute('aria-current','page');else $(id).removeAttribute('aria-current');} $('title').textContent = title; $('actions').replaceChildren(...actions); $('title').focus({preventScroll:true}); }
-function resetPicture() { if (picture) URL.revokeObjectURL(picture); picture = null; }
+function resetPicture() { if (picture) URL.revokeObjectURL(picture); picture = null; pictureFor = ''; }
 function reviewCapturedSources(){
   const section=[...$('main').querySelectorAll('details')].find(node=>node.firstElementChild?.textContent==='Sources and facts');
   if(section){error('');section.open=true;section.scrollIntoView({block:'start'});section.firstElementChild.focus();}
@@ -168,7 +180,7 @@ async function home() {
   try {
     const data = await request('/api/projects');
     const cards = data.projects.map(p => {
-      const node=card(p.title || 'Unreadable infographic', make('p', 'quiet', p.problem || 'Revision ' + p.revision), button('Open ' + (p.title || p.id), () => openProject(p.id)));
+      const node=card(p.title || 'Unreadable infographic', ...(p.problem?[make('p','problem',p.problem)]:[stateLine(p.readiness?.state||'current',p.readiness?.summary||'Saved'),make('p','quiet','Revision '+p.revision)]), button('Open ' + (p.title || p.id), () => openProject(p.id)));
       node.classList.add('ig-project-card'); return node;
     });
     const intro=add(make('div','intro'),make('h2','large-title','Your infographics'),make('p','lede','Turn supplied information into one clear page.'));
@@ -281,7 +293,7 @@ function csvSheet() {
   add(form,problem,add(make('div','bar'),go,button('Back to information',()=>{closeSheet();newSheet();})));closeSheet();sheet('Select CSV data',form);
 }
 async function openProject(id) {
-  try { resetPicture(); held=await request('/api/desk?id='+encodeURIComponent(id)); renderProject();
+  try { if(held?.project.id!==id)resetPicture(); held=await request('/api/desk?id='+encodeURIComponent(id)); renderProject();
     try{sessionStorage.setItem('infographic-studio-project',id);}catch(f){}
     if(!busy&&held.activity?.state==='running')void resumeActivity(id,held.activity);
     else if(!busy&&held.activity?.state==='failed'&&held.activity.problem)error(held.activity.problem);
@@ -299,14 +311,25 @@ function renderProject() {
   const nativeReady=selected&&selected.blocks.every(b=>b.visual||b.kind==='numbers'||b.quantitative===true||(b.quantitative!==false&&b.fact_ids.every(id=>typeof p.facts.find(f=>f.id===id)?.value==='number'))||(b.fact_ids.length<=4&&b.fact_ids.every(id=>(p.facts.find(f=>f.id===id)?.statement||'').split(/\s+/).length<=8)));
   const currentDelivery=held.deliveries.find(d=>d.current), checked=held.review_checked&&p.checks.length&&p.checks.every(c=>c.status==='passed'), approved=p.approval&&checked, needsArtwork=p.scene?.art_regions?.length&&!p.scene.elements.some(e=>e.kind==='artwork');
   const savedPlan=held.planning_response?.available;
-  let next=[savedPlan?'Check saved proposal':'Find the story',()=>action('suggest')];
-  if(p.stories.length)next=!selected?['Choose a story',()=>document.querySelector('#story-choice').scrollIntoView({behavior:'smooth'})]:!p.scene||needsArtwork?['Build page',compose]:!currentDelivery?['Create preview',()=>action('preview')]:approved?(!currentDelivery.approved_current?['Export files',()=>action('export',{draft:false})]:['Downloads',()=>document.querySelector('.ig-page-tools').scrollIntoView({behavior:'smooth'})]):checked?['Approve page',()=>action('approve')]:held.visual_review?.status==='passed'?['Run checks',()=>action('check')]:['Review page',()=>reviewSheet(currentDelivery)];
+  const stage=held.roadmap?.stage, approvedFiles=held.deliveries.find(d=>d.approved_current);
+  let next={
+    story:[savedPlan?'Check saved proposal':'Find the story',()=>action('suggest')],
+    choose:['Choose a story',()=>document.querySelector('#story-choice').scrollIntoView({behavior:'smooth'})],
+    build:['Build page',compose],
+    preview:[held.deliveries.length?'Update preview':'Create preview',()=>action('preview')],
+    review:['Review page',()=>reviewSheet(currentDelivery)],
+    check:['Run checks',()=>action('check')],
+    approve:['Approve revision '+p.revision,approveRevision],
+    export:['Prepare approved files',()=>action('export',{draft:false})],
+    deliver:['Deliver or download',()=>approvedFiles&&deliverySheet(approvedFiles)]
+  }[stage]||[savedPlan?'Check saved proposal':'Find the story',()=>action('suggest')];
+  if(p.scene&&needsArtwork)next=['Build page',compose];
   if(selected&&!nativeReady&&(!p.scene||!p.scene.visual_version))next=['Make this story visual',()=>reviseStorySheet(selected,true)];
   else if(selected&&p.scene&&!p.scene.visual_version)next=['Rebuild visual layout',()=>action('visual-layout')];
   const recoverable=held.recovery.find(r=>r.local_artwork_available);
   if(recoverable)next=['Recover saved artwork',()=>action('image-recover',{request_id:recoverable.attempt_id})];
   heading(p.brief.title,button('Infographics',home),button(...next,true));
-  const parts=[make('p','lede','Choose the explanation, review the actual page, then approve its exact revision.')];
+  const parts=[make('p','lede','Choose the explanation, review the actual page, then approve its exact revision.'),roadmapView(held.roadmap)];
   if(held.recovery.length) parts.push(card('Image work needs attention',...held.recovery.map(r=>add(make('div','stack'),make('p','',r.message),r.local_artwork_available?button('Recover saved artwork',()=>action('image-recover',{request_id:r.attempt_id}),true):button('Cancel uncertain request',()=>action('image-cancel',{request_id:r.attempt_id}))))));
   if(selected&&((p.scene&&!p.scene.visual_version)||!nativeReady)){
     parts.push(card('Make this a visual infographic',make('p','','Earlier versions and captured facts are kept. A visual plan uses concise labels, diagrams and comparisons rather than paragraph blocks.'),
@@ -322,23 +345,11 @@ function renderProject() {
   }
   if(selected && !p.scene)parts.push(card('Make the page',make('p','',p.brand?'Using pinned '+p.brand.identity.name+'.':'Compose with your configured brand. Brand settings are pinned when you choose this action.'),button('Build page',compose)));
   const delivery=held.deliveries.find(d=>d.current) || held.deliveries[0];
-  if(delivery) {
-    const img=make('img','ig-preview');img.alt='Rendered '+(delivery.draft?'draft':'approved')+' infographic, revision '+delivery.revision;
-    const scroll=add(make('div','ig-preview-scroll'),img);
-    const fit=button('Fit page',()=>zoom(false)),actual=button('Actual pixels',()=>zoom(true));
-    function zoom(original){img.classList.toggle('ig-preview-actual',original);fit.setAttribute('aria-pressed',String(!original));actual.setAttribute('aria-pressed',String(original));}
-    zoom(false);
-    const tools=add(make('div','ig-page-tools'),fit,actual);
-    for(const format of ['png','pdf','svg','text'])tools.append(button('Download '+format.toUpperCase()+(delivery.draft?' draft':''),async()=>{try{await download(delivery,format);}catch(f){error(f.message);}}));
-    if(delivery.approved_current)tools.append(button('Deliver Google Doc or PDF',()=>deliverySheet(delivery)),button('Share selected files with team',()=>shareSheet(delivery)));
-    parts.push(card(!delivery.current?'Earlier page — create a new preview':delivery.draft?'Draft page':delivery.approved_current?'Approved delivery':'Earlier approval — review the current revision',make('p','quiet','Saved revision '+delivery.revision+'. Earlier deliveries stay available through history; edits require a new review.'),scroll,tools));
-    download(delivery,'png',true).then(url=>{if(held?.project.id===p.id && document.body.contains(img)){picture=url;img.src=url;}else URL.revokeObjectURL(url);}).catch(f=>error(f.message));
-  }
+  if(delivery||p.scene)parts.push(workbench(p,delivery));
   if(p.scene) {
-    const edit=make('div','stack');for(const e of p.scene.elements.filter(e=>e.kind==='text')) {const f=field(e.id,e.text,'textarea');edit.append(add(make('div','stack'),f.wrap,button('Save '+e.id,()=>action('edit-text',{element_id:e.id,text:f.input.value}))));}
-    parts.push(detail('Edit words directly',edit),detail('Layout alternatives',button('Visual infographic',()=>nativeReady?action('visual-layout'):reviseStorySheet(selected,true)),button('Stacked blocks',()=>action('layout',{arrangement:'stack'})),button('Two columns',()=>action('layout',{arrangement:'columns'}))));
+    parts.push(detail('Layout alternatives',button('Visual infographic',()=>nativeReady?action('visual-layout'):reviseStorySheet(selected,true)),button('Stacked blocks',()=>action('layout',{arrangement:'stack'})),button('Two columns',()=>action('layout',{arrangement:'columns'}))));
     if(p.scene.art_regions?.length)parts.push(detail('Artwork and image brief',card('Explanatory artwork',button('Revise this artwork',reviseArtSheet),make('p','','Artwork is raster; labels and chart marks stay editable. Review the exact art direction before starting or editing an image.'),...p.assets.map(a=>button('Compose saved image '+a.id,()=>action('compose-image',{asset_id:a.id}))),button('Suggest precise art direction',()=>action('art-direct')),detail('Write the art direction yourself',button('Describe subjects and relationships',artSheet)),...p.image_briefs.map(b=>detail('Saved image brief',make('pre','ig-csv-preview',b.prompt),button('Generate artwork using selected provider',()=>startImage(b)))))));
-    if(delivery?.current)parts.push(card('Review and finish',make('p','','Inspect the actual page at its intended size: facts and qualifications, objects and relationships, crop and resolution, label clearance and brand.'),button('Inspect page with assistant',()=>action('inspect-images')),button('Record my visual review',()=>reviewSheet(delivery)),button('Run checks',()=>action('check')),button('Repair findings',repairSheet),approved?button('Export approved files',()=>action('export',{draft:false})):checked?button('Approve this checked revision',()=>action('approve')):make('p','quiet','Approval becomes available when the current checks pass against the latest visual review.')));
+    if(delivery?.current)parts.push(finishCard(p,delivery,checked,approved));
   }
   for(const sent of held.google_deliveries||[])parts.push(card((sent.current?'Google delivery':'Earlier Google delivery')+' · revision '+sent.revision,sent.url?googleLink(sent.url,'Open delivered Google Doc'):make('p','quiet','Outcome uncertain. Read-only reconciliation checks for the saved request; it never resends.'),sent.url?null:button('Reconcile Google delivery',()=>action('google-deliver',{export_id:sent.export_id,request_id:sent.request_id,account:sent.account,folder:sent.folder,reconcile:true},sent.revision))));
   if(held.visual_review)parts.push(detail('Visual review: '+held.visual_review.status,list(held.visual_review.observations),...held.visual_review.findings.map(f=>card(f.region_id+': '+(f.blocking?'Needs correction':'Suggestion'),make('p','',f.message),make('p','',f.correction)))));
@@ -346,8 +357,179 @@ function renderProject() {
   parts.push(detail('Brief and requirements',button('Edit brief',briefSheet),make('p','',p.brief.audience||'Audience not specified'),list(p.brief.must_show.map(r=>r.text))));
   parts.push(detail('Sources and facts',button('Add or update supplied information',sourceSheet),button('Import selected studio material',()=>handoffSheet(preview=>sourceImportSheet(preview))),button('Research this topic',researchSheet),...p.sources.map(s=>card(s.name||s.id,make('p','quiet',s.characters+' captured characters'),button('Review '+(s.name||s.id),()=>sourceTextSheet(s)))),list(held.source_findings.map(f=>f.message)),...p.facts.map(f=>card(f.statement,make('p','quiet','Supplied assertion; not independently corroborated.'),list((f.evidence||[]).map(q=>q.source_id+' ['+q.start+'–'+q.end+']: '+(q.quote||'')))))));
   if(held.image_history?.length)parts.push(detail('Image requests and usage',...held.image_history.map(a=>add(make('div','stack'),make('p','',a.provider+' · '+a.operation+' · '+a.state),make('p','quiet',a.usage?'Reported tokens: '+(a.usage.input_tokens??'unknown')+' in / '+(a.usage.output_tokens??'unknown')+' out. Cost: '+(a.usage.cost??'not reported')+'.':'Usage not reported; no estimate was invented.'),button('Inspect saved image request',()=>imageRequestSheet(a.id))))));
-  parts.push(detail('History',...held.history.map(v=>add(make('div','bar'),make('span','','Revision '+v.revision+(v.approved?' · approved then':'')),button('Compare with current',()=>compareSheet(v)),button('Restore revision '+v.revision,()=>restoreSheet(v)))),held.history.length>=100&&held.history.at(-1).revision>0?button('Older revisions',olderHistory):null));
+  if(held.deliveries.length)parts.push(detail('Saved files',make('p','quiet','Every rendered revision keeps its files. Approved files never change; an edit makes a new draft.'),...held.deliveries.map(savedFiles)));
+  parts.push(detail('History',make('p','quiet','Each saved revision is kept. Restoring makes new work and never brings back an approval.'),add(make('div','desk-versions'),...held.history.map((v,i)=>historyEntry(v,i===0))),held.history.length>=100&&held.history.at(-1).revision>0?button('Older revisions',olderHistory):null));
   $('main').replaceChildren(...parts.filter(Boolean));
+  restoreBench();
+}
+// The visual editor keeps its place across saves, reloads and other actions in this tab:
+// the selected element, unsaved words for each element, and the last saved confirmation.
+let bench={project:'',element:'',drafts:{},saved:null,failed:'',unchanged:false,focus:false,scroll:null};
+// Every infographic's unsaved words and selected element, by project then element.
+let benchStore={drafts:{},elements:{}};
+try{const kept=JSON.parse(sessionStorage.getItem('infographic-studio-bench')||'null');
+  if(kept&&typeof kept==='object'&&kept.drafts&&typeof kept.drafts==='object'&&!Array.isArray(kept.drafts))benchStore={drafts:kept.drafts,elements:kept.elements&&typeof kept.elements==='object'?kept.elements:{}};}catch(f){}
+function keepBench(){
+  if(bench.project){benchStore.elements[bench.project]=bench.element;if(Object.keys(bench.drafts).length)benchStore.drafts[bench.project]=bench.drafts;else delete benchStore.drafts[bench.project];}
+  try{sessionStorage.setItem('infographic-studio-bench',JSON.stringify(benchStore));}catch(f){}
+}
+function unsavedFor(id){return Object.keys(benchStore.drafts[id]||{}).length>0;}
+function when(value){const date=value?new Date(value):null;return date&&!isNaN(date)?date.toLocaleString([], {dateStyle:'medium',timeStyle:'short'}):'';}
+function ledgerItem(name,words,state,detail){
+  const bead=make('span','bead');bead.dataset.state=state;bead.setAttribute('aria-hidden','true');
+  return add(make('div','ig-ledger-item'),make('span','quiet',name),add(make('strong','state'),bead,document.createTextNode(words)),detail?make('span','quiet ig-ledger-detail',detail):null);
+}
+function workbench(p,delivery){
+  if(bench.project!==p.id){keepBench();bench={project:p.id,element:String(benchStore.elements[p.id]||''),drafts:{...(benchStore.drafts[p.id]||{})},saved:null,failed:'',unchanged:false,focus:false,scroll:null};}
+  const names=held.elements||[];
+  const approvedFiles=held.deliveries.find(d=>!d.draft);
+  const ledger=add(make('div','ig-ledger'),
+    ledgerItem('Current work','Revision '+p.revision,'current',held.readiness?.summary),
+    ledgerItem('Preview',delivery?'Revision '+delivery.revision:'Not rendered yet',delivery?.current?'done':'review',delivery?(delivery.current?(delivery.revision===p.revision?'Shows your current work.':'Shows your current content; later revisions only recorded checks or approval.'):'Outdated: it does not show your latest changes.'):'Create a preview to see the page.'),
+    ledgerItem('Approved delivery',approvedFiles?'Revision '+approvedFiles.revision:'None yet',approvedFiles?.approved_current?'done':'review',approvedFiles?(approvedFiles.approved_current?'Matches your current work.':'Earlier files, kept unchanged.'):'Approve a checked revision to deliver it.'));
+  ledger.setAttribute('aria-label','Revisions');ledger.setAttribute('role','group');
+  const view=make('section','card stack ig-view');view.append(make('h2','card-title',!delivery?'Page preview':!delivery.current?'Earlier preview: update it to see your changes':delivery.draft&&p.approval?'Approved revision '+p.revision+': prepare its files':delivery.draft?'Draft page':delivery.approved_current?'Approved delivery':'Earlier approval: review the current revision'));
+  const mark=make('div','ig-mark');mark.hidden=true;mark.setAttribute('aria-hidden','true');
+  let img=null,figure=null;
+  if(delivery){
+    img=make('img','ig-preview');img.alt='Rendered '+(delivery.draft?'draft':'approved')+' infographic, revision '+delivery.revision;
+    if(p.scene){img.width=Math.round(p.scene.width);img.height=Math.round(p.scene.height);}
+    figure=add(make('div','ig-figure'),img,mark);
+    const scroll=add(make('div','ig-preview-scroll'),figure);
+    const fit=button('Fit page',()=>zoom(false)),actual=button('Actual pixels',()=>zoom(true));
+    function zoom(original){img.classList.toggle('ig-preview-actual',original);figure.classList.toggle('ig-actual',original);fit.setAttribute('aria-pressed',String(!original));actual.setAttribute('aria-pressed',String(original));}
+    zoom(false);
+    const tools=add(make('div','ig-page-tools'),fit,actual);
+    for(const format of ['png','pdf','svg','text'])tools.append(button('Download '+format.toUpperCase()+(delivery.draft?' draft':''),async()=>{try{await download(delivery,format);}catch(f){error(f.message);}}));
+    if(delivery.approved_current)tools.append(button('Deliver Google Doc or PDF',()=>deliverySheet(delivery)),button('Share selected files with team',()=>shareSheet(delivery)));
+    view.append(make('p','quiet',delivery.current?'Shows revision '+delivery.revision+'. Select words on the page to edit them.':'Shows revision '+delivery.revision+'. Your current work is revision '+p.revision+'.'));
+    if(!delivery.current&&p.scene)view.append(button('Update preview',()=>action('preview'),true));
+    view.append(scroll,tools);
+    showPicture(delivery,img,p.id);
+  }else if(p.scene)view.append(make('p','','No preview yet. Rendering is local and starts no assistant or image request.'),button('Create preview',()=>action('preview'),true));
+  const parts=[ledger,view];
+  if(p.scene&&names.length)parts.push(inspector(p,names,img,mark));
+  return add(make('div','ig-workbench'),...parts);
+}
+function inspector(p,names,img,mark){
+  if(!names.some(n=>n.id===bench.element))bench.element=names[0].id;
+  const panel=make('section','card stack ig-inspector');panel.setAttribute('aria-labelledby','ig-inspector-title');
+  const title=make('h2','card-title','Edit words');title.id='ig-inspector-title';
+  const choice=field('Element','','select');choice.input.id='ig-element';choice.wrap.htmlFor='ig-element';
+  const where=make('p','quiet');where.id='ig-element-where';
+  const words=field('Words','','textarea');words.input.id='ig-words';words.wrap.htmlFor='ig-words';words.input.rows=4;words.input.setAttribute('aria-describedby','ig-element-where ig-save-state');
+  const state=make('p','ig-save-state');state.id='ig-save-state';state.setAttribute('role','status');state.setAttribute('aria-live','polite');
+  const advanced=make('p','quiet');
+  const save=button('Save words',()=>saveWords(),true);save.id='ig-save-words';
+  function options(){choice.input.replaceChildren(...names.map(n=>{const o=make('option','',n.label+(bench.drafts[n.id]!==undefined&&bench.drafts[n.id]!==n.text?' (unsaved)':''));o.value=n.id;return o;}));choice.input.value=bench.element;}
+  function show(){
+    const chosen=names.find(n=>n.id===bench.element);
+    words.wrap.querySelector('.field-label').textContent='Words for '+chosen.label;
+    words.input.value=bench.drafts[chosen.id]??chosen.text;where.textContent=chosen.location+'.';advanced.textContent='Element ID: '+chosen.id;
+    const [x,y,w,h]=chosen.bounds;Object.assign(mark.style,{left:x*100+'%',top:y*100+'%',width:w*100+'%',height:h*100+'%'});mark.hidden=!img;
+    pending();
+  }
+  function pending(){
+    const chosen=names.find(n=>n.id===bench.element),unsaved=words.input.value!==chosen.text;
+    if(bench.failed){state.className='ig-save-state problem';state.textContent=bench.failed+' Your words are kept here.';return;}
+    if(bench.unchanged&&!unsaved){state.className='ig-save-state';state.textContent='Nothing changed, so no revision was made. These words are already in revision '+held.project.revision+'.';return;}
+    if(bench.saved&&!unsaved&&bench.saved.revision===held.project.revision){
+      const stale=!held.deliveries.find(d=>d.current);state.className='ig-save-state';
+      state.replaceChildren(document.createTextNode('Saved '+bench.saved.label+' as revision '+bench.saved.revision+'. '+(stale?'The preview still shows an earlier revision. Update it to see this change before review.':'')));
+      if(stale)state.append(button('Update preview',()=>action('preview')));
+      return;
+    }
+    state.className='ig-save-state quiet';state.textContent=unsaved?'Unsaved words. Saving makes a new revision; approval is never carried over.':'Saving makes a new revision. Approval is never carried over.';
+  }
+  choice.input.addEventListener('change',()=>{bench.element=choice.input.value;bench.saved=null;bench.failed='';bench.unchanged=false;keepBench();show();});
+  words.input.addEventListener('input',()=>{const chosen=names.find(n=>n.id===bench.element);if(words.input.value===chosen.text)delete bench.drafts[chosen.id];else bench.drafts[chosen.id]=words.input.value;bench.failed='';bench.unchanged=false;keepBench();options();pending();});
+  if(img){
+    img.addEventListener('click',event=>{
+      const box=img.getBoundingClientRect(),x=(event.clientX-box.left)/box.width,y=(event.clientY-box.top)/box.height;
+      const hit=names.filter(n=>x>=n.bounds[0]&&x<=n.bounds[0]+n.bounds[2]&&y>=n.bounds[1]&&y<=n.bounds[1]+n.bounds[3]).sort((a,b)=>a.bounds[2]*a.bounds[3]-b.bounds[2]*b.bounds[3])[0];
+      if(!hit)return;bench.element=hit.id;bench.saved=null;bench.failed='';bench.unchanged=false;keepBench();options();show();words.input.focus();
+    });
+    img.title='Select words on the page to edit them';
+  }
+  options();show();
+  panel.append(title,make('p','quiet','Choose an element here or select it on the page. Each save keeps your place.'),choice.wrap,where,words.wrap,add(make('div','bar'),save),state,detail('Advanced',advanced));
+  return panel;
+}
+async function saveWords(){
+  const chosen=(held.elements||[]).find(n=>n.id===bench.element),input=$('ig-words');if(!chosen||!input)return;
+  const text=input.value;bench.scroll=window.scrollY;bench.saved=null;bench.failed='';bench.unchanged=false;
+  if(text===chosen.text){delete bench.drafts[chosen.id];bench.unchanged=true;keepBench();bench.focus=true;renderProject();return;}
+  const before=held.project.revision,result=await action('edit-text',{element_id:chosen.id,text});
+  if(result&&typeof result.revision==='number'){delete bench.drafts[chosen.id];if(result.revision>before)bench.saved={revision:result.revision,label:chosen.label};else bench.unchanged=true;}
+  else{bench.drafts[chosen.id]=text;bench.failed=$('notice').textContent||'These words could not be saved.';}
+  keepBench();bench.focus=true;if(held?.project.id===bench.project)renderProject();
+}
+function restoreBench(){
+  if(!bench.focus)return;bench.focus=false;
+  const target=$('ig-words');if(!target)return;
+  target.focus({preventScroll:true});
+  if(typeof bench.scroll==='number'){const y=bench.scroll;requestAnimationFrame(()=>window.scrollTo(0,y));}
+}
+// One preview download per saved delivery; re-rendering the page reuses it.
+let pictureFor='';
+function showPicture(delivery,img,id){
+  if(picture&&pictureFor===delivery.id){img.src=picture;return;}
+  download(delivery,'png',true).then(url=>{if(held?.project.id===id&&document.body.contains(img)){resetPicture();picture=url;pictureFor=delivery.id;img.src=url;}else URL.revokeObjectURL(url);}).catch(f=>error(f.message));
+}
+function savedFiles(d){
+  const words=(d.draft?'Draft':'Approved')+' · revision '+d.revision+(d.approved_current?' · current approval':d.current?' · matches current work':' · earlier');
+  return add(make('div','desk-version'),make('span','',words),add(make('div','ig-page-tools'),...['png','pdf','svg','text'].map(format=>{const node=button(format==='text'?'Text':format.toUpperCase(),async()=>{try{await download(d,format);}catch(f){error(f.message);}});node.setAttribute('aria-label','Download '+(format==='text'?'accessible text':format.toUpperCase())+', '+(d.draft?'draft':'approved')+' revision '+d.revision);return node;})));
+}
+function historyEntry(v,current){
+  const facts=[when(v.saved_at),'Revision '+v.revision+(current?' (current)':''),v.affected?.length?'Changed: '+v.affected.join(', '):'',v.approved?'Approved at this revision':''].filter(Boolean).join(' · ');
+  return add(make('div','desk-version'),add(make('div','ig-entry'),make('strong','',v.summary||'Saved revision '+v.revision),make('span','quiet',facts),make('span','quiet','Exact identity '+v.sha256.slice(0,12))),
+    current?null:add(make('div','bar'),button('Compare revision '+v.revision+' with current',()=>compareSheet(v)),button('Restore revision '+v.revision,()=>restoreSheet(v))));
+}
+function roadmapView(map){
+  if(!map)return null;
+  const steps=add(make('ol','workflow-steps ig-roadmap'),...map.steps.map(step=>{
+    const item=make('li','workflow-step');const bead=make('span','bead');bead.dataset.state=step.state==='done'?'done':step.state==='current'?'current':'none';bead.setAttribute('aria-hidden','true');
+    item.append(bead,document.createTextNode(' '+step.label+(step.state==='done'?' (done)':'')));if(step.state==='current')item.setAttribute('aria-current','step');return item;}));
+  steps.setAttribute('aria-label','Steps to an approved delivery');
+  const line=(name,words)=>add(make('p',''),make('strong','',name+' '),document.createTextNode(words));
+  return add(make('section','card stack ig-standing'),make('h2','card-title','Where this stands'),steps,line('Complete:',map.complete),line('Needs you:',map.needs),line('Downloads:',map.downloads));
+}
+function finishCard(p,delivery,checked,approved){
+  const prepared=held.deliveries.some(d=>d.approved_current);
+  const step=(title,words,...controls)=>add(make('div','stack ig-finish-step'),make('strong','',title),make('p','',words),...controls.filter(Boolean));
+  return card('Review and finish',
+    step('1. Review the page (required)','Look at the actual page for revision '+delivery.revision+' at its intended size: facts and qualifications, objects and relationships, crop and resolution, label clearance and brand. Recording your review runs the checks straight after.',
+      add(make('div','bar'),button('Record my review and run checks',()=>reviewSheet(delivery)),button('Inspect page with assistant (optional)',()=>action('inspect-images',{then_check:true})))),
+    step('2. Checks (on this computer)','Required content, factual support, page layout, brand and accessibility, and your latest review. They start no assistant or image request.',
+      add(make('div','bar'),button('Run checks again',()=>action('check')),p.checks.some(c=>c.status!=='passed')?button('Repair findings',repairSheet):null)),
+    step('3. Approve (your decision)',approved?(prepared?'You approved revision '+p.approval.revision+'. Its files are ready below and in Saved files.':'You approved revision '+p.approval.revision+'. Prepare its files on this computer; nothing is sent anywhere.'):checked?'Approval applies to revision '+p.revision+' only. Its final files are prepared on this computer straight after; a later change needs a new review.':'Approval becomes available when the current checks pass against your latest review.',
+      approved?(prepared?null:button('Prepare approved files',()=>action('export',{draft:false}),true)):checked?button('Approve revision '+p.revision+' and prepare files',approveRevision,true):null));
+}
+async function approveRevision(){
+  const result=await action('approve',{then_export:true});
+  if(result?.approved&&result.problem)error('Revision '+result.revision+' is approved, but its files are not ready: '+result.problem+' Choose Prepare approved files to try again on this computer.');
+}
+function receiptCard(title,state,words,...controls){
+  const bead=make('span','bead');bead.dataset.state=state;bead.setAttribute('aria-hidden','true');
+  return add(make('section','card stack'),make('h3','card-title',title),add(make('p','state'),bead,document.createTextNode(words)),...controls.filter(Boolean));
+}
+function receiptSheet(delivery,receipts){
+  const parts=receipts.map(r=>{
+    if(r.kind==='pdf')return receiptCard('PDF',r.ok?'done':'late',r.ok?'Downloaded: approved revision '+delivery.revision+'.':'Not downloaded: '+r.message,
+      button(r.ok?'Download PDF again':'Retry PDF download',async()=>{try{await download(delivery,'pdf');toast('PDF downloaded again.');}catch(f){error(f.message);}}));
+    const result=r.result||{};
+    if(result.url)return receiptCard('Google Doc','done','Delivered: approved revision '+delivery.revision+'.',googleLink(result.url,'Open Google Doc'));
+    const saved=(held?.google_deliveries||[]).some(g=>g.request_id===r.request_id);
+    const uncertain=saved&&(!r.result||result.state==='unknown');
+    const resend=async()=>{const request_id=requestId();const again=await action('google-deliver',{export_id:delivery.id,request_id,folder:r.folder},delivery.revision,{quiet:true});receiptSheet(delivery,receipts.map(x=>x===r?{...r,request_id,result:again,problem:again?null:$('notice').textContent}:x));};
+    const check=async()=>{const again=await action('google-deliver',{export_id:delivery.id,request_id:r.request_id,folder:r.folder,reconcile:true},delivery.revision,{quiet:true});receiptSheet(delivery,receipts.map(x=>x===r?{...r,result:again}:x));};
+    if(!saved)return receiptCard('Google Doc','late','Not delivered: '+(result.message||r.problem||'The request did not start.')+' No Google request was saved.',button('Send again',resend));
+    return receiptCard('Google Doc',uncertain?'review':'late',(uncertain?'Not confirmed: ':'Not delivered: ')+(result.message||r.problem||'The outcome could not be confirmed.')+' Nothing was resent.',
+      button('Check again without resending',check),uncertain?null:button('Send again',resend));
+  });
+  const partial=receipts.some(r=>r.kind==='pdf'?!r.ok:!r.result?.url)&&receipts.some(r=>r.kind==='pdf'?r.ok:!!r.result?.url);
+  sheet('Delivery receipt',make('p','','Approved revision '+delivery.revision+'. Each format you chose is listed with what happened.'),...parts,
+    partial?make('p','quiet','What succeeded is kept. Retrying the PDF is a download on this computer and sends nothing to Google.'):null,add(make('div','create-foot bar'),button('Done',closeSheet,true)));
 }
 async function compose(){
   try {
@@ -362,7 +544,7 @@ function artSheet(){const raw=field('Precise image direction JSON (advanced)',''
 async function startImage(brief){
   try{preferences=await request('/api/preferences');const capability=await request('/api/computer');sheet('Generate artwork',make('p','',capability.disclosure),make('p','','This starts a provider request using the saved brief. Unknown outcomes are kept for explicit recovery; reopening never resubmits.'),add(make('div','bar'),button('Generate artwork',()=>action('image-start',{brief_id:brief.id,provider:preferences.image_provider,request_id:requestId()}),true),button('Cancel',closeSheet)));}catch(f){error(f.message);}
 }
-function reviewSheet(delivery){const observations=field('What did you inspect on the actual composed page?','','textarea');sheet('Review the actual page',button('Inspect page with assistant',()=>action('inspect-images')),make('p','','Or record your own visual review of the rendered revision. It does not claim automated or live-provider quality verification.'),observations.wrap,add(make('div','bar'),button('Record reviewed page',()=>action('review',{export_id:delivery.id,observations:lines(observations.input.value)}),true),button('Cancel',closeSheet)));}
+function reviewSheet(delivery){const observations=field('What did you inspect on the actual composed page?','','textarea');sheet('Review the actual page',make('p','','Look at the rendered page for revision '+delivery.revision+' at its intended size, then say what you checked. Recording your review runs the local checks straight after; nothing is approved.'),observations.wrap,add(make('div','bar'),button('Record review and run checks',()=>action('review',{export_id:delivery.id,observations:lines(observations.input.value),then_check:true}),true),button('Cancel',closeSheet)),detail('Optional: ask your assistant to inspect it',make('p','quiet','Your assistant looks at the actual page and artwork and records located findings. It uses your assistant allowance and never approves.'),button('Inspect page with assistant',()=>action('inspect-images',{then_check:true}))));}
 function restoreSheet(version){sheet('Restore revision '+version.revision+'?',make('p','','Creates a new revision. Current sources, images and deliveries remain in history; approval is not restored.'),add(make('div','bar'),button('Restore as a new revision',()=>action('restore',{revision:version.revision,sha256:version.sha256}),true),button('Cancel',closeSheet)));}
 async function showSettings() {
   if (busy) return;
@@ -426,12 +608,26 @@ if (homeLink) {
   if (sameTab) $('go-suite').removeAttribute('target');
 }
 async function startDesk() {
+  // Back from shared settings: reopen the same infographic and sheet. Connecting stays a choice.
+  let back=null;try{back=JSON.parse(sessionStorage.getItem('infographic-studio-return')||'null');sessionStorage.removeItem('infographic-studio-return');}catch(f){}
+  if(back&&typeof back==='object'&&!Array.isArray(back)){
+    if(typeof back.project==='string'&&/^[A-Za-z0-9_-]{1,64}$/.test(back.project))await openProject(back.project);else await home();
+    if(back.sheet==='team')await teamSheet();
+    return;
+  }
   let id='';try{id=sessionStorage.getItem('infographic-studio-project')||'';}catch(f){}
-  if(id){try{const progress=await request('/api/activity?id='+encodeURIComponent(id)),desk=await request('/api/desk?id='+encodeURIComponent(id));if(progress.activity?.state==='running'||desk.planning_response?.available||desk.recovery?.length){await openProject(id);return;}}catch(f){}}
+  if(id){try{const progress=await request('/api/activity?id='+encodeURIComponent(id)),desk=await request('/api/desk?id='+encodeURIComponent(id));const unsaved=unsavedFor(id);if(progress.activity?.state==='running'||desk.planning_response?.available||desk.recovery?.length||unsaved){await openProject(id);return;}}catch(f){}}
   await home();
 }
 $('sheet').addEventListener('close',paintWork);
 if(!token)error('Open Infographic Studio using the private link printed in your terminal.');else void startDesk();
+// Back from shared settings with the browser's Back button restores this page from its cache,
+// without running startDesk: drop the return marker and re-read an open Team library sheet.
+window.addEventListener('pageshow',event=>{
+  if(!event.persisted||!token)return;
+  try{sessionStorage.removeItem('infographic-studio-return');}catch(f){}
+  if($('sheet').open&&$('sheet-title')?.textContent==='Team library')void teamSheet();
+});
 
 function reviseArtSheet(){const change=field('What should change?','','textarea'),preserve=field('What should stay the same?','Keep all other subjects, relationships, brand, empty label regions and composition.','textarea');sheet('Revise the artwork',make('p','','This sends the saved original as a reference to your selected image provider. It uses provider allowance; the earlier artwork remains in history.'),change.wrap,preserve.wrap,add(make('div','bar'),button('Create referenced revision',()=>action('revise-art',{change:change.input.value,preserve:preserve.input.value,request_id:requestId()}),true),button('Cancel',closeSheet)));}
 async function compareSheet(version){try{const result=await request('/api/action',{action:'compare',id:held.project.id,expected_revision:held.project.revision,before:version.revision,after:held.project.revision});sheet('Changes since revision '+version.revision,...Object.entries(result.result).map(([key,value])=>detail(key,make('h3','','Before'),make('pre','ig-csv-preview',JSON.stringify(value.before,null,2)),make('h3','','Current'),make('pre','ig-csv-preview',JSON.stringify(value.after,null,2)))),button('Done',closeSheet));}catch(f){error(f.message);}}
@@ -532,13 +728,13 @@ async function deliverySheet(delivery){
   const folder=field('Destination folder ID (optional)',preferences.google?.folder||'');
   const problem=make('p','problem'),savedRequest=requestId();
   format.input.addEventListener('change',()=>{folder.wrap.hidden=format.input.value==='pdf';});
-  const go=button('Deliver approved page',async()=>{go.disabled=true;problem.textContent='';try{
-    if(format.input.value!=='google')await download(delivery,'pdf');
-    if(format.input.value==='pdf'){closeSheet();return;}
-    const result=await action('google-deliver',{export_id:delivery.id,request_id:savedRequest,folder:folder.input.value});
-    if(result?.url)sheet('Google Doc delivered',googleLink(result.url,'Open Google Doc'),button('Done',closeSheet));
-    else if(result)error(result.message||'Keep the PDF and reconcile the saved Google request. Nothing is automatically resent.');
-  }catch(f){problem.textContent=f.message;}finally{go.disabled=false;}},true);
+  const go=button('Deliver approved page',async()=>{go.disabled=true;problem.textContent='';
+    const choice=format.input.value,receipts=[];
+    try{
+      if(choice!=='google'){try{await download(delivery,'pdf');receipts.push({kind:'pdf',ok:true});}catch(f){receipts.push({kind:'pdf',ok:false,message:f.message});}}
+      if(choice!=='pdf'){const result=await action('google-deliver',{export_id:delivery.id,request_id:savedRequest,folder:folder.input.value},null,{quiet:true});receipts.push({kind:'google',result,request_id:savedRequest,folder:folder.input.value,problem:result?null:$('notice').textContent});}
+      receiptSheet(delivery,receipts);
+    }finally{go.disabled=false;}},true);
   sheet('Deliver this approved revision',make('p','','PDF preserves the exact approved one-page render. A new Google Doc contains that page as an image, plus editable text and source notes. Your original document is kept. Google conversion layout requires visual review in Docs.'),make('p','quiet','Starts with your shared Marketing Studio delivery choice and existing Google sign-in.'),format.wrap,detail('Choose a destination folder',folder.wrap),problem,add(make('div','bar'),go,button('Cancel',closeSheet)));
 }
 
@@ -596,21 +792,56 @@ async function researchImportSheet(){
   const go=button('Verify and preview reviewed research',async()=>{go.disabled=true;try{const preview=await request('/api/research-preview',{id:held.project.id,expected_revision:held.project.revision,case:path.input.value,source_mode:mode.input.value});sourceImportSheet(preview);}catch(f){problem.textContent=f.message;}finally{go.disabled=false;}},true);
   sheet('Use reviewed research',make('p','','Optional: give this purpose-led task to Harness Research, then import its complete independently reviewed case. This screen starts no research or public search.'),mode.wrap,detail('Infographic research task',task),path.wrap,problem,add(make('div','bar'),go,button('Cancel',closeSheet)));
 }
+// Shared settings own the team repository. Going there keeps this infographic and this
+// sheet to come back to; nothing connects until the person asks again.
+function sharedSettingsLink(label,part){
+  const link=make('a','button',label);
+  link.href='/onboarding/#token='+encodeURIComponent(token)+'&view=settings'+(part?'&part='+encodeURIComponent(part):'');
+  link.addEventListener('click',()=>{try{sessionStorage.setItem('infographic-studio-return',JSON.stringify({project:held?.project.id||'',sheet:part==='workspace-part'?'team':''}));}catch(f){}});
+  return link;
+}
+function syncedWords(value){
+  const when=value?new Date(value):null;
+  return when&&!isNaN(when)?'Last synced '+when.toLocaleString([], {dateStyle:'medium',timeStyle:'short'})+'.':'Not synced yet.';
+}
 async function teamSheet(){
-  const problem=make('p','problem'),items=make('div','stack');
-  async function show(){try{const state=await request('/api/team');items.replaceChildren(make('p','quiet',state.connected?'Last explicitly synced team copy. Local projects stay in your workspace.':'Connect to the repository chosen in shared Marketing Studio settings.'));
+  const problem=make('p','problem'),items=make('div','stack'),summary=make('div','stack');problem.setAttribute('role','alert');
+  const explain=detail('What connecting and sharing do',list(['Connect or sync copies the team library into a private folder on this computer. Nothing of yours is sent.','Share selected files, from an approved infographic, sends only the files you review and confirm.','Opening this library or changing its repository never shares a draft, source or artwork.']));
+  const configure=sharedSettingsLink('Configure shared repository','workspace-part');
+  const failed=failure=>{problem.textContent=failure.message;problem.hidden=false;};
+  let sync=null;
+  async function connect(){sync.disabled=true;problem.hidden=true;try{await request('/api/team',{operation:'connect'});await show();toast('Team library synced.');}catch(f){failed(f);sync.textContent='Retry connection';}finally{sync.disabled=false;}}
+  async function show(){
+    let state;
+    try{state=await request('/api/team');}catch(f){failed(f);return;}
+    items.replaceChildren();
+    if(!state.configured){
+      configure.classList.add('button-filled');
+      summary.replaceChildren(stateLine('review','No shared repository yet'),
+        make('p','','The Team library uses the shared repository in shared settings. Choose Shared repository under Your workspace, save, and come back here to connect.'),
+        make('p','quiet','Other studios keep their work in that repository too. Infographic Studio keeps its own work in your local workspace.'),
+        ...(state.problem?[make('p','problem',state.problem)]:[]),add(make('div','bar'),configure),explain);
+      return;
+    }
+    configure.classList.remove('button-filled');configure.textContent='Change shared repository';
+    sync=button(state.connected?'Sync team library':'Connect team library',connect,true);
+    summary.replaceChildren(stateLine(state.connected?'done':'review',state.connected?'Connected':'Not connected yet'),
+      make('p','','Repository: '+state.repository+' · branch '+state.branch),
+      make('p','quiet',state.connected?syncedWords(state.synced_at)+' The list below is your last synced copy; syncing again is explicit.':'Connect to copy the team library to this computer.'),
+      add(make('div','bar'),sync,configure),explain);
     if(state.workspace_owner)items.append(make('p','quiet','Your workspace owner ID: '+state.workspace_owner));
-    if(state.connected)items.append(button('Retry pending team push',async()=>{try{await request('/api/team',{operation:'retry',expected_commit:state.head});await show();}catch(f){problem.textContent=f.message;}}));
+    if(state.pending)items.append(add(make('div','stack'),make('p','',state.pending===1?'One shared commit has not reached the team repository.':state.pending+' shared commits have not reached the team repository.'),button('Retry pending team push',async()=>{try{await request('/api/team',{operation:'retry',expected_commit:state.head});await show();}catch(f){failed(f);}})));
+    if(state.connected&&!state.items.length)items.append(make('p','quiet','No infographics are shared yet. Share one from an approved delivery.'));
     for(const entry of state.items){
       const cardNode=card(entry.title,make('p','quiet','Shared revision '+entry.revision+' · driver '+entry.claim.owner),list([...entry.missing.map(f=>'Missing or changed: '+f),...(entry.unshared_sources||[]).map(f=>'Private source not shared: '+f),...(entry.unshared_assets||[]).map(f=>'Private artwork not shared: '+f)]));
       const pdf=entry.files.find(f=>f.file==='delivery/page.pdf');if(pdf)cardNode.append(button('Download shared PDF',()=>downloadShared(entry,'pdf')));
-      cardNode.append(button('Take over this shared infographic',async()=>{try{await request('/api/team',{operation:'claim',id:entry.id,expected_head:state.head,expected_claim:entry.claim});await show();}catch(f){problem.textContent=f.message;}}));
-      if(entry.editable)cardNode.append(button('Import claimed editable copy',async()=>{try{const result=await request('/api/team',{operation:'take',id:entry.id,expected_head:state.head,expected_claim:entry.claim});closeSheet();await openProject(result.project.id);if(result.missing_sources.length||result.missing_assets.length)error('Editable copy imported without approval. Some private sources or artwork were not shared; supply them before rebuilding.');}catch(f){problem.textContent=f.message;}}));
-      const owner=field('New driver workspace owner ID');cardNode.append(detail('Hand over to a teammate',owner.wrap,button('Hand over shared driver',async()=>{try{await request('/api/team',{operation:'claim',id:entry.id,expected_head:state.head,expected_claim:entry.claim,new_owner:owner.input.value});await show();}catch(f){problem.textContent=f.message;}})));items.append(cardNode);
+      cardNode.append(button('Take over this shared infographic',async()=>{try{await request('/api/team',{operation:'claim',id:entry.id,expected_head:state.head,expected_claim:entry.claim});await show();}catch(f){failed(f);}}));
+      if(entry.editable)cardNode.append(button('Import claimed editable copy',async()=>{try{const result=await request('/api/team',{operation:'take',id:entry.id,expected_head:state.head,expected_claim:entry.claim});closeSheet();await openProject(result.project.id);if(result.missing_sources.length||result.missing_assets.length)error('Editable copy imported without approval. Some private sources or artwork were not shared; supply them before rebuilding.');}catch(f){failed(f);}}));
+      const owner=field('New driver workspace owner ID');cardNode.append(detail('Hand over to a teammate',owner.wrap,button('Hand over shared driver',async()=>{try{await request('/api/team',{operation:'claim',id:entry.id,expected_head:state.head,expected_claim:entry.claim,new_owner:owner.input.value});await show();}catch(f){failed(f);}})));items.append(cardNode);
     }
-  }catch(f){problem.textContent=f.message;}}
-  const sync=button('Connect or sync team library',async()=>{sync.disabled=true;problem.textContent='';try{await request('/api/team',{operation:'connect'});await show();}catch(f){problem.textContent=f.message;}finally{sync.disabled=false;}},true);
-  sheet('Team library',make('p','','Only an explicit share sends selected files. Takeover changes the shared driver; it does not overwrite anyone’s local draft.'),sync,problem,items,button('Done',closeSheet));await show();
+  }
+  problem.hidden=true;
+  sheet('Team library',summary,problem,items,add(make('div','create-foot bar'),button('Done',closeSheet)));await show();
 }
 async function shareSheet(delivery){
   const editable=make('input');editable.type='checkbox';const include=add(make('label','check'),editable,document.createTextNode('Include editable project (private brief, facts and source metadata)'));

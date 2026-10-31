@@ -39,6 +39,66 @@ Signing in to an assistant, your organisation's brands and fonts, and optional G
   start no assistant, sign-in, installation, workspace preparation or paid work, and model
   lists load only when Models and reasoning is opened.
 
+## Unreleased: Infographic Studio visual editor and history
+
+- **Edit words beside the page.** The preview stays beside an Edit words panel. Choose
+  an element by name (Page heading, Section 2 heading, Section 1, step 3 label) or select
+  it on the page, where it is outlined and its place described. Element IDs move under
+  Advanced. Saving keeps the selected element, focus and scroll, so two headings can be
+  edited one after the other.
+- **Which revision is which.** Current work, the rendered preview and the last approved
+  delivery are shown separately. A save confirms its new revision, says when the preview
+  is out of date and offers Update preview. Unsaved words are kept for each infographic
+  and element in the tab, across a reload, another infographic and a refused save.
+- **History in words.** Each revision says what it did, what it changed and when, beside
+  its number and exact identity. Saved files keep every rendered revision's downloads;
+  approved files never change, and edits and restores never carry an approval over.
+  Home shows each infographic's working state with its revision.
+
+## Unreleased: Infographic Studio review to delivery
+
+- **One route and one next action.** Where this stands shows Story, Draft page, Review
+  and checks and Approved delivery with the current step, and says what is complete,
+  what needs you and what you can download. The toolbar offers that one next action.
+- **Review, checks and approval, each explained.** Recording your review of the actual
+  page runs the local checks straight after. Assistant inspection is optional and
+  separate. Approve revision N and prepare files approves that exact revision and then
+  prepares its files on this computer in the same action, so an approved page is never
+  shown as a new draft. If files cannot be prepared, the approval is kept and Prepare
+  approved files retries locally.
+- **A receipt for every format.** Delivering a Google Doc and PDF lists both, each with
+  its revision and Open or Download action. Partial success is shown honestly: what
+  succeeded is kept, retrying the PDF sends nothing to Google, and an unconfirmed Google
+  Doc is only checked again, never resent.
+- Exact-revision checks, explicit approval, image recovery and spend protection are
+  unchanged.
+
+## Unreleased: Infographic Studio Team library first use
+
+- **A setup state, not an error.** With no shared repository, Team library says so
+  and offers **Configure shared repository**, which opens Shared settings at Your
+  workspace. Saving or choosing Back returns to the same infographic and reopens the
+  library; connecting is still your choice.
+- **Connection state.** A configured library shows its repository, branch, whether it
+  is connected and when it last synced, read locally so an offline copy still lists.
+  A commit that has not reached the team repository is counted with **Retry pending team
+  push**.
+- **Recovery that says what to do.** Refused access, a missing repository or branch and
+  an unreachable host each name a recovery step without repeating Git's output or any
+  credential. A failed first connection no longer stops the library from opening.
+- Opening or configuring the library shares nothing. Shared settings keep their single
+  locked file and outdated-form checks.
+
+## Unreleased: Infographic Studio Codex image outcomes
+
+Infographic Studio's Codex image adapter now reports each failure from the worker's
+own diagnostics rather than from anything the model wrote. A turn that fails after a
+successful exit is no longer collected as artwork. A saved file that is not a usable
+PNG is reported as an invalid image, separately from a Codex that cannot offer its
+image tool. Sign-in, usage limits, invalid images and an unavailable image tool each
+say what to do next. Nothing is retried, and live generation and editing remain a
+separate acceptance step.
+
 ## Unreleased: research citation handoffs
 
 Research workers are explicitly told which saved source IDs to cite. If a worker

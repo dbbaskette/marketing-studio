@@ -7,6 +7,12 @@ const tokenHeader = document.body.dataset.tokenHeader;
 const sessionKey = standalone ? product.toLowerCase().replaceAll(' ', '-') + '-setup-token' : 'marketing-studio-token';
 const launchOptions = new URLSearchParams(location.hash.slice(1));
 const requestedView = launchOptions.get('view') === 'settings' ? 'settings' : 'home';
+// A studio can open one part of Shared settings, such as the workspace repository a Team
+// library uses. Only a part this page lists is accepted, and only after first-run setup.
+function launchPart(options, known) {
+  const part = options.get('part') || '';
+  return known.includes(part) ? part : '';
+}
 // The private key in a link's fragment: `token=…`, or for a standalone studio's setup the bare key.
 function linkKey(hash, bare) {
   const fragment = String(hash).replace(/^#/, '');
@@ -775,6 +781,8 @@ $('#refresh-models').addEventListener('click', () => loadModels(true));
   try {
     if (!token) { $('#loading').hidden = true; inform(`This page needs its private link. Run ${standalone ? 'the studio command' : 'marketing-studio'} in your terminal to open it again.`, true); return; }
     snapshot = await api('home'); setup = !snapshot.setup.done; fill(); renderHome(); markSaved(); show(setup || standalone ? 'settings' : requestedView); if (snapshot.shared_problem) inform(snapshot.shared_problem, true);
+    const part = setup ? '' : launchPart(launchOptions, [...document.querySelectorAll('[data-part]')].map(button => button.dataset.part));
+    if (part) { if (view !== 'settings') show('settings'); goToPart(part); }
   }
   catch (error) { $('#loading').hidden = true; inform(error.message, true); }
 })();

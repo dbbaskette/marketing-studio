@@ -158,6 +158,13 @@ visual review and brand/accessibility. Only explicit user approval authorizes th
 `approve` action; assistant tool success is not authorization. Final exports bind
 that exact approved revision. `export --draft` is explicitly labeled unapproved.
 
+The page combines local steps the person has already authorized. In action JSON,
+`review` and `inspect-images` accept `then_check: true` to run the checks against the
+review just recorded; `approve` accepts `then_export: true` to prepare the approved
+files locally straight after. A refused check keeps the review; a failed preparation
+keeps the approval and reports `problem`, and `export` retries it. Neither combined
+step starts an assistant, image provider or Google write.
+
 Exports are immutable PNG, exactly one-page PDF, editable SVG and accessible text.
 Embedded artwork remains raster, with exact text and chart marks editable. Font
 licenses/availability affect portability; no font binaries are exported. Export
