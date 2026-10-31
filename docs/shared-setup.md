@@ -191,7 +191,10 @@ was shown, **Saving…**, then **Saved at** a time. Leaving for another view kee
 changes on the page and says they are not saved yet; reloading or closing the tab asks
 first. A refused save, such as a form outdated by another studio's change, keeps the
 typed changes and stays **Unsaved changes**. A save sends only the leaves that changed,
-so overrides and values this page does not show are kept as they are.
+so overrides and values this page does not show are kept as they are. A group nobody
+changed sends nothing, so a default the form fills in for a value the config lacks (a
+branch, when to share, the delivery format, model routing) is never written unasked.
+While the save bar shows, toasts sit above it.
 
 ### One save, and Blog Studio's own setup
 

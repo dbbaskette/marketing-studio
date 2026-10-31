@@ -181,6 +181,9 @@
 .save-bar { position: sticky; bottom: 1rem; z-index: 3; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.8rem; padding: 0.55rem 0.8rem; border-radius: 16px; }
 .save-state { flex: 1 1 12rem; min-width: 0; margin: 0; font-size: 0.9rem; }
 
+/* While the save bar shows, toasts sit above it rather than over Save and its state. */
+body:has(#settings:not([hidden]) .save-bar) .toasts { bottom: calc(5.5rem + env(safe-area-inset-bottom)); }
+
 .launch-note {
   font-size: 0.85rem;
 }
@@ -205,6 +208,14 @@
 
   .save-bar > .save-state {
     flex-basis: 8rem;
+  }
+
+  body:has(#settings:not([hidden]) .save-bar) .toasts {
+    bottom: calc(var(--tab-bar-room) + 5rem);
+  }
+
+  body.alone:has(#settings:not([hidden]) .save-bar) .toasts {
+    bottom: calc(5rem + env(safe-area-inset-bottom));
   }
 
   .settings-nav { gap: 0.4rem; }

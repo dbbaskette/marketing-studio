@@ -324,6 +324,47 @@ class SharedSetupJourneyTests(PageLayoutTests):
                 self.assertTrue(first['hidden'][part])
         self.assertIn('after setup', first['words']['models-pointer'])
 
+    def test_buttons_that_change_the_form_update_the_save_state(self):
+        load = 'snapshot = ' + json.dumps(self.shown()) + '; setup = false; fill(); renderHome(); markSaved();'
+        walk = "const walk = node => [node, ...(node.children || []).flatMap(walk)];"
+        brands = {'skills': [{'name': 'Synthetic brand skill', 'path': '/opt/brand-skill', 'brands': [
+            {'name': 'Example', 'brand': 'example', 'variants': ['light']}]}]}
+        shots = self.page([
+            {'run': load}, {'show': 'settings'}, {'snapshot': 'shown', 'ids': ['save-state', 'research-state']},
+            {'type': 'docs.other.com'}, {'click': 'add'},
+            {'snapshot': 'added', 'ids': ['save-state', 'research-state']},
+            {'click': 'remove', 'index': 1}, {'snapshot': 'removed', 'ids': ['save-state', 'research-state']},
+            {'responses': {'brands': brands}},
+            {'run': "(async () => { $('#find-brands').fire('click'); for (let i = 0; i < 20; i += 1) await null;"
+                    + walk + " walk($('#brand-choices')).find(node => node.tagName === 'BUTTON').fire('click'); })()"},
+            {'snapshot': 'brand', 'ids': ['save-state']},
+            {'run': load + " show('settings'); form.elements['assistant.agent'].value = 'codex';"
+                    " $('#confirm-profiles').fire('click');"},
+            {'snapshot': 'profiles', 'ids': ['save-state']}],
+            answers={'docs.other.com': {'site': 'https://docs.other.com'}})
+        self.assertEqual(shots['shown']['words'], {'save-state': 'All changes saved', 'research-state': '1 site'})
+        self.assertEqual(shots['added']['words'], {'save-state': 'Unsaved changes', 'research-state': '2 sites'})
+        self.assertEqual(shots['removed']['words'], {'save-state': 'All changes saved', 'research-state': '1 site'})
+        self.assertEqual(shots['brand']['words']['save-state'], 'Unsaved changes')
+        self.assertEqual(shots['profiles']['words']['save-state'], 'Unsaved changes')
+
+    def test_an_unchanged_group_sends_none_of_the_defaults_the_form_filled_in(self):
+        # A config without team, share, output, render, brand or models: the form shows their
+        # defaults, and saving another value must not write those defaults unasked.
+        sparse = {**self.SHOWN, 'computer': None, 'shared': {
+            'person': {'name': 'Ana'}, 'assistant': {'agent': 'claude'}, 'local': {'root': '/tmp/studios'}}}
+        probe = "$('#probe').textContent = JSON.stringify(changesForStep());"
+        shots = self.page([
+            {'run': 'snapshot = ' + json.dumps(sparse) + '; setup = false; fill(); renderHome(); markSaved();'},
+            {'run': "form.elements['person.name'].value = 'Bea'; " + probe},
+            {'snapshot': 'name', 'read': ['#probe']},
+            {'run': "form.elements['models.mode'].value = 'by_task'; " + probe},
+            {'snapshot': 'models', 'read': ['#probe']}])
+        self.assertEqual(json.loads(shots['name']['read']['#probe']['text']), {'person': {'name': 'Bea'}})
+        # A group the person did change is sent whole, as the config needs it.
+        models = json.loads(shots['models']['read']['#probe']['text'])['models']
+        self.assertEqual((models['schema'], models['agent'], models['mode']), (1, 'claude', 'by_task'))
+
     def test_a_card_says_what_is_missing_and_recovers_without_launching(self):
         home = {**self.shown(), 'studios': [
             {'id': 'blog', 'name': 'Blog Studio', 'installed': True, 'running': False, 'configured_path': '',

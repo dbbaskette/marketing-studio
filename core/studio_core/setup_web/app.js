@@ -217,7 +217,7 @@ function formState() {
   return JSON.stringify([named, researchSites, folders, profileAgent ?? null]);
 }
 function unsaved() { return Boolean(snapshot) && !setup && formState() !== savedForm; }
-function markSaved(when = '') { savedForm = formState(); savedAt = when; saveState(); }
+function markSaved(when = '') { savedForm = formState(); savedAt = when; rememberShown(); saveState(); }
 function saveState(saving = false) {
   const node = $('#save-state');
   node.hidden = setup || !snapshot;
@@ -308,6 +308,8 @@ function renderSites() {
   });
   $('#research-site-table').hidden = researchSites.length === 0;
   $('#research-site-empty').hidden = researchSites.length > 0;
+  // A site added or removed by its button changes the form as typing does.
+  saveState();
 }
 async function addSite() {
   const input = $('#research-site-input'), button = $('#research-site-add');
@@ -374,7 +376,7 @@ function fillProfiles() {
   profilesChanged();
 }
 form.querySelectorAll('[name="models.mode"]').forEach(input => input.addEventListener('change', profilesChanged));
-$('#confirm-profiles').addEventListener('click', () => { profileAgent = form.elements['assistant.agent'].value; profilesChanged(); });
+$('#confirm-profiles').addEventListener('click', () => { profileAgent = form.elements['assistant.agent'].value; profilesChanged(); saveState(); });
 const drawings = {
   blog: 'M5 4h10l4 4v14H5zM14 4v5h5M8 13h8M8 17h6',
   presentation: 'M3 5h20v14H3zM13 19v5M8 24h10M7 14l4-4 4 3 4-5',
@@ -619,8 +621,8 @@ function renderHome(refreshPaths = true) {
   }
   saveState();
 }
-function changesForStep() {
-  validateModelChoices();
+// What the form holds, group by group, shaped as the studios config is.
+function wantedValues() {
   const value = name => form.elements[name].value.trim() || null;
   const wanted = {};
   if (!setup || step === 0) {
@@ -645,7 +647,22 @@ function changesForStep() {
   }
   // Research sites are kept in Shared settings, not in first-run setup.
   if (!setup) wanted.research = {sites: [...researchSites]};
-  // Send just the leaves changed from what this form was shown.
+  return wanted;
+}
+// The groups as the form was last filled, after setup: a group nobody changed sends nothing,
+// so the defaults the form fills in for a value the config lacks are never written unasked.
+let shownWanted = null;
+function rememberShown() {
+  try { shownWanted = setup ? null : wantedValues(); } catch (error) { shownWanted = null; }
+}
+function changesForStep() {
+  validateModelChoices();
+  const wanted = wantedValues();
+  for (const group of Object.keys(wanted)) {
+    if (shownWanted && !setup && JSON.stringify(wanted[group]) === JSON.stringify(shownWanted[group])) delete wanted[group];
+  }
+  // Send just the leaves changed from what this form was shown. A group that was changed
+  // sends every leaf that differs from the config, as before, so it stays complete.
   function changed(wanted, seen) {
     const result = {};
     for (const [key, value] of Object.entries(wanted)) {
@@ -683,7 +700,9 @@ form.addEventListener('submit', async event => {
     }
     if (setup && step < 2) { step++; show('settings'); }
     else if (setup) { snapshot = await api('setup', {done: true, prepare: true}); if (standalone) return openNative(); setup = false; fill(); renderHome(); markSaved(); show('home'); showNotices(); inform('Your studios are ready.'); }
-    else { if (standalone) { await api('setup', {done: true}); markSaved(); return openNative(); } fill(); renderHome(); markSaved(clock()); inform(savedWords()); }
+    else { if (standalone) { await api('setup', {done: true}); markSaved(); return openNative(); } fill(); renderHome(); markSaved(clock());
+      // The save bar already says Saved at…; a toast says only what still needs doing.
+      const words = savedWords(); if (words !== 'Shared settings saved.') inform(words); }
   } catch (error) { inform(error.message, true); }
   finally { $('#save').disabled = false; saveState(); }
 });
@@ -706,6 +725,7 @@ $('#find-brands').addEventListener('click', async () => {
         form.elements['brand.brand'].value = brand.brand;
         form.elements['brand.variant'].value = select.value;
         $('#brand-catalog-status').textContent = `${brand.name} selected. Save settings to keep this choice.`;
+        saveState();
       });
       field.append(label, select); row.append(field, use); holder.append(row);
     }

@@ -1901,7 +1901,9 @@ function sharedCard() {
       + 'Marketing Studio’s Shared settings.'],
     ['This deck only', 'Each deck keeps the brand, research sites and models it was started '
       + 'with.'],
-    ['This studio', 'The cards below apply to Presentation Studio on this computer.']]));
+    ['This studio', 'The cards below apply to Presentation Studio on this computer, except '
+      + 'Brand skill: its repository and release are shared, as Shared settings, Advanced, '
+      + 'Brand skill release shows them.']]));
   return add(node, add(make('div', 'bar'), capsule('Change shared settings', 'quiet',
     () => { location.href = settingsAddress(); }, 'shared-settings')));
 }
