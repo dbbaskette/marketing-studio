@@ -26,7 +26,7 @@ changes for authors first, then what changes for maintainers.
   **Bring accepted changes**. Bring accepted changes reads the Doc's accepted text and
   lists each part it changes, merged paragraph by paragraph against the Doc as the desk
   and the Doc last agreed: what only the Doc changed comes, a suggestion the owner rejected
-  comes back, and every desk paragraph the Doc has not answered (unsent, or sent as a
+  comes back (matched by its paragraph, never its words alone), and every desk paragraph the Doc has not answered (unsent, or sent as a
   comment for the owner to make by hand) stays. Each part taken keeps the desk's text in
   History as "Before Google's accepted text", and the Doc becomes the new baseline. The
   desk's section order, and the sections it added or removed, are kept. A paragraph both

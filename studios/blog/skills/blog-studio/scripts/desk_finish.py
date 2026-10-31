@@ -2465,6 +2465,16 @@ def google_changes(baseline, body, title=None):
     def same_lines(k):
         return sum(1 for line in before[:k] if line == before[k])
 
+    # Where a change sits, as a bring-back finds it again: the baseline paragraph's words and
+    # how many paragraphs with the same words come before it (headings left out).
+    places, counted = {}, {}
+    for m, line in enumerate(before):
+        if line.lstrip().startswith('#'):
+            continue
+        key = _line_key(line)
+        places[m] = [key, counted.get(key, 0)]
+        counted[key] = counted.get(key, 0) + 1
+
     for k in sorted(set(edits) | set(comments)):
         old, shown = before[k], texts[k]
         now = ' / '.join(
@@ -2516,6 +2526,7 @@ def google_changes(baseline, body, title=None):
                 'near': nearby(k),
                 'was': shown,
                 'now': now,
+                'place': places.get(k),
                 # The desk's lines this change carries, as the Doc shows words.
                 'lines': [
                     text.strip()
@@ -2551,6 +2562,7 @@ def google_changes(baseline, body, title=None):
                 'near': nearby(k),
                 'about': about,
                 'float': True,
+                'place': places.get(k),
                 # A change made by hand carries the desk's lines it asks for.
                 'lines': [
                     text.strip()
@@ -2812,6 +2824,7 @@ def google_plan(root, ident, mode):
             if p['kind'] == 'edit' and not covers.get(p['id']) and plan.get('mode') != 'comments'
             else 'hand',
             'lines': (paragraphs.get(p['id']) or {}).get('lines') or [],
+            'place': (paragraphs.get(p['id']) or {}).get('place'),
         }
         for p in proposals
     ]
@@ -3361,7 +3374,12 @@ def google_send(root, ident, data):
         for entry in meta.get('carried') or []:
             how = 'hand' if result['status'] == 'verified-comments' else entry.get('how')
             record['carried'].append(
-                {'transfer': base['transfer'], 'how': how, 'lines': entry.get('lines') or []}
+                {
+                    'transfer': base['transfer'],
+                    'how': how,
+                    'lines': entry.get('lines') or [],
+                    'place': entry.get('place'),
+                }
             )
         record['carried'] = record['carried'][-2000:]
         studio.write_json(_sent_path(root, ident), record)
@@ -3470,9 +3488,9 @@ def _seen(text):
 
 
 def _merge3(base, ours, theirs):
-    """A three-way merge of key lists, by place: [(kind, (o0, o1), (t0, t1))], each kind
-    'same', 'ours' (only the desk changed), 'theirs' (only the Doc changed) or 'conflict',
-    with the range of the desk's and the Doc's keys it covers (google_workflow.merge_chunks,
+    """A three-way merge of key lists, by place: [(kind, (b0, b1), (o0, o1), (t0, t1))],
+    each kind 'same', 'ours' (only the desk changed), 'theirs' (only the Doc changed) or
+    'conflict', with the range of the baseline's, the desk's and the Doc's keys it covers (google_workflow.merge_chunks,
     keeping places instead of lines)."""
     import difflib
 
@@ -3514,6 +3532,7 @@ def _merge3(base, ours, theirs):
                 chunks.append(
                     (
                         kind,
+                        (at_base + step, at_base + step + 1),
                         (at_ours + step, at_ours + step + 1),
                         (at_theirs + step, at_theirs + step + 1),
                     )
@@ -3528,24 +3547,31 @@ def _merge3(base, ours, theirs):
                 if yours == original
                 else 'conflict'
             )
-            chunks.append((kind, (at_ours, in_ours), (at_theirs, in_theirs)))
+            chunks.append((kind, (at_base, low), (at_ours, in_ours), (at_theirs, in_theirs)))
         if high > low:
             chunks.append(
-                ('same', (in_ours, in_ours + high - low), (in_theirs, in_theirs + high - low))
+                (
+                    'same',
+                    (low, high),
+                    (in_ours, in_ours + high - low),
+                    (in_theirs, in_theirs + high - low),
+                )
             )
         at_base, at_ours, at_theirs = high, in_ours + high - low, in_theirs + high - low
     return chunks
 
 
+def _line_key(line):
+    """A paragraph's words as the Doc shows them; a line with no words (an image) is known
+    by itself."""
+    shown = _visible(line)
+    return shown.strip() if shown and shown.strip() else '\x00' + line.strip()
+
+
 def _lines(text):
-    """A part's paragraphs (its non-blank lines) and, for each, its words as the Doc shows
-    them; a line with no words (an image) is known by itself."""
+    """A part's paragraphs (its non-blank lines) and, for each, its key (`_line_key`)."""
     raw = [line for line in (text or '').split('\n') if line.strip()]
-    keys = []
-    for line in raw:
-        shown = _visible(line)
-        keys.append(shown.strip() if shown and shown.strip() else '\x00' + line.strip())
-    return raw, keys
+    return raw, [_line_key(line) for line in raw]
 
 
 def _matched(left, right):
@@ -3586,14 +3612,32 @@ def _pull(root, ident, directory, base, body):
     was = workflow.baseline_text(directory, base)
     linked = desk.split(was, title=draft['title']) if was is not None else None
     sent = _sent(root, ident)
-    # The desk's lines that went as suggestions, and those that went by hand, to this Doc.
-    suggested, by_hand = set(), set()
+    # What each verified send carried to this baseline, by the paragraph it was in: its
+    # words and which copy of them. The newest carried for a place is the one that counts.
+    carried = {}
     for entry in sent['carried']:
-        if entry.get('transfer') == base['transfer']:
-            (suggested if entry.get('how') == 'suggestion' else by_hand).update(
-                line.strip() for line in entry.get('lines') or [] if isinstance(line, str)
-            )
-    changes, refused, pictures = [], [], []
+        place = entry.get('place')
+        if (
+            entry.get('transfer') == base['transfer']
+            and isinstance(place, list)
+            and len(place) == 2
+        ):
+            carried.setdefault(tuple(place), []).append(entry)
+    # Each baseline paragraph's place, counted through the whole Doc as the plan counts it.
+    counted, places = {}, {}
+
+    def placed(label, keys):
+        out = []
+        for key in keys:
+            out.append((key, counted.get(key, 0)))
+            counted[key] = counted.get(key, 0) + 1
+        places[label] = out
+
+    if linked is not None:
+        placed('opening', _lines(linked['opening'])[1])
+        for at, section in enumerate(linked['sections']):
+            placed(at, _lines(section['text'])[1])
+    changes, refused, pictures, withdrawn = [], [], [], []
     held = {desk_images.key(label): entry for label, entry in (draft.get('images') or {}).items()}
     sent_images = {}
 
@@ -3626,25 +3670,43 @@ def _pull(root, ident, directory, base, body):
     def name(heading):
         return ' '.join(re.sub(r'^(\*\*|__)(.+)\1$', r'\2', heading.strip()).split())
 
-    def decided(keys):
-        # Every one of these desk lines went as a suggestion, none by hand.
-        return bool(keys) and all(key in suggested and key not in by_hand for key in keys)
+    def sent_as(where):
+        """The lines suggested for these baseline paragraphs, in order, or None unless each
+        had its newest carried change go as a suggestion."""
+        lines = []
+        for spot in where:
+            found = carried.get(spot)
+            if not found or found[-1].get('how') != 'suggestion':
+                return None
+            lines += [line.strip() for line in found[-1].get('lines') or []]
+        return lines if where else None
 
-    def merged(label, then, mine, theirs):
+    def merged(label, then_at, mine, theirs):
         """The part's text after the merge, or None when it is refused."""
         mine_raw, mine_keys = _lines(mine)
         their_raw, their_keys = _lines(theirs)
         if mine_keys == their_keys:
             return mine
-        then_keys = _lines(then)[1] if then is not None else None
-        if then_keys is None:
+        if then_at not in places:
             refused.append(label)
             return None
+        where = places[then_at]
+        then_keys = [key for key, _ in where]
         out, took = [], []
-        for kind, (o0, o1), (t0, t1) in _merge3(then_keys, mine_keys, their_keys):
+        for kind, (b0, b1), (o0, o1), (t0, t1) in _merge3(then_keys, mine_keys, their_keys):
+            suggested = sent_as(where[b0:b1]) if kind != 'same' else None
             if kind == 'same':
                 out += mine_raw[o0:o1]
-            elif kind == 'theirs' or (kind in ('ours', 'conflict') and decided(mine_keys[o0:o1])):
+            elif kind == 'theirs' and suggested is not None and suggested == their_keys[t0:t1]:
+                # The owner accepted what the desk sent, and the desk has since changed it
+                # back: neither is taken over the other.
+                withdrawn.append(label)
+                return None
+            elif kind == 'theirs' or (
+                # The desk's words here are exactly what it sent from this place as
+                # suggestions: the owner decided them, so the Doc's words stand.
+                kind in ('ours', 'conflict') and suggested == mine_keys[o0:o1]
+            ):
                 out += their_raw[t0:t1]
                 took += their_raw[t0:t1]
             elif kind == 'ours':
@@ -3658,9 +3720,7 @@ def _pull(root, ident, directory, base, body):
             return None
         return theirs if out == their_raw else '\n\n'.join(out)
 
-    opening = merged(
-        'Opening', linked['opening'] if linked else None, draft['opening'], doc['opening']
-    )
+    opening = merged('Opening', 'opening', draft['opening'], doc['opening'])
     if opening is None:
         opening = draft['opening']
     elif opening != draft['opening']:
@@ -3690,9 +3750,10 @@ def _pull(root, ident, directory, base, body):
                 refused.append(label)
                 sections.append(one)
                 continue
-            text = merged(
-                label, then if at in to_then else one['text'], one['text'], written['text']
-            )
+            if at not in to_then:
+                sections.append(one)  # New on the desk and in the Doc, written alike.
+                continue
+            text = merged(label, to_then[at], one['text'], written['text'])
             if text is not None and text != one['text']:
                 changes.append(
                     {
@@ -3758,7 +3819,13 @@ def _pull(root, ident, directory, base, body):
             'images': sent_images,
         },
     )
-    return {'changes': changes, 'refused': refused, 'pictures': pictures, 'markdown': markdown}
+    return {
+        'changes': changes,
+        'refused': refused,
+        'pictures': pictures,
+        'withdrawn': withdrawn,
+        'markdown': markdown,
+    }
 
 
 def _pull_capture(root, ident, base, folder):
@@ -3839,6 +3906,13 @@ def _pull_said(found, waiting):
             + ' since they last agreed. Nothing is brought back, so no desk change is lost: '
             'send the desk’s changes first, or say “Pull from Google Docs” in chat to choose '
             'the wording for each.'
+        )
+    if found.get('withdrawn'):
+        return (
+            ', '.join('“' + name + '”' for name in found['withdrawn'])
+            + ': you changed this back on the desk after sending it, and the Doc’s owner '
+            'accepted the sent version. Nothing is brought back, so neither replaces the other: '
+            'send the desk’s words again, or say “Pull from Google Docs” in chat.'
         )
     if found['pictures']:
         return (

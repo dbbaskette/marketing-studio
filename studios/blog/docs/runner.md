@@ -363,8 +363,12 @@ agreed (when it was linked, or the last bring-back):
 
 - A paragraph only the Doc changed takes the Doc's words: what its owner accepted or wrote.
 - A paragraph only the desk changed keeps the desk's words, unless the desk sent exactly
-  those words as suggestions and the Doc kept its own: the owner rejected them, so the
-  Doc's words come back.
+  those words, from that same paragraph, as suggestions and the Doc kept its own: the owner
+  rejected them, so the Doc's words come back. Each sent change is found again by its
+  paragraph and which copy of it it was, never by its words alone, so the same words
+  elsewhere stay as the desk has them.
+- A paragraph the desk sent and then changed back, which the owner then accepted, refuses
+  its part: "you changed this back on the desk after sending it".
 - Words sent as a comment (Comments only, a Doc that cannot take suggestions, words a
   teammate's suggestion also changes, a change made by hand) stay on the desk: the owner
   makes them by hand, so the desk still counts them as unsent.

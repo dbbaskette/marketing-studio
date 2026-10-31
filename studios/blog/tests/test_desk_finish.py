@@ -3651,6 +3651,39 @@ class GoogleBringBackTests(unittest.TestCase):
         self.assertIn('track each step', text, 'the comment’s words stay')
         self.assertIn('The finish.', text, 'the owner’s edit comes')
 
+    def save_section(self, change):
+        draft = desk.read(self.root, self.ident)
+        section = self.section()
+        desk.save(self.root, self.ident, draft['revision'], section['id'], change(section['text']))
+
+    def test_a_copy_of_sent_words_elsewhere_is_never_taken_for_the_sent_change(self):
+        # The Doc repeats "Keep it short." The first copy goes as a suggestion and is accepted;
+        # the second is changed the same way on the desk and not sent. It stays.
+        self.save_section(lambda text: text.replace('Keep it short.', 'Keep it brief.', 1))
+        self.send()
+        self.client.decide()
+        self.save_section(lambda text: text.replace('Keep it short.', 'Keep it brief.'))
+        self.assertTrue(desk_jobs.view(self.root, self.ident)['google_state']['unsent'])
+        owner_types(self.client, 'The end.', 'The finish.')
+        found = self.act('google-compare')
+        self.assertTrue(found['ready'], found['said'])
+        self.act('google-take', preview=found['preview'], confirmed=True)
+        text = self.section()['text']
+        self.assertEqual((text.count('Keep it brief.'), text.count('Keep it short.')), (2, 0))
+        self.assertIn('The finish.', text)
+        self.assertTrue(desk_jobs.view(self.root, self.ident)['google_state']['unsent'])
+
+    def test_a_sent_change_the_desk_took_back_is_refused_once_accepted(self):
+        self.edit([('track every step', 'track each step')])
+        self.send()
+        self.edit([('track each step', 'track every step')])  # Back to the Doc's words.
+        self.assertFalse(desk_jobs.view(self.root, self.ident)['google_state']['unsent'])
+        self.client.decide()  # The owner accepts the suggestion the desk withdrew.
+        found = self.act('google-compare')
+        self.assertFalse(found['ready'])
+        self.assertIn('you changed this back on the desk after sending it', found['said'])
+        self.assertIn('track every step', self.section()['text'])
+
     def test_a_desk_edit_kept_at_a_bring_back_survives_the_next(self):
         writes = self.client.writes
         self.edit([('keep improving', 'improve over time')])  # On the desk only, never sent.
