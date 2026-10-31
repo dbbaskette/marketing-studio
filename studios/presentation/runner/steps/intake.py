@@ -3,6 +3,7 @@
 What a caller needs to know
 ---------------------------
     entry = intake.take_document(root, source, drive=None)   # keep what the person gave
+    intake.document_taken(root)                              # whether it is kept yet
     work  = intake.classify_work(root, run, request, error)  # the classifier's job
     intake.keep_classification(root, run, handed)            # keep its verdict, open the gate
     run   = intake.correct(root, run, 'spec' | 'material')   # the person's correction
@@ -18,6 +19,8 @@ What a caller needs to know
   the research steps a material has and a spec has not are reset by name, everything after
   is redone, and the gate is approved. The document is never removed.
 - Both write the run record, and change and return the run they are given.
+- A document pinned from the Document Library at the start is a source beside the person's
+  document, never the document: it does not count as taken in, and it is not classified.
 """
 from __future__ import annotations
 
@@ -44,6 +47,17 @@ RESEARCH_GATES = ('gate:research-plan', 'gate:research')
 
 
 # --- the documents --------------------------------------------------------------------------
+
+def theirs(root) -> list[dict]:
+    """The readable documents the person gave as the deck's document: not those pinned from
+    the Document Library beside it."""
+    return [entry for entry in documents.listed(root)
+            if entry['readable'] and not entry.get('library')]
+
+
+def document_taken(root) -> bool:
+    return bool(theirs(root))
+
 
 def take_document(root, source: dict, drive=None) -> dict:
     """Keep one document the person gave, and return its entry."""
@@ -73,9 +87,8 @@ def classify_work(root, run: dict, request: dict | None = None,
     root = Path(root)
     form = run.get('form') or {}
     inputs = {}
-    for entry in documents.listed(root):
-        if entry['readable']:
-            inputs[entry.get('title') or entry['name']] = documents.text_of(root, entry)
+    for entry in theirs(root):
+        inputs[entry.get('title') or entry['name']] = documents.text_of(root, entry)
     if not inputs:
         raise WorkspaceError('There is no document to read yet. Add one first.')
     lines = [f"Deck title: {run.get('title') or form.get('title') or 'not given'}",

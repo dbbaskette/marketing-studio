@@ -206,6 +206,76 @@ class KeepUploadTests(LibraryCase):
         self.assertEqual(self.library.catalog(kind='upload')['total'], 3)
 
 
+class StartSourceTests(LibraryCase):
+    """#255: the start's source editor keeps an uploaded file in the library as the desk does,
+    and a document pinned from the library at the start is never taken for the person's own."""
+
+    def setUp(self):
+        super().setUp()
+        from studio_core.research_sources import Sources
+        self.store = Sources(self.place / '.research-sources')
+        self.draft = self.store.create()
+
+    def capture(self, keep, name='runbook.md', data=b'# Runbook\n\nTwo batches at a time.\n'):
+        import base64
+        from runner import source_keep
+        sent = {'action': 'capture', 'id': self.draft['id'],
+                'expected': self.draft['revision'], 'kind': 'file', 'name': name,
+                'content': base64.b64encode(data).decode('ascii')}
+        if keep is not None:
+            sent['keep'] = keep
+        answer = source_keep.research_sources(self.store, sent)
+        self.draft = {key: answer[key] for key in ('id', 'revision')}
+        return answer
+
+    def test_keep_in_library_keeps_the_file_the_desk_would(self):
+        answer = self.capture(True)
+        kept = answer['library_kept']
+        self.assertEqual((kept['state'], kept['source']),
+                         ('kept', answer['sources'][0]['id']))
+        # The same file added later on the desk is the same library document.
+        desk = desk_actions.DeskActions._keep_upload(
+            'runbook.md', b'# Runbook\n\nTwo batches at a time.\n', None)
+        self.assertEqual((desk['id'], desk['revision']), (kept['id'], kept['revision']))
+        self.assertEqual(self.library.catalog(kind='upload')['total'], 1)
+
+    def test_only_this_project_or_no_choice_keeps_nothing(self):
+        self.assertNotIn('library_kept', self.capture(False))
+        self.assertNotIn('library_kept', self.capture(None, name='notes.md'))
+        self.assertEqual(self.library.catalog(kind='upload')['total'], 0)
+
+    def test_keep_is_only_for_a_file(self):
+        from runner import source_keep
+        with self.assertRaisesRegex(ValueError, 'uploaded file'):
+            source_keep.research_sources(self.store, {
+                'action': 'capture', 'id': self.draft['id'],
+                'expected': self.draft['revision'], 'kind': 'text', 'text': 'Words.',
+                'keep': True})
+
+    def test_library_documents_come_at_the_start_only_with_research(self):
+        from runner.engine import Engine
+        picks = [{'id': 'a' * 32, 'revision': 1}]
+        for form in ({'route': 'existing', 'research': True}, {'route': 'scratch'}):
+            with self.subTest(form=form), self.assertRaisesRegex(WorkspaceError,
+                                                                 'Research first'):
+                Engine._start_library(form, picks)
+        self.assertEqual(Engine._start_library({'route': 'document', 'research': True},
+                                               picks), picks)
+        self.assertEqual(Engine._start_library({'route': 'scratch'}, []), [])
+
+    def test_a_library_document_is_not_the_persons_document(self):
+        from runner.steps import intake
+        brief = self.library.add_upload('brief.md', b'# Brief\n\nCapacity holds.\n')
+        context.pin(documents, self.root, [{'id': brief['id'], 'revision': 1}])
+        self.assertFalse(intake.document_taken(self.root))
+        with self.assertRaisesRegex(WorkspaceError, 'no document to read'):
+            intake.classify_work(self.root, {'form': {}})
+        documents.add_text(self.root, 'Pasted text', 'The talk, slide by slide.')
+        self.assertTrue(intake.document_taken(self.root))
+        work = intake.classify_work(self.root, {'form': {}})
+        self.assertEqual(list(work.prepared['inputs']), ['Pasted text'])
+
+
 PDF = b'%PDF-1.7\n% the render of the delivered deck\n%%EOF\n'
 
 

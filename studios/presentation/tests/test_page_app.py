@@ -75,10 +75,11 @@ class ApiTests(unittest.TestCase):
         self.assertIn("file.accept = '.pdf,application/pdf", read('research.js'))
         # A deck from a document says its document goes with the research, whichever kind
         # of deck the sources were first opened for.
-        self.assertRegex(self.script, r"return draft\.route === 'document' \? add\(make\('div', "
-                                      r"'fields'\), make\('p', 'quiet',\s+'Your source document "
-                                      r"is included with these references\.'\), "
-                                      r"draft\.sourceEditor\.node\)")
+        # (test_desk_page.ResearchStartTests runs it.)
+        self.assertRegex(self.script, r"draft\.route === 'document' \? make\('p', 'quiet',\s+"
+                                      r"'Your source document is included with these "
+                                      r"references\.'\) : null,\s+draft\.sourceEditor\.node, "
+                                      r"alertLine\('research-from-problem'\)")
 
 
 class LinkTests(unittest.TestCase):
@@ -162,7 +163,10 @@ class MarkupTests(unittest.TestCase):
     def test_a_document_is_drawn_by_the_vendored_markdown_only(self):
         script = read('app.js')
         self.assertIn('window.StudioMarkdown.render(', script)
-        self.assertEqual(script.count('.render('), 1)
+        self.assertEqual(script.count('StudioMarkdown.render('), 1)
+        # The only other render is the shared source editor drawing itself again.
+        self.assertEqual(set(re.findall(r'(\w+)\.render\(', script)),
+                         {'StudioMarkdown', 'editor'})
 
     def test_the_page_reads_the_shared_renderer_by_its_own_name(self):
         script = read('app.js')

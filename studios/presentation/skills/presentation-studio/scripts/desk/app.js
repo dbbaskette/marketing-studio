@@ -110,15 +110,18 @@ const OUTPUT_SAYS = [
   'Google Slides: the finished deck is a new presentation in your Google Drive.',
   'PowerPoint: the finished deck is a .pptx file kept on this computer, to download.',
 ];
-// How a deck begins. Each card opens a short form with only that route's questions.
+// How a deck begins, by the one name each kind has everywhere: New deck's cards (An idea,
+// A document, An existing deck), Home's Start a deck, a deck's header and the Decks filter
+// (From an idea, ...). An existing deck covers every level, so it is never "Redesign".
 const ROUTES = [
-  ['scratch', 'Start from scratch', 'Say what it is about and who it is for. It is '
+  ['scratch', 'From an idea', 'Say what it is about and who it is for. It is '
     + 'researched if you like, outlined, designed and built.'],
-  ['document', 'Start from a document', 'A script, notes or a write-up. It is read first, '
+  ['document', 'From a document', 'A script, notes or a write-up. It is read first, '
     + 'to tell a finished script from material to build from.'],
-  ['existing', 'Redesign an existing deck', 'A .pptx or a Google Slides deck. The original '
+  ['existing', 'From an existing deck', 'A .pptx or a Google Slides deck. The original '
     + 'is never changed: a new copy is made.'],
 ];
+const ROUTE_NAMES = Object.fromEntries(ROUTES.map(([route, name]) => [route, name]));
 // How much of an existing deck changes. Each says in one line what it does.
 const LEVELS = [
   ['brand-only', 'Brand only', 'Same slides in your brand’s look: colors, fonts, logo, '
@@ -488,6 +491,7 @@ function alertLine(id) {
 }
 
 function say(problem, text) {
+  if (!problem) return;
   problem.textContent = text;
   problem.hidden = !text;
 }
@@ -1394,10 +1398,9 @@ function openDeck(brief) {
 // How a deck began, in a few words.
 function routeWords(brief) {
   const level = LEVELS.find((one) => one[0] === brief.level);
-  if (brief.route === 'existing') return 'An existing deck' + (level ? ' · ' + level[1] : '');
-  if (brief.route === 'document') return 'From a document';
-  if (brief.route === 'scratch') return 'From scratch';
-  return '';
+  if (!ROUTE_NAMES[brief.route]) return '';
+  return ROUTE_NAMES[brief.route] + (brief.route === 'existing' && level ? ' · ' + level[1]
+    : '');
 }
 
 function runWords(found) {
@@ -1592,8 +1595,7 @@ function drawHome(fresh) {
 const DELIVERED = [['', 'Any'], ['yes', 'Delivered'], ['no', 'Not delivered yet']];
 const STANDS = [['', 'Any'], ['needs', 'Needs you'], ['working', 'In progress'],
   ['finished', 'Finished'], ['elsewhere', 'Run by your teammates']];
-const BEGAN = [['', 'Any'], ['scratch', 'From scratch'], ['document', 'From a document'],
-  ['existing', 'From an existing deck']];
+const BEGAN = [['', 'Any'], ...ROUTES.map(([route, name]) => [route, name])];
 
 function deckCard(brief) {
   const node = make('li', 'card shine' + (brief.state === 'working' && !elsewhere(brief)
@@ -2621,6 +2623,16 @@ function brandsFound() {
   return found.found ? list(found.brands) : [];
 }
 
+// The brand a deck is made in, by the name the brand skill gives it, as New deck says it:
+// "Example Co (light)". A brand this computer's skill does not list keeps the words the
+// runner said (`fallback`), and with no brand at all it is "your brand".
+function madeIn(brand, variant, fallback) {
+  const found = brandsFound().find((one) => one.brand === brand);
+  if (!found) return fallback || (brand ? brand + (variant ? ' (' + variant + ')' : '')
+    : 'your brand');
+  return (found.name || found.brand) + (variant ? ' (' + variant + ')' : '');
+}
+
 // Hold a choice to a brand the brand skill has, and one of that brand's variants.
 function settleBrand(held) {
   const brands = brandsFound();
@@ -3054,7 +3066,7 @@ function looksOf(draft) {
 
 // The choice as the runner takes it: research_from.
 function researchFromOf(draft) {
-  if (draft.sourceEditor) return draft.sourceEditor.choice(draft.route === 'document');
+  if (draft.sourceEditor) return draft.sourceEditor.choice(givenWith(draft));
   const looks = looksOf(draft);
   return { documents: draft.route === 'document' && looks.documents,
     sites: looks.sitesOn ? looks.sites.filter((one) => one.on).map((one) => one.url) : [],
@@ -3080,7 +3092,7 @@ function researchSummary(from) {
 
 // Why the choice cannot be used, or nothing when it can.
 function researchProblem(draft) {
-  if (draft.sourceEditor) return draft.sourceEditor.valid(draft.route === 'document') ? '' : 'Add readable sources or allow additional external search before starting.';
+  if (draft.sourceEditor) return draft.sourceEditor.valid(givenWith(draft)) ? '' : 'Add readable sources or allow additional external search before starting.';
   const looks = looksOf(draft);
   const from = researchFromOf(draft);
   if (looks.sitesOn && !from.sites.length) return RESEARCH_NO_SITES;
@@ -3116,19 +3128,117 @@ async function addSite(draft) {
   focusKey('research-site');
 }
 
+// What research will read, under the box that allows more: said as the choice stands now,
+// so that the box and the line never read as two contradicting options.
+function searchSays(state) {
+  if (!state.external) return 'Only your sources are used. Tick to also search the web.';
+  return state.restricted ? 'Your sources are used, and only your approved sites are searched.'
+    : 'Your sources are used, and the public web is searched too.';
+}
+
+// Whether research has the person's own material besides the source editor's: the deck's
+// document, or documents chosen from the library.
+function givenWith(draft) {
+  return draft.route === 'document' || libraryPicks(draft).length > 0;
+}
+
+// At most this many of the library's documents are chosen at the start, as the desk's Add
+// from library takes at most this many at once.
+const LIBRARY_MOST = 40;
+const LIBRARY_FULL = LIBRARY_MOST + ' documents from the library is the most a new deck '
+  + 'takes. Remove one to add another.';
+
+// The Document Library's documents chosen at the start, each {id, revision, title}: pinned
+// as the deck's sources when it starts, as Add from library on the desk pins them.
+function libraryPicks(draft) {
+  if (!Array.isArray(draft.library)) draft.library = [];
+  return draft.library;
+}
+
+// Add from library, in the source editor: the shared sheet (library.js). Each chosen
+// revision is read once, for its title and to refuse one with no readable text, and is
+// held until Start; nothing is sent to the deck before then.
+function pickLibrary(draft, editor) {
+  if (!window.StudioLibrary) {
+    say(byId('research-from-problem'), 'The Document Library could not be loaded. Reload the '
+      + 'page.');
+    return;
+  }
+  const held = libraryPicks(draft);
+  if (held.length >= LIBRARY_MOST) {
+    say(byId('research-from-problem'), LIBRARY_FULL);
+    return;
+  }
+  window.StudioLibrary.pick({
+    studio: 'presentation', max: LIBRARY_MOST - held.length,
+    post: (route, body) => send(route, body),
+    refocus: () => document.querySelector('[data-key="research-library"]'),
+    use: async (picks) => {
+      const found = [];
+      for (const pick of picks) {
+        const read = await send('library-document', { id: pick.id, revision: pick.revision });
+        if (!read.readable) {
+          throw new Error('"' + (read.title || 'That document') + '" has no text that can be '
+            + 'read. Choose another.');
+        }
+        found.push({ id: pick.id, revision: pick.revision, title: read.title || 'Untitled' });
+      }
+      const chosen = new Set(found.map((one) => one.id));
+      const kept = [...held.filter((one) => !chosen.has(one.id)), ...found];
+      if (kept.length > LIBRARY_MOST) throw new Error(LIBRARY_FULL);
+      draft.library = kept;
+      editor.render();
+      editor.changed();
+      toast(found.length === 1 ? 'It is added. It becomes a source of the deck when it starts.'
+        : found.length + ' documents are added. They become sources of the deck when it starts.');
+    },
+  });
+}
+
+// The library's documents chosen so far, under the source editor's own list, each with
+// Remove.
+function libraryList(draft, editor) {
+  const held = libraryPicks(draft);
+  if (!held.length) return null;
+  const full = held.length >= LIBRARY_MOST ? make('p', 'quiet field-hint', LIBRARY_FULL) : null;
+  return add(make('div', ''), add(make('ul', 'research-source-list'), ...held.map((one) => {
+    const remove = button('Remove', 'button button-quiet', () => {
+      draft.library = held.filter((other) => other.id !== one.id);
+      editor.render();
+      editor.changed();
+      focusKey('research-library');
+    }, 'research-library-remove-' + one.id);
+    remove.setAttribute('aria-label', 'Remove ' + one.title);
+    return add(make('li', 'research-source-row'), add(make('div', 'research-source-copy'),
+      make('p', 'row-title', one.title), make('p', 'quiet', 'From the Document Library, '
+        + 'revision ' + one.revision)), remove);
+  })), full);
+}
+
 // Research from: ☑ your documents ☑ your sites (3) ☐ the public web. With your sites on,
 // a tick for each site and a box to add one for this deck.
 function researchFromField(draft) {
   if (typeof StudioResearch !== 'undefined') {
     if (!draft.sourceEditor) draft.sourceEditor = new StudioResearch.Editor({
       request: sent => send('research-sources', sent),
-      onChange: () => { if (draft.retell) draft.retell(); }
+      // An uploaded file is kept in the Document Library too, unless Only this project.
+      keepChoice: true,
+      library: (editor) => pickLibrary(draft, editor),
+      libraryFull: () => libraryPicks(draft).length >= LIBRARY_MOST,
+      extra: (editor) => libraryList(draft, editor),
+      policyHint: searchSays,
+      onChange: () => {
+        if (draft.retell) draft.retell();
+        // A refusal Start said beside the sources goes once they can be used.
+        if (view.draft === draft && !researchProblem(draft)) say(byId('research-from-problem'), '');
+      }
     });
     // The sources are kept when the kind of deck changes; a deck from a document says its
-    // document goes with them, whichever kind they were first opened for.
-    return draft.route === 'document' ? add(make('div', 'fields'), make('p', 'quiet',
-      'Your source document is included with these references.'), draft.sourceEditor.node)
-      : draft.sourceEditor.node;
+    // document goes with them, whichever kind they were first opened for. Start says what
+    // stops research under them, in the line the old chooser had.
+    return add(make('div', 'fields'), draft.route === 'document' ? make('p', 'quiet',
+      'Your source document is included with these references.') : null,
+    draft.sourceEditor.node, alertLine('research-from-problem'));
   }
   const looks = looksOf(draft);
   const flip = (key) => (on) => {
@@ -3235,7 +3345,10 @@ function missingIn(draft, name) {
     if (draft.research && draft.route !== 'existing') {
       const why = researchProblem(draft);
       say(byId('research-from-problem'), why);
-      if (why) missing.push(draft.route === 'document' ? 'research-documents' : 'research-sites');
+      // With the shared source editor, the first gap is its box for links: where sources
+      // are added. The old chooser's is its first tick.
+      if (why) missing.push(draft.sourceEditor ? 'research-urls'
+        : draft.route === 'document' ? 'research-documents' : 'research-sites');
     }
   }
   return missing;
@@ -3290,7 +3403,13 @@ async function startDeck(pressed, how) {
   say(problem, '');
   let started;
   try {
-    started = await send('decks', { form, uploads, ...(draft.sourceEditor ? {research_inputs: draft.sourceEditor.spec()} : {}) });
+    // The source editor's draft goes with a researched deck, and so do the library's
+    // documents chosen beside it.
+    const sourced = draft.sourceEditor && form.research;
+    const picked = sourced ? libraryPicks(draft).map(({ id, revision }) => ({ id, revision })) : [];
+    started = await send('decks', { form, uploads,
+      ...(sourced ? { research_inputs: draft.sourceEditor.spec() } : {}),
+      ...(picked.length ? { library: picked } : {}) });
   } catch (failure) {
     draft.starting = false;
     pressed.disabled = false;
@@ -4828,7 +4947,7 @@ function storyboardPanel(gate, readonly) {
 function lookPanel(gate, readonly, held, review) {
   if (gate.offered) return looksPanel(gate, readonly, held || chosenFor(gate), review);
   const node = card('The brand');
-  const made = gate.made_in || 'your brand';
+  const made = madeIn(gate.brand, gate.variant, gate.made_in);
   add(node, make('p', 'row-title', 'Made in ' + made + '.'),
     make('p', '', readonly ? 'Its cover, drawn in that brand.' : 'This is your cover, drawn '
       + 'in that brand, so you can see it is the one you meant. If it is not, choose another '
@@ -4848,7 +4967,7 @@ function lookPanel(gate, readonly, held, review) {
 function looksPanel(gate, readonly, held, review) {
   const offered = gate.offered;
   if (gate.again && !held.look) held.look = gate.again.choice || '';
-  const made = gate.made_in || 'your brand';
+  const made = madeIn(gate.brand, gate.variant, gate.made_in);
   const node = card('Choose the look');
   add(node, make('p', 'row-title', 'Made in ' + made + '.'),
     make('p', '', 'The brand drew one slide of your outline in each of its looks. The look '
@@ -5953,7 +6072,7 @@ function paintDeck(fresh) {
       () => questionPart(run, title)] : null,
     gate ? ['gate-line', [gate.name, gate.label, read, driver, googleReady()],
       () => gateLine(run)] : null,
-    gate ? ['gate', [gate, read, narrow() ? lead : '', Boolean(view.sheet)],
+    gate ? ['gate', [gate, read, narrow() ? lead : '', Boolean(view.sheet), brandsFound()],
       () => gatePanel(run)] : null,
     noting(run) ? ['note', [run.note, run.state, read], () => notePart(run)] : null,
     run.research_progress && typeof StudioResearch !== 'undefined' ? ['research-progress', run.research_progress, () => StudioResearch.progress(run.research_progress)] : null,
@@ -5988,7 +6107,12 @@ async function drawDeck(fresh) {
     const run = await ask('run', { path: view.path });
     if (turn !== view.turn) return;
     const first = fresh || !view.run;
-    const same = !first && JSON.stringify(run) === JSON.stringify(view.run);
+    // The brands named on the deck (madeIn) come with Set-up, which may arrive after the
+    // deck was first drawn: it is drawn again then.
+    const brands = JSON.stringify(brandsFound());
+    const same = !first && JSON.stringify(run) === JSON.stringify(view.run)
+      && brands === view.brandsDrawn;
+    view.brandsDrawn = brands;
     view.run = run;
     // Someone is in the middle of deciding: the screen waits until they are done.
     if (!view.busy && !view.sheet && !same) paintDeck(first);
@@ -7613,7 +7737,7 @@ function deskParts() {
     questionPart,
     findingItems, routeWords, nameOf, googleReady, createStep, chooseRoute, paintNew,
     paintAgents, readAgents, readModels, researchFromField, researchSummary, researchFromOf,
-    brandFields, brandsFound, agentFields, modelFields, draftModelWords, limitsSays,
+    brandFields, brandsFound, madeIn, agentFields, modelFields, draftModelWords, limitsSays,
     sourceFields, formOf, missingIn, startDeck, deliveryOf, base64Of,
     words: { OUTPUTS, OUTPUT_SAYS, DELIVERIES, AGENT_NAMES, NOT_CONNECTED, ROUTES, KINDS,
       LEVELS, STEERED },

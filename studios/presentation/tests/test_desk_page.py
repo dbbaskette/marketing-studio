@@ -10,7 +10,9 @@ computer or touches the network.
 import base64
 import copy
 import json
+import subprocess
 import unittest
+from pathlib import Path
 from datetime import UTC, datetime
 from unittest import mock
 
@@ -177,7 +179,7 @@ class StartTests(DeskPageCase):
     def test_research_offers_your_documents_your_sites_and_the_web(self):
         sites = ['blog.example.com/platform', 'docs.example.com']
         result = self.new_deck([
-            {'click': 'A document'}, {'click': 'Research first'}, {'snapshot': 'research'},
+            {'click': 'A document'}, {'tick': 'Research first'}, {'snapshot': 'research'},
             {'fill': 'What should the research answer? (optional)', 'value': 'Why?'},
             {'click': 'Paste the text'}, {'fill': 'The text', 'value': 'Synthetic notes.'},
             {'fill': 'A short title', 'value': 'Synthetic deck'}, {'click': 'Start'}],
@@ -186,7 +188,7 @@ class StartTests(DeskPageCase):
         self.assertIn('Research from', shot['sheet'])
         for choice in ('your documents', 'your sites (2)', 'the public web'):
             self.assertIn(choice, shot['buttons'])
-        self.assertEqual(shot['ticked'], ['your documents'])
+        self.assertEqual(shot['ticked'], ['Research first', 'your documents'])
         self.assertIn('The research is planned from your questions', shot['sheet'])
         self.assertNotIn('You approve the research plan', shot['sheet'])
         (_, body), = self.posts(result)
@@ -242,7 +244,7 @@ class StartTests(DeskPageCase):
     def test_an_idea_is_researched_whatever_a_document_was_marked(self):
         result = self.new_deck([
             {'click': 'A document'}, {'click': 'It lays out the slides'},
-            {'click': 'Research first'}, {'snapshot': 'script'},
+            {'tick': 'Research first'}, {'snapshot': 'script'},
             {'click': 'An idea'}, {'snapshot': 'idea'}])
         self.assertNotIn('Research.', self.plan_of(result['snapshots']['script']))
         plan = self.plan_of(result['snapshots']['idea'])
@@ -281,7 +283,7 @@ class StartTests(DeskPageCase):
         result = self.new_deck([
             {'click': 'An idea'}, {'snapshot': 'idea'},
             {'click': 'Use the brand’s default look'}, {'snapshot': 'default'},
-            {'click': 'A document'}, {'click': 'Research first'}, {'snapshot': 'unread'},
+            {'click': 'A document'}, {'tick': 'Research first'}, {'snapshot': 'unread'},
             {'click': 'It lays out the slides'}, {'snapshot': 'script'},
             {'click': 'It is material to build from'}, {'snapshot': 'material'}])
         shots = result['snapshots']
@@ -320,7 +322,7 @@ class StartTests(DeskPageCase):
             {'fill': 'What should they take away?', 'value': 'When capacity holds.'},
             {'fill': 'About how long, in minutes (optional)', 'value': '20'},
             {'click': 'A handout'}, {'click': 'Use the brand’s default look'},
-            {'click': 'Research first'}, {'tick': 'your sites'},
+            {'tick': 'Research first'}, {'tick': 'your sites'},
             {'fill': 'What should the research answer? (optional)', 'value': 'Why now?'},
             {'click': 'A document'},
             {'attach': 'The document', 'files': [{'name': 'notes.md', 'bytes': '# Notes'}]},
@@ -348,7 +350,7 @@ class StartTests(DeskPageCase):
         for name in ('document', 'back', 'refused'):
             with self.subTest(shot=name):
                 shot = shots[name]
-                self.assertIn('Research first', shot['chosen'])
+                self.assertIn('Research first', shot['ticked'])
                 self.assertIn('your sites (2)', shot['ticked'])
                 self.assertEqual(shot['fields']['What should the research answer? (optional)'],
                                  'Why now?')
@@ -426,6 +428,328 @@ class StartTests(DeskPageCase):
         self.assertEqual(shown['gate']['name'], 'gate:build', shown['sentence'])
 
 
+NO_SOURCES = 'Add readable sources or allow additional external search before starting.'
+
+
+class ResearchStartTests(DeskPageCase):
+    """Issue #255: Start with Research first on, through the shared source editor the page
+    loads (research.js), for a deck from an idea and one from a document, with sources and
+    without. Each answer the editor reads is the runner's own for that request, and the deck
+    is started by sending the runner what the page sent."""
+
+    TEXT = 'Synthetic reference: rolling restarts keep one instance serving.'
+
+    def drafts(self, *steps) -> list:
+        """The runner's answers to the source editor, in order: the draft it creates, then
+        each change. A step is ('text', words) or ('external', on)."""
+        made = [self.post('research-sources', {'action': 'create'})]
+        for kind, value in steps:
+            last = {'id': made[-1]['id'], 'expected': made[-1]['revision']}
+            if kind == 'text':
+                made.append(self.post('research-sources', {**last, 'action': 'capture',
+                                                           'kind': 'text',
+                                                           'name': 'Pasted notes',
+                                                           'text': value}))
+            else:
+                made.append(self.post('research-sources', {**last, 'action': 'configure',
+                                                           'external': value}))
+        return [ok(one) for one in made]
+
+    def goal(self) -> list:
+        return [{'fill': 'A short title', 'value': 'Rolling restarts'},
+                {'fill': 'Who is it for?', 'value': 'Platform teams'},
+                {'fill': 'What should they take away?', 'value': 'When capacity holds.'}]
+
+    def start(self, route_steps: list, steps: list, drafts: list, more=None, **plan) -> dict:
+        return self.run_page(self.answers(**{**STARTED, **NOT_THERE,
+                                             'POST /api/research-sources': drafts,
+                                             **(more or {})}),
+                             [{'click': 'New deck'}, *route_steps, *self.goal(),
+                              {'tick': 'Research first'}, *steps,
+                              {'click': 'Start'}, {'snapshot': 'started'}],
+                             research=True, **plan)
+
+    def started_here(self, result: dict) -> dict:
+        """The deck the runner starts from what the page sent, and the body it was sent."""
+        body = next(body for address, body in self.posts(result) if address == '/api/decks')
+        self.assertLessEqual({'form', 'uploads', 'research_inputs'}, set(body))
+        self.assertLessEqual(set(body), {'form', 'uploads', 'research_inputs', 'library'})
+        with mock.patch.object(self.engine, 'wake'):
+            made = self.post('decks', body)
+        return self.engine._load(Path(made['path'])), body
+
+    def pasted(self) -> list:
+        return [{'click': 'Paste text'}, {'fill': 'Source text', 'value': self.TEXT},
+                {'click': 'Add text'}]
+
+    def test_an_idea_with_a_pasted_source_starts_and_is_researched(self):
+        result = self.start([{'click': 'An idea'}], self.pasted(),
+                            self.drafts(('text', self.TEXT)))
+        shot = result['snapshots']['started']
+        self.assertNotIn(NO_SOURCES, shot['text'])
+        self.assertEqual(shot['sheet'], '', 'the sheet closes once the deck is started')
+        record, body = self.started_here(result)
+        self.assertTrue(body['form']['research'])
+        self.assertEqual(body['form']['research_from'],
+                         {'documents': True, 'sites': [], 'web': False})
+        self.assertEqual(record['form']['research_from'],
+                         {'documents': True, 'sites': [], 'web': False})
+        self.assertEqual(record['research_inputs']['count'], 1)
+        # Its run researches first: the research stop is among its steps.
+        from runner import stages
+        self.assertIn('gate:research', {step.name for step in stages.steps(record)})
+
+    def test_an_idea_with_no_sources_is_refused_beside_them(self):
+        result = self.start([{'click': 'An idea'}], [], self.drafts())
+        shot = result['snapshots']['started']
+        self.assertEqual(shot['posts'], 1, 'only the source draft is made')
+        self.assertIn(NO_SOURCES, shot['sheet'])
+        self.assertIn('Something above is missing.', shot['sheet'])
+        # The first gap is where sources are added.
+        self.assertEqual(shot['focusKey'], 'research-urls')
+
+    def test_an_idea_with_no_sources_starts_once_external_search_is_allowed(self):
+        result = self.start([{'click': 'An idea'}],
+                            [{'click': 'Start'}, {'snapshot': 'refused'},
+                             {'tick': 'Search for additional external sources'},
+                             {'snapshot': 'allowed'}],
+                            self.drafts(('external', True)))
+        self.assertIn(NO_SOURCES, result['snapshots']['refused']['sheet'])
+        # Once the sources can be used, the refusal goes.
+        self.assertNotIn(NO_SOURCES, result['snapshots']['allowed']['sheet'])
+        record, body = self.started_here(result)
+        self.assertEqual(body['form']['research_from'],
+                         {'documents': False, 'sites': [], 'web': True})
+        self.assertEqual(record['research_inputs']['count'], 0)
+        self.assertEqual(record['form']['research_from']['web'], True)
+
+    def document(self) -> list:
+        return [{'click': 'A document'}, {'click': 'Paste the text'},
+                {'fill': 'The text', 'value': 'Synthetic notes to build from.'}]
+
+    def test_a_document_with_a_pasted_source_starts_and_is_researched(self):
+        result = self.start(self.document(), [{'snapshot': 'research'}, *self.pasted()],
+                            self.drafts(('text', self.TEXT)))
+        self.assertIn('Your source document is included with these references.',
+                      result['snapshots']['research']['sheet'])
+        self.assertEqual(result['snapshots']['started']['sheet'], '')
+        record, body = self.started_here(result)
+        self.assertEqual(body['form']['route'], 'document')
+        self.assertEqual(record['research_inputs']['count'], 1)
+        self.assertTrue(record['form']['research_from']['documents'])
+
+    def test_a_document_with_no_other_sources_starts_on_its_own(self):
+        result = self.start(self.document(), [], self.drafts())
+        shot = result['snapshots']['started']
+        self.assertNotIn(NO_SOURCES, shot['text'])
+        self.assertEqual(shot['sheet'], '')
+        record, body = self.started_here(result)
+        self.assertEqual(body['form']['research_from'],
+                         {'documents': True, 'sites': [], 'web': False})
+        self.assertEqual(record['research_inputs']['count'], 0)
+
+    # --- the research choices are form checkboxes, and say what will happen (item 5) -------
+
+    def test_research_first_and_external_search_are_checkboxes_that_say_what_happens(self):
+        result = self.start([{'click': 'An idea'}],
+                            [{'snapshot': 'only'},
+                             {'tick': 'Search for additional external sources'},
+                             {'snapshot': 'web'}],
+                            self.drafts(('external', True)))
+        only, web = result['snapshots']['only'], result['snapshots']['web']
+        # Both are native checkboxes in a label, ticked as the choices stand.
+        self.assertEqual(only['ticked'], ['Research first'])
+        self.assertEqual(web['ticked'], ['Research first',
+                                         'Search for additional external sources'])
+        self.assertEqual(only['chosen'], [], 'no chip button is left for Research first')
+        self.assertIn('Only your sources are used. Tick to also search the web.', only['sheet'])
+        self.assertIn('Your sources are used, and the public web is searched too.', web['sheet'])
+        for shot in (only, web):
+            self.assertNotIn('Use supplied sources', shot['sheet'])
+
+    # --- the start's sources and the desk's Sources card (#255, item 3) ---------------------
+
+    def library(self):
+        """A disposable Document Library holding one readable brief."""
+        import os
+        import tempfile
+        from studio_core import document_library
+        place = tempfile.TemporaryDirectory()
+        self.addCleanup(place.cleanup)
+        patcher = mock.patch.dict(os.environ, {'STUDIOS_LIBRARY': place.name + '/library'})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        return document_library.opened(create=True).add_upload(
+            'brief.md', b'# Brief\n\nCapacity holds with two instances.\n')
+
+    def test_the_start_offers_the_desks_add_from_library_and_keep_choice(self):
+        result = self.start([{'click': 'An idea'}], [{'snapshot': 'sources'}], self.drafts())
+        shot = result['snapshots']['sources']
+        for offered in ('Add links', 'Choose files', 'Paste text', 'Add from library',
+                        'Use saved research'):
+            self.assertIn(offered, shot['buttons'])
+        # An uploaded file is kept in the library unless Only this project, as on the desk.
+        self.assertIn('Where an uploaded file is kept', shot['sheet'])
+        self.assertEqual([name for name in shot['pressed'] if name in KEEP_CHOICES],
+                         ['Keep in library'])
+
+    def test_a_library_document_chosen_at_the_start_is_pinned_as_a_deck_source(self):
+        from runner import documents
+        brief = self.library()
+        pick = {'id': brief['id'], 'revision': brief['revision']}
+        read = self.post('library-document', pick)
+        result = self.start([{'click': 'An idea'}],
+                            [{'click': 'Add from library'}, {'snapshot': 'picked'}],
+                            self.drafts(), {'POST /api/library-document': [ok(read)]},
+                            library=[pick])
+        picked = result['snapshots']['picked']
+        self.assertEqual(result['library'], [{'studio': 'presentation', 'max': 40,
+                                              'refocus': 'research-library'}])
+        self.assertIn('brief\nFrom the Document Library, revision 1', picked['sheet'])
+        self.assertIn('Remove brief', picked['buttons'])
+        # The library document is research's own material: no other source is needed.
+        self.assertNotIn('Add material here', picked['sheet'])
+        self.assertEqual(result['snapshots']['started']['sheet'], '')
+        record, body = self.started_here(result)
+        self.assertEqual(body['library'], [pick])
+        self.assertEqual(body['form']['research_from'],
+                         {'documents': True, 'sites': [], 'web': False})
+        root = self.deck_root(record)
+        listed = documents.listed(root)
+        self.assertEqual([(one['title'], one['library']['id']) for one in listed],
+                         [('brief', brief['id'])])
+        sources = self.engine._desk_view(root, record)['sources']
+        self.assertEqual([one['title'] for one in sources], ['brief'])
+
+    def document_with_library(self, library) -> dict:
+        """What the page sends for a researched deck from a pasted document, with `library`."""
+        draft = self.post('research-sources', {'action': 'create'})
+        return {'form': {**runner_support.FORM, 'flow': 'desk', 'route': 'document',
+                         'research': True, 'source': {'kind': 'paste',
+                                                      'text': 'The talk, slide by slide.'}},
+                'uploads': {}, 'library': library,
+                'research_inputs': {'id': draft['id'], 'expected': draft['revision']}}
+
+    def test_a_library_pick_beside_a_document_is_never_read_as_that_document(self):
+        # Review of #255: the outline and the classification read the person's document
+        # alone; a library pick beside it is a separately labelled supporting source.
+        from runner.steps import intake, outline
+        brief = self.library()
+        with mock.patch.object(self.engine, 'wake'):
+            made = self.post('decks', self.document_with_library(
+                [{'id': brief['id'], 'revision': brief['revision']}]))
+        root = Path(made['path'])
+        # The intake step takes the pasted document in, beside the pin.
+        intake.take_document(root, {'kind': 'paste', 'text': 'The talk, slide by slide.'})
+        self.assertEqual(list(outline._document_texts(root)), ['Pasted text'])
+        self.assertEqual(list(outline._supporting_texts(root)), ['Supporting source: brief'])
+        record = self.engine._load(root)
+        shown = self.engine._show_classify(root, record)
+        self.assertEqual([one['title'] for one in shown['documents']], ['Pasted text'])
+
+    def test_a_bad_library_pick_is_refused_before_anything_is_made(self):
+        from runner import decks as deck_files
+        before = sorted(path.parent for path in self.engine.space().root.rglob(deck_files.RUN))
+        # A malformed pick is the request's fault.
+        for bad in ([{'id': 'x'}], [{'id': 'a' * 32, 'revision': '1'}], 'brief'):
+            with self.subTest(bad=bad):
+                self.post('decks', self.document_with_library(bad), expect=400)
+        # One that is well formed but not in the library makes nothing, not even a commit.
+        self.library()
+        commits = self.engine.space().repo
+        log = subprocess.run(['git', '-C', str(commits), 'rev-list', '--all',
+                                             '--count'], capture_output=True, text=True).stdout
+        refused = self.post('decks', self.document_with_library(
+            [{'id': 'f' * 32, 'revision': 1}]), expect=409)
+        self.assertIn('error', refused)
+        after = sorted(path.parent for path in self.engine.space().root.rglob(deck_files.RUN))
+        self.assertEqual(after, before)
+        self.assertEqual(subprocess.run(
+            ['git', '-C', str(commits), 'rev-list', '--all', '--count'],
+            capture_output=True, text=True).stdout, log)
+
+    def test_add_from_library_waits_once_forty_are_chosen(self):
+        brief = self.library()
+        read = self.post('library-document', {'id': brief['id'], 'revision': brief['revision']})
+        picks = [{'id': f'{number:032x}', 'revision': 1} for number in range(40)]
+        result = self.start([{'click': 'An idea'}],
+                            [{'click': 'Add from library'}, {'snapshot': 'full'},
+                             {'click': 'Add from library'}],
+                            self.drafts(), {'POST /api/library-document': [ok(read)]},
+                            library=picks)
+        full = result['snapshots']['full']
+        self.assertEqual([asked['max'] for asked in result['library']], [40])
+        self.assertIn('Add from library', full['off'])
+        self.assertIn('40 documents from the library is the most a new deck takes. Remove one '
+                      'to add another.', full['sheet'])
+        # The second press asks for nothing more, and Start sends the forty.
+        body = next(body for address, body in self.posts(result) if address == '/api/decks')
+        self.assertEqual(body['library'], picks)
+
+    def deck_root(self, record: dict):
+        """The folder of the one deck the runner started here."""
+        found = [path.parent for path in self.engine.space().root.rglob('run.json')
+                 if '.research-sources' not in path.parts]
+        self.assertEqual(len(found), 1, found)
+        return found[0]
+
+    def test_the_desk_lists_the_sources_research_was_given_at_the_start(self):
+        from studio_core import research_sources
+        from runner import documents
+        result = self.start([{'click': 'An idea'}], self.pasted(),
+                            self.drafts(('text', self.TEXT)))
+        record, _ = self.started_here(result)
+        root = self.deck_root(record)
+        sources = self.engine._desk_view(root, record)['sources']
+        self.assertEqual([(one['title'], one['readable'], one['given']) for one in sources],
+                         [('Pasted notes', True, 'given at the start, for research')])
+        # Every source research reads is listed, and the words jobs read them too.
+        read = [*documents.sources(root)[0],
+                *research_sources.sources(root, record['research_inputs'])[0]]
+        self.assertEqual(len(read), len(sources))
+        self.assertIn(self.TEXT, self.engine._desk_sources(root, record))
+        # The card says where it came from.
+        path = self.desk_deck()
+        view = self.run_of(path)
+        view['desk']['sources'] = sources
+        shot = self.open_deck(path, view, [{'snapshot': 'desk'}])['snapshots']['desk']
+        self.assertIn('Pasted notes · given at the start, for research', shot['text'])
+        self.assertNotIn('No sources yet.', shot['text'])
+
+
+class NamesTests(DeskPageCase):
+    """#255, item 4: each kind of deck has one name on Home, New deck, a deck's header and
+    the Decks filter, and the brand one name at the start and at the look."""
+
+    KINDS = ('From an idea', 'From a document', 'From an existing deck')
+    OLD = ('Start from scratch', 'From scratch', 'Start from a document',
+           'Redesign an existing deck')
+
+    def test_each_kind_of_deck_has_one_name_everywhere(self):
+        path = self.desk_deck()
+        result = self.run_page(self.answers(), [
+            {'snapshot': 'home'}, {'click': 'New deck'}, {'snapshot': 'new'},
+            {'click': 'Cancel'}, {'click': 'Decks'}, {'snapshot': 'decks'}])
+        shots = {**result['snapshots'], **self.open_deck(
+            path, self.run_of(path), [{'snapshot': 'deck'}])['snapshots']}
+        for kind in self.KINDS:
+            self.assertIn(kind, shots['home']['buttons'])
+        self.assertEqual(shots['decks']['lists']['How it began'], ['Any', *self.KINDS])
+        self.assertIn('From an idea', shots['deck']['text'])
+        # New deck asks what it starts from, by the same names.
+        for kind in ('An idea', 'A document', 'An existing deck'):
+            self.assertTrue(any(name.startswith(kind) for name in shots['new']['buttons']))
+        for name, shot in shots.items():
+            for gone in self.OLD:
+                with self.subTest(shot=name, gone=gone):
+                    self.assertNotIn(gone, shot['text'] + shot['sheet'])
+
+    def test_the_start_names_the_brand_as_the_look_does(self):
+        result = self.new_deck([{'click': 'An idea'}, {'snapshot': 'idea'}])
+        self.assertIn('Made in Example Co (light), delivered as',
+                      result['snapshots']['idea']['sheet'])
+
+
 class ProgressTests(DeskPageCase):
     """Task 1.13: before the desk, progress, with only the look pick to ask for."""
 
@@ -471,6 +795,8 @@ class ProgressTests(DeskPageCase):
             **{'POST /api/desk-look': [ok(picked)]})
         pause = result['snapshots']['pause']
         self.assertEqual(pause['parts'][0], 'Pick the look')
+        # The brand by the name New deck gives it, not its ID (#255).
+        self.assertIn('Made in Example Co (light).', pause['text'])
         lines = pause['text'].split('\n')
         self.assertEqual(lines[lines.index('Pick the look') + 1], LOOK_PAUSE)
         self.assertEqual(pause['filled'], ['Draw the deck in this look'])
