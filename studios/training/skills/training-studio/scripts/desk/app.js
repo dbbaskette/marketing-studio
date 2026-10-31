@@ -2309,6 +2309,14 @@ function drawSettings(fresh) {
     ['head', [], () => pageHead(SETTINGS_LEDE)],
     ['shared-settings', [Boolean(view.runner)], () => view.runner ? add(card('Shared settings'),
       make('p', '', 'Your assistant, work folder, brand and delivery choices apply across all studios.'),
+      // Who owns each kind of value, said in words rather than implied by where it sits.
+      about([['Shared', 'Assistant, work folder, default brand and delivery: changed in '
+          + 'Marketing Studio’s Shared settings.'],
+        ['This training only', 'Each training keeps the brand, research sites and models it '
+          + 'was started with.'],
+        ['This studio', 'The cards below apply to Training Studio on this computer, except '
+          + 'Brand skill: its repository and release are shared, as Shared settings, Advanced, '
+          + 'Brand skill release shows them.']]),
       capsule('Change shared settings', 'quiet', () => { location.href = settingsAddress(); }, 'shared-settings')) : null],
     ['workspace', around(), workspaceCard],
     ['decided', [decided, view.unmoved], decidedCard],

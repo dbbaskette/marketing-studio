@@ -279,10 +279,92 @@ class StudioReadinessTests(IsolatedHome):
             found=self.page.snapshot()
         for row in found['studios']:
             if row['installed']:
-                self.assertEqual(row['readiness']['state'],'done');self.assertEqual(row['readiness']['label'],'Ready to open');self.assertFalse(row['running'])
+                self.assertEqual(row['readiness']['state'],'done');self.assertEqual(row['readiness']['label'],'Can open');self.assertIsNone(row['readiness']['action']);self.assertFalse(row['running'])
 
     def test_missing_shared_setup_and_assistant_do_not_show_green(self):
         self.assertTrue(all(r['readiness']['state']!='done' for r in self.page.snapshot()['studios']))
         shared.update({'local':{'root':str(self.root/'work')}});self.write('/api/setup',{'done':True})
         with mock.patch('marketing_studio.page.runtime.assistant_command',return_value=None):
             self.assertTrue(all(r['readiness']['state']!='done' for r in self.page.snapshot()['studios']))
+
+    def test_each_readiness_state_says_why_and_how_to_recover(self):
+        row = {'installed': True}
+        with mock.patch('marketing_studio.page.runtime.assistant_command', return_value='/synthetic/claude'), \
+                mock.patch('marketing_studio.page.shutil.which', return_value=None):
+            missing = Home.readiness(row, None, True, 'claude')
+        self.assertEqual((missing['state'], missing['label']), ('review', 'Needs setup'))
+        self.assertIn('Git was not found', missing['detail'])
+        self.assertEqual(missing['action'], {'view': 'computer', 'label': 'Check this computer'})
+        with mock.patch('marketing_studio.page.runtime.assistant_command', return_value=None), \
+                mock.patch('marketing_studio.page.shutil.which', return_value=None):
+            both = Home.readiness(row, None, True, 'codex')
+        self.assertIn('Codex and Git were not found', both['detail'])
+        unset = Home.readiness(row, None, False, 'claude')
+        self.assertEqual((unset['label'], unset['action']['view']), ('Needs setup', 'settings'))
+        unread = Home.readiness(row, 'The file could not be read.', False, 'claude')
+        self.assertEqual((unread['state'], unread['label'], unread['action']['view']),
+                         ('none', 'Not checked', 'settings'))
+        absent = Home.readiness({'installed': False}, None, True, 'claude')
+        self.assertEqual((absent['state'], absent['label'], absent['action']), ('off', 'Not installed', None))
+        self.assertIn('never installs', absent['detail'])
+        with mock.patch('marketing_studio.page.runtime.assistant_command', return_value='/synthetic/claude'), \
+                mock.patch('marketing_studio.page.shutil.which', return_value='/synthetic/git'):
+            ready = Home.readiness(row, None, True, 'claude')
+        self.assertEqual((ready['state'], ready['label']), ('done', 'Can open'))
+        self.assertIn('Sign-in is checked when a task needs it', ready['detail'])
+
+    def test_browsing_and_checking_start_nothing_and_change_nothing(self):
+        shared.update({'local': {'root': str(self.root / 'work')}, 'assistant': {'agent': 'claude'}})
+        self.write('/api/setup', {'done': True})
+        before = shared.path().read_bytes()
+        ran = []
+
+        def local_only(command, **_):
+            ran.append(command)
+            return mock.Mock(returncode=1, stdout='')
+        refuse = AssertionError('Browsing must not open, prepare or connect a studio')
+        with mock.patch.object(self.launcher, 'open', side_effect=refuse), \
+                mock.patch.object(self.launcher, 'prepare', side_effect=refuse), \
+                mock.patch.object(self.launcher, 'connect', side_effect=refuse), \
+                mock.patch('subprocess.Popen', side_effect=AssertionError('Nothing is started')), \
+                mock.patch('marketing_studio.computer.subprocess.run', side_effect=local_only):
+            json.loads(self.page.read('/api/home', lambda _: None)[2])
+            looked = self.write('/api/computer', {})['computer']
+            again = json.loads(self.page.read('/api/home', lambda _: None)[2])
+        # A check reads the version control tool's own settings and nothing else; the home then reports it.
+        self.assertTrue(ran and all(command[1:3] == ['config', '--get'] for command in ran))
+        self.assertEqual(again['computer'], looked)
+        self.assertFalse(next(item for item in looked['items'] if item['name'] == 'Git identity')['ready'])
+        self.assertEqual(shared.path().read_bytes(), before)
+        self.assertFalse((self.root / 'work').exists())
+
+
+class SharedSettingsSaveTests(IsolatedHome):
+    """The everyday save keeps every override and unrelated value, and an outdated form is
+    still refused leaf by leaf."""
+    OVERRIDES = ('{\n  "schema": 1,\n  "kept": {"by": "another tool"},\n'
+                 '  "person": {"name": "Ana"},\n  "assistant": {"agent": "claude"},\n  "local": {"root": "/tmp/studios"},\n'
+                 '  "brand": {"repository": "https://example.com/brand.git", "release": "v1.4.0"},\n'
+                 '  "models": {"schema": 1, "agent": "claude", "mode": "by_task", "profiles": '
+                 '{"quick": {"selection": "explicit", "model": "synthetic-small", "effort": "low"}}},\n'
+                 '  "research": {"sites": ["https://docs.example.com/guide"]},\n'
+                 '  "setup": {"version": 1}\n}\n')
+
+    def test_an_everyday_save_keeps_overrides_and_unrelated_values(self):
+        shared.path().write_text(self.OVERRIDES)
+        seen = shared.read()[0]
+        self.write('/api/shared', {'changes': {'person': {'name': 'Bea'}}, 'seen': seen})
+        self.assertEqual(shared.path().read_text(), self.OVERRIDES.replace('"Ana"', '"Bea"'))
+
+    def test_an_outdated_form_cannot_replace_an_override_another_studio_changed(self):
+        shared.path().write_text(self.OVERRIDES)
+        seen = shared.read()[0]
+        shared.update({'brand': {'release': 'v2.0.0'}})
+        with self.assertRaisesRegex(WorkspaceError, 'Another studio changed'):
+            self.write('/api/shared', {'changes': {'brand': {'release': None}}, 'seen': seen})
+        # Changing only an everyday value from the same outdated form is still accepted.
+        self.write('/api/shared', {'changes': {'person': {'name': 'Bea'}}, 'seen': seen})
+        values = shared.read()[0]
+        self.assertEqual((values['brand']['release'], values['person']['name']), ('v2.0.0', 'Bea'))
+        self.assertEqual(values['models']['profiles']['quick']['model'], 'synthetic-small')
+        self.assertEqual(values['kept'], {'by': 'another tool'})

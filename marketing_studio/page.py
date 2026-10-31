@@ -41,23 +41,45 @@ class Home(server.Page):
         return {'team': {key: (values.get('team') or {}).get(key) for key in ('repository', 'branch')},
                 'local': (values.get('local') or {}).get('root'), 'share': values.get('share')}
 
+    @staticmethod
+    def readiness(row, problem, done, agent):
+        """What a launch card can honestly say before the studio opens, and how to recover.
+
+        Only local launch prerequisites are looked at: shared setup, the chosen assistant's
+        command and Git on PATH. Nothing is run, signed in to, installed or started; account
+        sign-in and task tools are each studio's to check when a task needs them."""
+        if not row['installed']:
+            return {'state': 'off', 'label': 'Not installed',
+                    'detail': 'Install it yourself to open it here. Marketing Studio never installs or updates studios.',
+                    'action': None}
+        if problem:
+            return {'state': 'none', 'label': 'Not checked',
+                    'detail': 'The shared settings file could not be read, so what this studio needs was not checked.',
+                    'action': {'view': 'settings', 'label': 'Review shared settings'}}
+        if not done:
+            return {'state': 'review', 'label': 'Needs setup',
+                    'detail': 'Finish shared setup once for all studios.',
+                    'action': {'view': 'settings', 'label': 'Finish shared setup'}}
+        missing = [name for name, found in ((runtime.ASSISTANTS.get(agent, 'The assistant'),
+                                             runtime.assistant_command(agent)),
+                                            ('Git', shutil.which('git'))) if not found]
+        if missing:
+            return {'state': 'review', 'label': 'Needs setup',
+                    'detail': f"{' and '.join(missing)} {'was' if len(missing) == 1 else 'were'} not found on this computer.",
+                    'action': {'view': 'computer', 'label': 'Check this computer'}}
+        return {'state': 'done', 'label': 'Can open',
+                'detail': f'Setup, {runtime.ASSISTANTS.get(agent, "the assistant")} and Git found. '
+                          'Sign-in is checked when a task needs it.',
+                'action': None}
+
     def snapshot(self):
         preferences = state.read()
         values, problem = shared.read()
         studios = catalog.describe(preferences.get('paths', {}), self.launcher.running)
         done = not problem and self.configured(values)
         agent=(values.get('assistant') or {}).get('agent') or runtime.assistant_default(state.data_root())
-        assistant_available=bool(runtime.assistant_command(agent))
-        git_available=bool(shutil.which('git'))
         for row in studios:
-            if not row['installed']:
-                row['readiness']={'state':'off','label':'Not installed','detail':'Install this studio explicitly to open it.'}
-            elif not done:
-                row['readiness']={'state':'review','label':'Needs shared setup','detail':'Finish Marketing Studio setup once for all studios.'}
-            elif not assistant_available or not git_available:
-                row['readiness']={'state':'review','label':'Needs assistant' if not assistant_available else 'Needs Git','detail':'Check this computer for the missing local prerequisite.'}
-            else:
-                row['readiness']={'state':'done','label':'Ready to open','detail':'Shared setup and local launch prerequisites are available. Accounts and task-specific tools are checked when used.'}
+            row['readiness'] = self.readiness(row, problem, done, agent)
             # Read from each studio's own records: never started, never guessed from a folder's name.
             row['workspace'] = workspaces.connection(row['id'], values) if done and row['installed'] else None
         return {'studios': studios,

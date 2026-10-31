@@ -38,7 +38,7 @@ explicit action in a studio's settings. **Where is your brand skill?** offers
 **Git repository** and **Installed skill folder** as separate, optional inputs.
 A repository address does not require an installed folder. Leave the folder
 blank for automatic discovery, or use it to select an existing installation.
-The optional release tag is under **Brand skill release options**.
+The optional release tag is under **Advanced → Brand skill release**.
 
 Optional studio controls retain built-in defaults: writing tone, time/spending
 limits, parallel work, notifications and update checks. Research scope, author
@@ -50,9 +50,29 @@ Run `scripts/ci/shared_setup_acceptance.py` for fresh independent-launch journey
 with disposable homes, synthetic Git identities and background provider/update
 actions disabled. It is included in the full suite's acceptance gate.
 
+## What a studio card says before it opens
+
+Each launch card says, in words on the card, what Marketing Studio can honestly tell
+before the studio opens, with the one action that fixes what is missing:
+
+| Card | Meaning | Recovery |
+| --- | --- | --- |
+| **Can open** | Shared setup is finished, and the chosen assistant and Git are on this computer | None needed; sign-in is checked when a task needs it |
+| **Needs setup** | Shared setup is unfinished, or the assistant or Git was not found | **Finish shared setup**, or **Check this computer** |
+| **Not checked** | The shared settings file could not be read, or Marketing Studio did not answer | **Review shared settings**, or open the new private link |
+| **Not installed** | The studio is not installed | **Install**, which you do yourself |
+
+The **Ready when you are** card below the studios separates the three kinds of check:
+what Can open covers; **This computer** (Git identity, Node.js and optional tools), which
+is **Not checked** until you ask, then **Checked** or **Needs setup** with the items to
+fix; and **Accounts**, assistant sign-in and Google access, which each studio checks when a
+task needs them. Looking at Studios, its refresh and **Check this computer** run no
+assistant, sign in to nothing, install no studio, prepare no workspace and start no paid
+work: they look for commands on this computer and read Git's own settings.
+
 ## Models by task
 
-In **Shared settings → You and your assistant → Models for your work**, choose
+In **Shared settings → Advanced → Models and reasoning**, choose
 **One model** or **By task**. Each profile can inherit the shared model above,
 use the assistant's default without model or reasoning flags, or select a model
 and reasoning level from dropdowns. **Enter a model ID…** supports custom or
@@ -96,7 +116,7 @@ settings, and reject conflicting stale edits.
 
 Research in every studio may look in your documents, your sites and/or the public
 web. Your sites are a list of base URLs kept under `research.sites` in the studios
-config, edited on Shared settings' **Research sites** card (not in first-run setup):
+config, edited on Shared settings' **Advanced → Research sites** part (not in first-run setup):
 
 ```json
 "research": {"sites": ["https://blogs.vmware.com/tanzu", "https://docs.example.com"]}
@@ -143,9 +163,42 @@ all selected levels into one stop, **Review the first drafts**, with each deck's
 wireframe draft and the brand's looks to pick from, stops at each drawn deck, then
 one review of the completed documents, decks and scenarios.
 
+### Everyday choices, Advanced, and who owns a value
+
+First-run setup asks only the four everyday choices, in three steps: you and your
+assistant, your workspace, and brand and delivery. Shared settings shows the same four
+cards first, with section links (**Everyday**: Assistant, Workspace, Brand, Delivery;
+**Advanced**: Models, Brand release, Research sites, Installations). A new person can
+make the four choices, save, and return to Studios without opening an install control.
+
+The Advanced parts are closed disclosures that say what they hold while closed:
+**Models and reasoning** (shared model, reasoning and routing by task), **Brand skill
+release**, **Research sites** and **Studio installations**. A value set in place of the
+automatic one is tagged **Override** (models by task or a chosen model, a pinned release,
+an installation folder you set), so an override is never hidden by the disclosure. Model
+lists are read only when Models and reasoning is opened, so opening the page asks no
+assistant anything.
+
+Each part is tagged with who owns it. **Shared** values are saved once for every studio
+on this computer and new work starts with them. **Project** choices are made for one
+blog, presentation or training in its studio and kept with that work. Presentation
+Studio's and Training Studio's Settings say the same on their Shared settings card,
+with **Change shared settings** leading to this page.
+
+After setup, the save state and **Save settings** stay in view at the foot of the
+window: **All changes saved**, **Unsaved changes** while the form differs from what it
+was shown, **Saving…**, then **Saved at** a time. Leaving for another view keeps typed
+changes on the page and says they are not saved yet; reloading or closing the tab asks
+first. A refused save, such as a form outdated by another studio's change, keeps the
+typed changes and stays **Unsaved changes**. A save sends only the leaves that changed,
+so overrides and values this page does not show are kept as they are. A group nobody
+changed sends nothing, so a default the form fills in for a value the config lacks (a
+branch, when to share, the delivery format, model routing) is never written unasked.
+While the save bar shows, toasts sit above it.
+
 ### One save, and Blog Studio's own setup
 
-Shared settings is one form: **Studio installations** is its last card, and **Save
+Shared settings is one form: **Studio installations** is its last part, and **Save
 settings** writes the shared choices and then any installation folder that changed. When
 the folders are refused after the shared choices were saved, the page says so: "Your shared
 settings were saved. The installation folders were not: …". Each setup step is named once,

@@ -15,7 +15,7 @@ const path=require('node:path'),fs=require('node:fs'),assert=require('node:asser
    const response=await route.fetch(),data=await response.json();
    data.shared.local.root='~/Studios';
    for(const studio of data.studios){
-    studio.readiness={state:'done',label:'Ready to open',detail:'Synthetic local prerequisite check.'};studio.running=true;
+    studio.readiness={state:'done',label:'Can open',detail:'Synthetic local prerequisite check.',action:null};studio.running=true;
     studio.workspace=studio.id==='infographic'?{state:'local',summary:'Local workspace',detail:'Share selected files through Team library.'}:{state:'connected',summary:'Connected to https://example.invalid/team/a-long-reference-repository-for-layout-checking (main)',detail:null};
     if(variant==='attention'&&studio.id==='blog'){studio.installed=false;studio.version=null;studio.running=false;studio.workspace=null;studio.readiness={state:'off',label:'Not installed',detail:'Install explicitly.'};}
     if(variant==='attention'&&studio.id==='presentation')studio.workspace={state:'disconnected',summary:'Shared settings changed',detail:'Connect to the configured repository. Your local work is kept.',connect:true};
@@ -26,6 +26,9 @@ const path=require('node:path'),fs=require('node:fs'),assert=require('node:asser
   async function capture(name){if(process.env.HOME_LAUNCHPAD_RESULTS){fs.mkdirSync(process.env.HOME_LAUNCHPAD_RESULTS,{recursive:true});await page.evaluate(()=>{document.activeElement?.blur();scrollTo(0,0);});await page.screenshot({path:path.join(process.env.HOME_LAUNCHPAD_RESULTS,name+'.png')});}}
   await page.goto(url);await page.getByRole('button',{name:'Return to Infographic Studio',exact:true}).waitFor();
   assert.equal(await page.locator('.studio-preview[aria-hidden="true"] svg').count(),4);
+  // Readiness is explained in words on each card, not only in a tooltip (issue 215).
+  assert.deepEqual(await page.locator('.studio-readiness-detail').allTextContents(),Array(4).fill('Synthetic local prerequisite check.'));
+  assert.equal(await page.locator('.studio-readiness[title]').count(),0);
   let cards=await page.locator('.studio-card').evaluateAll(nodes=>nodes.map(n=>{const r=n.getBoundingClientRect();return {x:r.x,y:r.y,height:r.height};}));
   assert.equal(cards[0].y,cards[1].y);assert.ok(cards[2].y>cards[0].y);
   assert.ok(cards.every(c=>c.height<270),'Desktop cards should be compact without a forced empty row');

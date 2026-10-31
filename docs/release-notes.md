@@ -18,6 +18,27 @@ Download `marketing-studio-installer.zip` for the whole suite, or one studio's i
 
 Signing in to an assistant, your organisation's brands and fonts, and optional Google setup are still your choices. Installing starts no provider job.
 
+## Unreleased: shorter shared setup, clear ownership and readiness
+
+- **Four everyday choices first.** Shared settings leads with you and your assistant,
+  your workspace, brand, and delivery, with section links. Models and reasoning, the brand
+  skill release, research sites and studio installations are named **Advanced** parts that
+  say what they hold, and tag an **Override**, while closed. First-run setup asks only the
+  everyday choices.
+- **A visible save state.** All changes saved, Unsaved changes, Saving… and Saved at a time
+  stay in view with Save settings. Typed changes survive moving between views, a reload
+  asks first, and a refused save keeps them. Overrides, values the page does not show and
+  the outdated-form checks are unchanged.
+- **Who owns a value.** Shared, Override and Project tags say where each value is set.
+  Presentation Studio's and Training Studio's Settings say which values are shared, which
+  each deck or training keeps, and which are the studio's own, with Change shared settings.
+- **Readiness in words.** Each studio card says **Can open**, **Needs setup**, **Not
+  checked** or **Not installed** on the card, not only in a tooltip, with one recovery
+  action. The home separates launch prerequisites, the on-request computer check and
+  account checks that each studio makes when a task needs them. Browsing and checking
+  start no assistant, sign-in, installation, workspace preparation or paid work, and model
+  lists load only when Models and reasoning is opened.
+
 ## Unreleased: research citation handoffs
 
 Research workers are explicitly told which saved source IDs to cite. If a worker

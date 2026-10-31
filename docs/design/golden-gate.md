@@ -63,7 +63,7 @@ These rules put each screen in the order a person works. Every studio follows th
 | Sheets | The only transient material. A sheet that makes something runs in numbered steps (`1. Name`, `2. Add`, `3. Choose`), each separated by a hairline, and ends with its submit and Cancel together. Sources that open their own sheet return to the step they came from with what they added. |
 | Spacing | Cards and sections `1.1rem` apart; a step or field group `0.6rem` inside; one heading level per card (`.card-title`), `.sheet-part` for a section inside a sheet. |
 | Phone | Toolbar actions wrap under the title; long labels wrap inside their button; every control is at least 44px tall; fixed bars sit above the tab bar and the page leaves room for them. |
-| Glass | Sidebar, toolbar, sheets, selection bars and toasts only. Forms, lists, documents and reviews stay opaque. |
+| Glass | Sidebar, toolbar, sheets, selection bars, Shared settings' save bar and toasts only. Forms, lists, documents and reviews stay opaque. |
 
 ## Shared components and page stylesheets
 

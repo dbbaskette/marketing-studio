@@ -1904,6 +1904,15 @@ function sharedCard() {
       ['Brand', brand.brand ? brand.brand + (brand.variant ? ', ' + brand.variant : '') : ''],
       ['Delivered as', output ? output[1] : '']]));
   }
+  // Who owns each kind of value, said in words: Shared settings own what every studio
+  // shares, a deck keeps what it was started with, and the cards below are this studio's.
+  add(node, about([['Shared', 'Assistant, workspace, default brand and delivery: changed in '
+      + 'Marketing Studio’s Shared settings.'],
+    ['This deck only', 'Each deck keeps the brand, research sites and models it was started '
+      + 'with.'],
+    ['This studio', 'The cards below apply to Presentation Studio on this computer, except '
+      + 'Brand skill: its repository and release are shared, as Shared settings, Advanced, '
+      + 'Brand skill release shows them.']]));
   return add(node, add(make('div', 'bar'), capsule('Change shared settings', 'quiet',
     () => { location.href = settingsAddress(); }, 'shared-settings')));
 }
