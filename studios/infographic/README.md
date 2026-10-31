@@ -194,6 +194,20 @@ session URLs remain in memory. A saved delivery intent precedes writes; after in
 **Reconcile Google delivery** performs reads only and never blindly creates another Doc.
 PDF remains available when Google access fails. An old delivery remains historical after edits.
 
+**Sources and facts → Add from library** (also on **New infographic**) chooses
+documents from the Document Library that every studio shares on this computer:
+uploads, finished blogs, delivered decks and approved infographics. Each chosen
+revision is checked, then captured as a source of this infographic only, so it keeps
+working if the library changes. Like any new source, it clears the facts, story and
+page built from earlier sources. The source says which library revision it came from,
+and when a newer one is available, **Use revision N** takes it. Adding starts no
+research, grants no web access and sends nothing to an assistant; it is refused while
+the infographic is working. After **Approve revision N and prepare files**, the
+approved page's accessible text and PDF are kept in the library as an Infographic,
+from the saved files. If that fails, the approval and files stand and **Keep in
+library again** retries it locally. See
+[the Document Library](../../docs/shared-setup.md#the-document-library).
+
 **Sources and facts → Use reviewed research** displays the exact infographic-purpose task
 and explicit source mode. Give it to Harness Research separately, then select its complete
 independently reviewed case. The installed helper verifies a bounded copied case; exact

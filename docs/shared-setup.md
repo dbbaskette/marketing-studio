@@ -143,8 +143,8 @@ One local library holds documents for every studio. The code is in
 **Where it is.** `library.root` in the studios config names its folder. Until the
 first explicit use, the folder is `library/` under `local.root` (normally
 `~/Studios/library`), and nothing is written. Explicit uses are an upload on
-Marketing Studio's **Library** screen, a finished or published blog, or a delivered
-deck. On the first one, the resolved folder is saved through the config's adjacent
+Marketing Studio's **Library** screen, a finished or published blog, a delivered
+deck, or an infographic's approved files. On the first one, the resolved folder is saved through the config's adjacent
 lock, with unrelated values and formatting kept. If another studio saved a
 location first, that one is used. A later change to `local.root` never moves the
 library. Browsing, or opening any studio, makes nothing and sets up no workspace.
@@ -182,6 +182,7 @@ read with OCR, a model or the network.
 | Finished or published blog | Its Markdown, under `blog:<blog id>` |
 | Delivered deck | Slide-ordered outline Markdown, under a key made once per deck (`presentation:<folder>-<random>`, kept in its local `sources/library.json`). Also `content.pdf`, the PDF Harness Slides rendered of the delivered deck in its last whole-deck preview, kept only when it still matches. **PDF saved** then. Otherwise the PDF is recorded as **needs export**, with why. |
 | A file added on the Presentation Studio desk with **Keep in library** | Kept as an upload from Presentation Studio, beside the deck's own copy in `sources/supplied/`. **Only this project** keeps the deck's copy only. |
+| Approved infographic | The approved export's accessible text (`page.txt`) as Markdown and its `page.pdf` as `content.pdf`, under `infographic:<workspace owner>-<infographic id>`. Only the approved, visually checked current revision is kept. |
 
 **Choosing context.** **Add from library** pins chosen revisions into one project,
 after checking every one of them first:
@@ -193,6 +194,13 @@ after checking every one of them first:
 - **Blog Studio** makes each revision a file uploaded for that blog (material) with
   the chosen role. An example stays an example. These files never enter the team
   library or the Team Hub.
+- **Infographic Studio** captures each revision as a `handoff` source through the
+  same capture boundary as selected studio material, with `provenance.library`
+  naming the ID, revision and hashes. The Markdown is the source text and an
+  upload's original is kept beside it. All chosen documents land in one new
+  revision of the infographic. As with any source change, the facts, story and page
+  built from the earlier sources are cleared, and nothing is approved. Team sharing
+  sends a source only when it is chosen in Share.
 
 A project keeps its copy if the library changes or is gone. A newer revision is
 shown as available and is taken only on request. Removing a source removes the
@@ -213,7 +221,10 @@ grants no web access and sends nothing to an assistant.
 | A library save fails after delivery | Recorded in the deck's local `sources/library.json`. **Keep in library again** retries from `deliver.json` and this computer's files, with no upload, no render and no job. |
 | A delivered deck's PDF is missing, changed or of another deck | Its Markdown is kept and the PDF stays **needs export**, with why. **PDF saved** is never shown |
 | **Keep in library** fails for a file added on the Presentation Studio desk | The deck keeps the source, and the card says the library did not keep it |
+| A library save fails after an infographic's approved files are prepared | The approval and files stand. Recorded in the infographic's `jobs/library.json`; **Keep in library again** retries from the saved export, with no render and no provider |
+| An infographic changes after approval | Its earlier approved files are not kept again; approve the current revision first |
 | A job is running on the deck (the chain draws, or a desk job runs) | Add from library and Use revision N are refused until it ends; the job keeps the sources it started with |
+| Work is running on an infographic (a page action, an image request pending or uncertain, or research) | Add from library and Use revision N are refused until it ends |
 | Use selected is still landing | The sheet's Cancel, Close and Escape wait |
 | A newer revision, in Blog Studio | The desk source says Update available; **Use revision N** gives the blog's file a new source revision and the blog pins it. Refused while a desk job runs |
 

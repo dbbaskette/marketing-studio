@@ -110,10 +110,16 @@ def main():
         os.environ.update(PATH=path, HOME=str(home), INFOGRAPHIC_STUDIO_DATA=str(root / 'data'),
                           CODEX_HOME=str(root / 'codex'),
                           MARKETING_STUDIO_DATA=str(root / 'marketing-data'),
-                          STUDIOS_CONFIG=str(root / 'settings.json'), GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM='1')
+                          STUDIOS_CONFIG=str(root / 'settings.json'), STUDIOS_LIBRARY=str(root / 'library'),
+                          GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM='1')
         (root / 'settings.json').write_text(json.dumps({'schema': 1, 'assistant': {'agent': 'codex', 'model': None},
             'output':'google' if args.remote else 'pptx', 'person': {'name': 'Synthetic Author'}, 'local': {'root': str(root / 'work')}}))
         store = Store.setup()
+        # One synthetic document in the disposable Document Library, for Add from library.
+        from studio_core import document_library
+        document_library.opened(create=True).add_upload(
+            'synthetic-capacity.txt', b'Synthetic capacity notes: four instances; one restarts at a time.',
+            title='Synthetic capacity notes')
         source_text = case('paraphrase' if args.scenario == 'recovery' else args.scenario)['source'] if args.scenario else 'One instance restarts while the others serve.'
         settings.save({'renderer': str(args.renderer)}, expected=settings.snapshot()['native_revision'])
         if args.remote:
