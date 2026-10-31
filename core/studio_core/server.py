@@ -468,13 +468,14 @@ class Desk:
         self.server.server_close()
 
 
-# The deck panels and the list kit every studio page shows, served from the shared core
+# The deck panels, the list kit and the Document Library sheet every studio page shows, served from the shared core
 # beside each page.
 DECK_WEB = Path(__file__).resolve().parent / 'deck_web'
 DECK_PAGES = {'/deck-panels.js': (str(DECK_WEB / 'deck-panels.js'),
                                   'text/javascript; charset=utf-8'),
               '/deck-panels.css': (str(DECK_WEB / 'deck-panels.css'), 'text/css; charset=utf-8'),
-              '/lists.js': (str(DECK_WEB / 'lists.js'), 'text/javascript; charset=utf-8')}
+              '/lists.js': (str(DECK_WEB / 'lists.js'), 'text/javascript; charset=utf-8'),
+              '/library.js': (str(DECK_WEB / 'library.js'), 'text/javascript; charset=utf-8')}
 
 
 def for_product(name, product, token_header, page_dir, pages, computer, error,

@@ -295,5 +295,45 @@ class RouteTests(LibraryCase):
                 context.pin(fake, self.base, bad)
 
 
+class HomeLibraryTests(LibraryCase):
+    """Marketing Studio's Library screen: upload, browse, preview and download."""
+
+    def setUp(self):
+        super().setUp()
+        from marketing_studio.launcher import Launcher
+        from marketing_studio.page import Home
+        data = mock.patch.dict(os.environ, {'MARKETING_STUDIO_DATA': str(self.base / 'data')})
+        data.start()
+        self.addCleanup(data.stop)
+        self.launcher = Launcher()
+        self.addCleanup(self.launcher.close)
+        self.page = Home(8000, self.launcher)
+
+    def write(self, path, sent):
+        return json.loads(self.page.write(path, sent)[2])
+
+    def test_upload_browse_preview_download_and_selects_nothing(self):
+        import base64
+        from marketing_studio.errors import WorkspaceError
+        self.assertFalse(self.write('/api/library', {})['available'])
+        self.assertFalse(self.config.exists())
+        sent = {'operation': OPERATION, 'name': 'brief.md',
+                'content': base64.b64encode(b'# Brief\n\nShip it.').decode()}
+        kept = self.write('/api/library-upload', sent)
+        self.assertEqual(kept['location'], '~/Studios/library')
+        self.assertEqual(self.write('/api/library-upload', sent)['document']['id'], kept['document']['id'])
+        listed = self.write('/api/library', {'filters': {'kind': 'upload'}})
+        self.assertEqual(listed['total'], 1)
+        found = self.write('/api/library-download', {'id': kept['document']['id'], 'revision': 1,
+                                                     'format': 'original'})
+        self.assertEqual(base64.b64decode(found['content']), b'# Brief\n\nShip it.')
+        with self.assertRaises(WorkspaceError):
+            self.write('/api/library-upload', {**sent, 'content': 'not base64!'})
+        with self.assertRaises(WorkspaceError):
+            self.write('/api/library', {'filters': {'kind': 'nothing'}})
+        self.assertEqual(self.page.body_limit('/api/library-upload', {}), 12_000_000)
+        self.assertEqual(self.page.body_limit('/api/library', {}), 64_000)
+
+
 if __name__ == '__main__':
     unittest.main()

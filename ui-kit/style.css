@@ -3638,3 +3638,26 @@ body[data-pilot="liquid"] .ig-outline-value { fill: var(--studio-color); font: 2
 .desk-tool-group{grid-column:1/-1;margin:.6rem 0 0;font-size:.9rem;color:var(--quiet)}
 
 .desk-reading-part .desk-part-head{flex-wrap:wrap;gap:.5rem}
+
+/* Shared Document Library catalog and Add from library sheet (deck_web/library.js). Rows,
+   previews and forms stay opaque; only the sheet and its selection bar are material. */
+.library-sheet{width:min(58rem,calc(100% - 1.5rem))}
+.library-list{list-style:none;margin:0;padding:0;background:var(--paper);border:1px solid var(--hair);border-radius:16px}
+.library-list>li{padding:.75rem 1rem;overflow-wrap:anywhere}
+.library-list>li+li{border-top:1px solid var(--hair)}
+.library-row{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.5rem 1rem}
+.library-row.is-selected{background:var(--selection);box-shadow:inset 3px 0 0 var(--accent)}
+.library-row.is-selected .row-title{font-weight:700}
+.library-tick{flex:1 1 18rem;min-width:0;min-height:2.75rem}
+.library-row-text{display:flex;flex-direction:column;gap:.2rem;min-width:0;flex:1 1 16rem}
+.library-row-text>.quiet,.library-row-text>.problem{font-size:.9rem}
+.library-row-actions{flex-wrap:wrap;margin:0}
+.library-row-actions select.input{width:auto;min-height:2.75rem}
+.library-preview{padding:1rem 1.2rem;max-height:22rem;overflow:auto}
+.library-preview>*+*{margin-top:.6rem}
+.library-preview h3:focus{outline:none}
+.library-preview-text{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;margin:0}
+.library-pages{align-items:center;flex-wrap:wrap}
+.library-selection>*+*{margin-top:.8rem}
+.library-selection .selection-bar{position:sticky;bottom:0;top:auto;margin:0}
+@media (max-width:37.5rem){.library-row{flex-direction:column;align-items:stretch}.library-row-actions{justify-content:flex-start}}

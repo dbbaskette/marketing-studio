@@ -90,8 +90,9 @@ function show(next) {
   // Leaving the form keeps what was typed on it; say so, since nothing was saved.
   if (previousView === 'settings' && view !== 'settings' && unsaved()) inform('Your shared settings changes are not saved yet. They stay on the Shared settings page until you save or reload.');
   if (view === 'computer' && snapshot?.computer) renderComputer(snapshot.computer);
-  for (const name of ['loading', 'home', 'settings', 'computer']) $(`#${name}`).hidden = name !== view;
-  $('#view-title').textContent = setup ? `Welcome to ${product}` : ({home: 'Studios', settings: 'Shared settings', computer: 'This computer'})[view];
+  if (view === 'library') void openLibrary();
+  for (const name of ['loading', 'home', 'settings', 'computer', 'library']) $(`#${name}`).hidden = name !== view;
+  $('#view-title').textContent = setup ? `Welcome to ${product}` : ({home: 'Studios', settings: 'Shared settings', computer: 'This computer', library: 'Library'})[view];
   document.querySelectorAll('[data-view]').forEach(button => {
     if (button.classList.contains('nav-item')) {
       if (button.dataset.view === view && !setup) button.setAttribute('aria-current', 'page');
@@ -775,6 +776,75 @@ function openNative() {
   // Setup can be served at the native root. A fragment change alone keeps its DOM.
   if (samePage) location.reload();
 }
+// The Document Library screen: browse, preview, download and add uploads. It selects
+// nothing for a project; each studio's Add from library does that for its own work.
+let libraryCatalog = null;
+function libraryKit() {
+  if (window.StudioLibrary) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = '/library.js';
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error('The library page could not be loaded. Reload this page.'));
+    document.head.append(script);
+  });
+}
+async function openLibrary() {
+  if (standalone) return;
+  try {
+    await libraryKit();
+    if (!libraryCatalog) {
+      libraryCatalog = new window.StudioLibrary.Catalog({
+        studio: 'marketing',
+        post: (route, body) => api(route, body),
+        download: async (row, format) => {
+          try {
+            const found = await api('library-download', {id: row.id, revision: row.revision, format});
+            const bytes = Uint8Array.from(atob(found.content), c => c.charCodeAt(0));
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(new Blob([bytes], {type: found.media}));
+            link.download = found.name; document.body.append(link); link.click(); link.remove();
+            setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+          } catch (error) { inform(error.message, true); }
+        },
+      });
+      $('#library-catalog').replaceChildren(libraryCatalog.node);
+    } else void libraryCatalog.load();
+    const where = (libraryCatalog.answer || {}).location;
+    if (where) $('#library-where').textContent = `Kept in ${where} on this computer.`;
+  } catch (error) { inform(error.message, true); }
+}
+// One operation ID per file until it is kept, so trying again never keeps it twice.
+const libraryOperations = new Map();
+function operationId(file) {
+  const key = [file.name, file.size, file.lastModified].join('|');
+  if (!libraryOperations.has(key)) {
+    const bytes = new Uint8Array(16); crypto.getRandomValues(bytes);
+    libraryOperations.set(key, [...bytes].map(b => b.toString(16).padStart(2, '0')).join(''));
+  }
+  return libraryOperations.get(key);
+}
+$('#library-add').addEventListener('click', async () => {
+  const files = [...$('#library-files').files];
+  if (!files.length) { $('#library-where').textContent = 'Choose one or more files first.'; return; }
+  const button = $('#library-add'); button.disabled = true;
+  let added = 0;
+  try {
+    for (const file of files) {
+      if (file.size > 8_000_000) { inform(`${file.name} is larger than 8 MB, so it was not added.`, true); continue; }
+      const bytes = new Uint8Array(await file.arrayBuffer()); let binary = '';
+      for (let i = 0; i < bytes.length; i += 8192) binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
+      const found = await api('library-upload', {operation: operationId(file), name: file.name, content: btoa(binary)});
+      libraryOperations.delete([file.name, file.size, file.lastModified].join('|'));
+      added++;
+      $('#library-where').textContent = `Kept in ${found.location} on this computer.`;
+      if (!found.document.readable) inform(`${found.document.title}: ${found.document.problem}`);
+    }
+    if (added) inform(added === 1 ? 'Added 1 document to the library.' : `Added ${added} documents to the library.`);
+    $('#library-files').value = '';
+  } catch (error) { inform(error.message, true); }
+  finally { button.disabled = false; if (libraryCatalog) void libraryCatalog.load(); }
+});
 modelPicker(form.elements['assistant.model'], 'Shared model');
 $('#refresh-models').addEventListener('click', () => loadModels(true));
 (async () => {
