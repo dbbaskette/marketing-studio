@@ -2,7 +2,7 @@
 
 Presentation Studio makes slide decks in your brand. You give it an idea, a document or a deck you already have, and it builds the deck with you.
 
-A deck you start on the page starts on the desk, in three steps: the kind of deck, its sources and settings, and what you have. It drafts the slide text first: titles, visible copy, order and speaker notes. Review it and ask for changes, or choose **Approve text & design deck**. Only then are look samples drawn and slides designed and rendered. Pick the look too when you chose to pick it. It then opens on the desk: a card for each slide, under its section. A note on a card redraws only that slide's section, and the other slides stay exactly as they are; a note for the whole deck redraws every section, with **Stop**. Every redraw says first what it last took on this computer, or that there is no record yet ("expect minutes, not seconds"). You change a slide's words and its speaker notes on its card, and **Deliver** is always yours. [The desk](#the-desk) says more.
+A deck you start on the page starts on the desk, in three steps: what it starts from, its audience and goal, and research and settings; the sheet then lists what happens after Start. It drafts the slide text first: titles, visible copy, order and speaker notes. Review it and ask for changes, or choose **Approve text & design deck**. Only then are look samples drawn and slides designed and rendered. Pick the look too when you chose to pick it. It then opens on the desk: a card for each slide, under its section. A note on a card redraws only that slide's section, and the other slides stay exactly as they are; a note for the whole deck redraws every section, with **Stop**. Every redraw says first what it last took on this computer, or that there is no record yet ("expect minutes, not seconds"). You change a slide's words and its speaker notes on its card, and **Deliver** is always yours. [The desk](#the-desk) says more.
 
 A saved deck started before the desk can be a gated deck: it keeps the flow in [What you do at each step](#what-you-do-at-each-step), with its saved review level. Balanced brings research, the outline and the brand's looks together for one review, where you pick the look, then shows the finished deck; a deck redesigned with its content kept, which has no outline stop, stops for its look instead. Automatic draft stops at the finished deck and uses the brand's default look; Step by step reviews every stage. Existing runs keep their saved flow, and once delivered they can be opened on the desk. Review levels govern only these saved decks, and Training Studio: a desk deck has none.
 
@@ -32,13 +32,17 @@ At Brand only and Polish a slide with no words of its own, such as a picture alo
 
 This is how a deck you start on the page is made, from an idea, a document or a deck you have.
 
-**The start.** **New deck** opens one sheet in three numbered steps, with **Start** at its end.
+**The start.** **New deck** opens one sheet in three numbered steps, then what happens after Start, with **Start** at its end.
 
-1. **Kind of deck**: an idea, a document or an existing deck. An existing deck shows its five levels on the same step, and Selected changes asks which slides, and what to fix.
-2. **Sources and settings**: research, on or off, with where it may look and up to eight questions (an existing deck has no research); the minutes, the audience, a talk or a handout, the brand and variant, and the output. **Look** is "Pick it when the samples are drawn" (the default) or "Use the brand's default look", for every kind of deck whose looks are drawn. The assistant and its model are under **Options**. There is no review level here.
-3. **What you have**: the title and the goal, and the brief, the document or the deck. A document can be marked "It lays out the slides" or "It is material to build from"; left unmarked, it is read first to tell which.
+1. **What you start from**: an idea, a document or an existing deck, and the material itself: the brief, the document or the deck. A document can be marked "It lays out the slides" or "It is material to build from"; left unmarked, it is read first to tell which. An existing deck then shows its five levels, and Selected changes asks which slides, and what to fix.
+2. **Audience and goal**: the title, who it is for, what they should take away, the minutes, and a talk or a handout.
+3. **Research and settings**: research, on or off, with where it may look and up to eight questions (an existing deck has no research). **Look** is "Pick it when the samples are drawn" (the default) or "Use the brand's default look", for every kind of deck whose looks are drawn. The brand, variant and output start as your defaults, said in one line; **Brand, output and assistant** opens them, with the assistant and its model, to change for this deck. There is no review level here.
 
-**While it is made.** Nothing is needed from you: the page says so, with about how many minutes are left from what each step took on this computer, or that this computer has no record yet. The slides take shape as they are drawn, and each preview has a note box, "How should this slide change?". The one pause is the look, when you chose to pick it: the samples lead the screen, and your pick carries the deck on. A question from the assistant, a step that failed and the spend limit come first, above everything else.
+Changing the kind of deck keeps what you typed and chose, research included; each kind keeps its own file.
+
+**What happens after Start** lists, from your choices, what comes next and where it waits for you: research, if you asked for it; **Approve the slide text**, for an idea, a document or a full rework, where you read the drafted titles, words, order and speaker notes and choose **Approve text & design deck** before anything is designed; the look to pick, or the brand's default; then reviewing the deck on the desk, and Deliver. A deck saved before keeps the decisions it was saved with.
+
+**While it is made.** Nothing is needed from you between those stops: the page says so, with about how many minutes are left from what each step took on this computer, or that this computer has no record yet. The slides take shape as they are drawn, and each preview has a note box, "How should this slide change?". Besides the slide text, the one pause is the look, when you chose to pick it: the samples lead the screen, and your pick carries the deck on. A question from the assistant, a step that failed and the spend limit come first, above everything else.
 
 **A card for each slide.** On the desk the slides sit on cards under their sections, each with its picture, its words, its speaker notes and what the brand check and the review found on it. The toolbar has **Deliver**, **Download**, **Finishing** and **More**.
 
@@ -141,9 +145,9 @@ A terminal window opens and the page opens in your browser. It works on this com
 
 **2. Set it up, once.** Say where decks are kept: a folder on this computer to try things out, or your team's shared repository. Then choose your assistant, your name, the brand and where decks are delivered. If you also use Training Studio or Blog Studio, the answers they share, such as the team repository and the assistant, are kept in one place for all of them, so a change in one studio is a change in all three (see [shared settings](#shared-settings)).
 
-**3. Press "New deck"** and go through its three steps: the kind of deck, its sources and settings, and what you have. **Start** begins it at once.
+**3. Press "New deck"** and go through its three steps: what it starts from, its audience and goal, and research and settings. The sheet lists what happens after Start; **Start** begins it at once.
 
-**4. Let it run.** Nothing is needed from you, except the look when you chose to pick it. You can close the page while it works and come back later.
+**4. Let it run.** Nothing is needed from you except the stops the sheet listed: approving the slide text, where it is drafted, and the look when you chose to pick it. You can close the page while it works and come back later.
 
 **5. Change it on the desk, and deliver.** Note a slide, change its words or its speaker notes, look it over with Finishing, then press **Deliver**. The page shows the Google Slides link or the PowerPoint file. A change after that is delivered as the next numbered revision.
 
