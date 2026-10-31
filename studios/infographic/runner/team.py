@@ -10,7 +10,7 @@ import secrets
 import subprocess
 from studio_core import studios_config
 from . import exports
-from .contracts import canonical, digest
+from .contracts import Invalid, canonical, digest
 from .validation import identifier, relative_path, require, validate_project
 from .workspace import _atomic, _json, _read, data_root, file_lock
 
@@ -55,6 +55,28 @@ def configuration():
         "Choose a simple team branch.",
     )
     return repository, branch, settings
+
+
+def connection():
+    """The shared repository choice without raising: unset is a setup state, not an error.
+
+    Never runs Git or reads credentials. A configured repository has already passed the
+    shared validator, so it carries no credentials and can be shown.
+    """
+    settings, problem = studios_config.read()
+    if problem:
+        return {"configured": False, "repository": None, "branch": None,
+                "problem": "Restore valid shared settings before connecting a team repository."}
+    team = settings.get("team") or {}
+    if not team.get("repository"):
+        return {"configured": False, "repository": None, "branch": None, "problem": None}
+    try:
+        repository, branch, _ = configuration()
+    except ValueError as failure:
+        return {"configured": False, "repository": None, "branch": None,
+                "problem": "The shared repository setting cannot be used: " + str(failure)
+                + " Change it in shared settings."}
+    return {"configured": True, "repository": repository, "branch": branch, "problem": None}
 
 
 def root():
@@ -116,15 +138,46 @@ def git(folder, *args, check=True):
             timeout=60,
             env=env,
         )
+    except subprocess.TimeoutExpired:
+        raise Invalid(PROBLEMS["unreachable" if args and args[0] in ("fetch", "push") else "git"]) from None
     except (OSError, subprocess.SubprocessError):
         raise ValueError(
             "Team Git could not finish. Local work and any unshared commit are kept."
         ) from None
-    require(
-        not check or done.returncode == 0,
-        "Team Git could not finish. Check access, then sync explicitly; no forced push or reset was used.",
-    )
+    if check and done.returncode != 0:
+        # Git's own words can repeat a remote address or helper output: classify, never echo.
+        remote = args and args[0] in ("fetch", "push")
+        raise Invalid(PROBLEMS[git_problem(done.stderr) if remote else "git"])
     return done.stdout.decode("utf-8", "strict").strip()
+
+
+PROBLEMS = {
+    "unauthorized": "The team repository refused access from this computer. Sign in to Git for it "
+    "(your credential helper or SSH key), then choose Retry connection. Local work and any unshared commit are kept.",
+    "not-found": "The team repository or its branch was not found. Check the repository address and branch in "
+    "shared settings, then choose Retry connection. Local work is kept.",
+    "unreachable": "The team repository could not be reached. Check your network connection, then choose "
+    "Retry connection. Local work and any unshared commit are kept.",
+    "git": "Team Git could not finish. Check access, then sync explicitly; no forced push or reset was used.",
+}
+
+
+def git_problem(stderr):
+    """One recovery category from Git's diagnostics; the diagnostics themselves stay private."""
+    value = (stderr or b"").decode("utf-8", "replace").casefold()
+    for reason, terms in (
+        ("unauthorized", ("authentication failed", "permission denied", "could not read username",
+                          "could not read password", "terminal prompts disabled", "access denied",
+                          "error: 403", "returned error: 401", "returned error: 403", "invalid credentials")),
+        ("not-found", ("repository not found", "not found", "returned error: 404","does not appear to be a git repository",
+                       "couldn't find remote ref", "no such file or directory", "does not exist")),
+        ("unreachable", ("could not resolve host", "could not resolve hostname", "connection refused",
+                         "connection timed out", "operation timed out", "network is unreachable",
+                         "failed to connect", "no route to host", "connection reset")),
+    ):
+        if any(term in value for term in terms):
+            return reason
+    return "git"
 
 
 def safe(folder, relative):
@@ -144,6 +197,9 @@ def clean(folder):
 
 
 def connect(*, sync=False):
+    chosen = connection()
+    require(chosen["configured"], chosen["problem"] or
+            "Configure a shared repository in shared settings before connecting the Team library.")
     folder = root()
     repository, branch, _ = configuration()
     with file_lock(data_root() / ".team.lock"):
@@ -182,10 +238,42 @@ def head(folder):
 
 
 def status():
+    """Local state only: the configured repository, the private clone and its last sync.
+
+    Reading never fetches, so an offline or signed-out connection still lists its last
+    synced copy. An unset repository is a setup state, not a validation error.
+    """
+    chosen = connection()
+    if not chosen["configured"]:
+        return {**chosen, "connected": False, "items": [], "synced_at": None, "pending": 0}
     folder = root()
     if not folder.exists():
-        return {"connected": False, "items": []}
+        return {**chosen, "connected": False, "items": [], "synced_at": None, "pending": 0}
     require(not folder.is_symlink(), "The private team clone cannot be a link.")
+    return {**chosen, **_listing(folder), "synced_at": _synced_at(folder),
+            "pending": _pending(folder, chosen["branch"])}
+
+
+def _synced_at(folder):
+    """When this clone last fetched explicitly, from Git's own record; None if never."""
+    from datetime import datetime, timezone
+    record = folder / ".git" / "FETCH_HEAD"
+    if record.is_symlink() or not record.is_file():
+        return None
+    return datetime.fromtimestamp(record.stat().st_mtime, timezone.utc).isoformat(timespec="seconds")
+
+
+def _pending(folder, branch):
+    """Local commits the team remote has not acknowledged, counted without any network."""
+    tracked = git(folder, "rev-parse", "--verify", "--quiet", "refs/remotes/origin/" + branch, check=False)
+    local = git(folder, "rev-parse", "--verify", "--quiet", "HEAD", check=False)
+    if not local:
+        return 0
+    count = git(folder, "rev-list", "--count", (tracked + "..HEAD") if tracked else "HEAD", check=False)
+    return int(count) if count.isdecimal() else 0
+
+
+def _listing(folder):
     found = []
     safe(folder, "infographics")
     for path in (folder / "infographics").glob("*/share.json"):
@@ -253,7 +341,10 @@ def status():
             )
         except (ValueError, OSError, KeyError, TypeError):
             continue
-    return {"connected": True, "head": head(folder), "items": found}
+    # A clone whose first fetch failed has no commit yet: it is not connected, and
+    # reading it must not fail, so an explicit retry stays possible.
+    current = git(folder, "rev-parse", "--verify", "--quiet", "HEAD", check=False)
+    return {"connected": bool(current), "head": current or None, "items": found}
 
 
 def inventory(

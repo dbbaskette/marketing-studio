@@ -599,12 +599,26 @@ if (homeLink) {
   if (sameTab) $('go-suite').removeAttribute('target');
 }
 async function startDesk() {
+  // Back from shared settings: reopen the same infographic and sheet. Connecting stays a choice.
+  let back=null;try{back=JSON.parse(sessionStorage.getItem('infographic-studio-return')||'null');sessionStorage.removeItem('infographic-studio-return');}catch(f){}
+  if(back&&typeof back==='object'&&!Array.isArray(back)){
+    if(typeof back.project==='string'&&/^[A-Za-z0-9_-]{1,64}$/.test(back.project))await openProject(back.project);else await home();
+    if(back.sheet==='team')await teamSheet();
+    return;
+  }
   let id='';try{id=sessionStorage.getItem('infographic-studio-project')||'';}catch(f){}
   if(id){try{const progress=await request('/api/activity?id='+encodeURIComponent(id)),desk=await request('/api/desk?id='+encodeURIComponent(id));const unsaved=unsavedFor(id);if(progress.activity?.state==='running'||desk.planning_response?.available||desk.recovery?.length||unsaved){await openProject(id);return;}}catch(f){}}
   await home();
 }
 $('sheet').addEventListener('close',paintWork);
 if(!token)error('Open Infographic Studio using the private link printed in your terminal.');else void startDesk();
+// Back from shared settings with the browser's Back button restores this page from its cache,
+// without running startDesk: drop the return marker and re-read an open Team library sheet.
+window.addEventListener('pageshow',event=>{
+  if(!event.persisted||!token)return;
+  try{sessionStorage.removeItem('infographic-studio-return');}catch(f){}
+  if($('sheet').open&&$('sheet-title')?.textContent==='Team library')void teamSheet();
+});
 
 function reviseArtSheet(){const change=field('What should change?','','textarea'),preserve=field('What should stay the same?','Keep all other subjects, relationships, brand, empty label regions and composition.','textarea');sheet('Revise the artwork',make('p','','This sends the saved original as a reference to your selected image provider. It uses provider allowance; the earlier artwork remains in history.'),change.wrap,preserve.wrap,add(make('div','bar'),button('Create referenced revision',()=>action('revise-art',{change:change.input.value,preserve:preserve.input.value,request_id:requestId()}),true),button('Cancel',closeSheet)));}
 async function compareSheet(version){try{const result=await request('/api/action',{action:'compare',id:held.project.id,expected_revision:held.project.revision,before:version.revision,after:held.project.revision});sheet('Changes since revision '+version.revision,...Object.entries(result.result).map(([key,value])=>detail(key,make('h3','','Before'),make('pre','ig-csv-preview',JSON.stringify(value.before,null,2)),make('h3','','Current'),make('pre','ig-csv-preview',JSON.stringify(value.after,null,2)))),button('Done',closeSheet));}catch(f){error(f.message);}}
@@ -769,21 +783,56 @@ async function researchImportSheet(){
   const go=button('Verify and preview reviewed research',async()=>{go.disabled=true;try{const preview=await request('/api/research-preview',{id:held.project.id,expected_revision:held.project.revision,case:path.input.value,source_mode:mode.input.value});sourceImportSheet(preview);}catch(f){problem.textContent=f.message;}finally{go.disabled=false;}},true);
   sheet('Use reviewed research',make('p','','Optional: give this purpose-led task to Harness Research, then import its complete independently reviewed case. This screen starts no research or public search.'),mode.wrap,detail('Infographic research task',task),path.wrap,problem,add(make('div','bar'),go,button('Cancel',closeSheet)));
 }
+// Shared settings own the team repository. Going there keeps this infographic and this
+// sheet to come back to; nothing connects until the person asks again.
+function sharedSettingsLink(label,part){
+  const link=make('a','button',label);
+  link.href='/onboarding/#token='+encodeURIComponent(token)+'&view=settings'+(part?'&part='+encodeURIComponent(part):'');
+  link.addEventListener('click',()=>{try{sessionStorage.setItem('infographic-studio-return',JSON.stringify({project:held?.project.id||'',sheet:part==='workspace-part'?'team':''}));}catch(f){}});
+  return link;
+}
+function syncedWords(value){
+  const when=value?new Date(value):null;
+  return when&&!isNaN(when)?'Last synced '+when.toLocaleString([], {dateStyle:'medium',timeStyle:'short'})+'.':'Not synced yet.';
+}
 async function teamSheet(){
-  const problem=make('p','problem'),items=make('div','stack');
-  async function show(){try{const state=await request('/api/team');items.replaceChildren(make('p','quiet',state.connected?'Last explicitly synced team copy. Local projects stay in your workspace.':'Connect to the repository chosen in shared Marketing Studio settings.'));
+  const problem=make('p','problem'),items=make('div','stack'),summary=make('div','stack');problem.setAttribute('role','alert');
+  const explain=detail('What connecting and sharing do',list(['Connect or sync copies the team library into a private folder on this computer. Nothing of yours is sent.','Share selected files, from an approved infographic, sends only the files you review and confirm.','Opening this library or changing its repository never shares a draft, source or artwork.']));
+  const configure=sharedSettingsLink('Configure shared repository','workspace-part');
+  const failed=failure=>{problem.textContent=failure.message;problem.hidden=false;};
+  let sync=null;
+  async function connect(){sync.disabled=true;problem.hidden=true;try{await request('/api/team',{operation:'connect'});await show();toast('Team library synced.');}catch(f){failed(f);sync.textContent='Retry connection';}finally{sync.disabled=false;}}
+  async function show(){
+    let state;
+    try{state=await request('/api/team');}catch(f){failed(f);return;}
+    items.replaceChildren();
+    if(!state.configured){
+      configure.classList.add('button-filled');
+      summary.replaceChildren(stateLine('review','No shared repository yet'),
+        make('p','','The Team library uses the shared repository in shared settings. Choose Shared repository under Your workspace, save, and come back here to connect.'),
+        make('p','quiet','Other studios keep their work in that repository too. Infographic Studio keeps its own work in your local workspace.'),
+        ...(state.problem?[make('p','problem',state.problem)]:[]),add(make('div','bar'),configure),explain);
+      return;
+    }
+    configure.classList.remove('button-filled');configure.textContent='Change shared repository';
+    sync=button(state.connected?'Sync team library':'Connect team library',connect,true);
+    summary.replaceChildren(stateLine(state.connected?'done':'review',state.connected?'Connected':'Not connected yet'),
+      make('p','','Repository: '+state.repository+' · branch '+state.branch),
+      make('p','quiet',state.connected?syncedWords(state.synced_at)+' The list below is your last synced copy; syncing again is explicit.':'Connect to copy the team library to this computer.'),
+      add(make('div','bar'),sync,configure),explain);
     if(state.workspace_owner)items.append(make('p','quiet','Your workspace owner ID: '+state.workspace_owner));
-    if(state.connected)items.append(button('Retry pending team push',async()=>{try{await request('/api/team',{operation:'retry',expected_commit:state.head});await show();}catch(f){problem.textContent=f.message;}}));
+    if(state.pending)items.append(add(make('div','stack'),make('p','',state.pending===1?'One shared commit has not reached the team repository.':state.pending+' shared commits have not reached the team repository.'),button('Retry pending team push',async()=>{try{await request('/api/team',{operation:'retry',expected_commit:state.head});await show();}catch(f){failed(f);}})));
+    if(state.connected&&!state.items.length)items.append(make('p','quiet','No infographics are shared yet. Share one from an approved delivery.'));
     for(const entry of state.items){
       const cardNode=card(entry.title,make('p','quiet','Shared revision '+entry.revision+' · driver '+entry.claim.owner),list([...entry.missing.map(f=>'Missing or changed: '+f),...(entry.unshared_sources||[]).map(f=>'Private source not shared: '+f),...(entry.unshared_assets||[]).map(f=>'Private artwork not shared: '+f)]));
       const pdf=entry.files.find(f=>f.file==='delivery/page.pdf');if(pdf)cardNode.append(button('Download shared PDF',()=>downloadShared(entry,'pdf')));
-      cardNode.append(button('Take over this shared infographic',async()=>{try{await request('/api/team',{operation:'claim',id:entry.id,expected_head:state.head,expected_claim:entry.claim});await show();}catch(f){problem.textContent=f.message;}}));
-      if(entry.editable)cardNode.append(button('Import claimed editable copy',async()=>{try{const result=await request('/api/team',{operation:'take',id:entry.id,expected_head:state.head,expected_claim:entry.claim});closeSheet();await openProject(result.project.id);if(result.missing_sources.length||result.missing_assets.length)error('Editable copy imported without approval. Some private sources or artwork were not shared; supply them before rebuilding.');}catch(f){problem.textContent=f.message;}}));
-      const owner=field('New driver workspace owner ID');cardNode.append(detail('Hand over to a teammate',owner.wrap,button('Hand over shared driver',async()=>{try{await request('/api/team',{operation:'claim',id:entry.id,expected_head:state.head,expected_claim:entry.claim,new_owner:owner.input.value});await show();}catch(f){problem.textContent=f.message;}})));items.append(cardNode);
+      cardNode.append(button('Take over this shared infographic',async()=>{try{await request('/api/team',{operation:'claim',id:entry.id,expected_head:state.head,expected_claim:entry.claim});await show();}catch(f){failed(f);}}));
+      if(entry.editable)cardNode.append(button('Import claimed editable copy',async()=>{try{const result=await request('/api/team',{operation:'take',id:entry.id,expected_head:state.head,expected_claim:entry.claim});closeSheet();await openProject(result.project.id);if(result.missing_sources.length||result.missing_assets.length)error('Editable copy imported without approval. Some private sources or artwork were not shared; supply them before rebuilding.');}catch(f){failed(f);}}));
+      const owner=field('New driver workspace owner ID');cardNode.append(detail('Hand over to a teammate',owner.wrap,button('Hand over shared driver',async()=>{try{await request('/api/team',{operation:'claim',id:entry.id,expected_head:state.head,expected_claim:entry.claim,new_owner:owner.input.value});await show();}catch(f){failed(f);}})));items.append(cardNode);
     }
-  }catch(f){problem.textContent=f.message;}}
-  const sync=button('Connect or sync team library',async()=>{sync.disabled=true;problem.textContent='';try{await request('/api/team',{operation:'connect'});await show();}catch(f){problem.textContent=f.message;}finally{sync.disabled=false;}},true);
-  sheet('Team library',make('p','','Only an explicit share sends selected files. Takeover changes the shared driver; it does not overwrite anyone’s local draft.'),sync,problem,items,button('Done',closeSheet));await show();
+  }
+  problem.hidden=true;
+  sheet('Team library',summary,problem,items,add(make('div','create-foot bar'),button('Done',closeSheet)));await show();
 }
 async function shareSheet(delivery){
   const editable=make('input');editable.type='checkbox';const include=add(make('label','check'),editable,document.createTextNode('Include editable project (private brief, facts and source metadata)'));

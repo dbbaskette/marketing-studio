@@ -205,11 +205,18 @@ public work runs in supplied-only mode. Missing or changed captures block claims
 Presentation Studio or Training Studio `hub.json` folder. Select one file and review its
 preview. Refresh/replacement is explicit and creates a new source revision.
 
-**Team library** shows the last explicitly synced copy, its shared driver and omitted or
+**Team library** uses the shared repository in shared settings. With none set, it says so
+and offers **Configure shared repository**, which opens Shared settings at Your workspace.
+Saving or choosing Back returns to the same infographic and reopens Team library; nothing
+connects until you choose **Connect team library**. A configured library shows its
+repository, branch, connection and last sync, read locally without fetching, so an offline
+or signed-out connection still lists its last copy. Access, missing-repository and network
+failures each name a recovery step without repeating Git's output or any credential, and
+a failed first connection can be retried. It shows the last explicitly synced copy, its shared driver and omitted or
 missing private inputs. Default sharing includes approved delivery files and a title only.
 Editable project, source captures and artwork require separate selection and confirmation;
 image briefs, prompts and job records are excluded. Set your shared display name and native
 **Team Git email** before committing. Sync never force-pushes, resets or discards conflicts.
-Failed pushes keep their commit for **Retry pending team push**. Takeover changes the driver;
+Failed pushes keep their commit; the library counts it and offers **Retry pending team push**. Takeover changes the driver;
 importing its supported editable copy creates local work without approval. A local copy
 already present is preserved. Unshared private inputs remain unavailable until supplied.

@@ -170,6 +170,9 @@ assistant, your workspace, and brand and delivery. Shared settings shows the sam
 cards first, with section links (**Everyday**: Assistant, Workspace, Brand, Delivery;
 **Advanced**: Models, Brand release, Research sites, Installations). A new person can
 make the four choices, save, and return to Studios without opening an install control.
+A studio can open one listed part directly with `view=settings&part=<part id>` in the
+link's fragment, as Infographic Studio's Team library does for `workspace-part`. Any
+other value is ignored, and first-run setup keeps its steps.
 
 The Advanced parts are closed disclosures that say what they hold while closed:
 **Models and reasoning** (shared model, reasoning and routing by task), **Brand skill
