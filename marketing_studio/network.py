@@ -32,7 +32,9 @@ INFOGRAPHIC_REMOTE_TIMEOUT = 240
 # add with links fetches up to 25 pages of up to 15 seconds each in one request.
 BLOG_REMOTE_TIMEOUT = 600
 BLOG_REMOTE = frozenset(('/api/desk-google-send', '/api/editor-google-send', '/api/google-preview',
-                         '/api/google-start', '/api/library-add', '/api/library-add-preview'))
+                         '/api/google-start', '/api/library-add', '/api/library-add-preview',
+                         '/api/desk-google-plan', '/api/desk-google-compare',
+                         '/api/desk-google-take'))
 # The bridge says, in a header of its own, that a request reached Marketing Studio over the
 # network. A network caller cannot send it: only the headers named in forward() pass.
 VIA_HEADER = 'X-Marketing-Studio-Via'

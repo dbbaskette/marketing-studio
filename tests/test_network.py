@@ -381,6 +381,9 @@ class BridgeLimitTests(unittest.TestCase):
             self.assertIn('No request was resubmitted', answer['error'])
         self.assertEqual(network.upstream_timeout('blog', 'POST', '/api/desk-google-send'), 600)
         self.assertEqual(network.upstream_timeout('blog', 'POST', '/api/library-add'), 600)
+        # Planning, checking and bringing back the Doc's text read Google more than once.
+        for path in ('/api/desk-google-plan', '/api/desk-google-compare', '/api/desk-google-take'):
+            self.assertEqual(network.upstream_timeout('blog', 'POST', path), 600, path)
         self.assertEqual(network.upstream_timeout('blog', 'GET', '/api/desk-google-send'), 100)
         self.assertEqual(network.upstream_timeout('presentation', 'POST', '/api/library-add'), 100)
 

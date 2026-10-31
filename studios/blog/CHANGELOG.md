@@ -26,8 +26,12 @@ changes for authors first, then what changes for maintainers.
   **Bring accepted changes**. Bring accepted changes reads the Doc's accepted text and
   lists each part it changes; a part the desk has not changed since the last whole send
   takes the Doc's text, keeping the desk's in History as "Before Google's accepted text",
-  and the Doc becomes the new baseline. It is refused while desk suggestions still wait
-  for the owner, or when both sides changed a part. Nothing is written to Google. The send
+  and the Doc becomes the new baseline. A desk change the Doc has not answered (one sent as
+  a comment, through Comments only, a Doc that cannot take suggestions, or a teammate's
+  suggestion on the same words) stays on the desk; a part both changed is refused, as is a
+  part whose image the desk holds differently, and the whole check while desk suggestions
+  still wait for the owner. Nothing is written to Google, and a slow answer through the
+  phone link says to check again. The send
   receipt says what went and when, and the desk, Home and Blogs say what waits in the Doc,
   when the desk last sent, and when it has unsent changes; Home counts a desk blog with
   open suggestions, Doc suggestions waiting or unsent changes as needing you, and each row

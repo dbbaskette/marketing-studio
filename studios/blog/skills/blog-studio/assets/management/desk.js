@@ -338,7 +338,7 @@ function sDeskSourcesSheet(held){
   let done;
   const files=sFilesCard(adding,problem,()=>sDeskSourcesSheet(held),locked=>{if(done)done.disabled=locked||!sDeskCan(held);},{keepWhen:'Ticked ones go to the team library when you add them.',empty:'No sources yet. Later rewrites will read what you add.'});
   done=sButton('Add to this draft',async button=>{
-    const ready=adding.files.filter(file=>file.state==='ready');if(!ready.length){problem.textContent='Add a file, a link, a Google Doc or a library post with text first.';return;}
+    const ready=adding.files.filter(file=>file.state==='ready');if(!ready.length){problem.textContent='Add a file, a link, a Google Doc or a post from the team or Document Library with text first.';return;}
     await busy(button,'Adding…',async()=>{try{await sDeskFlush(held);const before=held.view;held.view=await api('desk-sources',{id:held.id,sources:sDeskUploads(ready),library:sDeskLibraryPicks(ready),...sDeskKept(ready)});held.adding=null;sCloseSheet();sToast(ready.length===1?'Added. Later rewrites read it.':'Added. Later rewrites read them.');sDeskRefresh(held,before);}catch(error){problem.textContent=error.message;}});
   },'filled');
   done.disabled=!sDeskCan(held);
@@ -445,6 +445,8 @@ function sDeskGoogleActions(held){
 // sent, and changes not sent yet. Read on this computer; Google is read only when asked.
 function sDeskDocWords(view){const g=view.google_state;if(!g)return '';const said=[];if(g.waiting)said.push('Doc: '+g.waiting+' waiting');if(g.last)said.push('last sent '+sDeskWhen(g.last.at));if(g.unsent)said.push('Unsent desk changes');return said.join(' · ');}
 function sDeskWhen(at){const when=new Date(at||'');if(isNaN(when.getTime()))return '';const time=when.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});return when.toDateString()===new Date().toDateString()?time:when.toLocaleDateString('en-US',{month:'short',day:'numeric'})+', '+time;}
+// A Google request that took too long to answer (the phone link's 504), said plainly.
+function sDeskSlow(error,again){return error?.status===504||/took too long|timed? ?out/i.test(error?.message||'')?again:error?.message;}
 // The receipt of a send: how many went, when, and what comes next.
 function sDeskSentWords(plan,result){
   if(!['verified-pending','verified-comments'].includes(result?.status))return 'The result is not yet verified. Check delivery before trying anything else.';
@@ -460,7 +462,7 @@ async function sDeskGoogleSend(held){
   const problem=sNode('p','sheet-error');problem.setAttribute('role','alert');
   sOpenSheet('Send to the Google Doc',sNode('p','','Checking what the desk would send. Nothing is sent until you choose Send.'),problem,sAdd(sNode('div','bar'),sButton('Cancel',sCloseSheet)));
   const owner=studio.sheet,opener=owner.opener;let plan;
-  try{if(held.mode==='review')await sReviewFlush(held);await sDeskFlush(held);plan=await api('desk-google-plan',{id:held.id,mode:'auto'});}catch(error){if(studio.sheet===owner)problem.textContent=error.message;return;}
+  try{if(held.mode==='review')await sReviewFlush(held);await sDeskFlush(held);plan=await api('desk-google-plan',{id:held.id,mode:'auto'});}catch(error){if(studio.sheet===owner)problem.textContent=sDeskSlow(error,'Reading the Google Doc took too long. Check again; nothing was sent.');return;}
   if(studio.sheet!==owner)return;
   const changes=sNode('ul','look');for(const item of plan.proposals||[])changes.append(sNode('li','',sDeskGoogleItem(item)));
   const deliver=async button=>{await busy(button,'Sending…',async()=>{try{
@@ -478,7 +480,7 @@ async function sDeskGoogleBring(held){
   const problem=sNode('p','sheet-error');problem.setAttribute('role','alert');
   sOpenSheet('Bring accepted changes from the Doc',sNode('p','','Reading the Google Doc’s accepted text. Nothing is written to Google, and nothing on the desk changes until you choose to bring it.'),problem,sAdd(sNode('div','bar'),sButton('Cancel',sCloseSheet)));
   const owner=studio.sheet,opener=owner.opener;let found;
-  try{if(held.mode==='review')await sReviewFlush(held);await sDeskFlush(held);found=await api('desk-google-compare',{id:held.id});}catch(error){if(studio.sheet===owner)problem.textContent=error.message;return;}
+  try{if(held.mode==='review')await sReviewFlush(held);await sDeskFlush(held);found=await api('desk-google-compare',{id:held.id});}catch(error){if(studio.sheet===owner)problem.textContent=sDeskSlow(error,'Reading the Google Doc took too long. Check again; nothing on the desk changed.');return;}
   if(studio.sheet!==owner)return;
   const list=sNode('ul','rows desk-brought');
   for(const change of found.changes){const what=change.kind==='added'?'Added in the Doc':change.kind==='removed'?'Removed in the Doc':change.renamed?'Renamed from “'+change.renamed+'” and changed in the Doc':'Changed in the Doc';list.append(sAdd(sNode('li','row'),sAdd(sNode('div','row-text'),sNode('span','row-title',change.name),sNode('span','row-says',what),disclosure('Compare',deskSides(change.before,change.after)))));}
@@ -486,7 +488,7 @@ async function sDeskGoogleBring(held){
   const go=found.ready?sButton(parts===1?'Bring 1 part to the desk':'Bring '+parts+' parts to the desk',async button=>{await busy(button,'Bringing…',async()=>{try{
     const before=held.view;held.view=await api('desk-google-take',{id:held.id,preview:found.preview,confirmed:true});sCloseSheet();
     const n=held.view.brought?.parts?.length??parts;sToast((n===1?'Brought 1 part':'Brought '+n+' parts')+' from the Google Doc. The desk’s earlier text is in History.');sDeskRefresh(held,before);
-  }catch(error){problem.textContent=error.message;}});},'filled'):null;
+  }catch(error){problem.textContent=sDeskSlow(error,'This took too long to answer. Check again: choose Bring again, which never brings anything twice, and the result is kept.');}});},'filled'):null;
   if(go)go.disabled=!sDeskCan(held);
   sOpenSheet('Bring accepted changes from the Doc',sNode('p','',found.ready?'These parts take the Doc’s accepted text. Each keeps the desk’s text first in History, as Before Google’s accepted text. Nothing is written to Google.':found.said),parts?list:null,problem,sAdd(sNode('div','bar'),go,sButton(go?'Cancel':'Close',sCloseSheet)));studio.sheet.opener=opener;
 }
@@ -653,7 +655,7 @@ function sDeskPart(held,part){return held.reading==='read'?sDeskReadPart(held,pa
 function sDeskSourceRow(held,source){
   const row=sNode('li','row'),text=sAdd(sNode('div','row-text'),sNode('span','row-title',source.name));row.append(text);
   const found=source.library;if(!found)return row;
-  text.append(sNode('span','row-says','From the Document Library · revision '+found.revision+(found.update?' · Update available: revision '+found.head:found.head===null?' · no longer in the library; this blog keeps its copy':'')));
+  text.append(sNode('span','row-says','From the Document Library · revision '+found.revision+(found.update?' · Update available: revision '+found.head:found.head===null?' · no longer in the Document Library; this blog keeps its copy':'')));
   if(found.update){
     const take=sButton('Use revision '+found.head,async button=>{await busy(button,'Taking revision '+found.head+'…',async()=>{try{await sDeskFlush(held);const before=held.view;held.view=await api('desk-library-update',{id:held.id,source:source.id});sToast('Revision '+found.head+' is a source now. Later rewrites read it; nothing already written changes.');sDeskRefresh(held,before);}catch(error){sToast(error.message);}});});
     take.setAttribute('aria-label','Use revision '+found.head+' of '+source.name);take.disabled=!sDeskCan(held)||!!held.view.working;row.append(take);

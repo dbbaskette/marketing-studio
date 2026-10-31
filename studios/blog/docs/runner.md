@@ -359,8 +359,12 @@ suggestions waiting or unsent changes as needing you.
 **Bring accepted changes** reads the Doc's accepted text (its pending suggestions stay in
 Google, never accepted or rejected) and lists each part it would change, with a comparison:
 a part the desk has not changed since the desk and the Doc last agreed (the last send that
-sent every change, or the last bring-back) takes the Doc's text, so what the owner accepted,
-rejected or wrote comes back. Nothing changes until **Bring N parts to the desk**; each
+sent every change as a suggestion, or the last bring-back) takes the Doc's text, so what
+the owner accepted, rejected or wrote comes back. A part changed only on the desk keeps the
+desk's text: so does a change sent as a comment (Comments only, a Doc that cannot take
+suggestions, or words a teammate's suggestion also changes), which the owner makes by hand.
+A Doc image a taken part refers to comes with it; one the desk holds differently under the
+same label refuses that part. Nothing changes until **Bring N parts to the desk**; each
 part keeps the desk's text first in History, as **Before Google's accepted text**, and the
 Doc becomes the new common baseline, as the chat's "Pull from Google Docs" does. Nothing is
 written to Google. It is refused, with nothing changed, while suggestions sent from the desk

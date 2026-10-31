@@ -3673,6 +3673,9 @@ async function deskGoogleRoundTrip(){
   assert.deepEqual(took,{id:'desk-blog',preview:'p'.repeat(32),confirmed:true});
   assert.equal(f.get('sheet').hidden,true);
   assert.ok(descendants(f.get('toasts')).some(n=>n.textContent==='Brought 1 part from the Google Doc. The desk’s earlier text is in History.'));
+  // Through the phone link a slow Google request is said plainly, never as a raw 504.
+  assert.equal(f.run("sDeskSlow({status:504,message:'Gateway Timeout'},'Check again.')"),'Check again.');
+  assert.equal(f.run("sDeskSlow({status:400,message:'Refused.'},'Check again.')"),'Refused.');
   // Review mode before any check: the Doc's pending suggestions counted and explained.
   view={...view,doc_suggestions:{count:2,marks:[]}};
   await f.run("(async()=>{studio.desk.view=await api('desk?id=desk-blog');sReviewEnter(studio.desk);sDeskRender(studio.desk);})()");
@@ -3684,7 +3687,12 @@ async function deskGoogleRoundTrip(){
   const needs=page().find(n=>/card-needs/.test(n.className||''));
   assert.ok(descendants(needs).some(n=>n.textContent==='Harbour plans'),'it names the blog');
   assert.ok(descendants(needs).some(n=>n.textContent==='Humanize · 4 to review · edited just now'),'one status line with its edited time');
+  // A Doc-linked one says what waits there and when the desk last sent, as the desk does.
+  f.set('sentAt',at);f.run("studio.listing=[{id:'b3',title:'Doc one',flow:'desk',status:'desk',needs:['Doc: 2 waiting'],doc_sent:sentAt,touched:new Date().toISOString(),complete:false,stages:[]}];sHome()");
+  assert.ok(page().some(n=>n.textContent==='Doc: 2 waiting · last sent '+f.run('sDeskWhen(sentAt)')+' · edited just now'),'Home names the last send');
   f.run('sBlogs()');
+  assert.ok(page().some(n=>n.textContent==='Doc: 2 waiting · last sent '+f.run('sDeskWhen(sentAt)')+' · edited just now'),'and so does Blogs');
+  f.run("studio.listing=[{id:'b2',title:'Quiet one',flow:'desk',status:'desk',needs:[],touched:new Date().toISOString(),complete:false,stages:[]}];sBlogs()");
   assert.ok(!page().some(n=>n.textContent==='On the writing desk'),'Blogs says the desk once');
   assert.ok(page().some(n=>n.textContent==='On the desk · edited just now'));
 }

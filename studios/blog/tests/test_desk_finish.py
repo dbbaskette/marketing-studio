@@ -3482,11 +3482,102 @@ class GoogleBringBackTests(unittest.TestCase):
             result['brought'],
         )
         self.assertEqual(
-            self.act('google-compare')['said'], 'The desk already has the Doc’s accepted text.'
+            self.act('google-compare')['said'],
+            'Nothing to bring back: the desk has every accepted change in the Doc.',
         )
         # After a new desk edit, the desk says it has changes not sent.
         self.edit([('The end.', 'The finish.')])
         self.assertTrue(desk_jobs.view(self.root, self.ident)['google_state']['unsent'])
+
+    def test_a_change_sent_as_a_comment_is_never_taken_back(self):
+        # A teammate's suggestion on the same words: ours goes as a comment, for the owner to
+        # make by hand. The Doc's text there is no answer to it, so nothing is brought back.
+        self.client.teammate('all of ', 'every step', delete='every')
+        self.edit([('track every step', 'track each step')])
+        plan = self.act('google-plan', mode='auto')
+        self.assertEqual((plan['suggestions'], plan['comments']), (0, 1))
+        self.act('google-send', plan=plan['plan'], confirmed=True)
+        self.assertTrue(desk_jobs.view(self.root, self.ident)['google_state']['unsent'])
+        found = self.act('google-compare')
+        self.assertFalse(found['ready'], found)
+        self.assertEqual(found['changes'], [])
+        self.assertIn('track each step', self.section()['text'])
+
+    def test_comments_only_and_a_doc_without_suggestions_take_nothing_back(self):
+        # Comments only: every change is a comment the owner makes by hand.
+        class Commenting(type(self.client)):
+            def native_comments_update(self, file_id, revision, requests):
+                return self.native_review_update(file_id, revision, requests)
+
+        self.client.__class__ = Commenting
+        self.edit([('track every step', 'track each step')])
+        plan = self.act('google-plan', mode='comments')
+        self.assertEqual(
+            self.act('google-send', plan=plan['plan'], confirmed=True)['status'],
+            'verified-comments',
+        )
+        state = desk_jobs.view(self.root, self.ident)['google_state']
+        self.assertEqual((state['waiting'], state['unsent']), (0, True))
+        found = self.act('google-compare')
+        self.assertFalse(found['ready'])
+        self.assertIn('track each step', self.section()['text'])
+        # A Doc that cannot take suggestions: auto falls back to comments, and such a plan
+        # never counts as bringing the desk and the Doc together.
+        import google_drive as gd
+
+        class NoReview(Commenting):
+            def review_comments(self, document_id):
+                return []  # Readable comments: none yet.
+
+            def native_read(self, file_id, inline=False, comments=False, accepted_preview=False):
+                if comments:
+                    raise gd.ReviewUnavailable('No review threads here.')
+                return super().native_read(file_id, inline, comments, accepted_preview)
+
+        self.client.__class__ = NoReview
+        self.edit([('The end.', 'The finish.')])
+        plan = self.act('google-plan', mode='auto')
+        self.assertEqual(plan['mode'], 'comments')
+        meta = desk_finish._sent(self.root, self.ident)['meta'][plan['plan']]
+        self.assertFalse(meta['whole'])
+
+    def test_a_desk_just_opened_from_its_doc_has_nothing_unsent(self):
+        state = desk_jobs.view(self.root, self.ident)['google_state']
+        self.assertFalse(state['unsent'], 'a fresh Doc-linked desk needs nobody')
+        with self.assertRaisesRegex(ValueError, 'Nothing new to send'):
+            self.act('google-plan', mode='auto')
+        self.edit([('The end.', 'The finish.')])
+        self.assertTrue(desk_jobs.view(self.root, self.ident)['google_state']['unsent'])
+
+    def test_a_doc_image_comes_with_its_text_and_a_different_one_refuses(self):
+        import google_workflow as workflow
+        from test_desk import IMAGE_ONE, IMAGE_TWO
+
+        directory, _, base = desk_finish._google_base(self.root, self.ident)
+        was = workflow.baseline_text(directory, base)
+        body = (
+            was.replace(
+                'Keep it short.\n\nThe end.', 'Keep it short.\n\n![][image1]\n\nThe end, at last.'
+            )
+            + '\n[image1]: <'
+            + IMAGE_ONE
+            + '>\n'
+        )
+        found = desk_finish._pull(self.root, self.ident, directory, base, body)
+        self.assertEqual([c['name'] for c in found['changes']], ['Key Data Patterns'])
+        self.assertIn('[image1]: <' + IMAGE_ONE + '>', found['markdown'], 'the image comes too')
+        # The desk holds image1 with other data: that part is refused, never swapped.
+        draft = desk.read(self.root, self.ident)
+        desk.save(
+            self.root,
+            self.ident,
+            draft['revision'],
+            'opening',
+            draft['opening'] + '\n\n![][image1]\n\n[image1]: <' + IMAGE_TWO + '>',
+        )
+        found = desk_finish._pull(self.root, self.ident, directory, base, body)
+        self.assertEqual((found['changes'], found['pictures']), ([], ['Key Data Patterns']))
+        self.assertIn('an image the desk holds differently', desk_finish._pull_said(found, 0))
 
     def test_a_part_changed_on_the_desk_since_the_send_is_never_taken_back(self):
         self.edit(self.EDITS)

@@ -29,7 +29,13 @@ function sStatus(kind,label){return sAdd(sNode('span','state'),sBead(kind),sNode
 function sStages(found,small=false){const list=sNode('ol','beads'+(small?' beads-small':''));list.setAttribute('aria-label','Writing stages');for(const row of found.stages||[]){const item=sNode('li','bead-stage');item.dataset.state=sKind(row,found);item.title=row.label+': '+(STAGE_STATUSES[row.status]||row.status);item.append(sBead(sKind(row,found)),sNode('span','bead-name',found.mode==='ideas'&&row.stage==='outline'?'Ideas':row.label));list.append(item);}return list;}
 // A desk blog's one status line: what it waits on (open suggestions, its Doc), or On the
 // desk, then when it was last edited.
-function sDeskRowWords(found){const age=found.touched&&typeof Drafting!=='undefined'?Drafting.age(found.touched):'';return ((found.needs||[]).length?found.needs.join(' · '):'On the desk')+(age?' · edited '+age:'');}
+function sDeskRowWords(found){
+  const age=found.touched&&typeof Drafting!=='undefined'?Drafting.age(found.touched):'',sent=found.doc_sent&&typeof sDeskWhen==='function'?sDeskWhen(found.doc_sent):'';
+  // When the desk last sent to its Doc goes beside what waits there, as the desk's toolbar says it.
+  const needs=(found.needs||[]).map(words=>sent&&/^Doc: \d+ waiting$/.test(words)?words+' · last sent '+sent:words);
+  const said=needs.length?needs.join(' · '):'On the desk';
+  return said+(sent&&!/last sent/.test(said)?' · last sent '+sent:'')+(age?' · edited '+age:'');
+}
 function sWords(found){if(found.flow==='desk'&&found.status==='desk')return sDeskRowWords(found);if(sEditingRun(found)){if(found.status==='waiting-for-approval')return 'Suggestions ready';if(found.status==='paused'||found.status==='complete')return 'Ready to edit';if(found.status==='working')return {polish:'Polishing writing','factual-support':'Checking facts',shape:'Reviewing structure',geo:'Reviewing citation readiness',revise:'Revising draft'}[found.editor_check]||'Reviewing writing';}return RUN_LABELS[found.status]||found.status;}
 function sNeeds(found){return ['waiting-for-approval','failed','needs-attention'].includes(found.status)||!!(found.needs||[]).length;}
 function sField(id,label,held,key,about={}){
