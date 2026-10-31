@@ -147,3 +147,51 @@ class DeliveryFlowTests(Isolated):
         self.assertIn('Nothing was resent', checked['message'])
         client.create_document.assert_called_once()
         self.assertEqual(self.stage()['stage'], 'deliver')
+
+    def test_reconciling_a_saved_request_keeps_its_own_folder_and_account(self):
+        from runner import settings
+        settings.save({'google_folder': 'default_folder_1', 'google_account': 'default@example.invalid'},
+                      expected=settings.snapshot()['native_revision'])
+        self.reviewed()
+        done = self.engine.approve_and_export(self.ident, expected_revision=self.current()['revision'])
+        client = mock.Mock()
+        client.create_document.side_effect = GoogleError('Synthetic timeout', uncertain=True)
+        first = google_delivery.execute(self.store, self.ident, expected_revision=done['revision'],
+                                        export_id=done['export']['id'], request_id='chosen_folder_request',
+                                        account='editor@example.invalid', folder='chosen_folder_1', client=client)
+        self.assertEqual(first['state'], 'unknown')
+        intent = google_delivery.listing(self.store, self.ident)[0]
+        self.assertEqual((intent['folder'], intent['account']), ('chosen_folder_1', 'editor@example.invalid'))
+        client.find_delivery.return_value = [{'id': 'recovered_doc', 'mimeType': google_delivery.DOC_MIME, 'appProperties': {
+            'infographic_request': 'chosen_folder_request', 'infographic_payload': intent['payload_sha256']}}]
+        # The receipt's check names only the request: the saved destination is used, not the defaults.
+        checked = google_delivery.execute(self.store, self.ident, expected_revision=done['revision'],
+                                          export_id=done['export']['id'], request_id='chosen_folder_request',
+                                          reconcile=True, client=client)
+        self.assertEqual((checked['state'], checked['document_id']), ('delivered', 'recovered_doc'))
+        client.create_document.assert_called_once()
+        with self.assertRaisesRegex(Invalid, 'different destination'):
+            google_delivery.execute(self.store, self.ident, expected_revision=done['revision'],
+                                    export_id=done['export']['id'], request_id='chosen_folder_request',
+                                    folder='another_folder_1', reconcile=True, client=client)
+
+    def test_approve_and_review_run_through_the_configured_server_engine(self):
+        import json
+        from runner import server
+        configured = mock.Mock(side_effect=lambda store: Engine(store, renderer=desk.fake_renderer))
+        page = server.Page(0, self.store)
+        manifest = self.engine.preview(self.ident, expected_revision=self.current()['revision'])
+        with mock.patch.object(server.api, 'engine', configured):
+            status, _, raw = page.write('/api/action', {
+                'action': 'review', 'id': self.ident, 'expected_revision': self.current()['revision'],
+                'export_id': manifest['id'], 'observations': REVIEW, 'then_check': True})
+            self.assertEqual(status, 200)
+            self.assertEqual(page.activity.snapshot(self.ident)['state'], 'complete')
+            status, _, raw = page.write('/api/action', {
+                'action': 'approve', 'id': self.ident, 'expected_revision': self.current()['revision'],
+                'then_export': True})
+        result = json.loads(raw)['result']
+        self.assertEqual(status, 200)
+        self.assertEqual((result['approved'], result['problem']), (True, None))
+        self.assertEqual([call.args[0] for call in configured.call_args_list], [self.store, self.store])
+        self.assertTrue(any(d['approved_current'] for d in self.engine.deliveries(self.ident)))

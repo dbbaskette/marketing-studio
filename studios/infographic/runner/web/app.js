@@ -510,9 +510,13 @@ function receiptSheet(delivery,receipts){
       button(r.ok?'Download PDF again':'Retry PDF download',async()=>{try{await download(delivery,'pdf');toast('PDF downloaded again.');}catch(f){error(f.message);}}));
     const result=r.result||{};
     if(result.url)return receiptCard('Google Doc','done','Delivered: approved revision '+delivery.revision+'.',googleLink(result.url,'Open Google Doc'));
-    const uncertain=!r.result||result.state==='unknown';
+    const saved=(held?.google_deliveries||[]).some(g=>g.request_id===r.request_id);
+    const uncertain=saved&&(!r.result||result.state==='unknown');
+    const resend=async()=>{const request_id=requestId();const again=await action('google-deliver',{export_id:delivery.id,request_id,folder:r.folder},delivery.revision,{quiet:true});receiptSheet(delivery,receipts.map(x=>x===r?{...r,request_id,result:again,problem:again?null:$('notice').textContent}:x));};
+    const check=async()=>{const again=await action('google-deliver',{export_id:delivery.id,request_id:r.request_id,folder:r.folder,reconcile:true},delivery.revision,{quiet:true});receiptSheet(delivery,receipts.map(x=>x===r?{...r,result:again}:x));};
+    if(!saved)return receiptCard('Google Doc','late','Not delivered: '+(result.message||r.problem||'The request did not start.')+' No Google request was saved.',button('Send again',resend));
     return receiptCard('Google Doc',uncertain?'review':'late',(uncertain?'Not confirmed: ':'Not delivered: ')+(result.message||r.problem||'The outcome could not be confirmed.')+' Nothing was resent.',
-      button('Check again without resending',async()=>{const again=await action('google-deliver',{export_id:delivery.id,request_id:r.request_id,reconcile:true},delivery.revision,{quiet:true});receiptSheet(delivery,receipts.map(x=>x===r?{...r,result:again}:x));}));
+      button('Check again without resending',check),uncertain?null:button('Send again',resend));
   });
   const partial=receipts.some(r=>r.kind==='pdf'?!r.ok:!r.result?.url)&&receipts.some(r=>r.kind==='pdf'?r.ok:!!r.result?.url);
   sheet('Delivery receipt',make('p','','Approved revision '+delivery.revision+'. Each format you chose is listed with what happened.'),...parts,
@@ -705,7 +709,7 @@ async function deliverySheet(delivery){
     const choice=format.input.value,receipts=[];
     try{
       if(choice!=='google'){try{await download(delivery,'pdf');receipts.push({kind:'pdf',ok:true});}catch(f){receipts.push({kind:'pdf',ok:false,message:f.message});}}
-      if(choice!=='pdf'){const result=await action('google-deliver',{export_id:delivery.id,request_id:savedRequest,folder:folder.input.value},null,{quiet:true});receipts.push({kind:'google',result,request_id:savedRequest,problem:result?null:$('notice').textContent});}
+      if(choice!=='pdf'){const result=await action('google-deliver',{export_id:delivery.id,request_id:savedRequest,folder:folder.input.value},null,{quiet:true});receipts.push({kind:'google',result,request_id:savedRequest,folder:folder.input.value,problem:result?null:$('notice').textContent});}
       receiptSheet(delivery,receipts);
     }finally{go.disabled=false;}},true);
   sheet('Deliver this approved revision',make('p','','PDF preserves the exact approved one-page render. A new Google Doc contains that page as an image, plus editable text and source notes. Your original document is kept. Google conversion layout requires visual review in Docs.'),make('p','quiet','Starts with your shared Marketing Studio delivery choice and existing Google sign-in.'),format.wrap,detail('Choose a destination folder',folder.wrap),problem,add(make('div','bar'),go,button('Cancel',closeSheet)));
