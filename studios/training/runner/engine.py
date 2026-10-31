@@ -5580,8 +5580,10 @@ class Engine(Reviewing):
             session = workspace.load(root)
             names, person = workspace.artifact_names(root, session), \
                 workspace.person_statuses(root, session)
+            # Every one is checked before any changes: a refusal leaves everything as it was.
             for name, shown in seen.items():
-                if name not in names:
+                if name not in names or workspace.split(name)[0].partition(':')[0] \
+                        not in workspace.PERSON_MARKED:
                     raise WorkspaceError(drafts.NOTHING_TO_RETURN)
                 it = workspace.sentence(workspace.label(name))
                 if name in drafts.updates(record):

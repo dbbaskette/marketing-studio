@@ -153,6 +153,22 @@ class ReadyTests(ReadyCase):
         reviews = (self.root / workspace.review_file(guide)).read_text(encoding='utf-8')
         self.assertIn('Decision: returned to draft on the page', reviews)
 
+    def test_row_202_a_name_that_is_not_a_desk_material_refuses_before_any_change(self):
+        guide = self.guide()
+        seen = self.seen(guide)
+        self.post('drafts/ready', {'path': self.path, 'name': guide, 'seen': seen[guide]})
+        session = workspace.load(self.root)
+        intake = workspace.sha256_file(
+            self.root / workspace.artifact(self.root, session, 'intake')['file'])
+        approvals, commits = self.approvals(), self.log()
+        refused = self.post('drafts/draft', {'path': self.path, 'seen': {
+            guide: seen[guide], 'intake': intake}}, expect=409)
+        self.assertEqual(refused['error'], drafts.NOTHING_TO_RETURN)
+        self.assertEqual(self.cards()[guide]['state'], 'ready')
+        self.assertEqual(self.approvals(), approvals)
+        self.assertEqual(self.log(), commits)
+        self.assertEqual(self.git('status', '--porcelain'), '')
+
     def test_return_to_draft_without_the_mark_it_undoes_stays_accepted_on_the_desk(self):
         guide = self.guide()
         seen = self.seen(guide)
@@ -312,7 +328,9 @@ class ReadyJourneyTests(RunnerAnswers, ReadyCase):
                                                             {'path': self.path, 'seen': seen})]
         result = self.journey(answers, [
             {'click': 'Mark every material ready'}, {'click': 'Mark 3 materials ready'},
-            {'snapshot': 'marked'}, {'click': 'Undo'}, {'snapshot': 'undone'}], narrow=True)
+            {'snapshot': 'marked'}, {'click': 'Undo'}, {'snapshot': 'undone'},
+            # The toast's leaving, later, never takes the focus Undo put back.
+            {'timer': 'gone'}, {'snapshot': 'gone'}], narrow=True)
         self.assertEqual(self.posts(result), [('/api/drafts/level-ready', sent),
                                               ('/api/drafts/draft', {'path': self.path,
                                                                      'seen': seen})])
@@ -326,9 +344,25 @@ class ReadyJourneyTests(RunnerAnswers, ReadyCase):
                       'revision 1 of Guide until you mark it ready again. The Document Library '
                       'keeps revision 1 of Brief until you mark it ready again.', shot['toasts'])
         self.assertIn('Mark every material ready', shot['buttons'])
+        self.assertEqual(shot['focus'], 'Mark every material ready')
+        self.assertEqual(result['snapshots']['gone']['focus'], 'Mark every material ready')
         self.assertEqual(self.approvals(), before)
         self.assertEqual(self.shelf(), kept)
         self.assertEqual(len(kept), 2)
+
+    def test_row_201_undo_leaves_with_its_desk(self):
+        seen = self.seen(*self.drafted())
+        answers = self.shell()
+        answers['POST /api/drafts/level-ready'] = [self.read_post(
+            'drafts/level-ready', {'path': self.path, 'level': '', 'seen': seen})]
+        result = self.journey(answers, [
+            {'click': 'Mark every material ready'}, {'click': 'Mark 3 materials ready'},
+            {'snapshot': 'marked'}, {'click': 'Home'}, {'snapshot': 'home'}])
+        self.assertIn('Undo', result['snapshots']['marked']['buttons'])
+        self.assertNotIn('Undo', result['snapshots']['home']['buttons'])
+        # Leaving the desk shares what was typed, as always; nothing returns to draft.
+        self.assertEqual([address for address, _ in self.posts(result)],
+                         ['/api/drafts/level-ready', '/api/drafts/share'])
 
     def test_row_202_return_to_draft_on_a_card_says_what_the_library_keeps(self):
         guide = self.guide()

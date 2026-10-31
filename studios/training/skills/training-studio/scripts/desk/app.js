@@ -990,9 +990,14 @@ function toast(text, action) {
     if (!node.parentNode) return;
     const focused = node.contains(document.activeElement);
     node.classList.add('toast-leaving');
-    window.setTimeout(() => {
+    window.setTimeout(function gone() {
       node.remove();
-      if (focused) byId('title').focus({ preventScroll: true });
+      // Only a focus that left with the toast is put back: what the action itself focused
+      // in the meantime keeps it.
+      const active = document.activeElement;
+      if (focused && (!active || active === document.body || !document.body.contains(active))) {
+        byId('title').focus({ preventScroll: true });
+      }
     }, calm() ? 0 : 260);
   };
   if (action) {
@@ -1225,6 +1230,10 @@ function swap(update) {
 function open(next) {
   if (view.screen === 'run' && view.path && (next.screen !== 'run' || next.path !== view.path)
       && typeof shareDesk === 'function') shareDesk(view.path);
+  // A toast's action (Undo) belongs to the screen it was offered on: it leaves with it.
+  if (view.screen !== next.screen || view.path !== (next.path || null)) {
+    for (const old of byId('toasts').querySelectorAll('.toast-action')) old.remove();
+  }
   view.screen = unset() ? 'setup' : next.screen || 'home';
   view.path = next.path || null;
   view.artifact = next.artifact || null;
@@ -9070,6 +9079,8 @@ function took(listing) {
   const keys = waiting.map(waitingKey);
   for (const training of view.known ? waiting : []) {
     if (view.known.includes(waitingKey(training))) continue;
+    // What the person just did themselves (Undo, Return to draft) is not news to them.
+    if (view.ownDecision && view.ownDecision.has(training.path)) continue;
     const said = (training.title || 'Untitled') + ': ' + saysOf(training);
     toast(said);
     if (alerts() !== 'granted') continue;
@@ -9086,6 +9097,7 @@ function took(listing) {
     }
   }
   view.known = keys;
+  if (view.ownDecision) for (const training of waiting) view.ownDecision.delete(training.path);
 }
 
 // Someone is in the middle of writing in a box: the list is left as it is until they are done.

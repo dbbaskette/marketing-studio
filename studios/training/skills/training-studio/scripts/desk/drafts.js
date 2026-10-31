@@ -2242,7 +2242,8 @@ function paintDesk(fresh) {
   }
   const selected = held.sources ? 'sources' : held.material[level];
   // The version of each material shown here, for the Mark this level ready sheet.
-  const opened = !held.sources && available.find((one) => one.name === selected);
+  const opened = !held.sources && !preparingPlan && !waitingPlan
+    && available.find((one) => one.name === selected);
   if (opened && opened.seen) (held.opened ||= {})[opened.name] = opened.seen;
   const options = [...available.map(one => ({id: one.name, label: cardTitle(one) + ' · '
     + (DESK_WORDS.tabs[one.state] || 'Draft')})),
@@ -2294,10 +2295,12 @@ function paintDesk(fresh) {
 
 // One of the person's decisions on the desk, answered with the desk again. What it was
 // refused for, or where Mark this level ready stopped, is said on the desk.
-async function deskDecide(route, sent, pressed, { flush = true } = {}) {
+async function deskDecide(route, sent, pressed, { flush = true, path: at = null } = {}) {
   if (view.busy) return null;
   const turn = view.turn;
-  const path = view.path;
+  // A decision offered on one training's desk (Undo) is sent for that training, wherever
+  // the person is when they press it.
+  const path = at || view.path;
   const held = deskHeld(path);
   view.busy = true;
   held.said = '';
@@ -2325,6 +2328,7 @@ async function deskDecide(route, sent, pressed, { flush = true } = {}) {
   }
   view.busy = false;
   if (turn !== view.turn) return null;
+  const here = view.screen === 'run' && view.path === path;
   if (answer && route === 'level-ready') {
     if (answer.stopped) held.said = answer.stopped.said;
     if (list(answer.marked).length) readyToast(answer, answer.marked);
@@ -2333,6 +2337,8 @@ async function deskDecide(route, sent, pressed, { flush = true } = {}) {
     readyToast(answer, [sent.name]);
   } else if (answer && route === 'draft') {
     draftToast(answer, list(answer.returned), sent.undo);
+    // The person's own decision: the list's next look does not tell them it needs them.
+    (view.ownDecision ||= new Set()).add(path);
   } else if (answer && route === 'keep') {
     toast('Kept as it is.');
   } else if (answer && route === 'library-keep') {
@@ -2352,6 +2358,10 @@ async function deskDecide(route, sent, pressed, { flush = true } = {}) {
     }
   }
   if (pressed) pressed.disabled = false;
+  if (!here) {
+    if (!answer && held.said) toast(held.said);   // its desk is not shown to say it
+    return answer;
+  }
   if (view.sheet && DESK_SHEETS.includes(view.sheet)) drawSheet();
   paintDesk(false);
   // A card's Mark ready or Return to draft is gone once pressed: the toast's Undo, or the
@@ -2436,9 +2446,11 @@ function readyToast(answer, names) {
     return;
   }
   const seen = Object.fromEntries(undoable.map((one) => [one.name, one.seen]));
+  const path = view.path;   // the training these were marked on, whatever is shown later
   toast(text, { label: 'Undo', key: 'desk-undo', run: async (control) => {
-    const undone = await deskDecide('draft', { seen, undo: true }, control);
-    if (undone && !focusKey('desk-level-ready')) {
+    const undone = await deskDecide('draft', { seen, undo: true }, control, { path });
+    if (undone && view.screen === 'run' && view.path === path
+        && !focusKey('desk-level-ready')) {
       if (!focusKey('desk-ready ' + undoable[0].name)) byId('title').focus({ preventScroll: true });
     }
   } });
