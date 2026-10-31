@@ -5,6 +5,8 @@ What a caller needs to know
     context.ROUTES                         # the POST routes every studio page answers alike
     context.answer(path, sent, studio)     # one of them: browse, preview, filters, matching
     context.pin(documents, root, picks)    # pin [{'id', 'revision'}] into an item's documents
+    context.snapshots(picks)               # check and read them first, for a caller that
+                                           # must refuse before it makes anything
     context.update(documents, root, ident) # take a document's newest revision, explicitly
     context.marked(entries)                # each pinned entry with its library head
 
@@ -94,14 +96,26 @@ def _picks(picks) -> list[dict]:
     return clean
 
 
-def pin(documents, root, picks) -> list[dict]:
-    """Pin the chosen revisions as the item's documents, all or none."""
-    picks = _picks(picks)
+def picks(value) -> list[dict]:
+    """The chosen revisions' shape alone: a list of {'id', 'revision'}, each document once.
+    Raises LibraryError with a sentence. Nothing is read."""
+    return _picks(value)
+
+
+def snapshots(chosen) -> list[dict]:
+    """Every chosen revision read and checked (there, readable, not removed from the
+    library, matching its hashes) before anything is changed, as `pin` takes them.
+    Raises LibraryError with a sentence."""
+    chosen = _picks(chosen)
     library = opened()
     if library is None:
         raise LibraryError(NOT_MADE)
-    snapshots = [library.snapshot(pick['id'], pick['revision']) for pick in picks]
-    return documents.add_snapshots(root, snapshots)
+    return [library.snapshot(pick['id'], pick['revision']) for pick in chosen]
+
+
+def pin(documents, root, picks) -> list[dict]:
+    """Pin the chosen revisions as the item's documents, all or none."""
+    return documents.add_snapshots(root, snapshots(picks))
 
 
 def update(documents, root, ident) -> dict:

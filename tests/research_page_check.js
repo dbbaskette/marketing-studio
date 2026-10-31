@@ -57,6 +57,8 @@ const key=(editor,k)=>all(editor.node).find(n=>n.dataset.key===k);
  chosen=Object.assign(new Node('ul'),{className:'research-source-list'});chosen.append('Synthetic library brief');library.render();
  assert.ok(all(library.node).some(n=>n.textContent==='Synthetic library brief'));
  assert.equal(all(library.node).some(n=>n.textContent==='Add material here, or allow external search below.'),false);
+ let full=false;const capped=new kit.Editor({request,value:{...state,sources:[]},library:()=>{},libraryFull:()=>full});
+ assert.equal(key(capped,'research-library').disabled,false);full=true;capped.render();assert.equal(key(capped,'research-library').disabled,true,'Add from library waits once the studio says its choices are full');
  // A studio may say the search choice in its own words; without them the shared summary stands.
  assert.ok(all(editor.node).some(n=>n.textContent===kit.summary(editor.value)));
  const worded=new kit.Editor({request,value:{...state,sources:[],external:false},policyHint:value=>value.external?'Searching too.':'Yours only.'});

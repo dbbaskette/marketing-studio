@@ -821,6 +821,8 @@ class Engine(Jobs, Researching, DeskActions):
         checked = decks.check_form(form, self.brands(), references=bool(
             selected_sources and selected_sources['sources']) or bool(library))
         given = self._given(form, checked, uploads or {})
+        # Every library pick is read and checked now, before anything is made.
+        taken = self._library_snapshots(library) if library else []
         named = isinstance(form, dict) and form.get('agent') not in (None, '')
         agent = settings.check_agent(form['agent']) if named else chosen.agent
         model = settings.check_model(form.get('model')) if named else chosen.model
@@ -853,11 +855,8 @@ class Engine(Jobs, Researching, DeskActions):
                                      'Open the current workspace and try again.')
             root = decks.create(space, checked)
             try:
-                if library:
-                    try:
-                        library_context.pin(documents, root, library)
-                    except LibraryError as refusal:
-                        raise WorkspaceError(str(refusal)) from None
+                if taken:
+                    documents.add_snapshots(root, taken)
                 for name, data in given.items():
                     target = root / INCOMING / name
                     target.parent.mkdir(parents=True, exist_ok=True)
@@ -895,9 +894,10 @@ class Engine(Jobs, Researching, DeskActions):
 
     @staticmethod
     def _start_library(form, picks) -> list:
-        """The library's revisions chosen at the start, checked before anything is made:
-        each by its ID and revision, once, and only for a deck that is researched from an
-        idea or a document, where the start's sources are offered."""
+        """The library's revisions chosen at the start, by their shape alone: each by its
+        ID and revision, once, and only for a deck that is researched from an idea or a
+        document, where the start's sources are offered. `_library_snapshots` reads them,
+        before the deck is made."""
         if not picks:
             return []
         form = form if isinstance(form, dict) else {}
@@ -905,9 +905,19 @@ class Engine(Jobs, Researching, DeskActions):
             raise WorkspaceError('Documents from the library are added at the start only with '
                                  'Research first, for a deck from an idea or a document. Add '
                                  'them on the desk otherwise.')
-        if not isinstance(picks, list):
-            raise WorkspaceError('Choose each document by its library ID and revision.')
-        return picks
+        try:
+            return library_context.picks(picks)
+        except LibraryError as refusal:
+            raise WorkspaceError(str(refusal)) from None
+
+    @staticmethod
+    def _library_snapshots(picks) -> list:
+        """Each chosen revision read and checked: there, readable, not removed from the
+        library and matching its hashes. A refusal says which, and nothing is made."""
+        try:
+            return library_context.snapshots(picks)
+        except LibraryError as refusal:
+            raise WorkspaceError(str(refusal)) from None
 
     @staticmethod
     def _given(form: dict, checked: dict, uploads: dict) -> dict:
@@ -3097,7 +3107,7 @@ class Engine(Jobs, Researching, DeskActions):
                     'corrected': '(Corrected by you)' in said.get('Verdict', ''),
                     'documents': [{key: entry.get(key) for key in ('name', 'title', 'bytes',
                                                                    'readable')}
-                                  for entry in documents.listed(root)]}
+                                  for entry in intake.theirs(root)]}
         found = outlines.inventory_of(root) or {}
         pictured = sorted(number for number in self._shots(root / existing.ORIGINAL_SHOTS)
                           if isinstance(number, int))

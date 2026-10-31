@@ -210,6 +210,8 @@ const StudioResearch = (() => {
       const status = make('p', this.problem ? 'problem' : 'quiet', this.problem || this.reading); status.setAttribute('role', this.problem ? 'alert' : 'status'); status.hidden = !status.textContent; this.node.append(status);
       if (this.problem) this.node.append(button('Reload sources', () => this.load(), 'research-reload'));
       for (const control of this.node.querySelectorAll('button, input, textarea, select')) control.disabled = this.busy || !state;
+      // A studio whose library choices are full says so beside them (`libraryFull`), and Add from library waits.
+      if (this.a.library && this.a.libraryFull && this.a.libraryFull()) { const more = Array.from(this.node.querySelectorAll('button')).find(n => n.dataset.key === 'research-library'); if (more) more.disabled = true; }
       if (this.problem) { const reload = Array.from(this.node.querySelectorAll('button')).find(n => n.dataset.key === 'research-reload'); if (reload) reload.disabled = this.busy; }
       for (const detail of this.node.querySelectorAll('details[data-key]')) detail.open = opened.includes(detail.dataset.key);
       if (restore) { const target = Array.from(this.node.querySelectorAll('[data-key]')).find(n => n.dataset.key === restore); if (target && !target.disabled) target.focus(); }

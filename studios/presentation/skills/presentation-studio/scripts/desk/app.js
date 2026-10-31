@@ -3142,6 +3142,12 @@ function givenWith(draft) {
   return draft.route === 'document' || libraryPicks(draft).length > 0;
 }
 
+// At most this many of the library's documents are chosen at the start, as the desk's Add
+// from library takes at most this many at once.
+const LIBRARY_MOST = 40;
+const LIBRARY_FULL = LIBRARY_MOST + ' documents from the library is the most a new deck '
+  + 'takes. Remove one to add another.';
+
 // The Document Library's documents chosen at the start, each {id, revision, title}: pinned
 // as the deck's sources when it starts, as Add from library on the desk pins them.
 function libraryPicks(draft) {
@@ -3159,8 +3165,12 @@ function pickLibrary(draft, editor) {
     return;
   }
   const held = libraryPicks(draft);
+  if (held.length >= LIBRARY_MOST) {
+    say(byId('research-from-problem'), LIBRARY_FULL);
+    return;
+  }
   window.StudioLibrary.pick({
-    studio: 'presentation', max: Math.max(1, 40 - held.length),
+    studio: 'presentation', max: LIBRARY_MOST - held.length,
     post: (route, body) => send(route, body),
     refocus: () => document.querySelector('[data-key="research-library"]'),
     use: async (picks) => {
@@ -3174,7 +3184,9 @@ function pickLibrary(draft, editor) {
         found.push({ id: pick.id, revision: pick.revision, title: read.title || 'Untitled' });
       }
       const chosen = new Set(found.map((one) => one.id));
-      draft.library = [...held.filter((one) => !chosen.has(one.id)), ...found];
+      const kept = [...held.filter((one) => !chosen.has(one.id)), ...found];
+      if (kept.length > LIBRARY_MOST) throw new Error(LIBRARY_FULL);
+      draft.library = kept;
       editor.render();
       editor.changed();
       toast(found.length === 1 ? 'It is added. It becomes a source of the deck when it starts.'
@@ -3188,7 +3200,8 @@ function pickLibrary(draft, editor) {
 function libraryList(draft, editor) {
   const held = libraryPicks(draft);
   if (!held.length) return null;
-  return add(make('ul', 'research-source-list'), ...held.map((one) => {
+  const full = held.length >= LIBRARY_MOST ? make('p', 'quiet field-hint', LIBRARY_FULL) : null;
+  return add(make('div', ''), add(make('ul', 'research-source-list'), ...held.map((one) => {
     const remove = button('Remove', 'button button-quiet', () => {
       draft.library = held.filter((other) => other.id !== one.id);
       editor.render();
@@ -3199,7 +3212,7 @@ function libraryList(draft, editor) {
     return add(make('li', 'research-source-row'), add(make('div', 'research-source-copy'),
       make('p', 'row-title', one.title), make('p', 'quiet', 'From the Document Library, '
         + 'revision ' + one.revision)), remove);
-  }));
+  })), full);
 }
 
 // Research from: ☑ your documents ☑ your sites (3) ☐ the public web. With your sites on,
@@ -3211,6 +3224,7 @@ function researchFromField(draft) {
       // An uploaded file is kept in the Document Library too, unless Only this project.
       keepChoice: true,
       library: (editor) => pickLibrary(draft, editor),
+      libraryFull: () => libraryPicks(draft).length >= LIBRARY_MOST,
       extra: (editor) => libraryList(draft, editor),
       policyHint: searchSays,
       onChange: () => {

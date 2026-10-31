@@ -276,7 +276,7 @@ class StartSourceTests(LibraryCase):
         self.assertEqual(list(work.prepared['inputs']), ['Pasted text'])
 
 
-PDF =b'%PDF-1.7\n% the render of the delivered deck\n%%EOF\n'
+PDF = b'%PDF-1.7\n% the render of the delivered deck\n%%EOF\n'
 
 
 class PdfTests(LibraryCase):

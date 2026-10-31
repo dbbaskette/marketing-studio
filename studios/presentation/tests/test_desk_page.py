@@ -10,7 +10,9 @@ computer or touches the network.
 import base64
 import copy
 import json
+import subprocess
 import unittest
+from pathlib import Path
 from datetime import UTC, datetime
 from unittest import mock
 
@@ -474,7 +476,7 @@ class ResearchStartTests(DeskPageCase):
         self.assertLessEqual(set(body), {'form', 'uploads', 'research_inputs', 'library'})
         with mock.patch.object(self.engine, 'wake'):
             made = self.post('decks', body)
-        return self.engine._load(runner_support.Path(made['path'])), body
+        return self.engine._load(Path(made['path'])), body
 
     def pasted(self) -> list:
         return [{'click': 'Paste text'}, {'fill': 'Source text', 'value': self.TEXT},
@@ -618,6 +620,71 @@ class ResearchStartTests(DeskPageCase):
                          [('brief', brief['id'])])
         sources = self.engine._desk_view(root, record)['sources']
         self.assertEqual([one['title'] for one in sources], ['brief'])
+
+    def document_with_library(self, library) -> dict:
+        """What the page sends for a researched deck from a pasted document, with `library`."""
+        draft = self.post('research-sources', {'action': 'create'})
+        return {'form': {**runner_support.FORM, 'flow': 'desk', 'route': 'document',
+                         'research': True, 'source': {'kind': 'paste',
+                                                      'text': 'The talk, slide by slide.'}},
+                'uploads': {}, 'library': library,
+                'research_inputs': {'id': draft['id'], 'expected': draft['revision']}}
+
+    def test_a_library_pick_beside_a_document_is_never_read_as_that_document(self):
+        # Review of #255: the outline and the classification read the person's document
+        # alone; a library pick beside it is a separately labelled supporting source.
+        from runner.steps import intake, outline
+        brief = self.library()
+        with mock.patch.object(self.engine, 'wake'):
+            made = self.post('decks', self.document_with_library(
+                [{'id': brief['id'], 'revision': brief['revision']}]))
+        root = Path(made['path'])
+        # The intake step takes the pasted document in, beside the pin.
+        intake.take_document(root, {'kind': 'paste', 'text': 'The talk, slide by slide.'})
+        self.assertEqual(list(outline._document_texts(root)), ['Pasted text'])
+        self.assertEqual(list(outline._supporting_texts(root)), ['Supporting source: brief'])
+        record = self.engine._load(root)
+        shown = self.engine._show_classify(root, record)
+        self.assertEqual([one['title'] for one in shown['documents']], ['Pasted text'])
+
+    def test_a_bad_library_pick_is_refused_before_anything_is_made(self):
+        from runner import decks as deck_files
+        before = sorted(path.parent for path in self.engine.space().root.rglob(deck_files.RUN))
+        # A malformed pick is the request's fault.
+        for bad in ([{'id': 'x'}], [{'id': 'a' * 32, 'revision': '1'}], 'brief'):
+            with self.subTest(bad=bad):
+                self.post('decks', self.document_with_library(bad), expect=400)
+        # One that is well formed but not in the library makes nothing, not even a commit.
+        self.library()
+        commits = self.engine.space().repo
+        log = subprocess.run(['git', '-C', str(commits), 'rev-list', '--all',
+                                             '--count'], capture_output=True, text=True).stdout
+        refused = self.post('decks', self.document_with_library(
+            [{'id': 'f' * 32, 'revision': 1}]), expect=409)
+        self.assertIn('error', refused)
+        after = sorted(path.parent for path in self.engine.space().root.rglob(deck_files.RUN))
+        self.assertEqual(after, before)
+        self.assertEqual(subprocess.run(
+            ['git', '-C', str(commits), 'rev-list', '--all', '--count'],
+            capture_output=True, text=True).stdout, log)
+
+    def test_add_from_library_waits_once_forty_are_chosen(self):
+        brief = self.library()
+        read = self.post('library-document', {'id': brief['id'], 'revision': brief['revision']})
+        picks = [{'id': f'{number:032x}', 'revision': 1} for number in range(40)]
+        result = self.start([{'click': 'An idea'}],
+                            [{'click': 'Add from library'}, {'snapshot': 'full'},
+                             {'click': 'Add from library'}],
+                            self.drafts(), {'POST /api/library-document': [ok(read)]},
+                            library=picks)
+        full = result['snapshots']['full']
+        self.assertEqual([asked['max'] for asked in result['library']], [40])
+        self.assertIn('Add from library', full['off'])
+        self.assertIn('40 documents from the library is the most a new deck takes. Remove one '
+                      'to add another.', full['sheet'])
+        # The second press asks for nothing more, and Start sends the forty.
+        body = next(body for address, body in self.posts(result) if address == '/api/decks')
+        self.assertEqual(body['library'], picks)
 
     def deck_root(self, record: dict):
         """The folder of the one deck the runner started here."""

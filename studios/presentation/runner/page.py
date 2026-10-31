@@ -150,6 +150,7 @@ from runner import decks, gitstate, marks, settings, setup
 from runner import engine as engines
 
 from studio_core import modules
+from studio_core.document_library import LibraryError
 from studio_core.document_library import context as library_context
 from studio_core.shared_runner import page as _shared
 modules.bind(globals(), _shared, _shared.NAMES)
@@ -556,6 +557,12 @@ class RunnerPage(server.Page):
         brands = self.engine.brands() if self.engine.workspace is not None else None
         if brands is not None and not sent.get('research_inputs'):   # source-backed forms are checked with their trusted references by the engine
             shaped(decks.check_form, form, brands)
+        # A malformed pick is the request's fault, refused before anything is read.
+        if sent.get('library') is not None:
+            try:
+                library_context.picks(sent['library'])
+            except LibraryError as refusal:
+                raise server.Refusal(HTTPStatus.BAD_REQUEST, str(refusal)) from None
         return self.engine.start(form, uploads, research_inputs=sent.get('research_inputs'),
                                  library=sent.get('library'))
 

@@ -5,6 +5,22 @@ making decks first, then what changes for maintainers.
 
 ## Unreleased
 
+- **A library document beside your document stays a supporting source.** When
+  a deck from a document has documents chosen from the library, the outline is
+  written from your document alone. The library documents go to it under their
+  own label, as supporting sources, and the classification lists only your
+  document. A library choice that is missing or was removed from the library is
+  refused before anything is made. New deck takes at most 40 documents from the
+  library; at 40, **Add from library** waits and says why.
+
+  For maintainers: `outline._document_texts` reads `intake.theirs`, and
+  `_supporting_texts` adds the pins as "Supporting source: …" inputs. The
+  engine's `_show_classify` lists `intake.theirs`. `studio_core.document_library.context`
+  gains `picks` (the shape alone) and `snapshots` (each pick read and checked),
+  and `pin` uses them. The engine reads every pick before `decks.create`, and
+  `/api/decks` answers 400 for a malformed pick. `research.js` takes an optional
+  `libraryFull` adapter hook. Part of #255.
+
 - **Research choices are checkboxes that say what will happen.** **Research
   first** is now a checkbox, as other independent choices on a form are, and a
   screen reader announces it as one. Under **Search for additional external

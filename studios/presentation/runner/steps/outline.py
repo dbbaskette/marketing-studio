@@ -242,12 +242,25 @@ def count_rule(inventory: dict, level: str):
 
 # --- the jobs -------------------------------------------------------------------------------
 
+SUPPORTING = 'Supporting source: '
+SUPPORTING_SAYS = (f'Inputs named "{SUPPORTING}…" are documents the person chose from the '
+                   'Document Library beside their own: use them to support the outline, never '
+                   'as the document it is written from.')
+
+
 def _document_texts(root) -> dict:
-    found = {}
-    for entry in documents.listed(root):
-        if entry['readable']:
-            found[entry.get('title') or entry['name']] = documents.text_of(root, entry)
-    return found
+    """The person's own document, under its title: never a document pinned from the
+    Document Library beside it (intake.theirs)."""
+    from runner.steps import intake
+    return {entry.get('title') or entry['name']: documents.text_of(root, entry)
+            for entry in intake.theirs(root)}
+
+
+def _supporting_texts(root) -> dict:
+    """Readable documents pinned from the Document Library, each under its own label so it
+    is never read as the person's document."""
+    return {SUPPORTING + (entry.get('title') or entry['name']): documents.text_of(root, entry)
+            for entry in documents.listed(root) if entry['readable'] and entry.get('library')}
 
 
 def _tail(run: dict, request, error) -> list[str]:
@@ -353,6 +366,10 @@ def outline_work(root, run: dict, request: dict | None, error: str | None, brand
         kind = 'outline-spec' if run.get('classified') == 'spec' else 'outline-material'
         intro = 'Write the outline from the person\'s document.'
         inputs.update(_document_texts(root))
+        supporting = _supporting_texts(root)
+        if supporting:
+            inputs.update(supporting)
+            intro += ' ' + SUPPORTING_SAYS
     elif route == 'existing':
         kind = 'restructure'
         intro = 'Rework the story of the deck the person gave.'
