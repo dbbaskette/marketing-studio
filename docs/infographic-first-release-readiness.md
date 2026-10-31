@@ -26,7 +26,10 @@ this repository.
 
 ## Remaining release decisions
 
-- **#152 — Codex live execution.** With explicit authorization, generate a PNG using
+- **#152 — Codex live execution.** The scoped generate/reference-edit adapter and its
+  normalized outcomes (missing image tool, sign-in, quota, malformed asset, timeout)
+  are implemented and covered with stubbed event streams; only live acceptance remains.
+  With explicit authorization, generate a PNG using
   the native confined adapter and the selected signed-in Codex model. Perform a
   reference-guided edit and inspect actual returned and composed images. Saved
   events, owned bytes and the normalized outcome must agree. Never replace an
