@@ -939,7 +939,8 @@ $('#library-existing-preview').addEventListener('click', async () => {
 // Add documents: each file is added on its own and reported by name, and a refusal never
 // stops the rest. A file keeps its operation ID for as long as this page is open, so a retry
 // (or choosing it again) is the same upload and never keeps it twice; what was added leaves
-// the selection, so Add to library again tries only what was refused.
+// the selection, so Add to library again tries only what was refused. libraryKept only
+// words the answer: the server decides every time.
 const libraryOperations = new Map(), libraryKept = new Map();
 const fileKey = file => [file.name, file.size, file.lastModified].join('|');
 function operationId(file) {
@@ -951,9 +952,11 @@ function operationId(file) {
   return libraryOperations.get(key);
 }
 async function uploadOne(file) {
-  const key = fileKey(file);
-  if (libraryKept.has(key)) return {state: 'already', detail: `Already added as “${libraryKept.get(key)}”, so it was not added again.`};
   if (file.size > 8_000_000) return {state: 'refused', detail: 'It is larger than 8 MB, the most one document can be.'};
+  // The server is always asked, even for a file added from this page before: it says when
+  // the file is already there, shows again one removed since, and repairs one whose kept
+  // files changed. The same operation ID keeps a retry from adding it twice.
+  const key = fileKey(file), before = libraryKept.has(key);
   try {
     const bytes = new Uint8Array(await file.arrayBuffer()); let binary = '';
     for (let i = 0; i < bytes.length; i += 8192) binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
@@ -961,9 +964,10 @@ async function uploadOne(file) {
     const kept = found.document;
     libraryKept.set(key, kept.title);
     $('#library-where').textContent = `Kept in ${found.location} on this computer.`;
-    if (kept.already) return {state: 'already', detail: `Already in the library as “${kept.title}”${kept.restored ? ', and shown again: it had been removed' : ''}.`};
-    const note = kept.restored ? ' It had been removed from the library and is shown again.' : '';
-    return {state: 'added', detail: kept.readable ? `Added as “${kept.title}”.${note}` : `Added as “${kept.title}”, but ${kept.problem}${note}`};
+    if (kept.restored) return {state: 'added', detail: `Shown again as “${kept.title}”: it had been removed from the library.`};
+    if (kept.repaired) return {state: 'added', detail: `Kept again as “${kept.title}”: the library’s earlier copy had changed or gone missing.`};
+    if (kept.already || before) return {state: 'already', detail: `Already in the library as “${kept.title}”, so it was not added again.`};
+    return {state: 'added', detail: kept.readable ? `Added as “${kept.title}”.` : `Added as “${kept.title}”, but ${kept.problem}`};
   } catch (error) { return {state: 'refused', detail: error.message}; }
 }
 $('#library-add-open').addEventListener('click', () => {

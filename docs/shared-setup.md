@@ -189,7 +189,9 @@ Markdown, HTML, Word or PDF file; larger than 8 MB; empty). One refusal stops
 nothing. A file keeps its operation ID while the page is open, and what was added
 leaves the selection, so **Add to library** again tries only what was refused. The
 same file uploaded again (its name, bytes, title and studio) is the document already
-kept, even from another page.
+kept, even from another page. The page always asks the library, so a file removed
+since is shown again. When that document's kept files changed or went missing ("Upload
+it again"), uploading the file keeps a whole new revision of the same document instead.
 
 **Remove from library.** It hides a document: `documents/<id>/document.json` says
 so, written atomically under the library's lock. A hidden document is left out of
@@ -255,7 +257,7 @@ grants no web access and sends nothing to an assistant.
 | Remove | The project's copy is removed; the library document is unchanged |
 | A newer library revision | The project shows Update available; nothing changes until the person takes it |
 | Library changed, unavailable or deleted | The project keeps reading its pinned copy |
-| Removed from library (hidden) | The project keeps reading its pinned copy; Update available is not offered, and adding it again is refused until it is restored |
+| Removed from library (hidden) | The project keeps reading its pinned copy; Update available is not offered (Infographic Studio says it was removed), and adding it again is refused until it is restored |
 | Unreadable, changed or missing revision | Refused with why, and nothing changes |
 | Finish, publish or deliver again with the same text | Same document and revision, and no new revision |
 | A library save fails after delivery | Recorded in the deck's local `sources/library.json`. **Keep in library again** retries from `deliver.json` and this computer's files, with no upload, no render and no job. |

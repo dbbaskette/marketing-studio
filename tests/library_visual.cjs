@@ -264,6 +264,19 @@ const path=require('node:path'),fs=require('node:fs'),os=require('node:os'),asse
   await page.locator('#library [data-key="library-show-hidden"]').click();   // it is redrawn, then gone
   await page.locator('#library h3').filter({hasText:/^37 documents$/}).waitFor();
   assert.equal(await page.locator('#library [data-key="library-show-hidden"]').count(),0,'nothing is hidden now');
+  // On the same open page, a file added earlier then removed is shown again by uploading it:
+  // the page asks the server rather than answering from what it added before.
+  const alphaKey=await page.locator('#library-catalog .library-row').evaluateAll(rows=>rows.find(row=>row.querySelector('.row-title')?.textContent==='alpha')?.querySelector('[data-key^="library-preview-"]')?.dataset.key);
+  assert.ok(alphaKey,'alpha is listed');
+  await page.locator(`#library [data-key="${alphaKey}"]`).click();
+  await page.locator(`#library [data-key="library-remove-${alphaKey.slice('library-preview-'.length)}"]`).click();
+  await page.locator('#library [data-key="library-remove-confirm"]').click();
+  await page.locator('#library h3').filter({hasText:/^36 documents$/}).waitFor();
+  await page.locator('#library-add-open').click();
+  const shownAgain=await addFiles([mixed[0]]);
+  assert.ok(shownAgain.includes('Shown again as “alpha”'),'uploading a removed file shows it again: '+shownAgain);
+  await page.locator('#library h3').filter({hasText:/^37 documents$/}).waitFor();
+  await page.locator('#library-add-close').click();
   assert.deepEqual(errors,[]);
   console.log('PASS Document Library in a browser: the Library screen list first with one filled action, phone Filters in the Library and the Add from library sheet, Add documents with a mixed and an oversize upload reported per file and retried without duplicates, preview beside its row with focus back, Add existing work to library, Remove from library and Restore, at 1280, 390 and 320px, light and dark, reduced motion and reduced transparency with more contrast; opaque lists, 44px controls, keyboard ticks, Escape and focus; no studio, assistant or provider started');
  }catch(e){console.error(e);throw e;}

@@ -373,6 +373,17 @@ class Library:
         return isinstance(found, dict) and found.get('schema') == SCHEMA \
             and found.get('id') == folder.name and found.get('hidden') is True
 
+    def _whole(self, place: Path, record: dict) -> bool:
+        """Whether a revision's kept files are all there and match their hashes."""
+        if self._state_of(place, record)[0] == 'missing':
+            return False
+        try:
+            for part in (record.get('markdown'), record.get('original')):
+                self._checked(place, part)
+        except (LibraryError, OSError):
+            return False
+        return True
+
     def _set_hidden(self, folder: Path, hidden: bool) -> None:
         """Write the document's own record whole. Hold the lock."""
         try:
@@ -556,7 +567,8 @@ class Library:
         with self.lock:
             folder = self._folder(ident)
             if self._head(folder) is None:
-                raise LibraryError('That revision is not in the library.')
+                raise LibraryError('That document has no complete revision in the library, so '
+                                   'it cannot be removed or restored. Nothing was changed.')
             if self._hidden(folder) != hidden:
                 self._set_hidden(folder, hidden)
         return self.describe(ident)
@@ -721,7 +733,9 @@ class Library:
 
         The same operation ID returns what it kept. The same file (name, bytes, title and
         studio) under another operation ID is the document already kept, and its row says
-        `already`. Either way a hidden document is restored, and its row says `restored`."""
+        `already`. Either way a hidden document is restored, and its row says `restored`.
+        When that document's kept files changed or went missing, a new whole revision of it
+        is kept instead, and its row says `repaired`."""
         plain = _plain(name, NAME)
         if plain is None or any(c in plain for c in '/\\:') or plain.startswith('.'):
             raise LibraryError('Upload a text, Markdown, HTML, Word (.docx) or PDF file by its name.')
@@ -781,15 +795,26 @@ class Library:
                 earlier = next((row['id'] for row in rows if row.get('kind') == 'upload'
                                 and row.get('fingerprint') == fingerprint), None)
                 already = earlier is not None
+            repair = None
             if earlier is not None:
                 folder = self._folder(earlier)
-                restored = self._hidden(folder)
-                if restored:
-                    self._set_hidden(folder, False)
-                return {**self.describe(earlier), 'already': already, 'restored': restored}
+                place, head = self._record(earlier)
+                if self._whole(place, head):
+                    restored = self._hidden(folder)
+                    if restored:
+                        self._set_hidden(folder, False)
+                    return {**self.describe(earlier), 'already': already, 'restored': restored,
+                            'repaired': False}
+                # Its kept files changed or went missing ("Upload it again"): this upload
+                # keeps a whole new revision of the same document, so uploading repairs it.
+                repair = earlier
             self._tidy()
-            kept = self._write(None, record, files)
-        return {**self.describe(kept['id']), 'already': False, 'restored': False}
+            kept = self._write(repair, record, files)
+            restored = repair is not None and self._hidden(self._folder(repair))
+            if restored:
+                self._set_hidden(self._folder(repair), False)
+        return {**self.describe(kept['id']), 'already': False, 'restored': restored,
+                'repaired': repair is not None}
 
     def retain(self, key, studio, kind, title, text, project=None, author=None, pdf=None,
                origin='created') -> dict:

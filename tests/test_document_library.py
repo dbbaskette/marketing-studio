@@ -459,6 +459,34 @@ class RemoveTests(LibraryCase):
         back = made.add_upload('alpha.md', b'Alpha words.')
         self.assertEqual((back['id'], back['restored'], back['hidden']), (first['id'], True, False))
 
+    def test_uploading_again_repairs_a_document_whose_files_changed_or_went_missing(self):
+        made = self.made()
+        first = made.add_upload('alpha.md', b'# Alpha\nhello\n', operation='a' * 32)
+        place = made.root / 'documents' / first['id'] / 'revisions' / '1'
+        (place / 'content.md').write_text('changed behind the library')
+        with self.assertRaisesRegex(library.LibraryError, 'Upload it again'):
+            made.snapshot(first['id'], 1)
+        made.hide(first['id'], True)
+        again = made.add_upload('alpha.md', b'# Alpha\nhello\n', operation='c' * 32)
+        self.assertEqual((again['id'], again['revision'], again['already'], again['repaired'], again['restored']),
+                         (first['id'], 2, False, True, True))
+        self.assertEqual(made.snapshot(first['id'], 2)['text'], '# Alpha\nhello\n')
+        # Once whole, the same file is the document already kept, by either operation ID.
+        for operation in ('a' * 32, 'c' * 32, 'd' * 32):
+            same = made.add_upload('alpha.md', b'# Alpha\nhello\n', operation=operation)
+            self.assertEqual((same['id'], same['revision'], same['repaired']), (first['id'], 2, False))
+        (made.root / 'documents' / first['id'] / 'revisions' / '2' / 'original.md').unlink()
+        retried = made.add_upload('alpha.md', b'# Alpha\nhello\n', operation='c' * 32)
+        self.assertEqual((retried['revision'], retried['repaired']), (3, True))
+        self.assertEqual(made.catalog()['total'], 1)
+
+    def test_remove_refuses_a_document_with_no_complete_revision(self):
+        made = self.made()
+        kept = made.add_upload('alpha.md', b'Alpha words.')
+        (made.root / 'documents' / kept['id'] / 'revisions' / '1' / 'revision.json').unlink()
+        with self.assertRaisesRegex(library.LibraryError, 'no complete revision.*cannot be removed or restored'):
+            made.hide(kept['id'], True)
+
     def test_a_refused_file_is_named(self):
         made = self.made()
         with self.assertRaisesRegex(library.LibraryError, '"beta.png" is not a text'):
