@@ -69,8 +69,11 @@ def main():
         stop = threading.Event()
         signal.signal(signal.SIGTERM, lambda *_: stop.set())
         signal.signal(signal.SIGINT, lambda *_: stop.set())
+        parent = os.getppid()
         try:
-            stop.wait()
+            # Ends with the check that started it, even when that check is killed outright.
+            while not stop.wait(1) and os.getppid() == parent:
+                pass
         finally:
             desk.stop()
             launcher.close()
