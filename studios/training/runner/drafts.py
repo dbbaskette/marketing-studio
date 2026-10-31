@@ -926,7 +926,9 @@ def view(engine, root) -> dict:
         'job': next((dict(job) for job in reversed(jobs) if basis.busy(job)), None),
         'team': {'ours': mine, 'driver': who, 'last_shared': last},
         # The same standing Home, Trainings and Status say, read from these very cards.
-        'standing': standing(engine, root, record, found, cards) if mine else None}
+        'standing': standing(engine, root, record, found, cards) if mine else None,
+        # What sending each guide or brief to a Google Doc would do, asked for one at a time.
+        'docs': docs_view(engine, root, record) if mine else {}}
 
 
 # --- one standing for every screen -------------------------------------------------------
@@ -2220,3 +2222,69 @@ def select_materials(root: Path, record: dict, selection: dict) -> None:
     current['stages'] = [stage for stage in workspace.SKIPPABLE if stage in stages]
     workspace.log(session, 'requested-materials', by='conversation-person', selection=selection)
     workspace.store(root, session)
+
+
+# --- one Google Doc, as the person asks on the desk --------------------------------------
+#
+# Ready is the person's approval and stays on this computer. A Google Doc is a separate,
+# explicit delivery of one version of one guide or brief. A training started with Google
+# Docs keeps them up to date as its materials are marked Ready, as it always did; one started
+# with local copies only is never switched to that, and a Doc made for it later is updated
+# only when the person asks.
+
+DOC_ONLY = 'Only a learner guide or a brief goes to a Google Doc.'
+DOC_UNSURE = ('The last try may have made a Google Doc named “{title}”: Google did not say. '
+              'Look in Google Drive first. If there is none, choose Make the Doc anyway.')
+DOC_KEPT = ('This training keeps its Google Docs up to date by itself: marking a material '
+            'Ready updates its Doc, and Send updates it now.')
+
+
+def doc_view(root: Path, record: dict, name, copies) -> dict:
+    """What one explicit Google Doc delivery of `name` would do: {'artifact', 'label',
+    'seen', 'title', 'action' ('create', 'update' or 'send'), 'url', 'current', 'conflict',
+    'automatic', 'uncertain', 'receipt', 'problem'}. `automatic` says the training keeps
+    Google Docs by itself (`action` is then 'send', its own way). `problem` is why nothing
+    can be sent now, in a sentence to act on. Reads files and records only."""
+    import gdocs
+    root = Path(root)
+    session = workspace.load(root)
+    if not isinstance(name, str) or name not in workspace.artifact_names(root, session) \
+            or workspace.split(name)[0] not in gdocs.SYNCED:
+        raise workspace.WorkspaceError(DOC_ONLY)
+    seen = workspace.sha256_file(root / workspace.artifact(root, session, name)['file'])
+    entry = gdocs.read_links(root)['docs'].get(name)
+    automatic = 'google' in session['settings']['copies']
+    state = workspace.statuses(root, session)
+    if seen is None:
+        problem = UNWRITTEN.format(it=workspace.sentence(workspace.label(name)))
+    elif name in updates(record):
+        problem = BUSY
+    elif state.get(name) == 'stale':
+        problem = held_first(root, session, held(root, session, record, state), name, state)
+    else:
+        problem = copies.google_problem()
+    kept = record.get('copies') or {}
+    return {'artifact': name, 'label': workspace.label(name), 'seen': seen,
+            'title': copies.doc_title(root, name),
+            'action': 'send' if automatic else 'update' if entry else 'create',
+            'url': (entry or {}).get('url'),
+            'current': bool(entry) and entry.get('local_sha256') == seen,
+            'conflict': bool((entry or {}).get('conflict')), 'automatic': automatic,
+            'uncertain': bool((kept.get('uncertain') or {}).get(name)),
+            'receipt': (kept.get('delivered') or {}).get(name), 'problem': problem}
+
+
+def docs_view(engine, root: Path, record: dict) -> dict:
+    """`doc_view` of each guide and brief, by name, for the desk's Google Doc sheet. One
+    that cannot be read is left out rather than hiding the rest."""
+    import gdocs
+    session = workspace.load(root)
+    shown = {}
+    for name in workspace.artifact_names(root, session):
+        if workspace.split(name)[0] not in gdocs.SYNCED:
+            continue
+        try:
+            shown[name] = doc_view(root, record, name, engine.copies)
+        except (workspace.WorkspaceError, OSError):
+            continue
+    return shown

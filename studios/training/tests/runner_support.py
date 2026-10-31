@@ -1349,10 +1349,20 @@ class Drive:
 
     def __init__(self):
         self.docs, self.calls = {}, []
+        # 'lost': the next create makes the Doc and its answer never arrives; 'refused':
+        # Google turns the sign-in away before anything is made.
+        self.fail = None
 
     def create(self, title: str, markdown: str) -> dict:
+        from workspace import WorkspaceError
+        failing, self.fail = self.fail, None
+        if failing == 'refused':
+            raise WorkspaceError('Google did not accept the gcloud sign-in. Run `gcloud auth '
+                                 'login --enable-gdrive-access` and try again.')
         ident = f'doc{len(self.docs) + 1}'
         self.docs[ident] = markdown
+        if failing == 'lost':
+            raise TimeoutError('the answer never came')
         return {'file_id': ident, 'url': f'https://docs.example.com/d/{ident}/edit'}
 
     def update(self, file_id: str, markdown: str) -> None:
@@ -1401,6 +1411,23 @@ class Copies:
     def remake(self, root: Path, name: str, google=None) -> dict:
         from runner import copies
         return copies.remake(root, name, google or self.drive)
+
+    def google_problem(self, google=None):
+        return self.refuse.get('google')
+
+    def doc_title(self, root: Path, name: str) -> str:
+        from runner import copies
+        return copies.doc_title(root, name)
+
+    def deliver(self, root: Path, name: str, google=None) -> dict:
+        """One explicit Doc through the real rules, into the pretend Drive. `refuse['google']`
+        is a computer that cannot reach Google at all."""
+        from runner import copies
+        from workspace import WorkspaceError
+        self.calls += 1
+        if 'google' in self.refuse:
+            raise WorkspaceError(self.refuse['google'])
+        return copies.deliver(root, name, google or self.drive)
 
     def make(self, root: Path, google=None, word=None, only=None) -> tuple[list[dict], dict]:
         import gdocs

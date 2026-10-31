@@ -7797,6 +7797,85 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         self.assertIn('Review slide text', shot['buttons'])
         self.assertEqual(list(shot['fields']), ['Changes to slide text'])
 
+    def a_doc(self, name='document@101', **more) -> dict:
+        """runner/drafts.py `doc_view` of a guide in a training made with local copies."""
+        return {'artifact': name, 'label': 'the level 101 learner guide', 'seen': seen_of(name),
+                'title': 'Rolling restarts: learner guide (101)', 'action': 'create',
+                'url': None, 'current': False, 'conflict': False, 'automatic': False,
+                'uncertain': False, 'receipt': None, 'problem': None, **more}
+
+    def test_row_197_a_local_guide_gets_one_google_doc_of_the_version_shown(self):
+        guide, guide_view = self.readable()
+        doc = self.a_doc()
+        desk = a_desk(guide, levels=('101',), running=False, docs={'document@101': doc})
+        guide_view['desk'] = desk['body']
+        receipt = {'artifact': 'document@101', 'label': 'the level 101 learner guide',
+                   'result': 'created', 'url': 'https://docs.google.com/document/d/abc/edit',
+                   'title': doc['title'], 'sha256': doc['seen'], 'at': '2030-01-02T03:04:05Z'}
+        after = {**desk['body'], 'docs': {'document@101': {
+            **doc, 'action': 'update', 'current': True, 'url': receipt['url'],
+            'receipt': receipt}}, 'doc': receipt}
+        result = self.open_desk(self.on_desk(desk, **{
+            'GET /api/drafts/card': [ok(guide_view)],
+            'GET /api/drafts/doc-preview': [ok(doc)],
+            'POST /api/drafts/doc': [ok(after)]}), [
+            {'click': 'Google Doc'}, {'snapshot': 'sheet'},
+            {'click': 'Make a Google Doc of the level 101 learner guide'},
+            {'snapshot': 'confirm'}, {'click': 'Make the Doc'}, {'snapshot': 'done'}],
+            narrow=True)
+        sheet = result['snapshots']['sheet']['sheet']
+        self.assertIn('Ready is your approval here and sends nothing.', sheet)
+        self.assertIn('No Google Doc yet. Your download stays as it is.', sheet)
+        self.assertNotIn('A Ready material is sent by itself', sheet)
+        confirm = result['snapshots']['confirm']['sheet']
+        for said in ('The level 101 learner guide', seen_of('document@101')[:8],
+                     'A new Google Doc named “Rolling restarts: learner guide (101)”',
+                     'It makes one new Doc of exactly this version.',
+                     'Nothing is marked ready'):
+            self.assertIn(said, confirm)
+        self.assertEqual(result['snapshots']['confirm']['filled'], ['Make the Doc'])
+        self.assertEqual(self.posts(result), [('/api/drafts/doc', {
+            'path': str(self.root), 'name': 'document@101', 'seen': seen_of('document@101'),
+            'again': False})])
+        done = result['snapshots']['done']
+        self.assertIn('Made “Rolling restarts: learner guide (101)”', done['sheet'])
+        self.assertIn({'name': 'Open the Google Doc of the level 101 learner guide, in a new tab',
+                       'href': receipt['url'], 'rel': 'noopener noreferrer',
+                       'target': '_blank'}, done['links'])
+
+    def test_without_google_set_up_the_sheet_says_what_to_do_and_offers_no_send(self):
+        guide, guide_view = self.readable()
+        problem = ('Google access is not set up on this computer: the gcloud command was not '
+                   'found. Install the Google Cloud CLI, run `gcloud auth login '
+                   '--enable-gdrive-access` in a terminal, then try the copies again.')
+        desk = a_desk(guide, levels=('101',), running=False,
+                      docs={'document@101': self.a_doc(problem=problem)})
+        guide_view['desk'] = desk['body']
+        result = self.open_desk(self.on_desk(desk, **{
+            'GET /api/drafts/card': [ok(guide_view)]}), [
+            {'click': 'Google Doc'}, {'snapshot': 'sheet'}])
+        shot = result['snapshots']['sheet']
+        self.assertIn(problem, shot['sheet'])
+        self.assertNotIn('Make a Google Doc of the level 101 learner guide', shot['buttons'])
+        self.assertIn('Download the level 101 learner guide, as saved', shot['buttons'])
+
+    def test_after_an_uncertain_answer_only_make_it_anyway_sends_again(self):
+        guide, guide_view = self.readable()
+        doc = self.a_doc(uncertain=True)
+        desk = a_desk(guide, levels=('101',), running=False, docs={'document@101': doc})
+        guide_view['desk'] = desk['body']
+        result = self.open_desk(self.on_desk(desk, **{
+            'GET /api/drafts/card': [ok(guide_view)],
+            'GET /api/drafts/doc-preview': [ok(doc)],
+            'POST /api/drafts/doc': [{'status': 409, 'body': {'error': 'Not this time.'}}]}), [
+            {'click': 'Google Doc'},
+            {'click': 'Make a Google Doc of the level 101 learner guide'},
+            {'snapshot': 'confirm'}, {'click': 'Make the Doc anyway'}, {'snapshot': 'refused'}])
+        confirm = result['snapshots']['confirm']['sheet']
+        self.assertIn('Look in Google Drive first.', confirm)
+        self.assertEqual(self.posts(result)[0][1]['again'], True)
+        self.assertIn('Not this time.', result['snapshots']['refused']['sheet'])
+
     def test_readiness_is_not_offered_while_a_level_material_is_being_written(self):
         plan = a_card('blueprint@101')
         guide = a_card('document@101', state='writing', says='Being written.', seen=None, actions=[])

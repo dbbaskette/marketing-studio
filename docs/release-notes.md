@@ -61,6 +61,17 @@ text. Finishing opens on the material in front of you, with All materials for an
 toolbar's download says it is the level's, and each material's own is on its card. While a
 deck's slide text waits for approval, the desk opens on that deck with no editor beside it.
 
+## Unreleased: Training Studio Google Doc after local creation
+
+A training made on the Training Studio desk with local copies only can make a Google Doc
+of a guide or brief later, from Google Doc on the desk. The sheet names the material, the
+version and the Doc it makes; the one explicit action sends exactly that version and gives
+its link. Nothing is marked ready, no job starts, the file is kept, and the training is not
+switched to Google Docs, so Ready still sends nothing by itself. Update the Google Doc
+sends a newer version to the same Doc and never writes over changes made in Google. After
+an uncertain answer from Google, another Doc is made only when you choose Make the Doc
+anyway. Trainings started with Google Docs keep updating them as they are marked Ready.
+
 ## Unreleased: research citation handoffs
 
 Research workers are explicitly told which saved source IDs to cite. If a worker

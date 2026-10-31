@@ -22,6 +22,10 @@ If you say at the start that you want Google Docs, or later say "Keep the guide 
 - `README.md` in your folder lists the links.
 - If you also asked for Yoodli scenarios, the brief's Doc is the file you give Yoodli: download it from Google as a PDF. No Word copy is made.
 
+## One Doc from the desk
+
+A training made on the desk with local copies only can still have a Google Doc of a guide or brief. Choose **Google Doc** on the desk, then **Make a Google Doc** for that material. The sheet says which material and version go, the Doc's name, and that it makes a new Doc; **Make the Doc** sends exactly that version, and you get its link. Nothing is marked ready, your file is kept as it is, and the training is not switched to Google Docs: marking the material Ready later sends nothing by itself. When the material changes, **Update the Google Doc** sends the new version to the same Doc, and a Doc someone changed in Google is never written over. If Google does not answer whether it made the Doc, the desk asks you to look in Google Drive first and makes another only when you choose **Make the Doc anyway**. Without `gcloud` or a sign-in, the sheet says what to run, and Download keeps working.
+
 Word copies are a separate choice and are off unless you ask for them. You can have either, both or neither, and change your mind at any time: "Stop keeping Google Docs", or "Make Word copies too".
 
 ## What you need

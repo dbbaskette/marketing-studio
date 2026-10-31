@@ -2235,19 +2235,114 @@ function deskSheet(kind) {
     ready.length ? items : make('p', 'quiet', 'Nothing of ' + where + ' is written yet.'),
     add(make('div', 'bar'), close)];
   }
-  const copied = shown.filter((one) => list(one.actions).includes('send'));
-  const items = make('ul', 'rows');
-  for (const one of copied) {
-    const go = capsule('Send', '', () => deskDecide('send', { name: one.name }, go),
-      'desk-send ' + one.name);
-    go.setAttribute('aria-label', 'Send ' + one.label + ' to its Google Doc');
-    items.append(add(make('li', 'row step'), add(make('div', 'row-text'),
-      make('p', 'step-name', cardTitle(one)), make('p', 'quiet', one.says)), go));
+  const docs = found.docs || {};
+  const automatic = Object.values(docs).some((doc) => doc.automatic);
+  if (automatic) {
+    // A training started with Google Docs keeps them as it always did.
+    const copied = shown.filter((one) => list(one.actions).includes('send'));
+    const items = make('ul', 'rows');
+    for (const one of copied) {
+      const go = capsule('Send', '', () => deskDecide('send', { name: one.name }, go),
+        'desk-send ' + one.name);
+      go.setAttribute('aria-label', 'Send ' + one.label + ' to its Google Doc');
+      items.append(add(make('li', 'row step'), add(make('div', 'row-text'),
+        make('p', 'step-name', cardTitle(one)), make('p', 'quiet', one.says)), go));
+    }
+    return [sheetTitle('Google Doc'), make('p', '', 'This training keeps its Google Docs up '
+      + 'to date by itself: marking a guide or brief Ready updates its Doc. Send updates it '
+      + 'now, as it stands, before it is Ready.'),
+    copied.length ? items : make('p', 'quiet', 'Every Google Doc of ' + where + ' is up to '
+      + 'date, or waits for its material to be written.'),
+    add(make('div', 'bar'), close)];
   }
-  return [sheetTitle('Google Doc'), make('p', '', 'Send a material of ' + where + ' to its '
-    + 'Google Doc now, as it stands. A Ready material is sent by itself.'),
-  copied.length ? items : make('p', 'quiet', 'Nothing of ' + where + ' has a Google Doc '
-    + 'waiting for it. A guide or a brief is kept in Google Docs when the training is started '
-    + 'with that copy.'),
+  // Made with local copies: Ready is the person's approval here and sends nothing. A Doc of
+  // one guide or brief is made, or updated, only when they ask, one version at a time.
+  const items = make('ul', 'rows');
+  const offered = shown.filter((one) => docs[one.name]);
+  for (const one of offered) {
+    const doc = docs[one.name];
+    const text = add(make('div', 'row-text'), make('p', 'step-name', cardTitle(one)),
+      make('p', 'quiet', doc.problem || docWords(doc)), copyLink({ link: doc.url }, 'Google Doc',
+        'Google Doc of ' + one.label));
+    const go = doc.problem || !deskOurs() ? null : capsule(doc.action === 'update'
+      ? 'Update the Google Doc' : 'Make a Google Doc', 'quiet', () => docSheet(one.name),
+    'desk-doc ' + one.name);
+    if (go) go.setAttribute('aria-label', go.textContent + ' of ' + one.label);
+    items.append(add(make('li', 'row step'), text, go));
+  }
+  return [sheetTitle('Google Doc'), make('p', '', 'This training keeps its materials on this '
+    + 'computer. Ready is your approval here and sends nothing. Make a Google Doc of a guide '
+    + 'or brief when you want one; it is updated only when you ask.'),
+  offered.length ? items : make('p', 'quiet', 'Nothing of ' + where + ' goes to a Google Doc: '
+    + 'only a learner guide or a brief does.'),
   add(make('div', 'bar'), close)];
+}
+
+// Where one guide or brief stands in Google Docs, in a sentence.
+function docWords(doc) {
+  if (doc.uncertain) return 'The last try may have made a Doc: Google did not say.';
+  if (!doc.url) return 'No Google Doc yet. Your download stays as it is.';
+  if (doc.conflict) return 'Someone changed the Google Doc. It is left as it is.';
+  return doc.current ? 'Its Google Doc has this version.'
+    : 'Its Google Doc has an earlier version.';
+}
+
+// The one explicit delivery: which material, which version, where it goes, and whether it
+// makes a new Doc or updates the linked one. The filled button authorizes exactly that.
+async function docSheet(name) {
+  const path = view.path, turn = view.turn;
+  let doc;
+  try {
+    doc = await ask('drafts/doc-preview', { path, name });
+  } catch (failure) {
+    deskHeld(path).said = failure.message; closeSheet(); paintDesk(false); return;
+  }
+  if (view.turn !== turn) return;
+  const status = make('p', 'notice');
+  status.setAttribute('role', 'status');
+  const creating = doc.action !== 'update';
+  const facts = add(make('dl', 'about'),
+    make('dt', '', 'Material'), make('dd', '', capital(doc.label)),
+    make('dt', '', 'Version'), make('dd', '', 'As it is saved on the desk now ('
+      + String(doc.seen).slice(0, 8) + ')'),
+    make('dt', '', 'Goes to'), make('dd', '', creating ? 'A new Google Doc named “' + doc.title
+      + '”, in the Google Drive this computer is signed in to'
+      : 'The Google Doc “' + doc.title + '” it is linked to'));
+  const deliver = async (control, again) => {
+    if (view.busy) return;
+    view.busy = true; control.disabled = true;
+    say(status, creating ? 'Making the Google Doc…' : 'Updating the Google Doc…');
+    try {
+      const answer = await send('drafts/doc', { path, name, seen: doc.seen, again });
+      if (view.turn !== turn) return;
+      deskHeld(path).view = answer;
+      const done = answer.doc;
+      DESK.kitSheet = [sheetTitle(done.result === 'created' ? 'Google Doc made'
+        : 'Google Doc updated'),
+      make('p', '', (done.result === 'created' ? 'Made “' : 'Updated “') + done.title
+        + '” with the version saved at ' + when(done.at) + '. Nothing was marked ready.'),
+      copyLink({ link: done.url }, 'Google Doc', 'Google Doc of ' + doc.label),
+      add(make('div', 'bar'), capsule('Close', 'quiet', closeSheet, 'cancel'))];
+      openSheet('desk-kit', '')();
+      paintDesk(false);
+    } catch (failure) {
+      say(status, failure.message);
+    } finally {
+      view.busy = false; control.disabled = false;
+    }
+  };
+  const label = doc.uncertain ? 'Make the Doc anyway' : creating ? 'Make the Doc'
+    : 'Update the Doc';
+  const go = capsule(label, 'filled', () => deliver(go, Boolean(doc.uncertain)), 'desk-doc-go');
+  DESK.kitSheet = [sheetTitle(creating ? 'Make a Google Doc' : 'Update the Google Doc'), facts,
+    make('p', '', (creating ? 'It makes one new Doc of exactly this version.'
+      : 'It replaces the Doc’s text with exactly this version, unless someone changed the Doc '
+      + 'since it was last sent.') + ' Nothing is marked ready, your file is kept as it is, '
+      + 'and nothing else is sent.'),
+    doc.uncertain ? make('p', 'notice', 'The last try may have made a Google Doc named “'
+      + doc.title + '”: Google did not say. Look in Google Drive first. If there is none, '
+      + 'make it anyway.') : null,
+    status, add(make('div', 'bar'), go, capsule('Cancel', 'quiet', closeSheet, 'cancel'))]
+    .filter(Boolean);
+  openSheet('desk-kit', '')();
 }

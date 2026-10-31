@@ -222,7 +222,7 @@ PART_LIMIT = 1_000_000   # bytes: one part of the largest size, as JSON
 READS = ('/api/capabilities', '/api/setup', '/api/agents', '/api/models', '/api/run',
          '/api/download', '/api/slide', '/api/status', '/api/published', '/api/delete', '/api/deck-draft-ticket',
          DRAFTS, CARD, VERSIONS, f'{DRAFTS}/update-preview', f'{DRAFTS}/slide-versions', f'{DRAFTS}/source-price',
-         f'{DRAFTS}/proofread', f'{DRAFTS}/migration-preview')
+         f'{DRAFTS}/proofread', f'{DRAFTS}/migration-preview', f'{DRAFTS}/doc-preview')
 WRITES = ('/api/training-plan', '/api/research-sources', '/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/answer',
           '/api/documents', '/api/copies', '/api/share', '/api/outline', '/api/review', '/api/drive',
           '/api/publish', '/api/adopt', '/api/fetch', '/api/delete', '/api/companions',
@@ -233,7 +233,8 @@ WRITES = ('/api/training-plan', '/api/research-sources', '/api/setup/check', '/a
           f'{DRAFTS}/finding', f'{DRAFTS}/slide-restore', f'{DRAFTS}/look-samples',
           f'{DRAFTS}/look', f'{DRAFTS}/draw-here', f'{DRAFTS}/deck-note', f'{DRAFTS}/deck-stop',
           f'{DRAFTS}/slide-selection', f'{DRAFTS}/slide-selection-settle', f'{DRAFTS}/deck-outline', f'{DRAFTS}/deck-outline-price',
-          f'{DRAFTS}/source', f'{DRAFTS}/finish', f'{DRAFTS}/apply', f'{DRAFTS}/skip', *DECIDED, *TYPED, *JOBS)
+          f'{DRAFTS}/source', f'{DRAFTS}/finish', f'{DRAFTS}/apply', f'{DRAFTS}/skip',
+          f'{DRAFTS}/doc', *DECIDED, *TYPED, *JOBS)
 KINDS = {
     '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
     '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -336,6 +337,12 @@ class RunnerPage(desk.Page):
             root = self.on_desk(one('path'))
             with self.engine.files:
                 return desk.as_json(HTTPStatus.OK, drafts.source_price(root, drafts.run_of(root)))
+        if path == f'{DRAFTS}/doc-preview':
+            root = self.on_desk(one('path'))
+            try:
+                return desk.as_json(HTTPStatus.OK, self.engine.doc_preview(root, one('name')))
+            except WorkspaceError as refusal:
+                raise desk.Refusal(HTTPStatus.CONFLICT, str(refusal))
         if path == f'{DRAFTS}/update-preview':
             root = self.on_desk(one('path'))
             with self.engine.files:
@@ -788,6 +795,18 @@ class RunnerPage(desk.Page):
             return desk.as_json(HTTPStatus.OK, self.engine.share())
         if path == ASSET:
             return desk.as_json(HTTPStatus.OK, self.asset(sent))
+        if path == f'{DRAFTS}/doc':
+            # One explicit Google Doc of one version of one guide or brief.
+            root = self.on_desk(desk.text(sent, 'path'))
+            again = sent.get('again', False)
+            if not isinstance(again, bool):
+                raise desk.Refusal(HTTPStatus.BAD_REQUEST, 'Say yes or no to making it anyway.')
+            try:
+                done = self.engine.deliver_doc(root, desk.text(sent, 'name'),
+                                               desk.text(sent, 'seen'), again)
+            except WorkspaceError as refusal:
+                raise desk.Refusal(HTTPStatus.CONFLICT, str(refusal))
+            return desk.as_json(HTTPStatus.OK, {**drafts.view(self.engine, root), **done})
         if path == f'{DRAFTS}/source':
             root = self.on_desk(desk.text(sent, 'path'))
             files = sent.get('files')
