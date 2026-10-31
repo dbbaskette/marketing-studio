@@ -73,3 +73,20 @@ workers once; total assistant time adds their durations. Incomplete older timing
 history is identified. Existing trainings continue with their saved workflow.
 The existing allowance is shared across workers; parallelism does not raise it.
 Providers that do not report dollar cost still cannot supply a precise dollar total.
+
+## The Document Library
+
+**Research & sources** has a **From the Document Library** part when the training's
+research reads documents. **Add from library** chooses documents kept on this computer
+for this training only. They are listed as not read yet, and **Update the research**
+reads them after saying what it changes, as **Add a source** does. A newer revision of
+one is shown, and **Use revision N** takes it, also unread until the research is
+updated. Nothing is added while a change is being made.
+
+**Add a source** asks where each document is kept: **Keep in library** (a copy for
+other projects too) or **Only this project**.
+
+A learner guide or brief you mark ready is kept in the Document Library as Markdown.
+Its card says which revision, or that the save failed, with **Keep in library again**.
+A guide or brief that was Ready before the library kept anything offers **Keep in
+library**.

@@ -143,8 +143,9 @@ One local library holds documents for every studio. The code is in
 **Where it is.** `library.root` in the studios config names its folder. Until the
 first explicit use, the folder is `library/` under `local.root` (normally
 `~/Studios/library`), and nothing is written. Explicit uses are an upload on
-Marketing Studio's **Library** screen, a finished or published blog, a delivered
-deck, or an infographic's approved files. On the first one, the resolved folder is saved through the config's adjacent
+Marketing Studio's **Library** screen or one kept with **Keep in library**, a finished
+or published blog, a delivered deck, an infographic's approved files, or a Training
+Studio guide or brief marked ready. On the first one, the resolved folder is saved through the config's adjacent
 lock, with unrelated values and formatting kept. If another studio saved a
 location first, that one is used. A later change to `local.root` never moves the
 library. Browsing, or opening any studio, makes nothing and sets up no workspace.
@@ -183,6 +184,8 @@ read with OCR, a model or the network.
 | Delivered deck | Slide-ordered outline Markdown, under a key made once per deck (`presentation:<folder>-<random>`, kept in its local `sources/library.json`). Also `content.pdf`, the PDF Harness Slides rendered of the delivered deck in its last whole-deck preview, kept only when it still matches. **PDF saved** then. Otherwise the PDF is recorded as **needs export**, with why. |
 | A file added on the Presentation Studio desk with **Keep in library** | Kept as an upload from Presentation Studio, beside the deck's own copy in `sources/supplied/`. **Only this project** keeps the deck's copy only. |
 | Approved infographic | The approved export's accessible text (`page.txt`) as Markdown and its `page.pdf` as `content.pdf`, under `infographic:<workspace owner>-<infographic id>`. Only the approved, visually checked current revision is kept. |
+| Training guide or brief marked ready | Its Markdown as learners read it, without coverage notes, under `training:<folder>-<random>.<material>`, with the key in the training's local `sources/library.json`. Decks are not kept until Training Studio can export a PDF. |
+| Training Studio upload kept with **Keep in library** | As any upload, from Training Studio. The same file sent again is the same document |
 
 **Choosing context.** **Add from library** pins chosen revisions into one project,
 after checking every one of them first:
@@ -201,6 +204,12 @@ after checking every one of them first:
   revision of the infographic. As with any source change, the facts, story and page
   built from the earlier sources are cleared, and nothing is approved. Team sharing
   sends a source only when it is chosen in Share.
+- **Training Studio** copies each revision into the training's `sources/supplied/`
+  as one of its documents, read only by its research. While the training waits for
+  its documents, a pinned one is read with the rest. After the research is planned it
+  is listed under `documents.later` and read only by **Update the research**, which is
+  priced first. A training whose research does not read documents refuses it: pinning
+  never widens where research looks.
 
 A project keeps its copy if the library changes or is gone. A newer revision is
 shown as available and is taken only on request. Removing a source removes the
@@ -227,6 +236,9 @@ grants no web access and sends nothing to an assistant.
 | Work is running on an infographic (a page action, an image request pending or uncertain, or research) | Add from library and Use revision N are refused until it ends |
 | An infographic has facts, a page or an approval | Add from library and Use revision N say what will be cleared and ask first |
 | A chosen revision has extraction gaps (Infographic Studio) | Refused until the person confirms using only its readable text; the gaps stay on the source |
+| A step is being worked on in a training (a worker, or a desk change under way) | Add from library and Use revision N are refused until it ends |
+| A Training Studio guide or brief's library save fails after Mark ready | It stays Ready. The failure is recorded in the training's local `sources/library.json`, and **Keep in library again** retries with no job |
+| An upload kept with **Keep in library** that the library refuses | The project keeps its document, and the page says the library did not keep it |
 | Use selected is still landing | The sheet's Cancel, Close and Escape wait |
 | A newer revision, in Blog Studio | The desk source says Update available; **Use revision N** gives the blog's file a new source revision and the blog pins it. Refused while a desk job runs |
 

@@ -155,6 +155,33 @@ This part is optional. A scenario file already works with any AI that can play a
 
 For each scenario, Training Studio then writes a file under `yoodli/` laid out in the same order as Yoodli's roleplay builder, so you can copy each part into its field. It also tells you which file to upload as the AI's reference material. You build the roleplay in Yoodli yourself; Training Studio does not upload anything. See [scenarios and Yoodli](docs/scenarios-and-yoodli.md).
 
+## The Document Library
+
+Training Studio shares the Document Library that every studio keeps on this
+computer. It holds uploads, finished blogs, delivered decks and finished training
+material.
+
+- **Add from library.** The documents card, and the desk's **Research & sources**,
+  have **Add from library**. Each chosen revision is copied into the training as one
+  of its documents, so the training keeps it if the library changes. A newer revision
+  is shown, and **Use revision N** takes it. Adding one starts no research. While the
+  training waits for its documents, it is read with the rest. After the research it
+  waits, not read yet, until you choose **Update the research**, which says first what
+  it changes. A training whose research does not read documents takes none: adding
+  from the library never widens where research looks. Both are refused while a step
+  is being worked on.
+- **Keep in library.** When you add a document, **Keep in library** also keeps a copy
+  in the library for other projects, and **Only this project** keeps it in the
+  training alone. Neither changes who it is shared with.
+- **Finished material.** Marking a learner guide or a brief ready on the desk keeps it
+  in the library as Markdown, as learners read it, without its coverage notes. Marking
+  it ready again adds a revision only when its words changed. If that save fails, its
+  card says so and offers **Keep in library again**. Decks are not kept yet, because
+  Training Studio cannot export a PDF of one.
+
+Nothing in the library is shared with your team or committed to your workspace. See
+[the Document Library](../../docs/shared-setup.md#the-document-library).
+
 ## If something goes wrong
 
 | What you see | What it means |
