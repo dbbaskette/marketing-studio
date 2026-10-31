@@ -28,6 +28,7 @@ NO_RECORD = 'This computer has no record yet of how long that takes.'
 LOOK_PAUSE = 'One thing needs you: pick the look. The deck is drawn in it.'
 WAITS = ('The deck cannot be delivered yet: a change to it is still waiting or under way. '
          'Deliver when it is done.')
+KEEP_CHOICES = ('Keep in library', 'Only this project')   # where a file added on the desk is kept
 
 
 def cards_of(desk: dict) -> list:
@@ -1622,22 +1623,91 @@ class FinishingPageTests(DeskPageCase):
         self.assertIn('No sources yet.', shot['text'])
         self.assertNotIn('Research again', shot['buttons'], 'a deck with no research')
         self.assertIn('Paste the text of the source first.', result['snapshots']['empty']['text'])
+        # Keep in library is the visible default, chosen before the file is.
+        self.assertIn('Keep the file', shot['text'].split('\n'))
+        self.assertEqual([name for name in shot['pressed'] if name in KEEP_CHOICES],
+                         ['Keep in library'])
+        self.assertLess(lines.index('Keep the file'), lines.index('A file'))
+        self.assertIn('It is shared with no one either way.', shot['text'])
         (file_address, sent_file), (text_address, sent_text) = self.posts(result)
         self.assertEqual((file_address, text_address), ('/api/desk-source', '/api/desk-source'))
-        self.assertEqual((sent_file['path'], sent_file['name']), (path, 'runbook.md'))
+        self.assertEqual((sent_file['path'], sent_file['name'], sent_file['library']),
+                         (path, 'runbook.md', True))
         self.assertEqual(base64.b64decode(sent_file['content']),
                          b'# Runbook\n\nTwo batches at a time.\n')
         self.assertEqual(sent_text, {'path': path, 'text': 'Health checks gate each batch.',
                                      'title': 'Pasted notes'})
         # What the page sends is what the server takes, and nothing is drawn.
         jobs = len(self.workers.jobs)
-        self.post('desk-source', sent_file)
+        kept = self.post('desk-source', sent_file)['library_upload']
         added = self.post('desk-source', sent_text)
         self.assertEqual([one['title'] for one in added['desk']['sources']],
                          ['runbook', 'Pasted notes'])
         self.assertEqual(len(self.workers.jobs), jobs)
+        # The library has the file as it was sent, kept locally; the deck's own copy is an
+        # ordinary supplied source, as it is with Only this project.
+        from studio_core import document_library
+        row = document_library.opened().describe(kept['id'])
+        self.assertEqual((kept['state'], row['studio'], row['kind'], row['scope'],
+                          row['original_name']),
+                         ('kept', 'presentation', 'upload', 'local', 'runbook.md'))
+        self.assertEqual(document_library.opened().download(kept['id'], 1, 'original')[2],
+                         b'# Runbook\n\nTwo batches at a time.\n')
+        self.assertNotIn('library', added['desk']['sources'][0])
         shot = self.open_deck(path, added, [{'snapshot': 'listed'}])['snapshots']['listed']
         self.assertIn('Pasted notes', shot['text'].split('\n'))
+
+    def test_only_this_project_keeps_the_file_out_of_the_library(self):
+        from studio_core import document_library
+        path = self.desk_deck()
+        view = self.run_of(path)
+        upload = {'name': 'limits.md', 'text': '# Limits\n\nForty at most.\n'}
+        failed = {**view, 'library_upload': {'state': 'failed', 'problem': 'Not kept: busy.'}}
+        result = self.open_deck(path, view, [
+            {'click': 'Only this project'}, {'snapshot': 'chosen'},
+            {'attach': 'A file', 'files': [upload]}, {'polls': 1},
+            {'click': 'Keep in library'},
+            {'attach': 'A file', 'files': [{**upload, 'name': 'other.md'}]}, {'polls': 1},
+            {'snapshot': 'failed'}],
+            **{'POST /api/desk-source': [ok(view), ok(failed)]})
+        self.assertEqual([name for name in result['snapshots']['chosen']['pressed']
+                          if name in KEEP_CHOICES], ['Only this project'])
+        (_, only), (_, keep) = self.posts(result)
+        self.assertEqual((only['library'], keep['library']), (False, True))
+        # A failed library save is said on the card; the deck still has the source.
+        self.assertIn('Not kept: busy.', result['snapshots']['failed']['text'])
+        # The server keeps nothing in the library for Only this project.
+        before = document_library.opened(create=True).catalog(limit=50)['total']
+        added = self.post('desk-source', only)
+        self.assertNotIn('library_upload', added)
+        self.assertEqual(document_library.opened().catalog(limit=50)['total'], before)
+        self.assertEqual([one['name'] for one in added['desk']['sources']], ['limits.md'])
+        # When the library cannot keep it, the deck has its source all the same.
+        with mock.patch.object(document_library, 'opened',
+                               side_effect=document_library.LibraryError('The library is busy.')):
+            said = self.post('desk-source', {**only, 'name': 'other.md', 'library': True})
+        self.assertEqual(said['library_upload']['state'], 'failed')
+        self.assertIn('The library is busy.', said['library_upload']['problem'])
+        self.assertEqual([one['name'] for one in said['desk']['sources']],
+                         ['limits.md', 'other.md'])
+        refused = self.post('desk-source', {**only, 'name': 'third.md', 'library': 'yes'},
+                            expect=400)
+        self.assertIn('Keep in library or Only this project', json.dumps(refused))
+
+    def test_a_delivered_deck_says_pdf_saved_only_when_the_library_has_it(self):
+        path = self.desk_deck()
+        view = self.run_of(path)
+        delivered = self.post('desk-deliver', {'path': path, 'expected': view['desk']['expected'],
+                                               'blockers_seen': view['desk']['blockers_seen']})
+        self.assertEqual(delivered['desk']['library']['pdf'], 'saved')
+        shot = self.open_deck(path, delivered, [{'snapshot': 'kept'}])['snapshots']['kept']
+        self.assertIn('Kept in the Document Library as a PDF and slide Markdown, revision '
+                      f"{delivered['desk']['library']['revision']}. PDF saved.", shot['text'])
+        without = copy.deepcopy(delivered)
+        without['desk']['library'].update(pdf='needs-export', pdf_note='No PDF was left here.')
+        shot = self.open_deck(path, without, [{'snapshot': 'kept'}])['snapshots']['kept']
+        self.assertIn('PDF needs export: No PDF was left here.', shot['text'])
+        self.assertNotIn('PDF saved', shot['text'])
 
     def test_research_again_says_its_price_before_it_posts(self):
         path = self.research_deck()

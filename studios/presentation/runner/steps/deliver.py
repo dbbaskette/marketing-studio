@@ -16,9 +16,11 @@ What a caller needs to know
   replaces it, and a Google delivery takes it away. A delivery made before this recorded
   work/deck.pptx, which stays on the computer that made it.
     deliver.shared_file(root)              # the shared delivered file, or None
-- deliver.json (decks.DELIVER) is {'output', 'url', 'fileId', 'pptx', 'revision', 'at'},
-  with 'notice' when the deck was not delivered as asked. `revision` counts deliveries:
-  each is added to run['revisions'] as {'revision', 'at', 'url' or 'pptx'}. The deck's
+- deliver.json (decks.DELIVER) is {'output', 'url', 'fileId', 'pptx', 'revision', 'at',
+  'deck_sha256'}, with 'notice' when the deck was not delivered as asked. `deck_sha256` is
+  the hash of the deck file delivered, which the Document Library's PDF is checked by.
+  `revision` counts deliveries: each is added to run['revisions'] as {'revision', 'at',
+  'url' or 'pptx'}. The deck's
   README.md and the workspace's index are written again from it.
 - `space` is the workspace, for its index. Without it, the deck's folder is taken to be
   in the workspace's own folder, as it always is.
@@ -28,6 +30,7 @@ What a caller needs to know
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import shutil
 import types
@@ -89,7 +92,8 @@ def upload(root, run: dict, slides, output=None) -> dict:
     revision, at = len(run.get('revisions') or []) + 1, home.now()
     output = output or (run.get('form') or {}).get('output') or 'google'
     record = {'output': output, 'url': None, 'fileId': None, 'pptx': None,
-              'revision': revision, 'at': at, **({'review_status': 'unreviewed'} if decks.user_first(run) else {})}
+              'revision': revision, 'at': at, **({'review_status': 'unreviewed'} if decks.user_first(run) else {}),
+              'deck_sha256': hashlib.sha256(deck.read_bytes()).hexdigest()}
     if decks.on_desk(run):
         record['review_status'] = 'reviewed' if desk.reviewed(build.read_state(root)) \
             else 'unreviewed'

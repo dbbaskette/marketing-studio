@@ -5,6 +5,7 @@ Every library here is a disposable folder (STUDIOS_LIBRARY, set by helpers). Not
 runs pdftotext, the slides tool, an assistant or the network.
 """
 import contextlib
+import hashlib
 import json
 import os
 import shutil
@@ -18,6 +19,7 @@ from runner_support import DeckCase
 from workspace import WorkspaceError
 
 from runner import desk_actions, documents, library_keep
+from runner.steps import build
 from runner import page as pages
 from studio_core import document_library
 from studio_core.document_library import context
@@ -184,6 +186,123 @@ class KeepTests(LibraryCase):
         found = library_keep.keep(self.root, {'title': 'Deck'}, {'revision': 1})
         self.assertEqual(found['state'], 'failed')
         self.assertIn('no slide outline', found['problem'])
+
+
+PDF = b'%PDF-1.7\n% the render of the delivered deck\n%%EOF\n'
+
+
+class PdfTests(LibraryCase):
+    """The delivered deck's PDF is the one Harness Slides rendered of it, found and checked
+    here, never made: anything that does not agree keeps the Markdown only."""
+
+    PREVIEW = 'work/build/whole-abc123/preview'
+
+    def delivered(self, pdf: bytes = PDF, recorded: bool = True) -> dict:
+        """A deck delivered from the last round's preview, as build and deliver leave it."""
+        self.write('outline.md', '# Launch deck\n\n## 1. Why now\n')
+        folder = self.root / self.PREVIEW
+        folder.mkdir(parents=True)
+        deck = b'PK\x03\x04 the delivered deck'
+        (folder / 'deck.pptx').write_bytes(deck)
+        (folder / 'deck.pdf').write_bytes(pdf)
+        sha = hashlib.sha256(deck).hexdigest()
+        slides = [{'number': 1}, {'number': 2}]
+        (folder / 'preview.json').write_text(json.dumps(
+            {'deck': str(folder / 'deck.pptx'), 'deckSha256': sha, 'slides': slides}))
+        made = {'deck': sha, 'preview': self.PREVIEW, 'file': f'{self.PREVIEW}/deck.pptx',
+                'slides': slides}
+        if recorded:
+            made['pdf'] = hashlib.sha256(pdf).hexdigest()
+        build.write_state(self.root, {'rounds': [made]})
+        return {'revision': 1, 'output': 'pptx', 'deck_sha256': sha}
+
+    def kept_without_pdf(self, delivered: dict, why: str) -> None:
+        found = library_keep.keep(self.root, {'title': 'Launch deck'}, delivered)
+        self.assertEqual((found['state'], found['pdf'], found['pdf_note']),
+                         ('kept', 'needs-export', why))
+        row = self.library.describe(found['document'])
+        self.assertEqual((row['pdf'], row['formats']), ('needs-export', ['markdown']))
+
+    def test_the_rendered_pdf_of_the_delivered_deck_is_kept(self):
+        found = library_keep.keep(self.root, {'title': 'Launch deck'}, self.delivered())
+        self.assertEqual((found['state'], found['pdf']), ('kept', 'saved'))
+        self.assertNotIn('pdf_note', found)
+        row = self.library.describe(found['document'])
+        self.assertEqual((row['pdf'], row['pdf_note'], row['formats']),
+                         ('saved', None, ['markdown', 'pdf']))
+        self.assertEqual(self.library.download(found['document'], 1, 'pdf'),
+                         ('launch-deck.pdf', 'application/pdf', PDF))
+        self.assertEqual(library_keep.status(self.root)['pdf'], 'saved')
+
+    def test_a_round_from_before_rounds_recorded_their_pdf_is_bound_by_its_preview(self):
+        found = library_keep.keep(self.root, {'title': 'Launch deck'},
+                                  self.delivered(recorded=False))
+        self.assertEqual(found['pdf'], 'saved')
+
+    def test_a_delivery_from_before_it_recorded_its_deck_claims_no_pdf(self):
+        delivered = self.delivered()
+        del delivered['deck_sha256']
+        self.kept_without_pdf(delivered, library_keep.NO_PDF)
+
+    def test_another_deck_than_the_last_round_claims_no_pdf(self):
+        self.kept_without_pdf({**self.delivered(), 'deck_sha256': 'f' * 64},
+                              library_keep.NO_PDF)
+
+    def test_a_pdf_changed_since_it_was_rendered_is_not_kept(self):
+        delivered = self.delivered()
+        (self.root / self.PREVIEW / 'deck.pdf').write_bytes(PDF.replace(b'render', b'edited'))
+        self.kept_without_pdf(delivered, library_keep.PDF_CHANGED)
+
+    def test_a_preview_of_another_deck_is_not_kept(self):
+        delivered = self.delivered()
+        (self.root / self.PREVIEW / 'deck.pptx').write_bytes(b'PK\x03\x04 another deck')
+        self.kept_without_pdf(delivered, library_keep.PDF_CHANGED)
+
+    def test_a_file_that_is_not_a_whole_pdf_is_not_kept(self):
+        self.kept_without_pdf(self.delivered(pdf=b'%PDF-1.7\n cut short'),
+                              library_keep.PDF_CHANGED)
+
+    def test_a_missing_or_linked_pdf_or_preview_is_not_followed(self):
+        delivered = self.delivered()
+        pdf = self.root / self.PREVIEW / 'deck.pdf'
+        outside = self.place / 'elsewhere.pdf'
+        outside.write_bytes(PDF)
+        pdf.unlink()
+        self.kept_without_pdf(delivered, library_keep.NO_PDF)
+        pdf.symlink_to(outside)
+        self.kept_without_pdf(delivered, library_keep.NO_PDF)
+        # A preview folder that leads out of the deck's work folder is not read.
+        pdf.unlink()
+        outside.rename(pdf)
+        moved = self.place / 'preview'
+        shutil.move(str(self.root / self.PREVIEW), moved)
+        (self.root / self.PREVIEW).symlink_to(moved, target_is_directory=True)
+        self.assertEqual(library_keep.rendered_pdf(self.root, delivered),
+                         (None, library_keep.NO_PDF))
+
+    def test_keep_again_saves_the_pdf_from_this_computer_alone(self):
+        delivered = self.delivered()
+        with mock.patch.object(document_library, 'opened',
+                               side_effect=document_library.LibraryError('The library is busy.')):
+            failed = library_keep.keep(self.root, {'title': 'Launch deck'}, delivered)
+        self.assertEqual(failed['state'], 'failed')
+        self.write('deliver.json', json.dumps(delivered))
+        with mock.patch.object(build, 'render', side_effect=AssertionError('no render')):
+            again = library_keep.again(self.root, {'title': 'Launch deck'})
+        self.assertEqual((again['state'], again['pdf']), ('kept', 'saved'))
+
+    def test_a_pdf_found_later_adds_a_revision_with_it(self):
+        delivered = self.delivered()
+        pdf = self.root / self.PREVIEW / 'deck.pdf'
+        pdf.rename(self.place / 'aside.pdf')
+        first = library_keep.keep(self.root, {'title': 'Launch deck'}, delivered)
+        self.assertEqual((first['revision'], first['pdf']), (1, 'needs-export'))
+        (self.place / 'aside.pdf').rename(pdf)
+        second = library_keep.keep(self.root, {'title': 'Launch deck'}, delivered)
+        self.assertEqual((second['document'], second['revision'], second['pdf']),
+                         (first['document'], 2, 'saved'))
+        self.assertEqual(library_keep.keep(self.root, {'title': 'Launch deck'},
+                                           delivered)['revision'], 2)
 
 
 if __name__ == '__main__':

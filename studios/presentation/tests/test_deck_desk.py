@@ -676,6 +676,31 @@ class DeliverTests(DeskCase):
         name, _ = self.engine.download(root)
         self.assertEqual(name, f'{root.name}.pptx')
 
+    def test_the_delivered_deck_is_kept_in_the_library_with_the_pdf_it_was_rendered_to(self):
+        import hashlib
+        from runner import library_keep
+        from runner.steps import build
+        from studio_core import document_library
+        root = self.deck()
+        self.deliver(root)
+        said = json.loads((root / 'deliver.json').read_text())
+        delivered = (root / 'work' / 'deck.pptx').read_bytes()
+        self.assertEqual(said['deck_sha256'], hashlib.sha256(delivered).hexdigest())
+        kept = library_keep.status(root)
+        self.assertEqual((kept['state'], kept['pdf']), ('kept', 'saved'))
+        self.assertNotIn('pdf_note', kept)
+        last = build.read_state(root)['rounds'][-1]
+        rendered = (root / last['preview'] / 'deck.pdf').read_bytes()
+        self.assertIn(said['deck_sha256'].encode(), rendered)   # the stand-in's render of it
+        library = document_library.opened()
+        self.assertEqual(library.describe(kept['document'])['formats'], ['markdown', 'pdf'])
+        self.assertEqual(library.download(kept['document'], kept['revision'], 'pdf')[2], rendered)
+        # Keep in library again uses this computer's files only: no upload, no render.
+        calls = len(self.slides.run.calls)
+        self.assertEqual(library_keep.again(root, self.record(root))['revision'],
+                         kept['revision'])
+        self.assertEqual(len(self.slides.run.calls), calls)
+
     def test_deliver_against_another_deck_is_refused(self):
         root = self.deck()
         with self.assertRaises(WorkspaceError) as caught:
@@ -1390,6 +1415,11 @@ class OpenOnDeskTests(DeskCase):
         self.assertTrue(shown['expected'])
         self.assertEqual(shown['delivered']['revision'], 1)
         self.assertEqual(self.record(root)['flow'], 'desk')
+        # Its changed copy was pictured without a PDF being kept: none is claimed.
+        from runner import decks, library_keep
+        self.assertEqual(library_keep.rendered_pdf(root, decks.delivered(root)),
+                         (None, library_keep.NO_PDF))
+        self.assertNotEqual(library_keep.status(root).get('pdf'), 'saved')
 
     def test_a_selected_changes_deck_without_its_copy_here_says_so(self):
         import shutil

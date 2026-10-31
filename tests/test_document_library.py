@@ -190,6 +190,39 @@ class RecordTests(LibraryCase):
             made.retain('presentation:deck', 'presentation', 'presentation', 'Deck', '# Deck\n',
                         pdf={'state': 'saved'})
         with self.assertRaises(library.LibraryError):
+            made.retain('presentation:deck', 'presentation', 'presentation', 'Deck', '# Deck\n',
+                        pdf={'state': 'saved', 'data': b'not a PDF'})
+
+    def test_a_saved_pdf_is_kept_beside_the_markdown_and_checked_like_it(self):
+        made = self.made()
+        exported = b'%PDF-1.7\n% the deck\n%%EOF\n'
+        first = made.retain('presentation:deck-1', 'presentation', 'presentation', 'Deck',
+                            '# Deck\n', pdf={'state': 'needs-export', 'reason': 'Not yet.'})
+        saved = made.retain('presentation:deck-1', 'presentation', 'presentation', 'Deck',
+                            '# Deck\n', pdf={'state': 'saved', 'data': exported})
+        # The same text with a PDF now is a new revision, and the PDF is offered with it.
+        self.assertEqual((saved['document'], saved['revision'], saved['changed']),
+                         (first['document'], 2, True))
+        row = made.describe(saved['document'])
+        self.assertEqual((row['pdf'], row['pdf_note'], row['formats']),
+                         ('saved', None, ['markdown', 'pdf']))
+        self.assertEqual(made.download(saved['document'], 2, 'pdf'),
+                         ('deck.pdf', 'application/pdf', exported))
+        # The same PDF again adds nothing; another PDF of the same text is a revision.
+        self.assertEqual(made.retain('presentation:deck-1', 'presentation', 'presentation',
+                                     'Deck', '# Deck\n', pdf={'state': 'saved', 'data': exported}),
+                         {**saved, 'changed': False})
+        other = made.retain('presentation:deck-1', 'presentation', 'presentation', 'Deck',
+                            '# Deck\n', pdf={'state': 'saved', 'data': exported + b'\n'})
+        self.assertEqual(other['revision'], 3)
+        # Revision 1 never had a PDF; a changed PDF file is refused as any changed file is.
+        with self.assertRaisesRegex(library.LibraryError, 'no PDF version'):
+            made.download(saved['document'], 1, 'pdf')
+        place = made.root / 'documents' / saved['document'] / 'revisions' / '2'
+        (place / 'content.pdf').write_bytes(b'%PDF-1.7\n% changed\n')
+        with self.assertRaisesRegex(library.LibraryError, 'changed'):
+            made.download(saved['document'], 2, 'pdf')
+        with self.assertRaises(library.LibraryError):
             made.retain('blog:x', 'presentation', 'blog', 'X', 'text')   # key names another studio
 
     def test_changed_missing_or_linked_files_are_refused(self):

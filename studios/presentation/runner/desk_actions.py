@@ -26,7 +26,7 @@ import home
 from workspace import WorkspaceError, write_atomic
 
 from runner import briefs, decks, desk, documents, gitstate, library_keep, marks, stages
-from studio_core import deck_content, research_view
+from studio_core import deck_content, document_library, research_view
 from studio_core.document_library import LibraryError
 from studio_core.document_library import context as library_context
 from studio_core.drafting import prompts
@@ -43,6 +43,8 @@ RESEARCH_BUSY = 'The deck is being redrawn now. Change the research when that en
 LIBRARY_BUSY = ('The deck is being made now. Add from the library, or take a newer revision, '
                 'when that ends: a job that is running keeps the sources it started with.')
 LEFT_OUT_ALREADY = 'Those findings are left out already.'
+NOT_KEPT = ('It is a source of this deck, but it was not kept in the Document Library: {why} '
+            "Add it on Marketing Studio's Library screen to keep it there.")
 PASTED = 'Pasted text'
 SOURCES_TOLD = ('The person\'s own sources are in your input "sources". Add only what they, '
                 'the slide or the outline support.')
@@ -1380,17 +1382,35 @@ class DeskActions:
 
     # --- sources and research ------------------------------------------------------------------
 
-    def desk_source(self, path, name, data=None, text=None, title=None) -> dict:
+    def desk_source(self, path, name, data=None, text=None, title=None,
+                    keep: bool = False) -> dict:
         """Add a source to the deck: a file, or text the person pasted. It is listed under
         Sources and read by the words jobs, the speaker-notes proposals and the outline when
         it is written again. Nothing is drawn and research does not run: Research again
-        does, when asked."""
+        does, when asked. With `keep` (Keep in library, for a file), the file is also kept
+        in the shared Document Library on this computer, once the deck has it; the view then
+        says how that went in `library_upload`. The deck's copy is the same either way, and
+        neither is shared with anyone."""
         root = self._desk_held(path)
         if text is not None:
             documents.add_text(root, PASTED if title is None else title, text)
-        else:
-            documents.add(root, name, data, title)
-        return self.view(root)
+            return self.view(root)
+        documents.add(root, name, data, title)
+        kept = self._keep_upload(name, data, title) if keep else None
+        shown = self.view(root)
+        return {**shown, 'library_upload': kept} if kept and shown is not None else shown
+
+    @staticmethod
+    def _keep_upload(name, data, title) -> dict:
+        """Keep a file the deck was just given in the Document Library as well:
+        {'state': 'kept', 'id', 'revision'} or {'state': 'failed', 'problem'}. The deck keeps
+        its source whatever the library does."""
+        try:
+            row = document_library.opened(create=True).add_upload(
+                name, data, title=title, studio='presentation')
+        except (LibraryError, OSError) as failure:
+            return {'state': 'failed', 'problem': NOT_KEPT.format(why=str(failure)[:300])}
+        return {'state': 'kept', 'id': row['id'], 'revision': row['revision']}
 
     @staticmethod
     def _library_idle(root, record: dict) -> None:

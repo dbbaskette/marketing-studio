@@ -66,9 +66,14 @@ Signing in to an assistant, your organisation's brands and fonts, and optional G
 - **Finished work is kept there too.** A finished or published blog is kept as
   Markdown. A delivered Presentation Studio deck is kept as its slide-ordered outline
   Markdown. Delivering or finishing again adds a revision only when the text
-  changed. Presentation Studio cannot export a PDF yet, so a deck's entry says
-  **PDF needs export**, and no PDF is claimed. If the library save fails, the deck
-  says so and offers **Keep in library again**, which delivers nothing again.
+  changed. A delivered deck also keeps its PDF: the one Harness Slides rendered of
+  that exact deck when it was last previewed, kept only when it still matches.
+  Its entry then says **PDF saved**. Otherwise it says **PDF needs export** and
+  why, and no PDF is claimed. If the library save fails, the deck says so and
+  offers **Keep in library again**, which delivers and renders nothing again.
+- **Keep in library, or Only this project.** A file added on Presentation
+  Studio's desk is kept in the library too, unless you choose **Only this
+  project**. The deck has its own copy either way, and nothing is shared.
 - **Add from library, for one project.** Presentation Studio's desk Sources card
   and Blog Studio's sources card each have **Add from library**. Ticks stay when you
   page or filter, **Select all on this page** and **Select all matching** are

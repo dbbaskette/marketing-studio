@@ -17,6 +17,7 @@ Layout
         revision.json                           # written last: what the revision is
         content.md                              # readable Markdown, when there is any
         original<ending>                        # an upload's bytes, as they were sent
+        content.pdf                             # finished work's PDF, once it is saved
     <library>/.state/catalog.json               # a search index, rebuilt from records
     <library>/.state/filters.json               # each studio's browsing filters
 
@@ -76,7 +77,8 @@ LIMITS = {'bytes': 8_000_000,       # one original, as the studios' supplied doc
           'revisions': 1_000,       # revisions one document keeps
           'page': 50,               # rows one catalog page gives
           'preview': 20_000,        # characters a preview shows
-          'matching': 40}           # documents "all matching" may choose at once
+          'matching': 40,           # documents "all matching" may choose at once
+          'pdf': 50_000_000}        # bytes of one finished deck's PDF
 IDENT = re.compile(r'^[a-z0-9][a-z0-9-]{0,63}$')
 KEY = re.compile(r'^(blog|presentation|training|infographic):[A-Za-z0-9][A-Za-z0-9._-]{0,159}$')
 OPERATION = re.compile(r'^[a-f0-9]{32}$')
@@ -360,7 +362,7 @@ class Library:
         name = part['file']
         if '/' in name or name.startswith('.'):
             raise LibraryError(CHANGED)
-        data = _bounded(place / name, max(LIMITS['bytes'], LIMITS['text']))
+        data = _bounded(place / name, max(LIMITS['bytes'], LIMITS['text'], LIMITS['pdf']))
         if _sha(data) != part.get('sha256'):
             raise LibraryError(CHANGED)
         return data
@@ -709,7 +711,10 @@ class Library:
                origin='created') -> dict:
         """Keep finished work as readable Markdown, found again by its key: the same key
         reuses the document, and a revision is added only when the text, the title or the
-        PDF's state changed. Returns {'document', 'revision', 'changed'}."""
+        PDF changed. `pdf` is {'state': 'needs-export', 'reason'} while no PDF exists, or
+        {'state': 'saved', 'data'} with the bytes of a PDF the studio has already checked
+        is of exactly this work; the library keeps them as `content.pdf` and checks only
+        that they are a PDF. Returns {'document', 'revision', 'changed'}."""
         if not isinstance(key, str) or not KEY.match(key) or key.split(':', 1)[0] != studio:
             raise LibraryError('Name the finished work by its studio and project.')
         if kind not in KINDS or kind == 'upload' or origin not in ORIGINS:
@@ -720,8 +725,20 @@ class Library:
         encoded = text.encode('utf-8')
         if len(encoded) > LIMITS['text']:
             raise LibraryError(f'"{shown}" is longer than the library keeps for one document.')
-        if pdf is not None and not (isinstance(pdf, dict) and pdf.get('state') == 'needs-export'
-                                    and isinstance(pdf.get('reason'), str)):
+        files = {'content.md': encoded}
+        if isinstance(pdf, dict) and pdf.get('state') == 'saved':
+            data = pdf.get('data')
+            if type(data) is not bytes or not data.startswith(b'%PDF-'):
+                raise LibraryError('A PDF is kept only once it has been exported.')
+            if len(data) > LIMITS['pdf']:
+                raise LibraryError(f'The PDF of "{shown}" is larger than the library keeps.')
+            files['content.pdf'] = data
+            kept_pdf = {'state': 'saved', 'file': 'content.pdf', 'bytes': len(data),
+                        'sha256': _sha(data)}
+        elif pdf is None or (isinstance(pdf, dict) and pdf.get('state') == 'needs-export'
+                             and isinstance(pdf.get('reason'), str)):
+            kept_pdf = {'state': 'needs-export', 'reason': pdf['reason'][:300]} if pdf else None
+        else:
             raise LibraryError('A PDF is kept only once it has been exported.')
         held = None
         if isinstance(project, dict):
@@ -733,7 +750,7 @@ class Library:
                   'operation': None, 'original': None,
                   'markdown': {'file': 'content.md', 'bytes': len(encoded), 'sha256': _sha(encoded),
                                'characters': len(text)},
-                  'pdf': {'state': 'needs-export', 'reason': pdf['reason'][:300]} if pdf else None,
+                  'pdf': kept_pdf,
                   'conversion': {'method': f'{studio}-markdown-v1', 'state': 'readable',
                                  'gaps': [], 'problem': None}}
         with self.lock:
@@ -742,11 +759,12 @@ class Library:
                 place, head = self._record(existing)
                 same = (head.get('title') == shown
                         and (head.get('markdown') or {}).get('sha256') == record['markdown']['sha256']
-                        and (head.get('pdf') or {}).get('state') == (record['pdf'] or {}).get('state'))
+                        and (head.get('pdf') or {}).get('state') == (record['pdf'] or {}).get('state')
+                        and (head.get('pdf') or {}).get('sha256') == (record['pdf'] or {}).get('sha256'))
                 if same and self._state_of(place, head)[0] == 'readable':
                     return {'document': existing, 'revision': head['revision'], 'changed': False}
             self._tidy()
-            kept = self._write(existing, record, {'content.md': encoded})
+            kept = self._write(existing, record, files)
         return {'document': kept['id'], 'revision': kept['revision'], 'changed': True}
 
     # existing work, added explicitly (adopt.py)
