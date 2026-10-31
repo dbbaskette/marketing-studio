@@ -88,11 +88,13 @@ Restarting generates new session links. Existing project files stay on the host.
   100-second limit. If a connection times out, work may still finish on the
   computer: reopen the saved work and check it before retrying. The bridge never
   resubmits a request.
-- A file or picture refused as too large says how much the network link takes there.
-  The bridge allows each studio address exactly what that studio's own server allows:
-  for example 12 MB for a Training Studio or Presentation Studio source, 1 MB for a
-  saved Training Studio section, 28 MB for a slide picture, 120 MB for a new deck's
-  form, 24 MB for Infographic Studio's sources and actions, and 15 MiB for Blog Studio.
+- A file or picture refused as too large says how large a file the network link takes
+  there. The bridge allows each studio address exactly what that studio's own server
+  allows: for example a 12 MB request for a Training Studio or Presentation Studio
+  source, 1 MB for a saved Training Studio section, 28 MB for a slide picture, 120 MB
+  for a new deck's form, 24 MB for Infographic Studio's sources and actions, and
+  15 MiB for Blog Studio. Pages send files base64-encoded, a third larger, so the
+  sentence names three quarters of the limit: about 9 MB for a source.
 
 ## Verification
 
