@@ -336,7 +336,7 @@ function sDeskSourcesSheet(held){
   const adding=held.adding||(held.adding={files:[],role:'material',keep:false,style:held.view.style?.style_id||''});
   const problem=sNode('p','sheet-error',adding.problem||'');problem.setAttribute('role','alert');delete adding.problem;
   let done;
-  const files=sFilesCard(adding,problem,()=>sDeskSourcesSheet(held),locked=>{if(done)done.disabled=locked||!sDeskCan(held);},{keepWhen:'Ticked ones go to the team library when you add them.'});
+  const files=sFilesCard(adding,problem,()=>sDeskSourcesSheet(held),locked=>{if(done)done.disabled=locked||!sDeskCan(held);},{keepWhen:'Ticked ones go to the team library when you add them.',empty:'No sources yet. Later rewrites will read what you add.'});
   done=sButton('Add to this draft',async button=>{
     const ready=adding.files.filter(file=>file.state==='ready');if(!ready.length){problem.textContent='Add a file, a link, a Google Doc or a library post with text first.';return;}
     await busy(button,'Adding…',async()=>{try{await sDeskFlush(held);const before=held.view;held.view=await api('desk-sources',{id:held.id,sources:sDeskUploads(ready),library:sDeskLibraryPicks(ready),...sDeskKept(ready)});held.adding=null;sCloseSheet();sToast(ready.length===1?'Added. Later rewrites read it.':'Added. Later rewrites read them.');sDeskRefresh(held,before);}catch(error){problem.textContent=error.message;}});
@@ -513,14 +513,15 @@ async function sDeskChoose(held,reading,part=held.activePart){
 // Finishing opens from the toolbar only: Polish goes to Review mode, the one place fixes are
 // accepted or rejected in the text. On a phone the view, the buttons and the page's sentence
 // fold into one bar beside Go to section, so the title and the first paragraph come first.
-function sDeskReadingControls(held,lede){
+function sDeskReadingControls(held,lede,status){
   const choices=sChoice('Manuscript view',[['read','Read'],['edit','Edit section'],['full','Full desk']],held,'reading',value=>sDeskChoose(held,value));
   const picker=sField('desk-part-picker','Go to section',held,'activePart',{options:[['title','Title'],['opening','Opening'],...held.view.sections.map(section=>[section.id,deskHeading(section.heading)])],changed:value=>sDeskChoose(held,held.reading,value)});
   const actions=sAdd(sNode('div','bar'),sButton('Polish',()=>sDeskFinishOpen(held,'copyedit'),'filled'),sButton('Sources',()=>sDeskSourcesSheet(held)),sButton('Outline',async()=>{await sDeskFlush(held);held.tab='outline';sDeskRender(held);}));
   if(!sNarrow())return sAdd(sNode('div','desk-reading-controls'),choices,picker,actions);
   const fold=sNode('details','desk-tools-fold');fold.open=!!held.toolsOpen;fold.addEventListener('toggle',()=>{held.toolsOpen=fold.open;});
   fold.append(sNode('summary','button','View and tools'),sAdd(sNode('div','desk-tools-list'),lede,choices,actions));
-  return sAdd(sNode('div','desk-reading-controls desk-compact'),picker,fold);
+  // The save line stays in reach, empty until there is something to say.
+  return sAdd(sNode('div','desk-reading-controls desk-compact'),picker,fold,status);
 }
 function sDeskReviewQueue(held){
   // Humanize's located rewrites open Review mode, as Copy edit's fixes do: one place to accept or reject them.
@@ -567,7 +568,7 @@ function sDeskRender(held){
   held.panel=finishing?sDeskPanel(held):null;held.panelKey=finishing?sDeskPanelKey(held):null;
   const lede=held.tab==='outline'?'Rename, reorder, add and remove sections and say what each must do. Write the draft from the outline, or one section at a time.':'Read your manuscript, or choose a section to edit. Polish and checks offer suggestions; nothing changes until you accept.';
   const said=sNode('p','lede',narrow?lede+' Changes save as you type.':lede);
-  sPage(narrow?null:said,sDeskElsewhere(view),status,held.tab==='outline'?sDeskTabs(held):null,held.tab==='outline'?null:sDeskReadingControls(held,said),sAdd(sNode('div','desk-layout'+(finishing&&!sheet?' desk-finishing':'')),column,finishing&&!sheet?held.panel:held.aside),sheet?held.panel:null,held.bar);
+  sPage(narrow?null:said,sDeskElsewhere(view),narrow?null:status,held.tab==='outline'?sDeskTabs(held):null,held.tab==='outline'?null:sDeskReadingControls(held,said,status),sAdd(sNode('div','desk-layout'+(finishing&&!sheet?' desk-finishing':'')),column,finishing&&!sheet?held.panel:held.aside),sheet?held.panel:null,held.bar);
   sDeskImagesLoad(held);
 }
 // After a job starts, moves on or ends: redraw only the cards it changed, so the part the
@@ -728,8 +729,9 @@ function sDeskMakeDoc(held){
 // Mark as published: where it went, said by the person. Nothing is posted.
 function sDeskPublish(held){
   const draft={url:held.view.publication||''},problem=sNode('p','sheet-error');problem.setAttribute('role','alert');
-  const save=sButton('Mark as published',async button=>{const url=draft.url.trim();if(!/^https:\/\/\S+$/.test(url)){problem.textContent='Add the public https address where it was published.';return;}await busy(button,'Saving…',async()=>{try{await sDeskFlush(held);const result=await api('schedule',{id:held.id,expected:held.view.expected,stage:'published',confirm_stage:true,publication_url:url}),kept=result?.library;sCloseSheet();sToast('Recorded as published. Nothing was posted anywhere.'+(kept?.reason?' Not kept in the team library: '+kept.reason:kept?.id?' Its draft is kept in the team library.':''));await sDesk(held.id);}catch(error){problem.textContent=error.message;}});},'filled');
-  sOpenSheet('Mark as published',sNode('p','','Record where this blog was published. The current text is the published one. Its draft is kept in the team library as a reference and an example of its kind of post. Marking it again updates that item.'),sField('desk-publication','Public address',draft,'url',{max:2000,required:true}),problem,sAdd(sNode('div','bar'),save,sButton('Cancel',sCloseSheet)));
+  const save=sButton('Mark as published',async button=>{const url=draft.url.trim();if(!/^https:\/\/\S+$/.test(url)){problem.textContent='Add the public https address where it was published.';return;}await busy(button,'Saving…',async()=>{try{await sDeskFlush(held);const result=await api('schedule',{id:held.id,expected:held.view.expected,stage:'published',confirm_stage:true,publication_url:url}),kept=result?.library,copy=result?.document_library;sCloseSheet();sToast('Recorded as published. Nothing was posted anywhere.'+(kept?.reason?' Not kept in the team library: '+kept.reason:kept?.id?' Its draft is kept in the team library.':'')+(copy?.state==='kept'?' A copy is in the Document Library on this computer.':copy?.state==='failed'?' Not kept in the Document Library: '+copy.reason:''));await sDesk(held.id);}catch(error){problem.textContent=error.message;}});},'filled');
+  const team=studio.team?.joined?'':' Without a Team Hub, the team library is on this computer only.';
+  sOpenSheet('Mark as published',sNode('p','','Record where this blog was published. The current text is the published one. Its draft is kept in the team library, as a reference and an example of its kind of post, and a copy goes to the Document Library on this computer, for any studio. Marking it again updates both.'+team),sField('desk-publication','Public address',draft,'url',{max:2000,required:true}),problem,sAdd(sNode('div','bar'),save,sButton('Cancel',sCloseSheet)));
 }
 
 // A finished step-by-step blog once it is on the desk: its run is read as it ended, with

@@ -5,6 +5,22 @@ changes for authors first, then what changes for maintainers.
 
 ## Unreleased
 
+- **One library vocabulary, honest upload limits and clear source choices (#260).** The
+  page says **team library** and **Document Library (this computer)** everywhere: **From
+  the team library**, **From the Document Library (this computer)**, **Keep a copy in the
+  Document Library** for uploads, and **Add to the team library**. Mark as published names
+  both places its draft is kept, and without a Team Hub the page says the team library is
+  on this computer only. **Add to the team library** sends large files in groups that each
+  fit one request, through the phone link too, and reads them back as one check and one
+  result. **Add a source**'s five options wrap with exactly one shown as chosen. Team
+  library rows show one status in words ("Readable · not analyzed yet"), the Status filter
+  reads **All active**, and its dialogs close with **Close**. Opened through Marketing
+  Studio's phone link, Status says to run sign-in commands on the computer running
+  Marketing Studio. The desk's **Add a source** says "Later rewrites will read what you
+  add." On a phone the desk's save line sits in its compact bar. Shared look: a `.dialog`
+  that holds form fields is opaque, and a five- or six-option segmented control fills the
+  chosen option instead of sliding a thumb.
+
 - **The Google Doc round trip, finished on the page (#259).** The desk's **Google Doc**
   is a small menu: **Open the Google Doc**, **Check what would be sent** (then **Send**) and
   **Bring accepted changes**. Bring accepted changes reads the Doc's accepted text and

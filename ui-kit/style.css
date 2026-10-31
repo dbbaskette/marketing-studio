@@ -695,6 +695,24 @@ summary {
   transform: translateX(300%);
 }
 
+/* Five or six answers wrap onto rows, where a sliding thumb cannot follow the choice: the
+   thumb goes, and the chosen answer is filled on its own. */
+.segmented[data-count="5"],
+.segmented[data-count="6"] {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 8.5rem), 1fr));
+}
+
+.segmented[data-count="5"] > .seg-thumb,
+.segmented[data-count="6"] > .seg-thumb {
+  display: none;
+}
+
+.segmented[data-count="5"] > .seg-option[aria-pressed="true"],
+.segmented[data-count="6"] > .seg-option[aria-pressed="true"] {
+  background: var(--selection);
+  box-shadow: var(--edge), 0 1px 3px rgb(0 0 0 / 0.1);
+}
+
 .seg-option {
   position: relative;
   z-index: 1;
@@ -2645,6 +2663,12 @@ a.button {
   border-bottom: 1px solid var(--hair);
 }
 
+/* A dialog that holds a form is opaque: nothing behind it reads through its fields. */
+.dialog:has(input, select, textarea),
+.dialog:has(input, select, textarea) .dialog-header {
+  background: var(--solid);
+}
+
 .dialog-header > h2 {
   font-size: 1.12rem;
   font-weight: 700;
@@ -2699,6 +2723,13 @@ a.button {
 
 @media (max-width: 37.5rem) and (forced-colors: active) {
   .segmented[data-count="4"] > .seg-option[aria-pressed="true"] {
+    outline: 2px solid Highlight;
+  }
+}
+
+@media (forced-colors: active) {
+  .segmented[data-count="5"] > .seg-option[aria-pressed="true"],
+  .segmented[data-count="6"] > .seg-option[aria-pressed="true"] {
     outline: 2px solid Highlight;
   }
 }

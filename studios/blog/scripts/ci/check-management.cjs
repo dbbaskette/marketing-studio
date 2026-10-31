@@ -100,6 +100,7 @@ async function check(){
   await filesJourney();
   await voiceLinksJourney();
   await libraryAddJourney();
+  await libraryWordsAndBatches();
   await libraryScreen();
   await librarySelectAll();
   await voicesForEveryAuthor();
@@ -1132,7 +1133,7 @@ async function movedControls(){
     assert.ok(actions.some(([label])=>label==='Library and team tools'),name+': the other views are a button away');
   }
   await f.run("sLegacy('library')");await f.get('actions').children[0].listeners.click();
-  assert.equal(f.get('sheet').children[0].children[0].textContent,'Add to the library');
+  assert.equal(f.get('sheet').children[0].children[0].textContent,'Add to the team library');
   f.get('memory-form').reset=()=>{};{const submit=new Element('button');submit.type='submit';f.get('memory-form').append(submit);}
   f.run('sCloseSheet()');await f.run("sLegacy('memory')");await f.get('actions').children[0].listeners.click();assert.equal(f.get('memory-dialog').open,true,'Add memory');
   f.get('memory-dialog').open=false;
@@ -1599,7 +1600,7 @@ async function filesJourney(){
   // copy is said on its row, and Only this blog sends none. It never changes team sharing.
   {const choice=byId('files-document-keep');assert.ok(choice,'the Keep in library choice');
    const options=()=>descendants(byId('files-document-keep')).filter(e=>e.tagName==='button');
-   assert.deepEqual(options().map(o=>[o.textContent,o.attributes['aria-pressed']]),[['Keep in library','true'],['Only this blog','false']]);
+   assert.deepEqual(options().map(o=>[o.textContent,o.attributes['aria-pressed']]),[['Keep a copy in the Document Library','true'],['Only this blog','false']]);
    assert.ok(descendants(choice).some(e=>/not shared with your team/.test(e.textContent)),'and says it stays local');
    {const ids=nodes().filter(e=>e.id).map(e=>e.id);assert.ok(ids.indexOf('files-document-keep')<ids.indexOf('files-input'),'the choice comes before the picker');}
    assert.equal(upload[0].data.document_library,true,'Keep in library is the default');
@@ -1893,7 +1894,7 @@ async function libraryAddJourney(){
   f.loadRunner();voicesOn(f);
   const sheet=()=>descendants(f.get('sheet')),find=label=>sheet().find(e=>e.textContent===label),byId=id=>sheet().find(e=>e.id===id),has=pattern=>sheet().some(e=>pattern.test(e.textContent));
   await f.run('sLibraryAdd()');
-  assert.equal(f.get('sheet').children[0].children[0].textContent,'Add to the library');
+  assert.equal(f.get('sheet').children[0].children[0].textContent,'Add to the team library');
   const files=byId('library-add-files');assert.equal(files.multiple,true);assert.match(files.accept,/\.pdf/);
   assert.ok(byId('library-add-links')&&byId('library-add-links-file'),'links can be pasted or chosen as a file');assert.ok(byId('library-add-google'),'and a Google Doc link added');
   assert.equal(byId('library-add-who').value,'*each','each post’s own author by default');
@@ -1960,6 +1961,72 @@ async function libraryAddJourney(){
   assert.equal(retried.retry,true);assert.equal(retried.operation,operation,'the same operation');assert.equal(retried.expected,'check-1');
 }
 
+// Issue 260: Add to the team library sends large sets in groups that each fit a request (the
+// page and the phone link take at most 15 MiB), read back as one; one library vocabulary on
+// the sources card; Team library rows with one status in words; and Status through the phone
+// link saying where commands are run.
+async function libraryWordsAndBatches(){
+  const requests=[];let previews=0,adds=0;
+  const preview=data=>{previews++;return {status:'ready',role:'facts',author:'*each',kind:'',kind_name:'',expected:'check-'+previews,items:data.files.filter(f=>f.filename).map(f=>({key:f.filename,kind:'file',title:f.filename,filename:f.filename,state:'ready',chars:f.content.length,note:'',bylines:['Avery Quinn']})).concat(data.links?[{key:'https://blog.example/a/',kind:'link',url:'https://blog.example/a/',site:'blog.example/',state:'new',chars:null,bylines:[],note:''}]:[]),in_library:0,to_fetch:data.links?1:0,duplicates:0,unusable:0,sites:data.links?[{shown:'blog.example/'}]:[]};};
+  const result=data=>{adds++;const ids=data.files.map(f=>f.filename);return {operation:data.operation,state:'saved',role:'facts',author:'*each',kind:'',items:ids.map(id=>({id,kind:'file',filename:id,status:'imported',title:id,author:'Avery Quinn',bylines:['Avery Quinn'],role:'facts',sample:false,revision:1,text:true})),counts:{imported:ids.length,'in-library':0,failed:0,pending:0,samples:0},remaining:0,groups:[{author:'Avery Quinn',ids,samples:[],learnable:[],count:ids.length}],held:[],sharing_message:'',next_step:'Done.'};};
+  const f=fixture((url,options)=>{const data=options?.body?JSON.parse(options.body):null;requests.push({url,data,size:options?.body?.length||0});
+    if(url.startsWith('/api/styles'))return {styles:[],samples:[],candidates:[],pending:[]};
+    if(url==='/api/library-add-preview')return preview(data);
+    if(url==='/api/library-add')return result(data);
+    if(url==='/api/library-add-author')return {...result({files:data.ids.map(id=>({filename:id})),operation:data.operation}),groups:[{author:data.author,ids:data.ids,samples:[],learnable:[],count:data.ids.length}]};
+    return {items:[],total:0};});
+  f.loadRunner();
+  const sheet=()=>descendants(f.get('sheet')),has=pattern=>sheet().some(e=>pattern.test(e.textContent||''));
+  // Three files of 6 MiB each, already read as base64: together far over one request.
+  f.run("studio.libraryAdd=null;const held=sLibraryAddHeld();held.links='https://blog.example/a/';held.files=['one.md','two.md','three.md'].map(name=>({filename:name,content:'A'.repeat(8*1024*1024)}))");
+  await f.run('sLibraryAdd()');
+  assert.equal(f.get('sheet').children[0].children[0].textContent,'Add to the team library');
+  assert.ok(has(/3 chosen: one\.md, two\.md, three\.md\. They are sent in 3 groups\./),'the sheet says the files go in groups');
+  await sheet().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
+  const checks=requests.filter(r=>r.url==='/api/library-add-preview');
+  assert.equal(checks.length,3,'each group is checked on its own');
+  assert.ok(checks.every(r=>r.size<15*1024*1024),'and every request fits the page and the phone link');
+  assert.deepEqual(checks.map(r=>[r.data.files.map(f=>f.filename),!!r.data.links]),[[['one.md'],true],[['two.md'],false],[['three.md'],false]],'the links go with the first group only');
+  assert.ok(sheet().some(e=>e.textContent==='4 items'),'read back as one check');
+  assert.ok(has(/too large to send together, so they go in 3 groups/));
+  await sheet().find(e=>e.textContent==='Add 4 items').listeners.click();
+  const sent=requests.filter(r=>r.url==='/api/library-add');
+  assert.equal(sent.length,3);assert.ok(sent.every(r=>r.size<15*1024*1024));
+  assert.equal(new Set(sent.map(r=>r.data.operation)).size,3,'each group is its own add');
+  assert.deepEqual(sent.map(r=>r.data.expected),['check-1','check-2','check-3'],'each against its own check');
+  assert.ok(sheet().some(e=>e.textContent==='3 added · 0 already there · 0 failed'),'the result counts every group');
+  assert.ok(sheet().some(e=>e.textContent==='Avery Quinn · 3 posts'),'authors are grouped across groups');
+  // Renaming an author renames it in each group's own add.
+  const rename=sheet().find(e=>e.id==='library-add-rename-0');rename.value='Avery Q. Quinn';rename.listeners.input();
+  await sheet().find(e=>e.textContent==='Rename').listeners.click();
+  const renamed=requests.filter(r=>r.url==='/api/library-add-author');
+  assert.deepEqual(renamed.map(r=>[r.data.operation,r.data.ids]),sent.map(r=>[r.data.operation,[r.data.files[0].filename]]));
+  // The sources card: one library vocabulary, and one option marked as chosen.
+  f.run("studio.team={joined:false};globalThis.sourcesDraft={files:[]};document.getElementById('studio-page').replaceChildren(sFilesCard(sourcesDraft,document.createElement('p'),()=>{},()=>{},{empty:'No sources yet. Later rewrites will read what you add.'}))");
+  const card=descendants(f.get('studio-page'));
+  const group=card.find(n=>n.attributes?.['aria-label']==='Add a source');
+  assert.equal(group.dataset.count,'5');assert.equal(group.children.filter(n=>n.attributes?.['aria-pressed']==='true').length,1,'exactly one option is chosen');
+  assert.ok(!group.children.some(n=>n.textContent==='Library'),'no bare library');
+  assert.ok(card.some(n=>n.textContent==='No sources yet. Later rewrites will read what you add.'),'the desk sheet says desk words');
+  f.run("sourcesDraft.fileMethod='library';document.getElementById('studio-page').replaceChildren(sFilesCard(sourcesDraft,document.createElement('p'),()=>{},()=>{}))");
+  const labels=descendants(f.get('studio-page')).filter(n=>n.tagName==='button').map(n=>n.textContent);
+  assert.ok(labels.includes('From the team library')&&labels.includes('From the Document Library (this computer)'));
+  assert.ok(descendants(f.get('studio-page')).some(n=>/until you join a Team Hub it is on this computer only/.test(n.textContent||'')),'what team means without a Hub');
+  const keep=descendants(f.get('studio-page')).find(n=>n.id==='files-document-keep');
+  assert.deepEqual(descendants(keep).filter(n=>n.tagName==='button').map(n=>n.textContent),['Keep a copy in the Document Library','Only this blog']);
+  // Team library rows: one status in words, never a raw state.
+  assert.equal(f.run("libraryStatus({library:{curation:'ready'},analysis:{status:'needs-analysis'}})"),'Readable · not analyzed yet');
+  assert.equal(f.run("libraryStatus({library:{},status:'ready',analysis:{status:'ready'}})"),'Readable · analyzed');
+  assert.equal(f.run("libraryStatus({library:{curation:'pending'}})"),'Pending extraction');
+  // Status through the phone link: commands are run on the computer running Marketing Studio.
+  f.run("studio.computer={checks:[{label:'Codex',detail:'Not signed in. Run gh auth status to check Hub access.',next_step:'Run codex login, then check again.',status:'action'}]};studio.settings={workspace:'/w'};sStatusPage()");
+  assert.ok(descendants(f.get('studio-page')).some(n=>n.textContent==='Run codex login, then check again.'),'on this computer, as it was');
+  f.run("location.hostname='192.168.1.20';sStatusPage()");
+  const said=descendants(f.get('studio-page')).map(n=>n.textContent);
+  assert.ok(said.includes('On the computer running Marketing Studio, run codex login, then check again.'));
+  assert.ok(said.includes('Not signed in. On the computer running Marketing Studio, run gh auth status to check Hub access.'));
+  f.run("location.hostname=''");
+}
 // The library screen: filters for role, kind of post and author reach the request; rows can be
 // ticked; the selection learns a style or a voice (marked as samples first, asking whose when
 // nobody is named) or starts a blog from my files with the items ticked as examples.
@@ -2065,14 +2132,14 @@ async function libraryPicker(){
   await kind('Field notes');assert.equal(files().length,8);
   f.run('studio.deskStart.step=0');await f.run('sDeskStart()');
   assert.ok(texts().some(t=>t==='Sample s8'),'the sources step lists them: '+texts().join('|'));
-  assert.ok(texts().some(t=>t==='From the library'),'as library items');
+  assert.ok(texts().some(t=>t==='From the team library'),'as library items');
   assert.ok(texts().some(t=>/needs text, so it is not read/.test(t)),'a sample without text says so');
   assert.equal(byId('files-role-s8').value,'inspiration');
   await nodes().find(e=>e.attributes['aria-label']==='Remove Sample s8').listeners.click();
   assert.equal(files().length,7,'unticking removes it');assert.equal(files().some(([id])=>id==='s8'),false);
   const sheet=()=>descendants(f.get('sheet')),inSheet=id=>sheet().find(e=>e.id===id);
-  await nodes().find(e=>e.textContent==='From the library'&&e.tagName==='button').listeners.click();
-  assert.equal(f.get('sheet').children[0].children[0].textContent,'From the library');
+  await nodes().find(e=>e.textContent==='From the team library'&&e.tagName==='button').listeners.click();
+  assert.equal(f.get('sheet').children[0].children[0].textContent,'From the team library');
   assert.ok(inSheet('pick-role')&&inSheet('pick-kind')&&inSheet('pick-author')&&inSheet('pick-query'),'role, kind and author filters and a search box');
   assert.deepEqual(inSheet('pick-kind').children.map(o=>o.textContent),['Any kind','Product announcement','Field notes']);
   inSheet('pick-role').value='facts';inSheet('pick-role').listeners.change();inSheet('pick-author').value='Avery';inSheet('pick-author').listeners.input();inSheet('pick-query').value='launch';inSheet('pick-query').listeners.input();
@@ -3543,7 +3610,9 @@ async function deskOrderAndOnePath(){
   const top=f.get('studio-page').children;
   assert.ok(!top.some(n=>n.className==='lede'),'no lede above the text on a phone');
   const bar=top.find(n=>/desk-compact/.test(n.className||''));assert.ok(bar,'one compact bar');
-  assert.deepEqual(bar.children.map(n=>n.tagName),['div','details'],'Go to section, then View and tools');
+  assert.deepEqual(bar.children.map(n=>n.tagName),['div','details','p'],'Go to section, then View and tools, then the save line');
+  assert.equal(bar.children[2].textContent,'','the save line is empty until there is something to say');
+  assert.equal(bar.children[2].attributes['aria-live'],'polite');
   assert.ok(descendants(bar.children[1]).some(n=>n.textContent==='Polish'),'Polish is in the fold');
   f.run('delete window.matchMedia');
 }
@@ -4858,15 +4927,15 @@ async function deskPublishKeeps(){
   let view=deskView(),library={id:'kept',revision:1};
   const t=deskStartFixture((url,data)=>{
     if(url.startsWith('/api/desk?'))return view;
-    if(url==='/api/schedule'){view={...view,publication:data.publication_url,expected:'session-v2'};return {id:'desk-blog',receipts:[],library};}
+    if(url==='/api/schedule'){view={...view,publication:data.publication_url,expected:'session-v2'};return {id:'desk-blog',receipts:[],library,...(library.id?{document_library:{state:'kept',document:'d1',revision:1}}:{})};}
     return null;
   });
   const actions=()=>descendants(t.f.get('actions')),toasts=()=>descendants(t.f.get('toasts')).map(n=>n.textContent);
-  for(const [kept,said] of [[{id:'kept',revision:1},'Recorded as published. Nothing was posted anywhere. Its draft is kept in the team library.'],[{reason:'it could not be saved here.'},'Recorded as published. Nothing was posted anywhere. Not kept in the team library: it could not be saved here.']]){
+  for(const [kept,said] of [[{id:'kept',revision:1},'Recorded as published. Nothing was posted anywhere. Its draft is kept in the team library. A copy is in the Document Library on this computer.'],[{reason:'it could not be saved here.'},'Recorded as published. Nothing was posted anywhere. Not kept in the team library: it could not be saved here.']]){
     library=kept;view=deskView();t.f.get('toasts').replaceChildren();
     await t.f.run("sRoute('desk','desk-blog').then(()=>sDeskChoose(studio.desk,'full'))");
     await actions().find(n=>n.textContent==='Mark as published').listeners.click();
-    assert.ok(t.sheet().some(n=>n.textContent==='Record where this blog was published. The current text is the published one. Its draft is kept in the team library as a reference and an example of its kind of post. Marking it again updates that item.'));
+    assert.ok(t.sheet().some(n=>n.textContent==='Record where this blog was published. The current text is the published one. Its draft is kept in the team library, as a reference and an example of its kind of post, and a copy goes to the Document Library on this computer, for any studio. Marking it again updates both. Without a Team Hub, the team library is on this computer only.'),'both places are named, and what team means without a Hub');
     assert.ok(t.sheet().some(n=>n.textContent==='Cancel'));
     t.type('desk-publication','https://example.com/post');
     await t.sheet().find(n=>n.textContent==='Mark as published'&&n.listeners.click).listeners.click();

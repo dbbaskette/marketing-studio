@@ -63,7 +63,7 @@ These rules put each screen in the order a person works. Every studio follows th
 | Sheets | The only transient material. A sheet that makes something runs in numbered steps (`1. Name`, `2. Add`, `3. Choose`), each separated by a hairline, and ends with its submit and Cancel together. Sources that open their own sheet return to the step they came from with what they added. |
 | Spacing | Cards and sections `1.1rem` apart; a step or field group `0.6rem` inside; one heading level per card (`.card-title`), `.sheet-part` for a section inside a sheet. |
 | Phone | Toolbar actions wrap under the title; long labels wrap inside their button; every control is at least 44px tall; fixed bars sit above the tab bar and the page leaves room for them. |
-| Glass | Sidebar, toolbar, sheets, selection bars, Shared settings' save bar and toasts only. Forms, lists, documents and reviews stay opaque. |
+| Glass | Sidebar, toolbar, sheets, selection bars, Shared settings' save bar and toasts only. Forms, lists, documents and reviews stay opaque, and so does a `.dialog` that holds form fields. |
 
 ## Shared components and page stylesheets
 
@@ -75,7 +75,7 @@ shared setup, Blog Studio, Presentation Studio and Training Studio:
 | Shell | `.backdrop`, `.window`, `.sidebar.glass`, `.content`, `.toolbar-wrap`, `.toolbar.glass`, `.page` |
 | Actions | `.button`, `.button-filled`, `.button-quiet`, `.button-danger`, `.button-round` |
 | Fields | `.field`, `.field-label`, `.input`, `.field-hint`, `label.field`, `.input-typed` |
-| Exclusive choices | `.segmented` with buttons or radio `label.seg-option` |
+| Exclusive choices | `.segmented` with buttons or radio `label.seg-option`; five or six options wrap onto rows and fill the chosen one |
 | Independent form choices | Native checkbox in `label.check`; use fieldset/legend for a group. A focus ring never substitutes for checked state. |
 | Compact marks outside forms | `.chips`, `.chip`, when an explicit pressed state and label explain the mark; use an action button for work that runs immediately. |
 | Object choices | `.pick-cards`, `.pick-card`, `.pick-title`, `.pick-says` |
