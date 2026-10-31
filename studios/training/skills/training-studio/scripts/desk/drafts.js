@@ -1491,9 +1491,25 @@ function lookSheet(found, look) {
 function deskEditing(held, found) {
   if (!deskCanChange() || held.view.readonly) return false;
   const desk = deskHeld(deskItem(held.id).path);
-  return Boolean((desk.editing || {})[found.name] || Object.keys(held.pending || {}).length
-    || hasDeskRecovery(held) || held.selection
-    || Object.values(held.notes || {}).some((note) => String(note || '').trim()));
+  return Boolean((desk.editing || {})[found.name] || keptOpen(held));
+}
+
+// Why a material stays open for editing whatever the person chose, in a sentence, or ''.
+function keptOpen(held) {
+  if (Object.keys(held.pending || {}).length) {
+    return hasDeskRecovery(held) ? 'Recovered text is waiting to be saved, so it stays open '
+      + 'for editing. Save it, or change it, first.'
+      : 'Your text is not saved yet, so it stays open for editing.';
+  }
+  if (hasDeskRecovery(held)) return 'Recovered text is waiting to be saved, so it stays open '
+    + 'for editing. Save it, or change it, first.';
+  if (String(held.wholeNote || '').trim()
+      || Object.values(held.notes || {}).some((note) => String(note || '').trim())) {
+    return 'A change note is written and not sent, so it stays open for editing. Send it or '
+      + 'clear it first.';
+  }
+  if (held.selection) return 'A passage is selected for a change, so it stays open for editing.';
+  return '';
 }
 
 function editToggle(held, found, editing) {
@@ -1504,11 +1520,16 @@ function editToggle(held, found, editing) {
     if (editing) {
       // What was typed is saved before the reading view shows the saved text.
       try { await deskKit.flush(held); } catch (failure) { /* said below */ }
-      if (Object.keys(held.pending || {}).length) {
-        desk.said = 'Your text is not saved yet, so it stays open for editing.';
+      desk.editing[found.name] = false;
+      const why = keptOpen(held);
+      if (why) {
+        desk.said = why;
         paintDesk(true);
         return;
       }
+      paintDesk(true);
+      focusKey('desk-edit ' + found.name);
+      return;
     }
     desk.editing[found.name] = !editing;
     paintDesk(true);
@@ -1551,8 +1572,27 @@ function materialParts(held, found) {
   add(area, toggle ? add(make('div', 'bar'), toggle) : null, status,
     editing ? deskKit.selectionBar(held) : null, held.view.readonly
       ? make('p', 'quiet', held.view.readonly) : null);
-  if (editing) area.append(add(make('details', 'card-part'),
-    make('summary', '', 'Change the whole ' + cardTitle(found).toLowerCase()), materialNote(held, found)));
+  if (editing) {
+    const whole = add(make('details', 'card-part'),
+      make('summary', '', 'Change the whole ' + cardTitle(found).toLowerCase()),
+      materialNote(held, found));
+    // A note for the whole material, from Finishing or typed earlier, is never folded away.
+    if (String(held.wholeNote || '').trim()) whole.open = true;
+    area.append(whole);
+  } else if (hasDeskRecovery(held)) {
+    // Text recovered here that cannot be saved now is shown as it is, to be copied.
+    const kept = card('Recovered text not saved');
+    kept.append(make('p', 'quiet', 'It cannot be saved here now. Copy it to keep it.'));
+    for (const [part, edit] of Object.entries(held.pending || {})) {
+      if (!(held.recoveredParts || {})[part]) continue;
+      const heading = part === 'opening' ? 'Opening'
+        : list(held.view.sections).find((section) => section.id === part)?.heading || part;
+      kept.append(add(make('div', 'card-part'), make('p', 'row-title', heading),
+        make('p', 'desk-plain', edit.text),
+        copyButton('Copy', 'Copied.', edit.text, 'desk-recovered ' + part)));
+    }
+    area.append(kept);
+  }
   if (hasDeskRecovery(held) && deskCanChange() && !held.view.readonly) {
     const save = capsule('Save recovered text', 'quiet', async () => {
       held.recoveredParts = {};

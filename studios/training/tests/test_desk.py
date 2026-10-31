@@ -7689,6 +7689,32 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
             {'id': 'abcd5678', 'heading': 'Rolling a deploy', 'text': 'Second section.'}],
             'versions': {'abcd1234': 1}, 'working': None, 'jobs': []}
 
+    def test_a_whole_material_note_from_finishing_opens_where_it_can_be_edited(self):
+        guide, guide_view = self.readable()
+        desk = a_desk(guide, levels=('101',), running=False)
+        guide_view['desk'] = desk['body']
+        proposal = {'job': 'a' * 32, 'kind': 'finish-coverage', 'items': [
+            {'id': 'p1', 'part': 'abcd1234', 'before': 'Some text.',
+             'note': 'O2 is not taught.', 'instruction': 'Teach O2 across the guide.',
+             'state': 'open', 'present': True}]}
+        checked = {**guide_view, 'finishing': {'coverage': proposal}}
+        result = self.open_desk(self.on_desk(desk, **{
+            'GET /api/drafts/card': [ok(guide_view)],
+            'POST /api/drafts/finish': [ok(checked)],
+            'POST /api/drafts/apply': [ok({**checked, 'whole': True,
+                                           'note': {'text': 'Teach O2 across the guide.'}})]}), [
+            {'click': 'Finishing'}, {'click': 'Coverage'}, {'click': 'Check coverage'},
+            {'click': 'Apply'}, {'snapshot': 'note'}, {'click': 'Done editing'},
+            {'snapshot': 'kept'}])
+        note = result['snapshots']['note']
+        self.assertEqual(note['fields']['Note for the whole guide'], 'Teach O2 across the guide.')
+        self.assertEqual(note['focus'], 'Note for the whole guide')
+        # Done editing never folds an unsent note away, and says why it stays.
+        kept = result['snapshots']['kept']
+        self.assertEqual(kept['fields']['Note for the whole guide'], 'Teach O2 across the guide.')
+        self.assertIn('A change note is written and not sent, so it stays open for editing.',
+                      kept['text'])
+
     def test_a_material_opens_to_read_and_edit_keeps_typed_text_across_tabs(self):
         guide, guide_view = self.readable()
         brief, brief_view = self.readable('brief@101', 'A brief.')
