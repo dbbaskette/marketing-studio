@@ -104,6 +104,11 @@ def _finding_fingerprints(root: Path) -> dict:
             for ident, finding in findings.items() if isinstance(finding, dict)}
 
 
+def findings_now(root: Path) -> dict:
+    """The findings as they are, to mark what a research update changes."""
+    return _finding_fingerprints(root)
+
+
 def marked(root: Path, record: dict) -> dict:
     before = (record.get('drafts') or {}).get('findings_before')
     if before is None:
@@ -865,6 +870,7 @@ def view(engine, root) -> dict:
     import assess
     import desk
 
+    from runner import library as kept_library
     from runner import pipeline
     root = Path(root)
     record = engine._load(root)
@@ -928,7 +934,9 @@ def view(engine, root) -> dict:
         # The same standing Home, Trainings and Status say, read from these very cards.
         'standing': standing(engine, root, record, found, cards) if mine else None,
         # What sending each guide or brief to a Google Doc would do, asked for one at a time.
-        'docs': docs_view(engine, root, record) if mine else {}}
+        'docs': docs_view(engine, root, record) if mine else {},
+        # Whether each Ready guide and brief is kept in the shared Document Library.
+        'library': kept_library.kept(root, cards) if mine else {}}
 
 
 # --- one standing for every screen -------------------------------------------------------

@@ -223,6 +223,12 @@ const COPY_STATES = {
 const WEB_LINK = /^https?:\/\/\S+$/i;
 const KEPT_HERE = 'Your documents stay on this computer and are never shared with your team. '
   + 'Passages quoted from them appear in the research report, which is shared.';
+// The Keep in library choice for an upload, and what each answer means. Neither changes
+// who it is shared with.
+const KEEP_CHOICES = ['Keep in library', 'Only this project'];
+const KEEP_SAYS = ['A copy is also kept in the Document Library on this computer, for other '
+  + 'projects to use. It is not shared with your team.',
+'It is kept in this training only.'];
 // How the pictures of a deck's slides are made while it is drawn. What each way means is
 // said under the choice.
 const PREVIEWS = ['local', 'drive'];
@@ -5647,14 +5653,21 @@ async function addDocuments(input) {
   view.busy = true;
   holdDocuments(true);
   let added = 0;
+  let library = 0;
+  const keep = keepUploads();
   for (const [index, file] of taken.entries()) {
     say(byId('documents-status'), 'Adding ' + (index + 1) + ' of ' + taken.length + ': '
       + file.name);
     try {
       const content = await base64Of(file);
-      view.run = await send('documents', { path: view.path, action: 'add', name: file.name,
-        content });
+      const { library_kept: kept, ...run } = await send('documents', { path: view.path,
+        action: 'add', name: file.name, content, keep });
+      view.run = run;
       added += 1;
+      // The training has it either way; the library's own refusal is said beside it.
+      if (kept && kept.state === 'kept') library += 1;
+      else if (kept) refused.push(file.name + ' was added, but not kept in the Document '
+        + 'Library. ' + kept.problem);
     } catch (failure) {
       refused.push(file.name + ' was not added. ' + failure.message);
       // With no answer at all, there is nobody to send the rest to.
@@ -5669,8 +5682,80 @@ async function addDocuments(input) {
   say(byId('documents-status'), '');
   paintRun(false);
   unadded(refused.join(' '));
-  if (added) toast(count(added, 'document', 'documents') + ' added.');
+  if (added) {
+    toast(count(added, 'document', 'documents') + ' added'
+      + (!library ? '.' : library === added ? ', and kept in the Document Library too.'
+        : ', ' + library + ' kept in the Document Library too.'));
+  }
   if (!focusKey('documents-file')) byId('title').focus({ preventScroll: true });
+}
+
+// Whether a document chosen now is kept in the Document Library too: yes until the person
+// chooses Only this project, which this page then keeps for the rest of its visit.
+function keepUploads() {
+  return view.keepUploads !== false;
+}
+
+function keepChoice(key) {
+  const at = keepUploads() ? 0 : 1;
+  const says = make('p', 'quiet field-hint', KEEP_SAYS[at]);
+  const choice = segmented('Where an upload is kept', KEEP_CHOICES, at, (index, node) => {
+    view.keepUploads = index === 0;
+    slide(node, index);
+    says.textContent = KEEP_SAYS[index];
+  }, key);
+  return add(make('div', 'field keep-choice'), make('p', 'field-label', 'Where it is kept'),
+    choice, says);
+}
+
+// The shared Document Library (library.js). Add from library pins the chosen revisions as
+// the training's documents; Use revision N takes a newer one only when pressed. Neither
+// starts research or a job, and nothing is sent to an assistant.
+function libraryAdd(path, key, after) {
+  return capsule('Add from library', 'quiet', () => {
+    if (!window.StudioLibrary) {
+      toast('The Document Library could not be loaded. Reload the page.');
+      return;
+    }
+    window.StudioLibrary.pick({
+      studio: 'training', max: 40,
+      post: (route, body) => send(route, body),
+      // The card is drawn again with the new documents: focus its Add from library.
+      refocus: () => Array.from(document.querySelectorAll('[data-key]'))
+        .find((node) => node.dataset.key === key) || null,
+      use: async (picks) => {
+        const run = await send('documents-library', { path, picks });
+        if (view.path === path) after(run);
+        toast((picks.length === 1 ? 'The document is added.' : picks.length
+          + ' documents are added.') + ' Nothing is researched until you say so.');
+      },
+    });
+  }, key);
+}
+
+function libraryUpdate(path, found, after) {
+  const head = found.library_head;
+  const take = capsule('Use revision ' + head, 'quiet', async () => {
+    if (view.busy) return;
+    take.disabled = true;
+    try {
+      const run = await send('documents-library-update', { path, document: found.library.id });
+      if (view.path === path) after(run);
+      toast('Revision ' + head + ' is used now. Nothing is researched until you say so.');
+    } catch (failure) {
+      take.disabled = false;
+      toast(failure.message + ' Nothing was changed.');
+    }
+  }, 'documents-library-update ' + found.library.id);
+  take.setAttribute('aria-label', 'Use revision ' + head + ' of ' + (found.title || found.name));
+  return take;
+}
+
+// What a document pinned from the library says under its name.
+function libraryWords(found) {
+  if (!found.library) return null;
+  return make('p', 'quiet', 'From the Document Library, revision ' + found.library.revision
+    + (found.update ? '. Revision ' + found.library_head + ' is available.' : '.'));
 }
 
 // Take one document away, or say that is all of them. The runner answers with the run.
@@ -5710,9 +5795,9 @@ async function settleDocuments(action, name, pressed) {
   refresh();
 }
 
-function documentItem(found, waiting, later = false) {
+function documentItem(found, waiting, later = false, mine = true) {
   const text = add(make('div', 'row-text'), make('p', 'step-name', found.name),
-    make('p', 'quiet', size(Number(found.bytes) || 0)));
+    make('p', 'quiet', size(Number(found.bytes) || 0)), libraryWords(found));
   // Added once the research was planned: kept, and read when the research is updated.
   if (later) add(text, make('p', '', 'Added after the research: not read yet.'));
   if (!found.readable) {
@@ -5724,6 +5809,13 @@ function documentItem(found, waiting, later = false) {
   item.dataset.state = found.readable ? 'read' : 'unread';
   add(item, bead(found.readable ? 'done' : 'late'), text,
     make('span', 'step-words', found.readable ? 'Can be read' : 'Cannot be read'));
+  if (found.update && mine) {
+    add(item, libraryUpdate(view.path, found, (run) => {
+      view.run = run;
+      paintRun(false);
+      if (!focusKey('documents-library')) byId('title').focus({ preventScroll: true });
+    }));
+  }
   if (!waiting && !later) return item;
   const remove = capsule('Remove', 'quiet',
     () => settleDocuments('remove', found.name, remove), 'remove ' + found.name);
@@ -5756,6 +5848,8 @@ function updateResearchSheet() {
       closeSheet();
       toast('The research runs again with ' + series(names) + '.');
       paintRun(false);
+      // The desk reads its cards again: what the update holds is said on them.
+      if (onTheDesk(view.run)) refresh();
     } catch (failure) {
       say(problem, failure.message + ' Nothing was changed.');
       go.disabled = false;
@@ -5787,7 +5881,7 @@ function documentsCard(run, lead) {
       + '“That is all of them”.'), make('p', '', KEPT_HERE),
     field('documents-file', 'Add documents', {}, '', { picked: addDocuments,
       accept: types.join(','), refused: view.unadded,
-      hint: takes + '. You can choose several at once.' }), status);
+      hint: takes + '. You can choose several at once.' }), keepChoice('documents-keep'), status);
   } else {
     add(node, make('p', '', added.length ? 'These were given to the research. ' + KEPT_HERE
       : 'None were added.'));
@@ -5797,12 +5891,20 @@ function documentsCard(run, lead) {
   if (added.length) {
     const items = make('ul', 'rows');
     for (const found of added) {
-      items.append(documentItem(found, held.waiting, later.has(found.name)));
+      items.append(documentItem(found, held.waiting, later.has(found.name), run.mine !== false));
     }
     add(node, make('p', 'row-title', count(added.length, 'document', 'documents')
       + ' added'), items);
   } else if (held.waiting) {
     add(node, make('p', 'quiet', 'Nothing is added yet.'));
+  }
+  // Documents kept in the shared Document Library, chosen for this training only. Once the
+  // research is planned they wait, unread, for Update the research.
+  if (run.mine !== false) {
+    add(node, add(make('div', 'bar'), libraryAdd(view.path, 'documents-library', (answer) => {
+      view.run = answer;
+      paintRun(false);
+    })));
   }
   if (!held.waiting) {
     if (!later.size || run.mine === false) return node;
