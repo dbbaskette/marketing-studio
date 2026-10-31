@@ -2264,11 +2264,24 @@ function deskSheet(kind) {
     const text = add(make('div', 'row-text'), make('p', 'step-name', cardTitle(one)),
       make('p', 'quiet', doc.problem || docWords(doc)), copyLink({ link: doc.url }, 'Google Doc',
         'Google Doc of ' + one.label));
-    const go = doc.problem || !deskOurs() ? null : capsule(doc.action === 'update'
-      ? 'Update the Google Doc' : 'Make a Google Doc', 'quiet', () => docSheet(one.name),
-    'desk-doc ' + one.name);
-    if (go) go.setAttribute('aria-label', go.textContent + ' of ' + one.label);
-    items.append(add(make('li', 'row step'), text, go));
+    const bar = make('div', 'bar');
+    const offer = (label, act, key) => {
+      const go = capsule(label, 'quiet', act, key + ' ' + one.name);
+      go.setAttribute('aria-label', label + ' of ' + one.label);
+      bar.append(go);
+      return go;
+    };
+    if (!doc.problem && deskOurs()) {
+      if (doc.changed) {
+        // Changed in Google: bring its changes in, or leave it and make a new Doc.
+        const pull = offer('Bring the Doc’s changes in', () => pullDoc(one.name, pull), 'desk-doc-pull');
+        offer('Make a new Google Doc', () => docSheet(one.name, { fresh: true }), 'desk-doc-new');
+      } else {
+        offer(doc.action === 'update' ? 'Update the Google Doc' : 'Make a Google Doc',
+          () => docSheet(one.name), 'desk-doc');
+      }
+    }
+    items.append(add(make('li', 'row step'), text, bar.childNodes.length ? bar : null));
   }
   return [sheetTitle('Google Doc'), make('p', '', 'This training keeps its materials on this '
     + 'computer. Ready is your approval here and sends nothing. Make a Google Doc of a guide '
@@ -2282,25 +2295,61 @@ function deskSheet(kind) {
 function docWords(doc) {
   if (doc.uncertain) return 'The last try may have made a Doc: Google did not say.';
   if (!doc.url) return 'No Google Doc yet. Your download stays as it is.';
-  if (doc.conflict) return 'Someone changed the Google Doc. It is left as it is.';
+  if (doc.changed || doc.conflict) return 'Someone changed the Google Doc since it was last '
+    + 'sent, so it is left as it is. Bring its changes in here, or make a new Google Doc; '
+    + 'the edited Doc is kept either way.';
   return doc.current ? 'Its Google Doc has this version.'
     : 'Its Google Doc has an earlier version.';
 }
 
+// Bring a Doc's changes in from Google, as the person asks on the Google Doc sheet. Where
+// both sides changed, the Doc's version is chosen only on a second, explicit press; this
+// version stays in History.
+async function pullDoc(name, control, choose) {
+  const path = view.path, turn = view.turn;
+  if (view.busy) return;
+  view.busy = true; control.disabled = true;
+  let answer = null, said = '';
+  try {
+    await flushDesk(deskHeld(path));
+    answer = await send('copies', { path, pull: name, ...(choose ? { choose } : {}) });
+    said = answer.said || '';
+    deskHeld(path).view = await ask('drafts', { path });
+  } catch (failure) {
+    said = failure.message;
+  } finally {
+    view.busy = false; control.disabled = false;
+  }
+  if (view.turn !== turn) return;
+  const both = answer && !choose && /Choose which to keep/.test(said);
+  const theirs = both ? capsule('Use the Google Doc’s version', 'filled',
+    () => pullDoc(name, theirs, 'theirs'), 'desk-doc-theirs') : null;
+  DESK.kitSheet = [sheetTitle('Bring the Doc’s changes in'), make('p', '', said),
+    both ? make('p', 'quiet', 'Your version on the desk stays in History.') : null,
+    add(make('div', 'bar'), theirs, capsule('Close', 'quiet', closeSheet, 'cancel'))]
+    .filter(Boolean);
+  openSheet('desk-kit', '')();
+  paintDesk(false);
+}
+
 // The one explicit delivery: which material, which version, where it goes, and whether it
 // makes a new Doc or updates the linked one. The filled button authorizes exactly that.
-async function docSheet(name) {
+// `fresh` makes a new Doc beside one that was changed in Google, which is left as it is.
+// `said` is what the last try was answered with, shown again on the sheet drawn afresh.
+async function docSheet(name, { fresh = false, said = '' } = {}) {
   const path = view.path, turn = view.turn;
   let doc;
   try {
+    // The last seconds of typing are saved first, so the version shown is the one sent.
+    await flushDesk(deskHeld(path));
     doc = await ask('drafts/doc-preview', { path, name });
   } catch (failure) {
     deskHeld(path).said = failure.message; closeSheet(); paintDesk(false); return;
   }
   if (view.turn !== turn) return;
-  const status = make('p', 'notice');
+  const status = make('p', 'notice', said);
   status.setAttribute('role', 'status');
-  const creating = doc.action !== 'update';
+  const creating = fresh || doc.action !== 'update';
   const facts = add(make('dl', 'about'),
     make('dt', '', 'Material'), make('dd', '', capital(doc.label)),
     make('dt', '', 'Version'), make('dd', '', 'As it is saved on the desk now ('
@@ -2312,8 +2361,9 @@ async function docSheet(name) {
     if (view.busy) return;
     view.busy = true; control.disabled = true;
     say(status, creating ? 'Making the Google Doc…' : 'Updating the Google Doc…');
+    let refused = null;
     try {
-      const answer = await send('drafts/doc', { path, name, seen: doc.seen, again });
+      const answer = await send('drafts/doc', { path, name, seen: doc.seen, again, fresh });
       if (view.turn !== turn) return;
       deskHeld(path).view = answer;
       const done = answer.doc;
@@ -2326,23 +2376,32 @@ async function docSheet(name) {
       openSheet('desk-kit', '')();
       paintDesk(false);
     } catch (failure) {
-      say(status, failure.message);
+      refused = failure.message;
+      say(status, refused);
     } finally {
       view.busy = false; control.disabled = false;
     }
+    // Drawn again from what is true now: after an answer Google never gave, the one way on
+    // is Make the Doc anyway; after a change in Google, the sheet's own two ways.
+    if (refused && view.turn === turn) docSheet(name, { fresh, said: refused });
   };
-  const label = doc.uncertain ? 'Make the Doc anyway' : creating ? 'Make the Doc'
-    : 'Update the Doc';
-  const go = capsule(label, 'filled', () => deliver(go, Boolean(doc.uncertain)), 'desk-doc-go');
-  DESK.kitSheet = [sheetTitle(creating ? 'Make a Google Doc' : 'Update the Google Doc'), facts,
-    make('p', '', (creating ? 'It makes one new Doc of exactly this version.'
+  const label = doc.uncertain && creating ? 'Make the Doc anyway'
+    : fresh ? 'Make a new Doc' : creating ? 'Make the Doc' : 'Update the Doc';
+  const go = doc.changed && !fresh ? null : capsule(label, 'filled',
+    () => deliver(go, Boolean(doc.uncertain)), 'desk-doc-go');
+  DESK.kitSheet = [sheetTitle(fresh ? 'Make a new Google Doc' : creating ? 'Make a Google Doc'
+    : 'Update the Google Doc'), facts,
+  make('p', '', (fresh ? 'It makes one new Doc of exactly this version. The Doc that was '
+    + 'changed in Google is left exactly as it is, and this material is linked to the new one.'
+    : creating ? 'It makes one new Doc of exactly this version.'
       : 'It replaces the Doc’s text with exactly this version, unless someone changed the Doc '
       + 'since it was last sent.') + ' Nothing is marked ready, your file is kept as it is, '
-      + 'and nothing else is sent.'),
-    doc.uncertain ? make('p', 'notice', 'The last try may have made a Google Doc named “'
-      + doc.title + '”: Google did not say. Look in Google Drive first. If there is none, '
-      + 'make it anyway.') : null,
-    status, add(make('div', 'bar'), go, capsule('Cancel', 'quiet', closeSheet, 'cancel'))]
-    .filter(Boolean);
+    + 'and nothing else is sent.'),
+  doc.uncertain ? make('p', 'notice', 'The last try may have made a Google Doc named “'
+    + doc.title + '”: Google did not say. Look in Google Drive first. If there is none, '
+    + 'make it anyway.') : null,
+  doc.changed && !fresh ? make('p', 'notice', docWords(doc)) : null,
+  status, add(make('div', 'bar'), go, capsule(go ? 'Cancel' : 'Close', 'quiet', closeSheet,
+    'cancel'))].filter(Boolean);
   openSheet('desk-kit', '')();
 }

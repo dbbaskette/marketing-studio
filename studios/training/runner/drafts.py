@@ -2237,12 +2237,16 @@ DOC_UNSURE = ('The last try may have made a Google Doc named “{title}”: Goog
               'Look in Google Drive first. If there is none, choose Make the Doc anyway.')
 DOC_KEPT = ('This training keeps its Google Docs up to date by itself: marking a material '
             'Ready updates its Doc, and Send updates it now.')
+DOC_CHANGED = ('Someone changed the Google Doc since it was last sent, so it was left as it '
+               'is. Bring its changes in here, or make a new Google Doc instead; the edited '
+               'Doc is kept either way.')
+DOC_NONE = 'There is no Google Doc of it yet to make anew. Make a Google Doc instead.'
 
 
 def doc_view(root: Path, record: dict, name, copies) -> dict:
     """What one explicit Google Doc delivery of `name` would do: {'artifact', 'label',
     'seen', 'title', 'action' ('create', 'update' or 'send'), 'url', 'current', 'conflict',
-    'automatic', 'uncertain', 'receipt', 'problem'}. `automatic` says the training keeps
+    'automatic', 'changed', 'uncertain', 'receipt', 'problem'}. `automatic` says the training keeps
     Google Docs by itself (`action` is then 'send', its own way). `problem` is why nothing
     can be sent now, in a sentence to act on. Reads files and records only."""
     import gdocs
@@ -2270,6 +2274,10 @@ def doc_view(root: Path, record: dict, name, copies) -> dict:
             'url': (entry or {}).get('url'),
             'current': bool(entry) and entry.get('local_sha256') == seen,
             'conflict': bool((entry or {}).get('conflict')), 'automatic': automatic,
+            # Changed in Google since it was last sent: it is left as it is.
+            'changed': bool(entry) and ((kept.get('remote') or {}).get(name) in
+                                        ('remote changed', 'both changed')
+                                        or bool(entry.get('conflict'))),
             'uncertain': bool((kept.get('uncertain') or {}).get(name)),
             'receipt': (kept.get('delivered') or {}).get(name), 'problem': problem}
 

@@ -7836,7 +7836,7 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         self.assertEqual(result['snapshots']['confirm']['filled'], ['Make the Doc'])
         self.assertEqual(self.posts(result), [('/api/drafts/doc', {
             'path': str(self.root), 'name': 'document@101', 'seen': seen_of('document@101'),
-            'again': False})])
+            'again': False, 'fresh': False})])
         done = result['snapshots']['done']
         self.assertIn('Made “Rolling restarts: learner guide (101)”', done['sheet'])
         self.assertIn({'name': 'Open the Google Doc of the level 101 learner guide, in a new tab',
@@ -7875,6 +7875,63 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         self.assertIn('Look in Google Drive first.', confirm)
         self.assertEqual(self.posts(result)[0][1]['again'], True)
         self.assertIn('Not this time.', result['snapshots']['refused']['sheet'])
+
+    def test_an_uncertain_answer_redraws_the_sheet_with_make_it_anyway(self):
+        guide, guide_view = self.readable()
+        doc = self.a_doc()
+        desk = a_desk(guide, levels=('101',), running=False, docs={'document@101': doc})
+        guide_view['desk'] = desk['body']
+        unsure = ('It is not known whether Google made the Doc (Google Drive did not answer as '
+                  'it should have: TimeoutError). Look in Google Drive for “Rolling restarts: '
+                  'learner guide (101)” before making another, so that no second Doc is made.')
+        result = self.open_desk(self.on_desk(desk, **{
+            'GET /api/drafts/card': [ok(guide_view)],
+            'GET /api/drafts/doc-preview': [ok(doc), ok({**doc, 'uncertain': True})],
+            'POST /api/drafts/doc': [{'status': 409, 'body': {'error': unsure}}]}), [
+            {'click': 'Google Doc'},
+            {'click': 'Make a Google Doc of the level 101 learner guide'},
+            {'click': 'Make the Doc'}, {'snapshot': 'after'}])
+        after = result['snapshots']['after']
+        self.assertIn(unsure, after['sheet'])
+        self.assertEqual(after['filled'], ['Make the Doc anyway'])
+        self.assertNotIn('Make the Doc', [name for name in after['buttons']
+                                          if name == 'Make the Doc'])
+
+    def test_a_doc_changed_in_google_offers_its_changes_or_a_new_doc(self):
+        guide, guide_view = self.readable()
+        doc = self.a_doc(action='update', url='https://docs.google.com/document/d/abc/edit',
+                         changed=True)
+        desk = a_desk(guide, levels=('101',), running=False, docs={'document@101': doc})
+        guide_view['desk'] = desk['body']
+        both = ('The level 101 learner guide was changed here and in its Google Doc. The Doc’s '
+                'text is kept beside it; nothing was replaced. Choose which to keep.')
+        receipt = {'artifact': 'document@101', 'label': 'the level 101 learner guide',
+                   'result': 'created', 'url': 'https://docs.google.com/document/d/new/edit',
+                   'title': doc['title'], 'sha256': doc['seen'], 'at': '2030-01-02T03:04:05Z'}
+        result = self.open_desk(self.on_desk(desk, **{
+            'GET /api/drafts/card': [ok(guide_view)],
+            'GET /api/drafts/doc-preview': [ok(doc)],
+            'POST /api/copies': [ok({'said': both}), ok({'said': 'Brought in.'})],
+            'POST /api/drafts/doc': [ok({**desk['body'], 'doc': receipt})]}), [
+            {'click': 'Google Doc'}, {'snapshot': 'sheet'},
+            {'click': 'Bring the Doc’s changes in of the level 101 learner guide'},
+            {'snapshot': 'both'}, {'click': 'Use the Google Doc’s version'},
+            {'click': 'Close'}, {'click': 'Google Doc'},
+            {'click': 'Make a new Google Doc of the level 101 learner guide'},
+            {'snapshot': 'fresh'}, {'click': 'Make a new Doc'}])
+        sheet = result['snapshots']['sheet']['sheet']
+        self.assertIn('the edited Doc is kept either way', sheet)
+        self.assertNotIn('try the copies again', sheet)
+        self.assertIn('Your version on the desk stays in History.',
+                      result['snapshots']['both']['sheet'])
+        self.assertIn('The Doc that was changed in Google is left exactly as it is',
+                      result['snapshots']['fresh']['sheet'])
+        self.assertEqual(self.posts(result), [
+            ('/api/copies', {'path': str(self.root), 'pull': 'document@101'}),
+            ('/api/copies', {'path': str(self.root), 'pull': 'document@101', 'choose': 'theirs'}),
+            ('/api/drafts/doc', {'path': str(self.root), 'name': 'document@101',
+                                 'seen': seen_of('document@101'), 'again': False,
+                                 'fresh': True})])
 
     def test_readiness_is_not_offered_while_a_level_material_is_being_written(self):
         plan = a_card('blueprint@101')

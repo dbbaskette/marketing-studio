@@ -798,12 +798,13 @@ class RunnerPage(desk.Page):
         if path == f'{DRAFTS}/doc':
             # One explicit Google Doc of one version of one guide or brief.
             root = self.on_desk(desk.text(sent, 'path'))
-            again = sent.get('again', False)
-            if not isinstance(again, bool):
-                raise desk.Refusal(HTTPStatus.BAD_REQUEST, 'Say yes or no to making it anyway.')
+            again, fresh = sent.get('again', False), sent.get('fresh', False)
+            if not isinstance(again, bool) or not isinstance(fresh, bool):
+                raise desk.Refusal(HTTPStatus.BAD_REQUEST, 'Say yes or no to making it anyway '
+                                   'and to making a new Doc.')
             try:
                 done = self.engine.deliver_doc(root, desk.text(sent, 'name'),
-                                               desk.text(sent, 'seen'), again)
+                                               desk.text(sent, 'seen'), again, fresh)
             except WorkspaceError as refusal:
                 raise desk.Refusal(HTTPStatus.CONFLICT, str(refusal))
             return desk.as_json(HTTPStatus.OK, {**drafts.view(self.engine, root), **done})

@@ -86,9 +86,52 @@ class DocDeliveryTests(PageCase):
         ident = next(iter(self.copies.drive.docs))
         self.copies.drive.docs[ident] += '\nTheir edit.\n'
         self.type_into(root, line='And another.')
-        with self.assertRaisesRegex(WorkspaceError, 'Someone has changed the Google Doc'):
+        with self.assertRaisesRegex(WorkspaceError, '^' + drafts.DOC_CHANGED + '$'):
             self.engine.deliver_doc(root, NAME, self.seen(root))
         self.assertIn('Their edit.', self.copies.drive.docs[ident])
+        self.assertTrue(self.engine.doc_preview(root, NAME)['changed'])
+        self.assertEqual(self.git('status', '--porcelain'), '')
+
+    def changed_in_google(self):
+        """A local training whose guide's Doc was edited in Google after it was sent, and
+        whose guide was typed into since: the next update is refused."""
+        root = self.local_training()
+        self.engine.deliver_doc(root, NAME, self.seen(root))
+        ident = next(iter(self.copies.drive.docs))
+        self.copies.drive.docs[ident] += '\nTheir edit.\n'
+        self.type_into(root)
+        with self.assertRaisesRegex(WorkspaceError, 'Bring its changes in here, or make a new '
+                                                    'Google Doc instead'):
+            self.engine.deliver_doc(root, NAME, self.seen(root))
+        return root, ident
+
+    def test_a_doc_changed_in_google_can_be_brought_in_on_the_desk(self):
+        root, ident = self.changed_in_google()
+        both = self.post('copies', {'path': str(root), 'pull': NAME})
+        self.assertIn('Choose which to keep.', both['said'])
+        self.post('copies', {'path': str(root), 'pull': NAME, 'choose': 'theirs'})
+        session = workspace.load(root)
+        text = (root / workspace.artifact(root, session, NAME)['file']).read_text()
+        self.assertIn('Their edit.', text)
+        offered = self.engine.doc_preview(root, NAME)
+        self.assertEqual((offered['changed'], offered['current']), (False, True))
+        self.assertEqual(len(self.copies.drive.docs), 1)
+        self.assertEqual(self.git('status', '--porcelain'), '')
+
+    def test_a_doc_changed_in_google_can_be_left_and_a_new_one_made(self):
+        root, ident = self.changed_in_google()
+        edited = self.copies.drive.docs[ident]
+        done = self.post('drafts/doc', {'path': str(root), 'name': NAME,
+                                        'seen': self.seen(root), 'fresh': True})['doc']
+        self.assertEqual(done['result'], 'created')
+        self.assertEqual(len(self.copies.drive.docs), 2)
+        self.assertEqual(self.copies.drive.docs[ident], edited, 'the edited Doc is untouched')
+        self.assertNotIn(ident, done['url'])
+        offered = self.engine.doc_preview(root, NAME)
+        self.assertEqual((offered['changed'], offered['current'], offered['url']),
+                         (False, True, done['url']))
+        self.assertIn('make a new Google Doc of the learner guide', self.log()[-1])
+        self.assertEqual(self.git('status', '--porcelain'), '')
 
     def test_row_199_an_uncertain_answer_never_makes_a_second_doc_unasked(self):
         root = self.local_training()
@@ -120,6 +163,8 @@ class DocDeliveryTests(PageCase):
         self.assertNotIsInstance(caught.exception, copies.Uncertain)
         self.assertEqual(self.copies.drive.docs, {})
         self.assertFalse(self.engine.doc_preview(root, NAME)['uncertain'])
+        # A definite refusal leaves the run record exactly as it was.
+        self.assertEqual(self.git('status', '--porcelain'), '')
         self.assertEqual(self.engine.deliver_doc(root, NAME, self.seen(root))['doc']['result'],
                          'created')
 

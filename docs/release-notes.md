@@ -68,7 +68,8 @@ of a guide or brief later, from Google Doc on the desk. The sheet names the mate
 version and the Doc it makes; the one explicit action sends exactly that version and gives
 its link. Nothing is marked ready, no job starts, the file is kept, and the training is not
 switched to Google Docs, so Ready still sends nothing by itself. Update the Google Doc
-sends a newer version to the same Doc and never writes over changes made in Google. After
+sends a newer version to the same Doc and never writes over changes made in Google;
+those can be brought in, or a new Doc made beside the edited one. After
 an uncertain answer from Google, another Doc is made only when you choose Make the Doc
 anyway. Trainings started with Google Docs keep updating them as they are marked Ready.
 
