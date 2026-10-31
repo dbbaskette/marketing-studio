@@ -6,8 +6,12 @@ What a caller needs to know
     library_keep.status(root)                 # what was kept last, or None
 
 - What is kept is the deck's slide-ordered Markdown (`outline.md`, the outline the
-  delivered deck was built from), found again by the deck's folder: delivering again
-  reuses its library document and adds a revision only when the Markdown changed.
+  delivered deck was built from), found again by the deck's own library key: delivering
+  again reuses its library document and adds a revision only when the Markdown changed.
+- The key is the folder's name with a random part, made once and kept in
+  `sources/library.json`. A deck's folder name is a slug of its title, so two workspaces
+  with a deck of the same title, or a deck deleted and made again under the same title,
+  are separate library documents, never revisions of one.
 - No PDF is made: Presentation Studio's slides tool has no PDF export, so the library
   records that the PDF still needs exporting. Nothing is installed or rendered for it.
 - Delivery never waits on the library. Whatever stops the library is recorded in
@@ -18,6 +22,8 @@ What a caller needs to know
 from __future__ import annotations
 
 import json
+import re
+import secrets
 from pathlib import Path
 
 import home
@@ -41,11 +47,20 @@ def status(root) -> dict | None:
     return found if isinstance(found, dict) else None
 
 
+def _key(root: Path) -> str:
+    """This deck's library key: the one recorded for it, else a new one for this folder."""
+    held = (status(root) or {}).get('key')
+    if isinstance(held, str) and re.fullmatch(r'presentation:[a-z0-9-]{1,120}-[a-f0-9]{12}', held):
+        return held
+    plain = re.sub(r'[^a-z0-9-]+', '-', root.name.lower()).strip('-')[:120] or 'deck'
+    return f'presentation:{plain}-{secrets.token_hex(6)}'
+
+
 def keep(root, run: dict, delivered: dict) -> dict:
     """Keep the delivered deck's Markdown in the library and record how that went."""
     root = Path(root)
     revision = delivered.get('revision') if isinstance(delivered, dict) else None
-    done = {'delivered': revision, 'at': home.now()}
+    done = {'delivered': revision, 'at': home.now(), 'key': _key(root)}
     try:
         place = root / outlines.OUTLINE_MD
         text = place.read_text(encoding='utf-8') if place.is_file() and not place.is_symlink() else ''
@@ -55,7 +70,7 @@ def keep(root, run: dict, delivered: dict) -> dict:
             title = run.get('title') or root.name
             library = document_library.opened(create=True)
             kept = library.retain(
-                key=f'presentation:{root.name}', studio='presentation', kind='presentation',
+                key=done['key'], studio='presentation', kind='presentation',
                 title=title, text=text,
                 project={'id': root.name, 'title': title, 'revision': revision},
                 pdf={'state': 'needs-export', 'reason': NO_PDF})

@@ -34,13 +34,16 @@
     const when = stamp ? new Date(stamp) : null;
     return when && !isNaN(when) ? when.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : '';
   };
-  const choice = (key, label, options, value, changed) => {
-    const id = 'library-' + key;
+  // Element IDs are this catalog's own (`doclib<n>-…`): a page may already use library-*
+  // IDs for something else, as Blog Studio's team library filters do. Keys stay stable.
+  let instances = 0;
+  const choice = (ns, key, label, options, value, changed) => {
+    const id = ns + key;
     const title = make('label', 'field-label', label);
     title.htmlFor = id;
     const select = make('select', 'input');
     select.id = id;
-    select.dataset.key = id;
+    select.dataset.key = 'library-' + key;
     for (const [optionValue, text] of options) {
       const option = make('option', '', text);
       option.value = optionValue;
@@ -62,6 +65,9 @@
       this.problem = '';
       this.loading = false;
       this.first = true;
+      this.turn = 0;                    // only the newest load's answer is drawn
+      this.ns = 'doclib' + (++instances) + '-';
+      this.typed = { query: '', author: '' };   // typed, not yet searched: kept across redraws
       this.preview = null;
       this.onChange = options.onChange || (() => {});
       this.node = make('section', 'library-catalog stack');
@@ -70,11 +76,13 @@
     }
 
     async load() {
+      const turn = ++this.turn;
       this.loading = true;
       this.render();
       try {
         const sent = { filters: this.sent(), offset: this.offset, limit: PAGE };
         const answer = await this.a.post('library', sent);
+        if (turn !== this.turn) return;           // a newer load answers instead
         if (this.first && answer.remembered && Object.keys(answer.remembered).length) {
           this.first = false;
           Object.assign(this.filters, answer.remembered);    // a filter, never a selection
@@ -84,11 +92,13 @@
         this.answer = answer;
         this.problem = '';
       } catch (error) {
-        this.problem = message(error);
+        if (turn === this.turn) this.problem = message(error);
       } finally {
-        this.loading = false;
-        this.render();
-        this.onChange();      // the selection bar counts what this page no longer shows
+        if (turn === this.turn) {
+          this.loading = false;
+          this.render();
+          this.onChange();      // the selection bar counts what this page no longer shows
+        }
       }
     }
 
@@ -152,40 +162,42 @@
       form.setAttribute('role', 'search');
       form.noValidate = true;
       const title = make('label', 'field-label', 'Search');
-      title.htmlFor = 'library-query';
+      title.htmlFor = this.ns + 'query';
       const box = make('input', 'input');
       box.type = 'search';
-      box.id = 'library-query';
+      box.id = this.ns + 'query';
       box.dataset.key = 'library-query';
       box.maxLength = 200;
       box.autocomplete = 'off';
       box.placeholder = 'Title or words in the document';
-      box.value = this.filters.query;
+      box.value = this.typed.query;
+      box.addEventListener('input', () => { this.typed.query = box.value; });
       const go = make('button', 'button', 'Search');
       go.type = 'submit';
       add(form, add(make('div', 'field search'), title, box),
-        choice('kind', 'Type', options(labels.kinds, 'All types'), this.filters.kind, (k, v) => this.changed(k, v)),
-        choice('studio', 'From', options(labels.studios, 'All studios'), this.filters.studio, (k, v) => this.changed(k, v)),
+        choice(this.ns, 'kind', 'Type', options(labels.kinds, 'All types'), this.filters.kind, (k, v) => this.changed(k, v)),
+        choice(this.ns, 'studio', 'From', options(labels.studios, 'All studios'), this.filters.studio, (k, v) => this.changed(k, v)),
         go);
       const more = make('details', 'more-filters');
       more.dataset.key = 'library-more';
       more.open = Boolean(this.filters.origin || this.filters.state || this.filters.author);
       const authorTitle = make('label', 'field-label', 'Author');
-      authorTitle.htmlFor = 'library-author';
+      authorTitle.htmlFor = this.ns + 'author';
       const author = make('input', 'input');
-      author.id = 'library-author';
+      author.id = this.ns + 'author';
       author.dataset.key = 'library-author';
       author.maxLength = 100;
-      author.value = this.filters.author;
+      author.value = this.typed.author;
+      author.addEventListener('input', () => { this.typed.author = author.value; });
       add(more, make('summary', '', 'More filters'),
-        choice('origin', 'Origin', options(labels.origins, 'Any origin'), this.filters.origin, (k, v) => this.changed(k, v)),
-        choice('state', 'Status', options(labels.states, 'Any status'), this.filters.state, (k, v) => this.changed(k, v)),
+        choice(this.ns, 'origin', 'Origin', options(labels.origins, 'Any origin'), this.filters.origin, (k, v) => this.changed(k, v)),
+        choice(this.ns, 'state', 'Status', options(labels.states, 'Any status'), this.filters.state, (k, v) => this.changed(k, v)),
         add(make('div', 'field'), authorTitle, author));
       form.append(more);
       form.addEventListener('submit', (event) => {
         event.preventDefault();
-        this.filters.query = box.value.trim();
-        this.filters.author = author.value.trim();
+        this.filters.query = this.typed.query.trim();
+        this.filters.author = this.typed.author.trim();
         this.offset = 0;
         this.load();
       });
@@ -284,7 +296,7 @@
       const list = make('ul', 'library-list');
       list.setAttribute('aria-busy', String(this.loading));
       if (this.loading && !answer) list.append(make('li', 'quiet', 'Loading the library…'));
-      else if (answer && !answer.available) list.append(make('li', 'quiet', 'Nothing has been kept in the Document Library yet. Uploads, finished blogs and delivered decks appear here.'));
+      else if (answer && !answer.available) list.append(make('li', answer.problem ? 'problem' : 'quiet', answer.problem || 'Nothing has been kept in the Document Library yet. Uploads, finished blogs and delivered decks appear here.'));
       else if (answer && !items.length) list.append(make('li', 'quiet', 'No documents match these filters.'));
       for (const row of items) list.append(this.row(row));
       parts.push(list);
@@ -311,14 +323,25 @@
     return new Promise((resolve) => {
       const opener = document.activeElement;
       const dialog = make('dialog', 'dialog library-sheet');
-      dialog.setAttribute('aria-labelledby', 'library-sheet-title');
+      const titleId = 'doclib-sheet-title-' + (++instances);
+      dialog.setAttribute('aria-labelledby', titleId);
       const title = make('h2', '', adapter.title || 'Add from library');
-      title.id = 'library-sheet-title';
+      title.id = titleId;
       const bar = make('div', 'library-selection');
       let problem = '';
       let busy = false;
+      const close = button('Close', 'button button-quiet', () => dismiss(), 'library-close');
       const catalog = new Catalog(adapter, { selectable: true, onChange: () => draw() });
-      const finish = (value) => { dialog.close(); dialog.remove(); if (opener && opener.focus) opener.focus(); resolve(value); };
+      // After Use selected, focus goes where the page says (its redrawn Add from library),
+      // else back to what opened the sheet, while it is still on the page.
+      const finish = (value) => {
+        dialog.close(); dialog.remove();
+        const back = (value && adapter.refocus && adapter.refocus())
+          || (opener && document.body.contains(opener) ? opener : null);
+        if (back && back.focus) back.focus();
+        resolve(value);
+      };
+      const dismiss = () => { if (!busy) finish(false); };   // never while choices are landing
       const use = async () => {
         if (busy || !catalog.ticked.size) return;
         busy = true; problem = ''; draw();
@@ -352,19 +375,21 @@
         if (problem) parts.push(make('p', 'problem', problem));
         const go = button(busy ? 'Adding…' : 'Use selected', 'button button-filled', use, 'library-use');
         go.disabled = busy || !ticked.size;
-        parts.push(add(make('div', 'create-foot bar'), go, button('Cancel', 'button button-quiet', () => finish(false), 'library-cancel')));
+        const cancel = button('Cancel', 'button button-quiet', dismiss, 'library-cancel');
+        cancel.disabled = busy;
+        close.disabled = busy;
+        parts.push(add(make('div', 'create-foot bar'), go, cancel));
         bar.replaceChildren(...parts);
       }
-      add(dialog, add(make('header', 'dialog-header'), title,
-        button('Close', 'button button-quiet', () => finish(false), 'library-close')),
+      add(dialog, add(make('header', 'dialog-header'), title, close),
       add(make('div', 'dialog-content'),
         make('p', 'quiet', 'Choose documents for this project only. Adding them starts nothing, sends nothing to an assistant and changes no research settings. A new project starts with none.'),
         catalog.node, bar));
-      dialog.addEventListener('cancel', (event) => { event.preventDefault(); finish(false); });
+      dialog.addEventListener('cancel', (event) => { event.preventDefault(); dismiss(); });
       document.body.append(dialog);
       draw();
       dialog.showModal();
-      const first = dialog.querySelector('#library-query');
+      const first = dialog.querySelector('[data-key="library-query"]');
       if (first) first.focus();
     });
   }

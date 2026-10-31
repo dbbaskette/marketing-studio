@@ -18,7 +18,7 @@ What a caller needs to know
 """
 from __future__ import annotations
 
-from .store import KINDS, LIMITS, ORIGINS, STATES, STUDIOS, LibraryError, location, opened
+from .store import KINDS, LIMITS, ORIGINS, STATES, STUDIOS, LibraryError, gone, location, opened
 
 ROUTES = ('/api/library', '/api/library-document', '/api/library-filters',
           '/api/library-matching')
@@ -52,7 +52,8 @@ def answer(path: str, sent: dict, studio: str) -> dict:
         where = location()
         if library is None:
             return {'available': False, 'items': [], 'total': 0, 'offset': 0,
-                    'limit': limit, 'remembered': {}, 'location': where['shown'], **_labels()}
+                    'limit': limit, 'remembered': {}, 'location': where['shown'],
+                    'problem': gone(where['shown']) if where['missing'] else None, **_labels()}
         found = library.catalog(offset=offset, limit=limit, **filters)
         return {'available': True, **found, 'remembered': library.filters(studio),
                 'location': where['shown'], **_labels()}

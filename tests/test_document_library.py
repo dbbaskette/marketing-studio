@@ -30,6 +30,9 @@ class LibraryCase(unittest.TestCase):
                                                'STUDIOS_CONFIG': str(self.config)})
         patcher.start()
         self.addCleanup(patcher.stop)
+        # These tests find the library from the config, as a person's computer does: a
+        # library named for the whole run (STUDIOS_LIBRARY) is set aside until they end.
+        os.environ.pop('STUDIOS_LIBRARY', None)
 
     def write_config(self, values):
         self.config.write_text(json.dumps(values, indent=4) + '\n')
@@ -81,6 +84,20 @@ class LocationTests(LibraryCase):
         with mock.patch.object(store.studios_config, 'update', racing):
             made = self.made()
         self.assertEqual(made.root, other)
+
+    def test_a_saved_folder_that_is_gone_is_said_and_not_made_again(self):
+        made = self.made()
+        made.add_upload('notes.md', b'Words.')
+        moved = self.base / 'unplugged'
+        made.root.rename(moved)          # a drive not connected, a folder moved away
+        before = self.config.read_text()
+        with self.assertRaisesRegex(library.LibraryError, 'not there now'):
+            self.made()
+        self.assertFalse(made.root.exists())
+        self.assertEqual(self.config.read_text(), before)
+        found = context.answer('/api/library', {}, 'blog')
+        self.assertFalse(found['available'])
+        self.assertIn('not there now', found['problem'])
 
     def test_unreadable_config_refuses_and_leaves_it(self):
         self.config.write_text('{not json')

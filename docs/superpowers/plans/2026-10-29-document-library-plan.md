@@ -32,8 +32,10 @@ Changes from the plan:
 - **No PDF.** Presentation Studio delivery keeps outline Markdown and records the
   PDF as needing export. The pinned Harness Slides runtime has no PDF export, and
   none is added.
-- **Running jobs.** Context follows each desk's existing source rules. A running
-  job keeps the copy of its sources that it took when it started.
+- **Running jobs.** On the Presentation Studio desk, Add from library and Use revision N
+  are refused while the chain draws or a desk job runs. A running job keeps the copy of
+  its sources that it took when it started. Blog Studio's picker adds files the way
+  uploads do, under that studio's existing rules.
 
 Left for follow-ups:
 

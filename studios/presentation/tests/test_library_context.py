@@ -4,6 +4,7 @@ revision taken only on request, and a delivered deck's slide Markdown kept there
 Every library here is a disposable folder (STUDIOS_LIBRARY, set by helpers). Nothing here
 runs pdftotext, the slides tool, an assistant or the network.
 """
+import contextlib
 import json
 import os
 import shutil
@@ -16,7 +17,7 @@ import runner_support  # noqa: F401  puts the runner on the import path
 from runner_support import DeckCase
 from workspace import WorkspaceError
 
-from runner import documents, library_keep
+from runner import desk_actions, documents, library_keep
 from runner import page as pages
 from studio_core import document_library
 from studio_core.document_library import context
@@ -104,6 +105,32 @@ class PinTests(LibraryCase):
         self.assertEqual(pages.DESK['/api/desk-library-keep'][0], 'desk_library_keep')
 
 
+class BusyTests(LibraryCase):
+    """Context never changes underneath a job that is reading the deck."""
+
+    def actions(self, record):
+        fake = mock.Mock(files=contextlib.nullcontext(), _load=lambda root: record,
+                         _desk_held=lambda path: self.root, view=lambda root: {'viewed': True})
+        fake._library_idle = desk_actions.DeskActions._library_idle
+        return fake
+
+    def test_adding_or_updating_is_refused_while_a_job_runs(self):
+        row = self.library.add_upload('brief.md', b'Words.\n')
+        picks = [{'id': row['id'], 'revision': 1}]
+        waiting = {'gates': {'gate:build': {'state': 'waiting'}}}
+        for record in ({'gates': {'gate:build': {'state': 'running'}}},     # the chain is drawing
+                       {**waiting, 'desk_jobs': {'words-1': {}}}):           # a desk job runs
+            for name, given in (('desk_library', picks), ('desk_library_update', row['id'])):
+                with self.subTest(record=record, action=name), \
+                        self.assertRaisesRegex(WorkspaceError, 'being made now'):
+                    getattr(desk_actions.DeskActions, name)(self.actions(record), 'deck', given)
+        self.assertEqual(documents.listed(self.root), [])
+        # At rest on the desk, the same request pins them.
+        self.assertEqual(desk_actions.DeskActions.desk_library(self.actions(waiting), 'deck', picks),
+                         {'viewed': True})
+        self.assertEqual(len(documents.listed(self.root)), 1)
+
+
 class KeepTests(LibraryCase):
     def test_delivered_deck_keeps_its_markdown_and_reports_the_pdf_still_needed(self):
         self.write('outline.md', '# Launch deck\n\n## 1. Why now\n')
@@ -133,6 +160,25 @@ class KeepTests(LibraryCase):
         self.assertEqual(library_keep.again(self.root, {'title': 'Deck'})['state'], 'kept')
         with mock.patch.object(document_library, 'opened', side_effect=RuntimeError('boom')):
             self.assertEqual(library_keep.keep(self.root, {}, {'revision': 1})['state'], 'failed')
+
+    def test_same_folder_name_elsewhere_or_remade_is_another_document(self):
+        self.write('outline.md', '# Launch plan\n')
+        first = library_keep.keep(self.root, {'title': 'Launch plan'}, {'revision': 1})
+        other = self.place / 'other-workspace' / self.root.name     # the same title slug
+        other.mkdir(parents=True)
+        (other / 'run.json').write_text('{}\n')
+        (other / 'outline.md').write_text('# Launch plan\n\nAnother team, another deck.\n')
+        second = library_keep.keep(other, {'title': 'Launch plan'}, {'revision': 1})
+        self.assertNotEqual(first['document'], second['document'])
+        self.assertEqual(second['revision'], 1)
+        # Deleted and made again under the same title: its local record is gone with it.
+        shutil.rmtree(self.root / 'sources')
+        remade = library_keep.keep(self.root, {'title': 'Launch plan'}, {'revision': 1})
+        self.assertNotIn(remade['document'], (first['document'], second['document']))
+        # Delivering the same deck again keeps its key and its document.
+        again = library_keep.keep(self.root, {'title': 'Launch plan'}, {'revision': 2})
+        self.assertEqual((again['key'], again['document']), (remade['key'], remade['document']))
+        self.assertEqual(self.library.catalog(kind='presentation')['total'], 3)
 
     def test_no_outline_is_a_visible_failure(self):
         found = library_keep.keep(self.root, {'title': 'Deck'}, {'revision': 1})

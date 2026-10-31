@@ -163,7 +163,11 @@ Each revision is written whole into a hidden folder and then renamed into place.
 Every write holds `.library.lock` (an interprocess `flock`). The catalog in
 `.state/catalog.json` is rebuilt from the records whenever it is stale or damaged.
 Each studio's browsing filters are kept in `.state/filters.json`; they are filters
-only, never a selection.
+only, never a selection. A deck's folder is a slug of its title, so a delivered deck's
+key adds a random part made once for that deck. Two workspaces with decks of the same
+title, or a deck deleted and made again, are separate documents. A blog's ID already
+ends in a random part, so `blog:<id>` is unique. A saved library folder that is gone,
+such as on a drive that is not connected, is reported and not made again.
 
 Every file is checked against its hash before it is previewed, downloaded or
 pinned, and a link, a missing file or a changed file is refused. Some files can't
@@ -175,7 +179,7 @@ read with OCR, a model or the network.
 | --- | --- |
 | Upload | Original bytes, plus Markdown when its text can be read |
 | Finished or published blog | Its Markdown, under `blog:<blog id>` |
-| Delivered deck | Slide-ordered outline Markdown, under `presentation:<deck folder>`. The PDF is recorded as **needs export**. |
+| Delivered deck | Slide-ordered outline Markdown, under a key made once per deck (`presentation:<folder>-<random>`, kept in its local `sources/library.json`). The PDF is recorded as **needs export**. |
 
 **Choosing context.** **Add from library** pins chosen revisions into one project,
 after checking every one of them first:
@@ -205,7 +209,8 @@ grants no web access and sends nothing to an assistant.
 | Unreadable, changed or missing revision | Refused with why, and nothing changes |
 | Finish, publish or deliver again with the same text | Same document and revision, and no new revision |
 | A library save fails after delivery | Recorded in the deck's local `sources/library.json`. **Keep in library again** retries from `deliver.json`, with no upload and no job. |
-| A job is already running | It keeps the copy of its sources that it took when it started. Adding context follows the desk's existing source rules. |
+| A job is running on the deck (the chain draws, or a desk job runs) | Add from library and Use revision N are refused until it ends; the job keeps the sources it started with |
+| Use selected is still landing | The sheet's Cancel, Close and Escape wait |
 
 ## Where new work stops
 

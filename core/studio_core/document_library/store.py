@@ -111,8 +111,8 @@ def location() -> dict:
     if named and Path(named).expanduser().is_absolute():
         # Named for this process, as STUDIOS_CONFIG names the config: never saved.
         where = Path(named).expanduser()
-        return {'root': where, 'saved': True, 'shown': studios_config.shown(where),
-                'problem': problem}
+        return {'root': where, 'saved': True, 'named': True, 'missing': False,
+                'shown': studios_config.shown(where), 'problem': problem}
     saved = _saved(values)
     if saved:
         where = Path(saved).expanduser()
@@ -121,8 +121,11 @@ def location() -> dict:
         if not (isinstance(base, str) and base and Path(base).expanduser().is_absolute()):
             base = '~/Studios'
         where = Path(base).expanduser() / 'library'
-    return {'root': where, 'saved': bool(saved), 'shown': studios_config.shown(where),
-            'problem': problem}
+    # A saved folder that is gone (a drive not connected, a folder moved) is said, never
+    # quietly made again in its place.
+    return {'root': where, 'saved': bool(saved), 'named': False,
+            'missing': bool(saved) and not where.exists(),
+            'shown': studios_config.shown(where), 'problem': problem}
 
 
 def _marked(root: Path) -> bool:
@@ -144,6 +147,8 @@ def opened(create: bool = False) -> 'Library | None':
     root = found['root']
     if not create:
         return Library(root) if _marked(root) else None
+    if found['missing']:
+        raise LibraryError(gone(found['shown']))
     if not found['saved']:
         if found['problem']:
             raise LibraryError(found['problem'].split(', so ')[0] + ', so the library location '
@@ -183,6 +188,12 @@ def _make(root: Path) -> None:
     except OSError as failure:
         raise LibraryError(f'{studios_config.shown(root)} could not be made '
                            f'({str(failure.strerror or failure).lower()}).') from None
+
+
+def gone(shown: str) -> str:
+    return (f'The Document Library is saved at {shown}, which is not there now. Connect the '
+            'drive it is on, or put the folder back; nothing was kept, and a new library was '
+            'not made in its place.')
 
 
 # --- small helpers -------------------------------------------------------------------------

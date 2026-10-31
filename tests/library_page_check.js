@@ -106,7 +106,9 @@ async function post(route, body) {
   await settle();
   const sheet = document.body.children.find((n) => n.tagName === 'dialog');
   assert.ok(sheet && sheet.open, 'the sheet opens as a modal dialog');
-  assert.equal(document.activeElement.id, 'library-query', 'focus starts in the search');
+  assert.equal(document.activeElement.dataset.key, 'library-query', 'focus starts in the search');
+  assert.ok(all(sheet).filter((n) => n.id).every((n) => n.id.startsWith('doclib')), 'IDs are the sheet\'s own');
+  assert.ok(all(sheet).filter((n) => n.htmlFor).every((n) => all(sheet).some((m) => m.id === n.htmlFor)), 'every label names a field in the sheet');
   assert.ok(find(sheet, 'library-use').disabled, 'Use selected waits for a tick');
   assert.ok(find(sheet, 'library-tick-doc-3').disabled, 'an unreadable revision cannot be ticked');
   assert.ok(all(sheet).some((n) => n.textContent === 'Synthetic <b>document</b> 0'), 'a title is text');
@@ -116,8 +118,13 @@ async function post(route, body) {
   assert.equal(requests.at(-1)[1].offset, 25);
   assert.match(all(sheet).find((n) => n.className === 'selection-count').text, /1 of them is not in this view/);
   // A filter change keeps the tick and is remembered as a filter only.
-  const kind = all(sheet).find((n) => n.id === 'library-kind');
+  // Text typed in the search but not searched yet survives a filter change and a tick.
+  const box = find(sheet, 'library-query');
+  box.value = 'Synth'; box.listeners.input();
+  const kind = find(sheet, 'library-kind');
   kind.value = 'blog'; kind.listeners.change(); await settle();
+  assert.equal(find(sheet, 'library-query').value, 'Synth');
+  assert.equal(requests.at(-1)[1].filters.query, undefined, 'not searched until Search');
   assert.deepEqual(requests.find((r) => r[0] === 'library-filters')[1].filters, { kind: 'blog', studio: '', origin: '', state: '' });
   assert.equal(requests.at(-1)[1].offset, 0);
   assert.match(all(sheet).find((n) => n.className === 'selection-count').text, /1 selected/);
@@ -152,7 +159,7 @@ async function post(route, body) {
     await settle();
     const open = document.body.children.find((n) => n.tagName === 'dialog');
     // The studio's remembered filter is back (Blog); nothing is ticked until the person ticks.
-    assert.equal(all(open).find((n) => n.id === 'library-kind').value, 'blog');
+    assert.equal(find(open, 'library-kind').value, 'blog');
     assert.ok(find(open, 'library-use').disabled);
     await tick(find(open, 'library-tick-doc-1'), true);
     if (how === 'escape') { let prevented = false; open.listeners.cancel({ preventDefault: () => { prevented = true; } }); assert.ok(prevented); }
@@ -160,5 +167,35 @@ async function post(route, body) {
     assert.equal(await again, false, how + ' resolves without a choice');
     assert.equal(used.length, before, how + ' sends nothing');
   }
+  // While Use selected is landing, Cancel, Close and Escape wait; then focus goes where the
+  // page says (its redrawn Add from library).
+  let land;
+  const target = new Node('button');
+  document.body.append(target);
+  const slow = kit.pick({ ...adapter, use: () => new Promise((resolve) => { land = resolve; }), refocus: () => target });
+  await settle();
+  const busy = document.body.children.find((n) => n.tagName === 'dialog');
+  await tick(find(busy, 'library-tick-doc-1'), true);
+  find(busy, 'library-use').listeners.click(); await settle();
+  assert.ok(find(busy, 'library-cancel').disabled && find(busy, 'library-close').disabled);
+  find(busy, 'library-cancel').listeners.click();
+  find(busy, 'library-close').listeners.click();
+  busy.listeners.cancel({ preventDefault: () => {} });
+  await settle();
+  assert.ok(busy.open, 'the sheet stays while the choice lands');
+  land(); assert.equal(await slow, true);
+  assert.equal(document.activeElement, target, 'focus goes to the redrawn Add from library');
+
+  // Only the newest load is drawn: an older, slower answer is ignored.
+  const waiting = [];
+  const racing = new kit.Catalog({ studio: 'blog', post: (route, body) => new Promise((resolve) => waiting.push([body, resolve])) });
+  racing.filters.kind = 'blog'; racing.load();
+  await settle();
+  const answer = (rows) => ({ available: true, items: rows, total: rows.length, offset: 0, limit: 25, remembered: {} });
+  waiting[1][1](answer([docs[1]]));
+  await settle();
+  waiting[0][1](answer([docs[0], docs[2]]));
+  await settle();
+  assert.deepEqual(racing.shownIds(), ['doc-1'], 'a late answer from an older load is not drawn');
   console.log('library page check passed');
 })().catch((error) => { console.error(error); process.exit(1); });

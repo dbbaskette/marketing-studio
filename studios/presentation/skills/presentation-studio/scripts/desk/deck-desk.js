@@ -1513,6 +1513,8 @@
       window.StudioLibrary.pick({
         studio: 'presentation', max: 40,
         post: (route, body) => h.send(route, body),
+        // The card is drawn again with the new sources: focus its Add from library.
+        refocus: () => document.querySelector('[data-key="desk-library-add"]'),
         use: async (picks) => {
           const found = await h.send('desk-library', { path, picks });
           if (h.view.screen === 'deck' && h.view.path === path) { h.view.run = found; h.paintDeck(false); }

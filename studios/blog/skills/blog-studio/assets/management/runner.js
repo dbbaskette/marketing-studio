@@ -1174,7 +1174,7 @@ function sFilesCard(draft,problem,again,lock,about={}){
   // A public page, read now and saved with this blog like a file.
   let linkField;
   {const linkInput=sNode('input','input');linkInput.id='files-link';linkInput.type='url';linkInput.inputMode='url';linkInput.autocomplete='off';linkInput.placeholder='https://…';const linkLabel=sNode('label','field-label','Or add a link');linkLabel.htmlFor=linkInput.id;const linkAdd=sButton('Add the link',async button=>{const link=linkInput.value.trim();if(!/^https:\/\/\S+$/.test(link)){problem.textContent='Paste a public https link first.';linkInput.focus();return;}if(draft.files.length>=20){problem.textContent='Use up to 20 files for one blog.';return;}await busy(button,'Reading the page…',async()=>{studio.busy=true;try{const result=await api('upload',{operation:operationId(),files:[{link,purpose:draft.role}],purpose:'material',keep:false,analyze:false});const added=(result.files||[])[0];remember(result);problem.textContent='';studio.busy=false;sToast(added?'Added '+added.filename+'.':'Added the page.');again();}catch(error){problem.textContent=error.message;linkInput.focus();}finally{studio.busy=false;}});});linkAdd.id='files-link-add';linkField=sAdd(sNode('div','field'),linkLabel,sAdd(sNode('div','bar'),linkInput,linkAdd),sNode('p','quiet field-hint','A public page, read once.'));}
-  const fromLibrary=sAdd(sNode('div','field'),sAdd(sNode('div','bar'),sButton('From the library',()=>sLibraryPicker(draft,again)),sButton('From the Document Library',()=>sDocumentLibrary(draft,again,problem))),sNode('p','quiet field-hint','Posts already in the team library, each with its role. The Document Library holds uploads and finished work from every studio on this computer; what you choose there stays with this blog.'));
+  const fromLibrary=sAdd(sNode('div','field'),sAdd(sNode('div','bar'),sButton('From the library',()=>sLibraryPicker(draft,again)),(()=>{const node=sButton('From the Document Library',()=>sDocumentLibrary(draft,again,problem));node.id='files-document-library';return node;})()),sNode('p','quiet field-hint','Posts already in the team library, each with its role. The Document Library holds uploads and finished work from every studio on this computer; what you choose there stays with this blog.'));
   if(draft.sourceEditor)fromLibrary.append(sButton('Use saved research',()=>sSavedResearchPicker(draft,again)));
   // Keep comes before the picker: it applies to the files added next, and each row says where its file went.
   const keep=sCheck('files-keep','Keep in the team library',draft,'keep',about.keepWhen||'Ticked ones go to the team library when you start.');
@@ -1200,6 +1200,7 @@ function sDocumentLibrary(draft,again,problem){
   const asRole={facts:'material',messaging:'messaging',example:'inspiration'};
   window.StudioLibrary.pick({studio:'blog',roles,max:Math.max(1,20-draft.files.length),title:'Add from the Document Library',
     post:(route,body)=>api('document-'+route,body),
+    refocus:()=>document.getElementById('files-document-library'),
     use:async picks=>{
       if(picks.length+draft.files.length>20)throw new Error('Use up to 20 files for one blog.');
       const result=await api('document-library-take',{operation:operationId(),picks});

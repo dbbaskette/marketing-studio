@@ -40,6 +40,8 @@ from runner.steps import outline as outlines
 NO_PICK = 'The look is not waiting to be picked now.'
 NO_RESEARCH = 'This deck has no research. Add a source, and its words jobs read it.'
 RESEARCH_BUSY = 'The deck is being redrawn now. Change the research when that ends.'
+LIBRARY_BUSY = ('The deck is being made now. Add from the library, or take a newer revision, '
+                'when that ends: a job that is running keeps the sources it started with.')
 LEFT_OUT_ALREADY = 'Those findings are left out already.'
 PASTED = 'Pasted text'
 SOURCES_TOLD = ('The person\'s own sources are in your input "sources". Add only what they, '
@@ -1390,25 +1392,38 @@ class DeskActions:
             documents.add(root, name, data, title)
         return self.view(root)
 
+    @staticmethod
+    def _library_idle(root, record: dict) -> None:
+        """Refuse a change to the deck's context while an assistant job may be reading it:
+        the chain under way, or a desk job running. Hold `files`."""
+        if (decks.delivered(root) is None and not desk.resting(record)) \
+                or record.get('desk_jobs'):
+            raise WorkspaceError(LIBRARY_BUSY)
+
     def desk_library(self, path, picks) -> dict:
         """Add documents chosen from the shared Document Library to the deck's sources, as
         desk_source adds a file: each chosen revision is checked first, and its text and file
         are copied into the deck, which keeps them when the library changes. Nothing is drawn,
-        research does not run and no research setting changes."""
+        research does not run and no research setting changes. Refused while a job runs."""
         root = self._desk_held(path)
-        try:
-            library_context.pin(documents, root, picks)
-        except LibraryError as refusal:
-            raise WorkspaceError(str(refusal)) from None
+        with self.files:
+            self._library_idle(root, self._load(root))
+            try:
+                library_context.pin(documents, root, picks)
+            except LibraryError as refusal:
+                raise WorkspaceError(str(refusal)) from None
         return self.view(root)
 
     def desk_library_update(self, path, document) -> dict:
-        """Take the newest library revision of one source, only because the person asked."""
+        """Take the newest library revision of one source, only because the person asked.
+        Refused while a job runs."""
         root = self._desk_held(path)
-        try:
-            library_context.update(documents, root, document)
-        except LibraryError as refusal:
-            raise WorkspaceError(str(refusal)) from None
+        with self.files:
+            self._library_idle(root, self._load(root))
+            try:
+                library_context.update(documents, root, document)
+            except LibraryError as refusal:
+                raise WorkspaceError(str(refusal)) from None
         return self.view(root)
 
     def desk_library_keep(self, path) -> dict:
