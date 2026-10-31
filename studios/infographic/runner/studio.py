@@ -90,13 +90,13 @@ def parser():
         if name == 'source-import':
             operation.add_argument('--capture-id', required=True)
             operation.add_argument('--replace-id')
-        if name in ('source', 'source-import'):
+        if name in ('source', 'source-import', 'library', 'library-update'):
             operation.add_argument('--acknowledge-warnings', action='store_true')
         fields = {'select': ('story-id',), 'build': ('request-id',), 'repair': ('request-id',),
                   'restore': ('revision',), 'edit-text': ('element-id', 'text'),
                   'image-start': ('brief-id', 'provider', 'request-id'), 'image-cancel': ('request-id',), 'image-recover': ('request-id',),
                   'revise-art': ('change', 'preserve', 'request-id'), 'revise-story': ('story-id', 'instruction'),
-                  'library-update': ('document',), 'library-keep': ('export-id',)}
+                  'library-update': ('document', 'revision'), 'library-keep': ('export-id',)}
         for field in fields.get(name, ()):
             operation.add_argument('--' + field, required=True, type=int if field == 'revision' else str)
         if name == 'google-deliver':

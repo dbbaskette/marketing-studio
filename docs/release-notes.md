@@ -99,10 +99,15 @@ Signing in to an assistant, your organisation's brands and fonts, and optional G
   studios. Every chosen revision is checked, then all of them become sources of that
   infographic in one revision, or none do. Each keeps its readable text, and an
   upload keeps its original file. The infographic keeps them if the library changes
-  or is gone. A source says which library revision it came from, and **Use revision
-  N** takes a newer one only when you press it.
-- **Same input rules.** Like any new source, a library document clears the facts,
-  story and page built from the earlier sources, and nothing is approved. Choosing
+  or is gone. A source says which library revision it came from, shows its
+  extraction gaps, and says when it can't be found on this computer (for example,
+  when a teammate added it). **Use revision N** takes exactly that revision, only
+  when you press it.
+- **Same input rules, said first.** Like any new source, a library document clears
+  the facts, story, page and approval built from the earlier sources. A line beside
+  **Add from library** and **Use revision N** says so, and when there is work to
+  clear the page asks before anything changes. A document with extraction gaps is
+  added only after you confirm using only its readable text. Choosing
   documents starts no research, grants no web access and sends nothing to an
   assistant. It is refused while the infographic is working, while an image request
   is pending or uncertain, or while research runs.

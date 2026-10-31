@@ -191,6 +191,11 @@ const assert = require('node:assert/strict');
     await sheet.getByRole('checkbox',{name:'Select Synthetic capacity notes'}).click();
     await sheet.getByRole('checkbox',{name:'Selected: Synthetic capacity notes'}).waitFor();
     await sheet.getByRole('button',{name:'Use selected',exact:true}).click();
+    // This infographic has facts, a page and an approval: it asks before clearing them.
+    const confirm=page.getByRole('dialog',{name:'Add Synthetic capacity notes'});
+    await confirm.getByText(/^This clears this infographic’s facts, story, page, approval\./).waitFor();
+    assert.equal(await page.evaluate(()=>held.project.sources.length),sourcesAt,'Nothing changes before Add as sources');
+    await confirm.getByRole('button',{name:'Add as sources',exact:true}).click();
     await page.getByText(/^The document is a source now\./).waitFor();
     assert.equal(await page.evaluate(()=>held.project.sources.length),sourcesAt+1);
     await page.getByText('From the Document Library (Marketing Studio), revision 1.',{exact:true}).waitFor();

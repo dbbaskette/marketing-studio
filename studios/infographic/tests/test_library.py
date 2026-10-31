@@ -130,7 +130,8 @@ class ContextTests(LibraryCase):
         self.assertEqual((project['facts'], project['scene'], project['approval']), ([], None, None))
         marked = self.engine.inspect(self.ident)['library']['sources']
         self.assertEqual(marked[added[1]['id']], {'id': self.blog['document'], 'revision': 1,
-                                                  'head': 1, 'update': False})
+                                                  'head': 1, 'update': False, 'state': 'current',
+                                                  'note': None})
 
     def test_one_refusal_changes_nothing(self):
         with mock.patch.object(document_library.store.source_documents, 'pdf_text', return_value='\f'):
@@ -150,30 +151,60 @@ class ContextTests(LibraryCase):
             api.action(self.engine, {'action': 'library', 'id': self.ident, 'expected_revision': before['revision'],
                                      'picks': self.picks(self.blog)})
 
-    def test_a_newer_revision_is_offered_and_taken_only_when_asked(self):
+    def test_a_document_with_gaps_needs_readable_only_coverage_confirmed(self):
+        gappy = {'readable': True, 'text': 'Readable synthetic words.', 'extractor': 'synthetic',
+                 'locations': [], 'warnings': ['Page 2 contains no readable text.']}
+        with mock.patch.object(document_library.store.source_documents, 'extract', return_value=gappy):
+            gaps = self.library().add_upload('gappy.txt', b'Readable synthetic words.')
+        self.assertEqual(gaps['gaps'], ['Page 2 contains no readable text.'])
+        before = self.current()
+        with self.assertRaisesRegex(Invalid, 'extraction gaps'):
+            self.act('library', picks=self.picks(gaps))
+        self.assertEqual(self.current(), before)
+        with self.assertRaisesRegex(Invalid, 'explicitly'):
+            self.act('library', picks=self.picks(gaps), acknowledge_warnings='yes')
+        project = self.act('library', picks=self.picks(gaps), acknowledge_warnings=True)
+        coverage = project['sources'][-1]['coverage']
+        self.assertEqual((coverage['warnings'], coverage['acknowledged']),
+                         (['Page 2 contains no readable text.'], True))
+
+    def test_use_revision_n_takes_exactly_that_revision_only_when_asked(self):
         project = self.act('library', picks=self.picks(self.note, self.blog))
         source = project['sources'][-1]
-        newer = self.library().retain('blog:synthetic-post', 'blog', 'blog', 'Rolling restarts', '# Rolling\n\nTwo at a time.\n')
-        self.assertEqual(newer['revision'], 2)
+        made = self.library()
+        self.assertEqual(made.retain('blog:synthetic-post', 'blog', 'blog', 'Rolling restarts',
+                                     '# Rolling\n\nTwo at a time.\n')['revision'], 2)
+        self.assertEqual(made.retain('blog:synthetic-post', 'blog', 'blog', 'Rolling restarts',
+                                     '# Rolling\n\nThree at a time.\n')['revision'], 3)
         self.assertEqual(sources.read(self.store, self.current(), source), '# Rolling\n\nOne at a time.\n',
-                         'The pinned copy is read until the newer revision is taken.')
+                         'The pinned copy is read until a newer revision is taken.')
         marked = self.engine.inspect(self.ident)['library']['sources'][source['id']]
-        self.assertEqual((marked['head'], marked['update']), (2, True))
-        taken = self.act('library-update', document=self.blog['document'])
+        self.assertEqual((marked['head'], marked['update'], marked['state']), (3, True, 'update'))
+        taken = self.act('library-update', document=self.blog['document'], revision=2)
         self.assertEqual(len(taken['sources']), len(project['sources']))
         self.assertEqual(taken['sources'][-1]['provenance']['library']['revision'], 2)
         self.assertEqual(sources.read(self.store, taken, taken['sources'][-1]), '# Rolling\n\nTwo at a time.\n')
-        with self.assertRaisesRegex(Invalid, 'newest revision'):
+        for older in (1, 2):
+            with self.assertRaisesRegex(Invalid, 'already uses revision 2'):
+                self.act('library-update', document=self.blog['document'], revision=older)
+        with self.assertRaisesRegex(Invalid, 'the revision to take'):
             self.act('library-update', document=self.blog['document'])
 
-    def test_pinned_sources_keep_working_without_the_library(self):
+    def test_pinned_sources_keep_working_and_say_why_no_newer_one_is_shown(self):
         project = self.act('library', picks=self.picks(self.blog))
+        source = project['sources'][-1]['id']
+        # Another computer's library: the document is not in it.
+        with mock.patch.dict('os.environ', {'STUDIOS_LIBRARY': str(self.temp / 'teammate-library')}):
+            document_library.opened(create=True)
+            elsewhere = self.engine.inspect(self.ident)['library']['sources'][source]
+        self.assertEqual((elsewhere['state'], elsewhere['head']), ('not-here', None))
+        self.assertIn("teammate's computer", elsewhere['note'])
         shutil.rmtree(self.temp / 'library')
         self.assertEqual(sources.read(self.store, project, project['sources'][-1]), '# Rolling\n\nOne at a time.\n')
-        marked = self.engine.inspect(self.ident)['library']['sources'][project['sources'][-1]['id']]
-        self.assertEqual((marked['head'], marked['update']), (None, False))
-        with self.assertRaisesRegex(Invalid, 'no longer in the Document Library'):
-            self.act('library-update', document=self.blog['document'])
+        gone = self.engine.inspect(self.ident)['library']['sources'][source]
+        self.assertEqual((gone['state'], gone['head'], gone['update']), ('no-library', None, False))
+        with self.assertRaisesRegex(Invalid, 'no Document Library on this computer'):
+            self.act('library-update', document=self.blog['document'], revision=2)
 
     def test_context_is_refused_while_work_runs(self):
         before = self.current()
@@ -186,8 +217,8 @@ class ContextTests(LibraryCase):
             self.act('library', picks=self.picks(self.note))
         research = mock.Mock(**{'read.return_value': {'state': 'working'}})
         with self.assertRaisesRegex(Invalid, 'working now'):
-            library.update(self.store, self.ident, self.blog['document'], expected_revision=before['revision'],
-                           research=research)
+            library.update(self.store, self.ident, self.blog['document'], 2,
+                           expected_revision=before['revision'], research=research)
         self.assertEqual(self.current(), before)
 
     def test_the_page_answers_the_library_routes_for_infographic_studio(self):

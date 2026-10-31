@@ -2,9 +2,9 @@
 
 What a caller needs to know
 ---------------------------
-    library.choose(store, ident, picks, expected_revision=n)     # Add from library
-    library.update(store, ident, document, expected_revision=n)  # Use revision N, explicitly
-    library.marked(store, project)    # {source id: {'id', 'revision', 'head', 'update'}}
+    library.choose(store, ident, picks, expected_revision=n, acknowledge_warnings=False)
+    library.update(store, ident, document, revision, expected_revision=n)  # exactly revision N
+    library.marked(store, project)    # {source id: {'id', 'revision', 'head', 'update', 'state'}}
     library.idle(store, project, research=None, activity=None)   # refuses while work runs
     library.keep(store, ident, export_id)    # an approved export's text and PDF; never raises
     library.status(store, ident)             # what was kept last, or None
@@ -15,9 +15,11 @@ Context
   sources through the same capture boundary as selected studio material
   (`sources.captured`): the readable Markdown is the source text and an upload's original
   bytes are kept beside it. The infographic keeps them when the library changes or is gone.
-  All chosen documents land in one new revision, or none do.
+  All chosen documents land in one new revision, or none do. A revision with extraction
+  gaps is refused unless the person confirms using only its readable text
+  (`acknowledge_warnings`), as an intake preview with gaps is; the gaps stay on the source.
 - A source records where it came from in `provenance.library`; a newer revision in the
-  library is offered as Update available and taken only when asked. Choosing documents
+  library is offered as Update available and only the revision the person chose is taken. Choosing documents
   starts no research, grants no web access, sends nothing to an assistant and changes no
   research setting; like any source change it clears the facts, story and page that were
   built from the earlier sources, under the existing input rules.
@@ -96,11 +98,14 @@ def _name(title: str) -> str:
     return plain[:200] or 'Library document'
 
 
-def _captured(snapshot: dict) -> tuple[dict, bytes, bytes]:
+def _captured(snapshot: dict, acknowledged: bool) -> tuple[dict, bytes, bytes]:
     """A library revision as a source record, its kept bytes and its normalized text."""
     found = document_library.opened()
     gaps = found.describe(snapshot['id'], snapshot['revision'])['gaps'] if found else []
     gaps = [gap for gap in gaps if isinstance(gap, str) and gap.strip()][:20]
+    if gaps and acknowledged is not True:
+        raise Invalid(f'"{snapshot["title"]}" has extraction gaps. Review them and confirm '
+                      'using only its readable text before adding it.')
     text = snapshot['text']
     raw = snapshot['original'] if snapshot['original'] is not None else text.encode('utf-8')
     studio = document_library.STUDIOS.get(snapshot.get('studio'), 'Marketing Studio')
@@ -108,8 +113,7 @@ def _captured(snapshot: dict) -> tuple[dict, bytes, bytes]:
         'id': snapshot['id'], 'revision': snapshot['revision'], 'kind': snapshot['kind'],
         'title': snapshot['title'][:200], 'content_sha256': snapshot['content_sha256'],
         'original_sha256': snapshot['original_sha256']}}
-    # The person chose this revision in the sheet, which shows its gaps: choosing it is
-    # using only its readable text. The gaps stay recorded with the source.
+    # The gaps stay recorded with the source, and on its card, as the person confirmed them.
     extracted = {'text': text, 'extractor': EXTRACTOR, 'locations': [], 'warnings': gaps,
                  'readable': True}
     record, normalized = sources.captured(raw, extracted, kind='handoff', name=_name(snapshot['title']),
@@ -120,9 +124,11 @@ def _captured(snapshot: dict) -> tuple[dict, bytes, bytes]:
 class _Sources:
     """The documents adapter `context.pin` and `context.update` take, for one infographic."""
 
-    def __init__(self, store, ident, expected_revision, research=None, activity=None):
+    def __init__(self, store, ident, expected_revision, research=None, activity=None,
+                 acknowledged=False):
+        require(type(acknowledged) is bool, 'Confirm readable-only coverage explicitly.')
         self.store, self.ident, self.expected = store, ident, expected_revision
-        self.research, self.activity = research, activity
+        self.research, self.activity, self.acknowledged = research, activity, acknowledged
 
     def _current(self):
         project = self.store.read(self.ident)
@@ -141,7 +147,7 @@ class _Sources:
         return self.store.change_locked(project, {'sources': sources_now})
 
     def add_snapshots(self, _root, snapshots) -> dict:
-        captured = [_captured(snapshot) for snapshot in snapshots]
+        captured = [_captured(snapshot, self.acknowledged) for snapshot in snapshots]
         with self.store.locked():
             project = self._current()
             held = {one['id'] for one in map(pinned, project['sources']) if one}
@@ -154,7 +160,7 @@ class _Sources:
             return self._save(project, project['sources'] + added, captured)
 
     def replace_snapshot(self, _root, snapshot) -> dict:
-        record, raw, normalized = _captured(snapshot)
+        record, raw, normalized = _captured(snapshot, self.acknowledged)
         with self.store.locked():
             project = self._current()
             place = next((n for n, source in enumerate(project['sources'])
@@ -165,9 +171,10 @@ class _Sources:
             return self._save(project, sources_now, [(record, raw, normalized)])
 
 
-def choose(store, ident, picks, *, expected_revision, research=None, activity=None) -> dict:
+def choose(store, ident, picks, *, expected_revision, research=None, activity=None,
+           acknowledge_warnings=False) -> dict:
     """Add the chosen library revisions as sources, all or none. Returns the infographic."""
-    adapter = _Sources(store, ident, expected_revision, research, activity)
+    adapter = _Sources(store, ident, expected_revision, research, activity, acknowledge_warnings)
     adapter._current()      # refused before the library is read when the work moved on
     try:
         return library_context.pin(adapter, ident, picks)
@@ -175,25 +182,63 @@ def choose(store, ident, picks, *, expected_revision, research=None, activity=No
         raise Invalid(str(refusal)) from None
 
 
-def update(store, ident, document, *, expected_revision, research=None, activity=None) -> dict:
-    """Take the newest library revision of one source, only because the person asked."""
-    require(isinstance(document, str), 'Choose a document from the Document Library.')
-    adapter = _Sources(store, ident, expected_revision, research, activity)
+def update(store, ident, document, revision, *, expected_revision, research=None,
+           activity=None, acknowledge_warnings=False) -> dict:
+    """Take exactly the library revision the person chose for one source: refused unless it
+    is newer than the one pinned. Returns the infographic."""
+    require(isinstance(document, str) and type(revision) is int,
+            'Choose a document from the Document Library and the revision to take.')
+    adapter = _Sources(store, ident, expected_revision, research, activity, acknowledge_warnings)
+    entry = next((one for one in adapter.listed(ident) if one['library']['id'] == document), None)
+    require(entry is not None, 'That library document is not in this infographic.')
+    require(revision > entry['library']['revision'],
+            f'This infographic already uses revision {entry["library"]["revision"]} or newer.')
+    found = document_library.opened()
+    require(found is not None, NO_LIBRARY)
     try:
-        return library_context.update(adapter, ident, document)
+        return adapter.replace_snapshot(ident, found.snapshot(document, revision))
     except LibraryError as refusal:
         raise Invalid(str(refusal)) from None
 
 
+NO_LIBRARY = ('There is no Document Library on this computer, or its folder is not '
+              'connected. This infographic keeps its own copy.')
+STATES = {
+    'current': None,
+    'update': None,
+    'unreadable': 'Its newest library revision cannot be read now. This infographic keeps its own copy.',
+    'not-here': ("It is not in this computer's Document Library, so it was probably added on a "
+                 "teammate's computer. This infographic keeps its own copy."),
+    'no-library': NO_LIBRARY,
+}
+
+
 def marked(store, project) -> dict:
-    """{source id: {'id', 'revision', 'head', 'update'}} for sources chosen from the library.
-    `head` is the library's newest revision (None when it is gone from the library); the
-    infographic's own copy is what is read either way."""
-    entries = [{'source': source['id'], 'library': held}
-               for source in project['sources'] if (held := pinned(source))]
-    return {entry['source']: {'id': entry['library']['id'], 'revision': entry['library']['revision'],
-                              'head': entry.get('library_head'), 'update': entry.get('update', False)}
-            for entry in library_context.marked(entries)}
+    """{source id: {'id', 'revision', 'head', 'update', 'state', 'note'}} for sources chosen
+    from the library. `head` is the library's newest revision on this computer (None when
+    it cannot be found); `state` and `note` say why. The infographic's own copy is read
+    either way."""
+    chosen = [(source['id'], held) for source in project['sources'] if (held := pinned(source))]
+    if not chosen:
+        return {}
+    try:
+        found = document_library.opened()
+    except (LibraryError, OSError):
+        found = None
+    shown = {}
+    for source, held in chosen:
+        head, state = None, 'no-library'
+        if found is not None:
+            try:
+                row = found.describe(held['id'])
+                head = row['revision']
+                state = ('unreadable' if not row['readable']
+                         else 'update' if head > held['revision'] else 'current')
+            except (LibraryError, OSError):
+                state = 'not-here'
+        shown[source] = {'id': held['id'], 'revision': held['revision'], 'head': head,
+                         'update': state == 'update', 'state': state, 'note': STATES[state]}
+    return shown
 
 
 # --- approved exports --------------------------------------------------------------------
@@ -221,7 +266,8 @@ def keep(store, ident, export_id=None) -> dict:
         title = project['brief']['title']
         kept = document_library.opened(create=True).retain(
             key=done['key'], studio='infographic', kind='infographic', title=title, text=text,
-            project={'id': ident, 'title': title, 'revision': delivery['revision']}, pdf=pdf)
+            project={'id': ident, 'title': title, 'revision': delivery['revision']},
+            pdf={'state': 'saved', 'data': pdf})
         done.update(state='kept', document=kept['document'], library_revision=kept['revision'],
                     pdf='saved')
     except Exception as failure:     # the approved files stand whatever the library does

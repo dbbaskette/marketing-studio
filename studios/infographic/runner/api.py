@@ -72,7 +72,8 @@ FIELDS = {
     'export': {'draft'}, 'restore': {'revision', 'sha256'},
     'inspect-images': {'then_check'}, 'revise-art': {'change', 'preserve', 'request_id'},
     'compare': {'before', 'after'}, 'repair': {'request_id'}, 'revise-story': {'story_id', 'block_id', 'instruction'},
-    'library': {'picks'}, 'library-update': {'document'}, 'library-keep': {'export_id'},
+    'library': {'picks', 'acknowledge_warnings'}, 'library-update': {'document', 'revision', 'acknowledge_warnings'},
+    'library-keep': {'export_id'},
 }
 
 
@@ -115,11 +116,13 @@ def action(found, sent):
         # The shared Document Library: context is chosen, or a newer revision taken, only
         # when asked, and refused while work runs; nothing starts research or a provider.
         from . import library
-        busy = {'research': getattr(found, 'research', None), 'activity': getattr(found, 'activity', None)}
+        busy = {'research': getattr(found, 'research', None), 'activity': getattr(found, 'activity', None),
+                'acknowledge_warnings': sent.get('acknowledge_warnings', False)}
         if verb == 'library':
             return library.choose(store, ident, sent.get('picks'), expected_revision=revision, **busy)
         if verb == 'library-update':
-            return library.update(store, ident, sent.get('document'), expected_revision=revision, **busy)
+            return library.update(store, ident, sent.get('document'), sent.get('revision'),
+                                  expected_revision=revision, **busy)
         return library.keep(store, ident, sent.get('export_id'))
     if verb == 'source-import':
         from . import intake

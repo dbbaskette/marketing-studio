@@ -218,7 +218,7 @@ python3 runner/studio.py handoff-inventory --root /absolute/blogs --studio blog
 python3 runner/studio.py handoff-preview --root /absolute/blogs --studio blog --file ITEM/DRAFT.md --expected-sha256 HASH
 python3 runner/studio.py library-browse --query capacity --kind blog
 python3 runner/studio.py library ID --file picks.json --expected-revision REV
-python3 runner/studio.py library-update ID --document LIBRARY_ID --expected-revision REV
+python3 runner/studio.py library-update ID --document LIBRARY_ID --revision N --expected-revision REV
 python3 runner/studio.py research-task ID --source-mode selected
 python3 runner/studio.py research-preview ID --case /absolute/reviewed-case --source-mode selected
 ```
@@ -235,9 +235,14 @@ matching its hashes) before the infographic changes, then all are captured as `h
 sources in one new revision, or none are. The source keeps the library's readable
 Markdown and an upload's original bytes, with `provenance.library` naming the ID,
 revision and hashes, so the infographic keeps working if the library changes. Like any
-source change it clears the facts, story and page built from earlier sources. A document
-already chosen is refused. `inspect ID` lists `library.sources` with each one's newest
-library revision; `library-update` takes it only when asked. Both are refused while a
+source change it clears the facts, story, page and approval built from earlier sources,
+so tell the person before adding to work that has them. A revision with extraction gaps
+is refused until the person has reviewed them and you add `--acknowledge-warnings`; the
+gaps stay with the source. A document already chosen is refused. `inspect ID` lists
+`library.sources` with each one's newest revision on this computer and a `state`
+(`current`, `update`, `unreadable`, `not-here` when it was added on another computer,
+`no-library`). `library-update` takes exactly `--revision N`, only when it is newer than
+the pinned one and only when asked. Both are refused while a
 page action, an image request (pending or uncertain) or research is running. Neither
 starts research, grants web access, changes research settings or sends text to an
 assistant.

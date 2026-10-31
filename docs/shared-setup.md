@@ -225,6 +225,8 @@ grants no web access and sends nothing to an assistant.
 | An infographic changes after approval | Its earlier approved files are not kept again; approve the current revision first |
 | A job is running on the deck (the chain draws, or a desk job runs) | Add from library and Use revision N are refused until it ends; the job keeps the sources it started with |
 | Work is running on an infographic (a page action, an image request pending or uncertain, or research) | Add from library and Use revision N are refused until it ends |
+| An infographic has facts, a page or an approval | Add from library and Use revision N say what will be cleared and ask first |
+| A chosen revision has extraction gaps (Infographic Studio) | Refused until the person confirms using only its readable text; the gaps stay on the source |
 | Use selected is still landing | The sheet's Cancel, Close and Escape wait |
 | A newer revision, in Blog Studio | The desk source says Update available; **Use revision N** gives the blog's file a new source revision and the blog pins it. Refused while a desk job runs |
 
