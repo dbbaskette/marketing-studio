@@ -813,6 +813,25 @@ async function app(file) {
   vm.runInContext(fs.readFileSync(panels, 'utf8'), context, { filename: 'deck-panels.js' });
   const lists = path.join(PAGE, '..', 'studio_core', 'deck_web', 'lists.js');
   vm.runInContext(fs.readFileSync(lists, 'utf8'), context, { filename: 'lists.js' });
+  // The Document Library's sheet is the shared core's, checked on its own by the
+  // repository's tests/library_page_check.js. A plan with {library: picks} stands in for it,
+  // as Training Studio's harness does: Add from library hands the page those picks as Use
+  // selected does, and the report says which studio asked and where focus went afterwards.
+  if (plan.library) {
+    window.StudioLibrary = { pick: async (adapter) => {
+      report.library = [...(report.library || []), { studio: adapter.studio, max: adapter.max }];
+      try {
+        await adapter.use(plan.library);
+      } catch (failure) {
+        report.library[report.library.length - 1].refused = failure.message;
+        return false;
+      }
+      const back = adapter.refocus && adapter.refocus();
+      if (back) back.focus();
+      report.library[report.library.length - 1].refocus = back ? back.dataset.key : null;
+      return true;
+    } };
+  }
   // The shared desk kit (drafting.js, linked from ui-kit), then the page, then the deck desk,
   // in the order index.html loads them. A plan with {research: true} loads the shared source
   // editor (research.js) first, as the page does: Research first then offers it, and asks

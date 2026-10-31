@@ -48,6 +48,15 @@ const key=(editor,k)=>all(editor.node).find(n=>n.dataset.key===k);
  assert.ok(key(policy,'research-external'));assert.ok(key(policy,'research-workers'));
  assert.equal(policy.valid(true),true);assert.equal(policy.choice(true).documents,true);
  assert.equal(policy.valid(false),false,'external-only policy cannot invent a primary source');
+ // Add from library, for a studio whose adapter turns it on: its button beside the others, and what it chose under the list in place of the empty line.
+ assert.equal(key(editor,'research-library'),undefined,'Add from library is off unless the studio turns it on');
+ let opened=0,chosen=null;
+ const library=new kit.Editor({request,value:{...state,sources:[]},library:()=>{opened+=1;},extra:()=>chosen});
+ key(library,'research-library').listeners.click();assert.equal(opened,1);
+ assert.ok(all(library.node).some(n=>n.textContent==='Add material here, or allow external search below.'));
+ chosen=Object.assign(new Node('ul'),{className:'research-source-list'});chosen.append('Synthetic library brief');library.render();
+ assert.ok(all(library.node).some(n=>n.textContent==='Synthetic library brief'));
+ assert.equal(all(library.node).some(n=>n.textContent==='Add material here, or allow external search below.'),false);
  // Keep in library, for a studio whose adapter turns it on: Keep in library first, Only this project on request, a retry when the library refused.
  const kept=[];let keepState={id:'keeping',revision:'0',external:false,restricted:false,workers:3,focus:'',sites:[],sources:[]};
  const keeping=new kit.Editor({keepChoice:true,request:async sent=>{kept.push(sent);if(sent.action==='capture')keepState.sources.push({id:'k'+keepState.sources.length,name:sent.name,kind:'file',status:'ready'});

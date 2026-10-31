@@ -163,7 +163,10 @@ class MarkupTests(unittest.TestCase):
     def test_a_document_is_drawn_by_the_vendored_markdown_only(self):
         script = read('app.js')
         self.assertIn('window.StudioMarkdown.render(', script)
-        self.assertEqual(script.count('.render('), 1)
+        self.assertEqual(script.count('StudioMarkdown.render('), 1)
+        # The only other render is the shared source editor drawing itself again.
+        self.assertEqual(set(re.findall(r'(\w+)\.render\(', script)),
+                         {'StudioMarkdown', 'editor'})
 
     def test_the_page_reads_the_shared_renderer_by_its_own_name(self):
         script = read('app.js')

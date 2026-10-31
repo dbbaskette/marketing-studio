@@ -186,6 +186,13 @@ file in the library, so any studio can use it. The deck has the same copy either
 way, and neither choice shares it with anyone. If the library can't keep it, the
 card says so, and the deck still has the source. Pasted text stays with the deck.
 
+New deck offers the same choices. With **Research first**, **Your sources** has
+**Add from library** beside links, files, pasted text and saved research, and a
+file you choose there offers **Keep in library** or **Only this project**. A
+library document chosen there is copied into the deck as a source when it starts.
+On the desk, the Sources card lists every source research and the words jobs
+read, including the ones given at the start.
+
 Adding a source starts no research. After delivery, the deck's slide outline is
 kept in the library as Markdown, with the deck's PDF. The PDF is the one Harness
 Slides rendered of the delivered deck when it was last previewed. It is kept, and

@@ -3055,7 +3055,7 @@ function looksOf(draft) {
 
 // The choice as the runner takes it: research_from.
 function researchFromOf(draft) {
-  if (draft.sourceEditor) return draft.sourceEditor.choice(draft.route === 'document');
+  if (draft.sourceEditor) return draft.sourceEditor.choice(givenWith(draft));
   const looks = looksOf(draft);
   return { documents: draft.route === 'document' && looks.documents,
     sites: looks.sitesOn ? looks.sites.filter((one) => one.on).map((one) => one.url) : [],
@@ -3081,7 +3081,7 @@ function researchSummary(from) {
 
 // Why the choice cannot be used, or nothing when it can.
 function researchProblem(draft) {
-  if (draft.sourceEditor) return draft.sourceEditor.valid(draft.route === 'document') ? '' : 'Add readable sources or allow additional external search before starting.';
+  if (draft.sourceEditor) return draft.sourceEditor.valid(givenWith(draft)) ? '' : 'Add readable sources or allow additional external search before starting.';
   const looks = looksOf(draft);
   const from = researchFromOf(draft);
   if (looks.sitesOn && !from.sites.length) return RESEARCH_NO_SITES;
@@ -3117,12 +3117,82 @@ async function addSite(draft) {
   focusKey('research-site');
 }
 
+// Whether research has the person's own material besides the source editor's: the deck's
+// document, or documents chosen from the library.
+function givenWith(draft) {
+  return draft.route === 'document' || libraryPicks(draft).length > 0;
+}
+
+// The Document Library's documents chosen at the start, each {id, revision, title}: pinned
+// as the deck's sources when it starts, as Add from library on the desk pins them.
+function libraryPicks(draft) {
+  if (!Array.isArray(draft.library)) draft.library = [];
+  return draft.library;
+}
+
+// Add from library, in the source editor: the shared sheet (library.js). Each chosen
+// revision is read once, for its title and to refuse one with no readable text, and is
+// held until Start; nothing is sent to the deck before then.
+function pickLibrary(draft, editor) {
+  if (!window.StudioLibrary) {
+    say(byId('research-from-problem'), 'The Document Library could not be loaded. Reload the '
+      + 'page.');
+    return;
+  }
+  const held = libraryPicks(draft);
+  window.StudioLibrary.pick({
+    studio: 'presentation', max: Math.max(1, 40 - held.length),
+    post: (route, body) => send(route, body),
+    refocus: () => document.querySelector('[data-key="research-library"]'),
+    use: async (picks) => {
+      const found = [];
+      for (const pick of picks) {
+        const read = await send('library-document', { id: pick.id, revision: pick.revision });
+        if (!read.readable) {
+          throw new Error('"' + (read.title || 'That document') + '" has no text that can be '
+            + 'read. Choose another.');
+        }
+        found.push({ id: pick.id, revision: pick.revision, title: read.title || 'Untitled' });
+      }
+      const chosen = new Set(found.map((one) => one.id));
+      draft.library = [...held.filter((one) => !chosen.has(one.id)), ...found];
+      editor.render();
+      editor.changed();
+      toast(found.length === 1 ? 'It is added. It becomes a source of the deck when it starts.'
+        : found.length + ' documents are added. They become sources of the deck when it starts.');
+    },
+  });
+}
+
+// The library's documents chosen so far, under the source editor's own list, each with
+// Remove.
+function libraryList(draft, editor) {
+  const held = libraryPicks(draft);
+  if (!held.length) return null;
+  return add(make('ul', 'research-source-list'), ...held.map((one) => {
+    const remove = button('Remove', 'button button-quiet', () => {
+      draft.library = held.filter((other) => other.id !== one.id);
+      editor.render();
+      editor.changed();
+      focusKey('research-library');
+    }, 'research-library-remove-' + one.id);
+    remove.setAttribute('aria-label', 'Remove ' + one.title);
+    return add(make('li', 'research-source-row'), add(make('div', 'research-source-copy'),
+      make('p', 'row-title', one.title), make('p', 'quiet', 'From the Document Library, '
+        + 'revision ' + one.revision)), remove);
+  }));
+}
+
 // Research from: ☑ your documents ☑ your sites (3) ☐ the public web. With your sites on,
 // a tick for each site and a box to add one for this deck.
 function researchFromField(draft) {
   if (typeof StudioResearch !== 'undefined') {
     if (!draft.sourceEditor) draft.sourceEditor = new StudioResearch.Editor({
       request: sent => send('research-sources', sent),
+      // An uploaded file is kept in the Document Library too, unless Only this project.
+      keepChoice: true,
+      library: (editor) => pickLibrary(draft, editor),
+      extra: (editor) => libraryList(draft, editor),
       onChange: () => {
         if (draft.retell) draft.retell();
         // A refusal Start said beside the sources goes once they can be used.
@@ -3299,7 +3369,13 @@ async function startDeck(pressed, how) {
   say(problem, '');
   let started;
   try {
-    started = await send('decks', { form, uploads, ...(draft.sourceEditor ? {research_inputs: draft.sourceEditor.spec()} : {}) });
+    // The source editor's draft goes with a researched deck, and so do the library's
+    // documents chosen beside it.
+    const sourced = draft.sourceEditor && form.research;
+    const picked = sourced ? libraryPicks(draft).map(({ id, revision }) => ({ id, revision })) : [];
+    started = await send('decks', { form, uploads,
+      ...(sourced ? { research_inputs: draft.sourceEditor.spec() } : {}),
+      ...(picked.length ? { library: picked } : {}) });
   } catch (failure) {
     draft.starting = false;
     pressed.disabled = false;

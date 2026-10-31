@@ -154,6 +154,9 @@ const StudioResearch = (() => {
       file.addEventListener('change', () => this.files(file.files));
       const actions = add(make('div', 'bar'), button('Choose files', () => file.click(), 'research-files'),
         button(this.pasting ? 'Close pasted text' : 'Paste text', () => { this.pasting = !this.pasting; this.render(); }, 'research-paste'));
+      // Optional, per studio: Add from library, which the studio's own adapter opens (the
+      // shared StudioLibrary.pick) and whose picks it lists under the sources (`extra`).
+      if (this.a.library) actions.append(button('Add from library', () => this.a.library(this), 'research-library'));
       actions.append(button('Use saved research', async () => {
         if (this.a.savedResearch) return this.a.savedResearch(this);
         try { this.saved = await this.a.request({action:'saved'}); this.render(); }
@@ -167,8 +170,9 @@ const StudioResearch = (() => {
         add(panel, name.wrap, text.wrap, button('Add text', async () => { if (await this.act('capture', {kind: 'text', name: this.name, text: this.text})) { this.text = ''; this.pasting = false; this.render(); } }, 'research-add-text'));
       }
       const list = make('ul', 'research-source-list'); for (const source of array(state && state.sources)) list.append(this.source(source));
-      if (!state || !state.sources.length) list.append(make('li', 'quiet', state ? 'Add material here, or allow external search below.' : 'Loading the source draft…'));
-      add(panel, list); this.node.append(panel);
+      const extra = this.a.extra ? this.a.extra(this) : null;
+      if (!state || (!state.sources.length && !extra)) list.append(make('li', 'quiet', state ? 'Add material here, or allow external search below.' : 'Loading the source draft…'));
+      add(panel, list, extra); this.node.append(panel);
       }
       if (this.saved && !this.a.policyOnly) {
         const choices = add(make('section', 'paper stack'), make('h3','card-title','Saved research'));

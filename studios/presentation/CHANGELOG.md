@@ -5,6 +5,31 @@ making decks first, then what changes for maintainers.
 
 ## Unreleased
 
+- **The start's sources match the desk's Sources card.** With **Research
+  first**, **Your sources** on New deck now offers **Add from library**, and a
+  file chosen there offers **Keep in library** (the default) or **Only this
+  project**, as the desk does. A library document chosen at the start is
+  copied into the deck as a source when it starts, and counts as research's
+  own material, so no other source is needed. On the desk, the Sources card
+  lists every source research and the words jobs read: the sources given at
+  the start say "given at the start, for research", and the card's count
+  matches the Research card's. The words jobs and speaker notes now read those
+  sources too. A library document beside a deck's own document is never taken
+  for it, or classified as it.
+
+  For maintainers: `/api/decks` takes `library` ([{id, revision}]) with a
+  researched deck from an idea or a document. It is pinned with `context.pin`
+  before the deck runs, all or none, and is part of the start's receipt.
+  `/api/research-sources` goes through `runner/source_keep.py`, which takes
+  `keep` with a file capture and `library-keep`, as Training Studio's does. It
+  uses `desk_actions.library_upload`, so the start and the desk keep one
+  library document for one file. The desk view's `sources` adds
+  `research_input` entries from `research_sources.document_entries`.
+  `intake.document_taken` and `classify_work` skip library pins.
+  `ui-kit/research.js` takes two optional adapter hooks, `library` (an Add
+  from library button) and `extra` (a node under the list); other studios are
+  unchanged. Part of #255.
+
 - **The New deck heading hides what scrolls under it.** The sheet's sticky
   heading was slightly see-through, left a gap above it, and was drawn under
   choices such as **Pick it when the samples are drawn**, so text showed

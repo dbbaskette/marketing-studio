@@ -1492,6 +1492,8 @@
       listed.length ? h.bullets(listed.map((one) => (one.title || one.name)
         + (one.library ? ' · from the library, revision ' + one.library.revision
           + (one.update ? ' (revision ' + one.library_head + ' is available)' : '') : '')
+        // A source research was given at the start says so.
+        + (one.given ? ' · ' + one.given : '')
         + (one.readable ? '' : ': ' + (one.problem || 'it has no text that can be read.'))))
         : make('p', 'quiet', 'No sources yet.'),
       ...libraryParts(run, path, listed, problem),

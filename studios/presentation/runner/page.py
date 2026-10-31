@@ -414,8 +414,10 @@ class RunnerPage(server.Page):
                 raise server.Refusal(HTTPStatus.BAD_REQUEST, str(error)) from None
         if path == '/api/research-sources':
             from studio_core.research_sources import Sources
+            from runner import source_keep
             try:
-                return server.as_json(HTTPStatus.OK, Sources(self.engine.space().root / '.research-sources').dispatch(sent))
+                return server.as_json(HTTPStatus.OK, source_keep.research_sources(
+                    Sources(self.engine.space().root / '.research-sources'), sent))
             except ValueError as error:
                 raise server.Refusal(HTTPStatus.BAD_REQUEST, str(error)) from None
         self.engine.seen()
@@ -554,7 +556,8 @@ class RunnerPage(server.Page):
         brands = self.engine.brands() if self.engine.workspace is not None else None
         if brands is not None and not sent.get('research_inputs'):   # source-backed forms are checked with their trusted references by the engine
             shaped(decks.check_form, form, brands)
-        return self.engine.start(form, uploads, research_inputs=sent.get('research_inputs'))
+        return self.engine.start(form, uploads, research_inputs=sent.get('research_inputs'),
+                                 library=sent.get('library'))
 
     def picture_given(self, sent: dict) -> dict:
         """A picture the person gives one slide at the outline stop: {"path", "slide",

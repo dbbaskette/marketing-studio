@@ -139,6 +139,8 @@ import home
 import hub
 from workspace import WorkspaceError, write_atomic
 from studio_core.process_lock import ProcessRLock
+from studio_core.document_library import LibraryError
+from studio_core.document_library import context as library_context
 from studio_core.shared_runner.write_markers import defer_share, mark_step
 
 from runner import agents, companion, decks, desk, documents, gitstate, marks, settings, stages
@@ -773,21 +775,28 @@ class Engine(Jobs, Researching, DeskActions):
     # --- starting and picking up -------------------------------------------------------------
 
     def start(self, form: dict, uploads: dict | None = None, *,
-              execution: str = 'runner', scope=None, research_inputs=None, _source_start=None) -> dict:
+              execution: str = 'runner', scope=None, research_inputs=None, library=None,
+              _source_start=None) -> dict:
         """Make a deck from the form as the page sent it, and start its run. `uploads` maps
-        an uploaded file's name to its bytes. Returns {'path', 'id'}."""
+        an uploaded file's name to its bytes. `library` is the Document Library's revisions
+        chosen at the start ([{'id', 'revision'}]), pinned as the deck's sources before it
+        runs, all or none, as Add from library pins them on the desk. Returns {'path', 'id'}."""
+        if library is not None:
+            library = self._start_library(form, library)
         if research_inputs and execution == 'runner' and _source_start is None:
             try:
                 upload_hashes = {name: hashlib.sha256(raw).hexdigest() for name, raw in (uploads or {}).items()}
                 with research_sources.Start(self.space().root, research_inputs,
-                        {'product':'Presentation Studio','form':form,'uploads':upload_hashes}) as start:
+                        {'product':'Presentation Studio','form':form,'uploads':upload_hashes,
+                         **({'library': library} if library else {})}) as start:
                     previous = start.previous()
                     if previous:
                         self._load(Path(previous['path']))
                         self.wake(Path(previous['path']))
                         return previous
                     return self.start(form, uploads, execution=execution, scope=scope,
-                                      research_inputs=research_inputs, _source_start=start)
+                                      research_inputs=research_inputs, library=library,
+                                      _source_start=start)
             except ValueError as error:
                 raise WorkspaceError(str(error)) from error
         if not isinstance(form, dict):
@@ -802,11 +811,15 @@ class Engine(Jobs, Researching, DeskActions):
         if execution != 'runner':
             raise WorkspaceError('Choose runner or conversation execution.')
         space, chosen = self.space(), settings.load()
-        selected_sources = research_sources.prepare_start(space.root, research_inputs, primary=form.get('route') == 'document') if research_inputs and form.get('research') and form.get('route') != 'existing' else None
+        # The deck's document, or documents pinned from the library, are research's own
+        # material besides the source editor's.
+        primary = form.get('route') == 'document' or bool(library)
+        selected_sources = research_sources.prepare_start(space.root, research_inputs, primary=primary) if research_inputs and form.get('research') and form.get('route') != 'existing' else None
         if selected_sources:
             form = {**form, 'research_from': selected_sources['research_from']}
         gitstate.identity(space.repo)
-        checked = decks.check_form(form, self.brands(), references=bool(selected_sources and selected_sources['sources']))
+        checked = decks.check_form(form, self.brands(), references=bool(
+            selected_sources and selected_sources['sources']) or bool(library))
         given = self._given(form, checked, uploads or {})
         named = isinstance(form, dict) and form.get('agent') not in (None, '')
         agent = settings.check_agent(form['agent']) if named else chosen.agent
@@ -840,6 +853,11 @@ class Engine(Jobs, Researching, DeskActions):
                                      'Open the current workspace and try again.')
             root = decks.create(space, checked)
             try:
+                if library:
+                    try:
+                        library_context.pin(documents, root, library)
+                    except LibraryError as refusal:
+                        raise WorkspaceError(str(refusal)) from None
                 for name, data in given.items():
                     target = root / INCOMING / name
                     target.parent.mkdir(parents=True, exist_ok=True)
@@ -874,6 +892,22 @@ class Engine(Jobs, Researching, DeskActions):
         if _source_start is not None: _source_start.keep(result)
         self.wake(root)
         return result
+
+    @staticmethod
+    def _start_library(form, picks) -> list:
+        """The library's revisions chosen at the start, checked before anything is made:
+        each by its ID and revision, once, and only for a deck that is researched from an
+        idea or a document, where the start's sources are offered."""
+        if not picks:
+            return []
+        form = form if isinstance(form, dict) else {}
+        if form.get('route') == 'existing' or not form.get('research'):
+            raise WorkspaceError('Documents from the library are added at the start only with '
+                                 'Research first, for a deck from an idea or a document. Add '
+                                 'them on the desk otherwise.')
+        if not isinstance(picks, list):
+            raise WorkspaceError('Choose each document by its library ID and revision.')
+        return picks
 
     @staticmethod
     def _given(form: dict, checked: dict, uploads: dict) -> dict:
@@ -1178,7 +1212,7 @@ class Engine(Jobs, Researching, DeskActions):
             lacks = did('intake-source') and (
                 (route == 'existing' and not (root / existing.SOURCE).is_file())
                 or (route == 'document' and gate_state(record, 'gate:outline') != 'approved'
-                    and not any(entry['readable'] for entry in documents.listed(root))))
+                    and not intake.document_taken(root)))
             if lacks and source.get('kind') != 'google':
                 self._problem(root, 'intake-source', 'stopped', GIVEN_ELSEWHERE.format(
                     how='pasted' if source.get('kind') == 'paste' else 'uploaded'),
@@ -1608,7 +1642,7 @@ class Engine(Jobs, Researching, DeskActions):
         route, source = record['route'], dict((record['form'].get('source') or {}))
         incoming = root / INCOMING
         if route == 'document':
-            if not any(entry['readable'] for entry in documents.listed(root)):
+            if not intake.document_taken(root):
                 if source.get('kind') == 'upload':
                     source['data'] = (incoming / 'upload').read_bytes()
                 elif source.get('kind') == 'paste':

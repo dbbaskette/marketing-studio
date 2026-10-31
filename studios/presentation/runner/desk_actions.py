@@ -27,7 +27,7 @@ import home
 from workspace import WorkspaceError, write_atomic
 
 from runner import briefs, decks, desk, documents, gitstate, library_keep, marks, stages
-from studio_core import deck_content, document_library, research_view
+from studio_core import deck_content, document_library, research_sources, research_view
 from studio_core.document_library import LibraryError
 from studio_core.document_library import context as library_context
 from studio_core.drafting import prompts
@@ -50,6 +50,8 @@ PASTED = 'Pasted text'
 SOURCES_TOLD = ('The person\'s own sources are in your input "sources". Add only what they, '
                 'the slide or the outline support.')
 CHECK_BUSY = 'The deck is being redrawn now. Check it again when that ends.'
+# What the desk says of a source supplied with research at the start.
+GIVEN_AT_START = 'given at the start, for research'
 REVIEW_BUSY = 'The deck is being redrawn now. Review it when that ends.'
 REVIEW_DELIVERED = ('This deck is delivered as it is. A change here makes the next revision: '
                     'review that one before you deliver it.')
@@ -63,6 +65,19 @@ AGAIN = 3   # chains one rest on the desk may run for notes that came while it w
 # asked to draw the deck here. Both are this computer's only.
 BEFORE = Path('work') / 'desk' / 'patch-before.json'
 DRAW_HERE = Path('work') / 'desk' / 'draw-here'
+
+
+def library_upload(name, data: bytes, title=None) -> dict:
+    """Keep a file in the Document Library on this computer, as Presentation Studio's: its
+    row, or LibraryError or OSError. The same file under the same name and title, sent again
+    (a retried request, a source removed and added again, or a file kept at the start and
+    again on the desk), is the same library document: its operation ID is made from them."""
+    operation = hashlib.sha256(
+        b'presentation-upload\0' + str(name).encode('utf-8') + b'\0'
+        + str(title or '').encode('utf-8') + b'\0'
+        + hashlib.sha256(data).digest()).hexdigest()[:32]
+    return document_library.opened(create=True).add_upload(
+        name, data, title=title, operation=operation, studio='presentation')
 
 
 class DeskActions:
@@ -205,7 +220,10 @@ class DeskActions:
                 'notes_locked': desk.OWN_NOTES if desk.selected(record) else None,
                 # Each source pinned from the Document Library says whether a newer revision
                 # is there; the deck keeps reading its own copy either way.
-                'sources': library_context.marked(documents.listed(root)),
+                # Research's sources supplied at the start are listed with them: each one
+                # research and the words jobs read is here.
+                'sources': [*library_context.marked(documents.listed(root)),
+                            *self._start_sources(root, record)],
                 'library': library_keep.status(root) if decks.delivered(root) else None,
                 **self._desk_research_view(root, record),
                 **self._desk_finishing_view(root, record, state, shown)}
@@ -767,7 +785,7 @@ class DeskActions:
             if error:
                 told.append(f'An earlier try at this job did not work: {error}\n'
                             'Take care not to end the same way.')
-            read = self._desk_sources(root) if job['action'] == 'expand' else ''
+            read = self._desk_sources(root, record) if job['action'] == 'expand' else ''
             if read:
                 told.append(SOURCES_TOLD)
             told.append('Hand back the replacement for the passage with submit_artifact under '
@@ -816,10 +834,28 @@ class DeskActions:
                     self._commit(root, 'the change to the words is done')
 
     @staticmethod
-    def _desk_sources(root) -> str:
-        """The person's readable sources as one input, each under its title: '' for none."""
-        return '\n\n'.join(f"# {one['title']}\n\n{one['text'].strip()}"
-                           for one in documents.sources(root)[1])
+    def _start_sources(root, record: dict) -> list[dict]:
+        """The sources research was given at the start (the source editor's draft, kept with
+        the deck), as the Sources card lists a source: each with its name, whether it can be
+        read and, when it cannot, why."""
+        return [{'name': one['name'], 'title': one['name'], 'readable': one['readable'],
+                 'problem': one.get('problem'), 'research_input': True,
+                 'given': GIVEN_AT_START}
+                for one in research_sources.document_entries(root, record.get('research_inputs'))]
+
+    @staticmethod
+    def _desk_sources(root, record: dict | None = None) -> str:
+        """The person's readable sources as one input, each under its title: '' for none.
+        With the deck's record, the sources research was given at the start are read too, as
+        research reads them; one this computer no longer has is left out."""
+        found = list(documents.sources(root)[1])
+        saved = (record or {}).get('research_inputs')
+        if saved:
+            try:
+                found += research_sources.sources(root, saved)[1]
+            except (OSError, ValueError):
+                pass
+        return '\n\n'.join(f"# {one['title']}\n\n{one['text'].strip()}" for one in found)
 
     def desk_notes(self, path, number, text, seen, session=None) -> dict:
         """A slide's speaker notes, saved as its words are, with no composer."""
@@ -1409,12 +1445,7 @@ class DeskActions:
         sent again (a retried request, or a source removed and added again) is the same
         library document: its operation ID is made from them."""
         try:
-            operation = hashlib.sha256(
-                b'presentation-upload\0' + str(name).encode('utf-8') + b'\0'
-                + str(title or '').encode('utf-8') + b'\0'
-                + hashlib.sha256(data).digest()).hexdigest()[:32]
-            row = document_library.opened(create=True).add_upload(
-                name, data, title=title, operation=operation, studio='presentation')
+            row = library_upload(name, data, title)
         except (LibraryError, OSError) as failure:
             return {'state': 'failed', 'problem': NOT_KEPT.format(why=str(failure)[:300])}
         return {'state': 'kept', 'id': row['id'], 'revision': row['revision']}
@@ -1652,7 +1683,7 @@ class DeskActions:
             outline = desk._outline(root)
             slides = finishing.notes_slides(outline)
             minutes = (record.get('form') or {}).get('minutes')
-            read = self._desk_sources(root)
+            read = self._desk_sources(root, record)
             title = record.get('title') or 'the deck'
             told = [(f'Propose speaker notes for every slide of "{title}": what the speaker '
                      'says while the slide is shown. Your input "slides" has each slide\'s ID, '
