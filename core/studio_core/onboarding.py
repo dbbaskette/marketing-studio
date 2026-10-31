@@ -100,6 +100,8 @@ class Controller:
             return status, kind, data
         except self.protocol.Refusal as failure:
             return self.protocol.as_json(failure.status, {'error': str(failure)})
+        except preferences.Conflict as failure:
+            return self.protocol.as_json(409, {'error': str(failure), 'conflict': {'fields': failure.fields}})
         except ValueError as failure:
             return self.protocol.as_json(409, {'error': str(failure)})
 

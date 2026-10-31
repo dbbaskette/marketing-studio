@@ -48,11 +48,73 @@ const modelPickers = new Map(), catalogs = {};
 const customModel = '__manual model__';
 let modelRequest = 0;
 const calm = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-function inform(message, error = false) {
-  if (error) { const node = $('#problem'); node.textContent = message; node.hidden = false; return; }
+// The problem notice belongs to the screen that raised it: it clears when the person leaves
+// that screen or its action next succeeds, and Dismiss clears it by hand. `newer` offers Load
+// newer settings, for a save someone else's change refused.
+let problemView = null;
+function inform(message, error = false, newer = false) {
+  if (error) {
+    problemView = view;
+    $('#problem-text').textContent = message;
+    $('#problem-newer').hidden = !newer;
+    $('#problem').hidden = false;
+    return;
+  }
   // Toasts are timed as they are in every studio; anything with a link stays in #message.
   const node = element('p', message, 'toast glass'); $('#toasts').append(node);
   setTimeout(() => { node.classList.add('toast-leaving'); setTimeout(() => node.remove(), calm() ? 0 : 260); }, 4200);
+}
+function clearProblem() {
+  problemView = null;
+  $('#problem').hidden = true;
+  $('#problem-text').textContent = '';
+  $('#problem-newer').hidden = true;
+}
+$('#problem-dismiss').addEventListener('click', () => { clearProblem(); $('#view-title').focus({preventScroll: true}); });
+// A long action keeps its button: still focusable and named, marked busy, its label saying
+// what runs. The returned function ends it. A busy button ignores another press.
+function busy(button, words) {
+  const label = button.textContent;
+  button.setAttribute('aria-disabled', 'true'); button.dataset.busy = 'true'; button.textContent = words;
+  $('#announce').textContent = words;
+  return () => { button.removeAttribute('aria-disabled'); delete button.dataset.busy; if (button.textContent === words) button.textContent = label; };
+}
+const isBusy = button => button.dataset.busy === 'true';
+// A value the form cannot send is marked at its field, which takes focus, rather than in the
+// notice at the top of the page.
+function fieldProblem(name, message) {
+  const failure = new Error(message); failure.field = form.elements[name]; return failure;
+}
+function markInvalid(input, message) {
+  const id = `${input.id}-error`;
+  let note = $(`#${id}`);
+  if (!note) { note = element('p', '', 'field-hint problem'); note.id = id; input.after(note); }
+  note.textContent = message;
+  input.setAttribute('aria-invalid', 'true');
+  const described = (input.getAttribute('aria-describedby') || '').split(' ').filter(Boolean);
+  if (!described.includes(id)) input.setAttribute('aria-describedby', [id, ...described].join(' '));
+  input.addEventListener('input', () => clearInvalid(input), {once: true});
+  input.focus();
+}
+function clearInvalid(input) {
+  const id = `${input.id}-error`;
+  input.removeAttribute('aria-invalid');
+  $(`#${id}`)?.remove();
+  const described = (input.getAttribute('aria-describedby') || '').split(' ').filter(word => word && word !== id);
+  if (described.length) input.setAttribute('aria-describedby', described.join(' ')); else input.removeAttribute('aria-describedby');
+}
+// First-run setup remembers its step in this tab, so a reload resumes where the person was.
+const stepKey = sessionKey + '-setup-step';
+function rememberStep() {
+  try { if (setup) sessionStorage.setItem(stepKey, String(step)); else sessionStorage.removeItem(stepKey); } catch (failure) {}
+}
+function resumeStep(shared) {
+  let at = 0;
+  try { at = Number(sessionStorage.getItem(stepKey) || 0); } catch (failure) {}
+  if (!Number.isInteger(at) || at < 0 || at > 2) at = 0;
+  // The last step needs the workspace an earlier step saved; another tab may have reset it.
+  if (at === 2 && !(shared?.team?.repository || shared?.local?.root)) at = 1;
+  return at;
 }
 async function api(path, body) {
   let response;
@@ -64,7 +126,11 @@ async function api(path, body) {
     throw new Error(`This page has lost touch with ${product}, so it cannot read or save anything. Run ${standalone ? 'the studio command' : 'marketing-studio'} again in your terminal and use the new link.`);
   }
   const result = await response.json();
-  if (!response.ok) throw new Error(result.error || 'This request could not be completed.');
+  if (!response.ok) {
+    // The refusal's other words, such as which settings conflict, stay with it.
+    const failure = new Error(result.error || 'This request could not be completed.');
+    failure.answer = result; throw failure;
+  }
   return result;
 }
 function syncSegments() {
@@ -86,6 +152,8 @@ function show(next) {
   window.scrollTo(0, 0);
   const previousView=view;
   view = setup ? 'settings' : next;
+  // A problem describes the screen that raised it, and is not carried to another.
+  if (problemView !== null && problemView !== view) clearProblem();
   if(view==='home'&&previousView!=='home'&&snapshot)void refreshHomeStatus();
   // Leaving the form keeps what was typed on it; say so, since nothing was saved.
   if (previousView === 'settings' && view !== 'settings' && unsaved()) inform('Your shared settings changes are not saved yet. They stay on the Shared settings page until you save or reload.');
@@ -112,6 +180,8 @@ function show(next) {
   $('#step-label').hidden = true;
   // This computer's one action is its toolbar's.
   $('#check').hidden = view !== 'computer';
+  // The Library's one filled action is its toolbar's too: Add documents.
+  $('#library-add-open').hidden = view !== 'library';
   $('#setup-progress').hidden = !setup;
   $('#setup-progress').querySelectorAll('li').forEach((node, index) => {
     if (index === step) node.setAttribute('aria-current', 'step'); else node.removeAttribute('aria-current');
@@ -120,7 +190,7 @@ function show(next) {
   // Blog Studio's own first run asks only what Blog Studio uses.
   $('#delivery-part').hidden = blogAlone() || (setup && step !== 2);
   $('#back').hidden = !setup || step === 0;
-  $('#save').textContent = setup ? (step === 2 ? 'Finish setup' : 'Continue') : 'Save settings';
+  if (!isBusy($('#save'))) $('#save').textContent = saveWords();
   $('#installations').hidden = setup || standalone;
   // Setup asks the four everyday choices; section links, owners and Advanced come after it.
   $('#settings-nav').hidden = setup;
@@ -131,7 +201,6 @@ function show(next) {
   for (const name of ['save-bar', 'glass']) $('#save-bar').classList.toggle(name, !setup);
   if (standalone) {
     $('#prepare-note').textContent = 'Finish setup prepares this studio. Other studios will use these settings when you open them. Models and research sites are under Shared settings, Advanced, afterwards.';
-    $('#save').textContent = setup && step < 2 ? 'Continue' : `Save and open ${product}`;
   }
   $('#prepare-note').hidden = !setup || step !== 2;
   describeAdvanced(); saveState();
@@ -141,6 +210,11 @@ function show(next) {
   if (snapshot) $('#view-title').focus({preventScroll: true});
   // A moment after the focus move, so a screen reader does not drop it behind the title.
   setTimeout(() => { $('#announce').textContent = setup ? `Step ${step + 1} of 3: ${labels[step]}` : ''; }, 150);
+}
+// What Save says on this step: Continue, Finish setup, or Save settings.
+function saveWords() {
+  if (standalone) return setup && step < 2 ? 'Continue' : `Save and open ${product}`;
+  return setup ? (step === 2 ? 'Finish setup' : 'Continue') : 'Save settings';
 }
 function efforts(selected) {
   profileLevels(form.elements['assistant.effort'], selected, form.elements['assistant.model'].value);
@@ -487,7 +561,7 @@ function readinessBlock(studio) {
 // The recovery actions: shared settings, or a look at this computer that changes nothing.
 function recover(where) {
   show(where);
-  if (where === 'computer') void checkComputer();
+  if (where === 'computer') void checkComputer(true);
 }
 function renderReadinessSummary() {
   const installed = snapshot.studios.filter(studio => studio.installed);
@@ -562,7 +636,7 @@ function renderHome(refreshPaths = true) {
       const connect = element('button', 'Connect', 'button studio-connect button-filled'); connect.type = 'button';
       connect.setAttribute('aria-label', `Connect ${studio.name} to the shared storage`);
       connect.addEventListener('click', async () => {
-        connect.disabled = true; connect.textContent = 'Connecting…'; $('#problem').hidden = true; $('#message').hidden = true;
+        connect.disabled = true; connect.textContent = 'Connecting…'; clearProblem(); $('#message').hidden = true;
         try {
           snapshot = await api('connect', {studio: studio.id});
           const done = snapshot.connected; renderHome();
@@ -579,7 +653,7 @@ function renderHome(refreshPaths = true) {
       button.setAttribute('aria-label',label);
       button.addEventListener('click', async () => {
         if (inThisTab((query) => window.matchMedia(query).matches)) {
-          button.disabled = true; button.textContent = 'Opening…'; $('#problem').hidden = true;
+          button.disabled = true; button.textContent = 'Opening…'; clearProblem();
           try { location.href = withHome((await api('open', {studio: studio.id})).link, true); }
           catch (error) { inform(error.message, true); button.disabled = false; button.textContent = words; }
           return;
@@ -587,7 +661,7 @@ function renderHome(refreshPaths = true) {
         let blocked = false;
         // Reserve the named tab during the click so popup protection does not lose it.
         const tab = window.open('about:blank', `marketing-${studio.id}`);
-        button.disabled = true; button.textContent = 'Opening…'; $('#problem').hidden = true; $('#message').hidden = true;
+        button.disabled = true; button.textContent = 'Opening…'; clearProblem(); $('#message').hidden = true;
         try {
           const result = await api('open', {studio: studio.id});
           if (tab) tab.location.href = withHome(result.link);
@@ -608,9 +682,13 @@ function renderHome(refreshPaths = true) {
     list.append(card);
   }
   const network = snapshot.network;
-  $('#network-access').hidden = standalone || !network;
-  $('#network-link').value = network?.url || '';
   const remote = !['127.0.0.1', 'localhost', '[::1]'].includes(location.hostname);
+  // The way to the phone, and the terminal note, are this computer's. A phone gets one line.
+  $('#network-access').hidden = standalone || !network || remote;
+  $('#network-link').value = remote ? '' : network?.url || '';
+  $('#launch-note').hidden = remote;
+  $('#remote-note').hidden = !remote || standalone;
+  if (!standalone && !remote && network?.url) void drawLinkCode(network.url);
   $('#where').textContent = remote ? 'On your local network' : 'On this computer';
   const shared = snapshot.shared;
   const assistant = shared.assistant?.agent === 'codex' ? 'Codex' : 'Claude Code';
@@ -642,7 +720,7 @@ function wantedValues() {
     const local = form.elements.storage.value === 'local';
     wanted.local = {root: value('local.root') || '~/Studios'};
     wanted.team = {repository: local ? null : value('team.repository'), branch: value('team.branch') || 'main'};
-    if (!local && !wanted.team.repository) throw new Error('Give a repository address, or choose local Git.');
+    if (!local && !wanted.team.repository) throw fieldProblem('team.repository', 'Give a repository address, or choose local Git.');
     wanted.share = value('share');
   }
   if (!setup || step === 2) {
@@ -696,24 +774,143 @@ function folderChanges() {
 }
 const clock = () => new Date().toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'});
 form.addEventListener('submit', async event => {
-  event.preventDefault(); $('#save').disabled = true; $('#problem').hidden = true; saveState(true);
+  event.preventDefault();
+  const save = $('#save');
+  if (isBusy(save)) return;
+  const done = busy(save, setup && step === 2 ? 'Finishing…' : 'Saving…');
+  clearProblem(); saveState(true);
+  form.querySelectorAll('[aria-invalid="true"]').forEach(clearInvalid);
   try {
     const folders = folderChanges();
     const changes = changesForStep(); snapshot = await api('shared', {changes, seen: snapshot.shared});
+    clearConflicts();
     // One save: the folders go after the shared settings, and a refusal says what was kept.
     if (folders) {
       try { snapshot = await api('paths', {paths: folders}); }
       catch (error) { fill(); renderHome(); markSaved(); inform(`Your shared settings were saved. The installation folders were not: ${error.message}`, true); return; }
     }
-    if (setup && step < 2) { step++; show('settings'); }
-    else if (setup) { snapshot = await api('setup', {done: true, prepare: true}); if (standalone) return openNative(); setup = false; fill(); renderHome(); markSaved(); show('home'); showNotices(); inform('Your studios are ready.'); }
+    if (setup && step < 2) { step++; rememberStep(); show('settings'); }
+    else if (setup) { snapshot = await api('setup', {done: true, prepare: true}); if (standalone) return openNative(); setup = false; rememberStep(); fill(); renderHome(); markSaved(); show('home'); showNotices(); inform('Your studios are ready.'); }
     else { if (standalone) { await api('setup', {done: true}); markSaved(); return openNative(); } fill(); renderHome(); markSaved(clock());
       // The save bar already says Saved at…; a toast says only what still needs doing.
       const words = savedWords(); if (words !== 'Shared settings saved.') inform(words); }
-  } catch (error) { inform(error.message, true); }
-  finally { $('#save').disabled = false; saveState(); }
+  } catch (error) {
+    if (error.field) markInvalid(error.field, error.message);
+    else inform(error.message, true, Boolean(error.answer?.conflict));
+  }
+  finally { done(); save.textContent = saveWords(); saveState(); }
 });
-$('#back').addEventListener('click', () => { step--; show('settings'); });
+$('#back').addEventListener('click', () => { step--; rememberStep(); show('settings'); });
+// Load newer settings, after a save someone else's change refused: the config is read again,
+// the person's edits to values nobody else changed are kept, and each value both changed
+// shows the two side by side. Save stays pending, and the next save sends the newer `seen`.
+let conflictNotes = [];
+function clearConflicts() {
+  for (const {note, control} of conflictNotes) {
+    note.remove();
+    const described = (control.getAttribute?.('aria-describedby') || '').split(' ').filter(word => word && word !== note.id);
+    if (described.length) control.setAttribute('aria-describedby', described.join(' ')); else control.removeAttribute?.('aria-describedby');
+  }
+  conflictNotes = [];
+}
+function applyControls(values) {
+  for (const [name, value] of Object.entries(values)) if (form.elements[name]) form.elements[name].value = value;
+  // Choices that depend on the assistant or a model are rebuilt with the wanted levels.
+  efforts(values['assistant.effort'] ?? form.elements['assistant.effort'].value);
+  for (const name of profileNames) {
+    const effort = form.elements[`models.${name}.effort`], key = `models.${name}.effort`;
+    if (effort) profileLevels(effort, values[key] ?? effort.value, form.elements[`models.${name}.model`]?.value);
+  }
+  for (const picker of modelPickers.values()) renderModelPicker(picker);
+  storage(); profilesChanged(); saveState();
+}
+// How a value reads on the form: an option's words, or the text typed.
+function shownValue(control, value) {
+  if (Array.isArray(value)) return value.length ? value.map(siteShown).join(', ') : 'no sites';
+  const options = control?.options ? [...control.options] : control?.length ? [...control] : [];
+  const choice = options.find(item => item.value === value);
+  const words = String((choice ? choice.text || choice.parentElement?.textContent : value) || '').trim();
+  return words ? `“${words}”` : 'nothing';
+}
+function fieldLabel(name, control) {
+  if (name === 'research') return 'Research sites';
+  if (name === 'storage') return 'Workspace storage';
+  const label = control?.id && (document.querySelector(`label[for="${control.id}"]`)
+    || document.querySelector(`label[for="${control.id}-choice"]`));
+  return label?.textContent?.replace(/\s*\(optional\)\s*$/, '').trim() || name;
+}
+// A control a person can be sent to: a radio group's chosen button, or the control itself.
+function focusable(control) {
+  if (control?.focus) return control;
+  return control?.length ? [...control].find(item => item.checked) || control[0] : null;
+}
+function showConflict({name, theirs, mine}) {
+  const control = name === 'research' ? $('#research-site-input') : form.elements[name];
+  const anchor = name === 'storage' ? $('#remote-fields') : name === 'research' ? $('#research-site-table') : control;
+  if (!control || !anchor) return;
+  if (name === 'research') $('#research-more').open = true;
+  else if (control.closest?.('details')) control.closest('details').open = true;
+  const id = `conflict-${name.replaceAll('.', '-')}`, label = fieldLabel(name, control);
+  const note = element('div', '', 'paper callout conflict-note'); note.id = id; note.dataset.kind = 'yours';
+  note.append(element('p', `Saved in another tab or studio: ${shownValue(control, theirs)}. Yours: ${shownValue(control, mine)}. Save settings keeps yours.`));
+  const bar = element('div', '', 'bar'), use = element('button', 'Use the saved value', 'button');
+  use.type = 'button'; use.setAttribute('aria-label', `Use the saved value for ${label}`);
+  use.addEventListener('click', () => {
+    if (name === 'research') { researchSites = [...theirs]; renderSites(); } else applyControls({[name]: theirs});
+    note.remove(); conflictNotes = conflictNotes.filter(held => held.note !== note);
+    (focusable(control) || $('#save')).focus();
+    saveState();
+  });
+  bar.append(use); note.append(bar);
+  (name === 'storage' ? anchor.before.bind(anchor) : anchor.after.bind(anchor))(note);
+  const described = focusable(control);
+  if (described) {
+    const ids = (described.getAttribute('aria-describedby') || '').split(' ').filter(Boolean);
+    described.setAttribute('aria-describedby', [id, ...ids].join(' '));
+  }
+  conflictNotes.push({note, control: described || control, label});
+}
+async function loadNewer() {
+  const button = $('#problem-newer');
+  if (isBusy(button)) return;
+  const done = busy(button, 'Loading newer settings…');
+  const base = JSON.parse(savedForm), mine = JSON.parse(formState());
+  try {
+    snapshot = await api('home');
+    clearConflicts(); fill(); renderHome(); markSaved();
+    const theirs = JSON.parse(savedForm), conflicts = [];
+    const [was, now, held] = [base, mine, theirs].map(state => Object.fromEntries(state[0]));
+    const kept = {};
+    for (const [name, value] of Object.entries(now)) {
+      if (value === was[name]) continue;   // not edited here: the newer value stands
+      kept[name] = value;
+      if (held[name] !== was[name] && held[name] !== value) conflicts.push({name, theirs: held[name], mine: value});
+    }
+    applyControls(kept);
+    if (JSON.stringify(mine[1]) !== JSON.stringify(base[1])) {
+      if (JSON.stringify(theirs[1]) !== JSON.stringify(base[1]) && JSON.stringify(theirs[1]) !== JSON.stringify(mine[1]))
+        conflicts.push({name: 'research', theirs: theirs[1], mine: mine[1]});
+      researchSites = [...mine[1]]; renderSites();
+    }
+    [...$('#path-fields').children].forEach((field, index) => {
+      const input = field.children?.[1];
+      if (input && mine[2][index] !== base[2][index]) input.value = mine[2][index];
+    });
+    if (mine[3] !== base[3]) { profileAgent = mine[3]; profilesChanged(); }
+    clearProblem(); saveState();
+    conflicts.forEach(showConflict);
+    const names = conflictNotes.map(held => held.label);
+    if (names.length) {
+      inform(`Newer settings loaded, and your other edits kept. Compare ${names.join(' and ')}, then save.`);
+      (focusable(conflictNotes[0].control) || $('#save')).focus();
+    } else {
+      inform(unsaved() ? 'Newer settings loaded, and your edits kept. Save when you are ready.' : 'Newer settings loaded.');
+      $('#save').focus();
+    }
+  } catch (error) { inform(error.message, true, true); }
+  finally { done(); }
+}
+$('#problem-newer').addEventListener('click', () => void loadNewer());
 $('#find-brands').addEventListener('click', async () => {
   const button = $('#find-brands'); button.disabled = true;
   $('#brand-catalog-status').textContent = 'Looking up installed brands… Your form is kept.';
@@ -755,16 +952,47 @@ function renderComputer(look) {
   }
 }
 // A look at this computer: local commands and Git settings only. Nothing signs in or installs.
-async function checkComputer() {
-  $('#check').disabled = true;
+// Pressed in the toolbar, focus stays on Check computer; started from another screen, it
+// moves to the results once they are listed.
+async function checkComputer(toResults = false) {
+  const button = $('#check');
+  if (isBusy(button)) return;
+  const done = busy(button, 'Checking…');
+  if (problemView === 'computer') clearProblem();
   try {
     const result = await api('computer', {}); snapshot.computer = result.computer;
     renderComputer(result.computer); renderReadinessSummary();
-  } catch (error) { inform(error.message, true); } finally { $('#check').disabled = false; }
+    $('#announce').textContent = `Check finished. ${$('#computer-summary').textContent}`;
+    if (toResults && view === 'computer') $('#computer-results-heading').focus();
+  } catch (error) { inform(error.message, true); } finally { done(); }
 }
-$('#check').addEventListener('click', checkComputer);
+$('#check').addEventListener('click', () => void checkComputer());
 // Its data-view shows This computer first; the look runs there, where its results are listed.
-$('#go-check').addEventListener('click', () => void checkComputer());
+$('#go-check').addEventListener('click', () => void checkComputer(true));
+// The private link as a QR code, drawn on this computer from qr.js, which is loaded only here.
+let drawnLink = '';
+function codeKit() {
+  if (window.StudioQR) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = '/qr.js'; script.onload = () => resolve(); script.onerror = () => reject(new Error('qr.js'));
+    document.head.append(script);
+  });
+}
+async function drawLinkCode(link) {
+  if (link === drawnLink) return;
+  drawnLink = link;
+  try {
+    await codeKit();
+    if (link !== drawnLink) return;
+    const image = window.StudioQR.svg(link, 'QR code for the private session link above. Scan it with your phone’s camera to open Marketing Studio there.');
+    $('#network-qr-code').replaceChildren(...(image ? [image] : []));
+    $('#network-qr').hidden = !image;
+  } catch (failure) {
+    // Copy link still works; the code is a convenience.
+    $('#network-qr').hidden = true; drawnLink = '';
+  }
+}
 $('#copy-network').addEventListener('click', async () => {
   const input = $('#network-link');
   try { await navigator.clipboard.writeText(input.value); inform('Private link copied. Open it on your phone.'); }
@@ -776,8 +1004,9 @@ function openNative() {
   // Setup can be served at the native root. A fragment change alone keeps its DOM.
   if (samePage) location.reload();
 }
-// The Document Library screen: browse, preview, download and add uploads. It selects
-// nothing for a project; each studio's Add from library does that for its own work.
+// The Document Library screen: the list first, Add documents as the toolbar's one filled
+// action, and Add existing work beside the lede. It selects nothing for a project; each
+// studio's Add from library does that for its own work.
 let libraryCatalog = null;
 function libraryKit() {
   if (window.StudioLibrary) return Promise.resolve();
@@ -789,6 +1018,15 @@ function libraryKit() {
     document.head.append(script);
   });
 }
+// Add existing work is a one-time step: prominent until something has been added from a
+// studio's workspace, then a quiet button.
+function libraryIntake(answer) {
+  if (!answer) return;
+  const imported = Boolean(answer.imported);
+  $('#library-existing-open').className = imported ? 'button button-quiet' : 'button';
+  $('#library-existing-hint').hidden = imported;
+  if (answer.location) $('#library-where').textContent = `Kept in ${answer.location} on this computer.`;
+}
 async function openLibrary() {
   if (standalone) return;
   try {
@@ -796,6 +1034,8 @@ async function openLibrary() {
     if (!libraryCatalog) {
       libraryCatalog = new window.StudioLibrary.Catalog({
         studio: 'marketing',
+        manage: true,      // Remove from library, Show hidden and Restore
+        said: message => inform(message),
         post: (route, body) => api(route, body),
         download: async (row, format) => {
           try {
@@ -807,13 +1047,32 @@ async function openLibrary() {
             setTimeout(() => URL.revokeObjectURL(link.href), 1000);
           } catch (error) { inform(error.message, true); }
         },
-      });
+      }, {onChange: () => libraryIntake(libraryCatalog && libraryCatalog.answer)});
       $('#library-catalog').replaceChildren(libraryCatalog.node);
     } else void libraryCatalog.load();
-    const where = (libraryCatalog.answer || {}).location;
-    if (where) $('#library-where').textContent = `Kept in ${where} on this computer.`;
   } catch (error) { inform(error.message, true); }
 }
+// The Library's two sheets. Escape and Close return focus to what opened them; neither
+// closes while its work is landing.
+const librarySheets = {busy: false};
+function openLibrarySheet(dialog, opener, first) {
+  dialog.returnTo = opener;
+  dialog.showModal();
+  if (first) first.focus();
+}
+function closeLibrarySheet(dialog) { if (!librarySheets.busy) dialog.close(); }
+for (const dialog of [$('#library-add-sheet'), $('#library-existing')]) {
+  dialog.addEventListener('cancel', event => { if (librarySheets.busy) event.preventDefault(); });
+  dialog.addEventListener('close', () => {
+    const back = dialog.returnTo;
+    if (back && document.body.contains(back) && !back.hidden) back.focus();
+  });
+}
+$('#library-existing-open').addEventListener('click', () => {
+  $('#library-existing-result').replaceChildren();
+  openLibrarySheet($('#library-existing'), $('#library-existing-open'), $('#library-existing-preview'));
+});
+$('#library-existing-close').addEventListener('click', () => closeLibrarySheet($('#library-existing')));
 // Add existing work to library: a preview of what the studios' remembered workspaces hold,
 // then an import only when it is confirmed. The confirm carries the preview's signature, so
 // it adds exactly what was shown or refuses when the workspaces changed since.
@@ -838,6 +1097,7 @@ function showExisting(found) {
   const said = element('p', found.adding ? `${found.adding === 1 ? '1 item' : `${found.adding} items`} can be added. Nothing is added until you confirm.`
     : found.total ? 'Everything found is already in the library.' : 'No existing work was found to add.', 'quiet');
   said.setAttribute('role', 'status');
+  said.tabIndex = -1; said.id = 'library-existing-said';
   const parts = [said, element('h4', 'Workspaces', 'card-subtitle'), places];
   if (found.total) {
     const counts = [found.new && `${found.new} new`, found.changed && `${found.changed} with a newer revision`,
@@ -868,7 +1128,7 @@ function showExisting(found) {
 }
 async function adoptExisting(signature, button) {
   const box = $('#library-existing-result'), label = button.textContent;
-  button.disabled = true; button.textContent = 'Adding…';
+  button.disabled = true; button.textContent = 'Adding…'; librarySheets.busy = true;
   try {
     const done = await api('library-adopt', {signature});
     const said = [done.added && `${done.added} added`, done.revised && `${done.revised} with a new revision`,
@@ -886,52 +1146,105 @@ async function adoptExisting(signature, button) {
     problem.setAttribute('role', 'alert');
     box.prepend(problem);
     button.disabled = false; button.textContent = label;
-  }
+  } finally { librarySheets.busy = false; }
 }
+// The button is disabled while the preview loads, so focus moves to what it found.
 $('#library-existing-preview').addEventListener('click', async () => {
   const button = $('#library-existing-preview');
   button.disabled = true;
   try { showExisting(await api('library-existing', {})); }
-  catch (error) { $('#library-existing-result').replaceChildren(element('p', error.message, 'problem')); }
+  catch (error) {
+    const problem = element('p', error.message, 'problem');
+    problem.setAttribute('role', 'alert'); problem.tabIndex = -1; problem.id = 'library-existing-said';
+    $('#library-existing-result').replaceChildren(problem);
+  }
   finally { button.disabled = false; }
+  const result = $('#library-existing-said');
+  if (result) result.focus();
 });
-// One operation ID per file until it is kept, so trying again never keeps it twice.
-const libraryOperations = new Map();
+// Add documents: each file is added on its own and reported by name, and a refusal never
+// stops the rest. A file keeps its operation ID for as long as this page is open, so a retry
+// (or choosing it again) is the same upload and never keeps it twice; what was added leaves
+// the selection, so Add to library again tries only what was refused. libraryKept only
+// words the answer: the server decides every time.
+const libraryOperations = new Map(), libraryKept = new Map();
+const fileKey = file => [file.name, file.size, file.lastModified].join('|');
 function operationId(file) {
-  const key = [file.name, file.size, file.lastModified].join('|');
+  const key = fileKey(file);
   if (!libraryOperations.has(key)) {
     const bytes = new Uint8Array(16); crypto.getRandomValues(bytes);
     libraryOperations.set(key, [...bytes].map(b => b.toString(16).padStart(2, '0')).join(''));
   }
   return libraryOperations.get(key);
 }
-$('#library-add').addEventListener('click', async () => {
-  const files = [...$('#library-files').files];
-  if (!files.length) { $('#library-where').textContent = 'Choose one or more files first.'; return; }
-  const button = $('#library-add'); button.disabled = true;
-  let added = 0;
+async function uploadOne(file) {
+  if (file.size > 8_000_000) return {state: 'refused', detail: 'It is larger than 8 MB, the most one document can be.'};
+  // The server is always asked, even for a file added from this page before: it says when
+  // the file is already there, shows again one removed since, and repairs one whose kept
+  // files changed. The same operation ID keeps a retry from adding it twice.
+  const key = fileKey(file), before = libraryKept.has(key);
   try {
-    for (const file of files) {
-      if (file.size > 8_000_000) { inform(`${file.name} is larger than 8 MB, so it was not added.`, true); continue; }
-      const bytes = new Uint8Array(await file.arrayBuffer()); let binary = '';
-      for (let i = 0; i < bytes.length; i += 8192) binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
-      const found = await api('library-upload', {operation: operationId(file), name: file.name, content: btoa(binary)});
-      libraryOperations.delete([file.name, file.size, file.lastModified].join('|'));
-      added++;
-      $('#library-where').textContent = `Kept in ${found.location} on this computer.`;
-      if (!found.document.readable) inform(`${found.document.title}: ${found.document.problem}`);
-    }
-    if (added) inform(added === 1 ? 'Added 1 document to the library.' : `Added ${added} documents to the library.`);
-    $('#library-files').value = '';
-  } catch (error) { inform(error.message, true); }
-  finally { button.disabled = false; if (libraryCatalog) void libraryCatalog.load(); }
+    const bytes = new Uint8Array(await file.arrayBuffer()); let binary = '';
+    for (let i = 0; i < bytes.length; i += 8192) binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
+    const found = await api('library-upload', {operation: operationId(file), name: file.name, content: btoa(binary)});
+    const kept = found.document;
+    libraryKept.set(key, kept.title);
+    $('#library-where').textContent = `Kept in ${found.location} on this computer.`;
+    if (kept.restored) return {state: 'added', detail: `Shown again as “${kept.title}”: it had been removed from the library.`};
+    if (kept.repaired) return {state: 'added', detail: `Kept again as “${kept.title}”: the library’s earlier copy had changed or gone missing.`};
+    if (kept.already || before) return {state: 'already', detail: `Already in the library as “${kept.title}”, so it was not added again.`};
+    return {state: 'added', detail: kept.readable ? `Added as “${kept.title}”.` : `Added as “${kept.title}”, but ${kept.problem}`};
+  } catch (error) { return {state: 'refused', detail: error.message}; }
+}
+$('#library-add-open').addEventListener('click', () => {
+  $('#library-add-results').replaceChildren();
+  $('#library-add-cancel').textContent = 'Cancel';
+  openLibrarySheet($('#library-add-sheet'), $('#library-add-open'), $('#library-files'));
+});
+for (const id of ['#library-add-close', '#library-add-cancel']) $(id).addEventListener('click', () => closeLibrarySheet($('#library-add-sheet')));
+$('#library-add').addEventListener('click', async () => {
+  const input = $('#library-files'), box = $('#library-add-results'), button = $('#library-add');
+  const files = [...input.files];
+  if (librarySheets.busy) return;
+  if (!files.length) {
+    const said = element('p', 'Choose one or more files first.', 'problem'); said.setAttribute('role', 'alert');
+    box.replaceChildren(said); input.focus(); return;
+  }
+  librarySheets.busy = true; button.disabled = true; button.textContent = 'Adding…';
+  const outcomes = [];
+  try { for (const file of files) outcomes.push({file, ...await uploadOne(file)}); }
+  finally { librarySheets.busy = false; button.disabled = false; button.textContent = 'Add to library'; }
+  const refused = outcomes.filter(one => one.state === 'refused');
+  try {
+    const left = new DataTransfer();
+    for (const one of refused) left.items.add(one.file);
+    input.files = left.files;
+  } catch (error) { if (!refused.length) input.value = ''; }
+  const count = state => outcomes.filter(one => one.state === state).length;
+  const added = count('added'), already = count('already');
+  const said = element('p', [added && `${added} added`, already && `${already} already in the library`,
+    refused.length && `${refused.length} not added`].filter(Boolean).join(', ') + '.', '');
+  said.setAttribute('role', 'status'); said.tabIndex = -1;
+  const list = element('ul', '', 'library-list');
+  list.setAttribute('aria-label', 'Files');
+  for (const one of outcomes) {
+    list.append(existingRow(one.file.name, [[one.detail, one.state === 'refused' ? 'problem' : 'quiet']],
+      ({added: 'Added', already: 'Already there', refused: 'Not added'})[one.state]));
+  }
+  const parts = [said, list];
+  if (refused.length) parts.push(element('p', 'The files not added are still chosen. Fix them, or choose others, then add again; what was added is not added twice.', 'field-hint quiet'));
+  box.replaceChildren(...parts);
+  if (added || already) $('#library-add-cancel').textContent = 'Done';
+  said.focus();
+  if (added) inform(added === 1 ? 'Added 1 document to the library.' : `Added ${added} documents to the library.`);
+  if (libraryCatalog) void libraryCatalog.load();
 });
 modelPicker(form.elements['assistant.model'], 'Shared model');
 $('#refresh-models').addEventListener('click', () => loadModels(true));
 (async () => {
   try {
     if (!token) { $('#loading').hidden = true; inform(`This page needs its private link. Run ${standalone ? 'the studio command' : 'marketing-studio'} in your terminal to open it again.`, true); return; }
-    snapshot = await api('home'); setup = !snapshot.setup.done; fill(); renderHome(); markSaved(); show(setup || standalone ? 'settings' : requestedView); if (snapshot.shared_problem) inform(snapshot.shared_problem, true);
+    snapshot = await api('home'); setup = !snapshot.setup.done; step = setup ? resumeStep(snapshot.shared) : 0; rememberStep(); fill(); renderHome(); markSaved(); show(setup || standalone ? 'settings' : requestedView); if (snapshot.shared_problem) inform(snapshot.shared_problem, true);
     const part = setup ? '' : launchPart(launchOptions, [...document.querySelectorAll('[data-part]')].map(button => button.dataset.part));
     if (part) { if (view !== 'settings') show('settings'); goToPart(part); }
   }

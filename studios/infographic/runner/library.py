@@ -207,6 +207,8 @@ STATES = {
     'current': None,
     'update': None,
     'unreadable': 'Its newest library revision cannot be read now. This infographic keeps its own copy.',
+    'removed': ('It was removed from the Document Library, so no newer revision is offered. '
+                'This infographic keeps its own copy.'),
     'not-here': ("It is not in this computer's Document Library, so it was probably added on a "
                  "teammate's computer. This infographic keeps its own copy."),
     'no-library': NO_LIBRARY,
@@ -232,7 +234,8 @@ def marked(store, project) -> dict:
             try:
                 row = found.describe(held['id'])
                 head = row['revision']
-                state = ('unreadable' if not row['readable']
+                # Remove from library hides it: Use revision N would be refused, so none is offered.
+                state = ('removed' if row.get('hidden') else 'unreadable' if not row['readable']
                          else 'update' if head > held['revision'] else 'current')
             except (LibraryError, OSError):
                 state = 'not-here'

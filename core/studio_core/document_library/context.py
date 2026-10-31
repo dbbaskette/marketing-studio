@@ -15,6 +15,9 @@ What a caller needs to know
 - Every chosen revision is checked (it exists, is readable and matches its hashes) before
   the item changes; one refusal changes nothing.
 - A remembered filter is only a filter: no route here turns one into a selection.
+- A document removed from the library (hidden) is never listed, matched, pinned or offered
+  as an update here; Marketing Studio's Library alone lists it, under Show hidden, with
+  `hidden` and `imported` counts beside the page.
 """
 from __future__ import annotations
 
@@ -54,9 +57,13 @@ def answer(path: str, sent: dict, studio: str) -> dict:
             return {'available': False, 'items': [], 'total': 0, 'offset': 0,
                     'limit': limit, 'remembered': {}, 'location': where['shown'],
                     'problem': gone(where['shown']) if where['missing'] else None, **_labels()}
-        found = library.catalog(offset=offset, limit=limit, **filters)
+        # Hidden documents are offered only on Marketing Studio's Library screen, under Show
+        # hidden, to be restored: never in a studio's Add from library.
+        manage = studio == 'marketing'
+        found = library.catalog(offset=offset, limit=limit,
+                                hidden=manage and sent.get('hidden') is True, **filters)
         return {'available': True, **found, 'remembered': library.filters(studio),
-                'location': where['shown'], **_labels()}
+                'location': where['shown'], **(library.summary() if manage else {}), **_labels()}
     if library is None:
         raise LibraryError(NOT_MADE)
     if path == '/api/library-document':

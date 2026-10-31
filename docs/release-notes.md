@@ -18,6 +18,54 @@ Download `marketing-studio-installer.zip` for the whole suite, or one studio's i
 
 Signing in to an assistant, your organisation's brands and fonts, and optional Google setup are still your choices. Installing starts no provider job.
 
+## Unreleased: a list-first Library screen, safe uploads and Remove from library
+
+- **Documents first.** Marketing Studio's **Library** screen opens on its list.
+  **Add documents** is the toolbar's one filled action and opens a sheet. **Add
+  existing work** sits beside the lede, prominent only until something has been added
+  from a studio's workspace. On a 390-pixel phone the first document is in view
+  without scrolling.
+- **Every file reported by name.** Adding several files tries each one, even after a
+  refusal, and says for each whether it was added, was already there, or was not
+  added and why, an oversize file included. What was added leaves the selection, and
+  trying again never adds a file twice.
+- **Filters on a phone.** The Library and every studio's **Add from library** sheet
+  show a **Filters** button on a phone. It opens Type, From, Origin, Status and Author
+  and counts those set.
+- **Preview where you are.** Preview opens just below its row and holds the
+  downloads, so each row has one action. Close preview returns to that row, and
+  Preview existing work moves focus to what it found.
+- **Remove from library.** A mistaken, duplicate or unreadable document can be taken
+  out of browsing and **Add from library**. Nothing is deleted: projects that use it
+  keep their copy, no studio workspace is changed, and **Show hidden** can restore it.
+
+## Unreleased: problems where you are, and an easier way to the phone
+
+- **A problem stays on its own screen.** Marketing Studio's red notice now clears
+  when you move to another screen or the action succeeds, and has a **Dismiss**
+  button.
+- **A save conflict you can recover from.** When another tab or studio saved the same
+  setting first, the notice names it, such as "Your name", and offers **Load newer
+  settings**. Your other edits stay on the form, the setting shows both values, and
+  you choose before saving again. Nothing is written from an outdated form.
+- **Busy buttons keep focus.** **Save settings** and **Check computer** say "Saving…"
+  or "Checking…" and keep keyboard focus. A check started from Studios moves focus to
+  its results.
+- **First-run setup in one column.** The toolbar, notice and form line up, a missing
+  repository address is shown at its field, and a reload returns to the step you left.
+- **Scan to continue on your phone.** With phone access on, the computer's home shows
+  a QR code for the private link, drawn on the computer with nothing fetched. The
+  phone's own home no longer shows the link or the terminal note.
+- **Studios on the computer stay local.** With phone access on, a studio opened on the
+  computer opens at `127.0.0.1`. Only one opened from the phone goes through the
+  network bridge, and the way back to Marketing Studio works from both.
+- **Larger files through the phone link.** The bridge now allows each studio address
+  what the studio itself allows: Training Studio's **Add a source** and section saves,
+  Presentation Studio's desk sources and slide pictures, and Infographic Studio's
+  research sources. A file that is still too large gets a sentence that says what to
+  do. Blog Studio's Google sends, Google Doc intake and library adds with links wait
+  up to 10 minutes.
+
 ## Unreleased: the Document Library, existing work and Blog Studio updates
 
 - **Add existing work to library.** Marketing Studio's **Library** screen can now

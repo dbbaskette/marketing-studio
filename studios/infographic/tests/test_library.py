@@ -206,6 +206,20 @@ class ContextTests(LibraryCase):
         with self.assertRaisesRegex(Invalid, 'no Document Library on this computer'):
             self.act('library-update', document=self.blog['document'], revision=2)
 
+    def test_a_removed_document_offers_no_update(self):
+        project = self.act('library', picks=self.picks(self.blog))
+        source = project['sources'][-1]
+        made = self.library()
+        made.retain('blog:synthetic-post', 'blog', 'blog', 'Rolling restarts', '# Rolling\n\nTwo at a time.\n')
+        made.hide(self.blog['document'], True)
+        marked = self.engine.inspect(self.ident)['library']['sources'][source['id']]
+        self.assertEqual((marked['update'], marked['state']), (False, 'removed'))
+        self.assertIn('removed from the Document Library', marked['note'])
+        self.assertEqual(sources.read(self.store, self.current(), source), '# Rolling\n\nOne at a time.\n')
+        made.hide(self.blog['document'], False)
+        marked = self.engine.inspect(self.ident)['library']['sources'][source['id']]
+        self.assertEqual((marked['update'], marked['state']), (True, 'update'))
+
     def test_context_is_refused_while_work_runs(self):
         before = self.current()
         running = {'state': 'running', 'action': 'suggest'}

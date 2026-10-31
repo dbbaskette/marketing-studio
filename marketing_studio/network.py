@@ -22,14 +22,50 @@ PRIVATE_NETWORKS = tuple(ipaddress.ip_network(value) for value in
 TOKEN_HEADERS = {identifier: 'X-' + name + '-Studio-Token' for identifier, name in
                  (('marketing', 'Marketing'), ('blog', 'Blog'),
                   ('presentation', 'Presentation'), ('training', 'Training'), ('infographic', 'Infographic'))}
-# Native upload handlers retain their smaller, per-route limits.
-MAX_BODY = 120_000_000
 UPSTREAM_TIMEOUT = 100
 # Native infographic actions can include two renders, a five-minute author call
 # and a ten-minute image call. Keep the bridge alive across those bounded stages.
 INFOGRAPHIC_ACTION_TIMEOUT = 1200
 # Google previews may perform account/token lookup and several fixed API reads.
 INFOGRAPHIC_REMOTE_TIMEOUT = 240
+# Blog Studio's Google sends make several Google calls of up to a minute each, and a library
+# add with links fetches up to 25 pages of up to 15 seconds each in one request.
+BLOG_REMOTE_TIMEOUT = 600
+BLOG_REMOTE = frozenset(('/api/desk-google-send', '/api/editor-google-send', '/api/google-preview',
+                         '/api/google-start', '/api/library-add', '/api/library-add-preview'))
+# The bridge says, in a header of its own, that a request reached Marketing Studio over the
+# network. A network caller cannot send it: only the headers named in forward() pass.
+VIA_HEADER = 'X-Marketing-Studio-Via'
+# The most bytes a POST may carry through the bridge, as each studio's own server allows it
+# (its `body_limit`, or Blog Studio's MAX_BODY). tests/test_network.py keeps them in step.
+SHARED_LIMIT = 64_000
+BLOG_LIMIT = 15 * 1024 * 1024
+BODY_LIMITS = {
+    'marketing': {'/api/library-upload': 12_000_000},
+    'presentation': {'/api/research-sources': 12_000_000, '/api/decks': 120_000_000,
+                     '/api/desk-source': 12_000_000, '/api/picture': 28_000_000},
+    'training': {'/api/research-sources': 12_000_000, '/api/documents': 12_000_000,
+                 '/api/asset': 12_000_000, '/api/drafts/source': 12_000_000,
+                 '/api/drafts/save': 1_000_000},
+    'infographic': {'/api/research-sources': 24_000_000, '/api/source-preview': 24_000_000,
+                    '/api/action': 24_000_000, '/api/csv-preview': 24_000_000,
+                    '/api/csv-selection': 24_000_000},
+}
+
+
+def body_limit(identifier, path):
+    """The bridge's limit for a POST to `path` on one studio, never more than its own."""
+    if identifier == 'blog':
+        # Blog Studio's server takes MAX_BODY everywhere; its shared setup takes the usual limit.
+        return SHARED_LIMIT if path.startswith('/onboarding/') else BLOG_LIMIT
+    return BODY_LIMITS.get(identifier, {}).get(path, SHARED_LIMIT)
+
+
+def too_large(limit):
+    """A bridge 413 as a sentence a person can act on."""
+    size = f'{limit // 1_000_000} MB' if limit >= 1_000_000 else f'{limit // 1000} KB'
+    return (f'This is too large to send over the private network link, which takes at most {size} '
+            'here. Send something smaller, or do this on the computer.')
 STATIC = frozenset(('/', '/index.html', '/app.js', '/style.css', '/home.css',
                     '/blog.css', '/runner.js', '/desk.js', '/drafting.js', '/markdown.js', '/research.js',
                     '/deck.css', '/infographic.css', '/favicon.ico',
@@ -45,6 +81,8 @@ FRAMED = {'presentation': frozenset(('/api/deck-draft',)),
 def upstream_timeout(identifier, method, path):
     if method == 'POST' and path == '/api/research-sources':
         return INFOGRAPHIC_REMOTE_TIMEOUT
+    if identifier == 'blog' and method == 'POST' and path in BLOG_REMOTE:
+        return BLOG_REMOTE_TIMEOUT
     if identifier == 'infographic' and method == 'POST':
         if path == '/api/action':
             return INFOGRAPHIC_ACTION_TIMEOUT
@@ -170,21 +208,11 @@ class BridgeHandler(BaseHTTPRequestHandler):
             size = int(lengths[0]) if lengths else 0
         except ValueError:
             return self.send_error(400, 'Use one bounded request body.')
-        limit = 64_000
-        if own.identifier == 'blog' and not url.path.startswith('/onboarding/'):
-            limit = 15 * 1024 * 1024
-        elif own.identifier in ('presentation', 'training', 'infographic') and url.path == '/api/research-sources':
-            limit = 12_000_000
-        elif own.identifier == 'presentation' and url.path == '/api/decks':
-            limit = MAX_BODY
-        elif own.identifier == 'infographic' and url.path in ('/api/source-preview','/api/action','/api/csv-preview','/api/csv-selection'):
-            limit = 24_000_000
-        elif own.identifier == 'training' and url.path in ('/api/documents', '/api/asset'):
-            limit = 12_000_000
-        elif own.identifier == 'marketing' and url.path == '/api/library-upload':
-            limit = 12_000_000
-        if size < 0 or size > limit or (self.command == 'POST' and not lengths):
-            return self.send_error(413, 'This request is too large or has no stated length.')
+        if self.command == 'POST' and not lengths:
+            return self.send_error(411, 'Send this again from the studio page: its size was not stated.')
+        limit = body_limit(own.identifier, url.path)
+        if size < 0 or size > limit:
+            return self.send_error(413, too_large(limit))
         if self.command == 'GET' and size:
             return self.send_error(400, 'A GET request has no body.')
         body = self.rfile.read(size) if size else None
@@ -202,6 +230,8 @@ class BridgeHandler(BaseHTTPRequestHandler):
                 headers[name] = values[0]
         if origins:
             headers['Origin'] = 'http://' + own.target
+        if own.identifier == 'marketing':
+            headers[VIA_HEADER] = 'network'
         connection = http.client.HTTPConnection(
             own.target, timeout=upstream_timeout(own.identifier, self.command, url.path))
         begun = False

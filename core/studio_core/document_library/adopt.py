@@ -119,6 +119,10 @@ def _states(candidates) -> None:
             one['state'] = 'changed'
         if not copy or found is not None:
             one['document'] = found
+        if found and found.get('hidden'):
+            # Adding it again keeps it hidden: only Restore brings it back.
+            one['gaps'] = ['Removed from the library. Restore it under Show hidden to use it again.',
+                           *one['gaps']]
 
 
 def _signature(candidates) -> str:

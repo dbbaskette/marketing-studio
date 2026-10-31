@@ -40,7 +40,9 @@ runpy.run_path({str(repo/'marketing_studio/bridge.py')!r},run_name='__main__')
         launcher=Launcher(network)
         try:
             for identifier in paths:
-                link=launcher.open(identifier,{'paths':paths},shared)
+                # A phone's Open is given the studio's bridge; the computer's keeps loopback.
+                link=launcher.open(identifier,{'paths':paths},shared,remote=True)
+                assert link==network.bridges[identifier][3]!=launcher.children[identifier][1]
                 with urllib.request.urlopen(link.split('#')[0],timeout=5) as response:
                     body=response.read()
                     assert response.status==200 and b'<html' in body.lower()
@@ -57,7 +59,8 @@ runpy.run_path({str(repo/'marketing_studio/bridge.py')!r},run_name='__main__')
                     raise AssertionError('An unauthenticated studio read was accepted')
                 except urllib.error.HTTPError as error:
                     assert error.code==403
-                assert launcher.open(identifier,{'paths':paths},shared)==link
+                assert launcher.open(identifier,{'paths':paths},shared,remote=True)==link
+                assert launcher.open(identifier,{'paths':paths},shared)==launcher.children[identifier][1]
                 print(identifier+': native page and authenticated API serve through network bridge; unauthenticated reads fail; repeated Open reuses process')
             processes=[p for p,_ in launcher.children.values()]
         finally:

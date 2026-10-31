@@ -319,7 +319,7 @@ class SharedSitesTests(IsolatedHome):
         shared.update({'research': {'sites': [TANZU, DOCS]}})
         with self.assertRaises(ValueError) as caught:
             preferences.save(shared, {'research': {'sites': []}}, seen)
-        self.assertIn('Reload', str(caught.exception))
+        self.assertIn('Load newer settings', str(caught.exception))
         self.assertEqual(shared.read()[0]['research']['sites'], [TANZU, DOCS])
         # The form that read the current list saves.
         preferences.save(shared, {'research': {'sites': []}}, preferences.visible(shared.read()[0]))
@@ -473,8 +473,8 @@ class SettingsPageJourneyTests(unittest.TestCase):
             {'run': " $('#path-fields').children[0].children[1].value = '/nowhere';"},
             {'responses': {'shared': {'shared': {}, 'efforts': {'claude': [], '': []}, 'setup': {'done': True}, 'studios': []},
                            'paths': {'error': 'That folder does not hold Blog Studio.'}}},
-            {'submit': True}, {'snapshot': 'refused', 'read': ['#problem']}])
-        self.assertEqual(shots['refused']['read']['#problem']['text'],
+            {'submit': True}, {'snapshot': 'refused', 'read': ['#problem-text']}])
+        self.assertEqual(shots['refused']['read']['#problem-text']['text'],
                          'Your shared settings were saved. The installation folders were not: '
                          'That folder does not hold Blog Studio.')
 

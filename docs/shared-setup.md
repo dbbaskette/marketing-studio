@@ -171,6 +171,38 @@ title, or a deck deleted and made again, are separate documents. A blog's ID alr
 ends in a random part, so `blog:<id>` is unique. A saved library folder that is gone,
 such as on a drive that is not connected, is reported and not made again.
 
+**The Library screen.** Marketing Studio's **Library** lists documents first, with
+**Add documents** as the toolbar's one filled action and **Add existing work** beside
+the lede. **Add existing work** stays a plain button with a one-line hint until
+something has been added from a studio's workspace, then becomes quiet. Both open a
+sheet; Close and Escape return to the button that opened it. On a phone only the
+search shows, with a **Filters** button that opens Type, From, Origin, Status and
+Author and counts those set, remembered filters included. Every studio's **Add from
+library** sheet has the same Filters button. Each row has one action, **Preview**,
+which opens the document just below its row. The preview holds every download
+(Markdown, the original and a saved PDF) and, on the Library screen only, **Remove
+from library**. **Close preview** returns focus to that row's Preview.
+
+**Add documents, file by file.** Each chosen file is added on its own and reported
+by name: **Added**, **Already there** or **Not added**, with why (not a text,
+Markdown, HTML, Word or PDF file; larger than 8 MB; empty). One refusal stops
+nothing. A file keeps its operation ID while the page is open, and what was added
+leaves the selection, so **Add to library** again tries only what was refused. The
+same file uploaded again (its name, bytes, title and studio) is the document already
+kept, even from another page. The page always asks the library, so a file removed
+since is shown again. When that document's kept files changed or went missing ("Upload
+it again"), uploading the file keeps a whole new revision of the same document instead.
+
+**Remove from library.** It hides a document: `documents/<id>/document.json` says
+so, written atomically under the library's lock. A hidden document is left out of
+browsing, of every studio's **Add from library**, of **Select all matching** and of
+**Update available**, and a new pin of it is refused. Nothing is deleted: every
+revision stays, projects that pinned it keep their copy and keep working, and no
+studio workspace is read or changed. The Library screen's **Show hidden** lists it
+again with **Restore to library**. Uploading the same file again restores it too.
+Finishing, delivering or adding existing work again keeps it hidden until it is
+restored.
+
 Every file is checked against its hash before it is previewed, downloaded or
 pinned, and a link, a missing file or a changed file is refused. Some files can't
 be added as context until their text is supplied: an image-only PDF is marked
@@ -225,6 +257,7 @@ grants no web access and sends nothing to an assistant.
 | Remove | The project's copy is removed; the library document is unchanged |
 | A newer library revision | The project shows Update available; nothing changes until the person takes it |
 | Library changed, unavailable or deleted | The project keeps reading its pinned copy |
+| Removed from library (hidden) | The project keeps reading its pinned copy; Update available is not offered (Infographic Studio says it was removed), and adding it again is refused until it is restored |
 | Unreadable, changed or missing revision | Refused with why, and nothing changes |
 | Finish, publish or deliver again with the same text | Same document and revision, and no new revision |
 | A library save fails after delivery | Recorded in the deck's local `sources/library.json`. **Keep in library again** retries from `deliver.json` and this computer's files, with no upload, no render and no job. |
@@ -327,6 +360,34 @@ make the four choices, save, and return to Studios without opening an install co
 A studio can open one listed part directly with `view=settings&part=<part id>` in the
 link's fragment, as Infographic Studio's Team library does for `workspace-part`. Any
 other value is ignored, and first-run setup keeps its steps.
+
+First-run setup is one column: the toolbar, any notice and the form share their edges.
+A value a step cannot use, such as a shared repository with no address, is shown at its
+field, which is marked invalid and takes focus. Each step that continues is remembered in
+that browser tab, so a reload resumes at the step the person left. The last step is
+resumed only when the configuration holds a workspace.
+
+### Problems, conflicts and long actions
+
+A problem notice belongs to the screen that raised it. It clears when the person moves
+to another screen or the action next succeeds, and its **Dismiss** button clears it by
+hand. The notice is announced once.
+
+Saving checks every value the form changes against the configuration the form was shown.
+When another Marketing Studio tab, or a studio, saved a different value for the same
+setting meanwhile, nothing is written. The notice names the setting, for example "“Your
+name” was changed in another tab or studio while this page was open, so nothing was
+saved", and offers **Load newer settings**. That reads the configuration again and keeps
+the person's edits to every value nobody else changed. Each value both changed shows the
+saved value and the person's own, with **Use the saved value**, and Save stays pending.
+The next save sends the newer values as what it was shown, so it is checked again under
+the lock. Unrelated values in the file are never touched. The refusal also carries the
+conflicting fields, as dotted paths such as `person.name`, under `conflict.fields`.
+
+**Save settings** and **Check computer** stay focusable while they work. Each is marked
+`aria-disabled`, says "Saving…" or "Checking…", and ignores another press. Focus stays
+on the button, or moves to the results heading when the check was started from another
+screen.
 
 The Advanced parts are closed disclosures that say what they hold while closed:
 **Models and reasoning** (shared model, reasoning and routing by task), **Brand skill

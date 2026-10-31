@@ -38,7 +38,7 @@ class ProfileTests(IsolatedHome):
         shared.update({k: v for k, v in configuration().items() if k != 'schema'})
         seen = shared.read()[0]
         preferences.save(shared, {'models': {'profiles': {'quick': {'model': 'other'}}}}, seen)
-        with self.assertRaisesRegex(ValueError, 'Another studio'):
+        with self.assertRaisesRegex(ValueError, '“Quick model” was changed in another tab or studio'):
             preferences.save(shared, {'models': {'profiles': {'quick': {'model': 'mine'}}}}, seen)
         preferences.save(shared, {'models': {'profiles': {'complex': {'effort': 'max'}}}}, seen)
         self.assertEqual(shared.read()[0]['models']['profiles']['quick']['model'], 'other')
@@ -47,7 +47,7 @@ class ProfileTests(IsolatedHome):
         shared.update({k: v for k, v in configuration().items() if k != 'schema'})
         seen = shared.read()[0]
         shared.update({'assistant': {'model': 'changed'}})
-        with self.assertRaisesRegex(ValueError, 'Another studio'):
+        with self.assertRaisesRegex(ValueError, '“Model” was changed in another tab or studio'):
             preferences.save(shared, {'models': {'profiles': {'quick': {'model': 'mine'}}}}, seen)
 
     def test_assistant_change_requires_profile_review(self):

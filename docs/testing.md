@@ -59,7 +59,12 @@ Marketing Studio home served by `tests/library_visual_server.py` over synthetic
 settings, a synthetic library and a synthetic Blog Studio workspace in a temporary
 folder. It covers the Library screen, Add existing work to library and the Add from
 library sheet at 1280, 390 and 320px, in light and dark, with reduced motion and with
-reduced transparency and more contrast. codex, claude and gemini are refusing
+reduced transparency and more contrast. It checks that the screen leads with its list
+and one filled action, that **Filters** opens every filter on a phone in the Library
+and in the sheet, that a mixed upload (`alpha.md`, `beta.png`, `gamma.txt`) and an
+oversize file are reported per file and retried without duplicates, that Close
+preview returns to its row by keyboard, and Remove from library with Restore.
+codex, claude and gemini are refusing
 stand-ins and `BROWSER` is false. Run it with the library tests in the shared runner:
 `bash scripts/ci/tart-macos.sh --guest scripts/ci/guest-library-visual.sh`. Run it from
 a plain clone: the guest clones its source with Git, which cannot read a linked
@@ -124,6 +129,12 @@ Training Studio evidence from the full suite run.
 `tests/test_network.py` checks the opt-in LAN bridge against loopback-only disposable
 HTTP servers: authorization, origin and Host validation, duplicate/framing headers,
 request limits, fixed destinations, shutdown, key rotation, and private-link redaction.
+It reads each studio's own `body_limit` (and Blog Studio's `MAX_BODY`) and requires the
+bridge's limit for every address to match, sends a 5 MB source, a 500 KB section and a
+10 MB picture through a loopback bridge, and checks that the computer is given loopback
+studio links while a network caller is given the bridge. Every test there uses a
+disposable data root, so `serve`'s orphan cleanup never sees a real session's studios.
+`tests/test_qr_code.py` reads the home page's QR code back with a separate decoder.
 `native_launch_acceptance.py` exercises each real native page and authenticated
 listing API through the bridge, refusing unauthenticated reads and reusing child
 processes. No real user state or provider jobs are involved. Blog Studio's client

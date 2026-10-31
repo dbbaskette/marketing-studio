@@ -3487,6 +3487,8 @@ body[data-pilot="liquid"] .nav-item[aria-current="page"] { background: var(--pil
 body[data-pilot="liquid"] .toolbar { min-height: 4.6rem; border-bottom-color: var(--paper-line); }
 body[data-pilot="liquid"] .toolbar-title { font-size: 1rem; font-weight: 600; }
 body[data-pilot="liquid"] .page { max-width: 76rem; padding-top: 2.8rem; }
+/* First-run setup keeps one column: the toolbar, the notice and the form share its edges. */
+body[data-pilot="liquid"].alone .page { max-width: 46rem; }
 body[data-pilot="liquid"] .large-title { font-size: clamp(2rem, 3.1vw, 2.8rem); font-weight: 700; letter-spacing: -.055em; line-height: 1.12; }
 body[data-pilot="liquid"] .lede { color: var(--quiet); line-height: 1.6; }
 body[data-pilot="liquid"] .intro { margin-bottom: 1.8rem; }
@@ -3653,10 +3655,14 @@ body[data-pilot="liquid"] .ig-outline-value { fill: var(--studio-color); font: 2
 .library-row-text>.quiet,.library-row-text>.problem{font-size:.9rem}
 .library-row-actions{flex-wrap:wrap;margin:0}
 .library-row-actions select.input{width:auto;min-height:2.75rem}
-.library-preview{padding:1rem 1.2rem;max-height:22rem;overflow:auto}
+/* A preview opens in its own item just below its row; only its text scrolls. */
+.library-preview-item{padding-top:.25rem}
 .library-preview>*+*{margin-top:.6rem}
+.library-preview h3{font-size:1rem;min-width:0;overflow-wrap:anywhere}
 .library-preview h3:focus{outline:none}
-.library-preview-text{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;margin:0}
+.library-preview-text{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;margin:0;max-height:20rem;overflow:auto;padding:.6rem .75rem;border:1px solid var(--hair);border-radius:10px;background:var(--paper)}
+.library-preview-actions,.library-removal .bar{flex-wrap:wrap;margin:0}
+.library-removal>*+*{margin-top:.6rem}
 .library-pages{align-items:center;flex-wrap:wrap}
 .library-selection>*+*{margin-top:.8rem}
 .library-selection .selection-bar{position:sticky;bottom:0;top:auto;margin:0}
@@ -3664,5 +3670,8 @@ body[data-pilot="liquid"] .ig-outline-value { fill: var(--studio-color); font: 2
 .library-existing:empty{display:none}
 .library-existing>*+*{margin-top:.75rem}
 .library-existing .card-subtitle{font-size:1rem;font-weight:650;margin-top:1rem}
-.library-existing .library-row>.tag{flex:none;align-self:flex-start;white-space:nowrap}
+.library-row>.tag{flex:none;align-self:flex-start;white-space:nowrap}
+/* Add documents (Marketing Studio's Library screen): each file's outcome, by name. */
+.library-results:empty{display:none}
+.library-results>*+*{margin-top:.6rem}
 @media (max-width:37.5rem){.library-row{flex-direction:column;align-items:stretch}.library-tick,.library-row-text{flex:none}.library-tick>.library-row-text{flex:1 1 auto;min-width:0}.library-row-actions{justify-content:flex-start}}
