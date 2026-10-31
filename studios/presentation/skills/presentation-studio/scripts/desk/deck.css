@@ -152,6 +152,19 @@
   margin-top: 0.6rem;
 }
 
+/* What happens after Start: a short numbered list, from the choices on the sheet. */
+.new-plan > * + * {
+  margin-top: 0.6rem;
+}
+
+.new-roadmap {
+  padding-left: 1.4rem;
+}
+
+.new-roadmap > li + li {
+  margin-top: 0.45rem;
+}
+
 /* The deck desk (deck-desk.js): the slide cards under their section headings, each with its
    picture, its words and its note. */
 .deck-desk-section > * + * {

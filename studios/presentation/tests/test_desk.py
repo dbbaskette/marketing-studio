@@ -314,7 +314,7 @@ class ScreenTests(ScriptedPage, PageCase):
                       'Selected changes'):
             self.assertIn(level, shots['levels']['text'])
         self.assertIn('Chosen: old.pptx', shots['levels']['text'])
-        self.assertIn('It starts at once and runs on its own, with no stops.',
+        self.assertIn('It runs on its own until the deck opens on the desk.',
                       shots['last']['text'])
         (address, body), = self.posts(result)
         self.assertEqual(address, '/api/decks')
@@ -634,15 +634,15 @@ class ScreenTests(ScriptedPage, PageCase):
             {'fill': 'Who is it for?', 'value': 'Operators'},
             {'fill': 'What should they take away?', 'value': 'Skip AI review on the first build.'},
             {'snapshot': 'about'},
-            {'snapshot': 'last'}, {'click': 'Options'},
+            {'snapshot': 'last'}, {'click': 'Brand, output and assistant'},
             {'snapshot': 'opened'}, {'click': 'Start'}])
         last, opened = result['snapshots']['last'], result['snapshots']['opened']
-        # A desk deck stops only for a look pick, so its start names no stops and no level.
+        # A desk deck's start names no review level and no first-draft choice.
         self.assertNotIn('Balanced: it stops for', last['text'])
         self.assertNotIn('Review level', last['text'])
         self.assertNotIn('Change', [link['name'] for link in last['links']])
         self.assertNotIn('First native build', last['text'])
-        self.assertIn('Options', last['buttons'])
+        self.assertIn('Brand, output and assistant', last['buttons'])
         for shot in (last, opened):
             self.assertNotIn('See the first draft before the deck is checked', shot['buttons'])
         self.assertIn('Its model', opened['fields'])
@@ -654,33 +654,45 @@ class ScreenTests(ScriptedPage, PageCase):
         posted = [body for address, body in self.posts(result) if address == '/api/decks']
         self.assertNotIn('initial_review', posted[0]['form'])
 
-    def test_the_start_says_the_one_stop_an_existing_deck_makes(self):
+    def test_the_start_lists_what_an_existing_deck_waits_for_by_its_level(self):
         import route_stops
         titles = {'brand-only': 'Brand only', 'polish': 'Polish',
                   'redesign': 'Redesign, keep content', 'rework': 'Full rework',
                   'selected': 'Selected changes'}
         for case, form in route_stops.FORM.items():
-            # A desk deck stops only for a look the start chose to pick: an existing deck's
-            # looks are drawn only where it is redesigned. No start chooses a review level.
+            # What happens after Start follows the route's own steps: the slide text is
+            # approved wherever an outline is drafted, and the look picked where looks are
+            # drawn. No start chooses a review level.
             if form['route'] != 'existing':
                 continue
             answers = self.answers(**{
                 'GET /api/setup': [self.setup_with(review_level='balanced')],
                 'GET /api/run': [{'status': 404, 'body': {'error': 'There is no deck there.'}}]})
             result = self.run_page(answers, [
-                {'click': 'New deck'}, {'click': 'An existing deck'},
+                {'click': 'New deck'}, {'click': 'An existing deck'}, {'snapshot': 'unset'},
                 {'click': titles[form['level']]}, {'snapshot': 'level'}])
             with self.subTest(case=case):
                 self.assertEqual(result['errors'], [])
                 shot = result['snapshots']['level']
-                looks = 'gate:look' in route_stops.STOPS[form['stops']]['step_by_step']
-                self.assertIn('It stops once, for you to pick the look' if looks
-                              else 'It starts at once and runs on its own, with no stops.',
-                              shot['text'])
+                stops = route_stops.STOPS[form['stops']]['step_by_step']
+                text, looks = 'gate:outline' in stops, 'gate:look' in stops
+                said = {(True, True): 'Before the desk, it waits for you twice: to approve the '
+                                      'slide text, then to pick the look.',
+                        (False, True): 'Before the desk, it waits for you to pick the look.',
+                        (False, False): 'It runs on its own until the deck opens on the '
+                                        'desk.'}[(text, looks)]
+                self.assertIn(said, shot['sheet'])
+                self.assertEqual('Approve the slide text.' in shot['sheet'], text)
+                self.assertEqual('The changes are made.' in shot['sheet'], not text)
+                self.assertEqual('Pick the look.' in shot['sheet'], looks)
                 self.assertEqual('Pick it when the samples are drawn' in shot['buttons'], looks)
-                for gone in ('Review level', 'Where it stops',
+                for always in ('Review the deck.', 'Deliver.'):
+                    self.assertIn(always, shot['sheet'])
+                for gone in ('Review level', 'Where it stops', 'It stops once',
                              'Use this for new work in every studio'):
                     self.assertNotIn(gone, shot['text'])
+                self.assertIn('Choose how much changes, and what happens after Start is listed '
+                              'here.', result['snapshots']['unset']['sheet'])
 
     def test_the_plan_says_where_each_question_is_answered_from(self):
         path = self.saved_started(research=True)
@@ -728,23 +740,40 @@ class ScreenTests(ScriptedPage, PageCase):
                 self.assertIn(words, about['text'])
                 for other in gated:
                     self.assertNotIn(other, about['text'])
-                self.assertIn('It stops once, for you to pick the look when the samples are '
-                              'drawn', last['text'])
-                self.assertIn('runs on its own, with no stops.',
-                              result['snapshots']['default']['text'])
+                # What happens after Start is said from the choices: research, the slide
+                # text to approve, then the look to pick, or the brand's default with no stop.
+                plan = last['sheet'][last['sheet'].index('What happens after Start'):]
+                self.assertIn('Before the desk, it waits for you twice: to approve the slide '
+                              'text, then to pick the look.', plan)
+                self.assertLess(plan.index('Research.'), plan.index('Approve the slide text.'))
+                self.assertLess(plan.index('Approve the slide text.'),
+                                plan.index('Pick the look.'))
+                self.assertLess(plan.index('Pick the look.'), plan.index('Review the deck.'))
+                self.assertLess(plan.index('Review the deck.'), plan.index('Deliver.'))
+                self.assertIn('choose Approve text & design deck. Nothing is designed until you '
+                              'approve.', plan)
+                default = result['snapshots']['default']['sheet']
+                self.assertIn('Before the desk, it waits for you to approve the slide text.',
+                              default)
+                self.assertIn('The brand’s default look. Once the text is approved, the slides '
+                              'are designed in it, with no stop.', default)
+                self.assertNotIn('Pick the look.', default)
+                for gone in ('It stops once', 'with no stops'):
+                    self.assertNotIn(gone, last['text'] + default)
                 for old in ('At each stop you see what is made so far.',
                             'From the first decision on'):
                     self.assertNotIn(old, last['text'])
 
-    def test_home_says_new_decks_run_on_the_desk_and_a_deck_you_have_stops_by_its_level(self):
+    def test_home_says_new_slide_text_is_approved_before_anything_is_designed(self):
         result = self.run_page(self.answers(), [{'snapshot': 'home'}])
         text = result['snapshots']['home']['text']
-        self.assertIn('A deck from an idea or a document is researched, outlined, designed and '
-                      'built on its own, and opens on the desk when it is ready. It stops only '
-                      'if you chose to pick its look.', text)
-        self.assertIn('A deck you already have stops where its review level says, for your '
-                      'decision.', text)
+        self.assertIn('Where new slide text is drafted, you approve it before anything is '
+                      'designed; then the deck is built and opens on the desk when it is '
+                      'ready. The start lists what happens, from your choices, before you '
+                      'begin.', text)
         for old in ('stops each time it needs your decision',
+                    'It stops only if you chose to pick its look.',
+                    'stops where its review level says',
                     'builds it on its own, and stops where its review level says',
                     'It takes two or three short steps'):
             self.assertNotIn(old, text)
@@ -1174,7 +1203,7 @@ class ScreenTests(ScriptedPage, PageCase):
                                                    'error': 'There is no deck there.'}}]}), [
             {'click': 'New deck'}, {'click': 'An idea'},
             {'fill': 'A short title', 'value': 'Rolling restarts'},
-            {'click': 'Options'}, {'snapshot': 'options'}])
+            {'click': 'Brand, output and assistant'}, {'snapshot': 'options'}])
         self.assertIn(said, result['snapshots']['options']['text'])
         result = self.deck_screen(path, [{'snapshot': 'signed'}],
                                   **{'GET /api/setup': [self.setup_with(google=True)]})
