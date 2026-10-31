@@ -7,7 +7,7 @@ from pathlib import Path
 
 from helpers import Isolated
 from graphics_fixtures import png
-from runner.images.codex import Codex, failure_reason
+from runner.images.codex import Codex, failure_reason, saved_output
 from runner.images.gemini import Gemini
 from runner.validation import validate_image_result
 
@@ -161,3 +161,44 @@ class CodexImageTests(Isolated):
     def test_a_clean_turn_has_no_failure_reason(self):
         self.assertIsNone(failure_reason({'returncode': 0, 'events': COMPLETED}))
         self.assertEqual(failure_reason({'returncode': 0, 'events': stream({'type': 'error', 'message': 'quota'})}), 'quota')
+
+    def test_a_retried_stream_error_followed_by_a_completed_turn_is_not_a_failure(self):
+        # Codex reports stream retries as error events; a later completed turn recovered them.
+        events = stream({'type': 'thread.started', 'thread_id': THREAD},
+                        {'type': 'error', 'message': 'Reconnecting... 1/5 (stream disconnected before completion)'},
+                        {'type': 'error', 'message': 'Reconnecting... 2/5 (rate limit while reconnecting)'},
+                        {'type': 'turn.completed', 'usage': {'input_tokens': 7, 'output_tokens': 9}})
+        self.assertIsNone(failure_reason({'returncode': 0, 'events': events}))
+        adapter, folder = self.adapter(Worker(events=events))
+        answer = adapter.generate(attempt_id='attempt1', brief=self.brief)
+        self.assertEqual(answer['state'], 'complete', 'A recovered request must not look failed and invite a paid retry.')
+        self.assertEqual((folder / answer['assets'][0]['file']).read_bytes(), PNG)
+        # Local recovery applies the same rule to the saved event stream.
+        import os
+        os.environ['CODEX_HOME'] = str(self.temp / 'codex')
+        output = self.temp / 'codex' / 'generated_images' / THREAD
+        output.mkdir(parents=True)
+        (output / 'image.png').write_bytes(PNG)
+        recovering = self.temp / 'recovering'
+        recovering.mkdir()
+        (recovering / 'events.jsonl').write_text(events)
+        self.assertEqual(saved_output(recovering), output)
+
+    def test_an_error_with_nothing_after_it_ends_the_request(self):
+        events = stream({'type': 'thread.started', 'thread_id': THREAD},
+                        {'type': 'turn.completed'},
+                        {'type': 'error', 'message': 'stream disconnected before completion'})
+        self.assertEqual(failure_reason({'returncode': 0, 'events': events}), 'provider-refusal')
+        answer = self.adapter(Worker(events=events))[0].generate(attempt_id='attempt1', brief=self.brief)
+        self.assertEqual(answer['state'], 'failed')
+        self.assertEqual(answer['assets'], [])
+        recovering = self.temp / 'recovering'
+        recovering.mkdir()
+        (recovering / 'events.jsonl').write_text(events)
+        with self.assertRaises(ValueError):
+            saved_output(recovering, root=self.temp / 'codex-output')
+
+    def test_please_run_login_is_a_sign_in_problem(self):
+        worker = Worker(image=None, returncode=1, stderr='Not signed in. Please run /login to continue.', events='')
+        answer = self.adapter(worker)[0].generate(attempt_id='attempt1', brief=self.brief)
+        self.assertEqual((answer['state'], answer['reason']), ('failed', 'sign-in-required'))

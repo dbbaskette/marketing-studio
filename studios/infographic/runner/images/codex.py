@@ -19,19 +19,32 @@ _ACTIVE = {}
 _ACTIVE_LOCK = threading.Lock()
 
 
+def terminal_failures(raw):
+    """The events that ended the run: any turn.failed, and error events with no later
+    turn.completed. Codex reports retried stream errors ("Reconnecting... 1/5") as error
+    events; when a turn completes after them they were recovered, not a failure.
+    """
+    events = list(_events(raw))
+    last_completed = max((i for i, e in enumerate(events) if e.get('type') == 'turn.completed'), default=-1)
+    return [e for i, e in enumerate(events) if e.get('type') == 'turn.failed'
+            or e.get('type') == 'error' and i > last_completed]
+
+
 def failure_reason(done, stderr=''):
     """A normalized reason from failed-run diagnostics only, never from the model's prose.
 
-    Returns None for a clean completed turn. Terminal error events count even when the
+    Returns None for a clean completed turn. Terminal failures count even when the
     process exited 0, so a refused or limited turn is never collected as an image.
     """
     from ..assistant_failure import classify
-    failed = any(event.get('type') in ('turn.failed', 'error') for event in _events(done.get('events', '')))
-    if not done.get('returncode') and not failed:
+    failures = terminal_failures(done.get('events', ''))
+    if not done.get('returncode') and not failures:
         return None
-    diagnostics = (stderr + '\n' + '\n'.join(json.dumps(e) for e in _events(done.get('events', ''))
-                   if e.get('type') in ('turn.failed', 'error'))).casefold()
-    found = classify({**done, 'state': 'complete'}, stderr)
+    terminal = '\n'.join(json.dumps(e) for e in failures)
+    diagnostics = (stderr + '\n' + terminal).casefold()
+    if 'please run /login' in diagnostics:
+        return 'sign-in-required'
+    found = classify({**done, 'state': 'complete', 'events': terminal}, stderr)
     if found in ('sign-in', 'quota'):
         return {'sign-in': 'sign-in-required', 'quota': 'quota'}[found]
     # An installed Codex that cannot expose its image tool in this execution mode.
@@ -70,7 +83,7 @@ def saved_output(folder, *, root=None):
     require(len(threads) == 1 and isinstance(threads[0], str)
             and re.fullmatch(r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}', threads[0])
             and any(event.get('type') == 'turn.completed' for event in parsed)
-            and not any(event.get('type') in ('turn.failed', 'error') for event in parsed),
+            and not terminal_failures(events),
             'A completed owned image thread is required for local recovery.')
     output = Path(root) / threads[0] if root is not None else generated_root() / threads[0]
     require(output.is_dir() and not any(p.is_symlink() for p in (output, *output.parents)),
