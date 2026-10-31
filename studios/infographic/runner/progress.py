@@ -9,6 +9,15 @@ def _reviewed(project, review):
                 and review.get('scene_digest') == digest(project['scene']))
 
 
+def approved_words(approval):
+    """Who approved which revision, and whether a rename carried that approval forward."""
+    moved = approval.get('carried') or {}
+    if moved.get('reason') == 'rename':
+        return ('You approved revision ' + str(moved['from_revision']) + '. Renaming kept the '
+                'approval for revision ' + str(approval['revision']) + '.')
+    return 'You approved revision ' + str(approval['revision']) + '.'
+
+
 STEPS = (('story', 'Story'), ('draft', 'Draft page'), ('review', 'Review and checks'),
          ('delivery', 'Approved delivery'))
 
@@ -32,10 +41,12 @@ def roadmap(project, deliveries, *, review=None, review_checked=False):
         stage = 'choose'
     elif project['scene'] is None:
         stage = 'build'
+    elif project['approval'] is not None:
+        # An approval without a current preview was kept by a rename: the approved files
+        # are prepared straight from the approved page, with no draft preview first.
+        stage = 'deliver' if approved_files else 'export'
     elif preview is None:
         stage = 'preview'
-    elif project['approval'] is not None:
-        stage = 'deliver' if approved_files else 'export'
     elif passed:
         stage = 'approve'
     elif _reviewed(project, review) and not review_checked:
@@ -57,7 +68,7 @@ def roadmap(project, deliveries, *, review=None, review_checked=False):
     if passed or project['approval'] is not None:
         complete.append('Review recorded and checks passed.')
     if project['approval'] is not None:
-        complete.append('You approved revision ' + str(project['approval']['revision']) + '.')
+        complete.append(approved_words(project['approval']))
     needs = {
         'story': 'Find the story: your assistant proposes source-backed explanations.',
         'choose': 'Choose one of the proposed stories.',

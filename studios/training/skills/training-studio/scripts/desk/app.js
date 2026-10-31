@@ -980,14 +980,44 @@ function calm() {
 }
 
 // A short message that slides in at the bottom right, is read out, and leaves by itself.
-// It is kept clear of the toolbar, so it never covers the main thing to do.
-function toast(text) {
-  const node = make('p', 'toast glass', text);
-  byId('toasts').append(node);
-  window.setTimeout(() => {
+// It is kept clear of the toolbar, so it never covers the main thing to do. One with an
+// action ({label, key, run}, as Undo is) stays longer, and stays while it is pointed at or
+// holds the focus; pressing its button puts it away. Returns the toast's button, or null.
+function toast(text, action) {
+  const node = make('p', 'toast glass' + (action ? ' toast-action' : ''), text);
+  let go = null, over = false;
+  const leave = () => {
+    if (!node.parentNode) return;
+    const focused = node.contains(document.activeElement);
     node.classList.add('toast-leaving');
-    window.setTimeout(() => node.remove(), calm() ? 0 : 260);
-  }, 4200);
+    window.setTimeout(function gone() {
+      node.remove();
+      // Only a focus that left with the toast is put back: what the action itself focused
+      // in the meantime keeps it.
+      const active = document.activeElement;
+      if (focused && (!active || active === document.body || !document.body.contains(active))) {
+        byId('title').focus({ preventScroll: true });
+      }
+    }, calm() ? 0 : 260);
+  };
+  if (action) {
+    // One action at a time: a newer Undo replaces an older one, which no longer applies.
+    for (const old of byId('toasts').querySelectorAll('.toast-action')) old.remove();
+    go = capsule(action.label, 'quiet', () => {
+      leave();
+      return action.run(go);
+    }, action.key);
+    node.append(' ', go);
+    node.addEventListener('mouseenter', () => { over = true; });
+    node.addEventListener('mouseleave', () => { over = false; });
+  }
+  byId('toasts').append(node);
+  const wait = () => window.setTimeout(function leaving() {
+    if (action && (over || node.contains(document.activeElement))) wait();
+    else leave();
+  }, action ? 10000 : 4200);
+  wait();
+  return go;
 }
 
 // --- copying ----------------------------------------------------------------------
@@ -1200,6 +1230,10 @@ function swap(update) {
 function open(next) {
   if (view.screen === 'run' && view.path && (next.screen !== 'run' || next.path !== view.path)
       && typeof shareDesk === 'function') shareDesk(view.path);
+  // A toast's action (Undo) belongs to the screen it was offered on: it leaves with it.
+  if (view.screen !== next.screen || view.path !== (next.path || null)) {
+    for (const old of byId('toasts').querySelectorAll('.toast-action')) old.remove();
+  }
   view.screen = unset() ? 'setup' : next.screen || 'home';
   view.path = next.path || null;
   view.artifact = next.artifact || null;
@@ -1858,9 +1892,11 @@ function drawHome(fresh) {
     && first.standing.next;
   const gate = first && ((first.waiting || {}).artifact || next) && !asked;
   const outline = first && !(first.waiting || {}).artifact && readsOutline(asked);
-  const lead = !first ? null : outline ? capsule('Review ' + outlineLabel(asked.outline),
+  // With several trainings waiting, the toolbar's review names the one it opens.
+  const whose = first && pick('needs-you').length > 1 ? ' for ' + (first.title || 'Untitled') : '';
+  const lead = !first ? null : outline ? capsule('Review ' + outlineLabel(asked.outline) + whose,
     'filled', () => show('outline', { path: first.path }), 'lead')
-    : capsule(gate ? (next ? next.label : 'Review ' + first.waiting.label)
+    : capsule(gate ? (next ? next.label : 'Review ' + first.waiting.label) + whose
       : 'Open ' + (first.title || 'Untitled'),
       'filled', gate ? reviewAction(first) : openTraining(first), 'lead');
   // With the runner, one button starts a new training. It is the filled one when nothing
@@ -9043,6 +9079,8 @@ function took(listing) {
   const keys = waiting.map(waitingKey);
   for (const training of view.known ? waiting : []) {
     if (view.known.includes(waitingKey(training))) continue;
+    // What the person just did themselves (Undo, Return to draft) is not news to them.
+    if (view.ownDecision && view.ownDecision.has(training.path)) continue;
     const said = (training.title || 'Untitled') + ': ' + saysOf(training);
     toast(said);
     if (alerts() !== 'granted') continue;
@@ -9059,6 +9097,7 @@ function took(listing) {
     }
   }
   view.known = keys;
+  if (view.ownDecision) for (const training of waiting) view.ownDecision.delete(training.path);
 }
 
 // Someone is in the middle of writing in a box: the list is left as it is until they are done.

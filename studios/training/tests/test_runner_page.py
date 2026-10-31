@@ -2992,7 +2992,7 @@ class DeskPageTests(PageCase):
         view = self.post('drafts/ready', {'path': path, 'name': name,
                                           'seen': hashed(root, name)})
         card = next(card for card in view['cards'] if card['name'] == name)
-        self.assertEqual((card['state'], card['actions']), ('ready', ['download']))
+        self.assertEqual((card['state'], card['actions']), ('ready', ['draft', 'download']))
         said = self.post('drafts/ready', {'path': path, 'name': 'brief@101', 'seen': 'x'}, 409)
         self.assertTrue(said['error'].endswith('has changed since it was opened. Read the new '
                                                'version before deciding.'))

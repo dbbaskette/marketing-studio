@@ -154,12 +154,14 @@ What a caller needs to know
   page likes.
 - A training started on the desk (`flow: 'desk'`) is shown and changed there: `GET
   /api/drafts?path=` answers `drafts.view`, and `POST /api/drafts/ready` {path, name,
-  seen}, `/api/drafts/level-ready` {path, level, seen: {name: hash}}, `/api/drafts/update`
-  {path, name}, `/api/drafts/keep` {path, name, reason, seen} and `/api/drafts/send` {path,
-  name} each answer it after the change (`level-ready` adds `marked` and `stopped`, `send`
-  adds `made` and `problems`). Each is 409 with `drafts.NOT_ON_DESK` for a saved training,
-  and a desk training is 409 with `drafts.ON_DESK` at `/api/decide`, `/api/review`,
-  `/api/outline`, `/api/look` and `GET /api/gate`. A teammate reads the desk with only
+  seen}, `/api/drafts/level-ready` {path, level, seen: {name: hash}}, `/api/drafts/draft`
+  {path, seen: {name: hash}} (Return to draft, and Undo after Mark ready),
+  `/api/drafts/update` {path, name}, `/api/drafts/keep` {path, name, reason, seen} and
+  `/api/drafts/send` {path, name} each answer it after the change (`level-ready` adds
+  `marked` and `stopped`, `draft` adds `returned`, `send` adds `made` and `problems`).
+  Each is 409 with `drafts.NOT_ON_DESK` for a saved training, and a desk training is 409
+  with `drafts.ON_DESK` at `/api/decide`, `/api/review`, `/api/outline`, `/api/look` and
+  `GET /api/gate`. A teammate reads the desk with only
   Download on each card, and each change is refused with who runs the training.
 - Add a source reads `GET /api/drafts/source-price?path=` before sending
   `POST /api/drafts/source` with {path, files: [{name, content (base64)}]}. It adds the
@@ -222,10 +224,11 @@ from studio_core.shared_runner import page as _shared
 modules.bind(globals(), _shared, _shared.NAMES)
 
 DRAFTS = '/api/drafts'
-# The desk's decisions, each under DRAFTS: Mark ready, Mark this level ready, Update, Keep as
-# it is, and Send to its copies.
-DECIDED = tuple(f'{DRAFTS}/{action}' for action in ('ready', 'level-ready', 'update', 'keep',
-                                                     'send', 'update-all', 'stop-updates'))
+# The desk's decisions, each under DRAFTS: Mark ready, Mark this level ready, Return to draft
+# (and Undo), Update, Keep as it is, and Send to its copies.
+DECIDED = tuple(f'{DRAFTS}/{action}' for action in ('ready', 'level-ready', 'draft', 'update',
+                                                     'keep', 'send', 'update-all',
+                                                     'stop-updates'))
 # Typing into a part, bringing back one of its versions, and committing what was typed.
 TYPED = tuple(f'{DRAFTS}/{action}' for action in ('save', 'restore', 'share'))
 JOBS = tuple(f'{DRAFTS}/{action}' for action in ('note', 'revise', 'selection', 'stop', 'retry', 'layout', 'write-whole'))
@@ -555,11 +558,13 @@ class RunnerPage(desk.Page):
     def drafted(self, path: str, sent: dict) -> dict:
         """One of the desk's decisions, as the person made it on a card, answered with the
         desk's view: Mark ready {name, seen}, Mark this level ready {level, seen: {name:
-        hash}}, which adds `marked` and `stopped`, Update {name}, Keep as it is {name,
+        hash}}, which adds `marked` and `stopped`, Return to draft (and Undo) {seen: {name:
+        hash}}, which adds `returned`, Update {name}, Keep as it is {name,
         reason, seen}, and Send to its copies {name}, which adds `made` and `problems`."""
         root = self.on_desk(desk.text(sent, 'path'))
-        name = None if path in (f'{DRAFTS}/level-ready', f'{DRAFTS}/update-all',
-                                f'{DRAFTS}/stop-updates') else desk.text(sent, 'name')
+        name = None if path in (f'{DRAFTS}/level-ready', f'{DRAFTS}/draft',
+                                f'{DRAFTS}/update-all', f'{DRAFTS}/stop-updates') \
+            else desk.text(sent, 'name')
         added = {}
         try:
             if path == f'{DRAFTS}/ready':
@@ -571,6 +576,12 @@ class RunnerPage(desk.Page):
                     raise desk.Refusal(HTTPStatus.BAD_REQUEST, 'Give the level as text and '
                                        'what was shown of each card by its name.')
                 added = self.engine.mark_level_ready(root, level or None, seen or {})
+            elif path == f'{DRAFTS}/draft':
+                seen = sent.get('seen')
+                if not isinstance(seen, dict):
+                    raise desk.Refusal(HTTPStatus.BAD_REQUEST, 'Give what was shown of each '
+                                       'material to return to draft by its name.')
+                added = self.engine.return_to_draft(root, seen)
             elif path == f'{DRAFTS}/update':
                 self.engine.update(root, name)
             elif path == f'{DRAFTS}/update-all':
@@ -685,11 +696,14 @@ class RunnerPage(desk.Page):
         if told is None:
             return
         counts = told['counts']
+        # While the topics wait for approval, that is the one thing asked: nothing is the
+        # person's to mark ready before it, the plan's own draft among them.
+        topics = (told['next'] or {}).get('kind') == 'plan'
         item.update(standing=told, state=told['state'], sentence=told['sentence'],
                     ready=told['phase'] == 'ready',
                     # Still to make counted unapproved drafts too; these are told apart.
                     to_make=counts['to_write'], to_write=counts['to_write'],
-                    to_review=counts['drafts'], attention=counts['attention'],
+                    to_review=0 if topics else counts['drafts'], attention=counts['attention'],
                     stages=drafts.stage_row(item.get('stages') or [], told))
         if told['state'] == 'needs-you' and not isinstance(item.get('waiting'), dict):
             item['waiting'] = {'artifact': None, 'label': None, 'question': None,

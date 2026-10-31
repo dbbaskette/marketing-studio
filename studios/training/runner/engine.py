@@ -5453,10 +5453,17 @@ class Engine(Reviewing):
         if workspace.split(name)[0] == 'deck' and name in state \
                 and drafts.needs_you(root, self._survey_files(root, record), name):
             raise WorkspaceError(drafts.NEEDS_YOU.format(it=workspace.label(name)))
+        # What it was before, so Undo (Return to draft of this very approval) puts it back.
+        before = (workspace.load(root)['artifacts'].get(name) or {}).get('approved')
         # Never approved unseen: without the version the person saw, the core refuses it as
         # one that has changed since it was opened.
-        workspace.decide(root, name, 'approve', by='page',
-                         seen=seen if isinstance(seen, str) else '')
+        outcome = workspace.decide(root, name, 'approve', by='page',
+                                   seen=seen if isinstance(seen, str) else '')
+        record = self._load(root)
+        record.setdefault('drafts', {}).setdefault('marked', {})[name] = {
+            'sha256': outcome['approved']['sha256'], 'at': outcome['approved']['at'],
+            'before': before}
+        self._store(root, record)
 
     @staticmethod
     def _settled(root: Path, record: dict, name: str) -> dict:
@@ -5550,6 +5557,57 @@ class Engine(Reviewing):
         if marked:
             self.carry_on(root)
         return {'marked': marked, 'stopped': stopped}
+
+    def return_to_draft(self, path, seen) -> dict:
+        """Return materials the person marked ready to drafts, as they asked on the desk:
+        Return to draft on a card, or Undo on the Mark ready toast. Each is bound to the
+        version the person was shown (`seen`, by name), as Mark ready is, and all of them are
+        checked before any changes. Where the version is still the one that Mark ready
+        approved, the approval it had before is put back exactly; otherwise it stays
+        accepted on the desk, as an edit leaves it. Refused while one is being updated and
+        in a conversation, where readiness is decided there. Nothing is made again, no job
+        starts, and nothing kept in the Document Library or a copy is removed: a guide or
+        brief keeps its library revision until it is marked ready again. Returns
+        {'returned': [names]}."""
+        with self.files:
+            root, record = self._on_desk(path, decided=True)
+            if drafts.in_conversation(record):
+                raise WorkspaceError(drafts.DRAFT_IN_CONVERSATION)
+            if not isinstance(seen, dict) or not seen or not all(
+                    isinstance(name, str) and isinstance(shown, str)
+                    for name, shown in seen.items()):
+                raise WorkspaceError(drafts.NOTHING_TO_RETURN)
+            session = workspace.load(root)
+            names, person = workspace.artifact_names(root, session), \
+                workspace.person_statuses(root, session)
+            # Every one is checked before any changes: a refusal leaves everything as it was.
+            for name, shown in seen.items():
+                if name not in names or workspace.split(name)[0].partition(':')[0] \
+                        not in workspace.PERSON_MARKED:
+                    raise WorkspaceError(drafts.NOTHING_TO_RETURN)
+                it = workspace.sentence(workspace.label(name))
+                if name in drafts.updates(record):
+                    raise WorkspaceError(drafts.BUSY)
+                if person.get(name) != 'approved':
+                    raise WorkspaceError(drafts.DRAFT_ALREADY.format(it=it))
+                file = root / workspace.artifact(root, session, name)['file']
+                if workspace.sha256_file(file) != shown:
+                    raise WorkspaceError(CHANGED.format(it=it))
+            marked = record.setdefault('drafts', {}).setdefault('marked', {})
+            for name, shown in seen.items():
+                kept = marked.pop(name, None)
+                approval = session['artifacts'][name].get('approved') or {}
+                exact = (isinstance(kept, dict) and kept.get('sha256') == shown
+                         and kept.get('at') == approval.get('at'))
+                workspace.return_to_draft(root, name, shown,
+                                          {'approved': kept.get('before')} if exact else None)
+            self._store(root, record)
+            self._ready_again(root)
+            which = (workspace.label(next(iter(seen))) if len(seen) == 1
+                     else f'{len(seen)} materials')
+            self._commit(root, f'return {which} to draft')
+        self.carry_on(root)
+        return {'returned': list(seen)}
 
     def send_copy(self, path, name) -> dict:
         """Send one material to its copies at once, as the person asked on its card, Ready
