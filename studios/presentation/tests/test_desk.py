@@ -64,7 +64,7 @@ class PageFileTests(unittest.TestCase):
         self.assertEqual(set(server.PAGE), {'/', '/index.html', '/app.js', '/markdown.js',
                                             '/style.css', '/deck.css', '/deck-panels.js',
                                             '/deck-panels.css', '/lists.js', '/deck-desk.js',
-                                            '/drafting.js', '/research.js'})
+                                            '/drafting.js', '/research.js', '/library.js'})
 
     def test_the_page_has_nothing_its_own_policy_would_block(self):
         page = self.read('index.html')
@@ -72,10 +72,10 @@ class PageFileTests(unittest.TestCase):
         self.assertNotRegex(page, r'\sstyle\s*=')
         self.assertNotRegex(page, r'\son[a-z]+\s*=')
         self.assertNotRegex(page, r'<svg\b')
-        # markdown.js, the desk kit, the shared deck panels, app.js and the deck desk: each a
-        # file, none inline.
+        # markdown.js, the desk kit, the shared deck panels, the library sheet, app.js and the
+        # deck desk: each a file, none inline.
         self.assertEqual(re.findall(r'<script\b[^>]*>(.*?)</script>', page, re.DOTALL),
-                         ['', '', '', '', '', '', ''])
+                         ['', '', '', '', '', '', '', ''])
 
     def test_the_shell_names_its_controls_and_its_regions(self):
         page = self.read('index.html')

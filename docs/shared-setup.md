@@ -133,6 +133,85 @@ host, path at a segment boundary, every redirect checked); see
 [the design](superpowers/specs/2026-10-23-research-sites-design.md) and
 `core/studio_core/research_sites.py`.
 
+## The Document Library
+
+One local library holds documents for every studio. The code is in
+`core/studio_core/document_library/`, and the design is in
+[the spec](superpowers/specs/2026-10-29-document-library-design.md) and
+[the plan](superpowers/plans/2026-10-29-document-library-plan.md).
+
+**Where it is.** `library.root` in the studios config names its folder. Until the
+first explicit use, the folder is `library/` under `local.root` (normally
+`~/Studios/library`), and nothing is written. Explicit uses are an upload on
+Marketing Studio's **Library** screen, a finished or published blog, or a delivered
+deck. On the first one, the resolved folder is saved through the config's adjacent
+lock, with unrelated values and formatting kept. If another studio saved a
+location first, that one is used. A later change to `local.root` never moves the
+library. Browsing, or opening any studio, makes nothing and sets up no workspace.
+`STUDIOS_LIBRARY` names a library for one process, as `STUDIOS_CONFIG` names the
+config file. Tests use it, and it is never saved.
+
+**What it keeps.** Each document has a stable ID and immutable revisions under
+`documents/<id>/revisions/<n>/`:
+
+- `revision.json` holds the type, origin, studio, project and revision,
+  representations with their SHA-256 hashes, and conversion state and gaps.
+- `content.md` holds the readable Markdown.
+- An upload also keeps `original.<ending>`, its bytes as they were sent.
+
+Each revision is written whole into a hidden folder and then renamed into place.
+Every write holds `.library.lock` (an interprocess `flock`). The catalog in
+`.state/catalog.json` is rebuilt from the records whenever it is stale or damaged.
+Each studio's browsing filters are kept in `.state/filters.json`; they are filters
+only, never a selection. A deck's folder is a slug of its title, so a delivered deck's
+key adds a random part made once for that deck. Two workspaces with decks of the same
+title, or a deck deleted and made again, are separate documents. A blog's ID already
+ends in a random part, so `blog:<id>` is unique. A saved library folder that is gone,
+such as on a drive that is not connected, is reported and not made again.
+
+Every file is checked against its hash before it is previewed, downloaded or
+pinned, and a link, a missing file or a changed file is refused. Some files can't
+be added as context until their text is supplied: an image-only PDF is marked
+**Needs text**, and an unreadable file is marked **Cannot be read**. Nothing is
+read with OCR, a model or the network.
+
+| Content | Kept |
+| --- | --- |
+| Upload | Original bytes, plus Markdown when its text can be read |
+| Finished or published blog | Its Markdown, under `blog:<blog id>` |
+| Delivered deck | Slide-ordered outline Markdown, under a key made once per deck (`presentation:<folder>-<random>`, kept in its local `sources/library.json`). The PDF is recorded as **needs export**. |
+
+**Choosing context.** **Add from library** pins chosen revisions into one project,
+after checking every one of them first:
+
+- **Presentation Studio** copies each revision into the deck's `sources/supplied/`
+  as an ordinary supplied document, with `library` naming the ID, revision and
+  Markdown hash. The deck's research, outline and words jobs read it within the
+  existing 40-document and 8 MB limits.
+- **Blog Studio** makes each revision a file uploaded for that blog (material) with
+  the chosen role. An example stays an example. These files never enter the team
+  library or the Team Hub.
+
+A project keeps its copy if the library changes or is gone. A newer revision is
+shown as available and is taken only on request. Removing a source removes the
+project's copy, never the library document. Choosing context starts no research,
+grants no web access and sends nothing to an assistant.
+
+**State changes**
+
+| Action or condition | Result |
+| --- | --- |
+| Add | Every revision is checked. All are pinned, or none |
+| Add a document already pinned | Refused; Update instead |
+| Remove | The project's copy is removed; the library document is unchanged |
+| A newer library revision | The project shows Update available; nothing changes until the person takes it |
+| Library changed, unavailable or deleted | The project keeps reading its pinned copy |
+| Unreadable, changed or missing revision | Refused with why, and nothing changes |
+| Finish, publish or deliver again with the same text | Same document and revision, and no new revision |
+| A library save fails after delivery | Recorded in the deck's local `sources/library.json`. **Keep in library again** retries from `deliver.json`, with no upload and no job. |
+| A job is running on the deck (the chain draws, or a desk job runs) | Add from library and Use revision N are refused until it ends; the job keeps the sources it started with |
+| Use selected is still landing | The sheet's Cancel, Close and Escape wait |
+
 ## Where new work stops
 
 Choose **Where new work stops** under You and your assistant. New browser

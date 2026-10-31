@@ -10,6 +10,8 @@ from pathlib import Path
 _DATA = tempfile.TemporaryDirectory()
 os.environ['PRESENTATION_STUDIO_DATA'] = _DATA.name
 os.environ['STUDIOS_CONFIG'] = str(Path(_DATA.name) / 'config' / 'studios-config.json')
+# Nor the shared Document Library a delivered deck is kept in.
+os.environ['STUDIOS_LIBRARY'] = str(Path(_DATA.name) / 'library')
 
 # After a commit, a fetch or a push, git starts auto-gc and maintenance in the background. That
 # work can still be writing when a test's temporary directory is removed, which fails the

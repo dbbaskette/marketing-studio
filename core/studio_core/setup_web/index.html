@@ -15,6 +15,7 @@
   <nav class="sidebar glass" aria-label="Main navigation">
     <a href="#" class="brand" id="home-link"><span id="home-symbol" class="studio-symbol" aria-hidden="true">M</span><span id="home-name">Marketing Studio</span></a>
     <button type="button" data-view="home" class="nav-item"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg><span class="nav-label">Studios</span></button>
+    <button type="button" data-view="library" class="nav-item"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4.5h4v15H5z"/><path d="M10.5 4.5h4v15h-4z"/><path d="M16 5.2l3.6-1 3.4 14.6-3.6.9z"/></svg><span class="nav-label">Library</span></button>
     <button type="button" data-view="settings" class="nav-item"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 7.5h7"/><path d="M16.5 7.5h3"/><path d="M14 5.5a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/><path d="M4.5 16.5h3"/><path d="M12.5 16.5h7"/><path d="M10 14.5a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/></svg><span class="nav-label">Shared settings</span></button>
     <button type="button" data-view="computer" class="nav-item"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4.5h18v13H3z"/><path d="M8 21h8"/><path d="M12 17.5V21"/></svg><span class="nav-label">This computer</span></button>
     <p class="sidebar-foot">One place to get ready.<br>Four places to create.</p>
@@ -140,6 +141,18 @@
           <p id="prepare-note" class="field-hint quiet" hidden>Finish setup will prepare installed studios with these choices. Your existing workspaces stay in place. For a shared repository, this creates a separate clone for each studio. Models, research sites and installation folders are under Shared settings, Advanced, afterwards.</p>
           <div id="save-bar" class="bar form-actions"><p id="save-state" class="save-state" role="status" hidden></p><button type="button" id="done-settings" class="button button-quiet" hidden>Back to Studios</button><button type="button" id="back" class="button" hidden>Back</button><button type="submit" id="save" class="button button-filled">Save settings</button></div>
         </form>
+      </section>
+      <section id="library" class="stack" hidden>
+        <div class="intro"><h2 class="large-title">Document Library</h2><p class="lede">Uploads and finished work, kept once on this computer for any studio to use.</p></div>
+        <section id="library-intake" class="card" aria-labelledby="library-intake-heading">
+          <h3 id="library-intake-heading" class="card-title">Add documents</h3>
+          <p class="quiet">Text, Markdown, HTML, Word (.docx) or PDF, up to 8 MB each. Each file is kept as it is, with its readable text as Markdown. Nothing is shared with your team, and no reading of pictures, summary or assistant job starts.</p>
+          <div class="field"><label class="field-label" for="library-files">Files</label><input id="library-files" class="input" type="file" multiple accept=".txt,.md,.html,.htm,.docx,.pdf"></div>
+          <div class="bar"><button type="button" id="library-add" class="button button-filled">Add to library</button></div>
+          <p id="library-where" class="field-hint quiet" role="status"></p>
+        </section>
+        <p class="quiet">Choosing documents for a blog, presentation or training happens in that studio, under Add from library. Browsing here selects nothing.</p>
+        <div id="library-catalog"></div>
       </section>
       <section id="computer" class="stack" hidden>
         <div class="intro"><h2 class="large-title">This computer</h2><p class="lede">Check the tools your studios need on this computer.</p></div>

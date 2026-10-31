@@ -18,6 +18,37 @@ Download `marketing-studio-installer.zip` for the whole suite, or one studio's i
 
 Signing in to an assistant, your organisation's brands and fonts, and optional Google setup are still your choices. Installing starts no provider job.
 
+## Unreleased: the shared Document Library, first slice
+
+- **One library for every studio.** Marketing Studio has a new **Library** screen.
+  Add text, Markdown, HTML, Word or PDF files once. Each is kept as it was sent,
+  with its readable text as Markdown. Browse with search, **Type** and **From**,
+  and **More filters** for origin, status and author. You can preview the Markdown
+  and download the Markdown or the original.
+- **Finished work is kept there too.** A finished or published blog is kept as
+  Markdown. A delivered Presentation Studio deck is kept as its slide-ordered outline
+  Markdown. Delivering or finishing again adds a revision only when the text
+  changed. Presentation Studio cannot export a PDF yet, so a deck's entry says
+  **PDF needs export**, and no PDF is claimed. If the library save fails, the deck
+  says so and offers **Keep in library again**, which delivers nothing again.
+- **Add from library, for one project.** Presentation Studio's desk Sources card
+  and Blog Studio's sources card each have **Add from library**. Ticks stay when you
+  page or filter, **Select all on this page** and **Select all matching** are
+  bounded, and an unreadable document cannot be ticked and says why. **Cancel**
+  changes nothing.
+- **What a project keeps.** Each chosen revision is copied into the project, which
+  keeps working if the library later changes or is gone. When a newer revision is
+  available, a deck shows it and takes it only with **Use revision N**. In Blog Studio
+  you choose a role for each document: facts, approved messaging or an example. An
+  example never becomes evidence, and the documents stay with that blog only.
+- **Nothing starts by itself.** Choosing context starts no research, grants no web
+  access and sends nothing to an assistant. A remembered filter is never a
+  selection, and a new project starts with no documents chosen.
+- **Local.** The library lives in `library/` under your work folder (normally
+  `~/Studios/library`). Its location is saved the first time you use it, and it
+  doesn't move if the work folder changes later. Nothing in it is shared with your
+  team or the Team Hub.
+
 ## Unreleased: shorter shared setup, clear ownership and readiness
 
 - **Four everyday choices first.** Shared settings leads with you and your assistant,

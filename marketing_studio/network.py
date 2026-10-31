@@ -35,7 +35,7 @@ STATIC = frozenset(('/', '/index.html', '/app.js', '/style.css', '/home.css',
                     '/deck.css', '/infographic.css', '/favicon.ico',
                     '/onboarding/', '/onboarding/app.js', '/onboarding/style.css',
                     '/onboarding/home.css', '/deck-panels.js', '/deck-panels.css',
-                    '/lists.js', '/deck-desk.js', '/drafts.js'))
+                    '/lists.js', '/library.js', '/deck-desk.js', '/drafts.js'))
 # GET addresses a studio's page opens in a frame, which cannot send the key: the studio
 # server checks the one-page ticket in its address instead. Every other check still holds.
 FRAMED = {'presentation': frozenset(('/api/deck-draft',)),
@@ -180,6 +180,8 @@ class BridgeHandler(BaseHTTPRequestHandler):
         elif own.identifier == 'infographic' and url.path in ('/api/source-preview','/api/action','/api/csv-preview','/api/csv-selection'):
             limit = 24_000_000
         elif own.identifier == 'training' and url.path in ('/api/documents', '/api/asset'):
+            limit = 12_000_000
+        elif own.identifier == 'marketing' and url.path == '/api/library-upload':
             limit = 12_000_000
         if size < 0 or size > limit or (self.command == 'POST' and not lengths):
             return self.send_error(413, 'This request is too large or has no stated length.')

@@ -1482,8 +1482,11 @@
     const node = h.card('Sources');
     return h.add(node, make('p', 'quiet', SOURCES_SAY),
       listed.length ? h.bullets(listed.map((one) => (one.title || one.name)
+        + (one.library ? ' · from the library, revision ' + one.library.revision
+          + (one.update ? ' (revision ' + one.library_head + ' is available)' : '') : '')
         + (one.readable ? '' : ': ' + (one.problem || 'it has no text that can be read.'))))
         : make('p', 'quiet', 'No sources yet.'),
+      ...libraryParts(run, path, listed, problem),
       h.add(make('p'), make('strong', '', 'Add a source')),
       h.field('desk-source-file', 'A file', {}, 'file', { accept: SOURCE_TYPES,
         hint: 'Text, Markdown, a web page, a Word document or a PDF, up to 8 MB.',
@@ -1492,6 +1495,46 @@
         limit: 1000000 }),
       h.field('desk-source-title', 'Its title', kept, 'title', {}),
       bar(go), problem);
+  }
+
+  // The shared Document Library (library.js): Add from library pins chosen revisions as
+  // sources, Use revision N takes a newer one only when pressed, and a delivered deck says
+  // whether its slide Markdown was kept there. Nothing here starts research or a job.
+  function libraryParts(run, path, listed, problem) {
+    const parts = [];
+    for (const one of listed.filter((entry) => entry.update)) {
+      parts.push(bar(h.capsule('Use revision ' + one.library_head + ' of ' + (one.title || one.name), 'quiet',
+        () => act('desk-library-update', { path, document: one.library.id }, null,
+          'The newer revision is a source now. Research runs again only when you ask.', problem),
+        'desk-library-update-' + one.library.id)));
+    }
+    const pick = h.capsule('Add from library', 'quiet', () => {
+      if (!window.StudioLibrary) { h.say(problem, 'The library could not be loaded. Reload the page.'); return; }
+      window.StudioLibrary.pick({
+        studio: 'presentation', max: 40,
+        post: (route, body) => h.send(route, body),
+        // The card is drawn again with the new sources: focus its Add from library.
+        refocus: () => document.querySelector('[data-key="desk-library-add"]'),
+        use: async (picks) => {
+          const found = await h.send('desk-library', { path, picks });
+          if (h.view.screen === 'deck' && h.view.path === path) { h.view.run = found; h.paintDeck(false); }
+          h.toast(picks.length === 1 ? 'The document is a source now.' : picks.length + ' documents are sources now.');
+          h.refresh();
+        },
+      });
+    }, 'desk-library-add');
+    parts.push(bar(pick));
+    const kept = run.desk.library;
+    if (kept && kept.state === 'kept') {
+      parts.push(make('p', 'quiet', 'Kept in the Document Library as slide Markdown, revision '
+        + kept.revision + '. PDF needs export: ' + (kept.pdf_note || '')));
+    } else if (kept && kept.state === 'failed') {
+      parts.push(make('p', 'problem', 'Not kept in the Document Library: ' + kept.problem));
+      parts.push(bar(h.capsule('Keep in library again', 'quiet',
+        () => act('desk-library-keep', { path }, null, 'Kept in the Document Library.', problem),
+        'desk-library-keep')));
+    }
+    return parts;
   }
 
   async function addFile(input, problem) {

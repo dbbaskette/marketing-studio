@@ -142,7 +142,7 @@ from studio_core.process_lock import ProcessRLock
 from studio_core.shared_runner.write_markers import defer_share, mark_step
 
 from runner import agents, companion, decks, desk, documents, gitstate, marks, settings, stages
-from runner import build_progress, team, worker_tools
+from runner import build_progress, library_keep, team, worker_tools
 from runner import brand as brand_skill
 from runner import brand_source
 from runner import research as research_cli
@@ -1776,6 +1776,8 @@ class Engine(Jobs, Researching, DeskActions):
             where = made.get('url') or made.get('pptx') or ''
             self._done(root, step, clock, f"deliver revision {made['revision']}"
                        + (f': {where}' if where else ''), record, self._listed(space))
+        # Kept in the shared Document Library after delivery, which never waits on it.
+        library_keep.keep(root, self._load(root), made)
         self._last()
 
     # --- the steps a worker does -------------------------------------------------------------

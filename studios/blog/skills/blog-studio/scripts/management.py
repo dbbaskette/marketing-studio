@@ -24,6 +24,7 @@ import studio
 import editorial
 from experience import page
 import blog_library
+import shared_library
 import source_curator
 from google_drive import GoogleError
 from studio_core.server import Server as LoopbackServer, suite_port, with_suite_port
@@ -40,6 +41,11 @@ STATIC = {
     '/markdown.js': ('markdown.js', 'text/javascript; charset=utf-8'),
     '/blog.css': ('blog.css', 'text/css; charset=utf-8'),
     '/style.css': ('style.css', 'text/css; charset=utf-8'),
+    # The shared Document Library's sheet, from the core every studio shares.
+    '/library.js': (
+        str(Path(__file__).resolve().parent / 'studio_core' / 'deck_web' / 'library.js'),
+        'text/javascript; charset=utf-8',
+    ),
 }
 MAX_BODY = 15 * 1024 * 1024
 HEADER_TIMEOUT = 3  # Seconds a new connection has to send its request line and headers.
@@ -1998,6 +2004,9 @@ def _dispatch(root, route, data):
             return retry_receipt(root, adapter, data)
         if route == 'upload':
             return upload(root, data, prepared)
+        if route == shared_library.TAKE:
+            # Chosen revisions become files for one blog, as uploaded files are.
+            return shared_library.take(root, data)
         if route == 'source-role':
             return source_role(root, data)
         if route == 'schedule':
@@ -2017,7 +2026,11 @@ def _dispatch(root, route, data):
                 if values.get('stage') == 'published' and desk.on_desk(directory)
                 else None
             )
-            library = {'library': kept} if kept else {}
+            shared = kept.pop('document_library', None) if kept else None
+            library = {
+                **({'library': kept} if kept else {}),
+                **({'document_library': shared} if shared else {}),
+            }
             receipts = [kept.pop('receipt')] if kept and 'receipt' in kept else []
             if studio.record_bytes(directory, 'articles') == before:
                 if not receipts:
@@ -2201,13 +2214,21 @@ def keep_published(root, directory, record):
             else 'it could not be saved here. The blog is marked as published; mark it again '
             'to retry.'
         }
-    kept = {'id': source['id'], 'revision': source['revision']}
+    kept = {
+        'id': source['id'],
+        'revision': source['revision'],
+        # The shared Document Library, local to this computer; never raised.
+        'document_library': shared_library.keep_blog(root, record, text, source),
+    }
     if prior is None or prior.get('revision') != source['revision']:
         kept['receipt'] = receipt(root, 'Published blog', share(root, 'source', source), 'source')
     return kept
 
 
 def dispatch(root, route, data):
+    if route in shared_library.BROWSE:
+        # The shared Document Library: browsing reads and selects nothing for a blog.
+        return shared_library.browse(route, data)
     if route == 'research-sources':
         from studio_core.research_sources import Sources
         import google_drive

@@ -25,8 +25,10 @@ import runner  # noqa: F401  puts the core on the import path
 import home
 from workspace import WorkspaceError, write_atomic
 
-from runner import briefs, decks, desk, documents, gitstate, marks, stages
+from runner import briefs, decks, desk, documents, gitstate, library_keep, marks, stages
 from studio_core import deck_content, research_view
+from studio_core.document_library import LibraryError
+from studio_core.document_library import context as library_context
 from studio_core.drafting import prompts
 from runner.jobs import gate_state, sha256_of
 from runner.steps import build, finishing, intake, words
@@ -38,6 +40,8 @@ from runner.steps import outline as outlines
 NO_PICK = 'The look is not waiting to be picked now.'
 NO_RESEARCH = 'This deck has no research. Add a source, and its words jobs read it.'
 RESEARCH_BUSY = 'The deck is being redrawn now. Change the research when that ends.'
+LIBRARY_BUSY = ('The deck is being made now. Add from the library, or take a newer revision, '
+                'when that ends: a job that is running keeps the sources it started with.')
 LEFT_OUT_ALREADY = 'Those findings are left out already.'
 PASTED = 'Pasted text'
 SOURCES_TOLD = ('The person\'s own sources are in your input "sources". Add only what they, '
@@ -196,7 +200,10 @@ class DeskActions:
                 # Your own deck: its words kept exactly, or its speaker notes kept as they are.
                 'level': desk.level(record), 'words_locked': desk.words_locked(record),
                 'notes_locked': desk.OWN_NOTES if desk.selected(record) else None,
-                'sources': documents.listed(root),
+                # Each source pinned from the Document Library says whether a newer revision
+                # is there; the deck keeps reading its own copy either way.
+                'sources': library_context.marked(documents.listed(root)),
+                'library': library_keep.status(root) if decks.delivered(root) else None,
                 **self._desk_research_view(root, record),
                 **self._desk_finishing_view(root, record, state, shown)}
 
@@ -1383,6 +1390,47 @@ class DeskActions:
             documents.add_text(root, PASTED if title is None else title, text)
         else:
             documents.add(root, name, data, title)
+        return self.view(root)
+
+    @staticmethod
+    def _library_idle(root, record: dict) -> None:
+        """Refuse a change to the deck's context while an assistant job may be reading it:
+        the chain under way, or a desk job running. Hold `files`."""
+        if (decks.delivered(root) is None and not desk.resting(record)) \
+                or record.get('desk_jobs'):
+            raise WorkspaceError(LIBRARY_BUSY)
+
+    def desk_library(self, path, picks) -> dict:
+        """Add documents chosen from the shared Document Library to the deck's sources, as
+        desk_source adds a file: each chosen revision is checked first, and its text and file
+        are copied into the deck, which keeps them when the library changes. Nothing is drawn,
+        research does not run and no research setting changes. Refused while a job runs."""
+        root = self._desk_held(path)
+        with self.files:
+            self._library_idle(root, self._load(root))
+            try:
+                library_context.pin(documents, root, picks)
+            except LibraryError as refusal:
+                raise WorkspaceError(str(refusal)) from None
+        return self.view(root)
+
+    def desk_library_update(self, path, document) -> dict:
+        """Take the newest library revision of one source, only because the person asked.
+        Refused while a job runs."""
+        root = self._desk_held(path)
+        with self.files:
+            self._library_idle(root, self._load(root))
+            try:
+                library_context.update(documents, root, document)
+            except LibraryError as refusal:
+                raise WorkspaceError(str(refusal)) from None
+        return self.view(root)
+
+    def desk_library_keep(self, path) -> dict:
+        """Keep the delivered deck in the library again, after a failure: from what was
+        delivered, with no upload and no slides or assistant job."""
+        root = self._desk_held(path)
+        library_keep.again(root, self._load(root))
         return self.view(root)
 
     def desk_research_again(self, path, expected) -> dict:

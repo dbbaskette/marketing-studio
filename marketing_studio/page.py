@@ -1,4 +1,7 @@
-"""The home API: shared settings, first-run setup, inventory, and launch."""
+"""The home API: shared settings, first-run setup, inventory, launch, and the Document
+Library screen (browsing, preview, download and upload; it selects nothing for a project)."""
+import base64
+import binascii
 import threading
 import shutil
 from pathlib import Path
@@ -6,6 +9,8 @@ from pathlib import Path
 from studio_core import preferences as shared_preferences
 from studio_core import brand_catalog, research_sites, runtime
 from studio_core.model_catalog import Catalog
+from studio_core import document_library
+from studio_core.document_library import context as library_context
 
 from . import catalog, server, shared, state, validation, workspaces
 from .errors import WorkspaceError
@@ -13,7 +18,10 @@ from .errors import WorkspaceError
 
 class Home(server.Page):
     reads = ('/api/home', '/api/computer', '/api/models')
-    writes = ('/api/shared', '/api/setup', '/api/open', '/api/connect', '/api/computer', '/api/paths', '/api/models', '/api/brands', '/api/research-site')
+    writes = ('/api/shared', '/api/setup', '/api/open', '/api/connect', '/api/computer', '/api/paths', '/api/models', '/api/brands', '/api/research-site',
+              *library_context.ROUTES, '/api/library-upload', '/api/library-download')
+    UPLOAD = '/api/library-upload'
+    UPLOAD_LIMIT = 12_000_000   # bytes: a document of up to 8 MB, in base64, with its name
 
     def __init__(self, port, launcher):
         super().__init__(port)
@@ -98,7 +106,42 @@ class Home(server.Page):
             return server.as_json(200, self.snapshot() if path == '/api/home'
                                   else {'computer': self.computer(False)})
 
+    def body_limit(self, target, headers):
+        if target.partition('?')[0] == self.UPLOAD:
+            return self.UPLOAD_LIMIT
+        return super().body_limit(target, headers)
+
+    def library(self, path, sent):
+        """The Document Library screen: what every studio page answers, and here also an
+        upload and a download. Nothing selects context for a project."""
+        try:
+            if path in library_context.ROUTES:
+                return library_context.answer(path, sent, 'marketing')
+            if path == '/api/library-download':
+                found = document_library.opened()
+                if found is None:
+                    raise document_library.LibraryError(library_context.NOT_MADE)
+                revision = sent.get('revision')
+                name, media, data = found.download(sent.get('id'), revision, sent.get('format'))
+                return {'name': name, 'media': media, 'content': base64.b64encode(data).decode('ascii')}
+            content = sent.get('content')
+            try:
+                if not isinstance(content, str) or not content:
+                    raise ValueError
+                data = base64.b64decode(content, validate=True)
+            except (binascii.Error, ValueError):
+                raise WorkspaceError('The file did not arrive whole. Choose it again.')
+            with self.changes:
+                made = document_library.opened(create=True)   # an upload is an explicit use
+                row = made.add_upload(sent.get('name'), data, title=sent.get('title') or None,
+                                      operation=sent.get('operation'), studio='marketing')
+            return {'document': row, 'location': document_library.location()['shown']}
+        except document_library.LibraryError as error:
+            raise WorkspaceError(str(error)) from error
+
     def write(self, path, sent):
+        if path in library_context.ROUTES or path in (self.UPLOAD, '/api/library-download'):
+            return server.as_json(200, self.library(path, sent))
         if path == '/api/research-site':
             # One site checked as a save would check it; nothing is saved.
             try:

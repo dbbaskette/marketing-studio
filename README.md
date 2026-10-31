@@ -52,6 +52,15 @@ A scan may contain only pictures; encrypted or damaged files may be unreadable.
 The studios explain extraction gaps rather than inventing missing text or silently
 sending the file to an OCR service. See [document tools](docs/installation.md#optional-capabilities).
 
+**Keep a document once, use it anywhere.** The shared Document Library holds
+uploads you add on Marketing Studio's **Library** screen, finished blogs and
+delivered decks. It lives in `library/` under your work folder (normally
+`~/Studios/library`) and stays on this computer. In Presentation Studio and Blog
+Studio, **Add from library** copies chosen revisions into that one deck or blog,
+which keeps them even if the library changes. Choosing a document starts nothing:
+no research, no web access and no assistant job. See
+[the Document Library](docs/shared-setup.md#the-document-library).
+
 Research uses the shared Harness Research workflow: up to three investigators,
 followed by synthesis and an independent check. Progress and checked evidence are
 saved so recovery can reuse completed work. Existing saved projects retain the
