@@ -24,6 +24,7 @@ atexit.register(shutil.rmtree, PLACE, ignore_errors=True)
 (Path(PLACE) / 'home').mkdir()
 os.environ['HOME'] = str(Path(PLACE) / 'home')
 os.environ['STUDIOS_CONFIG'] = str(Path(PLACE) / 'config' / 'studios-config.json')
+os.environ['STUDIOS_LIBRARY'] = str(Path(PLACE) / 'library')   # the shared Document Library
 os.environ['BLOG_STUDIO_DATA'] = str(Path(PLACE) / 'data')
 
 

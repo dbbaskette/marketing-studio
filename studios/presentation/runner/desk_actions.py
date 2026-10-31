@@ -25,8 +25,10 @@ import runner  # noqa: F401  puts the core on the import path
 import home
 from workspace import WorkspaceError, write_atomic
 
-from runner import briefs, decks, desk, documents, gitstate, marks, stages
+from runner import briefs, decks, desk, documents, gitstate, library_keep, marks, stages
 from studio_core import deck_content, research_view
+from studio_core.document_library import LibraryError
+from studio_core.document_library import context as library_context
 from studio_core.drafting import prompts
 from runner.jobs import gate_state, sha256_of
 from runner.steps import build, finishing, intake, words
@@ -196,7 +198,10 @@ class DeskActions:
                 # Your own deck: its words kept exactly, or its speaker notes kept as they are.
                 'level': desk.level(record), 'words_locked': desk.words_locked(record),
                 'notes_locked': desk.OWN_NOTES if desk.selected(record) else None,
-                'sources': documents.listed(root),
+                # Each source pinned from the Document Library says whether a newer revision
+                # is there; the deck keeps reading its own copy either way.
+                'sources': library_context.marked(documents.listed(root)),
+                'library': library_keep.status(root) if decks.delivered(root) else None,
                 **self._desk_research_view(root, record),
                 **self._desk_finishing_view(root, record, state, shown)}
 
@@ -1383,6 +1388,34 @@ class DeskActions:
             documents.add_text(root, PASTED if title is None else title, text)
         else:
             documents.add(root, name, data, title)
+        return self.view(root)
+
+    def desk_library(self, path, picks) -> dict:
+        """Add documents chosen from the shared Document Library to the deck's sources, as
+        desk_source adds a file: each chosen revision is checked first, and its text and file
+        are copied into the deck, which keeps them when the library changes. Nothing is drawn,
+        research does not run and no research setting changes."""
+        root = self._desk_held(path)
+        try:
+            library_context.pin(documents, root, picks)
+        except LibraryError as refusal:
+            raise WorkspaceError(str(refusal)) from None
+        return self.view(root)
+
+    def desk_library_update(self, path, document) -> dict:
+        """Take the newest library revision of one source, only because the person asked."""
+        root = self._desk_held(path)
+        try:
+            library_context.update(documents, root, document)
+        except LibraryError as refusal:
+            raise WorkspaceError(str(refusal)) from None
+        return self.view(root)
+
+    def desk_library_keep(self, path) -> dict:
+        """Keep the delivered deck in the library again, after a failure: from what was
+        delivered, with no upload and no slides or assistant job."""
+        root = self._desk_held(path)
+        library_keep.again(root, self._load(root))
         return self.view(root)
 
     def desk_research_again(self, path, expected) -> dict:

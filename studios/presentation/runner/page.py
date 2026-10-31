@@ -148,6 +148,7 @@ from runner import decks, gitstate, marks, settings, setup
 from runner import engine as engines
 
 from studio_core import modules
+from studio_core.document_library import context as library_context
 from studio_core.shared_runner import page as _shared
 modules.bind(globals(), _shared, _shared.NAMES)
 
@@ -178,11 +179,15 @@ DESK = {'/api/desk-note': ('desk_note', ('number', 'note', 'expected')),
         '/api/desk-finish': ('desk_finish', ('tool', 'expected?', 'again?')),
         '/api/desk-apply': ('desk_apply', ('set', 'ids', 'seen')),
         '/api/desk-skip': ('desk_skip', ('set', 'ids')),
-        '/api/desk-open': ('open_on_desk', ())}
+        '/api/desk-open': ('open_on_desk', ()),
+        # Sources from the shared Document Library, and the delivered deck kept there.
+        '/api/desk-library': ('desk_library', ('picks',)),
+        '/api/desk-library-update': ('desk_library_update', ('document',)),
+        '/api/desk-library-keep': ('desk_library_keep', ())}
 SOURCE = '/api/desk-source'   # a source added on the desk: a file in base64, or pasted text
 SOURCE_LIMIT = 12_000_000     # bytes: a document of up to 8 MB, in base64, with its name
 # What a desk change takes as it is sent, not as text.
-RAW = ('slides', 'field', 'ids', 'again')
+RAW = ('slides', 'field', 'ids', 'again', 'picks')
 WHOLE = ('seen', 'start', 'end', 'index')   # whole numbers, from zero
 WRITES = ('/api/research-sources', '/api/setup/check', '/api/setup', '/api/decks', '/api/run', '/api/decide',
           '/api/answer', '/api/share', '/api/fetch', '/api/drive', '/api/publish',
@@ -192,6 +197,8 @@ WRITES = ('/api/research-sources', '/api/setup/check', '/api/setup', '/api/decks
           '/api/note', '/api/research-site', '/api/picture',
           '/api/picture-remove', '/api/desk-outline-price', SOURCE, *DESK)
 WRITES = (*WRITES, '/api/desk-migrate', '/api/desk-ready')
+# Browsing the shared Document Library: it reads, and selects nothing for a deck.
+WRITES = (*WRITES, *library_context.ROUTES)
 PPTX = 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
 DECKS = '/api/decks'
 DRAFT = '/api/deck-draft'   # a deck's storyboard, framed by the page and opened with a ticket
@@ -398,6 +405,11 @@ class RunnerPage(server.Page):
     # --- changes -------------------------------------------------------------------------
 
     def write(self, path: str, sent: dict):
+        if path in library_context.ROUTES:
+            try:
+                return server.as_json(HTTPStatus.OK, library_context.answer(path, sent, 'presentation'))
+            except ValueError as error:
+                raise server.Refusal(HTTPStatus.BAD_REQUEST, str(error)) from None
         if path == '/api/research-sources':
             from studio_core.research_sources import Sources
             try:

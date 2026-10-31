@@ -107,6 +107,12 @@ def location() -> dict:
     """Where the library is, or would be made: {'root', 'saved', 'shown', 'problem'}.
     Nothing is written."""
     values, problem = studios_config.read()
+    named = os.environ.get('STUDIOS_LIBRARY')
+    if named and Path(named).expanduser().is_absolute():
+        # Named for this process, as STUDIOS_CONFIG names the config: never saved.
+        where = Path(named).expanduser()
+        return {'root': where, 'saved': True, 'shown': studios_config.shown(where),
+                'problem': problem}
     saved = _saved(values)
     if saved:
         where = Path(saved).expanduser()

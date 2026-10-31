@@ -19,7 +19,7 @@ What a caller needs to know
   never shares: the file as it was sent and, beside it, its text. The list of what was added
   is kept there too, in `index.json`. Nothing is written anywhere else.
 - An entry is {'name', 'bytes', 'readable', 'problem', 'id', 'title', 'file', 'original',
-  'distinct', 'sha256', 'library'}. `id` is a slug of the name, unique among the item's documents.
+  'distinct', 'sha256'}, and 'library' for one pinned from the library. `id` is a slug of the name, unique among the item's documents.
   `file` is the text's path from the item's folder and `original` the sent file's.
   `distinct` is True when the file as sent is another document than its text (a PDF, a
   Word file, a web page) and False for text and Markdown, which are their text: only a
@@ -37,8 +37,8 @@ What a caller needs to know
 - `add_snapshots` pins revisions from the shared Document Library (`studio_core.
   document_library`): each one's readable Markdown and its file are copied in, so the
   item keeps reading them when the library changes or is gone, and `library` names the
-  library ID, revision and Markdown hash it came from (None for a document supplied
-  here). All of them are kept, or none; one already pinned is refused. `replace_snapshot`
+  library ID, revision and Markdown hash it came from (a document supplied here has no
+  `library`). All of them are kept, or none; one already pinned is refused. `replace_snapshot`
   takes a newer revision only when asked. Removing one never touches the library.
 - `text_of(root, entry)` reads the text kept of the document an entry names, by its ID; one
   that is not readable is refused with why.
@@ -307,7 +307,7 @@ def _entry(root: Path, kept: dict) -> dict:
             'original': original,
             'distinct': _distinct(root, kept, file, original),
             'sha256': kept.get('sha256') if isinstance(kept.get('sha256'), str) else None,
-            'library': _pinned(kept.get('library'))}
+            **({'library': _pinned(kept['library'])} if _pinned(kept.get('library')) else {})}
 
 
 def _pinned(found) -> dict | None:
