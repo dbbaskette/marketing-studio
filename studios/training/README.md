@@ -172,10 +172,12 @@ material.
   is being worked on.
 - **Keep in library.** When you add a document, **Keep in library** also keeps a copy
   in the library for other projects, and **Only this project** keeps it in the
-  training alone. Neither changes who it is shared with.
+  training alone. The New training sheet asks the same for each file. Neither changes
+  who it is shared with. If the library refuses one, **Keep in library again** tries
+  again from the training's own copy.
 - **Finished material.** Marking a learner guide or a brief ready on the desk keeps it
   in the library as Markdown, as learners read it, without its coverage notes. Marking
-  it ready again adds a revision only when its words changed. If that save fails, its
+  it ready again, here or in a conversation, adds a revision only when its words changed. If that save fails, its
   card says so and offers **Keep in library again**. Decks are not kept yet, because
   Training Studio cannot export a PDF of one.
 

@@ -137,8 +137,12 @@ Signing in to an assistant, your organisation's brands and fonts, and optional G
   sharing.
 - **Finished training material is kept.** Marking a learner guide or a brief ready keeps
   it in the library as Markdown, without its coverage notes. Marking it ready again adds
-  a revision only when its words changed. A failed save is said on its card with **Keep
-  in library again**. Decks are kept once Training Studio can export a PDF.
+  a revision only when its words changed, also when it is marked ready in a conversation.
+  A failed save is said on its card with **Keep in library again**. Decks are kept once
+  Training Studio can export a PDF.
+- **Keep in library at Start too.** The New training sheet's sources editor offers the
+  same choice for each file; a file is kept once it is read. Presentation Studio's editor
+  is unchanged. An upload the library refused offers **Keep in library again**.
 
 ## Unreleased: shorter shared setup, clear ownership and readiness
 
