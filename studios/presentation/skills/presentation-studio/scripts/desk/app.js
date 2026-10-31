@@ -2941,13 +2941,22 @@ async function pickFile(input) {
   refuse('new-file', '');
   draft.reading = true;
   paintChosen();
+  // A file still being read when another kind of deck is chosen is not that kind's file.
+  const route = draft.route;
+  let read = null;
+  let problem = '';
   try {
-    draft.upload = { name: file.name, size: file.size, encoded: await base64Of(file) };
+    read = { name: file.name, size: file.size, encoded: await base64Of(file) };
   } catch (failure) {
-    draft.upload = null;
-    refuse('new-file', file.name + ' could not be read. ' + failure.message);
+    problem = file.name + ' could not be read. ' + failure.message;
   }
   draft.reading = false;
+  if (draft.route !== route) {
+    if (view.draft === draft) paintChosen();
+    return;
+  }
+  draft.upload = read;
+  if (problem) refuse('new-file', problem);
   if (view.draft === draft) paintChosen();
 }
 

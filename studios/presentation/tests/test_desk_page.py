@@ -230,6 +230,47 @@ class StartTests(DeskPageCase):
         # The document comes first, in the first step, before the title and goal.
         self.assertEqual(missing['focus'], 'new-file')
 
+    def plan_of(self, shot: dict) -> str:
+        return shot['sheet'][shot['sheet'].index('What happens after Start'):]
+
+    def test_an_idea_is_researched_whatever_a_document_was_marked(self):
+        result = self.new_deck([
+            {'click': 'A document'}, {'click': 'It lays out the slides'},
+            {'click': 'Research first'}, {'snapshot': 'script'},
+            {'click': 'An idea'}, {'snapshot': 'idea'}])
+        self.assertNotIn('Research.', self.plan_of(result['snapshots']['script']))
+        plan = self.plan_of(result['snapshots']['idea'])
+        self.assertIn('Research. It is planned from your questions', plan)
+        self.assertLess(plan.index('Research.'), plan.index('Approve the slide text.'))
+
+    def test_a_redesign_lists_its_look_before_its_changes(self):
+        default = self.get('setup').get('output')
+        other = 'Google Slides' if default == 'pptx' else 'PowerPoint (.pptx)'
+        result = self.new_deck([
+            {'click': 'An existing deck'}, {'click': 'Redesign, keep content'},
+            {'snapshot': 'pick'}, {'click': 'Use the brand’s default look'},
+            {'snapshot': 'default'}, {'click': 'Brand, output and assistant'},
+            {'click': other}, {'snapshot': 'changed'}])
+        shots = result['snapshots']
+        # The runner reads the deck, draws the looks, waits for the pick, then changes it.
+        pick = self.plan_of(shots['pick'])
+        order = ['Pick the look.', 'The changes are made.', 'Review the deck.', 'Deliver.']
+        self.assertEqual([pick.index(step) for step in order],
+                         sorted(pick.index(step) for step in order))
+        self.assertIn('Pick the look. The brand draws a slide in each of its looks', pick)
+        self.assertIn('A brand with no looks to show uses its own, with no stop.', pick)
+        self.assertNotIn('Approve the slide text.', pick)
+        self.assertIn('Before the desk, it waits for you to pick the look.', pick)
+        default_plan = self.plan_of(shots['default'])
+        self.assertIn('The brand’s default look. The slides are designed in it, with no '
+                      'stop.', default_plan)
+        self.assertLess(default_plan.index('The brand’s default look.'),
+                        default_plan.index('The changes are made.'))
+        # The defaults line says when this deck no longer uses them.
+        self.assertIn('These start as your defaults.', shots['default']['sheet'])
+        self.assertIn('Changed for this deck.', shots['changed']['sheet'])
+        self.assertNotIn('These start as your defaults.', shots['changed']['sheet'])
+
     def test_what_happens_after_start_follows_the_choices(self):
         result = self.new_deck([
             {'click': 'An idea'}, {'snapshot': 'idea'},

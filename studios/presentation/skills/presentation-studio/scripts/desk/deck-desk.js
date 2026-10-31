@@ -252,7 +252,9 @@
     const text = outlined(draft);
     const picks = looked(draft) && draft.look !== 'default';
     const steps = [];
-    if (!existing && draft.research && draft.readAs !== 'spec') {
+    // How the document is read is kept when the kind changes, and matters only for one.
+    const script = draft.route === 'document' && draft.readAs === 'spec';
+    if (!existing && draft.research && !script) {
       steps.push(['Research.', (draft.route === 'document' && !draft.readAs
         ? 'Only if your document turns out to be material to build from. ' : '')
         + 'It is planned from your questions, or from the goal, and done on its own.']);
@@ -261,16 +263,18 @@
       steps.push(['Approve the slide text.', 'The titles, the words on each slide, their '
         + 'order and the speaker notes are drafted first. Read them, ask for changes, or '
         + 'choose Approve text & design deck. Nothing is designed until you approve.']);
-    } else {
-      steps.push(['The changes are made.', 'On a copy of your deck, on its own.']);
     }
     if (looked(draft)) {
-      const after = text ? 'Once the text is approved, ' : '';
-      steps.push(picks ? ['Pick the look.', after + 'the brand draws a slide in each of its '
-        + 'looks, and the deck is drawn in the one you pick.']
+      const after = text ? 'once the text is approved, ' : '';
+      // A brand that has no looks to show draws the deck in its own, with no stop.
+      steps.push(picks ? ['Pick the look.', capital(after + 'the brand draws a slide in each '
+        + 'of its looks, and the deck is drawn in the one you pick. A brand with no looks to '
+        + 'show uses its own, with no stop.')]
         : ['The brand’s default look.', capital(after + 'the slides are designed in it, with '
           + 'no stop.')]);
     }
+    // An existing deck kept as it says is changed after its look, the way the runner goes.
+    if (!text) steps.push(['The changes are made.', 'On a copy of your deck, on its own.']);
     steps.push(['Review the deck.', 'It opens on the desk, a card for each slide: change its '
       + 'words, or note a slide to redraw it.'],
     ['Deliver.', 'Always yours, when the deck is right.']);
@@ -316,14 +320,27 @@
   }
 
   // The brand and variant and how it is delivered, as the draft has them: "Made in Acme
-  // (dark), delivered as Google Slides."
+  // (dark), delivered as Google Slides.", then whether those are the defaults still.
   function defaultsSays(draft) {
-    const brand = h.brandsFound().find((one) => one.brand === draft.brand);
+    const found = h.brandsFound();
+    const brand = found.find((one) => one.brand === draft.brand);
     const named = brand ? (brand.name || brand.brand) + (draft.variant ? ' (' + draft.variant
       + ')' : '') : '';
     const output = h.words.OUTPUTS[draft.output][1];
     return (named ? 'Made in ' + named + ', delivered as ' : 'Delivered as ') + output
-      + '. These start as your defaults.';
+      + (changedFromDefaults(draft, found) ? '. Changed for this deck.'
+        : '. These start as your defaults.');
+  }
+
+  // Whether the brand, its variant or the output differ from what Settings starts a deck
+  // with. A default brand this computer does not have is not counted as changed.
+  function changedFromDefaults(draft, found) {
+    const setup = h.view.setup || {};
+    const chosen = (setup.brand && setup.brand.default) || {};
+    const output = setup.output === 'pptx' ? 1 : 0;
+    const known = found.some((one) => one.brand === chosen.brand);
+    return draft.output !== output || (known && (draft.brand !== chosen.brand
+      || Boolean(chosen.variant) && draft.variant !== chosen.variant));
   }
 
   function settingsStep(draft, told, retell) {
