@@ -1,6 +1,6 @@
 """The home API: shared settings, first-run setup, inventory, launch, and the Document
-Library screen (browsing, preview, download, upload and Add existing work to library; it
-selects nothing for a project)."""
+Library screen (browsing, preview, download, upload, Add existing work to library, and
+Remove from library or Restore; it selects nothing for a project)."""
 import base64
 import binascii
 import threading
@@ -22,9 +22,10 @@ class Home(server.Page):
     reads = ('/api/home', '/api/computer', '/api/models')
     writes = ('/api/shared', '/api/setup', '/api/open', '/api/connect', '/api/computer', '/api/paths', '/api/models', '/api/brands', '/api/research-site',
               *library_context.ROUTES, '/api/library-upload', '/api/library-download',
-              '/api/library-existing', '/api/library-adopt')
+              '/api/library-existing', '/api/library-adopt', '/api/library-hide')
     UPLOAD = '/api/library-upload'
     EXISTING = ('/api/library-existing', '/api/library-adopt')
+    HIDE = '/api/library-hide'
     UPLOAD_LIMIT = 12_000_000   # bytes: a document of up to 8 MB, in base64, with its name
 
     def __init__(self, port, launcher):
@@ -117,7 +118,8 @@ class Home(server.Page):
 
     def library(self, path, sent):
         """The Document Library screen: what every studio page answers, and here also an
-        upload and a download. Nothing selects context for a project."""
+        upload, a download, and Remove from library or Restore. Nothing selects context for
+        a project, and no studio's workspace is read or changed by a removal."""
         try:
             if path in library_context.ROUTES:
                 return library_context.answer(path, sent, 'marketing')
@@ -130,6 +132,14 @@ class Home(server.Page):
                     return library_adopt.preview(known)
                 with self.changes:
                     return library_adopt.confirm(known, sent.get('signature'))
+            if path == self.HIDE:
+                # Hides the document from browsing and Add from library, or shows it again.
+                # No revision is deleted; projects that pinned it keep their own copies.
+                found = document_library.opened()
+                if found is None:
+                    raise document_library.LibraryError(library_context.NOT_MADE)
+                with self.changes:
+                    return {'document': found.hide(sent.get('id'), sent.get('hidden'))}
             if path == '/api/library-download':
                 found = document_library.opened()
                 if found is None:
@@ -153,7 +163,8 @@ class Home(server.Page):
             raise WorkspaceError(str(error)) from error
 
     def write(self, path, sent):
-        if path in library_context.ROUTES or path in (self.UPLOAD, '/api/library-download', *self.EXISTING):
+        if path in library_context.ROUTES or path in (self.UPLOAD, self.HIDE, '/api/library-download',
+                                                      *self.EXISTING):
             return server.as_json(200, self.library(path, sent))
         if path == '/api/research-site':
             # One site checked as a save would check it; nothing is saved.

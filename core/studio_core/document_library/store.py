@@ -13,6 +13,7 @@ Layout
 ------
     <library>/library.json                      # marks the folder as a library
     <library>/.library.lock                     # every write holds it, in every process
+    <library>/documents/<id>/document.json      # the document's own record: hidden or not
     <library>/documents/<id>/revisions/<n>/     # one immutable revision
         revision.json                           # written last: what the revision is
         content.md                              # readable Markdown, when there is any
@@ -26,8 +27,14 @@ an interrupted write leaves no half-made revision: the newest complete revision 
 document's head. A document's ID never changes. Finished work is found again by its key
 (`<studio>:<project>`), so a repeated Finish or Deliver reuses its document and adds a
 revision only when what it keeps changed. An upload's operation ID makes a retry return
-what the first attempt kept. Every file is checked against its recorded hash before it is
-previewed, downloaded or pinned; a link, a missing file or a changed file is refused.
+what the first attempt kept, and the same file uploaded again (its name, bytes, title and
+studio) is the document already kept. Every file is checked against its recorded hash before
+it is previewed, downloaded or pinned; a link, a missing file or a changed file is refused.
+
+Remove from library hides a document: `document.json` says so, written atomically under the
+lock. A hidden document is left out of the catalog, Select all matching, Update available
+and new pins; nothing of it is deleted, a project that pinned it keeps its own copy, and
+Restore shows it again. Uploading the same file again restores it too.
 
 A document's text is never trusted: it is shown as text, never as markup, and is never
 sent anywhere by the library. Nothing here uses the network, starts an assistant, runs
@@ -93,6 +100,8 @@ NO_TEXT = ('It has no readable text yet. Upload a text or Word version of it, th
 CHANGED = ('Its files in the library changed after they were kept, so it cannot be used. '
            'Upload it again.')
 MISSING = 'Its files are missing from the library folder. Upload it again.'
+HIDDEN = ('"{title}" was removed from the library, so it cannot be added. Restore it in '
+          'Marketing Studio’s Library first.')
 
 
 # --- where the library is ------------------------------------------------------------------
@@ -355,6 +364,26 @@ class Library:
         return sorted(found)
 
     @staticmethod
+    def _hidden(folder: Path) -> bool:
+        """Whether Remove from library hid this document. A damaged record hides nothing."""
+        record = folder / 'document.json'
+        if not record.is_file():
+            return False
+        found = _json(record)
+        return isinstance(found, dict) and found.get('schema') == SCHEMA \
+            and found.get('id') == folder.name and found.get('hidden') is True
+
+    def _set_hidden(self, folder: Path, hidden: bool) -> None:
+        """Write the document's own record whole. Hold the lock."""
+        try:
+            _atomic(folder / 'document.json', json.dumps(
+                {'schema': SCHEMA, 'id': folder.name, 'hidden': hidden, 'changed_at': _now()},
+                indent=2).encode() + b'\n')
+        except OSError as failure:
+            raise LibraryError(f'The library could not change it ({str(failure.strerror or failure).lower()}). '
+                               'Nothing was changed; try again.') from None
+
+    @staticmethod
     def _checked(place: Path, part: dict | None, limit: int | None = None) -> bytes | None:
         """A representation's bytes, refused unless they match the hash it was kept with.
         Only a saved PDF is read up to LIMITS['pdf']; Markdown and originals stay within
@@ -420,8 +449,9 @@ class Library:
         ids = self._ids()
         heads = []
         for ident in ids:
-            numbers = self._numbers(self._documents() / ident)
-            heads.append([ident, numbers[-1] if numbers else 0])
+            folder = self._documents() / ident
+            numbers = self._numbers(folder)
+            heads.append([ident, numbers[-1] if numbers else 0, self._hidden(folder)])
         cache = self._state() / 'catalog.json'
         found = _json(cache)
         if isinstance(found, dict) and found.get('schema') == SCHEMA \
@@ -447,6 +477,9 @@ class Library:
                     excerpt = ''
             row['key'] = record.get('key')
             row['operation'] = record.get('operation')
+            row['fingerprint'] = record.get('fingerprint')
+            row['adopted'] = bool(record.get('adopted'))
+            row['hidden'] = self._hidden(folder)
             row['search'] = ' '.join((row['title'], row.get('author') or '',
                                       row.get('original_name') or '', excerpt)).casefold()
             entries.append(row)
@@ -460,9 +493,11 @@ class Library:
 
     @staticmethod
     def _public(row: dict) -> dict:
-        return {key: value for key, value in row.items() if key not in ('search', 'key', 'operation')}
+        return {key: value for key, value in row.items()
+                if key not in ('search', 'key', 'operation', 'fingerprint', 'adopted')}
 
-    def _matches(self, query='', kind=None, studio=None, origin=None, author=None, state=None):
+    def _matches(self, query='', kind=None, studio=None, origin=None, author=None, state=None,
+                 hidden=False):
         if kind not in (None, '', *KINDS) or studio not in (None, '', *STUDIOS) \
                 or origin not in (None, '', *ORIGINS) or state not in (None, '', *STATES):
             raise LibraryError('Choose the filters this page offers.')
@@ -472,7 +507,7 @@ class Library:
         words = (query or '').casefold().split()
         who = (author or '').casefold().strip()
         rows = [row for row in self._index()
-                if (not kind or row['kind'] == kind) and (not studio or row['studio'] == studio)
+                if (hidden or not row.get('hidden')) and (not kind or row['kind'] == kind) and (not studio or row['studio'] == studio)
                 and (not origin or row['origin'] == origin) and (not state or row['state'] == state)
                 and (not who or who in (row.get('author') or '').casefold())
                 and all(word in row['search'] for word in words)]
@@ -480,19 +515,21 @@ class Library:
         return rows
 
     def catalog(self, query='', kind=None, studio=None, origin=None, author=None, state=None,
-                offset=0, limit=25) -> dict:
+                offset=0, limit=25, hidden=False) -> dict:
         """One page of documents that match, newest first: {'items', 'total', 'offset',
-        'limit'}. Each item is a document's newest revision; no local path is given."""
+        'limit'}. Each item is a document's newest revision; no local path is given. A
+        hidden document is left out unless `hidden` (Marketing Studio's Show hidden)."""
         if type(offset) is not int or offset < 0 or type(limit) is not int \
                 or not 1 <= limit <= LIMITS['page']:
             raise LibraryError(f"Ask for at most {LIMITS['page']} documents at a time.")
-        rows = self._matches(query, kind, studio, origin, author, state)
+        rows = self._matches(query, kind, studio, origin, author, state, hidden)
         return {'items': [self._public(row) for row in rows[offset:offset + limit]],
                 'total': len(rows), 'offset': offset, 'limit': limit}
 
     def matching(self, readable_only=True, **filters) -> list[dict]:
         """Every readable document the filters match, as {'id', 'revision'}: what "Select all
-        matching" chooses. Refused when more match than a project can take at once."""
+        matching" chooses. A hidden document is never chosen. Refused when more match than
+        a project can take at once."""
         rows = [row for row in self._matches(**filters) if row['readable'] or not readable_only]
         if len(rows) > LIMITS['matching']:
             raise LibraryError(f"{len(rows)} documents match. Narrow the filters to at most "
@@ -507,7 +544,29 @@ class Library:
         head = self._head(folder)
         row['head'] = head['revision'] if head else record['revision']
         row['revisions'] = self._numbers(folder)[-50:]
+        row['hidden'] = self._hidden(folder)
         return row
+
+    def hide(self, ident, hidden=True) -> dict:
+        """Remove from library (`hidden`) or Restore: the document leaves, or comes back to,
+        the catalog and Add from library. No revision or file is deleted or changed, and a
+        project that pinned it keeps its own copy. Returns its row."""
+        if type(hidden) is not bool:
+            raise LibraryError('Say whether to remove the document or restore it.')
+        with self.lock:
+            folder = self._folder(ident)
+            if self._head(folder) is None:
+                raise LibraryError('That revision is not in the library.')
+            if self._hidden(folder) != hidden:
+                self._set_hidden(folder, hidden)
+        return self.describe(ident)
+
+    def summary(self) -> dict:
+        """{'hidden': how many documents are hidden, 'imported': whether any was added as
+        existing work}. Nothing is written but the search index."""
+        rows = self._index()
+        return {'hidden': sum(1 for row in rows if row.get('hidden')),
+                'imported': any(row.get('adopted') for row in rows)}
 
     def preview(self, ident, revision=None) -> dict:
         """A revision's readable Markdown, as plain text and bounded. Its hash is checked."""
@@ -552,6 +611,8 @@ class Library:
         place, record = self._record(ident, revision)
         state, problem = self._state_of(place, record)
         title = record.get('title') or 'Untitled'
+        if self._hidden(place.parent.parent):
+            raise LibraryError(HIDDEN.format(title=title))
         if state != 'readable':
             raise LibraryError(f'"{title}" cannot be added: {problem}')
         text = self._checked(place, record.get('markdown')).decode('utf-8')
@@ -565,11 +626,13 @@ class Library:
                 'original_sha256': (original or {}).get('sha256') if data is not None else None}
 
     def heads(self, ids) -> dict:
-        """{id: its newest revision, or None when it is no longer in the library}."""
+        """{id: its newest revision, or None when it is no longer in the library or was
+        removed from it}."""
         found = {}
         for ident in list(ids)[:200]:
             try:
-                head = self._head(self._folder(ident))
+                folder = self._folder(ident)
+                head = None if self._hidden(folder) else self._head(folder)
             except LibraryError:
                 head = None
             found[ident] = head['revision'] if head else None
@@ -654,11 +717,17 @@ class Library:
                    author=None) -> dict:
         """Keep an uploaded file: its bytes as they were sent, and readable Markdown when
         its text can be read. A file whose text cannot be read is kept, marked as needing
-        text, and cannot be chosen as context until text is supplied. Returns its row."""
+        text, and cannot be chosen as context until text is supplied. Returns its row.
+
+        The same operation ID returns what it kept. The same file (name, bytes, title and
+        studio) under another operation ID is the document already kept, and its row says
+        `already`. Either way a hidden document is restored, and its row says `restored`."""
         plain = _plain(name, NAME)
-        if plain is None or any(c in plain for c in '/\\:') or plain.startswith('.') \
-                or _ending(plain) not in ENDINGS:
+        if plain is None or any(c in plain for c in '/\\:') or plain.startswith('.'):
             raise LibraryError('Upload a text, Markdown, HTML, Word (.docx) or PDF file by its name.')
+        if _ending(plain) not in ENDINGS:
+            raise LibraryError(f'"{plain}" is not a text, Markdown, HTML, Word (.docx) or PDF '
+                               'file, so it was not added.')
         if type(data) is not bytes or not data:
             raise LibraryError(f'"{plain}" is empty.')
         if len(data) > LIMITS['bytes']:
@@ -698,16 +767,29 @@ class Library:
             record['markdown'] = {'file': 'content.md', 'bytes': len(encoded),
                                   'sha256': _sha(encoded), 'characters': len(text)}
         with self.lock:
+            rows = self._index()
+            earlier, already = None, False
             if operation:
-                for row in self._index():
+                for row in rows:
                     if row.get('operation') == operation:
-                        _, earlier = self._record(row['id'], 1)
-                        if earlier.get('fingerprint') != fingerprint:
+                        _, first = self._record(row['id'], 1)
+                        if first.get('fingerprint') != fingerprint:
                             raise LibraryError('This operation ID belongs to a different upload.')
-                        return self.describe(row['id'])
+                        earlier = row['id']
+                        break
+            if earlier is None:
+                earlier = next((row['id'] for row in rows if row.get('kind') == 'upload'
+                                and row.get('fingerprint') == fingerprint), None)
+                already = earlier is not None
+            if earlier is not None:
+                folder = self._folder(earlier)
+                restored = self._hidden(folder)
+                if restored:
+                    self._set_hidden(folder, False)
+                return {**self.describe(earlier), 'already': already, 'restored': restored}
             self._tidy()
             kept = self._write(None, record, files)
-        return self.describe(kept['id'])
+        return {**self.describe(kept['id']), 'already': False, 'restored': False}
 
     def retain(self, key, studio, kind, title, text, project=None, author=None, pdf=None,
                origin='created') -> dict:
@@ -797,7 +879,8 @@ class Library:
                           'title': head.get('title'),
                           'markdown': (head.get('markdown') or {}).get('sha256'),
                           'original': (head.get('original') or {}).get('sha256'),
-                          'whole': self._state_of(place, head)[0] != 'missing'}
+                          'whole': self._state_of(place, head)[0] != 'missing',
+                          'hidden': bool(row.get('hidden'))}
         return found
 
     def uploaded(self, studio) -> dict:

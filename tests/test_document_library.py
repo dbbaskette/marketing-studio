@@ -389,6 +389,91 @@ class RouteTests(LibraryCase):
                 context.pin(fake, self.base, bad)
 
 
+class RemoveTests(LibraryCase):
+    """Remove from library hides a document; nothing is deleted and Restore undoes it."""
+
+    def files(self, made):
+        return sorted(str(path.relative_to(made.root)) for path in (made.root / 'documents').rglob('*')
+                      if path.name != 'document.json')
+
+    def test_a_hidden_document_leaves_browsing_and_add_from_library_and_comes_back(self):
+        made = self.made()
+        kept = made.add_upload('alpha.md', b'Alpha words.')
+        other = made.add_upload('beta.md', b'Beta words.')
+        before = self.files(made)
+        row = made.hide(kept['id'], True)
+        self.assertTrue(row['hidden'])
+        self.assertEqual(self.files(made), before, 'no revision or file is deleted or changed')
+        self.assertEqual([r['id'] for r in made.catalog()['items']], [other['id']])
+        self.assertEqual({r['id'] for r in made.catalog(hidden=True)['items']}, {kept['id'], other['id']})
+        self.assertEqual(made.matching(), [{'id': other['id'], 'revision': 1}])
+        self.assertEqual(made.summary(), {'hidden': 1, 'imported': False})
+        with self.assertRaisesRegex(library.LibraryError, 'removed from the library'):
+            made.snapshot(kept['id'], 1)
+        self.assertEqual(made.heads([kept['id'], other['id']]), {kept['id']: None, other['id']: 1})
+        # It can still be previewed and downloaded, to decide whether to restore it.
+        self.assertEqual(made.preview(kept['id'])['text'], 'Alpha words.\n')
+        self.assertEqual(made.download(kept['id'], 1, 'original')[2], b'Alpha words.')
+        # Only Marketing Studio's Library lists it, under Show hidden.
+        shown = context.answer('/api/library', {'filters': {}, 'hidden': True}, 'marketing')
+        self.assertEqual((shown['total'], shown['hidden']), (2, 1))
+        sheet = context.answer('/api/library', {'filters': {}, 'hidden': True}, 'blog')
+        self.assertEqual(sheet['total'], 1)
+        self.assertNotIn('hidden', sheet)
+        self.assertEqual(made.hide(kept['id'], False)['hidden'], False)
+        self.assertEqual(made.catalog()['total'], 2)
+        self.assertEqual(made.snapshot(kept['id'], 1)['text'], 'Alpha words.\n')
+        with self.assertRaises(library.LibraryError):
+            made.hide(kept['id'], 'yes')
+        with self.assertRaises(library.LibraryError):
+            made.hide('../escape', True)
+
+    def test_a_project_that_pinned_it_keeps_working(self):
+        made = self.made()
+        kept = made.add_upload('alpha.md', b'Alpha words.')
+        held = []
+        fake = mock.Mock(add_snapshots=lambda root, snaps: held.extend(snaps) or snaps,
+                         listed=lambda root: [{'title': 'Alpha', 'library': {'id': kept['id'], 'revision': 1}}])
+        context.pin(fake, self.base, [{'id': kept['id'], 'revision': 1}])
+        made.hide(kept['id'], True)
+        self.assertEqual(held[0]['text'], 'Alpha words.\n')     # the project's own copy
+        marked = context.marked(fake.listed(self.base))
+        self.assertEqual((marked[0]['library_head'], marked[0]['update']), (None, False))
+        with self.assertRaisesRegex(library.LibraryError, 'keeps the revision it pinned'):
+            context.update(fake, self.base, kept['id'])
+        with self.assertRaisesRegex(library.LibraryError, 'removed from the library'):
+            context.pin(fake, self.base, [{'id': kept['id'], 'revision': 1}])
+
+    def test_the_same_file_again_is_already_there_and_restores_a_hidden_one(self):
+        made = self.made()
+        first = made.add_upload('alpha.md', b'Alpha words.', operation='a' * 32)
+        self.assertEqual((first['already'], first['restored']), (False, False))
+        again = made.add_upload('alpha.md', b'Alpha words.', operation='b' * 32)
+        self.assertEqual((again['id'], again['already']), (first['id'], True))
+        retried = made.add_upload('alpha.md', b'Alpha words.', operation='a' * 32)
+        self.assertEqual((retried['id'], retried['already']), (first['id'], False))
+        self.assertEqual(made.catalog()['total'], 1)
+        made.add_upload('alpha.md', b'Other words.')            # a different file is its own
+        self.assertEqual(made.catalog()['total'], 2)
+        made.hide(first['id'], True)
+        back = made.add_upload('alpha.md', b'Alpha words.')
+        self.assertEqual((back['id'], back['restored'], back['hidden']), (first['id'], True, False))
+
+    def test_a_refused_file_is_named(self):
+        made = self.made()
+        with self.assertRaisesRegex(library.LibraryError, '"beta.png" is not a text'):
+            made.add_upload('beta.png', b'png')
+        with self.assertRaisesRegex(library.LibraryError, '"big.txt" is larger than 8 MB'):
+            made.add_upload('big.txt', b'x' * (store.LIMITS['bytes'] + 1))
+
+    def test_a_damaged_document_record_hides_nothing(self):
+        made = self.made()
+        kept = made.add_upload('alpha.md', b'Alpha words.')
+        made.hide(kept['id'], True)
+        (made.root / 'documents' / kept['id'] / 'document.json').write_text('{damaged')
+        self.assertEqual(made.catalog()['total'], 1)
+
+
 class HomeLibraryTests(LibraryCase):
     """Marketing Studio's Library screen: upload, browse, preview and download."""
 
@@ -427,6 +512,23 @@ class HomeLibraryTests(LibraryCase):
             self.write('/api/library', {'filters': {'kind': 'nothing'}})
         self.assertEqual(self.page.body_limit('/api/library-upload', {}), 12_000_000)
         self.assertEqual(self.page.body_limit('/api/library', {}), 64_000)
+
+    def test_remove_from_library_and_restore(self):
+        import base64
+        from marketing_studio.errors import WorkspaceError
+        with self.assertRaisesRegex(WorkspaceError, 'nothing in it yet'):
+            self.write('/api/library-hide', {'id': 'x', 'hidden': True})
+        sent = {'operation': OPERATION, 'name': 'brief.md',
+                'content': base64.b64encode(b'# Brief\n\nShip it.').decode()}
+        ident = self.write('/api/library-upload', sent)['document']['id']
+        self.assertTrue(self.write('/api/library-hide', {'id': ident, 'hidden': True})['document']['hidden'])
+        listed = self.write('/api/library', {'filters': {}})
+        self.assertEqual((listed['total'], listed['hidden'], listed['imported']), (0, 1, False))
+        self.assertEqual(self.write('/api/library', {'filters': {}, 'hidden': True})['items'][0]['hidden'], True)
+        self.assertFalse(self.write('/api/library-hide', {'id': ident, 'hidden': False})['document']['hidden'])
+        self.assertEqual(self.write('/api/library', {'filters': {}})['total'], 1)
+        with self.assertRaises(WorkspaceError):
+            self.write('/api/library-hide', {'id': ident})
 
 
 if __name__ == '__main__':
