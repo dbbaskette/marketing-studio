@@ -1097,6 +1097,46 @@ def accept_desk(root: Path, name: str) -> dict:
 
 
 @mutating
+def return_to_draft(root: Path, name: str, seen: str, earlier=None) -> dict:
+    """Return a material the person marked ready on the desk to a draft, as they asked:
+    bound to the version they were shown (`seen`). `earlier` is the approval the material
+    had before that Mark ready ({'approved': the entry or None}), which Undo puts back
+    exactly; without it, or where it would still read as Ready, the version stays accepted
+    on the desk's way through, as an edit leaves it, so nothing built from it is held.
+    Nothing else changes: the file, its History, what it is built from, and any copy or
+    library revision kept of it."""
+    session = load(root)
+    if not on_desk(session):
+        raise WorkspaceError(NOT_ON_DESK)
+    if name not in artifact_names(root, session) \
+            or split(name)[0].partition(':')[0] not in PERSON_MARKED:
+        raise WorkspaceError('Only a material on the desk returns to draft.')
+    subject = sentence(label(name))
+    current = sha256_file(managed(root, artifact(root, session, name)['file']))
+    if current is None or seen != current:
+        raise WorkspaceError(f'{subject} has changed since it was opened. Read the new '
+                             'version before deciding.')
+    if person_statuses(root, session).get(name) != 'approved':
+        raise WorkspaceError(f'{subject} is not marked ready, so it is a draft already.')
+    entry = session['artifacts'][name]
+    marked = dict(entry['approved'])
+    ready = session.get('desk_ready') or {}
+    if ready.get(name) == current:
+        ready.pop(name)
+    if isinstance(earlier, dict) and 'approved' in earlier:
+        if earlier['approved'] is None:
+            entry.pop('approved', None)
+        else:
+            entry['approved'] = dict(earlier['approved'])
+    if person_statuses(root, session).get(name) == 'approved':
+        entry['approved'] = {**marked, 'by': 'desk'}
+    log(session, 'returned-to-draft', artifact=name, sha256=current, by='page')
+    store(root, session)
+    append_review(root, name, f'Decision: returned to draft on the page, {now()}', None)
+    return {'artifact': name, 'status': person_statuses(root, session)[name]}
+
+
+@mutating
 def keep_as_is(root: Path, name: str, reason: str | None = None, by: str = 'page',
                seen: str | None = None) -> dict:
     """Keep a held material as it is: what it is built from becomes what is there now.

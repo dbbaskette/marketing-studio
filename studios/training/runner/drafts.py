@@ -61,6 +61,11 @@ NOT_ON_DESK = ('This training is not on the desk. Use its own screen, or open it
 # One change at a time: a desk job or an update under way. Task 13's draft_jobs re-exports it.
 BUSY = 'A change is already being made to this training. Wait for it, or stop it.'
 UP_TO_DATE = workspace.UP_TO_DATE
+# Return to draft, on a card or as Undo on the Mark ready toast.
+NOTHING_TO_RETURN = 'Choose a material to return to draft, with the version you were shown.'
+DRAFT_ALREADY = '{it} is not marked ready, so it is a draft already.'
+DRAFT_IN_CONVERSATION = ('This training is worked on in a conversation. Return a material to '
+                         'draft there.')
 # What no step of its own makes again when it is out of date: a scenario the person wrote, the
 # research plan and the research. It can only be kept as it is.
 NOT_REMADE = '{it} is not made again by the studio. Keep it as it is, or change it yourself.'
@@ -713,7 +718,7 @@ def start_minutes(root: Path, record: dict, found) -> int:
 
 # --- the desk's view ---------------------------------------------------------------------
 
-ACTIONS = ('ready', 'update', 'keep', 'send', 'download')
+ACTIONS = ('ready', 'draft', 'update', 'keep', 'send', 'download')
 STATES = ('writing', 'queued', 'decide', 'draft', 'ready', 'held', 'needs', 'left-out')
 TEXT_APPROVAL = ('Needs your text approval. Read its slide text, then approve it or ask for '
                  'changes. Nothing is designed until you decide.')
@@ -837,6 +842,10 @@ def _cards(engine, root: Path, record: dict, found) -> list[dict]:
                                            'Review the affected slides below before marking it ready.')
                 elif person.get(name) == 'approved':
                     shown, says = 'ready', READY
+                    # Return to draft: the person's own way back from Ready, never in a
+                    # conversation, where readiness is decided there.
+                    if not in_conversation(record):
+                        card_actions = ['draft', *card_actions]
                 else:
                     shown, says = 'draft', DRAFT
                     card_actions = ['ready', *(['send'] if name in copied_to
@@ -1090,7 +1099,9 @@ def standing(engine, root, record: dict | None = None, found=None,
             said = f'{ALL_READY} Writing the index now.'
     else:
         phase, now, words, said = 'working', 'in-progress', PHASE_WORDS['working'], sentence
-    if remains and phase not in ('ready', 'drafts'):   # drafts already say what is left
+    # Drafts already say what is left; the topics review is the one decision until it is
+    # made, and no material is the person's to mark ready before it.
+    if remains and phase not in ('ready', 'drafts') and (nxt or {}).get('kind') != 'plan':
         said = f'{said} {remains}'
     kinds: dict[str, list[str]] = {}
     for card in cards:
