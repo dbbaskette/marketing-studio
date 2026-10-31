@@ -39,6 +39,17 @@ Signing in to an assistant, your organisation's brands and fonts, and optional G
   start no assistant, sign-in, installation, workspace preparation or paid work, and model
   lists load only when Models and reasoning is opened.
 
+## Unreleased: Training Studio standing on every screen
+
+A training made on the desk now has one standing that Home, Trainings, Status and the desk
+all read: working on its own, needs your decision, needs attention, drafts to mark ready,
+ready, or stopped. A finished writing job with a retained review finding is listed under
+Needs you with a button straight to its level, material and slide, and is never called
+Finished. Status counts drafts still to write apart from drafts to review and mark ready
+and what needs attention. A deck whose slide text waits says Needs your text approval, and
+materials nothing is writing say Not written yet. Saved runs keep their own words, and
+reading any screen starts no work.
+
 ## Unreleased: research citation handoffs
 
 Research workers are explicitly told which saved source IDs to cite. If a worker

@@ -6897,6 +6897,24 @@ DESK_LEDE = ('Each level’s materials, built from the shared research. Edit any
              'Nothing is ready until you mark it.')
 NOTHING_NEEDED = 'Nothing needed from you. Each material opens here as it is ready.'
 A_DRAFT = 'A draft. Nothing is ready until you mark it.'
+# runner/drafts.py `standing` for two levels whose drafts are all written and whose level 101
+# deck keeps a major review finding (test_training_standing makes the same with the runner).
+STANDING_ATTENTION = {
+    'state': 'needs-you', 'phase': 'attention', 'words': 'Needs attention',
+    'sentence': 'The level 101 slide deck needs attention before it can be marked ready. '
+                'Still to do: 9 drafts to mark ready.',
+    'level': '101',
+    'counts': {'materials': 10, 'to_write': 0, 'updating': 0, 'drafts': 9, 'attention': 1,
+               'decision': 0, 'ready': 0},
+    'levels': {'101': {'materials': 5, 'to_write': 0, 'updating': 0, 'drafts': 4,
+                       'attention': 1, 'decision': 0, 'ready': 0},
+               '201': {'materials': 5, 'to_write': 0, 'updating': 0, 'drafts': 5,
+                       'attention': 0, 'decision': 0, 'ready': 0}},
+    'next': {'kind': 'material', 'label': 'Review the level 101 slide deck',
+             'material': 'deck@101', 'level': '101', 'slide': 'what-it-does'},
+    'kinds': {'blueprint': ['draft', 'draft'], 'document': ['draft', 'draft'],
+              'brief': ['draft', 'draft'], 'deck': ['needs', 'draft'],
+              'scenario': ['draft', 'draft']}}
 DESK_START_STEPS = ['1. Goal and audience', '2. Materials and levels', '3. Sources and settings']
 
 
@@ -7545,6 +7563,93 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         self.assertEqual(result['snapshots']['other']['pressed'], ['201'])
         # Each card is marked ready on its own, with the version shown on it.
         self.assertEqual(shot['buttons'].count('Mark ready'), 1)
+
+    def standing_listed(self, told: dict, **counts) -> dict:
+        """The list as the runner gives it for a desk training whose run is done, said from
+        `told`, the runner's one standing (test_training_standing checks its shape)."""
+        found = self.listed('done', 'Everything is made.')
+        for item in found['body']['trainings']:
+            if item['path'] == str(self.root):
+                item['run']['flow'] = 'desk'
+                item.update(state=told['state'], sentence=told['sentence'], standing=told,
+                            ready=False, waiting={'artifact': None, 'label': None,
+                                                  'question': None, 'recorded': False},
+                            **counts)
+        found['body']['needs'] = 1
+        return found
+
+    def test_row_194_home_status_and_desk_say_one_standing_for_a_finished_job(self):
+        self.started('--levels', '101,201')
+        cards = [a_card(f'{base}@{level}') for level in ('101', '201')
+                 for base, _ in DESK_KINDS]
+        reviewing = ('This deck has unresolved review issues. Review the affected slides '
+                     'below before marking it ready.')
+        cards[3] = a_card('deck@101', 'needs', reviewing, ('download',),)
+        cards[3]['needs'] = ['Major on what-it-does: One of two equal labels is larger.']
+        told = {**STANDING_ATTENTION}
+        listing = self.standing_listed(told, to_make=0, to_write=0, to_review=9, attention=1)
+        desk_view = a_desk(*cards, running=False, needs=['the level 101 slide deck'],
+                           standing=told)
+        status = ok({'limit': 1, 'elsewhere': [], 'runs': [
+            {'path': str(self.root), 'id': 'rolling-restarts', 'title': 'Rolling restarts',
+             'state': 'done', 'sentence': 'Everything is made.', 'queue': None,
+             'needs': False, 'spent': {'dollars': 1.5, 'tokens': None}, 'notice': None,
+             'driver': None}]})
+        answers = self.answers(**{'GET /api/trainings': [listing], 'GET /api/status': [status],
+                                  'GET /api/run': [a_desk_run('done', 'Everything is made.')],
+                                  'GET /api/drafts': [desk_view]})
+        result = self.run_page(answers, [
+            {'snapshot': 'home'}, {'click': 'Trainings'}, {'snapshot': 'trainings'},
+            {'click': 'Status'}, {'snapshot': 'status'}, {'click': 'Home'},
+            {'click': 'Review the level 101 slide deck'}, {'snapshot': 'desk'}])
+        shots = result['snapshots']
+        home = shots['home']
+        self.assertIn('One thing needs you.', home['text'])
+        self.assertNotIn('Nothing needs you right now', home['text'])
+        self.assertEqual(home['filled'], ['Review the level 101 slide deck'])
+        for name in ('home', 'trainings', 'status'):
+            with self.subTest(screen=name):
+                self.assertIn(told['sentence'], shots[name]['text'])
+                self.assertNotIn('Finished here', shots[name]['text'])
+                self.assertNotIn('Still to make', shots[name]['text'])
+        self.assertIn('Needs attention', shots['trainings']['text'])
+        status_text = shots['status']['text'].replace('\n', '')
+        self.assertIn('To review and mark ready: 9 · Needs attention: 1', status_text)
+        self.assertNotIn('Still to write', status_text)
+        self.assertIn('It needs you.', status_text)
+        desk_shot = shots['desk']
+        self.assertIn('Deck · Needs attention', desk_shot['buttons'])
+        self.assertIn('Level 101: 0 of 5 materials ready · 4 drafts to mark ready · 1 needs '
+                      'attention.', desk_shot['text'])
+        self.assertIn(reviewing, desk_shot['text'])
+        self.assertEqual(desk_shot['pressed'], ['101'])
+        # Opening a screen asked for nothing to be made.
+        self.assertEqual(self.posts(result), [])
+
+    def test_row_196_a_deck_waiting_for_its_text_says_so_with_a_way_to_the_decision(self):
+        plan = a_card('blueprint@101')
+        guide = a_card('document@101', state='queued', seen=None, actions=[],
+                       says='Not written yet. Nothing is writing it while the training '
+                            'waits for you or is paused.')
+        deck = a_card('deck@101', state='decide', seen=None, actions=[],
+                      says='Needs your text approval. Read its slide text, then approve it or '
+                           'ask for changes. Nothing is designed until you decide.')
+        run = a_desk_run('waiting', 'What the level 101 slide deck says is waiting for your '
+                         'review.')
+        run['body']['outline'] = {'content_first': True, 'waiting': True, 'level': '101',
+                                  'sha256': 'a' * 64, 'slides': [
+                                      {'title': 'Why restarts roll', 'points': ['Capacity']}]}
+        result = self.open_desk(self.on_desk(a_desk(plan, guide, deck, levels=('101',),
+                                                    running=False), run), [
+            {'click': 'Deck · Needs your text approval'}, {'snapshot': 'deck'},
+            {'click': 'Review slide text'}, {'snapshot': 'review'}])
+        shot = result['snapshots']['deck']
+        self.assertIn('Guide · Not written yet', shot['buttons'])
+        self.assertNotIn('Writing', ' '.join(shot['buttons']))
+        self.assertIn('Review slide text', shot['buttons'])
+        self.assertNotIn('Mark this level ready', shot['buttons'])
+        self.assertEqual(result['snapshots']['review']['focus'], 'Review slide text · Level 101')
+        self.assertEqual(self.posts(result), [])
 
     def test_readiness_is_not_offered_while_a_level_material_is_being_written(self):
         plan = a_card('blueprint@101')
@@ -8754,11 +8859,11 @@ class TeamScreenTests(ScriptedPage, PageCase):
         status = shots['status']
         text = status['text'].replace('\n', '')
         # One table, each training once: a run the list knows is its row, with the list's
-        # own count of what is still to make; a run the list does not know is a row of its
+        # own count of what is still to write; a run the list does not know is a row of its
         # own. A working run's last activity is now; a run with no record here says so.
         for shown in ('Trainings on this computer', 'Up to 2 trainings work at once on this '
                       'computer. Any more wait their turn.',
-                      'Rolling restartsWorking on its own' + going + 'Still to make: ',
+                      'Rolling restartsWorking on its own' + going + 'Still to write: ',
                       '$1.25Working nowOpen', 'Canary releasesWaiting its turnWaiting for its turn.'
                       'It is waiting its turn: 1 training is ahead of it.',
                       'when its turn comes.' + broken + '5,200 tokensnot recorded',
@@ -8846,7 +8951,7 @@ class TeamScreenTests(ScriptedPage, PageCase):
         self.assertIn('Trainings on this computer', text)
         self.assertIn('Up to 2 trainings work at once on this computer. Any more wait their '
                       'turn.', text)
-        self.assertIn('Rolling restartsWorking on its own' + going + 'Still to make: 6'
+        self.assertIn('Rolling restartsWorking on its own' + going + 'Still to write: 6'
                       '$1.25Working now', text)
         self.assertIn('HeldIn progress' + stuck + 'In the way: 2 things—3 hours ago', text)
         self.assertIn('DoneFinished' + ready + '—5 minutes ago', text)

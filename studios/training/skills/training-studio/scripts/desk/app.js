@@ -98,6 +98,9 @@ const CONFIRMS = {
     send: 'Bring it back',
   },
 };
+// The shape beside a desk training's standing (runner/drafts.py PHASES).
+const PHASE_BEADS = { working: 'current', decision: 'review', attention: 'late',
+  drafts: 'review', ready: 'done', stopped: 'off' };
 const STATES = {
   'needs-you': ['review', 'Waiting for you'],
   'in-progress': ['current', 'In progress'],
@@ -1674,6 +1677,15 @@ function openTraining(training) {
 
 function reviewAction(training) {
   const waiting = training.waiting || {};
+  const next = training.standing && training.standing.next;
+  // A desk training opens on its desk at the person's next action: its level, material and,
+  // for a review finding, its slide. Opening it starts nothing.
+  if (!waiting.artifact && next && typeof deskGoTo === 'function') {
+    return () => {
+      deskGoTo(deskHeld(training.path), training.standing, null);
+      show('run', { path: training.path });
+    };
+  }
   return waiting.artifact
     ? () => show('gate', { path: training.path, artifact: waiting.artifact })
     : openTraining(training);
@@ -1692,6 +1704,8 @@ function working(training) {
 function saysOf(training) {
   // Of a training a teammate runs, the runner says what was last shared and when.
   if (elsewhere(training)) return (training.run && training.run.sentence) || training.sentence;
+  // A desk training is said from the one standing its desk shows too.
+  if (training.standing) return training.standing.sentence;
   if (deckLeft(training)) return DECK_LEFT;
   const atGate = training.state === 'needs-you' && (training.waiting || {}).artifact;
   return (training.run && !atGate && training.run.sentence) || training.sentence;
@@ -1712,7 +1726,8 @@ function needsRow(training, index) {
     }
   }
   add(text, noticeLine(training));
-  const review = waiting.artifact && !asked.question && !asked.problem;
+  const next = training.standing && training.standing.next;
+  const review = (waiting.artifact || next) && !asked.question && !asked.problem;
   // What a deck says is reviewed on a screen of its own, reached from here like any gate.
   const outline = !waiting.artifact && readsOutline(asked);
   const go = capsule(review || outline ? 'Review' : 'Open', asked.question ? 'quiet' : '',
@@ -1729,7 +1744,10 @@ function quietRow(training, kind) {
     make('p', 'row-title', training.title || 'Untitled'));
   if (kind === 'in-progress') add(text, beads(training.stages, true));
   // A run that is not working says so: paused, stopped, or finished as far as it goes here.
-  if (training.run && training.run.state !== 'working' && kind === 'in-progress'
+  // A desk training says its own standing instead: a finished writing job is not Ready.
+  if (training.standing && kind === 'in-progress') {
+    add(text, state(...standingOf(training)));
+  } else if (training.run && training.run.state !== 'working' && kind === 'in-progress'
       && !deckLeft(training)) {
     add(text, state(...runWords(training.run)));
   }
@@ -1830,11 +1848,14 @@ function drawHome(fresh) {
   const all = view.listing;
   const first = pick('needs-you')[0];
   const asked = first ? view.asks[first.path] : null;
-  const gate = first && (first.waiting || {}).artifact && !asked;
+  const next = first && !(first.waiting || {}).artifact && first.standing
+    && first.standing.next;
+  const gate = first && ((first.waiting || {}).artifact || next) && !asked;
   const outline = first && !(first.waiting || {}).artifact && readsOutline(asked);
   const lead = !first ? null : outline ? capsule('Review ' + outlineLabel(asked.outline),
     'filled', () => show('outline', { path: first.path }), 'lead')
-    : capsule(gate ? 'Review ' + first.waiting.label : 'Open ' + (first.title || 'Untitled'),
+    : capsule(gate ? (next ? next.label : 'Review ' + first.waiting.label)
+      : 'Open ' + (first.title || 'Untitled'),
       'filled', gate ? reviewAction(first) : openTraining(first), 'lead');
   // With the runner, one button starts a new training. It is the filled one when nothing
   // needs the person first.
@@ -2031,8 +2052,15 @@ function statusRunOf(training) {
 // progress, or what is in the way of one whose files are all made.
 function leftLine(training) {
   if (!training || training.error || training.ready || !given(training.to_make)) return null;
-  if (training.to_make) return make('p', 'quiet', 'Still to make: ' + training.to_make);
-  if (!training.blocking) return null;
+  // Drafts still to write, drafts to review and mark ready, and what needs attention are
+  // counted apart: a draft that exists is never said to be still to make.
+  const write = given(training.to_write) ? training.to_write : training.to_make;
+  const parts = [];
+  if (write) parts.push('Still to write: ' + write);
+  if (training.to_review) parts.push('To review and mark ready: ' + training.to_review);
+  if (training.attention) parts.push('Needs attention: ' + training.attention);
+  if (parts.length) return make('p', 'quiet', parts.join(' · '));
+  if (!training.blocking || training.standing) return null;
   const go = capsule('In the way: ' + count(training.blocking, 'thing', 'things'), 'link',
     openTraining(training), 'in-the-way ' + training.path);
   go.setAttribute('aria-label', 'See what is in the way of ' + (training.title || 'Untitled'));
@@ -2075,7 +2103,8 @@ function statusRow(training, found) {
   return add(row, name,
     cell('Doing now', state(shape, words),
       // A question, a problem, or documents to add: it does nothing more until you come.
-      found && found.needs ? add(make('p', ''), make('strong', '', 'It needs you.')) : null,
+      (found && found.needs) || (known.standing && known.standing.state === 'needs-you')
+        ? add(make('p', ''), make('strong', '', 'It needs you.')) : null,
       says ? make('p', 'quiet', says) : null,
       found && queued(found) ? make('p', 'quiet', queueSays(found.queue)) : null,
       noticeLine(found || training), leftLine(training)),
@@ -3496,6 +3525,9 @@ function standingOf(training) {
   // What a teammate runs is never said to be working or waiting: that is not known here.
   if (elsewhere(training)) return ['none', 'Run by ' + nameOf(training.driver)];
   if (unclaimed(training)) return ['off', 'Nobody is running it'];
+  if (training.standing) {
+    return [PHASE_BEADS[training.standing.phase] || 'current', training.standing.words];
+  }
   if (deckLeft(training)) return STATES['in-progress'];
   if (training.run && (training.state === 'in-progress' || training.run.state === 'failed')) {
     return runWords(training.run);

@@ -19,8 +19,11 @@ const DESK_WORDS = {
   kinds: { blueprint: 'Plan', document: 'Guide', brief: 'Brief', deck: 'Deck',
     scenario: 'Practice', yoodli: 'Yoodli' },
   // The shape beside a card's state; its words are the card's own sentence.
-  beads: { writing: 'current', draft: 'none', ready: 'done', held: 'late', needs: 'late',
-    'left-out': 'out' },
+  beads: { writing: 'current', queued: 'none', decide: 'review', draft: 'none', ready: 'done',
+    held: 'late', needs: 'late', 'left-out': 'out' },
+  // A material tab's state, as the runner's one standing names it (runner/drafts.py).
+  tabs: { writing: 'Writing', queued: 'Not written yet', decide: 'Needs your text approval',
+    needs: 'Needs attention', held: 'Needs updating', ready: 'Ready', draft: 'Draft' },
   noResearch: 'The research is not written yet. It opens here when it is.',
   kept: 'Your documents stay on this computer and are never shared with your team. Passages '
     + 'quoted from them appear in the research report, which is shared.',
@@ -53,6 +56,20 @@ function deskHeld(path) {
       drawn: '', materials: {}, recovery: readDeskRecovery(path) };
   }
   return DESK.held[path];
+}
+
+// The way to the person's next action from another screen or from the needs line: its
+// level, its material and, for a deck review finding, its slide. Opening never starts work.
+function deskGoTo(held, standing, name) {
+  const next = standing && standing.next;
+  if (!next || !next.material || (name && next.material !== name)) return;
+  held.level = next.level || '';
+  held.sources = false;
+  held.material[held.level] = next.material;
+  if (next.slide) {
+    held.slide ||= {};
+    held.slide[next.material] = next.slide;
+  }
 }
 
 // A training started on the desk: the runner's view of its run says so in `flow`.
@@ -820,6 +837,30 @@ async function shareDesk(path) {
 }
 
 // The level a desk shows, and whether a phone shows its Sources in place of the cards.
+// Where the level shown stands, from the runner's one standing: how many of its materials
+// are Ready, still to write, drafts to mark ready, or need attention or a decision. A
+// material is Ready on its own; the level is complete once all of its materials are.
+function levelStanding(found, level) {
+  const counts = found.standing && found.standing.levels && found.standing.levels[level || ''];
+  if (!counts || !counts.materials) return null;
+  const parts = [counts.ready + ' of ' + count(counts.materials, 'material', 'materials')
+    + ' ready'];
+  if (counts.to_write) parts.push(counts.to_write + ' still to write');
+  if (counts.drafts) parts.push(count(counts.drafts, 'draft', 'drafts') + ' to mark ready');
+  if (counts.attention) parts.push(counts.attention + (counts.attention === 1 ? ' needs'
+    : ' need') + ' attention');
+  if (counts.decision) parts.push(counts.decision + (counts.decision === 1 ? ' waits'
+    : ' wait') + ' for your decision');
+  const whole = counts.ready === counts.materials
+    ? (level ? 'This level is complete.' : 'Every material is ready.')
+    : (level ? 'This level is complete' : 'The training is complete')
+      + ' once every material is ready. Downloads and Google Docs are optional.';
+  const node = make('p', 'quiet desk-level-standing', (level ? 'Level ' + level + ': ' : '')
+    + parts.join(' · ') + '. ' + whole);
+  node.setAttribute('role', 'status');
+  return node;
+}
+
 function deskTabs(found, held) {
   const named = list(found.levels).filter(Boolean);
   if (!named.includes(held.level)) held.level = named[0] || '';
@@ -938,6 +979,17 @@ function deskCard(found) {
       'desk-send ' + found.name));
   }
   if (actions.includes('download')) bar.append(downloadButton(found));
+  // A deck waiting for its slide text to be approved: nothing is writing it, and the one
+  // way on is the decision, which this takes the person straight to.
+  const text = view.run && view.run.outline;
+  if (found.state === 'decide' && text && text.content_first && text.waiting) {
+    // Quiet: the approval itself holds the screen's one filled button.
+    bar.append(capsule('Review slide text', 'quiet', () => {
+      const review = byId('slide-text-review');
+      const title = review && review.querySelector('h2, h3');
+      if (title) { title.tabIndex = -1; title.focus(); }
+    }, 'desk-text ' + found.name));
+  }
   const material = deskHeld(view.path).materials[found.name];
   if (material && found.kind === 'document' && deskCanChange() && !material.view.readonly) {
     const menu = make('details', 'menu'); menu.dataset.key = 'whole-menu ' + found.name;
@@ -1622,6 +1674,7 @@ function needsPart(found, held, run) {
         held.level = one.level;
         held.sources = false;
         held.material[held.level || ''] = one.name;
+        deskGoTo(held, found.standing, one.name);
         paintDesk(false);
         const heading = byId(headingId(one.name));
         if (heading) heading.focus();
@@ -1662,8 +1715,17 @@ function progressPart(found, held, lead) {
     : materials.length ? available + ' of ' + materials.length + ' drafts available. New drafts appear below as they finish.'
       : 'Preparing the first material. It will appear here when it is ready.') : null;
   return add(make('div'), callout('', building, line, status, controls.childNodes.length ? controls : null,
-    run.timing ? (!run.research_progress || run.research_progress.phase === 'complete' ? measuredTime(run) : null) : progress.started_at ? make('p', 'quiet desk-clock', deskKit.clock(progress))
-      : null), researchActivity(run));
+    // Time is a detail, never an estimate of what is left: elapsed time keeps growing.
+    run.timing ? (!run.research_progress || run.research_progress.phase === 'complete'
+      ? timeDetails(measuredTime(run)) : null) : progress.started_at
+      ? timeDetails(make('p', 'quiet desk-clock', deskKit.clock(progress))) : null),
+  researchActivity(run));
+}
+
+function timeDetails(line) {
+  if (!line) return null;
+  return add(make('details', 'card-part desk-time'), make('summary', '', 'Time so far'), line,
+    make('p', 'quiet', 'Elapsed time includes waiting. It is not an estimate of what is left.'));
 }
 
 function unsentPart(held, lead) {
@@ -1800,7 +1862,7 @@ function deskLead(run, held, ours) {
 
 function slideTextReview(outline, held) {
   const path = view.path, turn = view.turn;
-  return Drafting.slideContent({slides: outline.slides,
+  const review = Drafting.slideContent({slides: outline.slides,
     label: 'Review slide text' + (outline.level ? ' · Level ' + outline.level : ''),
     note: held.slideTextNote || '', onNote: note => { held.slideTextNote = note; },
     onDecision: async (decision, note) => {
@@ -1809,6 +1871,16 @@ function slideTextReview(outline, held) {
       if (view.turn !== turn) return;
       held.slideTextNote = ''; view.run = result; await drawDesk(true);
     }});
+  review.id = 'slide-text-review';
+  // The note's label wraps it; it is also named by id, so every reader finds its name.
+  const note = review.querySelector('textarea');
+  const label = note && note.parentNode;
+  if (note && label && label.tagName === 'LABEL') {
+    note.id = 'slide-text-note';
+    label.htmlFor = note.id;
+    note.dataset.key = 'slide-text-note';
+  }
+  return review;
 }
 
 function trainingPlanReview(plan, held) {
@@ -1923,7 +1995,7 @@ function paintDesk(fresh) {
   }
   const selected = held.sources ? 'sources' : held.material[level];
   const options = [...available.map(one => ({id: one.name, label: cardTitle(one) + ' · '
-    + ({writing: 'Writing', needs: 'Needs attention', held: 'Needs updating', ready: 'Ready', draft: 'Draft'}[one.state] || 'Draft')})),
+    + (DESK_WORDS.tabs[one.state] || 'Draft')})),
     {id: 'sources', label: 'Research & sources'}];
   const materials = workspaceTabs('Training material', options, selected, id => {
     held.sources = id === 'sources';
@@ -1952,6 +2024,7 @@ function paintDesk(fresh) {
     run.problem ? problemPart(run, lead === 'problem') : null,
     adding(run) && ours && !held.unsent ? documentsCard(run, lead === 'documents') : null,
     preparingPlan || waitingPlan ? null : tabs,
+    preparingPlan || waitingPlan ? null : levelStanding(found, level),
     preparingPlan || waitingPlan ? null : materials,
     preparingPlan || waitingPlan ? null : layout,
   ], fresh);

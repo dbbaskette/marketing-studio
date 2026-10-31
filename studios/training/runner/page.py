@@ -634,7 +634,32 @@ class RunnerPage(desk.Page):
                                  'question': found['question'], 'recorded': False})
         elif item.get('state') == 'in-progress' and found['state'] != 'done':
             item['sentence'] = found['sentence']
+        if found['mine'] and found.get('flow') == drafts.FLOW:
+            self.with_standing(item)
         return item
+
+    def with_standing(self, item: dict) -> None:
+        """Say a desk training as its desk does, from the one reading of its materials:
+        Home, Trainings and Status then agree with the desk on what needs the person, what
+        is still to write and what is waiting for Mark ready."""
+        try:
+            told = drafts.standing(self.engine, Path(item['path']))
+        except (WorkspaceError, OSError):
+            return   # what the list already says is kept
+        if told is None:
+            return
+        counts = told['counts']
+        item.update(standing=told, state=told['state'], sentence=told['sentence'],
+                    ready=told['phase'] == 'ready',
+                    # Still to make counted unapproved drafts too; these are told apart.
+                    to_make=counts['to_write'], to_write=counts['to_write'],
+                    to_review=counts['drafts'], attention=counts['attention'],
+                    stages=drafts.stage_row(item.get('stages') or [], told))
+        if told['state'] == 'needs-you' and not isinstance(item.get('waiting'), dict):
+            item['waiting'] = {'artifact': None, 'label': None, 'question': None,
+                               'recorded': False}
+        elif told['state'] != 'needs-you':
+            item['waiting'] = None
 
     # --- the desk's changes --------------------------------------------------------------
 

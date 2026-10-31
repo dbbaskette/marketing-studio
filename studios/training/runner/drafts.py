@@ -709,9 +709,12 @@ def start_minutes(root: Path, record: dict, found) -> int:
 # --- the desk's view ---------------------------------------------------------------------
 
 ACTIONS = ('ready', 'update', 'keep', 'send', 'download')
-STATES = ('writing', 'draft', 'ready', 'held', 'needs', 'left-out')
+STATES = ('writing', 'queued', 'decide', 'draft', 'ready', 'held', 'needs', 'left-out')
+TEXT_APPROVAL = ('Needs your text approval. Read its slide text, then approve it or ask for '
+                 'changes. Nothing is designed until you decide.')
 NOTHING_NEEDED = 'Nothing needed from you. Each material opens here as it is ready.'
 WRITING = 'Being written. It opens here when it is ready.'
+QUEUED = 'Not written yet. Nothing is writing it while the training waits for you or is paused.'
 UPDATING = 'Being made again from what it is built from now.'
 DRAFT = 'A draft. Nothing is ready until you mark it.'
 READY = 'Ready. You marked it ready.'
@@ -758,38 +761,34 @@ def _failing(found, problem: dict) -> str | None:
                  and (at == step.id or at.startswith(step.id + ':'))), None)
 
 
-def view(engine, root) -> dict:
-    """Everything the desk shows for one desk training: {'flow', 'title', 'levels',
-    'progress', 'needs', 'cards', 'sources', 'job', 'team'}.
+def _text_waiting(found) -> str | None:
+    """The deck whose slide text waits for the person's approval, or None: on the desk the
+    one stop a deck makes before it is designed."""
+    step = found.next.step
+    if found.next.kind != 'outline' or step is None or not step.artifact:
+        return None
+    return step.artifact
 
-    `progress` is the start's band: {'running', 'doing', 'started_at', 'minutes', 'line'}.
-    `cards` are each level's materials in ORDER, each {'name', 'level', 'kind', 'label',
-    'state', 'says', 'checks', 'seen', 'held', 'actions', 'needs'}: `state` one of STATES,
-    read from what the person marked (the desk's acceptance is a draft), `seen` the hash of
-    its file, `actions` of ACTIONS (only `download` for a teammate). `needs` names the
-    cards that need the person, then the run's question or problem, and, once everything is
-    Ready, what still keeps the index from being written."""
-    import assess
-    import desk
 
+def _cards(engine, root: Path, record: dict, found) -> list[dict]:
+    """Each material of a desk training in ORDER, level by level, with how it stands:
+    {'name', 'level', 'kind', 'label', 'state', 'says', 'seen', 'held', 'actions', 'needs'}.
+    This is the one reading of a material's state, shared by the desk's cards and by every
+    list of trainings (`standing`). It reads files and records only and starts nothing."""
     from runner import pipeline
-    root = Path(root)
-    record = engine._load(root)
-    found = engine._survey(root, record, engine._wanted(root, record))
     session = found.session
-    state, sentence = engine._state(record, found, engine._run(root))
-    mine, who, state, sentence, last = engine._whose(root, record, found, state, sentence)
     plain = workspace.statuses(root, session)
     person = workspace.person_statuses(root, session)
-    holding, asked, report = held(root, session, record, plain), updates(record), \
-        assess.run_checks(root, show_all=True)
-    problem, question = record.get('problem') or {}, record.get('question')
+    holding, asked = held(root, session, record, plain), updates(record)
+    problem = record.get('problem') or {}
     failing, busy_now = _failing(found, problem), busy(record)
+    deciding = _text_waiting(found)
+    # A draft not written yet is said to be written only while the run is working on it.
+    running = engine._state(record, found, engine._run(root))[0] == 'working' or busy_now
     copied_to = {entry['artifact'] for entry in found.copies}
-    levels = session['levels'] or [None]
     names = workspace.artifact_names(root, session)
     cards = []
-    for level in levels:
+    for level in session['levels'] or [None]:
         for base in ORDER:
             for name in names:
                 kind = workspace.split(name)[0].partition(':')[0]
@@ -809,12 +808,16 @@ def view(engine, root) -> dict:
                     shown, says, card_actions = 'writing', UPDATING, []
                 elif name == failing and problem:
                     shown, says = 'needs', problem.get('what') or NEEDS
+                elif name == deciding:
+                    # Nothing is being written: the deck waits for the person's decision.
+                    shown, says = 'decide', TEXT_APPROVAL
                 elif seen is None and in_conversation(record):
                     shown, says, card_actions = 'needs', 'Not provided. No work is scheduled; continue explicitly in conversation.', []
                 elif seen is None:
                     shown, says = (('needs', pipeline.deck_says(found))
                                    if kind == 'deck' and found.missing
-                                   else ('writing', WRITING))
+                                   else ('writing', WRITING) if running
+                                   else ('queued', QUEUED))
                     card_actions = []
                 elif name in holding:
                     shown = 'held'
@@ -843,13 +846,46 @@ def view(engine, root) -> dict:
                 cards.append({
                     'name': name, 'level': level or '', 'kind': kind,
                     'label': workspace.label(name), 'state': shown, 'says': says,
-                    'checks': _checked(report['checks'], name) if seen else
-                    {'passed': 0, 'problems': []},
-                    'seen': seen, 'held': name in holding,
-                    'actions': card_actions if mine else ['download'], 'needs': needs,
-                    **({'proposals': engine.deck_proposals(root, level),
-                        **deck_card(engine, root, level, found)}
-                       if kind == 'deck' and seen else {})})
+                    'seen': seen, 'held': name in holding, 'actions': card_actions,
+                    'needs': needs})
+    return cards
+
+
+def view(engine, root) -> dict:
+    """Everything the desk shows for one desk training: {'flow', 'title', 'levels',
+    'progress', 'needs', 'cards', 'sources', 'job', 'team'}.
+
+    `progress` is the start's band: {'running', 'doing', 'started_at', 'minutes', 'line'}.
+    `cards` are each level's materials in ORDER, each {'name', 'level', 'kind', 'label',
+    'state', 'says', 'checks', 'seen', 'held', 'actions', 'needs'}: `state` one of STATES,
+    read from what the person marked (the desk's acceptance is a draft), `seen` the hash of
+    its file, `actions` of ACTIONS (only `download` for a teammate). `needs` names the
+    cards that need the person, then the run's question or problem, and, once everything is
+    Ready, what still keeps the index from being written."""
+    import assess
+    import desk
+
+    from runner import pipeline
+    root = Path(root)
+    record = engine._load(root)
+    found = engine._survey(root, record, engine._wanted(root, record))
+    session = found.session
+    state, sentence = engine._state(record, found, engine._run(root))
+    mine, who, state, sentence, last = engine._whose(root, record, found, state, sentence)
+    report = assess.run_checks(root, show_all=True)
+    problem, question = record.get('problem') or {}, record.get('question')
+    levels = session['levels'] or [None]
+    cards = []
+    for card in _cards(engine, root, record, found):
+        name, level, seen = card['name'], card['level'] or None, card['seen']
+        cards.append({
+            **card,
+            'checks': _checked(report['checks'], name) if seen else
+            {'passed': 0, 'problems': []},
+            'actions': card['actions'] if mine else ['download'],
+            **({'proposals': engine.deck_proposals(root, level),
+                **deck_card(engine, root, level, found)}
+               if card['kind'] == 'deck' and seen else {})})
     needed = []
     if mine:
         needed = [card['label'] for card in cards if card['state'] in ('held', 'needs')
@@ -888,7 +924,198 @@ def view(engine, root) -> dict:
                                    ('name', 'bytes', 'readable', 'problem')}
                                   for entry in listed]},
         'job': next((dict(job) for job in reversed(jobs) if basis.busy(job)), None),
-        'team': {'ours': mine, 'driver': who, 'last_shared': last}}
+        'team': {'ours': mine, 'driver': who, 'last_shared': last},
+        # The same standing Home, Trainings and Status say, read from these very cards.
+        'standing': standing(engine, root, record, found, cards) if mine else None}
+
+
+# --- one standing for every screen -------------------------------------------------------
+#
+# Home, Trainings, Status and the desk say where a desk training is from this one reading
+# of its cards. Writing a draft, a decision the person owes, a draft waiting for Mark ready,
+# a review that needs attention, Ready and a stopped run are told apart, so a finished
+# writing job never reads as a training that is ready to use.
+
+PHASES = ('working', 'decision', 'attention', 'drafts', 'ready', 'stopped')
+PHASE_WORDS = {'working': 'Working on its own', 'decision': 'Needs your decision',
+               'attention': 'Needs attention', 'drafts': 'Drafts to mark ready',
+               'ready': 'Ready', 'stopped': 'Stopped'}
+TEXT_WAITS = ('Needs your text approval: {it}. Read its slide text, then approve it or ask '
+              'for changes. Nothing is designed until you decide.')
+PLAN_WAITS = ('Needs your approval of the topics and teaching plan. Nothing more is built '
+              'until you decide.')
+ATTENTION = '{It} needs attention before it can be marked ready.'
+DRAFTS_LEFT = '{drafts} to read and mark ready.'
+ALL_READY = 'Every material is marked ready.'
+
+
+def _things(count: int, one: str, many: str) -> str:
+    return f'{count} {one if count == 1 else many}'
+
+
+def _tally(cards: list[dict]) -> dict:
+    """How many of `cards` stand where: still to write (no draft yet), being made again, a
+    draft to mark ready, needing attention, waiting for a decision, and Ready."""
+    shown = [card for card in cards if card['state'] != 'left-out']
+    return {'materials': len(shown),
+            'to_write': sum(not card['seen'] and card['state'] != 'needs' for card in shown),
+            'updating': sum(bool(card['seen']) and card['state'] == 'writing' for card in shown),
+            'drafts': sum(card['state'] == 'draft' for card in shown),
+            'attention': sum(card['state'] in ('needs', 'held') for card in shown),
+            'decision': sum(card['state'] == 'decide' for card in shown),
+            'ready': sum(card['state'] == 'ready' for card in shown)}
+
+
+def _slide_of(root: Path, found, name: str) -> str | None:
+    """The first slide a deck's open grave findings are on, for a way straight to it."""
+    if workspace.split(name)[0] != 'deck':
+        return None
+    from runner import pipeline
+    try:
+        shown = pipeline.deck_gate(root, found.session, name)
+    except (workspace.WorkspaceError, OSError, KeyError, ValueError):
+        return None
+    for finding in (shown.get('review') or {}).get('findings') or ():
+        if isinstance(finding, dict) and finding.get('severity') in review_policy.GRAVE \
+                and finding.get('slide'):
+            return str(finding['slide'])
+    return None
+
+
+def standing(engine, root, record: dict | None = None, found=None,
+             cards: list[dict] | None = None) -> dict | None:
+    """Where a desk training stands, the same on every screen: {'state', 'phase', 'words',
+    'sentence', 'level', 'counts', 'levels', 'next'}.
+
+    `state` is how a list groups it ('needs-you', 'in-progress' or 'finished'); `phase` one
+    of PHASES; `words` its short label. `counts` (and `levels`, the same for each level) tell
+    drafts still to write from drafts to mark ready, attention and decisions. `next` is the
+    person's next action, {'kind', 'label', 'material', 'level', 'slide'}, or None while
+    there is nothing for them to do. Reading it starts nothing."""
+    root = Path(root)
+    record = engine._load(root) if record is None else record
+    if not on_desk(record) or in_conversation(record):
+        return None   # a saved run keeps its own words; conversation work is said there
+    found = engine._survey(root, record, engine._wanted(root, record)) if found is None \
+        else found
+    run = engine._run(root)
+    state, sentence = engine._state(record, found, run)
+    cards = _cards(engine, root, record, found) if cards is None else cards
+    counts = _tally(cards)
+    by_level = {level: _tally([card for card in cards if card['level'] == level])
+                for level in (found.session['levels'] or [''])}
+    working = state == 'working' or busy(record)
+
+    def first(*states):
+        return next((card for card in cards if card['state'] in states), None)
+
+    def to(card, kind='material', label=None):
+        return {'kind': kind, 'label': label or f"Review {card['label']}",
+                'material': card['name'], 'level': card['level'],
+                'slide': _slide_of(root, found, card['name']) if card['kind'] == 'deck'
+                else None}
+
+    remains = []
+    if counts['to_write']:
+        remains.append(f"{_things(counts['to_write'], 'draft', 'drafts')} still to write")
+    if counts['drafts']:
+        remains.append(f"{_things(counts['drafts'], 'draft', 'drafts')} to mark ready")
+    remains = ('Still to do: ' + ', '.join(remains) + '.') if remains else ''
+    problem, question = record.get('problem'), record.get('question')
+    deciding, attention, drafted = first('decide'), first('needs', 'held'), first('draft')
+    nxt, level = None, ''
+    if problem:
+        phase, now = 'stopped', 'needs-you'
+        words = 'Stopped: something went wrong'
+        said = problem.get('what') or sentence
+        nxt = {'kind': 'problem', 'label': 'See what went wrong', 'material': None,
+               'level': '', 'slide': None}
+    elif state in ('paused', 'stopped'):
+        phase, now, words, said = 'stopped', 'in-progress', state.capitalize(), sentence
+    elif question:
+        phase, now, words = 'decision', 'needs-you', 'Needs your answer'
+        said = QUESTION.format(text=question['text'])
+        nxt = {'kind': 'question', 'label': 'Answer the question', 'material': None,
+               'level': '', 'slide': None}
+    elif found.next.kind == 'documents':
+        phase, now, words, said = 'decision', 'needs-you', 'Needs your documents', sentence
+        nxt = {'kind': 'documents', 'label': 'Add your documents', 'material': None,
+               'level': '', 'slide': None}
+    elif found.next.kind == 'review' and getattr(found.next.step, 'id', '') == \
+            'review:training-plan':
+        phase, now, words, said = 'decision', 'needs-you', 'Needs your plan approval', PLAN_WAITS
+        nxt = {'kind': 'plan', 'label': 'Review the teaching plan', 'material': None,
+               'level': '', 'slide': None}
+    elif deciding:
+        phase, now, words = 'decision', 'needs-you', 'Needs your text approval'
+        said = TEXT_WAITS.format(it=deciding['label'])
+        nxt = to(deciding, 'text', 'Review the slide text'
+                 + (f" for level {deciding['level']}" if deciding['level'] else ''))
+        level = deciding['level']
+    elif attention:
+        phase, now, words = 'attention', 'needs-you', PHASE_WORDS['attention']
+        said = ATTENTION.format(It=workspace.sentence(attention['label']))
+        nxt, level = to(attention), attention['level']
+    elif working:
+        phase, now, words, said = 'working', 'in-progress', PHASE_WORDS['working'], sentence
+        writing = first('writing')
+        level = writing['level'] if writing else ''
+    elif drafted:
+        phase, now, words = 'drafts', 'needs-you', PHASE_WORDS['drafts']
+        said = DRAFTS_LEFT.format(drafts=_things(counts['drafts'], 'draft', 'drafts')
+                                  .capitalize())
+        nxt, level = to(drafted, label=f"Review {drafted['label']}"), drafted['level']
+    elif counts['materials'] and counts['ready'] == counts['materials']:
+        import assess
+        import desk
+        from runner import pipeline
+        blocking = assess.run_checks(root)['blocking']
+        if blocking:   # every material is Ready, and something else keeps the index back
+            phase, now, words = 'attention', 'needs-you', PHASE_WORDS['attention']
+            said = f'{ALL_READY} {desk.plainly_on_desk(blocking[0])}'
+        elif (root / pipeline.INDEX).is_file() and found.next.kind == 'done':
+            phase, now, words, said = 'ready', 'finished', PHASE_WORDS['ready'], ALL_READY
+        else:
+            phase, now, words = 'working', 'in-progress', PHASE_WORDS['working']
+            said = f'{ALL_READY} Writing the index now.'
+    else:
+        phase, now, words, said = 'working', 'in-progress', PHASE_WORDS['working'], sentence
+    if remains and phase not in ('ready', 'drafts'):   # drafts already say what is left
+        said = f'{said} {remains}'
+    kinds: dict[str, list[str]] = {}
+    for card in cards:
+        kinds.setdefault(card['kind'], []).append(card['state'])
+    return {'state': now, 'phase': phase, 'words': words, 'sentence': said.strip(),
+            'level': level or '', 'counts': counts, 'levels': by_level, 'next': nxt,
+            'kinds': kinds}
+
+
+# A stage of the row, from its materials' cards: done only once every one is Ready.
+BEAD_OF = {'ready': 'done', 'left-out': 'left-out', 'writing': 'current', 'queued': 'not-started',
+           'draft': 'review',
+           'decide': 'review', 'needs': 'review', 'held': 'review'}
+
+
+def stage_row(stages: list[dict], told: dict) -> list[dict]:
+    """The row of stages of a desk training, read from `told` (its `standing`) rather than
+    from what the desk accepted on its way through: a stage is done once its materials are
+    all Ready, yours to review while any is a draft, needs attention or waits for a decision,
+    and the index is done only once the training is Ready."""
+    import desk
+    row = []
+    for stage in stages:
+        states = told['kinds'].get(stage['stage'])
+        now = stage['state']
+        if stage['stage'] == 'package':
+            now = 'done' if told['phase'] == 'ready' else 'not-started'
+        elif states:
+            shown = [BEAD_OF.get(state, 'current') for state in states if state != 'left-out']
+            now = ('left-out' if not shown else 'done' if all(bead == 'done' for bead in shown)
+                   else 'review' if 'review' in shown
+                   else 'not-started' if all(bead == 'not-started' for bead in shown)
+                   else 'current')
+        row.append({**stage, 'state': now, 'words': desk.STAGE_STATES[now]})
+    return row
 
 
 # --- parts: a training's guide, brief and plan as piece 3's parts ------------------------

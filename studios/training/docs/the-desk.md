@@ -39,6 +39,8 @@ Use **Add a source** to add documents after research. The desk shows the price b
 
 ## Mark ready and Finishing
 
+Under the level tabs, one line says how many of the level's materials are ready, still to write, drafts to mark ready, or need attention or a decision. A material is ready on its own; a level is complete once all of its materials are, and downloads and Google Docs stay optional. While a deck's slide text waits for you, its tab says **Needs your text approval** and **Review slide text** takes you to it; materials not written yet say **Not written yet**, never Writing, while nothing works on them. Time so far is a detail you open; elapsed time is never an estimate of what is left.
+
 **Mark ready** records your approval of a material. You can also mark a level ready; the desk stops at the first material that needs attention. Settle holds, grave deck findings and other blocking checks first. A later edit makes the material a draft again. Once all requested materials are ready, Training Studio writes the index. Requested copies follow readiness; a guide or brief can also be sent to a Google Doc from the desk. You can look for changes in Google Docs and bring them back, resolving a conflict if both versions changed.
 
 **Finishing** offers checks and proposals for the training. Review each proposal and choose Apply, Edit or Skip. A proofread fix may request work; other findings can open a note for you to edit. Applied changes keep a version in History. Local checks create proposals without starting a job. When you request an AI check, it runs work to produce proposals; each proposal waits for your decision.
