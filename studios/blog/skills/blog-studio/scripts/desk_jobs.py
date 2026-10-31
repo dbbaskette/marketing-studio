@@ -1965,6 +1965,10 @@ def view(root, ident):
             )
         except (ValueError, OSError, KeyError):
             names.append({'id': entry['source_id'], 'name': 'Unavailable source', 'purposes': []})
+    import shared_library
+
+    # A source taken from the Document Library says when a newer revision is there.
+    names = shared_library.marked(root, names)
     last = rows[-1] if rows else None
     chain = None
     if last and last['chain']:
