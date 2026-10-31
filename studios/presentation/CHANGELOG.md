@@ -5,6 +5,20 @@ making decks first, then what changes for maintainers.
 
 ## Unreleased
 
+- **One name for each kind of deck, and for its brand.** Home's **Start a
+  deck**, a deck's header and the Decks filter now say **From an idea**, **From
+  a document** and **From an existing deck**, the names New deck asks with (An
+  idea, A document, An existing deck). "Start from scratch", "From scratch" and
+  "Redesign an existing deck" are gone; an existing deck covers every level,
+  not only a redesign. The look and the look pause name the brand as New deck
+  does, for example "Made in Example Co (light)", not by its ID.
+
+  For maintainers: `ROUTES` in `app.js` holds the one name per route, and
+  `routeWords` and the Decks filter read it. `madeIn(brand, variant, fallback)`
+  names a brand from Set-up's brand list and falls back to the runner's
+  `made_in`; the deck is drawn again when Set-up's brands arrive after it.
+  Part of #255.
+
 - **The start's sources match the desk's Sources card.** With **Research
   first**, **Your sources** on New deck now offers **Add from library**, and a
   file chosen there offers **Keep in library** (the default) or **Only this

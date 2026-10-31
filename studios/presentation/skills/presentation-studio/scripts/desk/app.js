@@ -110,15 +110,18 @@ const OUTPUT_SAYS = [
   'Google Slides: the finished deck is a new presentation in your Google Drive.',
   'PowerPoint: the finished deck is a .pptx file kept on this computer, to download.',
 ];
-// How a deck begins. Each card opens a short form with only that route's questions.
+// How a deck begins, by the one name each kind has everywhere: New deck's cards (An idea,
+// A document, An existing deck), Home's Start a deck, a deck's header and the Decks filter
+// (From an idea, ...). An existing deck covers every level, so it is never "Redesign".
 const ROUTES = [
-  ['scratch', 'Start from scratch', 'Say what it is about and who it is for. It is '
+  ['scratch', 'From an idea', 'Say what it is about and who it is for. It is '
     + 'researched if you like, outlined, designed and built.'],
-  ['document', 'Start from a document', 'A script, notes or a write-up. It is read first, '
+  ['document', 'From a document', 'A script, notes or a write-up. It is read first, '
     + 'to tell a finished script from material to build from.'],
-  ['existing', 'Redesign an existing deck', 'A .pptx or a Google Slides deck. The original '
+  ['existing', 'From an existing deck', 'A .pptx or a Google Slides deck. The original '
     + 'is never changed: a new copy is made.'],
 ];
+const ROUTE_NAMES = Object.fromEntries(ROUTES.map(([route, name]) => [route, name]));
 // How much of an existing deck changes. Each says in one line what it does.
 const LEVELS = [
   ['brand-only', 'Brand only', 'Same slides in your brand’s look: colors, fonts, logo, '
@@ -1395,10 +1398,9 @@ function openDeck(brief) {
 // How a deck began, in a few words.
 function routeWords(brief) {
   const level = LEVELS.find((one) => one[0] === brief.level);
-  if (brief.route === 'existing') return 'An existing deck' + (level ? ' · ' + level[1] : '');
-  if (brief.route === 'document') return 'From a document';
-  if (brief.route === 'scratch') return 'From scratch';
-  return '';
+  if (!ROUTE_NAMES[brief.route]) return '';
+  return ROUTE_NAMES[brief.route] + (brief.route === 'existing' && level ? ' · ' + level[1]
+    : '');
 }
 
 function runWords(found) {
@@ -1593,8 +1595,7 @@ function drawHome(fresh) {
 const DELIVERED = [['', 'Any'], ['yes', 'Delivered'], ['no', 'Not delivered yet']];
 const STANDS = [['', 'Any'], ['needs', 'Needs you'], ['working', 'In progress'],
   ['finished', 'Finished'], ['elsewhere', 'Run by your teammates']];
-const BEGAN = [['', 'Any'], ['scratch', 'From scratch'], ['document', 'From a document'],
-  ['existing', 'From an existing deck']];
+const BEGAN = [['', 'Any'], ...ROUTES.map(([route, name]) => [route, name])];
 
 function deckCard(brief) {
   const node = make('li', 'card shine' + (brief.state === 'working' && !elsewhere(brief)
@@ -2620,6 +2621,16 @@ function brandSkills() {
 function brandsFound() {
   const found = (view.setup && view.setup.brand) || {};
   return found.found ? list(found.brands) : [];
+}
+
+// The brand a deck is made in, by the name the brand skill gives it, as New deck says it:
+// "Example Co (light)". A brand this computer's skill does not list keeps the words the
+// runner said (`fallback`), and with no brand at all it is "your brand".
+function madeIn(brand, variant, fallback) {
+  const found = brandsFound().find((one) => one.brand === brand);
+  if (!found) return fallback || (brand ? brand + (variant ? ' (' + variant + ')' : '')
+    : 'your brand');
+  return (found.name || found.brand) + (variant ? ' (' + variant + ')' : '');
 }
 
 // Hold a choice to a brand the brand skill has, and one of that brand's variants.
@@ -4913,7 +4924,7 @@ function storyboardPanel(gate, readonly) {
 function lookPanel(gate, readonly, held, review) {
   if (gate.offered) return looksPanel(gate, readonly, held || chosenFor(gate), review);
   const node = card('The brand');
-  const made = gate.made_in || 'your brand';
+  const made = madeIn(gate.brand, gate.variant, gate.made_in);
   add(node, make('p', 'row-title', 'Made in ' + made + '.'),
     make('p', '', readonly ? 'Its cover, drawn in that brand.' : 'This is your cover, drawn '
       + 'in that brand, so you can see it is the one you meant. If it is not, choose another '
@@ -4933,7 +4944,7 @@ function lookPanel(gate, readonly, held, review) {
 function looksPanel(gate, readonly, held, review) {
   const offered = gate.offered;
   if (gate.again && !held.look) held.look = gate.again.choice || '';
-  const made = gate.made_in || 'your brand';
+  const made = madeIn(gate.brand, gate.variant, gate.made_in);
   const node = card('Choose the look');
   add(node, make('p', 'row-title', 'Made in ' + made + '.'),
     make('p', '', 'The brand drew one slide of your outline in each of its looks. The look '
@@ -6038,7 +6049,7 @@ function paintDeck(fresh) {
       () => questionPart(run, title)] : null,
     gate ? ['gate-line', [gate.name, gate.label, read, driver, googleReady()],
       () => gateLine(run)] : null,
-    gate ? ['gate', [gate, read, narrow() ? lead : '', Boolean(view.sheet)],
+    gate ? ['gate', [gate, read, narrow() ? lead : '', Boolean(view.sheet), brandsFound()],
       () => gatePanel(run)] : null,
     noting(run) ? ['note', [run.note, run.state, read], () => notePart(run)] : null,
     run.research_progress && typeof StudioResearch !== 'undefined' ? ['research-progress', run.research_progress, () => StudioResearch.progress(run.research_progress)] : null,
@@ -6073,7 +6084,12 @@ async function drawDeck(fresh) {
     const run = await ask('run', { path: view.path });
     if (turn !== view.turn) return;
     const first = fresh || !view.run;
-    const same = !first && JSON.stringify(run) === JSON.stringify(view.run);
+    // The brands named on the deck (madeIn) come with Set-up, which may arrive after the
+    // deck was first drawn: it is drawn again then.
+    const brands = JSON.stringify(brandsFound());
+    const same = !first && JSON.stringify(run) === JSON.stringify(view.run)
+      && brands === view.brandsDrawn;
+    view.brandsDrawn = brands;
     view.run = run;
     // Someone is in the middle of deciding: the screen waits until they are done.
     if (!view.busy && !view.sheet && !same) paintDeck(first);
@@ -7698,7 +7714,7 @@ function deskParts() {
     questionPart,
     findingItems, routeWords, nameOf, googleReady, createStep, chooseRoute, paintNew,
     paintAgents, readAgents, readModels, researchFromField, researchSummary, researchFromOf,
-    brandFields, brandsFound, agentFields, modelFields, draftModelWords, limitsSays,
+    brandFields, brandsFound, madeIn, agentFields, modelFields, draftModelWords, limitsSays,
     sourceFields, formOf, missingIn, startDeck, deliveryOf, base64Of,
     words: { OUTPUTS, OUTPUT_SAYS, DELIVERIES, AGENT_NAMES, NOT_CONNECTED, ROUTES, KINDS,
       LEVELS, STEERED },

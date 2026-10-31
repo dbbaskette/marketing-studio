@@ -631,6 +631,39 @@ class ResearchStartTests(DeskPageCase):
         self.assertNotIn('No sources yet.', shot['text'])
 
 
+class NamesTests(DeskPageCase):
+    """#255, item 4: each kind of deck has one name on Home, New deck, a deck's header and
+    the Decks filter, and the brand one name at the start and at the look."""
+
+    KINDS = ('From an idea', 'From a document', 'From an existing deck')
+    OLD = ('Start from scratch', 'From scratch', 'Start from a document',
+           'Redesign an existing deck')
+
+    def test_each_kind_of_deck_has_one_name_everywhere(self):
+        path = self.desk_deck()
+        result = self.run_page(self.answers(), [
+            {'snapshot': 'home'}, {'click': 'New deck'}, {'snapshot': 'new'},
+            {'click': 'Cancel'}, {'click': 'Decks'}, {'snapshot': 'decks'}])
+        shots = {**result['snapshots'], **self.open_deck(
+            path, self.run_of(path), [{'snapshot': 'deck'}])['snapshots']}
+        for kind in self.KINDS:
+            self.assertIn(kind, shots['home']['buttons'])
+        self.assertEqual(shots['decks']['lists']['How it began'], ['Any', *self.KINDS])
+        self.assertIn('From an idea', shots['deck']['text'])
+        # New deck asks what it starts from, by the same names.
+        for kind in ('An idea', 'A document', 'An existing deck'):
+            self.assertTrue(any(name.startswith(kind) for name in shots['new']['buttons']))
+        for name, shot in shots.items():
+            for gone in self.OLD:
+                with self.subTest(shot=name, gone=gone):
+                    self.assertNotIn(gone, shot['text'] + shot['sheet'])
+
+    def test_the_start_names_the_brand_as_the_look_does(self):
+        result = self.new_deck([{'click': 'An idea'}, {'snapshot': 'idea'}])
+        self.assertIn('Made in Example Co (light), delivered as',
+                      result['snapshots']['idea']['sheet'])
+
+
 class ProgressTests(DeskPageCase):
     """Task 1.13: before the desk, progress, with only the look pick to ask for."""
 
@@ -676,6 +709,8 @@ class ProgressTests(DeskPageCase):
             **{'POST /api/desk-look': [ok(picked)]})
         pause = result['snapshots']['pause']
         self.assertEqual(pause['parts'][0], 'Pick the look')
+        # The brand by the name New deck gives it, not its ID (#255).
+        self.assertIn('Made in Example Co (light).', pause['text'])
         lines = pause['text'].split('\n')
         self.assertEqual(lines[lines.index('Pick the look') + 1], LOOK_PAUSE)
         self.assertEqual(pause['filled'], ['Draw the deck in this look'])

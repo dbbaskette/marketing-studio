@@ -98,7 +98,7 @@ class LayoutTests(test_desk.ScriptedPage, test_runner_page.PageCase):
     def test_start_a_deck_opens_the_form_at_its_route(self):
         self.saved_started(title='Waiting deck')
         result = self.run_page(self.answers(), [
-            {'click': 'Start from a document'}, {'snapshot': 'document'}])
+            {'click': 'From a document'}, {'snapshot': 'document'}])
         shot = result['snapshots']['document']
         # Home's way in opens the desk's start at that kind, with the document asked for
         # first.

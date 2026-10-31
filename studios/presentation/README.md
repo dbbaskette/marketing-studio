@@ -12,13 +12,17 @@ It is the third studio beside [Training Studio](https://github.com/dbbaskette/ma
 
 ## Three ways in
 
+New deck asks what the deck starts from. Home's **Start a deck**, a deck's header
+and the Decks filter use the same names: **From an idea**, **From a document** and
+**From an existing deck**.
+
 | You have | Choose | What happens |
 | --- | --- | --- |
-| An idea | **Start from scratch** | You give it a title, audience and goal, with an optional brief of up to 4000 characters for points, examples or a rough order. The brief reaches the research plan and outline. Research is optional and off unless you turn it on. |
-| A document | **Start from a document** | A Markdown or text file, a Word file, a PDF, a Google Doc or pasted text. The studio says whether it thinks the document lays out the slides or is material to turn into slides. You can correct it. |
-| A deck | **Redesign an existing deck** | A `.pptx` file or a Google Slides link. You choose how much may change (below). Your original is never changed; you always get a new copy. |
+| An idea | **An idea** | You give it a title, audience and goal, with an optional brief of up to 4000 characters for points, examples or a rough order. The brief reaches the research plan and outline. Research is optional and off unless you turn it on. |
+| A document | **A document** | A Markdown or text file, a Word file, a PDF, a Google Doc or pasted text. The studio says whether it thinks the document lays out the slides or is material to turn into slides. You can correct it. |
+| A deck | **An existing deck** | A `.pptx` file or a Google Slides link. You choose how much may change (below). Your original is never changed; you always get a new copy. |
 
-Redesigns come in five levels:
+An existing deck changes at one of five levels:
 
 - **Brand only**: same slides, your brand's look.
 - **Polish**: brand plus tidier layouts and spacing. The words stay.

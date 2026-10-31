@@ -1282,7 +1282,8 @@ class ScreenTests(ScriptedPage, PageCase):
             if name in ('gate:research-plan', 'gate:research'):
                 self.assertIn('research', shot['text'].lower())
             if name == 'gate:look':
-                self.assertIn('Made in example (light).', shot['text'])
+                # The brand's own name, as New deck says it (#255).
+                self.assertIn('Made in Example Co (light).', shot['text'])
                 self.assertIn('too old to offer looks', shot['text'])
                 self.assertTrue(any('kind=look&name=sample' in picture['of']
                                     for picture in shot['pictures']), shot['pictures'])

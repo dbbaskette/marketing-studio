@@ -327,9 +327,8 @@
   // (dark), delivered as Google Slides.", then whether those are the defaults still.
   function defaultsSays(draft) {
     const found = h.brandsFound();
-    const brand = found.find((one) => one.brand === draft.brand);
-    const named = brand ? (brand.name || brand.brand) + (draft.variant ? ' (' + draft.variant
-      + ')' : '') : '';
+    const named = found.some((one) => one.brand === draft.brand)
+      ? h.madeIn(draft.brand, draft.variant) : '';
     const output = h.words.OUTPUTS[draft.output][1];
     return (named ? 'Made in ' + named + ', delivered as ' : 'Delivered as ') + output
       + (changedFromDefaults(draft, found) ? '. Changed for this deck.'
@@ -544,7 +543,7 @@
         run.problem, gate] }, [
       ...interruptions(run, lead, title),
       gate?.content_first && gate.name === 'gate:outline' ? ['slide-text', [gate, read], () => slideTextReview(run, read)] : null,
-      pause ? ['look-pause', [gate, lead], () => lookPause(run, lead === 'look')]
+      pause ? ['look-pause', [gate, lead, h.brandsFound()], () => lookPause(run, lead === 'look')]
         : ['progress', [run.state, run.sentence, desk.progress, Boolean(run.question),
           run.problem], () => progressPart(run)],
       previews ? ['previews', [run.build_progress, read, run.mine],
@@ -624,7 +623,8 @@
     const pick = held.looks[key] || (held.looks[key] = { look: '', words: '' });
     const node = h.card('Pick the look', 'card-needs');
     h.add(node, make('p', '', LOOK_PAUSE),
-      make('p', 'quiet', 'Made in ' + (gate.made_in || 'your brand') + '. The brand drew one '
+      make('p', 'quiet', 'Made in ' + h.madeIn(gate.brand, gate.variant, gate.made_in)
+        + '. The brand drew one '
         + 'slide of your outline in each of its looks. The look you pick sets the colours, '
         + 'what each colour means and how cards are drawn on every slide.'),
       window.DeckPanels.lookPicker({
@@ -745,7 +745,8 @@
       mark: ['desk', title, run.state, lead, read, run.driver, working, found.drawn_here,
         Boolean(found.delivered), found.expected, h.view.downloading, finish] }, [
       ...interruptions(run, lead, title),
-      pause ? ['look-pause', [run.gate, lead], () => lookPause(run, lead === 'look')] : null,
+      pause ? ['look-pause', [run.gate, lead, h.brandsFound()], () => lookPause(run, lead === 'look')]
+        : null,
       working ? ['working', [found.working, read], () => workingPart(run)] : null,
       !found.drawn_here ? ['away', [found.no_drawing, found.draw_here_price, read, working],
         () => run.execution === 'conversation' ? h.add(h.card('Drawing'),
