@@ -154,6 +154,9 @@ const StudioResearch = (() => {
       file.addEventListener('change', () => this.files(file.files));
       const actions = add(make('div', 'bar'), button('Choose files', () => file.click(), 'research-files'),
         button(this.pasting ? 'Close pasted text' : 'Paste text', () => { this.pasting = !this.pasting; this.render(); }, 'research-paste'));
+      // Optional, per studio: Add from library, which the studio's own adapter opens (the
+      // shared StudioLibrary.pick) and whose picks it lists under the sources (`extra`).
+      if (this.a.library) actions.append(button('Add from library', () => this.a.library(this), 'research-library'));
       actions.append(button('Use saved research', async () => {
         if (this.a.savedResearch) return this.a.savedResearch(this);
         try { this.saved = await this.a.request({action:'saved'}); this.render(); }
@@ -167,8 +170,9 @@ const StudioResearch = (() => {
         add(panel, name.wrap, text.wrap, button('Add text', async () => { if (await this.act('capture', {kind: 'text', name: this.name, text: this.text})) { this.text = ''; this.pasting = false; this.render(); } }, 'research-add-text'));
       }
       const list = make('ul', 'research-source-list'); for (const source of array(state && state.sources)) list.append(this.source(source));
-      if (!state || !state.sources.length) list.append(make('li', 'quiet', state ? 'Add material here, or allow external search below.' : 'Loading the source draft…'));
-      add(panel, list); this.node.append(panel);
+      const extra = this.a.extra ? this.a.extra(this) : null;
+      if (!state || (!state.sources.length && !extra)) list.append(make('li', 'quiet', state ? 'Add material here, or allow external search below.' : 'Loading the source draft…'));
+      add(panel, list, extra); this.node.append(panel);
       }
       if (this.saved && !this.a.policyOnly) {
         const choices = add(make('section', 'paper stack'), make('h3','card-title','Saved research'));
@@ -189,8 +193,9 @@ const StudioResearch = (() => {
       }
       if (state) {
         const policy = make('div', 'research-policy');
+        // A studio may say the choice in its own words (`policyHint`), as long as they say what will happen.
         add(policy, check('Search for additional external sources', state.external, external => this.act('configure', {external}), 'research-external'),
-          make('p', 'field-hint', summary(state)));
+          make('p', 'field-hint', this.a.policyHint ? this.a.policyHint(state) : summary(state)));
         if (state.external && state.sites.length) add(policy, check('Limit additional searches to my approved sites', state.restricted, restricted => this.act('configure', {restricted}), 'research-restricted'));
         add(this.node, policy);
         const advanced = make('details', 'research-options'); advanced.dataset.key = 'research-options'; advanced.append(make('summary', '', 'Research options'));
@@ -205,6 +210,8 @@ const StudioResearch = (() => {
       const status = make('p', this.problem ? 'problem' : 'quiet', this.problem || this.reading); status.setAttribute('role', this.problem ? 'alert' : 'status'); status.hidden = !status.textContent; this.node.append(status);
       if (this.problem) this.node.append(button('Reload sources', () => this.load(), 'research-reload'));
       for (const control of this.node.querySelectorAll('button, input, textarea, select')) control.disabled = this.busy || !state;
+      // A studio whose library choices are full says so beside them (`libraryFull`), and Add from library waits.
+      if (this.a.library && this.a.libraryFull && this.a.libraryFull()) { const more = Array.from(this.node.querySelectorAll('button')).find(n => n.dataset.key === 'research-library'); if (more) more.disabled = true; }
       if (this.problem) { const reload = Array.from(this.node.querySelectorAll('button')).find(n => n.dataset.key === 'research-reload'); if (reload) reload.disabled = this.busy; }
       for (const detail of this.node.querySelectorAll('details[data-key]')) detail.open = opened.includes(detail.dataset.key);
       if (restore) { const target = Array.from(this.node.querySelectorAll('[data-key]')).find(n => n.dataset.key === restore); if (target && !target.disabled) target.focus(); }

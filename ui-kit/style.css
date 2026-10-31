@@ -2888,6 +2888,17 @@ a.button {
   flex-shrink: 0;
 }
 
+/* At the top of a sheet the heading reaches the sheet's edges, over the padding text would
+   otherwise scroll through, and is opaque: the sheet's own fill laid over paper, in either
+   theme. It sits above a segmented control's options, which are raised in their own group. */
+.sheet > .sheet-heading:first-child {
+  top: -1.1rem;
+  z-index: 2;
+  margin: -1.1rem -1.2rem 0;
+  padding: 1.1rem 1.2rem 0.75rem;
+  background: linear-gradient(var(--sheet-fill), var(--sheet-fill)), var(--paper);
+}
+
 /* Research from: your documents, your sites and the public web, one row of ticks that wraps
    on a phone; the sites open below on the form's own opaque paper. */
 .research-choices {

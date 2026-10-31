@@ -77,6 +77,16 @@ class FakeNode {
     return false;
   }
 
+  replaceWith(node) {
+    if (!this.parentNode) return;
+    const parent = this.parentNode;
+    const held = parent.childNodes;
+    node.remove();
+    node.parentNode = parent;
+    held.splice(held.indexOf(this), 1, node);
+    this.parentNode = null;
+  }
+
   get nextSibling() {
     if (!this.parentNode) return null;
     const held = this.parentNode.childNodes;
@@ -461,12 +471,16 @@ function words(node) {
   return node.childNodes.map(words).join(inline.includes(node.tagName) ? '' : '\n');
 }
 
-// The boxes a person can type in, each under the words of its label.
+// The boxes a person can type in, each under the words of its label: a label for the box,
+// or one the box sits in, as the shared source editor's are, named by its own words.
 function boxes() {
   const found = [];
   for (const label of document.body.querySelectorAll('label').filter(visible)) {
-    const box = label.htmlFor ? document.getElementById(label.htmlFor) : null;
-    if (box && visible(box)) found.push([name(label), box]);
+    const box = label.htmlFor ? document.getElementById(label.htmlFor)
+      : label.querySelectorAll('input, textarea, select')
+        .filter((node) => node.type !== 'checkbox')[0] || null;
+    const words = label.htmlFor ? null : label.querySelector('.field-label');
+    if (box && visible(box)) found.push([words ? words.textContent.trim() : name(label), box]);
   }
   return found;
 }
@@ -533,9 +547,11 @@ function snapshot() {
   for (const control of controls) {
     if (control.tagName === 'TEXTAREA' || control.tagName === 'INPUT') {
       if (control.getAttribute('aria-hidden') === 'true') continue;
+      const around = labelOf(control);
       const labelled = document.body.querySelectorAll('label')
         .some((label) => label.htmlFor && label.htmlFor === control.id && name(label))
-        || Boolean(control.tagName === 'INPUT' && name(control));
+        || Boolean(control.tagName === 'INPUT' && name(control))
+        || Boolean(around && !around.htmlFor && name(around));
       if (!labelled && !control.getAttribute('aria-label')) unnamed.push(control.tagName);
     } else if (!name(control)) {
       unnamed.push(control.tagName + '.' + control.className);
@@ -566,6 +582,8 @@ function snapshot() {
     held: [...kept.values()],
     focus: document.activeElement === document.body ? '(nowhere)'
       : document.activeElement ? (document.activeElement.id || name(document.activeElement)) : '',
+    focusKey: (document.activeElement && document.activeElement.dataset
+      && document.activeElement.dataset.key) || '',
     notice: document.getElementById('notice').hidden ? '' : document.getElementById('notice').textContent,
     current: document.body.querySelectorAll('[aria-current]').map(name),
     sheet: sheet.hidden ? '' : words(sheet).replace(/\n+/g, '\n'),
@@ -795,9 +813,31 @@ async function app(file) {
   vm.runInContext(fs.readFileSync(panels, 'utf8'), context, { filename: 'deck-panels.js' });
   const lists = path.join(PAGE, '..', 'studio_core', 'deck_web', 'lists.js');
   vm.runInContext(fs.readFileSync(lists, 'utf8'), context, { filename: 'lists.js' });
+  // The Document Library's sheet is the shared core's, checked on its own by the
+  // repository's tests/library_page_check.js. A plan with {library: picks} stands in for it,
+  // as Training Studio's harness does: Add from library hands the page those picks as Use
+  // selected does, and the report says which studio asked and where focus went afterwards.
+  if (plan.library) {
+    window.StudioLibrary = { pick: async (adapter) => {
+      report.library = [...(report.library || []), { studio: adapter.studio, max: adapter.max }];
+      try {
+        await adapter.use(plan.library);
+      } catch (failure) {
+        report.library[report.library.length - 1].refused = failure.message;
+        return false;
+      }
+      const back = adapter.refocus && adapter.refocus();
+      if (back) back.focus();
+      report.library[report.library.length - 1].refocus = back ? back.dataset.key : null;
+      return true;
+    } };
+  }
   // The shared desk kit (drafting.js, linked from ui-kit), then the page, then the deck desk,
-  // in the order index.html loads them.
-  for (const script of ['markdown.js', 'drafting.js', 'app.js', 'deck-desk.js']) {
+  // in the order index.html loads them. A plan with {research: true} loads the shared source
+  // editor (research.js) first, as the page does: Research first then offers it, and asks
+  // POST /api/research-sources for its draft as soon as it is drawn.
+  for (const script of [...(plan.research ? ['research.js'] : []), 'markdown.js', 'drafting.js',
+    'app.js', 'deck-desk.js']) {
     vm.runInContext(fs.readFileSync(path.join(PAGE, script), 'utf8'), context, { filename: script });
   }
   await settle();
