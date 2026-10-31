@@ -67,6 +67,7 @@ function card(title, ...parts) { return add(make('section', 'card stack'), make(
 function detail(title, ...parts) { return add(make('details'), make('summary', '', title), ...parts); }
 let fieldNumber = 0;
 function field(label, value='', kind='input') { const wrap = make('label', 'field'); const input = make(kind, 'input'); input.value = value; const caption=make('span','field-label',label);caption.id='field-caption-'+(++fieldNumber);input.id='field-'+fieldNumber;wrap.htmlFor=input.id;input.setAttribute('aria-labelledby',caption.id);add(wrap, caption, input); return {wrap, input}; }
+function stateLine(kind,words){const bead=make('span','bead');bead.dataset.state=kind;bead.setAttribute('aria-hidden','true');return add(make('p','state'),bead,document.createTextNode(words));}
 function lines(value) { return value.split('\n').map(v => v.trim()).filter(Boolean); }
 function list(items) { return add(make('ul'), ...items.map(item => make('li', '', item))); }
 function sheet(title, ...nodes) { $('sheet-body').replaceChildren(add(make('div', 'ig-sheet stack'), make('h2', 'sheet-title', title))); $('sheet-body').firstChild.firstChild.id = 'sheet-title'; const status=make('section','callout ig-work');status.dataset.workStatus='';status.setAttribute('role','status');status.setAttribute('aria-live','polite');const problem=make('p','problem');problem.dataset.workError='';problem.hidden=true;problem.setAttribute('role','alert');$('sheet-body').firstChild.append(status,problem,...nodes); if (!$('sheet').open) $('sheet').showModal(); paintWork(); }
@@ -158,7 +159,7 @@ async function action(verb, values={}, revision=null) {
   finally { clearInterval(polling); endWork(owner);busy = false;unlock(); }
 }
 function heading(title, ...actions) { for(const id of ['home','settings']){if((id==='settings')===title.startsWith('Settings'))$(id).setAttribute('aria-current','page');else $(id).removeAttribute('aria-current');} $('title').textContent = title; $('actions').replaceChildren(...actions); $('title').focus({preventScroll:true}); }
-function resetPicture() { if (picture) URL.revokeObjectURL(picture); picture = null; }
+function resetPicture() { if (picture) URL.revokeObjectURL(picture); picture = null; pictureFor = ''; }
 function reviewCapturedSources(){
   const section=[...$('main').querySelectorAll('details')].find(node=>node.firstElementChild?.textContent==='Sources and facts');
   if(section){error('');section.open=true;section.scrollIntoView({block:'start'});section.firstElementChild.focus();}
@@ -168,7 +169,7 @@ async function home() {
   try {
     const data = await request('/api/projects');
     const cards = data.projects.map(p => {
-      const node=card(p.title || 'Unreadable infographic', make('p', 'quiet', p.problem || 'Revision ' + p.revision), button('Open ' + (p.title || p.id), () => openProject(p.id)));
+      const node=card(p.title || 'Unreadable infographic', ...(p.problem?[make('p','problem',p.problem)]:[stateLine(p.readiness?.state||'current',p.readiness?.summary||'Saved'),make('p','quiet','Revision '+p.revision)]), button('Open ' + (p.title || p.id), () => openProject(p.id)));
       node.classList.add('ig-project-card'); return node;
     });
     const intro=add(make('div','intro'),make('h2','large-title','Your infographics'),make('p','lede','Turn supplied information into one clear page.'));
@@ -281,7 +282,7 @@ function csvSheet() {
   add(form,problem,add(make('div','bar'),go,button('Back to information',()=>{closeSheet();newSheet();})));closeSheet();sheet('Select CSV data',form);
 }
 async function openProject(id) {
-  try { resetPicture(); held=await request('/api/desk?id='+encodeURIComponent(id)); renderProject();
+  try { if(held?.project.id!==id)resetPicture(); held=await request('/api/desk?id='+encodeURIComponent(id)); renderProject();
     try{sessionStorage.setItem('infographic-studio-project',id);}catch(f){}
     if(!busy&&held.activity?.state==='running')void resumeActivity(id,held.activity);
     else if(!busy&&held.activity?.state==='failed'&&held.activity.problem)error(held.activity.problem);
@@ -322,21 +323,9 @@ function renderProject() {
   }
   if(selected && !p.scene)parts.push(card('Make the page',make('p','',p.brand?'Using pinned '+p.brand.identity.name+'.':'Compose with your configured brand. Brand settings are pinned when you choose this action.'),button('Build page',compose)));
   const delivery=held.deliveries.find(d=>d.current) || held.deliveries[0];
-  if(delivery) {
-    const img=make('img','ig-preview');img.alt='Rendered '+(delivery.draft?'draft':'approved')+' infographic, revision '+delivery.revision;
-    const scroll=add(make('div','ig-preview-scroll'),img);
-    const fit=button('Fit page',()=>zoom(false)),actual=button('Actual pixels',()=>zoom(true));
-    function zoom(original){img.classList.toggle('ig-preview-actual',original);fit.setAttribute('aria-pressed',String(!original));actual.setAttribute('aria-pressed',String(original));}
-    zoom(false);
-    const tools=add(make('div','ig-page-tools'),fit,actual);
-    for(const format of ['png','pdf','svg','text'])tools.append(button('Download '+format.toUpperCase()+(delivery.draft?' draft':''),async()=>{try{await download(delivery,format);}catch(f){error(f.message);}}));
-    if(delivery.approved_current)tools.append(button('Deliver Google Doc or PDF',()=>deliverySheet(delivery)),button('Share selected files with team',()=>shareSheet(delivery)));
-    parts.push(card(!delivery.current?'Earlier page — create a new preview':delivery.draft?'Draft page':delivery.approved_current?'Approved delivery':'Earlier approval — review the current revision',make('p','quiet','Saved revision '+delivery.revision+'. Earlier deliveries stay available through history; edits require a new review.'),scroll,tools));
-    download(delivery,'png',true).then(url=>{if(held?.project.id===p.id && document.body.contains(img)){picture=url;img.src=url;}else URL.revokeObjectURL(url);}).catch(f=>error(f.message));
-  }
+  if(delivery||p.scene)parts.push(workbench(p,delivery));
   if(p.scene) {
-    const edit=make('div','stack');for(const e of p.scene.elements.filter(e=>e.kind==='text')) {const f=field(e.id,e.text,'textarea');edit.append(add(make('div','stack'),f.wrap,button('Save '+e.id,()=>action('edit-text',{element_id:e.id,text:f.input.value}))));}
-    parts.push(detail('Edit words directly',edit),detail('Layout alternatives',button('Visual infographic',()=>nativeReady?action('visual-layout'):reviseStorySheet(selected,true)),button('Stacked blocks',()=>action('layout',{arrangement:'stack'})),button('Two columns',()=>action('layout',{arrangement:'columns'}))));
+    parts.push(detail('Layout alternatives',button('Visual infographic',()=>nativeReady?action('visual-layout'):reviseStorySheet(selected,true)),button('Stacked blocks',()=>action('layout',{arrangement:'stack'})),button('Two columns',()=>action('layout',{arrangement:'columns'}))));
     if(p.scene.art_regions?.length)parts.push(detail('Artwork and image brief',card('Explanatory artwork',button('Revise this artwork',reviseArtSheet),make('p','','Artwork is raster; labels and chart marks stay editable. Review the exact art direction before starting or editing an image.'),...p.assets.map(a=>button('Compose saved image '+a.id,()=>action('compose-image',{asset_id:a.id}))),button('Suggest precise art direction',()=>action('art-direct')),detail('Write the art direction yourself',button('Describe subjects and relationships',artSheet)),...p.image_briefs.map(b=>detail('Saved image brief',make('pre','ig-csv-preview',b.prompt),button('Generate artwork using selected provider',()=>startImage(b)))))));
     if(delivery?.current)parts.push(card('Review and finish',make('p','','Inspect the actual page at its intended size: facts and qualifications, objects and relationships, crop and resolution, label clearance and brand.'),button('Inspect page with assistant',()=>action('inspect-images')),button('Record my visual review',()=>reviewSheet(delivery)),button('Run checks',()=>action('check')),button('Repair findings',repairSheet),approved?button('Export approved files',()=>action('export',{draft:false})):checked?button('Approve this checked revision',()=>action('approve')):make('p','quiet','Approval becomes available when the current checks pass against the latest visual review.')));
   }
@@ -346,8 +335,124 @@ function renderProject() {
   parts.push(detail('Brief and requirements',button('Edit brief',briefSheet),make('p','',p.brief.audience||'Audience not specified'),list(p.brief.must_show.map(r=>r.text))));
   parts.push(detail('Sources and facts',button('Add or update supplied information',sourceSheet),button('Import selected studio material',()=>handoffSheet(preview=>sourceImportSheet(preview))),button('Research this topic',researchSheet),...p.sources.map(s=>card(s.name||s.id,make('p','quiet',s.characters+' captured characters'),button('Review '+(s.name||s.id),()=>sourceTextSheet(s)))),list(held.source_findings.map(f=>f.message)),...p.facts.map(f=>card(f.statement,make('p','quiet','Supplied assertion; not independently corroborated.'),list((f.evidence||[]).map(q=>q.source_id+' ['+q.start+'–'+q.end+']: '+(q.quote||'')))))));
   if(held.image_history?.length)parts.push(detail('Image requests and usage',...held.image_history.map(a=>add(make('div','stack'),make('p','',a.provider+' · '+a.operation+' · '+a.state),make('p','quiet',a.usage?'Reported tokens: '+(a.usage.input_tokens??'unknown')+' in / '+(a.usage.output_tokens??'unknown')+' out. Cost: '+(a.usage.cost??'not reported')+'.':'Usage not reported; no estimate was invented.'),button('Inspect saved image request',()=>imageRequestSheet(a.id))))));
-  parts.push(detail('History',...held.history.map(v=>add(make('div','bar'),make('span','','Revision '+v.revision+(v.approved?' · approved then':'')),button('Compare with current',()=>compareSheet(v)),button('Restore revision '+v.revision,()=>restoreSheet(v)))),held.history.length>=100&&held.history.at(-1).revision>0?button('Older revisions',olderHistory):null));
+  if(held.deliveries.length)parts.push(detail('Saved files',make('p','quiet','Every rendered revision keeps its files. Approved files never change; an edit makes a new draft.'),...held.deliveries.map(savedFiles)));
+  parts.push(detail('History',make('p','quiet','Each saved revision is kept. Restoring makes new work and never brings back an approval.'),add(make('div','desk-versions'),...held.history.map((v,i)=>historyEntry(v,i===0))),held.history.length>=100&&held.history.at(-1).revision>0?button('Older revisions',olderHistory):null));
   $('main').replaceChildren(...parts.filter(Boolean));
+  restoreBench();
+}
+// The visual editor keeps its place across saves, reloads and other actions in this tab:
+// the selected element, unsaved words for each element, and the last saved confirmation.
+let bench={project:'',element:'',drafts:{},saved:null,failed:'',focus:false,scroll:null};
+try{const kept=JSON.parse(sessionStorage.getItem('infographic-studio-bench')||'null');if(kept&&typeof kept==='object'&&kept.drafts&&typeof kept.drafts==='object')bench={...bench,project:String(kept.project||''),element:String(kept.element||''),drafts:kept.drafts};}catch(f){}
+function keepBench(){try{sessionStorage.setItem('infographic-studio-bench',JSON.stringify({project:bench.project,element:bench.element,drafts:bench.drafts}));}catch(f){}}
+function when(value){const date=value?new Date(value):null;return date&&!isNaN(date)?date.toLocaleString([], {dateStyle:'medium',timeStyle:'short'}):'';}
+function ledgerItem(name,words,state,detail){
+  const bead=make('span','bead');bead.dataset.state=state;bead.setAttribute('aria-hidden','true');
+  return add(make('div','ig-ledger-item'),make('span','quiet',name),add(make('strong','state'),bead,document.createTextNode(words)),detail?make('span','quiet ig-ledger-detail',detail):null);
+}
+function workbench(p,delivery){
+  if(bench.project!==p.id){bench={project:p.id,element:'',drafts:{},saved:null,failed:'',focus:false,scroll:null};keepBench();}
+  const names=held.elements||[];
+  const approvedFiles=held.deliveries.find(d=>!d.draft);
+  const ledger=add(make('div','ig-ledger'),
+    ledgerItem('Current work','Revision '+p.revision,'current',held.readiness?.summary),
+    ledgerItem('Preview',delivery?'Revision '+delivery.revision:'Not rendered yet',delivery?.current?'done':'review',delivery?(delivery.current?'Shows your current work.':'Outdated: it does not show your latest changes.'):'Create a preview to see the page.'),
+    ledgerItem('Approved delivery',approvedFiles?'Revision '+approvedFiles.revision:'None yet',approvedFiles?.approved_current?'done':'review',approvedFiles?(approvedFiles.approved_current?'Matches your current work.':'Earlier files, kept unchanged.'):'Approve a checked revision to deliver it.'));
+  ledger.setAttribute('aria-label','Revisions');ledger.setAttribute('role','group');
+  const view=make('section','card stack ig-view');view.append(make('h2','card-title',!delivery?'Page preview':!delivery.current?'Earlier preview: update it to see your changes':delivery.draft?'Draft page':delivery.approved_current?'Approved delivery':'Earlier approval: review the current revision'));
+  const mark=make('div','ig-mark');mark.hidden=true;mark.setAttribute('aria-hidden','true');
+  let img=null,figure=null;
+  if(delivery){
+    img=make('img','ig-preview');img.alt='Rendered '+(delivery.draft?'draft':'approved')+' infographic, revision '+delivery.revision;
+    if(p.scene){img.width=Math.round(p.scene.width);img.height=Math.round(p.scene.height);}
+    figure=add(make('div','ig-figure'),img,mark);
+    const scroll=add(make('div','ig-preview-scroll'),figure);
+    const fit=button('Fit page',()=>zoom(false)),actual=button('Actual pixels',()=>zoom(true));
+    function zoom(original){img.classList.toggle('ig-preview-actual',original);figure.classList.toggle('ig-actual',original);fit.setAttribute('aria-pressed',String(!original));actual.setAttribute('aria-pressed',String(original));}
+    zoom(false);
+    const tools=add(make('div','ig-page-tools'),fit,actual);
+    for(const format of ['png','pdf','svg','text'])tools.append(button('Download '+format.toUpperCase()+(delivery.draft?' draft':''),async()=>{try{await download(delivery,format);}catch(f){error(f.message);}}));
+    if(delivery.approved_current)tools.append(button('Deliver Google Doc or PDF',()=>deliverySheet(delivery)),button('Share selected files with team',()=>shareSheet(delivery)));
+    view.append(make('p','quiet',delivery.current?'Shows revision '+delivery.revision+'. Select words on the page to edit them.':'Shows revision '+delivery.revision+'. Your current work is revision '+p.revision+'.'));
+    if(!delivery.current&&p.scene)view.append(button('Update preview',()=>action('preview'),true));
+    view.append(scroll,tools);
+    showPicture(delivery,img,p.id);
+  }else if(p.scene)view.append(make('p','','No preview yet. Rendering is local and starts no assistant or image request.'),button('Create preview',()=>action('preview'),true));
+  const parts=[ledger,view];
+  if(p.scene&&names.length)parts.push(inspector(p,names,img,mark));
+  return add(make('div','ig-workbench'),...parts);
+}
+function inspector(p,names,img,mark){
+  if(!names.some(n=>n.id===bench.element))bench.element=names[0].id;
+  const panel=make('section','card stack ig-inspector');panel.setAttribute('aria-labelledby','ig-inspector-title');
+  const title=make('h2','card-title','Edit words');title.id='ig-inspector-title';
+  const choice=field('Element','','select');choice.input.id='ig-element';choice.wrap.htmlFor='ig-element';
+  const where=make('p','quiet');where.id='ig-element-where';
+  const words=field('Words','','textarea');words.input.id='ig-words';words.wrap.htmlFor='ig-words';words.input.rows=4;words.input.setAttribute('aria-describedby','ig-element-where ig-save-state');
+  const state=make('p','ig-save-state');state.id='ig-save-state';state.setAttribute('role','status');state.setAttribute('aria-live','polite');
+  const advanced=make('p','quiet');
+  const save=button('Save words',()=>saveWords(),true);save.id='ig-save-words';
+  function options(){choice.input.replaceChildren(...names.map(n=>{const o=make('option','',n.label+(bench.drafts[n.id]!==undefined&&bench.drafts[n.id]!==n.text?' (unsaved)':''));o.value=n.id;return o;}));choice.input.value=bench.element;}
+  function show(){
+    const chosen=names.find(n=>n.id===bench.element);
+    words.wrap.querySelector('.field-label').textContent='Words for '+chosen.label;
+    words.input.value=bench.drafts[chosen.id]??chosen.text;where.textContent=chosen.location+'.';advanced.textContent='Element ID: '+chosen.id;
+    const [x,y,w,h]=chosen.bounds;Object.assign(mark.style,{left:x*100+'%',top:y*100+'%',width:w*100+'%',height:h*100+'%'});mark.hidden=!img;
+    pending();
+  }
+  function pending(){
+    const chosen=names.find(n=>n.id===bench.element),unsaved=words.input.value!==chosen.text;
+    if(bench.failed){state.className='ig-save-state problem';state.textContent=bench.failed+' Your words are kept here.';return;}
+    if(bench.saved&&!unsaved&&bench.saved.revision===held.project.revision){
+      const stale=!held.deliveries.find(d=>d.current);state.className='ig-save-state';
+      state.replaceChildren(document.createTextNode('Saved '+bench.saved.label+' as revision '+bench.saved.revision+'. '+(stale?'The preview still shows an earlier revision. Update it to see this change before review.':'')));
+      if(stale)state.append(button('Update preview',()=>action('preview')));
+      return;
+    }
+    state.className='ig-save-state quiet';state.textContent=unsaved?'Unsaved words. Saving makes a new revision; approval is never carried over.':'Saving makes a new revision. Approval is never carried over.';
+  }
+  choice.input.addEventListener('change',()=>{bench.element=choice.input.value;bench.saved=null;bench.failed='';keepBench();show();});
+  words.input.addEventListener('input',()=>{const chosen=names.find(n=>n.id===bench.element);if(words.input.value===chosen.text)delete bench.drafts[chosen.id];else bench.drafts[chosen.id]=words.input.value;bench.failed='';keepBench();options();pending();});
+  if(img){
+    img.addEventListener('click',event=>{
+      const box=img.getBoundingClientRect(),x=(event.clientX-box.left)/box.width,y=(event.clientY-box.top)/box.height;
+      const hit=names.filter(n=>x>=n.bounds[0]&&x<=n.bounds[0]+n.bounds[2]&&y>=n.bounds[1]&&y<=n.bounds[1]+n.bounds[3]).sort((a,b)=>a.bounds[2]*a.bounds[3]-b.bounds[2]*b.bounds[3])[0];
+      if(!hit)return;bench.element=hit.id;bench.saved=null;bench.failed='';keepBench();options();show();words.input.focus();
+    });
+    img.title='Select words on the page to edit them';
+  }
+  options();show();
+  panel.append(title,make('p','quiet','Choose an element here or select it on the page. Each save keeps your place.'),choice.wrap,where,words.wrap,add(make('div','bar'),save),state,detail('Advanced',advanced));
+  return panel;
+}
+async function saveWords(){
+  const chosen=(held.elements||[]).find(n=>n.id===bench.element),input=$('ig-words');if(!chosen||!input)return;
+  const text=input.value;bench.scroll=window.scrollY;bench.saved=null;bench.failed='';
+  const result=await action('edit-text',{element_id:chosen.id,text});
+  if(result&&typeof result.revision==='number'){delete bench.drafts[chosen.id];bench.saved={revision:result.revision,label:chosen.label};}
+  else{bench.drafts[chosen.id]=text;bench.failed=$('notice').textContent||'These words could not be saved.';}
+  keepBench();bench.focus=true;if(held?.project.id===bench.project)renderProject();
+}
+function restoreBench(){
+  if(!bench.focus)return;bench.focus=false;
+  const target=$('ig-words');if(!target)return;
+  target.focus({preventScroll:true});
+  if(typeof bench.scroll==='number'){const y=bench.scroll;requestAnimationFrame(()=>window.scrollTo(0,y));}
+}
+// One preview download per saved delivery; re-rendering the page reuses it.
+let pictureFor='';
+function showPicture(delivery,img,id){
+  if(picture&&pictureFor===delivery.id){img.src=picture;return;}
+  download(delivery,'png',true).then(url=>{if(held?.project.id===id&&document.body.contains(img)){resetPicture();picture=url;pictureFor=delivery.id;img.src=url;}else URL.revokeObjectURL(url);}).catch(f=>error(f.message));
+}
+function savedFiles(d){
+  const words=(d.draft?'Draft':'Approved')+' · revision '+d.revision+(d.approved_current?' · current approval':d.current?' · matches current work':' · earlier');
+  return add(make('div','desk-version'),make('span','',words),add(make('div','ig-page-tools'),...['png','pdf','svg','text'].map(format=>{const node=button(format==='text'?'Text':format.toUpperCase(),async()=>{try{await download(d,format);}catch(f){error(f.message);}});node.setAttribute('aria-label','Download '+(format==='text'?'accessible text':format.toUpperCase())+', '+(d.draft?'draft':'approved')+' revision '+d.revision);return node;})));
+}
+function historyEntry(v,current){
+  const facts=[when(v.saved_at),'Revision '+v.revision+(current?' (current)':''),v.affected?.length?'Changed: '+v.affected.join(', '):'',v.approved?'Approved at this revision':''].filter(Boolean).join(' · ');
+  return add(make('div','desk-version'),add(make('div','ig-entry'),make('strong','',v.summary||'Saved revision '+v.revision),make('span','quiet',facts),make('span','quiet','Exact identity '+v.sha256.slice(0,12))),
+    current?null:add(make('div','bar'),button('Compare revision '+v.revision+' with current',()=>compareSheet(v)),button('Restore revision '+v.revision,()=>restoreSheet(v))));
 }
 async function compose(){
   try {
@@ -427,7 +532,7 @@ if (homeLink) {
 }
 async function startDesk() {
   let id='';try{id=sessionStorage.getItem('infographic-studio-project')||'';}catch(f){}
-  if(id){try{const progress=await request('/api/activity?id='+encodeURIComponent(id)),desk=await request('/api/desk?id='+encodeURIComponent(id));if(progress.activity?.state==='running'||desk.planning_response?.available||desk.recovery?.length){await openProject(id);return;}}catch(f){}}
+  if(id){try{const progress=await request('/api/activity?id='+encodeURIComponent(id)),desk=await request('/api/desk?id='+encodeURIComponent(id));const unsaved=bench.project===id&&Object.keys(bench.drafts).length>0;if(progress.activity?.state==='running'||desk.planning_response?.available||desk.recovery?.length||unsaved){await openProject(id);return;}}catch(f){}}
   await home();
 }
 $('sheet').addEventListener('close',paintWork);

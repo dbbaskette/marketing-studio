@@ -8,7 +8,7 @@ import os
 from pathlib import Path
 import secrets
 
-from . import brand, checks, evidence, exports, history, image_brief, planning_responses, scene, sources, stories, visual_review
+from . import brand, checks, evidence, exports, history, image_brief, labels, planning_responses, progress, scene, sources, stories, visual_review
 from .contracts import Invalid, basis, canonical, digest
 from .assistant_failure import AssistantFailure
 from .validation import REQUIRED_CHECKS, records, require, text
@@ -35,7 +35,8 @@ class Engine:
                 'image_history': Jobs(self.store, self.adapters).history(ident),
                 'visual_review': visual_review.latest(self.store, project),
                 'review_checked': visual_review.checked(self.store, project),
-                'google_deliveries': listing(self.store, ident), 'deliveries': self.deliveries(ident)}
+                'google_deliveries': listing(self.store, ident), 'deliveries': self.deliveries(ident),
+                'elements': labels.elements(project), 'readiness': progress.readiness(project)}
 
     def deliveries(self, ident):
         project = self.store.read(ident)

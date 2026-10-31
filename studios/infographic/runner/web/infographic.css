@@ -31,3 +31,28 @@
 .ig-project-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr)); gap: 1.25rem; }
 .ig-project-card { display: flex; flex-direction: column; align-items: start; min-height: 12rem; }
 .ig-project-card > .button { margin-top: auto; }
+/* The visual editor: revisions across the top, the page beside an opaque word inspector. */
+.ig-workbench { display: grid; gap: 1.1rem; grid-template-columns: minmax(0, 1fr); }
+.ig-ledger { display: grid; gap: .6rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr)); }
+.ig-ledger-item { display: grid; gap: .2rem; min-width: 0; padding: .6rem .8rem; border: 1px solid var(--hair); border-radius: 10px; background: var(--card); }
+.ig-figure { position: relative; width: min(100%, 34rem); margin: 0 auto; }
+.ig-figure .ig-preview { width: 100%; cursor: pointer; }
+.ig-figure.ig-actual { width: max-content; }
+.ig-figure.ig-actual .ig-preview { width: auto; }
+.ig-mark { position: absolute; box-sizing: border-box; border: 2px solid var(--focus); border-radius: 4px; box-shadow: 0 0 0 3px var(--focus-halo); pointer-events: none; }
+.ig-mark[hidden] { display: none; }
+.ig-inspector .input { width: 100%; max-width: none; box-sizing: border-box; }
+.ig-save-state { min-height: 1.4rem; margin: 0; }
+.ig-entry { display: grid; gap: .2rem; min-width: 0; }
+@media (min-width: 1100px) {
+  .ig-workbench { grid-template-columns: minmax(0, 1fr) 22rem; align-items: start; }
+  .ig-ledger { grid-column: 1 / -1; }
+  .ig-inspector { position: sticky; top: 5rem; }
+}
+@media (max-width: 700px) {
+  .ig-preview-scroll { max-height: 60vh; }
+  /* Three compact revision states on a phone; the page card says what each means. */
+  .ig-ledger { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .4rem; }
+  .ig-ledger-item { padding: .4rem .5rem; font-size: .85rem; }
+  .ig-ledger-detail { display: none; }
+}

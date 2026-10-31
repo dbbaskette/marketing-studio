@@ -39,6 +39,22 @@ Signing in to an assistant, your organisation's brands and fonts, and optional G
   start no assistant, sign-in, installation, workspace preparation or paid work, and model
   lists load only when Models and reasoning is opened.
 
+## Unreleased: Infographic Studio visual editor and history
+
+- **Edit words beside the page.** The preview stays beside an Edit words panel. Choose
+  an element by name (Page heading, Section 2 heading, Section 1, step 3 label) or select
+  it on the page, where it is outlined and its place described. Element IDs move under
+  Advanced. Saving keeps the selected element, focus and scroll, so two headings can be
+  edited one after the other.
+- **Which revision is which.** Current work, the rendered preview and the last approved
+  delivery are shown separately. A save confirms its new revision, says when the preview
+  is out of date and offers Update preview. Unsaved words are kept for each element in
+  the tab, across a reload and after a refused save.
+- **History in words.** Each revision says what it did, what it changed and when, beside
+  its number and exact identity. Saved files keep every rendered revision's downloads;
+  approved files never change, and edits and restores never carry an approval over.
+  Home shows each infographic's working state with its revision.
+
 ## Unreleased: research citation handoffs
 
 Research workers are explicitly told which saved source IDs to cite. If a worker

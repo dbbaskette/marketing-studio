@@ -108,7 +108,20 @@ and capability discovery are not proof of account access or successful generatio
 The desk exposes direct copy edits, a named-block or whole-story revision, a precise
 saved image brief, reference-guided artwork edits, pixel inspection, findings,
 comparison, history, restore and all four downloads. Earlier deliveries are labeled
-when they no longer match current content. Required content, locked wording, located
+when they no longer match current content.
+
+The visual editor keeps the page preview beside **Edit words**. Choose an element by
+its name (Page heading, Section 2 heading, Section 1, step 3 label) or select it on the
+page; it is outlined on the preview and its place is described. Element IDs are under
+Advanced. Saving keeps the element, focus and scroll position, confirms the new revision
+and says whether the preview is out of date, with **Update preview**. Unsaved words are
+kept per element in that browser tab, including across a reload, and a refused save
+keeps them. Three states stay distinct: current work, the rendered preview and the last
+approved delivery. **Saved files** keeps every rendered revision's downloads; approved
+files never change. **History** says what each revision did (for example Edited words,
+Ran checks, Approved this exact revision, Restored an earlier revision), what it
+changed and when, beside its revision number and exact identity. Home shows each
+infographic's working state with its revision. Required content, locked wording, located
 facts, exact calculations, readable fit and actual fonts are checked. Unknown units,
 periods or denominators block quantitative comparisons rather than being invented.
 Print body/source floors are 12/9 pt; digital floors are 24/18 px. A selected brand

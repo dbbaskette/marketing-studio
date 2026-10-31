@@ -6,9 +6,21 @@ from .validation import require
 
 
 def entries(store, ident, *, before=None):
-    return [{'revision': p['revision'], 'sha256': digest(p), 'title': p['brief']['title'],
-             'scene_id': (p['scene'] or {}).get('id'), 'approved': p['approval'] is not None}
-            for p in reversed(store.history(ident, before=before))]
+    """Newest first, each with its exact identity, what it did, its content and when."""
+    from .labels import change, _content
+    # One older revision explains the oldest entry on this page.
+    saved = store.history(ident, before=before, limit=101)
+    shown = saved[-100:]
+    result = []
+    for index, p in enumerate(shown):
+        position = len(saved) - len(shown) + index
+        previous = saved[position - 1] if position else None
+        older = {_content(o) for o in saved[:max(0, position - 1)]}
+        fingerprint = digest(p)
+        result.append({'revision': p['revision'], 'sha256': fingerprint, 'title': p['brief']['title'],
+                       'scene_id': (p['scene'] or {}).get('id'), 'approved': p['approval'] is not None,
+                       **change(previous, p, older), 'saved_at': store.saved_at(ident, p['revision'], fingerprint)})
+    return list(reversed(result))
 
 
 def version(store, ident, revision, fingerprint=None):
