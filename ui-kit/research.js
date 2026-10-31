@@ -15,6 +15,10 @@ const StudioResearch = (() => {
   class Editor {
     constructor(adapter) {
       this.a = adapter;
+      // Optional, per studio: the Keep in library / Only this project choice for an uploaded
+      // file. Off unless the adapter turns it on; then it starts at Keep in library.
+      this.keep = adapter.keepChoice ? true : null;
+      this.kept = {};     // source id -> what the Document Library said of its file
       this.value = adapter.value || null;
       this.urls = ''; this.text = ''; this.name = 'Pasted notes'; this.busy = false; this.problem = ''; this.reading = '';
       this.node = make('section', 'research-source-editor stack');
@@ -33,7 +37,12 @@ const StudioResearch = (() => {
     async act(action, data = {}) {
       if (this.busy || !this.value) return false;
       this.busy = true; this.problem = ''; this.reading = action === 'capture' || action === 'tabs' ? 'Reading source…' : 'Saving source choices…'; this.render();
-      try { this.value = await this.a.request({action, id: this.value.id, expected: this.value.revision, ...data}); return true; }
+      try {
+        const { library_kept: kept, ...value } = await this.a.request({action, id: this.value.id, expected: this.value.revision, ...data});
+        this.value = value;
+        if (kept && kept.source) this.kept[kept.source] = kept;
+        return true;
+      }
       catch (error) { this.problem = message(error); return false; }
       finally { this.busy = false; this.reading = ''; this.render(); this.changed(); }
     }
@@ -55,7 +64,7 @@ const StudioResearch = (() => {
         if (file.size > 8_000_000) { this.problem = file.name + ': choose a source within 8 MB.'; this.render(); continue; }
         const bytes = new Uint8Array(await file.arrayBuffer()); let binary = '';
         for (let i = 0; i < bytes.length; i += 8192) binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
-        if (!await this.act('capture', {kind: 'file', name: file.name, content: btoa(binary)})) break;
+        if (!await this.act('capture', {kind: 'file', name: file.name, content: btoa(binary), ...(this.keep === null ? {} : {keep: this.keep})})) break;
       }
     }
     spec() { return this.value ? {id: this.value.id, expected: this.value.revision} : null; }
@@ -92,6 +101,10 @@ const StudioResearch = (() => {
       if (source.status === 'needs-attention') add(copy, make('p', 'problem', source.problem || 'This source could not be read.'),
         make('p', 'quiet', 'Other captured sources are kept. Retry, remove or exclude this source.'));
       if (source.status === 'excluded') copy.append(make('p', 'quiet', 'Excluded from this request.'));
+      const kept = this.kept[source.id];
+      if (kept && kept.state === 'kept') copy.append(make('p', 'quiet', 'Kept in the Document Library too.'));
+      if (kept && kept.state === 'failed') add(copy, make('p', 'problem', 'Not kept in the Document Library: ' + (kept.problem || 'it could not be kept.')),
+        button('Keep in library again', () => this.act('library-keep', {source: source.id}), 'library-keep-' + source.id));
       if (array(source.warnings).length) copy.append(make('p', 'quiet', source.warnings.join(' ')));
       const tools = make('div', 'bar');
       if (source.status === 'ready') tools.append(button('Preview text', () => this.preview(source), 'preview-' + source.id));
@@ -103,6 +116,20 @@ const StudioResearch = (() => {
       const remove = button('Remove', () => this.act('remove', {source: source.id}), 'remove-' + source.id);
       remove.setAttribute('aria-label', 'Remove ' + source.name);
       return add(row, copy, remove);
+    }
+    keepChoice() {
+      const options = ['Keep in library', 'Only this project'];
+      const says = ['A copy of each file is also kept in the Document Library on this computer, for other projects. It is not shared with your team.',
+        'Files are kept in this project only.'];
+      const at = this.keep ? 0 : 1;
+      const group = make('div', 'segmented'); group.setAttribute('role', 'group'); group.setAttribute('aria-label', 'Where an uploaded file is kept');
+      group.dataset.at = String(at); group.dataset.count = '2';
+      const thumb = make('span', 'seg-thumb'); thumb.setAttribute('aria-hidden', 'true'); group.append(thumb);
+      options.forEach((text, index) => {
+        const option = button(text, () => { if (this.keep !== (index === 0)) { this.keep = index === 0; this.render(); } }, 'research-keep-' + index);
+        option.className = 'seg-option'; option.setAttribute('aria-pressed', String(index === at)); group.append(option);
+      });
+      return add(make('div', 'field research-keep'), make('p', 'field-label', 'Where an uploaded file is kept'), group, make('p', 'field-hint', says[at]));
     }
     render() {
       const focused = this.node.contains(document.activeElement) ? document.activeElement.dataset.key : '';
@@ -133,6 +160,7 @@ const StudioResearch = (() => {
         catch(error) { this.problem=message(error); this.render(); }
       }, 'research-saved'));
       add(panel, actions, file);
+      if (this.keep !== null) panel.append(this.keepChoice());
       if (this.pasting) {
         const name = field('Source name', this.name, 'research-text-name'); name.input.addEventListener('input', () => this.name = name.input.value);
         const text = field('Source text', this.text, 'research-text', true); text.input.rows = 6; text.input.addEventListener('input', () => this.text = text.input.value);

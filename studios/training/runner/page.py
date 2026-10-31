@@ -165,6 +165,18 @@ What a caller needs to know
   `POST /api/drafts/source` with {path, files: [{name, content (base64)}]}. It adds the
   documents and requests only a research update; the desk holds what the research reaches.
   The authenticated upload has the same body limit as the start's documents route.
+- The shared Document Library (`runner/library.py`): `POST /api/library`,
+  `/api/library-document`, `/api/library-filters` and `/api/library-matching` browse it and
+  select nothing. `POST /api/documents-library` {path, picks: [{id, revision}]} pins chosen
+  revisions as the training's documents and `/api/documents-library-update` {path,
+  document} takes a newer one; each answers the run, starts nothing, and is 409 while a job
+  runs or where the research reads no documents. `POST /api/documents` (add) and
+  `/api/drafts/source` take `keep`: true keeps the upload in the library too, once the
+  training took it, and the answer carries `library_kept`. `POST /api/drafts/library-keep`
+  {path, name} keeps a Ready guide or brief there again and answers the desk, and
+  `/api/documents-library-keep` {path, name} keeps an added document there again. The source
+  editor's `/api/research-sources` takes `keep` on a file capture and `library-keep` for one
+  source (`library.research_sources`).
 - A guide, brief or plan is typed into part by part; scenarios and Yoodli layouts use one
   whole-file part (`opening`). `GET /api/drafts/card?path=&name=` answers
   the card's view (`drafts.card`: the card, its parts with their revision and version
@@ -202,7 +214,8 @@ from workspace import WorkspaceError
 from studio_core import research_sites
 
 from runner import engine as engines
-from runner import draft_finish, drafts, gitstate, pipeline, setup
+from runner import draft_finish, drafts, gitstate, library, pipeline, setup
+from studio_core.document_library import context as library_context
 
 from studio_core import modules
 from studio_core.shared_runner import page as _shared
@@ -235,6 +248,14 @@ WRITES = ('/api/training-plan', '/api/research-sources', '/api/setup/check', '/a
           f'{DRAFTS}/slide-selection', f'{DRAFTS}/slide-selection-settle', f'{DRAFTS}/deck-outline', f'{DRAFTS}/deck-outline-price',
           f'{DRAFTS}/source', f'{DRAFTS}/finish', f'{DRAFTS}/apply', f'{DRAFTS}/skip',
           f'{DRAFTS}/doc', *DECIDED, *TYPED, *JOBS)
+# The shared Document Library: browsing it reads and selects nothing; Add from library and
+# Use revision N change a training's documents; Keep in library keeps a Ready guide or brief.
+LIBRARY_ADD = '/api/documents-library'
+LIBRARY_UPDATE = '/api/documents-library-update'
+LIBRARY_KEEP = f'{DRAFTS}/library-keep'
+LIBRARY_UPLOAD = '/api/documents-library-keep'   # Keep in library again, for an added document
+WRITES = (*WRITES, *library_context.ROUTES, LIBRARY_ADD, LIBRARY_UPDATE, LIBRARY_KEEP,
+          LIBRARY_UPLOAD)
 KINDS = {
     '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
     '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -258,6 +279,14 @@ def shaped(action, *args):
         return action(*args)
     except WorkspaceError as refusal:
         raise desk.Refusal(HTTPStatus.BAD_REQUEST, str(refusal))
+
+
+def kept(sent: dict) -> bool:
+    """The person's Keep in library choice for an upload: yes, or Only this project."""
+    keep = sent.get('keep', False)
+    if type(keep) is not bool:
+        raise desk.Refusal(HTTPStatus.BAD_REQUEST, 'Say whether to keep it in the library.')
+    return keep
 
 
 def research_site(sent: dict) -> dict:
@@ -721,10 +750,17 @@ class RunnerPage(desk.Page):
     # --- writes --------------------------------------------------------------------------
 
     def write(self, path: str, sent: dict):
+        if path in library_context.ROUTES:
+            try:
+                return desk.as_json(HTTPStatus.OK, library_context.answer(path, sent, 'training'))
+            except ValueError as error:
+                raise desk.Refusal(HTTPStatus.BAD_REQUEST, str(error)) from None
         if path == '/api/research-sources':
             from studio_core.research_sources import Sources
             try:
-                return desk.as_json(HTTPStatus.OK, Sources(self.engine.space().root / '.research-sources').dispatch(sent))
+                # With Training Studio's Keep in library for a file it captures.
+                return desk.as_json(HTTPStatus.OK, library.research_sources(
+                    Sources(self.engine.space().root / '.research-sources'), sent))
             except ValueError as error:
                 raise desk.Refusal(HTTPStatus.BAD_REQUEST, str(error)) from None
         self.engine.seen()
@@ -789,6 +825,21 @@ class RunnerPage(desk.Page):
                 path, desk.text(sent, 'text'), desk.text(sent, 'expected')))
         if path == DOCUMENTS:
             return desk.as_json(HTTPStatus.OK, self.supplied(sent))
+        if path in (LIBRARY_ADD, LIBRARY_UPDATE):
+            training = self.known(sent)
+            if path == LIBRARY_ADD:
+                return desk.as_json(HTTPStatus.OK, self.engine.library_add(training, sent.get('picks')))
+            return desk.as_json(HTTPStatus.OK, self.engine.library_update(
+                training, desk.text(sent, 'document')))
+        if path == LIBRARY_UPLOAD:
+            training = self.known(sent)
+            return desk.as_json(HTTPStatus.OK, {**self.engine.view(training), 'library_kept':
+                                                library.upload_again(self.engine, training,
+                                                                     desk.text(sent, 'name'))})
+        if path == LIBRARY_KEEP:
+            root = self.on_desk(desk.text(sent, 'path'))
+            self.typed(lambda: self.engine.library_keep(root, desk.text(sent, 'name')))
+            return desk.as_json(HTTPStatus.OK, drafts.view(self.engine, root))
         if path == '/api/copies':
             return desk.as_json(HTTPStatus.OK, self.copied(sent))
         if path == '/api/share':
@@ -824,8 +875,13 @@ class RunnerPage(desk.Page):
                     raise desk.Refusal(HTTPStatus.BAD_REQUEST,
                                        'That document did not arrive whole. Add it again.')
                 decoded.append({'name': name, 'data': data})
+            keep = kept(sent)
             self.typed(lambda: self.engine.add_source(root, decoded))
-            return desk.as_json(HTTPStatus.OK, drafts.view(self.engine, root))
+            # Kept in the Document Library too, when the person chose to: after the training
+            # took them, and never in place of that.
+            return desk.as_json(HTTPStatus.OK, {**drafts.view(self.engine, root), **(
+                {'library_kept': [library.upload(file['name'], file['data']) for file in decoded]}
+                if keep else {})})
         if path in (f'{DRAFTS}/finish', f'{DRAFTS}/apply', f'{DRAFTS}/skip'):
             root = self.on_desk(desk.text(sent, 'path'))
             name = desk.text(sent, 'name')
@@ -1177,8 +1233,11 @@ class RunnerPage(desk.Page):
             except (binascii.Error, ValueError):
                 raise desk.Refusal(HTTPStatus.BAD_REQUEST, 'That document did not arrive '
                                    'whole. Add it again.')
+        keep = kept(sent) if action == 'add' else False
         self.run(path)
-        return self.engine.supply(path, action, name, data)
+        found = self.engine.supply(path, action, name, data)
+        # Kept in the Document Library too, when the person chose to, once the training took it.
+        return {**found, 'library_kept': library.upload(name, data)} if keep else found
 
     def copied(self, sent: dict) -> dict:
         path = desk.text(sent, 'path')

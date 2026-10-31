@@ -803,6 +803,20 @@ async function app(file) {
   vm.runInContext(fs.readFileSync(panels, 'utf8'), context, { filename: 'deck-panels.js' });
   const lists = path.join(PAGE, '..', 'studio_core', 'deck_web', 'lists.js');
   vm.runInContext(fs.readFileSync(lists, 'utf8'), context, { filename: 'lists.js' });
+  // The Document Library's sheet is the shared core's, checked on its own by the
+  // repository's tests/library_page_check.js. A plan with {library: picks} stands in for it:
+  // Add from library hands the page those picks as Use selected does, and the report says
+  // which studio asked and where focus went afterwards.
+  if (plan.library) {
+    window.StudioLibrary = { pick: async (adapter) => {
+      report.library = [...(report.library || []), { studio: adapter.studio, max: adapter.max }];
+      await adapter.use(plan.library);
+      const back = adapter.refocus && adapter.refocus();
+      if (back) back.focus();
+      report.library[report.library.length - 1].refocus = back ? back.dataset.key : null;
+      return true;
+    } };
+  }
   // The shared desk kit before app.js, and the training desk, built on both, after it.
   for (const script of ['markdown.js', 'drafting.js', 'app.js', 'drafts.js']) {
     vm.runInContext(fs.readFileSync(path.join(PAGE, script), 'utf8'), context, { filename: script });

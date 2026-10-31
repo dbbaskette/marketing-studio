@@ -524,7 +524,8 @@ function timeField(draft) {
 
 // The documents, added here before Start and listed with Remove. The page holds the files
 // until the training is made; Start then adds each, and says they are all added.
-function documentsPart(draft, changed = retell) {
+// With `keep`, the Keep in library choice is offered for what is added (Add a source).
+function documentsPart(draft, changed = retell, keep = false) {
   const node = make('div', 'fields desk-documents');
   const fill = () => {
     const files = list(draft.files);
@@ -557,7 +558,7 @@ function documentsPart(draft, changed = retell) {
       accept: DESK_TYPES.join(',') + ',application/pdf', hint: DESK_WORDS.documentsHint }),
     files.length ? add(make('div', 'card-part'), make('p', 'row-title',
       count(files.length, 'document', 'documents') + ' to add'), items) : null,
-    make('p', 'quiet', DESK_WORDS.kept));
+    keep ? keepChoice('new-documents-keep') : null, make('p', 'quiet', DESK_WORDS.kept));
   };
   fill();
   return node;
@@ -583,10 +584,11 @@ function sourcesStep(draft, brand, looks) {
   told();
   researchLine(draft, looks);
   if (!draft.sourceEditor && typeof StudioResearch !== 'undefined') {
-    draft.sourceEditor = new StudioResearch.Editor({request: sent => send('research-sources', sent),
+    // Training Studio offers Keep in library for each file the editor captures.
+    draft.sourceEditor = new StudioResearch.Editor({request: sent => send('research-sources', sent), keepChoice: true,
       onChange: () => { if (draft.retell) draft.retell(); }});
   }
-  return [draft.sourceEditor ? draft.sourceEditor.node : documentsPart(draft),
+  return [draft.sourceEditor ? draft.sourceEditor.node : documentsPart(draft, retell, true),
     ...(draft.sourceEditor ? [] : [researchFields(draft, retell, ['documents'])]), looks,
     questionsField(draft), brand, copiesOption(draft),
     trainingOptions('Assistant and limits', 'training-assistant',
@@ -664,7 +666,8 @@ async function addHeld(path, files, status) {
     if (status) say(status, 'Adding ' + (index + 1) + ' of ' + files.length + ': ' + file.name);
     try {
       const content = await base64Of(file);
-      await send('documents', { path, action: 'add', name: file.name, content });
+      await send('documents', { path, action: 'add', name: file.name, content,
+        keep: keepUploads() });
     } catch (failure) {
       left.push(file);
       why.push(failure.message);
@@ -1010,7 +1013,7 @@ function deskCard(found) {
   }
   const editing = found.kind === 'deck' ? deckParts(found) : material ? materialParts(material, found) : null;
   add(node, state(DESK_WORDS.beads[found.state] || 'none', found.says),
-    checkedPart(found.checks), bar.childNodes.length ? bar : null);
+    checkedPart(found.checks), bar.childNodes.length ? bar : null, deskLibraryKept(found));
   if (list(found.needs).length) add(node, add(make('details', 'card-part'),
     make('summary', '', 'Detailed review notes'), bullets(found.needs, 'reasons')));
   if (found.kind === 'blueprint') add(node, updateChainPart(found.level));
@@ -1888,9 +1891,16 @@ async function addSource() {
         const files = await Promise.all(chosen.files.map(async (file) =>
           ({ name: file.name, content: await base64Of(file) })));
         if (view.path !== path) return;
-        const answer = await deskDecide('source', { files }, update);
-        if (answer) closeSheet();
-        else say(status, deskHeld(path).said || 'The source could not be added. Try again.');
+        const answer = await deskDecide('source', { files, keep: keepUploads() }, update);
+        if (answer) {
+          closeSheet();
+          const kept = list(answer.library_kept);
+          const missed = kept.filter((one) => one.state !== 'kept');
+          if (kept.length) {
+            toast(missed.length ? 'Added, but not kept in the Document Library: '
+              + missed.map((one) => one.problem).join(' ') : 'Kept in the Document Library too.');
+          }
+        } else say(status, deskHeld(path).said || 'The source could not be added. Try again.');
       } catch (failure) {
         say(status, failure.message);
       } finally {
@@ -1902,7 +1912,7 @@ async function addSource() {
     DESK.kitSheet = [sheetTitle('Add a source'),
       make('p', 'quiet', 'Add documents and read what updating the research will change.'),
       make('h3', 'sheet-part', '1. Add'),
-      documentsPart(chosen, () => { update.disabled = sending || !chosen.files.length; }),
+      documentsPart(chosen, () => { update.disabled = sending || !chosen.files.length; }, true),
       make('h3', 'sheet-part', '2. What it changes'), make('p', '', price.words),
       make('p', '', price.afterwards), price.widened ? make('p', '', price.widened) : null,
       status, add(make('div', 'bar'), update, capsule('Cancel', 'quiet', () => {
@@ -1951,9 +1961,65 @@ function sourcesPart(found) {
       bullets(documents.map((one) => one.name + (one.readable === false
         ? ': it could not be read' : '')))));
   }
+  add(node, deskLibraryPart());
   const aside = make('aside', 'desk-aside');
   aside.setAttribute('aria-label', 'Sources');
   return add(aside, node);
+}
+
+// The Document Library on the desk's Sources: documents pinned from it, a newer revision
+// taken only when pressed, and Add from library. What is added waits, unread, until Update
+// the research, which says first what it changes. Offered only where the research reads
+// documents: Add a source is the way to widen it.
+function deskLibraryPart() {
+  const run = view.run || {};
+  const held = run.documents;
+  if (!deskCanChange() || !held || held.waiting) return null;
+  const path = view.path;
+  const after = (answer) => {
+    view.run = answer;
+    drawDesk(false);
+  };
+  const part = add(make('div', 'card-part desk-library'), make('p', 'row-title', 'From the Document Library'));
+  const pinned = list(held.added).filter((one) => one.library);
+  if (pinned.length) {
+    const rows = make('ul', 'rows');
+    for (const one of pinned) {
+      rows.append(add(make('li', 'row'), add(make('div', 'row-text'),
+        make('p', 'step-name', one.title || one.name), libraryWords(one)),
+      one.update ? libraryUpdate(path, one, after) : null));
+    }
+    part.append(rows);
+  } else {
+    part.append(make('p', 'quiet', 'Choose documents kept on this computer for this training only.'));
+  }
+  const later = list(held.later).map((one) => one.name);
+  const bar = add(make('div', 'bar'), libraryAdd(path, 'desk-library-add', after));
+  if (later.length) {
+    part.append(make('p', '', 'Not read yet: ' + series(later) + '. The research reads '
+      + (later.length === 1 ? 'it' : 'them') + ' once you update it.'));
+    bar.append(capsule('Update the research', '', openSheet('update-research',
+      'desk-update-research'), 'desk-update-research'));
+  }
+  return add(part, bar);
+}
+
+// What the Document Library holds of a Ready guide or brief: kept, or the retry. Keeping it
+// again changes no material and starts no job, so, like Mark ready, the person who runs the
+// training is offered it while it is worked on in a conversation too; a teammate reads it.
+function deskLibraryKept(found) {
+  const kept = (deskHeld(view.path).view?.library || {})[found.name];
+  if (!kept) return null;
+  if (kept.state === 'kept') {
+    return make('p', 'quiet', 'Kept in the Document Library as Markdown, revision ' + kept.revision + '.');
+  }
+  const said = kept.state === 'failed'
+    ? make('p', 'problem', 'Not kept in the Document Library: ' + kept.problem)
+    : make('p', 'quiet', 'Not kept in the Document Library yet.');
+  if (!deskOurs()) return add(make('div', 'card-part'), said);
+  const again = capsule(kept.state === 'failed' ? 'Keep in library again' : 'Keep in library', 'quiet',
+    () => deskDecide('library-keep', { name: found.name }, again), 'desk-library-keep ' + found.name);
+  return add(make('div', 'card-part'), said, add(make('div', 'bar'), again));
 }
 
 function deskLead(run, held, ours) {
@@ -2189,6 +2255,8 @@ async function deskDecide(route, sent, pressed, { flush = true } = {}) {
     toast('Marked ready.');
   } else if (answer && route === 'keep') {
     toast('Kept as it is.');
+  } else if (answer && route === 'library-keep') {
+    toast('Kept in the Document Library.');
   } else if (answer && route === 'update') {
     toast('It is being made again from what it is built from now.');
   } else if (answer && route === 'send') {

@@ -121,6 +121,29 @@ Signing in to an assistant, your organisation's brands and fonts, and optional G
 - **Selected studio material is unchanged.** **Import selected studio material**
   still works as before.
 
+## Unreleased: the Document Library in Training Studio
+
+- **Add from library in Training Studio.** The documents card and the desk's
+  **Research & sources** have **Add from library**. Each chosen revision becomes one
+  of the training's own documents, and **Use revision N** takes a newer one only when
+  you press it. While a training waits for its documents, a pinned one is read with
+  the rest. After the research, it waits, not read yet, for **Update the research**,
+  which says first what it changes. Adding starts no research, grants no web access,
+  sends nothing to an assistant, and never widens research that reads no documents.
+  It is refused while a step is being worked on.
+- **Keep in library, or Only this project.** Adding a document to a training, on its
+  documents card or with the desk's **Add a source**, asks where it is kept. **Keep in
+  library** also keeps a copy in the library for other projects. Neither changes
+  sharing.
+- **Finished training material is kept.** Marking a learner guide or a brief ready keeps
+  it in the library as Markdown, without its coverage notes. Marking it ready again adds
+  a revision only when its words changed, also when it is marked ready in a conversation.
+  A failed save is said on its card with **Keep in library again**. Decks are kept once
+  Training Studio can export a PDF.
+- **Keep in library at Start too.** The New training sheet's sources editor offers the
+  same choice for each file; a file is kept once it is read. Presentation Studio's editor
+  is unchanged. An upload the library refused offers **Keep in library again**.
+
 ## Unreleased: shorter shared setup, clear ownership and readiness
 
 - **Four everyday choices first.** Shared settings leads with you and your assistant,

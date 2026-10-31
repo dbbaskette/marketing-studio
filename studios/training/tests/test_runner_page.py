@@ -2916,7 +2916,7 @@ class DeskPageTests(PageCase):
         # Each still answers what is its own as it always did.
         self.assertTrue(self.get('gate', path=saved, artifact='research-plan')['waiting'])
         self.assertEqual(sorted(self.get('drafts', path=path)),
-                         ['cards', 'docs', 'flow', 'job', 'levels', 'needs', 'progress',
+                         ['cards', 'docs', 'flow', 'job', 'levels', 'library', 'needs', 'progress',
                       'sources', 'standing', 'team', 'title'])
 
     def test_reading_the_desk_changes_nothing(self):

@@ -11,6 +11,8 @@ _DATA = tempfile.TemporaryDirectory()
 os.environ['TRAINING_STUDIO_DATA'] = _DATA.name
 # Nor the studios config every *-studio shares: a test that wants one writes it here.
 os.environ['STUDIOS_CONFIG'] = str(Path(_DATA.name) / 'studios-config.json')
+# Nor the shared Document Library a guide marked ready, or an upload, is kept in.
+os.environ['STUDIOS_LIBRARY'] = str(Path(_DATA.name) / 'library')
 
 # After a commit, a fetch or a push, git starts auto-gc and maintenance in the background. That
 # work can still be writing when a test's temporary directory is removed, which fails the

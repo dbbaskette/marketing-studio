@@ -1534,6 +1534,7 @@ class StudioCase(unittest.TestCase):
         patches = [
             mock.patch.dict(os.environ, {'TRAINING_STUDIO_DATA': str(self.base / 'data'),
                                          'STUDIOS_CONFIG': str(self.base / 'studios.json'),
+                                         'STUDIOS_LIBRARY': str(self.base / 'library'),
                                          'GIT_CONFIG_GLOBAL': str(self.base / 'gitconfig'),
                                          'GIT_CONFIG_NOSYSTEM': '1'}),
             mock.patch.object(worker_tools, 'fetch_once', self.web.opener),
@@ -1778,7 +1779,7 @@ class TeamCase(StudioCase):
     def setUp(self):
         super().setUp()
         self.alex = Person('Alex', {name: os.environ[name] for name in (
-            'TRAINING_STUDIO_DATA', 'STUDIOS_CONFIG', 'GIT_CONFIG_GLOBAL')})
+            'TRAINING_STUDIO_DATA', 'STUDIOS_CONFIG', 'STUDIOS_LIBRARY', 'GIT_CONFIG_GLOBAL')})
         self.alex.space, self.alex.engine = self.space, self.engine
         with self.be(self.alex):
             self.engine.share()     # the workspace's own files, so a teammate finds them
@@ -1794,6 +1795,7 @@ class TeamCase(StudioCase):
             f"defaultBranch = main\n\ttemplateDir = {self.base / 'no-templates'}\n")
         made = Person(name, {'TRAINING_STUDIO_DATA': str(folder / 'data'),
                              'STUDIOS_CONFIG': str(folder / 'studios-config.json'),
+                             'STUDIOS_LIBRARY': str(folder / 'library'),
                              'GIT_CONFIG_GLOBAL': str(folder / 'gitconfig')})
         with self.be(made):
             made.space = self.gitstate.join(str(self.remote))

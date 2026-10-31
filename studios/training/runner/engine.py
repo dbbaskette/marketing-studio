@@ -235,6 +235,8 @@ from studio_core.shared_runner.write_markers import defer_share, mark_step
 from studio_core.drafting import basis, guards
 
 from runner import agents, companion, deck, deck_edit, draft_jobs, drafts, gitstate, pipeline, settings, team, worker_tools
+from runner import library
+from studio_core.document_library import context as library_context
 from runner import brand as brand_skill
 from runner import brand_source
 from runner import copies as copies_made
@@ -5512,6 +5514,8 @@ class Engine(Reviewing):
             self._ready_again(root)
             self._remember_decision(root, self._load(root), workspace.label(name), 'approve')
             self._commit(root, f'mark {workspace.label(name)} ready')
+            # A learner guide or brief marked ready is kept in the Document Library too.
+            library.keep_marked(root, [name])
         self.carry_on(root)
         return self.view(root)
 
@@ -5542,6 +5546,7 @@ class Engine(Reviewing):
                 self._ready_again(root)
                 self._remember_decision(root, self._load(root), which, 'approve')
                 self._commit(root, f'mark {which} ready')
+                library.keep_marked(root, marked)
         if marked:
             self.carry_on(root)
         return {'marked': marked, 'stopped': stopped}
@@ -6171,13 +6176,42 @@ class Engine(Reviewing):
             if drafts.on_desk(record):
                 if self._desk_change_busy(root, record):
                     raise WorkspaceError(draft_jobs.BUSY)
+                if record.get('opened_on_desk'):
+                    # A saved run opened on the desk keeps the update it was planned with.
+                    self._request_sources(root, record)
+                else:
+                    # Documents waiting on a desk training (pinned from the Document Library)
+                    # are read as Add a source reads its own: findings that change are
+                    # marked, and the research plan is handed them too.
+                    self._edits_first(root)
+                    record = self._load(root)
+                    record.setdefault('drafts', {})['findings_before'] = drafts.findings_now(root)
+                    titles = {entry.get('name'): entry.get('title') or entry.get('name')
+                              for entry in self.documents.listed(root)}
+                    self._request_sources(root, record,
+                                          titles=[titles.get(name, name) for name in names])
             else:
                 run = self._run(root)
                 if run.workers or run.busy:
                     raise WorkspaceError(WORKING)
-            self._request_sources(root, record)
+                self._request_sources(root, record)
         self.carry_on(path)
         return self.view(root)
+
+    # --- the shared Document Library (runner/library.py) ---------------------------------
+
+    def library_add(self, path, picks) -> dict:
+        """Add from library: pin chosen revisions as the training's documents. Starts
+        nothing; refused while a job runs."""
+        return self.view(library.pin(self, path, picks))
+
+    def library_update(self, path, document) -> dict:
+        """Use revision N of one pinned document, only because the person asked."""
+        return self.view(library.update(self, path, document))
+
+    def library_keep(self, path, name) -> Path:
+        """Keep a Ready guide or brief in the Document Library, as the person asked."""
+        return library.again(self, path, name)
 
     def _request_sources(self, root: Path, record: dict, titles=None) -> None:
         """Record the existing research refresh, while holding files, for either flow."""
@@ -6845,8 +6879,11 @@ class Engine(Reviewing):
                  for entry in given.get('later') or () if isinstance(entry, dict)]
         price = self.research_price(root) if later else None
         return {'waiting': waiting,
-                'added': [{key: entry.get(key) for key in ('name', 'bytes', 'readable',
-                                                           'problem')} for entry in added],
+                # One pinned from the Document Library also says its revision, and whether
+                # a newer one is there; the training reads its own copy either way.
+                'added': [{**{key: entry.get(key) for key in ('name', 'bytes', 'readable',
+                                                              'problem')},
+                           **library.shown(entry)} for entry in library_context.marked(added)],
                 'types': types, 'limits': dict(self.documents.LIMITS), 'note': ' '.join(note),
                 # Added after the research was planned: kept, and not read until updated.
                 **({} if waiting else {'later': later}),
