@@ -3102,18 +3102,15 @@ async function addSite(draft) {
 // a tick for each site and a box to add one for this deck.
 function researchFromField(draft) {
   if (typeof StudioResearch !== 'undefined') {
-    const primary = draft.route === 'document' ? 'Your source document is included with these references.' : '';
     if (!draft.sourceEditor) draft.sourceEditor = new StudioResearch.Editor({
       request: sent => send('research-sources', sent),
-      primarySummary: primary,
       onChange: () => { if (draft.retell) draft.retell(); }
     });
-    // The same sources, kept when the kind of deck changes, say whether a document is with them.
-    else if (draft.sourceEditor.a.primarySummary !== primary) {
-      draft.sourceEditor.a.primarySummary = primary;
-      draft.sourceEditor.render();
-    }
-    return draft.sourceEditor.node;
+    // The sources are kept when the kind of deck changes; a deck from a document says its
+    // document goes with them, whichever kind they were first opened for.
+    return draft.route === 'document' ? add(make('div', 'fields'), make('p', 'quiet',
+      'Your source document is included with these references.'), draft.sourceEditor.node)
+      : draft.sourceEditor.node;
   }
   const looks = looksOf(draft);
   const flip = (key) => (on) => {
