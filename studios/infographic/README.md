@@ -164,11 +164,27 @@ separate release gates, never inferred from fixture success.
    text copy. Word means `.docx`, without OCR, linked-resource reads or embedded-object analysis.
 2. Set the audience, takeaway and must-show information. Choose a story, build the page,
    edit, inspect actual pixels, run checks and approve the exact revision.
+   **Where this stands** shows the route (Story, Draft page, Review and checks, Approved
+   delivery) with the current step, what is complete, what needs you and what you can
+   download; the toolbar offers that one next action. **Review and finish** has three
+   parts: your review of the actual page (required; recording it runs the local checks
+   straight after), the checks (on this computer, starting no assistant or image request),
+   and approval (your decision). Assistant inspection is optional and separate.
+   **Approve revision N and prepare files** approves that exact checked revision and then
+   prepares its final files locally in the same action, so the page never shows the
+   approved revision as a new draft. If the files cannot be prepared (for example no
+   renderer), the approval is kept, no approved file is offered, and **Prepare approved
+   files** retries on this computer.
 3. **Deliver Google Doc or PDF** offers either or both. PDF is the exact approved one-page
    local render. Google delivery creates a new native Doc containing the approved page image
    with alt text, plus editable accessible text and source notes. Artwork/layout in Docs is
    raster; the local SVG retains editable labels/charts. Inspect Google conversion in Docs
    before relying on its layout. The original source Doc is never overwritten or shared.
+   A **Delivery receipt** lists every format you chose for that revision with what happened:
+   the PDF as downloaded (with **Download PDF again**) and the Google Doc as delivered
+   (**Open Google Doc**), not confirmed or not delivered. A partial result keeps what
+   succeeded; retrying the PDF is local and sends nothing to Google, and **Check again
+   without resending** only reads.
 
 Google actions use the existing sign-in without an email prompt. Optional account/folder
 overrides remain in advanced defaults. Delivery starts with Marketing Studio’s shared

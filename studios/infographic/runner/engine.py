@@ -28,15 +28,17 @@ class Engine:
         project = self.store.read(ident)
         from .image_jobs import Jobs
         from .google_delivery import listing
+        review, review_checked, deliveries = (visual_review.latest(self.store, project),
+                                              visual_review.checked(self.store, project), self.deliveries(ident))
         return {'project': project, 'history': history.entries(self.store, ident),
                 'planning_response': planning_responses.status(self.store, project),
                 'source_findings': evidence.findings(project['facts']),
                 'recovery': Jobs(self.store, self.adapters).recovery(ident),
                 'image_history': Jobs(self.store, self.adapters).history(ident),
-                'visual_review': visual_review.latest(self.store, project),
-                'review_checked': visual_review.checked(self.store, project),
-                'google_deliveries': listing(self.store, ident), 'deliveries': self.deliveries(ident),
-                'elements': labels.elements(project), 'readiness': progress.readiness(project)}
+                'visual_review': review, 'review_checked': review_checked,
+                'google_deliveries': listing(self.store, ident), 'deliveries': deliveries,
+                'elements': labels.elements(project), 'readiness': progress.readiness(project),
+                'roadmap': progress.roadmap(project, deliveries, review=review, review_checked=review_checked)}
 
     def deliveries(self, ident):
         project = self.store.read(ident)
@@ -350,6 +352,35 @@ class Engine:
                           checks=checks.evaluate(self.store, project, measurement=measurement, visual=visual))
             next(c for c in result['checks'] if c['kind'] == 'visual')['review_digest'] = digest(visual)
             return self.store.commit_locked(project, result)
+
+    def check_after(self, ident, review, *, expected_revision):
+        """Run the local checks against a just-recorded review in the same request.
+
+        The review is already saved. If checking is refused (for example a newer change),
+        the review stays recorded and nothing is approved; checks can be run again.
+        """
+        self.progress('Running the local checks')
+        checked = self.check(ident, expected_revision=expected_revision)
+        return {'review': review, 'checks': checked['checks'], 'revision': checked['revision']}
+
+    def approve_and_export(self, ident, *, expected_revision):
+        """Approve exactly this checked revision, then prepare its final files locally.
+
+        Approval is the person's explicit decision and is saved first. Preparing files
+        uses only the local renderer, never an assistant, image provider or Google. If
+        preparation fails, the approval is kept, no approved file is advertised, and the
+        result says so; preparing again is a local retry.
+        """
+        self.progress('Approving this exact revision')
+        approved = self.approve(ident, expected_revision=expected_revision)
+        try:
+            manifest = self.preview(ident, expected_revision=approved['revision'], draft=False)
+        except Invalid as failure:
+            return {'approved': True, 'revision': approved['revision'], 'export': None, 'problem': str(failure)}
+        except Exception:
+            return {'approved': True, 'revision': approved['revision'], 'export': None,
+                    'problem': 'The approved files could not be prepared. Your approval is kept; prepare the files again.'}
+        return {'approved': True, 'revision': approved['revision'], 'export': manifest, 'problem': None}
 
     def approve(self, ident, *, expected_revision):
         with self.store.locked():

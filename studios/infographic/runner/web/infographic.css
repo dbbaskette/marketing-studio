@@ -44,6 +44,10 @@
 .ig-inspector .input { width: 100%; max-width: none; box-sizing: border-box; }
 .ig-save-state { min-height: 1.4rem; margin: 0; }
 .ig-entry { display: grid; gap: .2rem; min-width: 0; }
+/* The route to an approved delivery and the three finishing steps, in reading order. */
+.ig-roadmap { margin-bottom: .6rem; }
+.ig-roadmap .bead { margin-right: .35rem; }
+.ig-finish-step + .ig-finish-step { padding-top: .9rem; border-top: 1px solid var(--hair); }
 @media (min-width: 1100px) {
   .ig-workbench { grid-template-columns: minmax(0, 1fr) 22rem; align-items: start; }
   .ig-ledger { grid-column: 1 / -1; }

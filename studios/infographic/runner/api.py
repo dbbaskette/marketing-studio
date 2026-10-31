@@ -68,11 +68,16 @@ FIELDS = {
     'image-start': {'brief_id', 'provider', 'request_id', 'operation', 'parent'},
     'image-cancel': {'request_id'}, 'image-recover': {'request_id'}, 'art-direct': set(), 'build': {'request_id'}, 'compose-image': {'asset_id'},
     'suggest': {'automatic', 'fresh'}, 'edit-text': {'element_id', 'text'},
-    'preview': set(), 'check': set(), 'review': {'export_id', 'observations'}, 'approve': set(),
+    'preview': set(), 'check': set(), 'review': {'export_id', 'observations', 'then_check'}, 'approve': {'then_export'},
     'export': {'draft'}, 'restore': {'revision', 'sha256'},
-    'inspect-images': set(), 'revise-art': {'change', 'preserve', 'request_id'},
+    'inspect-images': {'then_check'}, 'revise-art': {'change', 'preserve', 'request_id'},
     'compare': {'before', 'after'}, 'repair': {'request_id'}, 'revise-story': {'story_id', 'block_id', 'instruction'},
 }
+
+
+def _then(sent, key):
+    require(type(sent.get(key, False)) is bool, 'Choose the follow-on step explicitly.')
+    return sent.get(key, False)
 
 
 def action(found, sent):
@@ -118,7 +123,10 @@ def action(found, sent):
         project = scene.adopt(store, ident, expected_revision=revision, arrangement='infographic')
         return found.preview(ident, expected_revision=project['revision'])
     if verb == 'art-direct': return found.prepare_art(ident, expected_revision=revision)
-    if verb == 'inspect-images': return found.inspect_images(ident, expected_revision=revision)
+    if verb == 'inspect-images':
+        then = _then(sent, 'then_check')
+        review = found.inspect_images(ident, expected_revision=revision)
+        return found.check_after(ident, review, expected_revision=revision) if then else review
     if verb == 'repair': return found.repair(ident, expected_revision=revision, request_id=sent.get('request_id'))
     if verb == 'revise-story': return found.revise_story(ident, sent.get('story_id'), sent.get('block_id'), sent.get('instruction'), expected_revision=revision)
     if verb == 'revise-art': return found.revise_art(ident, sent.get('change'), sent.get('preserve'),
@@ -153,8 +161,14 @@ def action(found, sent):
     if verb == 'edit-text': return found.edit_text(ident, sent.get('element_id'), sent.get('text'), expected_revision=revision)
     if verb == 'preview': return found.preview(ident, expected_revision=revision)
     if verb == 'check': return found.check(ident, expected_revision=revision)
-    if verb == 'review': return found.manual_review(ident, sent.get('export_id'), sent.get('observations'), expected_revision=revision)
-    if verb == 'approve': return found.approve(ident, expected_revision=revision)
+    if verb == 'review':
+        then = _then(sent, 'then_check')
+        review = found.manual_review(ident, sent.get('export_id'), sent.get('observations'), expected_revision=revision)
+        return found.check_after(ident, review, expected_revision=revision) if then else review
+    if verb == 'approve':
+        if _then(sent, 'then_export'):
+            return found.approve_and_export(ident, expected_revision=revision)
+        return found.approve(ident, expected_revision=revision)
     if verb == 'export':
         require(type(sent.get('draft', False)) is bool, 'Draft delivery must be an explicit boolean choice.')
         return found.preview(ident, expected_revision=revision, draft=sent.get('draft', False))

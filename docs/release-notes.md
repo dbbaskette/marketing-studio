@@ -55,6 +55,24 @@ Signing in to an assistant, your organisation's brands and fonts, and optional G
   approved files never change, and edits and restores never carry an approval over.
   Home shows each infographic's working state with its revision.
 
+## Unreleased: Infographic Studio review to delivery
+
+- **One route and one next action.** Where this stands shows Story, Draft page, Review
+  and checks and Approved delivery with the current step, and says what is complete,
+  what needs you and what you can download. The toolbar offers that one next action.
+- **Review, checks and approval, each explained.** Recording your review of the actual
+  page runs the local checks straight after. Assistant inspection is optional and
+  separate. Approve revision N and prepare files approves that exact revision and then
+  prepares its files on this computer in the same action, so an approved page is never
+  shown as a new draft. If files cannot be prepared, the approval is kept and Prepare
+  approved files retries locally.
+- **A receipt for every format.** Delivering a Google Doc and PDF lists both, each with
+  its revision and Open or Download action. Partial success is shown honestly: what
+  succeeded is kept, retrying the PDF sends nothing to Google, and an unconfirmed Google
+  Doc is only checked again, never resent.
+- Exact-revision checks, explicit approval, image recovery and spend protection are
+  unchanged.
+
 ## Unreleased: research citation handoffs
 
 Research workers are explicitly told which saved source IDs to cite. If a worker
