@@ -15,7 +15,8 @@
 // refresh asked for that many times at once, {hidden: true or false} for the tab put behind
 // another or brought back, {timer: a function's name} for the last timer the page set to
 // call it, {tick: the name of a check box} for a click on that box, {select: the label of a
-// box, start, end} for words selected in it, and {hold: the name of
+// box, start, end} for words selected in it, {press: a key, on: the name of a control} for
+// that key pressed on it, and {hold: the name of
 // a control} to follow that very node: each
 // snapshot then says, in `still`, which of those held are still on the page, and in `asked`
 // how many requests had been made by then. A box that is filled is left as a
@@ -360,6 +361,8 @@ function settle() {
 let phone = false;
 // Where the page sent the browser, when it set location.href: a page of its own is not left.
 let here = null;
+// The browser's history: what it keeps with the screen is what a reload opens the page at.
+let travelled = null;
 
 function styledAway(at) {
   if (at.nodeType !== 1) return false;
@@ -600,6 +603,8 @@ function snapshot() {
     asked: report.requests.length,
     still: followed.filter(([node]) => document.body.contains(node)).map(([, named]) => named),
     href: (here && here.href) || '',
+    // What the browser keeps with the screen, for a reload to open the page at it again.
+    state: travelled ? travelled.state : null,
     // A key two parts of the page share: focus kept by that key may land on the wrong one.
     keyedTwice: [...document.body.all().filter((node) => node.dataset && node.dataset.key
       && visible(node)).map((node) => node.dataset.key)
@@ -781,6 +786,7 @@ async function app(file) {
   }
   window.window = window;
   here = window.location;
+  travelled = window.history;
   window.navigator.clipboard.writeText = () => Promise.resolve();
   const context = vm.createContext(window);
   context.navigator = window.navigator;
@@ -853,6 +859,13 @@ async function app(file) {
       // The browser's own Back.
       if (step.back) window.history.back();
       if (step.key) for (const listener of documentListeners.keydown || []) listener({ key: step.key });
+      // {press: a key, on: the name of a control}: that key pressed while the control has the
+      // focus.
+      if (step.press) {
+        const held = control(step.on);
+        held.focus();
+        held.dispatch('keydown', { key: step.press, target: held, preventDefault() {} });
+      }
     } catch (failure) {
       report.errors.push(String(failure && failure.stack ? failure.stack : failure));
     }

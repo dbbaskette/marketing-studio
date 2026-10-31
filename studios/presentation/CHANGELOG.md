@@ -23,3 +23,23 @@ making decks first, then what changes for maintainers.
   `sourceStep`, `goalStep`, `settingsStep`, `roadmap`) builds the list from the
   route, level, research, reading and look; `chooseRoute` in `app.js` no longer
   resets research and keeps each kind's file and link.
+
+- **Review and change one slide at a time on the desk.** The Slides tab is a
+  workbench instead of one long form. A navigator lists every slide with its
+  picture, number, title and what it needs, and reaches any slide at once on a
+  desktop or a phone. The slide chosen shows its picture first, then what the
+  brand check and the review found on it, each once, with a proposed fix to
+  apply (priced first) or skip, then its words, speaker notes and note; its
+  caveat and source are folded. A short summary says what blocks delivery, what
+  waits for you (including slides a stopped whole-deck note did not redraw) and
+  what is only worth a look, each linked to its slide, and what Deliver will
+  use. The whole-deck note is a folded, secondary action that says it redraws
+  every section. The slide chosen and words not yet saved stay through the
+  Outline tab, Finishing, History, Deliver and a reload. A synthetic eight-slide
+  deck at 390px went from about 11,350px to about 2,650px tall. Approval,
+  delivery, revision binding and every redraw's scope and price are unchanged.
+
+  For maintainers: the workbench is drawn in `deck-desk.js` (`slideParts`,
+  `summaryPart`, `navigatorPart`, `slideCard`, `foundOn`, `marksOf`) from the
+  desk view alone; the slide chosen is kept per deck and in `history.state`
+  (`deskSlide`, `deskNumber`). No route or server gate changed.
