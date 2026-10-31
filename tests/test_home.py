@@ -138,8 +138,10 @@ class HomeTests(IsolatedHome):
         shared.path().write_text(original)
         seen = shared.read()[0]
         shared.update({'person': {'name': 'Two'}})
-        with self.assertRaises(WorkspaceError):
+        with self.assertRaisesRegex(WorkspaceError, '^“Your name” was changed in another tab or studio') as refused:
             self.write('/api/shared', {'changes': {'person': {'name': 'Three'}}, 'seen': seen})
+        self.assertEqual(refused.exception.details, {'conflict': {'fields': ['person.name']}})
+        self.assertIn('Load newer settings', str(refused.exception))
         self.write('/api/shared', {'changes': {'output': 'pptx'}, 'seen': seen})
         self.assertIn('"unknown": {"keep": [1, 2]}', shared.path().read_text())
         self.assertEqual(shared.read()[0]['person']['name'], 'Two')
@@ -360,7 +362,7 @@ class SharedSettingsSaveTests(IsolatedHome):
         shared.path().write_text(self.OVERRIDES)
         seen = shared.read()[0]
         shared.update({'brand': {'release': 'v2.0.0'}})
-        with self.assertRaisesRegex(WorkspaceError, 'Another studio changed'):
+        with self.assertRaisesRegex(WorkspaceError, '“Brand skill release” was changed in another tab or studio'):
             self.write('/api/shared', {'changes': {'brand': {'release': None}}, 'seen': seen})
         # Changing only an everyday value from the same outdated form is still accepted.
         self.write('/api/shared', {'changes': {'person': {'name': 'Bea'}}, 'seen': seen})

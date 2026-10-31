@@ -182,7 +182,10 @@ class Handler(BaseHTTPRequestHandler):
         except Refusal as refusal:
             reply, allow = as_json(refusal.status, {'error': str(refusal)}), refusal.allow
         except WorkspaceError as refusal:
-            reply = as_json(HTTPStatus.CONFLICT, {'error': str(refusal)})
+            # A refusal may say more for the page to act on, such as which values conflict.
+            details = getattr(refusal, 'details', None)
+            reply = as_json(HTTPStatus.CONFLICT, {**(details if isinstance(details, dict) else {}),
+                                                  'error': str(refusal)})
         except Exception as failure:  # answered like any other, never a dropped connection
             reply = as_json(HTTPStatus.INTERNAL_SERVER_ERROR, {'error': describe(failure)})
         if len(reply) == 4:

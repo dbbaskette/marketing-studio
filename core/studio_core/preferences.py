@@ -157,25 +157,65 @@ def save(config, changes, seen):
 
     def guard(current):
         check(changes, current)
+        # Every leaf the form changes that someone else changed differently since it was
+        # shown. Nothing is written while there is one.
+        stale = []
         if 'research' in changes and 'sites' in changes['research']:
             held = (current.get('research') or {}).get('sites') or []
             before = (seen.get('research') or {}).get('sites') or []
             if held != before and held != changes['research']['sites']:
-                raise ValueError(research_sites.STALE)
+                stale.append(('research', 'sites'))
         for path, wanted in model_profiles.leaves(
                 {key: value for key, value in changes.items() if key != 'research'}):
             held, before = model_profiles.get(current, path), model_profiles.get(seen, path)
             if held != before and held != wanted:
-                raise ValueError('Another studio changed this setting. Reload the page and try again.')
+                stale.append(path)
         # Profile edits also depend on the assistant and inherited defaults the form saw.
         if 'models' in changes:
             for key in ('agent', 'model', 'effort'):
                 held = (current.get('assistant') or {}).get(key)
                 before = (seen.get('assistant') or {}).get(key)
                 wanted = (changes.get('assistant') or {}).get(key, before)
-                if held != before and held != wanted:
-                    raise ValueError('Another studio changed the assistant. Reload and review the model profiles.')
+                if held != before and held != wanted and ('assistant', key) not in stale:
+                    stale.append(('assistant', key))
+        if stale:
+            raise Conflict(stale)
     return config.update(changes, guard=guard)
+
+
+# What the shared settings form calls each value, for a refusal that names it.
+LABELS = {('person', 'name'): 'Your name', ('assistant', 'agent'): 'Assistant',
+          ('assistant', 'model'): 'Model', ('assistant', 'effort'): 'Reasoning',
+          ('local', 'root'): 'Workspace folder', ('team', 'repository'): 'Repository address',
+          ('team', 'branch'): 'Branch', ('share',): 'Share changes',
+          ('brand', 'repository'): 'Brand Git repository', ('brand', 'skill'): 'Installed skill folder',
+          ('brand', 'brand'): 'Default brand', ('brand', 'variant'): 'Default variant',
+          ('brand', 'release'): 'Brand skill release', ('output',): 'Deliver as',
+          ('render', 'previews'): 'Slide previews', ('research', 'sites'): 'Research sites',
+          ('models', 'mode'): 'Model routing', ('models', 'agent'): 'Model profiles'}
+
+
+def label(path):
+    path = tuple(path)
+    if path in LABELS:
+        return LABELS[path]
+    if len(path) == 4 and path[:2] == ('models', 'profiles'):
+        part = {'selection': 'model choice', 'model': 'model', 'effort': 'reasoning'}.get(path[3], 'model')
+        return f'{path[2].capitalize()} {part}'
+    return 'Model profiles' if path[:1] == ('models',) else '.'.join(path)
+
+
+class Conflict(ValueError):
+    """A save refused because someone else changed the same values first. `fields` are
+    their dotted paths, such as person.name; the message names them as the form does."""
+
+    def __init__(self, paths):
+        self.fields = ['.'.join(path) for path in paths]
+        names = list(dict.fromkeys(f'“{label(path)}”' for path in paths))
+        named = names[0] if len(names) == 1 else ', '.join(names[:-1]) + ' and ' + names[-1]
+        super().__init__(f'{named} {"was" if len(names) == 1 else "were"} changed in another tab or studio '
+                         'while this page was open, so nothing was saved. Choose Load newer settings '
+                         'to compare; your other edits stay on the form.')
 
 
 def finish(config, prepare):
