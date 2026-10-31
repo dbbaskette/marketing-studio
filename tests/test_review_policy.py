@@ -36,7 +36,7 @@ class ReviewPolicyTests(IsolatedHome):
         preferences.save(shared, {'person': {'name': 'Ana'}}, seen)
         self.assertEqual(shared.read()[0]['review'], {'level': 'step_by_step'})
         self.assertEqual(shared.read()[0]['private'], {'keep': 7})
-        with self.assertRaisesRegex(ValueError, 'Another studio'):
+        with self.assertRaisesRegex(ValueError, '“Your name” was changed in another tab or studio'):
             preferences.save(shared, {'person': {'name': 'Bea'}}, seen)
 
     def test_gate_contract_and_receipt(self):
