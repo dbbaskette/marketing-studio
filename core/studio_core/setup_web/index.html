@@ -22,7 +22,7 @@
   </nav>
   <div class="content">
     <div class="toolbar-wrap"><header class="toolbar glass"><div class="toolbar-title"><h1 id="view-title" class="title" tabindex="-1">Studios</h1></div><div class="toolbar-actions"><button type="button" id="back-to-studio" class="button button-quiet" hidden>Back</button><span id="where" class="tag">On this computer</span><button id="check" type="button" class="button button-filled" hidden>Check computer</button><button id="library-add-open" type="button" class="button button-filled" aria-haspopup="dialog" hidden>Add documents</button></div></header></div>
-    <p id="problem" class="notice" role="alert" hidden></p>
+    <div id="problem" class="notice problem-notice" hidden><p id="problem-text" role="alert"></p><div class="problem-actions"><button type="button" id="problem-newer" class="button" hidden>Load newer settings</button><button type="button" id="problem-dismiss" class="button button-quiet">Dismiss</button></div></div>
     <main id="content" class="page" tabindex="-1">
       <p id="announce" class="offscreen" role="status" aria-live="polite"></p>
       <div id="message" class="paper callout" role="status" hidden></div>
@@ -46,8 +46,10 @@
           <div class="field"><label class="field-label" for="network-link">Private session link</label>
             <div class="copy-row"><input id="network-link" class="input input-typed" type="text" readonly autocomplete="off" spellcheck="false" aria-describedby="network-link-hint"><button type="button" id="copy-network" class="button">Copy link</button></div></div>
           <p id="network-link-hint" class="field-hint quiet">Anyone with this link has full studio access. HTTP is unencrypted. Keep it on a trusted network; stop Marketing Studio to disconnect.</p>
+          <figure id="network-qr" class="network-qr" hidden><div id="network-qr-code" class="network-qr-code"></div><figcaption class="field-hint quiet">Or scan this code with your phone’s camera. It opens the same private link, so keep it out of sight of others.</figcaption></figure>
         </section>
-        <p class="quiet launch-note">Leave the Marketing Studio terminal open while you work. You can also open each studio with its own launcher.</p>
+        <p id="launch-note" class="quiet launch-note">Leave the Marketing Studio terminal open while you work. You can also open each studio with its own launcher.</p>
+        <p id="remote-note" class="quiet launch-note" hidden>You are connected from another device. Work and the assistant stay on the computer.</p>
       </section>
       <section id="settings" class="stack" hidden>
         <div class="intro"><p id="step-label" class="quiet"></p><h2 id="settings-title" class="large-title">Shared settings</h2><p id="settings-intro" class="lede">New work in every studio starts with these choices.</p></div>
@@ -169,7 +171,7 @@
       </section>
       <section id="computer" class="stack" hidden>
         <div class="intro"><h2 class="large-title">This computer</h2><p class="lede">Check the tools your studios need on this computer.</p></div>
-        <section class="card"><h3 class="card-title">Tools</h3><ul id="computer-results" class="computer-items"><li class="quiet">Run a check to see what is installed.</li></ul><p class="field-hint quiet">Each studio checks sign-in when you use it. A check looks for commands on this computer and reads Git’s own settings: it signs in to nothing, installs nothing and starts no work.</p></section>
+        <section class="card"><h3 id="computer-results-heading" class="card-title" tabindex="-1">Tools</h3><ul id="computer-results" class="computer-items"><li class="quiet">Run a check to see what is installed.</li></ul><p class="field-hint quiet">Each studio checks sign-in when you use it. A check looks for commands on this computer and reads Git’s own settings: it signs in to nothing, installs nothing and starts no work.</p></section>
       </section>
     </main>
   </div>

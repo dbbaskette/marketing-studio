@@ -188,6 +188,21 @@ body:has(#settings:not([hidden]) .save-bar) .toasts { bottom: calc(5.5rem + env(
   font-size: 0.85rem;
 }
 
+/* The problem notice: its sentence, then Load newer settings when it applies, and Dismiss. */
+.problem-notice { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1rem; }
+.problem-notice > p { flex: 1 1 18rem; min-width: 0; margin: 0; }
+.problem-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+
+/* The private link as a QR code, drawn here, on this computer's own home only. */
+.network-qr { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem 1.2rem; margin: 0; }
+.network-qr-code { flex: 0 0 auto; width: 11rem; }
+.network-qr-code > svg { display: block; width: 100%; height: auto; border-radius: 8px; }
+.network-qr > figcaption { flex: 1 1 14rem; margin: 0; }
+
+/* A value someone else saved while this form was open: both values, beside the field. */
+.conflict-note { margin-top: 0.5rem; font-size: 0.88rem; }
+.conflict-note > .bar { margin-top: 0.4rem; }
+
 @media (max-width: 52rem) {
   .sidebar-foot {
     display: none;

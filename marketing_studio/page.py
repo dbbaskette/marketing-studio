@@ -16,6 +16,7 @@ from studio_core.document_library import context as library_context
 
 from . import catalog, server, shared, state, validation, workspaces
 from .errors import WorkspaceError
+from .network import VIA_HEADER
 
 
 class Home(server.Page):
@@ -33,6 +34,8 @@ class Home(server.Page):
         self.launcher = launcher
         self.models = Catalog()
         self.changes = threading.RLock()
+        # Each request is answered on its own thread: whether this one came over the bridge.
+        self.caller = threading.local()
         # Upgrade a completed pre-shared setup on opening Marketing Studio.
         values, problem = shared.read()
         if state.read().get('done') and not problem and 'setup' not in values:
@@ -110,6 +113,15 @@ class Home(server.Page):
         with self.changes:
             return server.as_json(200, self.snapshot() if path == '/api/home'
                                   else {'computer': self.computer(False)})
+
+    def change(self, url, host, headers, body):
+        """A change, remembering whether the network bridge carried it. Only the bridge adds
+        its header, and a loopback caller that sends it only gets the network link."""
+        self.caller.remote = headers.get(VIA_HEADER) == 'network'
+        try:
+            return super().change(url, host, headers, body)
+        finally:
+            self.caller.remote = False
 
     def body_limit(self, target, headers):
         if target.partition('?')[0] == self.UPLOAD:
@@ -190,6 +202,11 @@ class Home(server.Page):
                 before = shared.read()[0]
                 try:
                     shared_preferences.save(shared, sent.get('changes'), sent.get('seen'))
+                except shared_preferences.Conflict as failure:
+                    # Nothing was written. The page names the field and offers the newer values.
+                    refused = WorkspaceError(str(failure))
+                    refused.details = {'conflict': {'fields': failure.fields}}
+                    raise refused from failure
                 except ValueError as failure:
                     raise WorkspaceError(str(failure)) from failure
                 values, problem = shared.read()
@@ -236,7 +253,10 @@ class Home(server.Page):
                 values, problem = shared.read()
                 if problem:
                     raise WorkspaceError(problem)
-                return server.as_json(200, {'link': self.launcher.open(sent.get('studio'), preferences, values)})
+                # This computer keeps the loopback link; only a phone is given a studio's bridge.
+                remote = getattr(self.caller, 'remote', False)
+                return server.as_json(200, {'link': self.launcher.open(sent.get('studio'), preferences, values,
+                                                                       remote=remote)})
             elif path == '/api/connect':
                 preferences = state.read()
                 values, problem = shared.read()

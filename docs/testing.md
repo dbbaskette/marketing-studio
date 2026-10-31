@@ -129,6 +129,12 @@ Training Studio evidence from the full suite run.
 `tests/test_network.py` checks the opt-in LAN bridge against loopback-only disposable
 HTTP servers: authorization, origin and Host validation, duplicate/framing headers,
 request limits, fixed destinations, shutdown, key rotation, and private-link redaction.
+It reads each studio's own `body_limit` (and Blog Studio's `MAX_BODY`) and requires the
+bridge's limit for every address to match, sends a 5 MB source, a 500 KB section and a
+10 MB picture through a loopback bridge, and checks that the computer is given loopback
+studio links while a network caller is given the bridge. Every test there uses a
+disposable data root, so `serve`'s orphan cleanup never sees a real session's studios.
+`tests/test_qr_code.py` reads the home page's QR code back with a separate decoder.
 `native_launch_acceptance.py` exercises each real native page and authenticated
 listing API through the bridge, refusing unauthenticated reads and reusing child
 processes. No real user state or provider jobs are involved. Blog Studio's client

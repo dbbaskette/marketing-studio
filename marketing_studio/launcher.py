@@ -383,14 +383,17 @@ class Launcher:
             report.append(row)
         return report
 
-    def open(self, identifier, preferences, shared):
+    def open(self, identifier, preferences, shared, remote=False):
+        """The studio's link, starting it first when it is not running. `remote` is a caller
+        that reached Marketing Studio over the network bridge: only it is given, and only it
+        starts, the studio's own bridge. Everyone else is given the loopback link."""
         with self.lock:
             if self.closed:
                 raise WorkspaceError('Marketing Studio is closing. Open it again to launch a studio.')
             if not isinstance(identifier, str) or identifier not in catalog.STUDIOS:
                 raise WorkspaceError('Choose one of the studios shown on the home page.')
             if self.running(identifier):
-                return self.link(identifier, self.children[identifier][1])
+                return self.link(identifier, self.children[identifier][1], remote)
             root = catalog.locate(identifier, preferences.get('paths', {}))
             if root is None:
                 raise WorkspaceError('This studio was not found. Install it or set its folder in Settings.')
@@ -455,7 +458,7 @@ class Launcher:
                 raise
             self.children[identifier] = (process, link)
             record(identifier, process.pid)
-            return self.link(identifier, link)
+            return self.link(identifier, link, remote)
 
     def environment(self):
         """This process's environment for a studio, naming the home port only when it is known.
@@ -468,8 +471,9 @@ class Launcher:
             env[HOME_PORT] = str(port)
         return env
 
-    def link(self, identifier, link):
-        return self.network.share(identifier, link) if self.network else link
+    def link(self, identifier, link, remote=False):
+        """The loopback link for this computer, or the studio's bridge for a network caller."""
+        return self.network.share(identifier, link) if self.network and remote else link
 
     def prepare(self, preferences, shared, only=None):
         """Set up installed studios' missing workspaces as the shared settings say, without

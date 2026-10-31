@@ -157,6 +157,14 @@ class StaticLayoutTests(unittest.TestCase):
                 self.assertEqual(headings(card)[0].words(), title)
                 self.assertEqual(card.attrs.get('data-step'), step)
 
+    def test_first_run_setup_is_one_column_in_every_look(self):
+        # The liquid look widens .page; first-run setup keeps the toolbar's and notice's column.
+        kit = (ROOT / 'ui-kit/style.css').read_text()
+        self.assertIn('.alone .toolbar-wrap,\n.alone .notice,\n.alone .page {\n  max-width: 46rem;', kit)
+        self.assertIn('body[data-pilot="liquid"].alone .page { max-width: 46rem; }', kit)
+        self.assertLess(kit.index('body[data-pilot="liquid"] .page {'),
+                        kit.index('body[data-pilot="liquid"].alone .page'))
+
     def test_research_sites_are_a_table(self):
         html = page()
         listed = html.find('research-site-list')
@@ -305,11 +313,144 @@ class SharedSetupJourneyTests(PageLayoutTests):
             {'run': 'snapshot = ' + json.dumps(self.shown()) + '; setup = false; fill(); renderHome(); markSaved();'},
             {'show': 'settings'},
             {'run': "form.elements['person.name'].value = 'Bea'; form.fire('input');"},
-            {'responses': {'shared': {'error': 'Another studio changed this setting. Reload the page and try again.'}}},
-            {'submit': True}, {'snapshot': 'refused', 'ids': ['save-state'], 'read': ['#problem']}])
+            {'responses': {'shared': self.REFUSED}},
+            {'submit': True}, {'snapshot': 'refused', 'ids': ['save-state'],
+                               'read': ['#problem', '#problem-text', '#problem-newer', '#save']}])
         refused = shots['refused']
         self.assertEqual(refused['words']['save-state'], 'Unsaved changes')
-        self.assertIn('Another studio changed', refused['read']['#problem']['text'])
+        self.assertIn('“Your name” was changed in another tab or studio', refused['read']['#problem-text']['text'])
+        self.assertFalse(refused['read']['#problem']['hidden'])
+        self.assertFalse(refused['read']['#problem-newer']['hidden'], 'a conflict offers Load newer settings')
+        # Save is back, focusable and not busy, and focus was never moved off it.
+        self.assertEqual(refused['read']['#save']['text'], 'Save settings')
+        self.assertNotIn('aria-disabled', refused['read']['#save']['attributes'])
+        self.assertFalse(refused['read']['#save']['disabled'])
+
+    REFUSED = {'error': '“Your name” was changed in another tab or studio while this page was open, so '
+                        'nothing was saved. Choose Load newer settings to compare; your other edits stay on the form.',
+               'conflict': {'fields': ['person.name']}}
+
+    def test_a_problem_belongs_to_its_screen_and_can_be_dismissed(self):
+        load = 'snapshot = ' + json.dumps(self.shown()) + '; setup = false; fill(); renderHome(); markSaved();'
+        shots = self.page([
+            {'run': load}, {'show': 'settings'},
+            {'run': "form.elements['person.name'].value = 'Bea'; form.fire('input');"},
+            {'responses': {'shared': {'error': 'The shared settings file could not be written.'}}}, {'submit': True},
+            {'snapshot': 'raised', 'read': ['#problem', '#problem-newer']},
+            {'show': 'computer'}, {'snapshot': 'elsewhere', 'read': ['#problem', '#problem-text']},
+            {'show': 'settings'}, {'submit': True}, {'press': '#problem-dismiss'},
+            {'snapshot': 'dismissed', 'read': ['#problem', '#problem-text']}])
+        self.assertFalse(shots['raised']['read']['#problem']['hidden'])
+        self.assertTrue(shots['raised']['read']['#problem-newer']['hidden'], 'only a conflict offers newer settings')
+        self.assertTrue(shots['elsewhere']['read']['#problem']['hidden'])
+        self.assertEqual(shots['elsewhere']['read']['#problem-text']['text'], '')
+        self.assertTrue(shots['dismissed']['read']['#problem']['hidden'])
+        self.assertEqual(shots['dismissed']['focused'], 'view-title')
+
+    def test_load_newer_settings_keeps_other_edits_and_shows_both_values(self):
+        load = 'snapshot = ' + json.dumps(self.shown()) + '; setup = false; fill(); renderHome(); markSaved();'
+        newer = {**self.shown(), 'shared': {**self.OVERRIDES, 'person': {'name': 'Cy'},
+                                            'brand': {**self.OVERRIDES['brand'], 'release': 'v2.0.0'}}}
+        probe = ("$('#probe').textContent = JSON.stringify({name: form.elements['person.name'].value,"
+                 " output: form.elements.output.value, release: form.elements['brand.release'].value,"
+                 " notes: conflictNotes.map(held => held.note.children[0].textContent)});")
+        shots = self.page([
+            {'run': load}, {'show': 'settings'},
+            {'run': "form.elements['person.name'].value = 'Bea'; form.elements.output.value = 'google'; form.fire('input');"},
+            {'responses': {'shared': self.REFUSED}}, {'submit': True},
+            {'responses': {'home': newer}}, {'press': '#problem-newer'}, {'run': probe},
+            {'snapshot': 'loaded', 'ids': ['save-state'], 'read': ['#probe', '#problem']},
+            {'responses': {'shared': newer}}, {'submit': True}, {'snapshot': 'saved', 'read': []}])
+        loaded = shots['loaded']
+        form = json.loads(loaded['read']['#probe']['text'])
+        # The person's edits stay; the value only someone else changed is the newer one.
+        self.assertEqual((form['name'], form['output'], form['release']), ('Bea', 'google', 'v2.0.0'))
+        self.assertEqual(form['notes'], ['Saved in another tab or studio: “Cy”. Yours: “Bea”. Save settings keeps yours.'])
+        self.assertEqual(loaded['words']['save-state'], 'Unsaved changes')
+        self.assertTrue(loaded['read']['#problem']['hidden'])
+        self.assertEqual(loaded['focused'], 'person-name')
+        # Load newer settings only reads; the next save sends the newer seen and only the edits.
+        urls = [request['url'].split('/api/')[1] for request in shots['saved']['requests']]
+        self.assertEqual(urls, ['shared', 'home', 'shared'])
+        last = [request['sent'] for request in shots['saved']['requests'] if request['url'].endswith('/api/shared')][-1]
+        self.assertEqual(last['seen'], newer['shared'])
+        self.assertEqual(last['changes'], {'person': {'name': 'Bea'}, 'output': 'google'})
+
+    def test_busy_buttons_stay_focusable_and_say_what_runs(self):
+        load = 'snapshot = ' + json.dumps(self.shown()) + '; setup = false; fill(); renderHome(); markSaved();'
+        look = {'checked_at': '2026-10-30T12:00:00+00:00', 'ready': True, 'items': []}
+        shots = self.page([
+            {'run': load}, {'show': 'computer'}, {'responses': {'computer': {'hold': True}}},
+            {'run': "$('#check').focus(); void checkComputer();"},
+            {'snapshot': 'checking', 'read': ['#check', '#announce']},
+            {'run': "void checkComputer();"}, {'snapshot': 'again', 'read': []},
+            {'responses': {'computer': {'computer': look}}},
+            {'run': "delete $('#check').dataset.busy; $('#check').removeAttribute('aria-disabled'); $('#check').textContent = 'Check computer';"},
+            {'run': "$('#check').focus();"}, {'press': '#check'}, {'snapshot': 'checked', 'read': ['#check']},
+            # Started from another screen, as Check this computer on Studios does.
+            {'show': 'home'}, {'show': 'computer'}, {'run': "void checkComputer(true);"}, {'wait': True},
+            {'snapshot': 'from-home'},
+            {'show': 'settings'}, {'responses': {'shared': {'hold': True}}},
+            {'run': "form.elements['person.name'].value = 'Bea'; form.fire('input'); form.fire('submit');"},
+            {'snapshot': 'saving', 'read': ['#save']}])
+        checking = shots['checking']['read']['#check']
+        self.assertEqual((checking['text'], checking['attributes'].get('aria-disabled'), checking['disabled']),
+                         ('Checking…', 'true', False))
+        self.assertEqual(shots['checking']['read']['#announce']['text'], 'Checking…')
+        self.assertEqual(shots['checking']['focused'], 'check')
+        self.assertEqual(len([r for r in shots['again']['requests'] if 'computer' in r['url']]), 1,
+                         'a busy button ignores another press')
+        checked = shots['checked']['read']['#check']
+        self.assertEqual((checked['text'], checked['attributes'].get('aria-disabled')), ('Check computer', None))
+        self.assertEqual(shots['checked']['focused'], 'check')
+        self.assertEqual(shots['from-home']['focused'], 'computer-results-heading')
+        saving = shots['saving']['read']['#save']
+        self.assertEqual((saving['text'], saving['attributes'].get('aria-disabled'), saving['disabled']),
+                         ('Saving…', 'true', False))
+
+    def test_an_empty_repository_is_marked_at_its_field(self):
+        first = {**self.shown(), 'setup': {'done': False}}
+        shots = self.page([
+            {'run': 'snapshot = ' + json.dumps(first) + '; setup = true; step = 1; fill(); renderHome(); show("settings");'
+                    " form.elements.storage.value = 'remote'; form.elements['team.repository'].value = '';"},
+            {'submit': True},
+            {'snapshot': 'refused', 'read': ['#problem', '#team-repository-error']}])
+        refused = shots['refused']
+        self.assertEqual(refused['read']['#team-repository-error']['text'], 'Give a repository address, or choose local Git.')
+        self.assertTrue(refused['read']['#problem']['hidden'], 'the message is at the field, not in the notice')
+        self.assertEqual(refused['focused'], 'team-repository')
+        self.assertFalse(any(r['url'].endswith('/api/shared') for r in refused['requests']))
+
+    def test_first_run_setup_resumes_at_the_step_the_person_left(self):
+        first = {**self.shown(), 'setup': {'done': False}}
+        probe = {'run': "$('#probe').textContent = String(step);"}
+        for stored, shared, expected in (('2', first['shared'], '2'),
+                                         ('2', {'person': {'name': 'Ana'}}, '1'),
+                                         ('9', first['shared'], '0'), ('', first['shared'], '0')):
+            with self.subTest(stored=stored, shared=sorted(shared)):
+                shots = self.page([{'wait': True}, probe, {'snapshot': 'resumed', 'read': ['#probe']}],
+                                  session={'marketing-studio-token': 'synthetic-key',
+                                           'marketing-studio-token-setup-step': stored},
+                                  responses={'home': {**first, 'shared': shared}})
+                self.assertEqual(shots['resumed']['read']['#probe']['text'], expected)
+        # Continue remembers the next step in this tab, and finishing forgets it.
+        shots = self.page([
+            {'run': 'snapshot = ' + json.dumps(first) + '; setup = true; step = 0; fill(); renderHome(); show("settings");'},
+            {'responses': {'shared': first}}, {'submit': True}, {'snapshot': 'continued'}])
+        self.assertEqual(shots['continued']['session'].get('marketing-studio-token-setup-step'), '1')
+
+    def test_a_phone_sees_one_line_and_the_computer_keeps_the_way_to_the_phone(self):
+        home = {**self.SHOWN, 'network': {'address': 'http://192.168.1.5:9000/',
+                                          'url': 'http://192.168.1.5:9000/#token=' + 'k' * 43}}
+        ids = ['network-access', 'launch-note', 'remote-note']
+        phone = self.page([{'home': home}, {'snapshot': 'home', 'ids': ids, 'read': ['#network-link', '#where']}],
+                          hostname='192.168.1.5')['home']
+        self.assertEqual(phone['hidden'], {'network-access': True, 'launch-note': True, 'remote-note': False})
+        self.assertEqual(page().find('remote-note').words(),
+                         'You are connected from another device. Work and the assistant stay on the computer.')
+        self.assertEqual(phone['read']['#where']['text'], 'On your local network')
+        computer = self.page([{'home': home}, {'snapshot': 'home', 'ids': ids}])['home']
+        self.assertEqual(computer['hidden'], {'network-access': False, 'launch-note': False, 'remote-note': True})
 
     def test_first_run_setup_asks_only_the_everyday_choices(self):
         shots = self.page([

@@ -39,6 +39,33 @@ Signing in to an assistant, your organisation's brands and fonts, and optional G
   out of browsing and **Add from library**. Nothing is deleted: projects that use it
   keep their copy, no studio workspace is changed, and **Show hidden** can restore it.
 
+## Unreleased: problems where you are, and an easier way to the phone
+
+- **A problem stays on its own screen.** Marketing Studio's red notice now clears
+  when you move to another screen or the action succeeds, and has a **Dismiss**
+  button.
+- **A save conflict you can recover from.** When another tab or studio saved the same
+  setting first, the notice names it, such as "Your name", and offers **Load newer
+  settings**. Your other edits stay on the form, the setting shows both values, and
+  you choose before saving again. Nothing is written from an outdated form.
+- **Busy buttons keep focus.** **Save settings** and **Check computer** say "Saving…"
+  or "Checking…" and keep keyboard focus. A check started from Studios moves focus to
+  its results.
+- **First-run setup in one column.** The toolbar, notice and form line up, a missing
+  repository address is shown at its field, and a reload returns to the step you left.
+- **Scan to continue on your phone.** With phone access on, the computer's home shows
+  a QR code for the private link, drawn on the computer with nothing fetched. The
+  phone's own home no longer shows the link or the terminal note.
+- **Studios on the computer stay local.** With phone access on, a studio opened on the
+  computer opens at `127.0.0.1`. Only one opened from the phone goes through the
+  network bridge, and the way back to Marketing Studio works from both.
+- **Larger files through the phone link.** The bridge now allows each studio address
+  what the studio itself allows: Training Studio's **Add a source** and section saves,
+  Presentation Studio's desk sources and slide pictures, and Infographic Studio's
+  research sources. A file that is still too large gets a sentence that says what to
+  do. Blog Studio's Google sends, Google Doc intake and library adds with links wait
+  up to 10 minutes.
+
 ## Unreleased: the Document Library, existing work and Blog Studio updates
 
 - **Add existing work to library.** Marketing Studio's **Library** screen can now
