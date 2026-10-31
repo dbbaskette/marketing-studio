@@ -365,8 +365,8 @@ function renderProject() {
   for(const sent of held.google_deliveries||[])parts.push(card((sent.current?'Google delivery':'Earlier Google delivery')+' · revision '+sent.revision,sent.url?googleLink(sent.url,'Open delivered Google Doc'):make('p','quiet','Outcome uncertain. Read-only reconciliation checks for the saved request; it never resends.'),sent.url?null:button('Reconcile Google delivery',()=>action('google-deliver',{export_id:sent.export_id,request_id:sent.request_id,account:sent.account,folder:sent.folder,reconcile:true},sent.revision))));
   if(held.visual_review)parts.push(detail('Visual review: '+held.visual_review.status,list(held.visual_review.observations),...held.visual_review.findings.map(f=>card(f.region_id+': '+(f.blocking?'Needs correction':'Suggestion'),make('p','',f.message),make('p','',f.correction)))));
   if(p.checks.length)parts.push(card('Checks for this page',...p.checks.map(c=>add(make('div','stack'),make('strong','',({'coverage':'Required content','facts':'Factual support','layout':'Page layout','brand-accessibility':'Brand and accessibility','visual':'Visual review'}[c.kind]||c.kind)+': '+c.status),list(c.findings || [])))));
-  const editBrief=button('Edit brief',briefSheet);editBrief.dataset.key='ig-edit-brief';
-  const updateSources=button('Add or update supplied information',sourceSheet);updateSources.dataset.key='ig-source-update';
+  const editBrief=button('Edit brief',()=>briefSheet());editBrief.dataset.key='ig-edit-brief';
+  const updateSources=button('Add or update supplied information',()=>sourceSheet());updateSources.dataset.key='ig-source-update';
   const importMaterial=button('Import selected studio material',()=>handoffSheet(preview=>sourceImportSheet(preview,'','ig-source-material')));importMaterial.dataset.key='ig-source-material';
   const research=button('Research this topic',researchSheet);research.dataset.key='ig-research';
   parts.push(detail('Brief and requirements',editBrief,make('p','',p.brief.audience||'Audience not specified'),list(p.brief.must_show.map(r=>r.text))));
@@ -579,12 +579,18 @@ function briefClears(){
 // Back to the control that started an action, opening its section, once the page is drawn.
 function refocus(key){const found=key&&document.querySelector('[data-key="'+key+'"]');if(found){found.closest('details')?.setAttribute('open','');found.focus();}return found;}
 // Says what an action will clear and asks first; with nothing to clear, it simply runs.
-// Cancel changes nothing and returns focus to `back`, the control that started the action.
-function clearsConfirm(title,label,{clears,kept='',run,back,parts=[],check=()=>true}){
+// Cancel changes nothing: `cancel` returns to the sheet that asked, with what was typed;
+// otherwise focus returns to `back`, the control that started the action.
+function clearsConfirm(title,label,{clears,kept='',run,back,parts=[],check=()=>true,cancel=null}){
   if(!clears.length&&!parts.length){run();return;}
   const problem=make('p','problem');problem.setAttribute('role','alert');
   const said=clears.length?[make('p','','This clears this infographic’s '+joined(clears)+'.'+(kept?' '+kept:'')+' Earlier work stays in History. Nothing starts by itself; find the story again when you are ready.')]:[];
-  sheet(title,...said,...parts,problem,add(make('div','create-foot bar'),button(label,()=>{const refused=check();if(refused!==true){problem.textContent=refused;return;}run();},true),button('Cancel',()=>{closeSheet();refocus(back);})));
+  const go=button(label,async()=>{
+    if(go.disabled)return;
+    const refused=check();if(refused!==true){problem.textContent=refused;return;}
+    go.disabled=true;try{await run();}finally{go.disabled=false;}
+  },true);
+  sheet(title,...said,...parts,problem,add(make('div','create-foot bar'),go,button('Cancel',cancel||(()=>{closeSheet();refocus(back);}))));
 }
 // Says what will be cleared and asks first when there is work to clear, and asks the person
 // to confirm readable-only coverage when a document has extraction gaps; otherwise runs.
@@ -599,10 +605,10 @@ function libraryConfirm(title,label,rows,run,back='ig-library-add'){
     check:()=>!gaps||ack.checked||'Review the gaps and confirm using only the readable text first.'});
 }
 // Every route that changes sources asks first when facts, a story, a page or an approval exist.
-function sourceConfirm(name,replacing,run,back){
+function sourceConfirm(name,replacing,run,back,cancel){
   const label=replacing?'Replace source':'Add as a source';
   clearsConfirm(replacing?'Replace '+(held.project.sources.find(s=>s.id===replacing)?.name||'this source'):'Add '+name,label,
-    {clears:libraryClears(),back,run:async()=>{await run();refocus(back);}});
+    {clears:libraryClears(),back,cancel,run:async()=>{await run();refocus(back);}});
 }
 function libraryAddButton(){
   let rows=null;
@@ -773,25 +779,33 @@ window.addEventListener('pageshow',event=>{
 
 function reviseArtSheet(){const change=field('What should change?','','textarea'),preserve=field('What should stay the same?','Keep all other subjects, relationships, brand, empty label regions and composition.','textarea');sheet('Revise the artwork',make('p','','This sends the saved original as a reference to your selected image provider. It uses provider allowance; the earlier artwork remains in history.'),change.wrap,preserve.wrap,add(make('div','bar'),button('Create referenced revision',()=>action('revise-art',{change:change.input.value,preserve:preserve.input.value,request_id:requestId()}),true),button('Cancel',closeSheet)));}
 async function compareSheet(version){try{const result=await request('/api/action',{action:'compare',id:held.project.id,expected_revision:held.project.revision,before:version.revision,after:held.project.revision});sheet('Changes since revision '+version.revision,...Object.entries(result.result).map(([key,value])=>detail(key,make('h3','','Before'),make('pre','ig-csv-preview',JSON.stringify(value.before,null,2)),make('h3','','Current'),make('pre','ig-csv-preview',JSON.stringify(value.after,null,2)))),button('Done',closeSheet));}catch(f){error(f.message);}}
-function sourceSheet() {
-  const value=field('New or replacement supplied information','','textarea');
+// `kept` brings back what was typed or chosen when a confirmation is cancelled.
+function sourceSheet(kept=null) {
+  const value=field('New or replacement supplied information',kept?.text||'','textarea');
   const replacement=field('Source to replace (leave empty to add another)','','select');
   const empty=make('option','','Add as another source'); empty.value=''; replacement.input.append(empty);
   for(const source of held.project.sources){const option=make('option','',source.name);option.value=source.id;replacement.input.append(option);}
   const upload=field('Or upload a source file'); upload.input.type='file'; upload.input.accept='.txt,.md,.pdf,application/pdf,.docx,.html,.htm';
   const shown=make('div','stack'),problem=make('p','problem'); problem.setAttribute('role','alert');
-  let preview=null,acknowledged=false;
+  replacement.input.value=kept?.replace||'';
+  let preview=kept?.preview||null,acknowledged=Boolean(kept?.acknowledged);
+  const again=()=>sourceSheet({text:value.input.value,replace:replacement.input.value,preview,acknowledged});
+  function showPreview(){
+    shown.replaceChildren(make('p','',preview.name+' · '+preview.characters+' readable characters'),make('pre','ig-csv-preview',preview.excerpt),list(preview.warnings));
+    if(preview.warnings.length){const ack=make('input');ack.type='checkbox';ack.checked=acknowledged;ack.addEventListener('change',()=>{acknowledged=ack.checked;});shown.append(add(make('label','check'),ack,document.createTextNode('I reviewed these gaps. Use only the readable text.')));}
+    if(!preview.readable)problem.textContent='No readable text was found. Supply an accessible Word or text version.';
+  }
   const go=button('Save supplied information',async()=>{
     problem.textContent='';const replace=replacement.input.value;
     if(preview){
       if(value.input.value.trim()){problem.textContent='Use either a file or pasted text for this source.';return;}
       if(!preview.readable || (preview.warnings.length&&!acknowledged)){problem.textContent='Review the readable coverage before importing this source.';return;}
       const sent={capture_id:preview.id,acknowledge_warnings:acknowledged,...(replace?{replace_id:replace}:{})};
-      sourceConfirm(preview.name,replace,()=>action('source-import',sent),'ig-source-update');
+      sourceConfirm(preview.name,replace,()=>action('source-import',sent),'ig-source-update',again);
     }else{
       if(!value.input.value.trim()){problem.textContent='Paste source text or choose a readable file.';return;}
       const sent={data:encoded(new TextEncoder().encode(value.input.value)),kind:'text',name:'Updated supplied information',...(replace?{replace_id:replace}:{})};
-      sourceConfirm('supplied information',replace,()=>action('source',sent),'ig-source-update');
+      sourceConfirm('supplied information',replace,()=>action('source',sent),'ig-source-update',again);
     }
   },true);
   upload.input.addEventListener('change',async()=>{
@@ -800,12 +814,11 @@ function sourceSheet() {
       const kinds={txt:'text',md:'markdown',pdf:'pdf',docx:'docx',html:'html',htm:'html'},kind=kinds[file.name.toLowerCase().split('.').pop()];
       if(!kind)throw Error('Choose text, Markdown, PDF, Word (.docx) or HTML. Add selected CSV through a new information preview.');
       preview=await request('/api/source-preview',{data:encoded(await bytes(file)),kind,name:file.name}); acknowledged=false;
-      shown.replaceChildren(make('p','',preview.characters+' readable characters'),make('pre','ig-csv-preview',preview.excerpt),list(preview.warnings));
-      if(preview.warnings.length){const ack=make('input');ack.type='checkbox';ack.addEventListener('change',()=>{acknowledged=ack.checked;});shown.append(add(make('label','check'),ack,document.createTextNode('I reviewed these gaps. Use only the readable text.')));}
-      if(!preview.readable)problem.textContent='No readable text was found. Supply an accessible Word or text version.';
+      showPreview();
     }catch(failure){preview=null;problem.textContent=failure.message;}finally{go.disabled=false;}
   });
   sheet('Update supplied information',make('p','',LIBRARY_CLEARS+' You are asked first when there is work to clear.'),replacement.wrap,value.wrap,upload.wrap,button('Use a Google Doc, Slides or public page',()=>remoteSheet(result=>{preview=result;acknowledged=false;sourceImportSheet(result,replacement.input.value,'ig-source-update');})),shown,problem,add(make('div','bar'),go,button('Cancel',closeSheet)));
+  if(preview)showPreview();
 }
 async function sourceTextSheet(source,start=0){
   try{
@@ -848,9 +861,10 @@ async function olderHistory(){try{const last=held.history.at(-1);const result=aw
 
 // The working title alone is a rename that clears nothing. Any other change clears the story,
 // page and approval built from the earlier brief, so it asks first when they exist.
-function briefSheet(){
+// `typed` brings back what was typed when the confirmation is cancelled.
+function briefSheet(typed=null){
   const p=held.project,fields={};
-  for(const[key,label,value]of[['title','Working title',p.brief.title],['audience','Audience',p.brief.audience],['purpose','Desired takeaway',p.brief.purpose],['must','Must-show ideas — one per line',p.brief.must_show.map(r=>r.text).join('\n')],['locked','Exact wording to preserve',p.brief.locked_words.join('\n')],['exclusions','Leave out',p.brief.exclusions.join('\n')]])fields[key]=field(label,value,['must','locked','exclusions'].includes(key)?'textarea':'input');
+  for(const[key,label,value]of[['title','Working title',p.brief.title],['audience','Audience',p.brief.audience],['purpose','Desired takeaway',p.brief.purpose],['must','Must-show ideas — one per line',p.brief.must_show.map(r=>r.text).join('\n')],['locked','Exact wording to preserve',p.brief.locked_words.join('\n')],['exclusions','Leave out',p.brief.exclusions.join('\n')]])fields[key]=field(label,typed?typed[key]:value,['must','locked','exclusions'].includes(key)?'textarea':'input');
   const save=async()=>{
     const brief={...p.brief,title:fields.title.input.value,audience:fields.audience.input.value,purpose:fields.purpose.input.value,must_show:lines(fields.must.input.value).map((text,i)=>({id:p.brief.must_show[i]?.id||'r_'+requestId().slice(0,12),text})),locked_words:lines(fields.locked.input.value),exclusions:lines(fields.exclusions.input.value)};
     const rest=b=>JSON.stringify({...b,title:undefined}),story=rest(brief)!==rest(p.brief),renamed=brief.title!==p.brief.title;
@@ -858,11 +872,15 @@ function briefSheet(){
     const clears=story?briefClears():[];
     const said=!story?(p.approval?'Renamed. The story, page and approval are kept. Prepare the approved files again so they carry the new title.':p.stories.length||p.scene?'Renamed. The story and page are kept.':'Renamed.')
       :clears.length?'Brief saved. Find the story again when you’re ready.':'Brief saved.';
+    // One save at a time: a second click would only meet the revision the first one made.
     const send=async()=>{
-      try{await request('/api/project',{id:p.id,expected_revision:p.revision,brief});closeSheet();await openProject(p.id);toast(said);refocus('ig-edit-brief');}
+      if(busy)return;busy=true;const unlock=lockControls();
+      try{await request('/api/project',{id:p.id,expected_revision:p.revision,brief});closeSheet();unlock();busy=false;await openProject(p.id);toast(said);refocus('ig-edit-brief');}
       catch(f){error(f.message);}
+      finally{if(busy){unlock();busy=false;}}
     };
-    clearsConfirm('Save the brief','Save brief',{clears,kept:p.facts.length?'Captured facts stay.':'',run:send,back:'ig-edit-brief'});
+    const typedNow=Object.fromEntries(Object.entries(fields).map(([key,f])=>[key,f.input.value]));
+    clearsConfirm('Save the brief','Save brief',{clears,kept:p.facts.length?'Captured facts stay.':'',run:send,back:'ig-edit-brief',cancel:()=>briefSheet(typedNow)});
   };
   sheet('Edit brief and requirements',make('p','','Renaming keeps the story, page and approval. Changing anything else clears the story, page and approval built from the earlier brief, and asks first. Captured facts, earlier versions and saved files are kept.'),...Object.values(fields).map(f=>f.wrap),add(make('div','bar'),button('Save brief',save,true),button('Cancel',()=>{closeSheet();refocus('ig-edit-brief');})));
 }
@@ -881,9 +899,9 @@ async function remoteSheet(done){
   sheet('Add a document or page',make('p','','Paste a Google Docs, Google Slides or public page link. Uses your existing Google sign-in, just like Blog Studio. Review captured text before importing.'),url.wrap,detail('Choose specific tabs or slides',tabs.wrap),problem,add(make('div','bar'),go,button('Cancel',()=>{closeSheet();if(!held)newSheet();})));
 }
 
-function sourceImportSheet(preview,replaceId,back='ig-research'){
-  let acknowledged=false;const problem=make('p','problem'),ack=make('input');ack.type='checkbox';ack.addEventListener('change',()=>{acknowledged=ack.checked;});
-  sheet('Review captured information',make('p','',preview.name+' · '+preview.characters+' readable characters'),make('pre','ig-csv-preview',preview.excerpt),list(preview.warnings),preview.warnings.length?add(make('label','check'),ack,document.createTextNode('I reviewed these gaps. Use only readable text.')):make('p','quiet','Captured text is stored locally; import does not read the remote document again.'),problem,add(make('div','bar'),button('Import this capture',()=>{if(!preview.readable||(preview.warnings.length&&!acknowledged)){problem.textContent='Review readable coverage and acknowledge gaps before import.';return;}const sent={capture_id:preview.id,acknowledge_warnings:acknowledged,...(replaceId?{replace_id:replaceId}:{})};sourceConfirm(preview.name,replaceId||'',()=>action('source-import',sent),back);},true),button('Cancel',()=>{closeSheet();refocus(back);})));
+function sourceImportSheet(preview,replaceId,back='ig-research',acknowledgedBefore=false){
+  let acknowledged=acknowledgedBefore;const problem=make('p','problem'),ack=make('input');ack.type='checkbox';ack.checked=acknowledged;ack.addEventListener('change',()=>{acknowledged=ack.checked;});
+  sheet('Review captured information',make('p','',preview.name+' · '+preview.characters+' readable characters'),make('pre','ig-csv-preview',preview.excerpt),list(preview.warnings),preview.warnings.length?add(make('label','check'),ack,document.createTextNode('I reviewed these gaps. Use only readable text.')):make('p','quiet','Captured text is stored locally; import does not read the remote document again.'),problem,add(make('div','bar'),button('Import this capture',()=>{if(!preview.readable||(preview.warnings.length&&!acknowledged)){problem.textContent='Review readable coverage and acknowledge gaps before import.';return;}const sent={capture_id:preview.id,acknowledge_warnings:acknowledged,...(replaceId?{replace_id:replaceId}:{})};sourceConfirm(preview.name,replaceId||'',()=>action('source-import',sent),back,()=>sourceImportSheet(preview,replaceId,back,acknowledged));},true),button('Cancel',()=>{closeSheet();refocus(back);})));
 }
 async function deliverySheet(delivery){
   try{preferences=await request('/api/preferences');}catch(f){error(f.message);return;}

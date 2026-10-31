@@ -435,7 +435,7 @@
         heading.append(add(shown, box, make('span', '', 'Show hidden (' + (answer.hidden || 0) + ')')));
       }
       if (this.selectable && items.length) {
-        const shown = items.filter((row) => row.readable);
+        const shown = items.filter((row) => row.readable && !this.unavailable(row));
         const some = shown.filter((row) => this.ticked.has(row.id)).length;
         const tick = make('label', 'check select-page');
         const box = make('input');

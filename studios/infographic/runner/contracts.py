@@ -104,8 +104,8 @@ def renaming(project: dict, brief) -> bool:
 def renamed(project: dict, title: str, review: dict | None = None, *, sequence: int = 0):
     """A rename as the next revision. Only the working title changes, so nothing is cleared:
     the page's pixels and checks are unchanged, and the checks, the latest visual review and
-    the approval move to the renamed revision, each marked with the revision the person
-    reviewed or approved.
+    the approval move to the renamed revision. Each records `carried`, naming the revision
+    before the first rename (for the approval, the revision the person approved).
     Returns (renamed project, carried review or None). The approved files of the earlier
     revision stay as they are; files with the new title are prepared again on request."""
     from .validation import validate_project
@@ -121,7 +121,7 @@ def renamed(project: dict, title: str, review: dict | None = None, *, sequence: 
                    'sequence': max(sequence, review.get('sequence', 0)) + 1}
     for check in result['checks']:
         if check['basis'] == before:
-            check['basis'] = after
+            check.update(basis=after, carried=check.get('carried') or moved)
             if carried is not None and check.get('review_digest') == digest(review):
                 check['review_digest'] = digest(carried)
     if result['approval'] is not None:

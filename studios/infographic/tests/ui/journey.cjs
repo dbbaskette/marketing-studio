@@ -207,6 +207,9 @@ const assert = require('node:assert/strict');
     const pasted=page.getByRole('dialog',{name:'Add supplied information'});
     await pasted.getByText(/^This clears this infographic’s facts, story, page and approval\. Earlier work stays in History\./).waitFor();
     await pasted.getByRole('button',{name:'Cancel',exact:true}).click();
+    // Cancel returns to the sheet with what was typed; Cancel there closes it.
+    assert.equal(await page.getByLabel('New or replacement supplied information',{exact:true}).inputValue(),'Synthetic replacement notes.');
+    await page.getByRole('dialog',{name:'Update supplied information'}).getByRole('button',{name:'Cancel',exact:true}).click();
     assert.equal(await page.evaluate(()=>held.project.revision),atRevision,'Cancel changes nothing');
     assert.equal(await page.evaluate(()=>document.activeElement.dataset.key),'ig-source-update');
     await page.getByRole('button',{name:'Add or update supplied information',exact:true}).click();
@@ -221,6 +224,7 @@ const assert = require('node:assert/strict');
     await page.evaluate(()=>sourceImportSheet({id:'synthetic_capture',name:'Synthetic material',characters:19,excerpt:'Synthetic material.',warnings:[],readable:true},'','ig-source-material'));
     await page.getByRole('button',{name:'Import this capture',exact:true}).click();
     await page.getByRole('dialog',{name:'Add Synthetic material'}).getByRole('button',{name:'Cancel',exact:true}).click();
+    await page.getByRole('dialog',{name:'Review captured information'}).getByRole('button',{name:'Cancel',exact:true}).click();
     assert.equal(await page.evaluate(()=>held.project.revision),atRevision);
     assert.equal(await page.evaluate(()=>document.activeElement.dataset.key),'ig-source-material');
     // A brief change that affects the story asks first; Cancel changes nothing.
@@ -233,13 +237,19 @@ const assert = require('node:assert/strict');
     if(output)await page.screenshot({path:path.join(output,'brief-confirm-desktop.png')});
     await briefAsks.getByRole('button',{name:'Cancel',exact:true}).click();
     assert.deepEqual(await page.evaluate(()=>[held.project.revision,held.project.brief.audience]),[atRevision,'Technical practitioners']);
+    // Cancel returns to the brief with what was typed; Cancel there closes it.
+    assert.equal(await page.getByLabel('Audience',{exact:true}).inputValue(),'Site reliability engineers');
+    await page.getByRole('dialog',{name:'Edit brief and requirements'}).getByRole('button',{name:'Cancel',exact:true}).click();
     assert.equal(await page.evaluate(()=>document.activeElement.dataset.key),'ig-edit-brief');
     const approvedFiles=await page.evaluate(()=>held.deliveries.find(d=>d.approved_current).files.map(f=>f.sha256));
     await page.getByRole('button',{name:'Edit brief',exact:true}).click();
     await page.getByLabel('Audience',{exact:true}).fill('Site reliability engineers');
     await page.getByRole('button',{name:'Save brief',exact:true}).click();
-    await briefAsks.getByRole('button',{name:'Save brief',exact:true}).click();
+    // A double click saves once, with no stray "changed" error.
+    await briefAsks.getByRole('button',{name:'Save brief',exact:true}).dblclick();
     await page.getByText('Brief saved. Find the story again when you’re ready.',{exact:true}).waitFor();
+    assert.equal(await page.locator('#notice').isVisible(),false,'No error after a double click');
+    assert.equal(await page.evaluate(()=>held.project.revision),atRevision+1,'Saved exactly once');
     const cleared=await page.evaluate(()=>({p:held.project,summary:held.history[0].summary,files:held.deliveries.find(d=>!d.draft&&d.files).files.map(f=>f.sha256)}));
     assert.deepEqual([cleared.p.stories.length,cleared.p.scene,cleared.p.approval],[0,null,null]);
     assert(cleared.p.facts.length,'Captured facts stay');

@@ -39,7 +39,9 @@ locked_words, exclusions, direction or preset explicitly. A change to the title 
 rename that clears nothing: the story, page, checks, visual review and approval move to
 the new revision, and `approval.carried` names the revision the person approved. Its
 earlier approved files keep the old title and stay unchanged; `export ID --expected-revision REV`
-prepares files with the new title on this computer. Any other change clears the story,
+prepares files with the new title on this computer. After a rename, export; don't run
+`check` first: no rendered page matches the renamed revision yet, so the checks would come
+back incomplete and the approval would be cleared. Any other change clears the story,
 page and approval built from the earlier brief (captured facts stay), so tell the person
 what will be cleared and ask before saving when they exist. Earlier revisions remain.
 

@@ -7,9 +7,9 @@ renderer is the structural fake; no assistant, image provider, research or Googl
 """
 import hashlib
 
+from test_library import REVIEW, LibraryCase    # first: its helpers put the runner on the path
 from runner import exports, history, library, progress
 from runner.contracts import Invalid
-from test_library import REVIEW, LibraryCase
 
 
 class FinishedWorkTests(LibraryCase):
@@ -39,7 +39,11 @@ class FinishedWorkTests(LibraryCase):
         # The approval moves to the renamed revision, naming the revision the person approved.
         self.assertEqual((renamed['approval']['revision'], renamed['approval']['carried']),
                          (renamed['revision'], {'from_revision': before['revision'], 'reason': 'rename'}))
+        # The checks and the visual review move too, each naming the revision they came from.
+        moved = {'from_revision': before['revision'], 'reason': 'rename'}
+        self.assertTrue(renamed['checks'] and all(c['carried'] == moved for c in renamed['checks']))
         inspected = self.engine.inspect(self.ident)
+        self.assertEqual(inspected['visual_review']['carried'], moved)
         self.assertTrue(inspected['review_checked'])
         self.assertEqual(inspected['roadmap']['stage'], 'export')
         self.assertIn('Renaming kept the approval for revision ' + str(renamed['revision']),
@@ -66,6 +70,7 @@ class FinishedWorkTests(LibraryCase):
         self.brief(title='Second title')
         back = self.brief(title='Restart one instance')
         self.assertEqual(back['approval']['carried']['from_revision'], approved_at)
+        self.assertTrue(all(c['carried']['from_revision'] == approved_at for c in back['checks']))
         self.assertTrue(self.engine.inspect(self.ident)['review_checked'])
         self.assertEqual(history.entries(self.store, self.ident)[0]['summary'], 'Renamed to “Restart one instance”')
 

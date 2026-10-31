@@ -243,6 +243,11 @@ async function post(route, body) {
     assert.ok(box.disabled, 'its own export cannot be ticked');
     assert.equal(box.attributes['aria-label'], 'Synthetic <b>document</b> 1 is unavailable: This infographic');
     assert.ok(all(open).some((n) => n.textContent === 'This infographic'));
+    // Select all on this page leaves it out too.
+    await tick(find(open, 'library-select-page'), true);
+    assert.ok(!find(open, 'library-tick-doc-1').checked, 'select page skips its own export');
+    assert.ok(find(open, 'library-tick-doc-5').checked);
+    await tick(find(open, 'library-select-page'), false);
     await tick(find(open, 'library-tick-doc-5'), true);
     await click(find(open, 'library-all-matching'));
     assert.match(all(open).find((n) => n.className === 'selection-count').text, /2 selected/);

@@ -55,7 +55,9 @@ clears approval, and conservatively invalidates dependent stories/scenes/briefs/
 attempts/checks. A no-op preserves the revision. A brief change to the title alone is a
 rename (`renamed`): the next revision clears nothing, and because the page's pixels and
 checks are unchanged its checks, latest visual review and approval move to it with the
-new basis, each recording `carried` with the revision the person reviewed or approved.
+new basis. Each check, the carried review and the approval record `carried`
+(`{"from_revision", "reason": "rename"}`), naming the revision before the first rename,
+which for an approval is the revision the person approved; later renames keep it.
 The earlier revision's approved exports stay as they were. More granular unaffected-element
 reuse and compare/restore belong to the later history issue; no foundation method
 silently claims that dependency-aware editing is complete.
