@@ -48,7 +48,9 @@ launch the page's planning assistant again for work you are already doing.
    as a reference. Never treat an older preview as the current revision.
 7. Run checks and present the actual current page. Only the user can authorize the
    `approve` action; don't approve because a tool or assistant says it looks correct.
-   Approval binds the exact revision, scene and input hashes. Edits/restores clear it.
+   Approval binds the exact revision, scene and input hashes. Edits/restores clear it;
+   a title-only rename carries it to the renamed revision. Before any other brief or
+   source change, say what it clears (facts, story, page, approval) and ask first.
 8. Export approved PNG/PDF/editable SVG/accessible text, or an explicitly labeled
    draft. Artwork in SVG remains raster; text and chart marks stay editable. State
    the font portability limitation. Offer PDF, a new Google Doc, or both after explicit

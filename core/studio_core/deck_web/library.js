@@ -7,7 +7,10 @@
 //
 // adapter: {studio, post(route, body) -> Promise of the answer, use(picks) -> Promise,
 //           roles: [[value, label]] (optional), max (optional), download(row, format),
-//           manage (optional: Remove from library, Show hidden and Restore), said(text)}
+//           manage (optional: Remove from library, Show hidden and Restore), said(text),
+//           noun (optional: what the studio calls one piece of work, default 'project'),
+//           unavailable(row) (optional: {label, detail} for a row that cannot be chosen,
+//           such as a studio's own kept export, else null; the server must refuse it too)}
 // `post` is sent 'library', 'library-document', 'library-filters' or 'library-matching',
 // and with `manage` also 'library-hide' ({id, hidden}).
 //
@@ -85,6 +88,7 @@
       this.typed = { query: '', author: '' };   // typed, not yet searched: kept across redraws
       this.preview = null;              // {row, found | problem | loading, confirming, failed}
       this.manage = Boolean(adapter.manage) && !this.selectable;
+      this.unavailable = (row) => (this.selectable && adapter.unavailable && adapter.unavailable(row)) || null;
       this.showHidden = false;          // Marketing Studio's Show hidden
       this.filtersOpen = false;         // a phone's Filters
       this.moreOpen = null;             // More filters, once the person opened or closed it
@@ -211,11 +215,12 @@
       try {
         const found = await this.a.post('library-matching', { filters: this.sent() });
         const max = this.a.max || 40;
-        if (this.ticked.size + found.matching.filter((one) => !this.ticked.has(one.id)).length > max) {
+        if (this.ticked.size + found.matching.filter((one) => !this.ticked.has(one.id) && !this.unavailable(one)).length > max) {
           throw new Error('That would be more than ' + max + ' documents. Narrow the filters first.');
         }
         const titles = new Map(((this.answer && this.answer.items) || []).map((row) => [row.id, row.title]));
         for (const one of found.matching) {
+          if (this.unavailable(one)) continue;
           if (!this.ticked.has(one.id)) this.ticked.set(one.id, { ...one, title: titles.get(one.id) || 'Library document', role: (this.a.roles || [[null]])[0][0] });
         }
         this.problem = '';
@@ -299,14 +304,17 @@
       if (!row.readable) text.append(add(make('span', 'problem'), make('span', 'tag', row.state_label), ' ' + (row.problem || '')));
       if (row.pdf === 'needs-export') text.append(make('span', 'quiet', 'PDF needs export. ' + (row.pdf_note || '')));
       if (row.hidden) text.append(add(make('span', 'quiet'), make('span', 'tag', 'Hidden'), ' Not listed or offered in Add from library.'));
+      const unavailable = this.unavailable(row);
+      if (unavailable) text.append(add(make('span', 'quiet'), make('span', 'tag', unavailable.label), unavailable.detail ? ' ' + unavailable.detail : ''));
       if (this.selectable) {
         const tick = make('label', 'check library-tick');
         const box = make('input');
         box.type = 'checkbox';
         box.dataset.key = 'library-tick-' + row.id;
         box.checked = on;
-        box.disabled = !row.readable;
-        box.setAttribute('aria-label', (on ? 'Selected: ' : 'Select ') + row.title);
+        box.disabled = !row.readable || Boolean(unavailable);
+        box.setAttribute('aria-label', unavailable ? row.title + ' is unavailable: ' + unavailable.label
+          : (on ? 'Selected: ' : 'Select ') + row.title);
         box.addEventListener('change', () => this.tick(row, box.checked));
         add(item, add(tick, box, text));
       } else {
@@ -427,7 +435,7 @@
         heading.append(add(shown, box, make('span', '', 'Show hidden (' + (answer.hidden || 0) + ')')));
       }
       if (this.selectable && items.length) {
-        const shown = items.filter((row) => row.readable);
+        const shown = items.filter((row) => row.readable && !this.unavailable(row));
         const some = shown.filter((row) => this.ticked.has(row.id)).length;
         const tick = make('label', 'check select-page');
         const box = make('input');
@@ -475,6 +483,7 @@
       const titleId = 'doclib-sheet-title-' + (++instances);
       dialog.setAttribute('aria-labelledby', titleId);
       const title = make('h2', '', adapter.title || 'Add from library');
+      const noun = adapter.noun || 'project';
       title.id = titleId;
       const bar = make('div', 'library-selection');
       let problem = '';
@@ -532,7 +541,7 @@
       }
       add(dialog, add(make('header', 'dialog-header'), title, close),
       add(make('div', 'dialog-content'),
-        make('p', 'quiet', 'Choose documents for this project only. Adding them starts nothing, sends nothing to an assistant and changes no research settings. A new project starts with none.'),
+        make('p', 'quiet', 'Choose documents for this ' + noun + ' only. Adding them starts nothing, sends nothing to an assistant and changes no research settings. A new ' + noun + ' starts with none.'),
         catalog.node, bar));
       dialog.addEventListener('cancel', (event) => { event.preventDefault(); dismiss(); });
       document.body.append(dialog);

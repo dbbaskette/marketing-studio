@@ -176,6 +176,97 @@ const assert = require('node:assert/strict');
       assert.deepEqual(targets,[],'Small controls at '+width);
     }
     const output=process.env.INFOGRAPHIC_UI_RESULTS;if(output){fs.mkdirSync(output,{recursive:true});await page.evaluate(()=>scrollTo(0,0));await page.screenshot({path:path.join(output,'desktop-dark.png'),fullPage:false});await page.setViewportSize({width:390,height:844});await page.emulateMedia({colorScheme:'light'});await page.evaluate(()=>scrollTo(0,0));await page.screenshot({path:path.join(output,'phone-light.png'),fullPage:false});}
+    // A rename clears nothing: the story, page and approval stay, and the approved files are
+    // prepared again so they carry the new title. Earlier approved files stay downloadable.
+    await page.setViewportSize({width:1280,height:900});await page.emulateMedia({colorScheme:'light'});
+    const approvedAt=await page.evaluate(()=>held.project.approval.revision);
+    await page.getByText('Brief and requirements',{exact:true}).click();
+    await page.getByRole('button',{name:'Edit brief',exact:true}).click();
+    await page.getByLabel('Working title',{exact:true}).fill('Synthetic rolling restarts');
+    await page.getByRole('button',{name:'Save brief',exact:true}).click();
+    await page.getByText(/^Renamed\. The story, page and approval are kept\./).waitFor();
+    const renamed=await page.evaluate(()=>held.project);
+    assert.equal(renamed.brief.title,'Synthetic rolling restarts');
+    assert.equal(renamed.approval.carried.from_revision,approvedAt,'The approval names the revision the person approved');
+    assert(renamed.stories.length&&renamed.scene,'A rename clears nothing');
+    assert.equal(await page.evaluate(()=>document.activeElement.dataset.key),'ig-edit-brief');
+    assert.equal(await page.locator('#title').innerText(),'Synthetic rolling restarts');
+    await page.getByRole('heading',{name:'Approved revision '+renamed.revision+': prepare its files',exact:true}).waitFor();
+    await page.getByRole('button',{name:'Download PDF (earlier approved)',exact:true}).waitFor();
+    assert.equal(await page.getByRole('button',{name:'Update preview',exact:true}).count(),0);
+    await page.locator('#actions').getByRole('button',{name:'Prepare approved files',exact:true}).click();
+    await page.getByRole('heading',{name:'Approved delivery',exact:true}).waitFor();
+    assert.equal(await page.evaluate(()=>held.history[0].summary),'Renamed to “Synthetic rolling restarts”');
+    // Every route that changes sources asks first, names what it clears, and Cancel or Escape
+    // changes nothing and returns focus to the control that started it.
+    const atRevision=await page.evaluate(()=>held.project.revision);
+    await page.getByText('Sources and facts',{exact:true}).click();
+    await page.getByRole('button',{name:'Add or update supplied information',exact:true}).click();
+    await page.getByLabel('New or replacement supplied information',{exact:true}).fill('Synthetic replacement notes.');
+    await page.getByRole('button',{name:'Save supplied information',exact:true}).click();
+    const pasted=page.getByRole('dialog',{name:'Add supplied information'});
+    await pasted.getByText(/^This clears this infographic’s facts, story, page and approval\. Earlier work stays in History\./).waitFor();
+    await pasted.getByRole('button',{name:'Cancel',exact:true}).click();
+    // Cancel returns to the sheet with what was typed; Cancel there closes it.
+    assert.equal(await page.getByLabel('New or replacement supplied information',{exact:true}).inputValue(),'Synthetic replacement notes.');
+    await page.getByRole('dialog',{name:'Update supplied information'}).getByRole('button',{name:'Cancel',exact:true}).click();
+    assert.equal(await page.evaluate(()=>held.project.revision),atRevision,'Cancel changes nothing');
+    assert.equal(await page.evaluate(()=>document.activeElement.dataset.key),'ig-source-update');
+    await page.getByRole('button',{name:'Add or update supplied information',exact:true}).click();
+    await page.getByLabel('Or upload a source file',{exact:true}).setInputFiles({name:'more.md',mimeType:'text/markdown',buffer:Buffer.from('More synthetic notes.')});
+    await page.getByRole('dialog').getByText('More synthetic notes.',{exact:true}).waitFor();
+    await page.getByRole('button',{name:'Save supplied information',exact:true}).click();
+    await page.getByRole('dialog',{name:'Add more.md'}).getByText(/^This clears this infographic’s facts, story, page and approval\./).waitFor();
+    await page.keyboard.press('Escape');
+    assert.equal(await page.evaluate(()=>held.project.revision),atRevision,'Escape changes nothing');
+    assert.equal(await page.evaluate(()=>document.activeElement.dataset.key),'ig-source-update');
+    // Studio material, a Google Doc or page, and research all import through one reviewed capture.
+    await page.evaluate(()=>sourceImportSheet({id:'synthetic_capture',name:'Synthetic material',characters:19,excerpt:'Synthetic material.',warnings:[],readable:true},'','ig-source-material'));
+    await page.getByRole('button',{name:'Import this capture',exact:true}).click();
+    await page.getByRole('dialog',{name:'Add Synthetic material'}).getByRole('button',{name:'Cancel',exact:true}).click();
+    await page.getByRole('dialog',{name:'Review captured information'}).getByRole('button',{name:'Cancel',exact:true}).click();
+    assert.equal(await page.evaluate(()=>held.project.revision),atRevision);
+    assert.equal(await page.evaluate(()=>document.activeElement.dataset.key),'ig-source-material');
+    // A brief change that affects the story asks first; Cancel changes nothing.
+    await page.getByText('Brief and requirements',{exact:true}).click();
+    await page.getByRole('button',{name:'Edit brief',exact:true}).click();
+    await page.getByLabel('Audience',{exact:true}).fill('Site reliability engineers');
+    await page.getByRole('button',{name:'Save brief',exact:true}).click();
+    const briefAsks=page.getByRole('dialog',{name:'Save the brief'});
+    await briefAsks.getByText(/^This clears this infographic’s story, page and approval\. Captured facts stay\. Earlier work stays in History\./).waitFor();
+    if(output)await page.screenshot({path:path.join(output,'brief-confirm-desktop.png')});
+    await briefAsks.getByRole('button',{name:'Cancel',exact:true}).click();
+    assert.deepEqual(await page.evaluate(()=>[held.project.revision,held.project.brief.audience]),[atRevision,'Technical practitioners']);
+    // Cancel returns to the brief with what was typed; Cancel there closes it.
+    assert.equal(await page.getByLabel('Audience',{exact:true}).inputValue(),'Site reliability engineers');
+    await page.getByRole('dialog',{name:'Edit brief and requirements'}).getByRole('button',{name:'Cancel',exact:true}).click();
+    assert.equal(await page.evaluate(()=>document.activeElement.dataset.key),'ig-edit-brief');
+    const approvedFiles=await page.evaluate(()=>held.deliveries.find(d=>d.approved_current).files.map(f=>f.sha256));
+    await page.getByRole('button',{name:'Edit brief',exact:true}).click();
+    await page.getByLabel('Audience',{exact:true}).fill('Site reliability engineers');
+    await page.getByRole('button',{name:'Save brief',exact:true}).click();
+    // A double click saves once, with no stray "changed" error.
+    await briefAsks.getByRole('button',{name:'Save brief',exact:true}).dblclick();
+    await page.getByText('Brief saved. Find the story again when you’re ready.',{exact:true}).waitFor();
+    assert.equal(await page.locator('#notice').isVisible(),false,'No error after a double click');
+    assert.equal(await page.evaluate(()=>held.project.revision),atRevision+1,'Saved exactly once');
+    const cleared=await page.evaluate(()=>({p:held.project,summary:held.history[0].summary,files:held.deliveries.find(d=>!d.draft&&d.files).files.map(f=>f.sha256)}));
+    assert.deepEqual([cleared.p.stories.length,cleared.p.scene,cleared.p.approval],[0,null,null]);
+    assert(cleared.p.facts.length,'Captured facts stay');
+    assert.equal(cleared.summary,'Edited the brief: audience; cleared the story, page and approval');
+    assert.deepEqual(cleared.files,approvedFiles,'Earlier approved files stay unchanged');
+    // With no page, the card names the earlier page and the toolbar's next step.
+    await page.getByRole('heading',{name:/^Earlier page \(revision \d+\)$/}).waitFor();
+    await page.getByText('Your current work, revision '+cleared.p.revision+', has no page yet. Find the story and build the page again to edit or approve it.',{exact:true}).waitFor();
+    await page.locator('#actions').getByRole('button',{name:'Find the story',exact:true}).waitFor();
+    await page.getByRole('button',{name:'Download PDF (earlier approved)',exact:true}).waitFor();
+    assert.equal(await page.getByRole('button',{name:'Update preview',exact:true}).count(),0);
+    for(const colorScheme of ['light','dark']){
+      await page.setViewportSize({width:390,height:844});await page.emulateMedia({colorScheme});
+      assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Horizontal overflow on the earlier page at 390 '+colorScheme);
+      if(output){await page.getByRole('heading',{name:/^Earlier page/}).scrollIntoViewIfNeeded();await page.screenshot({path:path.join(output,'earlier-page-'+colorScheme+'.png')});}
+    }
+    await page.emulateMedia({colorScheme:'light'});
     // Add from library: Cancel changes nothing; Use selected makes the document a source and
     // returns focus to Add from library. Nothing is started.
     await page.setViewportSize({width:390,height:844});
@@ -184,6 +275,9 @@ const assert = require('node:assert/strict');
     await page.getByRole('button',{name:'Add from library',exact:true}).click();
     const sheet=page.getByRole('dialog',{name:'Add from library'});
     await sheet.getByRole('checkbox',{name:'Select Synthetic capacity notes'}).waitFor();
+    // This infographic's own kept export is listed as unavailable, never as a source.
+    await sheet.getByText('Choose documents for this infographic only.',{exact:false}).waitFor();
+    assert(await sheet.getByRole('checkbox',{name:'Synthetic rolling restarts is unavailable: This infographic'}).isDisabled());
     await page.keyboard.press('Escape');
     assert.equal(await page.getByRole('dialog',{name:'Add from library'}).count(),0);
     assert.equal(await page.evaluate(()=>held.project.sources.length),sourcesAt,'Cancel changes nothing');
@@ -191,9 +285,9 @@ const assert = require('node:assert/strict');
     await sheet.getByRole('checkbox',{name:'Select Synthetic capacity notes'}).click();
     await sheet.getByRole('checkbox',{name:'Selected: Synthetic capacity notes'}).waitFor();
     await sheet.getByRole('button',{name:'Use selected',exact:true}).click();
-    // This infographic has facts, a page and an approval: it asks before clearing them.
+    // This infographic still has its captured facts: it asks before clearing them.
     const confirm=page.getByRole('dialog',{name:'Add Synthetic capacity notes'});
-    await confirm.getByText(/^This clears this infographic’s facts, story, page, approval\./).waitFor();
+    await confirm.getByText(/^This clears this infographic’s facts\. Earlier work stays in History\./).waitFor();
     assert.equal(await page.evaluate(()=>held.project.sources.length),sourcesAt,'Nothing changes before Add as sources');
     await confirm.getByRole('button',{name:'Add as sources',exact:true}).click();
     await page.getByText(/^The document is a source now\./).waitFor();
@@ -220,6 +314,6 @@ const assert = require('node:assert/strict');
     assert.equal(await page.getByLabel('Working title',{exact:true}).inputValue(),'Retained intake');
     await page.keyboard.press('Escape');
     assert.deepEqual(errors,[],'Browser runtime errors');
-    console.log('PASS: phone intake → source-backed story → actual render → focused edit → pixel review → checks → approval → SVG download → kept in the Document Library; history comparison; Add from library on the desk and a new brief; 320/390/1280 light/dark/reduced-motion; no browser errors or horizontal overflow. Providers are injected.');
+    console.log('PASS: phone intake → source-backed story → actual render → focused edit → pixel review → checks → approval → SVG download → kept in the Document Library; history comparison; a rename that keeps the approval; source and brief changes that ask first; the earlier page card; this infographic’s own export unavailable in Add from library; Add from library on the desk and a new brief; 320/390/1280 light/dark/reduced-motion; no browser errors or horizontal overflow. Providers are injected.');
   }catch(f){console.error(JSON.stringify({browser_errors:errors,text:page?await page.locator('body').innerText():''}));if(page&&process.env.INFOGRAPHIC_UI_RESULTS)await page.screenshot({path:path.join(process.env.INFOGRAPHIC_UI_RESULTS,'failure.png'),fullPage:true});throw f;}finally{if(browser)await browser.close();child.kill('SIGTERM');await new Promise(resolve=>{const timer=setTimeout(()=>{child.kill('SIGKILL');resolve();},5000);child.once('exit',()=>{clearTimeout(timer);resolve();});});}
 })().catch(e=>{console.error(e.message);process.exitCode=1;});

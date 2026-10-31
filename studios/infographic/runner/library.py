@@ -8,6 +8,7 @@ What a caller needs to know
     library.idle(store, project, research=None, activity=None)   # refuses while work runs
     library.keep(store, ident, export_id)    # an approved export's text and PDF; never raises
     library.status(store, ident)             # what was kept last, or None
+    library.own(store, ident)                # the library document holding its export, or None
 
 Context
 - Chosen revisions are checked by the library (they exist, are readable and match their
@@ -23,6 +24,8 @@ Context
   starts no research, grants no web access, sends nothing to an assistant and changes no
   research setting; like any source change it clears the facts, story and page that were
   built from the earlier sources, under the existing input rules.
+- This infographic's own kept export (the document under `key()`, see `own()`) is refused
+  as a source for itself; the page shows it as unavailable.
 - Refused while the infographic is working: an action under way on the page, an image
   request pending or uncertain, or research running.
 
@@ -63,6 +66,20 @@ NOT_APPROVED = ('Only the approved files of the current revision are kept in the
 def key(store, ident) -> str:
     """This infographic's library key. The workspace owner keeps two workspaces apart."""
     return f'infographic:{store.owner[:12]}-{ident}'
+
+
+SELF = ('This is this infographic’s own approved page, kept in the Document Library. It '
+        'cannot be a source for itself. Choose another document.')
+
+
+def own(store, ident) -> str | None:
+    """The library document that keeps this infographic's approved files, or None."""
+    try:
+        found = document_library.opened()
+        held = found.keyed([key(store, ident)]).get(key(store, ident)) if found else None
+    except (LibraryError, OSError):
+        return None
+    return held['id'] if held else None
 
 
 def _now() -> str:
@@ -129,6 +146,12 @@ class _Sources:
         require(type(acknowledged) is bool, 'Confirm readable-only coverage explicitly.')
         self.store, self.ident, self.expected = store, ident, expected_revision
         self.research, self.activity, self.acknowledged = research, activity, acknowledged
+        self.own = own(store, ident)
+
+    def _not_own(self, snapshot):
+        # Its own approved page is not a source for its facts: that would be circular.
+        if self.own is not None and snapshot['id'] == self.own:
+            raise Invalid(SELF)
 
     def _current(self):
         project = self.store.read(self.ident)
@@ -147,6 +170,8 @@ class _Sources:
         return self.store.change_locked(project, {'sources': sources_now})
 
     def add_snapshots(self, _root, snapshots) -> dict:
+        for snapshot in snapshots:
+            self._not_own(snapshot)
         captured = [_captured(snapshot, self.acknowledged) for snapshot in snapshots]
         with self.store.locked():
             project = self._current()
@@ -160,6 +185,7 @@ class _Sources:
             return self._save(project, project['sources'] + added, captured)
 
     def replace_snapshot(self, _root, snapshot) -> dict:
+        self._not_own(snapshot)
         record, raw, normalized = _captured(snapshot, self.acknowledged)
         with self.store.locked():
             project = self._current()

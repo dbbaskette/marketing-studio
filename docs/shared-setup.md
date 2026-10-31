@@ -267,7 +267,8 @@ grants no web access and sends nothing to an assistant.
 | An infographic changes after approval | Its earlier approved files are not kept again; approve the current revision first |
 | A job is running on the deck (the chain draws, or a desk job runs) | Add from library and Use revision N are refused until it ends; the job keeps the sources it started with |
 | Work is running on an infographic (a page action, an image request pending or uncertain, or research) | Add from library and Use revision N are refused until it ends |
-| An infographic has facts, a page or an approval | Add from library and Use revision N say what will be cleared and ask first |
+| An infographic has facts, a story, a page or an approval | Add from library, Use revision N and every other source change say what will be cleared and ask first |
+| An infographic's own approved export, in its Add from library | Shown as unavailable ("This infographic") and refused by the server: its page cannot be a source for its own facts |
 | A chosen revision has extraction gaps (Infographic Studio) | Refused until the person confirms using only its readable text; the gaps stay on the source |
 | A step is being worked on in a training (a worker, or a desk change under way) | Add from library and Use revision N are refused until it ends |
 | A Training Studio guide or brief's library save fails after Mark ready | It stays Ready. The failure is recorded in the training's local `sources/library.json`, and **Keep in library again** retries with no job. Its owner is offered the retry in a conversation too; a teammate only reads the state |
