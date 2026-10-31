@@ -919,14 +919,18 @@ def long_deck(view: dict, count: int) -> dict:
 
 
 def reviewed_on(view: dict, number: int) -> dict:
-    """The deck on screen with a fix the review proposed for one slide, to apply or skip."""
+    """The deck on screen with a fix the review proposed for one slide, to apply or skip. As
+    the runner makes it, the proposal is the slide's own review finding."""
     shown = copy.deepcopy(view)
     card = next(card for card in cards_of(shown['desk']) if card['number'] == number)
+    finding = {'severity': 'major', 'about': 'drawing', 'question': None,
+               'note': 'The labels overlap the chart.', 'fix': 'Move the labels under the chart.'}
+    card['findings'] = [finding]
     shown['desk']['finishing'] = {'review': {'job': 'review-job', 'kind': 'finish-review',
                                              'items': [{
         'id': 'finding-1', 'number': number, 'part': card['id'], 'state': 'open',
-        'present': True, 'severity': 'major', 'note': 'The labels overlap the chart.',
-        'fix': 'Move the labels under the chart.', 'after': 'Move the labels under the chart.',
+        'present': True, 'severity': 'major', 'about': 'drawing', 'note': finding['note'],
+        'fix': finding['fix'], 'after': finding['fix'],
         'price': 'Redraws section 1. Expect minutes, not seconds.'}]}}
     return shown
 
@@ -1078,10 +1082,14 @@ class WorkbenchTests(DeskPageCase):
             {'click': 'Apply'}, {'snapshot': 'priced'}, {'click': 'Apply and redraw slide 4'}],
             **{'POST /api/desk-apply': [ok(shown)]})
         shots = result['snapshots']
-        self.assertIn('Slide 4: 1 fix to apply or skip.', shots['summary']['text'].split('\n'))
+        summary = shots['summary']['text'].split('\n')
+        self.assertIn('Slide 4: 1 fix to apply or skip.', summary)
+        # The finding the fix was made from is counted, and shown, once: as the fix.
+        self.assertNotIn('Slide 4: 1 review finding.', summary)
         found = shots['found']['text'].split('\n')
         self.assertIn('Proposed by the review Major', found)
         self.assertIn(item['note'], found)
+        self.assertEqual(shots['found']['text'].count(item['note']), 1)
         self.assertIn('Suggested: ' + item['fix'], found)
         priced = shots['priced']['text'].split('\n')
         self.assertEqual(priced[priced.index(item['price']) + 1:priced.index(item['price']) + 3],
@@ -1094,6 +1102,80 @@ class WorkbenchTests(DeskPageCase):
                                  **{'POST /api/desk-skip': [ok(shown)]})
         self.assertEqual(self.posts(skipped), [('/api/desk-skip', {
             'path': path, 'set': 'review-job', 'ids': [item['id']]})])
+
+    def test_the_slide_shown_first_stays_when_what_drew_the_desk_to_it_is_resolved(self):
+        path = self.desk_deck()
+        view = self.run_of(path)
+        blocked = copy.deepcopy(view)
+        blocked['desk']['blockers'] = [{'number': 4, 'says': 'Text runs off the slide.'}]
+        next(card for card in cards_of(blocked['desk']) if card['number'] == 4)['audit'] = [
+            {'says': 'Text runs off the slide.', 'kind': 'error'}]
+        result = self.open_deck(path, blocked, [
+            {'snapshot': 'first'}, {'fill': 'Title of slide 4', 'value': 'A shorter title'},
+            {'timer': 'flush'}, {'snapshot': 'saved'}],
+            **{'POST /api/desk-words': [ok(view)]})
+        first, saved = result['snapshots']['first'], result['snapshots']['saved']
+        self.assertIn('Slide 4 of 8', first['text'].split('\n'))
+        # The save answers with the blocker gone: the desk stays on slide 4, in its box.
+        self.assertNotIn('Blocks delivery', saved['text'].split('\n'))
+        self.assertIn('Slide 4 of 8', saved['text'].split('\n'))
+        self.assertEqual(saved['focus'], 'desk-title-4')
+        self.assertEqual(saved['state']['deskNumber'], 4)
+
+    def test_a_brand_fix_for_a_blocker_is_shown_and_counted_once(self):
+        path = self.desk_deck()
+        with mock.patch.object(self.brand, 'audit', return_value=BLOCKED):
+            checked = self.post('desk-finish', {'path': path, 'tool': 'brand', 'again': True})
+        (item,) = checked['desk']['finishing']['brand']['items']
+        result = self.open_deck(path, checked, [{'snapshot': 'three'}])
+        shot = result['snapshots']['three']
+        lines = shot['text'].split('\n')
+        self.assertIn('Slide 3 of 8', lines)
+        # The check's line is the fix: once on the slide, with its tag, and once in the summary.
+        self.assertEqual(shot['text'].count(item['says']), 2)
+        self.assertNotIn('The brand check: Text runs off the slide. It blocks delivery.', lines)
+        self.assertIn('Proposed by the brand check Blocks delivery', lines)
+        self.assertIn('Slide 3: Text runs off the slide.', lines)
+        self.assertFalse([line for line in lines if line.startswith('Slide 3: 1 fix')])
+
+    def test_a_slide_the_stopped_whole_deck_note_left_says_to_redraw_it(self):
+        path = self.desk_deck()
+        view = copy.deepcopy(self.run_of(path))
+        next(card for card in cards_of(view['desk']) if card['number'] == 6)['note'] = {
+            'status': 'set aside', 'whole': True, 'note': 'Fewer words.'}
+        shot = self.open_deck(path, view, [{'snapshot': 'desk'}])['snapshots']['desk']
+        self.assertTrue([name for name in shot['buttons']
+                         if name.startswith('Slide 6: ') and name.endswith(', not redrawn')])
+        self.assertIn('Slide 6: Not redrawn when the whole-deck note was stopped: Redraw slide 6 '
+                      'draws it again.', shot['text'].split('\n'))
+
+    def test_the_first_key_typed_marks_the_slide_and_keeps_the_box(self):
+        path = self.desk_deck()
+        view = self.run_of(path)
+        result = self.open_deck(path, view, [
+            to(3), {'fill': 'Title of slide 3', 'value': 'Typed', 'stay': True},
+            {'snapshot': 'typed'}])
+        shot = result['snapshots']['typed']
+        self.assertIn('Slide 3: Words not saved yet.', shot['text'].split('\n'))
+        self.assertTrue([name for name in shot['buttons']
+                         if name.startswith('Slide 3: ') and name.endswith(', waits for you')])
+        self.assertEqual(shot['focus'], 'desk-title-3')
+        self.assertEqual(shot['fields']['Title of slide 3'], 'Typed')
+        self.assertEqual(self.posts(result), [])
+
+    def test_with_no_deliver_here_the_summary_says_where_the_deck_stands(self):
+        path = self.desk_deck()
+        view = self.run_of(path)
+        delivered = self.post('desk-deliver', {'path': path, 'expected': view['desk']['expected'],
+                                               'blockers_seen': view['desk']['blockers_seen']})
+        shot = self.open_deck(path, delivered, [{'snapshot': 'delivered'}])['snapshots'][
+            'delivered']
+        lines = shot['text'].split('\n')
+        self.assertIn('Where the deck stands', lines)
+        self.assertNotIn('Before you deliver', lines)
+        self.assertNotIn('Nothing blocks delivery.', lines)
+        self.assertNotIn('What Deliver will use', lines)
+        self.assertIn('The brand check found nothing that blocks delivery.', lines)
 
     def test_the_caveat_and_source_are_folded_and_the_whole_deck_note_comes_last(self):
         path = self.desk_deck()

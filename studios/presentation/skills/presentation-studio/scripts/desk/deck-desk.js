@@ -910,33 +910,54 @@
       && edit.number === one.number);
   }
 
+  // What was found on a slide, each thing once. Finishing's proposals are made from the same
+  // review findings and brand check lines the slide carries: a finding or a line that a
+  // proposal still open stands for is shown, and counted, as that proposal alone.
+  function foundOn(run, one) {
+    const proposals = h.theirs(run) ? [] : proposalsOn(run, one);
+    const finding = (item) => [item.severity || '', item.note || item.question || ''].join('\n');
+    const reviewed = new Set(proposals.filter(({ key }) => key === 'review')
+      .map(({ item }) => finding(item)));
+    const checked = new Set(proposals.filter(({ key }) => key === 'brand')
+      .map(({ item }) => item.says));
+    return { proposals,
+      findings: h.list(one.findings).filter((item) => !reviewed.has(finding(item))),
+      audit: h.list(one.audit).filter((line) => !checked.has(line.says)) };
+  }
+
   // What a slide asks of the person, what is under way on it, and what is worth a look, each
   // said in a few words. Blockers come first; a warning never reads as one.
   function marksOf(run, one) {
     const path = h.view.path;
     const blocks = blockersOn(run, one);
+    const found = foundOn(run, one);
     const waits = [];
+    const kept = one.note && one.note.status === 'set aside';
+    if (kept) waits.push('not redrawn when the whole-deck note was stopped: Redraw slide '
+      + one.number + ' draws it again');
     if (one.unfit) waits.push('words that do not fit: redraw or discard them');
     if (unsavedOn(path, one)) waits.push('words not saved yet');
     if (one.note && one.note.status === 'waiting') waits.push('your note waits to be drawn');
-    const proposals = proposalsOn(run, one);
-    if (proposals.length) {
-      waits.push(h.count(proposals.length, 'fix', 'fixes') + ' to apply or skip');
-    }
+    // A fix for a blocker is counted with the blocker, once.
+    const fixes = found.proposals.filter(({ key, item }) => !(key === 'brand'
+      && item.kind === 'blocker'));
+    if (fixes.length) waits.push(h.count(fixes.length, 'fix', 'fixes') + ' to apply or skip');
     const looks = [];
-    const findings = h.list(one.findings).length;
-    if (findings) looks.push(h.count(findings, 'review finding', 'review findings'));
-    const warnings = h.list(one.audit).filter((line) => line.kind !== 'error').length;
+    if (found.findings.length) {
+      looks.push(h.count(found.findings.length, 'review finding', 'review findings'));
+    }
+    const warnings = found.audit.filter((line) => line.kind !== 'error').length;
     if (warnings) looks.push(h.count(warnings, 'brand warning', 'brand warnings'));
     const busy = Boolean(one.busy) || Boolean(one.note && one.note.status === 'drawing');
     return { blocks, waits, looks, busy,
-      tag: blocks.length ? 'Blocks delivery' : busy ? 'Redrawing' : waits.length ? 'Waits for you'
-        : looks.length ? 'Worth a look' : '' };
+      tag: blocks.length ? 'Blocks delivery' : busy ? 'Redrawing' : kept ? 'Not redrawn'
+        : waits.length ? 'Waits for you' : looks.length ? 'Worth a look' : '' };
   }
 
   // The slide chosen: the one kept for this deck, by its ID, else by its number (an outline
   // saved since may have moved it), else the first that asks something of the person, else
-  // the first.
+  // the first. A slide chosen for the person is kept as if they chose it, so the desk does
+  // not move away from it when what drew it there is resolved.
   function activeOf(run, cards) {
     const path = h.view.path;
     if (!held.slide[path]) {
@@ -949,7 +970,10 @@
     const found = kept && (cards.find(({ one }) => one.id === kept.id)
       || cards.find(({ one }) => one.number === kept.number));
     if (found) return found;
-    return cards.find(({ one }) => one.unfit || blockersOn(run, one).length) || cards[0] || null;
+    const first = cards.find(({ one }) => one.unfit || blockersOn(run, one).length) || cards[0];
+    if (!first) return null;
+    remember(path, first.one);
+    return first;
   }
 
   // The browser keeps the slide with the screen, so a reload opens the deck at it.
@@ -1038,17 +1062,24 @@
     const found = run.desk;
     const read = h.theirs(run);
     const conversation = run.execution === 'conversation';
-    const node = h.card('Before you deliver', 'desk-summary');
+    // Where there is no Deliver here (a deck run in conversation, one delivered, or a
+    // teammate's), the summary says where the deck stands, not what stands before Deliver.
+    const delivers = !read && !conversation && !found.delivered;
+    const node = h.card(delivers ? 'Before you deliver' : 'Where the deck stands',
+      'desk-summary');
     const blockers = h.list(found.blockers);
     const marked = cards.map(({ one }) => ({ one, marks: marksOf(run, one) }));
     const waiting = marked.filter(({ marks }) => marks.waits.length || marks.busy);
     const looks = marked.filter(({ marks }) => marks.looks.length);
     const ready = deliverableNow(found);
-    h.add(node, make('p', '', !found.drawn_here ? 'Nothing can be delivered from this computer '
-      + 'until the deck is drawn here.' : !ready ? NOT_DELIVERABLE : blockers.length
-      ? h.count(blockers.length, 'problem blocks', 'problems block') + ' delivery. Deliver '
-        + 'asks you before it sends the deck anyway.'
-      : 'Nothing blocks delivery.'));
+    const checked = blockers.length ? 'The brand check found ' + h.count(blockers.length,
+      'problem that blocks', 'problems that block') + ' delivery.'
+      : 'The brand check found nothing that blocks delivery.';
+    h.add(node, make('p', '', !delivers ? checked : !found.drawn_here ? 'Nothing can be '
+      + 'delivered from this computer until the deck is drawn here.' : !ready ? NOT_DELIVERABLE
+      : blockers.length ? h.count(blockers.length, 'problem blocks', 'problems block')
+        + ' delivery. Deliver asks you before it sends the deck anyway.'
+        : 'Nothing blocks delivery.'));
     const byNumber = new Map(cards.map(({ one }) => [one.number, one]));
     h.add(node,
       summaryList('Blocks delivery', 'The brand check found these on the last render.',
@@ -1059,7 +1090,7 @@
           + '.'))),
       summaryList('Worth a look', 'These do not block delivery.', looks.map(({ one, marks }) =>
         jump(one, marks.looks.join(' and ') + '.'))));
-    if (!read && !conversation && !found.delivered) {
+    if (delivers) {
       h.add(node, h.add(make('div', 'desk-summary-part'),
         make('p', 'row-title', 'What Deliver will use'),
         make('p', '', 'The ' + h.count(cards.length, 'slide', 'slides') + ' as they are drawn '
@@ -1221,7 +1252,7 @@
       editing && one.unfit ? unfitPart(run, one) : null,
       own ? (editing ? objectBoxes(one) : objectWords(one))
         : editing && !locked ? wordBoxes(one)
-          : wordsPart({ ...words, caveat: null, source: null }),
+          : wordsPart(one.lead ? words : { ...words, caveat: null, source: null }),
       locked ? make('p', 'quiet', found.words_locked) : null,
       own ? make('p', 'quiet', found.notes_locked || '')
         : editing ? notesBox(one)
@@ -1234,11 +1265,10 @@
   }
 
   // What the brand check and the review found on the slide, in their words, blockers first,
-  // and each fix proposed for it, to apply or skip here as in Finishing.
+  // and each fix proposed for it, to apply or skip here as in Finishing. A finding a fix
+  // stands for is shown once, as that fix.
   function foundPart(run, one) {
-    const audit = h.list(one.audit);
-    const findings = h.list(one.findings);
-    const proposals = h.theirs(run) ? [] : proposalsOn(run, one);
+    const { audit, findings, proposals } = foundOn(run, one);
     if (!audit.length && !findings.length && !proposals.length) return null;
     return h.add(make('div', 'desk-found'),
       make('p', 'row-title', 'What was found on this slide'),
@@ -1846,6 +1876,7 @@
   function typed(number, field, text) {
     const path = h.view.path;
     const key = editKey(path, number, field);
+    const first = !unsavedOn(path, { number });
     const edit = held.edits[key] || (held.edits[key] = { path, number, field });
     edit.text = text;
     if (edit.timer) window.clearTimeout(edit.timer);
@@ -1855,6 +1886,9 @@
       return save(key);
     }, SAVE_WAIT);
     saySaved(number, 'Saving…');
+    // The first key typed on a slide marks it in the navigator and the summary. Only those
+    // are drawn again: the box being typed in, its focus and its caret stay as they are.
+    if (first && h.view.screen === 'deck' && h.view.run && h.view.run.desk) h.paintDeck(false);
   }
 
   // One save at a time, each against the latest view; a newer edit of the same box is saved
