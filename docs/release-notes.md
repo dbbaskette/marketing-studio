@@ -48,7 +48,9 @@ Needs you with a button straight to its level, material and slide, and is never 
 Finished. Status counts drafts still to write apart from drafts to review and mark ready
 and what needs attention. A deck whose slide text waits says Needs your text approval, and
 materials nothing is writing say Not written yet. Saved runs keep their own words, and
-reading any screen starts no work.
+reading any screen starts no work. A desk training whose drafts are all written but not yet
+marked ready now sits under Needs you, existing ones included, and is told once rather than
+again after each Mark ready.
 
 ## Unreleased: research citation handoffs
 

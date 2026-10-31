@@ -7626,6 +7626,27 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         # Opening a screen asked for nothing to be made.
         self.assertEqual(self.posts(result), [])
 
+    def test_marking_drafts_ready_one_by_one_tells_the_person_once(self):
+        self.started('--levels', '101,201')
+        drafts = {**STANDING_ATTENTION, 'phase': 'drafts', 'words': 'Drafts to mark ready',
+                  'next': {'kind': 'material', 'label': 'Review the level 101 blueprint',
+                           'material': 'blueprint@101', 'level': '101', 'slide': None}}
+        listings = [self.standing_listed({**drafts, 'sentence': f'{left} drafts to read and '
+                                                                 'mark ready.'})
+                    for left in (10, 9, 8)]
+        attention = self.standing_listed(STANDING_ATTENTION)
+        answers = self.answers(**{'GET /api/trainings': [*listings, attention]})
+        result = self.run_page(answers, [
+            {'snapshot': 'home'}, {'poll': True}, {'poll': True}, {'snapshot': 'marked'},
+            {'poll': True}, {'snapshot': 'attention'}], notifications='granted')
+        # The first look tells nothing new; each Mark ready changes only how many are left.
+        self.assertEqual(result['snapshots']['marked']['toasts'], [])
+        # Something else needing the person is news, told once, and only that.
+        said = 'Rolling restarts: ' + STANDING_ATTENTION['sentence']
+        self.assertEqual(result['snapshots']['attention']['toasts'], [said])
+        self.assertEqual(result['notifications'],
+                         [{'title': 'Training Studio needs you', 'body': said}])
+
     def test_row_196_a_deck_waiting_for_its_text_says_so_with_a_way_to_the_decision(self):
         plan = a_card('blueprint@101')
         guide = a_card('document@101', state='queued', seen=None, actions=[],

@@ -8856,6 +8856,15 @@ async function drawIndex(fresh) {
 
 function waitingKey(training) {
   const waiting = training.waiting || {};
+  // A desk training is told by its standing, never by a sentence that changes with each Mark
+  // ready. Drafts to mark ready are one thing to tell, however many are left; a decision or
+  // something needing attention is new when it is about another material.
+  const standing = training.standing;
+  if (standing && !waiting.artifact && !waiting.question) {
+    const next = standing.next || {};
+    return training.path + '\n' + standing.phase + (standing.phase === 'drafts' ? ''
+      : '\n' + (next.kind || '') + '\n' + (next.material || ''));
+  }
   // What a run needs when it is not at a gate is in its own sentence: a question, a problem.
   return training.path + '\n' + (waiting.artifact || '') + '\n' + (waiting.question || '')
     + (training.run && !waiting.artifact ? '\n' + training.run.sentence : '');
