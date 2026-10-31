@@ -33,8 +33,8 @@ Signing in to an assistant, your organisation's brands and fonts, and optional G
   Google Docs, imported posts and voice or style samples are offered from it. A
   finished blog keeps the library document that finishing it again later would use.
   Each item's Blog Studio ID, revision, roles, kind of post, author, voice and style
-  are recorded with it. Files kept for one blog only, Team Hub snapshots and items
-  only in the Team Hub are left out. The Team Hub is never changed. Adding existing
+  are recorded with it. Files kept for one blog only, Team Hub snapshots, retired
+  items and items only in the Team Hub are left out, and the preview says so. The Team Hub is never changed. Adding existing
   work from Presentation Studio, Training Studio and Infographic Studio is not
   offered yet.
 - **Update available in Blog Studio.** A desk source taken from the Document Library
@@ -47,7 +47,10 @@ Signing in to an assistant, your organisation's brands and fonts, and optional G
   this blog**. Keep in library also keeps a copy of each file, with its readable
   Markdown, in the Document Library on this computer. It never changes how the file
   is shared, and a library problem is shown on the file's row without stopping the
-  upload. Links and Google Docs stay with the blog.
+  upload. Links and Google Docs stay with the blog. The same file uploaded again is
+  kept once, and Add existing work shows it as already in the library. The team
+  library's own Upload and voice or style samples don't offer the choice: they feed
+  the team library and voice learning, not one blog's sources.
 - **Checked in a browser.** The Library screen, Add existing work and the **Add from
   library** sheet are checked at desktop and phone widths, in light and dark, and
   with reduced motion and reduced transparency. On a phone, a ticked document's

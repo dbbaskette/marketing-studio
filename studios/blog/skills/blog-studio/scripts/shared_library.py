@@ -9,7 +9,7 @@ What a caller needs to know
     shared_library.keep_blog(root, record, text, source)   # a finished blog, kept there too
     shared_library.marked(root, names)     # desk sources: when a newer revision is there
     shared_library.update(root, blog, source)              # take it, only when asked
-    shared_library.keep_upload(entry, operation, author)   # Keep in library, at upload
+    shared_library.keep_upload(entry, author)   # Keep in library, at upload
 
 - Taking a document makes it a file uploaded for one blog: a `material` source in the
   upload area, with the role chosen for it (facts, approved messaging or an example), its
@@ -343,7 +343,7 @@ def update(root, ident, source):
     return desk._write(root, ident, draft, ['sources'])
 
 
-def keep_upload(entry, operation, author=None):
+def keep_upload(entry, author=None):
     """Keep one uploaded file in the library too, for Keep in library: {'state': 'kept',
     'id', 'revision'} or {'state': 'failed', 'reason'}. Never raises: the upload stands."""
     try:
@@ -352,10 +352,13 @@ def keep_upload(entry, operation, author=None):
             entry['filename'],
             entry['content'],
             title=entry.get('title'),
-            # One operation per file of the upload, so a retried upload keeps it once.
-            operation=hashlib.sha256((operation + ':' + entry['filename']).encode()).hexdigest()[
-                :32
-            ],
+            # From the file's name, bytes and title, as Presentation Studio and Training Studio
+            # derive theirs: the same file uploaded again, for this blog or another, is kept once.
+            operation=hashlib.sha256(
+                encoded(
+                    [entry['filename'], sha(entry['content']), entry.get('title') or '', 'blog']
+                )
+            ).hexdigest()[:32],
             studio='blog',
             author=author,
         )

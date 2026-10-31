@@ -99,9 +99,17 @@ def _states(candidates) -> None:
     """Mark each candidate new, a new revision of a library document, or already kept."""
     library = opened()
     held = library.keyed([one['key'] for one in candidates]) if library else {}
+    # A file the studio already kept as an upload (Keep in library) is the same file: it is
+    # not offered again under the team library's key.
+    uploads = {studio: library.uploaded(studio) for studio in {one['studio'] for one in candidates}} \
+        if library else {}
     for one in candidates:
         found = held.get(one['key'])
-        if found is None:
+        copy = uploads.get(one['studio'], {}).get(one['original_sha']) if one['original_sha'] else None
+        if found is None and copy:
+            one['state'], one['document'] = 'kept', None
+            one['gaps'] = ['Kept in the library when it was uploaded.', *one['gaps']]
+        elif found is None:
             one['state'] = 'new'
         elif found['whole'] and found['title'] == one['title'] \
                 and found['markdown'] == one['markdown_sha'] \
@@ -109,7 +117,8 @@ def _states(candidates) -> None:
             one['state'] = 'kept'
         else:
             one['state'] = 'changed'
-        one['document'] = found
+        if not copy or found is not None:
+            one['document'] = found
 
 
 def _signature(candidates) -> str:

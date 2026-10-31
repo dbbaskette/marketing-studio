@@ -691,9 +691,7 @@ def upload_files(root, data, staging, ledger, fingerprint, prepared=None):
         # library that cannot keep it is said on its row, never in the way of the upload.
         for entry, row in zip(checked, rows, strict=True):
             if entry.get('from_file'):
-                row['document_library'] = shared_library.keep_upload(
-                    entry, data['operation'], row.get('author')
-                )
+                row['document_library'] = shared_library.keep_upload(entry, row.get('author'))
     ready = sum(row['state'] == 'ready' for row in rows)
     result = {
         'files': rows,

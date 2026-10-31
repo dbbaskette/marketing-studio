@@ -19,8 +19,9 @@ original file when it had one, and a revision. Only those records on this comput
   kind of post, its author and, for a finished blog, the blog's voice and style pins.
 
 Left alone: files uploaded for one blog (material, including copies taken from the Document
-Library), pinned Team Hub snapshots, items only the Team Hub holds, and anything whose text
-or file does not match its record. No record is written, no lock is taken, no Team Hub,
+Library), pinned Team Hub snapshots, items only the Team Hub holds, items retired in the team
+library, records of a shape Blog Studio does not save, and anything whose text or file does
+not match its record. (adopt.py also shows a file Keep in library already kept as there.) No record is written, no lock is taken, no Team Hub,
 Git, network, assistant or reader program is used, and every read is bounded and refuses
 links.
 """
@@ -176,7 +177,11 @@ def _candidate(places: dict, folder: Path) -> tuple[dict | None, str | None]:
             or record.get('document_library'):
         return None, None      # one blog's own file, a Team Hub snapshot, or a library copy
     held = record.get('library') if isinstance(record.get('library'), dict) else {}
-    kind_of = held.get('origin_kind') if held.get('origin_kind') in ORIGINS else None
+    if held.get('curation') == 'retired':
+        return None, (f'“{title[:120]}” was left out: it is retired in Blog Studio’s team '
+                      'library. Make it active there to add it.')
+    kind_of = held.get('origin_kind') if isinstance(held.get('origin_kind'), str) \
+        and held.get('origin_kind') in ORIGINS else None
     revision = record.get('revision') if type(record.get('revision')) is int else None
     text = ''
     content = folder / 'content.md'
@@ -207,7 +212,8 @@ def _candidate(places: dict, folder: Path) -> tuple[dict | None, str | None]:
               'post_kind': held.get('kind') if isinstance(held.get('kind'), str) else None,
               'author': record.get('author') if isinstance(record.get('author'), str) else None,
               'workspace': 'team' if places['team'] else 'local'}
-    finished = kind_of == 'written-here' and NAME.match(held.get('article') or '')
+    article = held.get('article')
+    finished = kind_of == 'written-here' and isinstance(article, str) and bool(NAME.match(article))
     if finished:
         blog = _blog(places, held['article'])
         native.update(blog=held['article'], **blog)
@@ -228,11 +234,21 @@ def _candidate(places: dict, folder: Path) -> tuple[dict | None, str | None]:
             'note': note, 'folder': folder}, None
 
 
+def _checked(places: dict, folder: Path) -> tuple[dict | None, str | None]:
+    """_candidate, with a record of an unexpected shape left out and said, never raised:
+    one odd record never stops the rest of the preview."""
+    try:
+        return _candidate(places, folder)
+    except (TypeError, ValueError, AttributeError, KeyError, OSError):
+        return None, (f'“{folder.name}” was left out: its record is not in a shape Blog '
+                      'Studio saves.')
+
+
 def load(root, candidate: dict) -> dict:
     """The candidate read again with its text and original, refused when either is no
     longer what the preview read."""
     places = layout(root)
-    found, _ = _candidate(places, candidate['folder']) if places else (None, None)
+    found, _ = _checked(places, candidate['folder']) if places else (None, None)
     if not found or found['key'] != candidate['key'] \
             or found['markdown_sha'] != candidate['markdown_sha'] \
             or found['original_sha'] != candidate['original_sha'] \
@@ -253,7 +269,7 @@ def scan(root, content: bool = False) -> dict:
     folders, more = _folders(places['sources'])
     candidates, gaps = [], []
     for folder in folders:
-        found, why = _candidate(places, folder)
+        found, why = _checked(places, folder)
         if found:
             if not content:
                 found['text'], found['original'] = None, None

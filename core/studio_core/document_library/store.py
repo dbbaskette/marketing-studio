@@ -771,6 +771,22 @@ class Library:
                           'whole': self._state_of(place, head)[0] != 'missing'}
         return found
 
+    def uploaded(self, studio) -> dict:
+        """{original's SHA-256: {'id', 'revision'}} for the files this studio kept as uploads
+        (Keep in library), newest revision of each. Nothing is written."""
+        found = {}
+        for row in self._index():
+            if row.get('studio') != studio or row.get('kind') != 'upload' or row.get('key'):
+                continue
+            try:
+                _, head = self._record(row['id'])
+            except LibraryError:
+                continue
+            digest = (head.get('original') or {}).get('sha256')
+            if isinstance(digest, str):
+                found.setdefault(digest, {'id': head['id'], 'revision': head['revision']})
+        return found
+
     def adopt(self, key, studio, kind, origin, title, text='', original=None, filename=None,
               project=None, author=None, native=None, gaps=()) -> dict:
         """Keep existing work a person chose to add, found again by its key as `retain`
@@ -778,7 +794,12 @@ class Library:
         has a file, and `native`, what the studio calls it (its own ID, revision, roles,
         voice and style), recorded as it was given. The same key reuses its document and a
         revision is added only when the title, the text or the original changed, so adding
-        again adds nothing. Returns {'document', 'revision', 'changed'}."""
+        again adds nothing. Returns {'document', 'revision', 'changed'}.
+
+        No PDF is taken: no studio's existing work holds a PDF checked against the revision
+        it was made from (Blog Studio keeps none), and the library never claims one it has
+        not checked. An adapter that has one would add a `pdf` part beside `original`,
+        verified as the delivered revision, rather than pass it as the original."""
         if not isinstance(key, str) or not KEY.match(key) or key.split(':', 1)[0] != studio:
             raise LibraryError('Name the existing work by its studio and its own ID.')
         if kind not in KINDS or origin not in ORIGINS:

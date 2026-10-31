@@ -218,7 +218,11 @@ grants no web access and sends nothing to an assistant.
 with the upload. Once every file is saved, each file sent from this computer is also
 kept with `add_upload` (studio `blog`, an operation ID derived from the upload's), and
 the file's row says `kept` or `failed` with why. The file's own record and sharing are
-unchanged. Links, Google Docs and LinkedIn exports are not kept.
+unchanged. Links, Google Docs and LinkedIn exports are not kept. Its operation ID comes
+from the file's name, bytes and title, as Presentation Studio's and Training Studio's do,
+so the same file uploaded again is kept once. The team library page's Upload dialog and
+voice or style sample uploads deliberately offer no Keep in library: they feed the team
+library and voice learning, not one project's sources.
 
 **Add existing work to library.** `document_library/adopt.py` previews and confirms an
 import from the workspace each studio remembers (`marketing_studio/workspaces.py`).
@@ -243,6 +247,8 @@ and checks the record's hashes.
 | Upload, link, Google Doc, voice or style sample, other reference | Uploaded document, with its origin, under `blog:reference.<source id>` |
 | One blog's own file (material), a Team Hub snapshot, a copy taken from the library | Left out |
 | Text or original that does not match its record, a link, no text and no file | Left out, and said in the preview |
+| Retired in the team library, or a record of a shape Blog Studio does not save | Left out, and said in the preview; one odd record never stops the rest |
+| A file Keep in library already kept at upload (same original bytes) | Already in the library; not added again |
 | An item only the Team Hub holds | Not read; the preview says so |
 
 Each revision records `native`: the source ID and revision, purposes and role, kind of

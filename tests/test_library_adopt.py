@@ -169,6 +169,45 @@ class PreviewTests(AdoptCase):
         other = adopt.preview({'blog': {'root': str(self.base / 'plain')}})
         self.assertEqual((other['workspaces'][0]['state'], other['total']), ('unreadable', 0))
 
+    def test_retired_and_odd_records_are_gaps_and_never_stop_the_preview(self):
+        self.blogs.source('retired-ffff6666', 'Retired post', 'Old words.\n',
+                          library={'origin_kind': 'import', 'curation': 'retired'})
+        # A written-here record whose blog ID is not text: read as a reference, not a crash.
+        self.blogs.source('odd-abcd7777', 'Odd record', 'Odd words.\n',
+                          library={'origin_kind': 'written-here', 'article': 42})
+        found = adopt.preview(self.known)
+        rows = {row['title']: row for row in found['items']}
+        self.assertNotIn('Retired post', rows)
+        self.assertEqual((rows['Odd record']['kind_label'], found['total']), ('Uploaded document', 6))
+        gaps = ' '.join(next(row for row in found['workspaces'] if row['studio'] == 'blog')['gaps'])
+        self.assertIn('“Retired post” was left out: it is retired', gaps)
+        # Whatever else a record holds that the adapter cannot read is one gap, not a failure.
+        real = adopt.blog_existing._candidate
+
+        def odd(places, folder):
+            if folder.name == 'odd-abcd7777':
+                raise TypeError('synthetic')
+            return real(places, folder)
+        with mock.patch.object(adopt.blog_existing, '_candidate', odd):
+            found = adopt.preview(self.known)
+        self.assertEqual(found['total'], 5)
+        gaps = ' '.join(next(row for row in found['workspaces'] if row['studio'] == 'blog')['gaps'])
+        self.assertIn('“odd-abcd7777” was left out: its record is not in a shape', gaps)
+
+    def test_a_file_already_kept_at_upload_is_not_added_again(self):
+        # Keep in library kept this file when it was uploaded (no key); the team library holds
+        # the same bytes as Pricing notes. It is shown as already there, never added twice.
+        made = library.opened(create=True)
+        made.add_upload('pricing.md', b'Plans start at two seats.\n', studio='blog')
+        found = adopt.preview(self.known)
+        row = next(row for row in found['items'] if row['title'] == 'Pricing notes')
+        self.assertEqual((row['state'], row['state_label']), ('kept', 'Already in the library'))
+        self.assertIn('Kept in the library when it was uploaded.', row['gaps'])
+        self.assertEqual((found['adding'], found['kept']), (4, 1))
+        adopt.confirm(self.known, found['signature'])
+        self.assertEqual(sum(row['title'] in ('Pricing notes', 'pricing') for row in self.catalog()), 1)
+        self.assertEqual(adopt.preview(self.known)['adding'], 0)
+
     def test_team_workspace_layout(self):
         team = Workspace(self.base / 'team', team=True)
         team.source('launch-notes-dddd4444', 'Launch notes', 'Shared notes.\n',
@@ -328,6 +367,21 @@ class PageTests(AdoptCase):
         self.assertIn('4 added.', added['words']['library-existing-result'])
         self.assertIn('An old post: It changed after the preview.', added['words']['library-existing-result'])
         self.assertEqual(added['toasts'], ['Some existing work could not be added.'])
+
+    def test_the_preview_is_announced_and_a_refused_confirm_keeps_its_count(self):
+        found = adopt.preview(self.known)
+        shots = self.run_page([
+            {'responses': {'library-existing': found,
+                           'library-adopt': {'error': 'Something the preview offered changed.'}}},
+            {'press': '#library-existing-preview'},
+            {'press': 'Add 5 to library', 'within': '#library-existing-result'},
+            {'snapshot': 'refused', 'ids': ['library-existing-result']},
+        ])
+        shown = shots['refused']['words']['library-existing-result']
+        self.assertIn('5 items can be added. Nothing is added until you confirm.', shown)
+        self.assertIn('Something the preview offered changed.', shown)
+        self.assertIn('Add 5 to library', shown)
+        self.assertNotIn('Adding…', shown)
 
 
 if __name__ == '__main__':

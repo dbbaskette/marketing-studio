@@ -317,6 +317,11 @@ class KeepUploadTests(SharedLibraryCase):
         # The same upload again returns what it did, and the library keeps it once.
         self.assertEqual(self.upload(True), result)
         self.assertEqual(len(library.catalog()['items']), 1)
+        # The same file uploaded again under another operation, for another blog, is the same
+        # library document: its operation comes from the file's name, bytes and title.
+        again = self.upload(True, operation='f' * 32)
+        self.assertEqual(again['files'][0]['document_library']['id'], row['document_library']['id'])
+        self.assertEqual(len(library.catalog()['items']), 1)
         only = self.upload(False, operation='b' * 32, name='Private.md')
         self.assertNotIn('document_library', only['files'][0])
         self.assertEqual(len(library.catalog()['items']), 1)

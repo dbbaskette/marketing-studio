@@ -37,6 +37,7 @@ class El {
   addEventListener(name, listener) { (this.listeners[name] ||= []).push(listener); }
   fire(name, event = {}) { for (const listener of this.listeners[name] || []) listener({ preventDefault() {}, key: event.key, target: this, ...event }); }
   append(...nodes) { for (const node of nodes) this.children.push(node); }
+  prepend(...nodes) { this.children.unshift(...nodes); }
   replaceChildren(...nodes) { this.children = [...nodes]; }
   before() {} after() {} remove() {} replaceWith() {} focus() { focused = this; } select() {} setSelectionRange() {}
   // A named control is the form's, as in a page: form.elements finds the one made last.

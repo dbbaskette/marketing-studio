@@ -834,7 +834,11 @@ function showExisting(found) {
     places.append(existingRow(place.label, [[place.summary], [place.shown ? `Workspace: ${place.shown}` : ''],
       ...place.gaps.map(gap => [gap])]));
   }
-  const parts = [element('h4', 'Workspaces', 'card-subtitle'), places];
+  // Said to a screen reader as the confirm's result is: what the preview found.
+  const said = element('p', found.adding ? `${found.adding === 1 ? '1 item' : `${found.adding} items`} can be added. Nothing is added until you confirm.`
+    : found.total ? 'Everything found is already in the library.' : 'No existing work was found to add.', 'quiet');
+  said.setAttribute('role', 'status');
+  const parts = [said, element('h4', 'Workspaces', 'card-subtitle'), places];
   if (found.total) {
     const counts = [found.new && `${found.new} new`, found.changed && `${found.changed} with a newer revision`,
       found.kept && `${found.kept} already in the library`].filter(Boolean).join(', ');
@@ -854,8 +858,6 @@ function showExisting(found) {
     go.type = 'button'; go.id = 'library-existing-add';
     go.addEventListener('click', () => adoptExisting(found.signature, go));
     bar.append(go);
-  } else {
-    parts.push(element('p', found.total ? 'Everything found is already in the library.' : 'No existing work was found to add.', 'quiet'));
   }
   const cancel = element('button', found.adding ? 'Cancel' : 'Close', 'button button-quiet');
   cancel.type = 'button';
@@ -865,7 +867,7 @@ function showExisting(found) {
   box.replaceChildren(...parts);
 }
 async function adoptExisting(signature, button) {
-  const box = $('#library-existing-result');
+  const box = $('#library-existing-result'), label = button.textContent;
   button.disabled = true; button.textContent = 'Adding…';
   try {
     const done = await api('library-adopt', {signature});
@@ -880,8 +882,10 @@ async function adoptExisting(signature, button) {
     if (libraryCatalog) void libraryCatalog.load();
     $('#library-existing-preview').focus();
   } catch (error) {
-    box.prepend(element('p', error.message, 'problem'));
-    button.disabled = false; button.textContent = 'Add to library';
+    const problem = element('p', error.message, 'problem');
+    problem.setAttribute('role', 'alert');
+    box.prepend(problem);
+    button.disabled = false; button.textContent = label;
   }
 }
 $('#library-existing-preview').addEventListener('click', async () => {
