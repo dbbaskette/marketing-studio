@@ -170,3 +170,169 @@ class TakeTests(SharedLibraryCase):
         name, media = management.STATIC['/library.js']
         self.assertTrue(Path(name).is_file())
         self.assertTrue(media.startswith('text/javascript'))
+
+
+class UpdateTests(SharedLibraryCase):
+    """Update available on the desk: a newer revision is shown, and taken only when asked."""
+
+    def setUp(self):
+        super().setUp()
+        self.library = document_library.opened(create=True)
+        self.deck = self.library.retain(
+            'presentation:launch',
+            'presentation',
+            'presentation',
+            'Launch deck',
+            '# Launch\n\nOne.\n',
+        )
+        taken = management.dispatch(
+            self.root,
+            shared_library.TAKE,
+            {
+                'operation': OPERATION,
+                'picks': [{'id': self.deck['document'], 'revision': 1, 'role': 'facts'}],
+            },
+        )
+        self.source = taken['files'][0]['source']['id']
+        self.blog = management.dispatch(
+            self.root,
+            'desk-create',
+            {
+                'operation': 'c' * 32,
+                'title': 'Library post',
+                'manuscript': '# Library post\n\nWords.\n',
+                'sources': [self.source],
+            },
+        )['id']
+
+    def newer(self):
+        self.library.retain(
+            'presentation:launch',
+            'presentation',
+            'presentation',
+            'Launch deck',
+            '# Launch\n\nTwo.\n',
+        )
+
+    def shown(self):
+        import desk_jobs
+
+        names = desk_jobs.view(self.root, self.blog)['source_names']
+        return next(row for row in names if row['id'] == self.source)
+
+    def update(self, source=None):
+        return management.dispatch(
+            self.root, 'desk-library-update', {'id': self.blog, 'source': source or self.source}
+        )
+
+    def test_a_newer_revision_is_shown_and_taken_only_when_asked(self):
+        self.assertEqual(
+            self.shown()['library'],
+            {'id': self.deck['document'], 'revision': 1, 'head': 1, 'update': False},
+        )
+        with self.assertRaisesRegex(ValueError, 'already uses the newest'):
+            self.update()
+        self.newer()
+        self.assertEqual(
+            (self.shown()['library']['update'], self.shown()['library']['head']), (True, 2)
+        )
+        folder, _ = studio.item(self.root, 'sources', self.source)
+        # Showing it changed nothing: the blog still reads revision 1.
+        self.assertEqual((folder / 'content.md').read_text(), '# Launch\n\nOne.\n')
+        self.assertEqual(self.update()['id'], self.blog)
+        folder, after = studio.item(self.root, 'sources', self.source)
+        self.assertEqual((after['revision'], after['document_library']['revision']), (2, 2))
+        self.assertEqual((folder / 'content.md').read_text(), '# Launch\n\nTwo.\n')
+        self.assertTrue(studio.is_material(self.root, folder, after))
+        _, record = studio.item(self.root, 'articles', self.blog)
+        pin = next(entry for entry in record['sources'] if entry['source_id'] == self.source)
+        self.assertEqual((pin['revision'], pin['purposes']), (2, ['material']))
+        self.assertFalse(self.shown()['library']['update'])
+        # What the blog read before stays readable at the revision it pinned.
+        self.assertEqual(runner.pinned_source(folder, after, 1)[1], '# Launch\n\nOne.\n')
+        self.assertEqual(runner.pinned_source(folder, after, 2)[1], '# Launch\n\nTwo.\n')
+        self.assertEqual(blog_library.catalog(self.root)['items'], [])
+
+    def test_refused_while_a_job_runs_or_when_the_library_is_gone(self):
+        import desk_jobs
+
+        self.newer()
+        with (
+            patch.object(desk_jobs, 'jobs', return_value=[{'status': 'working'}]),
+            patch.object(desk_jobs, 'busy', return_value=True),
+            self.assertRaisesRegex(ValueError, 'desk job is working'),
+        ):
+            self.update()
+        with (
+            patch.object(document_library, 'opened', return_value=None),
+            self.assertRaisesRegex(ValueError, 'no longer in the Document Library'),
+        ):
+            self.update()
+        with self.assertRaisesRegex(ValueError, 'not a source of this blog'):
+            self.update('material-0000000000000000')
+        _, record = studio.item(self.root, 'sources', self.source)
+        self.assertEqual(record['revision'], 1)
+
+
+class KeepUploadTests(SharedLibraryCase):
+    """Keep in library at upload: a local copy, beside whatever the file is kept as."""
+
+    def upload(self, keep, operation=OPERATION, name='Gateway facts.md'):
+        import base64
+
+        return management.dispatch(
+            self.root,
+            'upload',
+            {
+                'operation': operation,
+                'files': [
+                    {
+                        'filename': name,
+                        'content': base64.b64encode(b'The gateway holds 40 routes.\n').decode(),
+                        'purpose': 'material',
+                    }
+                ],
+                'purpose': 'material',
+                'keep': False,
+                'analyze': False,
+                'document_library': keep,
+            },
+        )
+
+    def test_keep_in_library_keeps_a_copy_and_only_this_blog_keeps_none(self):
+        result = self.upload(True)
+        row = result['files'][0]
+        self.assertEqual(row['document_library']['state'], 'kept')
+        library = document_library.opened()
+        listed = library.catalog()['items']
+        self.assertEqual(
+            [(item['title'], item['studio'], item['formats']) for item in listed],
+            [('Gateway facts', 'blog', ['markdown', 'original'])],
+        )
+        # The file itself is still this blog's own upload, never a team library item.
+        directory, record = studio.item(self.root, 'sources', row['source']['id'])
+        self.assertTrue(studio.is_material(self.root, directory, record))
+        self.assertNotIn('document_library', record)
+        self.assertEqual(blog_library.catalog(self.root)['items'], [])
+        # The same upload again returns what it did, and the library keeps it once.
+        self.assertEqual(self.upload(True), result)
+        self.assertEqual(len(library.catalog()['items']), 1)
+        # The same file uploaded again under another operation, for another blog, is the same
+        # library document: its operation comes from the file's name, bytes and title.
+        again = self.upload(True, operation='f' * 32)
+        self.assertEqual(again['files'][0]['document_library']['id'], row['document_library']['id'])
+        self.assertEqual(len(library.catalog()['items']), 1)
+        only = self.upload(False, operation='b' * 32, name='Private.md')
+        self.assertNotIn('document_library', only['files'][0])
+        self.assertEqual(len(library.catalog()['items']), 1)
+        with self.assertRaisesRegex(ValueError, 'Keep in library or Only this blog'):
+            self.upload('yes', operation='d' * 32)
+
+    def test_a_library_failure_never_stops_the_upload(self):
+        with patch.object(
+            document_library, 'opened', side_effect=document_library.LibraryError('Busy.')
+        ):
+            result = self.upload(True)
+        row = result['files'][0]
+        self.assertEqual(row['document_library'], {'state': 'failed', 'reason': 'Busy.'})
+        studio.item(self.root, 'sources', row['source']['id'])

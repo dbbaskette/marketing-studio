@@ -18,6 +18,44 @@ Download `marketing-studio-installer.zip` for the whole suite, or one studio's i
 
 Signing in to an assistant, your organisation's brands and fonts, and optional Google setup are still your choices. Installing starts no provider job.
 
+## Unreleased: the Document Library, existing work and Blog Studio updates
+
+- **Add existing work to library.** Marketing Studio's **Library** screen can now
+  bring in work kept before the library existed. **Preview existing work** reads
+  only the workspace each studio remembers on this computer. It lists each
+  workspace, every item with its type and formats, and what is missing, such as
+  **no PDF** or **needs text**. Nothing is added until you press **Add N to
+  library**. No other folder is searched, no studio is started, and nothing in a
+  workspace is moved or changed. Adding again adds nothing new, and a newer revision
+  in the studio adds a library revision. If anything changed since the preview,
+  nothing is added and you preview again.
+- **Blog Studio's team library comes along.** Finished blogs, uploads, links,
+  Google Docs, imported posts and voice or style samples are offered from it. A
+  finished blog keeps the library document that finishing it again later would use.
+  Each item's Blog Studio ID, revision, roles, kind of post, author, voice and style
+  are recorded with it. Files kept for one blog only, Team Hub snapshots, retired
+  items and items only in the Team Hub are left out, and the preview says so. The Team Hub is never changed. Adding existing
+  work from Presentation Studio, Training Studio and Infographic Studio is not
+  offered yet.
+- **Update available in Blog Studio.** A desk source taken from the Document Library
+  says which revision the blog reads. When the library has a newer one, the desk
+  shows **Update available** and **Use revision N**. Only that button takes it:
+  later rewrites read the new revision, nothing already written changes, and the
+  earlier revision stays readable. It waits while a desk job works on the blog.
+- **Keep in library when uploading in Blog Studio.** Uploading files on the desk
+  start or under **Add a source** offers **Keep in library** (the default) or **Only
+  this blog**. Keep in library also keeps a copy of each file, with its readable
+  Markdown, in the Document Library on this computer. It never changes how the file
+  is shared, and a library problem is shown on the file's row without stopping the
+  upload. Links and Google Docs stay with the blog. The same file uploaded again is
+  kept once, and Add existing work shows it as already in the library. The team
+  library's own Upload and voice or style samples don't offer the choice: they feed
+  the team library and voice learning, not one blog's sources.
+- **Checked in a browser.** The Library screen, Add existing work and the **Add from
+  library** sheet are checked at desktop and phone widths, in light and dark, and
+  with reduced motion and reduced transparency. On a phone, a ticked document's
+  title in the sheet now wraps instead of running past the list.
+
 ## Unreleased: the shared Document Library, first slice
 
 - **One library for every studio.** Marketing Studio has a new **Library** screen.

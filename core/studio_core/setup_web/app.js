@@ -814,6 +814,87 @@ async function openLibrary() {
     if (where) $('#library-where').textContent = `Kept in ${where} on this computer.`;
   } catch (error) { inform(error.message, true); }
 }
+// Add existing work to library: a preview of what the studios' remembered workspaces hold,
+// then an import only when it is confirmed. The confirm carries the preview's signature, so
+// it adds exactly what was shown or refuses when the workspaces changed since.
+function existingRow(title, lines, tagText) {
+  const item = element('li', '', 'library-row');
+  const text = element('div', '', 'library-row-text');
+  text.append(element('span', title, 'row-title'));
+  for (const [line, kind] of lines) if (line) text.append(element('span', line, kind || 'quiet'));
+  item.append(text);
+  if (tagText) item.append(element('span', tagText, 'tag'));
+  return item;
+}
+function showExisting(found) {
+  const box = $('#library-existing-result');
+  const places = element('ul', '', 'library-list');
+  places.setAttribute('aria-label', 'Workspaces looked at');
+  for (const place of found.workspaces) {
+    places.append(existingRow(place.label, [[place.summary], [place.shown ? `Workspace: ${place.shown}` : ''],
+      ...place.gaps.map(gap => [gap])]));
+  }
+  // Said to a screen reader as the confirm's result is: what the preview found.
+  const said = element('p', found.adding ? `${found.adding === 1 ? '1 item' : `${found.adding} items`} can be added. Nothing is added until you confirm.`
+    : found.total ? 'Everything found is already in the library.' : 'No existing work was found to add.', 'quiet');
+  said.setAttribute('role', 'status');
+  const parts = [said, element('h4', 'Workspaces', 'card-subtitle'), places];
+  if (found.total) {
+    const counts = [found.new && `${found.new} new`, found.changed && `${found.changed} with a newer revision`,
+      found.kept && `${found.kept} already in the library`].filter(Boolean).join(', ');
+    parts.push(element('h4', `${found.total === 1 ? '1 item' : `${found.total} items`} found: ${counts}`, 'card-subtitle'));
+    const items = element('ul', '', 'library-list');
+    items.setAttribute('aria-label', 'Existing work found');
+    for (const item of found.items) {
+      const meta = [item.kind_label, item.studio_label, item.note, item.format_labels.join(', ')].filter(Boolean).join(' · ');
+      items.append(existingRow(item.title, [[meta], ...item.gaps.map(gap => [gap])], item.state_label));
+    }
+    parts.push(items);
+    if (found.total > found.items.length) parts.push(element('p', `${found.total - found.items.length} more are not listed here; adding includes them.`, 'quiet'));
+  }
+  const bar = element('div', '', 'bar');
+  if (found.adding) {
+    const go = element('button', found.adding === 1 ? 'Add 1 to library' : `Add ${found.adding} to library`, 'button button-filled');
+    go.type = 'button'; go.id = 'library-existing-add';
+    go.addEventListener('click', () => adoptExisting(found.signature, go));
+    bar.append(go);
+  }
+  const cancel = element('button', found.adding ? 'Cancel' : 'Close', 'button button-quiet');
+  cancel.type = 'button';
+  cancel.addEventListener('click', () => { box.replaceChildren(); $('#library-existing-preview').focus(); });
+  bar.append(cancel);
+  parts.push(element('p', 'Adding keeps a local copy in the Document Library. Nothing is shared with your team or changed in a studio.', 'field-hint quiet'), bar);
+  box.replaceChildren(...parts);
+}
+async function adoptExisting(signature, button) {
+  const box = $('#library-existing-result'), label = button.textContent;
+  button.disabled = true; button.textContent = 'Adding…';
+  try {
+    const done = await api('library-adopt', {signature});
+    const said = [done.added && `${done.added} added`, done.revised && `${done.revised} with a new revision`,
+      done.unchanged && `${done.unchanged} already there`].filter(Boolean).join(', ') || 'Nothing to add';
+    const parts = [element('p', `${said}.`, '')];
+    parts[0].setAttribute('role', 'status');
+    for (const failed of done.failed) parts.push(element('p', `${failed.title}: ${failed.problem}`, 'problem'));
+    if (done.failed.length) parts.push(element('p', 'Preview again to try those once more; what was added is not added twice.', 'quiet'));
+    box.replaceChildren(...parts);
+    inform(done.failed.length ? 'Some existing work could not be added.' : 'Existing work was added to the library.');
+    if (libraryCatalog) void libraryCatalog.load();
+    $('#library-existing-preview').focus();
+  } catch (error) {
+    const problem = element('p', error.message, 'problem');
+    problem.setAttribute('role', 'alert');
+    box.prepend(problem);
+    button.disabled = false; button.textContent = label;
+  }
+}
+$('#library-existing-preview').addEventListener('click', async () => {
+  const button = $('#library-existing-preview');
+  button.disabled = true;
+  try { showExisting(await api('library-existing', {})); }
+  catch (error) { $('#library-existing-result').replaceChildren(element('p', error.message, 'problem')); }
+  finally { button.disabled = false; }
+});
 // One operation ID per file until it is kept, so trying again never keeps it twice.
 const libraryOperations = new Map();
 function operationId(file) {

@@ -211,6 +211,51 @@ grants no web access and sends nothing to an assistant.
 | A library save fails after delivery | Recorded in the deck's local `sources/library.json`. **Keep in library again** retries from `deliver.json`, with no upload and no job. |
 | A job is running on the deck (the chain draws, or a desk job runs) | Add from library and Use revision N are refused until it ends; the job keeps the sources it started with |
 | Use selected is still landing | The sheet's Cancel, Close and Escape wait |
+| A newer revision, in Blog Studio | The desk source says Update available; **Use revision N** gives the blog's file a new source revision and the blog pins it. Refused while a desk job runs |
+
+**Keep in library at upload.** Blog Studio's file picker offers **Keep in library**
+(the default) or **Only this blog**. Keep in library sends `document_library: true`
+with the upload. Once every file is saved, each file sent from this computer is also
+kept with `add_upload` (studio `blog`, an operation ID derived from the upload's), and
+the file's row says `kept` or `failed` with why. The file's own record and sharing are
+unchanged. Links, Google Docs and LinkedIn exports are not kept. Its operation ID comes
+from the file's name, bytes and title, as Presentation Studio's and Training Studio's do,
+so the same file uploaded again is kept once. The team library page's Upload dialog and
+voice or style sample uploads deliberately offer no Keep in library: they feed the team
+library and voice learning, not one project's sources.
+
+**Add existing work to library.** `document_library/adopt.py` previews and confirms an
+import from the workspace each studio remembers (`marketing_studio/workspaces.py`).
+The Library screen calls `/api/library-existing` for the preview and
+`/api/library-adopt` with the preview's `signature` to confirm. The preview writes
+nothing and does not make the library. The confirm scans again and refuses, adding
+nothing, unless what it would add still matches the signature. Each item is kept with
+`Library.adopt`, found again by its key, so adding again adds nothing and a changed
+title, text or original adds a revision. A failure is reported per item; the rest are
+added. No folder other than a remembered workspace is read, no studio is started, and
+no workspace file is written, moved or regenerated.
+
+Blog Studio's legacy adapter, `document_library/blog_existing.py`, reads only team
+library records on this computer: `sources/<id>/` in a plain writing folder, or
+`.shared/references/<id>/` in a team workspace. Every read is bounded, refuses links
+and checks the record's hashes.
+
+| Blog Studio record | Library document |
+| --- | --- |
+| Finished or published blog (`origin_kind` written-here) | Blog, Created here, under `blog:<blog id>`: the key Finish and publish already use |
+| Imported post | Blog, Imported, under `blog:reference.<source id>` |
+| Upload, link, Google Doc, voice or style sample, other reference | Uploaded document, with its origin, under `blog:reference.<source id>` |
+| One blog's own file (material), a Team Hub snapshot, a copy taken from the library | Left out |
+| Text or original that does not match its record, a link, no text and no file | Left out, and said in the preview |
+| Retired in the team library, or a record of a shape Blog Studio does not save | Left out, and said in the preview; one odd record never stops the rest |
+| A file Keep in library already kept at upload (same original bytes) | Already in the library; not added again |
+| An item only the Team Hub holds | Not read; the preview says so |
+
+Each revision records `native`: the source ID and revision, purposes and role, kind of
+post, author and, for a finished blog, the blog's voice and style pins. An original
+file is kept when it is a supported type of at most 8 MB that matches its hash; a
+record with no readable text is kept as **Needs text**. Presentation Studio, Training
+Studio and Infographic Studio have no adapter yet, and the preview says so.
 
 ## Where new work stops
 

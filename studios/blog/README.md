@@ -186,7 +186,15 @@ A finished or published blog is also kept as Markdown in the Document Library th
 every studio shares on this computer. It is local and separate from the team
 library. To use a deck or an upload from it, choose **Library → From the Document
 Library** under a blog's sources and give each document a role. The copy stays with
-that blog only and is never shared with the team. See
+that blog only and is never shared with the team. When the library has a newer
+revision of it, the desk says **Update available**; press **Use revision N** to take
+it. Nothing changes until you do.
+
+When you upload files, **Keep in library** (the default) also keeps a local copy of
+each one in the Document Library for any studio; choose **Only this blog** to keep
+none. Either way the file is shared with your team only as you chose for it. Blogs
+and team library items kept before the Document Library existed can be added on
+Marketing Studio's Library screen with **Add existing work to library**. See
 [the Document Library](../../docs/shared-setup.md#the-document-library).
 
 ## Update or get help

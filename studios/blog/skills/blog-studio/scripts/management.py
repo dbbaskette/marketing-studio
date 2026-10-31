@@ -535,6 +535,13 @@ def save_upload(root, staging, checked, purpose, author=None, analyze=True, libr
         )
 
 
+# What a files upload may say. `document_library` is Keep in library: a copy of each file
+# in the shared Document Library on this computer, beside whatever else is chosen for it.
+UPLOAD_FIELDS = frozenset(
+    {'operation', 'files', 'purpose', 'keep', 'analyze', 'author', 'kind', 'document_library'}
+)
+
+
 def read_ahead(root, data):
     """Read the links and Google Docs of a files upload before the studio lock is taken,
     so a slow page or Doc never holds the workspace. {position: checked entry}.
@@ -544,7 +551,7 @@ def read_ahead(root, data):
     if not isinstance(files, list) or len(files) > MAX_UPLOAD_FILES:
         return {}
     if (
-        set(data) - {'operation', 'files', 'purpose', 'keep', 'analyze', 'author', 'kind'}
+        set(data) - UPLOAD_FIELDS
         or data.get('purpose', 'material') not in studio.PURPOSES
         or not isinstance(data.get('keep', False), bool)
     ):
@@ -568,13 +575,15 @@ def upload_files(root, data, staging, ledger, fingerprint, prepared=None):
     recorded on every source it saves."""
     import sample_intake
 
-    if set(data) - {'operation', 'files', 'purpose', 'keep', 'analyze', 'author', 'kind'}:
+    if set(data) - UPLOAD_FIELDS:
         raise ValueError('Unknown upload field.')
     files = data.get('files')
     if not isinstance(files, list) or not files or len(files) > MAX_UPLOAD_FILES:
         raise ValueError('Upload at most %d files at once, and at least one.' % MAX_UPLOAD_FILES)
     if not isinstance(data.get('keep', False), bool):
         raise ValueError('Choose whether to keep these files in your references.')
+    if not isinstance(data.get('document_library', False), bool):
+        raise ValueError('Choose Keep in library or Only this blog for these files.')
     purpose = data.get('purpose', 'material')
     if purpose not in studio.PURPOSES:
         raise ValueError('Choose a source purpose.')
@@ -616,6 +625,8 @@ def upload_files(root, data, staging, ledger, fingerprint, prepared=None):
                 if 'link' in entry
                 else checked_upload
             )(root, entry)
+            # Only a file sent from this computer is offered to Keep in library.
+            found['from_file'] = 'google' not in entry and 'link' not in entry
             found['purposes'] = [purpose] + ([role] if role != 'material' else [])
             # Refused here, before the upload is begun, as `source add` refuses it.
             studio.lone_messaging(found['purposes'], 'Nothing was saved.')
@@ -674,6 +685,13 @@ def upload_files(root, data, staging, ledger, fingerprint, prepared=None):
                 shutil.rmtree(studio.material(root, ident), ignore_errors=True)
             ledger.unlink(missing_ok=True)
         raise
+    if data.get('document_library'):
+        # Keep in library, once every file is saved: a local copy for any studio on this
+        # computer. It changes nothing about where the file itself is kept or shared, and a
+        # library that cannot keep it is said on its row, never in the way of the upload.
+        for entry, row in zip(checked, rows, strict=True):
+            if entry.get('from_file'):
+                row['document_library'] = shared_library.keep_upload(entry, row.get('author'))
     ready = sum(row['state'] == 'ready' for row in rows)
     result = {
         'files': rows,
@@ -878,10 +896,13 @@ def upload(root, data, prepared=None):
         'files',
         'keep',
         'kind',
+        'document_library',
     }:
         raise ValueError('Unknown upload field.')
     if not isinstance(data.get('analyze', True), bool):
         raise ValueError('Choose whether to summarize and tag this upload.')
+    if 'files' not in data and data.get('document_library'):
+        raise ValueError('Keep in library applies to files sent together as files.')
     operation = data.get('operation', '')
     if not re.fullmatch(r'[a-f0-9]{32}', operation):
         raise ValueError('An upload operation ID is required.')

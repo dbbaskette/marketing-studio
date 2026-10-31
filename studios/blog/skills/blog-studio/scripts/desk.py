@@ -1430,6 +1430,8 @@ ROUTES = {
     'outline-save': {'id', 'seen', 'sections'},
     'draft': {'id', 'seen'},
     'sources': {'id', 'sources', 'library', 'keep'},
+    # A newer Document Library revision of a source, taken only when asked (shared_library).
+    'library-update': {'id', 'source'},
     # Finishing (desk_finish.py): a tool proposes, then the person applies or skips.
     'finish': {'id', 'seen', 'tool', 'level', 'guide'},
     # Review mode's check: Copy edit, then Humanize when it is on (desk_jobs.review).
@@ -1594,6 +1596,10 @@ def dispatch(root, action, data):
         desk_jobs.draft_job(root, ident, seen)
     elif action == 'sources':
         add_sources(root, ident, data)
+    elif action == 'library-update':
+        import shared_library
+
+        shared_library.update(root, ident, data.get('source'))
     elif action in ('google-plan', 'google-send'):
         import desk_finish
 

@@ -565,10 +565,23 @@ function sDeskWhole(held){return DESK_KIT.whole(held);}
 // The note for the whole draft is never drawn again by a poll: only its button follows the job.
 function sDeskWholeState(held){if(held.wholeGo)held.wholeGo.disabled=!sDeskCan(held)||!!held.view.working;}
 function sDeskPart(held,part){return held.reading==='read'?sDeskReadPart(held,part):DESK_KIT.part(held,part);}
+// One source on the desk. A document taken from the Document Library says which revision
+// this blog reads; a newer one there shows Update available, and is taken only with
+// Use revision N. Nothing already written changes, and no job starts.
+function sDeskSourceRow(held,source){
+  const row=sNode('li','row'),text=sAdd(sNode('div','row-text'),sNode('span','row-title',source.name));row.append(text);
+  const found=source.library;if(!found)return row;
+  text.append(sNode('span','row-says','From the Document Library · revision '+found.revision+(found.update?' · Update available: revision '+found.head:found.head===null?' · no longer in the library; this blog keeps its copy':'')));
+  if(found.update){
+    const take=sButton('Use revision '+found.head,async button=>{await busy(button,'Taking revision '+found.head+'…',async()=>{try{await sDeskFlush(held);const before=held.view;held.view=await api('desk-library-update',{id:held.id,source:source.id});sToast('Revision '+found.head+' is a source now. Later rewrites read it; nothing already written changes.');sDeskRefresh(held,before);}catch(error){sToast(error.message);}});});
+    take.setAttribute('aria-label','Use revision '+found.head+' of '+source.name);take.disabled=!sDeskCan(held)||!!held.view.working;row.append(take);
+  }
+  return row;
+}
 function sDeskAside(held){
   const view=held.view,aside=sNode('aside','desk-aside');aside.setAttribute('aria-label','Sources and gaps');
   const sources=sCard('Sources');
-  if((view.source_names||[]).length){const list=sNode('ul','rows');for(const source of view.source_names)list.append(sAdd(sNode('li','row'),sNode('span','row-title',source.name)));sources.append(list);}
+  if((view.source_names||[]).length){const list=sNode('ul','rows');for(const source of view.source_names)list.append(sDeskSourceRow(held,source));sources.append(list);}
   else if(!view.research)sources.append(sNode('p','quiet','No sources were given for this draft. Rewrites keep to what the draft already says.'));
   if(view.research)sources.append(sNode('p','quiet','Research was read for this draft'+(view.research.sources?': '+view.research.sources+(view.research.sources===1?' source.':' sources.'):'.')));
   const add=sButton('Add a source',()=>sDeskSourcesSheet(held));add.disabled=!sDeskCan(held);sources.append(sAdd(sNode('div','bar'),add));

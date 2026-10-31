@@ -195,6 +195,18 @@ elif [[ "${1:-full}" == marketing-home ]]; then
   node studios/infographic/tests/ui/home-readiness.cjs 2>&1 | tee "$results_dir/home-readiness-browser.log"
   "$python" -m unittest discover -s tests -v 2>&1 | tee "$results_dir/home-tests.log"
   bash scripts/ci/acceptance.sh "$python" "$results_dir/checks" 2>&1 | tee "$results_dir/home-acceptance.log"
+elif [[ "${1:-full}" == library-visual ]]; then
+  # The Document Library's screen, Add existing work and the Add from library sheet in a
+  # real browser at phone width, light/dark and reduced effects, over synthetic data only.
+  export INFOGRAPHIC_STUDIO_TEST_RENDERER="$("$python" scripts/ci/infographic-renderer.py --output "$work/library-graphics" --cache "$work/library-graphics-cache")"
+  mkdir -p "$work/library-browser"
+  cp studios/infographic/tests/ui/package*.json "$work/library-browser/"
+  touch "$work/library-npm-user.conf" "$work/library-npm-global.conf"
+  env HOME="$work/library-browser-home" NPM_CONFIG_USERCONFIG="$work/library-npm-user.conf" NPM_CONFIG_GLOBALCONFIG="$work/library-npm-global.conf" \
+    npm ci --prefix "$work/library-browser" --ignore-scripts --no-audit --no-fund > "$results_dir/library-browser-tools.log" 2>&1
+  export NODE_PATH="$work/library-browser/node_modules" PYTHON="$python" LIBRARY_VISUAL_RESULTS="$results_dir/library-ui"
+  node tests/library_visual.cjs 2>&1 | tee "$results_dir/library-browser.log"
+  PYTHONPATH=tests "$python" -m unittest test_document_library test_library_page test_library_adopt test_home test_layout_pass -v 2>&1 | tee "$results_dir/library-tests.log"
 elif [[ "${1:-full}" == yoodli-pdf ]]; then
   export INFOGRAPHIC_STUDIO_TEST_RENDERER="$("$python" scripts/ci/infographic-renderer.py --output "$work/source-picker-graphics" --cache "$work/source-picker-cache")"
   mkdir -p "$work/source-picker-browser"

@@ -18,7 +18,8 @@
 // for each (`words` includes the children's words), and every snapshot has `cards`: each
 // launch card's studio, its filled and plain buttons, the class of each of its parts in
 // order, its status line's bead and words, its readiness sentence and recovery action; and
-// `toasts`, the words of each toast shown. The form's named controls and its parts with a
+// `toasts`, the words of each toast shown. {press: selector} clicks an element, and {press:
+// words, within: selector} the button with those words under it, settling what it starts. The form's named controls and its parts with a
 // setup step are read from index.html, so fill(), show() and the saved state see them all.
 'use strict';
 
@@ -36,6 +37,7 @@ class El {
   addEventListener(name, listener) { (this.listeners[name] ||= []).push(listener); }
   fire(name, event = {}) { for (const listener of this.listeners[name] || []) listener({ preventDefault() {}, key: event.key, target: this, ...event }); }
   append(...nodes) { for (const node of nodes) this.children.push(node); }
+  prepend(...nodes) { this.children.unshift(...nodes); }
   replaceChildren(...nodes) { this.children = [...nodes]; }
   before() {} after() {} remove() {} replaceWith() {} focus() { focused = this; } select() {} setSelectionRange() {}
   // A named control is the form's, as in a page: form.elements finds the one made last.
@@ -125,6 +127,15 @@ for (const step of steps) {
     await run(step.run);
   } else if (step.responses) {
     responses = step.responses;
+  } else if (step.press) {
+    // {press: selector} clicks that element; {press: words, within: selector} clicks the
+    // button with those words under it, as a person would. Either settles what it started.
+    const within = step.within ? find(step.within) : null;
+    const all = node => (node.children || []).flatMap(child => [child, ...all(child)]);
+    const target = within ? all(within).find(node => node.tagName === 'BUTTON' && node.textContent === step.press)
+      : find(step.press);
+    if (!target) throw new Error('No button says ' + step.press);
+    target.fire('click'); for (let i = 0; i < 6; i += 1) await settle();
   } else if (step.submit) {
     form.fire('submit'); for (let i = 0; i < 6; i += 1) await settle();
   } else if ('type' in step) {
