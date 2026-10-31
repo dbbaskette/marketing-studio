@@ -34,6 +34,7 @@ it does not claim every low-level CLI flag is a browser control.
 | Pin a voice revision to a step-by-step blog *(older voice tools)* | Voice → Use this revision; Run → About this blog → Change the voice | Explicit article voice pin, confirmed once an outline or draft exists; no default mutation |
 | Interview → reviewed outline → a draft on the desk | Tools → Interview me → Review outline and start a draft | Interview notes and outline; the desk start with `desk-create` `way: outline` |
 | Compare/restore manuscript checkpoints | Tools → Saved manuscript revisions | `article restore` and `author_workflow.restore` |
+| Bring a desk blog's accepted Google text back | Desk → Google Doc → Bring accepted changes | `desk-google-compare` (reads, changes nothing), then `desk-google-take` with its `preview`; History keeps each part's desk text as `google`; refused while desk suggestions wait or both sides changed a part |
 | Reconcile local/Google accepted text | Tools → Compare Google and local text | `google pull --id ID`, then explicit `--accept PREVIEW --expected VERSION --comparison HASH --confirmed`; same three-way compare/accept and fresh read before local save |
 | Channel copy, target counts, named variants | Tools → Repurpose; Saved channel copies | Repurposing guidance and existing article derive; lazy per-copy editing with version guards |
 | Retrieval/citation readiness | Tools → Improve clarity… | Existing GEO guidance, located evidence review |

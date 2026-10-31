@@ -344,6 +344,30 @@ A teammate's suggestion, or one the owner rejected, holds nothing. A note with n
 paragraph nearby goes with the next send.
 When Google cannot take suggestions, the plan says the changes go as comments.
 
+The desk's toolbar keeps the Doc in reach: **Google Doc** is a small menu with **Open the
+Google Doc**, **Check what would be sent** (then **Send to Google Doc**: two steps) and
+**Bring accepted changes**; on a phone they are rows in the toolbar's menu. The receipt says
+what went and when, such as "Sent 10 suggestions and 2 comments at 3:24 PM. When the owner
+has decided them, choose Bring accepted changes." The toolbar then says what waits, for
+example "Doc: 12 waiting · last sent 3:24 PM", and "Unsent desk changes" once the desk has
+changes the Doc has not been sent. Home and Blogs show the same in each blog's one status
+line, with when it was last edited, and Home counts a desk blog with suggestions open, Doc
+suggestions waiting or unsent changes as needing you.
+
+### Bring accepted changes from the Doc
+
+**Bring accepted changes** reads the Doc's accepted text (its pending suggestions stay in
+Google, never accepted or rejected) and lists each part it would change, with a comparison:
+a part the desk has not changed since the desk and the Doc last agreed (the last send that
+sent every change, or the last bring-back) takes the Doc's text, so what the owner accepted,
+rejected or wrote comes back. Nothing changes until **Bring N parts to the desk**; each
+part keeps the desk's text first in History, as **Before Google's accepted text**, and the
+Doc becomes the new common baseline, as the chat's "Pull from Google Docs" does. Nothing is
+written to Google. It is refused, with nothing changed, while suggestions sent from the desk
+still wait for the owner, or when the desk and the Doc both changed a part since they last
+agreed: send the desk's changes first, or use "Pull from Google Docs" in chat to choose the
+wording for each. A desk or Doc change between the check and the bring-back is refused too.
+
 A blog edited in the manuscript editor (**Edit manuscript**) keeps its own Google tools:
 selected suggestions or comments are previewed and sent only when you confirm. Its
 **Polish another document** opens the polishing screen. The CLI remains available for Google

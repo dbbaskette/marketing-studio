@@ -170,6 +170,18 @@ class ProposalStoreTests(FinishCase):
         with self.assertRaisesRegex(ValueError, 'Choose suggestions from this set'):
             self.act('unskip', job=job, items=['p9'])
 
+    def test_home_lists_what_a_desk_blog_waits_on(self):
+        # One status line for Home and Blogs: open suggestions by tool, then nothing.
+        def needs():
+            listed = blog_runner.catalog(self.root)['items']
+            return next(row for row in listed if row['id'] == self.ident)['needs']
+
+        self.assertEqual(needs(), [])
+        job = self.offer([self.edit(), self.edit(self.second, 'Second text.', 'Two.')])
+        self.assertEqual(needs(), ['Humanize · 2 to review'])
+        self.act('skip', job=job, items=['p1', 'p2'])
+        self.assertEqual(needs(), [])
+
     def test_unknown_sets_and_items_are_refused_readably(self):
         job = self.offer([self.edit()])
         with self.assertRaisesRegex(ValueError, 'no longer here'):
@@ -3371,6 +3383,138 @@ class GooglePendingTests(GoogleSendAllTests):
         plan = self.act('google-plan', mode='auto')
         result = self.act('google-send', plan=plan['plan'], confirmed=True)
         self.assertEqual(result['status'], 'needs-reconciliation')
+
+
+class GoogleBringBackTests(unittest.TestCase):
+    """Bring accepted changes from the Doc (#259), on the fake Doc model only: the desk takes
+    exactly the text its owner accepted, keeps its own first in History, and refuses rather
+    than lose a desk change. Google is read, never written."""
+
+    # The Harbour Doc set up as the send tests have it, without running their tests again.
+    setUp = GoogleSendAllTests.setUp
+    act = GoogleSendAllTests.act
+    edit = GoogleSendAllTests.edit
+    desk_text = GoogleSendAllTests.desk_text
+    doc_text = GoogleSendAllTests.doc_text
+    provider = GooglePendingTests.provider
+    send = GooglePendingTests.send
+
+    EDITS = (
+        ('keep improving', 'improve over time'),
+        ('Keep it short.\n\nThe end.', 'Keep it brief.\n\nThe end.'),
+        ('track every step', 'track each step'),
+    )
+
+    def suggestion(self, word):
+        """The id of our pending suggestion that inserts `word`."""
+        inserted = {}
+        for item in self.client.items:
+            if item['ins']:
+                inserted[item['ins']] = inserted.get(item['ins'], '') + item['ch']
+        return next(name for name, text in inserted.items() if word in text)
+
+    def ids_for(self, word):
+        """Our suggestion that inserts `word`, with the deletion right beside it (a
+        replacement is a deletion and an insertion)."""
+        items, named = self.client.items, self.suggestion(word)
+        at = [k for k, item in enumerate(items) if item['ins'] == named]
+        near = {
+            items[k]['del']
+            for k in (at[0] - 1, at[-1] + 1)
+            if 0 <= k < len(items) and items[k]['del']
+        }
+        return {named} | near
+
+    def owner_decides(self, accept, reject):
+        """The owner accepts the suggestions that insert the words in `accept` and rejects
+        the ones in `reject`."""
+        self.client.decide(
+            accept_ids=set().union(*(self.ids_for(word) for word in accept)),
+            reject_ids=set().union(*(self.ids_for(word) for word in reject)),
+        )
+
+    def section(self):
+        draft = desk.read(self.root, self.ident)
+        return next(s for s in draft['sections'] if 'Event logs' in s['text'])
+
+    def test_bringing_back_takes_exactly_the_accepted_text_and_keeps_the_desks_in_history(self):
+        self.edit(self.EDITS)
+        writes = self.client.writes
+        self.send()
+        state = desk_jobs.view(self.root, self.ident)['google_state']
+        self.assertEqual(state['last']['suggestions'], 3)
+        self.assertEqual(state['waiting'], 3, 'what waits for the owner, as last read')
+        self.assertFalse(state['unsent'])
+        # Waiting suggestions hold the bring-back: the desk's text for them is never taken back.
+        found = self.act('google-compare')
+        self.assertFalse(found['ready'])
+        self.assertIn('3 suggestions sent from the desk still wait', found['said'])
+        sent = self.client.writes
+        self.owner_decides(accept=['improve over', 'brief'], reject=['each'])
+        found = self.act('google-compare')
+        self.assertTrue(found['ready'], found['said'])
+        self.assertEqual(found['waiting'], 0)
+        self.assertEqual([c['name'] for c in found['changes']], ['Key Data Patterns'])
+        change = found['changes'][0]
+        self.assertIn('track each step', change['before'])
+        self.assertIn('track every step', change['after'])
+        self.assertIn('Keep it brief.', change['after'], 'an accepted suggestion stays')
+        before = self.section()['text']
+        result = self.act('google-take', preview=found['preview'], confirmed=True)
+        self.assertEqual(result['brought'], {'parts': ['Key Data Patterns']})
+        self.assertEqual(self.client.writes, sent, 'nothing is written to Google')
+        self.assertGreater(sent, writes)
+        self.assertEqual(
+            self.doc_text(accepted=False), self.desk_text(), 'the desk reads as the Doc'
+        )
+        kept = desk.versions(self.root, self.ident, self.section()['id'])
+        self.assertEqual(kept[0]['source'], 'google', 'Before Google’s accepted text')
+        self.assertEqual(kept[0]['text'], before)
+        self.assertNotIn(
+            'google', [v['source'] for v in desk.versions(self.root, self.ident, 'opening')]
+        )
+        state = desk_jobs.view(self.root, self.ident)['google_state']
+        self.assertEqual((state['waiting'], state['unsent']), (0, False))
+        self.assertEqual(state['brought']['parts'], 1)
+        # The same check again is answered once, and there is nothing more to bring.
+        self.assertEqual(
+            self.act('google-take', preview=found['preview'], confirmed=True)['brought'],
+            result['brought'],
+        )
+        self.assertEqual(
+            self.act('google-compare')['said'], 'The desk already has the Doc’s accepted text.'
+        )
+        # After a new desk edit, the desk says it has changes not sent.
+        self.edit([('The end.', 'The finish.')])
+        self.assertTrue(desk_jobs.view(self.root, self.ident)['google_state']['unsent'])
+
+    def test_a_part_changed_on_the_desk_since_the_send_is_never_taken_back(self):
+        self.edit(self.EDITS)
+        self.send()
+        self.owner_decides(accept=['improve over', 'brief'], reject=['each'])
+        self.edit([('The end.', 'The finish.')])  # The same section, after the send.
+        found = self.act('google-compare')
+        self.assertFalse(found['ready'])
+        self.assertEqual(found['refused'], ['Key Data Patterns'])
+        self.assertIn('Nothing is brought back, so no desk change is lost', found['said'])
+        with self.assertRaisesRegex(ValueError, 'Check the Doc again'):
+            self.act('google-take', preview=found['preview'], confirmed=True)
+        self.assertIn('The finish.', self.section()['text'])
+
+    def test_the_desk_or_the_doc_changing_after_the_check_refuses_the_take(self):
+        self.edit(self.EDITS)
+        self.send()
+        self.owner_decides(accept=['improve over', 'brief'], reject=['each'])
+        found = self.act('google-compare')
+        self.client.teammate('really ', 'The end.')  # A new pending suggestion: same accepted text.
+        self.client.items[0]['ch'] = 'p'  # The owner edits the Doc's first letter.
+        self.client.rev += 1
+        with self.assertRaisesRegex(ValueError, 'The Google Doc changed since the check'):
+            self.act('google-take', preview=found['preview'], confirmed=True)
+        found = self.act('google-compare')
+        self.edit([('Most early', 'Most of the early')])
+        with self.assertRaisesRegex(ValueError, 'The desk changed since the check'):
+            self.act('google-take', preview=found['preview'], confirmed=True)
 
 
 class ImageFinishingTests(DeskCase):

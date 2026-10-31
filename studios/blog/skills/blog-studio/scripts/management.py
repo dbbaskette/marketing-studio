@@ -2278,6 +2278,7 @@ def dispatch(root, route, data):
         'editor-google-send',
         'desk-google-plan',
         'desk-google-send',
+        'desk-google-compare',
     ):
         return _dispatch(root, route, data)
     if (

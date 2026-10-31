@@ -158,6 +158,7 @@ async function check(){
   await deskStartReadsAGoogleDocAgainAfterAFailure();
   await deskReviewDocSuggestions();
   await deskOrderAndOnePath();
+  await deskGoogleRoundTrip();
   await oldIntakeAddressesOpenTheDeskStart();
   await deskStartRecovery();
   await deskTakeOver();
@@ -3560,6 +3561,64 @@ function focusFixtureWith(current,answer){
   const page=()=>descendants(f.get('studio-page'));
   return {f,requests,timers,page};
 }
+// Issue 259: the Google Doc round trip closed on the page, and its state where people look:
+// the toolbar's Google Doc menu, a send with a receipt, Bring accepted changes with its
+// refusal said, plain wording for what is sent, the Doc's pending marks explained without
+// hovering, and Home counting desk blogs that wait on something.
+async function deskGoogleRoundTrip(){
+  const at=new Date().toISOString();
+  let view=deskView({google:{url:'https://docs.google.com/document/d/linked/edit'},google_suggestions:true,finishing:{},doc_suggestions:{count:0,marks:[]},google_state:{last:{at,suggestions:10,comments:2},waiting:12,unsent:true,brought:null}}),compare=null,took=null;
+  const plan={plan:'g'.repeat(32),mode:'auto',count:3,suggestions:2,comments:1,left:0,waiting:0,sent_before:0,proposals:[{id:'d1',kind:'edit',before:'This is where ',after:''},{id:'d2',kind:'edit',before:'.',after:'.\nA new paragraph with a link in it.',context:'Read the setup guide first.'},{id:'d3',kind:'comment',before:'setup guide',reason:'Link changed.'}]};
+  const t=focusFixtureWith(()=>view,(url,data)=>{
+    if(url==='/api/desk-google-plan')return plan;
+    if(url==='/api/desk-google-send'){view={...view,google_state:{...view.google_state,waiting:2,unsent:false,last:{at,suggestions:2,comments:1}}};return {status:'verified-pending'};}
+    if(url==='/api/desk-google-compare')return compare;
+    if(url==='/api/desk-google-take'){took=data;view={...view,revision:view.revision+1,google_state:{...view.google_state,waiting:0,unsent:false},brought:{parts:['Second part']}};return view;}
+    return null;
+  });
+  const {f,page}=t;const actions=()=>descendants(f.get('actions')),sheet=()=>descendants(f.get('sheet'));
+  const press=async(nodes,label)=>{const found=nodes.find(n=>n.textContent===label&&n.listeners.click);assert.ok(found,'no '+label+' in '+nodes.map(n=>n.textContent).filter(Boolean).join('|'));await found.listeners.click();};
+  await f.run("sRoute('desk','desk-blog')");
+  assert.equal(f.get('above').textContent,'Doc: 12 waiting · last sent '+f.run("sDeskWhen("+JSON.stringify(at)+")")+' · Unsent desk changes','the desk says what waits in the Doc and what is not sent');
+  // Send in two steps from the toolbar: Check what would be sent, then Send.
+  const menu=actions().find(n=>/desk-google-menu/.test(n.className||''));
+  await press(descendants(menu),'Check what would be sent');
+  assert.equal(t.requests.filter(r=>r.url==='/api/desk-google-send').length,0,'nothing is sent before Send');
+  for(const said of ['Removes “This is where”','Adds a paragraph after “Read the setup guide first.”: “A new paragraph with a link in it.”','Comment on “setup guide”: Link changed.'])assert.ok(sheet().some(n=>n.textContent===said),'it lists '+said);
+  assert.ok(!sheet().some(n=>/“”|¶/.test(n.textContent||'')),'no arrows at empty quotes and no paragraph marks');
+  await press(sheet(),'Send to Google Doc');
+  assert.ok(sheet().some(n=>/^Sent 2 suggestions and 1 comment at .+\. When the owner has decided them, choose Bring accepted changes\.$/.test(n.textContent||'')),'the receipt counts, says when and what next');
+  assert.equal(f.get('above').textContent,'Doc: 2 waiting · last sent '+f.run("sDeskWhen("+JSON.stringify(at)+")"),'the desk is read again after the send');
+  await press(sheet(),'Close');
+  // Bring accepted changes: refused while the desk and the Doc both changed a part, and said.
+  compare={preview:'p'.repeat(32),changes:[],refused:['Second part'],waiting:0,ready:false,said:'The Doc and the desk both changed “Second part” since they last agreed. Nothing is brought back, so no desk change is lost.'};
+  await press(descendants(actions().find(n=>/desk-google-menu/.test(n.className||''))),'Bring accepted changes');
+  assert.ok(sheet().some(n=>n.textContent===compare.said),'the refusal is said');
+  assert.ok(!sheet().some(n=>/^Bring \d/.test(n.textContent||'')),'with nothing to bring');
+  await press(sheet(),'Close');
+  // Ready: each part listed with its comparison, then brought, the earlier text in History.
+  compare={preview:'p'.repeat(32),changes:[{kind:'changed',part:'bbbbbbbb',name:'Second part',before:'Second text.',after:'Second text, as accepted.'}],refused:[],waiting:0,ready:true,said:null};
+  await press(descendants(actions().find(n=>/desk-google-menu/.test(n.className||''))),'Bring accepted changes');
+  assert.ok(sheet().some(n=>n.textContent==='Second part')&&sheet().some(n=>n.textContent==='Changed in the Doc'));
+  await press(sheet(),'Bring 1 part to the desk');
+  assert.deepEqual(took,{id:'desk-blog',preview:'p'.repeat(32),confirmed:true});
+  assert.equal(f.get('sheet').hidden,true);
+  assert.ok(descendants(f.get('toasts')).some(n=>n.textContent==='Brought 1 part from the Google Doc. The desk’s earlier text is in History.'));
+  // Review mode before any check: the Doc's pending suggestions counted and explained.
+  view={...view,doc_suggestions:{count:2,marks:[]}};
+  await f.run("(async()=>{studio.desk.view=await api('desk?id=desk-blog');sReviewEnter(studio.desk);sDeskRender(studio.desk);})()");
+  assert.ok(page().some(n=>n.textContent==='2 suggestions are pending in the Google Doc. Decide them there; nothing to do here.'),'the count shows before a first check');
+  assert.ok(page().some(n=>n.dataset?.doc==='key'&&/waiting in the Google Doc\. Decide it there\./.test(descendants(n).map(c=>c.textContent).join(''))),'with the key, no hover needed');
+  // Home: a desk blog with open suggestions needs you, and says what and when.
+  f.run("studio.listing=[{id:'b1',title:'Harbour plans',flow:'desk',status:'desk',needs:['Humanize · 4 to review'],touched:new Date().toISOString(),complete:false,stages:[]},{id:'b2',title:'Quiet one',flow:'desk',status:'desk',needs:[],touched:new Date().toISOString(),complete:false,stages:[]}];studio.ordinary=[];studio.options={};sHome()");
+  assert.equal(page().find(n=>n.className==='large-title').textContent.replace(/^Good \w+\. /,''),'One thing needs you.');
+  const needs=page().find(n=>/card-needs/.test(n.className||''));
+  assert.ok(descendants(needs).some(n=>n.textContent==='Harbour plans'),'it names the blog');
+  assert.ok(descendants(needs).some(n=>n.textContent==='Humanize · 4 to review · edited just now'),'one status line with its edited time');
+  f.run('sBlogs()');
+  assert.ok(!page().some(n=>n.textContent==='On the writing desk'),'Blogs says the desk once');
+  assert.ok(page().some(n=>n.textContent==='On the desk · edited just now'));
+}
 async function deskReviewDocSuggestions(){
   const sentence='Timing and context is everything.',lead='A workflow coordinate agents.\n\n![][image1]\n\n';
   // Theirs: "coordinate" for "links" where no fix of ours sits, and "context" under fix 4.
@@ -3700,13 +3759,14 @@ async function deskReviewMode(){
   assert.deepEqual(last('/api/desk-google-plan'),{id:'review-blog',mode:'auto'});
   assert.ok(words(head()).includes('3 suggestions and 2 comments go to the Google Doc. Its owner accepts or rejects each suggestion. 1 change waits for the Doc’s owner to decide the earlier suggestion in its paragraph, and goes next time.'),'every change goes: none stays here');
   assert.ok(!/stay here|cannot be suggestions/.test(words(head())));
-  for(const said of ['“is” → “are”','“.” → “. ¶ A new paragraph.”','“Gone.” is removed','Comment on “setup guide”: Link changed: “setup guide” now points to https://example.com/new.','Comment on “Plans”: Suggested title: “Plans, revised”.'])assert.ok(descendants(head()).some(n=>n.textContent===said),'it lists '+said);
+  for(const said of ['“is” → “are”','Adds a paragraph after “.”: “A new paragraph.”','Removes “Gone.”','Comment on “setup guide”: Link changed: “setup guide” now points to https://example.com/new.','Comment on “Plans”: Suggested title: “Plans, revised”.'])assert.ok(descendants(head()).some(n=>n.textContent===said),'it lists '+said);
   assert.equal(sent,0,'nothing is sent before Send');
   assert.equal(descendants(head()).filter(n=>n.tagName==='button'&&/^Send\b/.test(n.textContent)).length,1,'only the actual delivery action says Send');
   await press(head(),'Send 5 changes');
   assert.equal(sent,1,'one final approval performs one send');
   assert.deepEqual(last('/api/desk-google-send'),{id:'review-blog',plan:'g'.repeat(32),confirmed:true});
-  assert.ok(words(head()).includes('Suggestions are ready for the Doc’s owner to accept or reject.'));
+  assert.match(words(head()),/Sent 3 suggestions and 2 comments at \d{1,2}:\d\d [AP]M\. When the owner has decided them, choose Bring accepted changes\./);
+  assert.ok(!/[“"]\s*[”"]|¶/.test(words(head())),'no arrows at empty quotes and no paragraph marks');
   // 7. Check again reruns Copy edit on the current text.
   await descendants(f.get('actions')).find(n=>n.textContent==='Check again').listeners.click();
   assert.deepEqual(last('/api/desk-review'),{id:'review-blog',seen:view.revision},'Check again sends no strength: the pinned one is reused');
@@ -4405,11 +4465,11 @@ assert.ok(descendants(panel()).some(n=>n.tagName==='mark'&&n.textContent==='here
   assert.ok(descendants(thumbs).some(n=>n.textContent==='Image kept in the Google Doc'),'a kept image shows as kept in the Doc, not missing');
   assert.equal(f.run("sDeskGoogleSaid({count:3,suggestions:1,comments:2,doc_overlap:2})"),'1 suggestion and 2 comments go to the Google Doc. Its owner accepts or rejects each suggestion. 2 of these change words a Doc suggestion also changes, so they go as comments; the Doc’s suggestion stays for its owner.','the plan says which change words a Doc suggestion changes');
   assert.ok(descendants(panel()).some(n=>n.textContent==='1 suggestion and 1 comment go to the Google Doc. Its owner accepts or rejects each suggestion. 2 changes were sent before.'));
-  assert.ok(descendants(panel()).some(n=>n.textContent==='Every desk change goes to the Google Doc: words and paragraphs as suggestions its owner accepts or rejects, and a link’s address, formatting or an image as a comment.'));
+  assert.ok(descendants(panel()).some(n=>n.textContent==='Every desk change goes to the Google Doc: words and paragraphs as suggestions its owner accepts or rejects, and a link’s address, formatting or an image as a comment. Once the owner has decided them, Bring accepted changes takes the Doc’s text back to the desk.'));
   assert.ok(!descendants(panel()).some(n=>/stay here|stays here|cannot be suggestions|stays? on the desk/.test(n.textContent||'')),'nothing is said to stay on the desk');
   await inPanel('Send to Google Doc').listeners.click();
   assert.deepEqual(last('/api/desk-google-send'),{id:'desk-blog',plan:'g'.repeat(32),confirmed:true});
-  assert.ok(descendants(panel()).some(n=>n.textContent==='Suggestions are ready for the Doc’s owner to accept or reject.'));
+  assert.ok(descendants(panel()).some(n=>/^Sent 1 suggestion and 1 comment at \d{1,2}:\d\d [AP]M\. When the owner has decided them, choose Bring accepted changes\.$/.test(n.textContent||'')),'the receipt counts what went, says when and what comes next');
   // 9. On a phone the panel is a full-screen sheet over the desk.
   f.run("window.matchMedia=()=>({matches:true})");
   await inPanel('Close').listeners.click();assert.ok(!panel());
@@ -4651,7 +4711,10 @@ async function deskGoogleDoc(){
   await t.sheet().find(n=>n.textContent==='Make the Doc').listeners.click();
   assert.deepEqual(t.requests.find(r=>r.url==='/api/desk-google-open').data,{id:'desk-blog',expected:'session-v1',confirmed:true});
   assert.equal(t.f.get('sheet').hidden,true);
-  const doc=actions().find(n=>n.textContent==='Google Doc ↗');assert.ok(doc,'the linked Doc opens from the toolbar');
+  // The linked Doc is a small menu: Open, Check what would be sent, Bring accepted changes.
+  const menu=actions().find(n=>n.tagName==='details'&&/desk-google-menu/.test(n.className));assert.ok(menu,'the linked Doc opens from the toolbar');
+  assert.deepEqual(descendants(menu).filter(n=>/menu-item/.test(n.className)).map(n=>n.textContent),['Open the Google Doc ↗','Check what would be sent','Bring accepted changes']);
+  assert.equal(descendants(menu).find(n=>n.textContent==='Open the Google Doc ↗').href,'https://docs.google.com/document/d/made/edit');
   assert.ok(!actions().some(n=>n.textContent==='Make a Google Doc'));
   await t.f.run("sDeskFinishOpen(studio.desk,'publish')");
   assert.ok(descendants(panel()).some(n=>n.textContent==='Check what would be sent'),'suggestions go to the new Doc');

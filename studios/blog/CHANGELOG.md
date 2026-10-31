@@ -5,6 +5,23 @@ changes for authors first, then what changes for maintainers.
 
 ## Unreleased
 
+- **The Google Doc round trip, finished on the page (#259).** The desk's **Google Doc**
+  is a small menu: **Open the Google Doc**, **Check what would be sent** (then **Send**) and
+  **Bring accepted changes**. Bring accepted changes reads the Doc's accepted text and
+  lists each part it changes; a part the desk has not changed since the last whole send
+  takes the Doc's text, keeping the desk's in History as "Before Google's accepted text",
+  and the Doc becomes the new baseline. It is refused while desk suggestions still wait
+  for the owner, or when both sides changed a part. Nothing is written to Google. The send
+  receipt says what went and when, and the desk, Home and Blogs say what waits in the Doc,
+  when the desk last sent, and when it has unsent changes; Home counts a desk blog with
+  open suggestions, Doc suggestions waiting or unsent changes as needing you, and each row
+  has one status line with when it was edited. What a send makes reads plainly ("Removes
+  …", "Adds a paragraph after …"), and the Doc's pending marks are counted and explained in
+  Review mode before a first check too. Maintainers: `desk-google-compare` and
+  `desk-google-take` (`desk_finish.google_pull`, `google_take`), `google_state` in the desk
+  view and `needs` in the runs listing (`desk_finish.attention`); the desk's Google ledger
+  keeps `last`, `waiting`, `synced` and `brought`.
+
 - **The manuscript in its order, and one path through Polish and Review (#258).** Read,
   Edit section, Full desk and Review mode always show the title, the opening, then the
   sections as saved: a section whose id was all digits could show above the title.
