@@ -158,6 +158,7 @@ config file. Tests use it, and it is never saved.
   representations with their SHA-256 hashes, and conversion state and gaps.
 - `content.md` holds the readable Markdown.
 - An upload also keeps `original.<ending>`, its bytes as they were sent.
+- Finished work with a saved PDF also keeps `content.pdf`, the PDF its studio checked.
 
 Each revision is written whole into a hidden folder and then renamed into place.
 Every write holds `.library.lock` (an interprocess `flock`). The catalog in
@@ -179,7 +180,8 @@ read with OCR, a model or the network.
 | --- | --- |
 | Upload | Original bytes, plus Markdown when its text can be read |
 | Finished or published blog | Its Markdown, under `blog:<blog id>` |
-| Delivered deck | Slide-ordered outline Markdown, under a key made once per deck (`presentation:<folder>-<random>`, kept in its local `sources/library.json`). The PDF is recorded as **needs export**. |
+| Delivered deck | Slide-ordered outline Markdown, under a key made once per deck (`presentation:<folder>-<random>`, kept in its local `sources/library.json`). Also `content.pdf`, the PDF Harness Slides rendered of the delivered deck in its last whole-deck preview, kept only when it still matches. **PDF saved** then. Otherwise the PDF is recorded as **needs export**, with why. |
+| A file added on the Presentation Studio desk with **Keep in library** | Kept as an upload from Presentation Studio, beside the deck's own copy in `sources/supplied/`. **Only this project** keeps the deck's copy only. |
 
 **Choosing context.** **Add from library** pins chosen revisions into one project,
 after checking every one of them first:
@@ -208,7 +210,9 @@ grants no web access and sends nothing to an assistant.
 | Library changed, unavailable or deleted | The project keeps reading its pinned copy |
 | Unreadable, changed or missing revision | Refused with why, and nothing changes |
 | Finish, publish or deliver again with the same text | Same document and revision, and no new revision |
-| A library save fails after delivery | Recorded in the deck's local `sources/library.json`. **Keep in library again** retries from `deliver.json`, with no upload and no job. |
+| A library save fails after delivery | Recorded in the deck's local `sources/library.json`. **Keep in library again** retries from `deliver.json` and this computer's files, with no upload, no render and no job. |
+| A delivered deck's PDF is missing, changed or of another deck | Its Markdown is kept and the PDF stays **needs export**, with why. **PDF saved** is never shown |
+| **Keep in library** fails for a file added on the Presentation Studio desk | The deck keeps the source, and the card says the library did not keep it |
 | A job is running on the deck (the chain draws, or a desk job runs) | Add from library and Use revision N are refused until it ends; the job keeps the sources it started with |
 | Use selected is still landing | The sheet's Cancel, Close and Escape wait |
 | A newer revision, in Blog Studio | The desk source says Update available; **Use revision N** gives the blog's file a new source revision and the blog pins it. Refused while a desk job runs |

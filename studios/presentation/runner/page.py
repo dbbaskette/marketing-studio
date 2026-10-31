@@ -103,9 +103,11 @@ What a caller needs to know
     words that did not fit and redraws the slide's section; `/api/desk-discard` {"path",
     "number"} lets them go; and `/api/desk-restore` {"path", "slide", "index", "seen"} brings a
     kept version back. `GET /api/desk-versions?path=&slide=` answers {"versions"}, newest
-    first. Sources, research and Finishing: `/api/desk-source` {"path", "name", "content"}
-    adds a file (`content` in base64; it alone may carry up to SOURCE_LIMIT bytes, and only
-    with the key) or {"path", "text", "title"} pasted text, and starts nothing;
+    first. Sources, research and Finishing: `/api/desk-source` {"path", "name", "content",
+    "library"?} adds a file (`content` in base64; it alone may carry up to SOURCE_LIMIT
+    bytes, and only with the key; `library` true keeps it in the Document Library too, and
+    the answer's `library_upload` says how that went) or {"path", "text", "title"} pasted
+    text, and starts nothing;
     `/api/desk-research-again` {"path", "expected"} researches again with the sources as
     they are; `/api/desk-leave-out` {"path", "ids"} leaves those findings out;
     `/api/desk-finish` {"path", "tool", "expected"?, "again"?} runs one of Finishing's tools
@@ -573,8 +575,10 @@ class RunnerPage(server.Page):
             server.text(sent, 'expected', needed=False))
 
     def source_given(self, sent: dict) -> dict:
-        """A source the person adds on the desk: {"path", "name", "content"} with the file in
-        base64, or {"path", "text", "title"} with text they pasted."""
+        """A source the person adds on the desk: {"path", "name", "content", "library"?} with
+        the file in base64, and `library` true to keep it in the Document Library as well
+        (Keep in library) or false for this deck only, or {"path", "text", "title"} with text
+        they pasted."""
         deck = self.deck(server.text(sent, 'path'))
         if sent.get('content') is None:
             text = sent.get('text')
@@ -592,9 +596,14 @@ class RunnerPage(server.Page):
         except (binascii.Error, ValueError):
             raise server.Refusal(HTTPStatus.BAD_REQUEST, 'The file did not arrive whole. '
                                  'Choose it again.')
+        keep = sent.get('library', False)
+        if not isinstance(keep, bool):
+            raise server.Refusal(HTTPStatus.BAD_REQUEST, 'Choose Keep in library or Only this '
+                                 'project.')
         return self.desk(lambda: self.engine.desk_source(
             deck, server.text(sent, 'name'), given, title=server.text(sent, 'title',
-                                                                       needed=False)))
+                                                                       needed=False),
+            keep=keep))
 
     def act(self, sent: dict) -> dict:
         path, action = server.text(sent, 'path'), server.text(sent, 'action')

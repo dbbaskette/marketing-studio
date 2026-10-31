@@ -17,6 +17,7 @@ Layout
         revision.json                           # written last: what the revision is
         content.md                              # readable Markdown, when there is any
         original<ending>                        # an upload's bytes, as they were sent
+        content.pdf                             # finished work's PDF, once it is saved
     <library>/.state/catalog.json               # a search index, rebuilt from records
     <library>/.state/filters.json               # each studio's browsing filters
 
@@ -76,7 +77,8 @@ LIMITS = {'bytes': 8_000_000,       # one original, as the studios' supplied doc
           'revisions': 1_000,       # revisions one document keeps
           'page': 50,               # rows one catalog page gives
           'preview': 20_000,        # characters a preview shows
-          'matching': 40}           # documents "all matching" may choose at once
+          'matching': 40,           # documents "all matching" may choose at once
+          'pdf': 50_000_000}        # bytes of one finished deck's PDF
 IDENT = re.compile(r'^[a-z0-9][a-z0-9-]{0,63}$')
 KEY = re.compile(r'^(blog|presentation|training|infographic):[A-Za-z0-9][A-Za-z0-9._-]{0,159}$')
 OPERATION = re.compile(r'^[a-f0-9]{32}$')
@@ -353,14 +355,16 @@ class Library:
         return sorted(found)
 
     @staticmethod
-    def _checked(place: Path, part: dict | None) -> bytes | None:
-        """A representation's bytes, refused unless they match the hash it was kept with."""
+    def _checked(place: Path, part: dict | None, limit: int | None = None) -> bytes | None:
+        """A representation's bytes, refused unless they match the hash it was kept with.
+        Only a saved PDF is read up to LIMITS['pdf']; Markdown and originals stay within
+        their own limits."""
         if not isinstance(part, dict) or not isinstance(part.get('file'), str):
             return None
         name = part['file']
         if '/' in name or name.startswith('.'):
             raise LibraryError(CHANGED)
-        data = _bounded(place / name, max(LIMITS['bytes'], LIMITS['text']))
+        data = _bounded(place / name, limit or max(LIMITS['bytes'], LIMITS['text']))
         if _sha(data) != part.get('sha256'):
             raise LibraryError(CHANGED)
         return data
@@ -531,7 +535,7 @@ class Library:
             media = part.get('media') or 'application/octet-stream'
         elif which == 'pdf':
             part = record.get('pdf') or {}
-            data = self._checked(place, part) if part.get('state') == 'saved' else None
+            data = self._checked(place, part, LIMITS['pdf']) if part.get('state') == 'saved' else None
             name, media = f'{stem}.pdf', 'application/pdf'
         else:
             raise LibraryError('Choose Markdown, the original or the PDF.')
@@ -709,7 +713,13 @@ class Library:
                origin='created') -> dict:
         """Keep finished work as readable Markdown, found again by its key: the same key
         reuses the document, and a revision is added only when the text, the title or the
-        PDF's state changed. Returns {'document', 'revision', 'changed'}."""
+        PDF changed, or when the head's kept PDF went missing or changed (it is kept again).
+
+        `pdf` is None, {'state': 'needs-export', 'reason': str} while no PDF exists, or
+        {'state': 'saved', 'data': bytes} with a PDF the studio already exported and checked
+        is of exactly this work: up to LIMITS['pdf'] bytes, kept as `content.pdf` as it is,
+        never made or converted here; the library checks only that it is a PDF.
+        Returns {'document', 'revision', 'changed'}."""
         if not isinstance(key, str) or not KEY.match(key) or key.split(':', 1)[0] != studio:
             raise LibraryError('Name the finished work by its studio and project.')
         if kind not in KINDS or kind == 'upload' or origin not in ORIGINS:
@@ -720,8 +730,20 @@ class Library:
         encoded = text.encode('utf-8')
         if len(encoded) > LIMITS['text']:
             raise LibraryError(f'"{shown}" is longer than the library keeps for one document.')
-        if pdf is not None and not (isinstance(pdf, dict) and pdf.get('state') == 'needs-export'
-                                    and isinstance(pdf.get('reason'), str)):
+        files = {'content.md': encoded}
+        if isinstance(pdf, dict) and pdf.get('state') == 'saved':
+            data = pdf.get('data')
+            if type(data) is not bytes or not data.startswith(b'%PDF-'):
+                raise LibraryError('A PDF is kept only once it has been exported.')
+            if len(data) > LIMITS['pdf']:
+                raise LibraryError(f'The PDF of "{shown}" is larger than the library keeps.')
+            files['content.pdf'] = data
+            kept_pdf = {'state': 'saved', 'file': 'content.pdf', 'media': MEDIA['.pdf'],
+                        'bytes': len(data), 'sha256': _sha(data)}
+        elif pdf is None or (isinstance(pdf, dict) and pdf.get('state') == 'needs-export'
+                             and isinstance(pdf.get('reason'), str)):
+            kept_pdf = {'state': 'needs-export', 'reason': pdf['reason'][:300]} if pdf else None
+        else:
             raise LibraryError('A PDF is kept only once it has been exported.')
         held = None
         if isinstance(project, dict):
@@ -733,20 +755,27 @@ class Library:
                   'operation': None, 'original': None,
                   'markdown': {'file': 'content.md', 'bytes': len(encoded), 'sha256': _sha(encoded),
                                'characters': len(text)},
-                  'pdf': {'state': 'needs-export', 'reason': pdf['reason'][:300]} if pdf else None,
+                  'pdf': kept_pdf,
                   'conversion': {'method': f'{studio}-markdown-v1', 'state': 'readable',
                                  'gaps': [], 'problem': None}}
         with self.lock:
             existing = next((row['id'] for row in self._index() if row.get('key') == key), None)
             if existing:
                 place, head = self._record(existing)
+                held_pdf, wanted = head.get('pdf') or {}, kept_pdf or {}
                 same = (head.get('title') == shown
                         and (head.get('markdown') or {}).get('sha256') == record['markdown']['sha256']
-                        and (head.get('pdf') or {}).get('state') == (record['pdf'] or {}).get('state'))
-                if same and self._state_of(place, head)[0] == 'readable':
+                        and held_pdf.get('state') == wanted.get('state')
+                        and held_pdf.get('sha256') == wanted.get('sha256'))
+                try:    # a kept PDF that went missing or changed is kept again
+                    whole = wanted.get('state') != 'saved' \
+                        or self._checked(place, held_pdf, LIMITS['pdf']) is not None
+                except LibraryError:
+                    whole = False
+                if same and whole and self._state_of(place, head)[0] == 'readable':
                     return {'document': existing, 'revision': head['revision'], 'changed': False}
             self._tidy()
-            kept = self._write(existing, record, {'content.md': encoded})
+            kept = self._write(existing, record, files)
         return {'document': kept['id'], 'revision': kept['revision'], 'changed': True}
 
     # existing work, added explicitly (adopt.py)

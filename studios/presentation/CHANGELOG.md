@@ -5,6 +5,36 @@ making decks first, then what changes for maintainers.
 
 ## Unreleased
 
+- **A delivered deck's PDF in the Document Library.** After delivery, the
+  library keeps the deck's PDF beside its slide Markdown. The PDF is the one
+  Harness Slides already rendered of the delivered deck, and drew its slide
+  pictures from, when the deck was last previewed. It is kept, and the Sources
+  card says **PDF saved**, only when it still matches the deck delivered.
+  Nothing is rendered, uploaded or installed for it. Otherwise the card says
+  **PDF needs export** and why: the deck was delivered on another computer, the
+  deck is your own at **Selected changes**, or the PDF changed. **Keep in
+  library again** uses this computer's files only. It uploads nothing to Google
+  and runs no slides tool or assistant.
+
+  For maintainers: `deliver.json` records `deck_sha256`, and each whole-deck
+  round records `pdf`, the hash of the preview's `deck.pdf`.
+  `library_keep.rendered_pdf` checks both against the last round, the
+  preview's `preview.json` and its `deck.pptx`. `Library.retain` takes
+  `pdf={'state': 'saved', 'data': ...}` and keeps it as `content.pdf`. The
+  slides stand-in's render is now a PDF of its deck, with `%%EOF`. Closes #237.
+
+- **Keep in library or Only this project, for a file added on the desk.** The
+  Sources card's **Keep the file** choice comes before the file picker.
+  **Keep in library** is the default and also saves the file in the Document
+  Library on this computer, for any studio to use. **Only this project** keeps
+  it with the deck only. The deck's own copy is the same either way, and
+  neither choice shares anything. If the library can't keep the file, the card
+  says so and the deck keeps the source. Pasted text stays with the deck.
+
+  For maintainers: `/api/desk-source` takes `library` (true or false) with a
+  file, and the answer's `library_upload` is `{state: 'kept', id, revision}` or
+  `{state: 'failed', problem}`. Presentation Studio's part of #238.
+
 - **Start a deck from its source and goal, and see its stops before Start.**
   New deck now asks what the deck starts from, with the brief, the document or
   the deck itself, then the audience and goal, then research and settings. The

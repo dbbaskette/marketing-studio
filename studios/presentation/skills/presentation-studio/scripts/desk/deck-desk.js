@@ -68,6 +68,10 @@
     + 'outline when it is written again. Adding one runs no research: Research again does, '
     + 'when you ask.';
   const NO_TEXT = 'Paste the text of the source first.';
+  // Where a file added here is kept: the deck has it either way.
+  const KEEP_CHOICES = ['Keep in library', 'Only this project'];
+  const KEEP_SAYS = 'Keep in library also saves the file in the Document Library on this '
+    + 'computer, for any studio to use. It is shared with no one either way.';
   const FINISH_TOOLS = [
     ['brand', 'Brand check', 'What the brand’s check says of each slide, what blocks '
       + 'delivery first. Check it again in seconds.'],
@@ -1464,11 +1468,15 @@
 
   function sourcesCard(run) {
     const path = h.view.path;
-    const kept = held.sources[path] || (held.sources[path] = { text: '', title: '' });
+    // A file is kept in the Document Library too unless the person chooses this deck only.
+    const kept = held.sources[path] || (held.sources[path] = { text: '', title: '', library: true });
+    if (typeof kept.library !== 'boolean') kept.library = true;
     const listed = h.list(run.desk.sources);
     const problem = make('p', 'problem');
     problem.id = 'desk-source-problem';
     problem.hidden = true;
+    // A file the library did not keep stays said, however often the card is drawn again.
+    if (kept.notKept) h.say(problem, kept.notKept);
     const go = h.capsule('Add the pasted text', '', async () => {
       if (!kept.text.trim()) {
         h.refuse('desk-source-text', NO_TEXT);
@@ -1488,9 +1496,12 @@
         : make('p', 'quiet', 'No sources yet.'),
       ...libraryParts(run, path, listed, problem),
       h.add(make('p'), make('strong', '', 'Add a source')),
+      // Chosen before the file: a file is added as soon as it is picked.
+      h.choice('Keep the file', KEEP_CHOICES, kept.library ? 0 : 1,
+        (index) => { kept.library = index === 0; }, 'desk-source-keep', KEEP_SAYS),
       h.field('desk-source-file', 'A file', {}, 'file', { accept: SOURCE_TYPES,
         hint: 'Text, Markdown, a web page, a Word document or a PDF, up to 8 MB.',
-        picked: (input) => addFile(input, problem) }),
+        picked: (input) => addFile(input, problem, kept) }),
       h.field('desk-source-text', 'Or paste its text', kept, 'text', { long: true, rows: 4,
         limit: 1000000 }),
       h.field('desk-source-title', 'Its title', kept, 'title', {}),
@@ -1525,7 +1536,11 @@
     }, 'desk-library-add');
     parts.push(bar(pick));
     const kept = run.desk.library;
-    if (kept && kept.state === 'kept') {
+    // "PDF saved" only when the library holds the PDF Harness Slides rendered of this deck.
+    if (kept && kept.state === 'kept' && kept.pdf === 'saved') {
+      parts.push(make('p', 'quiet', 'Kept in the Document Library as a PDF and slide Markdown, '
+        + 'revision ' + kept.revision + '. PDF saved.'));
+    } else if (kept && kept.state === 'kept') {
       parts.push(make('p', 'quiet', 'Kept in the Document Library as slide Markdown, revision '
         + kept.revision + '. PDF needs export: ' + (kept.pdf_note || '')));
     } else if (kept && kept.state === 'failed') {
@@ -1537,9 +1552,12 @@
     return parts;
   }
 
-  async function addFile(input, problem) {
+  // `form` is the card's held state: whether to keep the file in the library, and what the
+  // library said when it did not, which every drawing of the card shows until the next file.
+  async function addFile(input, problem, form) {
     const file = Array.from(input.files || [])[0];
     if (!file) return;
+    form.notKept = '';
     if (file.size > 8000000) {
       h.say(problem, file.name + ' is larger than 8 MB. Add a shorter version of it.');
       return;
@@ -1551,8 +1569,18 @@
       h.say(problem, file.name + ' could not be read. ' + failure.message);
       return;
     }
-    await act('desk-source', { path: h.view.path, name: file.name, content }, null,
-      file.name + ' is added. Research runs again only when you ask.', problem);
+    const found = await act('desk-source', { path: h.view.path, name: file.name, content,
+      library: Boolean(form.library) }, null, null, problem);
+    if (!found) return;
+    const kept = found.library_upload;
+    if (kept && kept.state === 'failed') {
+      // Held, so the card drawn again by act's repaint or a later refresh still says it.
+      form.notKept = kept.problem;
+      h.say(h.byId('desk-source-problem') || problem, kept.problem);
+      return;
+    }
+    h.toast(file.name + (kept && kept.state === 'kept' ? ' is added and kept in the Document '
+      + 'Library.' : ' is added to this deck only.') + ' Research runs again only when you ask.');
   }
 
   function researchCard(run) {

@@ -180,10 +180,20 @@ uploads, finished blogs and delivered decks. Each chosen revision is copied into
 the deck as a source, so the deck keeps it if the library changes. When a newer
 revision is available, the card shows it, and **Use revision N** takes it.
 
+When you add a file under **Add a source**, **Keep the file** offers **Keep in
+library** (the default) or **Only this project**. Keep in library also saves the
+file in the library, so any studio can use it. The deck has the same copy either
+way, and neither choice shares it with anyone. If the library can't keep it, the
+card says so, and the deck still has the source. Pasted text stays with the deck.
+
 Adding a source starts no research. After delivery, the deck's slide outline is
-kept in the library as Markdown. The PDF is recorded as still needing export,
-because Presentation Studio cannot make one yet. If that save fails, **Keep in
-library again** retries it without delivering again. See
+kept in the library as Markdown, with the deck's PDF. The PDF is the one Harness
+Slides rendered of the delivered deck when it was last previewed. It is kept, and
+the card says **PDF saved**, only when it still matches the delivered deck. Nothing
+is rendered, uploaded or installed for it. Otherwise the card says **PDF needs
+export** and why: for example, the deck was delivered on another computer, or it
+is your own deck at **Selected changes**. If that save fails, **Keep in library
+again** retries it from this computer's files, without delivering again. See
 [the Document Library](../../docs/shared-setup.md#the-document-library).
 
 ## Shared settings

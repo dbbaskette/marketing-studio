@@ -1394,6 +1394,17 @@ def _digest(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+RENDERED_PDF = 'deck.pdf'   # what a whole-deck preview leaves beside its deck.pptx
+
+
+def _rendered_pdf(folder: Path) -> str | None:
+    """The hash of the PDF a preview left beside its deck, or None when it left none."""
+    found = Path(folder) / RENDERED_PDF
+    if found.is_symlink() or not found.is_file():
+        return None
+    return _digest(found)
+
+
 def whole(root, run: dict, slides, renderer) -> dict:
     """Merge the drawn sections with the lead slides, compile the whole deck and preview
     it. Its pictures go to work/build/preview/, and its contact sheet to the shared
@@ -1557,6 +1568,9 @@ def draw_whole(root, run: dict, slides, renderer) -> dict:
             'preview': (folder / 'preview').relative_to(root).as_posix(),
             'compiled': (folder / 'compiled').relative_to(root).as_posix(),
             'file': file.relative_to(root.resolve()).as_posix(), 'deck': digest,
+            # The PDF Harness Slides rendered this deck to and drew its pictures from, as it
+            # was then: the delivered deck's PDF in the Document Library is checked by it.
+            'pdf': _rendered_pdf(file.parent),
             'review': None, 'questions': list(asked_now),
             'render_evidence': shown.get('renderEvidence'),
             'sheet': sheet.relative_to(root.resolve()).as_posix() if sheet else None,

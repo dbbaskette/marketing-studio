@@ -2108,7 +2108,9 @@ class StandIn:
                                 'a new preview file.')
                 kept.update(uploads=kept['uploads'] + 1, deckSha256=digest)
             remote = {'fileId': file_id, 'url': self._url(file_id)}
-        (output / 'deck.pdf').write_bytes(b'%PDF-1.4\n% a stand-in for the render\n')
+        # As the tool's render: a PDF of exactly this deck, one page for each slide.
+        (output / 'deck.pdf').write_bytes(f'%PDF-1.4\n% a stand-in for the render of {digest}, '
+                                          f"{len(scene['slides'])} pages\n%%EOF\n".encode())
         screened = _screened(scene, structure)
         slides, pictures = [], []
         for number, slide in enumerate(scene['slides'], 1):
