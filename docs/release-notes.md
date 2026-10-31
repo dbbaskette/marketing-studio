@@ -39,6 +39,22 @@ Signing in to an assistant, your organisation's brands and fonts, and optional G
   start no assistant, sign-in, installation, workspace preparation or paid work, and model
   lists load only when Models and reasoning is opened.
 
+## Unreleased: Infographic Studio Team library first use
+
+- **A setup state, not an error.** With no shared repository, Team library says so
+  and offers **Configure shared repository**, which opens Shared settings at Your
+  workspace. Saving or choosing Back returns to the same infographic and reopens the
+  library; connecting is still your choice.
+- **Connection state.** A configured library shows its repository, branch, whether it
+  is connected and when it last synced, read locally so an offline copy still lists.
+  A commit that has not reached the team repository is counted with **Retry pending team
+  push**.
+- **Recovery that says what to do.** Refused access, a missing repository or branch and
+  an unreachable host each name a recovery step without repeating Git's output or any
+  credential. A failed first connection no longer stops the library from opening.
+- Opening or configuring the library shares nothing. Shared settings keep their single
+  locked file and outdated-form checks.
+
 ## Unreleased: research citation handoffs
 
 Research workers are explicitly told which saved source IDs to cite. If a worker
