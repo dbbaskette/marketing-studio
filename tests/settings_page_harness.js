@@ -15,8 +15,11 @@
 // {read: [selector, ...]} adds each element's text and whether it is hidden, with every
 // request the page made. {show: view} runs show(view); {home: snapshot} hands the page that
 // snapshot and runs renderHome(). A snapshot with {ids: [id, ...]} adds `hidden` and `words`
-// for each, and every snapshot has `cards`: each launch card's studio, its filled and plain
-// buttons, the class of each of its parts in order, and its status line's bead and words.
+// for each (`words` includes the children's words), and every snapshot has `cards`: each
+// launch card's studio, its filled and plain buttons, the class of each of its parts in
+// order, its status line's bead and words, its readiness sentence and recovery action; and
+// `toasts`, the words of each toast shown. The form's named controls and its parts with a
+// setup step are read from index.html, so fill(), show() and the saved state see them all.
 'use strict';
 
 const fs = require('fs');
@@ -34,7 +37,10 @@ class El {
   fire(name, event = {}) { for (const listener of this.listeners[name] || []) listener({ preventDefault() {}, key: event.key, target: this, ...event }); }
   append(...nodes) { for (const node of nodes) this.children.push(node); }
   replaceChildren(...nodes) { this.children = [...nodes]; }
-  before() {} after() {} remove() {} focus() { focused = this; } select() {} setSelectionRange() {}
+  before() {} after() {} remove() {} replaceWith() {} focus() { focused = this; } select() {} setSelectionRange() {}
+  // A named control is the form's, as in a page: form.elements finds the one made last.
+  get name() { return this._name; }
+  set name(value) { this._name = value; named.set(value, this); }
   setAttribute(name, value) { this.attributes[name] = String(value); }
   getAttribute(name) { return this.attributes[name] ?? null; }
   removeAttribute(name) { delete this.attributes[name]; }
@@ -59,6 +65,16 @@ form.elements = new Proxy({}, { get: (target, name) => {
   if (!named.has(name)) { const input = new El('input'); input.name = String(name); named.set(name, input); }
   return named.get(name);
 } });
+// Every control the page's form names, so fill() and the saved-state check see them all, and
+// every part with a setup step, so show() hides and shows them as the page does.
+const html = fs.readFileSync(path.join(__dirname, '..', 'core', 'studio_core', 'setup_web', 'index.html'), 'utf8');
+for (const [, name] of html.matchAll(/\bname="([^"]+)"/g)) void form.elements[name];
+const stepped = [...html.matchAll(/<(?:section|div)\b[^>]*\bid="([^"]+)"[^>]*\bdata-step="([^"]+)"/g)]
+  .map(([, id, step]) => { const part = find('#' + id); part.dataset.step = step; return part; });
+form.querySelectorAll = selector => selector === 'input[name], select[name]' ? [...named.values()]
+  : selector === '[data-step]' ? stepped : [];
+// The words an element shows, its children's included.
+const deep = node => (node.textContent || '') + (node.children || []).map(deep).join('');
 const early = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
 let responses = {};
 const document = {
@@ -134,17 +150,21 @@ for (const step of steps) {
         const descendants = node => (node.children || []).flatMap(child => [child, ...descendants(child)]);
         const parts = descendants(card);
         const buttons = parts.filter(part => part.tagName === 'BUTTON' || part.tagName === 'A');
-        const state = card.children.find(part => part.className === 'state');
+        const state = parts.find(part => part.className === 'state');
+        const detail = parts.find(part => /\bstudio-readiness-detail\b/.test(part.className || ''));
+        const recover = parts.find(part => /\bstudio-recover\b/.test(part.className || ''));
         return { studio: card.dataset.studio,
           filled: buttons.filter(part => /\bbutton-filled\b/.test(part.className)).map(part => part.textContent),
           plain: buttons.filter(part => !/\bbutton-filled\b/.test(part.className)).map(part => part.textContent),
           actions: buttons.map(part => part.textContent),
           order: card.children.map(part => part.className),
           status: state ? [state.children[0].dataset.state, state.children[1].textContent] : null,
+          detail: detail ? detail.textContent : null, recover: recover ? recover.textContent : null,
           running: parts.find(part => /\bstudio-running\b/.test(part.className || ''))?.textContent || '' };
       }),
+      toasts: find('#toasts').children.map(toast => toast.textContent),
       ...(step.ids ? { hidden: Object.fromEntries(step.ids.map(id => [id, find('#' + id).hidden])),
-        words: Object.fromEntries(step.ids.map(id => [id, find('#' + id).textContent])) } : {}),
+        words: Object.fromEntries(step.ids.map(id => [id, deep(find('#' + id))])) } : {}),
       ...(step.read ? { read: Object.fromEntries(step.read.map(selector => [selector,
         { text: find(selector).textContent, hidden: find(selector).hidden }])),
       requests: asked.map(({ url, sent }) => ({ url: String(url), sent })) } : {}),

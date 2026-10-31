@@ -81,6 +81,9 @@ function show(next) {
   const previousView=view;
   view = setup ? 'settings' : next;
   if(view==='home'&&previousView!=='home'&&snapshot)void refreshHomeStatus();
+  // Leaving the form keeps what was typed on it; say so, since nothing was saved.
+  if (previousView === 'settings' && view !== 'settings' && unsaved()) inform('Your shared settings changes are not saved yet. They stay on the Shared settings page until you save or reload.');
+  if (view === 'computer' && snapshot?.computer) renderComputer(snapshot.computer);
   for (const name of ['loading', 'home', 'settings', 'computer']) $(`#${name}`).hidden = name !== view;
   $('#view-title').textContent = setup ? `Welcome to ${product}` : ({home: 'Studios', settings: 'Shared settings', computer: 'This computer'})[view];
   document.querySelectorAll('[data-view]').forEach(button => {
@@ -112,12 +115,21 @@ function show(next) {
   $('#back').hidden = !setup || step === 0;
   $('#save').textContent = setup ? (step === 2 ? 'Finish setup' : 'Continue') : 'Save settings';
   $('#installations').hidden = setup || standalone;
+  // Setup asks the four everyday choices; section links, owners and Advanced come after it.
+  $('#settings-nav').hidden = setup;
+  $('#settings-owners').hidden = setup;
+  $('#nav-installations').hidden = standalone;
+  $('#done-settings').hidden = setup || standalone;
+  // After setup, Save and its state stay in view: toolbar material, as a selection bar has.
+  for (const name of ['save-bar', 'glass']) $('#save-bar').classList.toggle(name, !setup);
   if (standalone) {
-    $('#prepare-note').textContent = 'Finish setup prepares this studio. Other studios will use these settings when you open them.';
+    $('#prepare-note').textContent = 'Finish setup prepares this studio. Other studios will use these settings when you open them. Models and research sites are under Shared settings, Advanced, afterwards.';
     $('#save').textContent = setup && step < 2 ? 'Continue' : `Save and open ${product}`;
   }
   $('#prepare-note').hidden = !setup || step !== 2;
-  if (view === 'settings' && (!setup || step === 0)) loadModels();
+  describeAdvanced(); saveState();
+  // Model lists are read only when Models and reasoning is open: browsing asks no assistant.
+  if (view === 'settings' && !setup && $('#models-more').open) loadModels();
   // As in every studio, focus moves to the toolbar title. The step is announced.
   if (snapshot) $('#view-title').focus({preventScroll: true});
   // A moment after the focus move, so a screen reader does not drop it behind the title.
@@ -194,6 +206,67 @@ function validateModelChoices() {
     if (model && effort && !model.levels.includes(effort)) throw new Error(`Choose a supported reasoning level for ${picker.title}, or use the assistant’s default.`);
   }
 }
+
+// Saved or not: the form as it was last filled from the shared settings, against what it holds
+// now. Typed values, the research list and the installation folders all count.
+let savedForm = '', savedAt = '';
+function formState() {
+  const named = [...form.querySelectorAll('input[name], select[name]')]
+    .filter(input => input.type !== 'radio' || input.checked).map(input => [input.name, input.value]);
+  const folders = [...$('#path-fields').children].map(field => field.children?.[1]?.value ?? '');
+  return JSON.stringify([named, researchSites, folders, profileAgent ?? null]);
+}
+function unsaved() { return Boolean(snapshot) && !setup && formState() !== savedForm; }
+function markSaved(when = '') { savedForm = formState(); savedAt = when; saveState(); }
+function saveState(saving = false) {
+  const node = $('#save-state');
+  node.hidden = setup || !snapshot;
+  if (node.hidden) return;
+  const pending = unsaved();
+  node.dataset.pending = String(pending);
+  node.replaceChildren(saving ? stateLine('current', 'Saving…')
+    : pending ? stateLine('review', 'Unsaved changes')
+      : stateLine('done', savedAt ? `Saved at ${savedAt}` : 'All changes saved'));
+  describeAdvanced();
+}
+// Each Advanced part says what it holds while it is closed, and whether it overrides an
+// automatic choice, so an override is never hidden by the disclosure.
+function owner(id, override, plain = 'Shared') { const tag = $(id); tag.textContent = override ? 'Override' : plain; tag.dataset.override = String(override); }
+function describeAdvanced() {
+  const value = name => (form.elements[name]?.value || '').trim();
+  const byTask = form.elements['models.mode']?.value === 'by_task';
+  const model = value('assistant.model'), effort = value('assistant.effort');
+  const single = `${model || 'the assistant’s default model'}${effort ? `, ${effort} reasoning` : model ? '' : ' and reasoning'}`;
+  const chosen = profileNames.filter(name => (form.elements[`models.${name}.selection`]?.value || 'inherit') !== 'inherit').length;
+  $('#models-state').textContent = !byTask ? `One model: ${single}`
+    : chosen ? `By task: ${chosen} of 3 tasks have their own model; the rest use ${single}` : `By task: every task uses ${single}`;
+  owner('#models-owner', byTask || Boolean(model || effort));
+  $('#models-pointer').textContent = `Uses ${byTask ? 'models chosen by task' : single}. ${setup ? 'You can change this in Shared settings, Advanced, after setup.' : 'Change it under Advanced: Models and reasoning.'}`;
+  const release = value('brand.release');
+  $('#release-state').textContent = release ? `Pinned to ${release}` : 'Newest release';
+  owner('#release-owner', Boolean(release));
+  $('#research-state').textContent = researchSites.length ? `${researchSites.length} ${researchSites.length === 1 ? 'site' : 'sites'}` : 'No sites yet';
+  const folders = [...$('#path-fields').children].filter(field => (field.children?.[1]?.value || '').trim()).length;
+  $('#installations-state').textContent = folders ? `${folders} ${folders === 1 ? 'folder' : 'folders'} set by you` : 'Every studio found automatically';
+  owner('#installations-owner', Boolean(folders), 'Found automatically');
+}
+// Section links: a part is brought into view and focused; an Advanced part opens.
+function goToPart(id) {
+  const part = $(`#${id}`); if (!part) return;
+  const more = part.querySelector('details');
+  if (more) more.open = true;
+  part.scrollIntoView({block: 'start', behavior: calm() ? 'auto' : 'smooth'});
+  const target = more ? more.querySelector('summary') : part.querySelector('.card-title');
+  if (!more) target.setAttribute('tabindex', '-1');
+  target.focus({preventScroll: true});
+}
+document.querySelectorAll('[data-part]').forEach(button => button.addEventListener('click', () => goToPart(button.dataset.part)));
+form.addEventListener('input', () => saveState());
+form.addEventListener('change', () => saveState());
+$('#models-more').addEventListener('toggle', () => { if ($('#models-more').open && snapshot) loadModels(); });
+$('#done-settings').addEventListener('click', () => show('home'));
+// A reload or a closed tab would lose typed changes: the browser asks first.
+window.addEventListener('beforeunload', event => { if (unsaved()) { event.preventDefault(); event.returnValue = ''; } });
 
 function storage() {
   const local = form.elements.storage.value === 'local';
@@ -384,7 +457,45 @@ function savedWords() {
   return names.length ? `Shared settings saved. Connect ${names.join(' and ')} from the studio cards to use the new storage.` : 'Shared settings saved.';
 }
 function studioReadiness(studio){
-  return studio.readiness || (studio.installed?{state:'done',label:'Ready to open',detail:'Local launch available; account access is checked when used.'}:{state:'off',label:'Not installed',detail:'Install this studio explicitly.'});
+  return studio.readiness || (studio.installed
+    ? {state: 'none', label: 'Not checked', detail: 'Marketing Studio has not said what this studio needs yet.', action: null}
+    : {state: 'off', label: 'Not installed', detail: 'Install it yourself to open it here.', action: null});
+}
+// What a card can honestly say before its studio opens, in words on the card rather than a
+// tooltip, with the one way to fix what is missing. Opening, sign-in and paid work are not
+// part of it: each studio checks those when a task needs them.
+function readinessBlock(studio) {
+  const ready = studioReadiness(studio), block = element('div', '', 'studio-readiness');
+  block.dataset.ready = JSON.stringify(ready);
+  block.append(stateLine(ready.state, ready.label), element('p', ready.detail, 'studio-readiness-detail quiet'));
+  if (ready.action) {
+    const fix = element('button', ready.action.label, 'button button-quiet studio-recover'); fix.type = 'button';
+    fix.addEventListener('click', () => recover(ready.action.view));
+    block.append(fix);
+  }
+  return block;
+}
+// The recovery actions: shared settings, or a look at this computer that changes nothing.
+function recover(where) {
+  show(where);
+  if (where === 'computer') void checkComputer();
+}
+function renderReadinessSummary() {
+  const installed = snapshot.studios.filter(studio => studio.installed);
+  const states = installed.map(studio => studioReadiness(studio).state);
+  const [kind, words] = !installed.length ? ['off', 'Not installed'] : states.includes('review') ? ['review', 'Needs setup']
+    : states.every(state => state === 'done') ? ['done', 'Can open'] : ['none', 'Not checked'];
+  $('#ready-open').replaceChildren(stateLine(kind, words));
+  const look = snapshot.computer, needs = (look?.items || []).filter(item => !item.ready && !item.optional);
+  $('#ready-computer').replaceChildren(stateLine(!look ? 'none' : needs.length ? 'review' : 'done',
+    !look ? 'Not checked' : needs.length ? 'Needs setup' : 'Checked'));
+  const when = look?.checked_at ? new Date(look.checked_at).toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'}) : '';
+  $('#computer-summary').textContent = !look
+    ? 'Git identity, Node.js and the other tools are checked only when you ask. A check reads this computer and changes nothing.'
+    : needs.length ? `Missing: ${needs.map(item => item.name).join(', ')}. This computer says how to fix ${needs.length === 1 ? 'it' : 'each'}.`
+      : `Checked${when ? ` at ${when}` : ''}: the tools every studio needs are here.`;
+  $('#go-check').textContent = look ? 'Check again' : 'Check this computer';
+  $('#ready-accounts').replaceChildren(stateLine('none', 'Checked when used'));
 }
 let homeRefreshing=false;
 async function refreshHomeStatus(){
@@ -395,17 +506,20 @@ async function refreshHomeStatus(){
     if(setup||view!=='home'||document.hidden)return;
     const structural=JSON.stringify(snapshot.studios.map(s=>[s.id,s.installed,s.path]))!==JSON.stringify(found.studios.map(s=>[s.id,s.installed,s.path]));
     snapshot.studios=found.studios;
+    if('computer' in found)snapshot.computer=found.computer;
     if(structural){renderHome(false);return;}
+    renderReadinessSummary();
     for(const studio of found.studios){
       const card=$(`#studio-list [data-studio="${studio.id}"]`);if(!card)continue;
-      const ready=studioReadiness(studio),line=card.querySelector('.studio-readiness');
-      if(line){line.querySelector('.bead').dataset.state=ready.state;line.lastElementChild.textContent=ready.label;line.title=ready.detail;}
+      const line=card.querySelector('.studio-readiness');
+      // Rebuilt only when it changed, so a focused recovery button keeps its focus.
+      if(line&&line.dataset.ready!==JSON.stringify(studioReadiness(studio)))line.replaceWith(readinessBlock(studio));
       const running=card.querySelector('.studio-running');if(running)running.textContent=`${studio.running?'Running · ':''}${studio.version||''}`;
       const button=card.querySelector('.studio-open');if(studio.installed&&button&&!button.disabled){button.textContent=studio.running?'Return':'Open';button.setAttribute('aria-label',studio.running?`Return to ${studio.name}`:`Open ${studio.name}`);}
     }
   }catch(failure){
     // Retain the last readable state while reconnecting, but never show stale green lights.
-    for(const line of document.querySelectorAll('.studio-readiness')){line.querySelector('.bead').dataset.state='review';line.lastElementChild.textContent='Status unavailable';line.title='Reopen the current private link if the app was restarted.';}
+    for(const line of document.querySelectorAll('.studio-readiness')){const studio=snapshot.studios.find(s=>s.id===line.closest('[data-studio]')?.dataset.studio)||{installed:true};line.replaceWith(readinessBlock({...studio,readiness:{state:'review',label:'Not checked',detail:'Marketing Studio did not answer, so this was not checked. If it was restarted, open the new private link from its terminal.',action:null}}));}
   }finally{homeRefreshing=false;}
 }
 function renderHome(refreshPaths = true) {
@@ -415,9 +529,7 @@ function renderHome(refreshPaths = true) {
     card.dataset.studio = studio.id;
     card.append(studioSymbol(studio.id), element('h3', studio.name, 'studio-name'),
       element('p', studioPurposes[studio.id] || studio.description, 'studio-says'), studioPreview(studio.id));
-    const readiness=studioReadiness(studio);
-    const readyLine=stateLine(readiness.state,readiness.label);readyLine.classList.add('studio-readiness');readyLine.title=readiness.detail;
-    card.append(readyLine);
+    card.append(readinessBlock(studio));
     const footer = element('div','','studio-footer'), actions = element('div','','studio-actions');
     const details = element('details','','studio-repository');
     const summary = element('summary','Details'); summary.setAttribute('aria-label',`Details for ${studio.name}`);
@@ -495,6 +607,7 @@ function renderHome(refreshPaths = true) {
   const assistant = shared.assistant?.agent === 'codex' ? 'Codex' : 'Claude Code';
   const workspace = shared.team?.repository ? `Repository: ${shared.team.repository}` : `Local Git: ${shared.local?.root || '~/Studios'}`;
   $('#summary-text').textContent = `${assistant}${shared.models?.mode === 'by_task' ? ' · Models by task' : ''}${shared.assistant?.model ? ` (${shared.assistant.model})` : ''}. ${workspace}.`;
+  renderReadinessSummary();
   if(!refreshPaths)return;
   const fields = $('#path-fields'); fields.replaceChildren();
   for (const studio of snapshot.studios) {
@@ -504,6 +617,7 @@ function renderHome(refreshPaths = true) {
     input.value = studio.configured_path; input.placeholder = studio.path || 'Absolute path to the studio installation';
     field.append(label, input); fields.append(field);
   }
+  saveState();
 }
 function changesForStep() {
   validateModelChoices();
@@ -556,21 +670,22 @@ function folderChanges() {
   const now = Object.fromEntries(inputs.filter(Boolean).map(input => [input.dataset.studio, input.value.trim()]));
   return Object.keys(now).some(id => now[id] !== (shown[id] ?? '')) ? now : null;
 }
+const clock = () => new Date().toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'});
 form.addEventListener('submit', async event => {
-  event.preventDefault(); $('#save').disabled = true; $('#problem').hidden = true;
+  event.preventDefault(); $('#save').disabled = true; $('#problem').hidden = true; saveState(true);
   try {
     const folders = folderChanges();
     const changes = changesForStep(); snapshot = await api('shared', {changes, seen: snapshot.shared});
     // One save: the folders go after the shared settings, and a refusal says what was kept.
     if (folders) {
       try { snapshot = await api('paths', {paths: folders}); }
-      catch (error) { fill(); renderHome(); inform(`Your shared settings were saved. The installation folders were not: ${error.message}`, true); return; }
+      catch (error) { fill(); renderHome(); markSaved(); inform(`Your shared settings were saved. The installation folders were not: ${error.message}`, true); return; }
     }
     if (setup && step < 2) { step++; show('settings'); }
-    else if (setup) { snapshot = await api('setup', {done: true, prepare: true}); if (standalone) return openNative(); setup = false; renderHome(); show('home'); showNotices(); inform('Your studios are ready.'); }
-    else { if (standalone) { await api('setup', {done: true}); return openNative(); } fill(); renderHome(); inform(savedWords()); }
+    else if (setup) { snapshot = await api('setup', {done: true, prepare: true}); if (standalone) return openNative(); setup = false; fill(); renderHome(); markSaved(); show('home'); showNotices(); inform('Your studios are ready.'); }
+    else { if (standalone) { await api('setup', {done: true}); markSaved(); return openNative(); } fill(); renderHome(); markSaved(clock()); inform(savedWords()); }
   } catch (error) { inform(error.message, true); }
-  finally { $('#save').disabled = false; }
+  finally { $('#save').disabled = false; saveState(); }
 });
 $('#back').addEventListener('click', () => { step--; show('settings'); });
 $('#find-brands').addEventListener('click', async () => {
@@ -598,23 +713,31 @@ $('#find-brands').addEventListener('click', async () => {
   } catch (error) { $('#brand-catalog-status').textContent = `${error.message} Your form is kept; you can enter the IDs below.`; }
   finally { button.disabled = false; }
 });
-form.elements['assistant.agent'].addEventListener('change', () => { efforts(''); form.elements['assistant.model'].value = ''; for (const name of profileNames) { const select = form.elements[`models.${name}.effort`]; profileLevels(select, select.value); } for (const picker of modelPickers.values()) renderModelPicker(picker); profilesChanged(); loadModels(); });
+form.elements['assistant.agent'].addEventListener('change', () => { efforts(''); form.elements['assistant.model'].value = ''; for (const name of profileNames) { const select = form.elements[`models.${name}.effort`]; profileLevels(select, select.value); } for (const picker of modelPickers.values()) renderModelPicker(picker); profilesChanged(); if ($('#models-more').open) loadModels(); });
 form.querySelectorAll('[name="storage"]').forEach(input => input.addEventListener('change', storage));
 document.querySelectorAll('[data-view]').forEach(button => button.addEventListener('click', () => show(button.dataset.view)));
 $('#home-link').addEventListener('click', event => { event.preventDefault(); show('home'); });
 $('#back-to-studio').addEventListener('click', () => openNative());
-$('#check').addEventListener('click', async () => {
+function renderComputer(look) {
+  const list = $('#computer-results'); list.replaceChildren();
+  for (const item of look.items) {
+    const kind = item.ready ? 'done' : item.optional ? 'none' : 'review';
+    const row = element('li', '', 'computer-item'), top = element('div', '', 'computer-top');
+    top.append(element('p', item.name, 'row-title'), stateLine(kind, item.ready ? 'Available' : item.optional ? 'Optional' : 'Needs setup'));
+    row.append(top, element('p', item.detail, 'facts')); list.append(row);
+  }
+}
+// A look at this computer: local commands and Git settings only. Nothing signs in or installs.
+async function checkComputer() {
   $('#check').disabled = true;
   try {
-    const result = await api('computer', {}); const list = $('#computer-results'); list.replaceChildren();
-    for (const item of result.computer.items) {
-      const kind = item.ready ? 'done' : item.optional ? 'none' : 'review';
-      const row = element('li', '', 'computer-item'), top = element('div', '', 'computer-top');
-      top.append(element('p', item.name, 'row-title'), stateLine(kind, item.ready ? 'Available' : item.optional ? 'Optional' : 'Needs setup'));
-      row.append(top, element('p', item.detail, 'facts')); list.append(row);
-    }
+    const result = await api('computer', {}); snapshot.computer = result.computer;
+    renderComputer(result.computer); renderReadinessSummary();
   } catch (error) { inform(error.message, true); } finally { $('#check').disabled = false; }
-});
+}
+$('#check').addEventListener('click', checkComputer);
+// Its data-view shows This computer first; the look runs there, where its results are listed.
+$('#go-check').addEventListener('click', () => void checkComputer());
 $('#copy-network').addEventListener('click', async () => {
   const input = $('#network-link');
   try { await navigator.clipboard.writeText(input.value); inform('Private link copied. Open it on your phone.'); }
@@ -631,7 +754,7 @@ $('#refresh-models').addEventListener('click', () => loadModels(true));
 (async () => {
   try {
     if (!token) { $('#loading').hidden = true; inform(`This page needs its private link. Run ${standalone ? 'the studio command' : 'marketing-studio'} in your terminal to open it again.`, true); return; }
-    snapshot = await api('home'); setup = !snapshot.setup.done; fill(); renderHome(); show(setup || standalone ? 'settings' : requestedView); if (snapshot.shared_problem) inform(snapshot.shared_problem, true);
+    snapshot = await api('home'); setup = !snapshot.setup.done; fill(); renderHome(); markSaved(); show(setup || standalone ? 'settings' : requestedView); if (snapshot.shared_problem) inform(snapshot.shared_problem, true);
   }
   catch (error) { $('#loading').hidden = true; inform(error.message, true); }
 })();

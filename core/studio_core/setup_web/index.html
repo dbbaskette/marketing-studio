@@ -29,7 +29,16 @@
       <section id="home" class="stack" hidden>
         <div class="intro"><h2 class="large-title">What will you make?</h2><p class="lede">Start with an idea, a draft or a source document.</p></div>
         <div id="studio-list" class="studio-list"></div>
-        <section class="card settings-summary"><div><h3 class="card-title">Ready when you are</h3><p id="summary-text"></p></div><button type="button" data-view="settings" class="button">Change settings</button></section>
+        <section id="readiness" class="card readiness-summary" aria-labelledby="readiness-heading">
+          <h3 id="readiness-heading" class="card-title">Ready when you are</h3>
+          <p id="summary-text"></p>
+          <dl class="readiness-list">
+            <div class="readiness-row"><dt id="ready-open"></dt><dd>Each card says whether it <strong>can open</strong>: shared setup is finished and the assistant and Git are on this computer. A card that <strong>needs setup</strong> says what is missing and how to fix it.</dd></div>
+            <div class="readiness-row"><dt id="ready-computer"></dt><dd><span id="computer-summary"></span></dd></div>
+            <div class="readiness-row"><dt id="ready-accounts"></dt><dd>Assistant sign-in, and Google access when you deliver to Google, are checked by each studio when a task needs them. Looking at this page or checking this computer never signs in, installs studios, prepares workspaces or starts paid work.</dd></div>
+          </dl>
+          <div class="bar"><button type="button" id="go-check" data-view="computer" class="button">Check this computer</button><button type="button" data-view="settings" class="button">Change settings</button></div>
+        </section>
         <section id="network-access" class="card" hidden aria-labelledby="network-heading">
           <h3 id="network-heading" class="card-title">Continue on your phone</h3>
           <p>Connect to the same trusted Wi-Fi and open this private link. Your work and assistant stay on this computer.</p>
@@ -42,27 +51,28 @@
       <section id="settings" class="stack" hidden>
         <div class="intro"><p id="step-label" class="quiet"></p><h2 id="settings-title" class="large-title">Shared settings</h2><p id="settings-intro" class="lede">New work in every studio starts with these choices.</p></div>
         <ol id="setup-progress" class="workflow-steps" aria-label="Setup progress" hidden><li class="workflow-step">1. You and your assistant</li><li class="workflow-step">2. Your workspace</li><li class="workflow-step">3. Brand and delivery</li></ol>
+        <nav id="settings-nav" class="settings-nav" aria-label="Shared settings sections">
+          <div class="settings-nav-group"><p class="field-label" id="nav-everyday">Everyday</p><ul class="settings-nav-list" aria-labelledby="nav-everyday">
+            <li><button type="button" class="button button-quiet" data-part="assistant-part">Assistant</button></li>
+            <li><button type="button" class="button button-quiet" data-part="workspace-part">Workspace</button></li>
+            <li><button type="button" class="button button-quiet" data-part="brand-part">Brand</button></li>
+            <li><button type="button" class="button button-quiet" data-part="delivery-part">Delivery</button></li></ul></div>
+          <div class="settings-nav-group"><p class="field-label" id="nav-advanced">Advanced</p><ul class="settings-nav-list" aria-labelledby="nav-advanced">
+            <li><button type="button" class="button button-quiet" data-part="models-part">Models</button></li>
+            <li><button type="button" class="button button-quiet" data-part="release-part">Brand release</button></li>
+            <li><button type="button" class="button button-quiet" data-part="research-sites">Research sites</button></li>
+            <li id="nav-installations"><button type="button" class="button button-quiet" data-part="installations">Installations</button></li></ul></div>
+        </nav>
+        <p id="settings-owners" class="field-hint quiet owners"><span class="tag">Shared</span> Saved once for every studio on this computer; new work starts with it. <span class="tag">Override</span> A shared choice set in place of the automatic one. <span class="tag">Project</span> Chosen for one blog, presentation or training in its studio, and kept with that work.</p>
         <form id="settings-form" class="setup-form stack">
-          <section class="card" data-step="0"><h3 class="card-title">You and your assistant</h3><p class="quiet">Use your signed-in assistant for research, writing, and slide work.</p>
+          <section id="assistant-part" class="card" data-step="0"><div class="part-head"><h3 class="card-title">You and your assistant</h3><span class="tag">Shared</span></div><p class="quiet">Use your signed-in assistant for research, writing, and slide work.</p>
             <div class="field-grid">
               <div class="field"><label class="field-label" for="person-name">Your name</label><input id="person-name" class="input" name="person.name" autocomplete="name" maxlength="100"></div>
-              <div class="field"><label class="field-label" for="assistant-agent">Assistant</label><select id="assistant-agent" class="input" name="assistant.agent"><option value="claude">Claude Code</option><option value="codex">Codex</option></select></div>
-              <div class="field"><label class="field-label" for="assistant-model">Model <span class="quiet">(optional)</span></label><input id="assistant-model" class="input" name="assistant.model" maxlength="100" placeholder="Use the assistant’s default" autocomplete="off" aria-describedby="assistant-model-hint"><p id="assistant-model-hint" class="field-hint quiet">Use an ID available in your account. All four studios use these choices for the selected assistant.</p></div>
-              <div class="field"><label class="field-label" for="assistant-effort">Reasoning</label><select id="assistant-effort" class="input" name="assistant.effort"></select></div>
+              <div class="field"><label class="field-label" for="assistant-agent">Assistant</label><select id="assistant-agent" class="input" name="assistant.agent" aria-describedby="assistant-agent-hint"><option value="claude">Claude Code</option><option value="codex">Codex</option></select><p id="assistant-agent-hint" class="field-hint quiet">Each studio checks sign-in when a task first uses it. Choosing here signs in to nothing.</p></div>
             </div>
-            <div class="model-catalog-bar"><p id="model-catalog-status" class="field-hint quiet" role="status">Loading model choices…</p><button type="button" id="refresh-models" class="button">Refresh models</button></div>
+            <p id="models-pointer" class="field-hint quiet">Uses the assistant’s default model and reasoning. Change them under Advanced: Models and reasoning.</p>
           </section>
-          <section class="card" data-step="0"><h3 class="card-title">Models for your work</h3>
-              <div class="model-heading"><div><p class="quiet">Keep one model for everything, or choose a model for each kind of task.</p></div>
-                <div class="field"><p class="field-label" id="model-mode-label">Model routing</p><div class="segmented" data-count="2" data-at="0" role="radiogroup" aria-labelledby="model-mode-label"><span class="seg-thumb" aria-hidden="true"></span><label class="seg-option"><input type="radio" name="models.mode" value="single" checked>One model</label><label class="seg-option"><input type="radio" name="models.mode" value="by_task">By task</label></div></div></div>
-              <div id="model-profiles" hidden>
-                <p class="field-hint quiet">Quick handles extraction, classification and Presentation Studio outlines. Main handles research, drafting, slides, review and the first repair. Complex handles repeated slide findings and other dedicated repairs. Blog Studio uses Main for every job. New work saves these choices; existing work keeps its models.</p>
-                <div id="profile-cards" class="profile-cards"></div>
-                <div id="profile-review" class="paper callout" data-kind="yours" role="status" hidden><p>The assistant changed. Check the model IDs and reasoning levels before using these profiles with this assistant.</p><button type="button" id="confirm-profiles" class="button">Use these profiles with this assistant</button></div>
-                <p class="field-hint quiet">Use model IDs available in your signed-in account. The studios send your choice directly to the selected assistant and stop if it cannot be used.</p>
-              </div>
-          </section>
-          <section class="card" data-step="1"><h3 class="card-title">Your workspace</h3><p class="quiet">Keep a Git history on this computer, or share work through a repository.</p>
+          <section id="workspace-part" class="card" data-step="1"><div class="part-head"><h3 class="card-title">Your workspace</h3><span class="tag">Shared</span></div><p class="quiet">Keep a Git history on this computer, or share work through a repository.</p>
             <div class="field"><p class="field-label" id="storage-label">Workspace storage</p><div class="segmented" data-count="2" data-at="0" role="radiogroup" aria-labelledby="storage-label"><span class="seg-thumb" aria-hidden="true"></span><label class="seg-option"><input type="radio" name="storage" value="local" checked>Local Git on this computer</label><label class="seg-option"><input type="radio" name="storage" value="remote">Shared repository</label></div></div>
             <div id="local-fields" class="field"><label class="field-label" for="local-root">Workspace folder</label><input id="local-root" class="input" name="local.root" placeholder="~/Studios" aria-describedby="local-root-hint"><p id="local-root-hint" class="field-hint quiet">Each studio keeps a local repository inside this folder.</p></div>
             <div id="remote-fields" class="field-grid" hidden>
@@ -72,7 +82,7 @@
             </div>
             <p class="field-hint quiet">Finishing setup prepares installed studios that have no workspace yet. Existing work stays where it is.</p>
           </section>
-          <section class="card" data-step="2"><h3 class="card-title">Brand</h3><p class="quiet">Choose the brand new work starts with. You can change it for each presentation or training. Blogs written step by step in chat use it too. Existing work keeps its saved choice.</p>
+          <section id="brand-part" class="card" data-step="2"><div class="part-head"><h3 class="card-title">Brand</h3><span class="tag">Shared</span></div><p class="quiet">Choose the brand new work starts with. You can change it for each presentation or training. Blogs written step by step in chat use it too. Existing work keeps its saved choice.</p>
             <p class="field-label">Where is your brand skill?</p>
             <div class="bar"><button type="button" id="find-brands" class="button">Find installed brands</button></div>
             <p id="brand-catalog-status" role="status" class="field-hint quiet">Look up brand and variant IDs from installed skills, or enter them below. This does not install anything.</p>
@@ -84,31 +94,56 @@
               <div class="field"><label class="field-label" for="brand-brand">Default brand <span class="quiet">(optional)</span></label><input id="brand-brand" class="input" name="brand.brand" placeholder="For example, tanzu" aria-describedby="brand-default-help"><p id="brand-default-help" class="field-hint quiet">Use a brand name offered by your installed skill. For example, tanzu starts new work with Tanzu branding.</p></div>
               <div class="field"><label class="field-label" for="brand-variant">Default variant <span class="quiet">(optional)</span></label><input id="brand-variant" class="input" name="brand.variant" placeholder="For example, light" aria-describedby="brand-variant-hint"><p id="brand-variant-hint" class="field-hint quiet">Use a variant offered by that brand, such as light or dark. Leave blank to use the brand’s first variant.</p></div>
             </div>
-            <details class="setup-more"><summary class="setup-more-label">Brand skill release options</summary>
-              <div class="field"><label class="field-label" for="brand-release">Brand skill release <span class="quiet">(optional)</span></label><input id="brand-release" class="input" name="brand.release" placeholder="Newest release" aria-describedby="brand-release-hint"><p id="brand-release-hint" class="field-hint quiet">Pin a release tag from the repository, such as v1.4.0, or leave blank for the newest release.</p></div>
-            </details>
           </section>
-          <section id="delivery-part" class="card" data-step="2"><h3 class="card-title">Delivery and previews</h3>
+          <section id="delivery-part" class="card" data-step="2"><div class="part-head"><h3 class="card-title">Delivery and previews</h3><span class="tag">Shared</span></div>
               <div class="field-grid">
                 <div class="field"><label class="field-label" for="output">Deliver as</label><select id="output" class="input" name="output"><option value="pptx">PowerPoint and Word files</option><option value="google">Google Slides and Docs</option></select></div>
                 <div class="field"><label class="field-label" for="render-previews">Slide previews</label><select id="render-previews" class="input" name="render.previews" aria-describedby="render-previews-hint"><option value="">Match delivery format</option><option value="local">Local rendering (LibreOffice)</option><option value="drive">Google Drive</option></select><p id="render-previews-hint" class="field-hint quiet">Local rendering needs LibreOffice and image tools; Google Drive needs sign-in. Each studio checks availability.</p></div>
               </div>
           </section>
-          <section id="research-sites" class="card" data-step="settings" aria-labelledby="research-sites-heading"><h3 id="research-sites-heading" class="card-title">Research sites</h3><p class="quiet">Research in every studio can look in your documents, these sites and the public web. Each blog, presentation or training chooses, starting from this list, and can add a site of its own.</p>
+          <div id="advanced-head" class="advanced-head" data-step="settings"><h3 class="advanced-title">Advanced</h3><p class="quiet">Optional. Most people leave these as they are. Each says what it holds while it is closed.</p></div>
+          <section id="models-part" class="card advanced-part" data-step="settings"><details id="models-more" class="advanced"><summary class="advanced-summary"><h3 class="card-title">Models and reasoning</h3><span id="models-owner" class="tag">Shared</span><span id="models-state" class="advanced-state quiet"></span></summary>
+            <div class="advanced-body">
+              <p class="quiet">Keep the assistant’s default, or choose a model and reasoning level. All four studios use these choices for the selected assistant.</p>
+              <div class="field-grid">
+                <div class="field"><label class="field-label" for="assistant-model">Model <span class="quiet">(optional)</span></label><input id="assistant-model" class="input" name="assistant.model" maxlength="100" placeholder="Use the assistant’s default" autocomplete="off" aria-describedby="assistant-model-hint"><p id="assistant-model-hint" class="field-hint quiet">Use an ID available in your account.</p></div>
+                <div class="field"><label class="field-label" for="assistant-effort">Reasoning</label><select id="assistant-effort" class="input" name="assistant.effort"></select></div>
+              </div>
+              <div class="model-catalog-bar"><p id="model-catalog-status" class="field-hint quiet" role="status">Model choices load when this section opens.</p><button type="button" id="refresh-models" class="button">Refresh models</button></div>
+              <div class="model-heading"><div><p class="quiet">Keep one model for everything, or choose a model for each kind of task.</p></div>
+                <div class="field"><p class="field-label" id="model-mode-label">Model routing</p><div class="segmented" data-count="2" data-at="0" role="radiogroup" aria-labelledby="model-mode-label"><span class="seg-thumb" aria-hidden="true"></span><label class="seg-option"><input type="radio" name="models.mode" value="single" checked>One model</label><label class="seg-option"><input type="radio" name="models.mode" value="by_task">By task</label></div></div></div>
+              <div id="model-profiles" hidden>
+                <p class="field-hint quiet">Quick handles extraction, classification and Presentation Studio outlines. Main handles research, drafting, slides, review and the first repair. Complex handles repeated slide findings and other dedicated repairs. Blog Studio uses Main for every job. New work saves these choices; existing work keeps its models.</p>
+                <div id="profile-cards" class="profile-cards"></div>
+                <div id="profile-review" class="paper callout" data-kind="yours" role="status" hidden><p>The assistant changed. Check the model IDs and reasoning levels before using these profiles with this assistant.</p><button type="button" id="confirm-profiles" class="button">Use these profiles with this assistant</button></div>
+                <p class="field-hint quiet">Use model IDs available in your signed-in account. The studios send your choice directly to the selected assistant and stop if it cannot be used.</p>
+              </div>
+            </div></details>
+          </section>
+          <section id="release-part" class="card advanced-part" data-step="settings"><details id="release-more" class="advanced"><summary class="advanced-summary"><h3 class="card-title">Brand skill release</h3><span id="release-owner" class="tag">Shared</span><span id="release-state" class="advanced-state quiet"></span></summary>
+            <div class="advanced-body">
+              <div class="field"><label class="field-label" for="brand-release">Brand skill release <span class="quiet">(optional)</span></label><input id="brand-release" class="input" name="brand.release" placeholder="Newest release" aria-describedby="brand-release-hint"><p id="brand-release-hint" class="field-hint quiet">Pin a release tag from the brand repository, such as v1.4.0, or leave blank for the newest release. A studio installs or updates the brand skill only when you ask it to, from its own settings.</p></div>
+            </div></details>
+          </section>
+          <section id="research-sites" class="card advanced-part" data-step="settings" aria-labelledby="research-sites-heading"><details id="research-more" class="advanced"><summary class="advanced-summary"><h3 id="research-sites-heading" class="card-title">Research sites</h3><span class="tag">Shared</span><span id="research-state" class="advanced-state quiet"></span></summary>
+            <div class="advanced-body">
+            <p class="quiet">Research in every studio can look in your documents, these sites and the public web. Each blog, presentation or training chooses, starting from this list, and can add a site of its own.</p>
             <table id="research-site-table" class="table" hidden><caption class="offscreen">Your research sites</caption><thead><tr><th scope="col">Site</th><th scope="col"><span class="offscreen">Remove</span></th></tr></thead><tbody id="research-site-list"></tbody></table>
             <p id="research-site-empty" class="field-hint quiet">No sites yet. Each blog, presentation or training still chooses where its research looks; sites you add here are offered there.</p>
             <div class="field"><label class="field-label" for="research-site-input">Add a site</label>
               <div class="copy-row"><input id="research-site-input" class="input" type="text" inputmode="url" autocomplete="off" spellcheck="false" placeholder="docs.example.com/guide" aria-describedby="research-site-hint"><button type="button" id="research-site-add" class="button">Add site</button></div>
               <p id="research-site-hint" class="field-hint quiet" role="status">An https address: a host and an optional path. Pages are saved only from under it, so docs.example.com/guide covers docs.example.com/guide/install but not docs.example.com/blog. At most 50 sites. Save settings to keep the list.</p></div>
+            </div></details>
           </section>
-          <section id="installations" class="card" data-step="settings" hidden><h3 class="card-title">Studio installations</h3><p class="quiet">Installed studios and sibling checkouts are found automatically. Set a folder if yours is somewhere else. Save settings keeps them with the rest.</p><div id="path-fields" class="field-grid"></div></section>
-          <p id="prepare-note" class="field-hint quiet" hidden>Finish setup will prepare installed studios with these choices. Your existing workspaces stay in place. For a shared repository, this creates a separate clone for each studio.</p>
-          <div class="bar form-actions"><button type="button" id="back" class="button" hidden>Back</button><button type="submit" id="save" class="button button-filled">Save settings</button></div>
+          <section id="installations" class="card advanced-part" data-step="settings" hidden><details id="installations-more" class="advanced"><summary class="advanced-summary"><h3 class="card-title">Studio installations</h3><span id="installations-owner" class="tag">Found automatically</span><span id="installations-state" class="advanced-state quiet"></span></summary>
+            <div class="advanced-body"><p class="quiet">Installed studios and sibling checkouts are found automatically. Set a folder if yours is somewhere else. Save settings keeps them with the rest. Nothing is installed or updated from here.</p><div id="path-fields" class="field-grid"></div></div></details></section>
+          <p id="prepare-note" class="field-hint quiet" hidden>Finish setup will prepare installed studios with these choices. Your existing workspaces stay in place. For a shared repository, this creates a separate clone for each studio. Models, research sites and installation folders are under Shared settings, Advanced, afterwards.</p>
+          <div id="save-bar" class="bar form-actions"><p id="save-state" class="save-state" role="status" hidden></p><button type="button" id="done-settings" class="button button-quiet" hidden>Back to Studios</button><button type="button" id="back" class="button" hidden>Back</button><button type="submit" id="save" class="button button-filled">Save settings</button></div>
         </form>
       </section>
       <section id="computer" class="stack" hidden>
         <div class="intro"><h2 class="large-title">This computer</h2><p class="lede">Check the tools your studios need on this computer.</p></div>
-        <section class="card"><h3 class="card-title">Tools</h3><ul id="computer-results" class="computer-items"><li class="quiet">Run a check to see what is installed.</li></ul><p class="field-hint quiet">Each studio checks sign-in when you use it.</p></section>
+        <section class="card"><h3 class="card-title">Tools</h3><ul id="computer-results" class="computer-items"><li class="quiet">Run a check to see what is installed.</li></ul><p class="field-hint quiet">Each studio checks sign-in when you use it. A check looks for commands on this computer and reads Git’s own settings: it signs in to nothing, installs nothing and starts no work.</p></section>
       </section>
     </main>
   </div>

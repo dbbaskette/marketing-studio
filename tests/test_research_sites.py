@@ -427,7 +427,8 @@ class SettingsPageJourneyTests(unittest.TestCase):
         html = (Path(__file__).resolve().parents[1] / 'core/studio_core/setup_web/index.html').read_text()
         for item in ('1. You and your assistant', '2. Your workspace', '3. Brand and delivery'):
             self.assertIn(item, html)
-        self.assertIn('<section class="card" data-step="1"><h3 class="card-title">Your workspace</h3>', html)
+        self.assertIn('<section id="workspace-part" class="card" data-step="1"><div class="part-head">'
+                      '<h3 class="card-title">Your workspace</h3>', html)
 
     def test_one_save_writes_settings_and_folders(self):
         shots = self.page([

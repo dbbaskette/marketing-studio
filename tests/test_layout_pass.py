@@ -124,11 +124,16 @@ class StaticLayoutTests(unittest.TestCase):
         form = html.find('settings-form')
         cards = [(node.attrs.get('data-step'), headings(node)[0].words()) for node in form.children
                  if node.tag == 'section' and 'card' in node.classes]
+        # The four everyday choices first, each a setup step; then the named Advanced parts,
+        # which only Shared settings shows, after its Advanced heading.
         self.assertEqual(cards, [
-            ('0', 'You and your assistant'), ('0', 'Models for your work'),
-            ('1', 'Your workspace'), ('2', 'Brand'),
-            ('2', 'Delivery and previews'), ('settings', 'Research sites'),
+            ('0', 'You and your assistant'), ('1', 'Your workspace'), ('2', 'Brand'),
+            ('2', 'Delivery and previews'), ('settings', 'Models and reasoning'),
+            ('settings', 'Brand skill release'), ('settings', 'Research sites'),
             ('settings', 'Studio installations')])
+        order = [node.attrs.get('id') for node in form.children if node.attrs.get('id')]
+        self.assertLess(order.index('delivery-part'), order.index('advanced-head'))
+        self.assertLess(order.index('advanced-head'), order.index('models-part'))
         self.assertNotIn('setup-part', (WEB / 'index.html').read_text())
 
     def test_first_run_steps_name_their_first_card(self):
@@ -140,7 +145,9 @@ class StaticLayoutTests(unittest.TestCase):
 
     def test_moved_setup_controls_are_in_their_new_cards(self):
         html = page()
-        for control, title, step in (('model-profiles', 'Models for your work', '0'),
+        for control, title, step in (('model-profiles', 'Models and reasoning', 'settings'),
+                                     ('assistant-model', 'Models and reasoning', 'settings'),
+                                     ('brand-release', 'Brand skill release', 'settings'),
                                      ('output', 'Delivery and previews', '2')):
             with self.subTest(control=control):
                 node = html.find(control)
@@ -220,10 +227,12 @@ class PageLayoutTests(unittest.TestCase):
         for card in cards:
             with self.subTest(studio=card['studio']):
                 self.assertEqual(card['order'][0], 'studio-symbol')
-                self.assertIn('state', card['order'])
+                self.assertIn('studio-readiness', card['order'])
+                self.assertIsNotNone(card['status'])
                 self.assertFalse(any('studio-status' in name or 'studio-icon' in name for name in card['order']))
+        # A card that the server said nothing about is not called ready.
         self.assertEqual({card['studio']: card['status'] for card in cards},
-                         {'blog': ['done', 'Ready to open'], 'presentation': ['done', 'Ready to open'],
+                         {'blog': ['none', 'Not checked'], 'presentation': ['none', 'Not checked'],
                           'training': ['off', 'Not installed']})
         running = {card['studio']: card['running'] for card in cards}
         self.assertIn('Running', running['presentation'])
@@ -238,6 +247,117 @@ class PageLayoutTests(unittest.TestCase):
                                     'save': False})
         self.assertFalse(shots['computer']['hidden']['check'])
         self.assertEqual(shots['settings']['words']['save'], 'Save settings')
+
+
+@unittest.skipUnless(shutil.which('node'), 'The page journey needs Node.js.')
+class SharedSetupJourneyTests(PageLayoutTests):
+    """Issue 215: a short everyday setup, named Advanced parts that show their overrides while
+    closed, a visible saved state, and launch readiness explained on the card itself."""
+    OVERRIDES = {
+        'person': {'name': 'Ana'}, 'assistant': {'agent': 'claude', 'model': None, 'effort': None},
+        'local': {'root': '/tmp/studios'}, 'team': {'branch': 'main'}, 'share': 'decision',
+        'output': 'pptx', 'kept': {'by': 'another tool'},
+        'brand': {'repository': 'https://example.com/brand.git', 'release': 'v1.4.0'},
+        'models': {'schema': 1, 'agent': 'claude', 'mode': 'by_task', 'profiles': {
+            'quick': {'selection': 'explicit', 'model': 'synthetic-small', 'effort': 'low'},
+            'main': {'selection': 'inherit'}, 'complex': {'selection': 'provider_default'}}},
+        'research': {'sites': ['https://docs.example.com/guide']}}
+    STATE = ['save-state', 'models-owner', 'models-state', 'release-owner', 'release-state',
+             'research-state', 'installations-owner', 'settings-nav', 'advanced-head', 'models-part',
+             'release-part', 'research-sites', 'installations', 'done-settings']
+
+    def shown(self, **changes):
+        return {**self.SHOWN, 'shared': {**self.OVERRIDES, **changes}, 'computer': None}
+
+    def test_overrides_stay_visible_and_an_everyday_save_sends_only_what_changed(self):
+        saved = {**self.shown(), 'shared': {**self.OVERRIDES, 'person': {'name': 'Bea'}}}
+        shots = self.page([
+            {'run': 'snapshot = ' + json.dumps(self.shown()) + '; setup = false; fill(); renderHome(); markSaved();'},
+            {'show': 'settings'}, {'snapshot': 'shown', 'ids': self.STATE},
+            {'run': "form.elements['person.name'].value = 'Bea'; form.fire('input');"
+                    " $('#probe').textContent = JSON.stringify(changesForStep());"},
+            {'snapshot': 'typed', 'ids': ['save-state'], 'read': ['#probe']},
+            {'show': 'home'}, {'snapshot': 'left'}, {'show': 'settings'},
+            {'responses': {'shared': saved}}, {'submit': True},
+            {'snapshot': 'saved', 'ids': ['save-state', 'problem'], 'read': ['#problem']}])
+        shown = shots['shown']
+        self.assertEqual(shown['words']['save-state'], 'All changes saved')
+        self.assertEqual(shown['words']['models-owner'], 'Override')
+        self.assertIn('By task: 2 of 3 tasks have their own model', shown['words']['models-state'])
+        self.assertEqual((shown['words']['release-owner'], shown['words']['release-state']),
+                         ('Override', 'Pinned to v1.4.0'))
+        self.assertEqual(shown['words']['research-state'], '1 site')
+        self.assertEqual(shown['words']['installations-owner'], 'Found automatically')
+        self.assertFalse(any(shown['hidden'][part] for part in (
+            'settings-nav', 'advanced-head', 'models-part', 'release-part', 'research-sites',
+            'installations', 'done-settings')))
+        self.assertEqual(shots['typed']['words']['save-state'], 'Unsaved changes')
+        # Only the leaf that was typed is sent; every override and unknown value is left alone.
+        self.assertEqual(json.loads(shots['typed']['read']['#probe']['text']), {'person': {'name': 'Bea'}})
+        self.assertIn('not saved yet', ' '.join(shots['left']['toasts']))
+        sent = [request['sent'] for request in shots['saved']['requests'] if request['url'].endswith('/api/shared')]
+        self.assertEqual(sent, [{'changes': {'person': {'name': 'Bea'}}, 'seen': self.shown()['shared']}])
+        self.assertTrue(shots['saved']['words']['save-state'].startswith('Saved at'))
+        self.assertTrue(shots['saved']['hidden']['problem'])
+
+    def test_a_refused_save_keeps_the_typed_change_unsaved(self):
+        shots = self.page([
+            {'run': 'snapshot = ' + json.dumps(self.shown()) + '; setup = false; fill(); renderHome(); markSaved();'},
+            {'show': 'settings'},
+            {'run': "form.elements['person.name'].value = 'Bea'; form.fire('input');"},
+            {'responses': {'shared': {'error': 'Another studio changed this setting. Reload the page and try again.'}}},
+            {'submit': True}, {'snapshot': 'refused', 'ids': ['save-state'], 'read': ['#problem']}])
+        refused = shots['refused']
+        self.assertEqual(refused['words']['save-state'], 'Unsaved changes')
+        self.assertIn('Another studio changed', refused['read']['#problem']['text'])
+
+    def test_first_run_setup_asks_only_the_everyday_choices(self):
+        shots = self.page([
+            {'run': 'snapshot = ' + json.dumps({**self.shown(), 'setup': {'done': False}})
+                    + '; setup = true; step = 0; fill(); renderHome(); show("settings");'},
+            {'snapshot': 'first', 'ids': self.STATE + ['assistant-part', 'models-pointer']}])
+        first = shots['first']
+        self.assertFalse(first['hidden']['assistant-part'])
+        for part in ('settings-nav', 'advanced-head', 'models-part', 'release-part', 'research-sites',
+                     'installations', 'save-state', 'done-settings'):
+            with self.subTest(part=part):
+                self.assertTrue(first['hidden'][part])
+        self.assertIn('after setup', first['words']['models-pointer'])
+
+    def test_a_card_says_what_is_missing_and_recovers_without_launching(self):
+        home = {**self.shown(), 'studios': [
+            {'id': 'blog', 'name': 'Blog Studio', 'installed': True, 'running': False, 'configured_path': '',
+             'path': '/opt/blog', 'readiness': {'state': 'review', 'label': 'Needs setup',
+                                                'detail': 'Git was not found on this computer.',
+                                                'action': {'view': 'computer', 'label': 'Check this computer'}}},
+            {'id': 'presentation', 'name': 'Presentation Studio', 'installed': True, 'running': False,
+             'configured_path': '', 'path': '/opt/p', 'readiness': {
+                 'state': 'done', 'label': 'Can open', 'detail': 'Setup, Claude Code and Git found.', 'action': None}}]}
+        look = {'checked_at': '2026-10-30T12:00:00+00:00', 'ready': False, 'items': [
+            {'name': 'Git identity', 'ready': False, 'optional': False, 'detail': 'Set it.'},
+            {'name': 'Codex', 'ready': False, 'optional': True, 'detail': 'Not found'}]}
+        walk = "const walk = node => [node, ...(node.children || []).flatMap(walk)];"
+        shots = self.page([
+            {'home': home}, {'snapshot': 'cards', 'ids': ['ready-computer', 'computer-summary', 'go-check']},
+            {'responses': {'computer': {'computer': look}}},
+            {'run': '(async () => {' + walk + " walk($('#studio-list')).find(node => /studio-recover/"
+                    ".test(node.className || '')).fire('click');"
+                    " for (let i = 0; i < 20; i += 1) await null; })()"},
+            {'snapshot': 'checked', 'ids': ['computer-summary', 'check'], 'read': []}])
+        cards = {card['studio']: card for card in shots['cards']['cards']}
+        self.assertEqual(cards['blog']['status'], ['review', 'Needs setup'])
+        self.assertEqual(cards['blog']['detail'], 'Git was not found on this computer.')
+        self.assertEqual(cards['blog']['recover'], 'Check this computer')
+        self.assertEqual((cards['presentation']['status'], cards['presentation']['recover']),
+                         (['done', 'Can open'], None))
+        self.assertIn('checked only when you ask', shots['cards']['words']['computer-summary'])
+        self.assertEqual(shots['cards']['words']['go-check'], 'Check this computer')
+        # The recovery is a local look at this computer, and the summary then says what it found.
+        urls = [request['url'] for request in shots['checked']['requests']]
+        self.assertEqual([url.split('/api/')[1] for url in urls], ['computer'])
+        self.assertFalse(shots['checked']['hidden']['check'])
+        self.assertEqual(shots['checked']['words']['computer-summary'],
+                         'Missing: Git identity. This computer says how to fix it.')
 
 
 if __name__ == '__main__':
