@@ -52,6 +52,15 @@ reading any screen starts no work. A desk training whose drafts are all written 
 marked ready now sits under Needs you, existing ones included, and is told once rather than
 again after each Mark ready.
 
+## Unreleased: Training Studio material review
+
+A material on the Training Studio desk opens to read, as learners receive it, with its
+formatting rendered and its teaching details folded away; **Edit** opens its parts, and text
+not saved yet keeps it open across tabs and levels. Copy text copies a section's exact saved
+text. Finishing opens on the material in front of you, with All materials for another. The
+toolbar's download says it is the level's, and each material's own is on its card. While a
+deck's slide text waits for approval, the desk opens on that deck with no editor beside it.
+
 ## Unreleased: research citation handoffs
 
 Research workers are explicitly told which saved source IDs to cite. If a worker

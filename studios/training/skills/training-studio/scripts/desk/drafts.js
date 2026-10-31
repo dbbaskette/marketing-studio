@@ -276,7 +276,9 @@ function finishingTools() {
   }));
 }
 
-function openFinishing() {
+// Finishing opens on the material in front of the person, with no second choice; All
+// materials is the way to another material of the level. `choose` asks which.
+function openFinishing(choose = false) {
   const held = deskHeld(view.path);
   const choices = Object.values(held.materials).filter((material) =>
     (material.view.level || '') === held.level && !material.view.readonly
@@ -287,8 +289,11 @@ function openFinishing() {
     held.material[held.level] = material.view.name;
     closeSheet(); deskKit.finishOpen(material);
   };
+  const current = !held.sources && choices.find((material) =>
+    material.view.name === held.material[held.level]);
+  if (!choose && current) { open(current); return; }
   if (choices.length === 1) { open(choices[0]); return; }
-  DESK.kitSheet = [sheetTitle('Finishing'), make('p', 'lede', 'Choose the material to check.'),
+  DESK.kitSheet = [sheetTitle('Finishing'), make('p', '', 'Choose the material to check.'),
     make('h3', 'sheet-part', '1. Choose a material'),
     ...choices.map((material) => capsule(cardTitle(material.view), 'quiet', () => open(material))),
     choices.length ? null : make('p', '', 'A guide, brief, practice or Yoodli layout opens here once it is written.'),
@@ -854,7 +859,9 @@ function levelStanding(found, level) {
   const whole = counts.ready === counts.materials
     ? (level ? 'This level is complete.' : 'Every material is ready.')
     : (level ? 'This level is complete' : 'The training is complete')
-      + ' once every material is ready. Downloads and Google Docs are optional.';
+      + ' once every material is ready. Ready is your approval of the version you read; a '
+      + 'material is still changed, checked or downloaded on its own, and Google Docs are '
+      + 'optional.';
   const node = make('p', 'quiet desk-level-standing', (level ? 'Level ' + level + ': ' : '')
     + parts.join(' · ') + '. ' + whole);
   node.setAttribute('role', 'status');
@@ -1478,15 +1485,73 @@ function lookSheet(found, look) {
   openSheet('desk-kit', '')();
 }
 
+// Whether a material is open for editing. It opens to read, as learners will receive it;
+// Edit opens its parts. Text not saved yet, recovered text, a selection or a change note (one
+// Finishing opened, say) keeps it open, so nothing typed is ever hidden. The choice outlives a change of tab, level or check.
+function deskEditing(held, found) {
+  if (!deskCanChange() || held.view.readonly) return false;
+  const desk = deskHeld(deskItem(held.id).path);
+  return Boolean((desk.editing || {})[found.name] || Object.keys(held.pending || {}).length
+    || hasDeskRecovery(held) || held.selection
+    || Object.values(held.notes || {}).some((note) => String(note || '').trim()));
+}
+
+function editToggle(held, found, editing) {
+  if (!deskCanChange() || held.view.readonly) return null;
+  const go = capsule(editing ? 'Done editing' : 'Edit ' + cardTitle(found), 'quiet', async () => {
+    const desk = deskHeld(deskItem(held.id).path);
+    desk.editing ||= {};
+    if (editing) {
+      // What was typed is saved before the reading view shows the saved text.
+      try { await deskKit.flush(held); } catch (failure) { /* said below */ }
+      if (Object.keys(held.pending || {}).length) {
+        desk.said = 'Your text is not saved yet, so it stays open for editing.';
+        paintDesk(true);
+        return;
+      }
+    }
+    desk.editing[found.name] = !editing;
+    paintDesk(true);
+    focusKey('desk-edit ' + found.name);
+  }, 'desk-edit ' + found.name);
+  return go;
+}
+
+// One part as learners receive it: its Markdown rendered on an opaque reading surface, the
+// exact saved text to copy, and its teaching details folded away.
+function readingPart(held, found, section) {
+  const text = section.id === 'opening' ? held.view.opening || '' : section.text || '';
+  const node = make('article', 'paper doc desk-reading');
+  node.setAttribute('aria-label', section.heading);
+  add(node, make('h2', 'doc-title', section.heading));
+  if (held.view.working && (held.view.working.part === section.id
+      || held.view.working.part === 'whole')) {
+    const working = make('p', 'quiet', 'Being changed now. The saved text is shown.');
+    working.setAttribute('role', 'status');
+    node.append(working);
+  }
+  node.append(text.trim() ? window.StudioMarkdown.render(text)
+    : make('p', 'quiet', 'Nothing is written here yet.'));
+  if (list(section.covers).length) {
+    node.append(add(make('details', 'card-part'), make('summary', '', 'Teaching details'),
+      make('p', 'quiet', 'Covers ' + section.covers.join(', '))));
+  }
+  return add(node, add(make('div', 'bar'),
+    copyButton('Copy text', 'Copied.', text, 'desk-copy ' + found.name + ' ' + section.id)));
+}
+
 function materialParts(held, found) {
   const area = make('div', 'desk-material stack');
   held.area = area;
+  const editing = deskEditing(held, found);
   const status = make('p', 'quiet desk-save-state', held.saved || '');
   status.setAttribute('role', 'status');
   held.status = status;
-  add(area, status, deskKit.selectionBar(held), held.view.readonly
-    ? make('p', 'quiet', held.view.readonly) : null);
-  if (deskCanChange() && !held.view.readonly) area.append(add(make('details', 'card-part'),
+  const toggle = editToggle(held, found, editing);
+  add(area, toggle ? add(make('div', 'bar'), toggle) : null, status,
+    editing ? deskKit.selectionBar(held) : null, held.view.readonly
+      ? make('p', 'quiet', held.view.readonly) : null);
+  if (editing) area.append(add(make('details', 'card-part'),
     make('summary', '', 'Change the whole ' + cardTitle(found).toLowerCase()), materialNote(held, found)));
   if (hasDeskRecovery(held) && deskCanChange() && !held.view.readonly) {
     const save = capsule('Save recovered text', 'quiet', async () => {
@@ -1516,7 +1581,9 @@ function materialParts(held, found) {
     id => { held.section = id; paintDesk(true); }, sectionKey));
   for (const section of sections.filter(section => section.id === held.section)) {
     let part;
-    if (section.locked) {
+    if (!editing) {
+      part = readingPart(held, found, section);
+    } else if (section.locked) {
       part = add(make('section', 'card desk-part'), make('h2', 'card-title', section.heading),
         make('p', 'quiet', 'Kept from the findings cited.'), make('p', 'desk-plain', section.text));
     } else part = materialPart(held, section.id);
@@ -1648,9 +1715,9 @@ async function previewUpdate(found) {
 function downloadButton(found) {
   const name = String(found.name).replace(/[^A-Za-z0-9._-]+/g, '-')
     + (found.kind === 'deck' ? '.pptx' : '.md');
-  const control = capsule('Download', 'quiet', (event) => downloadFile(view.path,
+  const control = capsule('Download ' + cardTitle(found), 'quiet', (event) => downloadFile(view.path,
     { artifact: found.name }, name, event.currentTarget), 'desk-download ' + found.name);
-  control.setAttribute('aria-label', 'Download ' + found.label);
+  control.setAttribute('aria-label', 'Download ' + found.label + ', as saved');
   return control;
 }
 
@@ -1979,18 +2046,20 @@ function paintDesk(fresh) {
       lead === 'ready' ? 'filled' : '', () => markLevel(level, shown, mark), 'desk-level-ready');
     actions.push(mark);
   }
-  if (!preparingPlan && !waitingPlan) actions.push(capsule('Download', '', openSheet('desk-download', 'desk-download-all'),
-    'desk-download-all'));
+  // The toolbar's Download is the whole level's; each material's own is on its card.
+  if (!preparingPlan && !waitingPlan) actions.push(capsule(level ? 'Download level ' + level
+    : 'Download all', '', openSheet('desk-download', 'desk-download-all'), 'desk-download-all'));
   if (ours && !conversation && !preparingPlan && !waitingPlan) {
     actions.push(capsule('Google Doc', '', openSheet('desk-copies', 'desk-copies'),
       'desk-copies'));
-    actions.push(capsule('Finishing', '', openFinishing, 'desk-finishing'));
+    actions.push(capsule('Finishing', '', () => openFinishing(), 'desk-finishing'));
   }
   const notice = held.said ? make('p', 'notice', held.said) : null;
   if (notice) notice.setAttribute('role', 'alert');
   const available = shown.filter(one => one.state !== 'left-out');
   if (!available.some(one => one.name === held.material[level])) {
-    held.material[level] = (available.find(one => one.seen && ['needs', 'held'].includes(one.state))
+    held.material[level] = (available.find(one => (one.seen && ['needs', 'held'].includes(one.state))
+      || one.state === 'decide')
       || available.find(one => one.seen) || available[0])?.name;
   }
   const selected = held.sources ? 'sources' : held.material[level];
@@ -2005,9 +2074,17 @@ function paintDesk(fresh) {
   const column = add(make('div', 'desk-column'), ...shown.filter(one => one.name === selected).map(deskCard));
   if (!shown.length) column.append(make('p', 'quiet', 'Nothing is made at this level.'));
   const finishing = finishingMaterial();
-  if (finishing) { finishing.panel = deskKit.panel(finishing); finishing.panelKey = deskKit.panelKey(finishing); }
+  if (finishing) {
+    finishing.panel = deskKit.panel(finishing); finishing.panelKey = deskKit.panelKey(finishing);
+    // Finishing is scoped to this material; All materials is the way to check another.
+    const others = capsule('All materials', 'quiet', () => openFinishing(true), 'desk-finishing-all');
+    others.setAttribute('aria-label', 'Finishing: choose another material of this level');
+    finishing.scope = add(make('p', 'quiet desk-finishing-scope'),
+      'Checking ' + cardTitle(finishing.view) + ' only. ', others);
+  }
   const layout = workspacePanel('desk-material', options.findIndex(one => one.id === selected),
-    held.sources ? sourcesPart(found) : add(make('div', 'stack'), column, finishing ? finishing.panel : null));
+    held.sources ? sourcesPart(found) : add(make('div', 'stack'), column,
+      finishing ? finishing.scope : null, finishing ? finishing.panel : null));
   place({ title: found.title || 'Untitled', back: true,
     above: named.length ? [make('span', '', levelsText(named))] : [], actions }, [
     waitingPlan ? null : pageHead(preparingPlan ? 'I’ll prepare the topics and teaching plan for you to check, then build the training.' : conversation ? 'Read the retained materials. Make checked edits in conversation; only you mark a material ready.' : DESK_WORDS.lede),
@@ -2111,8 +2188,10 @@ function deskSheet(kind) {
         make('p', 'step-name', cardTitle(one)), make('p', 'quiet', one.says)),
       downloadButton(one)));
     }
-    return [sheetTitle('Download'), make('p', '', 'Each material of ' + where + ', as it stands '
-      + 'now. Nothing is marked ready by downloading it.'),
+    return [sheetTitle(level ? 'Download level ' + level : 'Download all'),
+      make('p', '', 'Every written material of ' + where + ', one file each, exactly as it is '
+      + 'saved now, Ready or a draft. Downloading marks nothing ready and sends nothing. One '
+      + 'material alone downloads from its own card.'),
     ready.length ? items : make('p', 'quiet', 'Nothing of ' + where + ' is written yet.'),
     add(make('div', 'bar'), close)];
   }
