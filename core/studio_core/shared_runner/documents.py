@@ -8,6 +8,8 @@ What a caller needs to know
     documents.accepts()               # the endings this computer can read now
     entry = documents.add(root, name, data)    # keep one document, given as bytes
     entry = documents.add_text(root, title, text)   # keep pasted text, or an exported Doc
+    entries = documents.add_snapshots(root, snapshots)   # pin Document Library revisions
+    entry = documents.replace_snapshot(root, snapshot)   # take a newer revision, explicitly
     documents.remove(root, name)
     documents.listed(root)            # every entry, in the order they were added
     documents.text_of(root, entry)    # the text kept of one readable document
@@ -17,7 +19,7 @@ What a caller needs to know
   never shares: the file as it was sent and, beside it, its text. The list of what was added
   is kept there too, in `index.json`. Nothing is written anywhere else.
 - An entry is {'name', 'bytes', 'readable', 'problem', 'id', 'title', 'file', 'original',
-  'distinct', 'sha256'}. `id` is a slug of the name, unique among the item's documents.
+  'distinct', 'sha256', 'library'}. `id` is a slug of the name, unique among the item's documents.
   `file` is the text's path from the item's folder and `original` the sent file's.
   `distinct` is True when the file as sent is another document than its text (a PDF, a
   Word file, a web page) and False for text and Markdown, which are their text: only a
@@ -32,6 +34,12 @@ What a caller needs to know
 - `add_text` keeps text a person pasted, or a Google Doc exported as text, as a Markdown
   document named `<slug of the title>.md`, and its title is the one given. It is refused
   as `add` refuses, and when the text or the title is empty.
+- `add_snapshots` pins revisions from the shared Document Library (`studio_core.
+  document_library`): each one's readable Markdown and its file are copied in, so the
+  item keeps reading them when the library changes or is gone, and `library` names the
+  library ID, revision and Markdown hash it came from (None for a document supplied
+  here). All of them are kept, or none; one already pinned is refused. `replace_snapshot`
+  takes a newer revision only when asked. Removing one never touches the library.
 - `text_of(root, entry)` reads the text kept of the document an entry names, by its ID; one
   that is not readable is refused with why.
 - An item's folder is one IS_ITEM, passed in by the studio, says is one; any other is
@@ -174,8 +182,9 @@ def _same(one: str, other: str) -> bool:
     return one.casefold() == other.casefold()
 
 
-def _checked(name, data) -> tuple[str, str, bytes]:
-    """A sent document's name, ending and bytes, once each may be taken."""
+def _checked(name, data, read_here=True) -> tuple[str, str, bytes]:
+    """A sent document's name, ending and bytes, once each may be taken. A document whose
+    text comes with it (`read_here` False, a library revision) needs no reader here."""
     plain = _plain(name)
     if plain is None:
         raise WorkspaceError(f'"{_shown(name)}" is not a plain file name. Give the document '
@@ -184,7 +193,7 @@ def _checked(name, data) -> tuple[str, str, bytes]:
     if len(plain) > NAME:
         raise WorkspaceError(f'"{_shown(plain)}" is a name of more than {NAME} characters. '
                              'Give the document a shorter name and add it again.')
-    ending, taken = _ending(plain), accepts()
+    ending, taken = _ending(plain), accepts() if read_here else TYPES
     if ending == '.pdf' and ending not in taken:
         raise WorkspaceError(f'"{plain}" is a PDF, and this computer cannot read PDFs. '
                              f'{INSTEAD}')
@@ -297,7 +306,17 @@ def _entry(root: Path, kept: dict) -> dict:
             'id': kept['id'], 'title': title, 'file': file if readable else None,
             'original': original,
             'distinct': _distinct(root, kept, file, original),
-            'sha256': kept.get('sha256') if isinstance(kept.get('sha256'), str) else None}
+            'sha256': kept.get('sha256') if isinstance(kept.get('sha256'), str) else None,
+            'library': _pinned(kept.get('library'))}
+
+
+def _pinned(found) -> dict | None:
+    """The Document Library revision a document was pinned from, or None for one supplied
+    here."""
+    if not isinstance(found, dict) or not isinstance(found.get('id'), str) \
+            or type(found.get('revision')) is not int:
+        return None
+    return {key: found.get(key) for key in ('id', 'revision', 'content_sha256', 'kind', 'studio')}
 
 
 def _differs(ending: str, data: bytes, text: str | None) -> bool:
@@ -593,6 +612,101 @@ def add_text(root: Path, title: str, text: str) -> dict:
         raise WorkspaceError(f'"{_shown(title)}" cannot be the title of a document. Give it '
                              f'a plain title of at most {NAME} characters.')
     return add(root, f'{worker_tools.slug(shown, 60)}.md', text.encode('utf-8'), shown)
+
+
+def _snapshot_files(snapshot: dict, taken: set[str], names: list[str]):
+    """A pinned library revision as a document of this item: its name, ending, ID, the
+    bytes of the file as it was kept and its text. Its text is the library's readable
+    Markdown, not read again here, so the project reads what the person previewed."""
+    title = _titled(snapshot.get('title')) or 'Library document'
+    original = snapshot.get('original')
+    name = snapshot.get('name') if original is not None else f'{worker_tools.slug(title, 60)}.md'
+    plain, ending, data = _checked(name, original if original is not None
+                                   else snapshot['text'].encode('utf-8'), read_here=False)
+    stem, number = plain[:len(plain) - len(ending)], 1
+    while any(_same(plain, other) for other in names):
+        number += 1
+        plain = f'{stem} ({number}){ending}'
+    text = worker_tools.tidy(snapshot['text'].encode('utf-8', 'replace').decode('utf-8'))
+    if not text.strip():
+        raise WorkspaceError(f'"{title}" has no readable text, so it was not added.')
+    if len(text) > TEXT:
+        raise WorkspaceError(f'"{title}" {TOO_LONG[3:]}')
+    ident = _ident(plain, ending, taken)
+    library = {'id': snapshot['id'], 'revision': snapshot['revision'],
+               'content_sha256': snapshot['content_sha256'], 'kind': snapshot.get('kind'),
+               'studio': snapshot.get('studio')}
+    entry = {'name': plain, 'bytes': len(data), 'readable': True, 'problem': None,
+             'id': ident, 'distinct': _differs(ending, data, text),
+             'sha256': hashlib.sha256(data).hexdigest(), 'title': title, 'library': library}
+    return entry, ending, data, text
+
+
+def add_snapshots(root: Path, snapshots: list[dict]) -> list[dict]:
+    """Pin Document Library revisions as documents of this item: each one's text and file
+    are copied into the item, so it keeps working when the library changes or is gone.
+    All are kept, or none. A revision already pinned here is refused: update it instead.
+    `snapshots` are what `Library.snapshot` gave, checked against their hashes."""
+    root = Path(root)
+    written: list[Path] = []
+    with _CHANGING:
+        kept = _kept(root)
+        pinned = {(entry.get('library') or {}).get('id') for entry in kept}
+        if len(kept) + len(snapshots) > LIMITS['files']:
+            raise WorkspaceError(f"This {ITEM} can take {LIMITS['files'] - len(kept)} more "
+                                 f"documents, at most {LIMITS['files']} in all. Choose fewer.")
+        try:
+            added = []
+            for snapshot in snapshots:
+                if snapshot['id'] in pinned:
+                    raise WorkspaceError(f'"{_shown(snapshot.get("title"))}" is already in '
+                                         f'this {ITEM}. Use Update to take a newer revision.')
+                pinned.add(snapshot['id'])
+                entry, ending, data, text = _snapshot_files(
+                    snapshot, {one['id'] for one in kept + added},
+                    [one['name'] for one in kept + added])
+                file, original = (_managed(root, path) for path in _files(entry['id'], ending))
+                written += [original, file]
+                _write(original, data)
+                _write(file, text.encode('utf-8'))
+                added.append(entry)
+            _store(root, kept + added)
+        except BaseException:   # all pinned and listed, or none
+            for path in written:
+                path.unlink(missing_ok=True)
+            raise
+        return [_entry(root, entry) for entry in added]
+
+
+def replace_snapshot(root: Path, snapshot: dict) -> dict:
+    """Take a newer revision of a document pinned from the library, explicitly: its entry
+    keeps its place in the list, and its old text and file are replaced."""
+    root = Path(root)
+    with _CHANGING:
+        kept = _kept(root)
+        at = next((index for index, entry in enumerate(kept)
+                   if (entry.get('library') or {}).get('id') == snapshot['id']), None)
+        if at is None:
+            raise WorkspaceError(f'That library document is not in this {ITEM}.')
+        old = kept[at]
+        others = kept[:at] + kept[at + 1:]
+        entry, ending, data, text = _snapshot_files(
+            snapshot, {one['id'] for one in others}, [one['name'] for one in others])
+        file, original = (_managed(root, path) for path in _files(entry['id'], ending))
+        stale = [root / path for path in _files(old['id'], _ending(old['name']))]
+        try:
+            _write(original, data)
+            _write(file, text.encode('utf-8'))
+            _store(root, others[:at] + [entry] + others[at:])
+        except BaseException:
+            if entry['id'] != old['id'] or ending != _ending(old['name']):
+                original.unlink(missing_ok=True)
+                file.unlink(missing_ok=True)
+            raise
+        for path in stale:
+            if path not in (file, original):
+                path.unlink(missing_ok=True)
+        return _entry(root, entry)
 
 
 def text_of(root: Path, entry: dict) -> str:
