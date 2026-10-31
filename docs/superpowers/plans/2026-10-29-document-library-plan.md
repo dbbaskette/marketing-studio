@@ -1,10 +1,48 @@
 # Shared document library implementation plan
 
-Status: design and implementation plan approved; implementation pending.
+Status: the first slice is implemented (2026-10-31). The rest is in follow-up issues.
 Tracking issue: [Marketing Studio #205](https://github.com/dbbaskette/marketing-studio/issues/205)
 contains this plan and the [design](../specs/2026-10-29-document-library-design.md).
-Date: 2026-10-29. Implementation and integrated verification owner: assign when implementation begins.
-No application behavior has changed yet.
+Date: 2026-10-29.
+
+## First slice, as built (2026-10-31)
+
+Built:
+
+- step 1 in full;
+- step 3 for uploads, finished Blog Studio blogs and delivered Presentation Studio
+  decks (Markdown, with the PDF recorded as needing export);
+- step 4 for Presentation Studio and Blog Studio;
+- step 5 for those two studios and Marketing Studio's Library screen.
+
+The state matrix and the layout are in
+[shared setup](../../shared-setup.md#the-document-library).
+
+Changes from the plan:
+
+- **Filters.** Browsing filters are kept in the library's `.state/filters.json`,
+  not the studios config. The config takes only flat sections, and filters are not
+  a setting every studio shares. The config holds only `library.root`.
+- **Where the sheet lives.** It is `core/studio_core/deck_web/library.js`, served
+  beside `lists.js`, so that packaged studios carry it. Its styles are in
+  `ui-kit/style.css`.
+- **Blog Studio context.** Chosen revisions become Blog Studio's existing
+  project-local material with a role. The team library picker, roles, pins and
+  Team Hub behaviour are unchanged. No legacy adapter is built yet (step 2).
+- **No PDF.** Presentation Studio delivery keeps outline Markdown and records the
+  PDF as needing export. The pinned Harness Slides runtime has no PDF export, and
+  none is added.
+- **Running jobs.** Context follows each desk's existing source rules. A running
+  job keeps the copy of its sources that it took when it started.
+
+Left for follow-ups:
+
+- Training Studio and Infographic Studio;
+- **Keep in library** on in-studio uploads;
+- explicit adoption of existing work and a Blog Studio legacy adapter (step 2);
+- a real PDF export;
+- Update available in Blog Studio;
+- the integrated Hub walkthrough and the Tart run (step 6).
 
 ## 1. Shared library records and configuration
 

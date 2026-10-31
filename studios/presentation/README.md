@@ -172,6 +172,20 @@ Keep your decks in your team's shared repository. They go in a `presentations/` 
 
 [The runner](docs/runner.md) has the details, including what happens when two computers disagree.
 
+## The Document Library
+
+On the desk, the Sources card's **Add from library** chooses documents from the
+Document Library that every studio shares on this computer. Choices can include
+uploads, finished blogs and delivered decks. Each chosen revision is copied into
+the deck as a source, so the deck keeps it if the library changes. When a newer
+revision is available, the card shows it, and **Use revision N** takes it.
+
+Adding a source starts no research. After delivery, the deck's slide outline is
+kept in the library as Markdown. The PDF is recorded as still needing export,
+because Presentation Studio cannot make one yet. If that save fails, **Keep in
+library again** retries it without delivering again. See
+[the Document Library](../../docs/shared-setup.md#the-document-library).
+
 ## Shared settings
 
 `~/.config/studios-config.json` is the one place the choices common to every studio are kept: your team repository and branch, when to share, your name, your assistant with its model and level, the brand skill's repository and release, the brand and its variant, and the output. Presentation Studio keeps no copy of its own. It reads them from that file each time, and saving one of them in set-up or Settings writes it there, so Training Studio and Blog Studio see the change too. Limits, how slide previews are made and the other choices only Presentation Studio uses stay in its own settings.

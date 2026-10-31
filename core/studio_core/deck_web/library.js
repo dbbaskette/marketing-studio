@@ -88,6 +88,7 @@
       } finally {
         this.loading = false;
         this.render();
+        this.onChange();      // the selection bar counts what this page no longer shows
       }
     }
 

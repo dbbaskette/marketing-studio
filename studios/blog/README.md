@@ -182,6 +182,13 @@ In chat, say **“My blogs”** to find saved work or **“Continue [title]”**
 
 The page and chat use the same saved blog. You can move between them as you work.
 
+A finished or published blog is also kept as Markdown in the Document Library that
+every studio shares on this computer. It is local and separate from the team
+library. To use a deck or an upload from it, choose **Library → From the Document
+Library** under a blog's sources and give each document a role. The copy stays with
+that blog only and is never shared with the team. See
+[the Document Library](../../docs/shared-setup.md#the-document-library).
+
 ## Update or get help
 
 For a cloned copy, run `git pull --ff-only` and then `bash install.sh --studios blog`

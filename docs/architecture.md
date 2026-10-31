@@ -52,6 +52,21 @@ ordinary files into every released archive and installed runtime. Unexpected
 links remain refused. No installed studio needs the source checkout, another
 studio, or a shared external core installation.
 
+The shared Document Library (`core/studio_core/document_library/`) is generic
+storage. It does not import any studio. `context.py` gives every studio page the
+same POST routes: `/api/library`, `/api/library-document`, `/api/library-filters`
+and `/api/library-matching`. Blog Studio prefixes them with `document-` so they
+never meet its team library routes.
+
+The sheet, `deck_web/library.js`, is served beside `lists.js` by every shared page
+server and by the phone gateway, and Blog Studio's static map serves it too. It
+lives with `studio_core` rather than `ui-kit/`, so packaged studios carry it. Its
+styles are in `ui-kit/style.css`.
+
+Projects pin revisions through each studio's own source contract: the shared
+supplied documents for Presentation Studio, and project-local material for Blog
+Studio. See [shared setup](shared-setup.md#the-document-library).
+
 ## Settings and launch lifecycle
 
 First run reads existing shared choices and opens setup. Continue saves only
