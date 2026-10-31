@@ -1438,14 +1438,19 @@ ROUTES = {
     'review': {'id', 'seen', 'humanize', 'voice_guide'},
     'apply': {'id', 'seen', 'job', 'items', 'all'},
     'skip': {'id', 'job', 'items'},
+    # Review mode's Undo after Reject: suggestions set aside here are open again.
+    'unskip': {'id', 'job', 'items'},
     # Before publishing: a repurpose result as a new blog, and Google suggestions.
     'repurpose': {'id', 'job', 'title', 'content'},
     'google-plan': {'id', 'mode'},
     'google-send': {'id', 'plan', 'confirmed'},
+    # Bring the Doc's accepted text back: checked first (nothing changes), then taken.
+    'google-compare': {'id'},
+    'google-take': {'id', 'preview', 'confirmed'},
 }
 SESSION = re.compile(r'[a-f0-9]{16,64}')
 # Routes the page's dispatch does not record as a decision on this blog (management.py).
-UNSHARED = ('skip', 'google-plan', 'google-send', 'repurpose')
+UNSHARED = ('skip', 'unskip', 'google-plan', 'google-send', 'google-compare', 'repurpose')
 
 
 # First passes that are a Finishing tool: they propose, and the draft is left as it is.
@@ -1606,6 +1611,15 @@ def dispatch(root, action, data):
         if action == 'google-plan':
             return desk_finish.google_plan(root, ident, data.get('mode', 'auto'))
         return desk_finish.google_send(root, ident, data)
+    elif action == 'google-compare':
+        import desk_finish
+
+        return desk_finish.google_pull(root, ident)
+    elif action == 'google-take':
+        import desk_finish
+
+        brought = desk_finish.google_take(root, ident, data)
+        return {**desk_jobs.view(root, ident), **brought}
     elif action == 'repurpose':
         import desk_finish
 
@@ -1623,10 +1637,12 @@ def dispatch(root, action, data):
             data['humanize'] if 'humanize' in data else desk_jobs.PINNED,
             data['voice_guide'] if 'voice_guide' in data else desk_jobs.PINNED,
         )
-    elif action in ('apply', 'skip'):
+    elif action in ('apply', 'skip', 'unskip'):
         import desk_finish
 
-        if action == 'apply':
+        if action == 'unskip':
+            done = desk_finish.unskip(root, ident, data.get('job'), data.get('items'))
+        elif action == 'apply':
             done = desk_finish.apply(
                 root, ident, seen, data.get('job'), data.get('items'), data.get('all', False)
             )

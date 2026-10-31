@@ -5,6 +5,60 @@ changes for authors first, then what changes for maintainers.
 
 ## Unreleased
 
+- **One library vocabulary, honest upload limits and clear source choices (#260).** The
+  page says **team library** and **Document Library (this computer)** everywhere: **From
+  the team library**, **From the Document Library (this computer)**, **Keep a copy in the
+  Document Library** for uploads, and **Add to the team library**. Mark as published names
+  both places its draft is kept, and without a Team Hub the page says the team library is
+  on this computer only. **Add to the team library** sends large files in groups that each
+  fit one request, through the phone link too, and reads them back as one check and one
+  result. **Add a source**'s five options wrap with exactly one shown as chosen. Team
+  library rows show one status in words ("Readable · not analyzed yet"), the Status filter
+  reads **All active**, and its dialogs close with **Close**. Opened through Marketing
+  Studio's phone link, Status says to run sign-in commands on the computer running
+  Marketing Studio. The desk's **Add a source** says "Later rewrites will read what you
+  add." On a phone the desk's save line sits in its compact bar. Shared look: a `.dialog`
+  that holds form fields is opaque, and a five- or six-option segmented control fills the
+  chosen option instead of sliding a thumb.
+
+- **The Google Doc round trip, finished on the page (#259).** The desk's **Google Doc**
+  is a small menu: **Open the Google Doc**, **Check what would be sent** (then **Send**) and
+  **Bring accepted changes**. Bring accepted changes reads the Doc's accepted text and
+  lists each part it changes, merged paragraph by paragraph against the Doc as the desk
+  and the Doc last agreed: what only the Doc changed comes, a suggestion the owner rejected
+  comes back (matched by its paragraph, never its words alone), and every desk paragraph the Doc has not answered (unsent, or sent as a
+  comment for the owner to make by hand) stays. Each part taken keeps the desk's text in
+  History as "Before Google's accepted text", and the Doc becomes the new baseline. The
+  desk's section order, and the sections it added or removed, are kept. A paragraph both
+  changed refuses its part, as does an image the desk holds differently, and the whole
+  check waits while desk suggestions are still with the owner. Nothing is written to Google, and a slow answer through the
+  phone link says to check again. The send
+  receipt says what went and when, and the desk, Home and Blogs say what waits in the Doc,
+  when the desk last sent, and when it has unsent changes; Home counts a desk blog with
+  open suggestions, Doc suggestions waiting or unsent changes as needing you, and each row
+  has one status line with when it was edited. What a send makes reads plainly ("Removes
+  …", "Adds a paragraph after …"), and the Doc's pending marks are counted and explained in
+  Review mode before a first check too. Maintainers: `desk-google-compare` and
+  `desk-google-take` (`desk_finish.google_pull`, `google_take`), `google_state` in the desk
+  view and `needs` in the runs listing (`desk_finish.attention`); the desk's Google ledger
+  keeps `last`, `waiting`, `synced` and `brought`.
+
+- **The manuscript in its order, and one path through Polish and Review (#258).** Read,
+  Edit section, Full desk and Review mode always show the title, the opening, then the
+  sections as saved: a section whose id was all digits could show above the title.
+  **Polish** opens Review mode and **Back** there returns to the view, section and scroll
+  you came from; Review mode keeps **Copy**, **Download**, the **Google Doc** and **Mark as
+  published**, and shows **Check again** only once a check has run, with a first-run
+  sentence before it. The desk's **Review and share** button is gone: the toolbar's
+  **Finishing** is the one way to the panel. After **Accept**, **Reject** or **Accept all**
+  focus moves to the next suggestion or the summary; **Reject** is said, with **Undo**.
+  **Humanize · N to review** opens Review mode with the rewrites to accept or reject; in
+  Finishing, waiting rewrites come first and **Find sentences again** is quiet, under them,
+  saying it replaces them. On a phone, Go to section and one **View and tools** fold come
+  before the text. Maintainers: the `desk-unskip` route (`desk_finish.unskip`), and Review
+  mode's `reviewFrom`, `reviewHuman` and `focusAfter`. Presentation Studio and Training
+  Studio list their parts from arrays, so their desks were not affected.
+
 - **Document Library: Update available and Keep in library.** A desk source taken
   from the shared Document Library shows **Update available** when the library has
   a newer revision, and **Use revision N** takes it as a new source revision the blog

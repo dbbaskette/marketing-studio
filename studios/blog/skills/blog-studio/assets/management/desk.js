@@ -336,9 +336,9 @@ function sDeskSourcesSheet(held){
   const adding=held.adding||(held.adding={files:[],role:'material',keep:false,style:held.view.style?.style_id||''});
   const problem=sNode('p','sheet-error',adding.problem||'');problem.setAttribute('role','alert');delete adding.problem;
   let done;
-  const files=sFilesCard(adding,problem,()=>sDeskSourcesSheet(held),locked=>{if(done)done.disabled=locked||!sDeskCan(held);},{keepWhen:'Ticked ones go to the team library when you add them.'});
+  const files=sFilesCard(adding,problem,()=>sDeskSourcesSheet(held),locked=>{if(done)done.disabled=locked||!sDeskCan(held);},{keepWhen:'Ticked ones go to the team library when you add them.',empty:'No sources yet. Later rewrites will read what you add.'});
   done=sButton('Add to this draft',async button=>{
-    const ready=adding.files.filter(file=>file.state==='ready');if(!ready.length){problem.textContent='Add a file, a link, a Google Doc or a library post with text first.';return;}
+    const ready=adding.files.filter(file=>file.state==='ready');if(!ready.length){problem.textContent='Add a file, a link, a Google Doc or a post from the team or Document Library with text first.';return;}
     await busy(button,'Adding…',async()=>{try{await sDeskFlush(held);const before=held.view;held.view=await api('desk-sources',{id:held.id,sources:sDeskUploads(ready),library:sDeskLibraryPicks(ready),...sDeskKept(ready)});held.adding=null;sCloseSheet();sToast(ready.length===1?'Added. Later rewrites read it.':'Added. Later rewrites read them.');sDeskRefresh(held,before);}catch(error){problem.textContent=error.message;}});
   },'filled');
   done.disabled=!sDeskCan(held);
@@ -417,17 +417,88 @@ function sDeskTeam(view){
   team.disabled=!access.actions.edit;return team;
 }
 function sDeskElsewhere(view){return view.elsewhere?sNode('p','decision-notice desk-driver',view.elsewhere):null;}
-function sDeskToolbar(held){
+// The blog's own actions, on the desk's toolbar and on Review mode's: Copy, Download, its
+// Google Doc and Mark as published.
+function sDeskShareActions(held){
   const view=held.view,editable=sDeskCan(held);
-  const copy=sButton('Copy',async()=>{if(typeof navigator==='undefined'||!navigator.clipboard?.writeText)throw new Error('Download the draft and copy it from there.');const found=await sDeskMarkdown(held);await navigator.clipboard.writeText(found.markdown);sToast(deskWithout('Markdown copied',found.missing));});
-  const download=sButton('Download',async()=>{const found=await sDeskMarkdown(held);await sDownload({content:found.markdown,name:'DRAFT.md'});if(found.missing.length)sToast(deskWithout('Downloaded',found.missing));});
-  const google=view.google?.url?link(view.google.url,'Google Doc ↗'):sButton('Make a Google Doc',()=>sDeskMakeDoc(held));if(view.google?.url)google.className='button';else google.disabled=!editable;
+  const copy=sButton('Copy',async()=>{if(typeof navigator==='undefined'||!navigator.clipboard?.writeText)throw new Error('Download the draft and copy it from there.');if(held.mode==='review')await sReviewFlush(held);const found=await sDeskMarkdown(held);await navigator.clipboard.writeText(found.markdown);sToast(deskWithout('Markdown copied',found.missing));});
+  const download=sButton('Download',async()=>{if(held.mode==='review')await sReviewFlush(held);const found=await sDeskMarkdown(held);await sDownload({content:found.markdown,name:'DRAFT.md'});if(found.missing.length)sToast(deskWithout('Downloaded',found.missing));});
   const publish=sButton(view.publication?'Published':'Mark as published',()=>sDeskPublish(held));publish.disabled=!editable;
+  return [copy,download,...sDeskGoogleActions(held),publish];
+}
+// The Google Doc: made once; then Open, and for a Doc that takes suggestions a small menu
+// with Open, Check what would be sent and Bring accepted changes. On a phone the toolbar's
+// own menu lists the three, one row each.
+function sDeskGoogleActions(held){
+  const view=held.view,editable=sDeskCan(held);
+  if(!view.google?.url){const make=sButton('Make a Google Doc',()=>sDeskMakeDoc(held));make.disabled=!editable;return [make];}
+  if(!view.google_suggestions){const open=link(view.google.url,'Google Doc ↗');open.className='button';return [open];}
+  // A choice closes the menu it was made in.
+  const menu=sNode('details','menu desk-google-menu'),shut=go=>()=>{menu.open=false;return go(held);};
+  const open=link(view.google.url,'Open the Google Doc ↗'),check=sButton('Check what would be sent',shut(sDeskGoogleSend)),bring=sButton('Bring accepted changes',shut(sDeskGoogleBring));
+  check.disabled=bring.disabled=!editable;
+  if(sNarrow())return [open,check,bring];
+  for(const item of [open,check,bring])item.className='menu-item';
+  return [sAdd(menu,sNode('summary','button','Google Doc'),sAdd(sNode('div','menu-list'),open,check,bring))];
+}
+// The Doc as the desk last knew it, said in the toolbar: what waits there, when the desk last
+// sent, and changes not sent yet. Read on this computer; Google is read only when asked.
+function sDeskDocWords(view){const g=view.google_state;if(!g)return '';const said=[];if(g.waiting)said.push('Doc: '+g.waiting+' waiting');if(g.last)said.push('last sent '+sDeskWhen(g.last.at));if(g.unsent)said.push('Unsent desk changes');return said.join(' · ');}
+function sDeskWhen(at){const when=new Date(at||'');if(isNaN(when.getTime()))return '';const time=when.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});return when.toDateString()===new Date().toDateString()?time:when.toLocaleDateString('en-US',{month:'short',day:'numeric'})+', '+time;}
+// A Google request that took too long to answer (the phone link's 504), said plainly.
+function sDeskSlow(error,again){return error?.status===504||/took too long|timed? ?out/i.test(error?.message||'')?again:error?.message;}
+// The receipt of a send: how many went, when, and what comes next.
+function sDeskSentWords(plan,result){
+  if(!['verified-pending','verified-comments'].includes(result?.status))return 'The result is not yet verified. Check delivery before trying anything else.';
+  const asComments=result.status==='verified-comments',edits=plan.suggestions??plan.count??0,n=asComments?0:edits,m=asComments?edits+(plan.comments||0):plan.comments||0,parts=[];
+  if(n)parts.push(n+(n===1?' suggestion':' suggestions'));if(m)parts.push(m+(m===1?' comment':' comments'));
+  return 'Sent '+(parts.join(' and ')||'the changes')+' at '+sDeskWhen(new Date().toISOString())+'.'+(n?' When the owner has decided them, choose Bring accepted changes.':' The Doc’s owner makes each change by hand.');
+}
+// The desk read again after Google work, so its toolbar says what the Doc holds now.
+async function sDeskReread(held){if(!sDeskCurrent(held))return;const before=held.view;held.view=await api('desk?id='+encodeURIComponent(held.id));sDeskRefresh(held,before);}
+// Check what would be sent, then Send: two steps from the toolbar, on a sheet, nothing sent
+// before Send.
+async function sDeskGoogleSend(held){
+  const problem=sNode('p','sheet-error');problem.setAttribute('role','alert');
+  sOpenSheet('Send to the Google Doc',sNode('p','','Checking what the desk would send. Nothing is sent until you choose Send.'),problem,sAdd(sNode('div','bar'),sButton('Cancel',sCloseSheet)));
+  const owner=studio.sheet,opener=owner.opener;let plan;
+  try{if(held.mode==='review')await sReviewFlush(held);await sDeskFlush(held);plan=await api('desk-google-plan',{id:held.id,mode:'auto'});}catch(error){if(studio.sheet===owner)problem.textContent=sDeskSlow(error,'Reading the Google Doc took too long. Check again; nothing was sent.');return;}
+  if(studio.sheet!==owner)return;
+  const changes=sNode('ul','look');for(const item of plan.proposals||[])changes.append(sNode('li','',sDeskGoogleItem(item)));
+  const deliver=async button=>{await busy(button,'Sending…',async()=>{try{
+    const result=await api('desk-google-send',{id:held.id,plan:plan.plan,confirmed:true}),done=['verified-pending','verified-comments'].includes(result.status);
+    const again=done?null:sButton('Check delivery',deliver,'filled');
+    sOpenSheet(done?'Sent to the Google Doc':'Check delivery',sStatus(done?'done':'late',sDeskSentWords(plan,result)),sAdd(sNode('div','bar'),again,sButton('Close',sCloseSheet)));studio.sheet.opener=opener;
+    if(done)await sDeskReread(held);
+  }catch(error){problem.textContent=error.message;}});};
+  const send=sButton('Send to Google Doc',deliver,'filled');send.disabled=!sDeskCan(held);
+  sOpenSheet('Send to the Google Doc',sNode('p','',sDeskGoogleSaid(plan)),disclosure('What would be sent',changes),problem,sAdd(sNode('div','bar'),send,sButton('Cancel',sCloseSheet)));studio.sheet.opener=opener;
+}
+// Bring accepted changes from the Doc: read its accepted text, say which parts change, then
+// bring them, each keeping the desk's text first in History. Nothing is written to Google.
+async function sDeskGoogleBring(held){
+  const problem=sNode('p','sheet-error');problem.setAttribute('role','alert');
+  sOpenSheet('Bring accepted changes from the Doc',sNode('p','','Reading the Google Doc’s accepted text. Nothing is written to Google, and nothing on the desk changes until you choose to bring it.'),problem,sAdd(sNode('div','bar'),sButton('Cancel',sCloseSheet)));
+  const owner=studio.sheet,opener=owner.opener;let found;
+  try{if(held.mode==='review')await sReviewFlush(held);await sDeskFlush(held);found=await api('desk-google-compare',{id:held.id});}catch(error){if(studio.sheet===owner)problem.textContent=sDeskSlow(error,'Reading the Google Doc took too long. Check again; nothing on the desk changed.');return;}
+  if(studio.sheet!==owner)return;
+  const list=sNode('ul','rows desk-brought');
+  for(const change of found.changes){const what=change.kind==='added'?'Added in the Doc':change.kind==='removed'?'Removed in the Doc':change.renamed?'Renamed from “'+change.renamed+'” and changed in the Doc':'Changed in the Doc';list.append(sAdd(sNode('li','row'),sAdd(sNode('div','row-text'),sNode('span','row-title',change.name),sNode('span','row-says',what),disclosure('Compare',deskSides(change.before,change.after)))));}
+  const parts=found.changes.length;
+  const go=found.ready?sButton(parts===1?'Bring 1 part to the desk':'Bring '+parts+' parts to the desk',async button=>{await busy(button,'Bringing…',async()=>{try{
+    const before=held.view;held.view=await api('desk-google-take',{id:held.id,preview:found.preview,confirmed:true});sCloseSheet();
+    const n=held.view.brought?.parts?.length??parts;sToast((n===1?'Brought 1 part':'Brought '+n+' parts')+' from the Google Doc. The desk’s earlier text is in History.');sDeskRefresh(held,before);
+  }catch(error){problem.textContent=sDeskSlow(error,'This took too long to answer. Check again: choose Bring again, which never brings anything twice, and the result is kept.');}});},'filled'):null;
+  if(go)go.disabled=!sDeskCan(held);
+  sOpenSheet('Bring accepted changes from the Doc',sNode('p','',found.ready?'These parts take the Doc’s accepted text. Each keeps the desk’s text first in History, as Before Google’s accepted text. Nothing is written to Google.':found.said),parts?list:null,problem,sAdd(sNode('div','bar'),go,sButton(go?'Cancel':'Close',sCloseSheet)));studio.sheet.opener=opener;
+}
+function sDeskToolbar(held){
+  const view=held.view;
   const finishing=sButton('Finishing',()=>held.finish?sDeskFinishClose(held):sDeskFinishOpen(held));finishing.setAttribute('aria-pressed',String(!!held.finish));
-  const review=held.review?sButton('Review fixes',async()=>{await sDeskFlush(held);await sDeskOutlineFlush(held);held.finish=null;held.mode='review';sDeskRender(held);sDeskWatch(held);}):null;
+  const review=held.review?sButton('Review fixes',async()=>{await sDeskFlush(held);await sDeskOutlineFlush(held);sReviewEnter(held);sDeskRender(held);sDeskWatch(held);}):null;
   const stop=held.view.working?sButton('Stop',async button=>{await busy(button,'Stopping…',async()=>{const before=held.view;held.view=await api('desk-stop',{id:held.id,job:held.view.working.id});sDeskRefresh(held,before);});}):null;
   const team=sDeskTeam(view);
-  sFrame(view.title,sFold([team,stop,review,copy,download,google,publish,finishing]),held.view.working?sDeskStatusWords(held):sDeskDriverWords(view)||'On the desk',()=>sRoute('blogs'));
+  sFrame(view.title,sFold([team,stop,review,...sDeskShareActions(held),finishing]),held.view.working?sDeskStatusWords(held):sDeskDriverWords(view)||sDeskDocWords(view)||'On the desk',()=>sRoute('blogs'));
 }
 // Reading is the default; editing mounts only the selected part. The full desk remains
 // available for experienced authors. URL choices contain navigation only, never text.
@@ -441,13 +512,22 @@ async function sDeskChoose(held,reading,part=held.activePart){
   const selected=held.cards?.[held.activePart];if(reading==='read')selected?.scrollIntoView?.({block:'start',behavior:'instant'});
   else selected?.deskInput?.focus();
 }
-function sDeskReadingControls(held){
+// Finishing opens from the toolbar only: Polish goes to Review mode, the one place fixes are
+// accepted or rejected in the text. On a phone the view, the buttons and the page's sentence
+// fold into one bar beside Go to section, so the title and the first paragraph come first.
+function sDeskReadingControls(held,lede,status){
   const choices=sChoice('Manuscript view',[['read','Read'],['edit','Edit section'],['full','Full desk']],held,'reading',value=>sDeskChoose(held,value));
   const picker=sField('desk-part-picker','Go to section',held,'activePart',{options:[['title','Title'],['opening','Opening'],...held.view.sections.map(section=>[section.id,deskHeading(section.heading)])],changed:value=>sDeskChoose(held,held.reading,value)});
-  return sAdd(sNode('div','desk-reading-controls'),choices,picker,sAdd(sNode('div','bar'),sButton('Polish',()=>sDeskFinishOpen(held,'copyedit'),'filled'),sButton('Review and share',()=>sDeskFinishOpen(held)),sButton('Sources',()=>sDeskSourcesSheet(held)),sButton('Outline',async()=>{await sDeskFlush(held);held.tab='outline';sDeskRender(held);})));
+  const actions=sAdd(sNode('div','bar'),sButton('Polish',()=>sDeskFinishOpen(held,'copyedit'),'filled'),sButton('Sources',()=>sDeskSourcesSheet(held)),sButton('Outline',async()=>{await sDeskFlush(held);held.tab='outline';sDeskRender(held);}));
+  if(!sNarrow())return sAdd(sNode('div','desk-reading-controls'),choices,picker,actions);
+  const fold=sNode('details','desk-tools-fold');fold.open=!!held.toolsOpen;fold.addEventListener('toggle',()=>{held.toolsOpen=fold.open;});
+  fold.append(sNode('summary','button','View and tools'),sAdd(sNode('div','desk-tools-list'),lede,choices,actions));
+  // The save line stays in reach, empty until there is something to say.
+  return sAdd(sNode('div','desk-reading-controls desk-compact'),picker,fold,status);
 }
 function sDeskReviewQueue(held){
-  const rows=[];for(const tool of DESK_TOOLS){const n=(held.view.finishing?.[tool.key]?.items||[]).filter(item=>item.state==='open').length;if(!n)continue;rows.push(sButton(tool.name+' · '+n+' to review',()=>sDeskFinishOpen(held,tool.key)));}
+  // Humanize's located rewrites open Review mode, as Copy edit's fixes do: one place to accept or reject them.
+  const rows=[];for(const tool of DESK_TOOLS){const open=(held.view.finishing?.[tool.key]?.items||[]).filter(item=>item.state==='open'),n=open.length;if(!n)continue;rows.push(sButton(tool.name+' · '+n+' to review',()=>tool.key==='humanize'&&open.some(item=>item.present&&'after' in item)?sReviewHuman(held):sDeskFinishOpen(held,tool.key)));}
   if(!rows.length)return null;
   return sAdd(sNode('section','desk-suggestion-summary'),sNode('p','quiet','Optional suggestions to review'),sAdd(sNode('div','bar'),...rows));
 }
@@ -467,7 +547,8 @@ function sDeskRender(held){
   if(held.mode==='review')return sDeskReview(held);
   const view=held.view;held.reading=held.reading||'read';sDeskParts(held);held.shownReading=held.reading;held.shownPart=held.activePart;sDeskToolbar(held);held.layout=sDeskLayout();
   const status=sNode('p','quiet desk-save-state');status.setAttribute('role','status');status.setAttribute('aria-live','polite');held.status=status;
-  if(held.stale)sDeskStale(held);else status.textContent=held.saved||'Changes save as you type.';
+  const narrow=sNarrow()&&held.tab!=='outline';
+  if(held.stale)sDeskStale(held);else status.textContent=held.saved||(narrow?'':'Changes save as you type.');
   const column=sNode('div','desk-column'+(held.tab!=='outline'&&held.reading==='read'?' paper desk-reading-document':''));held.tab=held.tab||'draft';held.shownTab=held.tab;
   held.problemSlot=sNode('div','desk-problem-slot');const problem=sDeskProblem(held);if(problem)held.problemSlot.append(problem);
   held.cards={};
@@ -478,7 +559,9 @@ function sDeskRender(held){
     for(const part of sDeskParts(held))held.cards[part]=sDeskPart(held,part);
     const whole=held.wholeCard?(held.reading==='full'?held.wholeCard:disclosure('Revise the whole draft',held.wholeCard)):null;
     held.queueSlot=sNode('div','desk-review-queue');const queue=sDeskReviewQueue(held);if(queue)held.queueSlot.append(queue);
-    column.append(held.problemSlot,held.queueSlot,...[whole].filter(Boolean),...Object.values(held.cards));
+    // In reading order: an object keyed by part ids lists all-digit ids first, so the cards are
+    // placed by the parts' own order, never by the object's.
+    column.append(held.problemSlot,held.queueSlot,...[whole].filter(Boolean),...sDeskParts(held).map(part=>held.cards[part]));
     held.noSections=view.sections.length?null:sDeskNoSections();if(held.noSections)column.append(held.noSections);
   }
   held.bar=sDeskSelectionBar(held);held.aside=sDeskAside(held);
@@ -486,7 +569,8 @@ function sDeskRender(held){
   const finishing=!!held.finish,sheet=finishing&&sNarrow();
   held.panel=finishing?sDeskPanel(held):null;held.panelKey=finishing?sDeskPanelKey(held):null;
   const lede=held.tab==='outline'?'Rename, reorder, add and remove sections and say what each must do. Write the draft from the outline, or one section at a time.':'Read your manuscript, or choose a section to edit. Polish and checks offer suggestions; nothing changes until you accept.';
-  sPage(sNode('p','lede',lede),sDeskElsewhere(view),status,held.tab==='outline'?sDeskTabs(held):null,held.tab==='outline'?null:sDeskReadingControls(held),sAdd(sNode('div','desk-layout'+(finishing&&!sheet?' desk-finishing':'')),column,finishing&&!sheet?held.panel:held.aside),sheet?held.panel:null,held.bar);
+  const said=sNode('p','lede',narrow?lede+' Changes save as you type.':lede);
+  sPage(narrow?null:said,sDeskElsewhere(view),narrow?null:status,held.tab==='outline'?sDeskTabs(held):null,held.tab==='outline'?null:sDeskReadingControls(held,said,status),sAdd(sNode('div','desk-layout'+(finishing&&!sheet?' desk-finishing':'')),column,finishing&&!sheet?held.panel:held.aside),sheet?held.panel:null,held.bar);
   sDeskImagesLoad(held);
 }
 // After a job starts, moves on or ends: redraw only the cards it changed, so the part the
@@ -571,7 +655,7 @@ function sDeskPart(held,part){return held.reading==='read'?sDeskReadPart(held,pa
 function sDeskSourceRow(held,source){
   const row=sNode('li','row'),text=sAdd(sNode('div','row-text'),sNode('span','row-title',source.name));row.append(text);
   const found=source.library;if(!found)return row;
-  text.append(sNode('span','row-says','From the Document Library · revision '+found.revision+(found.update?' · Update available: revision '+found.head:found.head===null?' · no longer in the library; this blog keeps its copy':'')));
+  text.append(sNode('span','row-says','From the Document Library · revision '+found.revision+(found.update?' · Update available: revision '+found.head:found.head===null?' · no longer in the Document Library; this blog keeps its copy':'')));
   if(found.update){
     const take=sButton('Use revision '+found.head,async button=>{await busy(button,'Taking revision '+found.head+'…',async()=>{try{await sDeskFlush(held);const before=held.view;held.view=await api('desk-library-update',{id:held.id,source:source.id});sToast('Revision '+found.head+' is a source now. Later rewrites read it; nothing already written changes.');sDeskRefresh(held,before);}catch(error){sToast(error.message);}});});
     take.setAttribute('aria-label','Use revision '+found.head+' of '+source.name);take.disabled=!sDeskCan(held)||!!held.view.working;row.append(take);
@@ -592,7 +676,7 @@ function sDeskAside(held){
   // Other people's suggestions pending in the Google Doc, each where it sits: decided there.
   const doc=view.doc_suggestions||{count:0,marks:[]};
   if(doc.count){
-    const card=sCard('Suggested in the Doc',sDocPendingLine(doc.count));card.className+=' doc-pending-card';
+    const card=sCard('Suggested in the Doc',sDocPendingLine(doc.count),sDocKey());card.className+=' doc-pending-card';
     const list=sNode('ul','rows doc-suggestions');
     for(const mark of doc.marks){const text=deskTextOf(view,mark.part),before=text.slice(Math.max(0,mark.at-24),mark.at).replace(/^\S*\s/,'…'),after=text.slice(mark.at+mark.length,mark.at+mark.length+24).replace(/\s\S*$/,'…');list.append(sAdd(sNode('li','row'),document.createTextNode(before),sDocMark(text,mark),document.createTextNode(after)));}
     if(doc.marks.length)card.append(list);
@@ -647,8 +731,9 @@ function sDeskMakeDoc(held){
 // Mark as published: where it went, said by the person. Nothing is posted.
 function sDeskPublish(held){
   const draft={url:held.view.publication||''},problem=sNode('p','sheet-error');problem.setAttribute('role','alert');
-  const save=sButton('Mark as published',async button=>{const url=draft.url.trim();if(!/^https:\/\/\S+$/.test(url)){problem.textContent='Add the public https address where it was published.';return;}await busy(button,'Saving…',async()=>{try{await sDeskFlush(held);const result=await api('schedule',{id:held.id,expected:held.view.expected,stage:'published',confirm_stage:true,publication_url:url}),kept=result?.library;sCloseSheet();sToast('Recorded as published. Nothing was posted anywhere.'+(kept?.reason?' Not kept in the team library: '+kept.reason:kept?.id?' Its draft is kept in the team library.':''));await sDesk(held.id);}catch(error){problem.textContent=error.message;}});},'filled');
-  sOpenSheet('Mark as published',sNode('p','','Record where this blog was published. The current text is the published one. Its draft is kept in the team library as a reference and an example of its kind of post. Marking it again updates that item.'),sField('desk-publication','Public address',draft,'url',{max:2000,required:true}),problem,sAdd(sNode('div','bar'),save,sButton('Cancel',sCloseSheet)));
+  const save=sButton('Mark as published',async button=>{const url=draft.url.trim();if(!/^https:\/\/\S+$/.test(url)){problem.textContent='Add the public https address where it was published.';return;}await busy(button,'Saving…',async()=>{try{await sDeskFlush(held);const result=await api('schedule',{id:held.id,expected:held.view.expected,stage:'published',confirm_stage:true,publication_url:url}),kept=result?.library,copy=result?.document_library;sCloseSheet();sToast('Recorded as published. Nothing was posted anywhere.'+(kept?.reason?' Not kept in the team library: '+kept.reason:kept?.id?' Its draft is kept in the team library.':'')+(copy?.state==='kept'?' A copy is in the Document Library on this computer.':copy?.state==='failed'?' Not kept in the Document Library: '+copy.reason:''));await sDesk(held.id);}catch(error){problem.textContent=error.message;}});},'filled');
+  const team=studio.team?.joined?'':' Without a Team Hub, the team library is on this computer only.';
+  sOpenSheet('Mark as published',sNode('p','','Record where this blog was published. The current text is the published one. Its draft is kept in the team library, as a reference and an example of its kind of post, and a copy goes to the Document Library on this computer, for any studio. Marking it again updates both.'+team),sField('desk-publication','Public address',draft,'url',{max:2000,required:true}),problem,sAdd(sNode('div','bar'),save,sButton('Cancel',sCloseSheet)));
 }
 
 // A finished step-by-step blog once it is on the desk: its run is read as it ended, with
@@ -732,7 +817,7 @@ const DESK_VERDICTS={supported:'Supported','not-in-sources':'Not in your sources
 const DESK_ASPECTS={shape:'Shape',argument:'Argument',audience:'Audience',claims:'Claims'};
 const DESK_TOOLS=[
   {key:'copyedit',name:'Copy edit',says:'Grammar, spelling, punctuation, consistency and wordy sentences, each fix marked in your text to accept or reject. Voice, facts, quotes and links are kept.',run:'Find fixes',doing:'Finding grammar, spelling and wording fixes…',open:held=>sDeskCopyEdit(held),applyAll:true,empty:'Nothing to fix.'},
-  {key:'humanize',name:'Humanize',says:'Sentences that read as machine-written, each with a rewrite. Numbers, names, quotes and links are kept.',run:'Find sentences',doing:'Finding sentences that read as machine-written…',start:{level:'light'},options:(held,f)=>[sChoice('Intensity',DESK_LEVELS,f,'level')],data:f=>({level:f.level}),applyAll:true},
+  {key:'humanize',name:'Humanize',says:'Sentences that read as machine-written, each with a rewrite. Numbers, names, quotes and links are kept.',run:'Find sentences',doing:'Finding sentences that read as machine-written…',start:{level:'light'},options:(held,f)=>[sChoice('Intensity',DESK_LEVELS,f,'level')],data:f=>({level:f.level}),applyAll:true,view:held=>sDeskHumanizeView(held)},
   {key:'proofread',name:'Quick check',says:'Dashes, repetition, source IDs, editorial notes and passages carried over from examples, checked at once with no assistant.',view:held=>DESK_KIT.proofView(held),opened:(held,first)=>first||!held.finish.proof?sDeskProofread(held):undefined},
   {key:'facts',name:'Check facts against sources',says:'Each claim marked supported, not in your sources, or contradicted, with the passage.',run:'Check facts',doing:'Checking each claim against your sources…',options:held=>sDeskFactsOptions(held),verdicts:DESK_VERDICTS,counted:[' claim checked',' claims checked'],empty:'No claims to check.',source:held=>sDeskSourcesSheet(held)},
   {key:'geo',name:'GEO: retrieval readiness',says:'Proposals for direct answers, clear entities and useful evidence. Preview each change, then apply or skip it.',run:'Review retrieval readiness',doing:'Reviewing retrieval readiness…',applyAll:true,empty:'No retrieval changes suggested.',said:(set,said)=>{const summary=(set.summary||'').trim().replace(/\.+$/,'');if(summary)said.push(summary);}},
@@ -752,7 +837,18 @@ function sDeskFinishOpen(held,tool=null){const input=held.cards?.[held.activePar
 function sDeskFinishClose(held){return DESK_KIT.finishClose(held);}
 function sDeskReturnFocus(held){const saved=held.returnFocus,input=saved&&held.cards?.[saved.part]?.deskInput;if(input){input.focus();input.setSelectionRange?.(saved.start,saved.end);}if(typeof window.scrollTo==='function')window.scrollTo(0,held.returnScroll||0);}
 // Copy edit is reviewed in the text itself: it opens Review mode, where the check starts.
-async function sDeskCopyEdit(held){await sDeskFlush(held);await sDeskOutlineFlush(held);held.finish=null;held.mode='review';sDeskRender(held);sDeskWatch(held);}
+async function sDeskCopyEdit(held){await sDeskFlush(held);await sDeskOutlineFlush(held);sReviewEnter(held);sDeskRender(held);sDeskWatch(held);}
+// Review mode, entered from the desk, remembers the view, the part, the tab and the scroll it
+// came from; Back returns there. Entered from its address (a reload, a start), Back opens Read.
+function sReviewEnter(held){if(held.mode!=='review')held.reviewFrom={reading:held.reading||'read',part:held.activePart||'opening',tab:held.tab||'draft',scroll:typeof window.scrollY==='number'?window.scrollY:0};held.finish=null;held.mode='review';}
+async function sReviewLeave(held,reading){
+  await sReviewFlush(held);const from=held.reviewFrom||{reading:'read',part:held.activePart||'opening',tab:'draft',scroll:0};
+  held.reviewFrom=null;held.reviewHuman=false;held.mode=null;held.reading=reading||from.reading;held.activePart=from.part;held.tab=reading?'draft':from.tab;
+  sDeskModeUrl(held);sDeskViewUrl(held);sDeskRender(held);sDeskWatch(held);
+  if(!reading&&typeof window.scrollTo==='function')window.scrollTo(0,from.scroll||0);
+}
+// Humanize's rewrites reviewed in the text, with Accept and Reject, as Copy edit's fixes are.
+async function sReviewHuman(held){await sDeskFlush(held);await sDeskOutlineFlush(held);if(Object.keys(held.pending||{}).length)return;sReviewEnter(held);held.reviewHuman=true;sDeskRender(held);sDeskWatch(held);}
 function sDeskFinishTool(held,tool){return DESK_KIT.finishTool(held,tool);}
 // One optional saved guide in both Polish intake and a first review. Loading only this
 // region preserves the draft and keyboard focus while the catalog arrives.
@@ -806,6 +902,25 @@ function sDeskFactsOptions(held){
   return [sAdd(sNode('div','decision-notice desk-problem'),sNode('p','','Facts are checked against your sources, and this draft has none yet.'),add)];
 }
 function sDeskProposals(held,key,set){return DESK_KIT.proposals(held,key,set);}
+// Humanize in Finishing. With nothing open it is the kit's tool: Find sentences, filled. With
+// rewrites waiting, finishing them comes first: Review them in your text (Accept and Reject,
+// as Copy edit's fixes), the list with Apply all, and Find sentences again last and quiet,
+// saying that a new look replaces the open set.
+function sDeskHumanizeView(held){
+  const tool=deskTool('humanize'),view=held.view,f=held.finish,set=(view.finishing||{}).humanize,working=view.working;
+  const open=set?set.items.filter(item=>item.state==='open'):[],located=open.filter(item=>item.present&&'after' in item).length;
+  const run=sButton(set?tool.run+' again':tool.run,button=>sDeskJob(held,button,'desk-finish',{tool:'humanize',...tool.data(f)}),open.length?'':'filled');run.disabled=!sDeskCan(held)||!!working;
+  const said=[];
+  if(working&&working.kind==='finish-humanize'){const note=sNode('p','desk-working-note',tool.doing);note.setAttribute('role','status');said.push(note);}
+  else if(working)said.push(sNode('p','quiet','Another change is under way. This can run when it ends.'));
+  const last=(view.jobs||[]).filter(job=>job.kind==='finish-humanize').at(-1);
+  if(last&&!last.busy&&last.error&&(!set||set.job!==last.id))said.push(sNode('p','problem',last.error));
+  const head=[sNode('p','quiet',tool.says),...tool.options(held,f)];
+  if(!open.length)return [...head,sAdd(sNode('div','bar'),run),...said,...(set?sDeskProposals(held,'humanize',set):[])];
+  const review=sButton('Review them in your text',()=>sReviewHuman(held),'filled');review.disabled=!located||!sDeskCan(held);
+  return [head[0],...said,sAdd(sNode('div','bar'),review),sNode('p','quiet','In your text each rewrite is accepted or rejected; here Apply takes it and Skip leaves the sentence as it is. Either way the earlier text stays in History.'),...sDeskProposals(held,'humanize',set),
+    sNode('h3','sheet-part','Look again'),...head.slice(1),sAdd(sNode('div','bar'),run),sNode('p','quiet',open.length===1?'Finding sentences again replaces the open suggestion with a new set.':'Finding sentences again replaces the '+open.length+' open suggestions with a new set.')];
+}
 // Before and after side by side: struck words only before, marked words only after.
 function deskSides(before,after){return DESK_KIT.sides(before,after);}
 function sDeskProposal(held,set,item,key){return DESK_KIT.proposal(held,set,item,key);}
@@ -882,27 +997,38 @@ function sDeskGoogleSaid(plan){
   return said;
 }
 function sDeskGoogleItem(item){
-  if(item.kind==='comment')return 'Comment on “'+item.before+'”: '+item.reason;
-  if(item.remove)return '“'+item.before+'” is removed';
-  return '“'+item.before+'” → “'+item.after.replace(/\n/g,' ¶ ')+'”';
+  const quote=text=>'“'+text+'”',short=text=>text.length>80?text.slice(0,79).trimEnd()+'…':text,before=String(item.before||''),after=String(item.after||'');
+  if(item.kind==='comment')return 'Comment on '+quote(before)+': '+item.reason;
+  if(item.remove||!after.trim())return 'Removes '+quote(before.trim()||before);
+  const lines=text=>text.split('\n').map(line=>line.trim()).filter(Boolean);
+  if(after.includes('\n')&&after.startsWith(before)){
+    // A new paragraph after the words named: said with the end of the paragraph it follows.
+    const context=String(item.context||''),at=context.indexOf(before),end=at<0?-1:at+before.length,lead=end>0?(end>32?'…':'')+context.slice(Math.max(0,end-32),end).trim():before.trim();
+    const added=lines(after.slice(before.length));
+    return 'Adds '+(added.length===1?'a paragraph':added.length+' paragraphs')+' after '+quote(lead)+': '+quote(short(added.join(' ')));
+  }
+  if(after.includes('\n')){const [first,...rest]=lines(after);return 'Changes '+quote(before)+' to '+quote(first||'')+(rest.length?', then adds '+quote(short(rest.join(' '))):'');}
+  return quote(before)+' → '+quote(after);
 }
 function sDeskGoogleCard(held,p){
   const view=held.view,card=sCard('Send to Google Doc as suggestions');
   if(!view.google_suggestions&&!view.google?.url){const make=sButton('Make a Google Doc',()=>sDeskMakeDoc(held));make.disabled=!sDeskCan(held);card.append(sNode('p','','This blog has no Google Doc yet. Make a private one of this draft, and later desk changes are sent to it as suggestions for you to accept.'),sAdd(sNode('div','bar'),make));return card;}
   if(!view.google_suggestions){card.append(sNode('p','','This blog’s Google Doc cannot take suggestions yet: it has no confirmed copy of the draft to compare with.'));return card;}
-  card.append(sNode('p','quiet','Every desk change goes to the Google Doc: words and paragraphs as suggestions its owner accepts or rejects, and a link’s address, formatting or an image as a comment.'));
+  card.append(sNode('p','quiet','Every desk change goes to the Google Doc: words and paragraphs as suggestions its owner accepts or rejects, and a link’s address, formatting or an image as a comment. Once the owner has decided them, Bring accepted changes takes the Doc’s text back to the desk.'));
+  const docSaid=sDeskDocWords(view);if(docSaid)card.append(sNode('p','',docSaid));
   if(view.google?.url){const doc=link(view.google.url,'Open the Google Doc ↗');card.append(sAdd(sNode('p',''),doc));}
   if(p.googleProblem)card.append(sNode('p','problem',p.googleProblem));
   const check=sButton(p.plan?'Check again':'Check what would be sent',async button=>{await busy(button,'Checking…',async()=>{try{await sDeskFlush(held);p.plan=await api('desk-google-plan',{id:held.id,mode:p.google.mode});p.sent=null;p.googleProblem='';}catch(error){p.plan=null;p.googleProblem=error.message;}sDeskPanelShow(held);});},p.plan?'quiet':'filled');check.disabled=!sDeskCan(held);
   if(p.sent){card.append(sStatus(['verified-pending','verified-comments'].includes(p.sent.status)?'done':'late',p.sent.message));}
   if(p.plan&&!p.sent){
     const changes=sNode('ul','look');for(const item of p.plan.proposals||[])changes.append(sNode('li','',sDeskGoogleItem(item)));
-    const send=sButton('Send to Google Doc',async button=>{await busy(button,'Sending…',async()=>{try{const result=await api('desk-google-send',{id:held.id,plan:p.plan.plan,confirmed:true});p.sent={status:result.status,message:result.status==='verified-pending'?'Suggestions are ready for the Doc’s owner to accept or reject.':result.status==='verified-comments'?'Comments were added to the Google Doc.':'The result is not yet verified. Check delivery before trying anything else.'};p.googleProblem='';}catch(error){p.googleProblem=error.message;if(/changed/.test(error.message))p.plan=null;}sDeskPanelShow(held);});},'filled');send.disabled=!sDeskCan(held);
+    const send=sButton('Send to Google Doc',async button=>{await busy(button,'Sending…',async()=>{try{const result=await api('desk-google-send',{id:held.id,plan:p.plan.plan,confirmed:true});p.sent={status:result.status,message:sDeskSentWords(p.plan,result)};p.googleProblem='';await sDeskReread(held);}catch(error){p.googleProblem=error.message;if(/changed/.test(error.message))p.plan=null;}sDeskPanelShow(held);});},'filled');send.disabled=!sDeskCan(held);
     card.append(sNode('p','',sDeskGoogleSaid(p.plan)),disclosure('What would be sent',changes),sAdd(sNode('div','bar'),send,check));
     return card;
   }
-  if(p.sent&&!['verified-pending','verified-comments'].includes(p.sent.status)&&p.plan){card.append(sAdd(sNode('div','bar'),sButton('Check delivery',async button=>{await busy(button,'Checking…',async()=>{try{const result=await api('desk-google-send',{id:held.id,plan:p.plan.plan,confirmed:true});p.sent={status:result.status,message:result.status==='verified-pending'?'Suggestions are ready for the Doc’s owner to accept or reject.':result.status==='verified-comments'?'Comments were added to the Google Doc.':'The result is not yet verified. Check delivery before trying anything else.'};}catch(error){p.googleProblem=error.message;}sDeskPanelShow(held);});},'filled')));return card;}
-  card.append(sField('desk-google-mode','Send as',p.google,'mode',{options:[['auto','Suggestions, with comments fallback'],['native','Suggestions only'],['comments','Comments only']]}),sAdd(sNode('div','bar'),check));
+  if(p.sent&&!['verified-pending','verified-comments'].includes(p.sent.status)&&p.plan){card.append(sAdd(sNode('div','bar'),sButton('Check delivery',async button=>{await busy(button,'Checking…',async()=>{try{const result=await api('desk-google-send',{id:held.id,plan:p.plan.plan,confirmed:true});p.sent={status:result.status,message:sDeskSentWords(p.plan,result)};}catch(error){p.googleProblem=error.message;}sDeskPanelShow(held);});},'filled')));return card;}
+  const bring=sButton('Bring accepted changes',()=>sDeskGoogleBring(held));bring.disabled=!sDeskCan(held);
+  card.append(sField('desk-google-mode','Send as',p.google,'mode',{options:[['auto','Suggestions, with comments fallback'],['native','Suggestions only'],['comments','Comments only']]}),sAdd(sNode('div','bar'),check,bring));
   return card;
 }
 
@@ -946,6 +1072,8 @@ function sDeskModeUrl(held){const review=held.mode==='review';if(studio.screen!=
 const DOC_OVERLAP='A Doc suggestion also changes these words; accepting this makes it moot.';
 const DOC_NOTE='Suggested in the Doc. Decide it in Google Docs.';
 function sDocPendingLine(count){const line=sNode('p','quiet doc-pending',(count===1?'1 suggestion is':count+' suggestions are')+' pending in the Google Doc. Decide them there; nothing to do here.');line.dataset.doc='count';return line;}
+// The key to the Doc's marks, shown beside the count: no hover needed, on a phone too.
+function sDocKey(){const key=sAdd(sNode('p','quiet doc-key'),sAdd(sNode('span','doc-suggestion doc-key-mark'),sNode('ins','doc-inserted','Marked like this')),document.createTextNode(': waiting in the Google Doc. Decide it there.'));key.dataset.doc='key';return key;}
 function sDocMark(text,mark){
   const node=sNode('span','doc-suggestion');node.title=DOC_NOTE;node.tabIndex=0;node.dataset.doc=mark.id||'';node.setAttribute('aria-label',DOC_NOTE);
   const removed=text.slice(mark.at,mark.at+mark.length);
@@ -1001,7 +1129,9 @@ function reviewBlocks(text,marks){
 // suggestion keeps its number while its set is shown, so a number still names the one
 // accepted: a retired suggestion says which one changed its words, a carried one which it fits.
 function sReviewState(held){
-  const view=held.view,finishing=view.finishing||{},human=view.review?.humanize||null,r=held.review||{};
+  // Humanize is shown with Copy edit when the review asked for it, or when its rewrites from
+  // Finishing were opened here to accept or reject.
+  const view=held.view,finishing=view.finishing||{},human=view.review?.humanize||(held.reviewHuman&&finishing.humanize?finishing.humanize.level||'light':null),r=held.review||{};
   const kind=view.working?.kind,working=kind==='finish-copyedit'||kind==='finish-humanize'?view.working:null;
   const parts=['title','opening',...(view.sections||[]).map(section=>section.id)];
   // While Copy edit checks, nothing from the check before is shown; while Humanize looks, the
@@ -1049,11 +1179,13 @@ function sReviewState(held){
 }
 // Drawn again only when what it shows changes, so a poll never swaps a button being pressed.
 function sReviewToolbar(held,state,force=false){
-  const key=JSON.stringify([held.view.title,state.working?.kind||null,!!held.view.working,sDeskCan(held),sNarrow()]);
+  const ran=state.any||!!state.working||state.failed.length>0,view=held.view;
+  const key=JSON.stringify([view.title,state.working?.kind||null,!!view.working,sDeskCan(held),sNarrow(),ran,view.google?.url||'',!!view.google_suggestions,view.publication||'']);
   if(!force&&held.review?.toolbarKey===key&&studio.screen==='desk')return;if(held.review)held.review.toolbarKey=key;
-  const again=sButton('Check again',button=>sReviewCheck(held,button));again.disabled=!sDeskCan(held)||!!held.view.working;
-  const full=sButton('Open the full desk',async()=>{await sReviewFlush(held);held.mode=null;held.reading='full';sDeskModeUrl(held);held.tab='draft';sDeskRender(held);sDeskWatch(held);});
-  sFrame(held.view.title,sFold([again,full]),state.working?sReviewDoing(state):'Check spelling and grammar',()=>sRoute('blogs'));
+  // Before any check there is one way to start it, in the page: no Check again.
+  const again=ran?sButton('Check again',button=>sReviewCheck(held,button)):null;if(again)again.disabled=!sDeskCan(held)||!!view.working;
+  const full=sButton('Open the full desk',()=>sReviewLeave(held,'full'));
+  sFrame(view.title,sFold([again,full,...sDeskShareActions(held)]),state.working?sReviewDoing(state):'Check spelling and grammar',()=>sReviewLeave(held));
 }
 // What the check under way is doing, said in the toolbar and above the draft.
 function sReviewDoing(state){return state.working?.kind==='finish-humanize'?REVIEW_HUMAN:REVIEW_CHECKING;}
@@ -1064,7 +1196,7 @@ function sDeskReview(held){
   held.review.head=sReviewHead(held,state);held.review.headKey=sReviewHeadKey(held,state);held.review.paper=sReviewPaper(held,state);
   held.review.lede=sNode('p','lede',sReviewLede(state));
   sPage(held.review.lede,status,held.review.head,held.review.paper);
-  sDeskImagesLoad(held);sReviewProof(held);
+  sDeskImagesLoad(held);sReviewProof(held);sReviewFocusAfter(held);
 }
 // What needs the person first: the check under way, a problem, the count with Accept all and
 // Reject all, or, once nothing is left, where the draft goes next.
@@ -1082,7 +1214,7 @@ function sReviewHead(held,state){
     if(!state.working&&index===state.failed.length-1){const again=sButton('Check again',button=>sReviewCheck(held,button),'filled');again.disabled=!sDeskCan(held);said.append(sReviewMark(again,'check-again'));}
     head.append(said);
   });
-  if(!state.any&&!state.working&&!state.failed.length)return sAdd(head,sReviewStart(held));
+  if(!state.any&&!state.working&&!state.failed.length)return sAdd(head,state.doc.count?sDocPendingLine(state.doc.count):null,state.doc.count?sDocKey():null,sReviewStart(held));
   if(state.pending.length){
     const count=sNode('p','review-count',state.pending.length+' '+noun[state.pending.length===1?0:1]+' to review');count.setAttribute('role','status');count.tabIndex=-1;sReviewMark(count,'count');
     const all=sButton('Accept all ('+state.ready.length+')',button=>sReviewAcceptAll(held,state.ready.map(item=>item.key),button),'filled');all.disabled=!editable||!state.ready.length;sReviewMark(all,'accept-all');
@@ -1094,7 +1226,7 @@ function sReviewHead(held,state){
     const overlap=state.overlapping.length?sNode('p','quiet',state.overlapping.length===1?'1 '+noun[0]+' changes words a Doc suggestion also changes, so Accept all leaves it for you.':state.overlapping.length+' '+noun[1]+' change words a Doc suggestion also changes, so Accept all leaves them for you.'):null;
     sAdd(head,sAdd(sNode('div','card review-tally'),count,sAdd(sNode('div','bar'),all,none)),filter,flagged,overlap);
   }else if(state.any&&!state.working)head.append(sReviewDone(held,state));
-  if(state.doc.count)head.append(sDocPendingLine(state.doc.count));
+  if(state.doc.count)head.append(sDocPendingLine(state.doc.count),sDocKey());
   const kept=sDeskKeptLine(held.view);if(kept)head.append(kept);
   return sAdd(head,sReviewQuick(held,state));
 }
@@ -1122,7 +1254,8 @@ function sReviewShown(held,value){
 function sReviewDone(held,state){
   const noun=state.human?['suggestion','suggestions']:['fix','fixes'];
   const said=state.total?'Accepted '+state.applied+' of '+state.total+' '+noun[state.total===1?0:1]+'.':'No '+noun[1]+' were needed.';
-  const card=sCard('Nothing left to review',sNode('p','',said+' Every accepted '+noun[0]+' kept the earlier text in History.'));card.className+=' review-done';
+  const summary=sReviewMark(sNode('p','',said+' Every accepted '+noun[0]+' kept the earlier text in History.'),'done');summary.tabIndex=-1;
+  const card=sCard('Nothing left to review',summary);card.className+=' review-done';
   if(held.view.google_suggestions)return sAdd(card,...sReviewGoogle(held));
   const copy=sButton('Copy',async()=>{if(typeof navigator==='undefined'||!navigator.clipboard?.writeText)throw new Error('Download the draft and copy it from there.');const found=await sDeskMarkdown(held);await navigator.clipboard.writeText(found.markdown);sToast(deskWithout('Markdown copied',found.missing));},'filled');
   const download=sButton('Download',async()=>{const found=await sDeskMarkdown(held);await sDownload({content:found.markdown,name:'DRAFT.md'});if(found.missing.length)sToast(deskWithout('Downloaded',found.missing));});
@@ -1137,7 +1270,7 @@ function sReviewGoogle(held){
   if(g.plan){
     const changes=sNode('ul','look');for(const item of g.plan.proposals||[])changes.append(sNode('li','',sDeskGoogleItem(item)));
     const count=g.plan.count;
-    const send=sButton('Send '+count+(count===1?' change':' changes'),async button=>{await busy(button,'Sending…',async()=>{try{const result=await api('desk-google-send',{id:held.id,plan:g.plan.plan,confirmed:true});g.sent={status:result.status,message:result.status==='verified-pending'?'Suggestions are ready for the Doc’s owner to accept or reject.':result.status==='verified-comments'?'Comments were added to the Google Doc.':'The result is not yet verified. Check delivery in the full desk’s Finishing before trying anything else.'};g.problem='';}catch(error){g.problem=error.message;if(/changed/.test(error.message))g.plan=null;}sReviewHeadShow(held);});},'filled');send.disabled=!sDeskCan(held);
+    const send=sButton('Send '+count+(count===1?' change':' changes'),async button=>{await busy(button,'Sending…',async()=>{try{const result=await api('desk-google-send',{id:held.id,plan:g.plan.plan,confirmed:true});g.sent={status:result.status,message:['verified-pending','verified-comments'].includes(result.status)?sDeskSentWords(g.plan,result):'The result is not yet verified. Check delivery in the full desk’s Finishing before trying anything else.'};g.problem='';await sDeskReread(held);}catch(error){g.problem=error.message;if(/changed/.test(error.message))g.plan=null;}sReviewHeadShow(held);});},'filled');send.disabled=!sDeskCan(held);
     out.push(sNode('p','',sDeskGoogleSaid(g.plan)),disclosure('What would be sent',changes),sAdd(sNode('div','bar'),send,sButton('Cancel',()=>{g.plan=null;sReviewHeadShow(held);})));
     return out;
   }
@@ -1146,6 +1279,7 @@ function sReviewGoogle(held){
   return out;
 }
 function sReviewLede(state){
+  if(!state.any&&!state.working&&!state.failed.length)return 'Check the draft to see fixes marked in the text. Nothing changes until you accept one.';
   if(state.working?.kind==='finish-humanize')return 'The fixes are marked in your text while the wording check looks for sentences that read as machine-written. Accept or reject them meanwhile.';
   if(state.working)return state.human?'Copy edit is reading your draft for spelling, grammar and wordy sentences, then the wording check looks for sentences that read as machine-written. Read or edit it meanwhile.':'Copy edit is reading your draft for spelling, grammar and wordy sentences. Read or edit it meanwhile.';
   if(state.any&&!state.pending.length&&!state.failed.length)return (state.human?'Every suggestion is reviewed.':'Every fix is reviewed.')+' Click any paragraph to keep editing, or Check again for the latest text.';
@@ -1165,14 +1299,25 @@ function sReviewHeadReplace(held,state,key){
   const again=sReviewFind(head,was)||(/^(fix|dismiss):/.test(was)?sReviewFind(head,'quick'):null)||sReviewFirst(head)||sReviewFind(head,'count');
   if(again&&typeof again.focus==='function')again.focus();
 }
+// After Accept, Reject, Accept all or Reject all, focus goes to the next suggestion's Accept,
+// or to the count, or to the summary once nothing is left: never to the page itself.
+function sReviewFocusNext(held,state,item){
+  const at=item?state.pending.findIndex(row=>row.key===item.key):-1,next=at<0?null:state.pending[at+1]||state.pending[at-1];
+  held.review.focusAfter=next?'accept:'+next.key:'count';
+}
+function sReviewFocusAfter(held){
+  const r=held.review,key=r?.focusAfter;if(!key||!sDeskCurrent(held))return;r.focusAfter=null;
+  const find=name=>{for(const scope of [r.head,r.paper]){const node=sReviewFind(scope,name);if(node&&!node.disabled&&!node.hidden)return node;}return null;};
+  const node=find(key)||find('count')||find('done')||sReviewFirst(r.head);if(node&&typeof node.focus==='function')node.focus();
+}
 function sReviewFirst(node){for(const child of node?.children||[]){if(child.hidden)continue;if(['button','input','select','textarea','summary'].includes(String(child.tagName).toLowerCase())&&!child.disabled)return child;const found=sReviewFirst(child);if(found)return found;}return null;}
 function sReviewFind(node,key){if(!node)return null;if(node.dataset?.focus===key)return node;for(const child of node.children||[]){const found=sReviewFind(child,key);if(found)return found;}return null;}
 function sReviewMark(node,key){if(node)node.dataset.focus=key;return node;}
 // The reading surface: the title, the opening and each section, every paragraph with its
 // fixes marked, opaque like any document.
 function sReviewPaper(held,state){
-  const paper=sNode('article','paper review-paper');paper.setAttribute('aria-label','Your draft with its fixes marked');held.review.parts={};
-  for(const part of state.parts){const box=sReviewPart(held,part,state);if(box){held.review.parts[part]=box;paper.append(box);}}
+  const paper=sNode('article','paper review-paper');paper.setAttribute('aria-label','Your draft with its fixes marked');held.review.parts={};held.review.order=[];
+  for(const part of state.parts){const box=sReviewPart(held,part,state);if(box){held.review.parts[part]=box;held.review.order.push(part);paper.append(box);}}
   return paper;
 }
 function sReviewKey(held,part,state){const editing=held.review.editing;return JSON.stringify([deskTextOf(held.view,part),(state.doc?.marks||[]).filter(mark=>mark.part===part),state.pending.filter(item=>item.part===part&&item.docFlag).map(item=>item.key),!!state.working,sReviewFree(held),state.shown.filter(item=>item.part===part).map(item=>[item.key,item.number,item.at,item.before,item.after,item.flag,item.note,item.picked??null,item.carriedBy||null]),state.gone.filter(item=>item.part===part).map(item=>[item.key,item.state,item.byNumber??null]),editing&&editing.part===part?editing.start:null,(held.view.sections||[]).find(section=>section.id===part)?.heading||'']);}
@@ -1238,8 +1383,8 @@ function sReviewFixes(held,items,loose){
     if(item.carriedBy?.length){const known=item.carriedBy.filter(Boolean);row.append(sNode('p','quiet review-carried',known.length?'Updated to fit accepted suggestion '+known.map(n=>'#'+n).join(', ')+'.':'Updated to fit an accepted suggestion.'));}
     if(item.alternatives?.length)row.append(sReviewChoices(held,item));
     if(loose)row.append(deskSides(item.before,item.after));
-    const accept=sButton('Accept',button=>sReviewAccept(held,item,button));accept.disabled=!editable;accept.setAttribute('aria-label','Accept '+what+item.number);
-    const reject=sButton('Reject',button=>sReviewReject(held,item.job,[item.id],button));reject.disabled=!sDeskCan(held);reject.setAttribute('aria-label','Reject '+what+item.number);
+    const accept=sButton('Accept',button=>sReviewAccept(held,item,button));accept.disabled=!editable;accept.setAttribute('aria-label','Accept '+what+item.number);sReviewMark(accept,'accept:'+item.key);
+    const reject=sButton('Reject',button=>sReviewReject(held,item.job,[item.id],button,item));reject.disabled=!sDeskCan(held);reject.setAttribute('aria-label','Reject '+what+item.number);sReviewMark(reject,'reject:'+item.key);
     row.append(sAdd(sNode('div','bar'),accept,reject));list.append(row);
   }
   return list;
@@ -1275,7 +1420,8 @@ function sDeskReviewRefresh(held,before){
   if(held.review.lede)held.review.lede.textContent=sReviewLede(state);
   // Sections added or taken away, or an opening that appears or goes: drawn again whole,
   // unless a paragraph is being edited, when it waits for the editor to close.
-  const drawn=Object.keys(held.review.parts).join(','),wanted=state.parts.filter(part=>held.review.parts[part]||part!=='opening'||deskTextOf(held.view,part).trim()).join(',');
+  // The order drawn, kept as drawn: the parts object lists all-digit ids first.
+  const drawn=(held.review.order||[]).join(','),wanted=state.parts.filter(part=>held.review.parts[part]||part!=='opening'||deskTextOf(held.view,part).trim()).join(',');
   if(drawn!==wanted){if(!held.review.editing)sDeskReview(held);return;}
   // A part with the paragraph being edited, or a choice with focus, is kept as it is: a
   // second job landing never takes the caret or the words.
@@ -1286,7 +1432,7 @@ function sDeskReviewRefresh(held,before){
     const box=sReviewPart(held,part,state);if(!box)continue;
     old.replaceWith(box);held.review.parts[part]=box;
   }
-  sDeskImagesLoad(held);sReviewProof(held);
+  sDeskImagesLoad(held);sReviewProof(held);sReviewFocusAfter(held);
 }
 function sReviewEditor(held,editing){
   const title=editing.part==='title',box=sNode(title?'input':'textarea','input review-editor');
@@ -1343,11 +1489,12 @@ async function sReviewCheck(held,button,humanize,voiceGuide){
 async function sReviewAccept(held,item,button){
   await busy(button,'Accepting…',async()=>{try{
     await sReviewFlush(held);if(held.stale)return;
+    sReviewFocusNext(held,sReviewState(held),item);
     const before=held.view;held.view=await api('desk-apply',{id:held.id,seen:held.view.revision,job:item.job,items:[sReviewPick(item)]});
     if(held.review){held.review.google=null;delete held.review.picks[item.key];}
     sToast('Accepted. The earlier text is in History.'+deskFinishedSaid(held.view.finished));
     sDeskRefresh(held,before);
-  }catch(error){if(/changed since/.test(error.message)){held.stale=true;sDeskStale(held);}else notice(error.message,true);}});
+  }catch(error){if(held.review)held.review.focusAfter=null;if(/changed since/.test(error.message)){held.stale=true;sDeskStale(held);}else notice(error.message,true);}});
 }
 // Accept all: every shown suggestion that still fits and is not flagged, from both tools in one
 // request. The server lands them in reading order, each checked against the text the ones
@@ -1360,25 +1507,40 @@ async function sReviewAcceptAll(held,keys,button){
     try{
       await sReviewFlush(held);if(held.stale)return;
       const chosen=sReviewState(held).ready.filter(item=>keys.includes(item.key));if(!chosen.length)return;
+      held.review.focusAfter='count';
       held.view=await api('desk-apply',{id:held.id,seen:held.view.revision,job:chosen[0].job,items:chosen.map(item=>({job:item.job,...sReviewPick(item)})),all:true});
       for(const item of chosen)delete held.review.picks[item.key];
       if(held.review)held.review.google=null;
       const done=held.view.finished||{applied:chosen.length,left:[]},left=(done.left||[]).length,waits=left?' '+left+(left===1?' is':' are')+' left for you to decide.':'';
       if(done.applied)sToast((done.applied===1?'Accepted.':'Accepted '+done.applied+'.')+' The earlier text is in History.'+deskFinishedSaid(done)+waits);
       else if(left)sToast('Nothing was accepted: '+(left===1?'1 is':left+' are')+' left for you to decide.');
-    }catch(error){if(/changed since/.test(error.message)){held.stale=true;sDeskStale(held);}else notice(error.message,true);}
+    }catch(error){if(held.view===before&&held.review)held.review.focusAfter=null;if(/changed since/.test(error.message)){held.stale=true;sDeskStale(held);}else notice(error.message,true);}
     if(held.view!==before)sDeskRefresh(held,before);
   });
 }
-async function sReviewReject(held,job,ids,button){
-  await busy(button,'Rejecting…',async()=>{try{await sReviewFlush(held);const before=held.view;held.view=await api('desk-skip',{id:held.id,job,items:ids});sDeskRefresh(held,before);}catch(error){notice(error.message,true);}});
+async function sReviewReject(held,job,ids,button,item){
+  await busy(button,'Rejecting…',async()=>{try{
+    await sReviewFlush(held);if(item)sReviewFocusNext(held,sReviewState(held),item);
+    const before=held.view;held.view=await api('desk-skip',{id:held.id,job,items:ids});
+    sReviewUndoToast(held,ids.length===1?'Rejected; the text is unchanged.':'Rejected '+ids.length+'; the text is unchanged.',[{job,ids}],item);
+    sDeskRefresh(held,before);
+  }catch(error){if(held.review)held.review.focusAfter=null;notice(error.message,true);}});
+}
+// A rejection is said, with Undo for a short while: the suggestions are open again, and focus
+// goes back to the one brought back. Nothing in the text changed either way.
+function sReviewUndoToast(held,words,sets,item){
+  const toast=sNode('p','toast glass',words+' ');let used=false;
+  const undo=sButton('Undo',async button=>{if(used)return;used=true;await busy(button,'Bringing back…',async()=>{try{const before=held.view;for(const set of sets)held.view=await api('desk-unskip',{id:held.id,job:set.job,items:set.ids});toast.remove();sToast('Brought back to review.');if(held.review)held.review.focusAfter=item?'accept:'+item.key:'count';sDeskRefresh(held,before);}catch(error){used=false;notice(error.message,true);}});});
+  undo.className+=' button-quiet';toast.append(undo);$('toasts').append(toast);setTimeout(()=>toast.remove(),8000);
 }
 // Reject all: every open suggestion shown, set by set.
 async function sReviewRejectAll(held,open,button){
   await busy(button,'Rejecting…',async()=>{
     const before=held.view;
-    try{await sReviewFlush(held);for(const job of [...new Set(open.map(item=>item.job))])held.view=await api('desk-skip',{id:held.id,job,items:open.filter(item=>item.job===job).map(item=>item.id)});}
+    const sets=[];
+    try{await sReviewFlush(held);held.review.focusAfter='count';for(const job of [...new Set(open.map(item=>item.job))]){const ids=open.filter(item=>item.job===job).map(item=>item.id);held.view=await api('desk-skip',{id:held.id,job,items:ids});sets.push({job,ids});}}
     catch(error){notice(error.message,true);}
+    if(sets.length)sReviewUndoToast(held,open.length===1?'Rejected; the text is unchanged.':'Rejected '+open.length+'; the text is unchanged.',sets,null);
     if(held.view!==before)sDeskRefresh(held,before);
   });
 }

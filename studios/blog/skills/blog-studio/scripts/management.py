@@ -2165,7 +2165,7 @@ def _dispatch(root, route, data):
 
 
 # Desk requests that change only what this computer keeps: the driver check, nothing shared.
-DESK_LOCAL = ('desk-save', 'desk-skip')
+DESK_LOCAL = ('desk-save', 'desk-skip', 'desk-unskip')
 
 
 # The older voice tools, which the voice switch in Blog Studio settings hides: learning
@@ -2278,6 +2278,7 @@ def dispatch(root, route, data):
         'editor-google-send',
         'desk-google-plan',
         'desk-google-send',
+        'desk-google-compare',
     ):
         return _dispatch(root, route, data)
     if (
@@ -2381,7 +2382,7 @@ def dispatch(root, route, data):
         from team_workspace import kept_locally
 
         result['team_sync'] = kept_locally(root, result['id'], data.get('session'))
-    elif space(root) and route not in ('run-settings', 'desk-angles', 'desk-skip'):
+    elif space(root) and route not in ('run-settings', 'desk-angles', 'desk-skip', 'desk-unskip'):
         if route == 'tool-action':
             # A tool result may be a job or a profile, whose IDs are not blogs: the blog
             # a tool worked on is the one the request named.

@@ -75,7 +75,7 @@ byline, then groups the posts by author to rename, merge and complete (with the 
 voice tools on, also to mark as voice samples and learn a voice per group, with the usual
 confirmation). Filters for role, kind and author; a selection learns a style (or, with
 the older voice tools on, a voice) from the items or starts a blog with them as examples.
-**From the library** on the files card picks items with their library role, changeable
+**From the team library** on the files card picks items with their library role, changeable
 for that blog only; a learned kind of post pre-ticks its samples. With the older voice
 tools on, **Settings → Default voice** names a confirmed voice for blogs run step by step,
 and **Interview me** takes **Write as**; desk blogs write with their tone.

@@ -2792,6 +2792,18 @@ def catalog(root):
                 stopped = (
                     '' if busy else desk_jobs.stalled(root, ident, desk.read_start(root, ident))
                 )
+                # What it waits on: open suggestions, its Doc. Never a reason to fail the list.
+                needs, sent = [], None
+                if not (busy or stopped or published):
+                    try:
+                        import desk_finish
+
+                        found = desk_finish.attention(
+                            root, ident, draft, path.parent, studio.item(root, 'articles', ident)[1]
+                        )
+                        needs, sent = found['needs'], found['sent']
+                    except (ValueError, OSError, KeyError, TypeError):
+                        needs, sent = [], None
                 rows.append(
                     {
                         'id': ident,
@@ -2811,6 +2823,8 @@ def catalog(root):
                         'next': None,
                         'error': stopped,
                         'mode': 'desk',
+                        'needs': needs,
+                        'doc_sent': sent,
                     }
                 )
                 continue

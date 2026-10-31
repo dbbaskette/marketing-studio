@@ -185,7 +185,19 @@ deciding on each fix, with the full desk one click away.
   Rejected fixes are never sent. Other blogs offer **Copy** and **Download**.
 - **Open the full desk** shows the notes, the Outline tab and the whole Finishing panel;
   **Review fixes** there comes back. The address keeps Review mode (`stage=review`), so a
-  reload stays in it.
+  reload stays in it. **Back** returns to the view, section and scroll you came from
+  (Read, when Review mode was opened from its address). Review mode's toolbar keeps the
+  blog's own actions: **Copy**, **Download**, its **Google Doc** and **Mark as published**.
+- **Before the first check** there is one action, **Check spelling and grammar**, and no
+  **Check again**.
+- **After each decision** focus moves to the next suggestion's **Accept**, or to the count,
+  or to the summary once nothing is left. **Reject** says "Rejected; the text is
+  unchanged." with **Undo** for a few seconds; Undo brings the suggestion back to review.
+- **Humanize · N to review**, on the desk, opens Review mode with Humanize's rewrites marked
+  in the text, to accept or reject like Copy edit's fixes. In Finishing, while rewrites
+  wait, **Review them in your text** comes first, then the list (where the same choice is
+  **Apply** or **Skip**), and **Find sentences again** is last and quiet: a new look
+  replaces the open rewrites.
 
 ## The writing desk
 
@@ -331,6 +343,48 @@ waits there, so the Doc's owner never gets a suggestion that repeats or undoes a
 A teammate's suggestion, or one the owner rejected, holds nothing. A note with no free
 paragraph nearby goes with the next send.
 When Google cannot take suggestions, the plan says the changes go as comments.
+
+The desk's toolbar keeps the Doc in reach: **Google Doc** is a small menu with **Open the
+Google Doc**, **Check what would be sent** (then **Send to Google Doc**: two steps) and
+**Bring accepted changes**; on a phone they are rows in the toolbar's menu. The receipt says
+what went and when, such as "Sent 10 suggestions and 2 comments at 3:24 PM. When the owner
+has decided them, choose Bring accepted changes." The toolbar then says what waits, for
+example "Doc: 12 waiting · last sent 3:24 PM", and "Unsent desk changes" once the desk has
+changes the Doc has not been sent. Home and Blogs show the same in each blog's one status
+line, with when it was last edited, and Home counts a desk blog with suggestions open, Doc
+suggestions waiting or unsent changes as needing you.
+
+### Bring accepted changes from the Doc
+
+**Bring accepted changes** reads the Doc's accepted text (its pending suggestions stay in
+Google, never accepted or rejected) and lists each part it would change, with a comparison.
+Each part is merged paragraph by paragraph against the Doc as the desk and the Doc last
+agreed (when it was linked, or the last bring-back):
+
+- A paragraph only the Doc changed takes the Doc's words: what its owner accepted or wrote.
+- A paragraph only the desk changed keeps the desk's words, unless the desk sent exactly
+  those words, from that same paragraph, as suggestions and the Doc kept its own: the owner
+  rejected them, so the Doc's words come back. Each sent change is found again by its
+  paragraph and which copy of it it was, never by its words alone, so the same words
+  elsewhere stay as the desk has them.
+- A paragraph the desk sent and then changed back, which the owner then accepted, refuses
+  its part: "you changed this back on the desk after sending it".
+- Words sent as a comment (Comments only, a Doc that cannot take suggestions, words a
+  teammate's suggestion also changes, a change made by hand) stay on the desk: the owner
+  makes them by hand, so the desk still counts them as unsent.
+- A paragraph both changed, other than by decided suggestions, refuses its part.
+- Sections keep the desk's order. A section new in the Doc comes after the section before
+  it; one the Doc removed goes only when the desk left it alone; one the desk added stays;
+  one the desk removed stays out, and is refused when the Doc changed it.
+- A Doc image a taken paragraph refers to comes with it; one the desk holds differently
+  under the same label refuses that part.
+
+Nothing changes until **Bring N parts to the desk**; each part keeps the desk's text first in
+History, as **Before Google's accepted text**, and the Doc becomes the new common baseline, as
+the chat's "Pull from Google Docs" does. Nothing is written to Google. The whole check is
+refused while suggestions sent from the desk still wait for the owner, and so is a
+bring-back after the desk or the Doc changed since the check. For a refused part, send the
+desk's changes first, or use "Pull from Google Docs" in chat to choose the wording.
 
 A blog edited in the manuscript editor (**Edit manuscript**) keeps its own Google tools:
 selected suggestions or comments are previewed and sent only when you confirm. Its

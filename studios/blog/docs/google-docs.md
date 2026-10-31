@@ -267,7 +267,9 @@ Doc as it was read:
 | A title other than the Doc's name | A comment: "Suggested title: …". The Doc's name is not body text. |
 
 The plan names how many suggestions and comments go, and nothing is sent until you
-confirm. Each suggestion is placed by its paragraph's words and its place in that
+confirm. Once the Doc's owner has decided them, **Google Doc → Bring accepted changes** on
+the desk brings the accepted text back, part by part, each keeping the desk's text in
+History; see [the runner guide](runner.md#bring-accepted-changes-from-the-doc). Each suggestion is placed by its paragraph's words and its place in that
 paragraph; one the Doc would place with any doubt goes as a comment on the closest
 paragraph the Doc shows once instead, quoting the paragraph before and after. Copies are
 counted in the Doc's text as it was, without suggestions still waiting. A note about a

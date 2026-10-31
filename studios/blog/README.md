@@ -112,8 +112,11 @@ Once the page is open, use its controls to drive the work:
 4. **Read and edit.** The desk opens with the manuscript as a readable document.
    Use **Go to section** or **Edit** beside a heading to work on one section. Changes
    save as you type; changing views saves pending text first. **Full desk** keeps the
-   all-sections editor available. A note on a section rewrites that section; **Revise
-   the whole draft** is a separate disclosure. Select text in an editor for **Rephrase**,
+   all-sections editor available. Sections always show in the draft's own order. **Polish**
+   opens Review mode, and **Back** there returns to where you were; the Finishing panel
+   opens from the toolbar's **Finishing**. On a phone, **Go to section** and one **View and
+   tools** fold sit above the text, so the title and the first paragraph show first.
+   A note on a section rewrites that section; **Revise the whole draft** is a separate disclosure. Select text in an editor for **Rephrase**,
    **Shorten**, **Expand**, **Fix** or **Ask…**. **History** compares and restores earlier
    versions. The **Outline** tab manages sections and their briefs. **Sources** adds
    material without rewriting what you already have.
@@ -138,8 +141,10 @@ a voice**. The older voice tools (learning a voice from an author's posts, **Wri
 and a default voice) are hidden behind **Settings → Advanced**.
 
 A Google Doc is read with this computer's Google sign-in, so it need not be shared.
-**From the library** picks earlier posts and files from the **team library** as facts or
-examples; **Add to library** takes files, links and Google Docs straight in.
+**From the team library** picks earlier posts and files from the **team library** as facts or
+examples; **Add to the team library** takes files, links and Google Docs straight in, in
+groups that each fit one request when the files are large. Without a Team Hub, the team
+library is on this computer only, and the page says so.
 
 Blogs started before the desk keep their step-by-step path: research, outline, draft,
 review and handoff, stopping for your review where their review level says. Open one from
@@ -184,14 +189,14 @@ The page and chat use the same saved blog. You can move between them as you work
 
 A finished or published blog is also kept as Markdown in the Document Library that
 every studio shares on this computer. It is local and separate from the team
-library. To use a deck or an upload from it, choose **Library → From the Document
-Library** under a blog's sources and give each document a role. The copy stays with
+library. To use a deck or an upload from it, choose **Team or Document Library → From the
+Document Library (this computer)** under a blog's sources and give each document a role. The copy stays with
 that blog only and is never shared with the team. When the library has a newer
 revision of it, the desk says **Update available**; press **Use revision N** to take
 it. Nothing changes until you do.
 
-When you upload files, **Keep in library** (the default) also keeps a local copy of
-each one in the Document Library for any studio; choose **Only this blog** to keep
+When you upload files, **Keep a copy in the Document Library** (the default) keeps a local
+copy of each one there for any studio; choose **Only this blog** to keep
 none. Either way the file is shared with your team only as you chose for it. Blogs
 and team library items kept before the Document Library existed can be added on
 Marketing Studio's Library screen with **Add existing work to library**. See

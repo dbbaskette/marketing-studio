@@ -71,7 +71,7 @@ const operationCache = new Map();
 // getRandomValues is available on trusted-LAN HTTP as well as secure origins.
 function operationId(){return Array.from(crypto.getRandomValues(new Uint8Array(16)),value=>value.toString(16).padStart(2,'0')).join('');}
 function operationFor(kind,data){const key=kind+JSON.stringify(data);if(!operationCache.has(key))operationCache.set(key,operationId());return operationCache.get(key);}
-const views = {board:['All blogs','Every saved blog by stage and owner. Open one to read it, decide or keep writing.','All blogs'],inbox:['Review findings','Find waiting decisions, review findings and stale companions.','Review findings'],library:['Team library','Finished blogs, files, links and Google Docs your team writes from, by role, kind of post and author.','Library items'],memory:['Team memory','Keep useful knowledge and writing guidance easy to find.','Shared notes, context and rules']};
+const views = {board:['All blogs','Every saved blog by stage and owner. Open one to read it, decide or keep writing.','All blogs'],inbox:['Review findings','Find waiting decisions, review findings and stale companions.','Review findings'],library:['Team library','Finished blogs, files, links and Google Docs your team writes from, by role, kind of post and author.','Team library items'],memory:['Team memory','Keep useful knowledge and writing guidance easy to find.','Shared notes, context and rules']};
 function element(tag, text, cls) {const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(cls)e.className=cls;return e;}
 function notice(message, error=false) {
   const dialog=document.querySelector('dialog[open]');
@@ -194,6 +194,14 @@ async function api(route, data, signal) {
 function link(url, text) {if(!/^https:\/\//.test(url||''))return element('span',text);const a=element('a',text);a.href=url;a.target='_blank';a.rel='noopener noreferrer';return a;}
 const BADGE_LABELS={'not-run':'Not run','not-checked-live':'Not checked live','local-saved-not-shared':'Saved locally','pending-review':'Awaiting review','queued-unavailable':'Waiting to sync','needs-local-check':'Needs local check'};
 const BADGE_TONES=new Set(['ready','review','stale','waiting','unavailable','published','conflict','conflicting','conflicted']);
+// A library row's one status, in words: whether its text is readable, then its analysis.
+const LIBRARY_STATES={ready:'Readable',pending:'Pending extraction',unavailable:'Unavailable',retired:'Retired','needs-analysis':'Readable'};
+function libraryStatus(item){
+  const state=String(item.library?.curation||item.status||''),analysis=item.analysis?.status;
+  const read=LIBRARY_STATES[state]||BADGE_LABELS[state]||(state?state.charAt(0).toUpperCase()+state.slice(1).replace(/-/g,' '):'Status unknown');
+  if(!['ready','needs-analysis'].includes(state))return read;
+  return read+' · '+(analysis==='ready'?'analyzed':analysis==='needs-extraction'?'needs extraction':analysis==='failed'?'analysis failed':'not analyzed yet');
+}
 function badge(value) {
   // Status text can come from shared Hub records: show it as text, but never let it choose a CSS class.
   const name=String(value??'');
@@ -253,7 +261,9 @@ async function load() {
 }
 function render(state, result) {
   const {view,offset}=state, total=result.total;
-  $('heading').textContent=views[view][0];$('subtitle').textContent=views[view][1];$('section-title').textContent=views[view][2];$('count').textContent=total+' '+(total===1?'item':'items');
+  // Without a Team Hub, "team" library and memory are this computer's; the page says so.
+  const local=['library','memory'].includes(view)&&typeof studio!=='undefined'&&!studio.team?.joined?' Without a Team Hub they are kept on this computer only.':'';
+  $('heading').textContent=views[view][0];$('subtitle').textContent=views[view][1]+local;$('section-title').textContent=views[view][2];$('count').textContent=total+' '+(total===1?'item':'items');
   $('stage-filter').hidden=view!=='board';for(const name of ['status','role','kind','author'])$('library-'+name+'-filter').hidden=view!=='library';$('library-more-filters').hidden=view!=='library';
   if(view==='library'){const kinds=$('library-kind'),chosen=kinds.value;kinds.replaceChildren(...[['','Any kind'],...(result.kinds||[]).map(kind=>[kind.id,kind.name])].map(([value,text])=>{const option=element('option',text);option.value=value;return option;}));kinds.value=chosen;}
   {const chosen=view==='library'?['library-role','library-kind','library-author','library-status'].filter(id=>$(id).value.trim()).length+($('library-collection').value.trim()?1:0):view==='board'&&$('stage').value?1:0;$('filters-toggle').textContent=chosen?'Filters ('+chosen+')':'Filters';}
@@ -278,7 +288,7 @@ function render(state, result) {
       if(item.library.canonical_url)cell.append(link(item.library.canonical_url,'Original post ↗'));
       textCell(row,item.author||'Author unknown');
       textCell(row,(item.role==='voice-sample'&&!libraryVoices()?'Writing sample':LIBRARY_ROLES[item.role]||'Facts')+(item.kind_name?' · '+item.kind_name:'')+(libraryVoices()?['voice-sample','style-sample']:['style-sample']).filter(purpose=>purpose!==item.role&&(item.purposes||[]).includes(purpose)).map(purpose=>' · '+LIBRARY_ROLES[purpose].toLowerCase()).join(''));
-      const status=textCell(row,'');status.append(badge(item.library.curation||item.status),badge(item.analysis?.status==='ready'?'Analyzed':item.analysis?.status==='needs-extraction'?'Needs extraction':'Needs analysis'));
+      const status=textCell(row,'');status.append(element('span',libraryStatus(item),'badge'));
       const action=textCell(row,'');action.append(button(access.actions.edit?'Review details':'Read reference',()=>curate(item)));if(item.historical)action.append(element('p','Historical reference'));}
     if(view==='memory'){const cell=textCell(row,'');cell.append(button(item.title,()=>editMemory(item),'title-button'));if(item.conflict)cell.append(element('p','Competing revisions'));if(item.lesson_status)cell.append(element('p','Candidate lesson · '+item.lesson_status));textCell(row,item.kind);textCell(row,item.scope.level+(item.scope.key?' · '+item.scope.key:''));textCell(row,item.lesson?'Review / promote in chat':item.focused_workflow?'Manage in chat':item.kind==='decision'||item.conflict||!access.actions.memory?'Read details':'Open to read or edit');}
     Array.from(row.children).forEach((cell,index)=>cell.setAttribute('data-label',labels[index]));

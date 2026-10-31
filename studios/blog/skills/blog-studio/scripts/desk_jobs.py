@@ -2028,6 +2028,10 @@ def view(root, ident):
         'doc_suggestions': _doc_suggestions(root, ident, draft)
         if sendable
         else {'count': 0, 'marks': []},
+        # The last send, this blog's suggestions waiting in the Doc and changes not sent yet.
+        'google_state': desk_finish.google_state(root, ident, directory, record)
+        if sendable
+        else None,
         # The blog record's version, for Mark as published, Delete and changing its driver.
         'expected': expected(root, ident),
         # In a team workspace, who drives the blog, as a run says it (blog_runner.describe).

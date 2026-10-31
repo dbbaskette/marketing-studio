@@ -100,6 +100,7 @@ async function check(){
   await filesJourney();
   await voiceLinksJourney();
   await libraryAddJourney();
+  await libraryWordsAndBatches();
   await libraryScreen();
   await librarySelectAll();
   await voicesForEveryAuthor();
@@ -157,6 +158,8 @@ async function check(){
   await deskGoogleStartIsOneActionAndRetrySafe();
   await deskStartReadsAGoogleDocAgainAfterAFailure();
   await deskReviewDocSuggestions();
+  await deskOrderAndOnePath();
+  await deskGoogleRoundTrip();
   await oldIntakeAddressesOpenTheDeskStart();
   await deskStartRecovery();
   await deskTakeOver();
@@ -1130,7 +1133,7 @@ async function movedControls(){
     assert.ok(actions.some(([label])=>label==='Library and team tools'),name+': the other views are a button away');
   }
   await f.run("sLegacy('library')");await f.get('actions').children[0].listeners.click();
-  assert.equal(f.get('sheet').children[0].children[0].textContent,'Add to the library');
+  assert.equal(f.get('sheet').children[0].children[0].textContent,'Add to the team library');
   f.get('memory-form').reset=()=>{};{const submit=new Element('button');submit.type='submit';f.get('memory-form').append(submit);}
   f.run('sCloseSheet()');await f.run("sLegacy('memory')");await f.get('actions').children[0].listeners.click();assert.equal(f.get('memory-dialog').open,true,'Add memory');
   f.get('memory-dialog').open=false;
@@ -1597,7 +1600,7 @@ async function filesJourney(){
   // copy is said on its row, and Only this blog sends none. It never changes team sharing.
   {const choice=byId('files-document-keep');assert.ok(choice,'the Keep in library choice');
    const options=()=>descendants(byId('files-document-keep')).filter(e=>e.tagName==='button');
-   assert.deepEqual(options().map(o=>[o.textContent,o.attributes['aria-pressed']]),[['Keep in library','true'],['Only this blog','false']]);
+   assert.deepEqual(options().map(o=>[o.textContent,o.attributes['aria-pressed']]),[['Keep a copy in the Document Library','true'],['Only this blog','false']]);
    assert.ok(descendants(choice).some(e=>/not shared with your team/.test(e.textContent)),'and says it stays local');
    {const ids=nodes().filter(e=>e.id).map(e=>e.id);assert.ok(ids.indexOf('files-document-keep')<ids.indexOf('files-input'),'the choice comes before the picker');}
    assert.equal(upload[0].data.document_library,true,'Keep in library is the default');
@@ -1891,7 +1894,7 @@ async function libraryAddJourney(){
   f.loadRunner();voicesOn(f);
   const sheet=()=>descendants(f.get('sheet')),find=label=>sheet().find(e=>e.textContent===label),byId=id=>sheet().find(e=>e.id===id),has=pattern=>sheet().some(e=>pattern.test(e.textContent));
   await f.run('sLibraryAdd()');
-  assert.equal(f.get('sheet').children[0].children[0].textContent,'Add to the library');
+  assert.equal(f.get('sheet').children[0].children[0].textContent,'Add to the team library');
   const files=byId('library-add-files');assert.equal(files.multiple,true);assert.match(files.accept,/\.pdf/);
   assert.ok(byId('library-add-links')&&byId('library-add-links-file'),'links can be pasted or chosen as a file');assert.ok(byId('library-add-google'),'and a Google Doc link added');
   assert.equal(byId('library-add-who').value,'*each','each post’s own author by default');
@@ -1958,6 +1961,72 @@ async function libraryAddJourney(){
   assert.equal(retried.retry,true);assert.equal(retried.operation,operation,'the same operation');assert.equal(retried.expected,'check-1');
 }
 
+// Issue 260: Add to the team library sends large sets in groups that each fit a request (the
+// page and the phone link take at most 15 MiB), read back as one; one library vocabulary on
+// the sources card; Team library rows with one status in words; and Status through the phone
+// link saying where commands are run.
+async function libraryWordsAndBatches(){
+  const requests=[];let previews=0,adds=0;
+  const preview=data=>{previews++;return {status:'ready',role:'facts',author:'*each',kind:'',kind_name:'',expected:'check-'+previews,items:data.files.filter(f=>f.filename).map(f=>({key:f.filename,kind:'file',title:f.filename,filename:f.filename,state:'ready',chars:f.content.length,note:'',bylines:['Avery Quinn']})).concat(data.links?[{key:'https://blog.example/a/',kind:'link',url:'https://blog.example/a/',site:'blog.example/',state:'new',chars:null,bylines:[],note:''}]:[]),in_library:0,to_fetch:data.links?1:0,duplicates:0,unusable:0,sites:data.links?[{shown:'blog.example/'}]:[]};};
+  const result=data=>{adds++;const ids=data.files.map(f=>f.filename);return {operation:data.operation,state:'saved',role:'facts',author:'*each',kind:'',items:ids.map(id=>({id,kind:'file',filename:id,status:'imported',title:id,author:'Avery Quinn',bylines:['Avery Quinn'],role:'facts',sample:false,revision:1,text:true})),counts:{imported:ids.length,'in-library':0,failed:0,pending:0,samples:0},remaining:0,groups:[{author:'Avery Quinn',ids,samples:[],learnable:[],count:ids.length}],held:[],sharing_message:'',next_step:'Done.'};};
+  const f=fixture((url,options)=>{const data=options?.body?JSON.parse(options.body):null;requests.push({url,data,size:options?.body?.length||0});
+    if(url.startsWith('/api/styles'))return {styles:[],samples:[],candidates:[],pending:[]};
+    if(url==='/api/library-add-preview')return preview(data);
+    if(url==='/api/library-add')return result(data);
+    if(url==='/api/library-add-author')return {...result({files:data.ids.map(id=>({filename:id})),operation:data.operation}),groups:[{author:data.author,ids:data.ids,samples:[],learnable:[],count:data.ids.length}]};
+    return {items:[],total:0};});
+  f.loadRunner();
+  const sheet=()=>descendants(f.get('sheet')),has=pattern=>sheet().some(e=>pattern.test(e.textContent||''));
+  // Three files of 6 MiB each, already read as base64: together far over one request.
+  f.run("studio.libraryAdd=null;const held=sLibraryAddHeld();held.links='https://blog.example/a/';held.files=['one.md','two.md','three.md'].map(name=>({filename:name,content:'A'.repeat(8*1024*1024)}))");
+  await f.run('sLibraryAdd()');
+  assert.equal(f.get('sheet').children[0].children[0].textContent,'Add to the team library');
+  assert.ok(has(/3 chosen: one\.md, two\.md, three\.md\. They are sent in 3 groups\./),'the sheet says the files go in groups');
+  await sheet().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
+  const checks=requests.filter(r=>r.url==='/api/library-add-preview');
+  assert.equal(checks.length,3,'each group is checked on its own');
+  assert.ok(checks.every(r=>r.size<15*1024*1024),'and every request fits the page and the phone link');
+  assert.deepEqual(checks.map(r=>[r.data.files.map(f=>f.filename),!!r.data.links]),[[['one.md'],true],[['two.md'],false],[['three.md'],false]],'the links go with the first group only');
+  assert.ok(sheet().some(e=>e.textContent==='4 items'),'read back as one check');
+  assert.ok(has(/too large to send together, so they go in 3 groups/));
+  await sheet().find(e=>e.textContent==='Add 4 items').listeners.click();
+  const sent=requests.filter(r=>r.url==='/api/library-add');
+  assert.equal(sent.length,3);assert.ok(sent.every(r=>r.size<15*1024*1024));
+  assert.equal(new Set(sent.map(r=>r.data.operation)).size,3,'each group is its own add');
+  assert.deepEqual(sent.map(r=>r.data.expected),['check-1','check-2','check-3'],'each against its own check');
+  assert.ok(sheet().some(e=>e.textContent==='3 added · 0 already there · 0 failed'),'the result counts every group');
+  assert.ok(sheet().some(e=>e.textContent==='Avery Quinn · 3 posts'),'authors are grouped across groups');
+  // Renaming an author renames it in each group's own add.
+  const rename=sheet().find(e=>e.id==='library-add-rename-0');rename.value='Avery Q. Quinn';rename.listeners.input();
+  await sheet().find(e=>e.textContent==='Rename').listeners.click();
+  const renamed=requests.filter(r=>r.url==='/api/library-add-author');
+  assert.deepEqual(renamed.map(r=>[r.data.operation,r.data.ids]),sent.map(r=>[r.data.operation,[r.data.files[0].filename]]));
+  // The sources card: one library vocabulary, and one option marked as chosen.
+  f.run("studio.team={joined:false};globalThis.sourcesDraft={files:[]};document.getElementById('studio-page').replaceChildren(sFilesCard(sourcesDraft,document.createElement('p'),()=>{},()=>{},{empty:'No sources yet. Later rewrites will read what you add.'}))");
+  const card=descendants(f.get('studio-page'));
+  const group=card.find(n=>n.attributes?.['aria-label']==='Add a source');
+  assert.equal(group.dataset.count,'5');assert.equal(group.children.filter(n=>n.attributes?.['aria-pressed']==='true').length,1,'exactly one option is chosen');
+  assert.ok(!group.children.some(n=>n.textContent==='Library'),'no bare library');
+  assert.ok(card.some(n=>n.textContent==='No sources yet. Later rewrites will read what you add.'),'the desk sheet says desk words');
+  f.run("sourcesDraft.fileMethod='library';document.getElementById('studio-page').replaceChildren(sFilesCard(sourcesDraft,document.createElement('p'),()=>{},()=>{}))");
+  const labels=descendants(f.get('studio-page')).filter(n=>n.tagName==='button').map(n=>n.textContent);
+  assert.ok(labels.includes('From the team library')&&labels.includes('From the Document Library (this computer)'));
+  assert.ok(descendants(f.get('studio-page')).some(n=>/until you join a Team Hub it is on this computer only/.test(n.textContent||'')),'what team means without a Hub');
+  const keep=descendants(f.get('studio-page')).find(n=>n.id==='files-document-keep');
+  assert.deepEqual(descendants(keep).filter(n=>n.tagName==='button').map(n=>n.textContent),['Keep a copy in the Document Library','Only this blog']);
+  // Team library rows: one status in words, never a raw state.
+  assert.equal(f.run("libraryStatus({library:{curation:'ready'},analysis:{status:'needs-analysis'}})"),'Readable · not analyzed yet');
+  assert.equal(f.run("libraryStatus({library:{},status:'ready',analysis:{status:'ready'}})"),'Readable · analyzed');
+  assert.equal(f.run("libraryStatus({library:{curation:'pending'}})"),'Pending extraction');
+  // Status through the phone link: commands are run on the computer running Marketing Studio.
+  f.run("studio.computer={checks:[{label:'Codex',detail:'Not signed in. Run gh auth status to check Hub access.',next_step:'Run codex login, then check again.',status:'action'}]};studio.settings={workspace:'/w'};sStatusPage()");
+  assert.ok(descendants(f.get('studio-page')).some(n=>n.textContent==='Run codex login, then check again.'),'on this computer, as it was');
+  f.run("location.hostname='192.168.1.20';sStatusPage()");
+  const said=descendants(f.get('studio-page')).map(n=>n.textContent);
+  assert.ok(said.includes('On the computer running Marketing Studio, run codex login, then check again.'));
+  assert.ok(said.includes('Not signed in. On the computer running Marketing Studio, run gh auth status to check Hub access.'));
+  f.run("location.hostname=''");
+}
 // The library screen: filters for role, kind of post and author reach the request; rows can be
 // ticked; the selection learns a style or a voice (marked as samples first, asking whose when
 // nobody is named) or starts a blog from my files with the items ticked as examples.
@@ -2063,14 +2132,14 @@ async function libraryPicker(){
   await kind('Field notes');assert.equal(files().length,8);
   f.run('studio.deskStart.step=0');await f.run('sDeskStart()');
   assert.ok(texts().some(t=>t==='Sample s8'),'the sources step lists them: '+texts().join('|'));
-  assert.ok(texts().some(t=>t==='From the library'),'as library items');
+  assert.ok(texts().some(t=>t==='From the team library'),'as library items');
   assert.ok(texts().some(t=>/needs text, so it is not read/.test(t)),'a sample without text says so');
   assert.equal(byId('files-role-s8').value,'inspiration');
   await nodes().find(e=>e.attributes['aria-label']==='Remove Sample s8').listeners.click();
   assert.equal(files().length,7,'unticking removes it');assert.equal(files().some(([id])=>id==='s8'),false);
   const sheet=()=>descendants(f.get('sheet')),inSheet=id=>sheet().find(e=>e.id===id);
-  await nodes().find(e=>e.textContent==='From the library'&&e.tagName==='button').listeners.click();
-  assert.equal(f.get('sheet').children[0].children[0].textContent,'From the library');
+  await nodes().find(e=>e.textContent==='From the team library'&&e.tagName==='button').listeners.click();
+  assert.equal(f.get('sheet').children[0].children[0].textContent,'From the team library');
   assert.ok(inSheet('pick-role')&&inSheet('pick-kind')&&inSheet('pick-author')&&inSheet('pick-query'),'role, kind and author filters and a search box');
   assert.deepEqual(inSheet('pick-kind').children.map(o=>o.textContent),['Any kind','Product announcement','Field notes']);
   inSheet('pick-role').value='facts';inSheet('pick-role').listeners.change();inSheet('pick-author').value='Avery';inSheet('pick-author').listeners.input();inSheet('pick-query').value='launch';inSheet('pick-query').listeners.input();
@@ -3448,6 +3517,185 @@ const REVIEW_FIXES=[
 // Other people's suggestions pending in the Google Doc, in Review mode and on the full desk:
 // marked where they sit, decided in Google Docs, never accepted, rejected, counted or
 // numbered here; a fix over their words is flagged and left out of Accept all.
+// Issue 258: the manuscript in its saved order, whatever its part ids look like, in Read,
+// Edit section, Full desk and Review mode, and after a reorder; one way through Polish and
+// back to the same place; a first check with one action; focus kept and every outcome said
+// after Accept, Reject (with Undo) and Accept all; Humanize's rewrites in Review mode, and a
+// rerun that is quiet while they wait; and a phone that shows the title and text first.
+async function deskOrderAndOnePath(){
+  // Part ids made only of digits: an object keyed by them lists them first, in number order.
+  const sections=[{id:'aaaaaaaa',heading:'Why it matters',brief:'',text:'Why text.'},{id:'12345678',heading:'How it works',brief:'',text:'How text.'},{id:'00000001',heading:'What to try next week',brief:'',text:'Try text.'}];
+  const fixes=[
+    {part:'aaaaaaaa',kind:'spelling',before:'Why text.',after:'Why texts.',note:'One.'},
+    {part:'12345678',kind:'grammar',before:'How text.',after:'How texts.',note:'Two.'},
+    {part:'00000001',kind:'wording',before:'Try text.',after:'Try texts.',note:'Three.'},
+  ];
+  let view=deskView({sections,opening:'An opening paragraph.',finishing:{},doc_suggestions:{count:0,marks:[]}}),unskipped=null;
+  const setState=(ids,state)=>({...view,finishing:{...view.finishing,copyedit:{...view.finishing.copyedit,items:view.finishing.copyedit.items.map(i=>ids.includes(i.id)?{...i,state}:i)}}});
+  const t=focusFixtureWith(()=>view,(url,data)=>{
+    if(url==='/api/desk-skip'){view=setState(data.items,'skipped');return view;}
+    if(url==='/api/desk-unskip'){unskipped=data;view=setState(data.items,'open');return view;}
+    if(url==='/api/desk-apply'){view={...setState(data.items.map(i=>i.id),'applied'),revision:view.revision+1,finished:{applied:data.items.length,left:[]}};return view;}
+    return null;
+  });
+  const {f,page}=t;
+  const order=()=>page().filter(n=>/desk-part/.test(n.className||'')&&n.dataset?.part).map(n=>n.dataset.part);
+  const want=['title','opening','aaaaaaaa','12345678','00000001'];
+  await f.run("sRoute('desk','desk-blog')");
+  assert.deepEqual(order(),want,'Read shows the title, the opening, then the sections as saved');
+  await f.run("sDeskChoose(studio.desk,'full')");
+  assert.deepEqual(order(),want,'so does the full desk');
+  await f.run("sDeskChoose(studio.desk,'edit','00000001')");
+  assert.deepEqual(order(),['00000001'],'Edit section shows the one part');
+  // Reordered elsewhere: the new saved order, in Read and on the full desk.
+  const moved=[sections[2],sections[0],sections[1]];
+  view={...view,revision:view.revision+1,sections:moved};
+  await f.run("(async()=>{const held=studio.desk,before=held.view;held.view=await api('desk?id=desk-blog');held.reading='full';sDeskRefresh(held,before);})()");
+  assert.deepEqual(order(),['title','opening','00000001','aaaaaaaa','12345678'],'after a reorder, the new order');
+  await f.run("sDeskChoose(studio.desk,'read','12345678')");
+  assert.deepEqual(order(),['title','opening','00000001','aaaaaaaa','12345678']);
+  // Polish from Read, at a section and a scroll, then Back: the same view, section and scroll.
+  f.run("window.scrollY=640;window.scrollTo=(x,y)=>{window.scrolledTo=y;}");
+  const pressIn=async(nodes,label)=>{const found=nodes.find(n=>n.textContent===label&&n.listeners.click);assert.ok(found,'no '+label);await found.listeners.click();};
+  assert.ok(!page().some(n=>n.textContent==='Review and share'),'one way to Finishing: the toolbar’s');
+  await pressIn(page(),'Polish');
+  assert.equal(f.run('studio.desk.mode'),'review');
+  // A first check: one action, no "again", and words for a check that has not run.
+  assert.ok(!descendants(f.get('actions')).some(n=>n.textContent==='Check again'),'no Check again before any check');
+  assert.equal(page().find(n=>n.className==='lede').textContent,'Check the draft to see fixes marked in the text. Nothing changes until you accept one.');
+  assert.equal(page().filter(n=>/button-filled/.test(n.className||'')).length,1,'one primary action');
+  for(const label of ['Copy','Download','Mark as published'])assert.ok(descendants(f.get('actions')).some(n=>n.textContent===label),label+' stays in Review mode');
+  assert.deepEqual(page().filter(n=>n.className==='review-part').map(n=>n.dataset.part),['title','opening','00000001','aaaaaaaa','12345678'],'Review mode reads in the same order');
+  await descendants(f.get('toolbar-lead'))[0].listeners.click();
+  assert.equal(f.run('studio.desk.mode'),null);
+  assert.equal(f.run('studio.desk.reading'),'read','Back lands in Read');
+  assert.equal(f.run('studio.desk.activePart'),'12345678','at the same section');
+  assert.equal(f.run('window.scrolledTo'),640,'with the scroll kept');
+  // Three fixes: Reject fix 2 moves focus to fix 3's Accept, says so, and offers Undo.
+  view={...view,sections,jobs:[{id:'c1',kind:'finish-copyedit',status:'ready',applied:true,error:''}],finishing:{copyedit:finishSet('copyedit',fixes)}};
+  await f.run("(async()=>{studio.desk.view=await api('desk?id=desk-blog');sReviewEnter(studio.desk);sDeskRender(studio.desk);})()");
+  assert.ok(descendants(f.get('actions')).some(n=>n.textContent==='Check again'),'Check again once a check has run');
+  const button=label=>page().find(n=>n.attributes?.['aria-label']===label);
+  await button('Reject fix 2').listeners.click();
+  assert.equal(button('Accept fix 3').focused,true,'focus moves to the next fix');
+  const toasts=descendants(f.get('toasts')).filter(n=>/\btoast\b/.test(n.className||''));
+  const said=toasts.at(-1);assert.ok(said,'Reject is said');
+  assert.match(said.textContent,/^Rejected; the text is unchanged\./);
+  await descendants(said).find(n=>n.textContent==='Undo').listeners.click();
+  assert.deepEqual(unskipped,{id:'desk-blog',job:view.finishing.copyedit.job,items:['p2']},'Undo brings it back');
+  assert.ok(button('Reject fix 2'),'fix 2 is open again');
+  assert.equal(button('Accept fix 2').focused,true,'with focus on it');
+  // Accept all: focus lands on the summary, never on the page.
+  const all=page().find(n=>/^Accept all/.test(n.textContent)&&n.listeners.click);await all.listeners.click();
+  const done=page().find(n=>n.dataset?.focus==='done');
+  assert.ok(done&&done.focused,'focus on the summary once nothing is left');
+  // Humanize's rewrites: the chip opens Review mode with them, to accept or reject.
+  const human=finishSet('humanize',[{part:'12345678',before:'How text.',after:'Here is how.',note:'Plainer.'}]);
+  view={...view,jobs:[],finishing:{humanize:human}};
+  await f.run("(async()=>{const held=studio.desk;await sReviewLeave(held);held.view=await api('desk?id=desk-blog');sDeskRender(held);})()");
+  await pressIn(page(),'Humanize · 1 to review');
+  assert.equal(f.run('studio.desk.mode'),'review','Humanize · 1 to review opens Review mode');
+  assert.ok(button('Accept suggestion 1')&&button('Reject suggestion 1'),'with Accept and Reject on the rewrite');
+  // In Finishing, waiting rewrites come first; Find sentences again is quiet and under them.
+  await f.run("(async()=>{const held=studio.desk;await sReviewLeave(held);await sDeskFinishOpen(held,'humanize');})()");
+  const panel=page().filter(n=>n.tagName==='button');
+  const again=panel.find(n=>n.textContent==='Find sentences again'),review=panel.find(n=>n.textContent==='Review them in your text');
+  assert.ok(again&&review,'both are there');
+  assert.ok(!/button-filled/.test(again.className),'the rerun is not the filled button');
+  assert.ok(panel.indexOf(review)<panel.indexOf(again),'and sits under the suggestions');
+  assert.ok(page().some(n=>n.textContent==='Finding sentences again replaces the open suggestion with a new set.'));
+  // A phone: Go to section and one fold before the text; no lede or save line above it.
+  f.run("window.matchMedia=()=>({matches:true})");
+  await f.run("(async()=>{const held=studio.desk;sDeskFinishClose(held);held.reading='read';sDeskRender(held);})()");
+  const top=f.get('studio-page').children;
+  assert.ok(!top.some(n=>n.className==='lede'),'no lede above the text on a phone');
+  const bar=top.find(n=>/desk-compact/.test(n.className||''));assert.ok(bar,'one compact bar');
+  assert.deepEqual(bar.children.map(n=>n.tagName),['div','details','p'],'Go to section, then View and tools, then the save line');
+  assert.equal(bar.children[2].textContent,'','the save line is empty until there is something to say');
+  assert.equal(bar.children[2].attributes['aria-live'],'polite');
+  assert.ok(descendants(bar.children[1]).some(n=>n.textContent==='Polish'),'Polish is in the fold');
+  f.run('delete window.matchMedia');
+}
+function focusFixtureWith(current,answer){
+  const requests=[],timers=[];
+  const f=fixture((url,options)=>{
+    const data=options?.body?JSON.parse(options.body):null;requests.push({url,data});
+    const given=answer(url,data);if(given!==null&&given!==undefined)return given;
+    if(url.startsWith('/api/desk?'))return current();
+    if(url==='/api/desk-share')return {id:data.id,shared:true};
+    if(url.startsWith('/api/desk-images'))return {id:'desk-blog',images:[]};
+    return {items:[],total:0};
+  });
+  f.loadRunner();f.set('setTimeout',fn=>{timers.push(fn);return timers.length;});f.set('clearTimeout',()=>{});
+  const page=()=>descendants(f.get('studio-page'));
+  return {f,requests,timers,page};
+}
+// Issue 259: the Google Doc round trip closed on the page, and its state where people look:
+// the toolbar's Google Doc menu, a send with a receipt, Bring accepted changes with its
+// refusal said, plain wording for what is sent, the Doc's pending marks explained without
+// hovering, and Home counting desk blogs that wait on something.
+async function deskGoogleRoundTrip(){
+  const at=new Date().toISOString();
+  let view=deskView({google:{url:'https://docs.google.com/document/d/linked/edit'},google_suggestions:true,finishing:{},doc_suggestions:{count:0,marks:[]},google_state:{last:{at,suggestions:10,comments:2},waiting:12,unsent:true,brought:null}}),compare=null,took=null;
+  const plan={plan:'g'.repeat(32),mode:'auto',count:3,suggestions:2,comments:1,left:0,waiting:0,sent_before:0,proposals:[{id:'d1',kind:'edit',before:'This is where ',after:''},{id:'d2',kind:'edit',before:'.',after:'.\nA new paragraph with a link in it.',context:'Read the setup guide first.'},{id:'d3',kind:'comment',before:'setup guide',reason:'Link changed.'}]};
+  const t=focusFixtureWith(()=>view,(url,data)=>{
+    if(url==='/api/desk-google-plan')return plan;
+    if(url==='/api/desk-google-send'){view={...view,google_state:{...view.google_state,waiting:2,unsent:false,last:{at,suggestions:2,comments:1}}};return {status:'verified-pending'};}
+    if(url==='/api/desk-google-compare')return compare;
+    if(url==='/api/desk-google-take'){took=data;view={...view,revision:view.revision+1,google_state:{...view.google_state,waiting:0,unsent:false},brought:{parts:['Second part']}};return view;}
+    return null;
+  });
+  const {f,page}=t;const actions=()=>descendants(f.get('actions')),sheet=()=>descendants(f.get('sheet'));
+  const press=async(nodes,label)=>{const found=nodes.find(n=>n.textContent===label&&n.listeners.click);assert.ok(found,'no '+label+' in '+nodes.map(n=>n.textContent).filter(Boolean).join('|'));await found.listeners.click();};
+  await f.run("sRoute('desk','desk-blog')");
+  assert.equal(f.get('above').textContent,'Doc: 12 waiting · last sent '+f.run("sDeskWhen("+JSON.stringify(at)+")")+' · Unsent desk changes','the desk says what waits in the Doc and what is not sent');
+  // Send in two steps from the toolbar: Check what would be sent, then Send.
+  const menu=actions().find(n=>/desk-google-menu/.test(n.className||''));
+  await press(descendants(menu),'Check what would be sent');
+  assert.equal(t.requests.filter(r=>r.url==='/api/desk-google-send').length,0,'nothing is sent before Send');
+  for(const said of ['Removes “This is where”','Adds a paragraph after “Read the setup guide first.”: “A new paragraph with a link in it.”','Comment on “setup guide”: Link changed.'])assert.ok(sheet().some(n=>n.textContent===said),'it lists '+said);
+  assert.ok(!sheet().some(n=>/“”|¶/.test(n.textContent||'')),'no arrows at empty quotes and no paragraph marks');
+  await press(sheet(),'Send to Google Doc');
+  assert.ok(sheet().some(n=>/^Sent 2 suggestions and 1 comment at .+\. When the owner has decided them, choose Bring accepted changes\.$/.test(n.textContent||'')),'the receipt counts, says when and what next');
+  assert.equal(f.get('above').textContent,'Doc: 2 waiting · last sent '+f.run("sDeskWhen("+JSON.stringify(at)+")"),'the desk is read again after the send');
+  await press(sheet(),'Close');
+  // Bring accepted changes: refused while the desk and the Doc both changed a part, and said.
+  compare={preview:'p'.repeat(32),changes:[],refused:['Second part'],waiting:0,ready:false,said:'The Doc and the desk both changed “Second part” since they last agreed. Nothing is brought back, so no desk change is lost.'};
+  await press(descendants(actions().find(n=>/desk-google-menu/.test(n.className||''))),'Bring accepted changes');
+  assert.ok(sheet().some(n=>n.textContent===compare.said),'the refusal is said');
+  assert.ok(!sheet().some(n=>/^Bring \d/.test(n.textContent||'')),'with nothing to bring');
+  await press(sheet(),'Close');
+  // Ready: each part listed with its comparison, then brought, the earlier text in History.
+  compare={preview:'p'.repeat(32),changes:[{kind:'changed',part:'bbbbbbbb',name:'Second part',before:'Second text.',after:'Second text, as accepted.'}],refused:[],waiting:0,ready:true,said:null};
+  await press(descendants(actions().find(n=>/desk-google-menu/.test(n.className||''))),'Bring accepted changes');
+  assert.ok(sheet().some(n=>n.textContent==='Second part')&&sheet().some(n=>n.textContent==='Changed in the Doc'));
+  await press(sheet(),'Bring 1 part to the desk');
+  assert.deepEqual(took,{id:'desk-blog',preview:'p'.repeat(32),confirmed:true});
+  assert.equal(f.get('sheet').hidden,true);
+  assert.ok(descendants(f.get('toasts')).some(n=>n.textContent==='Brought 1 part from the Google Doc. The desk’s earlier text is in History.'));
+  // Through the phone link a slow Google request is said plainly, never as a raw 504.
+  assert.equal(f.run("sDeskSlow({status:504,message:'Gateway Timeout'},'Check again.')"),'Check again.');
+  assert.equal(f.run("sDeskSlow({status:400,message:'Refused.'},'Check again.')"),'Refused.');
+  // Review mode before any check: the Doc's pending suggestions counted and explained.
+  view={...view,doc_suggestions:{count:2,marks:[]}};
+  await f.run("(async()=>{studio.desk.view=await api('desk?id=desk-blog');sReviewEnter(studio.desk);sDeskRender(studio.desk);})()");
+  assert.ok(page().some(n=>n.textContent==='2 suggestions are pending in the Google Doc. Decide them there; nothing to do here.'),'the count shows before a first check');
+  assert.ok(page().some(n=>n.dataset?.doc==='key'&&/waiting in the Google Doc\. Decide it there\./.test(descendants(n).map(c=>c.textContent).join(''))),'with the key, no hover needed');
+  // Home: a desk blog with open suggestions needs you, and says what and when.
+  f.run("studio.listing=[{id:'b1',title:'Harbour plans',flow:'desk',status:'desk',needs:['Humanize · 4 to review'],touched:new Date().toISOString(),complete:false,stages:[]},{id:'b2',title:'Quiet one',flow:'desk',status:'desk',needs:[],touched:new Date().toISOString(),complete:false,stages:[]}];studio.ordinary=[];studio.options={};sHome()");
+  assert.equal(page().find(n=>n.className==='large-title').textContent.replace(/^Good \w+\. /,''),'One thing needs you.');
+  const needs=page().find(n=>/card-needs/.test(n.className||''));
+  assert.ok(descendants(needs).some(n=>n.textContent==='Harbour plans'),'it names the blog');
+  assert.ok(descendants(needs).some(n=>n.textContent==='Humanize · 4 to review · edited just now'),'one status line with its edited time');
+  // A Doc-linked one says what waits there and when the desk last sent, as the desk does.
+  f.set('sentAt',at);f.run("studio.listing=[{id:'b3',title:'Doc one',flow:'desk',status:'desk',needs:['Doc: 2 waiting'],doc_sent:sentAt,touched:new Date().toISOString(),complete:false,stages:[]}];sHome()");
+  assert.ok(page().some(n=>n.textContent==='Doc: 2 waiting · last sent '+f.run('sDeskWhen(sentAt)')+' · edited just now'),'Home names the last send');
+  f.run('sBlogs()');
+  assert.ok(page().some(n=>n.textContent==='Doc: 2 waiting · last sent '+f.run('sDeskWhen(sentAt)')+' · edited just now'),'and so does Blogs');
+  f.run("studio.listing=[{id:'b2',title:'Quiet one',flow:'desk',status:'desk',needs:[],touched:new Date().toISOString(),complete:false,stages:[]}];sBlogs()");
+  assert.ok(!page().some(n=>n.textContent==='On the writing desk'),'Blogs says the desk once');
+  assert.ok(page().some(n=>n.textContent==='On the desk · edited just now'));
+}
 async function deskReviewDocSuggestions(){
   const sentence='Timing and context is everything.',lead='A workflow coordinate agents.\n\n![][image1]\n\n';
   // Theirs: "coordinate" for "links" where no fix of ours sits, and "context" under fix 4.
@@ -3588,13 +3836,14 @@ async function deskReviewMode(){
   assert.deepEqual(last('/api/desk-google-plan'),{id:'review-blog',mode:'auto'});
   assert.ok(words(head()).includes('3 suggestions and 2 comments go to the Google Doc. Its owner accepts or rejects each suggestion. 1 change waits for the Doc’s owner to decide the earlier suggestion in its paragraph, and goes next time.'),'every change goes: none stays here');
   assert.ok(!/stay here|cannot be suggestions/.test(words(head())));
-  for(const said of ['“is” → “are”','“.” → “. ¶ A new paragraph.”','“Gone.” is removed','Comment on “setup guide”: Link changed: “setup guide” now points to https://example.com/new.','Comment on “Plans”: Suggested title: “Plans, revised”.'])assert.ok(descendants(head()).some(n=>n.textContent===said),'it lists '+said);
+  for(const said of ['“is” → “are”','Adds a paragraph after “.”: “A new paragraph.”','Removes “Gone.”','Comment on “setup guide”: Link changed: “setup guide” now points to https://example.com/new.','Comment on “Plans”: Suggested title: “Plans, revised”.'])assert.ok(descendants(head()).some(n=>n.textContent===said),'it lists '+said);
   assert.equal(sent,0,'nothing is sent before Send');
   assert.equal(descendants(head()).filter(n=>n.tagName==='button'&&/^Send\b/.test(n.textContent)).length,1,'only the actual delivery action says Send');
   await press(head(),'Send 5 changes');
   assert.equal(sent,1,'one final approval performs one send');
   assert.deepEqual(last('/api/desk-google-send'),{id:'review-blog',plan:'g'.repeat(32),confirmed:true});
-  assert.ok(words(head()).includes('Suggestions are ready for the Doc’s owner to accept or reject.'));
+  assert.match(words(head()),/Sent 3 suggestions and 2 comments at \d{1,2}:\d\d [AP]M\. When the owner has decided them, choose Bring accepted changes\./);
+  assert.ok(!/[“"]\s*[”"]|¶/.test(words(head())),'no arrows at empty quotes and no paragraph marks');
   // 7. Check again reruns Copy edit on the current text.
   await descendants(f.get('actions')).find(n=>n.textContent==='Check again').listeners.click();
   assert.deepEqual(last('/api/desk-review'),{id:'review-blog',seen:view.revision},'Check again sends no strength: the pinned one is reused');
@@ -4293,11 +4542,11 @@ assert.ok(descendants(panel()).some(n=>n.tagName==='mark'&&n.textContent==='here
   assert.ok(descendants(thumbs).some(n=>n.textContent==='Image kept in the Google Doc'),'a kept image shows as kept in the Doc, not missing');
   assert.equal(f.run("sDeskGoogleSaid({count:3,suggestions:1,comments:2,doc_overlap:2})"),'1 suggestion and 2 comments go to the Google Doc. Its owner accepts or rejects each suggestion. 2 of these change words a Doc suggestion also changes, so they go as comments; the Doc’s suggestion stays for its owner.','the plan says which change words a Doc suggestion changes');
   assert.ok(descendants(panel()).some(n=>n.textContent==='1 suggestion and 1 comment go to the Google Doc. Its owner accepts or rejects each suggestion. 2 changes were sent before.'));
-  assert.ok(descendants(panel()).some(n=>n.textContent==='Every desk change goes to the Google Doc: words and paragraphs as suggestions its owner accepts or rejects, and a link’s address, formatting or an image as a comment.'));
+  assert.ok(descendants(panel()).some(n=>n.textContent==='Every desk change goes to the Google Doc: words and paragraphs as suggestions its owner accepts or rejects, and a link’s address, formatting or an image as a comment. Once the owner has decided them, Bring accepted changes takes the Doc’s text back to the desk.'));
   assert.ok(!descendants(panel()).some(n=>/stay here|stays here|cannot be suggestions|stays? on the desk/.test(n.textContent||'')),'nothing is said to stay on the desk');
   await inPanel('Send to Google Doc').listeners.click();
   assert.deepEqual(last('/api/desk-google-send'),{id:'desk-blog',plan:'g'.repeat(32),confirmed:true});
-  assert.ok(descendants(panel()).some(n=>n.textContent==='Suggestions are ready for the Doc’s owner to accept or reject.'));
+  assert.ok(descendants(panel()).some(n=>/^Sent 1 suggestion and 1 comment at \d{1,2}:\d\d [AP]M\. When the owner has decided them, choose Bring accepted changes\.$/.test(n.textContent||'')),'the receipt counts what went, says when and what comes next');
   // 9. On a phone the panel is a full-screen sheet over the desk.
   f.run("window.matchMedia=()=>({matches:true})");
   await inPanel('Close').listeners.click();assert.ok(!panel());
@@ -4539,7 +4788,10 @@ async function deskGoogleDoc(){
   await t.sheet().find(n=>n.textContent==='Make the Doc').listeners.click();
   assert.deepEqual(t.requests.find(r=>r.url==='/api/desk-google-open').data,{id:'desk-blog',expected:'session-v1',confirmed:true});
   assert.equal(t.f.get('sheet').hidden,true);
-  const doc=actions().find(n=>n.textContent==='Google Doc ↗');assert.ok(doc,'the linked Doc opens from the toolbar');
+  // The linked Doc is a small menu: Open, Check what would be sent, Bring accepted changes.
+  const menu=actions().find(n=>n.tagName==='details'&&/desk-google-menu/.test(n.className));assert.ok(menu,'the linked Doc opens from the toolbar');
+  assert.deepEqual(descendants(menu).filter(n=>/menu-item/.test(n.className)).map(n=>n.textContent),['Open the Google Doc ↗','Check what would be sent','Bring accepted changes']);
+  assert.equal(descendants(menu).find(n=>n.textContent==='Open the Google Doc ↗').href,'https://docs.google.com/document/d/made/edit');
   assert.ok(!actions().some(n=>n.textContent==='Make a Google Doc'));
   await t.f.run("sDeskFinishOpen(studio.desk,'publish')");
   assert.ok(descendants(panel()).some(n=>n.textContent==='Check what would be sent'),'suggestions go to the new Doc');
@@ -4683,15 +4935,15 @@ async function deskPublishKeeps(){
   let view=deskView(),library={id:'kept',revision:1};
   const t=deskStartFixture((url,data)=>{
     if(url.startsWith('/api/desk?'))return view;
-    if(url==='/api/schedule'){view={...view,publication:data.publication_url,expected:'session-v2'};return {id:'desk-blog',receipts:[],library};}
+    if(url==='/api/schedule'){view={...view,publication:data.publication_url,expected:'session-v2'};return {id:'desk-blog',receipts:[],library,...(library.id?{document_library:{state:'kept',document:'d1',revision:1}}:{})};}
     return null;
   });
   const actions=()=>descendants(t.f.get('actions')),toasts=()=>descendants(t.f.get('toasts')).map(n=>n.textContent);
-  for(const [kept,said] of [[{id:'kept',revision:1},'Recorded as published. Nothing was posted anywhere. Its draft is kept in the team library.'],[{reason:'it could not be saved here.'},'Recorded as published. Nothing was posted anywhere. Not kept in the team library: it could not be saved here.']]){
+  for(const [kept,said] of [[{id:'kept',revision:1},'Recorded as published. Nothing was posted anywhere. Its draft is kept in the team library. A copy is in the Document Library on this computer.'],[{reason:'it could not be saved here.'},'Recorded as published. Nothing was posted anywhere. Not kept in the team library: it could not be saved here.']]){
     library=kept;view=deskView();t.f.get('toasts').replaceChildren();
     await t.f.run("sRoute('desk','desk-blog').then(()=>sDeskChoose(studio.desk,'full'))");
     await actions().find(n=>n.textContent==='Mark as published').listeners.click();
-    assert.ok(t.sheet().some(n=>n.textContent==='Record where this blog was published. The current text is the published one. Its draft is kept in the team library as a reference and an example of its kind of post. Marking it again updates that item.'));
+    assert.ok(t.sheet().some(n=>n.textContent==='Record where this blog was published. The current text is the published one. Its draft is kept in the team library, as a reference and an example of its kind of post, and a copy goes to the Document Library on this computer, for any studio. Marking it again updates both. Without a Team Hub, the team library is on this computer only.'),'both places are named, and what team means without a Hub');
     assert.ok(t.sheet().some(n=>n.textContent==='Cancel'));
     t.type('desk-publication','https://example.com/post');
     await t.sheet().find(n=>n.textContent==='Mark as published'&&n.listeners.click).listeners.click();
