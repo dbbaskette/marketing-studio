@@ -6,11 +6,18 @@
 //   new StudioLibrary.Catalog(adapter).node   -> browsing only (Marketing Studio)
 //
 // adapter: {studio, post(route, body) -> Promise of the answer, use(picks) -> Promise,
-//           roles: [[value, label]] (optional), max (optional), download(row, format)}
-// `post` is sent 'library', 'library-document', 'library-filters' or 'library-matching'.
+//           roles: [[value, label]] (optional), max (optional), download(row, format),
+//           manage (optional: Remove from library, Show hidden and Restore), said(text)}
+// `post` is sent 'library', 'library-document', 'library-filters' or 'library-matching',
+// and with `manage` also 'library-hide' ({id, hidden}).
 //
 // Browsing chooses nothing: a remembered filter is only a filter, and a project's context
 // changes only when Use selected succeeds. Cancel and Escape change nothing.
+//
+// Each row has one action, Preview, which opens the document's preview just below its row;
+// the downloads (and, with `manage`, Remove from library or Restore) are in the preview, and
+// Close preview returns to the row's Preview. On a phone only the search shows, with a
+// Filters button that opens the rest and counts those set.
 (function () {
   'use strict';
 
@@ -30,6 +37,14 @@
     return node;
   };
   const message = (error) => (error && error.message) || String(error || 'The library could not be read.');
+  const FORMATS = { markdown: 'Markdown', original: 'original', pdf: 'PDF' };
+  const SET = ['kind', 'studio', 'origin', 'state', 'author'];   // what Filters counts
+  // Focus a control and bring it into view without jumping further than needed.
+  const land = (node) => {
+    if (!node) return;
+    node.focus();
+    if (node.scrollIntoView) node.scrollIntoView({ block: 'nearest' });
+  };
   const day = (stamp) => {
     const when = stamp ? new Date(stamp) : null;
     return when && !isNaN(when) ? when.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : '';
@@ -68,7 +83,12 @@
       this.turn = 0;                    // only the newest load's answer is drawn
       this.ns = 'doclib' + (++instances) + '-';
       this.typed = { query: '', author: '' };   // typed, not yet searched: kept across redraws
-      this.preview = null;
+      this.preview = null;              // {row, found | problem | loading, confirming, failed}
+      this.manage = Boolean(adapter.manage) && !this.selectable;
+      this.showHidden = false;          // Marketing Studio's Show hidden
+      this.filtersOpen = false;         // a phone's Filters
+      this.moreOpen = null;             // More filters, once the person opened or closed it
+      this.focusAfter = null;           // a control's key to land on once a load is drawn
       this.onChange = options.onChange || (() => {});
       this.node = make('section', 'library-catalog stack');
       this.node.setAttribute('aria-label', 'Document Library');
@@ -81,6 +101,7 @@
       this.render();
       try {
         const sent = { filters: this.sent(), offset: this.offset, limit: PAGE };
+        if (this.showHidden) sent.hidden = true;
         const answer = await this.a.post('library', sent);
         if (turn !== this.turn) return;           // a newer load answers instead
         if (this.first && answer.remembered && Object.keys(answer.remembered).length) {
@@ -91,6 +112,12 @@
         this.first = false;
         this.answer = answer;
         this.problem = '';
+        // A preview stays open while its document is still on this page, with its new row.
+        if (this.preview) {
+          const again = (answer.items || []).find((row) => row.id === this.preview.row.id);
+          if (again) this.preview.row = again;
+          else this.preview = null;
+        }
       } catch (error) {
         if (turn === this.turn) this.problem = message(error);
       } finally {
@@ -98,6 +125,11 @@
           this.loading = false;
           this.render();
           this.onChange();      // the selection bar counts what this page no longer shows
+          if (this.focusAfter) {
+            const key = this.focusAfter;
+            this.focusAfter = null;
+            land(this.node.querySelector('[data-key="' + key + '"]') || this.node.querySelector('[data-key="library-count"]'));
+          }
         }
       }
     }
@@ -116,17 +148,56 @@
       this.load();
     }
 
+    // Preview opens below its row, and pressing Preview again closes it.
     async show(row) {
-      this.preview = { row, loading: true };
+      if (this.preview && this.preview.row.id === row.id) { this.closePreview(); return; }
+      const opened = { row, loading: true };
+      this.preview = opened;
       this.render();
       try {
-        this.preview = { row, found: await this.a.post('library-document', { id: row.id, revision: row.revision }) };
+        Object.assign(opened, { loading: false, found: await this.a.post('library-document', { id: row.id, revision: row.revision }) });
       } catch (error) {
-        this.preview = { row, problem: message(error) };
+        Object.assign(opened, { loading: false, problem: message(error) });
       }
+      if (this.preview !== opened) return;      // closed, or another opened, meanwhile
       this.render();
-      const heading = this.node.querySelector('.library-preview h3');
-      if (heading) heading.focus();
+      land(this.node.querySelector('[data-key="library-preview-heading"]'));
+    }
+
+    // Back to the row's Preview, in view, so the person keeps their place.
+    closePreview() {
+      const id = this.preview && this.preview.row.id;
+      this.preview = null;
+      this.render();
+      if (id) land(this.node.querySelector('[data-key="library-preview-' + id + '"]'));
+    }
+
+    // Remove from library (hidden) or Restore. Nothing is deleted: the server only hides the
+    // document from browsing and from every studio's Add from library.
+    async hide(row, hidden) {
+      const held = this.preview;
+      if (!held || held.busy) return;
+      held.busy = true; held.failed = '';
+      this.render();
+      try {
+        await this.a.post('library-hide', { id: row.id, hidden });
+      } catch (error) {
+        held.busy = false; held.failed = message(error);
+        if (this.preview === held) this.render();
+        return;
+      }
+      const items = (this.answer && this.answer.items) || [];
+      const at = items.findIndex((one) => one.id === row.id);
+      const stays = !hidden || this.showHidden;
+      const next = stays ? row : (items[at + 1] || items[at - 1]);
+      this.preview = null;
+      this.focusAfter = next ? 'library-preview-' + next.id : 'library-count';
+      if (this.a.said) {
+        this.a.said(hidden
+          ? '“' + row.title + '” was removed from the library. Projects that use it keep their copy.'
+          : '“' + row.title + '” is back in the library.');
+      }
+      await this.load();
     }
 
     tick(row, on) {
@@ -158,7 +229,7 @@
     filterRow() {
       const labels = this.answer || {};
       const options = (map, all) => [['', all], ...Object.entries(map || {})];
-      const form = make('form', 'filter-bar');
+      const form = make('form', 'filter-bar' + (this.filtersOpen ? ' filters-open' : ''));
       form.setAttribute('role', 'search');
       form.noValidate = true;
       const title = make('label', 'field-label', 'Search');
@@ -174,13 +245,25 @@
       box.addEventListener('input', () => { this.typed.query = box.value; });
       const go = make('button', 'button', 'Search');
       go.type = 'submit';
-      add(form, add(make('div', 'field search'), title, box),
+      go.dataset.key = 'library-search';
+      // On a phone only the search shows; Filters opens the rest (ui-kit's .filters-toggle,
+      // as deck_web/lists.js draws it) and counts those set, remembered ones included.
+      const set = SET.filter((key) => this.filters[key]).length;
+      const toggle = button(set ? 'Filters (' + set + ')' : 'Filters', 'button filters-toggle', () => {
+        this.filtersOpen = !this.filtersOpen;
+        this.render();
+      }, 'library-filters-toggle');
+      toggle.setAttribute('aria-expanded', String(this.filtersOpen));
+      add(form, add(make('div', 'field search'), title, box), toggle,
         choice(this.ns, 'kind', 'Type', options(labels.kinds, 'All types'), this.filters.kind, (k, v) => this.changed(k, v)),
         choice(this.ns, 'studio', 'From', options(labels.studios, 'All studios'), this.filters.studio, (k, v) => this.changed(k, v)),
         go);
       const more = make('details', 'more-filters');
       more.dataset.key = 'library-more';
-      more.open = Boolean(this.filters.origin || this.filters.state || this.filters.author);
+      // Filters opens Origin, Status and Author too; otherwise it stays as the person left it.
+      more.open = this.filtersOpen || (this.moreOpen !== null ? this.moreOpen
+        : Boolean(this.filters.origin || this.filters.state || this.filters.author));
+      more.addEventListener('toggle', () => { if (!this.filtersOpen) this.moreOpen = more.open; });
       const authorTitle = make('label', 'field-label', 'Author');
       authorTitle.htmlFor = this.ns + 'author';
       const author = make('input', 'input');
@@ -215,6 +298,7 @@
       if (row.revision > 1) text.append(make('span', 'quiet', 'Revision ' + row.revision));
       if (!row.readable) text.append(add(make('span', 'problem'), make('span', 'tag', row.state_label), ' ' + (row.problem || '')));
       if (row.pdf === 'needs-export') text.append(make('span', 'quiet', 'PDF needs export. ' + (row.pdf_note || '')));
+      if (row.hidden) text.append(add(make('span', 'quiet'), make('span', 'tag', 'Hidden'), ' Not listed or offered in Add from library.'));
       if (this.selectable) {
         const tick = make('label', 'check library-tick');
         const box = make('input');
@@ -228,8 +312,12 @@
       } else {
         item.append(text);
       }
-      const actions = add(make('div', 'bar library-row-actions'),
-        button('Preview', 'button button-quiet', () => this.show(row), 'library-preview-' + row.id));
+      // One action a row: Preview, which holds the downloads (and Remove from library).
+      const open = Boolean(this.preview && this.preview.row.id === row.id);
+      const look = button('Preview', 'button button-quiet', () => this.show(row), 'library-preview-' + row.id);
+      look.setAttribute('aria-expanded', String(open));
+      look.setAttribute('aria-label', 'Preview ' + row.title);
+      const actions = add(make('div', 'bar library-row-actions'), look);
       if (on && this.a.roles) {
         const held = this.ticked.get(row.id);
         const select = make('select', 'input');
@@ -240,33 +328,79 @@
         select.addEventListener('change', () => { held.role = select.value; });
         actions.prepend(select);
       }
-      if (!this.selectable && this.a.download) {
-        for (const format of row.formats || []) {
-          actions.append(button('Download ' + ({ markdown: 'Markdown', original: 'original', pdf: 'PDF' })[format], 'button button-quiet',
-            () => this.a.download(row, format), 'library-download-' + format + '-' + row.id));
-        }
-      }
       return add(item, actions);
     }
 
+    // The preview, in its own list item just below its row: the text, then every download,
+    // then (Marketing Studio) Remove from library or Restore, confirmed in place.
     previewPart() {
       if (!this.preview) return null;
-      const { row, found, problem, loading } = this.preview;
-      const part = make('section', 'library-preview paper');
+      const held = this.preview;
+      const { row, found, problem, loading } = held;
+      const part = make('section', 'library-preview');
+      const headingId = this.ns + 'preview-title';
+      part.setAttribute('aria-labelledby', headingId);
       const heading = make('h3', '', row.title);
+      heading.id = headingId;
       heading.tabIndex = -1;
+      heading.dataset.key = 'library-preview-heading';
       const head = add(make('div', 'panel-heading'), heading,
-        button('Close preview', 'button button-quiet', () => { this.preview = null; this.render(); }, 'library-preview-close'));
+        button('Close preview', 'button button-quiet', () => this.closePreview(), 'library-preview-close'));
       part.append(head);
       if (loading) part.append(make('p', 'quiet', 'Reading the document…'));
       if (problem) part.append(make('p', 'problem', problem));
       if (found) {
         if (!found.readable) part.append(make('p', 'problem', found.problem || 'It has no readable text.'));
         for (const gap of found.gaps || []) part.append(make('p', 'quiet', gap));
-        if (found.text) part.append(make('pre', 'library-preview-text', found.text));
+        if (found.text) {
+          const passage = make('pre', 'library-preview-text', found.text);
+          passage.tabIndex = 0;     // it scrolls, so the keyboard can scroll it
+          passage.setAttribute('aria-label', 'Text of ' + row.title);
+          part.append(passage);
+        }
         if (found.truncated) part.append(make('p', 'quiet', 'Only the beginning is shown here: ' + found.characters.toLocaleString() + ' characters in all.'));
       }
+      const formats = (found && found.formats) || row.formats || [];
+      if (!this.selectable && this.a.download && formats.length) {
+        part.append(add(make('div', 'bar library-preview-actions'), ...formats.map((format) =>
+          button('Download ' + FORMATS[format], 'button button-quiet', () => this.a.download(row, format), 'library-download-' + format + '-' + row.id))));
+      }
+      if (this.manage && !loading) part.append(this.removal(held));
       return part;
+    }
+
+    // Remove from library says what it does before it does it; Restore undoes it.
+    removal(held) {
+      const { row } = held;
+      const part = make('div', 'library-removal');
+      if (held.failed) {
+        const said = make('p', 'problem', held.failed);
+        said.setAttribute('role', 'alert');
+        part.append(said);
+      }
+      if (row.hidden) {
+        const restore = button(held.busy ? 'Restoring…' : 'Restore to library', 'button button-quiet', () => this.hide(row, false), 'library-restore-' + row.id);
+        restore.disabled = Boolean(held.busy);
+        return add(part, make('p', 'quiet', 'Removed from the library: it is not listed here or offered in any studio’s Add from library. Projects that already use it keep their copy.'),
+          add(make('div', 'bar'), restore));
+      }
+      if (!held.confirming) {
+        return add(part, add(make('div', 'bar'), button('Remove from library…', 'button button-quiet', () => {
+          held.confirming = true;
+          this.render();
+          land(this.node.querySelector('[data-key="library-remove-cancel"]'));
+        }, 'library-remove-' + row.id)));
+      }
+      const said = make('p', '', 'Remove “' + row.title + '” from the library? It will no longer be listed here or offered in any studio’s Add from library. Nothing is deleted: every revision is kept, projects that already use it keep their copy and keep working, and no studio workspace is changed. Show hidden can restore it.');
+      said.setAttribute('role', 'status');
+      const go = button(held.busy ? 'Removing…' : 'Remove from library', 'button button-danger', () => this.hide(row, true), 'library-remove-confirm');
+      const keep = button('Keep it', 'button button-quiet', () => {
+        held.confirming = false; held.failed = '';
+        this.render();
+        land(this.node.querySelector('[data-key="library-remove-' + row.id + '"]'));
+      }, 'library-remove-cancel');
+      go.disabled = keep.disabled = Boolean(held.busy);
+      return add(part, said, add(make('div', 'bar'), go, keep));
     }
 
     render() {
@@ -278,7 +412,20 @@
       const items = (answer && answer.items) || [];
       const heading = make('div', 'panel-heading');
       const total = answer ? answer.total : 0;
-      heading.append(make('h3', '', answer ? (total === 1 ? '1 document' : total + ' documents') : 'Documents'));
+      const count = make('h3', '', answer ? (total === 1 ? '1 document' : total + ' documents') : 'Documents');
+      count.tabIndex = -1;
+      count.dataset.key = 'library-count';
+      heading.append(count);
+      // Show hidden lists what Remove from library hid, so it can be restored.
+      if (this.manage && answer && (answer.hidden || this.showHidden)) {
+        const shown = make('label', 'check select-page');
+        const box = make('input');
+        box.type = 'checkbox';
+        box.dataset.key = 'library-show-hidden';
+        box.checked = this.showHidden;
+        box.addEventListener('change', () => { this.showHidden = box.checked; this.offset = 0; this.load(); });
+        heading.append(add(shown, box, make('span', '', 'Show hidden (' + (answer.hidden || 0) + ')')));
+      }
       if (this.selectable && items.length) {
         const shown = items.filter((row) => row.readable);
         const some = shown.filter((row) => this.ticked.has(row.id)).length;
@@ -298,7 +445,11 @@
       if (this.loading && !answer) list.append(make('li', 'quiet', 'Loading the library…'));
       else if (answer && !answer.available) list.append(make('li', answer.problem ? 'problem' : 'quiet', answer.problem || 'Nothing has been kept in the Document Library yet. Uploads, finished blogs and delivered decks appear here.'));
       else if (answer && !items.length) list.append(make('li', 'quiet', 'No documents match these filters.'));
-      for (const row of items) list.append(this.row(row));
+      const preview = this.previewPart();
+      for (const row of items) {
+        list.append(this.row(row));
+        if (preview && this.preview.row.id === row.id) list.append(add(make('li', 'library-preview-item'), preview));
+      }
       parts.push(list);
       if (answer && total > PAGE) {
         const end = Math.min(total, this.offset + items.length);
@@ -309,8 +460,6 @@
         parts[parts.length - 1].querySelector('[data-key="library-previous"]').disabled = this.offset === 0;
         parts[parts.length - 1].querySelector('[data-key="library-next"]').disabled = end >= total;
       }
-      const preview = this.previewPart();
-      if (preview) parts.splice(1, 0, preview);
       this.node.replaceChildren(...parts);
       if (focused) { const again = this.node.querySelector('[data-key="' + focused + '"]'); if (again) again.focus(); }
     }

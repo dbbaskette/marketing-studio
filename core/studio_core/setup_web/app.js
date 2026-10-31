@@ -112,6 +112,8 @@ function show(next) {
   $('#step-label').hidden = true;
   // This computer's one action is its toolbar's.
   $('#check').hidden = view !== 'computer';
+  // The Library's one filled action is its toolbar's too: Add documents.
+  $('#library-add-open').hidden = view !== 'library';
   $('#setup-progress').hidden = !setup;
   $('#setup-progress').querySelectorAll('li').forEach((node, index) => {
     if (index === step) node.setAttribute('aria-current', 'step'); else node.removeAttribute('aria-current');
@@ -776,8 +778,9 @@ function openNative() {
   // Setup can be served at the native root. A fragment change alone keeps its DOM.
   if (samePage) location.reload();
 }
-// The Document Library screen: browse, preview, download and add uploads. It selects
-// nothing for a project; each studio's Add from library does that for its own work.
+// The Document Library screen: the list first, Add documents as the toolbar's one filled
+// action, and Add existing work beside the lede. It selects nothing for a project; each
+// studio's Add from library does that for its own work.
 let libraryCatalog = null;
 function libraryKit() {
   if (window.StudioLibrary) return Promise.resolve();
@@ -789,6 +792,15 @@ function libraryKit() {
     document.head.append(script);
   });
 }
+// Add existing work is a one-time step: prominent until something has been added from a
+// studio's workspace, then a quiet button.
+function libraryIntake(answer) {
+  if (!answer) return;
+  const imported = Boolean(answer.imported);
+  $('#library-existing-open').className = imported ? 'button button-quiet' : 'button';
+  $('#library-existing-hint').hidden = imported;
+  if (answer.location) $('#library-where').textContent = `Kept in ${answer.location} on this computer.`;
+}
 async function openLibrary() {
   if (standalone) return;
   try {
@@ -796,6 +808,8 @@ async function openLibrary() {
     if (!libraryCatalog) {
       libraryCatalog = new window.StudioLibrary.Catalog({
         studio: 'marketing',
+        manage: true,      // Remove from library, Show hidden and Restore
+        said: message => inform(message),
         post: (route, body) => api(route, body),
         download: async (row, format) => {
           try {
@@ -807,13 +821,32 @@ async function openLibrary() {
             setTimeout(() => URL.revokeObjectURL(link.href), 1000);
           } catch (error) { inform(error.message, true); }
         },
-      });
+      }, {onChange: () => libraryIntake(libraryCatalog && libraryCatalog.answer)});
       $('#library-catalog').replaceChildren(libraryCatalog.node);
     } else void libraryCatalog.load();
-    const where = (libraryCatalog.answer || {}).location;
-    if (where) $('#library-where').textContent = `Kept in ${where} on this computer.`;
   } catch (error) { inform(error.message, true); }
 }
+// The Library's two sheets. Escape and Close return focus to what opened them; neither
+// closes while its work is landing.
+const librarySheets = {busy: false};
+function openLibrarySheet(dialog, opener, first) {
+  dialog.returnTo = opener;
+  dialog.showModal();
+  if (first) first.focus();
+}
+function closeLibrarySheet(dialog) { if (!librarySheets.busy) dialog.close(); }
+for (const dialog of [$('#library-add-sheet'), $('#library-existing')]) {
+  dialog.addEventListener('cancel', event => { if (librarySheets.busy) event.preventDefault(); });
+  dialog.addEventListener('close', () => {
+    const back = dialog.returnTo;
+    if (back && document.body.contains(back) && !back.hidden) back.focus();
+  });
+}
+$('#library-existing-open').addEventListener('click', () => {
+  $('#library-existing-result').replaceChildren();
+  openLibrarySheet($('#library-existing'), $('#library-existing-open'), $('#library-existing-preview'));
+});
+$('#library-existing-close').addEventListener('click', () => closeLibrarySheet($('#library-existing')));
 // Add existing work to library: a preview of what the studios' remembered workspaces hold,
 // then an import only when it is confirmed. The confirm carries the preview's signature, so
 // it adds exactly what was shown or refuses when the workspaces changed since.
@@ -838,6 +871,7 @@ function showExisting(found) {
   const said = element('p', found.adding ? `${found.adding === 1 ? '1 item' : `${found.adding} items`} can be added. Nothing is added until you confirm.`
     : found.total ? 'Everything found is already in the library.' : 'No existing work was found to add.', 'quiet');
   said.setAttribute('role', 'status');
+  said.tabIndex = -1; said.id = 'library-existing-said';
   const parts = [said, element('h4', 'Workspaces', 'card-subtitle'), places];
   if (found.total) {
     const counts = [found.new && `${found.new} new`, found.changed && `${found.changed} with a newer revision`,
@@ -868,7 +902,7 @@ function showExisting(found) {
 }
 async function adoptExisting(signature, button) {
   const box = $('#library-existing-result'), label = button.textContent;
-  button.disabled = true; button.textContent = 'Adding…';
+  button.disabled = true; button.textContent = 'Adding…'; librarySheets.busy = true;
   try {
     const done = await api('library-adopt', {signature});
     const said = [done.added && `${done.added} added`, done.revised && `${done.revised} with a new revision`,
@@ -886,45 +920,94 @@ async function adoptExisting(signature, button) {
     problem.setAttribute('role', 'alert');
     box.prepend(problem);
     button.disabled = false; button.textContent = label;
-  }
+  } finally { librarySheets.busy = false; }
 }
+// The button is disabled while the preview loads, so focus moves to what it found.
 $('#library-existing-preview').addEventListener('click', async () => {
   const button = $('#library-existing-preview');
   button.disabled = true;
   try { showExisting(await api('library-existing', {})); }
-  catch (error) { $('#library-existing-result').replaceChildren(element('p', error.message, 'problem')); }
+  catch (error) {
+    const problem = element('p', error.message, 'problem');
+    problem.setAttribute('role', 'alert'); problem.tabIndex = -1; problem.id = 'library-existing-said';
+    $('#library-existing-result').replaceChildren(problem);
+  }
   finally { button.disabled = false; }
+  const result = $('#library-existing-said');
+  if (result) result.focus();
 });
-// One operation ID per file until it is kept, so trying again never keeps it twice.
-const libraryOperations = new Map();
+// Add documents: each file is added on its own and reported by name, and a refusal never
+// stops the rest. A file keeps its operation ID for as long as this page is open, so a retry
+// (or choosing it again) is the same upload and never keeps it twice; what was added leaves
+// the selection, so Add to library again tries only what was refused.
+const libraryOperations = new Map(), libraryKept = new Map();
+const fileKey = file => [file.name, file.size, file.lastModified].join('|');
 function operationId(file) {
-  const key = [file.name, file.size, file.lastModified].join('|');
+  const key = fileKey(file);
   if (!libraryOperations.has(key)) {
     const bytes = new Uint8Array(16); crypto.getRandomValues(bytes);
     libraryOperations.set(key, [...bytes].map(b => b.toString(16).padStart(2, '0')).join(''));
   }
   return libraryOperations.get(key);
 }
-$('#library-add').addEventListener('click', async () => {
-  const files = [...$('#library-files').files];
-  if (!files.length) { $('#library-where').textContent = 'Choose one or more files first.'; return; }
-  const button = $('#library-add'); button.disabled = true;
-  let added = 0;
+async function uploadOne(file) {
+  const key = fileKey(file);
+  if (libraryKept.has(key)) return {state: 'already', detail: `Already added as “${libraryKept.get(key)}”, so it was not added again.`};
+  if (file.size > 8_000_000) return {state: 'refused', detail: 'It is larger than 8 MB, the most one document can be.'};
   try {
-    for (const file of files) {
-      if (file.size > 8_000_000) { inform(`${file.name} is larger than 8 MB, so it was not added.`, true); continue; }
-      const bytes = new Uint8Array(await file.arrayBuffer()); let binary = '';
-      for (let i = 0; i < bytes.length; i += 8192) binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
-      const found = await api('library-upload', {operation: operationId(file), name: file.name, content: btoa(binary)});
-      libraryOperations.delete([file.name, file.size, file.lastModified].join('|'));
-      added++;
-      $('#library-where').textContent = `Kept in ${found.location} on this computer.`;
-      if (!found.document.readable) inform(`${found.document.title}: ${found.document.problem}`);
-    }
-    if (added) inform(added === 1 ? 'Added 1 document to the library.' : `Added ${added} documents to the library.`);
-    $('#library-files').value = '';
-  } catch (error) { inform(error.message, true); }
-  finally { button.disabled = false; if (libraryCatalog) void libraryCatalog.load(); }
+    const bytes = new Uint8Array(await file.arrayBuffer()); let binary = '';
+    for (let i = 0; i < bytes.length; i += 8192) binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
+    const found = await api('library-upload', {operation: operationId(file), name: file.name, content: btoa(binary)});
+    const kept = found.document;
+    libraryKept.set(key, kept.title);
+    $('#library-where').textContent = `Kept in ${found.location} on this computer.`;
+    if (kept.already) return {state: 'already', detail: `Already in the library as “${kept.title}”${kept.restored ? ', and shown again: it had been removed' : ''}.`};
+    const note = kept.restored ? ' It had been removed from the library and is shown again.' : '';
+    return {state: 'added', detail: kept.readable ? `Added as “${kept.title}”.${note}` : `Added as “${kept.title}”, but ${kept.problem}${note}`};
+  } catch (error) { return {state: 'refused', detail: error.message}; }
+}
+$('#library-add-open').addEventListener('click', () => {
+  $('#library-add-results').replaceChildren();
+  $('#library-add-cancel').textContent = 'Cancel';
+  openLibrarySheet($('#library-add-sheet'), $('#library-add-open'), $('#library-files'));
+});
+for (const id of ['#library-add-close', '#library-add-cancel']) $(id).addEventListener('click', () => closeLibrarySheet($('#library-add-sheet')));
+$('#library-add').addEventListener('click', async () => {
+  const input = $('#library-files'), box = $('#library-add-results'), button = $('#library-add');
+  const files = [...input.files];
+  if (librarySheets.busy) return;
+  if (!files.length) {
+    const said = element('p', 'Choose one or more files first.', 'problem'); said.setAttribute('role', 'alert');
+    box.replaceChildren(said); input.focus(); return;
+  }
+  librarySheets.busy = true; button.disabled = true; button.textContent = 'Adding…';
+  const outcomes = [];
+  try { for (const file of files) outcomes.push({file, ...await uploadOne(file)}); }
+  finally { librarySheets.busy = false; button.disabled = false; button.textContent = 'Add to library'; }
+  const refused = outcomes.filter(one => one.state === 'refused');
+  try {
+    const left = new DataTransfer();
+    for (const one of refused) left.items.add(one.file);
+    input.files = left.files;
+  } catch (error) { if (!refused.length) input.value = ''; }
+  const count = state => outcomes.filter(one => one.state === state).length;
+  const added = count('added'), already = count('already');
+  const said = element('p', [added && `${added} added`, already && `${already} already in the library`,
+    refused.length && `${refused.length} not added`].filter(Boolean).join(', ') + '.', '');
+  said.setAttribute('role', 'status'); said.tabIndex = -1;
+  const list = element('ul', '', 'library-list');
+  list.setAttribute('aria-label', 'Files');
+  for (const one of outcomes) {
+    list.append(existingRow(one.file.name, [[one.detail, one.state === 'refused' ? 'problem' : 'quiet']],
+      ({added: 'Added', already: 'Already there', refused: 'Not added'})[one.state]));
+  }
+  const parts = [said, list];
+  if (refused.length) parts.push(element('p', 'The files not added are still chosen. Fix them, or choose others, then add again; what was added is not added twice.', 'field-hint quiet'));
+  box.replaceChildren(...parts);
+  if (added || already) $('#library-add-cancel').textContent = 'Done';
+  said.focus();
+  if (added) inform(added === 1 ? 'Added 1 document to the library.' : `Added ${added} documents to the library.`);
+  if (libraryCatalog) void libraryCatalog.load();
 });
 modelPicker(form.elements['assistant.model'], 'Shared model');
 $('#refresh-models').addEventListener('click', () => loadModels(true));

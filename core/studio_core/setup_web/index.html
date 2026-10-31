@@ -21,7 +21,7 @@
     <p class="sidebar-foot">One place to get ready.<br>Four places to create.</p>
   </nav>
   <div class="content">
-    <div class="toolbar-wrap"><header class="toolbar glass"><div class="toolbar-title"><h1 id="view-title" class="title" tabindex="-1">Studios</h1></div><div class="toolbar-actions"><button type="button" id="back-to-studio" class="button button-quiet" hidden>Back</button><span id="where" class="tag">On this computer</span><button id="check" type="button" class="button button-filled" hidden>Check computer</button></div></header></div>
+    <div class="toolbar-wrap"><header class="toolbar glass"><div class="toolbar-title"><h1 id="view-title" class="title" tabindex="-1">Studios</h1></div><div class="toolbar-actions"><button type="button" id="back-to-studio" class="button button-quiet" hidden>Back</button><span id="where" class="tag">On this computer</span><button id="check" type="button" class="button button-filled" hidden>Check computer</button><button id="library-add-open" type="button" class="button button-filled" aria-haspopup="dialog" hidden>Add documents</button></div></header></div>
     <p id="problem" class="notice" role="alert" hidden></p>
     <main id="content" class="page" tabindex="-1">
       <p id="announce" class="offscreen" role="status" aria-live="polite"></p>
@@ -143,22 +143,29 @@
         </form>
       </section>
       <section id="library" class="stack" hidden>
-        <div class="intro"><h2 class="large-title">Document Library</h2><p class="lede">Uploads and finished work, kept once on this computer for any studio to use.</p></div>
-        <section id="library-intake" class="card" aria-labelledby="library-intake-heading">
-          <h3 id="library-intake-heading" class="card-title">Add documents</h3>
-          <p class="quiet">Text, Markdown, HTML, Word (.docx) or PDF, up to 8 MB each. Each file is kept as it is, with its readable text as Markdown. Nothing is shared with your team, and no reading of pictures, summary or assistant job starts.</p>
-          <div class="field"><label class="field-label" for="library-files">Files</label><input id="library-files" class="input" type="file" multiple accept=".txt,.md,.html,.htm,.docx,.pdf"></div>
-          <div class="bar"><button type="button" id="library-add" class="button button-filled">Add to library</button></div>
-          <p id="library-where" class="field-hint quiet" role="status"></p>
-        </section>
-        <section id="library-existing" class="card" aria-labelledby="library-existing-heading">
-          <h3 id="library-existing-heading" class="card-title">Add existing work to library</h3>
-          <p class="quiet">Work kept before the library existed, such as finished blogs and uploads in Blog Studio’s team library. Only the workspace each studio remembers on this computer is read. Preview first: nothing is added until you confirm, no other folder is searched, no studio is started, and nothing in a workspace is moved or changed.</p>
-          <div class="bar"><button type="button" id="library-existing-preview" class="button">Preview existing work</button></div>
-          <div id="library-existing-result" class="stack library-existing"></div>
-        </section>
-        <p class="quiet">Choosing documents for a blog, presentation or training happens in that studio, under Add from library. Browsing here selects nothing.</p>
+        <div class="intro"><h2 class="large-title">Document Library</h2>
+          <div class="page-head"><p class="lede">Uploads and finished work, kept once on this computer for any studio to use.</p><div class="bar"><button type="button" id="library-existing-open" class="button" aria-haspopup="dialog">Add existing work</button></div></div>
+          <p id="library-existing-hint" class="quiet">Finished blogs and uploads kept in Blog Studio’s team library before the library existed can be added with Add existing work.</p>
+        </div>
         <div id="library-catalog"></div>
+        <p class="quiet">Choosing documents for a blog, presentation or training happens in that studio, under Add from library. Browsing here selects nothing. <span id="library-where"></span></p>
+        <dialog id="library-add-sheet" class="dialog" aria-labelledby="library-add-title">
+          <header class="dialog-header"><h2 id="library-add-title">Add documents</h2><button type="button" id="library-add-close" class="button button-quiet">Close</button></header>
+          <div class="dialog-content">
+            <p class="quiet">Text, Markdown, HTML, Word (.docx) or PDF, up to 8 MB each. Each file is kept as it is, with its readable text as Markdown. Nothing is shared with your team, and no reading of pictures, summary or assistant job starts.</p>
+            <div class="field"><label class="field-label" for="library-files">Files</label><input id="library-files" class="input" type="file" multiple accept=".txt,.md,.html,.htm,.docx,.pdf"><p class="field-hint quiet">Each file is added on its own and reported by name. A file already in the library is not added again.</p></div>
+            <div id="library-add-results" class="library-results"></div>
+            <div class="create-foot bar"><button type="button" id="library-add" class="button button-filled">Add to library</button><button type="button" id="library-add-cancel" class="button button-quiet">Cancel</button></div>
+          </div>
+        </dialog>
+        <dialog id="library-existing" class="dialog" aria-labelledby="library-existing-heading">
+          <header class="dialog-header"><h2 id="library-existing-heading">Add existing work to library</h2><button type="button" id="library-existing-close" class="button button-quiet">Close</button></header>
+          <div class="dialog-content">
+            <p class="quiet">Work kept before the library existed, such as finished blogs and uploads in Blog Studio’s team library. Only the workspace each studio remembers on this computer is read. Preview first: nothing is added until you confirm, no other folder is searched, no studio is started, and nothing in a workspace is moved or changed.</p>
+            <div class="bar"><button type="button" id="library-existing-preview" class="button">Preview existing work</button></div>
+            <div id="library-existing-result" class="stack library-existing"></div>
+          </div>
+        </dialog>
       </section>
       <section id="computer" class="stack" hidden>
         <div class="intro"><h2 class="large-title">This computer</h2><p class="lede">Check the tools your studios need on this computer.</p></div>

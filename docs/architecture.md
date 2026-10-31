@@ -72,7 +72,10 @@ Add existing work to library (`adopt.py`) is offered only on Marketing Studio's
 Library screen. The home passes it the workspace each studio remembers
 (`marketing_studio/workspaces.py`), and per-studio adapters read existing work from
 those folders without importing the studio: `blog_existing.py` reads Blog Studio's
-team library records. See [shared setup](shared-setup.md#the-document-library).
+team library records. Remove from library is also the Library screen's alone
+(`/api/library-hide`): it writes the document's own `document.json` under the
+library's lock, and the catalog, Select all matching, Update available and new pins
+leave a hidden document out. See [shared setup](shared-setup.md#the-document-library).
 
 ## Settings and launch lifecycle
 

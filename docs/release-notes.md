@@ -18,6 +18,27 @@ Download `marketing-studio-installer.zip` for the whole suite, or one studio's i
 
 Signing in to an assistant, your organisation's brands and fonts, and optional Google setup are still your choices. Installing starts no provider job.
 
+## Unreleased: a list-first Library screen, safe uploads and Remove from library
+
+- **Documents first.** Marketing Studio's **Library** screen opens on its list.
+  **Add documents** is the toolbar's one filled action and opens a sheet. **Add
+  existing work** sits beside the lede, prominent only until something has been added
+  from a studio's workspace. On a 390-pixel phone the first document is in view
+  without scrolling.
+- **Every file reported by name.** Adding several files tries each one, even after a
+  refusal, and says for each whether it was added, was already there, or was not
+  added and why, an oversize file included. What was added leaves the selection, and
+  trying again never adds a file twice.
+- **Filters on a phone.** The Library and every studio's **Add from library** sheet
+  show a **Filters** button on a phone. It opens Type, From, Origin, Status and Author
+  and counts those set.
+- **Preview where you are.** Preview opens just below its row and holds the
+  downloads, so each row has one action. Close preview returns to that row, and
+  Preview existing work moves focus to what it found.
+- **Remove from library.** A mistaken, duplicate or unreadable document can be taken
+  out of browsing and **Add from library**. Nothing is deleted: projects that use it
+  keep their copy, no studio workspace is changed, and **Show hidden** can restore it.
+
 ## Unreleased: the Document Library, existing work and Blog Studio updates
 
 - **Add existing work to library.** Marketing Studio's **Library** screen can now

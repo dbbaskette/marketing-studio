@@ -66,15 +66,18 @@ for (let i = 0; i < 30; i++) {
 }
 const requests = [];
 let remembered = { kind: 'upload' };
+const hidden = new Set();
 async function post(route, body) {
   requests.push([route, JSON.parse(JSON.stringify(body))]);
   if (route === 'library') {
     const f = body.filters || {};
-    const rows = docs.filter((d) => (!f.kind || d.kind === f.kind) && (!f.query || d.title.includes(f.query)));
+    const rows = docs.filter((d) => (!f.kind || d.kind === f.kind) && (!f.query || d.title.includes(f.query))
+      && (body.hidden || !hidden.has(d.id))).map((d) => ({ ...d, hidden: hidden.has(d.id) }));
     const answer = { available: true, items: rows.slice(body.offset, body.offset + body.limit), total: rows.length, offset: body.offset,
-      limit: body.limit, remembered, kinds: { upload: 'Uploaded document', blog: 'Blog' }, studios: { blog: 'Blog Studio' }, origins: {}, states: {} };
+      limit: body.limit, remembered, hidden: hidden.size, kinds: { upload: 'Uploaded document', blog: 'Blog' }, studios: { blog: 'Blog Studio' }, origins: {}, states: {} };
     return answer;
   }
+  if (route === 'library-hide') { if (body.hidden) hidden.add(body.id); else hidden.delete(body.id); return { document: { id: body.id, hidden: body.hidden } }; }
   if (route === 'library-document') return { ...docs.find((d) => d.id === body.id), text: '<script>not run</script> words', truncated: false, characters: 30, gaps: [] };
   if (route === 'library-matching') {
     if (body.filters.kind !== 'blog') throw new Error('30 documents match. Narrow the filters.');
@@ -86,13 +89,72 @@ async function post(route, body) {
 
 (async () => {
   // Browsing (Marketing Studio): a remembered filter is applied once and selects nothing.
-  const browse = new kit.Catalog({ studio: 'marketing', post, download: () => {} });
+  const downloads = [], said = [];
+  const browse = new kit.Catalog({ studio: 'marketing', post, manage: true, said: (text) => said.push(text),
+    download: (row, format) => downloads.push([row.id, format]) });
   await settle();
   assert.deepEqual(requests.map((r) => r[0]), ['library', 'library']);
   assert.deepEqual(requests[1][1].filters, { kind: 'upload' });
   assert.equal(browse.ticked.size, 0);
-  assert.equal(all(browse.node).filter((n) => n.type === 'checkbox').length, 0, 'browsing has no ticks');
-  assert.ok(find(browse.node, 'library-download-markdown-doc-0'), 'browsing offers downloads');
+  assert.equal(all(browse.node).filter((n) => n.type === 'checkbox').length, 0, 'browsing has no ticks, and nothing is hidden yet');
+  // One action a row: Preview. The downloads are in the preview, two activations away.
+  const rows = all(browse.node).filter((n) => n.className === 'library-row');
+  assert.ok(rows.length > 1);
+  for (const row of rows) assert.deepEqual(all(row).filter((n) => n.tagName === 'button').map((n) => n.textContent), ['Preview']);
+  assert.ok(!find(browse.node, 'library-download-markdown-doc-0'), 'no download on the row');
+  // On a phone, Filters opens the rest and counts those set: the remembered Type is one.
+  const toggle = find(browse.node, 'library-filters-toggle');
+  assert.equal(toggle.textContent, 'Filters (1)');
+  assert.equal(toggle.attributes['aria-expanded'], 'false');
+  assert.ok(toggle.className.split(' ').includes('filters-toggle'));
+  toggle.focus(); await click(toggle);
+  const bar = all(browse.node).find((n) => n.tagName === 'form');
+  assert.ok(bar.className.split(' ').includes('filters-open'), 'Filters opens the filter row');
+  assert.ok(find(browse.node, 'library-more').open, 'with Origin, Status and Author');
+  assert.equal(find(browse.node, 'library-filters-toggle').attributes['aria-expanded'], 'true');
+  assert.equal(document.activeElement.dataset.key, 'library-filters-toggle', 'focus stays on Filters');
+  assert.equal(find(browse.node, 'library-kind').value, 'upload', 'the remembered filter still applies');
+  // Preview opens just below its row; Close preview lands on the same row's Preview.
+  const listOf = () => all(browse.node).find((n) => n.className === 'library-list');
+  const opener6 = find(browse.node, 'library-preview-doc-10');
+  opener6.focus(); await click(opener6);
+  const items = listOf().children;
+  const at = items.findIndex((n) => n.dataset.key === 'library-row-doc-10');
+  assert.equal(items[at + 1].className, 'library-preview-item', 'the preview is the next item after its row');
+  assert.equal(find(browse.node, 'library-preview-doc-10').attributes['aria-expanded'], 'true');
+  assert.equal(document.activeElement.dataset.key, 'library-preview-heading', 'focus moves to the preview');
+  await click(find(browse.node, 'library-download-markdown-doc-10'));
+  assert.deepEqual(downloads, [['doc-10', 'markdown']]);
+  await click(find(browse.node, 'library-preview-close'));
+  assert.ok(!all(browse.node).some((n) => n.className === 'library-preview-item'));
+  assert.equal(document.activeElement.dataset.key, 'library-preview-doc-10', 'focus returns to the row');
+  // Remove from library says what it does, confirms in place, and hides; Restore undoes it.
+  await click(find(browse.node, 'library-preview-doc-10'));
+  await click(find(browse.node, 'library-remove-doc-10'));
+  assert.equal(document.activeElement.dataset.key, 'library-remove-cancel', 'the safe choice has focus');
+  assert.match(all(browse.node).find((n) => n.className === 'library-removal').text, /Nothing is deleted.*projects that already use it keep their copy/);
+  await click(find(browse.node, 'library-remove-cancel'));
+  assert.equal(hidden.size, 0, 'Keep it changes nothing');
+  await click(find(browse.node, 'library-remove-doc-10'));
+  await click(find(browse.node, 'library-remove-confirm'));
+  assert.deepEqual(requests.find((r) => r[0] === 'library-hide')[1], { id: 'doc-10', hidden: true });
+  assert.ok(!find(browse.node, 'library-row-doc-10'), 'a removed document leaves the list');
+  assert.equal(document.activeElement.dataset.key, 'library-preview-doc-12', 'focus goes to the next row');
+  assert.match(said.at(-1), /removed from the library. Projects that use it keep their copy/);
+  const show = find(browse.node, 'library-show-hidden');
+  assert.ok(show, 'Show hidden appears once something is hidden');
+  show.checked = true; show.listeners.change(); await settle();
+  assert.equal(requests.at(-1)[1].hidden, true);
+  assert.ok(find(browse.node, 'library-row-doc-10'), 'Show hidden lists it');
+  await click(find(browse.node, 'library-preview-doc-10'));
+  await click(find(browse.node, 'library-restore-doc-10'));
+  assert.equal(hidden.size, 0);
+  assert.match(said.at(-1), /is back in the library/);
+  assert.equal(document.activeElement.dataset.key, 'library-preview-doc-10');
+  const plain = new kit.Catalog({ studio: 'blog', post, download: () => {} });
+  await settle();
+  await click(find(plain.node, 'library-preview-doc-0'));
+  assert.ok(!find(plain.node, 'library-remove-doc-0'), 'only Marketing Studio removes documents');
 
   // The sheet: open, tick, page, change filters, keep ticks, cancel changes nothing.
   remembered = {};
@@ -124,6 +186,7 @@ async function post(route, body) {
   const kind = find(sheet, 'library-kind');
   kind.value = 'blog'; kind.listeners.change(); await settle();
   assert.equal(find(sheet, 'library-query').value, 'Synth');
+  assert.equal(find(sheet, 'library-filters-toggle').textContent, 'Filters (1)', 'the sheet has Filters too, counting the Type');
   assert.equal(requests.at(-1)[1].filters.query, undefined, 'not searched until Search');
   assert.deepEqual(requests.find((r) => r[0] === 'library-filters')[1].filters, { kind: 'blog', studio: '', origin: '', state: '' });
   assert.equal(requests.at(-1)[1].offset, 0);
@@ -137,6 +200,7 @@ async function post(route, body) {
   const passage = all(sheet).find((n) => n.className === 'library-preview-text');
   assert.equal(passage.textContent, '<script>not run</script> words');
   assert.equal(passage.children.length, 0);
+  assert.ok(!all(sheet).some((n) => /^library-(remove|restore|download|show-hidden)/.test(n.dataset.key || '')), 'the sheet only chooses');
   // A role per ticked document, the first role by default.
   const role = find(sheet, 'library-role-doc-1');
   role.value = 'example'; role.listeners.change();

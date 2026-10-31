@@ -59,7 +59,12 @@ Marketing Studio home served by `tests/library_visual_server.py` over synthetic
 settings, a synthetic library and a synthetic Blog Studio workspace in a temporary
 folder. It covers the Library screen, Add existing work to library and the Add from
 library sheet at 1280, 390 and 320px, in light and dark, with reduced motion and with
-reduced transparency and more contrast. codex, claude and gemini are refusing
+reduced transparency and more contrast. It checks that the screen leads with its list
+and one filled action, that **Filters** opens every filter on a phone in the Library
+and in the sheet, that a mixed upload (`alpha.md`, `beta.png`, `gamma.txt`) and an
+oversize file are reported per file and retried without duplicates, that Close
+preview returns to its row by keyboard, and Remove from library with Restore.
+codex, claude and gemini are refusing
 stand-ins and `BROWSER` is false. Run it with the library tests in the shared runner:
 `bash scripts/ci/tart-macos.sh --guest scripts/ci/guest-library-visual.sh`. Run it from
 a plain clone: the guest clones its source with Git, which cannot read a linked
