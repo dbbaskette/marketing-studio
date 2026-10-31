@@ -64,7 +64,12 @@ const assert = require('node:assert/strict');
           return r.x<title.right && r.right>title.x && r.y<title.bottom && r.bottom>title.y;
         }).map(button=>button.textContent);
       })),[],'Launcher actions must not overlap studio names');
-      assert(await home.getByText('Connect this workspace to the configured repository. Your local work is kept.',{exact:true}).isVisible());
+      // Since the compact home (#209) the card shows the warning and its Connect action; the
+      // longer reconnect sentence is in the card's Details disclosure.
+      const moved=home.locator('[data-studio="presentation"]');
+      assert(await moved.locator('.studio-warning').getByText('Shared settings changed',{exact:true}).isVisible());
+      assert(await home.getByRole('button',{name:'Connect Presentation Studio to the shared storage',exact:true}).isVisible());
+      assert.equal(await moved.locator('.studio-repository').getByText('Connect this workspace to the configured repository. Your local work is kept.',{exact:true}).count(),1);
     }
     setupCases=false;await home.reload();await home.setViewportSize({width:1440,height:1000});
     await home.getByRole('button',{name:'Open Infographic Studio',exact:true}).waitFor();
