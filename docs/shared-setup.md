@@ -328,6 +328,34 @@ A studio can open one listed part directly with `view=settings&part=<part id>` i
 link's fragment, as Infographic Studio's Team library does for `workspace-part`. Any
 other value is ignored, and first-run setup keeps its steps.
 
+First-run setup is one column: the toolbar, any notice and the form share their edges.
+A value a step cannot use, such as a shared repository with no address, is shown at its
+field, which is marked invalid and takes focus. Each step that continues is remembered in
+that browser tab, so a reload resumes at the step the person left. The last step is
+resumed only when the configuration holds a workspace.
+
+### Problems, conflicts and long actions
+
+A problem notice belongs to the screen that raised it. It clears when the person moves
+to another screen or the action next succeeds, and its **Dismiss** button clears it by
+hand. The notice is announced once.
+
+Saving checks every value the form changes against the configuration the form was shown.
+When another Marketing Studio tab, or a studio, saved a different value for the same
+setting meanwhile, nothing is written. The notice names the setting, for example "“Your
+name” was changed in another tab or studio while this page was open, so nothing was
+saved", and offers **Load newer settings**. That reads the configuration again and keeps
+the person's edits to every value nobody else changed. Each value both changed shows the
+saved value and the person's own, with **Use the saved value**, and Save stays pending.
+The next save sends the newer values as what it was shown, so it is checked again under
+the lock. Unrelated values in the file are never touched. The refusal also carries the
+conflicting fields, as dotted paths such as `person.name`, under `conflict.fields`.
+
+**Save settings** and **Check computer** stay focusable while they work. Each is marked
+`aria-disabled`, says "Saving…" or "Checking…", and ignores another press. Focus stays
+on the button, or moves to the results heading when the check was started from another
+screen.
+
 The Advanced parts are closed disclosures that say what they hold while closed:
 **Models and reasoning** (shared model, reasoning and routing by task), **Brand skill
 release**, **Research sites** and **Studio installations**. A value set in place of the

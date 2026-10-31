@@ -1,0 +1,1 @@
+../../core/studio_core/setup_web/qr.js

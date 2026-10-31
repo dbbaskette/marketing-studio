@@ -11,8 +11,25 @@ computer; nothing needs installing on the phone.
    `marketing-studio serve --lan` to keep it in this terminal. If Marketing Studio
    is already running, use `marketing-studio restart --all --lan` instead.
 3. Follow the private phone link printed in that terminal. After shared setup,
-   the authenticated home page also offers **Continue on your phone** and **Copy link**.
-4. Open a studio from that home page. Its network address is supplied automatically.
+   the computer's own home page also offers **Continue on your phone**: scan its
+   QR code with the phone's camera, or use **Copy link**.
+4. Open a studio from the phone's home page. Its network address is supplied automatically.
+
+The QR code is drawn on the computer by the page itself, from a small encoder in
+`qr.js`: nothing is fetched or sent to make it. It holds the same private link, so
+keep it out of sight of others. It is shown only on the computer's own (loopback)
+home, never on the phone's and never in logs or JSON output. Its text alternative
+names it for a screen reader.
+
+The phone's home shows neither the private link nor the terminal note. It says
+instead: "You are connected from another device. Work and the assistant stay on
+the computer."
+
+With phone access on, a studio opened on the computer still opens at its loopback
+address, `127.0.0.1`. Only a studio opened from the phone goes through a network
+bridge, which starts then. The bridge marks requests it carries to Marketing Studio,
+so the home page knows which device asked. Each studio's **Marketing Studio** link
+leads back to the home page on the same device.
 
 Copy the whole link, including its fragment. A bare address loads the interface
 but cannot read or change your work. Browsers retain the session key for that tab;
@@ -66,16 +83,25 @@ Restarting generates new session links. Existing project files stay on the host.
   never moved to enable phone access.
 - Infographic Studio planning and page builds can take several minutes. The phone
   bridge waits up to 20 minutes for these actions and four minutes for remote
-  source previews. Other requests keep their existing 100-second limit. If a
-  connection times out, work may still finish on the computer: reopen the saved
-  infographic and check it before retrying. The bridge never resubmits a request.
+  source previews. Blog Studio's sends to Google, Google Doc intake and library
+  adds with links wait up to 10 minutes. Other requests keep their existing
+  100-second limit. If a connection times out, work may still finish on the
+  computer: reopen the saved work and check it before retrying. The bridge never
+  resubmits a request.
+- A file or picture refused as too large says how much the network link takes there.
+  The bridge allows each studio address exactly what that studio's own server allows:
+  for example 12 MB for a Training Studio or Presentation Studio source, 1 MB for a
+  saved Training Studio section, 28 MB for a slide picture, 120 MB for a new deck's
+  form, 24 MB for Infographic Studio's sources and actions, and 15 MiB for Blog Studio.
 
 ## Verification
 
 `tests/test_network.py` uses disposable settings and loopback-only bridge fixtures
 to check authentication, exact Host/Origin checks, duplicate headers, request size
 limits, fixed targets, key rotation, unavailable children, CLI redaction, reuse,
-and shutdown. Native launch acceptance also opens and authenticates all three
+and shutdown. It keeps every bridge size limit equal to the studio's own limit, and
+checks which link the computer and the phone are each given. `tests/test_qr_code.py`
+reads each QR code back with a separate decoder. Native launch acceptance also opens and authenticates all three
 real studio HTTP servers through the bridge using synthetic workspaces and no
 provider jobs. Responsive visual checks cover narrow forms and home pages; physical
 phone connectivity still depends on the network and host firewall.

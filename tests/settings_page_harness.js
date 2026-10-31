@@ -19,7 +19,12 @@
 // launch card's studio, its filled and plain buttons, the class of each of its parts in
 // order, its status line's bead and words, its readiness sentence and recovery action; and
 // `toasts`, the words of each toast shown. {press: selector} clicks an element, and {press:
-// words, within: selector} the button with those words under it, settling what it starts. The form's named controls and its parts with a
+// words, within: selector} the button with those words under it, settling what it starts.
+// The plan may also set {hostname} for the page's address, {session} for tab storage and
+// {responses} answered from the start; an answer {hold: true} never arrives, so a step can
+// look at a busy button; {wait: true} settles what the page started. Every snapshot has
+// `focused`, the element focus was last moved to, and `session`; `read` gives `disabled` and
+// `attributes` too. The form's named controls and its parts with a
 // setup step are read from index.html, so fill(), show() and the saved state see them all.
 'use strict';
 
@@ -58,7 +63,7 @@ let answers = {};
 const asked = [];
 const byId = new Map();
 function find(selector) {
-  if (!byId.has(selector)) byId.set(selector, new El());
+  if (!byId.has(selector)) { const node = new El(); if (selector.startsWith('#')) node.id = selector.slice(1); byId.set(selector, node); }
   return byId.get(selector);
 }
 const form = find('#settings-form');
@@ -71,6 +76,11 @@ form.elements = new Proxy({}, { get: (target, name) => {
 // every part with a setup step, so show() hides and shows them as the page does.
 const html = fs.readFileSync(path.join(__dirname, '..', 'core', 'studio_core', 'setup_web', 'index.html'), 'utf8');
 for (const [, name] of html.matchAll(/\bname="([^"]+)"/g)) void form.elements[name];
+// A control keeps its id from index.html, so a field's own message and focus can be read.
+for (const [tag] of html.matchAll(/<(?:input|select)\b[^>]*>/g)) {
+  const id = /\bid="([^"]+)"/.exec(tag), name = /\bname="([^"]+)"/.exec(tag);
+  if (id && name && !/type="radio"/.test(tag)) form.elements[name[1]].id = id[1];
+}
 const stepped = [...html.matchAll(/<(?:section|div)\b[^>]*\bid="([^"]+)"[^>]*\bdata-step="([^"]+)"/g)]
   .map(([, id, step]) => { const part = find('#' + id); part.dataset.step = step; return part; });
 form.querySelectorAll = selector => selector === 'input[name], select[name]' ? [...named.values()]
@@ -78,7 +88,8 @@ form.querySelectorAll = selector => selector === 'input[name], select[name]' ? [
 // The words an element shows, its children's included.
 const deep = node => (node.textContent || '') + (node.children || []).map(deep).join('');
 const early = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
-let responses = {};
+let responses = early.responses || {};
+const session = new Map(Object.entries(early.session || {}));
 const document = {
   body: { dataset: { standalone: String(Boolean(early.standalone)),
     product: early.product || 'Marketing Studio', tokenHeader: 'X-Test' }, classList: { toggle() {} } },
@@ -88,8 +99,9 @@ const document = {
 };
 const context = {
   document, console, setInterval: () => 0, setTimeout: () => 0, clearTimeout() {}, URL, URLSearchParams, JSON,
-  location: { hash: '', pathname: '/', origin: 'http://127.0.0.1:1', hostname: '127.0.0.1' },
-  history: { replaceState() {} }, sessionStorage: { getItem: () => '', setItem() {} },
+  location: { hash: '', pathname: '/', origin: `http://${early.hostname || '127.0.0.1'}:1`, hostname: early.hostname || '127.0.0.1' },
+  history: { replaceState() {} }, sessionStorage: { getItem: key => session.get(key) ?? '', setItem: (key, value) => session.set(key, String(value)),
+    removeItem: key => session.delete(key) },
   navigator: {}, Option: class extends El { constructor(text, value) { super('option'); this.text = text; this.value = value; } },
   // Only the one-site check is answered, from the plan's {answers: {typed: {site} or {error}}}.
   fetch: async (url, options) => {
@@ -98,6 +110,7 @@ const context = {
     const route = String(url).split('/api/').pop();
     const answer = route in responses ? responses[route]
       : answers[sent.site] || { error: 'Not in this plan.' };
+    if (answer.hold) return new Promise(() => {});   // still working when the next step looks
     return { ok: !answer.error, json: async () => answer };
   },
 };
@@ -123,6 +136,8 @@ for (const step of steps) {
   } else if (step.home) {
     context.homeSnapshot = step.home;
     run('snapshot = homeSnapshot; renderHome();');
+  } else if (step.wait) {
+    for (let i = 0; i < 12; i += 1) await settle();
   } else if (step.run) {
     await run(step.run);
   } else if (step.responses) {
@@ -174,10 +189,13 @@ for (const step of steps) {
           running: parts.find(part => /\bstudio-running\b/.test(part.className || ''))?.textContent || '' };
       }),
       toasts: find('#toasts').children.map(toast => toast.textContent),
+      focused: focused ? focused.id || focused.name || focused.textContent : null,
+      session: Object.fromEntries(session),
       ...(step.ids ? { hidden: Object.fromEntries(step.ids.map(id => [id, find('#' + id).hidden])),
         words: Object.fromEntries(step.ids.map(id => [id, deep(find('#' + id))])) } : {}),
       ...(step.read ? { read: Object.fromEntries(step.read.map(selector => [selector,
-        { text: find(selector).textContent, hidden: find(selector).hidden }])),
+        { text: find(selector).textContent, hidden: find(selector).hidden, disabled: find(selector).disabled,
+          attributes: { ...find(selector).attributes } }])),
       requests: asked.map(({ url, sent }) => ({ url: String(url), sent })) } : {}),
     };
   }
