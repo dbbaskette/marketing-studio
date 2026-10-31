@@ -1021,10 +1021,17 @@
     return h.add(make('li'), go, ': ' + words);
   }
 
+  const SUMMARY_LINES = 5;   // the lines of each list of the summary, before the rest are counted
+
   function summaryList(title, says, lines) {
     if (!lines.length) return null;
+    // A long list stays short: the rest are counted, and the navigator marks each of them.
+    const more = lines.length - SUMMARY_LINES;
+    const shown = more > 1 ? lines.slice(0, SUMMARY_LINES) : lines;
     return h.add(make('div', 'desk-summary-part'), make('p', 'row-title', title),
-      says ? make('p', 'quiet', says) : null, h.add(make('ul', 'plain'), ...lines));
+      says ? make('p', 'quiet', says) : null, h.add(make('ul', 'plain'), ...shown,
+        more > 1 ? make('li', 'quiet', 'And ' + more + ' more. The navigator marks each '
+          + 'slide.') : null));
   }
 
   function summaryPart(run, cards) {
@@ -1053,14 +1060,12 @@
       summaryList('Worth a look', 'These do not block delivery.', looks.map(({ one, marks }) =>
         jump(one, marks.looks.join(' and ') + '.'))));
     if (!read && !conversation && !found.delivered) {
-      h.add(node, summaryList('What Deliver will use', '', [
-        make('li', '', 'The slides as they are drawn now: ' + h.count(cards.length, 'slide',
-          'slides') + '.'),
-        make('li', '', found.reviewed ? 'The deck was reviewed as it is drawn now.'
-          : 'The deck has not been reviewed. Its brand check ran; Review the deck, in '
-            + 'Finishing, is yours to ask for.'),
-        make('li', '', deliveredAs(run)),
-        make('li', '', 'Nothing is sent until you confirm it in Deliver.')]));
+      h.add(node, h.add(make('div', 'desk-summary-part'),
+        make('p', 'row-title', 'What Deliver will use'),
+        make('p', '', 'The ' + h.count(cards.length, 'slide', 'slides') + ' as they are drawn '
+          + 'now, ' + (found.reviewed ? 'reviewed as they are' : 'not reviewed: only the brand '
+          + 'check ran') + '. ' + deliveredAs(run) + ' Nothing is sent until you confirm it in '
+          + 'Deliver.')));
     }
     return node;
   }
@@ -1069,8 +1074,7 @@
   function deliveredAs(run) {
     const google = run.output === 'google';
     return google && h.googleReady() ? 'It goes to Google Slides.'
-      : google ? 'Google is not connected on this computer, so delivering makes a '
-        + 'PowerPoint file. Send it to Google Slides once you are signed in.'
+      : google ? 'Google is not connected on this computer, so it is made a PowerPoint file.'
         : 'It is made a PowerPoint file, to download from here.';
   }
 
@@ -1121,7 +1125,30 @@
         make('span', 'strip-title', words.title || ''),
         tag ? make('span', 'tag', tag) : null)));
     });
+    // Once it is on the screen, the navigator scrolls itself to the slide chosen; the page
+    // itself stays put.
+    window.setTimeout(() => inView(node), 0);
     return h.add(node, h.add(make('div', 'bar slide-moves'), earlier, later, now), strip);
+  }
+
+  function inView(node, tries = 20) {
+    const item = node.querySelector('[aria-current="true"]');
+    if (!item) return;
+    // A screen changed with a view transition is put in place a few frames later.
+    if (!document.body.contains(node)) {
+      if (tries > 0) window.setTimeout(() => inView(node, tries - 1), 50);
+      return;
+    }
+    const shown = item.getBoundingClientRect();
+    for (const box of [node.querySelector('.desk-nav-list'), node]) {
+      const frame = box.getBoundingClientRect();
+      if (shown.left < frame.left) box.scrollLeft -= frame.left - shown.left;
+      else if (shown.right > frame.right) box.scrollLeft += shown.right - frame.right;
+      // A rail taller than what is left of the window keeps the slide within the window.
+      const bottom = Math.min(frame.bottom, window.innerHeight || frame.bottom);
+      if (shown.top < frame.top) box.scrollTop -= frame.top - shown.top;
+      else if (shown.bottom > bottom) box.scrollTop += shown.bottom - bottom;
+    }
   }
 
   // --- the whole-deck note: a second, folded way to change the deck ---------------------------

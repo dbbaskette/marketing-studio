@@ -952,6 +952,11 @@ class WorkbenchTests(DeskPageCase):
                 self.assertEqual(len([name for name in first['buttons']
                                       if name.startswith('Slide ')]), 30)
                 self.assertIn('Slide 1 of 30', first['text'].split('\n'))
+                # The summary stays short: past five slides, the rest are counted.
+                self.assertRegex(first['text'], r'\nAnd \d+ more\. The navigator marks each '
+                                                r'slide\.\n')
+                self.assertLessEqual(len([line for line in first['text'].split('\n')
+                                          if line.endswith('brand warning.')]), 5)
                 seventeen = shots['seventeen']
                 self.assertIn('Slide 17 of 30', seventeen['text'].split('\n'))
                 self.assertIn('Slide 17 · Section 1', seventeen['parts'])
@@ -1045,9 +1050,9 @@ class WorkbenchTests(DeskPageCase):
             self.assertIn(line, lines[looks:delivery])
         self.assertNotIn('Slide 3: Text runs off the slide.', lines[looks:delivery])
         self.assertLess(lines.index('Before you deliver'), delivery)
-        self.assertIn('The deck has not been reviewed. Its brand check ran; Review the deck, in '
-                      'Finishing, is yours to ask for.', lines[delivery:])
-        self.assertIn('Nothing is sent until you confirm it in Deliver.', lines[delivery:])
+        self.assertEqual(lines[delivery + 1], 'The 8 slides as they are drawn now, not reviewed: '
+                         'only the brand check ran. It goes to Google Slides. Nothing is sent '
+                         'until you confirm it in Deliver.')
         # The navigator says the same of each slide, a blocker apart from a warning.
         self.assertTrue([name for name in summary['buttons']
                          if name.startswith('Slide 3: ') and name.endswith(', blocks delivery')])

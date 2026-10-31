@@ -232,8 +232,14 @@
   margin-top: 0.6rem;
 }
 
-.desk-summary .link {
-  min-height: 44px;
+.desk-summary-part li + li {
+  margin-top: 0.2rem;
+}
+
+@media (max-width: 52rem) {
+  .desk-summary .link {
+    min-height: 44px;
+  }
 }
 
 .desk-found {
@@ -253,11 +259,6 @@
   display: list-item;
   min-height: 2.75rem;
   padding-block: 0.65rem;
-  cursor: pointer;
-}
-
-.desk-whole > summary {
-  font-weight: 600;
 }
 
 .deck-desk-slide > * + * {
