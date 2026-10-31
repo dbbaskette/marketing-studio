@@ -152,3 +152,7 @@ class TeamLibraryPageTests(Isolated):
         # The sheet offers the shared settings part that owns the repository, and returns here.
         self.assertIn("sharedSettingsLink('Configure shared repository','workspace-part')", script)
         self.assertIn("'infographic-studio-return'", script)
+        # Browser Back from setup restores a cached page: an open Team library sheet is re-read.
+        handler = script[script.index("window.addEventListener('pageshow'"):]
+        self.assertIn('event.persisted', handler[:400])
+        self.assertIn('void teamSheet()', handler[:400])

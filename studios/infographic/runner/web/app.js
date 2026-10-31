@@ -439,6 +439,13 @@ async function startDesk() {
 }
 $('sheet').addEventListener('close',paintWork);
 if(!token)error('Open Infographic Studio using the private link printed in your terminal.');else void startDesk();
+// Back from shared settings with the browser's Back button restores this page from its cache,
+// without running startDesk: drop the return marker and re-read an open Team library sheet.
+window.addEventListener('pageshow',event=>{
+  if(!event.persisted||!token)return;
+  try{sessionStorage.removeItem('infographic-studio-return');}catch(f){}
+  if($('sheet').open&&$('sheet-title')?.textContent==='Team library')void teamSheet();
+});
 
 function reviseArtSheet(){const change=field('What should change?','','textarea'),preserve=field('What should stay the same?','Keep all other subjects, relationships, brand, empty label regions and composition.','textarea');sheet('Revise the artwork',make('p','','This sends the saved original as a reference to your selected image provider. It uses provider allowance; the earlier artwork remains in history.'),change.wrap,preserve.wrap,add(make('div','bar'),button('Create referenced revision',()=>action('revise-art',{change:change.input.value,preserve:preserve.input.value,request_id:requestId()}),true),button('Cancel',closeSheet)));}
 async function compareSheet(version){try{const result=await request('/api/action',{action:'compare',id:held.project.id,expected_revision:held.project.revision,before:version.revision,after:held.project.revision});sheet('Changes since revision '+version.revision,...Object.entries(result.result).map(([key,value])=>detail(key,make('h3','','Before'),make('pre','ig-csv-preview',JSON.stringify(value.before,null,2)),make('h3','','Current'),make('pre','ig-csv-preview',JSON.stringify(value.after,null,2)))),button('Done',closeSheet));}catch(f){error(f.message);}}
