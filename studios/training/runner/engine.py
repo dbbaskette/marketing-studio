@@ -5581,6 +5581,88 @@ class Engine(Reviewing):
         self.carry_on(root)
         return {'made': made, 'problems': dict(problems or {})}
 
+    def doc_preview(self, path, name) -> dict:
+        """What one explicit Google Doc delivery of a guide or brief would do, before the
+        person decides: the material, the version it sends (`seen`), the Doc's name, whether
+        it creates a new Doc or updates the linked one, and what keeps it from being tried.
+        Reads only; nothing is asked of Google."""
+        with self.files:
+            root, record = self._on_desk(path)
+            return drafts.doc_view(root, record, name, self.copies)
+
+    def deliver_doc(self, path, name, seen, again: bool = False, fresh: bool = False) -> dict:
+        """Make one new Google Doc of a guide or brief, or bring its linked Doc up to date,
+        as the person asked on the desk: exactly the version they were shown (`seen`), and
+        nothing else. A training that keeps local copies only is not switched to Google
+        Docs, so marking Ready still sends nothing by itself; nothing is marked ready and no
+        job starts. Where Google may have made a Doc without saying so, the next try is
+        refused until the person says to make one anyway (`again`), so a retry never makes a
+        second Doc unasked. `fresh` makes a new Doc for a material already linked to one,
+        leaving that Doc exactly as it is: the way on once it was changed in Google. A
+        definite refusal leaves the run record as it was. Returns {'doc': the receipt}."""
+        import copy as copying
+
+        import gdocs
+        from runner import copies as made_by
+        with self.files:
+            root, record = self._on_desk(path, decided=True)
+            before = copying.deepcopy(record)
+            shown = drafts.doc_view(root, record, name, self.copies)
+            if shown['problem']:
+                raise WorkspaceError(shown['problem'])
+            if shown['automatic']:
+                raise WorkspaceError(drafts.DOC_KEPT)
+            if not isinstance(seen, str) or seen != shown['seen']:
+                raise WorkspaceError(f"{workspace.sentence(shown['label'])} has changed since "
+                                     'it was opened. Read the new version before sending it.')
+            if fresh and shown['action'] != 'update':
+                raise WorkspaceError(drafts.DOC_NONE)
+            kept = record.setdefault('copies', {})
+            unsure = kept.setdefault('uncertain', {})
+            if unsure.get(name) and not again and shown['action'] == 'create':
+                raise WorkspaceError(drafts.DOC_UNSURE.format(title=shown['title']))
+            unsure[name] = {'sha256': seen, 'at': home.now(), 'title': shown['title']}
+            self._store(root, record)   # kept first: a crash mid-request is never a blind retry
+            if fresh:   # the linked Doc is forgotten here, and never changed or deleted
+                links = gdocs.read_links(root)
+                gone = links['docs'].get(name)
+                gdocs.unlink(root, name)
+            try:
+                done = self.copies.deliver(root, name)
+            except made_by.Uncertain:
+                self._store(root, record)
+                self._commit(root, f'try a Google Doc of {workspace.label(name)}, as asked on '
+                                   'the desk; whether Google made it is not known')
+                raise
+            except WorkspaceError as refusal:
+                if fresh:   # nothing new was made: the old link comes back as it was
+                    links = gdocs.read_links(root)
+                    links['docs'][name] = gone
+                    gdocs.write_links(root, links)
+                if str(refusal) == made_by.CHANGED_THERE:
+                    # Changed in Google: kept as it is, and said so in this desk's words.
+                    before.setdefault('copies', {}).setdefault('remote', {})[name] = \
+                        'both changed'
+                    self._store(root, before)
+                    self._commit(root, f'leave the Google Doc of {workspace.label(name)} as '
+                                       'it is: it was changed in Google')
+                    raise WorkspaceError(drafts.DOC_CHANGED) from None
+                self._store(root, before)
+                raise
+            unsure.pop(name, None)
+            if not unsure:
+                kept.pop('uncertain')
+            receipt = {'artifact': name, 'label': shown['label'], 'result': done['result'],
+                       'url': done['url'], 'title': done['title'], 'sha256': seen,
+                       'at': home.now()}
+            kept.setdefault('delivered', {})[name] = receipt
+            kept.setdefault('problems', {}).pop(name, None)
+            (kept.get('remote') or {}).pop(name, None)
+            self._store(root, record)
+            self._commit(root, f"{'make a new' if fresh else 'make the' if done['result'] == 'created' else 'update the'} "
+                               f'Google Doc of {workspace.label(name)}, as asked on the desk')
+        return {'doc': receipt}
+
     # --- checked desk jobs ---------------------------------------------------------------
 
     def draft_begin(self, path, kind, name, **values) -> dict:

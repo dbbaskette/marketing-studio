@@ -19,9 +19,11 @@ Older saved trainings keep their original flow.
 
 ## Read and change materials
 
-Open the training on the desk. Each level has its own plan and materials; research is shared. Choose a material tab to read it, then a section tab to edit one part. Sources has its own tab; the other materials stay available without filling the page. You can type in an editable part, add a note asking for a change, or select a passage and ask for a change to just that passage. Review the result as it arrives. History keeps earlier versions and lets you restore one. Your own typing is saved, and a result does not overwrite a part you changed while it was working.
+Open the training on the desk. Each level has its own plan and materials; research is shared. Choose a material tab to read it as learners receive it: its formatting is shown, not its Markdown, and **Copy text** copies a section's exact saved text. Teaching details such as the objectives a section covers are folded away. Choose **Edit** to open its parts, and a section tab to edit one part; text you have not saved yet keeps the material open for editing as you move between tabs and levels. Sources has its own tab; the other materials stay available without filling the page. You can type in an editable part, add a note asking for a change, or select a passage and ask for a change to just that passage. Review the result as it arrives. History keeps earlier versions and lets you restore one. Your own typing is saved, and a result does not overwrite a part you changed while it was working.
 
 Sources collects the findings and references used in the training. A guide or brief's Sources section is maintained from its citations; change references in the text instead of typing into that section. You can read the research and plan, and decide how changes should reach the materials that depend on them.
+
+The toolbar's **Download level 101** (or **Download all**) gives every written material of the level, one file each, exactly as saved; a material's own Download is on its card. Downloading marks nothing ready and sends nothing.
 
 ## The deck
 
@@ -39,9 +41,11 @@ Use **Add a source** to add documents after research. The desk shows the price b
 
 ## Mark ready and Finishing
 
-**Mark ready** records your approval of a material. You can also mark a level ready; the desk stops at the first material that needs attention. Settle holds, grave deck findings and other blocking checks first. A later edit makes the material a draft again. Once all requested materials are ready, Training Studio writes the index. Requested copies follow readiness; a guide or brief can also be sent to a Google Doc from the desk. You can look for changes in Google Docs and bring them back, resolving a conflict if both versions changed.
+Under the level tabs, one line says how many of the level's materials are ready, still to write, drafts to mark ready, or need attention or a decision. A material is ready on its own; a level is complete once all of its materials are, and downloads and Google Docs stay optional. While a deck's slide text waits for you, its tab says **Needs your text approval** and **Review slide text** takes you to it; materials not written yet say **Not written yet**, never Writing, while nothing works on them. Time so far is a detail you open; elapsed time is never an estimate of what is left.
 
-**Finishing** offers checks and proposals for the training. Review each proposal and choose Apply, Edit or Skip. A proofread fix may request work; other findings can open a note for you to edit. Applied changes keep a version in History. Local checks create proposals without starting a job. When you request an AI check, it runs work to produce proposals; each proposal waits for your decision.
+**Mark ready** records your approval of a material. You can also mark a level ready; the desk stops at the first material that needs attention. Settle holds, grave deck findings and other blocking checks first. A later edit makes the material a draft again. Once all requested materials are ready, Training Studio writes the index. Ready is your approval and sends nothing by itself unless the training was started with Google Docs, which then follow readiness as before. A training made with local copies can make a Google Doc of one guide or brief from **Google Doc**, of exactly the version shown, and update it only when you ask; see [Google Docs](google-docs.md). You can look for changes in Google Docs and bring them back, resolving a conflict if both versions changed.
+
+**Finishing** opens on the material in front of you; **All materials** chooses another one of the level. It offers checks and proposals. Review each proposal and choose Apply, Edit or Skip. A proofread fix may request work; other findings can open a note for you to edit. Applied changes keep a version in History. Local checks create proposals without starting a job. When you request an AI check, it runs work to produce proposals; each proposal waits for your decision.
 
 ## Working with teammates and older trainings
 

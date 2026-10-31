@@ -37,6 +37,8 @@ The count beside Home, and in the tab's title, is how many things need you. Turn
 
 The same row of stages appears everywhere. A stage is done, in progress, yours to review, not started, left out, or could not be made, and each of those has its own shape as well as its own colour.
 
+A training made on the desk is said the same way on Home, Trainings, Status and its desk: working on its own, needs your decision (an answer, documents, the teaching plan or a deck's slide text), needs attention (a review finding or a held material), drafts to mark ready, ready, or stopped. A finished writing job is never called finished: the training is Ready only once you have marked every material ready and its index is written. Status counts drafts **still to write** apart from drafts **to review and mark ready** and what **needs attention**. Its button opens the desk at the next thing to do, down to the deck slide a finding is on. Opening any screen starts no work.
+
 ## A gate
 
 A gate is one thing to read and one decision to make.

@@ -19,8 +19,11 @@ const DESK_WORDS = {
   kinds: { blueprint: 'Plan', document: 'Guide', brief: 'Brief', deck: 'Deck',
     scenario: 'Practice', yoodli: 'Yoodli' },
   // The shape beside a card's state; its words are the card's own sentence.
-  beads: { writing: 'current', draft: 'none', ready: 'done', held: 'late', needs: 'late',
-    'left-out': 'out' },
+  beads: { writing: 'current', queued: 'none', decide: 'review', draft: 'none', ready: 'done',
+    held: 'late', needs: 'late', 'left-out': 'out' },
+  // A material tab's state, as the runner's one standing names it (runner/drafts.py).
+  tabs: { writing: 'Writing', queued: 'Not written yet', decide: 'Needs your text approval',
+    needs: 'Needs attention', held: 'Needs updating', ready: 'Ready', draft: 'Draft' },
   noResearch: 'The research is not written yet. It opens here when it is.',
   kept: 'Your documents stay on this computer and are never shared with your team. Passages '
     + 'quoted from them appear in the research report, which is shared.',
@@ -53,6 +56,20 @@ function deskHeld(path) {
       drawn: '', materials: {}, recovery: readDeskRecovery(path) };
   }
   return DESK.held[path];
+}
+
+// The way to the person's next action from another screen or from the needs line: its
+// level, its material and, for a deck review finding, its slide. Opening never starts work.
+function deskGoTo(held, standing, name) {
+  const next = standing && standing.next;
+  if (!next || !next.material || (name && next.material !== name)) return;
+  held.level = next.level || '';
+  held.sources = false;
+  held.material[held.level] = next.material;
+  if (next.slide) {
+    held.slide ||= {};
+    held.slide[next.material] = next.slide;
+  }
 }
 
 // A training started on the desk: the runner's view of its run says so in `flow`.
@@ -259,7 +276,9 @@ function finishingTools() {
   }));
 }
 
-function openFinishing() {
+// Finishing opens on the material in front of the person, with no second choice; All
+// materials is the way to another material of the level. `choose` asks which.
+function openFinishing(choose = false) {
   const held = deskHeld(view.path);
   const choices = Object.values(held.materials).filter((material) =>
     (material.view.level || '') === held.level && !material.view.readonly
@@ -270,8 +289,11 @@ function openFinishing() {
     held.material[held.level] = material.view.name;
     closeSheet(); deskKit.finishOpen(material);
   };
+  const current = !held.sources && choices.find((material) =>
+    material.view.name === held.material[held.level]);
+  if (!choose && current) { open(current); return; }
   if (choices.length === 1) { open(choices[0]); return; }
-  DESK.kitSheet = [sheetTitle('Finishing'), make('p', 'lede', 'Choose the material to check.'),
+  DESK.kitSheet = [sheetTitle('Finishing'), make('p', '', 'Choose the material to check.'),
     make('h3', 'sheet-part', '1. Choose a material'),
     ...choices.map((material) => capsule(cardTitle(material.view), 'quiet', () => open(material))),
     choices.length ? null : make('p', '', 'A guide, brief, practice or Yoodli layout opens here once it is written.'),
@@ -820,6 +842,32 @@ async function shareDesk(path) {
 }
 
 // The level a desk shows, and whether a phone shows its Sources in place of the cards.
+// Where the level shown stands, from the runner's one standing: how many of its materials
+// are Ready, still to write, drafts to mark ready, or need attention or a decision. A
+// material is Ready on its own; the level is complete once all of its materials are.
+function levelStanding(found, level) {
+  const counts = found.standing && found.standing.levels && found.standing.levels[level || ''];
+  if (!counts || !counts.materials) return null;
+  const parts = [counts.ready + ' of ' + count(counts.materials, 'material', 'materials')
+    + ' ready'];
+  if (counts.to_write) parts.push(counts.to_write + ' still to write');
+  if (counts.drafts) parts.push(count(counts.drafts, 'draft', 'drafts') + ' to mark ready');
+  if (counts.attention) parts.push(counts.attention + (counts.attention === 1 ? ' needs'
+    : ' need') + ' attention');
+  if (counts.decision) parts.push(counts.decision + (counts.decision === 1 ? ' waits'
+    : ' wait') + ' for your decision');
+  const whole = counts.ready === counts.materials
+    ? (level ? 'This level is complete.' : 'Every material is ready.')
+    : (level ? 'This level is complete' : 'The training is complete')
+      + ' once every material is ready. Ready is your approval of the version you read; a '
+      + 'material is still changed, checked or downloaded on its own, and Google Docs are '
+      + 'optional.';
+  const node = make('p', 'quiet desk-level-standing', (level ? 'Level ' + level + ': ' : '')
+    + parts.join(' · ') + '. ' + whole);
+  node.setAttribute('role', 'status');
+  return node;
+}
+
 function deskTabs(found, held) {
   const named = list(found.levels).filter(Boolean);
   if (!named.includes(held.level)) held.level = named[0] || '';
@@ -938,6 +986,17 @@ function deskCard(found) {
       'desk-send ' + found.name));
   }
   if (actions.includes('download')) bar.append(downloadButton(found));
+  // A deck waiting for its slide text to be approved: nothing is writing it, and the one
+  // way on is the decision, which this takes the person straight to.
+  const text = view.run && view.run.outline;
+  if (found.state === 'decide' && text && text.content_first && text.waiting) {
+    // Quiet: the approval itself holds the screen's one filled button.
+    bar.append(capsule('Review slide text', 'quiet', () => {
+      const review = byId('slide-text-review');
+      const title = review && review.querySelector('h2, h3');
+      if (title) { title.tabIndex = -1; title.focus(); }
+    }, 'desk-text ' + found.name));
+  }
   const material = deskHeld(view.path).materials[found.name];
   if (material && found.kind === 'document' && deskCanChange() && !material.view.readonly) {
     const menu = make('details', 'menu'); menu.dataset.key = 'whole-menu ' + found.name;
@@ -1426,16 +1485,114 @@ function lookSheet(found, look) {
   openSheet('desk-kit', '')();
 }
 
+// Whether a material is open for editing. It opens to read, as learners will receive it;
+// Edit opens its parts. Text not saved yet, recovered text, a selection or a change note (one
+// Finishing opened, say) keeps it open, so nothing typed is ever hidden. The choice outlives a change of tab, level or check.
+function deskEditing(held, found) {
+  if (!deskCanChange() || held.view.readonly) return false;
+  const desk = deskHeld(deskItem(held.id).path);
+  return Boolean((desk.editing || {})[found.name] || keptOpen(held));
+}
+
+// Why a material stays open for editing whatever the person chose, in a sentence, or ''.
+function keptOpen(held) {
+  if (Object.keys(held.pending || {}).length) {
+    return hasDeskRecovery(held) ? 'Recovered text is waiting to be saved, so it stays open '
+      + 'for editing. Save it, or change it, first.'
+      : 'Your text is not saved yet, so it stays open for editing.';
+  }
+  if (hasDeskRecovery(held)) return 'Recovered text is waiting to be saved, so it stays open '
+    + 'for editing. Save it, or change it, first.';
+  if (String(held.wholeNote || '').trim()
+      || Object.values(held.notes || {}).some((note) => String(note || '').trim())) {
+    return 'A change note is written and not sent, so it stays open for editing. Send it or '
+      + 'clear it first.';
+  }
+  if (held.selection) return 'A passage is selected for a change, so it stays open for editing.';
+  return '';
+}
+
+function editToggle(held, found, editing) {
+  if (!deskCanChange() || held.view.readonly) return null;
+  const go = capsule(editing ? 'Done editing' : 'Edit ' + cardTitle(found), 'quiet', async () => {
+    const desk = deskHeld(deskItem(held.id).path);
+    desk.editing ||= {};
+    if (editing) {
+      // What was typed is saved before the reading view shows the saved text.
+      try { await deskKit.flush(held); } catch (failure) { /* said below */ }
+      desk.editing[found.name] = false;
+      const why = keptOpen(held);
+      if (why) {
+        desk.said = why;
+        paintDesk(true);
+        return;
+      }
+      paintDesk(true);
+      focusKey('desk-edit ' + found.name);
+      return;
+    }
+    desk.editing[found.name] = !editing;
+    paintDesk(true);
+    focusKey('desk-edit ' + found.name);
+  }, 'desk-edit ' + found.name);
+  return go;
+}
+
+// One part as learners receive it: its Markdown rendered on an opaque reading surface, the
+// exact saved text to copy, and its teaching details folded away.
+function readingPart(held, found, section) {
+  const text = section.id === 'opening' ? held.view.opening || '' : section.text || '';
+  const node = make('article', 'paper doc desk-reading');
+  node.setAttribute('aria-label', section.heading);
+  add(node, make('h2', 'doc-title', section.heading));
+  if (held.view.working && (held.view.working.part === section.id
+      || held.view.working.part === 'whole')) {
+    const working = make('p', 'quiet', 'Being changed now. The saved text is shown.');
+    working.setAttribute('role', 'status');
+    node.append(working);
+  }
+  node.append(text.trim() ? window.StudioMarkdown.render(text)
+    : make('p', 'quiet', 'Nothing is written here yet.'));
+  if (list(section.covers).length) {
+    node.append(add(make('details', 'card-part'), make('summary', '', 'Teaching details'),
+      make('p', 'quiet', 'Covers ' + section.covers.join(', '))));
+  }
+  return add(node, add(make('div', 'bar'),
+    copyButton('Copy text', 'Copied.', text, 'desk-copy ' + found.name + ' ' + section.id)));
+}
+
 function materialParts(held, found) {
   const area = make('div', 'desk-material stack');
   held.area = area;
+  const editing = deskEditing(held, found);
   const status = make('p', 'quiet desk-save-state', held.saved || '');
   status.setAttribute('role', 'status');
   held.status = status;
-  add(area, status, deskKit.selectionBar(held), held.view.readonly
-    ? make('p', 'quiet', held.view.readonly) : null);
-  if (deskCanChange() && !held.view.readonly) area.append(add(make('details', 'card-part'),
-    make('summary', '', 'Change the whole ' + cardTitle(found).toLowerCase()), materialNote(held, found)));
+  const toggle = editToggle(held, found, editing);
+  add(area, toggle ? add(make('div', 'bar'), toggle) : null, status,
+    editing ? deskKit.selectionBar(held) : null, held.view.readonly
+      ? make('p', 'quiet', held.view.readonly) : null);
+  if (editing) {
+    const whole = add(make('details', 'card-part'),
+      make('summary', '', 'Change the whole ' + cardTitle(found).toLowerCase()),
+      materialNote(held, found));
+    // A note for the whole material, from Finishing or typed earlier, is never folded away.
+    if (String(held.wholeNote || '').trim()) whole.open = true;
+    area.append(whole);
+  } else if (hasDeskRecovery(held)) {
+    // Text recovered here that cannot be saved now is shown as it is, to be copied.
+    const kept = card('Recovered text not saved');
+    kept.append(make('p', 'quiet', 'It cannot be saved here now. Copy it to keep it.'));
+    for (const [part, edit] of Object.entries(held.pending || {})) {
+      if (!(held.recoveredParts || {})[part]) continue;
+      const heading = part === 'opening' ? 'Opening'
+        : list(held.view.sections).find((section) => section.id === part)?.heading || part;
+      kept.append(add(make('div', 'card-part'), make('p', 'row-title', heading),
+        make('p', 'desk-plain', edit.text),
+        copyButton('Copy', 'Copied.', edit.text, 'desk-recovered ' + part)));
+    }
+    area.append(kept);
+  }
   if (hasDeskRecovery(held) && deskCanChange() && !held.view.readonly) {
     const save = capsule('Save recovered text', 'quiet', async () => {
       held.recoveredParts = {};
@@ -1464,7 +1621,9 @@ function materialParts(held, found) {
     id => { held.section = id; paintDesk(true); }, sectionKey));
   for (const section of sections.filter(section => section.id === held.section)) {
     let part;
-    if (section.locked) {
+    if (!editing) {
+      part = readingPart(held, found, section);
+    } else if (section.locked) {
       part = add(make('section', 'card desk-part'), make('h2', 'card-title', section.heading),
         make('p', 'quiet', 'Kept from the findings cited.'), make('p', 'desk-plain', section.text));
     } else part = materialPart(held, section.id);
@@ -1596,9 +1755,9 @@ async function previewUpdate(found) {
 function downloadButton(found) {
   const name = String(found.name).replace(/[^A-Za-z0-9._-]+/g, '-')
     + (found.kind === 'deck' ? '.pptx' : '.md');
-  const control = capsule('Download', 'quiet', (event) => downloadFile(view.path,
+  const control = capsule('Download ' + cardTitle(found), 'quiet', (event) => downloadFile(view.path,
     { artifact: found.name }, name, event.currentTarget), 'desk-download ' + found.name);
-  control.setAttribute('aria-label', 'Download ' + found.label);
+  control.setAttribute('aria-label', 'Download ' + found.label + ', as saved');
   return control;
 }
 
@@ -1622,6 +1781,7 @@ function needsPart(found, held, run) {
         held.level = one.level;
         held.sources = false;
         held.material[held.level || ''] = one.name;
+        deskGoTo(held, found.standing, one.name);
         paintDesk(false);
         const heading = byId(headingId(one.name));
         if (heading) heading.focus();
@@ -1662,8 +1822,17 @@ function progressPart(found, held, lead) {
     : materials.length ? available + ' of ' + materials.length + ' drafts available. New drafts appear below as they finish.'
       : 'Preparing the first material. It will appear here when it is ready.') : null;
   return add(make('div'), callout('', building, line, status, controls.childNodes.length ? controls : null,
-    run.timing ? (!run.research_progress || run.research_progress.phase === 'complete' ? measuredTime(run) : null) : progress.started_at ? make('p', 'quiet desk-clock', deskKit.clock(progress))
-      : null), researchActivity(run));
+    // Time is a detail, never an estimate of what is left: elapsed time keeps growing.
+    run.timing ? (!run.research_progress || run.research_progress.phase === 'complete'
+      ? timeDetails(measuredTime(run)) : null) : progress.started_at
+      ? timeDetails(make('p', 'quiet desk-clock', deskKit.clock(progress))) : null),
+  researchActivity(run));
+}
+
+function timeDetails(line) {
+  if (!line) return null;
+  return add(make('details', 'card-part desk-time'), make('summary', '', 'Time so far'), line,
+    make('p', 'quiet', 'Elapsed time includes waiting. It is not an estimate of what is left.'));
 }
 
 function unsentPart(held, lead) {
@@ -1800,7 +1969,7 @@ function deskLead(run, held, ours) {
 
 function slideTextReview(outline, held) {
   const path = view.path, turn = view.turn;
-  return Drafting.slideContent({slides: outline.slides,
+  const review = Drafting.slideContent({slides: outline.slides,
     label: 'Review slide text' + (outline.level ? ' · Level ' + outline.level : ''),
     note: held.slideTextNote || '', onNote: note => { held.slideTextNote = note; },
     onDecision: async (decision, note) => {
@@ -1809,6 +1978,16 @@ function slideTextReview(outline, held) {
       if (view.turn !== turn) return;
       held.slideTextNote = ''; view.run = result; await drawDesk(true);
     }});
+  review.id = 'slide-text-review';
+  // The note's label wraps it; it is also named by id, so every reader finds its name.
+  const note = review.querySelector('textarea');
+  const label = note && note.parentNode;
+  if (note && label && label.tagName === 'LABEL') {
+    note.id = 'slide-text-note';
+    label.htmlFor = note.id;
+    note.dataset.key = 'slide-text-note';
+  }
+  return review;
 }
 
 function trainingPlanReview(plan, held) {
@@ -1907,23 +2086,25 @@ function paintDesk(fresh) {
       lead === 'ready' ? 'filled' : '', () => markLevel(level, shown, mark), 'desk-level-ready');
     actions.push(mark);
   }
-  if (!preparingPlan && !waitingPlan) actions.push(capsule('Download', '', openSheet('desk-download', 'desk-download-all'),
-    'desk-download-all'));
+  // The toolbar's Download is the whole level's; each material's own is on its card.
+  if (!preparingPlan && !waitingPlan) actions.push(capsule(level ? 'Download level ' + level
+    : 'Download all', '', openSheet('desk-download', 'desk-download-all'), 'desk-download-all'));
   if (ours && !conversation && !preparingPlan && !waitingPlan) {
     actions.push(capsule('Google Doc', '', openSheet('desk-copies', 'desk-copies'),
       'desk-copies'));
-    actions.push(capsule('Finishing', '', openFinishing, 'desk-finishing'));
+    actions.push(capsule('Finishing', '', () => openFinishing(), 'desk-finishing'));
   }
   const notice = held.said ? make('p', 'notice', held.said) : null;
   if (notice) notice.setAttribute('role', 'alert');
   const available = shown.filter(one => one.state !== 'left-out');
   if (!available.some(one => one.name === held.material[level])) {
-    held.material[level] = (available.find(one => one.seen && ['needs', 'held'].includes(one.state))
+    held.material[level] = (available.find(one => (one.seen && ['needs', 'held'].includes(one.state))
+      || one.state === 'decide')
       || available.find(one => one.seen) || available[0])?.name;
   }
   const selected = held.sources ? 'sources' : held.material[level];
   const options = [...available.map(one => ({id: one.name, label: cardTitle(one) + ' · '
-    + ({writing: 'Writing', needs: 'Needs attention', held: 'Needs updating', ready: 'Ready', draft: 'Draft'}[one.state] || 'Draft')})),
+    + (DESK_WORDS.tabs[one.state] || 'Draft')})),
     {id: 'sources', label: 'Research & sources'}];
   const materials = workspaceTabs('Training material', options, selected, id => {
     held.sources = id === 'sources';
@@ -1933,9 +2114,17 @@ function paintDesk(fresh) {
   const column = add(make('div', 'desk-column'), ...shown.filter(one => one.name === selected).map(deskCard));
   if (!shown.length) column.append(make('p', 'quiet', 'Nothing is made at this level.'));
   const finishing = finishingMaterial();
-  if (finishing) { finishing.panel = deskKit.panel(finishing); finishing.panelKey = deskKit.panelKey(finishing); }
+  if (finishing) {
+    finishing.panel = deskKit.panel(finishing); finishing.panelKey = deskKit.panelKey(finishing);
+    // Finishing is scoped to this material; All materials is the way to check another.
+    const others = capsule('All materials', 'quiet', () => openFinishing(true), 'desk-finishing-all');
+    others.setAttribute('aria-label', 'Finishing: choose another material of this level');
+    finishing.scope = add(make('p', 'quiet desk-finishing-scope'),
+      'Checking ' + cardTitle(finishing.view) + ' only. ', others);
+  }
   const layout = workspacePanel('desk-material', options.findIndex(one => one.id === selected),
-    held.sources ? sourcesPart(found) : add(make('div', 'stack'), column, finishing ? finishing.panel : null));
+    held.sources ? sourcesPart(found) : add(make('div', 'stack'), column,
+      finishing ? finishing.scope : null, finishing ? finishing.panel : null));
   place({ title: found.title || 'Untitled', back: true,
     above: named.length ? [make('span', '', levelsText(named))] : [], actions }, [
     waitingPlan ? null : pageHead(preparingPlan ? 'I’ll prepare the topics and teaching plan for you to check, then build the training.' : conversation ? 'Read the retained materials. Make checked edits in conversation; only you mark a material ready.' : DESK_WORDS.lede),
@@ -1952,6 +2141,7 @@ function paintDesk(fresh) {
     run.problem ? problemPart(run, lead === 'problem') : null,
     adding(run) && ours && !held.unsent ? documentsCard(run, lead === 'documents') : null,
     preparingPlan || waitingPlan ? null : tabs,
+    preparingPlan || waitingPlan ? null : levelStanding(found, level),
     preparingPlan || waitingPlan ? null : materials,
     preparingPlan || waitingPlan ? null : layout,
   ], fresh);
@@ -2038,24 +2228,180 @@ function deskSheet(kind) {
         make('p', 'step-name', cardTitle(one)), make('p', 'quiet', one.says)),
       downloadButton(one)));
     }
-    return [sheetTitle('Download'), make('p', '', 'Each material of ' + where + ', as it stands '
-      + 'now. Nothing is marked ready by downloading it.'),
+    return [sheetTitle(level ? 'Download level ' + level : 'Download all'),
+      make('p', '', 'Every written material of ' + where + ', one file each, exactly as it is '
+      + 'saved now, Ready or a draft. Downloading marks nothing ready and sends nothing. One '
+      + 'material alone downloads from its own card.'),
     ready.length ? items : make('p', 'quiet', 'Nothing of ' + where + ' is written yet.'),
     add(make('div', 'bar'), close)];
   }
-  const copied = shown.filter((one) => list(one.actions).includes('send'));
-  const items = make('ul', 'rows');
-  for (const one of copied) {
-    const go = capsule('Send', '', () => deskDecide('send', { name: one.name }, go),
-      'desk-send ' + one.name);
-    go.setAttribute('aria-label', 'Send ' + one.label + ' to its Google Doc');
-    items.append(add(make('li', 'row step'), add(make('div', 'row-text'),
-      make('p', 'step-name', cardTitle(one)), make('p', 'quiet', one.says)), go));
+  const docs = found.docs || {};
+  const automatic = Object.values(docs).some((doc) => doc.automatic);
+  if (automatic) {
+    // A training started with Google Docs keeps them as it always did.
+    const copied = shown.filter((one) => list(one.actions).includes('send'));
+    const items = make('ul', 'rows');
+    for (const one of copied) {
+      const go = capsule('Send', '', () => deskDecide('send', { name: one.name }, go),
+        'desk-send ' + one.name);
+      go.setAttribute('aria-label', 'Send ' + one.label + ' to its Google Doc');
+      items.append(add(make('li', 'row step'), add(make('div', 'row-text'),
+        make('p', 'step-name', cardTitle(one)), make('p', 'quiet', one.says)), go));
+    }
+    return [sheetTitle('Google Doc'), make('p', '', 'This training keeps its Google Docs up '
+      + 'to date by itself: marking a guide or brief Ready updates its Doc. Send updates it '
+      + 'now, as it stands, before it is Ready.'),
+    copied.length ? items : make('p', 'quiet', 'Every Google Doc of ' + where + ' is up to '
+      + 'date, or waits for its material to be written.'),
+    add(make('div', 'bar'), close)];
   }
-  return [sheetTitle('Google Doc'), make('p', '', 'Send a material of ' + where + ' to its '
-    + 'Google Doc now, as it stands. A Ready material is sent by itself.'),
-  copied.length ? items : make('p', 'quiet', 'Nothing of ' + where + ' has a Google Doc '
-    + 'waiting for it. A guide or a brief is kept in Google Docs when the training is started '
-    + 'with that copy.'),
+  // Made with local copies: Ready is the person's approval here and sends nothing. A Doc of
+  // one guide or brief is made, or updated, only when they ask, one version at a time.
+  const items = make('ul', 'rows');
+  const offered = shown.filter((one) => docs[one.name]);
+  for (const one of offered) {
+    const doc = docs[one.name];
+    const text = add(make('div', 'row-text'), make('p', 'step-name', cardTitle(one)),
+      make('p', 'quiet', doc.problem || docWords(doc)), copyLink({ link: doc.url }, 'Google Doc',
+        'Google Doc of ' + one.label));
+    const bar = make('div', 'bar');
+    const offer = (label, act, key) => {
+      const go = capsule(label, 'quiet', act, key + ' ' + one.name);
+      go.setAttribute('aria-label', label + ' of ' + one.label);
+      bar.append(go);
+      return go;
+    };
+    if (!doc.problem && deskOurs()) {
+      if (doc.changed) {
+        // Changed in Google: bring its changes in, or leave it and make a new Doc.
+        const pull = offer('Bring the Doc’s changes in', () => pullDoc(one.name, pull), 'desk-doc-pull');
+        offer('Make a new Google Doc', () => docSheet(one.name, { fresh: true }), 'desk-doc-new');
+      } else {
+        offer(doc.action === 'update' ? 'Update the Google Doc' : 'Make a Google Doc',
+          () => docSheet(one.name), 'desk-doc');
+      }
+    }
+    items.append(add(make('li', 'row step'), text, bar.childNodes.length ? bar : null));
+  }
+  return [sheetTitle('Google Doc'), make('p', '', 'This training keeps its materials on this '
+    + 'computer. Ready is your approval here and sends nothing. Make a Google Doc of a guide '
+    + 'or brief when you want one; it is updated only when you ask.'),
+  offered.length ? items : make('p', 'quiet', 'Nothing of ' + where + ' goes to a Google Doc: '
+    + 'only a learner guide or a brief does.'),
   add(make('div', 'bar'), close)];
+}
+
+// Where one guide or brief stands in Google Docs, in a sentence.
+function docWords(doc) {
+  if (doc.uncertain) return 'The last try may have made a Doc: Google did not say.';
+  if (!doc.url) return 'No Google Doc yet. Your download stays as it is.';
+  if (doc.changed || doc.conflict) return 'Someone changed the Google Doc since it was last '
+    + 'sent, so it is left as it is. Bring its changes in here, or make a new Google Doc; '
+    + 'the edited Doc is kept either way.';
+  return doc.current ? 'Its Google Doc has this version.'
+    : 'Its Google Doc has an earlier version.';
+}
+
+// Bring a Doc's changes in from Google, as the person asks on the Google Doc sheet. Where
+// both sides changed, the Doc's version is chosen only on a second, explicit press; this
+// version stays in History.
+async function pullDoc(name, control, choose) {
+  const path = view.path, turn = view.turn;
+  if (view.busy) return;
+  view.busy = true; control.disabled = true;
+  let answer = null, said = '';
+  try {
+    await flushDesk(deskHeld(path));
+    answer = await send('copies', { path, pull: name, ...(choose ? { choose } : {}) });
+    said = answer.said || '';
+    deskHeld(path).view = await ask('drafts', { path });
+  } catch (failure) {
+    said = failure.message;
+  } finally {
+    view.busy = false; control.disabled = false;
+  }
+  if (view.turn !== turn) return;
+  const both = answer && !choose && /Choose which to keep/.test(said);
+  const theirs = both ? capsule('Use the Google Doc’s version', 'filled',
+    () => pullDoc(name, theirs, 'theirs'), 'desk-doc-theirs') : null;
+  DESK.kitSheet = [sheetTitle('Bring the Doc’s changes in'), make('p', '', said),
+    both ? make('p', 'quiet', 'Your version on the desk stays in History.') : null,
+    add(make('div', 'bar'), theirs, capsule('Close', 'quiet', closeSheet, 'cancel'))]
+    .filter(Boolean);
+  openSheet('desk-kit', '')();
+  paintDesk(false);
+}
+
+// The one explicit delivery: which material, which version, where it goes, and whether it
+// makes a new Doc or updates the linked one. The filled button authorizes exactly that.
+// `fresh` makes a new Doc beside one that was changed in Google, which is left as it is.
+// `said` is what the last try was answered with, shown again on the sheet drawn afresh.
+async function docSheet(name, { fresh = false, said = '' } = {}) {
+  const path = view.path, turn = view.turn;
+  let doc;
+  try {
+    // The last seconds of typing are saved first, so the version shown is the one sent.
+    await flushDesk(deskHeld(path));
+    doc = await ask('drafts/doc-preview', { path, name });
+  } catch (failure) {
+    deskHeld(path).said = failure.message; closeSheet(); paintDesk(false); return;
+  }
+  if (view.turn !== turn) return;
+  const status = make('p', 'notice', said);
+  status.setAttribute('role', 'status');
+  const creating = fresh || doc.action !== 'update';
+  const facts = add(make('dl', 'about'),
+    make('dt', '', 'Material'), make('dd', '', capital(doc.label)),
+    make('dt', '', 'Version'), make('dd', '', 'As it is saved on the desk now ('
+      + String(doc.seen).slice(0, 8) + ')'),
+    make('dt', '', 'Goes to'), make('dd', '', creating ? 'A new Google Doc named “' + doc.title
+      + '”, in the Google Drive this computer is signed in to'
+      : 'The Google Doc “' + doc.title + '” it is linked to'));
+  const deliver = async (control, again) => {
+    if (view.busy) return;
+    view.busy = true; control.disabled = true;
+    say(status, creating ? 'Making the Google Doc…' : 'Updating the Google Doc…');
+    let refused = null;
+    try {
+      const answer = await send('drafts/doc', { path, name, seen: doc.seen, again, fresh });
+      if (view.turn !== turn) return;
+      deskHeld(path).view = answer;
+      const done = answer.doc;
+      DESK.kitSheet = [sheetTitle(done.result === 'created' ? 'Google Doc made'
+        : 'Google Doc updated'),
+      make('p', '', (done.result === 'created' ? 'Made “' : 'Updated “') + done.title
+        + '” with the version saved at ' + when(done.at) + '. Nothing was marked ready.'),
+      copyLink({ link: done.url }, 'Google Doc', 'Google Doc of ' + doc.label),
+      add(make('div', 'bar'), capsule('Close', 'quiet', closeSheet, 'cancel'))];
+      openSheet('desk-kit', '')();
+      paintDesk(false);
+    } catch (failure) {
+      refused = failure.message;
+      say(status, refused);
+    } finally {
+      view.busy = false; control.disabled = false;
+    }
+    // Drawn again from what is true now: after an answer Google never gave, the one way on
+    // is Make the Doc anyway; after a change in Google, the sheet's own two ways.
+    if (refused && view.turn === turn) docSheet(name, { fresh, said: refused });
+  };
+  const label = doc.uncertain && creating ? 'Make the Doc anyway'
+    : fresh ? 'Make a new Doc' : creating ? 'Make the Doc' : 'Update the Doc';
+  const go = doc.changed && !fresh ? null : capsule(label, 'filled',
+    () => deliver(go, Boolean(doc.uncertain)), 'desk-doc-go');
+  DESK.kitSheet = [sheetTitle(fresh ? 'Make a new Google Doc' : creating ? 'Make a Google Doc'
+    : 'Update the Google Doc'), facts,
+  make('p', '', (fresh ? 'It makes one new Doc of exactly this version. The Doc that was '
+    + 'changed in Google is left exactly as it is, and this material is linked to the new one.'
+    : creating ? 'It makes one new Doc of exactly this version.'
+      : 'It replaces the Doc’s text with exactly this version, unless someone changed the Doc '
+      + 'since it was last sent.') + ' Nothing is marked ready, your file is kept as it is, '
+    + 'and nothing else is sent.'),
+  doc.uncertain ? make('p', 'notice', 'The last try may have made a Google Doc named “'
+    + doc.title + '”: Google did not say. Look in Google Drive first. If there is none, '
+    + 'make it anyway.') : null,
+  doc.changed && !fresh ? make('p', 'notice', docWords(doc)) : null,
+  status, add(make('div', 'bar'), go, capsule(go ? 'Cancel' : 'Close', 'quiet', closeSheet,
+    'cancel'))].filter(Boolean);
+  openSheet('desk-kit', '')();
 }
