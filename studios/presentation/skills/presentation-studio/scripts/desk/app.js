@@ -488,6 +488,7 @@ function alertLine(id) {
 }
 
 function say(problem, text) {
+  if (!problem) return;
   problem.textContent = text;
   problem.hidden = !text;
 }
@@ -3122,13 +3123,18 @@ function researchFromField(draft) {
   if (typeof StudioResearch !== 'undefined') {
     if (!draft.sourceEditor) draft.sourceEditor = new StudioResearch.Editor({
       request: sent => send('research-sources', sent),
-      onChange: () => { if (draft.retell) draft.retell(); }
+      onChange: () => {
+        if (draft.retell) draft.retell();
+        // A refusal Start said beside the sources goes once they can be used.
+        if (view.draft === draft && !researchProblem(draft)) say(byId('research-from-problem'), '');
+      }
     });
     // The sources are kept when the kind of deck changes; a deck from a document says its
-    // document goes with them, whichever kind they were first opened for.
-    return draft.route === 'document' ? add(make('div', 'fields'), make('p', 'quiet',
-      'Your source document is included with these references.'), draft.sourceEditor.node)
-      : draft.sourceEditor.node;
+    // document goes with them, whichever kind they were first opened for. Start says what
+    // stops research under them, in the line the old chooser had.
+    return add(make('div', 'fields'), draft.route === 'document' ? make('p', 'quiet',
+      'Your source document is included with these references.') : null,
+    draft.sourceEditor.node, alertLine('research-from-problem'));
   }
   const looks = looksOf(draft);
   const flip = (key) => (on) => {
@@ -3235,7 +3241,10 @@ function missingIn(draft, name) {
     if (draft.research && draft.route !== 'existing') {
       const why = researchProblem(draft);
       say(byId('research-from-problem'), why);
-      if (why) missing.push(draft.route === 'document' ? 'research-documents' : 'research-sites');
+      // With the shared source editor, the first gap is its box for links: where sources
+      // are added. The old chooser's is its first tick.
+      if (why) missing.push(draft.sourceEditor ? 'research-urls'
+        : draft.route === 'document' ? 'research-documents' : 'research-sites');
     }
   }
   return missing;

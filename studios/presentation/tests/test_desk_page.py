@@ -426,6 +426,125 @@ class StartTests(DeskPageCase):
         self.assertEqual(shown['gate']['name'], 'gate:build', shown['sentence'])
 
 
+NO_SOURCES = 'Add readable sources or allow additional external search before starting.'
+
+
+class ResearchStartTests(DeskPageCase):
+    """Issue #255: Start with Research first on, through the shared source editor the page
+    loads (research.js), for a deck from an idea and one from a document, with sources and
+    without. Each answer the editor reads is the runner's own for that request, and the deck
+    is started by sending the runner what the page sent."""
+
+    TEXT = 'Synthetic reference: rolling restarts keep one instance serving.'
+
+    def drafts(self, *steps) -> list:
+        """The runner's answers to the source editor, in order: the draft it creates, then
+        each change. A step is ('text', words) or ('external', on)."""
+        made = [self.post('research-sources', {'action': 'create'})]
+        for kind, value in steps:
+            last = {'id': made[-1]['id'], 'expected': made[-1]['revision']}
+            if kind == 'text':
+                made.append(self.post('research-sources', {**last, 'action': 'capture',
+                                                           'kind': 'text',
+                                                           'name': 'Pasted notes',
+                                                           'text': value}))
+            else:
+                made.append(self.post('research-sources', {**last, 'action': 'configure',
+                                                           'external': value}))
+        return [ok(one) for one in made]
+
+    def goal(self) -> list:
+        return [{'fill': 'A short title', 'value': 'Rolling restarts'},
+                {'fill': 'Who is it for?', 'value': 'Platform teams'},
+                {'fill': 'What should they take away?', 'value': 'When capacity holds.'}]
+
+    def start(self, route_steps: list, steps: list, drafts: list) -> dict:
+        return self.run_page(self.answers(**{**STARTED, **NOT_THERE,
+                                             'POST /api/research-sources': drafts}),
+                             [{'click': 'New deck'}, *route_steps, *self.goal(),
+                              {'click': 'Research first'}, *steps,
+                              {'click': 'Start'}, {'snapshot': 'started'}],
+                             research=True)
+
+    def started_here(self, result: dict) -> dict:
+        """The deck the runner starts from what the page sent, and the body it was sent."""
+        body = next(body for address, body in self.posts(result) if address == '/api/decks')
+        self.assertEqual(set(body), {'form', 'uploads', 'research_inputs'})
+        with mock.patch.object(self.engine, 'wake'):
+            made = self.post('decks', body)
+        return self.engine._load(runner_support.Path(made['path'])), body
+
+    def pasted(self) -> list:
+        return [{'click': 'Paste text'}, {'fill': 'Source text', 'value': self.TEXT},
+                {'click': 'Add text'}]
+
+    def test_an_idea_with_a_pasted_source_starts_and_is_researched(self):
+        result = self.start([{'click': 'An idea'}], self.pasted(),
+                            self.drafts(('text', self.TEXT)))
+        shot = result['snapshots']['started']
+        self.assertNotIn(NO_SOURCES, shot['text'])
+        self.assertEqual(shot['sheet'], '', 'the sheet closes once the deck is started')
+        record, body = self.started_here(result)
+        self.assertTrue(body['form']['research'])
+        self.assertEqual(body['form']['research_from'],
+                         {'documents': True, 'sites': [], 'web': False})
+        self.assertEqual(record['form']['research_from'],
+                         {'documents': True, 'sites': [], 'web': False})
+        self.assertEqual(record['research_inputs']['count'], 1)
+        # Its run researches first: the research stop is among its steps.
+        from runner import stages
+        self.assertIn('gate:research', {step.name for step in stages.steps(record)})
+
+    def test_an_idea_with_no_sources_is_refused_beside_them(self):
+        result = self.start([{'click': 'An idea'}], [], self.drafts())
+        shot = result['snapshots']['started']
+        self.assertEqual(shot['posts'], 1, 'only the source draft is made')
+        self.assertIn(NO_SOURCES, shot['sheet'])
+        self.assertIn('Something above is missing.', shot['sheet'])
+        # The first gap is where sources are added.
+        self.assertEqual(shot['focusKey'], 'research-urls')
+
+    def test_an_idea_with_no_sources_starts_once_external_search_is_allowed(self):
+        result = self.start([{'click': 'An idea'}],
+                            [{'click': 'Start'}, {'snapshot': 'refused'},
+                             {'tick': 'Search for additional external sources'},
+                             {'snapshot': 'allowed'}],
+                            self.drafts(('external', True)))
+        self.assertIn(NO_SOURCES, result['snapshots']['refused']['sheet'])
+        # Once the sources can be used, the refusal goes.
+        self.assertNotIn(NO_SOURCES, result['snapshots']['allowed']['sheet'])
+        record, body = self.started_here(result)
+        self.assertEqual(body['form']['research_from'],
+                         {'documents': False, 'sites': [], 'web': True})
+        self.assertEqual(record['research_inputs']['count'], 0)
+        self.assertEqual(record['form']['research_from']['web'], True)
+
+    def document(self) -> list:
+        return [{'click': 'A document'}, {'click': 'Paste the text'},
+                {'fill': 'The text', 'value': 'Synthetic notes to build from.'}]
+
+    def test_a_document_with_a_pasted_source_starts_and_is_researched(self):
+        result = self.start(self.document(), [{'snapshot': 'research'}, *self.pasted()],
+                            self.drafts(('text', self.TEXT)))
+        self.assertIn('Your source document is included with these references.',
+                      result['snapshots']['research']['sheet'])
+        self.assertEqual(result['snapshots']['started']['sheet'], '')
+        record, body = self.started_here(result)
+        self.assertEqual(body['form']['route'], 'document')
+        self.assertEqual(record['research_inputs']['count'], 1)
+        self.assertTrue(record['form']['research_from']['documents'])
+
+    def test_a_document_with_no_other_sources_starts_on_its_own(self):
+        result = self.start(self.document(), [], self.drafts())
+        shot = result['snapshots']['started']
+        self.assertNotIn(NO_SOURCES, shot['text'])
+        self.assertEqual(shot['sheet'], '')
+        record, body = self.started_here(result)
+        self.assertEqual(body['form']['research_from'],
+                         {'documents': True, 'sites': [], 'web': False})
+        self.assertEqual(record['research_inputs']['count'], 0)
+
+
 class ProgressTests(DeskPageCase):
     """Task 1.13: before the desk, progress, with only the look pick to ask for."""
 

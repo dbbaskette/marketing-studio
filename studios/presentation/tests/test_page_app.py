@@ -75,10 +75,11 @@ class ApiTests(unittest.TestCase):
         self.assertIn("file.accept = '.pdf,application/pdf", read('research.js'))
         # A deck from a document says its document goes with the research, whichever kind
         # of deck the sources were first opened for.
-        self.assertRegex(self.script, r"return draft\.route === 'document' \? add\(make\('div', "
-                                      r"'fields'\), make\('p', 'quiet',\s+'Your source document "
-                                      r"is included with these references\.'\), "
-                                      r"draft\.sourceEditor\.node\)")
+        # (test_desk_page.ResearchStartTests runs it.)
+        self.assertRegex(self.script, r"draft\.route === 'document' \? make\('p', 'quiet',\s+"
+                                      r"'Your source document is included with these "
+                                      r"references\.'\) : null,\s+draft\.sourceEditor\.node, "
+                                      r"alertLine\('research-from-problem'\)")
 
 
 class LinkTests(unittest.TestCase):

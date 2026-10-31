@@ -26,7 +26,7 @@
     material: 'Read as material to build from.' };
   // Which gap the start puts the focus in first, in the order the sheet is filled.
   const GAPS = ['new-file', 'new-text', 'new-link', 'level brand-only', 'new-selected',
-    'new-title', 'new-minutes', 'research-documents', 'research-sites'];
+    'new-title', 'new-minutes', 'research-urls', 'research-documents', 'research-sites'];
   // The levels of an existing deck whose looks are drawn, for the person to pick from.
   const LOOKED_LEVELS = ['redesign', 'rework'];
   const NOTHING_NEEDED = 'Nothing needed from you. The deck opens here when it is ready.';

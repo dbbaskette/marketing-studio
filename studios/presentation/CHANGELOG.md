@@ -5,6 +5,19 @@ making decks first, then what changes for maintainers.
 
 ## Unreleased
 
+- **Start a deck with Research first again.** With **Research first** on,
+  **Start** did nothing, for a deck from an idea or from a document, with
+  sources or without. It now starts the deck, and its research runs. With no
+  readable sources and no additional external search, the sheet says "Add
+  readable sources or allow additional external search before starting." under
+  the sources and puts the focus in the box for links.
+
+  For maintainers: the start sheet checked research in a problem line that only
+  the old research chooser drew. The shared source editor now has it beneath
+  it. `page_harness.js` loads `research.js` when a plan says `research: true`,
+  as the real page always does. It also finds boxes inside their labels, has
+  `replaceWith`, and its snapshots say `focusKey`. Part of #255.
+
 - **A delivered deck's PDF in the Document Library.** After delivery, the
   library keeps the deck's PDF beside its slide Markdown. The PDF is the one
   Harness Slides already rendered of the delivered deck, and drew its slide
