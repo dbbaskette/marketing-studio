@@ -748,3 +748,94 @@ class Library:
             self._tidy()
             kept = self._write(existing, record, {'content.md': encoded})
         return {'document': kept['id'], 'revision': kept['revision'], 'changed': True}
+
+    # existing work, added explicitly (adopt.py)
+    def keyed(self, keys) -> dict:
+        """{key: what the library holds under it now} for the keys it has: the document,
+        its newest revision, its title and the hashes of its Markdown and original. Keys the
+        library does not hold are left out. Nothing is written."""
+        wanted = {key for key in list(keys)[:LIMITS['documents']] if isinstance(key, str)}
+        found = {}
+        for row in self._index():
+            key = row.get('key')
+            if key not in wanted or key in found:
+                continue
+            try:
+                place, head = self._record(row['id'])
+            except LibraryError:
+                continue
+            found[key] = {'id': head['id'], 'revision': head['revision'],
+                          'title': head.get('title'),
+                          'markdown': (head.get('markdown') or {}).get('sha256'),
+                          'original': (head.get('original') or {}).get('sha256'),
+                          'whole': self._state_of(place, head)[0] != 'missing'}
+        return found
+
+    def adopt(self, key, studio, kind, origin, title, text='', original=None, filename=None,
+              project=None, author=None, native=None, gaps=()) -> dict:
+        """Keep existing work a person chose to add, found again by its key as `retain`
+        finds finished work: readable Markdown when it has text, its original bytes when it
+        has a file, and `native`, what the studio calls it (its own ID, revision, roles,
+        voice and style), recorded as it was given. The same key reuses its document and a
+        revision is added only when the title, the text or the original changed, so adding
+        again adds nothing. Returns {'document', 'revision', 'changed'}."""
+        if not isinstance(key, str) or not KEY.match(key) or key.split(':', 1)[0] != studio:
+            raise LibraryError('Name the existing work by its studio and its own ID.')
+        if kind not in KINDS or origin not in ORIGINS:
+            raise LibraryError('Say what kind of work this is and where it came from.')
+        shown = _plain(title, TITLE) or 'Untitled'
+        text = text if isinstance(text, str) else ''
+        encoded = text.encode('utf-8') if text.strip() else b''
+        if len(encoded) > LIMITS['text']:
+            raise LibraryError(f'"{shown}" is longer than the library keeps for one document.')
+        files, part = {}, None
+        if original is not None:
+            plain = _plain(filename, NAME)
+            if type(original) is not bytes or not original or plain is None \
+                    or any(c in plain for c in '/\\:') or plain.startswith('.') \
+                    or _ending(plain) not in ENDINGS:
+                raise LibraryError(f'"{shown}" has no file the library can keep.')
+            if len(original) > LIMITS['bytes']:
+                raise LibraryError(f'"{shown}" is larger than 8 MB, the most one document can be.')
+            ending = _ending(plain)
+            files[f'original{ending}'] = original
+            part = {'file': f'original{ending}', 'filename': plain, 'media': MEDIA[ending],
+                    'bytes': len(original), 'sha256': _sha(original)}
+        if not encoded and part is None:
+            raise LibraryError(f'"{shown}" has no text or file to keep.')
+        try:
+            described = json.dumps(native if native is not None else {}, ensure_ascii=False)
+        except (TypeError, ValueError):
+            raise LibraryError('Describe the existing work with plain values.') from None
+        if not isinstance(native, (dict, type(None))) or len(described) > 8_000:
+            raise LibraryError('Describe the existing work in at most 8,000 characters.')
+        notes = [note for note in (_plain(gap, 300) for gap in list(gaps)[:20]) if note]
+        held = None
+        if isinstance(project, dict):
+            held = {'studio': studio, 'id': _plain(project.get('id'), 160),
+                    'title': _plain(project.get('title'), TITLE) or shown,
+                    'revision': project.get('revision') if type(project.get('revision')) in (int, str) else None}
+        record = {'title': shown, 'kind': kind, 'origin': origin, 'studio': studio, 'key': key,
+                  'project': held, 'author': _plain(author, 100) if author else None,
+                  'operation': None, 'original': part, 'markdown': None, 'pdf': None,
+                  'native': json.loads(described) if native is not None else None,
+                  'adopted': True,
+                  'conversion': {'method': f'{studio}-existing-v1',
+                                 'state': 'readable' if encoded else 'needs-text',
+                                 'gaps': notes, 'problem': None if encoded else NO_TEXT}}
+        if encoded:
+            files['content.md'] = encoded
+            record['markdown'] = {'file': 'content.md', 'bytes': len(encoded),
+                                  'sha256': _sha(encoded), 'characters': len(text)}
+        with self.lock:
+            existing = next((row['id'] for row in self._index() if row.get('key') == key), None)
+            if existing:
+                place, head = self._record(existing)
+                same = (head.get('title') == shown
+                        and (head.get('markdown') or {}).get('sha256') == (record['markdown'] or {}).get('sha256')
+                        and (head.get('original') or {}).get('sha256') == (part or {}).get('sha256'))
+                if same and self._state_of(place, head)[0] != 'missing':
+                    return {'document': existing, 'revision': head['revision'], 'changed': False}
+            self._tidy()
+            kept = self._write(existing, record, files)
+        return {'document': kept['id'], 'revision': kept['revision'], 'changed': True}

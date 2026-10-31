@@ -1,5 +1,6 @@
 """The home API: shared settings, first-run setup, inventory, launch, and the Document
-Library screen (browsing, preview, download and upload; it selects nothing for a project)."""
+Library screen (browsing, preview, download, upload and Add existing work to library; it
+selects nothing for a project)."""
 import base64
 import binascii
 import threading
@@ -10,6 +11,7 @@ from studio_core import preferences as shared_preferences
 from studio_core import brand_catalog, research_sites, runtime
 from studio_core.model_catalog import Catalog
 from studio_core import document_library
+from studio_core.document_library import adopt as library_adopt
 from studio_core.document_library import context as library_context
 
 from . import catalog, server, shared, state, validation, workspaces
@@ -19,8 +21,10 @@ from .errors import WorkspaceError
 class Home(server.Page):
     reads = ('/api/home', '/api/computer', '/api/models')
     writes = ('/api/shared', '/api/setup', '/api/open', '/api/connect', '/api/computer', '/api/paths', '/api/models', '/api/brands', '/api/research-site',
-              *library_context.ROUTES, '/api/library-upload', '/api/library-download')
+              *library_context.ROUTES, '/api/library-upload', '/api/library-download',
+              '/api/library-existing', '/api/library-adopt')
     UPLOAD = '/api/library-upload'
+    EXISTING = ('/api/library-existing', '/api/library-adopt')
     UPLOAD_LIMIT = 12_000_000   # bytes: a document of up to 8 MB, in base64, with its name
 
     def __init__(self, port, launcher):
@@ -117,6 +121,15 @@ class Home(server.Page):
         try:
             if path in library_context.ROUTES:
                 return library_context.answer(path, sent, 'marketing')
+            if path in self.EXISTING:
+                # Only the workspace each studio remembers in its own records is read: no
+                # folder is searched, and no studio is started or set up.
+                known = {identifier: workspaces.remembered(identifier)
+                         for identifier in catalog.STUDIOS}
+                if path == '/api/library-existing':
+                    return library_adopt.preview(known)
+                with self.changes:
+                    return library_adopt.confirm(known, sent.get('signature'))
             if path == '/api/library-download':
                 found = document_library.opened()
                 if found is None:
@@ -140,7 +153,7 @@ class Home(server.Page):
             raise WorkspaceError(str(error)) from error
 
     def write(self, path, sent):
-        if path in library_context.ROUTES or path in (self.UPLOAD, '/api/library-download'):
+        if path in library_context.ROUTES or path in (self.UPLOAD, '/api/library-download', *self.EXISTING):
             return server.as_json(200, self.library(path, sent))
         if path == '/api/research-site':
             # One site checked as a save would check it; nothing is saved.
