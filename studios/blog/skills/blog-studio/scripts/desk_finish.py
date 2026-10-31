@@ -2516,6 +2516,12 @@ def google_changes(baseline, body, title=None):
                 'near': nearby(k),
                 'was': shown,
                 'now': now,
+                # The desk's lines this change carries, as the Doc shows words.
+                'lines': [
+                    text.strip()
+                    for text in (_visible(after[j]) for j in becomes.get(k, []))
+                    if text and text.strip()
+                ],
             }
     # A note for a paragraph as a whole is a comment of its own, placed when the plan is made
     # on the closest paragraph nothing else in that plan uses, so it never rides on a
@@ -2545,6 +2551,14 @@ def google_changes(baseline, body, title=None):
                 'near': nearby(k),
                 'about': about,
                 'float': True,
+                # A change made by hand carries the desk's lines it asks for.
+                'lines': [
+                    text.strip()
+                    for text in (_visible(line) for line in key[1])
+                    if text and text.strip()
+                ]
+                if key[0] == 'by-hand'
+                else [],
             }
     return found, left, paragraphs
 
@@ -2574,9 +2588,9 @@ def _sent(root, ident):
         # The last send and the last bring-back: when, and how much.
         'last': held('last'),
         'brought': held('brought'),
-        # When the desk and the Doc last agreed (a whole send or a bring-back): DRAFT.md's
-        # digest, each part's, and the Doc baseline then, for telling desk changes not sent.
-        'synced': held('synced'),
+        # The desk lines each verified send carried to this Doc baseline, as suggestions or
+        # for the owner to make by hand: [{transfer, how, lines}].
+        'carried': [entry for entry in found.get('carried') or [] if isinstance(entry, dict)],
         # This blog's own suggestions waiting in the Doc, as the Doc was last read.
         'waiting': found.get('waiting') if isinstance(found.get('waiting'), int) else None,
     }
@@ -2789,18 +2803,21 @@ def google_plan(root, ident, mode):
         'suggestions': sum(1 for p in proposals if p['kind'] == 'edit'),
         'comments': sum(1 for p in proposals if p['kind'] == 'comment'),
     }
-    # A plan that leaves a change for later, or sends any as a comment (which its owner makes
-    # by hand), does not bring the desk and the Doc together.
-    by_hand = (
-        counts['comments']
-        or theirs
-        or any(covers.values())
-        or plan.get('mode') == 'comments'
-        or any(row['kind'] != 'edit' for row in rows)
-    )
+    # Which desk lines this send carries as suggestions its owner decides, and which as
+    # comments the owner makes by hand (a fallback beside a teammate's suggestion, Comments
+    # only, a Doc that cannot take suggestions, a note).
+    carried = [
+        {
+            'how': 'suggestion'
+            if p['kind'] == 'edit' and not covers.get(p['id']) and plan.get('mode') != 'comments'
+            else 'hand',
+            'lines': (paragraphs.get(p['id']) or {}).get('lines') or [],
+        }
+        for p in proposals
+    ]
     record['meta'] = {
         **{token: found for token, found in record['meta'].items() if token in record['plans']},
-        plan['plan']: {**counts, 'whole': not (left or later or waiting or by_hand)},
+        plan['plan']: {**counts, 'carried': carried},
     }
     studio.write_json(_sent_path(root, ident), record)
     return {
@@ -3335,58 +3352,36 @@ def google_send(root, ident, data):
             n, m = 0, n + m
         record['last'] = {'at': studio.now(), 'suggestions': n, 'comments': m}
         record['waiting'] = (record['waiting'] or 0) + n
-        # Only a whole send of suggestions moves the point where the desk and the Doc agreed;
-        # otherwise the last one stands, so a change sent as a comment is never taken back.
-        if meta.get('whole') and result['status'] == 'verified-pending':
-            record['synced'] = _synced(root, ident, base)
+        if result['status'] == 'verified-comments':
+            # Every change went as a comment: none is a suggestion that waits or is decided.
+            made = {row.get('id') for row in rows or []}
+            for row in record['sent']:
+                if row.get('id') in made:
+                    row['kind'] = 'comment'
+        for entry in meta.get('carried') or []:
+            how = 'hand' if result['status'] == 'verified-comments' else entry.get('how')
+            record['carried'].append(
+                {'transfer': base['transfer'], 'how': how, 'lines': entry.get('lines') or []}
+            )
+        record['carried'] = record['carried'][-2000:]
         studio.write_json(_sent_path(root, ident), record)
     return result
-
-
-def _part_digest(heading, text):
-    return studio.digest((heading + '\n' + text).encode())
-
-
-def _synced(root, ident, base):
-    """The desk as it is now, recorded as agreeing with the Doc: DRAFT.md's digest, and for
-    each part its digest and its words as the Doc shows them, against the Doc's current
-    baseline."""
-    directory, _ = studio.item(root, 'articles', ident)
-    draft = desk.read(root, ident)
-    parts = {
-        'title': [_part_digest('', draft['title']), _seen(draft['title'])],
-        'opening': [_part_digest('', draft['opening']), _seen(draft['opening'])],
-        **{
-            s['id']: [_part_digest(s['heading'], s['text']), _seen(s['heading'] + '\n' + s['text'])]
-            for s in draft['sections']
-        },
-    }
-    return {
-        'draft': studio.digest((directory / 'DRAFT.md').read_bytes()),
-        'transfer': base['transfer'],
-        'parts': parts,
-    }
 
 
 def google_state(root, ident, directory, record):
     """The Doc as the desk and Home show it, read on this computer only (Google is not read):
     the last send, this blog's own suggestions waiting there as the Doc was last read, the last
-    bring-back, and whether the desk has changes the Doc has not been sent. None without a Doc
-    that takes suggestions."""
+    bring-back, and whether the desk has changes the Doc has not been sent as suggestions. None
+    without a Doc that takes suggestions."""
     if not google_ready(record):
         return None
     base = record['google']['baselines']['draft']
     sent = _sent(root, ident)
-    synced = sent['synced'] if (sent['synced'] or {}).get('transfer') == base['transfer'] else None
     path = directory / 'DRAFT.md'
     body = path.read_bytes() if path.is_file() else b''
-    now = studio.digest(body)
-    if synced:
-        unsent = now != synced.get('draft')
-    elif now == base.get('local_sha256'):
-        unsent = False
-    else:
-        unsent = _differs(directory, base, body.decode('utf-8', 'replace'), sent)
+    unsent = studio.digest(body) != base.get('local_sha256') and _unsent(
+        directory, base, body.decode('utf-8', 'replace'), sent
+    )
     return {
         'last': sent['last'],
         'waiting': sent['waiting'] or 0,
@@ -3395,19 +3390,44 @@ def google_state(root, ident, directory, record):
     }
 
 
-def _differs(directory, base, body, sent):
-    """Whether the desk's text has changes for the Doc as it was linked: words a plan would
-    send, or a title other than the Doc's name as last read. Read locally; Google is not."""
+_UNSENT = {}  # (folder, DRAFT.md digest, baseline, ledger) -> whether a change is unsent
+
+
+def _unsent(directory, base, body, sent):
+    """Whether the desk has a change for the Doc, as a plan would make it against the Doc's
+    baseline, that has not gone to this baseline as a suggestion: never sent, sent as a
+    comment for the owner to make by hand, or a title other than the Doc's name as last read.
+    Read locally (Google is not), and kept while nothing it reads changes."""
     from google_workflow import snapshot_path
 
+    edits = sorted(
+        row.get('id', '')
+        for row in sent['sent']
+        if row.get('kind', 'edit') == 'edit'
+        and row.get('base', base['transfer']) == base['transfer']
+    )
+    key = (
+        str(directory),
+        studio.digest(body.encode()),
+        base['transfer'],
+        tuple(edits),
+        sent['name'],
+    )
+    if key in _UNSENT:
+        return _UNSENT[key]
     try:
         baseline = snapshot_path(directory, base['transfer'], 'document').read_text()
     except (OSError, ValueError):
         return True
     title = _desk_title(body)
-    return bool(google_changes(baseline, body, title)[0]) or bool(
+    gone = set(edits)
+    found = any(p['id'] not in gone for p in google_changes(baseline, body, title)[0]) or bool(
         sent['name'] and title is not None and title != sent['name']
     )
+    if len(_UNSENT) > 200:
+        _UNSENT.clear()
+    _UNSENT[key] = found
+    return found
 
 
 # The Finishing tools as the desk names them, in the panel's order, for Home's status line.
@@ -3449,74 +3469,137 @@ def _seen(text):
     return '\n'.join(line.strip() for line in lines if line and line.strip())
 
 
-def _paired(written, current):
-    """Each written section's desk section, as `desk.reimport` pairs them: by heading, then
-    by place; None for one the desk does not have."""
-    planned, used = [None] * len(written), set()
-    for at, section in enumerate(written):
-        for one in current:
-            if one['id'] not in used and desk._same_heading(one['heading'], section['heading']):
-                planned[at] = one
-                used.add(one['id'])
+def _merge3(base, ours, theirs):
+    """A three-way merge of key lists, by place: [(kind, (o0, o1), (t0, t1))], each kind
+    'same', 'ours' (only the desk changed), 'theirs' (only the Doc changed) or 'conflict',
+    with the range of the desk's and the Doc's keys it covers (google_workflow.merge_chunks,
+    keeping places instead of lines)."""
+    import difflib
+
+    def blocks(other):
+        return difflib.SequenceMatcher(None, base, other, autojunk=False).get_matching_blocks()
+
+    ours_blocks, theirs_blocks = blocks(ours), blocks(theirs)
+    regions, i, j = [], 0, 0
+    while i < len(ours_blocks) and j < len(theirs_blocks):
+        base_a, start_a, size_a = ours_blocks[i]
+        base_b, start_b, size_b = theirs_blocks[j]
+        low, high = max(base_a, base_b), min(base_a + size_a, base_b + size_b)
+        if low < high:
+            regions.append((low, high, start_a + low - base_a, start_b + low - base_b))
+        if base_a + size_a < base_b + size_b:
+            i += 1
+        else:
+            j += 1
+    regions.append((len(base), len(base), len(ours), len(theirs)))
+    chunks, at_base, at_ours, at_theirs = [], 0, 0, 0
+    for low, high, in_ours, in_theirs in regions:
+        original, mine, yours = (
+            base[at_base:low],
+            ours[at_ours:in_ours],
+            theirs[at_theirs:in_theirs],
+        )
+        if original and len(original) == len(mine) == len(yours) and len(original) > 1:
+            # Neighbouring paragraphs each changed on one side: each is merged on its own.
+            for step, (was, one, other) in enumerate(zip(original, mine, yours, strict=True)):
+                kind = (
+                    'same'
+                    if one == other
+                    else 'theirs'
+                    if one == was
+                    else 'ours'
+                    if other == was
+                    else 'conflict'
+                )
+                chunks.append(
+                    (
+                        kind,
+                        (at_ours + step, at_ours + step + 1),
+                        (at_theirs + step, at_theirs + step + 1),
+                    )
+                )
+        elif original or mine or yours:
+            kind = (
+                'same'
+                if mine == yours
+                else 'theirs'
+                if mine == original
+                else 'ours'
+                if yours == original
+                else 'conflict'
+            )
+            chunks.append((kind, (at_ours, in_ours), (at_theirs, in_theirs)))
+        if high > low:
+            chunks.append(
+                ('same', (in_ours, in_ours + high - low), (in_theirs, in_theirs + high - low))
+            )
+        at_base, at_ours, at_theirs = high, in_ours + high - low, in_theirs + high - low
+    return chunks
+
+
+def _lines(text):
+    """A part's paragraphs (its non-blank lines) and, for each, its words as the Doc shows
+    them; a line with no words (an image) is known by itself."""
+    raw = [line for line in (text or '').split('\n') if line.strip()]
+    keys = []
+    for line in raw:
+        shown = _visible(line)
+        keys.append(shown.strip() if shown and shown.strip() else '\x00' + line.strip())
+    return raw, keys
+
+
+def _matched(left, right):
+    """Pairs of places, left to right, of sections with the same heading, in order."""
+    pairs, used = {}, set()
+    for at, one in enumerate(left):
+        for to, other in enumerate(right):
+            if to not in used and desk._same_heading(one['heading'], other['heading']):
+                pairs[at] = to
+                used.add(to)
                 break
-    for at in range(len(written)):
-        if planned[at] is None and at < len(current) and current[at]['id'] not in used:
-            planned[at] = current[at]
-            used.add(current[at]['id'])
-    return planned, used
+    return pairs
 
 
 PULL_TOO_MUCH = 'The Doc and the desk both changed '
 
 
 def _pull(root, ident, directory, base, body):
-    """What bringing the Doc's accepted text to the desk changes, part by part.
+    """What bringing the Doc's accepted text to the desk changes, paragraph by paragraph.
 
-    A part the Doc shows as the desk does is left as it is. A part the desk has not changed
-    since the desk and the Doc last agreed (the last whole send, or bring-back) takes the
-    Doc's text: what its owner accepted, rejected or wrote. With no such record, the Doc as
-    it was linked stands in for it. A part both changed is refused: nothing is brought back
-    then, so a desk change is never lost. The title stays the desk's: the Doc's name is not
-    its text."""
+    Each part (the opening, each section, paired by heading) is merged three ways: the Doc
+    as the desk and the Doc last agreed (its baseline: when it was linked, or the last
+    bring-back), the desk now, and the Doc now. A paragraph only the Doc changed takes the
+    Doc's words. A paragraph only the desk changed keeps the desk's, unless the desk sent
+    exactly those words as suggestions and the Doc kept its own: the owner rejected them, so
+    the Doc's words come back. A paragraph both changed takes the Doc's words only when the
+    desk's went as suggestions the owner then decided; otherwise its part is refused, so a
+    desk change is never lost. Words that went as comments (Comments only, a Doc that cannot
+    take suggestions, beside a teammate's suggestion, by hand) are the owner's to make, so
+    the desk keeps them. Sections keep the desk's order: one new in the Doc comes after the
+    section before it, one the Doc removed goes when the desk left it alone, and one the desk
+    removed or added stays as the desk has it. The title stays the desk's: the Doc's name is
+    not its text."""
     import google_workflow as workflow
 
     draft = desk.read(root, ident)
     doc = desk.split(body, title=draft['title'])
+    was = workflow.baseline_text(directory, base)
+    linked = desk.split(was, title=draft['title']) if was is not None else None
     sent = _sent(root, ident)
-    synced = sent['synced'] if (sent['synced'] or {}).get('transfer') == base['transfer'] else None
-    # Each part as it was when they last agreed: [its digest or None, its words as the Doc
-    # shows them]. The Doc as it was linked stands in when there is no such record.
-    known = {}
-    if synced and isinstance(synced.get('parts'), dict):
-        for part, value in synced['parts'].items():
-            known[part] = list(value) if isinstance(value, list) else [value, None]
-    else:
-        was = workflow.baseline_text(directory, base)
-        linked = desk.split(was, title=draft['title']) if was is not None else None
-        if linked is not None:
-            known['opening'] = [None, _seen(linked['opening'])]
-            pairs, _ = _paired(linked['sections'], draft['sections'])
-            for section, one in zip(linked['sections'], pairs, strict=True):
-                if one is not None:
-                    known[one['id']] = [None, _seen(section['heading'] + '\n' + section['text'])]
-
-    def desk_changed(part, heading, text):
-        digest, words = known.get(part, [None, None])
-        if digest is not None:
-            return digest != _part_digest(heading, text)
-        return words is None or words != _seen(heading + '\n' + text)
-
-    def doc_changed(part, words):
-        was = known.get(part, [None, None])[1]
-        return was is None or was != words
-
+    # The desk's lines that went as suggestions, and those that went by hand, to this Doc.
+    suggested, by_hand = set(), set()
+    for entry in sent['carried']:
+        if entry.get('transfer') == base['transfer']:
+            (suggested if entry.get('how') == 'suggestion' else by_hand).update(
+                line.strip() for line in entry.get('lines') or [] if isinstance(line, str)
+            )
     changes, refused, pictures = [], [], []
-    # Images: one the Doc's text brings that the desk lacks comes with it; one the desk holds
-    # under the same label with other data refuses that part, so no image is swapped.
     held = {desk_images.key(label): entry for label, entry in (draft.get('images') or {}).items()}
     sent_images = {}
 
     def images_fit(text, label_of):
+        # A Doc image the Doc's words bring that the desk lacks comes with them; one the
+        # desk holds under the same label with other data refuses the part, so none is swapped.
         for found in desk_images.REFERENCE.finditer(text or ''):
             label = desk_images.key(found.group(2) or found.group(1))
             theirs = next(
@@ -3543,101 +3626,127 @@ def _pull(root, ident, directory, base, body):
     def name(heading):
         return ' '.join(re.sub(r'^(\*\*|__)(.+)\1$', r'\2', heading.strip()).split())
 
-    opening = draft['opening']
-    if _seen(doc['opening']) != _seen(draft['opening']):
-        mine = desk_changed('opening', '', draft['opening'])
-        theirs = doc_changed('opening', _seen(doc['opening']))
-        if mine and theirs:
-            refused.append('Opening')
-        elif not mine and images_fit(doc['opening'], 'Opening'):
-            changes.append(
-                {
-                    'kind': 'changed',
-                    'part': 'opening',
-                    'name': 'Opening',
-                    'before': draft['opening'],
-                    'after': doc['opening'],
-                }
-            )
-            opening = doc['opening']
-    sections = []
-    planned, used = _paired(doc['sections'], draft['sections'])
-    gone = {
-        words
-        for part, (_, words) in known.items()
-        if words and part not in {'title', 'opening', *(s['id'] for s in draft['sections'])}
-    }
-    for written, one in zip(doc['sections'], planned, strict=True):
-        heading = ' '.join(written['heading'].split())[:200]
-        words = _seen(heading + '\n' + written['text'])
-        if one is None:
-            # A section the desk took out since they agreed stays out; one new in the Doc comes.
-            if words in gone:
-                continue
-            if images_fit(written['text'], name(heading)):
-                changes.append(
-                    {'kind': 'added', 'name': name(heading), 'before': '', 'after': written['text']}
-                )
-                sections.append(written)
-            continue
-        if _seen(one['heading'] + '\n' + one['text']) == words:
-            sections.append(one)
-            continue
-        mine = desk_changed(one['id'], one['heading'], one['text'])
-        if mine:
-            # Changed on the desk only: kept, and still to send. Changed in both: refused.
-            if doc_changed(one['id'], words):
-                refused.append(name(one['heading']))
-            sections.append(one)
-            continue
-        if not images_fit(written['text'], name(heading)):
-            sections.append(one)
-            continue
+    def decided(keys):
+        # Every one of these desk lines went as a suggestion, none by hand.
+        return bool(keys) and all(key in suggested and key not in by_hand for key in keys)
+
+    def merged(label, then, mine, theirs):
+        """The part's text after the merge, or None when it is refused."""
+        mine_raw, mine_keys = _lines(mine)
+        their_raw, their_keys = _lines(theirs)
+        if mine_keys == their_keys:
+            return mine
+        then_keys = _lines(then)[1] if then is not None else None
+        if then_keys is None:
+            refused.append(label)
+            return None
+        out, took = [], []
+        for kind, (o0, o1), (t0, t1) in _merge3(then_keys, mine_keys, their_keys):
+            if kind == 'same':
+                out += mine_raw[o0:o1]
+            elif kind == 'theirs' or (kind in ('ours', 'conflict') and decided(mine_keys[o0:o1])):
+                out += their_raw[t0:t1]
+                took += their_raw[t0:t1]
+            elif kind == 'ours':
+                out += mine_raw[o0:o1]
+            else:
+                refused.append(label)
+                return None
+        if out == mine_raw:
+            return mine
+        if not images_fit('\n'.join(took), label):
+            return None
+        return theirs if out == their_raw else '\n\n'.join(out)
+
+    opening = merged(
+        'Opening', linked['opening'] if linked else None, draft['opening'], doc['opening']
+    )
+    if opening is None:
+        opening = draft['opening']
+    elif opening != draft['opening']:
         changes.append(
             {
                 'kind': 'changed',
-                'part': one['id'],
-                'name': name(heading),
-                'before': one['text'],
-                'after': written['text'],
-                **(
-                    {'renamed': name(one['heading'])}
-                    if name(one['heading']) != name(heading)
-                    else {}
-                ),
+                'part': 'opening',
+                'name': 'Opening',
+                'before': draft['opening'],
+                'after': opening,
             }
         )
-        sections.append(written)
+    then_sections = linked['sections'] if linked else []
+    to_doc, to_then = (
+        _matched(draft['sections'], doc['sections']),
+        _matched(draft['sections'], then_sections),
+    )
+    doc_then = _matched(doc['sections'], then_sections)
+    sections = []
     for at, one in enumerate(draft['sections']):
-        if one['id'] in used:
-            continue
-        if one['id'] not in known:
-            kept = True  # New on the desk since they agreed: kept, and still to send.
-        elif desk_changed(one['id'], one['heading'], one['text']):
-            refused.append(name(one['heading']))
-            kept = True
+        label = name(one['heading'])
+        then = then_sections[to_then[at]]['text'] if at in to_then else None
+        if at in to_doc:
+            written = doc['sections'][to_doc[at]]
+            if at not in to_then and _lines(one['text'])[1] != _lines(written['text'])[1]:
+                # New on the desk and in the Doc under one heading, written differently.
+                refused.append(label)
+                sections.append(one)
+                continue
+            text = merged(
+                label, then if at in to_then else one['text'], one['text'], written['text']
+            )
+            if text is not None and text != one['text']:
+                changes.append(
+                    {
+                        'kind': 'changed',
+                        'part': one['id'],
+                        'name': label,
+                        'before': one['text'],
+                        'after': text,
+                    }
+                )
+                one = {**one, 'text': text}
+            sections.append(one)
+        elif at in to_then:
+            # The Doc removed it: it goes when the desk left it as they agreed.
+            if _lines(one['text'])[1] == _lines(then)[1]:
+                changes.append(
+                    {
+                        'kind': 'removed',
+                        'part': one['id'],
+                        'name': label,
+                        'before': one['text'],
+                        'after': '',
+                    }
+                )
+            else:
+                refused.append(label)
+                sections.append(one)
         else:
-            kept = False
-            changes.append(
-                {
-                    'kind': 'removed',
-                    'part': one['id'],
-                    'name': name(one['heading']),
-                    'before': one['text'],
-                    'after': '',
-                }
-            )
-        if kept:
-            # Placed after the desk section before it that is kept, or first.
-            before = next(
-                (
-                    sections.index(other) + 1
-                    for other in reversed(draft['sections'][:at])
-                    if other in sections
-                ),
-                0,
-            )
-            sections.insert(before, one)
+            sections.append(one)  # New on the desk: kept, and still to send.
+    # A section new in the Doc comes after the section before it; one the desk removed stays
+    # out when the Doc left it alone, and is refused when the Doc changed it.
+    for at, written in enumerate(doc['sections']):
+        if at in to_doc.values():
+            continue
+        label = name(written['heading'])
+        if at in doc_then:
+            if _lines(written['text'])[1] != _lines(then_sections[doc_then[at]]['text'])[1]:
+                refused.append(label)
+            continue
+        if not images_fit(written['text'], label):
+            continue
+        changes.append({'kind': 'added', 'name': label, 'before': '', 'after': written['text']})
+        previous = next(
+            (
+                place
+                for back in range(at - 1, -1, -1)
+                for desk_at, doc_at in to_doc.items()
+                if doc_at == back
+                for place, kept in enumerate(sections)
+                if kept['id'] == draft['sections'][desk_at]['id']
+            ),
+            None,
+        )
+        sections.insert(0 if previous is None else previous + 1, {**written, 'id': None})
     markdown = desk.join(
         {
             'title': draft['title'],
@@ -3863,7 +3972,6 @@ def google_take(root, ident, data):
         _, record = studio.item(root, 'articles', ident)
         base = record['google']['baselines']['draft']
         sent = _sent(root, ident)
-        sent['synced'] = _synced(root, ident, base)
         sent['waiting'] = 0
         sent['brought'] = {'at': studio.now(), 'parts': len(found['changes'])}
         studio.write_json(_sent_path(root, ident), sent)

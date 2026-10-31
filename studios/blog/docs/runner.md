@@ -357,20 +357,30 @@ suggestions waiting or unsent changes as needing you.
 ### Bring accepted changes from the Doc
 
 **Bring accepted changes** reads the Doc's accepted text (its pending suggestions stay in
-Google, never accepted or rejected) and lists each part it would change, with a comparison:
-a part the desk has not changed since the desk and the Doc last agreed (the last send that
-sent every change as a suggestion, or the last bring-back) takes the Doc's text, so what
-the owner accepted, rejected or wrote comes back. A part changed only on the desk keeps the
-desk's text: so does a change sent as a comment (Comments only, a Doc that cannot take
-suggestions, or words a teammate's suggestion also changes), which the owner makes by hand.
-A Doc image a taken part refers to comes with it; one the desk holds differently under the
-same label refuses that part. Nothing changes until **Bring N parts to the desk**; each
-part keeps the desk's text first in History, as **Before Google's accepted text**, and the
-Doc becomes the new common baseline, as the chat's "Pull from Google Docs" does. Nothing is
-written to Google. It is refused, with nothing changed, while suggestions sent from the desk
-still wait for the owner, or when the desk and the Doc both changed a part since they last
-agreed: send the desk's changes first, or use "Pull from Google Docs" in chat to choose the
-wording for each. A desk or Doc change between the check and the bring-back is refused too.
+Google, never accepted or rejected) and lists each part it would change, with a comparison.
+Each part is merged paragraph by paragraph against the Doc as the desk and the Doc last
+agreed (when it was linked, or the last bring-back):
+
+- A paragraph only the Doc changed takes the Doc's words: what its owner accepted or wrote.
+- A paragraph only the desk changed keeps the desk's words, unless the desk sent exactly
+  those words as suggestions and the Doc kept its own: the owner rejected them, so the
+  Doc's words come back.
+- Words sent as a comment (Comments only, a Doc that cannot take suggestions, words a
+  teammate's suggestion also changes, a change made by hand) stay on the desk: the owner
+  makes them by hand, so the desk still counts them as unsent.
+- A paragraph both changed, other than by decided suggestions, refuses its part.
+- Sections keep the desk's order. A section new in the Doc comes after the section before
+  it; one the Doc removed goes only when the desk left it alone; one the desk added stays;
+  one the desk removed stays out, and is refused when the Doc changed it.
+- A Doc image a taken paragraph refers to comes with it; one the desk holds differently
+  under the same label refuses that part.
+
+Nothing changes until **Bring N parts to the desk**; each part keeps the desk's text first in
+History, as **Before Google's accepted text**, and the Doc becomes the new common baseline, as
+the chat's "Pull from Google Docs" does. Nothing is written to Google. The whole check is
+refused while suggestions sent from the desk still wait for the owner, and so is a
+bring-back after the desk or the Doc changed since the check. For a refused part, send the
+desk's changes first, or use "Pull from Google Docs" in chat to choose the wording.
 
 A blog edited in the manuscript editor (**Edit manuscript**) keeps its own Google tools:
 selected suggestions or comments are previewed and sent only when you confirm. Its
