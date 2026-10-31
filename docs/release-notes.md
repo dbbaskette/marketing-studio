@@ -18,6 +18,22 @@ Download `marketing-studio-installer.zip` for the whole suite, or one studio's i
 
 Signing in to an assistant, your organisation's brands and fonts, and optional Google setup are still your choices. Installing starts no provider job.
 
+## Unreleased: Ready is a deliberate, reversible decision in Training Studio
+
+- **Confirm before marking a level ready.** **Mark this level ready** opens a sheet
+  that lists each material as **Opened** or **Not opened yet** and names the guides
+  and briefs that go to the Document Library. Nothing is marked until you confirm, and
+  **Cancel** changes nothing. The control is gone once every material of the level is
+  Ready.
+- **Undo and Return to draft.** The toast after Mark ready offers **Undo** while the
+  version is unchanged; it restores the earlier states exactly. Each Ready card has a
+  quiet **Return to draft**, bound to the version you saw. Neither removes a library
+  revision: the card says the library keeps it until you mark the material ready again.
+- **Edits say what they undo.** Editing a Ready material says first that saving returns
+  it to Draft, and which library revision is kept, and a toast says so after the save.
+- **Home during the topics review** reports only that decision, and with several
+  trainings waiting, the toolbar's review names the training it opens.
+
 ## Unreleased: a list-first Library screen, safe uploads and Remove from library
 
 - **Documents first.** Marketing Studio's **Library** screen opens on its list.

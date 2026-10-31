@@ -271,6 +271,7 @@ grants no web access and sends nothing to an assistant.
 | A chosen revision has extraction gaps (Infographic Studio) | Refused until the person confirms using only its readable text; the gaps stay on the source |
 | A step is being worked on in a training (a worker, or a desk change under way) | Add from library and Use revision N are refused until it ends |
 | A Training Studio guide or brief's library save fails after Mark ready | It stays Ready. The failure is recorded in the training's local `sources/library.json`, and **Keep in library again** retries with no job. Its owner is offered the retry in a conversation too; a teammate only reads the state |
+| A Training Studio guide or brief returned to draft (an edit, **Undo** or **Return to draft**) | The library keeps the revision it has; nothing is removed. The card says the library keeps revision N until it is marked ready again, and marking the same words ready again adds no revision |
 | A Training Studio upload's library save fails | The training keeps its document; **Keep in library again** keeps it from the training's own copy |
 | An upload kept with **Keep in library** that the library refuses | The project keeps its document, and the page says the library did not keep it |
 | Use selected is still landing | The sheet's Cancel, Close and Escape wait |
