@@ -25,8 +25,8 @@
   const READ_AS = { spec: 'Read as a script for the slides.',
     material: 'Read as material to build from.' };
   // Which gap the start puts the focus in first, in the order the sheet is filled.
-  const GAPS = ['level brand-only', 'new-selected', 'research-documents', 'research-sites',
-    'new-minutes', 'new-title', 'new-file', 'new-text', 'new-link'];
+  const GAPS = ['new-file', 'new-text', 'new-link', 'level brand-only', 'new-selected',
+    'new-title', 'new-minutes', 'research-documents', 'research-sites'];
   // The levels of an existing deck whose looks are drawn, for the person to pick from.
   const LOOKED_LEVELS = ['redesign', 'rework'];
   const NOTHING_NEEDED = 'Nothing needed from you. The deck opens here when it is ready.';
@@ -137,9 +137,10 @@
   }
 
   // --- the start -----------------------------------------------------------------------------
-  // Three numbered steps: the kind of deck, its sources and settings, and what you have. Start
-  // sends it as a desk deck. An existing deck chooses how much of it changes on the first step,
-  // and gives the deck itself on the third.
+  // Three numbered steps, in the order a deck is thought of: what it starts from, with the
+  // material itself; who it is for and what they should take away; then research and the
+  // settings, with the defaults folded away. Under them, what happens after Start, said from
+  // the choices made, and Start. Start sends it as a desk deck.
 
   function start() {
     const draft = h.view.draft;
@@ -153,6 +154,10 @@
         + h.draftModelWords(draft) + '.';
     };
     told();
+    const plan = make('div', 'new-plan');
+    plan.id = 'new-roadmap';
+    const retell = () => plan.replaceChildren(...roadmapParts(draft));
+    retell();
     const form = make('form', 'create-flow');
     form.noValidate = true;
     // Enter in a box starts the deck, as Start does: every step is checked first.
@@ -160,24 +165,23 @@
       event.preventDefault();
       h.startDeck(go, { ready, form: formFor });
     });
-    h.add(form, h.createStep(1, 'Kind of deck', kindCards(draft),
-      ...(draft.route === 'existing' ? levelCards(draft) : [])));
+    h.add(form, h.createStep(1, 'What you start from', kindCards(draft),
+      ...(draft.route ? sourceStep(draft) : [])));
     if (draft.route) {
-      h.add(form, h.createStep(2, 'Sources and settings', ...settingsStep(draft, told)),
-        h.createStep(3, 'What you have', ...haveStep(draft)));
+      h.add(form, h.createStep(2, 'Audience and goal', ...goalStep(draft)),
+        h.createStep(3, 'Research and settings', ...settingsStep(draft, told, retell)),
+        h.add(make('section', 'create-step'), make('h3', 'sheet-part', 'What happens after Start'),
+          plan, h.add(make('p', 'quiet'), drafted, ' You can close this page meanwhile.')));
     }
-    const says = make('span', '', startsSays(draft));
-    says.id = 'new-starts';
-    h.add(form, draft.route ? h.add(make('p', 'quiet'), says, ' ', drafted, ' You can close '
-      + 'this page meanwhile.') : null, h.alertLine('new-problem'),
-    h.add(make('div', 'bar create-foot'), draft.route ? go : null, cancel));
+    h.add(form, h.alertLine('new-problem'),
+      h.add(make('div', 'bar create-foot'), draft.route ? go : null, cancel));
     return [h.add(make('div', 'sheet-heading'), h.sheetTitle('New deck')), form];
   }
 
   function kindCards(draft) {
     const node = make('div', 'pick-cards');
     node.setAttribute('role', 'group');
-    node.setAttribute('aria-label', 'Kind of deck');
+    node.setAttribute('aria-label', 'What you start from');
     for (const [route, title, says] of KINDS_OF_DECK) {
       h.add(node, h.pickCard(title, says, draft.route === route, () => {
         h.chooseRoute(route);
@@ -189,8 +193,24 @@
     return node;
   }
 
-  // How much of an existing deck changes: five cards, the first step's own. Selected changes
-  // adds its box under them.
+  // The material the deck starts from, under its kind: what an idea should cover, the
+  // document and how it is read, or the deck and how much of it changes.
+  function sourceStep(draft) {
+    if (draft.route === 'scratch') {
+      return [h.field('new-notes', 'What should it cover? (optional)', draft, 'notes',
+        { long: true, limit: 4000, hint: 'Points, examples or a rough order. It goes to the '
+          + 'research and the outline.' })];
+    }
+    if (draft.route === 'document') {
+      return [make('p', '', 'The document: a script, notes, a write-up or a transcript.'),
+        ...h.sourceFields(draft), readingField(draft)];
+    }
+    return [make('p', '', 'Your deck: the original is never changed. What you get is always '
+      + 'a new copy.'), ...h.sourceFields(draft), ...levelCards(draft)];
+  }
+
+  // How much of an existing deck changes: five cards, under the deck. Selected changes adds
+  // its box under them.
   function levelCards(draft) {
     const node = make('div', 'pick-cards');
     node.setAttribute('role', 'group');
@@ -215,16 +235,115 @@
     return draft.route !== 'existing' || LOOKED_LEVELS.includes(draft.level);
   }
 
-  // What happens once it starts, as the look chosen says.
-  function startsSays(draft) {
-    return draft.look === 'default' || !looked(draft)
-      ? 'It starts at once and runs on its own, with no stops. The deck opens here when it is '
-        + 'ready, for you to change and deliver.'
-      : 'It starts at once and runs on its own. It stops once, for you to pick the look when '
-        + 'the samples are drawn; then the deck opens here, for you to change and deliver.';
+  // Whether its slide text is drafted, for the person to approve before anything is
+  // designed: wherever an outline is written, from an idea, a document or a full rework.
+  function outlined(draft) {
+    return draft.route !== 'existing' || draft.level === 'rework';
   }
 
-  function settingsStep(draft, told) {
+  // What happens after Start, from what the start says now: research where it is asked for,
+  // the slide text to approve wherever it is drafted, the look where one is drawn, then the
+  // desk and Deliver. Every deck from this start approves its text before it is designed;
+  // a deck saved before keeps the decisions it was saved with. Null until an existing deck
+  // says how much changes.
+  function roadmap(draft) {
+    const existing = draft.route === 'existing';
+    if (existing && !draft.level) return null;
+    const text = outlined(draft);
+    const picks = looked(draft) && draft.look !== 'default';
+    const steps = [];
+    // How the document is read is kept when the kind changes, and matters only for one.
+    const script = draft.route === 'document' && draft.readAs === 'spec';
+    if (!existing && draft.research && !script) {
+      steps.push(['Research.', (draft.route === 'document' && !draft.readAs
+        ? 'Only if your document turns out to be material to build from. ' : '')
+        + 'It is planned from your questions, or from the goal, and done on its own.']);
+    }
+    if (text) {
+      steps.push(['Approve the slide text.', 'The titles, the words on each slide, their '
+        + 'order and the speaker notes are drafted first. Read them, ask for changes, or '
+        + 'choose Approve text & design deck. Nothing is designed until you approve.']);
+    }
+    if (looked(draft)) {
+      const after = text ? 'once the text is approved, ' : '';
+      // A brand that has no looks to show draws the deck in its own, with no stop.
+      steps.push(picks ? ['Pick the look.', capital(after + 'the brand draws a slide in each '
+        + 'of its looks, and the deck is drawn in the one you pick. A brand with no looks to '
+        + 'show uses its own, with no stop.')]
+        : ['The brand’s default look.', capital(after + 'the slides are designed in it, with '
+          + 'no stop.')]);
+    }
+    // An existing deck kept as it says is changed after its look, the way the runner goes.
+    if (!text) steps.push(['The changes are made.', 'On a copy of your deck, on its own.']);
+    steps.push(['Review the deck.', 'It opens on the desk, a card for each slide: change its '
+      + 'words, or note a slide to redraw it.'],
+    ['Deliver.', 'Always yours, when the deck is right.']);
+    const waits = [text ? 'approve the slide text' : '', picks ? 'pick the look' : '']
+      .filter(Boolean);
+    return { steps, says: waits.length ? 'Before the desk, it waits for you '
+      + (waits.length > 1 ? 'twice: to ' + waits.join(', then to ') : 'to ' + waits[0]) + '.'
+      : 'It runs on its own until the deck opens on the desk.' };
+  }
+
+  function capital(said) {
+    return said.charAt(0).toUpperCase() + said.slice(1);
+  }
+
+  function roadmapParts(draft) {
+    const found = roadmap(draft);
+    if (!found) {
+      return [make('p', '', 'Choose how much changes, and what happens after Start is listed '
+        + 'here.')];
+    }
+    return [make('p', '', found.says), h.add(make('ol', 'new-roadmap'),
+      ...found.steps.map(([name, says]) => h.add(make('li', ''), make('strong', '', name),
+        ' ' + says)))];
+  }
+
+  // Who it is for and what they should take away: the title, the audience, the goal, how
+  // long and whether it is presented.
+  function goalStep(draft) {
+    const words = h.words;
+    return [
+      h.field('new-title', 'A short title', draft, 'title', { limit: 120,
+        hint: 'What it is called in every list, for example “Rolling restarts”.' }),
+      h.field('new-audience', 'Who is it for?', draft, 'audience', { long: true, limit: 2000,
+        hint: 'Their role, and what they already know.' }),
+      h.field('new-goal', 'What should they take away?', draft, 'goal', { long: true,
+        limit: 2000, hint: 'A sentence or two is enough.' }),
+      h.field('new-minutes', 'About how long, in minutes (optional)', draft, 'minutes',
+        { short: true, mode: 'numeric' }),
+      h.choice('Is this deck for a talk or a handout?', words.DELIVERIES.map((one) => one[1]),
+        h.deliveryOf(draft), (index) => { draft.delivery = index; }, 'delivery',
+        'A talk is presented, with fewer words on each slide; a handout is read on its own.'),
+    ];
+  }
+
+  // The brand and variant and how it is delivered, as the draft has them: "Made in Acme
+  // (dark), delivered as Google Slides.", then whether those are the defaults still.
+  function defaultsSays(draft) {
+    const found = h.brandsFound();
+    const brand = found.find((one) => one.brand === draft.brand);
+    const named = brand ? (brand.name || brand.brand) + (draft.variant ? ' (' + draft.variant
+      + ')' : '') : '';
+    const output = h.words.OUTPUTS[draft.output][1];
+    return (named ? 'Made in ' + named + ', delivered as ' : 'Delivered as ') + output
+      + (changedFromDefaults(draft, found) ? '. Changed for this deck.'
+        : '. These start as your defaults.');
+  }
+
+  // Whether the brand, its variant or the output differ from what Settings starts a deck
+  // with. A default brand this computer does not have is not counted as changed.
+  function changedFromDefaults(draft, found) {
+    const setup = h.view.setup || {};
+    const chosen = (setup.brand && setup.brand.default) || {};
+    const output = setup.output === 'pptx' ? 1 : 0;
+    const known = found.some((one) => one.brand === chosen.brand);
+    return draft.output !== output || (known && (draft.brand !== chosen.brand
+      || Boolean(chosen.variant) && draft.variant !== chosen.variant));
+  }
+
+  function settingsStep(draft, told, retell) {
     const limits = (h.view.setup && h.view.setup.limits) || {};
     const words = h.words;
     // An existing deck has no research: what it says is the deck's own.
@@ -233,11 +352,22 @@
       draft.research = on;
       h.paintNew(false);
     }, 'research') : null;
+    const branded = h.brandsFound().length > 0;
+    const defaults = make('p', 'quiet', defaultsSays(draft));
+    // The brand, the output and the assistant start as the defaults, and change for this
+    // deck alone under one disclosure, which the line above it keeps up with.
     const options = make('details', 'new-options');
     options.dataset.key = 'new-options';
-    const summary = make('summary', '', 'Options');
+    options.addEventListener('change', () => { defaults.textContent = defaultsSays(draft); });
+    const summary = make('summary', '', 'Brand, output and assistant');
     summary.dataset.key = 'new-options-summary';
     h.add(options, summary,
+      branded ? h.brandFields(draft, 'new') : null,
+      ...h.explained('Delivered as', words.OUTPUTS.map((one) => one[1]), words.OUTPUT_SAYS,
+        draft.output, (index) => {
+          draft.output = index;
+          h.paintNew(false);
+        }, 'new-output'),
       make('p', 'quiet', [words.AGENT_NAMES[draft.agent] + h.draftModelWords(draft),
         h.limitsSays(limits) || 'no limits'].join(' · ')),
       ...h.agentFields(draft, 'new', 'For this deck', told),
@@ -245,6 +375,7 @@
         + ' A deck that reaches a limit stops and asks you. The limits are changed in '
         + 'Settings.'));
     const asked = researched && draft.research;
+    const text = outlined(draft);
     return [
       researched ? h.add(make('div', 'field'), research, make('p', 'quiet field-hint',
         (draft.route === 'document' ? 'Only where your document turns out to be material to '
@@ -254,53 +385,20 @@
       asked ? h.field('research-questions', 'What should the research answer? '
         + '(optional)', draft, 'researchQuestions', { long: true, rows: 4,
         hint: 'One question a line, at most 8.' }) : null,
-      h.field('new-minutes', 'About how long, in minutes (optional)', draft, 'minutes',
-        { short: true, mode: 'numeric' }),
-      h.field('new-audience', 'Who is it for?', draft, 'audience', { long: true, limit: 2000,
-        hint: 'Their role, and what they already know.' }),
-      h.choice('Is this deck for a talk or a handout?', words.DELIVERIES.map((one) => one[1]),
-        h.deliveryOf(draft), (index) => { draft.delivery = index; }, 'delivery',
-        'A talk is presented, with fewer words on each slide; a handout is read on its own.'),
-      h.brandFields(draft, 'new'),
-      ...h.explained('Delivered as', words.OUTPUTS.map((one) => one[1]), words.OUTPUT_SAYS,
-        draft.output, (index) => {
-          draft.output = index;
-          h.paintNew(false);
-        }, 'new-output'),
-      words.OUTPUTS[draft.output][0] === 'google' && !h.googleReady()
-        ? make('p', '', words.NOT_CONNECTED) : null,
       looked(draft) ? h.choice('The look', LOOKS.map((one) => one[1]),
         Math.max(0, LOOKS.findIndex((one) => one[0] === draft.look)), (index) => {
           draft.look = LOOKS[index][0];
-          const said = h.byId('new-starts');
-          if (said) said.textContent = startsSays(draft);
-        }, 'new-look', 'The brand draws a slide of your outline in each of its looks. Pick '
-          + 'one then, or leave it to the brand.') : null,
+          retell();
+        }, 'new-look', (text ? 'Once the slide text is approved, the' : 'The') + ' brand '
+          + 'draws a slide in each of its looks. Pick one then, or leave it to the brand.')
+        : null,
+      // With no brand skill to choose from, what to do about it is said in the open.
+      branded ? null : h.brandFields(draft, 'new'),
+      words.OUTPUTS[draft.output][0] === 'google' && !h.googleReady()
+        ? make('p', '', words.NOT_CONNECTED) : null,
+      defaults,
       options,
     ];
-  }
-
-  function haveStep(draft) {
-    const nodes = [
-      h.field('new-title', 'A short title', draft, 'title', { limit: 120,
-        hint: 'What it is called in every list, for example “Rolling restarts”.' }),
-      h.field('new-goal', 'What should they take away?', draft, 'goal', { long: true,
-        limit: 2000, hint: 'A sentence or two is enough.' }),
-    ];
-    if (draft.route === 'scratch') {
-      nodes.push(h.field('new-notes', 'What should it cover? (optional)', draft, 'notes',
-        { long: true, limit: 4000, hint: 'Points, examples or a rough order. It goes to the '
-          + 'research and the outline.' }));
-    }
-    if (draft.route === 'document') {
-      nodes.push(make('p', '', 'The document: a script, notes, a write-up or a transcript.'),
-        ...h.sourceFields(draft), readingField(draft));
-    }
-    if (draft.route === 'existing') {
-      nodes.push(make('p', '', 'Your deck: the original is never changed. What you get is '
-        + 'always a new copy.'), ...h.sourceFields(draft));
-    }
-    return nodes;
   }
 
   // How the document is read, when you know: it lays out the slides, or it is material to

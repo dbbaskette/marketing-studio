@@ -69,6 +69,17 @@ class ApiTests(unittest.TestCase):
         self.assertIn('readAsDataURL', self.script)
         self.assertRegex(self.script, r"send\('decks', \{ form[^}]*uploads")
 
+    def test_a_document_may_be_a_pdf_and_its_research_says_it_is_included(self):
+        # The start's document picker and the shared research sources both take a PDF.
+        self.assertRegex(self.script, r"const DOCUMENT_TYPES = \[[^\]]*'\.pdf'")
+        self.assertIn("file.accept = '.pdf,application/pdf", read('research.js'))
+        # A deck from a document says its document goes with the research, whichever kind
+        # of deck the sources were first opened for.
+        self.assertRegex(self.script, r"return draft\.route === 'document' \? add\(make\('div', "
+                                      r"'fields'\), make\('p', 'quiet',\s+'Your source document "
+                                      r"is included with these references\.'\), "
+                                      r"draft\.sourceEditor\.node\)")
+
 
 class LinkTests(unittest.TestCase):
     """The page loads nothing from anywhere else, and links out only where the server said."""

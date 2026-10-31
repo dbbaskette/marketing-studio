@@ -100,8 +100,10 @@ class LayoutTests(test_desk.ScriptedPage, test_runner_page.PageCase):
         result = self.run_page(self.answers(), [
             {'click': 'Start from a document'}, {'snapshot': 'document'}])
         shot = result['snapshots']['document']
-        # Home's way in opens the desk's start at that kind, with the document asked for.
-        self.assertIn('3. What you have', shot['parts'])
+        # Home's way in opens the desk's start at that kind, with the document asked for
+        # first.
+        self.assertEqual(shot['parts'][0], '1. What you start from')
+        self.assertIn('3. Research and settings', shot['parts'])
         self.assertIn('Paste the text', shot['buttons'])
         self.assertEqual(shot['heading'], 'Home')
 
@@ -326,9 +328,9 @@ class LayoutTests(test_desk.ScriptedPage, test_runner_page.PageCase):
             {'click': 'A document'}, {'snapshot': 'document'}])
         shots = result['snapshots']
         self.assertEqual(shots['routes']['heading'], 'Home')
-        self.assertIn('1. Kind of deck', shots['routes']['sheet'])
+        self.assertIn('1. What you start from', shots['routes']['sheet'])
         sheet = shots['document']['sheet']
-        steps = ['1. Kind of deck', '2. Sources and settings', '3. What you have']
+        steps = ['1. What you start from', '2. Audience and goal', '3. Research and settings']
         self.assertEqual([step for step in steps if step in sheet], steps)
         self.assertEqual(sorted(steps, key=sheet.index), steps)
         self.assertNotIn('4. ', sheet)
@@ -340,7 +342,7 @@ class LayoutTests(test_desk.ScriptedPage, test_runner_page.PageCase):
         result = self.run_page(self.answers(), [
             {'click': 'New deck'}, {'click': 'An idea'}, {'snapshot': 'idea'}])
         sheet = result['snapshots']['idea']['sheet']
-        for step in ('1. Kind of deck', '2. Sources and settings', '3. What you have'):
+        for step in ('1. What you start from', '2. Audience and goal', '3. Research and settings'):
             self.assertIn(step, sheet)
         self.assertNotIn('4. ', sheet)
         self.assertIn('What should it cover? (optional)', sheet)
@@ -355,8 +357,8 @@ class LayoutTests(test_desk.ScriptedPage, test_runner_page.PageCase):
         self.assertIn('Something above is missing.', missing['sheet'])
         self.assertIn('Choose the file first.', missing['sheet'])
         self.assertIn('Give it a title first.', missing['sheet'])
-        # The desk's start asks for the title before the document, in its third step.
-        self.assertEqual(missing['focus'], 'new-title')
+        # The desk's start asks for the document first, then the title, in its second step.
+        self.assertEqual(missing['focus'], 'new-file')
 
     def test_the_sheet_sends_what_the_wizard_sent(self):
         answers = self.answers(**{'POST /api/decks': [ok({'path': '/nowhere', 'id': 'x'})],
@@ -395,7 +397,7 @@ class LayoutTests(test_desk.ScriptedPage, test_runner_page.PageCase):
                                state={'screen': 'new', 'path': None})
         opened = result['snapshots']['opened']
         self.assertEqual(opened['heading'], 'Home')
-        self.assertIn('1. Kind of deck', opened['sheet'])
+        self.assertIn('1. What you start from', opened['sheet'])
 
     def test_research_from_is_ticks(self):
         sites = ['blog.example.com/platform', 'docs.example.com']
@@ -443,8 +445,9 @@ class LayoutTests(test_desk.ScriptedPage, test_runner_page.PageCase):
             for gone in ('Back a step', 'Another way to begin', 'Continue'):
                 self.assertNotIn(gone, shot['buttons'])
         sheet = result['snapshots']['document']['sheet']
-        self.assertLess(sheet.index('1. Kind of deck'), sheet.index('An idea'))
-        self.assertLess(sheet.index('An existing deck'), sheet.index('2. Sources and settings'))
+        self.assertLess(sheet.index('1. What you start from'), sheet.index('An idea'))
+        self.assertLess(sheet.index('An existing deck'), sheet.index('Where the document is'))
+        self.assertLess(sheet.index('Where the document is'), sheet.index('2. Audience and goal'))
 
 
     # --- the deck screen, kept light -----------------------------------------------
@@ -588,7 +591,7 @@ class LayoutTests(test_desk.ScriptedPage, test_runner_page.PageCase):
             {'snapshot': 'home'}, {'back': True}, {'snapshot': 'opened'}],
             earlier=[{'screen': 'new', 'path': None}], transitions=True)
         opened = result['snapshots']['opened']
-        self.assertIn('1. Kind of deck', opened['sheet'])
+        self.assertIn('1. What you start from', opened['sheet'])
         self.assertEqual(opened['focus'], 'sheet')
 
     def test_a_search_typed_and_not_sent_stays_when_a_choice_changes(self):
@@ -616,7 +619,7 @@ class LayoutTests(test_desk.ScriptedPage, test_runner_page.PageCase):
 
     def test_no_two_parts_of_the_new_deck_sheet_share_a_key(self):
         result = self.run_page(self.answers(), [
-            {'click': 'New deck'}, {'click': 'An idea'}, {'click': 'Options'},
+            {'click': 'New deck'}, {'click': 'An idea'}, {'click': 'Brand, output and assistant'},
             {'snapshot': 'options'}])
         self.assertEqual(result['snapshots']['options']['keyedTwice'], [])
 

@@ -1437,12 +1437,22 @@ function openNew(route) {
   byId('sheet').focus();
 }
 
+// Another kind of deck keeps everything typed and chosen: the title, the goal, the defaults
+// and research with where it may look. Only the material is the kind's own: the file, where
+// it is and its link are kept for each kind, and come back with it.
 function chooseRoute(route) {
   if (!view.draft) view.draft = newDraft();
-  if (view.draft.route === route) return;
-  view.draft.route = route;
-  view.draft.research = false;
-  view.draft.looks = null;
+  const draft = view.draft;
+  if (draft.route === route) return;
+  const kept = draft.material || (draft.material = {});
+  if (draft.route) {
+    kept[draft.route] = { upload: draft.upload, source: draft.source, link: draft.link };
+  }
+  const back = kept[route] || { upload: null, source: 0, link: '' };
+  draft.upload = back.upload;
+  draft.source = back.source;
+  draft.link = back.link;
+  draft.route = route;
 }
 
 // Ways to start a deck, after the decks in hand: the three routes, each opening the form.
@@ -1510,11 +1520,10 @@ function rows(title, found, kind, className) {
 function invitation() {
   return add(make('section', 'card shine invite'),
     make('h2', 'invite-title', 'Start your first deck'),
-    make('p', '', 'Start from an idea, from a document, or from a deck you already have. A '
-      + 'deck from an idea or a document is researched, outlined, designed and built on its '
-      + 'own, and opens on the desk when it is ready. It stops only if you chose to pick its '
-      + 'look. A deck you already have stops where its review level says, for your '
-      + 'decision.'),
+    make('p', '', 'Start from an idea, from a document, or from a deck you already have. '
+      + 'Where new slide text is drafted, you approve it before anything is designed; then '
+      + 'the deck is built and opens on the desk when it is ready. The start lists what '
+      + 'happens, from your choices, before you begin.'),
     add(make('div', 'bar'), newButton(view.sheet ? '' : 'filled')),
     make('p', 'quiet', 'Starting takes three short steps, and this page tells you when it '
       + 'needs you.'));
@@ -2932,13 +2941,22 @@ async function pickFile(input) {
   refuse('new-file', '');
   draft.reading = true;
   paintChosen();
+  // A file still being read when another kind of deck is chosen is not that kind's file.
+  const route = draft.route;
+  let read = null;
+  let problem = '';
   try {
-    draft.upload = { name: file.name, size: file.size, encoded: await base64Of(file) };
+    read = { name: file.name, size: file.size, encoded: await base64Of(file) };
   } catch (failure) {
-    draft.upload = null;
-    refuse('new-file', file.name + ' could not be read. ' + failure.message);
+    problem = file.name + ' could not be read. ' + failure.message;
   }
   draft.reading = false;
+  if (draft.route !== route) {
+    if (view.draft === draft) paintChosen();
+    return;
+  }
+  draft.upload = read;
+  if (problem) refuse('new-file', problem);
   if (view.draft === draft) paintChosen();
 }
 
@@ -3014,10 +3032,11 @@ function sharedSites() {
 
 // The draft's choice, made the first time research is switched on: your documents for a
 // deck from a document, the public web for one from an idea. Your sites stay off until they
-// are ticked, with the shared list ready under them.
+// are ticked, with the shared list ready under them. Your documents are on for every kind,
+// so a deck that becomes one from a document reads it; only a document offers the tick.
 function looksOf(draft) {
   if (!draft.looks) {
-    draft.looks = { documents: draft.route === 'document', sitesOn: false,
+    draft.looks = { documents: true, sitesOn: false,
       sites: sharedSites().map((url) => ({ url, on: true })),
       web: draft.route !== 'document', adding: '', checking: false };
   }
@@ -3094,10 +3113,13 @@ function researchFromField(draft) {
   if (typeof StudioResearch !== 'undefined') {
     if (!draft.sourceEditor) draft.sourceEditor = new StudioResearch.Editor({
       request: sent => send('research-sources', sent),
-      primarySummary: draft.route === 'document' ? 'Your source document is included with these references.' : '',
       onChange: () => { if (draft.retell) draft.retell(); }
     });
-    return draft.sourceEditor.node;
+    // The sources are kept when the kind of deck changes; a deck from a document says its
+    // document goes with them, whichever kind they were first opened for.
+    return draft.route === 'document' ? add(make('div', 'fields'), make('p', 'quiet',
+      'Your source document is included with these references.'), draft.sourceEditor.node)
+      : draft.sourceEditor.node;
   }
   const looks = looksOf(draft);
   const flip = (key) => (on) => {
