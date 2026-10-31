@@ -91,6 +91,23 @@ files in its owned `generated_images/` folder, as implemented by the official
 It does not invent an image event type or follow an output path mentioned by a model.
 Planning/inspection disable image generation; only the image adapter enables it.
 
+Codex outcomes use the same normalized result as Gemini and are classified only from
+the worker's own failure diagnostics (exit status, `stderr` and terminal `turn.failed`
+or `error` events), never from the model's prose:
+
+| Observation | State and reason |
+| --- | --- |
+| A completed turn with one bounded valid PNG in the owned output folder | `complete`, with reported or unknown token usage |
+| A completed turn with no saved image, an unknown `image_generation` feature or an unsupported argument | `failed`, `image-tool-unavailable` |
+| Not signed in, unauthorized or "please run /login" | `failed`, `sign-in-required` |
+| Retried stream `error` events followed by a completed turn | Not a failure; the image is collected as usual. Only an `error` with no later completed turn, or a `turn.failed`, ends the request, here and in local recovery |
+| Usage or rate limit, including a `turn.failed` event after an exit status of 0 | `failed`, `quota` |
+| A saved file that is not a bounded valid 8-bit PNG | `failed`, `invalid-asset`; nothing is adopted |
+| Time limit or cancellation | `unknown`/`timeout` or `cancelled`/`stopped`; never retried |
+
+`tests/test_codex_images.py` drives these from stubbed event streams. They do not
+establish that a particular installed Codex or account can generate or edit images.
+
 Claude Code inspection uses only staged PNG files, Read scoped to their names,
 restricted mode, no inherited setting sources, empty strict MCP configuration,
 no permission prompts/session persistence, and a minimal environment without Gemini

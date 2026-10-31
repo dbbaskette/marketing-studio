@@ -89,6 +89,16 @@ Signing in to an assistant, your organisation's brands and fonts, and optional G
 - Opening or configuring the library shares nothing. Shared settings keep their single
   locked file and outdated-form checks.
 
+## Unreleased: Infographic Studio Codex image outcomes
+
+Infographic Studio's Codex image adapter now reports each failure from the worker's
+own diagnostics rather than from anything the model wrote. A turn that fails after a
+successful exit is no longer collected as artwork. A saved file that is not a usable
+PNG is reported as an invalid image, separately from a Codex that cannot offer its
+image tool. Sign-in, usage limits, invalid images and an unavailable image tool each
+say what to do next. Nothing is retried, and live generation and editing remain a
+separate acceptance step.
+
 ## Unreleased: research citation handoffs
 
 Research workers are explicitly told which saved source IDs to cite. If a worker

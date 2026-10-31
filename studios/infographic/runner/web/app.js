@@ -143,6 +143,15 @@ async function request(route, data) {
     const answer = await response.json(); if (!response.ok){const failure=Error(answer.error || 'This request could not be completed.');failure.status=response.status;throw failure;}return answer;
   }finally{if(owner)endWork(owner);}
 }
+// Normalized image outcomes. Each says what happened and the next safe step; nothing is retried.
+const imageProblems={
+  'image-tool-unavailable':'The image worker finished without handing back a usable image. Your installed Codex may not offer its image tool here. Check Image work needs attention for local recovery.',
+  'sign-in-required':'Sign in to your selected assistant on this computer, then start the image request again. Your earlier work is kept.',
+  'quota':'The image provider reported a usage or rate limit. Your earlier work is kept. Try again when your allowance resets.',
+  'invalid-asset':'The returned image was not a usable PNG, so it was not added. Your earlier work is kept.',
+  'gemini-key-required':'Set GEMINI_API_KEY in the server launch environment before starting image work.',
+  'image-model-unavailable':'Choose a Gemini image model available to your account in Settings.'
+};
 async function action(verb, values={}, revision=null, options={}) {
   if (busy) return; busy = true; error(''); const id = held.project.id;
   const label=verb==='suggest'&&held.planning_response?.available&&!values.fresh?'Checking the saved proposal':workLabels[verb];
@@ -151,7 +160,7 @@ async function action(verb, values={}, revision=null, options={}) {
   const polling=setInterval(async()=>{if(checking)return;checking=true;try{progressNotice(await request('/api/activity?id='+encodeURIComponent(id)),owner,id);}catch(f){connectionUncertain(owner);}finally{checking=false;}},2000);
   try {
     const answer = await request('/api/action', {action:verb, id, expected_revision:revision??held.project.revision, ...values});
-    closeSheet(); await openProject(id); if(options.quiet)return answer.result; if(answer.result?.state==='unknown')error('The image worker did not confirm completion. Check Image work needs attention for saved artwork or cancellation. No request was repeated.'); else if(answer.result?.state==='failed')error(answer.result.reason==='image-tool-unavailable'?'The image worker finished without handing back a usable image. Check Image work needs attention for local recovery.':'The image provider could not finish. Your earlier work is kept.'); else if(answer.result?.state==='outdated')toast('The earlier result was kept privately and did not replace newer work.');else toast('Saved.'); return answer.result;
+    closeSheet(); await openProject(id); if(options.quiet)return answer.result; if(answer.result?.state==='unknown')error('The image worker did not confirm completion. Check Image work needs attention for saved artwork or cancellation. No request was repeated.'); else if(answer.result?.state==='failed')error(imageProblems[answer.result.reason]||'The image provider could not finish. Your earlier work is kept.'); else if(answer.result?.state==='outdated')toast('The earlier result was kept privately and did not replace newer work.');else toast('Saved.'); return answer.result;
   } catch (failure) {
     if(workLabels[verb]&&(!failure.status||failure.status>=500)){
       clearInterval(polling);connectionUncertain(owner);
