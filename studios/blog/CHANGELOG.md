@@ -5,6 +5,16 @@ changes for authors first, then what changes for maintainers.
 
 ## Unreleased
 
+- **Document Library: Update available and Keep in library.** A desk source taken
+  from the shared Document Library shows **Update available** when the library has
+  a newer revision, and **Use revision N** takes it as a new source revision the blog
+  pins; nothing changes until then, and it waits while a desk job runs. Uploading
+  files offers **Keep in library** (the default) or **Only this blog**; a kept copy is
+  local and never changes the file's sharing. Maintainers: `shared_library.marked`,
+  `update` and `keep_upload`, the `desk-library-update` route, and the upload field
+  `document_library`. Marketing Studio's **Add existing work to library** reads this
+  studio's team library without changing it.
+
 - **Polish the blog without its approval form.** Google dropdowns read as their
   selected text. New manuscript imports leave clearly labelled leading approver
   and reviewer chip fields out of the editing copy and explain this in the

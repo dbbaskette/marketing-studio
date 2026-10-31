@@ -54,6 +54,17 @@ assistant job, signed-in provider, private team repository, or real user setting
 are needed. Signed-in provider and multi-user acceptance remain separate from
 these offline checks.
 
+The Document Library's browser check, `tests/library_visual.cjs`, drives the real
+Marketing Studio home served by `tests/library_visual_server.py` over synthetic
+settings, a synthetic library and a synthetic Blog Studio workspace in a temporary
+folder. It covers the Library screen, Add existing work to library and the Add from
+library sheet at 1280, 390 and 320px, in light and dark, with reduced motion and with
+reduced transparency and more contrast. codex, claude and gemini are refusing
+stand-ins and `BROWSER` is false. Run it with the library tests in the shared runner:
+`bash scripts/ci/tart-macos.sh --guest scripts/ci/guest-library-visual.sh`. Run it from
+a plain clone: the guest clones its source with Git, which cannot read a linked
+worktree's `.git` file.
+
 For a setup-only repair after a full native suite run, use
 `bash scripts/ci/tart-macos.sh --guest scripts/ci/guest-shared-setup.sh`.
 This uses the same disposable runner and also repeats the native acceptance and

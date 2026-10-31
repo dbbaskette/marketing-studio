@@ -58,7 +58,9 @@ delivered decks. It lives in `library/` under your work folder (normally
 `~/Studios/library`) and stays on this computer. In Presentation Studio and Blog
 Studio, **Add from library** copies chosen revisions into that one deck or blog,
 which keeps them even if the library changes. Choosing a document starts nothing:
-no research, no web access and no assistant job. See
+no research, no web access and no assistant job. **Add existing work to library**
+on the Library screen previews what Blog Studio's team library already holds and
+adds it only when you confirm. See
 [the Document Library](docs/shared-setup.md#the-document-library).
 
 Research uses the shared Harness Research workflow: up to three investigators,
