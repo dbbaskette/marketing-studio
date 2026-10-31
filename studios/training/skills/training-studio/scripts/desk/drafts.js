@@ -584,10 +584,11 @@ function sourcesStep(draft, brand, looks) {
   told();
   researchLine(draft, looks);
   if (!draft.sourceEditor && typeof StudioResearch !== 'undefined') {
-    draft.sourceEditor = new StudioResearch.Editor({request: sent => send('research-sources', sent),
+    // Training Studio offers Keep in library for each file the editor captures.
+    draft.sourceEditor = new StudioResearch.Editor({request: sent => send('research-sources', sent), keepChoice: true,
       onChange: () => { if (draft.retell) draft.retell(); }});
   }
-  return [draft.sourceEditor ? draft.sourceEditor.node : documentsPart(draft),
+  return [draft.sourceEditor ? draft.sourceEditor.node : documentsPart(draft, retell, true),
     ...(draft.sourceEditor ? [] : [researchFields(draft, retell, ['documents'])]), looks,
     questionsField(draft), brand, copiesOption(draft),
     trainingOptions('Assistant and limits', 'training-assistant',
@@ -665,7 +666,8 @@ async function addHeld(path, files, status) {
     if (status) say(status, 'Adding ' + (index + 1) + ' of ' + files.length + ': ' + file.name);
     try {
       const content = await base64Of(file);
-      await send('documents', { path, action: 'add', name: file.name, content });
+      await send('documents', { path, action: 'add', name: file.name, content,
+        keep: keepUploads() });
     } catch (failure) {
       left.push(file);
       why.push(failure.message);
@@ -2002,18 +2004,22 @@ function deskLibraryPart() {
   return add(part, bar);
 }
 
-// What the Document Library holds of a Ready guide or brief: kept, or the retry.
+// What the Document Library holds of a Ready guide or brief: kept, or the retry. Keeping it
+// again changes no material and starts no job, so, like Mark ready, the person who runs the
+// training is offered it while it is worked on in a conversation too; a teammate reads it.
 function deskLibraryKept(found) {
   const kept = (deskHeld(view.path).view?.library || {})[found.name];
-  if (!kept || !deskCanChange()) return null;
+  if (!kept) return null;
   if (kept.state === 'kept') {
     return make('p', 'quiet', 'Kept in the Document Library as Markdown, revision ' + kept.revision + '.');
   }
+  const said = kept.state === 'failed'
+    ? make('p', 'problem', 'Not kept in the Document Library: ' + kept.problem)
+    : make('p', 'quiet', 'Not kept in the Document Library yet.');
+  if (!deskOurs()) return add(make('div', 'card-part'), said);
   const again = capsule(kept.state === 'failed' ? 'Keep in library again' : 'Keep in library', 'quiet',
     () => deskDecide('library-keep', { name: found.name }, again), 'desk-library-keep ' + found.name);
-  return add(make('div', 'card-part'), kept.state === 'failed'
-    ? make('p', 'problem', 'Not kept in the Document Library: ' + kept.problem)
-    : make('p', 'quiet', 'Not kept in the Document Library yet.'), add(make('div', 'bar'), again));
+  return add(make('div', 'card-part'), said, add(make('div', 'bar'), again));
 }
 
 function deskLead(run, held, ours) {

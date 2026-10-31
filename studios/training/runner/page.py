@@ -173,7 +173,10 @@ What a caller needs to know
   runs or where the research reads no documents. `POST /api/documents` (add) and
   `/api/drafts/source` take `keep`: true keeps the upload in the library too, once the
   training took it, and the answer carries `library_kept`. `POST /api/drafts/library-keep`
-  {path, name} keeps a Ready guide or brief there again and answers the desk.
+  {path, name} keeps a Ready guide or brief there again and answers the desk, and
+  `/api/documents-library-keep` {path, name} keeps an added document there again. The source
+  editor's `/api/research-sources` takes `keep` on a file capture and `library-keep` for one
+  source (`library.research_sources`).
 - A guide, brief or plan is typed into part by part; scenarios and Yoodli layouts use one
   whole-file part (`opening`). `GET /api/drafts/card?path=&name=` answers
   the card's view (`drafts.card`: the card, its parts with their revision and version
@@ -250,7 +253,9 @@ WRITES = ('/api/training-plan', '/api/research-sources', '/api/setup/check', '/a
 LIBRARY_ADD = '/api/documents-library'
 LIBRARY_UPDATE = '/api/documents-library-update'
 LIBRARY_KEEP = f'{DRAFTS}/library-keep'
-WRITES = (*WRITES, *library_context.ROUTES, LIBRARY_ADD, LIBRARY_UPDATE, LIBRARY_KEEP)
+LIBRARY_UPLOAD = '/api/documents-library-keep'   # Keep in library again, for an added document
+WRITES = (*WRITES, *library_context.ROUTES, LIBRARY_ADD, LIBRARY_UPDATE, LIBRARY_KEEP,
+          LIBRARY_UPLOAD)
 KINDS = {
     '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
     '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -753,7 +758,9 @@ class RunnerPage(desk.Page):
         if path == '/api/research-sources':
             from studio_core.research_sources import Sources
             try:
-                return desk.as_json(HTTPStatus.OK, Sources(self.engine.space().root / '.research-sources').dispatch(sent))
+                # With Training Studio's Keep in library for a file it captures.
+                return desk.as_json(HTTPStatus.OK, library.research_sources(
+                    Sources(self.engine.space().root / '.research-sources'), sent))
             except ValueError as error:
                 raise desk.Refusal(HTTPStatus.BAD_REQUEST, str(error)) from None
         self.engine.seen()
@@ -824,6 +831,11 @@ class RunnerPage(desk.Page):
                 return desk.as_json(HTTPStatus.OK, self.engine.library_add(training, sent.get('picks')))
             return desk.as_json(HTTPStatus.OK, self.engine.library_update(
                 training, desk.text(sent, 'document')))
+        if path == LIBRARY_UPLOAD:
+            training = self.known(sent)
+            return desk.as_json(HTTPStatus.OK, {**self.engine.view(training), 'library_kept':
+                                                library.upload_again(self.engine, training,
+                                                                     desk.text(sent, 'name'))})
         if path == LIBRARY_KEEP:
             root = self.on_desk(desk.text(sent, 'path'))
             self.typed(lambda: self.engine.library_keep(root, desk.text(sent, 'name')))

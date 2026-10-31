@@ -781,6 +781,29 @@ class ConversationCompletionTests(ConversationReviewFixTests):
         self.assertNotIn('research_contract', self.record(root))
         self.assertEqual(len(self.workers.jobs), count)
 
+    def test_a_guide_marked_ready_in_conversation_is_kept_in_the_library(self):
+        from runner import drafts, library, page
+        from studio_core import document_library
+        root = self.guide()
+        seen = workspace.sha256_file(root / 'document.md')
+        handler = page.RunnerPage(0, self.engine)
+        with mock.patch.object(document_library, 'opened',
+                               side_effect=document_library.LibraryError('The library is busy.')), \
+                mock.patch.object(self.engine, 'carry_on'):
+            handler.drafted('/api/drafts/ready', {'path': str(root), 'name': 'document', 'seen': seen})
+        # Ready stands; the failure is recorded with the same key and said on the desk.
+        self.assertEqual(workspace.person_statuses(root, workspace.load(root))['document'], 'approved')
+        self.assertEqual(drafts.view(self.engine, root)['library']['document'],
+                         {'state': 'failed', 'problem': 'The library is busy.'})
+        key = library.status(root)['key']
+        self.engine.library_keep(root, 'document')
+        kept = library.status(root)
+        self.assertEqual((kept['key'], kept['materials']['document']['state']), (key, 'kept'))
+        self.assertEqual(drafts.view(self.engine, root)['library']['document'], {'state': 'kept', 'revision': 1})
+        # Marked ready again in a conversation, the same words keep the same revision.
+        library.keep_marked(root, ['document'])
+        self.assertEqual(document_library.opened().catalog(kind='training')['total'], 1)
+
     def test_ready_checked_cli_and_incomplete_version_refusals(self):
         root = self.create()
         self.submit(root, 'blueprint', 'outline', {'text': BLUEPRINT})

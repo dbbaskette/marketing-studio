@@ -8,6 +8,7 @@ and writing are the scripted stand-ins every StudioCase uses.
 """
 import json
 import shutil
+from pathlib import Path
 from unittest import mock
 
 import helpers  # noqa: F401  puts the runner on the import path
@@ -222,6 +223,18 @@ class KeepTests(DeckCase):
         self.engine.library_keep(root, brief)
         self.assertEqual(self.desk(root)['library'][brief]['state'], 'kept')
 
+    def test_a_lost_local_record_finds_the_same_library_document(self):
+        root, cards = self.ready()
+        guide = next(name for name, card in cards.items() if card['kind'] == 'document')
+        self.engine.mark_ready(root, guide, cards[guide]['seen'])
+        first = library.status(root)
+        (root / library.STATUS).unlink()
+        self.engine.library_keep(root, guide)
+        again = library.status(root)
+        self.assertEqual((again['key'], again['materials'][guide]['document']),
+                         (first['key'], first['materials'][guide]['document']))
+        self.assertEqual(self.library.catalog(kind='training')['total'], 1)
+
     def test_only_a_ready_guide_or_brief_is_kept(self):
         root, cards = self.ready()
         guide = next(name for name, card in cards.items() if card['kind'] == 'document')
@@ -267,6 +280,64 @@ class UploadTests(LibraryCase):
             page.supplied({'path': str(root), 'action': 'add', 'name': 'two.md',
                            'content': content, 'keep': True})
         self.assertEqual(self.library.catalog()['total'], 1)
+
+    def test_a_failed_keep_is_tried_again_from_the_trainings_own_copy(self):
+        root = self.waiting()
+        page = pages.RunnerPage(8765, self.engine)
+        import base64
+        content = base64.b64encode(NOTES).decode()
+        with mock.patch.object(document_library, 'opened', side_effect=OSError('No room.')):
+            first = page.supplied({'path': str(root), 'action': 'add', 'name': 'one.md',
+                                   'content': content, 'keep': True})
+        self.assertEqual(first['library_kept'], {'state': 'failed', 'problem': 'No room.'})
+        again = json.loads(page.write(pages.LIBRARY_UPLOAD, {'path': str(root), 'name': 'one.md'})[2])
+        self.assertEqual(again['library_kept']['state'], 'kept')
+        self.assertEqual(again['documents']['added'][0]['name'], 'one.md')
+        # Asked again, it is the same library document, never a second one.
+        library.upload_again(self.engine, root, 'one.md')
+        self.assertEqual(self.library.catalog()['total'], 1)
+        with self.assertRaisesRegex(WorkspaceError, 'not a document added'):
+            library.upload_again(self.engine, root, 'two.md')
+
+    def test_the_source_editor_keeps_an_accepted_file_only_when_asked(self):
+        import base64
+        import tempfile
+        from studio_core.research_sources import Sources
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        store = Sources(Path(folder.name) / '.research-sources')
+        draft = library.research_sources(store, {'action': 'create'})
+        file = {'kind': 'file', 'name': 'brief.md', 'content': base64.b64encode(NOTES).decode()}
+        kept = library.research_sources(store, {'action': 'capture', 'id': draft['id'],
+                                                'expected': draft['revision'], 'keep': True, **file})
+        self.assertEqual(kept['library_kept']['state'], 'kept')
+        self.assertEqual(kept['library_kept']['source'], kept['sources'][0]['id'])
+        only = library.research_sources(store, {'action': 'capture', 'id': kept['id'],
+                                                'expected': kept['revision'], 'keep': False,
+                                                **file, 'name': 'only.md'})
+        self.assertNotIn('library_kept', only)
+        # A file the draft could not read is not kept.
+        broken = library.research_sources(store, {
+            'action': 'capture', 'id': only['id'], 'expected': only['revision'], 'keep': True,
+            'kind': 'file', 'name': 'scan.docx', 'content': base64.b64encode(b'not a zip').decode()})
+        self.assertEqual(broken['sources'][-1]['status'], 'needs-attention')
+        self.assertNotIn('library_kept', broken)
+        self.assertEqual(self.library.catalog()['total'], 1)
+        # Trying again keeps the same document.
+        retried = library.research_sources(store, {'action': 'library-keep', 'id': broken['id'],
+                                                   'expected': broken['revision'],
+                                                   'source': kept['sources'][0]['id']})
+        self.assertEqual((retried['library_kept']['document'], self.library.catalog()['total']),
+                         (kept['library_kept']['document'], 1))
+        failed = library.research_sources(store, {'action': 'library-keep', 'id': broken['id'],
+                                                  'expected': broken['revision'],
+                                                  'source': broken['sources'][-1]['id']})
+        self.assertEqual(failed['library_kept']['state'], 'failed')
+        with self.assertRaisesRegex(ValueError, 'Say whether'):
+            library.research_sources(store, {'action': 'capture', 'id': draft['id'], 'keep': 'yes'})
+        # Without `keep` the editor's requests are the shared component's own.
+        self.assertEqual(library.research_sources(store, {'action': 'read', 'id': draft['id']})['id'],
+                         draft['id'])
 
     def test_page_answers_the_library_routes(self):
         for route in (*context.ROUTES, pages.LIBRARY_ADD, pages.LIBRARY_UPDATE, pages.LIBRARY_KEEP):

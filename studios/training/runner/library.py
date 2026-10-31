@@ -8,6 +8,8 @@ What a caller needs to know
     library.keep(root, name)               # a guide or brief marked ready: never raises
     library.again(engine, path, name)      # Keep in library (again), for a Ready one
     library.kept(root, cards)              # what the desk says of each guide and brief
+    library.upload_again(engine, path, name)   # Keep in library again, for an added document
+    library.research_sources(store, sent)  # the shared source editor, with Keep in library
 
 Context
 -------
@@ -36,7 +38,10 @@ Keep in library
 ---------------
 - An upload the person chose to keep is kept in the library too, after the training took
   it, as an uploaded document from Training Studio. The same file sent again is the same
-  library document. A training's own copy is unchanged either way, and sharing never is.
+  library document, so trying again after a failure never makes a second one. A training's
+  own copy is unchanged either way, and sharing never is.
+- The New training sheet's source editor (ui-kit/research.js) offers the same choice for a
+  file it captures; the file is kept once the source draft accepted it as readable.
 """
 from __future__ import annotations
 
@@ -54,6 +59,7 @@ from workspace import WorkspaceError
 import runner  # noqa: F401  puts the core on the import path
 from runner import drafts
 from studio_core import document_library
+from studio_core import research_contract as rc
 from studio_core.document_library import LibraryError
 from studio_core.document_library import context as library_context
 
@@ -183,6 +189,62 @@ def upload(name, data) -> dict:
                 or 'The library could not keep it.'}
 
 
+def upload_again(engine, path, name) -> dict:
+    """Keep in library again, for a document the training already took: its file as it was
+    sent, read from the training's own copy. Starts nothing and changes no document."""
+    root = engine._held(path)
+    with engine.files:
+        entry = next((one for one in engine.documents.listed(root) if one.get('name') == name
+                      and not one.get('library')), None)
+        if entry is None or not entry.get('original'):
+            raise WorkspaceError('That is not a document added to this training.')
+        data = (root / entry['original']).read_bytes()
+    return upload(entry['name'], data)
+
+
+def _kept_capture(store, ident, source) -> dict:
+    """Keep one file the source editor captured: its bytes as the draft holds them, checked
+    against their hash. Never raises."""
+    try:
+        with store.lock:
+            value = store.load(ident)
+            found = next((one for one in value['sources'] if one.get('id') == source), None)
+            if found is None or found.get('kind') != 'file' or found.get('status') != 'ready':
+                raise LibraryError('Only a readable uploaded file is kept in the library.')
+            data = rc.inside(store.folder(ident), found['original']).read_bytes()
+            if hashlib.sha256(data).hexdigest() != found.get('original_sha256'):
+                raise LibraryError('This file changed after it was read. Add it again.')
+        return {**upload(found['name'], data), 'source': source}
+    except (LibraryError, ValueError, OSError, KeyError) as failure:
+        return {'state': 'failed', 'problem': str(failure)[:300] or 'The library could not keep it.',
+                'source': source}
+
+
+def research_sources(store, sent):
+    """The shared source editor's request, with Training Studio's Keep in library: `keep`
+    on a file capture keeps the file once the draft accepted it as readable, and
+    `library-keep` tries again for one source. The answer then carries `library_kept`."""
+    if not isinstance(sent, dict):
+        return store.dispatch(sent)
+    sent = dict(sent)
+    if sent.get('action') == 'library-keep':
+        if set(sent) - {'action', 'id', 'expected', 'source'}:
+            raise ValueError('Choose one source to keep in the library.')
+        return {**store.read(sent.get('id')), 'library_kept': _kept_capture(
+            store, sent.get('id'), sent.get('source'))}
+    if 'keep' not in sent:
+        return store.dispatch(sent)
+    keep = sent.pop('keep')
+    if type(keep) is not bool or sent.get('action') != 'capture' or sent.get('kind') != 'file':
+        raise ValueError('Say whether to keep an uploaded file in the library.')
+    before = {one['id'] for one in store.read(sent.get('id'))['sources']}
+    answer = store.dispatch(sent)
+    added = next((one for one in answer['sources'] if one['id'] not in before), None)
+    if not keep or added is None or added.get('status') != 'ready':
+        return answer       # Only this project, or not accepted: nothing is kept
+    return {**answer, 'library_kept': _kept_capture(store, answer['id'], added['id'])}
+
+
 # --- finished material: a guide or brief marked ready -----------------------------------
 
 def status(root) -> dict:
@@ -194,12 +256,18 @@ def status(root) -> dict:
 
 
 def _key(root: Path, held: dict) -> str:
-    """This training's library key: the one recorded for it, else a new one. A training's
-    folder name is a slug of its title, so a random part keeps two trainings of one title
-    apart, in two workspaces or made again after one was deleted."""
+    """This training's library key: the one recorded for it, else one made from the
+    training's own identity, its folder and the moment its run started (kept in its
+    committed run record). A training's folder name is a slug of its title, so the start
+    keeps two trainings of one title apart, in two workspaces or made again after one was
+    deleted, while the same training finds its documents again if `sources/library.json`
+    is lost. A run with no start recorded gets a random part instead."""
     if isinstance(held.get('key'), str) and KEY.fullmatch(held['key']):
         return held['key']
     plain = re.sub(r'[^a-z0-9-]+', '-', root.name.lower()).strip('-')[:120] or 'training'
+    started = (drafts.run_of(root) or {}).get('started_at')
+    if isinstance(started, str) and started:
+        return f"training:{plain}-{hashlib.sha256(f'{root.name}{chr(0)}{started}'.encode()).hexdigest()[:12]}"
     return f'training:{plain}-{secrets.token_hex(6)}'
 
 
@@ -261,9 +329,16 @@ def keep_marked(root, names) -> None:
 
 def again(engine, path, name) -> Path:
     """Keep a Ready guide or brief in the library now, as the person asked: after a failure,
-    or for one marked ready before the library kept anything. Starts no job."""
+    or for one marked ready before the library kept anything. Starts no job and changes no
+    material, so, like Mark ready, the person who runs a training worked on in a
+    conversation may ask for it on the page too; nobody else may."""
     with engine.files:
-        root, _ = engine._on_desk(path)
+        root = engine.driven(path)
+        if root is None:
+            raise WorkspaceError('No run is driving this training.')
+        engine.hold(root, conversation=True)
+        if not drafts.on_desk(engine._load(root)):
+            raise WorkspaceError(drafts.NOT_ON_DESK)
         if not isinstance(name, str) or not kept_by(workspace.split(name)[0]):
             raise WorkspaceError('Only a learner guide or a brief is kept in the library.')
         session = workspace.load(root)

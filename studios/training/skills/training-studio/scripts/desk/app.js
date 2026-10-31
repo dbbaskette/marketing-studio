@@ -5664,10 +5664,13 @@ async function addDocuments(input) {
         action: 'add', name: file.name, content, keep });
       view.run = run;
       added += 1;
-      // The training has it either way; the library's own refusal is said beside it.
+      // The training has it either way; the library's own refusal is said beside it, with
+      // Keep in library again on the document.
       if (kept && kept.state === 'kept') library += 1;
-      else if (kept) refused.push(file.name + ' was added, but not kept in the Document '
-        + 'Library. ' + kept.problem);
+      else if (kept) {
+        refused.push(file.name + ' was added, but not kept in the Document Library. ' + kept.problem);
+        view.libraryMissed = [...new Set([...list(view.libraryMissed), file.name])];
+      }
     } catch (failure) {
       refused.push(file.name + ' was not added. ' + failure.message);
       // With no answer at all, there is nobody to send the rest to.
@@ -5809,6 +5812,33 @@ function documentItem(found, waiting, later = false, mine = true) {
   item.dataset.state = found.readable ? 'read' : 'unread';
   add(item, bead(found.readable ? 'done' : 'late'), text,
     make('span', 'step-words', found.readable ? 'Can be read' : 'Cannot be read'));
+  if (mine && list(view.libraryMissed).includes(found.name) && !found.library) {
+    const again = capsule('Keep in library again', 'quiet', async () => {
+      again.disabled = true;
+      try {
+        const { library_kept: kept, ...run } = await send('documents-library-keep',
+          { path: view.path, name: found.name });
+        view.run = run;
+        if (kept && kept.state === 'kept') {
+          view.libraryMissed = list(view.libraryMissed).filter((name) => name !== found.name);
+          // What was said of it beside the control is no longer so.
+          if (byId('documents-file')) unadded('');
+          toast(found.name + ' is kept in the Document Library.');
+          paintRun(false);
+          if (again.isConnected !== false) again.remove();
+          if (!focusKey('documents-library')) byId('title').focus({ preventScroll: true });
+        } else {
+          again.disabled = false;
+          toast('Not kept in the Document Library. ' + ((kept && kept.problem) || ''));
+        }
+      } catch (failure) {
+        again.disabled = false;
+        toast(failure.message);
+      }
+    }, 'documents-library-keep ' + found.name);
+    again.setAttribute('aria-label', 'Keep ' + found.name + ' in library again');
+    add(item, again);
+  }
   if (found.update && mine) {
     add(item, libraryUpdate(view.path, found, (run) => {
       view.run = run;

@@ -2892,7 +2892,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         shape = result['snapshots']['shape']
         for material in ('Learner guide', 'Reference brief', 'Practice scenarios'):
             self.assertNotIn(material, shape['trainingChecked'])
-        self.assertEqual(shape['pressed'], ['Field enablement', 'No deck'],
+        self.assertEqual(shape['pressed'], ['Field enablement', 'No deck', 'Keep in library'],
                          'no deck until a brand is set')
         self.assertIn('201', shape['text'], 'the levels are chips in the open')
         self.assertIn('101', shape['trainingChecked'])
@@ -2907,7 +2907,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
             {'fill': 'Who is it for?', 'value': 'New operators'},
             {'snapshot': 'shape'}])
         self.assertEqual(result['snapshots']['shape']['pressed'],
-                         ['Field enablement', 'PowerPoint', 'Presented in a session'])
+                         ['Field enablement', 'PowerPoint', 'Presented in a session', 'Keep in library'])
 
     def test_a_working_run_says_what_it_does_now_and_for_how_long(self):
         import datetime
@@ -4172,7 +4172,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
             {'click': 'Deck brand'}, {'snapshot': 'two'}])
         two = result['snapshots']['two']
         self.assertEqual(two['pressed'], ['Field enablement', 'Google Slides',
-                                          'Presented in a session'])
+                                          'Presented in a session', 'Keep in library'])
         self.assertEqual((two['fields']['The deck’s brand'], two['fields']['The brand’s variant'],
                           two['trainingChecked']), ('example-co', 'dark', ['101']))
         # A brand the brand skill here does not have is not offered: its first one is.
@@ -4186,7 +4186,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
             {'click': 'Deck brand'}, {'snapshot': 'two'}])
         two = result['snapshots']['two']
         self.assertEqual(two['pressed'], ['Field enablement', 'PowerPoint',
-                                          'Presented in a session'])
+                                          'Presented in a session', 'Keep in library'])
         self.assertEqual((two['fields']['The deck’s brand'], two['fields']['The brand’s variant']),
                          ('example-co', 'dark'))
 
@@ -5890,7 +5890,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         shots = result['snapshots']
         two = shots['two']
         self.assertEqual(two['pressed'], ['Field enablement', 'PowerPoint',
-                                          'Presented in a session'])
+                                          'Presented in a session', 'Keep in library'])
         self.assertLessEqual({'How long it should take (optional)': '',
                               'The deck’s brand': 'example-co',
                               'The brand’s variant': 'light'}.items(), two['fields'].items())
@@ -5920,7 +5920,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         shots = result['snapshots']
         for name in ('two', 'still'):
             with self.subTest(screen=name):
-                self.assertEqual(shots[name]['pressed'], ['Field enablement', 'No deck'])
+                self.assertEqual(shots[name]['pressed'], ['Field enablement', 'No deck', 'Keep in library'])
                 self.assertEqual(shots[name]['off'], ['PowerPoint', 'Google Slides'])
                 self.assertNotIn('The deck’s brand', shots[name]['fields'])
         self.assertIn('A deck needs a brand skill. You can make the other materials now',
@@ -10858,14 +10858,17 @@ class LibraryScreenTests(ScriptedPage, PageCase):
             'POST /api/documents-library-update': [asked({**self.PINNED, 'library': {
                 'id': 'launch-post', 'revision': 2}, 'update': False})],
             'POST /api/documents': [{'status': 200, 'body': {**asked(self.PINNED, notes)['body'],
-                                    'library_kept': {'state': 'failed', 'problem': 'The library is busy.'}}}]})
+                                    'library_kept': {'state': 'failed', 'problem': 'The library is busy.'}}}],
+            'POST /api/documents-library-keep': [{'status': 200, 'body': {
+                **asked(self.PINNED, notes)['body'], 'library_kept': {'state': 'kept'}}}]})
         result = self.run_page(answers, [
             {'click': 'Open Rolling restarts'}, {'snapshot': 'empty'},
             {'click': 'Add from library'}, {'snapshot': 'pinned'},
             {'click': 'Use revision 2 of Launch post'}, {'snapshot': 'newer'},
             {'click': 'Only this project'},
             {'attach': 'Add documents', 'files': [{'name': 'Notes.MD', 'text': '# Notes\n'}]},
-            {'snapshot': 'uploaded'}], library=[{'id': 'launch-post', 'revision': 1}])
+            {'snapshot': 'uploaded'}, {'click': 'Keep Notes.MD in library again'},
+            {'snapshot': 'retried'}], library=[{'id': 'launch-post', 'revision': 1}])
         shots = result['snapshots']
         empty = shots['empty']
         self.assertIn('Add from library', empty['buttons'])
@@ -10887,6 +10890,13 @@ class LibraryScreenTests(ScriptedPage, PageCase):
             ('/api/documents-library', {**root, 'picks': [{'id': 'launch-post', 'revision': 1}]}),
             ('/api/documents-library-update', {**root, 'document': 'launch-post'})])
         self.assertEqual(posts[2][1]['keep'], False)
+        # The library's refusal offers Keep in library again, from the training's own copy.
+        self.assertIn('Keep Notes.MD in library again', uploaded['buttons'])
+        self.assertEqual(posts[3], ('/api/documents-library-keep', {**root, 'name': 'Notes.MD'}))
+        retried = shots['retried']
+        self.assertIn('Notes.MD is kept in the Document Library.', retried['toasts'])
+        self.assertNotIn('Keep Notes.MD in library again', retried['buttons'])
+        self.assertNotIn('not kept in the Document Library', retried['text'])
 
     def test_desk_sources_pin_wait_unread_and_update_the_research_when_asked(self):
         run = a_desk_run('waiting', 'Ready for you.',
@@ -10937,6 +10947,34 @@ class LibraryScreenTests(ScriptedPage, PageCase):
                       result['snapshots']['kept']['text'])
         self.assertEqual(self.posts(result), [('/api/drafts/library-keep',
                                                {'path': str(self.root), 'name': 'brief@101'})])
+
+    def test_the_kept_state_is_read_only_for_a_teammate(self):
+        brief = a_card('brief@101', 'ready', 'Ready.', actions=('download',))
+        failed = {'brief@101': {'state': 'failed', 'problem': 'The library is busy.'}}
+        steps = [{'click': 'Brief · '}, {'snapshot': 'brief'}]
+        theirs = self.open_desk(self.on_desk(a_desk(brief, levels=('101',), running=False, ours=False,
+                                                    library=failed), run=a_desk_run('done', 'Ready.')), steps)
+        shot = theirs['snapshots']['brief']
+        self.assertIn('Not kept in the Document Library: The library is busy.', shot['text'])
+        self.assertNotIn('Keep in library again', shot['buttons'])
+
+    def test_the_kept_state_is_offered_again_in_a_conversation(self):
+        brief = a_card('brief@101', 'ready', 'Ready.', actions=('download',))
+        failed = {'brief@101': {'state': 'failed', 'problem': 'The library is busy.'}}
+        steps = [{'click': 'Brief · '}, {'snapshot': 'brief'}]
+        talking = self.open_desk(self.on_desk(a_desk(brief, levels=('101',), running=False,
+                                                     library=failed, execution='conversation'),
+                                              run=a_desk_run('done', 'Ready.')), steps)
+        shot = talking['snapshots']['brief']
+        self.assertIn('Not kept in the Document Library: The library is busy.', shot['text'])
+        self.assertIn('Keep in library again', shot['buttons'])
+
+    def test_the_start_s_documents_offer_keep_in_library(self):
+        # Without the shared source editor (research.js), the start holds files itself and
+        # sends the choice with each one.
+        result = self.run_page(self.answers(), [
+            {'click': 'New training'}, {'snapshot': 'new'}])
+        self.assertIn('Keep in library', result['snapshots']['new']['pressed'])
 
 
 if __name__ == '__main__':

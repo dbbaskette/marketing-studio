@@ -686,6 +686,10 @@ def ready(engine, path, request):
         record.setdefault('conversation_decisions', []).append({**request, 'at': home.now(), 'by': 'person-request'})
         staged._store(stage, record)
         _publish(engine, space, root, stage, before)
+    # A learner guide or brief marked ready is kept in the Document Library too, as on the
+    # desk: after it is published, and never in place of it.
+    from runner import library
+    library.keep_marked(root, [request['target']])
     return show(engine, root)
 
 
