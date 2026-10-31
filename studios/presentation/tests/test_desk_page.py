@@ -177,7 +177,7 @@ class StartTests(DeskPageCase):
     def test_research_offers_your_documents_your_sites_and_the_web(self):
         sites = ['blog.example.com/platform', 'docs.example.com']
         result = self.new_deck([
-            {'click': 'A document'}, {'click': 'Research first'}, {'snapshot': 'research'},
+            {'click': 'A document'}, {'tick': 'Research first'}, {'snapshot': 'research'},
             {'fill': 'What should the research answer? (optional)', 'value': 'Why?'},
             {'click': 'Paste the text'}, {'fill': 'The text', 'value': 'Synthetic notes.'},
             {'fill': 'A short title', 'value': 'Synthetic deck'}, {'click': 'Start'}],
@@ -186,7 +186,7 @@ class StartTests(DeskPageCase):
         self.assertIn('Research from', shot['sheet'])
         for choice in ('your documents', 'your sites (2)', 'the public web'):
             self.assertIn(choice, shot['buttons'])
-        self.assertEqual(shot['ticked'], ['your documents'])
+        self.assertEqual(shot['ticked'], ['Research first', 'your documents'])
         self.assertIn('The research is planned from your questions', shot['sheet'])
         self.assertNotIn('You approve the research plan', shot['sheet'])
         (_, body), = self.posts(result)
@@ -242,7 +242,7 @@ class StartTests(DeskPageCase):
     def test_an_idea_is_researched_whatever_a_document_was_marked(self):
         result = self.new_deck([
             {'click': 'A document'}, {'click': 'It lays out the slides'},
-            {'click': 'Research first'}, {'snapshot': 'script'},
+            {'tick': 'Research first'}, {'snapshot': 'script'},
             {'click': 'An idea'}, {'snapshot': 'idea'}])
         self.assertNotIn('Research.', self.plan_of(result['snapshots']['script']))
         plan = self.plan_of(result['snapshots']['idea'])
@@ -281,7 +281,7 @@ class StartTests(DeskPageCase):
         result = self.new_deck([
             {'click': 'An idea'}, {'snapshot': 'idea'},
             {'click': 'Use the brand’s default look'}, {'snapshot': 'default'},
-            {'click': 'A document'}, {'click': 'Research first'}, {'snapshot': 'unread'},
+            {'click': 'A document'}, {'tick': 'Research first'}, {'snapshot': 'unread'},
             {'click': 'It lays out the slides'}, {'snapshot': 'script'},
             {'click': 'It is material to build from'}, {'snapshot': 'material'}])
         shots = result['snapshots']
@@ -320,7 +320,7 @@ class StartTests(DeskPageCase):
             {'fill': 'What should they take away?', 'value': 'When capacity holds.'},
             {'fill': 'About how long, in minutes (optional)', 'value': '20'},
             {'click': 'A handout'}, {'click': 'Use the brand’s default look'},
-            {'click': 'Research first'}, {'tick': 'your sites'},
+            {'tick': 'Research first'}, {'tick': 'your sites'},
             {'fill': 'What should the research answer? (optional)', 'value': 'Why now?'},
             {'click': 'A document'},
             {'attach': 'The document', 'files': [{'name': 'notes.md', 'bytes': '# Notes'}]},
@@ -348,7 +348,7 @@ class StartTests(DeskPageCase):
         for name in ('document', 'back', 'refused'):
             with self.subTest(shot=name):
                 shot = shots[name]
-                self.assertIn('Research first', shot['chosen'])
+                self.assertIn('Research first', shot['ticked'])
                 self.assertIn('your sites (2)', shot['ticked'])
                 self.assertEqual(shot['fields']['What should the research answer? (optional)'],
                                  'Why now?')
@@ -463,7 +463,7 @@ class ResearchStartTests(DeskPageCase):
                                              'POST /api/research-sources': drafts,
                                              **(more or {})}),
                              [{'click': 'New deck'}, *route_steps, *self.goal(),
-                              {'click': 'Research first'}, *steps,
+                              {'tick': 'Research first'}, *steps,
                               {'click': 'Start'}, {'snapshot': 'started'}],
                              research=True, **plan)
 
@@ -545,6 +545,25 @@ class ResearchStartTests(DeskPageCase):
         self.assertEqual(body['form']['research_from'],
                          {'documents': True, 'sites': [], 'web': False})
         self.assertEqual(record['research_inputs']['count'], 0)
+
+    # --- the research choices are form checkboxes, and say what will happen (item 5) -------
+
+    def test_research_first_and_external_search_are_checkboxes_that_say_what_happens(self):
+        result = self.start([{'click': 'An idea'}],
+                            [{'snapshot': 'only'},
+                             {'tick': 'Search for additional external sources'},
+                             {'snapshot': 'web'}],
+                            self.drafts(('external', True)))
+        only, web = result['snapshots']['only'], result['snapshots']['web']
+        # Both are native checkboxes in a label, ticked as the choices stand.
+        self.assertEqual(only['ticked'], ['Research first'])
+        self.assertEqual(web['ticked'], ['Research first',
+                                         'Search for additional external sources'])
+        self.assertEqual(only['chosen'], [], 'no chip button is left for Research first')
+        self.assertIn('Only your sources are used. Tick to also search the web.', only['sheet'])
+        self.assertIn('Your sources are used, and the public web is searched too.', web['sheet'])
+        for shot in (only, web):
+            self.assertNotIn('Use supplied sources', shot['sheet'])
 
     # --- the start's sources and the desk's Sources card (#255, item 3) ---------------------
 

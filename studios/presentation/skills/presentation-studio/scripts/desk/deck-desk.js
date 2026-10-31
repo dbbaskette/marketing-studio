@@ -351,10 +351,12 @@
     const words = h.words;
     // An existing deck has no research: what it says is the deck's own.
     const researched = draft.route !== 'existing';
-    const research = researched ? h.chip('Research first', draft.research, (on) => {
-      draft.research = on;
-      h.paintNew(false);
-    }, 'research') : null;
+    // An independent choice, so a native checkbox in label.check (golden-gate.md).
+    const research = researched ? StudioLists.tick({ id: 'research-first',
+      label: 'Research first', on: draft.research, flip: (on) => {
+        draft.research = on;
+        h.paintNew(false);
+      } }) : null;
     const branded = h.brandsFound().length > 0;
     const defaults = make('p', 'quiet', defaultsSays(draft));
     // The brand, the output and the assistant start as the defaults, and change for this

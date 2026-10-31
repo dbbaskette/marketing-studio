@@ -57,6 +57,11 @@ const key=(editor,k)=>all(editor.node).find(n=>n.dataset.key===k);
  chosen=Object.assign(new Node('ul'),{className:'research-source-list'});chosen.append('Synthetic library brief');library.render();
  assert.ok(all(library.node).some(n=>n.textContent==='Synthetic library brief'));
  assert.equal(all(library.node).some(n=>n.textContent==='Add material here, or allow external search below.'),false);
+ // A studio may say the search choice in its own words; without them the shared summary stands.
+ assert.ok(all(editor.node).some(n=>n.textContent===kit.summary(editor.value)));
+ const worded=new kit.Editor({request,value:{...state,sources:[],external:false},policyHint:value=>value.external?'Searching too.':'Yours only.'});
+ assert.ok(all(worded.node).some(n=>n.textContent==='Yours only.'));
+ assert.equal(all(worded.node).some(n=>n.textContent===kit.summary(worded.value)),false);
  // Keep in library, for a studio whose adapter turns it on: Keep in library first, Only this project on request, a retry when the library refused.
  const kept=[];let keepState={id:'keeping',revision:'0',external:false,restricted:false,workers:3,focus:'',sites:[],sources:[]};
  const keeping=new kit.Editor({keepChoice:true,request:async sent=>{kept.push(sent);if(sent.action==='capture')keepState.sources.push({id:'k'+keepState.sources.length,name:sent.name,kind:'file',status:'ready'});

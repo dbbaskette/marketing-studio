@@ -193,8 +193,9 @@ const StudioResearch = (() => {
       }
       if (state) {
         const policy = make('div', 'research-policy');
+        // A studio may say the choice in its own words (`policyHint`), as long as they say what will happen.
         add(policy, check('Search for additional external sources', state.external, external => this.act('configure', {external}), 'research-external'),
-          make('p', 'field-hint', summary(state)));
+          make('p', 'field-hint', this.a.policyHint ? this.a.policyHint(state) : summary(state)));
         if (state.external && state.sites.length) add(policy, check('Limit additional searches to my approved sites', state.restricted, restricted => this.act('configure', {restricted}), 'research-restricted'));
         add(this.node, policy);
         const advanced = make('details', 'research-options'); advanced.dataset.key = 'research-options'; advanced.append(make('summary', '', 'Research options'));

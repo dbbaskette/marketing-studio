@@ -407,14 +407,15 @@ class LayoutTests(test_desk.ScriptedPage, test_runner_page.PageCase):
         result = self.run_page(answers, [
             {'click': 'New deck'}, {'click': 'An idea'},
             {'fill': 'A short title', 'value': 'Synthetic deck'},
-            {'click': 'Research first'}, {'snapshot': 'research'},
+            {'tick': 'Research first'}, {'snapshot': 'research'},
             {'tick': 'your sites'}, {'snapshot': 'sites'},
             {'tick': 'the public web'}, {'snapshot': 'off'}, {'click': 'Start'}])
         shots = result['snapshots']
-        self.assertEqual(shots['research']['ticked'], ['the public web'])
+        self.assertEqual(shots['research']['ticked'], ['Research first', 'the public web'])
         self.assertIn('Research from', shots['research']['sheet'])
-        self.assertEqual(shots['sites']['ticked'], ['your sites (2)', 'the public web', *sites])
-        self.assertEqual(shots['off']['ticked'], ['your sites (2)', *sites])
+        self.assertEqual(shots['sites']['ticked'], ['Research first', 'your sites (2)',
+                                                    'the public web', *sites])
+        self.assertEqual(shots['off']['ticked'], ['Research first', 'your sites (2)', *sites])
         (_, body), = self.posts(result)
         self.assertEqual(body['form']['research_from'],
                          {'documents': False, 'sites': sites, 'web': False})

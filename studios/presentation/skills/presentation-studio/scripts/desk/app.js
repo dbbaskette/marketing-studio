@@ -3128,6 +3128,14 @@ async function addSite(draft) {
   focusKey('research-site');
 }
 
+// What research will read, under the box that allows more: said as the choice stands now,
+// so that the box and the line never read as two contradicting options.
+function searchSays(state) {
+  if (!state.external) return 'Only your sources are used. Tick to also search the web.';
+  return state.restricted ? 'Your sources are used, and only your approved sites are searched.'
+    : 'Your sources are used, and the public web is searched too.';
+}
+
 // Whether research has the person's own material besides the source editor's: the deck's
 // document, or documents chosen from the library.
 function givenWith(draft) {
@@ -3204,6 +3212,7 @@ function researchFromField(draft) {
       keepChoice: true,
       library: (editor) => pickLibrary(draft, editor),
       extra: (editor) => libraryList(draft, editor),
+      policyHint: searchSays,
       onChange: () => {
         if (draft.retell) draft.retell();
         // A refusal Start said beside the sources goes once they can be used.

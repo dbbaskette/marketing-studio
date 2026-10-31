@@ -5,6 +5,20 @@ making decks first, then what changes for maintainers.
 
 ## Unreleased
 
+- **Research choices are checkboxes that say what will happen.** **Research
+  first** is now a checkbox, as other independent choices on a form are, and a
+  screen reader announces it as one. Under **Search for additional external
+  sources**, the line now says what research will read as the box stands:
+  "Only your sources are used. Tick to also search the web." when it is not
+  ticked, and that the public web, or only your approved sites, is searched too
+  when it is. It no longer reads as a second, contradicting option.
+
+  For maintainers: `settingsStep` draws Research first with `StudioLists.tick`
+  (`research-first`). `ui-kit/research.js` takes an optional `policyHint(state)`
+  adapter hook for that line; studios that do not pass it keep the shared
+  summary. Closes the Presentation Studio row of `docs/design/form-choice-audit.md`
+  for Research first. Part of #255.
+
 - **One name for each kind of deck, and for its brand.** Home's **Start a
   deck**, a deck's header and the Decks filter now say **From an idea**, **From
   a document** and **From an existing deck**, the names New deck asks with (An

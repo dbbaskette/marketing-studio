@@ -388,7 +388,7 @@ class ScreenTests(ScriptedPage, PageCase):
             {'click': 'New deck'}, {'click': 'A document'},
             {'click': 'Paste the text'}, {'fill': 'The text', 'value': 'Synthetic notes.'},
             {'fill': 'A short title', 'value': 'Synthetic deck'},
-            {'snapshot': 'off'}, {'click': 'Research first'}, {'snapshot': 'offered'},
+            {'snapshot': 'off'}, {'tick': 'Research first'}, {'snapshot': 'offered'},
             {'tick': 'your sites'}, {'snapshot': 'sites'},
             {'tick': 'the public web'}, {'tick': 'docs.example.com'},
             {'fill': 'Add a site for this piece of work', 'value': 'learn.example.org/guide/'},
@@ -405,15 +405,16 @@ class ScreenTests(ScriptedPage, PageCase):
             self.assertIsNone(FORBIDDEN_WORDS.search(shot['text']))
         # A document's research reads the documents alone until more is ticked: your sites
         # stay off, the shared list ready under them.
-        self.assertEqual(offered['chosen'], ['Research first'])
-        self.assertEqual(offered['ticked'], ['your documents'])
+        # Research first is a checkbox of its own, ticked first (#255).
+        self.assertEqual(offered['chosen'], [])
+        self.assertEqual(offered['ticked'], ['Research first', 'your documents'])
         for button in ('your sites (2)', 'the public web'):
             self.assertIn(button, offered['buttons'])
         self.assertNotIn('Add a site for this piece of work', offered['fields'])
         self.assertIn('Research from your documents.', offered['text'])
         self.assertIn(self.ONLY_DOCUMENTS, offered['text'])
         self.assertNotIn(self.SEARCHED, offered['text'])
-        self.assertEqual(sites['ticked'], ['your documents', 'your sites (2)',
+        self.assertEqual(sites['ticked'], ['Research first', 'your documents', 'your sites (2)',
                                            'blog.example.com/platform', 'docs.example.com'])
         self.assertIn('Add a site for this piece of work', sites['fields'])
         self.assertIn('It is for this deck only; your shared list is changed in Shared settings.',
@@ -422,7 +423,7 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertNotIn(self.ONLY_DOCUMENTS, sites['text'])
         self.assertIn('Research from your documents and 2 of your sites '
                       '(blog.example.com/platform, docs.example.com).', sites['text'])
-        self.assertEqual(chosen['ticked'], ['your documents', 'your sites (2)',
+        self.assertEqual(chosen['ticked'], ['Research first', 'your documents', 'your sites (2)',
                                             'the public web', 'blog.example.com/platform',
                                             'learn.example.org/guide'])
         self.assertEqual(chosen['fields']['Add a site for this piece of work'], '')
@@ -454,9 +455,8 @@ class ScreenTests(ScriptedPage, PageCase):
         answers = self.answers(**{'GET /api/setup': [self.setup_with(research_sites=self.SITES)]})
         shot = self.run_page(answers, [
             {'click': 'New deck'}, {'click': 'An idea'},
-            {'click': 'Research first'}, {'snapshot': 'web'}])['snapshots']['web']
-        self.assertEqual(shot['chosen'], ['Research first'])
-        self.assertEqual(shot['ticked'], ['the public web'])
+            {'tick': 'Research first'}, {'snapshot': 'web'}])['snapshots']['web']
+        self.assertEqual(shot['ticked'], ['Research first', 'the public web'])
         self.assertIn('your sites (2)', shot['buttons'])
         self.assertIn('Research from the public web.', shot['text'])
         self.assertNotIn(self.ONLY_DOCUMENTS, shot['text'])
@@ -471,7 +471,7 @@ class ScreenTests(ScriptedPage, PageCase):
         result = self.run_page(answers, [
             {'click': 'New deck'}, {'click': 'An idea'},
             {'fill': 'A short title', 'value': 'Synthetic deck'},
-            {'click': 'Research first'}, {'snapshot': 'web'},
+            {'tick': 'Research first'}, {'snapshot': 'web'},
             {'tick': 'the public web'}, {'click': 'Start'}, {'snapshot': 'nowhere'},
             {'tick': 'your sites'}, {'snapshot': 'none'}, {'click': 'Start'},
             {'snapshot': 'no-site'}, {'click': 'Add the site'}, {'snapshot': 'empty'},
@@ -483,7 +483,7 @@ class ScreenTests(ScriptedPage, PageCase):
         shots = result['snapshots']
         # A deck from an idea has no documents to offer; it reads the public web.
         self.assertNotIn('your documents', shots['web']['buttons'])
-        self.assertEqual(shots['web']['ticked'], ['the public web'])
+        self.assertEqual(shots['web']['ticked'], ['Research first', 'the public web'])
         self.assertIn('Research from the public web.', shots['web']['text'])
         self.assertIn(research_sites.EMPTY, shots['nowhere']['sheet'])
         self.assertEqual(shots['nowhere']['focus'], 'research-sites')
@@ -744,7 +744,7 @@ class ScreenTests(ScriptedPage, PageCase):
             result = self.run_page(answers, [
                 {'click': 'New deck'}, {'click': 'An idea'},
                 {'fill': 'A short title', 'value': 'Rolling restarts'},
-                {'click': 'Research first'}, {'snapshot': 'about'},
+                {'tick': 'Research first'}, {'snapshot': 'about'},
                 {'snapshot': 'last'}, {'click': 'Use the brand’s default look'},
                 {'snapshot': 'default'}])
             with self.subTest(level=level):
