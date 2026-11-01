@@ -47,6 +47,8 @@ LEFT_OUT_ALREADY = 'Those findings are left out already.'
 NOT_KEPT = ('It is a source of this deck, but it was not kept in the Document Library: {why} '
             "Add it on Marketing Studio's Library screen to keep it there.")
 PASTED = 'Pasted text'
+OWN_OUTPUT = ('That is this deck’s own delivery, kept in the Document Library: a deck is not a '
+              'source of itself. Nothing was added.')
 SOURCES_TOLD = ('The person\'s own sources are in your input "sources". Add only what they, '
                 'the slide or the outline support.')
 CHECK_BUSY = 'The deck is being redrawn now. Check it again when that ends.'
@@ -65,6 +67,14 @@ AGAIN = 3   # chains one rest on the desk may run for notes that came while it w
 # asked to draw the deck here. Both are this computer's only.
 BEFORE = Path('work') / 'desk' / 'patch-before.json'
 DRAW_HERE = Path('work') / 'desk' / 'draw-here'
+
+
+def own_library_document(root) -> str | None:
+    """The Document Library document this deck's own delivery is kept as, or None: a deck is
+    never a source of itself."""
+    kept = library_keep.status(root) or {}
+    found = kept.get('document')
+    return found if isinstance(found, str) and found else None
 
 
 def library_upload(name, data: bytes, title=None) -> dict:
@@ -209,6 +219,8 @@ class DeskActions:
                     'draw_here_price': desk.draw_here_price(record) if desk.selected(record)
                     else desk.deck_price(self._last_build(record))}),
                 'delivered': decks.delivered(root),
+                # Every revision delivered, each with where it went and how to open it.
+                'receipts': delivering.receipts(root, record),
                 'revision': desk.DELIVERED_AGAIN.format(
                     revision=len(record['revisions']), next=len(record['revisions']) + 1)
                 if record.get('revisions') and decks.delivered(root) is None else None,
@@ -225,6 +237,8 @@ class DeskActions:
                 'sources': [*library_context.marked(documents.listed(root)),
                             *self._start_sources(root, record)],
                 'library': library_keep.status(root) if decks.delivered(root) else None,
+                # Add from library leaves out the deck's own delivery, kept there.
+                'own_library': own_library_document(root),
                 **self._desk_research_view(root, record),
                 **self._desk_finishing_view(root, record, state, shown)}
 
@@ -1424,16 +1438,19 @@ class DeskActions:
         """Add a source to the deck: a file, or text the person pasted. It is listed under
         Sources and read by the words jobs, the speaker-notes proposals and the outline when
         it is written again. Nothing is drawn and research does not run: Research again
-        does, when asked. With `keep` (Keep in library, for a file), the file is also kept
-        in the shared Document Library on this computer, once the deck has it; the view then
-        says how that went in `library_upload`. The deck's copy is the same either way, and
-        neither is shared with anyone."""
+        does, when asked. With `keep` (Keep in library), the file or the pasted text is also
+        kept in the shared Document Library on this computer, once the deck has it, pasted
+        text as the Markdown document the deck keeps of it; the view then says how that went
+        in `library_upload`. The deck's copy is the same either way, and neither is shared
+        with anyone."""
         root = self._desk_held(path)
         if text is not None:
-            documents.add_text(root, PASTED if title is None else title, text)
-            return self.view(root)
-        documents.add(root, name, data, title)
-        kept = self._keep_upload(name, data, title) if keep else None
+            entry = documents.add_text(root, PASTED if title is None else title, text)
+            kept = self._keep_upload(entry['name'], text.encode('utf-8'), entry.get('title')) \
+                if keep else None
+        else:
+            documents.add(root, name, data, title)
+            kept = self._keep_upload(name, data, title) if keep else None
         shown = self.view(root)
         return {**shown, 'library_upload': kept} if kept and shown is not None else shown
 
@@ -1464,6 +1481,9 @@ class DeskActions:
         are copied into the deck, which keeps them when the library changes. Nothing is drawn,
         research does not run and no research setting changes. Refused while a job runs."""
         root = self._desk_held(path)
+        own = own_library_document(root)
+        if own and any(isinstance(one, dict) and one.get('id') == own for one in picks or ()):
+            raise WorkspaceError(OWN_OUTPUT)
         with self.files:
             self._library_idle(root, self._load(root))
             try:

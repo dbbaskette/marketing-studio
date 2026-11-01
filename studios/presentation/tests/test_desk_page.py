@@ -15,6 +15,7 @@ import unittest
 from pathlib import Path
 from datetime import UTC, datetime
 from unittest import mock
+from urllib.parse import urlencode
 
 import runner_support
 import test_desk
@@ -809,12 +810,43 @@ class ProgressTests(DeskPageCase):
         after = self.post('desk-look', {'path': path, 'look': looks[1]['id']})
         self.assertEqual(after['gate']['name'], 'gate:build')
 
-    def test_a_look_pick_is_asked_for_before_it_is_sent(self):
+    def test_the_brands_default_look_is_chosen_until_another_is_picked(self):
+        """#256: Draw works straight away, with the brand's default."""
         path = self.started(flow='desk', look='pick')
-        result = self.open_deck(path, self.run_of(path), [
+        view = self.run_of(path)
+        offered = view['gate']['offered']
+        self.assertEqual(offered['default'], offered['looks'][0]['id'])
+        result = self.open_deck(path, view, [
+            {'snapshot': 'pause'}, {'click': 'Draw the deck in this look'}],
+            **{'POST /api/desk-look': [ok(view)]})
+        self.assertEqual(self.posts(result), [('/api/desk-look', {
+            'path': path, 'look': offered['default']})])
+        # Without a default, a look is still asked for before anything is sent.
+        bare = copy.deepcopy(view)
+        bare['gate']['offered']['default'] = None
+        result = self.open_deck(path, bare, [
             {'click': 'Draw the deck in this look'}, {'snapshot': 'unpicked'}])
         self.assertIn('Pick a look first.', result['snapshots']['unpicked']['text'])
         self.assertEqual(self.posts(result), [])
+
+    def test_the_looks_are_one_radio_group_for_the_keyboard(self):
+        """#256: one Tab stop; the arrow keys move the choice, and Space picks."""
+        path = self.started(flow='desk', look='pick')
+        view = self.run_of(path)
+        looks = view['gate']['offered']['looks']
+        first, second = looks[0]['name'], looks[1]['name']
+        result = self.open_deck(path, view, [
+            {'snapshot': 'pause'}, {'press': 'ArrowRight', 'on': first}, {'snapshot': 'moved'},
+            {'press': 'ArrowLeft', 'on': second}, {'snapshot': 'back'},
+            {'press': 'End', 'on': first}, {'click': 'Draw the deck in this look'}],
+            **{'POST /api/desk-look': [ok(view)]})
+        shots = result['snapshots']
+        self.assertEqual(shots['pause']['radios'], [[first, 'true', 0], [second, 'false', -1]])
+        self.assertEqual(shots['moved']['radios'], [[first, 'false', -1], [second, 'true', 0]])
+        self.assertEqual(shots['moved']['focus'], second)
+        self.assertEqual(shots['back']['radios'], [[first, 'true', 0], [second, 'false', -1]])
+        self.assertEqual(self.posts(result), [('/api/desk-look', {
+            'path': path, 'look': looks[-1]['id']})])
 
     def test_a_question_and_a_problem_come_before_progress(self):
         path = self.desk_deck()
@@ -1092,7 +1124,7 @@ class DeskTests(DeskPageCase):
                                                'blockers_seen': view['desk']['blockers_seen']})
         self.assertEqual(delivered['desk']['delivered']['revision'], 1)
         shot = self.open_deck(path, delivered, [{'snapshot': 'delivered'}])['snapshots']
-        self.assertIn('Delivered as revision 1.', shot['delivered']['text'])
+        self.assertIn('Delivered as revision 1 to Google Slides.', shot['delivered']['text'])
         changed = self.post('desk-note', {'path': path, 'number': 3, 'note': 'Shorter.',
                                           'expected': delivered['desk']['expected']})
         self.assertTrue(changed['desk']['revision'])
@@ -1425,10 +1457,21 @@ class WorkbenchTests(DeskPageCase):
         self.assertEqual(self.posts(result), [('/api/desk-apply', {
             'path': path, 'set': 'review-job', 'ids': [{'id': item['id']}],
             'seen': shown['desk']['seen']})])
-        skipped = self.open_deck(path, shown, [{'click': 'Go to slide 4'}, {'click': 'Skip'}],
-                                 **{'POST /api/desk-skip': [ok(shown)]})
+        # Each button names its fix (#257), and no two on the screen share a name.
+        self.assertIn('Apply the review’s fix to slide 4', shots['found']['buttons'])
+        self.assertIn('Skip the review’s fix to slide 4', shots['found']['buttons'])
+        self.assertIn('Apply and redraw slide 4: the review’s fix to slide 4',
+                      shots['priced']['buttons'])
+        gone = copy.deepcopy(shown)
+        gone['desk']['finishing']['review']['items'][0]['state'] = 'skipped'
+        skipped = self.open_deck(path, shown, [
+            {'click': 'Go to slide 4'}, {'click': 'Skip the review’s fix to slide 4'},
+            {'snapshot': 'skipped'}], **{'POST /api/desk-skip': [ok(gone)],
+                                         'GET /api/run': [ok(shown), ok(shown), ok(gone)]})
         self.assertEqual(self.posts(skipped), [('/api/desk-skip', {
             'path': path, 'set': 'review-job', 'ids': [item['id']]})])
+        # Skipped, the focus goes to the slide's heading, where nothing more is found.
+        self.assertEqual(skipped['snapshots']['skipped']['focus'], 'desk-slide-title')
 
     def test_the_slide_shown_first_stays_when_what_drew_the_desk_to_it_is_resolved(self):
         path = self.desk_deck()
@@ -1949,11 +1992,14 @@ class FinishingPageTests(DeskPageCase):
         self.assertIn('No sources yet.', shot['text'])
         self.assertNotIn('Research again', shot['buttons'], 'a deck with no research')
         self.assertIn('Paste the text of the source first.', result['snapshots']['empty']['text'])
-        # Keep in library is the visible default, chosen before the file is.
-        self.assertIn('Keep the file', shot['text'].split('\n'))
+        # Keep in library is the visible default, chosen before the file is, and it holds for
+        # pasted text too (#257): what it says is what is stored.
+        self.assertIn('Keep the file or text', shot['text'].split('\n'))
         self.assertEqual([name for name in shot['pressed'] if name in KEEP_CHOICES],
                          ['Keep in library'])
-        self.assertLess(lines.index('Keep the file'), lines.index('A file'))
+        self.assertLess(lines.index('Keep the file or text'), lines.index('A file'))
+        self.assertIn('Keep in library also saves the file, or the text you paste, in the '
+                      'Document Library on this computer', shot['text'])
         self.assertIn('It is shared with no one either way.', shot['text'])
         (file_address, sent_file), (text_address, sent_text) = self.posts(result)
         self.assertEqual((file_address, text_address), ('/api/desk-source', '/api/desk-source'))
@@ -1962,7 +2008,7 @@ class FinishingPageTests(DeskPageCase):
         self.assertEqual(base64.b64decode(sent_file['content']),
                          b'# Runbook\n\nTwo batches at a time.\n')
         self.assertEqual(sent_text, {'path': path, 'text': 'Health checks gate each batch.',
-                                     'title': 'Pasted notes'})
+                                     'title': 'Pasted notes', 'library': True})
         # What the page sends is what the server takes, and nothing is drawn.
         jobs = len(self.workers.jobs)
         kept = self.post('desk-source', sent_file)['library_upload']
@@ -1980,8 +2026,29 @@ class FinishingPageTests(DeskPageCase):
         self.assertEqual(document_library.opened().download(kept['id'], 1, 'original')[2],
                          b'# Runbook\n\nTwo batches at a time.\n')
         self.assertNotIn('library', added['desk']['sources'][0])
+        # The pasted text is kept there too, as the Markdown the deck keeps of it.
+        pasted = added['library_upload']
+        self.assertEqual(pasted['state'], 'kept')
+        self.assertEqual(document_library.opened().download(pasted['id'], 1, 'original')[2],
+                         b'Health checks gate each batch.')
+        # Only this project keeps pasted text out of it.
+        alone = self.post('desk-source', {**sent_text, 'title': 'Pasted alone',
+                                          'library': False})
+        self.assertNotIn('library_upload', alone)
         shot = self.open_deck(path, added, [{'snapshot': 'listed'}])['snapshots']['listed']
         self.assertIn('Pasted notes', shot['text'].split('\n'))
+        # Added, the focus goes to its row in Sources, not to the page (#257).
+        after = copy.deepcopy(added)
+        after['desk']['sources'].append({'name': 'more.md', 'title': 'More notes',
+                                         'readable': True})
+        moved = self.open_deck(path, added, [
+            {'fill': 'Or paste its text', 'value': 'More.'},
+            {'fill': 'Its title', 'value': 'More notes'},
+            {'click': 'Add the pasted text'}, {'snapshot': 'added'}],
+            **{'POST /api/desk-source': [ok(after)],
+               'GET /api/run': [ok(added), ok(after)]})['snapshots']['added']
+        self.assertEqual(moved['focusKey'], 'desk-source 2')
+        self.assertEqual(moved['fields']['Or paste its text'], '')
 
     def test_only_this_project_keeps_the_file_out_of_the_library(self):
         from studio_core import document_library
@@ -2034,13 +2101,25 @@ class FinishingPageTests(DeskPageCase):
                                                'blockers_seen': view['desk']['blockers_seen']})
         self.assertEqual(delivered['desk']['library']['pdf'], 'saved')
         shot = self.open_deck(path, delivered, [{'snapshot': 'kept'}])['snapshots']['kept']
-        self.assertIn('Kept in the Document Library as a PDF and slide Markdown, revision '
-                      f"{delivered['desk']['library']['revision']}. PDF saved.", shot['text'])
+        # Said on the Delivered card, after the receipts, named apart from the deck's revision
+        # (#257): the library counts its own.
+        lines = shot['text'].split('\n')
+        at = lines.index('Document Library')
+        self.assertGreater(at, lines.index('Delivered'))
+        self.assertLess(at, lines.index('Sources'))
+        self.assertEqual(lines[at + 1], 'PDF saved.')
+        self.assertIn('Kept from deck revision 1 as a PDF and its slide Markdown, for any studio '
+                      'on this computer. The library numbers its own copies apart from the '
+                      'deck: this is library revision '
+                      f"{delivered['desk']['library']['revision']}.", shot['text'])
+        self.assertNotIn('Keep in library again', shot['buttons'])
         without = copy.deepcopy(delivered)
         without['desk']['library'].update(pdf='needs-export', pdf_note='No PDF was left here.')
         shot = self.open_deck(path, without, [{'snapshot': 'kept'}])['snapshots']['kept']
-        self.assertIn('PDF needs export: No PDF was left here.', shot['text'])
+        self.assertIn('PDF needs export.', shot['text'])
+        self.assertIn('No PDF was left here.', shot['text'])
         self.assertNotIn('PDF saved', shot['text'])
+        self.assertIn('Keep in library again', shot['buttons'])
 
     def test_research_again_says_its_price_before_it_posts(self):
         path = self.research_deck()
@@ -2239,9 +2318,17 @@ class OpenOnDeskPageTests(DeskPageCase):
         opened = self.post('desk-open', {'path': path})
         self.assertTrue(opened['deliver']['to_google'])
         result = self.open_deck(path, opened, [
-            {'snapshot': 'desk'}, {'click': 'Send to Google Slides'}],
+            {'snapshot': 'desk'}, {'click': 'Send to Google Slides'}, {'snapshot': 'asked'},
+            {'click': 'Cancel'}, {'snapshot': 'cancelled'}, {'click': 'Send to Google Slides'},
+            {'click': 'Send to Google Slides'}],
             **{'POST /api/deliver': [ok(opened)]})
         self.assertIn('Send to Google Slides', result['snapshots']['desk']['buttons'])
+        # Nothing goes to Google on the first press: a sheet says what goes, as which revision
+        # (#257).
+        asked = result['snapshots']['asked']
+        self.assertIn('Revision 1, delivered as a PowerPoint file, goes to Google Slides as '
+                      'revision 2.', asked['sheet'])
+        self.assertEqual(result['snapshots']['cancelled']['posts'], 0)
         self.assertEqual(self.posts(result), [('/api/deliver', {'path': path})])
 
     def test_a_delivered_deck_offers_open_on_the_desk(self):
@@ -2259,11 +2346,408 @@ class OpenOnDeskPageTests(DeskPageCase):
         self.assertEqual(self.posts(result), [('/api/desk-open', {'path': path})])
         # The screen is the desk now: the navigator and the slide chosen, still delivered.
         self.assertIn('Previous slide', desk['buttons'])
-        self.assertIn('Delivered as revision 1.', desk['text'])
+        self.assertIn('Delivered as revision 1 to Google Slides.', desk['text'])
         self.assertNotIn('Open on the desk', desk['buttons'])
         # A deck on the desk already is not offered it again.
         shot = self.open_deck(path, opened, [{'snapshot': 'again'}])['snapshots']['again']
         self.assertNotIn('Open on the desk', shot['buttons'])
+
+
+APPROVE_TEXT = 'Approve text & design deck'
+
+
+class SlideTextStopTests(DeskPageCase):
+    """#256: the slide text waits for approval, and nothing typed there is dropped; every
+    stop says where the deck is in the words of the button that answers it."""
+
+    def setUp(self):
+        super().setUp()
+        self.engine.content_first = True
+
+    def text_deck(self, **changes) -> tuple[str, dict]:
+        path = self.started(flow='desk', **{'look': 'default', **changes})
+        view = self.run_of(path)
+        self.assertEqual(view['gate']['name'], 'gate:outline')
+        self.assertTrue(view['gate']['content_first'])
+        return path, view
+
+    def test_approve_with_a_typed_change_asks_before_it_drops_it(self):
+        path, view = self.text_deck()
+        typed = 'Make slide 4 title shorter.'
+        steps = [{'fill': 'Changes to slide text', 'value': typed},
+                 {'click': APPROVE_TEXT}, {'snapshot': 'asked'}]
+        dropped = self.open_deck(path, view, [*steps, {'click': 'Approve without them'}],
+                                 **{'POST /api/decide': [ok(view)]})
+        asked = dropped['snapshots']['asked']
+        self.assertIn('You typed a change to the slide text. Send these changes first, or '
+                      'approve without them?', asked['text'])
+        self.assertEqual(asked['posts'], 0, 'nothing is decided before the person chooses')
+        self.assertEqual(asked['focus'], 'Send these changes first')
+        self.assertEqual(self.posts(dropped), [('/api/decide', {
+            'path': path, 'gate': 'gate:outline', 'decision': 'approve', 'note': None,
+            'expected': view['gate']['expected']})])
+        sent = self.open_deck(path, view, [*steps, {'click': 'Send these changes first'}],
+                              **{'POST /api/decide': [ok(view)]})
+        self.assertEqual(self.posts(sent), [('/api/decide', {
+            'path': path, 'gate': 'gate:outline', 'decision': 'changes', 'note': typed,
+            'expected': view['gate']['expected']})])
+
+    def test_approve_is_the_toolbars_filled_action(self):
+        path, view = self.text_deck()
+        shot = self.open_deck(path, view, [{'snapshot': 'text'}])['snapshots']['text']
+        self.assertEqual(shot['toolbar'][0], {'name': APPROVE_TEXT, 'filled': True,
+                                              'quiet': False})
+        self.assertEqual(shot['filled'], [APPROVE_TEXT])
+        self.assertLayout(shot)
+        # Pressed with nothing typed, it approves at once.
+        result = self.open_deck(path, view, [{'click': APPROVE_TEXT}],
+                                **{'POST /api/decide': [ok(view)]})
+        self.assertEqual(self.posts(result), [('/api/decide', {
+            'path': path, 'gate': 'gate:outline', 'decision': 'approve', 'note': None,
+            'expected': view['gate']['expected']})])
+
+    def test_a_one_word_fix_is_approved_with_no_assistant_job(self):
+        from runner.steps import outline as outlines
+        path, view = self.text_deck()
+        slides = view['gate']['slides']
+        fixed = slides[3]['title'] + ' now'
+        result = self.open_deck(path, view, [
+            {'fill': 'Title of slide 4', 'value': fixed}, {'click': APPROVE_TEXT}],
+            **{'POST /api/decide': [ok(view)]})
+        ((address, sent),) = self.posts(result)
+        edited = copy.deepcopy(slides)
+        edited[3]['title'] = fixed
+        self.assertEqual(sent, {'path': path, 'gate': 'gate:outline', 'decision': 'approve',
+                                'note': None, 'expected': view['gate']['expected'],
+                                'extra': {'edited': edited}})
+        # The server takes it as it is sent: the title is saved, and the outline is not
+        # drafted again by an assistant.
+        drafted = len(self.workers.of('outline'))
+        self.post('decide', sent)
+        saved = json.loads((Path(path) / outlines.OUTLINE).read_text(encoding='utf-8'))
+        self.assertEqual(saved['slides'][3]['title'], fixed)
+        self.assertEqual(len(self.workers.of('outline')), drafted)
+        self.assertNotEqual(self.run_of(path)['gate'] and self.run_of(path)['gate']['name'],
+                            'gate:outline')
+
+    def test_the_research_found_is_reached_from_the_slide_text(self):
+        path, view = self.text_deck(research=True)
+        self.assertTrue(view['desk']['research_items'])
+        shot = self.open_deck(path, view, [{'snapshot': 'text'}])['snapshots']['text']
+        lines = shot['text'].split('\n')
+        self.assertIn('What the research found', shot['buttons'])
+        self.assertLess(lines.index('What the research found'), lines.index('Review slide text'))
+
+    def test_every_stop_says_where_it_is_as_its_screen_does(self):
+        path, view = self.text_deck(look='pick')
+        said = {}
+
+        def stop(name, run):
+            brief = next(one for one in self.get('decks')['needs'] if one['path'] == path)
+            shot = self.open_deck(path, run, [{'snapshot': name}])['snapshots'][name]
+            said[name] = (run['sentence'], brief['sentence'],
+                          next(line for line in shot['text'].split('\n')
+                               if line.startswith('From an idea · ')))
+
+        stop('text', view)
+        self.decided(path, 'gate:outline', expected=view['gate']['expected'])
+        looked = self.run_of(path)
+        stop('look', looked)
+        self.post('desk-look', {'path': path, 'look': looked['gate']['offered']['default']})
+        rested = self.run_of(path)
+        stop('desk', rested)
+        self.assertEqual(said, {
+            'text': ('Waiting for you to approve the slide text.',) * 2
+            + ('From an idea · Slide text',),
+            'look': ('Waiting for you to pick the look.',) * 2 + ('From an idea · Look',),
+            'desk': ('Ready to deliver.',) * 2 + ('From an idea · On the desk',)})
+        delivered = self.post('desk-deliver', {'path': path,
+                                               'expected': rested['desk']['expected'],
+                                               'blockers_seen': rested['desk']['blockers_seen']})
+        shot = self.open_deck(path, delivered, [{'snapshot': 'done'}])['snapshots']['done']
+        self.assertIn('From an idea · Delivered', shot['text'])
+        brief = next(one for one in self.get('decks')['finished'] if one['path'] == path)
+        # The link is a button of its own, never text in the sentence.
+        self.assertEqual(brief['sentence'], 'Delivered as revision 1 to Google Slides.')
+        self.assertNotIn('http', delivered['sentence'])
+
+    def test_a_deck_has_one_waiting_toast_and_none_once_it_is_decided(self):
+        path, view = self.text_deck()
+        listed = self.get('decks')
+        later = copy.deepcopy(listed)
+        later['needs'][0]['sentence'] = 'Waiting for you to pick the look.'
+        decided = copy.deepcopy(listed)
+        decided['working'], decided['needs'] = decided['needs'], []
+        decided['working'][0].update(state='working', sentence='Drawing the deck.', needs=False)
+        first = copy.deepcopy(listed)
+        first['needs'] = []
+        result = self.run_page(self.answers(**{'GET /api/decks': [
+            ok(first), ok(listed), ok(later), ok(decided)]}), [
+            {'snapshot': 'home'}, {'poll': True}, {'snapshot': 'waits'}, {'poll': True},
+            {'snapshot': 'later'}, {'poll': True}, {'snapshot': 'decided'}])
+        shots = result['snapshots']
+        title = listed['needs'][0]['title']
+        self.assertEqual(shots['waits']['toasts'],
+                         [title + ': Waiting for you to approve the slide text.'])
+        # The newer waiting line takes the place of the earlier one; once nothing waits, the
+        # deck's toast goes.
+        self.assertEqual(shots['later']['toasts'], [title + ': Waiting for you to pick the look.'])
+        self.assertEqual(shots['decided']['toasts'], [])
+
+    def test_the_badge_and_the_greeting_count_the_same(self):
+        setup = self.get('setup')
+        upkeep = {**(setup.get('upkeep') or {}), 'versions': {'key': 'newer', 'dismissed': False,
+                                                            'rows': []}}
+        answers = self.answers(**{'GET /api/setup': [ok({**setup, 'upkeep': upkeep})]})
+        home = self.run_page(answers, [{'snapshot': 'home'}])['snapshots']['home']
+        self.assertIn('Nothing needs you right now.', home['text'])
+        self.assertEqual(home['badge'], '')
+        self.assertFalse(home['title'].startswith('('))
+        self.text_deck()
+        answers = self.answers(**{'GET /api/setup': [ok({**setup, 'upkeep': upkeep})]})
+        home = self.run_page(answers, [{'snapshot': 'home'}])['snapshots']['home']
+        self.assertIn('One thing needs you.', home['text'])
+        self.assertEqual(home['badge'], '1 thing needs you')
+        self.assertTrue(home['title'].startswith('(1) '))
+
+
+# Runs deck-desk.js's own rebased() and outlineChanges() on outlines given as JSON: each case
+# is [from, work, now], each a list of [id, title]. Prints [[ids and titles], unsaved] each.
+REBASE = r'''
+const fs = require('fs');
+const src = fs.readFileSync(process.argv[1], 'utf8');
+const grab = (name) => { const at = src.indexOf('  function ' + name + '(');
+  return src.slice(at, src.indexOf('\n  }\n', at) + 4); };
+const changes = grab('outlineChanges').replace(
+  /function outlineChanges\(run\) \{[\s\S]*?const edit = outlineEdit\(outline\);/,
+  'function outlineChanges(run, edit) { const outline = run.desk.outline;');
+const kit = new Function('h', grab('copied') + grab('rebased') + changes
+  + '; return { rebased, outlineChanges };')({ list: (v) => (Array.isArray(v) ? v : []) });
+const slides = (rows) => rows.map(([id, title]) => ({ id, title }));
+const cases = JSON.parse(process.argv[2]);
+console.log(JSON.stringify(cases.map(([from, work, now]) => {
+  const made = kit.rebased({ from: slides(from), work: slides(work) }, slides(now));
+  return [made.map((one) => one.id + ':' + one.title),
+    kit.outlineChanges({ desk: { outline: { slides: slides(now) } } }, { work: made })];
+})));
+'''
+
+
+@unittest.skipUnless(NODE, 'Node is needed to run the page scripts without a browser')
+class OutlineRebaseTests(unittest.TestCase):
+    """#257: edits on the Outline tab carried onto an outline read again keep the outline's
+    own order, unless the person reordered; and only then is the order theirs to save."""
+
+    def rebased(self, *cases):
+        page = Path(__file__).parents[1] / 'skills/presentation-studio/scripts/desk/deck-desk.js'
+        done = subprocess.run([NODE, '-e', REBASE, str(page), json.dumps(cases)],
+                              capture_output=True, text=True, timeout=60)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        return json.loads(done.stdout)
+
+    def test_the_outline_keeps_its_own_order_unless_the_person_reordered(self):
+        abc = [['a', 'A'], ['b', 'B'], ['c', 'C']]
+        retitled = [['a', 'A'], ['b', 'New'], ['c', 'C']]
+        title = 'the title of slide {}, now “New”'
+        found = self.rebased(
+            # Reordered underneath: its order stands, with the person's title.
+            [abc, retitled, [['c', 'C'], ['a', 'A'], ['b', 'B']]],
+            # A slide inserted underneath stays where it was put.
+            [abc, retitled, [['a', 'A'], ['n', 'N'], ['b', 'B'], ['c', 'C']]],
+            # A slide deleted underneath stays deleted.
+            [abc, retitled, [['a', 'A'], ['b', 'B']]],
+            # The person moved c first; a slide inserted underneath keeps its neighbours.
+            [abc, [['c', 'C'], ['a', 'A'], ['b', 'B']],
+             [['a', 'A'], ['n', 'N'], ['b', 'B'], ['c', 'C']]],
+            # The person removed b; underneath, c was moved first. b stays removed.
+            [abc, [['a', 'A'], ['c', 'C']], [['c', 'C'], ['a', 'A'], ['b', 'B']]])
+        self.assertEqual(found, [
+            [['c:C', 'a:A', 'b:New'], [title.format(3)]],
+            [['a:A', 'n:N', 'b:New', 'c:C'], [title.format(3)]],
+            [['a:A', 'b:New'], [title.format(2)]],
+            [['c:C', 'n:N', 'a:A', 'b:B'], ['the order of the slides']],
+            [['c:C', 'a:A'], ['slide 3 removed']]])
+
+
+def summary_lines(shot: dict) -> list:
+    """The lines of the desk's summary, from its heading to what Deliver will use."""
+    lines = shot['text'].split('\n')
+    start = lines.index('Before you deliver')
+    return lines[start:lines.index('What Deliver will use', start)]
+
+
+class DeskFollowThroughTests(DeskPageCase):
+    """#257: focus after the desk's actions, Finishing on a phone, unsaved Outline edits,
+    every delivery's receipt and the Document Library's word on it."""
+
+    def test_finishing_on_a_phone_is_a_sheet_with_its_heading_focused(self):
+        path = self.desk_deck()
+        view = self.run_of(path)
+        tabs = [{'key': 'Tab'}, {'snapshot': 'tab-1'}, *[{'key': 'Tab'}] * 4,
+                {'snapshot': 'tab-5'}, {'key': 'Tab'}, {'snapshot': 'tab-6'}]
+        result = self.run_page(self.answers(**{'GET /api/run': [ok(view)]}), [
+            {'click': 'Finishing'}, {'snapshot': 'open'}, *tabs, {'click': 'Brand check'},
+            {'snapshot': 'tool'}, {'key': 'Escape'}, {'snapshot': 'closed'}],
+            state={'screen': 'deck', 'path': path}, narrow=True)
+        shots = result['snapshots']
+        self.assertEqual(shots['open']['focus'], 'desk-finish-title')
+        self.assertEqual(shots['open']['desks'][0]['children'][-1],
+                         ['desk-finish', 'desk-finish-sheet'])
+        self.assertEqual(shots['open']['dialogs'], [['true', 'desk-finish-title']])
+        # It is modal: Tab goes round its own controls, its Close and its four tools, and
+        # never reaches the desk behind it.
+        self.assertEqual(shots['tab-1']['focusKey'], 'desk-finish-close')
+        self.assertEqual(shots['tab-5']['focusKey'], 'desk-finish Rehearse')
+        self.assertEqual(shots['tab-6']['focusKey'], 'desk-finish-close')
+        self.assertEqual(shots['tool']['focus'], 'desk-finish-title')
+        # Escape puts it away, and the focus goes back to Finishing in the toolbar.
+        self.assertEqual(shots['closed']['desks'][0]['children'], [['desk-column'],
+                                                                   ['desk-aside']])
+        self.assertEqual(shots['closed']['focusKey'], 'desk-finishing')
+
+    def test_finishing_beside_the_slides_keeps_the_asides_width(self):
+        css = (Path(__file__).parents[1] / 'skills/presentation-studio/scripts/desk/deck.css'
+               ).read_text(encoding='utf-8')
+        wide = css[css.index('@media (min-width: 1100px) {\n  .desk-layout.desk-finishing'):]
+        self.assertIn('grid-template-columns: minmax(0, 1fr) 18rem;', wide.split('}')[0])
+        self.assertIn('.desk-layout > .desk-finish.desk-finish-sheet', css)
+
+    def test_opening_brand_check_keeps_its_warnings_worth_a_look(self):
+        path = self.desk_deck()
+        view = self.run_of(path)
+        # What opening Brand check asks: the last render's check, as proposals.
+        opened = self.post('desk-finish', {'path': path, 'tool': 'brand', 'again': True})
+        self.assertTrue(opened['desk']['brand_current'])
+        items = opened['desk']['finishing']['brand']['items']
+        self.assertIn((2, 'warning'), [(item['number'], item['kind']) for item in items])
+        self.assertNotIn('blocker', [item['kind'] for item in items])
+        before = self.open_deck(path, view, [{'snapshot': 'before'}])['snapshots']['before']
+        result = self.open_deck(path, opened, [
+            {'click': 'Finishing'}, {'click': 'Brand check'}, {'snapshot': 'after'}])
+        after = result['snapshots']['after']
+        lines = summary_lines(before)
+        self.assertIn('Worth a look', lines)
+        self.assertIn('Slide 2: 1 brand warning.', lines)
+        # The proposal is there to apply or skip, and still only worth a look.
+        self.assertIn('Apply the brand check’s fix to slide 2', after['buttons'])
+        self.assertEqual(summary_lines(after), lines)
+        self.assertNotIn('Waits for you', after['text'])
+
+    def test_an_unsaved_outline_edit_is_named_and_holds_deliver(self):
+        path = self.desk_deck()
+        view = self.run_of(path)
+        priced = {'says': 'Saving redraws section 2.'}
+        result = self.open_deck(path, view, [
+            {'click': 'Outline'}, {'snapshot': 'outline'},
+            {'fill': 'Title of slide 4', 'value': 'Batches of two'}, {'click': 'Slides'},
+            {'snapshot': 'slides'}, to(4), {'snapshot': 'slide'}, {'click': 'Deliver'},
+            {'snapshot': 'sheet'}, {'click': 'Discard them'}, {'snapshot': 'discarded'}],
+            **{'POST /api/desk-outline-price': [ok(priced)]})
+        shots = result['snapshots']
+        outline = shots['outline']
+        # The Outline tab says what it is for, and names its moves on each row.
+        self.assertEqual(outline['ledes'], ['Change the slides’ titles, their order and which '
+                                            'slides the deck has. Nothing changes until you '
+                                            'save; saving redraws only the sections whose '
+                                            'slides change.'])
+        self.assertIn('Move down: “' + cards_of(view['desk'])[0]['words']['title'] + '”',
+                      outline['buttons'])
+        said = 'the title of slide 4, now “Batches of two”'
+        self.assertIn('Outline tab: not saved yet: ' + said + '.', summary_lines(shots['slides']))
+        self.assertIn('On the Outline tab its title is “Batches of two”, not saved yet.',
+                      shots['slide']['text'])
+        sheet = shots['sheet']
+        self.assertIn('Your changes on the Outline tab are not saved: ' + said + '.',
+                      sheet['sheet'])
+        self.assertIn('Deliver', sheet['off'])
+        self.assertNotIn('Outline tab: not saved yet', shots['discarded']['text'])
+        self.assertNotIn('Deliver', shots['discarded']['off'])
+        self.assertNotIn('/api/desk-deliver', [address for address, _ in self.posts(result)])
+        # Save them goes to the Outline tab, its price worked out, to save there.
+        saved = self.open_deck(path, view, [
+            {'click': 'Outline'}, {'fill': 'Title of slide 4', 'value': 'Batches of two'},
+            {'click': 'Slides'}, {'click': 'Deliver'}, {'click': 'Save them on the Outline tab'},
+            {'snapshot': 'back'}], **{'POST /api/desk-outline-price': [ok(priced)]})
+        back = saved['snapshots']['back']
+        self.assertEqual(back['sheet'], '')
+        self.assertEqual(back['focusKey'], 'desk-outline-save')
+        self.assertIn('Saving redraws section 2.', back['text'])
+
+    def test_an_outline_edit_outlasts_words_saved_on_the_slides_tab(self):
+        path = self.desk_deck()
+        view = self.run_of(path)
+        resaved = copy.deepcopy(view)
+        resaved['desk']['outline']['expected'] = 'f' * 64
+        resaved['desk']['outline']['slides'][0]['subtitle'] = 'Saved from the Slides tab'
+        result = self.open_deck(path, view, [
+            {'click': 'Outline'}, {'fill': 'Title of slide 4', 'value': 'Batches of two'},
+            {'poll': True}, {'snapshot': 'outline'}],
+            **{'GET /api/run': [ok(view), ok(resaved)],
+               'POST /api/desk-outline-price': [ok({'says': 'Saving redraws section 2.'})]})
+        shot = result['snapshots']['outline']
+        self.assertEqual(shot['fields']['Title of slide 4'], 'Batches of two')
+        self.assertIn('Saved from the Slides tab', shot['text'])
+
+    def test_deliver_puts_the_focus_on_the_delivered_card(self):
+        path = self.desk_deck()
+        view = self.run_of(path)
+        delivered = self.post('desk-deliver', {'path': path, 'expected': view['desk']['expected'],
+                                               'blockers_seen': view['desk']['blockers_seen']})
+        result = self.open_deck(path, view, [
+            {'click': 'Deliver'}, {'click': 'Deliver'}, {'snapshot': 'done'}],
+            **{'POST /api/desk-deliver': [ok(delivered)],
+               'GET /api/run': [ok(view), ok(view), ok(delivered)]})
+        self.assertEqual(result['snapshots']['done']['focus'], 'desk-delivered-title')
+
+    def test_a_powerpoint_and_a_google_delivery_both_keep_their_receipts(self):
+        path = self.desk_deck(output='pptx')
+        view = self.run_of(path)
+        first = self.post('desk-deliver', {'path': path, 'expected': view['desk']['expected'],
+                                           'blockers_seen': view['desk']['blockers_seen']})
+        self.assertEqual(first['desk']['delivered']['output'], 'pptx')
+        both = self.post('deliver', {'path': path})
+        receipts = both['desk']['receipts']
+        self.assertEqual([(one['revision'], one['format']) for one in receipts],
+                         [(1, 'pptx'), (2, 'google')])
+        self.assertTrue(receipts[0]['download'])
+        shot = self.open_deck(path, both, [{'snapshot': 'delivered'}])['snapshots']['delivered']
+        self.assertIn('Download revision 1', shot['buttons'])
+        self.assertIn('Open revision 2 in Google Slides, in a new tab',
+                      [link['name'] for link in shot['links']])
+        self.assertEqual(shot['toolbar'][0]['name'], 'Download revision 2')
+        lines = shot['text'].split('\n')
+        self.assertLess(lines.index('Delivered as revision 2 to Google Slides.'),
+                        lines.index('Document Library'))
+        # Revision 1's file opens: the PowerPoint file that revision delivered.
+        status, kind, data, headers = self.raw('GET', '/api/download?' + urlencode(
+            {'path': path, 'revision': '1'}))
+        self.assertEqual(status, 200)
+        self.assertEqual(data, (Path(path) / 'deck.pptx').read_bytes())
+        self.assertIn('revision-1.pptx', headers['Content-Disposition'])
+        status, _, _, _ = self.raw('GET', '/api/download?' + urlencode(
+            {'path': path, 'revision': '2'}))
+        self.assertNotEqual(status, 200, 'a Google delivery has no file here')
+        # A revision that is not a plain whole number is refused as such, not a failure.
+        for odd in ('²', '1.0', '-1', ' 1'):
+            status, _, _, _ = self.raw('GET', '/api/download?' + urlencode(
+                {'path': path, 'revision': odd}))
+            self.assertEqual(status, 400, odd)
+        # Lists show where it went in words; the link is a button of its own.
+        brief = next(one for one in self.get('decks')['finished'] if one['path'] == path)
+        self.assertEqual(brief['sentence'], 'Delivered as revision 2 to Google Slides.')
+
+    def test_add_from_library_refuses_the_decks_own_delivery(self):
+        path = self.desk_deck()
+        view = self.run_of(path)
+        delivered = self.post('desk-deliver', {'path': path, 'expected': view['desk']['expected'],
+                                               'blockers_seen': view['desk']['blockers_seen']})
+        own = delivered['desk']['own_library']
+        self.assertEqual(own, delivered['desk']['library']['document'])
+        refused = self.post('desk-library', {'path': path, 'picks': [{'id': own,
+                                                                       'revision': 1}]},
+                            expect=400)
+        self.assertIn('a deck is not a source of itself', refused['error'])
+        self.assertEqual(self.run_of(path)['desk']['sources'], [])
 
 
 class MigrationPageTests(DeskPageCase):

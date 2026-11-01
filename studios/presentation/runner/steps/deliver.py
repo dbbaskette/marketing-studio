@@ -12,15 +12,18 @@ What a caller needs to know
   matter. When Google cannot be reached the deck is delivered as a PowerPoint file
   instead, and deliver.json says so in `notice` (NOT_CONNECTED). Output 'pptx' copies the
   rendered deck to deck.pptx in the deck's folder (SHARED), which is committed and shared
-  with the deck, for the page to offer as a download on any computer; a new delivery
-  replaces it, and a Google delivery takes it away. A delivery made before this recorded
+  with the deck, for the page to offer as a download on any computer; a new PowerPoint
+  delivery replaces it. A Google delivery, and changes asked for after delivery, leave it as
+  the receipt of the revision it delivered. A delivery made before this recorded
   work/deck.pptx, which stays on the computer that made it.
-    deliver.shared_file(root)              # the shared delivered file, or None
+    deliver.shared_file(root)              # the delivered file, while it is the delivery
+    deliver.receipt_file(root, run, n)     # revision n's PowerPoint file, while kept
+    deliver.receipts(root, run)            # every revision, as the desk lists them
 - deliver.json (decks.DELIVER) is {'output', 'url', 'fileId', 'pptx', 'revision', 'at',
   'deck_sha256'}, with 'notice' when the deck was not delivered as asked. `deck_sha256` is
   the hash of the deck file delivered, which the Document Library's PDF is checked by.
   `revision` counts deliveries: each is added to run['revisions'] as {'revision', 'at',
-  'url' or 'pptx'}. The deck's
+  'url' or 'pptx', 'sha256'}. The deck's
   README.md and the workspace's index are written again from it.
 - `space` is the workspace, for its index. Without it, the deck's folder is taken to be
   in the workspace's own folder, as it always is.
@@ -47,6 +50,11 @@ GATE = 'gate:build'
 SHARED = Path('deck.pptx')   # a PowerPoint delivery, kept beside the deck and shared
 NOT_CONNECTED = "Google isn't connected, so this deck was made as a PowerPoint file."
 NOTE = 4000
+# Why a PowerPoint receipt has no Download: only the last PowerPoint delivery is kept.
+REPLACED = 'Its file was replaced by revision {revision}’s PowerPoint file.'
+NOT_KEPT_HERE = 'Its file is no longer kept beside the deck.'
+UNRECORDED = ('This revision was delivered before Presentation Studio recorded which file it '
+              'delivered, so its file cannot be offered here.')
 
 
 def _title(run: dict, revision: int) -> str:
@@ -76,6 +84,51 @@ def shared_file(root) -> Path | None:
     found = Path(root) / SHARED
     said = decks.delivered(root) or {}
     return found if found.is_file() and said.get('pptx') == SHARED.as_posix() else None
+
+
+def receipt_file(root, run: dict, revision) -> Path | None:
+    """The PowerPoint file of one delivered revision, while it is still kept beside the deck:
+    the last PowerPoint delivery stays there through a Google delivery of the same deck and
+    through changes, until another PowerPoint delivery replaces it. It is that revision's
+    only when its bytes are the ones the revision recorded; a revision recorded before
+    deliveries kept their hash is found only while it is the deck's own delivery."""
+    root = Path(root)
+    found = root / SHARED
+    entry = next((one for one in run.get('revisions') or ()
+                  if isinstance(one, dict) and one.get('revision') == revision), None)
+    if entry is None or not entry.get('pptx') or found.is_symlink() or not found.is_file():
+        return None
+    wanted = entry.get('sha256')
+    if wanted:
+        return found if hashlib.sha256(found.read_bytes()).hexdigest() == wanted else None
+    said = decks.delivered(root) or {}
+    return shared_file(root) if said.get('revision') == revision else None
+
+
+def receipts(root, run: dict) -> list[dict]:
+    """Every delivered revision, oldest first, as its receipt: its revision, when, where it
+    went ('google' with its link, or 'pptx'), and for a PowerPoint file whether it can still
+    be downloaded here, or why not."""
+    out, latest, unrecorded = [], None, set()
+    for entry in run.get('revisions') or ():
+        if not isinstance(entry, dict) or not isinstance(entry.get('revision'), int):
+            continue
+        shown = {'revision': entry['revision'], 'at': entry.get('at')}
+        if entry.get('url'):
+            shown.update(format='google', url=entry['url'])
+        else:
+            kept = receipt_file(root, run, entry['revision']) is not None
+            shown.update(format='pptx', download=kept)
+            latest = entry['revision']
+            if not entry.get('sha256'):
+                unrecorded.add(entry['revision'])
+        out.append(shown)
+    for shown in out:
+        if shown['format'] == 'pptx' and not shown['download']:
+            shown['why'] = (REPLACED.format(revision=latest) if latest != shown['revision']
+                            else UNRECORDED if shown['revision'] in unrecorded
+                            else NOT_KEPT_HERE)
+    return out
 
 
 def upload(root, run: dict, slides, output=None) -> dict:
@@ -121,12 +174,15 @@ def record(root, run: dict, made: dict, space=None) -> dict:
         if made_here.resolve() != (root / SHARED).resolve():
             shutil.copyfile(made_here, root / SHARED)
         record['pptx'] = SHARED.as_posix()
-    else:
-        (root / SHARED).unlink(missing_ok=True)   # what is shared is the latest delivery
+    # A Google delivery leaves the last PowerPoint file where it is: it is that revision's
+    # receipt (receipt_file). What is delivered now is said by deliver.json (shared_file).
     write_atomic(root / decks.DELIVER, json.dumps(record, indent=2, ensure_ascii=False)
                  + '\n')
     where = {'url': record['url']} if record['url'] else {'pptx': record['pptx']}
-    revisions.append({'revision': revision, 'at': at, **where})
+    # Each revision keeps the hash of the file it delivered, so its receipt finds it.
+    revisions.append({'revision': revision, 'at': at, **where,
+                      **({'sha256': record['deck_sha256']} if record.get('deck_sha256')
+                         else {})})
     decks.write_run(root, run)
     _rewrite(root, run, record, space)
     return record
@@ -156,7 +212,8 @@ def again(root, run: dict, slides, note: str, space=None, sections=None) -> dict
                             'at': home.now()}, repaired=0)
         build.write_state(root, state)
     (root / decks.DELIVER).unlink(missing_ok=True)
-    (root / SHARED).unlink(missing_ok=True)   # the deck being made again is not that file
+    # The PowerPoint file delivered stays as that revision's receipt: without deliver.json
+    # it is never taken for the deck being made again (shared_file).
     decks.write_run(root, run)
     _rewrite(root, run, None, space)
     return run

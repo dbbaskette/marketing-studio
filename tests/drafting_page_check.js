@@ -149,8 +149,42 @@ const groups = {
     const input = all(panel).find(n => n.tagName === 'textarea');
     input.value = 'Shorten slide one.'; await input.fire('input'); await buttons[0].fire('click');
     same(decisions[0], ['changes', 'Shorten slide one.']);
-    await buttons[1].fire('click'); same(decisions[1], ['approve', null]);
     assert.equal(notes[0], input.value);
+    // Approve with a change still typed drops nothing: it asks first, and sends only what the
+    // person chooses.
+    const pending = panel.querySelector('.slide-text-pending');
+    assert.equal(pending.hidden, true);
+    await buttons[1].fire('click');
+    assert.equal(decisions.length, 1);
+    assert.equal(pending.hidden, false);
+    assert.equal(context.document.activeElement, buttons[2]);
+    same([buttons[2].textContent, buttons[3].textContent], ['Send these changes first', 'Approve without them']);
+    await buttons[2].fire('click'); same(decisions[1], ['changes', 'Shorten slide one.']);
+    await buttons[1].fire('click'); await buttons[3].fire('click');
+    same(decisions[2], ['approve', null]);
+    assert.equal(input.value, ''); assert.equal(notes[notes.length - 1], '');
+    // With nothing typed, Approve approves at once, and the panel's decide is the same.
+    await buttons[1].fire('click'); same(decisions[3], ['approve', null]);
+    await panel.decide('approve'); same(decisions[4], ['approve', null]);
+    // A studio that takes edits gets a box for each word, and the edited slides with its
+    // decision; one that does not gets none.
+    assert.equal(all(panel).filter(n => n.tagName === 'input').length, 0);
+    const edited = [];
+    const editable = Drafting.slideContent({slides: [{title: 'Why restarts rol', points: [{label: 'Claim', text: 'Capacity'}, 'Plain point'], notes: 'Say it.'}],
+      toolbar: true, onEdit: slides => edited.push(slides), onDecision: async (...args) => { decisions.push(args); }});
+    const boxes = all(editable).filter(n => n.tagName === 'input' || n.tagName === 'textarea');
+    same(boxes.map(n => n.value), ['Why restarts rol', 'Claim', 'Capacity', 'Plain point', 'Say it.', '']);
+    assert.ok(!all(editable).filter(n => n.tagName === 'button').some(n => n.className.includes('button-filled') && n.textContent.startsWith('Approve')));
+    boxes[0].value = 'Why restarts roll'; await boxes[0].fire('input');
+    boxes[3].value = 'Plain points'; await boxes[3].fire('input');
+    assert.equal(edited[edited.length - 1][0].title, 'Why restarts roll');
+    await editable.decide('approve');
+    same(decisions[5], ['approve', null, [{title: 'Why restarts roll', points: [{label: 'Claim', text: 'Capacity'}, 'Plain points'], notes: 'Say it.'}]]);
+    // Put back as it was, it sends no edit.
+    boxes[0].value = 'Why restarts rol'; await boxes[0].fire('input');
+    boxes[3].value = 'Plain point'; await boxes[3].fire('input');
+    assert.equal(edited[edited.length - 1], null);
+    await editable.decide('approve'); same(decisions[6], ['approve', null, null]);
   },
   async diff() {
     same(Drafting.diffWords('one two three', 'one 2 three').map(p => p.op), ['same', 'removed', 'added', 'same']);

@@ -586,6 +586,13 @@ function snapshot() {
       && document.activeElement.dataset.key) || '',
     notice: document.getElementById('notice').hidden ? '' : document.getElementById('notice').textContent,
     current: document.body.querySelectorAll('[aria-current]').map(name),
+    // Each dialog on the page that is not the sheet: whether it is modal, and what names it.
+    dialogs: document.body.querySelectorAll('[role="dialog"]').filter(visible)
+      .filter((node) => node.id !== 'sheet')
+      .map((node) => [node.getAttribute('aria-modal'), node.getAttribute('aria-labelledby')]),
+    // Each radio of a radio group: its name, whether it is checked, and its place for Tab.
+    radios: document.body.querySelectorAll('[role="radio"]').filter(visible)
+      .map((node) => [name(node), node.getAttribute('aria-checked'), node.tabIndex]),
     sheet: sheet.hidden ? '' : words(sheet).replace(/\n+/g, '\n'),
     sheetCards: sheet.hidden ? 0 : sheet.querySelectorAll('.card').filter(visible).length,
     toasts: document.body.querySelectorAll('.toast').map((node) => node.textContent),

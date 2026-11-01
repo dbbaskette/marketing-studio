@@ -35,6 +35,9 @@
   const LOOK_PAUSE = 'One thing needs you: pick the look. The deck is drawn in it.';
   const DESK_LEDE = 'Choose a slide to read it and change it. A note on a slide redraws only '
     + 'its section; Deliver sends the deck.';
+  const OUTLINE_LEDE = 'Change the slides’ titles, their order and which slides the deck has. '
+    + 'Nothing changes until you save; saving redraws only the sections whose slides change.';
+  const OUTLINE_READ_LEDE = 'Each slide’s words, in order, as the deck is drawn from them.';
   const OWN_LEDE = 'Choose a slide of your deck to read it and change its words, or note it to '
     + 'plan its changes again: only a copy is changed, and Deliver sends it.';
   // A slide's words, each a box on its card, in the order the slide reads: the field the
@@ -70,8 +73,9 @@
   const NO_TEXT = 'Paste the text of the source first.';
   // Where a file added here is kept: the deck has it either way.
   const KEEP_CHOICES = ['Keep in library', 'Only this project'];
-  const KEEP_SAYS = 'Keep in library also saves the file in the Document Library on this '
-    + 'computer, for any studio to use. It is shared with no one either way.';
+  const KEEP_SAYS = 'Keep in library also saves the file, or the text you paste, in the '
+    + 'Document Library on this computer, for any studio to use. It is shared with no one '
+    + 'either way.';
   const FINISH_TOOLS = [
     ['brand', 'Brand check', 'What the brand’s check says of each slide, what blocks '
       + 'delivery first. Check it again in seconds.'],
@@ -96,18 +100,29 @@
     // A source being added, the findings ticked to leave out, and Finishing: the panel's
     // state as the shared kit holds it, the proposal whose price is shown before it is
     // applied, and the words of a proposal being edited.
-    sources: {}, leave: {}, finish: {}, confirm: {}, editing: {} };
+    sources: {}, leave: {}, finish: {}, confirm: {}, editing: {},
+    // The slide text waiting for approval: the change typed for it and the words edited in
+    // it, by deck.
+    slideText: {},
+    // The deck whose Delivered card takes the focus once it is drawn, after Deliver.
+    landing: null };
 
   // The shared kit's Finishing panel, bound to this page: its shell and its list of tools
   // are the kit's, and each tool's view is the deck's own (`finishView`).
+  // On a phone Finishing is a sheet over the desk (deck.css), not a part far below it.
+  const phone = () => Boolean(window.matchMedia
+    && window.matchMedia('(max-width: 52rem)').matches);
   const FINISHING = {
     ui: {
-      button: (label, action) => h.capsule(label, 'quiet', () => action()),
+      button: (label, action) => h.capsule(label, 'quiet', () => action(),
+        'desk-finish-' + label.toLowerCase().replace(/[^a-z]+/g, '-')),
       pickCard: (title, says, action) => h.pickCard(title, says, false, action,
         'desk-finish ' + title),
-      narrow: () => false,
+      narrow: phone,
     },
-    hooks: { render: () => h.paintDeck(false) },
+    hooks: { render: () => h.paintDeck(false),
+      // Closed from its own Close: the focus goes back to Finishing in the toolbar.
+      finishClosed: () => landOnToggle() },
     tools: () => FINISH_TOOLS.map(([key, name, says]) => ({ key, name, says,
       open: (state) => openTool(state, key), view: () => finishView(key) })),
   };
@@ -119,6 +134,7 @@
   function init(parts) {
     h = parts;
     kit = typeof Drafting === 'undefined' ? null : Drafting.kit(FINISHING);
+    document.addEventListener('keydown', escaped);
   }
 
   function opens(run) {
@@ -471,13 +487,18 @@
       return null;
     }
     h.view.busy = false;
-    if (done) h.toast(done);
+    // A toast that says work is under way is the deck's own, and goes once the work is done.
+    if (done) h.toast(done, found && found.desk && found.desk.working ? workToast(path) : undefined);
     if (turn === h.view.turn && h.view.screen === 'deck' && h.view.path === path) {
       h.view.run = found;
       h.paintDeck(false);
     }
     h.refresh();
     return found;
+  }
+
+  function workToast(path) {
+    return 'work\n' + path;
   }
 
   // What comes before everything else: a teammate's hold, a question, a step that stopped
@@ -500,7 +521,20 @@
     const route = h.routeWords(run);
     const runs = run.execution === 'conversation' ? 'In conversation' : h.theirs(run) ? (run.driver ? 'Run by ' + h.nameOf(run.driver)
       : 'Nobody is running it') : run.driver ? 'Runs on this computer' : '';
-    return [make('span', '', [route, 'On the desk', runs].filter(Boolean).join(' · '))];
+    return [make('span', '', [route, stageOf(run), runs].filter(Boolean).join(' · '))];
+  }
+
+  // Where the deck stands, in the words of the screen it shows: its slide text waits for
+  // approval, its look for a pick, it is on the desk, or it is delivered. Before it reaches
+  // the desk it is drafted (the slide text) or made.
+  function stageOf(run) {
+    const found = run.desk || {};
+    const gate = run.gate;
+    if (found.delivered) return 'Delivered';
+    if (gate && gate.content_first && gate.name === 'gate:outline') return 'Slide text';
+    if (pausedAtLook(run) || (gate && gate.name === 'gate:look')) return 'Look';
+    if (found.arrived) return 'On the desk';
+    return found.content_pending ? 'Slide text' : 'Being made';
   }
 
   // Pause, Resume and Delete, under More. Stop on the desk is the redraw's own, on its line.
@@ -540,11 +574,15 @@
     const title = run.title || 'Untitled';
     const desk = run.desk;
     const previews = run.build_progress && h.list(run.build_progress.slides).length;
+    const text = gate?.content_first && gate.name === 'gate:outline';
     h.placeParts({ title, above: above(run), back: true, actions: progressActions(run, lead),
       mark: ['progress', title, run.state, lead, read, run.driver, Boolean(run.question),
         run.problem, gate] }, [
       ...interruptions(run, lead, title),
-      gate?.content_first && gate.name === 'gate:outline' ? ['slide-text', [gate, read], () => slideTextReview(run, read)] : null,
+      // Folded above the text, so it is reached without going past every slide.
+      text && !read ? ['slide-text-research', [desk.research_items, desk.research],
+        () => researchFound(run)] : null,
+      text ? ['slide-text', [gate, read], () => slideTextReview(run, read)] : null,
       pause ? ['look-pause', [gate, lead, h.brandsFound()], () => lookPause(run, lead === 'look')]
         : ['progress', [run.state, run.sentence, desk.progress, Boolean(run.question),
           run.problem], () => progressPart(run)],
@@ -554,17 +592,58 @@
     h.tidyPictures();
   }
 
+  // The slide text waits for approval. Its words are boxes: a typo is put right here, with no
+  // assistant, and the edits go with the decision. What was typed and not sent is kept for
+  // the text it was typed for, through every drawing of the screen.
+  function slideTextOf(run) {
+    const gate = run.gate;
+    const path = h.view.path;
+    const kept = held.slideText[path] || (held.slideText[path] = { note: '', edits: null,
+      base: gate.expected });
+    if (kept.base !== gate.expected) Object.assign(kept, { edits: null, base: gate.expected });
+    return kept;
+  }
+
   function slideTextReview(run, read) {
     const gate = run.gate, path = h.view.path;
     if (read) return h.make('p', 'quiet', 'Slide text is waiting for approval on its owner’s computer.');
-    return Drafting.slideContent({slides: gate.slides,
-      note: held.deck[path]?.slideTextNote || '',
-      onNote: note => { (held.deck[path] ||= {}).slideTextNote = note; },
-      onDecision: async (decision, note) => {
-        const found = await h.send('decide', {path, gate: 'gate:outline', decision, note, expected: gate.expected});
+    const kept = slideTextOf(run);
+    const node = Drafting.slideContent({slides: gate.slides, toolbar: true,
+      note: kept.note, onNote: (note) => { kept.note = note; },
+      edits: kept.edits, onEdit: (slides) => { kept.edits = slides; },
+      onDecision: async (decision, note, edited) => {
+        const found = await h.send('decide', {path, gate: 'gate:outline', decision, note,
+          expected: gate.expected, ...(edited ? { extra: { edited } } : {})});
         if (h.view.path !== path) return;
-        (held.deck[path] ||= {}).slideTextNote = ''; h.view.run = found; h.refresh();
+        Object.assign(kept, { note: '', edits: null });
+        h.view.run = found;
+        h.paintDeck(false);
+        // The panel is gone: the focus goes to the head of the screen, not to the page.
+        const title = h.byId('title');
+        if (title) title.focus({ preventScroll: true });
+        h.refresh();
       }});
+    node.id = 'slide-text-review';
+    return node;
+  }
+
+  // What the research found, folded under the slide text: the findings the text is drafted
+  // from, and what it could not find. Nothing is run from here.
+  function researchFound(run) {
+    const found = run.desk || {};
+    const items = h.list(found.research_items).filter((item) => !item.left_out);
+    const gaps = h.list(found.research && found.research.gaps);
+    if (!items.length && !gaps.length) return null;
+    const node = make('details', 'card desk-research-found');
+    node.dataset.key = 'slide-text-research';
+    const summary = make('summary', '', 'What the research found');
+    summary.dataset.key = 'slide-text-research-summary';
+    return h.add(node, summary,
+      found.research && found.research.read ? make('p', 'quiet', found.research.read) : null,
+      items.length ? h.bullets(items.map((item) => (item.title || item.id)
+        + (item.headline ? ': ' + item.headline : ''))) : null,
+      gaps.length ? h.add(make('div'), make('p', 'row-title', 'What it could not find'),
+        h.bullets(gaps)) : null);
   }
 
   // Pause and Stop while it works, Resume once it is paused or stopped, then More.
@@ -575,6 +654,16 @@
       const node = h.capsule(label, kind, () => h.steer(action, node), action);
       actions.push(node);
     };
+    // The slide text's approval is the screen's one filled action, reached without going past
+    // every slide. It decides as the panel's own Approve does: a change still typed is asked
+    // about first.
+    const gate = run.gate;
+    if (gate && gate.content_first && gate.name === 'gate:outline' && !lead) {
+      actions.push(h.capsule('Approve text & design deck', 'filled', () => {
+        const panel = h.byId('slide-text-review');
+        if (panel && panel.decide) panel.decide('approve');
+      }, 'slide-text-approve-top'));
+    }
     if (run.state === 'working') press('Pause', '', 'pause');
     if (['working', 'waiting', 'paused'].includes(run.state)) press('Stop', 'quiet', 'stop');
     if (['paused', 'stopped'].includes(run.state) && !(run.problem && run.problem.action)) {
@@ -631,7 +720,8 @@
         + 'what each colour means and how cards are drawn on every slide.'),
       window.DeckPanels.lookPicker({
         name: 'the deck', looks: h.list(offered.looks), defaultId: offered.default,
-        sheet: offered.sheet, notes: h.list(offered.notes), failed: offered.failed,
+        // The brand's default is chosen until another is picked: Draw works at once.
+        preselect: true, sheet: offered.sheet, notes: h.list(offered.notes), failed: offered.failed,
         picked: { choice: pick.look, words: pick.words },
         changed: (now) => {
           pick.look = now.choice;
@@ -733,6 +823,8 @@
     const path = h.view.path;
     const title = run.title || 'Untitled';
     const working = Boolean(found.working);
+    // A toast that said a redraw is under way is let go once the slide shows it is done.
+    if (!working) h.dropToast(workToast(path));
     const pause = pausedAtLook(run);
     const lead = h.view.sheet || read ? '' : run.question ? 'answer'
       : run.problem && run.problem.action ? 'problem' : pause ? 'look'
@@ -743,6 +835,7 @@
     const tab = !own && held.tabs[path] === 'outline' ? 'outline' : 'slides';
     const can = !read && found.drawn_here && run.execution !== 'conversation';
     const finish = can && !own && kit && finishing();
+    const outlineEditable = Boolean(can && found.outline && found.outline.editable);
     h.placeParts({ title, above: above(run), back: true, actions: deskActions(run, lead),
       mark: ['desk', title, run.state, lead, read, run.driver, working, found.drawn_here,
         Boolean(found.delivered), found.expected, h.view.downloading, finish] }, [
@@ -753,8 +846,9 @@
       !found.drawn_here ? ['away', [found.no_drawing, found.draw_here_price, read, working],
         () => run.execution === 'conversation' ? h.add(h.card('Drawing'),
           make('p', '', 'No checked drawing is available here. Continue the focused work in conversation.')) : awayPart(run)] : null,
-      found.delivered ? ['delivered', [found.delivered, title], () => deliveredPart(run)]
-        : null,
+      found.delivered ? ['delivered', [found.delivered, title, found.receipts, found.library,
+        found.reviewed, Boolean(h.view.delivering), run.deliver && run.deliver.to_google,
+        h.googleReady(), read], () => deliveredPart(run)] : null,
       run.execution === 'conversation' ? ['conversation', [found.ready, found.ready_problem],
         () => h.add(make('div', 'intro'), make('p', '', found.ready
           ? 'Ready. Your approval is recorded; nothing has been delivered.'
@@ -765,12 +859,14 @@
         make('p', 'quiet', 'That stop is retained in History. Conversation editing will not resume that runner.'))] : null,
       found.revision ? ['revision', [found.revision], () => make('p', 'quiet', found.revision)]
         : null,
-      ['head', [tab, own, run.execution], () => headPart(tab, own, run.execution === 'conversation')],
+      ['head', [tab, own, run.execution, outlineEditable], () => headPart(tab, own,
+        run.execution === 'conversation', outlineEditable)],
       can && tab === 'slides' && !found.words_locked ? ['selection-bar', [path],
         () => selectionBar()] : null,
       layoutPart(run, tab, own, can, working, finish, fresh),
     ], fresh);
     h.tidyPictures();
+    if (found.delivered) landOnDelivered(path);
   }
 
   // The slides, or the Outline tab, in a column, and beside it on a wide screen the aside
@@ -807,8 +903,12 @@
     if (deliver) {
       deliver.disabled = !deliverableNow(found);
     }
+    // Download says which revision it saves: the one delivered, else the deck as it is drawn
+    // now, which is not delivered yet.
+    const delivered = found.delivered && found.delivered.revision;
     const download = found.drawn_here ? h.capsule(h.view.downloading ? 'Downloading…'
-      : 'Download', '', () => h.downloadDeck(run, download), 'download') : null;
+      : delivered ? 'Download revision ' + delivered : 'Download', '',
+    () => h.downloadDeck(run, download), 'download') : null;
     // Finishing opens as a panel beside the slides: the brand check, the review, speaker
     // notes and rehearse.
     const finish = run.execution !== 'conversation' && found.drawn_here && kit && found.level !== 'selected'
@@ -843,30 +943,160 @@
       go && found.draw_here_price ? make('p', 'quiet', found.draw_here_price) : null);
   }
 
+  // Delivered: the revision on screen, every revision's receipt with the way to open it,
+  // whether the Document Library kept it, and Send to Google Slides for a PowerPoint
+  // delivery, confirmed in its own sheet.
   function deliveredPart(run) {
     const found = run.desk.delivered;
     const node = h.card('Delivered');
-    h.add(node, h.state('done', 'Delivered as revision ' + (found.revision || 1) + '.'),
-      found.url ? bar(h.outLink(found.url, 'Open in Google Slides', 'Open ' + (run.title
-        || 'the deck') + ' in Google Slides')) : null,
-      run.desk.reviewed ? null : make('p', 'quiet', 'It was delivered without a review of the '
+    const heading = node.querySelector('.card-title');
+    if (heading) {
+      heading.id = 'desk-delivered-title';
+      heading.tabIndex = -1;
+    }
+    h.add(node, h.state('done', 'Delivered as revision ' + (found.revision || 1)
+      + (found.url ? ' to Google Slides.' : found.pptx ? ' as a PowerPoint file.' : '.')),
+    receiptsPart(run),
+    run.desk.reviewed ? null : make('p', 'quiet', 'It was delivered without a review of the '
         + 'deck.'),
-      make('p', 'quiet', 'A note or an edit here makes the next revision, delivered when you '
+    ...libraryStatus(run),
+    make('p', 'quiet', 'A note or an edit here makes the next revision, delivered when you '
         + 'press Deliver. This one is kept.'));
-    // Delivered as a PowerPoint file: the same deck goes to Google Slides on request.
+    // Delivered as a PowerPoint file: the same deck goes to Google Slides on request, once
+    // the person confirms it in its sheet.
     const sent = run.deliver || {};
     if (sent.to_google && !h.theirs(run) && h.googleReady()) {
       const google = h.capsule(h.view.delivering ? 'Delivering…' : 'Send to Google Slides', '',
-        () => h.deliverToGoogle(run, google), 'deliver-google');
+        h.openSheet('desk-google', 'deliver-google'), 'deliver-google');
+      google.disabled = Boolean(h.view.delivering);
       h.add(node, make('p', 'quiet', 'The same deck goes to Google Slides as the next '
-        + 'revision. Nothing in it is built again.'), bar(google));
+        + 'revision. Nothing in it is built again, and nothing is sent until you confirm it.'),
+      bar(google));
     }
     return node;
   }
 
+  // When a revision was delivered, in the person's own clock.
+  function deliveredAt(at) {
+    const when = Date.parse(at || '');
+    if (!when) return '';
+    try {
+      return new Date(when).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+    } catch (failure) {
+      return new Date(when).toISOString().slice(0, 16).replace('T', ' ');
+    }
+  }
+
+  // Every revision delivered, newest first: its format, when, and Open or Download. A link is
+  // a button of its own, never shown as text.
+  function receiptsPart(run) {
+    const listed = h.list(run.desk.receipts).slice().reverse();
+    if (!listed.length) return null;
+    const node = make('ul', 'desk-receipts');
+    node.setAttribute('aria-label', 'Every revision delivered');
+    for (const one of listed) {
+      const when = deliveredAt(one.at);
+      const said = 'Revision ' + one.revision + ' · '
+        + (one.format === 'google' ? 'Google Slides' : 'PowerPoint file') + (when ? ' · ' + when : '');
+      let open = null;
+      if (one.format === 'google' && one.url) {
+        open = h.outLink(one.url, 'Open in Google Slides', 'Open revision ' + one.revision
+          + ' in Google Slides');
+      } else if (one.format === 'pptx' && one.download) {
+        open = h.capsule('Download revision ' + one.revision, 'quiet', () => h.downloadDeck(run,
+          open, one.revision), 'desk-receipt-download ' + one.revision);
+      }
+      h.add(node, h.add(make('li', 'desk-receipt'), make('p', 'row-title', said),
+        open ? bar(open) : one.why ? make('p', 'quiet', one.why) : null));
+    }
+    return node;
+  }
+
+  // Whether the Document Library kept the delivered deck, on the Delivered card: its PDF
+  // saved or still to export, named by the deck revision it was kept from. The library counts
+  // its own revisions apart from the deck's, and says so.
+  function libraryStatus(run) {
+    const kept = run.desk.library;
+    const path = h.view.path;
+    if (!kept) return [];
+    const problem = make('p', 'problem');
+    problem.id = 'desk-library-problem';
+    problem.hidden = true;
+    const again = h.theirs(run) ? null : h.capsule('Keep in library again', 'quiet',
+      () => act('desk-library-keep', { path }, again, 'Kept in the Document Library again.',
+        problem), 'desk-library-keep');
+    const from = kept.delivered ? ' from deck revision ' + kept.delivered : '';
+    const counted = kept.revision ? ' The library numbers its own copies apart from the deck: '
+      + 'this is library revision ' + kept.revision + '.' : '';
+    const parts = [make('p', 'row-title', 'Document Library')];
+    if (kept.state === 'kept' && kept.pdf === 'saved') {
+      parts.push(h.state('done', 'PDF saved.'), make('p', 'quiet', 'Kept' + from + ' as a PDF and '
+        + 'its slide Markdown, for any studio on this computer.' + counted));
+    } else if (kept.state === 'kept') {
+      parts.push(h.state('none', 'PDF needs export.'), make('p', 'quiet', 'Kept' + from + ' as '
+        + 'its slide Markdown only. ' + (kept.pdf_note || '') + counted), again ? bar(again) : null);
+    } else if (kept.state === 'failed') {
+      parts.push(h.state('late', 'Not kept.'), make('p', 'quiet', kept.problem || ''),
+        again ? bar(again) : null);
+    } else {
+      return [];
+    }
+    parts.push(make('p', 'quiet', 'Find it on Marketing Studio’s Library screen.'), problem);
+    return [h.add(make('div', 'desk-library-status'), ...parts)];
+  }
+
+  // Send to Google Slides, confirmed: what goes, and as which revision. Nothing is sent
+  // until Send is pressed here.
+  function googleSheet() {
+    const run = h.view.run;
+    const found = (run && ((run.desk && run.desk.delivered) || run.deliver)) || {};
+    const form = make('form', 'create-flow');
+    form.noValidate = true;
+    const problem = h.problemLine();
+    const go = h.submitButton('Send to Google Slides', 'deliver-google-confirm');
+    const cancel = h.capsule('Cancel', 'quiet', h.closeSheet, 'cancel');
+    const revision = found.revision || 1;
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      if (h.view.busy || h.view.delivering) return;
+      const path = h.view.path;
+      h.view.delivering = true;
+      go.disabled = true;
+      h.say(problem, '');
+      let shown;
+      try {
+        shown = await h.send('deliver', { path });
+      } catch (failure) {
+        h.view.delivering = false;
+        go.disabled = false;
+        h.say(problem, failure.message + ' Nothing was sent.');
+        return;
+      }
+      h.view.delivering = false;
+      h.view.sheet = '';
+      h.drawSheet();
+      h.toast('Revision ' + (revision + 1) + ' is in Google Slides now.');
+      if (h.view.screen === 'deck' && h.view.path === path) {
+        h.view.run = shown;
+        h.paintDeck(false);
+        const heading = h.byId('desk-delivered-title') || h.byId('title');
+        if (heading) heading.focus();
+      }
+      h.refresh();
+    });
+    h.add(form,
+      make('p', '', 'Revision ' + revision + ', delivered as a PowerPoint file, goes to Google '
+        + 'Slides as revision ' + (revision + 1) + '. It is the same deck: nothing in it is built '
+        + 'again.'),
+      make('p', 'quiet', 'A new Google Slides file is made in your Google Drive. Revision '
+        + revision + '’s PowerPoint file stays here as its receipt.'),
+      problem, h.add(make('div', 'bar create-foot'), go, cancel));
+    return [h.add(make('div', 'sheet-heading'), h.sheetTitle('Send to Google Slides')), form];
+  }
+
   // The one sentence of the desk, and its two tabs. Your own deck at Selected changes has no
   // outline: its slides are the deck's.
-  function headPart(tab, own, conversation) {
+  function headPart(tab, own, conversation, editable) {
     if (conversation) return h.pageHead('Inspect saved slide parts and edit through checked conversation commands, then explicitly mark the checked deck ready.', []);
     if (own) return h.pageHead(OWN_LEDE, []);
     const tabs = h.segmented('The desk', ['Slides', 'Outline'], tab === 'outline' ? 1 : 0,
@@ -875,7 +1105,8 @@
         h.paintDeck(false);
       }, 'desk-tab');
     tabs.classList.add('deck-desk-tabs');
-    return h.pageHead(DESK_LEDE, [tabs]);
+    return h.pageHead(tab !== 'outline' ? DESK_LEDE : editable ? OUTLINE_LEDE
+      : OUTLINE_READ_LEDE, [tabs]);
   }
 
   // --- the Slides tab: the workbench -----------------------------------------------------------
@@ -945,15 +1176,19 @@
     if (one.unfit) waits.push('words that do not fit: redraw or discard them');
     if (unsavedOn(path, one)) waits.push('words not saved yet');
     if (one.note && one.note.status === 'waiting') waits.push('your note waits to be drawn');
-    // A fix for a blocker is counted with the blocker, once.
-    const fixes = found.proposals.filter(({ key, item }) => !(key === 'brand'
-      && item.kind === 'blocker'));
+    // A fix for a blocker is counted with the blocker, once. The brand check's fix for a
+    // warning is still a warning: proposed only because Brand check was opened, it is worth a
+    // look and asks nothing of the person. The review's fixes come from a review they asked
+    // for, and wait for them.
+    const fixes = found.proposals.filter(({ key }) => key !== 'brand');
     if (fixes.length) waits.push(h.count(fixes.length, 'fix', 'fixes') + ' to apply or skip');
     const looks = [];
     if (found.findings.length) {
       looks.push(h.count(found.findings.length, 'review finding', 'review findings'));
     }
-    const warnings = found.audit.filter((line) => line.kind !== 'error').length;
+    const warnings = found.audit.filter((line) => line.kind !== 'error').length
+      + found.proposals.filter(({ key, item }) => key === 'brand' && item.kind !== 'blocker')
+        .length;
     if (warnings) looks.push(h.count(warnings, 'brand warning', 'brand warnings'));
     const busy = Boolean(one.busy) || Boolean(one.note && one.note.status === 'drawing');
     return { blocks, waits, looks, busy,
@@ -1026,14 +1261,14 @@
       ['summary', [marks, cards.map(({ one }) => marksOf(run, one)), found.blockers,
         found.reviewed, found.deliverable, found.working, found.drawn_here, found.expected,
         run.output, h.googleReady(), Boolean(found.delivered), found.revision, h.theirs(run),
-        run.execution], () => summaryPart(run, cards)],
+        run.execution, h.theirs(run) ? [] : outlineChanges(run)], () => summaryPart(run, cards)],
       cards.length ? ['desk-bench', [], () => make('div', 'desk-bench'),
         (inner) => h.fit(inner, [
           ['navigator', [marks, active.one.id, found.expected],
             () => navigatorPart(run, cards, active)],
           ['slide', [active.one, active.part.slides.map((one) => one.number), found.expected,
             can, working, found.words_locked, found.notes_locked, proposals,
-            held.confirm[path] || '', h.theirs(run)],
+            held.confirm[path] || '', h.theirs(run), pendingTitle(run, active.one)],
           () => slideCard(run, active.one, active.part, can)],
         ], false)] : null,
       can && found.level !== 'selected' ? ['whole', [found.expected, found.deck_price, working,
@@ -1088,13 +1323,18 @@
         + ' delivery. Deliver asks you before it sends the deck anyway.'
         : 'Nothing blocks delivery.'));
     const byNumber = new Map(cards.map(({ one }) => [one.number, one]));
+    // Changes on the Outline tab not saved yet wait for the person too: Deliver asks them to
+    // save or discard them first.
+    const outlined = read ? [] : outlineChanges(run);
+    const outlineLine = outlined.length ? h.add(make('li'), h.button('Outline tab', 'link',
+      toOutline, 'desk-jump-outline'), ': not saved yet: ' + outlined.join('; ') + '.') : null;
     h.add(node,
       summaryList('Blocks delivery', 'The brand check found these on the last render.',
         blockers.map((line) => (byNumber.has(line.number) ? jump(byNumber.get(line.number),
           line.says) : make('li', '', line.says)))),
-      summaryList('Waiting for you', '', waiting.map(({ one, marks }) => jump(one,
+      summaryList('Waiting for you', '', [outlineLine, ...waiting.map(({ one, marks }) => jump(one,
         h.capital([...(marks.busy ? ['being redrawn'] : []), ...marks.waits].join('; '))
-          + '.'))),
+          + '.'))].filter(Boolean)),
       summaryList('Worth a look', 'These do not block delivery.', looks.map(({ one, marks }) =>
         jump(one, marks.looks.join(' and ') + '.'))));
     if (delivers) {
@@ -1250,7 +1490,13 @@
     heading.id = 'desk-slide-title';
     heading.tabIndex = -1;
     node.setAttribute('aria-labelledby', heading.id);
+    // A title changed on the Outline tab and not saved: the slide is drawn with its old one.
+    const pending = h.theirs(run) ? '' : pendingTitle(run, one);
     h.add(node, heading,
+      pending ? h.callout('', h.add(make('p', ''), 'On the Outline tab its title is “' + pending
+        + '”, not saved yet. It is drawn with its title as it is here until you save the '
+        + 'outline.'), bar(h.capsule('Go to the Outline tab', 'quiet', toOutline,
+        'desk-slide-outline ' + one.id))) : null,
       picturesPart(run, one),
       one.busy && !own ? h.add(make('p', 'desk-working-note'), h.state('current',
         'Redrawing…')) : null,
@@ -1277,20 +1523,57 @@
   function foundPart(run, one) {
     const { audit, findings, proposals } = foundOn(run, one);
     if (!audit.length && !findings.length && !proposals.length) return null;
+    const among = proposals.map(({ key, item }) => ({ key, item }));
     return h.add(make('div', 'desk-found'),
       make('p', 'row-title', 'What was found on this slide'),
       audit.length ? auditPart(audit) : null,
       findings.length ? h.findingItems(findings) : null,
-      ...proposals.map(({ key, set, item }) => locatedFix(run, key, set, item)));
+      ...proposals.map(({ key, set, item }) => locatedFix(run, key, set, item, among)));
+  }
+
+  // What a proposal's buttons name it by, so no two buttons on the screen share a name:
+  // whose it is, its slide, and, where its slide has more than one of that tool's, which.
+  // `among` is every proposal shown beside it, as {key, item}.
+  function fixNamed(key, item, among) {
+    const alike = among.filter((one) => one.key === key && one.item.number === item.number);
+    const at = alike.findIndex((one) => one.item.id === item.id);
+    const whose = key === 'brand' ? 'the brand check’s fix' : key === 'review'
+      ? 'the review’s fix' : 'the proposed speaker notes';
+    return whose + (alike.length > 1 ? ' ' + (at + 1) + ' of ' + alike.length : '')
+      + (typeof item.number === 'number' ? (key === 'notes' ? ' for slide ' : ' to slide ')
+        + item.number : ' to the whole deck');
+  }
+
+  function named(control, words) {
+    control.setAttribute('aria-label', words);
+    return control;
+  }
+
+  // After a fix is skipped or applied, the focus goes to the next fix still open where it
+  // was, else to `otherwise`: the slide's heading, or Finishing's.
+  function landNear(within, id, otherwise) {
+    const cards = Array.from(document.querySelectorAll(within + ' [data-item]'));
+    const at = cards.findIndex((card) => card.dataset.item === id);
+    const order = at < 0 ? cards : [...cards.slice(at + 1), ...cards.slice(0, at)];
+    for (const card of order) {
+      const control = card.querySelector('button');
+      if (control && !control.disabled) {
+        control.focus();
+        return;
+      }
+    }
+    const heading = h.byId(otherwise);
+    if (heading) heading.focus();
   }
 
   // A fix proposed for the slide: what it is, then Apply, which says what it redraws before
   // anything is sent, or Skip.
-  function locatedFix(run, key, set, item) {
+  function locatedFix(run, key, set, item, among) {
     const path = h.view.path;
     const found = run.desk;
     const node = make('div', 'desk-located');
     node.dataset.item = item.id;
+    const said = fixNamed(key, item, among || [{ key, item }]);
     const from = key === 'brand' ? 'Proposed by the brand check' : 'Proposed by the review';
     const tag = key === 'brand' ? KIND_TAGS[item.kind] : item.severity
       ? h.capital(item.severity) : '';
@@ -1298,26 +1581,34 @@
       tag ? make('span', 'tag', tag) : null),
     make('p', '', key === 'brand' ? item.says : item.note),
     item.fix ? make('p', 'quiet', 'Suggested: ' + item.fix) : null);
-    const skip = h.capsule('Skip', 'quiet', () => act('desk-skip', { path, set: set.job,
-      ids: [item.id] }, skip, 'Skipped. Nothing changed.'), 'desk-slide-skip ' + item.id);
+    const skip = named(h.capsule('Skip', 'quiet', async () => {
+      const done = await act('desk-skip', { path, set: set.job, ids: [item.id] }, skip,
+        'Skipped. Nothing changed.');
+      if (done) landNear('.deck-desk-slide', item.id, 'desk-slide-title');
+    }, 'desk-slide-skip ' + item.id), 'Skip ' + said);
     if ('comment' in item) return h.add(node, bar(skip));
     if (held.confirm[path] === set.job + '\n' + item.id) {
-      const go = h.capsule('Apply and redraw slide ' + item.number, '', () => apply(run, set,
-        { id: item.id }, go, 'Slide ' + item.number + ' is being redrawn with the note. Every '
-        + 'other part of the deck stays exactly as it is.'), 'desk-slide-apply-go ' + item.id);
+      const go = named(h.capsule('Apply and redraw slide ' + item.number, '', async () => {
+        const done = await apply(run, set, { id: item.id }, go, 'Slide ' + item.number
+          + ' is being redrawn with the note. Every other part of the deck stays exactly as it '
+          + 'is.');
+        if (done) landNear('.deck-desk-slide', item.id, 'desk-slide-title');
+      }, 'desk-slide-apply-go ' + item.id), 'Apply and redraw slide ' + item.number + ': '
+        + said);
       go.disabled = Boolean(found.working);
-      const back = h.capsule('Cancel', 'quiet', () => {
+      const back = named(h.capsule('Cancel', 'quiet', () => {
         delete held.confirm[path];
         h.paintDeck(false);
-      }, 'desk-slide-apply-cancel ' + item.id);
+        h.focusKey('desk-slide-apply ' + item.id);
+      }, 'desk-slide-apply-cancel ' + item.id), 'Cancel applying ' + said);
       return h.add(node, make('p', '', item.price || 'This redraws its slide’s section.'),
         bar(go, back));
     }
-    const fix = h.capsule('Apply', '', () => {
+    const fix = named(h.capsule('Apply', '', () => {
       held.confirm[path] = set.job + '\n' + item.id;
       h.paintDeck(false);
       h.focusKey('desk-slide-apply-go ' + item.id);
-    }, 'desk-slide-apply ' + item.id);
+    }, 'desk-slide-apply ' + item.id), 'Apply ' + said);
     fix.disabled = Boolean(found.working);
     return h.add(node, bar(fix, skip));
   }
@@ -1485,24 +1776,49 @@
         h.refuse('desk-source-text', NO_TEXT);
         return;
       }
-      const done = await act('desk-source', { path, text: kept.text,
-        title: kept.title.trim() || 'Pasted text' }, go, 'The source is added. Research runs '
-        + 'again only when you ask.', problem);
-      if (done) Object.assign(kept, { text: '', title: '' });
+      const title = kept.title.trim() || 'Pasted text';
+      kept.notKept = '';
+      const done = await act('desk-source', { path, text: kept.text, title,
+        library: Boolean(kept.library) }, go, null, problem);
+      if (!done) return;
+      Object.assign(kept, { text: '', title: '' });
+      for (const id of ['desk-source-text', 'desk-source-title']) {
+        const box = h.byId(id);
+        if (box) box.value = '';
+      }
+      const library = done.library_upload;
+      if (library && library.state === 'failed') {
+        kept.notKept = library.problem;
+        h.say(h.byId('desk-source-problem') || problem, library.problem);
+      } else {
+        h.toast('The source is added' + (library && library.state === 'kept' ? ' and kept in '
+          + 'the Document Library' : ' to this deck only') + '. Research runs again only when '
+          + 'you ask.');
+      }
+      landOnSource(title);
     }, 'desk-source-add');
     const node = h.card('Sources');
-    return h.add(node, make('p', 'quiet', SOURCES_SAY),
-      listed.length ? h.bullets(listed.map((one) => (one.title || one.name)
+    const rows = make('ul', 'plain');
+    listed.forEach((one, index) => {
+      const row = make('li', '', (one.title || one.name)
         + (one.library ? ' · from the library, revision ' + one.library.revision
           + (one.update ? ' (revision ' + one.library_head + ' is available)' : '') : '')
         // A source research was given at the start says so.
         + (one.given ? ' · ' + one.given : '')
-        + (one.readable ? '' : ': ' + (one.problem || 'it has no text that can be read.'))))
-        : make('p', 'quiet', 'No sources yet.'),
+        + (one.readable ? '' : ': ' + (one.problem || 'it has no text that can be read.')));
+      // A row the focus can go to, once its source is added.
+      row.tabIndex = -1;
+      row.dataset.key = 'desk-source ' + index;
+      row.dataset.source = one.title || one.name || '';
+      rows.append(row);
+    });
+    return h.add(node, make('p', 'quiet', SOURCES_SAY),
+      listed.length ? rows : make('p', 'quiet', 'No sources yet.'),
       ...libraryParts(run, path, listed, problem),
       h.add(make('p'), make('strong', '', 'Add a source')),
-      // Chosen before the file: a file is added as soon as it is picked.
-      h.choice('Keep the file', KEEP_CHOICES, kept.library ? 0 : 1,
+      // Chosen before the file: a file is added as soon as it is picked. It holds for pasted
+      // text too.
+      h.choice('Keep the file or text', KEEP_CHOICES, kept.library ? 0 : 1,
         (index) => { kept.library = index === 0; }, 'desk-source-keep', KEEP_SAYS),
       h.field('desk-source-file', 'A file', {}, 'file', { accept: SOURCE_TYPES,
         hint: 'Text, Markdown, a web page, a Word document or a PDF, up to 8 MB.',
@@ -1511,6 +1827,13 @@
         limit: 1000000 }),
       h.field('desk-source-title', 'Its title', kept, 'title', {}),
       bar(go), problem);
+  }
+
+  // The focus goes to the source just added: its row, the last of that title.
+  function landOnSource(title) {
+    const rows = Array.from(document.querySelectorAll('.desk-aside [data-source]'));
+    const found = rows.filter((row) => row.dataset.source === title).pop() || rows.pop();
+    if (found) found.focus();
   }
 
   // The shared Document Library (library.js): Add from library pins chosen revisions as
@@ -1526,9 +1849,13 @@
     }
     const pick = h.capsule('Add from library', 'quiet', () => {
       if (!window.StudioLibrary) { h.say(problem, 'The library could not be loaded. Reload the page.'); return; }
+      const own = run.desk.own_library;
       window.StudioLibrary.pick({
         studio: 'presentation', max: 40,
         post: (route, body) => h.send(route, body),
+        // The deck's own delivery, kept in the library, is never offered as its source.
+        unavailable: (row) => (own && row && row.id === own ? { label: 'This deck',
+          detail: 'Its own delivery, kept here. A deck is not a source of itself.' } : null),
         // The card is drawn again with the new sources: focus its Add from library.
         refocus: () => document.querySelector('[data-key="desk-library-add"]'),
         use: async (picks) => {
@@ -1540,20 +1867,7 @@
       });
     }, 'desk-library-add');
     parts.push(bar(pick));
-    const kept = run.desk.library;
-    // "PDF saved" only when the library holds the PDF Harness Slides rendered of this deck.
-    if (kept && kept.state === 'kept' && kept.pdf === 'saved') {
-      parts.push(make('p', 'quiet', 'Kept in the Document Library as a PDF and slide Markdown, '
-        + 'revision ' + kept.revision + '. PDF saved.'));
-    } else if (kept && kept.state === 'kept') {
-      parts.push(make('p', 'quiet', 'Kept in the Document Library as slide Markdown, revision '
-        + kept.revision + '. PDF needs export: ' + (kept.pdf_note || '')));
-    } else if (kept && kept.state === 'failed') {
-      parts.push(make('p', 'problem', 'Not kept in the Document Library: ' + kept.problem));
-      parts.push(bar(h.capsule('Keep in library again', 'quiet',
-        () => act('desk-library-keep', { path }, null, 'Kept in the Document Library.', problem),
-        'desk-library-keep')));
-    }
+    // Whether the delivered deck was kept in the library is said on the Delivered card.
     return parts;
   }
 
@@ -1582,10 +1896,12 @@
       // Held, so the card drawn again by act's repaint or a later refresh still says it.
       form.notKept = kept.problem;
       h.say(h.byId('desk-source-problem') || problem, kept.problem);
+      landOnSource(file.name);
       return;
     }
     h.toast(file.name + (kept && kept.state === 'kept' ? ' is added and kept in the Document '
       + 'Library.' : ' is added to this deck only.') + ' Research runs again only when you ask.');
+    landOnSource(file.name);
   }
 
   function researchCard(run) {
@@ -1651,13 +1967,63 @@
 
   function toggleFinishing() {
     const state = finishState(h.view.path);
-    if (state.finish) kit.finishClose(state);
-    else kit.finishOpen(state);
+    if (state.finish) {
+      kit.finishClose(state);
+      return;
+    }
+    kit.finishOpen(state);
+    landInFinishing();
+  }
+
+  // The focus goes to Finishing's heading as it opens or turns to a tool: on a phone, where
+  // it is a sheet, that heading is on the screen.
+  function landInFinishing() {
+    const title = h.byId('desk-finish-title');
+    if (title) title.focus();
+  }
+
+  function landOnToggle() {
+    h.focusKey('desk-finishing');
+  }
+
+  // Escape puts Finishing away, as it does a sheet, when no sheet is open over it.
+  function escaped(event) {
+    if (!h.view || h.view.screen !== 'deck' || h.view.sheet || !kit) return;
+    const state = held.finish[h.view.path];
+    if (!state || !state.finish) return;
+    if (event.key === 'Tab') {
+      keptInSheet(event);
+      return;
+    }
+    if (event.key !== 'Escape' || h.view.busy) return;
+    if (event.preventDefault) event.preventDefault();
+    kit.finishClose(state);
+  }
+
+  // On a phone Finishing is a modal sheet over the desk: Tab and Shift+Tab go round its own
+  // controls and never reach the desk hidden behind it.
+  function keptInSheet(event) {
+    const panel = document.querySelector('.desk-finish.desk-finish-sheet');
+    if (!panel) return;
+    const shown = (node) => {
+      for (let at = node; at && at !== panel; at = at.parentNode) if (at.hidden) return false;
+      return true;
+    };
+    const controls = Array.from(panel.querySelectorAll('button, a, input, textarea, select, '
+      + 'summary')).filter((node) => !node.disabled && node.tabIndex !== -1 && shown(node));
+    if (!controls.length) return;
+    if (event.preventDefault) event.preventDefault();
+    const at = controls.indexOf(document.activeElement);
+    const by = event.shiftKey ? -1 : 1;
+    const next = at < 0 ? (by > 0 ? 0 : controls.length - 1)
+      : (at + by + controls.length) % controls.length;
+    controls[next].focus();
   }
 
   function openTool(state, key) {
     state.finish.tool = key;
     h.paintDeck(false);
+    landInFinishing();
     const run = h.view.run;
     // The brand check's proposals are made from the last render's check as it is opened.
     if (key === 'brand' && run && run.desk && !run.desk.brand_current && !h.theirs(run)) {
@@ -1678,7 +2044,19 @@
   function finishPart(run) {
     const state = finishState(h.view.path);
     state.view = { finishing: run.desk.finishing || {}, working: null };
-    return kit.panel(state);
+    const panel = kit.panel(state);
+    const title = panel.querySelector('.desk-finish-title');
+    if (title) {
+      title.id = 'desk-finish-title';
+      title.tabIndex = -1;
+    }
+    if (panel.classList.contains('desk-finish-sheet')) {
+      // A modal sheet: what is behind it is out of reach (keptInSheet) and out of hearing.
+      panel.setAttribute('role', 'dialog');
+      panel.setAttribute('aria-modal', 'true');
+      panel.setAttribute('aria-labelledby', 'desk-finish-title');
+    }
+    return panel;
   }
 
   function finishView(key) {
@@ -1760,14 +2138,19 @@
         : key === 'review' ? 'The review found nothing to change.'
           : 'The brand check found nothing on any slide.'));
     }
-    for (const item of items) out.push(proposalCard(run, key, set, item));
+    const among = items.map((item) => ({ key, item }));
+    for (const item of items) out.push(proposalCard(run, key, set, item, among));
     return out;
   }
 
-  function proposalCard(run, key, set, item) {
+  function proposalCard(run, key, set, item, among) {
     const path = h.view.path;
     const found = run.desk;
     const can = !h.theirs(run);
+    const said = fixNamed(key, item, among || [{ key, item }]);
+    // Skipped or applied, the focus goes to the next proposal still open, else to the top
+    // of Finishing.
+    const next = () => landNear('.desk-finish', item.id, 'desk-finish-title');
     const node = make('section', 'card desk-proposal');
     node.dataset.item = item.id;
     const slide = typeof item.number === 'number' ? 'Slide ' + item.number : 'The whole deck';
@@ -1789,8 +2172,11 @@
         ? 'Applied. The earlier notes are in History.'
         : 'Applied: its slide is redrawn with this note.') : 'Skipped.'));
     }
-    const skip = h.capsule('Skip', 'quiet', () => act('desk-skip', { path, set: set.job,
-      ids: [item.id] }, skip, 'Skipped. Nothing changed.'), 'desk-skip ' + item.id);
+    const skip = named(h.capsule('Skip', 'quiet', async () => {
+      const done = await act('desk-skip', { path, set: set.job, ids: [item.id] }, skip,
+        'Skipped. Nothing changed.');
+      if (done) next();
+    }, 'desk-skip ' + item.id), 'Skip ' + said);
     skip.disabled = !can;
     if ('comment' in item) return h.add(node, bar(skip));
     if (!item.present) {
@@ -1801,14 +2187,18 @@
     const confirming = held.confirm[path] === set.job + '\n' + item.id;
     if (confirming) {
       // What applying it redraws, said before it is sent.
-      const go = h.capsule('Apply and redraw slide ' + item.number, '', () => apply(run, set,
-        { id: item.id }, go, 'Slide ' + item.number + ' is being redrawn with the note. Every '
-        + 'other part of the deck stays exactly as it is.'), 'desk-apply-go ' + item.id);
+      const go = named(h.capsule('Apply and redraw slide ' + item.number, '', async () => {
+        const done = await apply(run, set, { id: item.id }, go, 'Slide ' + item.number
+          + ' is being redrawn with the note. Every other part of the deck stays exactly as it '
+          + 'is.');
+        if (done) next();
+      }, 'desk-apply-go ' + item.id), 'Apply and redraw slide ' + item.number + ': ' + said);
       go.disabled = !can || Boolean(found.working);
-      const back = h.capsule('Cancel', 'quiet', () => {
+      const back = named(h.capsule('Cancel', 'quiet', () => {
         delete held.confirm[path];
         h.paintDeck(false);
-      }, 'desk-apply-cancel ' + item.id);
+        h.focusKey('desk-apply ' + item.id);
+      }, 'desk-apply-cancel ' + item.id), 'Cancel applying ' + said);
       return h.add(node, make('p', '', item.price || 'This redraws its slide’s section.'),
         bar(go, back));
     }
@@ -1817,30 +2207,36 @@
       const kept = { text: editing };
       const box = h.field(id, 'Your notes for slide ' + item.number, kept, 'text',
         { long: true, rows: 4, limit: 4000, typed: () => { held.editing[editKey] = kept.text; } });
-      const use = h.capsule('Apply these notes', '', () => apply(run, set,
-        { id: item.id, after: held.editing[editKey] }, use, 'The notes of slide ' + item.number
-        + ' are saved. Nothing is redrawn.'), 'desk-apply-own ' + item.id);
+      const use = named(h.capsule('Apply these notes', '', async () => {
+        const done = await apply(run, set, { id: item.id, after: held.editing[editKey] }, use,
+          'The notes of slide ' + item.number + ' are saved. Nothing is redrawn.');
+        if (done) next();
+      }, 'desk-apply-own ' + item.id), 'Apply these notes to slide ' + item.number);
       use.disabled = !can;
-      const back = h.capsule('Cancel', 'quiet', () => {
+      const back = named(h.capsule('Cancel', 'quiet', () => {
         delete held.editing[editKey];
         h.paintDeck(false);
-      }, 'desk-edit-cancel ' + item.id);
+        h.focusKey('desk-edit ' + item.id);
+      }, 'desk-edit-cancel ' + item.id), 'Cancel editing ' + said);
       return h.add(node, box, bar(use, back));
     }
-    const applyNow = h.capsule('Apply', '', () => {
+    const applyNow = named(h.capsule('Apply', '', async () => {
       if (key === 'notes') {
-        apply(run, set, { id: item.id }, applyNow, 'The notes of slide ' + item.number
-          + ' are saved. Nothing is redrawn.');
+        const done = await apply(run, set, { id: item.id }, applyNow, 'The notes of slide '
+          + item.number + ' are saved. Nothing is redrawn.');
+        if (done) next();
         return;
       }
       held.confirm[path] = set.job + '\n' + item.id;
       h.paintDeck(false);
-    }, 'desk-apply ' + item.id);
+      h.focusKey('desk-apply-go ' + item.id);
+    }, 'desk-apply ' + item.id), 'Apply ' + said);
     applyNow.disabled = !can || (key !== 'notes' && Boolean(found.working));
-    const edit = key === 'notes' ? h.capsule('Edit', 'quiet', () => {
+    const edit = key === 'notes' ? named(h.capsule('Edit', 'quiet', () => {
       held.editing[editKey] = item.after;
       h.paintDeck(false);
-    }, 'desk-edit ' + item.id) : null;
+      h.focusKey('desk-edit-' + item.id);
+    }, 'desk-edit ' + item.id), 'Edit ' + said) : null;
     if (edit) edit.disabled = !can;
     return h.add(node, bar(applyNow, edit, skip));
   }
@@ -1849,10 +2245,11 @@
     const path = h.view.path;
     const found = await act('desk-apply', { path, set: set.job, ids: [entry],
       seen: run.desk.seen }, pressed, done);
-    if (!found) return;
+    if (!found) return null;
     delete held.confirm[path];
     delete held.editing[path + '\n' + set.job + '\n' + entry.id];
     h.paintDeck(false);
+    return found;
   }
 
   // --- a slide's words on its card --------------------------------------------------------
@@ -2234,15 +2631,99 @@
   }
 
   // What is being edited on the Outline tab, for the outline it was read from.
+  // An outline read again (its words saved on the Slides tab, say) keeps the edits made on
+  // this tab and not saved: each title changed, each slide removed and the order, carried
+  // onto the outline as it is now. Nothing typed here is let go unless the person puts it
+  // back.
   function outlineEdit(outline) {
     const path = h.view.path;
+    const slides = h.list(outline.slides);
     let edit = held.outlines[path];
     if (!edit || edit.base !== outline.expected) {
-      edit = { base: outline.expected, work: JSON.parse(JSON.stringify(h.list(outline.slides))),
+      const fresh = { base: outline.expected, from: copied(slides), work: copied(slides),
         priced: '', says: '', asking: '' };
+      if (edit && JSON.stringify(edit.work) !== JSON.stringify(edit.from || [])) {
+        fresh.work = rebased(edit, slides);
+      }
+      edit = fresh;
       held.outlines[path] = edit;
     }
     return edit;
+  }
+
+  function copied(value) {
+    return JSON.parse(JSON.stringify(value));
+  }
+
+  function rebased(edit, slides) {
+    const from = h.list(edit.from);
+    if (![...from, ...edit.work, ...slides].every((one) => one && one.id)) return copied(slides);
+    const before = new Map(from.map((one) => [one.id, one]));
+    const mine = new Map(edit.work.map((one) => [one.id, one]));
+    // A slide the person removed stays removed; one removed underneath is gone already.
+    const removed = new Set(from.filter((one) => !mine.has(one.id)).map((one) => one.id));
+    const made = slides.filter((one) => !removed.has(one.id)).map((one) => {
+      const kept = copied(one);
+      const was = before.get(one.id);
+      const now = mine.get(one.id);
+      if (was && now && (was.title || '') !== (now.title || '')) kept.title = now.title;
+      return kept;
+    });
+    // The outline as it is now keeps its order unless the person reordered the slides. When
+    // they did, their order is put into the places their slides hold now: a slide new
+    // underneath stays beside the neighbours it has now.
+    const theirs = edit.work.map((one) => one.id).filter((id) => before.has(id));
+    const was = from.map((one) => one.id).filter((id) => mine.has(id));
+    if (theirs.join('\n') === was.join('\n')) return made;
+    const here = new Map(made.map((one) => [one.id, one]));
+    const wanted = theirs.filter((id) => here.has(id));
+    const places = made.map((one, at) => (mine.has(one.id) ? at : -1)).filter((at) => at >= 0);
+    wanted.forEach((id, k) => { made[places[k]] = here.get(id); });
+    return made;
+  }
+
+  // What the Outline tab has changed and not saved, each in a few words: '' when nothing.
+  // Read only when the tab was opened: an outline never edited has nothing unsaved.
+  function outlineChanges(run) {
+    const outline = run.desk && run.desk.outline;
+    const path = h.view.path;
+    if (!outline || !held.outlines[path]) return [];
+    const edit = outlineEdit(outline);
+    const from = h.list(outline.slides);
+    if (JSON.stringify(edit.work) === JSON.stringify(from)) return [];
+    const said = [];
+    const at = new Map(from.map((one, index) => [one.id, { one, number: index + 1 }]));
+    for (const one of edit.work) {
+      const was = at.get(one.id);
+      if (was && (was.one.title || '') !== (one.title || '')) {
+        said.push('the title of slide ' + was.number + ', now “' + (one.title || '') + '”');
+      }
+    }
+    for (const one of from) {
+      if (!edit.work.some((other) => other.id === one.id)) {
+        said.push('slide ' + at.get(one.id).number + ' removed');
+      }
+    }
+    const kept = edit.work.map((one) => one.id).filter((id) => at.has(id));
+    const was = from.map((one) => one.id).filter((id) => kept.includes(id));
+    if (kept.join('\n') !== was.join('\n')) said.push('the order of the slides');
+    return said.length ? said : ['the outline'];
+  }
+
+  // A slide's title as the Outline tab has it and has not saved, when it differs.
+  function pendingTitle(run, one) {
+    const edit = held.outlines[h.view.path];
+    if (!edit || !run.desk.outline || edit.base !== run.desk.outline.expected) return '';
+    const mine = edit.work.find((slide) => slide.id === one.id);
+    const was = h.list(edit.from).find((slide) => slide.id === one.id);
+    return mine && was && (mine.title || '') !== (was.title || '') ? mine.title || '' : '';
+  }
+
+  // Go to the Outline tab, to save or put back what is unsaved there.
+  function toOutline() {
+    held.tabs[h.view.path] = 'outline';
+    h.paintDeck(false);
+    h.focusKey('desk-outline-save') || h.focusKey('desk-outline-back');
   }
 
   function outlinePart(run, editable, working) {
@@ -2316,6 +2797,11 @@
       tell();
     };
     paint();
+    // Edits made earlier and not saved, as when Deliver sent the person here: what saving
+    // them redraws is worked out now, so Save can be pressed.
+    if (editable && !working && edited() && edit.priced !== now() && edit.asking !== now()) {
+      price();
+    }
     h.add(node, make('p', '', 'Each slide’s words, in order. Saving redraws only the sections '
       + 'whose slides changed; the rest stay as they are drawn.'), rows);
     if (editable) h.add(node, said, bar(save, back));
@@ -2340,14 +2826,17 @@
       const [taken] = edit.work.splice(index, 1);
       edit.work.splice(index + by, 0, taken);
       on.moved();
-      h.focusKey('desk-outline ' + (by < 0 ? 'up ' : 'down ') + taken.id);
+      // At the top or the bottom that way is off: the focus stays on the slide's other move.
+      h.focusKey('desk-outline ' + (by < 0 ? 'up ' : 'down ') + taken.id)
+        || h.focusKey('desk-outline ' + (by < 0 ? 'down ' : 'up ') + taken.id);
     };
-    const up = h.button('Move up', 'menu-item', move(-1), 'desk-outline up ' + one.id);
-    const down = h.button('Move down', 'menu-item', move(1), 'desk-outline down ' + one.id);
-    const remove = h.button('Remove', 'menu-item', () => {
+    // Each named in words on the row, not folded behind a menu.
+    const up = h.capsule('Move up', 'quiet', move(-1), 'desk-outline up ' + one.id);
+    const down = h.capsule('Move down', 'quiet', move(1), 'desk-outline down ' + one.id);
+    const remove = h.capsule('Remove', 'quiet', () => {
       edit.work.splice(index, 1);
       on.moved();
-      h.focusKey('desk-outline-save');
+      h.focusKey('desk-outline-save') || h.focusKey('desk-outline-back');
     }, 'desk-outline remove ' + one.id);
     up.setAttribute('aria-label', 'Move up: “' + title + '”');
     down.setAttribute('aria-label', 'Move down: “' + title + '”');
@@ -2355,8 +2844,7 @@
     up.disabled = index === 0;
     down.disabled = index === edit.work.length - 1;
     remove.disabled = edit.work.length < 2;
-    return h.add(node, bar(h.moreMenu('More for “' + title + '”', [up, down, remove],
-      'desk-outline-more ' + one.id)));
+    return h.add(node, bar(up, down, remove));
   }
 
   // How a document is read, and the way to read it the other way, at its price.
@@ -2413,7 +2901,23 @@
       h.say(problem, NOT_DELIVERABLE);
       go.disabled = true;
     }
-    h.add(form,
+    // Changes on the Outline tab not saved yet: nothing is delivered until the person saves
+    // them (on the Outline tab, where saving says what it redraws) or discards them here.
+    const outlined = outlineChanges(run);
+    const unsaved = outlined.length ? h.callout('late', make('p', '', 'Your changes on the '
+      + 'Outline tab are not saved: ' + outlined.join('; ') + '. The deck as it is drawn does '
+      + 'not have them. Save them first, or discard them, before you deliver.'),
+    bar(h.capsule('Save them on the Outline tab', '', () => {
+      h.closeSheet();
+      toOutline();
+    }, 'deliver-outline-save'), h.capsule('Discard them', 'quiet', () => {
+      delete held.outlines[h.view.path];
+      h.drawSheet();
+      h.paintDeck(false);
+      h.focusKey('deliver-confirm');
+    }, 'deliver-outline-discard'))) : null;
+    if (unsaved) go.disabled = true;
+    h.add(form, unsaved,
       make('p', '', found.reviewed ? 'This deck was reviewed.' : 'This deck has not been '
         + 'reviewed. Its brand check ran; no review of the deck did.'),
       blockers.length ? make('p', '', 'The brand check found ' + h.count(blockers.length,
@@ -2429,6 +2933,33 @@
     return [h.add(make('div', 'sheet-heading'), h.sheetTitle('Deliver the deck')), form];
   }
 
+  // The focus goes to the Delivered card once it is drawn, and is checked there: a screen
+  // drawn in a view transition, or a sheet taken away, can leave it on the page instead, so it
+  // is tried again a few frames later. Until the card is there it waits on the deck's title.
+  // Only while the focus has nowhere better to be: a person who has moved on is left there.
+  function landOnDelivered(path, tries = 10) {
+    if (held.landing !== path || h.view.path !== path) return;
+    const card = h.byId('desk-delivered-title');
+    const active = document.activeElement;
+    const idle = !active || active === document.body || active.id === 'title' || active === card;
+    if (!idle) {
+      held.landing = null;
+      return;
+    }
+    if (card) {
+      card.focus();
+      if (document.activeElement === card) {
+        held.landing = null;
+        return;
+      }
+    } else {
+      const title = h.byId('title');
+      if (title && active !== title) title.focus({ preventScroll: true });
+    }
+    // The card comes with a later drawing of the deck (`desk`), which tries again too.
+    if (tries > 0) window.setTimeout(() => landOnDelivered(path, tries - 1), 100);
+  }
+
   async function deliver(run, blockers, pressed, problem) {
     if (h.view.busy) return;
     // The blockers are the ones this sheet listed, whatever the deck says since.
@@ -2438,6 +2969,11 @@
     // The deck may have moved on since the sheet was opened: it is read as it is now.
     if (!deliverableNow(run.desk || {})) {
       h.say(problem, NOT_DELIVERABLE);
+      return;
+    }
+    if (outlineChanges(run).length) {
+      h.say(problem, 'Save or discard your changes on the Outline tab first. Nothing was '
+        + 'delivered.');
       return;
     }
     const path = run.path || h.view.path;
@@ -2463,11 +2999,17 @@
       h.view.run = found;
       h.view.barred = '';
       h.paintDeck(false);
+      // The focus goes where the delivery is said: the Delivered card. While the deck is
+      // still being delivered it waits on the deck's title, and goes to the card once it is
+      // drawn (`desk`).
+      held.landing = path;
+      landOnDelivered(path);
     }
     h.refresh();
   }
 
-  window.deckDesk = { init, opens, start, progress, desk, deliverSheet, historySheet };
+  window.deckDesk = { init, opens, start, progress, desk, deliverSheet, historySheet,
+    googleSheet };
   // The page waits for this script before it begins; it begins now.
   if (typeof window.deckDeskWaits === 'function') window.deckDeskWaits();
 }());

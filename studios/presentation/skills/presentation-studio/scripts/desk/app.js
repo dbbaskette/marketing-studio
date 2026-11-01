@@ -746,9 +746,10 @@ async function picture(params) {
     { headers: { [TOKEN_HEADER]: view.token }, cache: 'no-store' }), /^image\/png\b/);
 }
 
-// The rendered deck, as its bytes.
-async function deckFile(path) {
-  return bytes(await reach('download?' + new URLSearchParams({ path }).toString(),
+// The rendered deck, or one delivered revision's PowerPoint file, as its bytes.
+async function deckFile(path, revision) {
+  const asked = revision ? { path, revision: String(revision) } : { path };
+  return bytes(await reach('download?' + new URLSearchParams(asked).toString(),
     { headers: { [TOKEN_HEADER]: view.token }, cache: 'no-store' }));
 }
 
@@ -772,14 +773,38 @@ function calm() {
 }
 
 // A short message that slides in at the bottom right, is read out, and leaves by itself.
-// It is kept clear of the toolbar, so it never covers the main thing to do.
-function toast(text) {
+// It is kept clear of the toolbar, so it never covers the main thing to do. A toast with a
+// key (a deck's own, such as what it waits for) takes the place of the one before it with
+// that key, and is let go once what it says is no longer so. No more than TOASTS_SHOWN are
+// on the screen at once: the oldest leaves first.
+const TOASTS_SHOWN = 2;
+
+function toast(text, key) {
+  if (key) dropToast(key);
   const node = make('p', 'toast glass', text);
-  byId('toasts').append(node);
-  window.setTimeout(() => {
-    node.classList.add('toast-leaving');
-    window.setTimeout(() => node.remove(), calm() ? 0 : 260);
-  }, 4200);
+  if (key) node.dataset.toast = key;
+  const holder = byId('toasts');
+  holder.append(node);
+  const shown = Array.from(holder.children)
+    .filter((one) => !one.classList.contains('toast-leaving'));
+  // On a phone they sit over the bar of screens (deck.css), which has room for one.
+  const room = window.matchMedia && window.matchMedia('(max-width: 52rem)').matches
+    ? 1 : TOASTS_SHOWN;
+  for (const old of shown.slice(0, Math.max(0, shown.length - room))) toastLeaves(old);
+  window.setTimeout(() => toastLeaves(node), 4200);
+}
+
+function toastLeaves(node) {
+  if (!node.parentNode || node.classList.contains('toast-leaving')) return;
+  node.classList.add('toast-leaving');
+  window.setTimeout(() => node.remove(), calm() ? 0 : 260);
+}
+
+// The toast with this key, gone at once: what it said is no longer so.
+function dropToast(key) {
+  for (const node of Array.from(byId('toasts').children)) {
+    if (node.dataset && node.dataset.toast === key) node.remove();
+  }
 }
 
 // --- copying ----------------------------------------------------------------------
@@ -1115,11 +1140,12 @@ function focusKey(key) {
   return false;
 }
 
-// The tab's title leads with how many things need the person, so it shows from another tab.
-// Versions Home tells of count as one more thing.
+// The tab's title leads with how many decks need the person, so it shows from another tab.
+// It counts what Home's greeting counts: decks only. Versions Home tells of are a notice of
+// their own, not a thing that needs you.
 function setTitle(name) {
   if (name !== undefined) view.named = name;
-  const needs = view.needs + (versionsNotice() ? 1 : 0);
+  const needs = view.needs;
   const waiting = needs ? '(' + needs + ') ' : '';
   document.title = waiting + (view.named ? view.named + ' · ' : '') + 'Presentation Studio';
   const badge = byId('needs-count');
@@ -1373,6 +1399,7 @@ function drawSheet() {
   else if (view.sheet === 'reclassify') body = reclassifySheet();
   else if (view.sheet === 'desk-deliver') body = window.deckDesk.deliverSheet();
   else if (view.sheet === 'desk-history') body = window.deckDesk.historySheet();
+  else if (view.sheet === 'desk-google') body = window.deckDesk.googleSheet();
   else if (view.sheet === 'desk-migration') body = migrationSheet();
   else if (view.sheet === 'desk-ready') body = readySheet();
   else body = undoSheet();
@@ -3421,7 +3448,7 @@ async function startDeck(pressed, how) {
   view.draft = null;
   view.sheet = '';
   drawSheet();
-  toast('Started. It is working on its own now.');
+  toast('Started. It is working on its own now.', deckToast(started.path));
   show('deck', { path: started.path }, true);
   refresh();
 }
@@ -5319,24 +5346,38 @@ function deliverPart(run) {
   const deskSays = desk ? make('p', 'quiet', (OPEN_SAYS[run.level] || OPEN_SAYS.other)
     + ' It stays delivered until you change it; a change makes the next revision.') : null;
   if (found.to_google && !theirs(run) && googleReady()) {
+    // Nothing goes to Google on this press: its sheet says what goes, and sends it.
     const google = capsule(view.delivering ? 'Delivering…' : 'Send to Google Slides', '',
-      () => deliverToGoogle(run, google), 'deliver-google');
+      openSheet('desk-google', 'deliver-google'), 'deliver-google');
+    google.disabled = Boolean(view.delivering);
     add(node, make('p', 'quiet', 'Once you are signed in to Google with gcloud on this '
       + 'computer, the same deck goes to Google Slides as the next revision. Nothing in it '
-      + 'is built again.'), deskSays, add(make('div', 'bar'), google, desk));
+      + 'is built again, and nothing is sent until you confirm it.'), deskSays,
+    add(make('div', 'bar'), google, desk));
   } else if (desk) add(node, deskSays, add(make('div', 'bar'), desk));
   if (found.to_google && !theirs(run) && !googleReady()) add(node, make('p', 'quiet',
     'Sign in to Google (Status → Check this computer says how) to send this deck to '
     + 'Google Slides later.'));
-  const revisions = list(found.revisions);
-  if (revisions.length > 1) {
+  // Every revision's receipt, as the desk's Delivered card lists them: its format, when, and
+  // Open in Google Slides or Download revision N while its PowerPoint file is kept here.
+  const receipts = list(found.receipts);
+  if (receipts.length > 1) {
     const items = make('ul', 'rows');
-    for (const one of revisions.slice().reverse()) {
+    for (const one of receipts.slice().reverse()) {
+      let open = null;
+      if (one.format === 'google' && one.url) {
+        open = add(make('p', ''), outLink(one.url, 'Open in Google Slides', 'Open revision '
+          + one.revision + ' in Google Slides'));
+      } else if (one.format === 'pptx' && one.download) {
+        const press = capsule('Download revision ' + one.revision, 'quiet',
+          () => downloadDeck(run, press, one.revision), 'receipt-download ' + one.revision);
+        open = add(make('div', 'bar'), press);
+      }
       add(items, add(make('li', 'row'), add(make('div', 'row-text'),
-        make('p', 'step-name', 'Revision ' + one.revision),
+        make('p', 'step-name', 'Revision ' + one.revision + ' · '
+          + (one.format === 'google' ? 'Google Slides' : 'PowerPoint file')),
         add(make('p', 'quiet'), 'Delivered ', when(one.at), '.'),
-        one.url ? add(make('p', ''), outLink(one.url, 'Open revision ' + one.revision
-          + ' in Google Slides')) : null)));
+        open || (one.why ? make('p', 'quiet', one.why) : null))));
     }
     add(node, make('p', 'row-title', 'Every revision'), items);
   }
@@ -5371,28 +5412,8 @@ function deliverPart(run) {
   return node;
 }
 
-// The deck, fetched with the key and handed to the browser to keep, from memory.
-// A deck made as a PowerPoint file because Google was not connected, sent to Google Slides.
-async function deliverToGoogle(run, pressed) {
-  if (view.delivering || view.busy) return;
-  const turn = view.turn;
-  view.delivering = true;
-  pressed.disabled = true;
-  try {
-    const shown = await send('deliver', { path: run.path });
-    view.delivering = false;
-    toast('The deck is in Google Slides now.');
-    if (turn === view.turn) {
-      view.run = shown;
-      paintDeck(false);
-    }
-    refresh();
-  } catch (failure) {
-    view.delivering = false;
-    pressed.disabled = false;
-    toast(failure.message + ' Nothing was sent.');
-  }
-}
+// A deck made as a PowerPoint file is sent to Google Slides from its own sheet
+// (deck-desk.js googleSheet), on the desk and on a gated deck's screen alike.
 
 // What Open on the desk says the desk lets change, by the level of an existing deck.
 const OPEN_SAYS = {
@@ -5425,21 +5446,22 @@ async function openOnDesk(run, pressed) {
   }
 }
 
-async function downloadDeck(run, pressed) {
+// The deck as it is drawn now, or with `revision` that delivered revision's own file.
+async function downloadDeck(run, pressed, revision) {
   if (view.downloading) return;
   view.downloading = true;
   pressed.disabled = true;
   try {
-    const found = await deckFile(run.path);
+    const found = await deckFile(run.path, revision);
     const held = URL.createObjectURL(found);
     const node = make('a', 'offscreen', 'Download');
     node.href = held;
-    node.download = (run.id || 'deck') + '.pptx';
+    node.download = (run.id || 'deck') + (revision ? '-revision-' + revision : '') + '.pptx';
     document.body.append(node);
     node.click();
     node.remove();
     window.setTimeout(() => URL.revokeObjectURL(held), 60000);
-    toast('The deck is downloaded.');
+    toast(revision ? 'Revision ' + revision + ' is downloaded.' : 'The deck is downloaded.');
   } catch (failure) {
     toast(failure.message + ' Nothing was downloaded.');
   }
@@ -5937,7 +5959,8 @@ async function decide(decision, note, problem, pressed, extra) {
   view.barred = '';
   paintDeck(false);
   toast(decision === 'approve' ? 'Approved. It carries on by itself. ' + CLOSE
-    : 'Your changes are noted. Once they are made, it comes back to you.');
+    : 'Your changes are noted. Once they are made, it comes back to you.',
+  deckToast(answered.path || view.path));
   window.scrollTo(0, 0);
   byId('title').focus({ preventScroll: true });
   refresh();
@@ -7452,6 +7475,17 @@ function waitingKey(brief) {
   return brief.path + '\n' + brief.sentence;
 }
 
+// The keys of a deck's own toasts. What happened to it (Started, Approved) keeps its time,
+// unless what it waits for next takes its place; what it waits for (waitsToast) goes as soon
+// as the deck no longer waits for it.
+function deckToast(path) {
+  return 'deck\n' + path;
+}
+
+function waitsToast(path) {
+  return 'waits\n' + path;
+}
+
 // Tell the person, once, about each new thing that needs them. A notification that is
 // clicked opens the deck it was about.
 function took(found) {
@@ -7471,10 +7505,16 @@ function took(found) {
   }
   view.noticed = noticed;
   const keys = waiting.map(waitingKey);
+  // A deck's toast says what it waits for now: one that no longer waits, or waits for
+  // something else, lets its earlier toast go.
+  for (const key of view.known || []) {
+    if (!keys.includes(key)) dropToast(waitsToast(key.split('\n')[0]));
+  }
   for (const brief of view.known ? waiting : []) {
     if (view.known.includes(waitingKey(brief))) continue;
     const said = (brief.title || 'Untitled') + ': ' + brief.sentence;
-    toast(said);
+    dropToast(deckToast(brief.path));
+    toast(said, waitsToast(brief.path));
     if (alerts() !== 'granted') continue;
     try {
       const note = new Notification('Presentation Studio needs you',
@@ -7728,12 +7768,12 @@ function deskParts() {
     view, make, add, count, list, series, lower, capital, spoken, given, card, bullets, callout,
     state, button, capsule, chip, field, refuse, choice, explained, segmented, pickCard, oneOf,
     moreMenu, submitButton, alertLine, problemLine, say, outLink, pageHead, focusKey, byId,
-    send, ask, toast, notify, show, refresh, placeParts, fit, tidyPictures, pager, slideName,
+    send, ask, toast, dropToast, deckToast, notify, show, refresh, placeParts, fit, tidyPictures, pager, slideName,
     // A slide's picture, fetched with this page's key and held in memory: `image` is what the
     // server names it by, and `mark` changes when a newer one is drawn.
     picture: (image, alt, mark) => pictureAt(pictureOf(view.path, image), alt, mark),
     pictureAt, pictureOf, sheetTitle, openSheet, closeSheet, drawSheet, paintDeck, steer,
-    askDelete, downloadDeck, deliverToGoogle, theirs, theirsPart, noticePart, problemPart,
+    askDelete, downloadDeck, theirs, theirsPart, noticePart, problemPart,
     questionPart,
     findingItems, routeWords, nameOf, googleReady, createStep, chooseRoute, paintNew,
     paintAgents, readAgents, readModels, researchFromField, researchSummary, researchFromOf,
