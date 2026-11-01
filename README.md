@@ -60,8 +60,10 @@ computer. In Presentation Studio, Blog Studio and Infographic Studio, **Add from
 library** copies chosen revisions into that one deck, blog or infographic, which
 keeps them even if the library changes. Choosing a document starts nothing:
 no research, no web access and no assistant job. **Add existing work to library**
-on the Library screen previews what Blog Studio's team library already holds and
-adds it only when you confirm. **Remove from library** hides a mistaken or duplicate
+on the Library screen previews finished work the studios already hold (Blog Studio's
+team library, delivered decks, guides and briefs marked ready, and approved
+infographics) and adds it only when you confirm, as the same document the studio keeps.
+**Remove from library** hides a mistaken or duplicate
 document without deleting it; projects that use it keep their copy. See
 [the Document Library](docs/shared-setup.md#the-document-library).
 

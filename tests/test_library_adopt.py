@@ -129,7 +129,7 @@ class PreviewTests(AdoptCase):
         self.assertEqual(places['blog']['state'], 'found')
         self.assertEqual(places['blog']['count'], 5)
         self.assertEqual(places['presentation']['state'], 'none')
-        self.assertEqual(places['training']['state'], 'not-offered')
+        self.assertEqual(places['training']['state'], 'missing')   # remembered, but gone now
         self.assertEqual(places['infographic']['state'], 'none')
         self.assertEqual((found['total'], found['new'], found['adding']), (5, 5, 5))
         rows = {row['title']: row for row in found['items']}
@@ -357,11 +357,12 @@ class PageTests(AdoptCase):
         ])
         shown = shots['preview']['words']['library-existing-result']
         for words in ('Blog Studio', 'Workspace: ', 'Presentation Studio has no workspace',
-                      'not offered yet', '5 items found: 5 new', 'Gateway guide',
+                      'workspace at', 'is not there now', '5 items found: 5 new', 'Gateway guide',
                       'Blog · Blog Studio · Finished blog · Markdown', 'Markdown, Original',
                       'Voice sample', 'Will be added', 'Add 5 to library', 'Cancel',
                       'Nothing is shared with your team'):
             self.assertIn(words, shown)
+        self.assertNotIn('not offered yet', shown)
         added = shots['added']
         self.assertEqual(added['requests'][-1]['sent'], {'signature': found['signature']})
         self.assertIn('4 added.', added['words']['library-existing-result'])

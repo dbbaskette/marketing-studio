@@ -296,9 +296,17 @@ The Library screen calls `/api/library-existing` for the preview and
 nothing and does not make the library. The confirm scans again and refuses, adding
 nothing, unless what it would add still matches the signature. Each item is kept with
 `Library.adopt`, found again by its key, so adding again adds nothing and a changed
-title, text or original adds a revision. A failure is reported per item; the rest are
-added. No folder other than a remembered workspace is read, no studio is started, and
-no workspace file is written, moved or regenerated.
+title, text, original or saved PDF adds a revision. A failure is reported per item; the
+rest are added. No folder other than a remembered workspace is read, no studio is
+started, and no workspace file is written, moved or regenerated. Every adapter reads
+the studio's own files without importing the studio, offers only finished work, and uses
+the studio's own library key, so finishing, delivering or marking the same work ready
+later in the studio reuses the document it was added as.
+
+A PDF is added only when the adapter checked it against the exact revision it came
+from; otherwise the item is added as Markdown and the preview says why. Work the
+library already keeps with a PDF is shown as already there, never added again without
+it.
 
 Blog Studio's legacy adapter, `document_library/blog_existing.py`, reads only team
 library records on this computer: `sources/<id>/` in a plain writing folder, or
@@ -319,8 +327,26 @@ and checks the record's hashes.
 Each revision records `native`: the source ID and revision, purposes and role, kind of
 post, author and, for a finished blog, the blog's voice and style pins. An original
 file is kept when it is a supported type of at most 8 MB that matches its hash; a
-record with no readable text is kept as **Needs text**. Presentation Studio, Training
-Studio and Infographic Studio have no adapter yet, and the preview says so.
+record with no readable text is kept as **Needs text**.
+
+| Studio and what is offered | Library document and key | PDF |
+| --- | --- | --- |
+| Presentation Studio (`presentation_existing.py`): a delivered deck (`deliver.json`) in `<workspace>/<deck>/` | Presentation, Created here: the slide Markdown (`outline.md`), under the key in the deck's `sources/library.json`, or the one Deliver makes from the deck's folder and `run.json`'s `created` | The `deck.pdf` Harness Slides rendered of exactly the delivered deck, checked as Deliver checks it (`deck_sha256`, the last build round, `preview.json`, its `deck.pptx` and the PDF's recorded hash). Otherwise none, with why: drawn again, delivered elsewhere, Selected changes, or changed |
+| Training Studio (`training_existing.py`): a learner guide or brief the person marked ready, while the file is that version and nothing it was built from changed | Training material, Created here: the text as learners read it (no coverage notes), under `training:<folder>-<part>.<material>`: the key in `sources/library.json`, or the one Mark ready makes from the training's folder and its run's start | None: Training Studio keeps no PDF of a guide or brief |
+| Infographic Studio (`infographic_existing.py`): the approved, visually reviewed export of the current revision, with its sources intact | Infographic, Created here: the export's `page.txt`, under `infographic:<owner[:12]>-<id>` | `page.pdf` when it matches the hash in the export's manifest; otherwise none, with why |
+
+Left out of every studio: drafts and unfinished work (counted in the preview), and
+anything whose records the studio itself could not open, each said. A deck with no
+recorded key and no `created`, or a training worked on only in a conversation, is left
+out and said: Keep in library in the studio keeps it. So is one whose
+`sources/library.json` is there but linked, too large or damaged: the studio may still
+read a key from it, so no key is made up. Each revision records `native`: the studio's
+own ID for the work, its delivery, material or export, and its revision. Why an item has
+no PDF is said in the preview and kept as the PDF's own reason, never as an extraction
+gap, so the document has the same gaps as the one the studio's own Keep in library makes.
+
+Presentation Studio's Deliver makes a deck's key the same way when `sources/library.json`
+has none, so a deck added here and delivered again later is one library document.
 
 ## Where new work stops
 

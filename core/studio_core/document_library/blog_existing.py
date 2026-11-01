@@ -219,19 +219,20 @@ def _candidate(places: dict, folder: Path) -> tuple[dict | None, str | None]:
         native.update(blog=held['article'], **blog)
         key, kind, origin = 'blog:' + held['article'], 'blog', 'created'
         project = {'id': held['article'], 'title': title, 'revision': revision}
-        gaps.append('Blog Studio keeps no PDF of a blog, so it is added as Markdown.')
+        notes = ['Blog Studio keeps no PDF of a blog, so it is added as Markdown.']
     else:
         key = 'blog:reference.' + folder.name
         kind = 'blog' if kind_of == 'import' else 'upload'
         origin = ORIGINS.get(kind_of or '', 'imported')
         project = None
     note = 'Finished blog' if finished else ROLES[role]
+    notes = notes if finished else []
     return {'key': key, 'studio': 'blog', 'kind': kind, 'origin': origin, 'title': title,
             'author': native['author'], 'text': text, 'original': original,
             'markdown_sha': _sha(text.encode('utf-8')) if text else None,
             'original_sha': _sha(original) if original is not None else None,
             'filename': filename, 'project': project, 'native': native, 'gaps': gaps,
-            'note': note, 'folder': folder}, None
+            'notes': notes, 'note': note, 'folder': folder}, None
 
 
 def _checked(places: dict, folder: Path) -> tuple[dict | None, str | None]:

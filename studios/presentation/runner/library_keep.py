@@ -9,7 +9,8 @@ What a caller needs to know
 - What is kept is the deck's slide-ordered Markdown (`outline.md`, the outline the
   delivered deck was built from), found again by the deck's own library key: delivering
   again reuses its library document and adds a revision only when what is kept changed.
-- The key is the folder's name with a random part, made once and kept in
+- The key is the folder's name with a part made from the folder and the moment the deck
+  was created (a random part when that is not recorded), made once and kept in
   `sources/library.json`. A deck's folder name is a slug of its title, so two workspaces
   with a deck of the same title, or a deck deleted and made again under the same title,
   are separate library documents, never revisions of one.
@@ -71,12 +72,20 @@ def status(root) -> dict | None:
     return found if isinstance(found, dict) else None
 
 
-def _key(root: Path) -> str:
-    """This deck's library key: the one recorded for it, else a new one for this folder."""
+def _key(root: Path, run: dict | None = None) -> str:
+    """This deck's library key: the one recorded for it, else one made from the deck's
+    folder and the moment it was created (`run.json`'s `created`), so a deck delivered
+    before the library kept anything, and added to it with Marketing Studio's Add existing
+    work, is found again here under the same key. A deck with no creation recorded gets a
+    random part instead."""
     held = (status(root) or {}).get('key')
     if isinstance(held, str) and re.fullmatch(r'presentation:[a-z0-9-]{1,120}-[a-f0-9]{12}', held):
         return held
     plain = re.sub(r'[^a-z0-9-]+', '-', root.name.lower()).strip('-')[:120] or 'deck'
+    created = (run or {}).get('created') if isinstance(run, dict) else None
+    if isinstance(created, str) and created:
+        part = hashlib.sha256(f'{root.name}\0{created}'.encode()).hexdigest()[:12]
+        return f'presentation:{plain}-{part}'
     return f'presentation:{plain}-{secrets.token_hex(6)}'
 
 
@@ -142,7 +151,7 @@ def keep(root, run: dict, delivered: dict) -> dict:
     and record how that went."""
     root = Path(root)
     revision = delivered.get('revision') if isinstance(delivered, dict) else None
-    done = {'delivered': revision, 'at': home.now(), 'key': _key(root)}
+    done = {'delivered': revision, 'at': home.now(), 'key': _key(root, run)}
     try:
         place = root / outlines.OUTLINE_MD
         text = place.read_text(encoding='utf-8') if place.is_file() and not place.is_symlink() else ''

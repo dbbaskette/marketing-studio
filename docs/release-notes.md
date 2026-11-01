@@ -18,6 +18,23 @@ Download `marketing-studio-installer.zip` for the whole suite, or one studio's i
 
 Signing in to an assistant, your organisation's brands and fonts, and optional Google setup are still your choices. Installing starts no provider job.
 
+## Unreleased: Add existing work from every studio
+
+- **Decks, guides and infographics too.** **Add existing work** on the Library screen
+  now offers delivered Presentation Studio decks, Training Studio learner guides and
+  briefs marked ready, and approved Infographic Studio pages, beside Blog Studio's team
+  library. Drafts are not offered; the preview counts them.
+- **One document, whichever comes first.** Each is added under the studio's own library
+  key, so delivering a deck, marking a guide ready or preparing an infographic's
+  approved files later reuses the document it was added as, and work the studio already
+  kept shows as already in the library. Presentation Studio now makes a deck's key from
+  its folder and the moment it was created when none is recorded, so a deck delivered
+  before the library existed is found again.
+- **A PDF only when it is the right one.** A deck's PDF comes along only when it is the
+  one rendered of exactly the delivered deck, and an infographic's only when it matches
+  its approved export. Otherwise the item is added as Markdown and the preview says why.
+  Nothing is rendered or exported again, and no workspace is changed.
+
 ## Unreleased: Ready is a deliberate, reversible decision in Training Studio
 
 - **Confirm before marking a level ready.** **Mark this level ready** opens a sheet
