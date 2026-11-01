@@ -49,12 +49,12 @@ class ApprovedExportTests(LibraryCase):
         done = self.approved()
         kept = done['library']
         self.assertEqual((kept['state'], kept['export'], kept['revision'], kept['pdf']),
-                         ('kept', done['export']['id'], done['revision'], 'saved'))
+                         ('kept', done['export']['id'], done['page_revision'], 'saved'))
         row = self.library().describe(kept['document'])
         self.assertEqual((row['kind'], row['studio'], row['formats'], row['readable']),
                          ('infographic', 'infographic', ['markdown', 'pdf'], True))
         self.assertEqual(row['project'], {'studio': 'infographic', 'title': 'Restart one instance',
-                                          'revision': done['revision']})
+                                          'revision': done['page_revision']})
         text = exports.read(self.store, self.ident, done['export']['id'], 'text')[1]
         pdf = exports.read(self.store, self.ident, done['export']['id'], 'pdf')[1]
         self.assertEqual(self.library().download(kept['document'], 1, 'markdown')[2], text)

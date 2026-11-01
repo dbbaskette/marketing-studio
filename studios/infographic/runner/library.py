@@ -289,13 +289,15 @@ def keep(store, ident, export_id=None) -> dict:
     done = {'schema': 1, 'at': _now(), 'key': key(store, ident), 'export': export_id}
     try:
         project, delivery = _approved(store, ident, export_id)
-        done.update(export=delivery['id'], revision=delivery['revision'])
+        # The library names the page revision the person approved, as the desk and receipts do.
+        from .history import Pages
+        done.update(export=delivery['id'], revision=Pages(store, ident).of(delivery['revision']))
         text = exports.read(store, ident, delivery['id'], 'text')[1].decode('utf-8')
         pdf = exports.read(store, ident, delivery['id'], 'pdf')[1]
         title = project['brief']['title']
         kept = document_library.opened(create=True).retain(
             key=done['key'], studio='infographic', kind='infographic', title=title, text=text,
-            project={'id': ident, 'title': title, 'revision': delivery['revision']},
+            project={'id': ident, 'title': title, 'revision': done['revision']},
             pdf={'state': 'saved', 'data': pdf})
         done.update(state='kept', document=kept['document'], library_revision=kept['revision'],
                     pdf='saved')

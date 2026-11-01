@@ -164,18 +164,26 @@ separate release gates, never inferred from fixture success.
    text copy. Word means `.docx`, without OCR, linked-resource reads or embedded-object analysis.
 2. Set the audience, takeaway and must-show information. Choose a story, build the page,
    edit, inspect actual pixels, run checks and approve the exact revision.
-   **Where this stands** shows the route (Story, Draft page, Review and checks, Approved
-   delivery) with the current step, what is complete, what needs you and what you can
-   download; the toolbar offers that one next action. **Review and finish** has three
-   parts: your review of the actual page (required; recording it runs the local checks
+   **Where this stands** is the one status surface: the route (Story, Draft page, Review
+   and checks, Approved delivery) with the current step, what needs you (always naming the
+   toolbar's one next action), your current work, the preview and the approved delivery,
+   and what you can download. Every revision named is the page's revision: checks, a
+   review and an approval are saved as revisions of their own, but they leave the page as
+   it was, so the button, the files, the receipts, History and the Document Library all
+   name the revision you reviewed. **Review and finish** has three parts: your review of
+   the actual page (**Review page**, required; recording it runs the local checks
    straight after), the checks (on this computer, starting no assistant or image request),
-   and approval (your decision). Assistant inspection is optional and separate.
-   **Approve revision N and prepare files** approves that exact checked revision and then
-   prepares its final files locally in the same action, so the page never shows the
-   approved revision as a new draft. If the files cannot be prepared (for example no
-   renderer), the approval is kept, no approved file is offered, and **Prepare approved
-   files** retries on this computer.
-3. **Deliver Google Doc or PDF** offers either or both. PDF is the exact approved one-page
+   and approval (your decision). Finished parts fold into one line, with **Review again**
+   behind a disclosure. Assistant inspection is optional and separate.
+   **Approve revision N** approves that exact checked revision and then prepares its final
+   files locally in the same action, so the page never shows the approved revision as a
+   new draft. If the files cannot be prepared (for example no renderer), the approval is
+   kept, no approved file is offered, and **Prepare approved files** retries on this
+   computer. **History** lists each page revision once, with what the revisions after it
+   recorded; **Compare** says what changed in words (words by element, sources, story,
+   layout) beside a thumbnail of each side, and keeps the saved fields under **Advanced**.
+3. **Deliver approved page** offers a PDF, a Google Doc or both; the PNG, SVG and text
+   downloads sit beside the page. PDF is the exact approved one-page
    local render. Google delivery creates a new native Doc containing the approved page image
    with alt text, plus editable accessible text and source notes. Artwork/layout in Docs is
    raster; the local SVG retains editable labels/charts. Inspect Google conversion in Docs
@@ -202,7 +210,7 @@ working if the library changes. Like any new source, it clears the facts, story 
 page built from earlier sources. The source says which library revision it came from,
 and when a newer one is available, **Use revision N** takes it. Adding starts no
 research, grants no web access and sends nothing to an assistant; it is refused while
-the infographic is working. After **Approve revision N and prepare files**, the
+the infographic is working. After **Approve revision N**, the
 approved page's accessible text and PDF are kept in the library as an Infographic,
 from the saved files. If that fails, the approval and files stand and **Keep in
 library again** retries it locally. See

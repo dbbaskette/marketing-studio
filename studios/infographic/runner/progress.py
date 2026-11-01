@@ -9,26 +9,36 @@ def _reviewed(project, review):
                 and review.get('scene_digest') == digest(project['scene']))
 
 
-def approved_words(approval):
-    """Who approved which revision, and whether a rename carried that approval forward."""
+def approved_words(approval, page=lambda revision: revision):
+    """Who approved which page revision, and whether a rename carried that approval forward.
+    `page` maps a saved revision to its page revision (history.Pages.of)."""
     moved = approval.get('carried') or {}
     if moved.get('reason') == 'rename':
-        return ('You approved revision ' + str(moved['from_revision']) + '. Renaming kept the '
-                'approval for revision ' + str(approval['revision']) + '.')
-    return 'You approved revision ' + str(approval['revision']) + '.'
+        return ('You approved revision ' + str(page(moved['from_revision'])) + '. Renaming kept the '
+                'approval for revision ' + str(page(approval['revision'])) + '.')
+    return 'You approved revision ' + str(page(approval['revision'])) + '.'
 
+
+# The toolbar's primary action for each stage; `needs` names it. Approve adds the revision.
+ACTIONS = {'story': 'Find the story', 'choose': 'Choose a story', 'build': 'Build page',
+           'preview': 'Update preview', 'review': 'Review page', 'check': 'Run checks',
+           'approve': 'Approve revision', 'export': 'Prepare approved files',
+           'deliver': 'Deliver approved page'}
 
 STEPS = (('story', 'Story'), ('draft', 'Draft page'), ('review', 'Review and checks'),
          ('delivery', 'Approved delivery'))
 
 
-def roadmap(project, deliveries, *, review=None, review_checked=False):
+def roadmap(project, deliveries, *, review=None, review_checked=False, page=lambda revision: revision):
     """The four-step route, the one next stage, and what is complete, needed and downloadable.
 
     `deliveries` is the desk's delivery listing (each with current/draft/approved_current).
+    Every revision named is a page revision (`page`, history.Pages.of): checks, reviews and
+    approvals save revisions of their own, but the person is told the page's one number.
+    `action` is the toolbar's primary action for the stage, and `needs` always names it.
     Every statement comes from saved state; nothing here renders, checks or approves.
     """
-    revision = project['revision']
+    revision = page(project['revision'])
     preview = next((d for d in deliveries if d['current']), None)
     approved_files = next((d for d in deliveries if d['approved_current']), None)
     earlier = next((d for d in deliveries if not d['draft'] and not d['approved_current']), None)
@@ -64,34 +74,39 @@ def roadmap(project, deliveries, *, review=None, review_checked=False):
         complete.append('Story chosen.')
     if preview is not None:
         complete.append(('Approved page' if not preview['draft'] else 'Draft page') + ' rendered for revision '
-                        + str(preview['revision']) + '.')
+                        + str(page(preview['revision'])) + '.')
     if passed or project['approval'] is not None:
         complete.append('Review recorded and checks passed.')
     if project['approval'] is not None:
-        complete.append(approved_words(project['approval']))
+        complete.append(approved_words(project['approval'], page))
+    action = 'Create preview' if stage == 'preview' and not deliveries else ACTIONS[stage]
+    if stage == 'approve':
+        action += ' ' + str(revision)
     needs = {
         'story': 'Find the story: your assistant proposes source-backed explanations.',
-        'choose': 'Choose one of the proposed stories.',
-        'build': 'Build the page from the chosen story.',
-        'preview': 'Update the preview so it shows revision ' + str(revision) + '.',
-        'review': 'Review the actual page and record what you checked. Checks then run on this computer.',
-        'check': 'Run the checks again for revision ' + str(revision) + '.' if checks else
-                 'Run the checks for revision ' + str(revision) + '.',
-        'approve': 'Approve revision ' + str(revision) + '. Only you can approve it.',
-        'export': 'Prepare the approved files for revision ' + str(revision) + '. This runs on this computer only.',
-        'deliver': 'Nothing. Download, deliver or share the approved files when you are ready.',
+        'choose': 'Choose a story from the proposals on this page.',
+        'build': 'Build page: compose the chosen story with your brand.',
+        'preview': 'Update preview so it shows revision ' + str(revision) + '.' if deliveries else
+                   'Create preview: render the page on this computer.',
+        'review': 'Review page: look at the actual page and record what you checked. Checks then run on this computer.',
+        'check': 'Run checks again for revision ' + str(revision) + '.' if checks else
+                 'Run checks for revision ' + str(revision) + '.',
+        'approve': action + '. Only you can approve it.',
+        'export': 'Prepare approved files for revision ' + str(revision) + '. This runs on this computer only.',
+        'deliver': 'Nothing required. Deliver approved page, or download or share its files, when you are ready.',
     }[stage]
     if checks and not passed and stage in ('review', 'check') and any(c['status'] != 'passed' for c in checks):
-        needs = 'Resolve the findings in Checks for this page, then review the page and run the checks again.'
+        needs = 'Resolve the findings in Checks for this page, then Review page again. Checks run straight after.'
+        action = ACTIONS['review']
     if approved_files:
-        downloads = 'Approved files for revision ' + str(approved_files['revision']) + ': PNG, PDF, SVG and text.'
+        downloads = 'Approved files for revision ' + str(page(approved_files['revision'])) + ': PNG, PDF, SVG and text.'
     elif preview is not None:
-        downloads = 'Draft files for revision ' + str(preview['revision']) + ', marked as drafts.'
+        downloads = 'Draft files for revision ' + str(page(preview['revision'])) + ', marked as drafts.'
     else:
         downloads = 'Nothing yet for the current revision.'
     if earlier is not None and approved_files is None:
-        downloads += ' Earlier approved files for revision ' + str(earlier['revision']) + ' stay in Saved files.'
-    return {'stage': stage, 'position': position, 'steps': steps, 'revision': revision,
+        downloads += ' Earlier approved files for revision ' + str(page(earlier['revision'])) + ' stay in Saved files.'
+    return {'stage': stage, 'position': position, 'steps': steps, 'revision': revision, 'action': action,
             'complete': ' '.join(complete) or 'Your brief and information are saved.', 'needs': needs,
             'downloads': downloads}
 

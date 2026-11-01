@@ -190,7 +190,15 @@ retry reads the existing verified delivery and never regenerates an image.
 --expected-revision CURRENT` creates a new revision without restoring approval.
 `action ID --file action.json` provides the full checked API. JSON always contains
 `action`, `expected_revision` and only that action's fields (see `runner/api.py`).
-A `compare` action takes `before` and `after` revision numbers.
+A `compare` action takes `before` and `after` revision numbers. It answers in words
+(`changes`, each `what`/`before`/`after`; `same` and `since` when nothing visible changed)
+and keeps the differing saved fields under `advanced`.
+
+`expected_revision` is always the saved revision. When you tell the person a number, use
+the page revision instead: `inspect` reports `page_revision` for the project, each
+delivery, Google delivery and history entry, and `approval_words`. Checks, reviews and
+approvals save revisions of their own but leave the page as it was, so they keep the page
+revision the person reviewed.
 
 `inspect ID` reports pending/unknown image intents even if later content edits
 invalidated the visible attempt array. It never resubmits. Cancel with

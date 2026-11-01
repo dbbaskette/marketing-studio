@@ -114,6 +114,12 @@ class NativeOutputTests(Isolated):
         self.native_output(folder)
         current = store.read(p["id"])
         self.assertTrue(jobs.recovery(p["id"])[0]["local_artwork_available"])
+        # Image work needs attention and the usage row say the same: made, not handed back.
+        self.assertTrue(jobs.recovery(p["id"])[0]["message"].startswith(
+            "The image was made but not handed back."))
+        listed = jobs.history(p["id"])[0]
+        self.assertEqual((listed["state"], listed["local_artwork_available"], listed["recovered"]),
+                         ("failed", True, False))
         with mock.patch(
             "runner.images.codex.execute", side_effect=AssertionError("No worker")
         ):
@@ -130,5 +136,8 @@ class NativeOutputTests(Isolated):
             "complete",
         )
         self.assertEqual(adapter.return_value.generate.call_count, 1)
+        listed = jobs.history(p["id"])[0]
+        self.assertEqual((listed["state"], listed["local_artwork_available"], listed["recovered"]),
+                         ("complete", False, True))
         with self.assertRaises(Invalid):
             jobs.recover(p["id"], "request1", expected_revision=current["revision"])

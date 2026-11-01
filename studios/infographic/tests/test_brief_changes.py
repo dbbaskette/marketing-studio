@@ -48,6 +48,10 @@ class FinishedWorkTests(LibraryCase):
         self.assertEqual(inspected['roadmap']['stage'], 'export')
         self.assertIn('Renaming kept the approval for revision ' + str(renamed['revision']),
                       inspected['roadmap']['complete'])
+        # Named by page revision: the one the person approved, then the renamed page.
+        self.assertEqual(inspected['approval_words'], 'You approved revision ' + str(done['page_revision'])
+                         + '. Renaming kept the approval for revision ' + str(renamed['revision']) + '.')
+        self.assertEqual(inspected['page_revision'], renamed['revision'], 'A rename changes the page')
         self.assertEqual(inspected['history'][0]['summary'], 'Renamed to “Restart one instance at a time”')
         # The earlier approved files stay downloadable and unchanged.
         earlier = next(d for d in inspected['deliveries'] if d['id'] == done['export']['id'])

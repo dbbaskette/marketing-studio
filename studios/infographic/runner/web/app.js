@@ -59,6 +59,8 @@ try {
 if(location.hash)history.replaceState(null,'',location.pathname);
 const $ = id => document.getElementById(id);
 let held = null, busy = false, picture = null, preferences = null;
+// The open infographic's toolbar primary action: the page shows that control at most once more.
+let primary = '';
 const draft = {research_first:false, materials: [], library: [], imported: [], step: 0, title: '', text: '', direction: 'suggest', audience: '', purpose: '', must: '', locked: '', exclusions: '', preset: 'a4'};
 const error = message => { $('notice').textContent = message; $('notice').hidden = !message; for(const node of document.querySelectorAll('[data-work-error]')){node.textContent=$('sheet').open?message:'';node.hidden=!message||!$('sheet').open;} };
 const toast = message => { const p = make('p', 'toast', message); $('toasts').replaceChildren(p); };
@@ -70,7 +72,10 @@ function field(label, value='', kind='input') { const wrap = make('label', 'fiel
 function stateLine(kind,words){const bead=make('span','bead');bead.dataset.state=kind;bead.setAttribute('aria-hidden','true');return add(make('p','state'),bead,document.createTextNode(words));}
 function lines(value) { return value.split('\n').map(v => v.trim()).filter(Boolean); }
 function list(items) { return add(make('ul'), ...items.map(item => make('li', '', item))); }
-function sheet(title, ...nodes) { $('sheet-body').replaceChildren(add(make('div', 'ig-sheet stack'), make('h2', 'sheet-title', title))); $('sheet-body').firstChild.firstChild.id = 'sheet-title'; const status=make('section','callout ig-work');status.dataset.workStatus='';status.setAttribute('role','status');status.setAttribute('aria-live','polite');const problem=make('p','problem');problem.dataset.workError='';problem.hidden=true;problem.setAttribute('role','alert');$('sheet-body').firstChild.append(status,problem,...nodes); if (!$('sheet').open) $('sheet').showModal(); paintWork(); }
+function sheet(title, ...nodes) { $('sheet-body').replaceChildren(add(make('div', 'ig-sheet stack'), make('h2', 'sheet-title', title))); $('sheet-body').firstChild.firstChild.id = 'sheet-title'; const status=make('section','callout ig-work');status.dataset.workStatus='';status.setAttribute('role','status');status.setAttribute('aria-live','polite');const problem=make('p','problem');problem.dataset.workError='';problem.hidden=true;problem.setAttribute('role','alert');$('sheet-body').firstChild.append(status,problem,...nodes.filter(node=>node!=null&&node!==false)); if (!$('sheet').open) $('sheet').showModal(); paintWork(); }
+// The one number a person is told for a saved revision: its page revision (history.Pages).
+// Checks, reviews and approvals save revisions of their own but leave the page as it was.
+function pageOf(saved){return saved?.page_revision??saved?.revision;}
 function closeSheet() { $('sheet').close(); paintWork(); }
 let work = null, workTimer = null;
 const workLabels = {'suggest':'Finding the story','build':'Building the page','art-direct':'Writing the art direction','image-start':'Generating artwork','inspect-images':'Inspecting the page','revise-story':'Revising the story','revise-art':'Revising the artwork','repair':'Repairing the page','preview':'Rendering the preview','export':'Preparing your files','google-deliver':'Delivering the Google Doc'};
@@ -144,14 +149,38 @@ async function request(route, data) {
   }finally{if(owner)endWork(owner);}
 }
 // Normalized image outcomes. Each says what happened and the next safe step; nothing is retried.
+// When saved artwork was found, every surface leads with that (image_jobs.FOUND): the notice,
+// Image work needs attention, Where this stands and the usage row.
+const imageFound='The image was made but not handed back. Choose Recover saved artwork to place it on the page on this computer, without a new image request.';
+const imageUncertain='This image request has not said how it ended, and no saved artwork was found on this computer. Nothing was resent. Cancel it under Image work needs attention before starting new image work.';
 const imageProblems={
-  'image-tool-unavailable':'The image worker finished without handing back a usable image. Your installed Codex may not offer its image tool here. Check Image work needs attention for local recovery.',
+  'image-tool-unavailable':'The image worker finished without handing back an image, and no saved artwork was found on this computer. Your installed Codex may not offer its image tool here. Nothing was resent.',
   'sign-in-required':'Sign in to your selected assistant on this computer, then start the image request again. Your earlier work is kept.',
   'quota':'The image provider reported a usage or rate limit. Your earlier work is kept. Try again when your allowance resets.',
   'invalid-asset':'The returned image was not a usable PNG, so it was not added. Your earlier work is kept.',
   'gemini-key-required':'Set GEMINI_API_KEY in the server launch environment before starting image work.',
   'image-model-unavailable':'Choose a Gemini image model available to your account in Settings.'
 };
+// One image request in words: which provider did what, and how it ended. Saved artwork that
+// was found or recovered is said first, as Image work needs attention says it.
+function usageWords(a){
+  const who=({codex:'Codex',gemini:'Gemini'}[a.provider]||a.provider)+' '+({generate:'image generation',edit:'reference edit'}[a.operation]||'image request');
+  const how=a.recovered?'recovered from saved artwork on this computer, without a new request'
+    :a.local_artwork_available?'the image was made but not handed back; saved artwork was found on this computer'
+    :({queued:'waiting to start',running:'running now',complete:'finished',failed:'did not hand back an image',cancelled:'cancelled','cancelled locally':'cancelled on this computer',unknown:'has not said how it ended','pending or interrupted':'pending or interrupted'}[a.state]||'outcome not recorded');
+  return who+': '+how+'.';
+}
+// What a finished action did, in words, once the infographic has been read again.
+function finished(verb){
+  const n=held?.page_revision;
+  return {'image-recover':'Recovered the saved artwork on this computer and placed it on the page, revision '+n+'. No new image request was made.',
+    'preview':'Preview updated: it shows revision '+n+'.','check':'Checks ran for revision '+n+'.',
+    'review':'Review recorded and checks ran for revision '+n+'.','inspect-images':'Your assistant inspected revision '+n+' and the checks ran.',
+    'export':'Approved files are ready for revision '+n+'.','approve':'You approved revision '+n+'.','build':'Page built: revision '+n+'.',
+    'visual-layout':'Visual layout rebuilt: revision '+n+'.','layout':'Layout changed: revision '+n+'.',
+    'select':'Story chosen. Build the page when you are ready.','suggest':'Stories proposed. Choose one to build.',
+    'restore':'Restored as revision '+n+'. Approval is not restored.','image-cancel':'The image request was cancelled on this computer. Remote charges may remain unknown.'}[verb]||'Saved.';
+}
 async function action(verb, values={}, revision=null, options={}) {
   if (busy) return; busy = true; error(''); const id = held.project.id;
   const label=verb==='suggest'&&held.planning_response?.available&&!values.fresh?'Checking the saved proposal':workLabels[verb];
@@ -160,7 +189,14 @@ async function action(verb, values={}, revision=null, options={}) {
   const polling=setInterval(async()=>{if(checking)return;checking=true;try{progressNotice(await request('/api/activity?id='+encodeURIComponent(id)),owner,id);}catch(f){connectionUncertain(owner);}finally{checking=false;}},2000);
   try {
     const answer = await request('/api/action', {action:verb, id, expected_revision:revision??held.project.revision, ...values});
-    closeSheet(); await openProject(id); if(options.quiet)return answer.result; if(answer.result?.state==='unknown')error('The image worker did not confirm completion. Check Image work needs attention for saved artwork or cancellation. No request was repeated.'); else if(answer.result?.state==='failed')error(imageProblems[answer.result.reason]||'The image provider could not finish. Your earlier work is kept.'); else if(answer.result?.state==='outdated')toast('The earlier result was kept privately and did not replace newer work.');else toast('Saved.'); return answer.result;
+    closeSheet(); await openProject(id); if(options.quiet)return answer.result;
+    const found=held?.recovery?.some(r=>r.local_artwork_available);
+    if(['unknown','failed'].includes(answer.result?.state)&&found)error(imageFound);
+    else if(answer.result?.state==='unknown')error(imageUncertain);
+    else if(answer.result?.state==='failed')error(imageProblems[answer.result.reason]||'The image provider could not finish. Your earlier work is kept.');
+    else if(answer.result?.state==='outdated')toast('The earlier result was kept privately and did not replace newer work.');
+    else toast(finished(verb));
+    return answer.result;
   } catch (failure) {
     if(workLabels[verb]&&(!failure.status||failure.status>=500)){
       clearInterval(polling);connectionUncertain(owner);
@@ -180,7 +216,7 @@ async function home() {
   try {
     const data = await request('/api/projects');
     const cards = data.projects.map(p => {
-      const node=card(p.title || 'Unreadable infographic', ...(p.problem?[make('p','problem',p.problem)]:[stateLine(p.readiness?.state||'current',p.readiness?.summary||'Saved'),make('p','quiet','Revision '+p.revision)]), button('Open ' + (p.title || p.id), () => openProject(p.id)));
+      const node=card(p.title || 'Unreadable infographic', ...(p.problem?[make('p','problem',p.problem)]:[stateLine(p.readiness?.state||'current',p.readiness?.summary||'Saved'),make('p','quiet','Revision '+pageOf(p))]), button('Open ' + (p.title || p.id), () => openProject(p.id)));
       node.classList.add('ig-project-card'); return node;
     });
     const intro=add(make('div','intro'),make('h2','large-title','Your infographics'),make('p','lede','Turn supplied information into one clear page.'));
@@ -323,25 +359,28 @@ function renderProject() {
   const currentDelivery=held.deliveries.find(d=>d.current), checked=held.review_checked&&p.checks.length&&p.checks.every(c=>c.status==='passed'), approved=p.approval&&checked, needsArtwork=p.scene?.art_regions?.length&&!p.scene.elements.some(e=>e.kind==='artwork');
   const savedPlan=held.planning_response?.available;
   const stage=held.roadmap?.stage, approvedFiles=held.deliveries.find(d=>d.approved_current);
-  let next={
-    story:[savedPlan?'Check saved proposal':'Find the story',()=>action('suggest')],
-    choose:['Choose a story',()=>document.querySelector('#story-choice').scrollIntoView({behavior:'smooth'})],
-    build:['Build page',compose],
-    preview:[held.deliveries.length?'Update preview':'Create preview',()=>action('preview')],
-    review:['Review page',()=>reviewSheet(currentDelivery)],
-    check:['Run checks',()=>action('check')],
-    approve:['Approve revision '+p.revision,approveRevision],
-    export:['Prepare approved files',()=>action('export',{draft:false})],
-    deliver:['Deliver or download',()=>approvedFiles&&deliverySheet(approvedFiles)]
-  }[stage]||[savedPlan?'Check saved proposal':'Find the story',()=>action('suggest')];
-  if(p.scene&&needsArtwork)next=['Build page',compose];
-  if(selected&&!nativeReady&&(!p.scene||!p.scene.visual_version))next=['Make this story visual',()=>reviseStorySheet(selected,true)];
-  else if(selected&&p.scene&&!p.scene.visual_version)next=['Rebuild visual layout',()=>action('visual-layout')];
-  const recoverable=held.recovery.find(r=>r.local_artwork_available);
-  if(recoverable)next=['Recover saved artwork',()=>action('image-recover',{request_id:recoverable.attempt_id})];
+  // One rule picks the toolbar's primary action, and Needs you always names it: the stage's
+  // action from the roadmap, unless saved artwork, an older plan or layout comes first.
+  const run={
+    story:()=>action('suggest'),
+    choose:()=>document.querySelector('#story-choice').scrollIntoView({behavior:'smooth'}),
+    build:compose, preview:()=>action('preview'), review:()=>reviewSheet(currentDelivery),
+    check:()=>action('check'), approve:approveRevision, export:()=>action('export',{draft:false}),
+    deliver:()=>approvedFiles&&deliverySheet(approvedFiles)};
+  let next=[held.roadmap?.action||'Find the story',run[stage]||run.story],needs=held.roadmap?.needs||'Find the story: your assistant proposes source-backed explanations.';
+  if(savedPlan&&(!stage||stage==='story')){next=['Check saved proposal',()=>action('suggest')];needs='Check saved proposal: it is checked on this computer, without using assistant allowance.';}
+  if(p.scene&&needsArtwork){next=['Build page',compose];needs='Build page: this page still needs its artwork.';}
+  if(selected&&!nativeReady&&(!p.scene||!p.scene.visual_version)){next=['Make this story visual',()=>reviseStorySheet(selected,true)];needs='Make this story visual: its labels are too long for diagrams, so your assistant suggests a visual plan first.';}
+  else if(selected&&p.scene&&!p.scene.visual_version){next=['Rebuild visual layout',()=>action('visual-layout')];needs='Rebuild visual layout: this page uses an older layout. Rebuilding runs on this computer.';}
+  const recoverable=held.recovery.find(r=>r.local_artwork_available),uncertain=held.recovery.find(r=>!r.local_artwork_available);
+  // New image work is refused while a request is uncertain, so cancelling it comes first.
+  if(uncertain&&!recoverable){next=['Cancel uncertain request',()=>action('image-cancel',{request_id:uncertain.attempt_id})];needs='Cancel uncertain request: '+imageUncertain.charAt(0).toLowerCase()+imageUncertain.slice(1).replace(' Cancel it under Image work needs attention before starting new image work.',' New image work can start once it is cancelled.');}
+  if(recoverable){next=['Recover saved artwork',()=>action('image-recover',{request_id:recoverable.attempt_id})];needs='Recover saved artwork: '+imageFound.charAt(0).toLowerCase()+imageFound.slice(1).replace(' Choose Recover saved artwork to place',' Recovering places');}
+  primary=next[0];
   heading(p.brief.title,button('Infographics',home),button(...next,true));
-  const parts=[make('p','lede','Choose the explanation, review the actual page, then approve its exact revision.'),roadmapView(held.roadmap)];
-  if(held.recovery.length) parts.push(card('Image work needs attention',...held.recovery.map(r=>add(make('div','stack'),make('p','',r.message),r.local_artwork_available?button('Recover saved artwork',()=>action('image-recover',{request_id:r.attempt_id}),true):button('Cancel uncertain request',()=>action('image-cancel',{request_id:r.attempt_id}))))));
+  const delivery=held.deliveries.find(d=>d.current) || held.deliveries[0];
+  const parts=[make('p','lede','Choose the explanation, review the actual page, then approve its exact revision.'),standing(held.roadmap,p,delivery,needs)];
+  if(held.recovery.length) parts.push(card('Image work needs attention',...held.recovery.map(r=>add(make('div','stack'),make('p','',r.message),r.local_artwork_available?button('Recover saved artwork',()=>action('image-recover',{request_id:r.attempt_id})):button('Cancel uncertain request',()=>action('image-cancel',{request_id:r.attempt_id}))))));
   if(selected&&((p.scene&&!p.scene.visual_version)||!nativeReady)){
     parts.push(card('Make this a visual infographic',make('p','','Earlier versions and captured facts are kept. A visual plan uses concise labels, diagrams and comparisons rather than paragraph blocks.'),
       button('Make this story visual',()=>reviseStorySheet(selected,true),true),
@@ -349,20 +388,22 @@ function renderProject() {
   }
   if(!p.stories.length)parts.push(savedPlan?card('Planning response saved',make('p','','Check the saved response locally, without using assistant allowance. Asking for a new plan starts a new assistant request.'),held.planning_response.detail?detail('What needs attention',make('p','',held.planning_response.detail)):null,button('Check saved proposal',()=>action('suggest')),button('Review source material',reviewCapturedSources),button('Ask for a new plan',()=>action('suggest',{fresh:true}))):card('Find a useful story',make('p','','Your supplied information is saved. The assistant proposes source-backed explanations; generation is a later explicit action.'),button('Find the story',()=>action('suggest')),detail('Author in your conversation',make('p','','Use native action JSON to save located facts and story proposals directly. A browser and nested planning assistant are not required.'))));
   if(held.planning_response?.problem)parts.push(card('Saved planning response needs attention',make('p','problem',held.planning_response.problem)));
+  let chosenStory=null;
   if(p.stories.length){
     const stories=p.stories.map(s=>card(s.headline,storyThumbnail(s),make('p','',s.takeaway),make('p','quiet',s.rationale),list(s.blocks.map(b=>b.title+': '+b.text)),...(s.qualifications.length?[list(s.qualifications)]:[]),s.omissions.length?make('p','problem','Required omissions: '+s.omissions.join(', ')):null,add(make('div','bar'),button('Ask for a revision',()=>reviseStorySheet(s)),button(s.id===p.selected_story?'Selected':'Use this story',()=>action('select',{story_id:s.id}),true))));
     const choices=add(make('section','stack'),make('h2','card-title','Choose the story'),add(make('div','ig-story-grid'),...stories));
-    choices.id='story-choice';parts.push(p.scene?detail('Story: '+selected.headline,choices):choices);
+    choices.id='story-choice';if(!p.scene)parts.push(choices);else chosenStory=detail('Story: '+selected.headline,choices);
   }
   if(selected && !p.scene)parts.push(card('Make the page',make('p','',p.brand?'Using pinned '+p.brand.identity.name+'.':'Compose with your configured brand. Brand settings are pinned when you choose this action.'),button('Build page',compose)));
-  const delivery=held.deliveries.find(d=>d.current) || held.deliveries[0];
+  // With a page built, the page comes first and the chosen story waits below it.
   if(delivery||p.scene)parts.push(workbench(p,delivery));
+  parts.push(chosenStory);
   if(p.scene) {
     parts.push(detail('Layout alternatives',button('Visual infographic',()=>nativeReady?action('visual-layout'):reviseStorySheet(selected,true)),button('Stacked blocks',()=>action('layout',{arrangement:'stack'})),button('Two columns',()=>action('layout',{arrangement:'columns'}))));
     if(p.scene.art_regions?.length)parts.push(detail('Artwork and image brief',card('Explanatory artwork',button('Revise this artwork',reviseArtSheet),make('p','','Artwork is raster; labels and chart marks stay editable. Review the exact art direction before starting or editing an image.'),...p.assets.map(a=>button('Compose saved image '+a.id,()=>action('compose-image',{asset_id:a.id}))),button('Suggest precise art direction',()=>action('art-direct')),detail('Write the art direction yourself',button('Describe subjects and relationships',artSheet)),...p.image_briefs.map(b=>detail('Saved image brief',make('pre','ig-csv-preview',b.prompt),button('Generate artwork using selected provider',()=>startImage(b)))))));
     if(delivery?.current)parts.push(finishCard(p,delivery,checked,approved));
   }
-  for(const sent of held.google_deliveries||[])parts.push(card((sent.current?'Google delivery':'Earlier Google delivery')+' · revision '+sent.revision,sent.url?googleLink(sent.url,'Open delivered Google Doc'):make('p','quiet','Outcome uncertain. Read-only reconciliation checks for the saved request; it never resends.'),sent.url?null:button('Reconcile Google delivery',()=>action('google-deliver',{export_id:sent.export_id,request_id:sent.request_id,account:sent.account,folder:sent.folder,reconcile:true},sent.revision))));
+  for(const sent of held.google_deliveries||[])parts.push(card((sent.current?'Google delivery':'Earlier Google delivery')+' · revision '+pageOf(sent),sent.url?googleLink(sent.url,'Open delivered Google Doc'):make('p','quiet','Outcome uncertain. Read-only reconciliation checks for the saved request; it never resends.'),sent.url?null:button('Reconcile Google delivery',()=>action('google-deliver',{export_id:sent.export_id,request_id:sent.request_id,account:sent.account,folder:sent.folder,reconcile:true},sent.revision))));
   if(held.visual_review)parts.push(detail('Visual review: '+held.visual_review.status,list(held.visual_review.observations),...held.visual_review.findings.map(f=>card(f.region_id+': '+(f.blocking?'Needs correction':'Suggestion'),make('p','',f.message),make('p','',f.correction)))));
   if(p.checks.length)parts.push(card('Checks for this page',...p.checks.map(c=>add(make('div','stack'),make('strong','',({'coverage':'Required content','facts':'Factual support','layout':'Page layout','brand-accessibility':'Brand and accessibility','visual':'Visual review'}[c.kind]||c.kind)+': '+c.status),list(c.findings || [])))));
   const editBrief=button('Edit brief',()=>briefSheet());editBrief.dataset.key='ig-edit-brief';
@@ -371,9 +412,9 @@ function renderProject() {
   const research=button('Research this topic',researchSheet);research.dataset.key='ig-research';
   parts.push(detail('Brief and requirements',editBrief,make('p','',p.brief.audience||'Audience not specified'),list(p.brief.must_show.map(r=>r.text))));
   parts.push(detail('Sources and facts',updateSources,importMaterial,libraryAddButton(),make('p','quiet',LIBRARY_CLEARS),research,...p.sources.map(s=>card(s.name||s.id,make('p','quiet',s.characters+' captured characters'),...libraryNote(s),button('Review '+(s.name||s.id),()=>sourceTextSheet(s)))),list(held.source_findings.map(f=>f.message)),...p.facts.map(f=>card(f.statement,make('p','quiet','Supplied assertion; not independently corroborated.'),list((f.evidence||[]).map(q=>q.source_id+' ['+q.start+'–'+q.end+']: '+(q.quote||'')))))));
-  if(held.image_history?.length)parts.push(detail('Image requests and usage',...held.image_history.map(a=>add(make('div','stack'),make('p','',a.provider+' · '+a.operation+' · '+a.state),make('p','quiet',a.usage?'Reported tokens: '+(a.usage.input_tokens??'unknown')+' in / '+(a.usage.output_tokens??'unknown')+' out. Cost: '+(a.usage.cost??'not reported')+'.':'Usage not reported; no estimate was invented.'),button('Inspect saved image request',()=>imageRequestSheet(a.id))))));
+  if(held.image_history?.length)parts.push(detail('Image requests and usage',...held.image_history.map(a=>add(make('div','stack'),make('p','',usageWords(a)),make('p','quiet',a.usage?'Reported tokens: '+(a.usage.input_tokens??'unknown')+' in / '+(a.usage.output_tokens??'unknown')+' out. Cost: '+(a.usage.cost??'not reported')+'.':'Usage not reported; no estimate was invented.'),button('Inspect saved image request',()=>imageRequestSheet(a.id))))));
   if(held.deliveries.length)parts.push(detail('Saved files',make('p','quiet','Every rendered revision keeps its files. Approved files never change; an edit makes a new draft.'),...held.deliveries.map(savedFiles)));
-  parts.push(detail('History',make('p','quiet','Each saved revision is kept. Restoring makes new work and never brings back an approval.'),add(make('div','desk-versions'),...held.history.map((v,i)=>historyEntry(v,i===0))),held.history.length>=100&&held.history.at(-1).revision>0?button('Older revisions',olderHistory):null));
+  parts.push(detail('History',make('p','quiet','Each saved revision is kept. Restoring makes new work and never brings back an approval.'),add(make('div','desk-versions'),...historyGroups(held.history).map((g,i)=>historyGroup(g,i===0))),held.history.length>=100&&held.history.at(-1).revision>0?button('Older revisions',olderHistory):null));
   $('main').replaceChildren(...parts.filter(Boolean));
   restoreBench();
 }
@@ -396,21 +437,15 @@ function ledgerItem(name,words,state,detail){
 }
 function workbench(p,delivery){
   if(bench.project!==p.id){keepBench();bench={project:p.id,element:String(benchStore.elements[p.id]||''),drafts:{...(benchStore.drafts[p.id]||{})},saved:null,failed:'',unchanged:false,focus:false,scroll:null};}
-  const names=held.elements||[];
-  const approvedFiles=held.deliveries.find(d=>!d.draft);
-  const ledger=add(make('div','ig-ledger'),
-    ledgerItem('Current work','Revision '+p.revision,'current',held.readiness?.summary),
-    ledgerItem('Preview',delivery?'Revision '+delivery.revision:'Not rendered yet',delivery?.current?'done':'review',delivery?(delivery.current?(delivery.revision===p.revision?'Shows your current work.':'Shows your current content; later revisions only recorded checks or approval.'):'Outdated: it does not show your latest changes.'):'Create a preview to see the page.'),
-    ledgerItem('Approved delivery',approvedFiles?'Revision '+approvedFiles.revision:'None yet',approvedFiles?.approved_current?'done':'review',approvedFiles?(approvedFiles.approved_current?'Matches your current work.':'Earlier files, kept unchanged.'):'Approve a checked revision to deliver it.'));
-  ledger.setAttribute('aria-label','Revisions');ledger.setAttribute('role','group');
+  const names=held.elements||[],n=held.page_revision;
   // With no current page there is nothing to update: say which page this is and the next step.
   const stage=held.roadmap?.stage,again=stage==='build'?'Build the page again to edit or approve it.':(stage==='choose'?'Choose a story':held.planning_response?.available?'Check the saved proposal':'Find the story')+' and build the page again to edit or approve it.';
   const kept=delivery&&!delivery.current&&p.approval;      // a rename kept the approval
-  const view=make('section','card stack ig-view');view.append(make('h2','card-title',!delivery?'Page preview':!p.scene?'Earlier page (revision '+delivery.revision+')':kept?'Approved revision '+p.revision+': prepare its files':!delivery.current?'Earlier preview: update it to see your changes':delivery.draft&&p.approval?'Approved revision '+p.revision+': prepare its files':delivery.draft?'Draft page':delivery.approved_current?'Approved delivery':'Earlier approval: review the current revision'));
+  const view=make('section','card stack ig-view');view.append(make('h2','card-title',!delivery?'Page preview':!p.scene?'Earlier page (revision '+pageOf(delivery)+')':kept?'Approved revision '+n+': prepare its files':!delivery.current?'Earlier preview: update it to see your changes':delivery.draft&&p.approval?'Approved revision '+n+': prepare its files':delivery.draft?'Draft page':delivery.approved_current?'Approved delivery':'Earlier approval: review the current revision'));
   const mark=make('div','ig-mark');mark.hidden=true;mark.setAttribute('aria-hidden','true');
   let img=null,figure=null;
   if(delivery){
-    img=make('img','ig-preview');img.alt='Rendered '+(delivery.draft?'draft':'approved')+' infographic, revision '+delivery.revision;
+    img=make('img','ig-preview');img.alt='Rendered '+(delivery.draft?'draft':'approved')+' infographic, revision '+pageOf(delivery);
     if(p.scene){img.width=Math.round(p.scene.width);img.height=Math.round(p.scene.height);}
     figure=add(make('div','ig-figure'),img,mark);
     const scroll=add(make('div','ig-preview-scroll'),figure);
@@ -419,18 +454,18 @@ function workbench(p,delivery){
     zoom(false);
     const tools=add(make('div','ig-page-tools'),fit,actual);
     const which=delivery.draft?' draft':delivery.approved_current?'':' (earlier approved)';
-    for(const format of ['png','pdf','svg','text'])tools.append(button('Download '+format.toUpperCase()+which,async()=>{try{await download(delivery,format);}catch(f){error(f.message);}}));
-    if(delivery.approved_current)tools.append(button('Deliver Google Doc or PDF',()=>deliverySheet(delivery)),button('Share selected files with team',()=>shareSheet(delivery)));
+    for(const format of ['png','pdf','svg','text'])tools.append(button('Download '+FORMAT_NAMES[format]+which,async()=>{try{await download(delivery,format);}catch(f){error(f.message);}}));
+    if(delivery.approved_current){if(primary!=='Deliver approved page')tools.append(button('Deliver approved page',()=>deliverySheet(delivery)));tools.append(button('Share selected files with team',()=>shareSheet(delivery)));}
     const library=delivery.approved_current?keptPart(delivery):null;
-    if(!p.scene)view.append(make('p','','Your current work, revision '+p.revision+', has no page yet. '+again),make('p','quiet','This is revision '+delivery.revision+(delivery.draft?', a draft.':'. Its approved files stay downloadable and unchanged.')));
-    else if(kept)view.append(make('p','quiet','Shows approved revision '+delivery.revision+'. Prepare the approved files for revision '+p.revision+' on this computer so they carry its title. Nothing is sent anywhere.'),button('Prepare approved files',()=>action('export',{draft:false}),true));
-    else view.append(make('p','quiet',delivery.current?'Shows revision '+delivery.revision+'. Select words on the page to edit them.':'Shows revision '+delivery.revision+'. Your current work is revision '+p.revision+'.'));
-    if(!delivery.current&&p.scene&&!kept)view.append(button('Update preview',()=>action('preview'),true));
+    if(!p.scene)view.append(make('p','','Your current work, revision '+n+', has no page yet. '+again),make('p','quiet','This is revision '+pageOf(delivery)+(delivery.draft?', a draft.':'. Its approved files stay downloadable and unchanged.')));
+    else if(kept)add(view,make('p','quiet','Shows approved revision '+pageOf(delivery)+'. Prepare the approved files for revision '+n+' on this computer so they carry its title. Nothing is sent anywhere.'),primary==='Prepare approved files'?null:button('Prepare approved files',()=>action('export',{draft:false}),true));
+    else view.append(make('p','quiet',delivery.current?'Shows revision '+pageOf(delivery)+'. Select words on the page to edit them.':'Shows revision '+pageOf(delivery)+'. Your current work is revision '+n+'.'));
+    if(!delivery.current&&p.scene&&!kept&&primary!=='Update preview')view.append(button('Update preview',()=>action('preview'),true));
     view.append(scroll,tools);
     if(library)view.append(library);
     showPicture(delivery,img,p.id);
-  }else if(p.scene)view.append(make('p','','No preview yet. Rendering is local and starts no assistant or image request.'),button('Create preview',()=>action('preview'),true));
-  const parts=[ledger,view];
+  }else if(p.scene)add(view,make('p','','No preview yet. Rendering is local and starts no assistant or image request.'),primary==='Create preview'?null:button('Create preview',()=>action('preview'),true));
+  const parts=[view];
   if(p.scene&&names.length)parts.push(inspector(p,names,img,mark));
   return add(make('div','ig-workbench'),...parts);
 }
@@ -455,11 +490,11 @@ function inspector(p,names,img,mark){
   function pending(){
     const chosen=names.find(n=>n.id===bench.element),unsaved=words.input.value!==chosen.text;
     if(bench.failed){state.className='ig-save-state problem';state.textContent=bench.failed+' Your words are kept here.';return;}
-    if(bench.unchanged&&!unsaved){state.className='ig-save-state';state.textContent='Nothing changed, so no revision was made. These words are already in revision '+held.project.revision+'.';return;}
+    if(bench.unchanged&&!unsaved){state.className='ig-save-state';state.textContent='Nothing changed, so no revision was made. These words are already in revision '+held.page_revision+'.';return;}
     if(bench.saved&&!unsaved&&bench.saved.revision===held.project.revision){
+      // The toolbar's Update preview is the one control for this; the words say so.
       const stale=!held.deliveries.find(d=>d.current);state.className='ig-save-state';
-      state.replaceChildren(document.createTextNode('Saved '+bench.saved.label+' as revision '+bench.saved.revision+'. '+(stale?'The preview still shows an earlier revision. Update it to see this change before review.':'')));
-      if(stale)state.append(button('Update preview',()=>action('preview')));
+      state.textContent='Saved '+bench.saved.label+' as revision '+held.page_revision+'. '+(stale?'The preview still shows an earlier revision. Choose Update preview to see this change before review.':'');
       return;
     }
     state.className='ig-save-state quiet';state.textContent=unsaved?'Unsaved words. Saving makes a new revision; approval is never carried over.':'Saving makes a new revision. Approval is never carried over.';
@@ -499,41 +534,71 @@ function showPicture(delivery,img,id){
   if(picture&&pictureFor===delivery.id){img.src=picture;return;}
   download(delivery,'png',true).then(url=>{if(held?.project.id===id&&document.body.contains(img)){resetPicture();picture=url;pictureFor=delivery.id;img.src=url;}else URL.revokeObjectURL(url);}).catch(f=>error(f.message));
 }
+// One label per format, everywhere a file is offered.
+const FORMAT_NAMES={png:'PNG',pdf:'PDF',svg:'SVG',text:'text'};
 function savedFiles(d){
-  const words=(d.draft?'Draft':'Approved')+' · revision '+d.revision+(d.approved_current?' · current approval':d.current?' · matches current work':' · earlier');
-  return add(make('div','desk-version'),make('span','',words),add(make('div','ig-page-tools'),...['png','pdf','svg','text'].map(format=>{const node=button(format==='text'?'Text':format.toUpperCase(),async()=>{try{await download(d,format);}catch(f){error(f.message);}});node.setAttribute('aria-label','Download '+(format==='text'?'accessible text':format.toUpperCase())+', '+(d.draft?'draft':'approved')+' revision '+d.revision);return node;})));
+  const words=(d.draft?'Draft':'Approved')+' · revision '+pageOf(d)+(d.approved_current?' · current approval':d.current?' · matches current work':' · earlier');
+  return add(make('div','desk-version'),make('span','',words),add(make('div','ig-page-tools'),...['png','pdf','svg','text'].map(format=>{const node=button(format==='text'?'Text':FORMAT_NAMES[format],async()=>{try{await download(d,format);}catch(f){error(f.message);}});node.setAttribute('aria-label','Download '+FORMAT_NAMES[format]+', '+(d.draft?'draft':'approved')+' revision '+pageOf(d));return node;})));
 }
-function historyEntry(v,current){
-  const facts=[when(v.saved_at),'Revision '+v.revision+(current?' (current)':''),v.affected?.length?'Changed: '+v.affected.join(', '):'',v.approved?'Approved at this revision':''].filter(Boolean).join(' · ');
-  return add(make('div','desk-version'),add(make('div','ig-entry'),make('strong','',v.summary||'Saved revision '+v.revision),make('span','quiet',facts),make('span','quiet','Exact identity '+v.sha256.slice(0,12))),
-    current?null:add(make('div','bar'),button('Compare revision '+v.revision+' with current',()=>compareSheet(v)),button('Restore revision '+v.revision,()=>restoreSheet(v))));
+// History by page revision: each group is the revision that changed the page, then what the
+// revisions after it recorded (checks, a review, an approval, art direction, image requests).
+// Compare and Restore belong to the group, so a bookkeeping entry offers neither.
+function historyGroups(entries){
+  const groups=[];
+  for(const v of entries){const page=pageOf(v);let group=groups.at(-1);if(!group||group.page!==page){group={page,entries:[]};groups.push(group);}group.entries.push(v);}
+  return groups;
 }
-function roadmapView(map){
+function historyGroup(group,current){
+  const newest=group.entries[0],oldest=group.entries.at(-1),head=oldest.revision===group.page?oldest:null;
+  const later=(head?group.entries.slice(0,-1):group.entries).slice().reverse();
+  const facts=[when((head||oldest).saved_at),'Revision '+group.page+(current?' (current)':''),head?.affected?.length?'Changed: '+head.affected.join(', '):'',newest.approved?'Approved':''].filter(Boolean).join(' · ');
+  return add(make('div','desk-version'),add(make('div','ig-entry'),make('strong','',head?.summary||'Revision '+group.page),make('span','quiet',facts),
+      later.length?make('span','quiet','Then: '+later.map(v=>v.summary).join('; ')+'.'):null),
+    current?null:add(make('div','bar'),button('Compare revision '+group.page+' with current',()=>compareSheet(newest,group.page)),button('Restore revision '+group.page,()=>restoreSheet(newest,group.page))));
+}
+// Where this stands: the one status surface. The route, the one next step (named as the
+// toolbar names it), the three revisions that matter, and what can be downloaded.
+function standing(map,p,delivery,needs){
   if(!map)return null;
   const steps=add(make('ol','workflow-steps ig-roadmap'),...map.steps.map(step=>{
     const item=make('li','workflow-step');const bead=make('span','bead');bead.dataset.state=step.state==='done'?'done':step.state==='current'?'current':'none';bead.setAttribute('aria-hidden','true');
     item.append(bead,document.createTextNode(' '+step.label+(step.state==='done'?' (done)':'')));if(step.state==='current')item.setAttribute('aria-current','step');return item;}));
   steps.setAttribute('aria-label','Steps to an approved delivery');
-  const line=(name,words)=>add(make('p',''),make('strong','',name+' '),document.createTextNode(words));
-  return add(make('section','card stack ig-standing'),make('h2','card-title','Where this stands'),steps,line('Complete:',map.complete),line('Needs you:',map.needs),line('Downloads:',map.downloads));
+  const line=(name,words,cls='')=>add(make('p',cls),make('strong','',name+' '),document.createTextNode(words));
+  let ledger=null;
+  if(delivery||p.scene){
+    const n=held.page_revision,approvedFiles=held.deliveries.find(d=>d.approved_current)||held.deliveries.find(d=>!d.draft);
+    ledger=add(make('div','ig-ledger'),
+      ledgerItem('Current work','Revision '+n,'current',held.readiness?.summary),
+      ledgerItem('Preview',delivery?'Revision '+pageOf(delivery):'Not rendered yet',delivery?.current?'done':'review',delivery?(delivery.current?(pageOf(delivery)===n?'Shows your current work.':'Shows the same page as your current work, saved earlier as revision '+pageOf(delivery)+'.'):'Outdated: it does not show your latest changes.'):'Create a preview to see the page.'),
+      ledgerItem('Approved delivery',approvedFiles?'Revision '+pageOf(approvedFiles):'None yet',approvedFiles?.approved_current?'done':'review',approvedFiles?(approvedFiles.approved_current?'Matches your current work.':'Earlier files, kept unchanged.'):'Approve a checked revision to deliver it.'));
+    ledger.setAttribute('aria-label','Revisions');ledger.setAttribute('role','group');
+  }
+  return add(make('section','card stack ig-standing'),make('h2','card-title','Where this stands'),steps,line('Needs you:',needs,'ig-needs'),ledger,line('Downloads:',map.downloads));
 }
+// Review and finish: the steps still to do, with finished ones folded into one line and
+// Review again behind a disclosure. Nothing here reads as required once it is done.
 function finishCard(p,delivery,checked,approved){
-  const prepared=held.deliveries.some(d=>d.approved_current);
+  const n=held.page_revision,prepared=held.deliveries.some(d=>d.approved_current);
   const step=(title,words,...controls)=>add(make('div','stack ig-finish-step'),make('strong','',title),make('p','',words),...controls.filter(Boolean));
+  const reviewing=()=>add(make('div','bar'),button('Review page',()=>reviewSheet(delivery)),button('Inspect page with assistant',()=>action('inspect-images',{then_check:true})));
+  const checking=()=>add(make('div','bar'),button('Run checks again',()=>action('check')),p.checks.some(c=>c.status!=='passed')?button('Repair findings',repairSheet):null);
+  const again=(words)=>detail('Review again',make('p','quiet',words),reviewing(),checking());
+  if(approved)return card('Review and finish',stateLine('done',held.approval_words+' '+(prepared?'Download its files from the page above, or from Saved files further down.':'Prepare its files on this computer; nothing is sent anywhere.')),
+    prepared||primary==='Prepare approved files'?null:button('Prepare approved files',()=>action('export',{draft:false}),true),
+    again('A new review records what you checked and runs the checks again. It never changes the approved files.'));
+  if(checked)return card('Review and finish',stateLine('done','Reviewed and checked: revision '+n+'. The checks passed against your latest review.'),
+    again('Review the page again or rerun the checks if something changed outside this page. Approval still waits for you.'),
+    step('Approve (your decision)','Approval applies to revision '+n+' only. Its final files are prepared on this computer straight after; a later change needs a new review.',button('Approve revision '+n,approveRevision,true)));
   return card('Review and finish',
-    step('1. Review the page (required)','Look at the actual page for revision '+delivery.revision+' at its intended size: facts and qualifications, objects and relationships, crop and resolution, label clearance and brand. Recording your review runs the checks straight after.',
-      add(make('div','bar'),button('Record my review and run checks',()=>reviewSheet(delivery)),button('Inspect page with assistant (optional)',()=>action('inspect-images',{then_check:true})))),
-    step('2. Checks (on this computer)','Required content, factual support, page layout, brand and accessibility, and your latest review. They start no assistant or image request.',
-      add(make('div','bar'),button('Run checks again',()=>action('check')),p.checks.some(c=>c.status!=='passed')?button('Repair findings',repairSheet):null)),
-    step('3. Approve (your decision)',approved?(prepared?approvedWords(p.approval)+' Its files are ready below and in Saved files.':approvedWords(p.approval)+' Prepare its files on this computer; nothing is sent anywhere.'):checked?'Approval applies to revision '+p.revision+' only. Its final files are prepared on this computer straight after; a later change needs a new review.':'Approval becomes available when the current checks pass against your latest review.',
-      approved?(prepared?null:button('Prepare approved files',()=>action('export',{draft:false}),true)):checked?button('Approve revision '+p.revision+' and prepare files',approveRevision,true):null));
+    step('1. Review the page (required)','Look at the actual page for revision '+n+' at its intended size: facts and qualifications, objects and relationships, crop and resolution, label clearance and brand. Recording your review runs the checks straight after. Asking your assistant to inspect it is optional.',reviewing()),
+    step('2. Checks (on this computer)','Required content, factual support, page layout, brand and accessibility, and your latest review. They start no assistant or image request.',checking()),
+    step('3. Approve (your decision)','Approval becomes available when the current checks pass against your latest review.'));
 }
-// Which revision the person approved, and whether a rename carried it (progress.approved_words).
-function approvedWords(a){return a.carried?.reason==='rename'?'You approved revision '+a.carried.from_revision+'. Renaming kept the approval for revision '+a.revision+'.':'You approved revision '+a.revision+'.';}
 async function approveRevision(){
   const result=await action('approve',{then_export:true});
-  if(result?.approved&&result.problem)error('Revision '+result.revision+' is approved, but its files are not ready: '+result.problem+' Choose Prepare approved files to try again on this computer.');
-  else if(result?.approved&&result.library?.state==='failed')error('Revision '+result.revision+' is approved and its files are ready, but they were not kept in the Document Library: '+result.library.problem+' Choose Keep in library again.');
+  if(result?.approved&&result.problem)error('Revision '+pageOf(result)+' is approved, but its files are not ready: '+result.problem+' Choose Prepare approved files to try again on this computer.');
+  else if(result?.approved&&result.library?.state==='failed')error('Revision '+pageOf(result)+' is approved and its files are ready, but they were not kept in the Document Library: '+result.library.problem+' Choose Keep in library again.');
 }
 // The shared Document Library (library.js). Add from library makes chosen revisions sources
 // of this infographic, Use revision N takes a newer one only when pressed, and approved files
@@ -663,10 +728,10 @@ function receiptCard(title,state,words,...controls){
 }
 function receiptSheet(delivery,receipts){
   const parts=receipts.map(r=>{
-    if(r.kind==='pdf')return receiptCard('PDF',r.ok?'done':'late',r.ok?'Downloaded: approved revision '+delivery.revision+'.':'Not downloaded: '+r.message,
+    if(r.kind==='pdf')return receiptCard('PDF',r.ok?'done':'late',r.ok?'Downloaded: approved revision '+pageOf(delivery)+'.':'Not downloaded: '+r.message,
       button(r.ok?'Download PDF again':'Retry PDF download',async()=>{try{await download(delivery,'pdf');toast('PDF downloaded again.');}catch(f){error(f.message);}}));
     const result=r.result||{};
-    if(result.url)return receiptCard('Google Doc','done','Delivered: approved revision '+delivery.revision+'.',googleLink(result.url,'Open Google Doc'));
+    if(result.url)return receiptCard('Google Doc','done','Delivered: approved revision '+pageOf(delivery)+'.',googleLink(result.url,'Open Google Doc'));
     const saved=(held?.google_deliveries||[]).some(g=>g.request_id===r.request_id);
     const uncertain=saved&&(!r.result||result.state==='unknown');
     const resend=async()=>{const request_id=requestId();const again=await action('google-deliver',{export_id:delivery.id,request_id,folder:r.folder},delivery.revision,{quiet:true});receiptSheet(delivery,receipts.map(x=>x===r?{...r,request_id,result:again,problem:again?null:$('notice').textContent}:x));};
@@ -676,7 +741,7 @@ function receiptSheet(delivery,receipts){
       button('Check again without resending',check),uncertain?null:button('Send again',resend));
   });
   const partial=receipts.some(r=>r.kind==='pdf'?!r.ok:!r.result?.url)&&receipts.some(r=>r.kind==='pdf'?r.ok:!!r.result?.url);
-  sheet('Delivery receipt',make('p','','Approved revision '+delivery.revision+'. Each format you chose is listed with what happened.'),...parts,
+  sheet('Delivery receipt',make('p','','Approved revision '+pageOf(delivery)+'. Each format you chose is listed with what happened.'),...parts,
     partial?make('p','quiet','What succeeded is kept. Retrying the PDF is a download on this computer and sends nothing to Google.'):null,add(make('div','create-foot bar'),button('Done',closeSheet,true)));
 }
 async function compose(){
@@ -692,8 +757,9 @@ function artSheet(){const raw=field('Precise image direction JSON (advanced)',''
 async function startImage(brief){
   try{preferences=await request('/api/preferences');const capability=await request('/api/computer');sheet('Generate artwork',make('p','',capability.disclosure),make('p','','This starts a provider request using the saved brief. Unknown outcomes are kept for explicit recovery; reopening never resubmits.'),add(make('div','bar'),button('Generate artwork',()=>action('image-start',{brief_id:brief.id,provider:preferences.image_provider,request_id:requestId()}),true),button('Cancel',closeSheet)));}catch(f){error(f.message);}
 }
-function reviewSheet(delivery){const observations=field('What did you inspect on the actual composed page?','','textarea');sheet('Review the actual page',make('p','','Look at the rendered page for revision '+delivery.revision+' at its intended size, then say what you checked. Recording your review runs the local checks straight after; nothing is approved.'),observations.wrap,add(make('div','bar'),button('Record review and run checks',()=>action('review',{export_id:delivery.id,observations:lines(observations.input.value),then_check:true}),true),button('Cancel',closeSheet)),detail('Optional: ask your assistant to inspect it',make('p','quiet','Your assistant looks at the actual page and artwork and records located findings. It uses your assistant allowance and never approves.'),button('Inspect page with assistant',()=>action('inspect-images',{then_check:true}))));}
-function restoreSheet(version){sheet('Restore revision '+version.revision+'?',make('p','','Creates a new revision. Current sources, images and deliveries remain in history; approval is not restored.'),add(make('div','bar'),button('Restore as a new revision',()=>action('restore',{revision:version.revision,sha256:version.sha256}),true),button('Cancel',closeSheet)));}
+function reviewSheet(delivery){const observations=field('What did you inspect on the actual composed page?','','textarea');sheet('Review page',make('p','','Look at the rendered page for revision '+pageOf(delivery)+' at its intended size, then say what you checked. Recording your review runs the local checks straight after; nothing is approved.'),observations.wrap,add(make('div','bar'),button('Record review and run checks',()=>action('review',{export_id:delivery.id,observations:lines(observations.input.value),then_check:true}),true),button('Cancel',closeSheet)),detail('Optional: ask your assistant to inspect it',make('p','quiet','Your assistant looks at the actual page and artwork and records located findings. It uses your assistant allowance and never approves.'),button('Inspect page with assistant',()=>action('inspect-images',{then_check:true}))));}
+// `page` is the page revision the person chose; `version` is its newest saved revision.
+function restoreSheet(version,page=pageOf(version)){sheet('Restore revision '+page+'?',make('p','','Creates a new revision with this page. Current sources, images and deliveries remain in history; approval is not restored.'),detail('Advanced',make('p','quiet','Restores saved revision '+version.revision+', exact identity '+version.sha256.slice(0,12)+'.')),add(make('div','bar'),button('Restore as a new revision',()=>action('restore',{revision:version.revision,sha256:version.sha256}),true),button('Cancel',closeSheet)));}
 async function showSettings() {
   if (busy) return;
   held = null;
@@ -778,7 +844,33 @@ window.addEventListener('pageshow',event=>{
 });
 
 function reviseArtSheet(){const change=field('What should change?','','textarea'),preserve=field('What should stay the same?','Keep all other subjects, relationships, brand, empty label regions and composition.','textarea');sheet('Revise the artwork',make('p','','This sends the saved original as a reference to your selected image provider. It uses provider allowance; the earlier artwork remains in history.'),change.wrap,preserve.wrap,add(make('div','bar'),button('Create referenced revision',()=>action('revise-art',{change:change.input.value,preserve:preserve.input.value,request_id:requestId()}),true),button('Cancel',closeSheet)));}
-async function compareSheet(version){try{const result=await request('/api/action',{action:'compare',id:held.project.id,expected_revision:held.project.revision,before:version.revision,after:held.project.revision});sheet('Changes since revision '+version.revision,...Object.entries(result.result).map(([key,value])=>detail(key,make('h3','','Before'),make('pre','ig-csv-preview',JSON.stringify(value.before,null,2)),make('h3','','Current'),make('pre','ig-csv-preview',JSON.stringify(value.after,null,2)))),button('Done',closeSheet));}catch(f){error(f.message);}}
+// Compare shows what a person can see: words by element, sources, story, layout and a
+// thumbnail of each side. The saved fields themselves wait behind Advanced.
+async function compareSheet(version,page=pageOf(version)){
+  try{
+    const found=(await request('/api/action',{action:'compare',id:held.project.id,expected_revision:held.project.revision,before:version.revision,after:held.project.revision})).result;
+    const parts=[];
+    if(found.same){
+      parts.push(make('p','','No changes to the page. Revision '+page+' and the current revision show the same page.'));
+      if(found.since.length)parts.push(make('p','quiet','The revisions in between only recorded: '+found.since.join('; ')+'.'));
+    }else{
+      const urls=[];
+      const side=(label,which)=>{
+        const shown=held.deliveries.find(d=>d.id===which?.export);if(!shown)return null;
+        const img=make('img','ig-compare-thumb');img.alt=label+': rendered revision '+pageOf(shown);
+        download(shown,'png',true).then(url=>{urls.push(url);img.src=url;}).catch(()=>{img.replaceWith(make('p','quiet','The '+label.toLowerCase()+' page could not be shown.'));});
+        return add(make('figure','ig-compare-side'),img,make('figcaption','quiet',label+' · revision '+pageOf(shown)));
+      };
+      const before=side('Before',found.before),after=side('Now',found.after);
+      if(before||after)parts.push(add(make('div','ig-compare'),before,after));
+      $('sheet').addEventListener('close',()=>urls.forEach(url=>URL.revokeObjectURL(url)),{once:true});
+      parts.push(add(make('div','stack'),...found.changes.map(c=>add(make('div','stack ig-change'),make('strong','',c.what),
+        c.before!=null?make('p','','Before: '+c.before):null,c.after!=null?make('p','','Now: '+c.after):null))));
+    }
+    parts.push(detail('Advanced',make('p','quiet','The saved fields that differ, exactly as stored.'),...Object.entries(found.advanced).map(([key,value])=>detail(key,make('pre','ig-csv-preview',JSON.stringify(value,null,2))))));
+    sheet('Changes since revision '+page,...parts,add(make('div','create-foot bar'),button('Done',closeSheet,true)));
+  }catch(f){error(f.message);}
+}
 // `kept` brings back what was typed or chosen when a confirmation is cancelled.
 function sourceSheet(kept=null) {
   const value=field('New or replacement supplied information',kept?.text||'','textarea');
@@ -916,7 +1008,7 @@ async function deliverySheet(delivery){
       if(choice!=='pdf'){const result=await action('google-deliver',{export_id:delivery.id,request_id:savedRequest,folder:folder.input.value},null,{quiet:true});receipts.push({kind:'google',result,request_id:savedRequest,folder:folder.input.value,problem:result?null:$('notice').textContent});}
       receiptSheet(delivery,receipts);
     }finally{go.disabled=false;}},true);
-  sheet('Deliver this approved revision',make('p','','PDF preserves the exact approved one-page render. A new Google Doc contains that page as an image, plus editable text and source notes. Your original document is kept. Google conversion layout requires visual review in Docs.'),make('p','quiet','Starts with your shared Marketing Studio delivery choice and existing Google sign-in.'),format.wrap,detail('Choose a destination folder',folder.wrap),problem,add(make('div','bar'),go,button('Cancel',closeSheet)));
+  sheet('Deliver approved page',make('p','','Approved revision '+pageOf(delivery)+'. To download its PNG, SVG or text instead, use the Download buttons beside the page.'),make('p','','PDF preserves the exact approved one-page render. A new Google Doc contains that page as an image, plus editable text and source notes. Your original document is kept. Google conversion layout requires visual review in Docs.'),make('p','quiet','Starts with your shared Marketing Studio delivery choice and existing Google sign-in.'),format.wrap,detail('Choose a destination folder',folder.wrap),problem,add(make('div','bar'),go,button('Cancel',closeSheet)));
 }
 
 async function handoffSheet(done){

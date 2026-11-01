@@ -44,6 +44,11 @@
 .ig-inspector .input { width: 100%; max-width: none; box-sizing: border-box; }
 .ig-save-state { min-height: 1.4rem; margin: 0; }
 .ig-entry { display: grid; gap: .2rem; min-width: 0; }
+/* Compare: a thumbnail of each side, then what changed in words. */
+.ig-compare { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr)); gap: .75rem; }
+.ig-compare-side { margin: 0; min-width: 0; }
+.ig-compare-thumb { display: block; width: 100%; height: auto; border: 1px solid var(--hair); border-radius: 8px; }
+.ig-change > * + * { margin-top: .2rem; }
 /* The route to an approved delivery and the three finishing steps, in reading order. */
 .ig-roadmap { margin-bottom: .6rem; }
 .ig-roadmap .bead { margin-right: .35rem; }
@@ -59,4 +64,8 @@
   .ig-ledger { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .4rem; }
   .ig-ledger-item { padding: .4rem .5rem; font-size: .85rem; }
   .ig-ledger-detail { display: none; }
+  /* The route in one row, so the page preview starts within the first phone screen. */
+  .ig-roadmap { flex-wrap: nowrap; gap: .2rem; margin-bottom: .2rem; }
+  .ig-roadmap > .workflow-step { flex: 1 1 0; min-width: 0; padding-inline: .15rem; text-align: center; overflow-wrap: anywhere; }
+  .ig-roadmap .bead { display: none; }
 }

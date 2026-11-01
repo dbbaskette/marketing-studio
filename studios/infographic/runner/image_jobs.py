@@ -9,6 +9,12 @@ from .contracts import MAX_ASSET_BYTES, basis, canonical, digest
 from .validation import identifier, require, validate_image_result
 from .workspace import _read
 
+# What Image work needs attention says; the page's notice, roadmap and usage row agree.
+FOUND = ('The image was made but not handed back. Recover saved artwork places it on the page on '
+         'this computer, without a new image request.')
+UNCERTAIN = ('This image request has not said how it ended, and no saved artwork was found on this '
+             'computer. Nothing was resent. Cancel it before starting new image work.')
+
 
 class Jobs:
     def __init__(self, store, adapters):
@@ -205,8 +211,7 @@ class Jobs:
             if state in ('queued', 'running', 'unknown') or local:
                 result.append({'attempt_id': folder.name, 'state': state, 'automatic_retry': False,
                      'local_artwork_available': local,
-                     'message': 'Completed artwork was found. Recover it locally without another image request.' if local else
-                         'No request was resubmitted. Pending or interrupted work requires explicit cancellation and new intent.'})
+                     'message': FOUND if local else UNCERTAIN})
         return result
 
     def details(self, ident, request_id):
@@ -232,11 +237,16 @@ class Jobs:
         root = self.store._project(ident) / 'jobs'
         require(not root.is_symlink(), 'Image request history cannot traverse links.')
         found = []
+        # Saved artwork a failed or uncertain request left behind, and requests recovered from
+        # it, so the usage row says the same as Image work needs attention.
+        available = {r['attempt_id'] for r in self.recovery(ident) if r['local_artwork_available']}
         for folder in root.iterdir() if root.exists() else ():
             if identifier(folder.name) and (folder / 'intent.json').exists():
                 item = self._details(ident, folder.name)
                 found.append({'id': item['id'], 'provider': item['provider'], 'operation': item['operation'],
                               'revision': item['revision'], 'state': 'cancelled locally' if item['cancelled_locally'] else
                               (item['result'] or {}).get('state', 'pending or interrupted'),
-                              'usage': (item['result'] or {}).get('usage')})
+                              'usage': (item['result'] or {}).get('usage'),
+                              'recovered': (folder / 'recovered-result.json').exists(),
+                              'local_artwork_available': item['id'] in available})
         return sorted(found, key=lambda item: (item['revision'], item['id']), reverse=True)

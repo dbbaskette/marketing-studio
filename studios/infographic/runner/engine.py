@@ -31,18 +31,29 @@ class Engine:
         from . import library
         review, review_checked, deliveries = (visual_review.latest(self.store, project),
                                               visual_review.checked(self.store, project), self.deliveries(ident))
-        return {'project': project, 'history': history.entries(self.store, ident),
+        # Every revision the page names is a page revision (history.Pages): the history read
+        # below seeds it, so naming deliveries and approvals reads little more.
+        pages = history.Pages(self.store, ident)
+        listed = history.entries(self.store, ident, pages=pages)
+        for delivery in deliveries:
+            delivery['page_revision'] = pages.of(delivery['revision'])
+        sent = listing(self.store, ident)
+        for one in sent:
+            one['page_revision'] = pages.of(one['revision'])
+        return {'project': project, 'history': listed, 'page_revision': pages.of(project['revision']),
+                'approval_words': progress.approved_words(project['approval'], pages.of) if project['approval'] else None,
                 'planning_response': planning_responses.status(self.store, project),
                 'source_findings': evidence.findings(project['facts']),
                 'recovery': Jobs(self.store, self.adapters).recovery(ident),
                 'image_history': Jobs(self.store, self.adapters).history(ident),
                 'visual_review': review, 'review_checked': review_checked,
-                'google_deliveries': listing(self.store, ident), 'deliveries': deliveries,
+                'google_deliveries': sent, 'deliveries': deliveries,
                 'library': {'sources': library.marked(self.store, project),
                             'kept': library.status(self.store, ident),
                             'own': library.own(self.store, ident)},
                 'elements': labels.elements(project), 'readiness': progress.readiness(project),
-                'roadmap': progress.roadmap(project, deliveries, review=review, review_checked=review_checked)}
+                'roadmap': progress.roadmap(project, deliveries, review=review, review_checked=review_checked,
+                                            page=pages.of)}
 
     def deliveries(self, ident):
         project = self.store.read(ident)
@@ -385,15 +396,18 @@ class Engine:
         """
         self.progress('Approving this exact revision')
         approved = self.approve(ident, expected_revision=expected_revision)
+        # The page revision the person approved: the approval's own saved revision is bookkeeping.
+        named = {'approved': True, 'revision': approved['revision'],
+                 'page_revision': history.Pages(self.store, ident).of(approved['revision'])}
         try:
             manifest = self.preview(ident, expected_revision=approved['revision'], draft=False)
         except Invalid as failure:
-            return {'approved': True, 'revision': approved['revision'], 'export': None, 'problem': str(failure)}
+            return {**named, 'export': None, 'problem': str(failure)}
         except Exception:
-            return {'approved': True, 'revision': approved['revision'], 'export': None,
+            return {**named, 'export': None,
                     'problem': 'The approved files could not be prepared. Your approval is kept; prepare the files again.'}
         from . import library
-        return {'approved': True, 'revision': approved['revision'], 'export': manifest, 'problem': None,
+        return {**named, 'export': manifest, 'problem': None,
                 'library': library.status(self.store, ident)}
 
     def approve(self, ident, *, expected_revision):
