@@ -2633,17 +2633,26 @@
     if (![...from, ...edit.work, ...slides].every((one) => one && one.id)) return copied(slides);
     const before = new Map(from.map((one) => [one.id, one]));
     const mine = new Map(edit.work.map((one) => [one.id, one]));
+    // A slide the person removed stays removed; one removed underneath is gone already.
     const removed = new Set(from.filter((one) => !mine.has(one.id)).map((one) => one.id));
-    const order = edit.work.map((one) => one.id);
-    const rank = (one) => (order.includes(one.id) ? order.indexOf(one.id) : order.length);
-    return slides.filter((one) => !removed.has(one.id)).map((one, index) => {
-      const made = copied(one);
+    const made = slides.filter((one) => !removed.has(one.id)).map((one) => {
+      const kept = copied(one);
       const was = before.get(one.id);
       const now = mine.get(one.id);
-      if (was && now && (was.title || '') !== (now.title || '')) made.title = now.title;
-      return { made, index };
-    }).sort((a, b) => rank(a.made) - rank(b.made) || a.index - b.index)
-      .map(({ made }) => made);
+      if (was && now && (was.title || '') !== (now.title || '')) kept.title = now.title;
+      return kept;
+    });
+    // The outline as it is now keeps its order unless the person reordered the slides. When
+    // they did, their order is put into the places their slides hold now: a slide new
+    // underneath stays beside the neighbours it has now.
+    const theirs = edit.work.map((one) => one.id).filter((id) => before.has(id));
+    const was = from.map((one) => one.id).filter((id) => mine.has(id));
+    if (theirs.join('\n') === was.join('\n')) return made;
+    const here = new Map(made.map((one) => [one.id, one]));
+    const wanted = theirs.filter((id) => here.has(id));
+    const places = made.map((one, at) => (mine.has(one.id) ? at : -1)).filter((at) => at >= 0);
+    wanted.forEach((id, k) => { made[places[k]] = here.get(id); });
+    return made;
   }
 
   // What the Outline tab has changed and not saved, each in a few words: '' when nothing.

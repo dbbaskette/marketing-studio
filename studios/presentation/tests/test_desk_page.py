@@ -2511,6 +2511,64 @@ class SlideTextStopTests(DeskPageCase):
         self.assertTrue(home['title'].startswith('(1) '))
 
 
+# Runs deck-desk.js's own rebased() and outlineChanges() on outlines given as JSON: each case
+# is [from, work, now], each a list of [id, title]. Prints [[ids and titles], unsaved] each.
+REBASE = r'''
+const fs = require('fs');
+const src = fs.readFileSync(process.argv[1], 'utf8');
+const grab = (name) => { const at = src.indexOf('  function ' + name + '(');
+  return src.slice(at, src.indexOf('\n  }\n', at) + 4); };
+const changes = grab('outlineChanges').replace(
+  /function outlineChanges\(run\) \{[\s\S]*?const edit = outlineEdit\(outline\);/,
+  'function outlineChanges(run, edit) { const outline = run.desk.outline;');
+const kit = new Function('h', grab('copied') + grab('rebased') + changes
+  + '; return { rebased, outlineChanges };')({ list: (v) => (Array.isArray(v) ? v : []) });
+const slides = (rows) => rows.map(([id, title]) => ({ id, title }));
+const cases = JSON.parse(process.argv[2]);
+console.log(JSON.stringify(cases.map(([from, work, now]) => {
+  const made = kit.rebased({ from: slides(from), work: slides(work) }, slides(now));
+  return [made.map((one) => one.id + ':' + one.title),
+    kit.outlineChanges({ desk: { outline: { slides: slides(now) } } }, { work: made })];
+})));
+'''
+
+
+@unittest.skipUnless(NODE, 'Node is needed to run the page scripts without a browser')
+class OutlineRebaseTests(unittest.TestCase):
+    """#257: edits on the Outline tab carried onto an outline read again keep the outline's
+    own order, unless the person reordered; and only then is the order theirs to save."""
+
+    def rebased(self, *cases):
+        page = Path(__file__).parents[1] / 'skills/presentation-studio/scripts/desk/deck-desk.js'
+        done = subprocess.run([NODE, '-e', REBASE, str(page), json.dumps(cases)],
+                              capture_output=True, text=True, timeout=60)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        return json.loads(done.stdout)
+
+    def test_the_outline_keeps_its_own_order_unless_the_person_reordered(self):
+        abc = [['a', 'A'], ['b', 'B'], ['c', 'C']]
+        retitled = [['a', 'A'], ['b', 'New'], ['c', 'C']]
+        title = 'the title of slide {}, now “New”'
+        found = self.rebased(
+            # Reordered underneath: its order stands, with the person's title.
+            [abc, retitled, [['c', 'C'], ['a', 'A'], ['b', 'B']]],
+            # A slide inserted underneath stays where it was put.
+            [abc, retitled, [['a', 'A'], ['n', 'N'], ['b', 'B'], ['c', 'C']]],
+            # A slide deleted underneath stays deleted.
+            [abc, retitled, [['a', 'A'], ['b', 'B']]],
+            # The person moved c first; a slide inserted underneath keeps its neighbours.
+            [abc, [['c', 'C'], ['a', 'A'], ['b', 'B']],
+             [['a', 'A'], ['n', 'N'], ['b', 'B'], ['c', 'C']]],
+            # The person removed b; underneath, c was moved first. b stays removed.
+            [abc, [['a', 'A'], ['c', 'C']], [['c', 'C'], ['a', 'A'], ['b', 'B']]])
+        self.assertEqual(found, [
+            [['c:C', 'a:A', 'b:New'], [title.format(3)]],
+            [['a:A', 'n:N', 'b:New', 'c:C'], [title.format(3)]],
+            [['a:A', 'b:New'], [title.format(2)]],
+            [['c:C', 'n:N', 'a:A', 'b:B'], ['the order of the slides']],
+            [['c:C', 'a:A'], ['slide 3 removed']]])
+
+
 def summary_lines(shot: dict) -> list:
     """The lines of the desk's summary, from its heading to what Deliver will use."""
     lines = shot['text'].split('\n')
