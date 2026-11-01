@@ -8,6 +8,7 @@ import contextlib
 import hashlib
 import json
 import os
+import re
 import shutil
 import tempfile
 import unittest
@@ -181,6 +182,24 @@ class KeepTests(LibraryCase):
         again = library_keep.keep(self.root, {'title': 'Launch plan'}, {'revision': 2})
         self.assertEqual((again['key'], again['document']), (remade['key'], remade['document']))
         self.assertEqual(self.library.catalog(kind='presentation')['total'], 3)
+
+    def test_a_deck_with_no_recorded_key_gets_one_from_its_folder_and_creation(self):
+        # Marketing Studio's Add existing work makes the same key for a deck delivered before
+        # the library kept anything, so delivering it again later is one library document.
+        self.write('outline.md', '# Deck\n')
+        run = {'title': 'Deck', 'created': '2026-03-02T09:10:11Z'}
+        part = hashlib.sha256(f'{self.root.name}\0{run["created"]}'.encode()).hexdigest()[:12]
+        plain = re.sub(r'[^a-z0-9-]+', '-', self.root.name.lower()).strip('-')[:120]
+        first = library_keep.keep(self.root, run, {'revision': 1})
+        self.assertEqual(first['key'], f'presentation:{plain}-{part}')
+        shutil.rmtree(self.root / 'sources')      # its local record is lost: the same key
+        again = library_keep.keep(self.root, run, {'revision': 2})
+        self.assertEqual((again['key'], again['document'], again['revision']),
+                         (first['key'], first['document'], 1))
+        # A recorded key still wins.
+        self.write('sources/library.json', json.dumps({'key': 'presentation:deck-abcdefabcdef'}))
+        self.assertEqual(library_keep.keep(self.root, run, {'revision': 3})['key'],
+                         'presentation:deck-abcdefabcdef')
 
     def test_no_outline_is_a_visible_failure(self):
         found = library_keep.keep(self.root, {'title': 'Deck'}, {'revision': 1})
