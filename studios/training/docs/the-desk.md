@@ -27,7 +27,7 @@ The toolbar's **Download level 101** (or **Download all**) opens a sheet whose *
 
 A Yoodli layout reads as Yoodli takes it: one list of its fields in order, each with its name, the characters it uses of Yoodli's limit, its text, and a **Copy** button named after the field. How to use the fields in Yoodli, and a copy of the whole layout, are folded away above the list.
 
-On a phone the desk keeps out of the way of what you read. The toolbar is one row with the title, the one filled action (such as **Mark ready**) and **More**, which holds Download, Google Doc and Finishing. The material and section tabs are one row that scrolls sideways, and choosing one brings what it shows to the top of the screen. While a sheet is open, Tab and Shift+Tab go round its own controls only.
+On a phone the desk keeps out of the way of what you read. The toolbar is one row with the title, the one filled action (such as **Mark level ready**, which marks the whole level; each card keeps its own **Mark ready**) and **More**, which holds Download, Google Doc and Finishing. The material and section tabs are one row that scrolls sideways, and choosing one brings what it shows to the top of the screen. While a sheet is open, Tab and Shift+Tab go round its own controls only.
 
 ## The deck
 

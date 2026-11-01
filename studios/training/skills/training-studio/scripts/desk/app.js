@@ -1319,6 +1319,12 @@ function folded(actions) {
   opener.setAttribute('aria-label', 'More');
   for (const node of rest) node.className = 'menu-item';
   add(menu, add(opener, icon('more')), add(make('div', 'menu-list'), ...rest));
+  // Tab out of it, and it is put away, as a click outside it puts it away.
+  menu.addEventListener('focusout', (event) => {
+    if (menu.open && event.relatedTarget && !menu.contains(event.relatedTarget)) {
+      menu.open = false;
+    }
+  });
   return [...filled, menu];
 }
 
@@ -9385,6 +9391,8 @@ function begin() {
   // Escape puts away whatever is open: a menu first, then the sheet.
   document.addEventListener('keydown', (event) => {
     if (event.key !== 'Escape') return;
+    // A dialog opened over the page, such as Add from library, puts itself away first.
+    if (document.querySelector('dialog[open]')) return;
     const menus = Array.from(document.querySelectorAll('.menu')).filter((menu) => menu.open);
     if (menus.length) {
       for (const menu of menus) menu.open = false;

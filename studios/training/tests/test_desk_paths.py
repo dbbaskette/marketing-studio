@@ -67,6 +67,22 @@ class LevelDownloadTests(PageCase):
         self.assertEqual(workspace.person_statuses(self.root, workspace.load(self.root)), before)
         self.assertEqual(self.git('rev-list', '--count', 'HEAD'), commits)
 
+    def test_a_material_linked_to_another_file_is_left_out_of_the_zip(self):
+        session = workspace.load(self.root)
+        guide = self.root / workspace.artifact(self.root, session, 'document@101')['file']
+        (self.root / '.training-studio').mkdir(exist_ok=True)
+        private = self.root / '.training-studio' / 'run.json'
+        if not private.exists():
+            private.write_text('{"private": true}\n', encoding='utf-8')
+        guide.unlink()
+        guide.symlink_to(private)
+        with zipfile.ZipFile(io.BytesIO(self.bundle('101')[2])) as archive:
+            names = archive.namelist()
+            inside = b''.join(archive.read(name) for name in names)
+        self.assertEqual(sorted(names), ['101-brief.md', '101-plan.md'])
+        self.assertNotIn(private.read_bytes(), inside)
+        self.assertFalse(any(name.endswith('.json') for name in names))
+
     def test_a_level_it_does_not_have_and_a_wrong_bundle_are_refused(self):
         with self.assertRaises(desk.Refusal) as refused:
             self.bundle('301')
@@ -138,6 +154,21 @@ class StartLibraryTests(PageCase):
         with self.assertRaisesRegex(WorkspaceError, 'added at the start with its sources'):
             self.engine.start(pipeline.check_form({**FORM, 'flow': 'desk'}),
                               library=[{'id': self.row['id'], 'revision': 1}])
+        self.assertEqual(sorted(path.name for path in self.space.root.iterdir()), before)
+
+    def test_row_205_a_malformed_pick_is_the_requests_fault(self):
+        # As Presentation Studio says it: a pick of the wrong shape is 400, before anything
+        # is read; a well-formed one that cannot be used is 409.
+        reference = self.editor()
+        before = sorted(path.name for path in self.space.root.iterdir())
+        for picks in ('x', [{'id': self.row['id']}], [{'id': self.row['id'], 'revision': '1'}],
+                      [], [{'id': self.row['id'], 'revision': 1}] * 2):
+            with self.subTest(picks=picks), patch.object(self.engine, 'wake'):
+                refused = self.post('trainings', self.body(reference, library=picks), expect=400)
+                self.assertTrue(refused['error'])
+        with patch.object(self.engine, 'wake'):
+            self.post('trainings', self.body(reference, library=[{'id': 'f' * 32, 'revision': 1}]),
+                      expect=409)
         self.assertEqual(sorted(path.name for path in self.space.root.iterdir()), before)
 
 

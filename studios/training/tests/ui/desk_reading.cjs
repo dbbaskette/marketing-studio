@@ -49,6 +49,16 @@ async function opened(page,url){
     if(phone){
      assert.ok(await chrome(page)<=120,'Sticky chrome is '+await chrome(page)+'px');
      assert.equal(await page.locator('#actions > *').count(),2,'One filled action and More');
+     // The toolbar's action says it marks the level, apart from each card's own Mark ready.
+     assert.equal((await page.locator('#actions > .button-filled').textContent()).trim(),'Mark level ready');
+     assert.equal(await page.locator('#actions > .button-filled').getAttribute('aria-label'),'Mark level ready: 101');
+     // Still one row on the narrowest phone.
+     await page.setViewportSize({width:320,height:700});
+     await page.waitForFunction(()=>document.getElementById('toolbar').getBoundingClientRect().height<=58.5);
+     assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'No sideways scroll at 320');
+     const fits=await page.evaluate(()=>{const bar=document.getElementById('toolbar').getBoundingClientRect();return [...document.querySelectorAll('#toolbar button, #toolbar summary')].filter(n=>n.getClientRects().length&&(n.tagName==='SUMMARY'||!n.closest('details:not([open])'))).every(n=>{const r=n.getBoundingClientRect();return r.right<=bar.right+0.5&&r.top>=bar.top&&r.bottom<=bar.bottom+0.5;});});
+     assert.ok(fits,'Every toolbar control fits its one row at 320');
+     await page.setViewportSize({width,height});
      await page.locator('#actions summary[aria-label="More"]').click();
      for(const name of ['Download level 101','Google Doc','Finishing'])await page.locator('.menu-item',{hasText:name}).waitFor();
      assert.deepEqual(await small(page),[]);

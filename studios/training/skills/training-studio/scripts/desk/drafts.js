@@ -350,7 +350,8 @@ function focusFinishing() {
 // Escape puts Finishing away when the focus is in it and nothing over it is open. It is
 // heard first, so a menu or a sheet open over the page is put away by the page instead.
 if (typeof document !== 'undefined') document.addEventListener('keydown', (event) => {
-  if (event.key !== 'Escape' || view.screen !== 'run' || !byId('sheet').hidden) return;
+  if (event.key !== 'Escape' || view.screen !== 'run' || !byId('sheet').hidden
+      || document.querySelector('dialog[open]')) return;
   if (Array.from(document.querySelectorAll('.menu')).some((menu) => menu.open)) return;
   const material = finishingMaterial();
   const panel = main().querySelector('.desk-finish');
@@ -2101,6 +2102,8 @@ async function addSource() {
     const status = make('p', 'notice');
     status.setAttribute('role', 'status');
     let sending = false;
+    // A document pinned from the library while files were being added is drawn once they are.
+    let pinned = null;
     const update = capsule('Update the research', 'filled', async () => {
       if (sending || !chosen.files.length) return;
       sending = true;
@@ -2125,14 +2128,29 @@ async function addSource() {
       } finally {
         sending = false;
         update.disabled = !chosen.files.length;
+        if (pinned) {
+          view.run = pinned;
+          pinned = null;
+          if (view.path === path) drawDesk(false);
+        }
       }
     });
     update.disabled = true;
     // Or documents kept in the Document Library: pinned at once, with no upload and no new
     // library entry, and read only when the research is updated.
     const fromLibrary = libraryAdd(path, 'desk-source-library', (run) => {
-      if (sending) return;
+      if (sending) {
+        pinned = run;
+        return;
+      }
       view.run = run;
+      // Files chosen here stay chosen: Update the research adds them and reads both.
+      if (chosen.files.length) {
+        say(status, 'Added from the Document Library. Update the research reads it with '
+          + 'your files; until then nothing is read.');
+        focusKey('desk-source-library');
+        return;
+      }
       closeSheet();
       deskHeld(path).sources = true;
       drawDesk(false).then(() => focusKey('desk-update-research'));
@@ -2403,11 +2421,11 @@ function paintDesk(fresh) {
       && levelCanBeReviewed(shown) && waiting.length) {
     const mark = capsule(named.length ? 'Mark this level ready' : 'Mark every material ready',
       lead === 'ready' ? 'filled' : '', () => confirmLevel(level, waiting), 'desk-level-ready');
-    // A phone's toolbar has one row: the shorter words, with the level in its name.
+    // A phone's toolbar has one row: shorter words that still say the whole level is marked,
+    // apart from a card's own Mark ready, with the level in its name.
     if (narrow()) {
-      mark.textContent = 'Mark ready';
-      mark.setAttribute('aria-label', named.length ? 'Mark ready: level ' + level
-        : 'Mark ready: every material');
+      mark.textContent = named.length ? 'Mark level ready' : 'Mark all ready';
+      if (named.length) mark.setAttribute('aria-label', 'Mark level ready: ' + level);
     }
     actions.push(mark);
   }

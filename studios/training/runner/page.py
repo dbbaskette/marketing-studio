@@ -224,6 +224,7 @@ from studio_core import research_sites
 
 from runner import engine as engines
 from runner import draft_finish, drafts, gitstate, library, pipeline, setup
+from studio_core.document_library import LibraryError
 from studio_core.document_library import context as library_context
 
 from studio_core import modules
@@ -292,6 +293,15 @@ def bundled(name: str, level: str, suffix: str) -> str:
     kind, _, ident = workspace.split(name)[0].partition(':')
     words = [level, BUNDLED.get(kind, kind), ident if ident and ident != 'main' else '']
     return NAMED.sub('-', '-'.join(filter(None, words))) + suffix.lower()
+
+
+def ordinary(root: Path, relative: str) -> Path | None:
+    """A material's own file, for a level's ZIP: an ordinary file where the training keeps
+    it, inside its folder. A link, even to another file of the training, is left out, so a
+    ZIP never carries anything but the materials themselves."""
+    file = desk.inside(root, relative)
+    placed = root / relative
+    return file if placed.is_file() and not placed.is_symlink() else None
 
 
 def shaped(action, *args):
@@ -464,12 +474,12 @@ class RunnerPage(desk.Page):
             if (card['level'] or '') != level or 'download' not in card['actions']:
                 continue
             relative = workspace.artifact(root, session, card['name'])['file']
-            file = desk.inside(root, relative)
-            if file.is_file():
-                files.append((bundled(card['name'], level, file.suffix), file))
-        index = desk.inside(root, pipeline.INDEX)
-        if index.is_file():
-            files.append((bundled('index', level, index.suffix), index))
+            file = ordinary(root, relative)
+            if file is not None:
+                files.append((bundled(card['name'], level, Path(relative).suffix), file))
+        index = ordinary(root, pipeline.INDEX)
+        if index is not None:
+            files.append((bundled('index', level, Path(pipeline.INDEX).suffix), index))
         if not files:
             raise desk.Refusal(HTTPStatus.NOT_FOUND, 'Nothing of this level is written yet.')
         held = io.BytesIO()
@@ -896,6 +906,13 @@ class RunnerPage(desk.Page):
             form = shaped(pipeline.check_form, {k: v for k, v in sent.items()
                                                 if k not in ('research_inputs', 'library')},
                           self.engine.brands())
+            # A malformed pick is the request's fault, refused before anything is read; one
+            # well formed that cannot be used (removed, unknown) is the engine's 409.
+            if picks is not None:
+                try:
+                    library_context.picks(picks)
+                except LibraryError as refusal:
+                    raise desk.Refusal(HTTPStatus.BAD_REQUEST, str(refusal)) from None
             return desk.as_json(HTTPStatus.OK, self.engine.start(form, research_inputs=reference,
                                                                  library=picks))
         if path == '/api/run':

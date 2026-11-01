@@ -33,6 +33,17 @@ async function opened(page,url){
   catch(e){if(tries>=3)throw e;}
  }
 }
+// Add from library opened, then Escape: the dialog goes, the sheet under it stays, and the
+// focus is back on Add from library.
+async function escapeLibrary(page,opener,key){
+ await opener.focus();await page.keyboard.press('Enter');
+ const dialog=page.locator('dialog.library-sheet');await dialog.waitFor();
+ await dialog.getByRole('checkbox',{name:/^Select /}).first().waitFor();
+ await page.keyboard.press('Escape');
+ await dialog.waitFor({state:'detached'});
+ assert.ok(await page.locator('#sheet').isVisible(),'The sheet under the library stays open');
+ await page.waitForFunction(key=>document.activeElement&&document.activeElement.dataset.key===key,key,{timeout:5000});
+}
 (async()=>{
  const browser=await chromium.launch({headless:true,executablePath:process.env.INFOGRAPHIC_STUDIO_TEST_RENDERER});
  const shots=process.env.TRAINING_DESK_UI_RESULTS;
@@ -55,6 +66,8 @@ async function opened(page,url){
      await page.getByLabel('Who is it for?',{exact:true}).fill('Platform engineers new to it.');
      const library=page.locator('#sheet [data-key="research-library"]');
      await library.waitFor();
+     await escapeLibrary(page,library,'research-library');
+     assert.equal(await page.getByLabel('A short title',{exact:true}).inputValue(),'Library start','Escape in the library keeps the form');
      await pickFromLibrary(page,library);
      await page.locator('#sheet').getByText('From the Document Library, revision 1',{exact:true}).waitFor();
      assert.equal(await page.evaluate(()=>document.getElementById('sheet').contains(document.activeElement)),true,'Focus is back in the sheet');
@@ -93,8 +106,15 @@ async function opened(page,url){
      await page.getByText('This training is researched from the public web. From now on it reads your documents too.',{exact:true}).waitFor();
      // Tab stays in the sheet, and the library sheet opened over it keeps its own Tab.
      for(let i=0;i<10;i++){await page.keyboard.press('Tab');assert.ok(await page.evaluate(()=>document.getElementById('sheet').contains(document.activeElement)));}
+     // Escape in the library dialog puts away only the dialog: the files chosen are kept.
+     const fromLibrary=page.locator('#sheet [data-key="desk-source-library"]');
+     await page.locator('#sheet').getByLabel('Add documents',{exact:true}).setInputFiles({name:'notes.txt',mimeType:'text/plain',buffer:Buffer.from('Synthetic notes.')});
+     await page.locator('#sheet').getByText('notes.txt',{exact:true}).waitFor();
+     await escapeLibrary(page,fromLibrary,'desk-source-library');
+     await page.locator('#sheet').getByText('notes.txt',{exact:true}).waitFor();
+     await page.locator('#sheet').getByRole('button',{name:'Remove notes.txt',exact:true}).click();
      const before=writes.length;
-     await pickFromLibrary(page,page.locator('#sheet [data-key="desk-source-library"]'));
+     await pickFromLibrary(page,fromLibrary);
      await page.locator('#sheet').waitFor({state:'hidden'});
      await page.getByText(/^Not read yet: capacity-notes\.md\. The research reads it once you update it\.$/).waitFor();
      await page.waitForFunction(()=>document.activeElement&&document.activeElement.dataset.key==='desk-update-research',null,{timeout:10000});
@@ -106,7 +126,7 @@ async function opened(page,url){
      // Mark the level ready, wait for the index, then Publish from the desk.
      await page.getByRole('tab',{name:/^Plan · /}).click();
      const narrow=width<600;
-     await page.locator('#actions').getByRole('button',{name:narrow?'Mark ready: every material':'Mark every material ready',exact:true}).click();
+     await page.locator('#actions').getByRole('button',{name:narrow?'Mark all ready':'Mark every material ready',exact:true}).click();
      await page.locator('#sheet').getByRole('button',{name:/^Mark \d+ materials? ready$/}).click();
      await page.waitForFunction(root=>ask('drafts',{path:root}).then(desk=>desk.index_written),root,{timeout:90000});
      await page.reload();

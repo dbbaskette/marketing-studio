@@ -3245,9 +3245,10 @@ body[data-product="Training Studio"] .card > .training-options {
 }
 /* On a phone, Training Studio's desk keeps its chrome small: the material and section tabs
    are one row that scrolls sideways, and a `.toolbar-compact` toolbar is one row (Back, the
-   title, one filled action and More), so the material being read fills the screen. */
+   title, one filled action and More), so the material being read fills the screen. Scoped
+   to Training Studio, whose page alone sets them. */
 @media (max-width: 52rem) {
-  .desk-workspace-tabs {
+  body[data-product="Training Studio"] .desk-workspace-tabs {
     position: relative;
     flex-wrap: nowrap;
     overflow-x: auto;
@@ -3258,38 +3259,39 @@ body[data-product="Training Studio"] .card > .training-options {
     /* Its row of tabs never widens the card or the page around it. */
     contain: inline-size;
   }
-  .desk-workspace-tabs [role="tab"] {
+  body[data-product="Training Studio"] .desk-workspace-tabs [role="tab"] {
     flex: none;
     max-width: none;
     white-space: nowrap;
   }
-  .toolbar.toolbar-compact {
+  body[data-product="Training Studio"] .toolbar.toolbar-compact {
     flex-wrap: nowrap;
     gap: 0.5rem;
     min-height: 0;
     padding-block: 0.4rem;
   }
-  .toolbar-compact .toolbar-title {
+  body[data-product="Training Studio"] .toolbar-compact .toolbar-title {
     flex: 1 1 0;
   }
-  .toolbar-compact .above,
-  .toolbar-compact .title {
+  body[data-product="Training Studio"] .toolbar-compact .above,
+  body[data-product="Training Studio"] .toolbar-compact .title {
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
   }
-  .toolbar-compact .above {
+  body[data-product="Training Studio"] .toolbar-compact .above {
     display: block;
   }
-  .toolbar-compact .title {
+  body[data-product="Training Studio"] .toolbar-compact .title {
     display: block;
     -webkit-line-clamp: 1;
     line-clamp: 1;
   }
-  .toolbar-compact .toolbar-actions {
+  body[data-product="Training Studio"] .toolbar-compact .toolbar-actions {
     flex-wrap: nowrap;
   }
-  .toolbar-compact .toolbar-actions > .button {
+  body[data-product="Training Studio"] .toolbar-compact .toolbar-actions > .button {
+    padding-inline: 0.8rem;
     white-space: nowrap;
   }
 }

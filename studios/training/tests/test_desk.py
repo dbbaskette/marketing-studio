@@ -8313,9 +8313,9 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         shot = phone['snapshots']['phone']
         # Mark ready, with its level in its name, and More: nothing else in the toolbar.
         self.assertEqual([(one['name'], one['filled']) for one in shot['toolbar']],
-                         [('Mark ready: level 101', True), ('More', False)])
+                         [('Mark level ready: 101', True), ('More', False)])
         self.assertEqual(phone['snapshots']['more']['toolbarButtons'],
-                         ['Mark ready: level 101', 'Download level 101', 'Google Doc',
+                         ['Mark level ready: 101', 'Download level 101', 'Google Doc',
                           'Finishing'])
         # Elsewhere the toolbar is as it was.
         self.assertEqual([one['name'] for one in wide['snapshots']['wide']['toolbar']],
