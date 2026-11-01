@@ -3243,6 +3243,58 @@ body[data-product="Training Studio"] .card > .training-options {
   box-shadow: inset 0 0 0 1px var(--accent);
   font-weight: 600;
 }
+/* On a phone, Training Studio's desk keeps its chrome small: the material and section tabs
+   are one row that scrolls sideways, and a `.toolbar-compact` toolbar is one row (Back, the
+   title, one filled action and More), so the material being read fills the screen. Scoped
+   to Training Studio, whose page alone sets them. */
+@media (max-width: 52rem) {
+  body[data-product="Training Studio"] .desk-workspace-tabs {
+    position: relative;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    padding: 3px;
+    margin: -3px;
+    scrollbar-width: thin;
+    /* Its row of tabs never widens the card or the page around it. */
+    contain: inline-size;
+  }
+  body[data-product="Training Studio"] .desk-workspace-tabs [role="tab"] {
+    flex: none;
+    max-width: none;
+    white-space: nowrap;
+  }
+  body[data-product="Training Studio"] .toolbar.toolbar-compact {
+    flex-wrap: nowrap;
+    gap: 0.5rem;
+    min-height: 0;
+    padding-block: 0.4rem;
+  }
+  body[data-product="Training Studio"] .toolbar-compact .toolbar-title {
+    flex: 1 1 0;
+  }
+  body[data-product="Training Studio"] .toolbar-compact .above,
+  body[data-product="Training Studio"] .toolbar-compact .title {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  body[data-product="Training Studio"] .toolbar-compact .above {
+    display: block;
+  }
+  body[data-product="Training Studio"] .toolbar-compact .title {
+    display: block;
+    -webkit-line-clamp: 1;
+    line-clamp: 1;
+  }
+  body[data-product="Training Studio"] .toolbar-compact .toolbar-actions {
+    flex-wrap: nowrap;
+  }
+  body[data-product="Training Studio"] .toolbar-compact .toolbar-actions > .button {
+    padding-inline: 0.8rem;
+    white-space: nowrap;
+  }
+}
 .desk-aside {
   display: grid;
   gap: 1.1rem;

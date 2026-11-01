@@ -23,7 +23,11 @@ Open the training on the desk. Each level has its own plan and materials; resear
 
 Sources collects the findings and references used in the training. A guide or brief's Sources section is maintained from its citations; change references in the text instead of typing into that section. You can read the research and plan, and decide how changes should reach the materials that depend on them.
 
-The toolbar's **Download level 101** (or **Download all**) gives every written material of the level, one file each, exactly as saved; a material's own Download is on its card. Downloading marks nothing ready and sends nothing.
+The toolbar's **Download level 101** (or **Download all**) opens a sheet whose **Download level 101 (.zip)** takes every written material of the level in one ZIP, exactly as saved, with the index once it is written. Each file in it is named by its level and what it is, such as `101-learner-guide.md`. Each material can also be downloaded alone, there or from its card. Downloading marks nothing ready and sends nothing.
+
+A Yoodli layout reads as Yoodli takes it: one list of its fields in order, each with its name, the characters it uses of Yoodli's limit, its text, and a **Copy** button named after the field. How to use the fields in Yoodli, and a copy of the whole layout, are folded away above the list.
+
+On a phone the desk keeps out of the way of what you read. The toolbar is one row with the title, the one filled action (such as **Mark level ready**, which marks the whole level; each card keeps its own **Mark ready**) and **More**, which holds Download, Google Doc and Finishing. The material and section tabs are one row that scrolls sideways, and choosing one brings what it shows to the top of the screen. While a sheet is open, Tab and Shift+Tab go round its own controls only.
 
 ## The deck
 
@@ -39,6 +43,8 @@ When you change an input, a dependent material can be held because it was built 
 
 Use **Add a source** to add documents after research. The desk shows the price before you update the research. New or changed findings are marked, and dependent materials may be held for your decision. A change already in progress may need to finish or stop first. Existing documents stay in the training.
 
+**Add from library**, in the same sheet, takes documents already kept in the Document Library without uploading them again. They wait, unread, until you choose **Update the research**, and start nothing before then. A training researched from the public web reads your documents too from then on, as the sheet says first.
+
 ## Mark ready and Finishing
 
 Under the level tabs, one line says how many of the level's materials are ready, still to write, drafts to mark ready, or need attention or a decision. A material is ready on its own; a level is complete once all of its materials are, and downloads and Google Docs stay optional. While a deck's slide text waits for you, its tab says **Needs your text approval** and **Review slide text** takes you to it; materials not written yet say **Not written yet**, never Writing, while nothing works on them. Time so far is a detail you open; elapsed time is never an estimate of what is left.
@@ -49,7 +55,7 @@ Ready can be taken back on purpose. The toast after Mark ready offers **Undo** w
 
 A later edit makes the material a draft again. Opening a Ready material for editing says so before you type (with the library revision it keeps), and the first save says it is back to Draft. Once all requested materials are ready, Training Studio writes the index. Ready is your approval and sends nothing by itself unless the training was started with Google Docs, which then follow readiness as before. A training made with local copies can make a Google Doc of one guide or brief from **Google Doc**, of exactly the version shown, and update it only when you ask; see [Google Docs](google-docs.md). You can look for changes in Google Docs and bring them back, resolving a conflict if both versions changed.
 
-**Finishing** opens on the material in front of you; **All materials** chooses another one of the level. It offers checks and proposals. Review each proposal and choose Apply, Edit or Skip. A proofread fix may request work; other findings can open a note for you to edit. Applied changes keep a version in History. Local checks create proposals without starting a job. When you request an AI check, it runs work to produce proposals; each proposal waits for your decision.
+**Finishing** opens on the material in front of you, beside it on a wide screen and above it on a phone, with its heading in view and focused; **Close** or Escape returns you to the button (to **More** on a phone). **All materials** chooses another one of the level. On the plan, or on Research & sources, which have no Finishing checks, it says so and lets you choose a material that has them. It offers checks and proposals. Review each proposal and choose Apply, Edit or Skip. A proofread fix may request work; other findings can open a note for you to edit. Applied changes keep a version in History. Local checks create proposals without starting a job. When you request an AI check, it runs work to produce proposals; each proposal waits for your decision.
 
 ## Working with teammates and older trainings
 
@@ -57,7 +63,9 @@ In a shared workspace, one computer drives a training at a time. A teammate can 
 
 Trainings started before the desk keep their original review flow. Once a saved training is finished and nothing is waiting, **Open on the desk** brings it to the desk. Existing person-approved material stays ready where applicable; other material may return as a draft for your decision. Opening it again does not create another copy.
 
-Conversation-owned work supports explicit person Mark ready through the main desk or checked `studio desk ready`, without runner handoff or jobs. Retained helper-page decisions and approval-mode changes refuse conversation ownership under the shared write guard. `studio desk return-delivered` previews and losslessly sets aside an undelivered local deck in History, restoring proven delivered active state or prior absence; it does not publish or invent approval.
+Conversation-owned work supports explicit person Mark ready through the main desk or checked `studio desk ready`, without runner handoff or jobs. Its desk is for reading: each material's Mark ready and downloads, and nothing that only the runner does (no Edit, Finishing, Google Doc, Mark this level ready or Stop). Home, Trainings and Status say **In conversation**, never that it waits for you. A change the page sends anyway, such as a save, is refused with the reason and what to do, and the desk says so.
+
+Once every material is ready and the index is written, the desk offers **Open the index** and **Publish**, which makes the training's next numbered revision as the Published screen describes. Retained helper-page decisions and approval-mode changes refuse conversation ownership under the shared write guard. `studio desk return-delivered` previews and losslessly sets aside an undelivered local deck in History, restoring proven delivered active state or prior absence; it does not publish or invent approval.
 
 Unfinished saved trainings offer **Open on the desk** with a read-only preview and Apply/Cancel. The preview names retained material parts, holds, incomplete work and prerequisites. Apply preserves original records and files and assigns conversation execution; it starts no work and grants no approval or Ready. A known prior paused/stopped runner status stays in History. Later broader work requires explicit checked scope. Early, unsupported, missing-input or worker-marked trainings keep their saved flow; existing saved recovery may discard uncommitted work.
 

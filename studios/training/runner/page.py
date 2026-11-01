@@ -30,6 +30,11 @@ What a caller needs to know
   actions, an answer, its documents, its copies, and what its deck says. A training
   driven elsewhere never counts as needing the person here.
 - `GET /api/download?path=&artifact=[&copy=word]` answers authenticated attachment bytes for a registered supported deliverable or the finished index; names are never filesystem paths.
+- `GET /api/download?path=&bundle=level&level=` answers one ZIP of every written material
+  of a desk training's level (`level` empty for a training with no levels), exactly as
+  saved, Ready or a draft, with the index once it is written. Each file inside is named by
+  the level and what it is, such as `101-learner-guide.md`. It marks nothing ready and sends
+  nothing.
 - `POST /api/copies` with `pull: "<artifact>"` explicitly pulls its Google Doc. `choose: ours|theirs` resolves a confirmed conflict only while the local, remote and kept-text revisions still match. It answers the refreshed run and a sentence.
 - The run adds `decided` while work continues after a decision and combined-review beads to its saved stage row. New runs use review layout 2; existing runs retain layout 1.
 - `GET /api/models?agent=codex` answers what an agent offers to choose from: {"agent",
@@ -203,7 +208,9 @@ from __future__ import annotations
 
 import base64
 import binascii
+import io
 import re
+import zipfile
 from http import HTTPStatus
 from urllib.parse import urlencode
 from pathlib import Path
@@ -217,6 +224,7 @@ from studio_core import research_sites
 
 from runner import engine as engines
 from runner import draft_finish, drafts, gitstate, library, pipeline, setup
+from studio_core.document_library import LibraryError
 from studio_core.document_library import context as library_context
 
 from studio_core import modules
@@ -263,8 +271,11 @@ KINDS = {
     '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
     '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     '.pdf': 'application/pdf', '.md': 'text/markdown; charset=utf-8',
-    '.json': 'application/json; charset=utf-8',
+    '.json': 'application/json; charset=utf-8', '.zip': 'application/zip',
 }
+# What each material is called inside a level's ZIP, as the desk's tabs name it.
+BUNDLED = {'blueprint': 'plan', 'document': 'learner-guide', 'brief': 'brief', 'deck': 'deck',
+           'scenario': 'practice', 'yoodli': 'yoodli', 'index': 'index'}
 NAMED = re.compile(r'[^A-Za-z0-9._-]+')
 DOCUMENTS = '/api/documents'
 ASSET = '/api/asset'
@@ -274,6 +285,23 @@ HALTED = ('This training is not running, so nothing more happens until you resum
           'try again.')
 RUNNER_DECIDES = ('The runner is driving this training, so its decisions are made on the '
                   'page.')
+
+
+def bundled(name: str, level: str, suffix: str) -> str:
+    """A material's file name inside its level's ZIP: the level, then what it is, such as
+    `101-learner-guide.md` or `201-practice-objection.md`."""
+    kind, _, ident = workspace.split(name)[0].partition(':')
+    words = [level, BUNDLED.get(kind, kind), ident if ident and ident != 'main' else '']
+    return NAMED.sub('-', '-'.join(filter(None, words))) + suffix.lower()
+
+
+def ordinary(root: Path, relative: str) -> Path | None:
+    """A material's own file, for a level's ZIP: an ordinary file where the training keeps
+    it, inside its folder. A link, even to another file of the training, is left out, so a
+    ZIP never carries anything but the materials themselves."""
+    file = desk.inside(root, relative)
+    placed = root / relative
+    return file if placed.is_file() and not placed.is_symlink() else None
 
 
 def shaped(action, *args):
@@ -319,6 +347,10 @@ class RunnerPage(desk.Page):
                     return one(name)
                 except desk.Refusal:
                     return None
+            if given('bundle') is not None:
+                if given('bundle') != 'level':
+                    raise desk.Refusal(HTTPStatus.BAD_REQUEST, 'Give bundle as level.')
+                return self.download_level(one('path'), given('level') or '')
             return self.download(one('path'), one('artifact'), given('copy'))
         if path == '/api/status':
             return desk.as_json(HTTPStatus.OK, self.engine.standing())
@@ -424,6 +456,40 @@ class RunnerPage(desk.Page):
         name = NAMED.sub('-', '-'.join(filter(None, [root.name, level, Path(relative).name])))
         return (HTTPStatus.OK, KINDS.get(file.suffix.lower(), 'application/octet-stream'),
                 file.read_bytes(), {'Content-Disposition': f'attachment; filename="{name}"'})
+
+    def download_level(self, path: str, level: str) -> tuple:
+        """Every written material of one level of a desk training, and the index once it is
+        written, in one ZIP, each file as it is saved now. Nothing is marked or sent."""
+        desk.registered(path)
+        root = self.engine.driven(path)
+        if root is None or not drafts.on_desk(drafts.run_of(root)):
+            raise desk.Refusal(HTTPStatus.NOT_FOUND, 'Only a training on the desk is '
+                               'downloaded a level at a time.')
+        found = drafts.view(self.engine, root)
+        if level not in found['levels']:
+            raise desk.Refusal(HTTPStatus.NOT_FOUND, f'This training has no level {level}.')
+        session = workspace.load(root)
+        files = []
+        for card in found['cards']:
+            if (card['level'] or '') != level or 'download' not in card['actions']:
+                continue
+            relative = workspace.artifact(root, session, card['name'])['file']
+            file = ordinary(root, relative)
+            if file is not None:
+                files.append((bundled(card['name'], level, Path(relative).suffix), file))
+        index = ordinary(root, pipeline.INDEX)
+        if index is not None:
+            files.append((bundled('index', level, Path(pipeline.INDEX).suffix), index))
+        if not files:
+            raise desk.Refusal(HTTPStatus.NOT_FOUND, 'Nothing of this level is written yet.')
+        held = io.BytesIO()
+        with zipfile.ZipFile(held, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
+            for name, file in files:
+                archive.writestr(name, file.read_bytes())
+        name = NAMED.sub('-', '-'.join(filter(None, [root.name, level and 'level-' + level,
+                                                      'materials'])) + '.zip')
+        return (HTTPStatus.OK, KINDS['.zip'], held.getvalue(),
+                {'Content-Disposition': f'attachment; filename="{name}"'})
 
     def index(self, path: str, relative=pipeline.INDEX) -> dict:
         """A training's index, in the shape the desk gives any of its files."""
@@ -647,6 +713,11 @@ class RunnerPage(desk.Page):
         if found and (found.get('flow') == 'desk' or found['state'] == 'done'):
             item['run'].update(flow=found.get('flow'),
                                can_open_desk=found.get('can_open_desk', False))
+        # Worked on in conversation: Home says In conversation, never that it waits for the
+        # person or that its index is in progress; nothing runs here.
+        conversation = bool(found and found.get('execution') == 'conversation')
+        if conversation:
+            item['run']['execution'] = 'conversation'
         if found and found.get('can_migrate_desk') and not found.get('flow') and found['state'] != 'done':
             item['run']['can_migrate_desk'] = True
         item['driver'] = found and found['driver']
@@ -656,6 +727,11 @@ class RunnerPage(desk.Page):
         if found is None or 'error' in item:
             return item
         item['stages'] = self.engine.review_beads(item['path'], item['stages'])
+        if conversation:
+            item['stages'] = [{**stage, 'state': 'not-started',
+                               'words': desk.STAGE_STATES['not-started']}
+                              if stage.get('state') == 'current' else stage
+                              for stage in item['stages'] or ()]
         # A worker in hand is activity too, from the moment it began.
         if found.get('busy_since') and item.get('activity_at'):
             item['activity_at'] = max(item['activity_at'], found['busy_since'])
@@ -825,9 +901,20 @@ class RunnerPage(desk.Page):
             return desk.as_json(HTTPStatus.OK,
                                 setup.apply(self.engine, shaped(setup.read, sent)))
         if path == '/api/trainings':
-            reference = sent.get('research_inputs')
-            form = shaped(pipeline.check_form, {k: v for k, v in sent.items() if k != 'research_inputs'}, self.engine.brands())
-            return desk.as_json(HTTPStatus.OK, self.engine.start(form, research_inputs=reference))
+            # The source editor's draft, and the Document Library's revisions chosen beside it.
+            reference, picks = sent.get('research_inputs'), sent.get('library')
+            form = shaped(pipeline.check_form, {k: v for k, v in sent.items()
+                                                if k not in ('research_inputs', 'library')},
+                          self.engine.brands())
+            # A malformed pick is the request's fault, refused before anything is read; one
+            # well formed that cannot be used (removed, unknown) is the engine's 409.
+            if picks is not None:
+                try:
+                    library_context.picks(picks)
+                except LibraryError as refusal:
+                    raise desk.Refusal(HTTPStatus.BAD_REQUEST, str(refusal)) from None
+            return desk.as_json(HTTPStatus.OK, self.engine.start(form, research_inputs=reference,
+                                                                 library=picks))
         if path == '/api/run':
             return desk.as_json(HTTPStatus.OK, self.act(sent))
         if path == '/api/answer':

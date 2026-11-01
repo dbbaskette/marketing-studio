@@ -22,14 +22,24 @@ def main():
             from studio_core import preferences, studios_config
             studios_config.update({'local': {'root': str(case.space.root)}})
             preferences.finish(studios_config, lambda _: None)
-            case.engine.plan_first = True
+            # --desk: straight to the desk, with no teaching plan to check first.
+            case.engine.plan_first = '--desk' not in sys.argv
             workspace_mode = '--workspace' in sys.argv
             case.engine.content_first = workspace_mode
+            if '--library' in sys.argv:
+                # One synthetic document in the disposable Document Library, to pin.
+                from studio_core import document_library
+                from runner import documents as real_documents
+                case.engine.documents = real_documents
+                document_library.opened(create=True).add_upload(
+                    'capacity-notes.md', b'# Capacity notes\n\nCapacity holds only when more '
+                    b'than one instance is running.\n')
             if workspace_mode:
                 from test_runner_deck import MAJOR
                 case.workers.found = [[MAJOR]]
             root = case.space.root if '--new' in sys.argv else case.begin(flow='desk', **({} if workspace_mode else {'deck_target': None, 'brand': None}),
-                **({'levels':['101','201']} if '--two-levels' in sys.argv else {}))
+                **({'levels':['101','201']} if '--two-levels' in sys.argv else {}),
+                **({'yoodli': True} if '--yoodli' in sys.argv else {}))
         server = desk.Desk(page=lambda port: page.RunnerPage(port, case.engine))
         server.start()
         print(json.dumps({'url': server.url, 'path': str(root)}), flush=True)

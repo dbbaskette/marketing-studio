@@ -149,10 +149,7 @@ def add_source(root: Path, record: dict, files: list, documents) -> list[str]:
             documents.remove(root, entry['name'])
         raise
     now = home.now()
-    if not record.get('documents'):
-        record['research_from'] = {**pipeline.research_of(record), 'documents': True,
-                                   'widened_at': now}
-        record['documents'] = {'scope': pipeline.scope_of(record['research_from'])}
+    widen(record, now)
     readable = [entry for entry in documents.listed(root) if entry.get('readable')]
     record['documents'].update(done=now, count=len(readable))
     record['documents']['later'] = [*(record['documents'].get('later') or []),
@@ -162,6 +159,20 @@ def add_source(root: Path, record: dict, files: list, documents) -> list[str]:
     marker.write_text(now + '\n', encoding='utf-8')
     record.setdefault('drafts', {})['findings_before'] = before
     return [entry.get('title') or entry['name'] for entry in added]
+
+
+def widen(record: dict, now: str) -> bool:
+    """A desk training researched without documents reads them from now on: research
+    `documents` is turned on, and said with when. Nothing is researched until the person
+    updates the research. True when it was widened here."""
+    from runner import pipeline
+
+    if record.get('documents'):
+        return False
+    record['research_from'] = {**pipeline.research_of(record), 'documents': True,
+                               'widened_at': now}
+    record['documents'] = {'scope': pipeline.scope_of(record['research_from'])}
+    return True
 
 
 def in_conversation(record: dict | None) -> bool:
@@ -924,7 +935,12 @@ def view(engine, root) -> dict:
     listed = engine._document_entries(root, record) if record.get('documents') else ()
     jobs = (record.get('drafts') or {}).get('jobs') or ()
     return {
-        **({'execution': record.get('execution'), 'saved_status': record.get('migration_saved_status')} if record.get('unfinished_migration') else {}),
+        # How it is worked on: by the runner, or in a conversation, whose desk offers only
+        # what a conversation leaves to the page (reading, downloads and Mark ready).
+        'execution': record.get('execution') or 'runner',
+        **({'saved_status': record.get('migration_saved_status')} if record.get('unfinished_migration') else {}),
+        # Whether the index is written, for the level's download, which includes it then.
+        'index_written': (root / pipeline.INDEX).is_file(),
         'flow': FLOW, 'title': session['title'], 'levels': [level or '' for level in levels],
         'progress': {'running': running, 'doing': doing,
                      'started_at': record.get('started_at'), 'minutes': None,

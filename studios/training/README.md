@@ -161,15 +161,16 @@ Training Studio shares the Document Library that every studio keeps on this
 computer. It holds uploads, finished blogs, delivered decks and finished training
 material.
 
-- **Add from library.** The documents card, and the desk's **Research & sources**,
-  have **Add from library**. Each chosen revision is copied into the training as one
-  of its documents, so the training keeps it if the library changes. A newer revision
-  is shown, and **Use revision N** takes it. Adding one starts no research. While the
-  training waits for its documents, it is read with the rest. After the research it
-  waits, not read yet, until you choose **Update the research**, which says first what
-  it changes. A training whose research does not read documents takes none: adding
-  from the library never widens where research looks. Both are refused while a step
-  is being worked on.
+- **Add from library.** New training's sources, the documents card, the desk's
+  **Research & sources** and its **Add a source** have **Add from library**. Each chosen
+  revision is copied into the training as one of its documents, so the training keeps it
+  if the library changes, and nothing is uploaded again. A newer revision is shown, and
+  **Use revision N** takes it. Adding one starts no research. Chosen in New training, it
+  is read with the start's own sources. After the research it waits, not read yet, until
+  you choose **Update the research**, which says first what it changes. On a desk
+  training researched from the public web, adding one means the research reads your
+  documents too from then on, as Add a source says. Both are refused while a step is
+  being worked on.
 - **Keep in library.** When you add a document, **Keep in library** also keeps a copy
   in the library for other projects, and **Only this project** keeps it in the
   training alone. The New training sheet asks the same for each file. Neither changes

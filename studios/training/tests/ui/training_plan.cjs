@@ -39,7 +39,8 @@ const path=require('node:path'),fs=require('node:fs'),assert=require('node:asser
     if(process.env.TRAINING_PLAN_UI_RESULTS){fs.mkdirSync(process.env.TRAINING_PLAN_UI_RESULTS,{recursive:true});await page.screenshot({path:path.join(process.env.TRAINING_PLAN_UI_RESULTS,'training-topics-'+width+'.png'),fullPage:true});}
     await page.getByRole('button',{name:'Build the training',exact:true}).click();
     await page.waitForFunction(root=>ask('run',{path:root}).then(run=>!run.training_plan_pending && !run.problem && run.state==='done'),fixture.path,{timeout:45000});
-    try { await page.getByRole('button',{name:'Finishing',exact:true}).waitFor(); }
+    // On a phone Finishing is behind More, beside the toolbar's one filled action.
+    try { if(width<600){await page.locator('#actions summary[aria-label="More"]').click();await page.locator('.menu-item',{hasText:'Finishing'}).waitFor();}else await page.getByRole('button',{name:'Finishing',exact:true}).waitFor(); }
     catch(error){console.error('Final page at '+width+': '+await page.locator('body').innerText());console.error('View state: '+await page.evaluate(()=>JSON.stringify({busy:view.busy,state:view.run?.state,plan:view.run?.training_plan,pending:view.run?.training_plan_pending})) );throw error;}
     assert.equal(await page.getByRole('heading',{name:'Here’s what this training will cover',exact:true}).count(),0);
     assert.deepEqual(errors,[]);await page.close();

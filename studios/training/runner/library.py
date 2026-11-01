@@ -21,8 +21,13 @@ Context
   that is all of them, as an uploaded one is. Once the research is planned it is kept as a
   document added after the research (`documents.later`): not read until the person
   updates the research, which is priced first. Use revision N works the same way.
-- A training whose research does not read documents takes none: pinning does not widen
-  where research looks. On the desk, Add a source does that, and says what it changes.
+- A saved training whose research does not read documents takes none: pinning does not
+  widen where research looks there. A desk training researched from the public web takes
+  them as Add a source does: its research reads documents from then on, and the pinned ones
+  wait, unread, until the person updates the research (`drafts.widen`). A conversation's
+  training never widens from the page.
+- New training can pin documents too (`engine.start(..., library=picks)`): each chosen
+  revision is read and checked before anything is made, and pinned before research starts.
 - Both are refused while a job is running: a job keeps the documents it started with.
 
 Finished material
@@ -117,9 +122,13 @@ def pin(engine, path, picks) -> Path:
     root = engine._held(path)
     with engine.files:
         record = engine._load(root)
-        given = _given(record)
+        # A desk training researched from the public web takes them too, as Add a source
+        # does: its research reads documents from now on, once the person updates it.
+        widening = not record.get('documents') and drafts.on_desk(record) \
+            and not drafts.in_conversation(record)
+        given = record.get('documents') if widening else _given(record)
         _idle(engine, root, record)
-        waiting = engine._survey(root, record).next.kind == 'documents'
+        waiting = not widening and engine._survey(root, record).next.kind == 'documents'
         try:
             added = library_context.pin(engine.documents, root, picks)
         except LibraryError as refusal:
@@ -127,6 +136,17 @@ def pin(engine, path, picks) -> Path:
         if not waiting:
             # Kept, and read only once the person updates the research.
             now = home.now()
+            if widening:
+                from runner import pipeline
+                drafts.widen(record, now)
+                given = record['documents']
+                readable = [entry for entry in engine.documents.listed(root)
+                            if entry.get('readable')]
+                given.update(done=now, count=len(readable))
+                # Its documents are all added, as Add a source says of its own.
+                marker = root / pipeline.ADDED
+                marker.parent.mkdir(parents=True, exist_ok=True)
+                marker.write_text(now + '\n', encoding='utf-8')
             given['later'] = [*_later(given),
                               *({'name': entry['name'], 'added_at': now} for entry in added)]
             engine._store(root, record)

@@ -387,7 +387,7 @@ class LayoutTests(test_desk.ScriptedPage, test_desk.PageCase):
         result = self.run_page(self.begun(), [
             {'click': 'New training'}, *self.FILLED,
             {'click': 'Technical upskilling'},
-            {'tick': 'Learner guide'}, {'tick': 'Reference brief'},
+            {'tick': 'Reference brief'},
             {'tick': 'Practice scenarios'}, {'tick': '301'},
             {'click': 'About the reference brief'}, {'click': 'A comparison'},
             {'click': 'Google Slides'}, {'click': 'Deck brand'},
@@ -415,7 +415,9 @@ class LayoutTests(test_desk.ScriptedPage, test_desk.PageCase):
     def test_start_checks_every_step_and_focuses_the_first_gap(self):
         result = self.run_page(self.begun(), [
             {'click': 'New training'}, {'click': 'Start'}, {'snapshot': 'empty'},
-            *self.FILLED, {'click': 'Start'}, {'snapshot': 'no materials'}])
+            # The learner guide is chosen to start with: taken off, nothing is left to make.
+            *self.FILLED, {'tick': 'Learner guide'}, {'click': 'Start'},
+            {'snapshot': 'no materials'}])
         empty = result['snapshots']['empty']
         self.assertEqual((empty['focus'], empty['posts']), ('new-title', 0))
         self.assertIn('Something above is missing.', empty['sheet'])
@@ -426,13 +428,13 @@ class LayoutTests(test_desk.ScriptedPage, test_desk.PageCase):
     def test_cancel_keeps_the_draft_for_the_session(self):
         result = self.run_page(self.begun(), [
             {'click': 'New training'}, {'fill': 'A short title', 'value': 'Rolling restarts'},
-            {'tick': 'Learner guide'}, {'click': 'Cancel'}, {'snapshot': 'closed'},
+            {'tick': 'Reference brief'}, {'click': 'Cancel'}, {'snapshot': 'closed'},
             {'click': 'New training'}, {'snapshot': 'again'}])
         shots = result['snapshots']
         self.assertEqual(shots['closed']['sheet'], '')
         self.assertEqual(shots['closed']['heading'], 'Home')
         self.assertEqual(shots['again']['fields']['A short title'], 'Rolling restarts')
-        self.assertIn('Learner guide', shots['again']['trainingChecked'])
+        self.assertIn('Reference brief', shots['again']['trainingChecked'])
         self.assertEqual(self.posts(result), [])
 
     def test_new_training_opens_over_the_screen_it_was_asked_from(self):
@@ -449,7 +451,7 @@ class LayoutTests(test_desk.ScriptedPage, test_desk.PageCase):
         answers = self.begun()
         answers['GET /api/setup'] = [ok(shared)]
         result = self.run_page(answers, [
-            {'click': 'New training'}, *self.FILLED, {'tick': 'Learner guide'},
+            {'click': 'New training'}, *self.FILLED,
             {'snapshot': 'research'}, {'tick': 'Your sites (2)'}, {'snapshot': 'sites'},
             {'tick': 'The public web'}, {'click': 'Start'}])
         research = result['snapshots']['research']

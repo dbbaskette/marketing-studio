@@ -141,7 +141,7 @@ Saving writes only the values you changed on that screen, and only where the fil
 
 ## Start a training
 
-“New training” opens a form for the learning goal, materials and research. Choose the learner's task and prior knowledge, the materials and learner time, and the sources. Optional details include depth, brand, copies and assistant settings. Check the summary and start the training. Research and a teaching blueprint support the materials you select. Yoodli requires a brief and practice scenarios; Training Studio prepares fields for you to copy into its builder.
+“New training” opens a form for the learning goal, materials and research. Choose the learner's task and prior knowledge, the materials and learner time, and the sources. Optional details include depth, brand, copies and assistant settings. Check the summary and start the training. The learner guide is chosen to start with, so a training starts with only its title, what it teaches and who it is for filled in; choose the brief, practice scenarios or a deck as well, or instead. Documents from the Document Library can be chosen with the sources (**Add from library**) and are read from the start. Research and a teaching blueprint support the materials you select. Yoodli requires a brief and practice scenarios; Training Studio prepares fields for you to copy into its builder.
 
 ### The desk
 
@@ -300,7 +300,7 @@ In Settings, "Tell me when no page is open" lets this computer notify you throug
 
 ### Publishing
 
-A finished training has a "Publish" button. Publishing marks the training, exactly as it stands, as its next numbered revision in the workspace. Nothing is copied and no second repository is used. A revision is never moved afterwards: publish again, and that is the next one.
+A finished training has a "Publish" button: on its run, or, for a training on the desk, on the desk once every material is ready and the index is written, beside **Open the index**. Publishing marks the training, exactly as it stands, as its next numbered revision in the workspace. Nothing is copied and no second repository is used. A revision is never moved afterwards: publish again, and that is the next one.
 
 A training that is not ready can still be published, and the revision says that it was not. Documents you supplied and saved pages are not part of a revision, because the workspace never shares them.
 

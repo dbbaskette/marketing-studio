@@ -29,6 +29,9 @@ const DESK_WORDS = {
     + 'quoted from them appear in the research report, which is shared.',
   documentsHint: 'Optional. Research reads them first, and starts once they are all added. '
     + 'You can choose several at once.',
+  // Add a source, once research has run: what is chosen waits for Update the research.
+  sourceHint: 'They wait, unread, until you choose Update the research. You can choose '
+    + 'several at once.',
 };
 // The sheets the desk opens over itself: a level's downloads, its Google Docs, and one the
 // shared kit asks for.
@@ -117,8 +120,12 @@ function deskApi(route, data) {
     rest.seen = material.view.seen;
   }
   const body = { ...item, ...rest };
-  return send(endpoint, body, endpoint === 'drafts/save' && smallDeskSave(body)
+  const sent = send(endpoint, body, endpoint === 'drafts/save' && smallDeskSave(body)
     ? { keepalive: true } : {});
+  if (endpoint !== 'drafts/save' || !material) return sent;
+  // Why a save was refused, in Training Studio's own words, until a save is taken.
+  return sent.then((answer) => { material.refused = ''; return answer; },
+    (failure) => { material.refused = failure.message; throw failure; });
 }
 
 // The shared kit is loaded before this script; without it there is no desk to draw.
@@ -194,6 +201,7 @@ const deskKit = Drafting.kit({
     },
     render: (held) => deskMaterialChanged(held),
     refresh: (held) => deskMaterialChanged(held),
+    finishClosed: () => focusFinishing(),
     reload: async (held) => {
       held.view = await ask('drafts/card', deskItem(held.id));
       held.pending = {}; held.editSeen = {}; held.recoveredParts = {};
@@ -299,18 +307,58 @@ function openFinishing(choose = false) {
     held.sources = false;
     held.material[held.level] = material.view.name;
     closeSheet(); deskKit.finishOpen(material);
+    revealFinishing();
   };
   const current = !held.sources && choices.find((material) =>
     material.view.name === held.material[held.level]);
   if (!choose && current) { open(current); return; }
   if (choices.length === 1) { open(choices[0]); return; }
-  DESK.kitSheet = [sheetTitle('Finishing'), make('p', '', 'Choose the material to check.'),
+  // What is shown has no checks of its own (the plan, or the sources): said, with the
+  // materials that do.
+  const shown = list(held.view?.cards).find((one) => one.name === held.material[held.level]);
+  const none = choose ? '' : held.sources ? 'Research & sources has no Finishing checks. '
+    : shown ? capital(cardTitle(shown).toLowerCase() === 'plan' ? 'the plan' : cardTitle(shown))
+      + ' has no Finishing checks. ' : '';
+  DESK.kitSheet = [sheetTitle('Finishing'), make('p', '', none + 'Choose the material to check.'),
     make('h3', 'sheet-part', '1. Choose a material'),
     ...choices.map((material) => capsule(cardTitle(material.view), 'quiet', () => open(material))),
     choices.length ? null : make('p', '', 'A guide, brief, practice or Yoodli layout opens here once it is written.'),
     capsule('Cancel', 'quiet', () => closeSheet())].filter(Boolean);
   openSheet('desk-kit', '')();
 }
+
+// Finishing, once open: its heading is brought into view under the toolbar and focused.
+function revealFinishing() {
+  const title = main().querySelector('.desk-finish-title');
+  if (!title) return;
+  title.tabIndex = -1;
+  title.focus({ preventScroll: true });
+  if (typeof title.getBoundingClientRect !== 'function') return;
+  const top = title.getBoundingClientRect().top;
+  const under = byId('toolbar').getBoundingClientRect().bottom;
+  const foot = narrow() ? byId('sidebar').getBoundingClientRect().height : 0;
+  if (top < under || top + 48 > window.innerHeight - foot) window.scrollBy(0, top - under - 12);
+}
+
+// The way back from Finishing, by Close or Escape: the Finishing button, or More on a phone,
+// where the button is one of its items.
+function focusFinishing() {
+  if (narrow() ? focusKey('more') : focusKey('desk-finishing')) return;
+  byId('title').focus({ preventScroll: true });
+}
+
+// Escape puts Finishing away when the focus is in it and nothing over it is open. It is
+// heard first, so a menu or a sheet open over the page is put away by the page instead.
+if (typeof document !== 'undefined') document.addEventListener('keydown', (event) => {
+  if (event.key !== 'Escape' || view.screen !== 'run' || !byId('sheet').hidden
+      || document.querySelector('dialog[open]')) return;
+  if (Array.from(document.querySelectorAll('.menu')).some((menu) => menu.open)) return;
+  const material = finishingMaterial();
+  const panel = main().querySelector('.desk-finish');
+  const active = document.activeElement;
+  if (!material || !panel || !(panel.contains(active) || active === document.body)) return;
+  deskKit.finishClose(material);
+}, true);
 
 // Before/after are labels inside a proposal card, keeping one heading level per card.
 const finishingSides = deskKit.sides;
@@ -536,7 +584,7 @@ function timeField(draft) {
 // The documents, added here before Start and listed with Remove. The page holds the files
 // until the training is made; Start then adds each, and says they are all added.
 // With `keep`, the Keep in library choice is offered for what is added (Add a source).
-function documentsPart(draft, changed = retell, keep = false) {
+function documentsPart(draft, changed = retell, keep = false, hint = DESK_WORDS.documentsHint) {
   const node = make('div', 'fields desk-documents');
   const fill = () => {
     const files = list(draft.files);
@@ -566,7 +614,8 @@ function documentsPart(draft, changed = retell, keep = false) {
         changed();
         focusKey('new-documents');
       },
-      accept: DESK_TYPES.join(',') + ',application/pdf', hint: DESK_WORDS.documentsHint }),
+      accept: DESK_TYPES.join(',') + ',application/pdf',
+      hint }),
     files.length ? add(make('div', 'card-part'), make('p', 'row-title',
       count(files.length, 'document', 'documents') + ' to add'), items) : null,
     keep ? keepChoice('new-documents-keep') : null, make('p', 'quiet', DESK_WORDS.kept));
@@ -578,7 +627,7 @@ function documentsPart(draft, changed = retell, keep = false) {
 // Where research looks, in one line, said again whenever a document or a choice changes.
 function researchLine(draft, line) {
   if (draft.sourceEditor) {
-    const chosen = draft.sourceEditor.choice();
+    const chosen = draft.sourceEditor.choice(startPicks(draft).length > 0);
     draft.research = {documents: chosen.documents, sites: Boolean(chosen.sites.length), web: chosen.web, picked: chosen.sites, added: []};
   } else draft.research.documents = list(draft.files).length > 0;
   line.textContent = researchProblem(draft)
@@ -597,6 +646,10 @@ function sourcesStep(draft, brand, looks) {
   if (!draft.sourceEditor && typeof StudioResearch !== 'undefined') {
     // Training Studio offers Keep in library for each file the editor captures.
     draft.sourceEditor = new StudioResearch.Editor({request: sent => send('research-sources', sent), keepChoice: true,
+      // Add from library: documents kept on this computer, pinned when the training starts.
+      library: (editor) => pickStartLibrary(draft, editor),
+      libraryFull: () => startPicks(draft).length >= START_PICKS,
+      extra: () => startPickList(draft),
       onChange: () => { if (draft.retell) draft.retell(); }});
   }
   return [draft.sourceEditor ? draft.sourceEditor.node : documentsPart(draft, retell, true),
@@ -606,6 +659,69 @@ function sourcesStep(draft, brand, looks) {
       ...agentFields(draft, 'new', 'For this training', told), drafted,
       make('p', 'quiet', limitsSays(limits) || 'No limits are set for this computer.'),
       make('p', 'quiet', 'Limits are changed in Settings.'))];
+}
+
+// The Document Library's documents chosen in New training, each {id, revision, title}: held
+// here until Start, which pins them before research starts. Nothing is sent before then.
+const START_PICKS = 40;
+function startPicks(draft) {
+  if (!Array.isArray(draft.library)) draft.library = [];
+  return draft.library;
+}
+
+// Add from library, in the sources editor: the shared sheet (library.js). Each chosen
+// revision is read once, for its title and to refuse one with no text to read.
+function pickStartLibrary(draft, editor) {
+  if (!window.StudioLibrary) {
+    toast('The Document Library could not be loaded. Reload the page.');
+    return;
+  }
+  const held = startPicks(draft);
+  window.StudioLibrary.pick({
+    studio: 'training', max: START_PICKS - held.length, noun: 'training',
+    post: (route, body) => send(route, body),
+    refocus: () => Array.from(document.querySelectorAll('[data-key]'))
+      .find((node) => node.dataset.key === 'research-library') || null,
+    use: async (picks) => {
+      const found = [];
+      for (const pick of picks) {
+        const read = await send('library-document', { id: pick.id, revision: pick.revision });
+        if (!read.readable) {
+          throw new Error('“' + (read.title || 'That document') + '” has no text that can be '
+            + 'read. Choose another.');
+        }
+        found.push({ id: pick.id, revision: pick.revision, title: read.title || 'Untitled' });
+      }
+      const chosen = new Set(found.map((one) => one.id));
+      const kept = [...held.filter((one) => !chosen.has(one.id)), ...found];
+      if (kept.length > START_PICKS) throw new Error(START_PICKS + ' documents from the library '
+        + 'is the most a new training takes. Remove one to add another.');
+      draft.library = kept;
+      editor.render();
+      editor.changed();
+      toast((found.length === 1 ? 'It is added.' : found.length + ' documents are added.')
+        + ' Research reads ' + (found.length === 1 ? 'it' : 'them') + ' when the training '
+        + 'starts.');
+    },
+  });
+}
+
+// The library's documents chosen so far, under the editor's own list, each with Remove.
+function startPickList(draft) {
+  const held = startPicks(draft);
+  if (!held.length) return null;
+  return add(make('ul', 'research-source-list'), ...held.map((one) => {
+    const remove = capsule('Remove', 'quiet', () => {
+      draft.library = held.filter((other) => other.id !== one.id);
+      draft.sourceEditor.render();
+      draft.sourceEditor.changed();
+      focusKey('research-library');
+    }, 'research-library-remove ' + one.id);
+    remove.setAttribute('aria-label', 'Remove ' + one.title);
+    return add(make('li', 'research-source-row'), add(make('div', 'research-source-copy'),
+      make('p', 'row-title', one.title), make('p', 'quiet', 'From the Document Library, '
+        + 'revision ' + one.revision)), remove);
+  }));
 }
 
 // The new-training sheet: three numbered steps in the order they are filled in, then Start
@@ -653,8 +769,11 @@ function deskBody(draft) {
     levels: LEVELS.filter((level) => draft.levels.includes(level)),
     brief_kind: draft.brief ? 'competitive' : 'product',
     time_limit: draft.time.trim() || null,
-    research_from: draft.sourceEditor ? draft.sourceEditor.choice() : researchChoice(draft),
+    research_from: draft.sourceEditor ? draft.sourceEditor.choice(startPicks(draft).length > 0)
+      : researchChoice(draft),
     ...(draft.sourceEditor ? {research_inputs: draft.sourceEditor.spec()} : {}),
+    ...(draft.sourceEditor && startPicks(draft).length ? { library: startPicks(draft)
+      .map(({ id, revision }) => ({ id, revision })) } : {}),
     research_questions: (draft.researchQuestions || '').split('\n'),
     deck_target: deck,
     brand: deck ? { brand: draft.brand, variant: draft.variant || null } : null,
@@ -894,14 +1013,19 @@ function deskTabs(found, held) {
   }, 'desk-level');
 }
 
-// One material at a time. Reading navigation never approves or starts work.
+// One material at a time. Reading navigation never approves or starts work. On a phone the
+// tabs are one row that scrolls sideways, and choosing one brings what it shows into view.
 function workspaceTabs(label, options, selected, choose, key) {
   const bar = make('div', 'desk-workspace-tabs');
   bar.setAttribute('role', 'tablist'); bar.setAttribute('aria-label', label);
+  const chosen = (index) => {
+    choose(options[index].id);
+    const tab = byId(key + '-' + index);
+    if (tab) tab.focus({ preventScroll: true });
+    revealTabs(tab);
+  };
   options.forEach((option, index) => {
-    const go = capsule(option.label, 'quiet', () => {
-      choose(option.id); byId(key + '-' + index)?.focus();
-    }, key + ' ' + index);
+    const go = capsule(option.label, 'quiet', () => chosen(index), key + ' ' + index);
     go.setAttribute('role', 'tab'); go.id = key + '-' + index;
     go.setAttribute('aria-selected', String(option.id === selected));
     go.tabIndex = option.id === selected ? 0 : -1;
@@ -912,11 +1036,30 @@ function workspaceTabs(label, options, selected, choose, key) {
       event.preventDefault();
       const next = event.key === 'Home' ? 0 : event.key === 'End' ? options.length - 1
         : (index + step + options.length) % options.length;
-      choose(options[next].id); byId(key + '-' + next)?.focus();
+      chosen(next);
     });
     bar.append(go);
   });
   return bar;
+}
+
+// After a tab is chosen: its row scrolls sideways to it, and, when what it shows would start
+// below the first screen, the page scrolls so the tabs sit just under the toolbar.
+function revealTabs(tab) {
+  const bar = tab && tab.parentNode;
+  if (!bar || typeof bar.getBoundingClientRect !== 'function') return;
+  if (bar.scrollWidth > bar.clientWidth) {
+    bar.scrollLeft = Math.max(0, tab.offsetLeft - (bar.clientWidth - tab.offsetWidth) / 2);
+  }
+  // On a phone the tabs always go to the top: what they show starts under them. Elsewhere
+  // only when its first lines (about 10rem of it) would be out of view.
+  const panel = byId(tab.getAttribute('aria-controls'));
+  const toolbar = byId('toolbar').getBoundingClientRect();
+  const top = bar.getBoundingClientRect().top;
+  const shown = panel ? panel.getBoundingClientRect().top + 160 : top;
+  if (narrow() || shown > window.innerHeight || top < toolbar.bottom) {
+    window.scrollBy(0, top - toolbar.bottom - 8);
+  }
 }
 
 function workspacePanel(key, index, node) {
@@ -1559,7 +1702,9 @@ function editToggle(held, found, editing) {
       desk.editing[found.name] = false;
       const why = keptOpen(held);
       if (why) {
-        desk.said = why;
+        // A refused save says why, in Training Studio's words, before what that means here.
+        desk.said = (held.refused && Object.keys(held.pending || {}).length
+          ? held.refused + ' ' : '') + why;
         paintDesk(true);
         return;
       }
@@ -1601,7 +1746,9 @@ function materialParts(held, found) {
   const area = make('div', 'desk-material stack');
   held.area = area;
   const editing = deskEditing(held, found);
-  const status = make('p', 'quiet desk-save-state', held.saved || '');
+  const status = make('p', 'quiet desk-save-state', held.refused
+    && Object.keys(held.pending || {}).length ? held.refused + ' Your text is kept here.'
+    : held.saved || '');
   status.setAttribute('role', 'status');
   held.status = status;
   const toggle = editToggle(held, found, editing);
@@ -1653,6 +1800,9 @@ function materialParts(held, found) {
     ...list(held.view.sections)];
   if (!sections.some(section => section.id === held.section)) held.section = sections[0]?.id;
   const sectionKey = headingId(found.name) + '-sections';
+  // A Yoodli layout is read as Yoodli takes it: its fields once, in order, each to copy.
+  const fielded = found.kind === 'yoodli' && !editing && list(held.view.fields).length;
+  if (fielded) sections.splice(0, sections.length);
   if (sections.length > 1) area.append(workspaceTabs('Section of ' + cardTitle(found),
     sections.map(section => ({id: section.id, label: section.heading})), held.section,
     id => { held.section = id; paintDesk(true); }, sectionKey));
@@ -1666,15 +1816,7 @@ function materialParts(held, found) {
     } else part = materialPart(held, section.id);
     area.append(sections.length > 1 ? workspacePanel(sectionKey, sections.indexOf(section), part) : part);
   }
-  if (found.kind === 'yoodli') {
-    for (const field of list(held.view.fields)) {
-      const title = list(field.heading).join(' / ');
-      area.append(add(make('section', 'card'), make('h2', 'card-title', title),
-        make('p', 'desk-plain', field.text), field.limit
-          ? make('p', 'quiet', field.text.length + ' of ' + field.limit.toLocaleString('en-US')
-            + ' characters') : null, copyButton('Copy', 'Copied.', field.text)));
-    }
-  }
+  if (fielded) area.append(...deskYoodliFields(held, found));
   const job = held.view.working || list(held.view.jobs).at(-1);
   if (job) {
     const checks = make('div', 'card');
@@ -1708,6 +1850,34 @@ function materialParts(held, found) {
   if (held.stale) deskKit.stale(held);
   if (!hasDeskRecovery(held)) deskKit.watch(held);
   return area;
+}
+
+// A Yoodli layout to copy from: how to use it in Yoodli folded away, then one list of its
+// fields in Yoodli's order, each with its name, the characters it uses of Yoodli's limit, its
+// text, and a Copy button named after it.
+function deskYoodliFields(held, found) {
+  const whole = String(held.view.opening || '');
+  const first = whole.search(/^## /m);
+  const intro = first > 0 ? whole.slice(0, first).trim() : '';
+  const how = add(make('details', 'card-part'), make('summary', '', 'How to use these fields in Yoodli'));
+  how.dataset.key = 'yoodli-how ' + found.name;
+  if (intro) how.append(window.StudioMarkdown.render(intro));
+  how.append(add(make('div', 'bar'), copyButton('Copy the whole layout', 'Copied.', whole,
+    'desk-copy ' + found.name + ' whole')));
+  const rows = make('ul', 'rows desk-yoodli-fields');
+  for (const field of list(held.view.fields)) {
+    const name = list(field.heading).join(' / ');
+    const text = String(field.text || '');
+    const used = text.length.toLocaleString('en-US') + (field.limit ? ' of '
+      + Number(field.limit).toLocaleString('en-US') : '') + ' characters';
+    const go = copyButton('Copy', 'Copied ' + name + '.', text, 'desk-yoodli-copy ' + name);
+    go.setAttribute('aria-label', 'Copy ' + name);
+    rows.append(add(make('li', 'row step desk-yoodli-field'),
+      add(make('div', 'row-text'), make('p', 'row-title', name), make('p', 'quiet', used),
+        make('p', 'desk-plain', text)), go));
+  }
+  return [add(card('Yoodli fields'), make('p', 'quiet', 'Paste each field into the Yoodli '
+    + 'Builder field of the same name, in this order.'), how, rows)];
 }
 
 // Said as a Ready material opens for editing, before anything is typed: a saved change
@@ -1932,6 +2102,8 @@ async function addSource() {
     const status = make('p', 'notice');
     status.setAttribute('role', 'status');
     let sending = false;
+    // A document pinned from the library while files were being added is drawn once they are.
+    let pinned = null;
     const update = capsule('Update the research', 'filled', async () => {
       if (sending || !chosen.files.length) return;
       sending = true;
@@ -1956,13 +2128,39 @@ async function addSource() {
       } finally {
         sending = false;
         update.disabled = !chosen.files.length;
+        if (pinned) {
+          view.run = pinned;
+          pinned = null;
+          if (view.path === path) drawDesk(false);
+        }
       }
     });
     update.disabled = true;
+    // Or documents kept in the Document Library: pinned at once, with no upload and no new
+    // library entry, and read only when the research is updated.
+    const fromLibrary = libraryAdd(path, 'desk-source-library', (run) => {
+      if (sending) {
+        pinned = run;
+        return;
+      }
+      view.run = run;
+      // Files chosen here stay chosen: Update the research adds them and reads both.
+      if (chosen.files.length) {
+        say(status, 'Added from the Document Library. Update the research reads it with '
+          + 'your files; until then nothing is read.');
+        focusKey('desk-source-library');
+        return;
+      }
+      closeSheet();
+      deskHeld(path).sources = true;
+      drawDesk(false).then(() => focusKey('desk-update-research'));
+    });
     DESK.kitSheet = [sheetTitle('Add a source'),
       make('p', 'quiet', 'Add documents and read what updating the research will change.'),
       make('h3', 'sheet-part', '1. Add'),
-      documentsPart(chosen, () => { update.disabled = sending || !chosen.files.length; }, true),
+      documentsPart(chosen, () => { update.disabled = sending || !chosen.files.length; }, true,
+        DESK_WORDS.sourceHint),
+      add(make('div', 'bar'), fromLibrary),
       make('h3', 'sheet-part', '2. What it changes'), make('p', '', price.words),
       make('p', '', price.afterwards), price.widened ? make('p', '', price.widened) : null,
       status, add(make('div', 'bar'), update, capsule('Cancel', 'quiet', () => {
@@ -2204,7 +2402,8 @@ function paintDesk(fresh) {
   const lead = deskLead(run, held, ours);
   const drawn = JSON.stringify([found, run.state, run.question, run.problem, run.documents,
     run.mine, run.driver, run.taken, run.notice, run.outline, run.training_plan, run.training_plan_pending,
-    run.research_progress, run.timing, held.level, held.sources, held.material, held.said,
+    run.research_progress, run.timing, run.finished, view.issued, view.setup && view.setup.workspace,
+    held.level, held.sources, held.material, held.said,
     held.unsent && list(held.unsent.files).map((file) => file.name), held.unsent
       && held.unsent.why, lead, narrow()]);
   if (!fresh && drawn === held.drawn) return;
@@ -2222,6 +2421,12 @@ function paintDesk(fresh) {
       && levelCanBeReviewed(shown) && waiting.length) {
     const mark = capsule(named.length ? 'Mark this level ready' : 'Mark every material ready',
       lead === 'ready' ? 'filled' : '', () => confirmLevel(level, waiting), 'desk-level-ready');
+    // A phone's toolbar has one row: shorter words that still say the whole level is marked,
+    // apart from a card's own Mark ready, with the level in its name.
+    if (narrow()) {
+      mark.textContent = named.length ? 'Mark level ready' : 'Mark all ready';
+      if (named.length) mark.setAttribute('aria-label', 'Mark level ready: ' + level);
+    }
     actions.push(mark);
   }
   // The toolbar's Download is the whole level's; each material's own is on its card.
@@ -2232,6 +2437,16 @@ function paintDesk(fresh) {
       'desk-copies'));
     actions.push(capsule('Finishing', '', () => openFinishing(), 'desk-finishing'));
   }
+  // A finished training: its index to read, and Publish, as the Published screen says.
+  const finished = ours && !conversation && run.finished && found.index_written
+    ? run.finished : null;
+  if (finished) {
+    actions.push(capsule('Open the index', lead === '' && !view.sheet && !actions.some((node) =>
+      node.classList.contains('button-filled')) ? 'filled' : '',
+    () => show('index', { path: view.path, artifact: finished.index || 'README.md' }),
+    'index'));
+  }
+  const published = view.issued && view.issued.path === view.path ? view.issued : null;
   const notice = held.said ? make('p', 'notice', held.said) : null;
   if (notice) notice.setAttribute('role', 'alert');
   const available = shown.filter(one => one.state !== 'left-out');
@@ -2264,11 +2479,17 @@ function paintDesk(fresh) {
     finishing.scope = add(make('p', 'quiet desk-finishing-scope'),
       'Checking ' + cardTitle(finishing.view) + ' only. ', others);
   }
+  // Finishing sits beside the material on a wide screen, and above it on a phone, so it
+  // opens where the person is looking.
+  const reading = !finishing ? add(make('div', 'stack'), column)
+    : narrow() ? add(make('div', 'stack'), finishing.scope, finishing.panel, column)
+      : add(make('div', 'stack'), finishing.scope, add(make('div', 'desk-layout desk-finishing'),
+        column, finishing.panel));
   const layout = workspacePanel('desk-material', options.findIndex(one => one.id === selected),
-    held.sources ? sourcesPart(found) : add(make('div', 'stack'), column,
-      finishing ? finishing.scope : null, finishing ? finishing.panel : null));
-  place({ title: found.title || 'Untitled', back: true,
-    above: named.length ? [make('span', '', levelsText(named))] : [], actions }, [
+    held.sources ? sourcesPart(found) : reading);
+  place({ title: found.title || 'Untitled', back: true, compact: narrow(),
+    above: named.length ? [make('span', '', levelsText(named))] : [],
+    actions: folded(actions) }, [
     waitingPlan ? null : pageHead(preparingPlan ? 'I’ll prepare the topics and teaching plan for you to check, then build the training.' : conversation ? 'Read the retained materials. Make checked edits in conversation; only you mark a material ready.' : DESK_WORDS.lede),
     notice,
     conversation ? add(card('Editing in conversation'), make('p', '', 'No work is scheduled. Checked edits to the listed existing material parts and explicit broader scope changes happen in conversation; Mark ready is your decision.')) : null,
@@ -2284,6 +2505,7 @@ function paintDesk(fresh) {
     adding(run) && ours && !held.unsent ? documentsCard(run, lead === 'documents') : null,
     preparingPlan || waitingPlan ? null : tabs,
     preparingPlan || waitingPlan ? null : levelStanding(found, level),
+    finished ? publishCard(run, published) : null,
     preparingPlan || waitingPlan ? null : materials,
     preparingPlan || waitingPlan ? null : layout,
   ], fresh);
@@ -2488,12 +2710,22 @@ function deskSheet(kind) {
         make('p', 'step-name', cardTitle(one)), make('p', 'quiet', one.says)),
       downloadButton(one)));
     }
+    // One ZIP of them all, with the index once it is written; each one alone below it.
+    const zip = level ? 'Download level ' + level + ' (.zip)' : 'Download all (.zip)';
+    const bundle = capsule(zip, 'filled', (event) => downloadFile(view.path,
+      { bundle: 'level', level }, (level ? 'level-' + level + '-' : '') + 'materials.zip',
+      event.currentTarget), 'desk-download-zip');
     return [sheetTitle(level ? 'Download level ' + level : 'Download all'),
-      make('p', '', 'Every written material of ' + where + ', one file each, exactly as it is '
-      + 'saved now, Ready or a draft. Downloading marks nothing ready and sends nothing. One '
-      + 'material alone downloads from its own card.'),
-    ready.length ? items : make('p', 'quiet', 'Nothing of ' + where + ' is written yet.'),
-    add(make('div', 'bar'), close)];
+      make('p', '', 'Every written material of ' + where + ', exactly as it is saved now, Ready '
+      + 'or a draft, in one ZIP' + (found.index_written ? ' with the index' : '') + '. Each '
+      + 'file is named by ' + (level ? 'its level and ' : '') + 'what it is. Downloading marks '
+      + 'nothing ready and sends nothing.'),
+      found.index_written ? null : make('p', 'quiet', 'The index is not written yet, so it '
+        + 'is not in the ZIP.'),
+      ready.length ? add(make('div', 'bar'), bundle) : null,
+      ready.length ? make('h3', 'sheet-part', 'One at a time') : null,
+      ready.length ? items : make('p', 'quiet', 'Nothing of ' + where + ' is written yet.'),
+    add(make('div', 'bar'), close)].filter(Boolean);
   }
   const docs = found.docs || {};
   const automatic = Object.values(docs).some((doc) => doc.automatic);
