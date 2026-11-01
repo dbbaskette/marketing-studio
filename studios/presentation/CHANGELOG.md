@@ -10,7 +10,8 @@ making decks first, then what changes for maintainers.
   each one: **Open in Google Slides**, or **Download revision N** while that
   PowerPoint file is still kept beside the deck. A Google delivery no longer takes
   the last PowerPoint file away. **Send to Google Slides** asks first, in a sheet
-  that says what goes and as which revision. The card also says whether the
+  that says what goes and as which revision, on the desk and on a gated deck's
+  screen alike; both list every revision. The card also says whether the
   Document Library kept the deck, from which deck revision, and that the library
   counts its own revisions. Home and Decks say where a deck went in words, with
   its link as a button. **Add from library** never offers the deck's own
@@ -18,7 +19,9 @@ making decks first, then what changes for maintainers.
   **Apply**, **Deliver** and **Add the pasted text** the focus lands beside what
   changed, and each Apply and Skip is named for its proposal. Finishing keeps
   the slide at its width on a desktop and opens as a sheet on a phone, its
-  heading focused; Escape closes it. Opening **Brand check** no longer turns
+  heading focused and Tab kept inside it; Escape closes it. Toasts sit over the
+  sidebar's foot on a desktop and over the bar of screens on a phone, clear of
+  the page's controls. Opening **Brand check** no longer turns
   warnings into things that wait for you. A change on the Outline tab that is
   not saved is listed before you deliver, said on its slide, kept when the
   outline is read again, and **Deliver** waits until you save or discard it.

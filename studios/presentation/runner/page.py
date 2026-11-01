@@ -265,7 +265,7 @@ class RunnerPage(server.Page):
                 revision = one('revision')
             except server.Refusal:
                 revision = None
-            if revision is not None and not revision.isdigit():
+            if revision is not None and not re.fullmatch(r'[0-9]+', revision):
                 raise server.Refusal(HTTPStatus.BAD_REQUEST, 'A revision is a whole number.')
             return self.download(one('path'), int(revision) if revision else None)
         if path == '/api/storyboard':

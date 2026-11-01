@@ -29,7 +29,11 @@
     if (spec.sheet && spec.picture) node.append(spec.picture(0, 'Every look on one sheet'));
     const looks = spec.looks || [];
     const known = (id) => looks.some((look) => look.id === id);
-    if (!known(held.choice)) held.choice = '';
+    // A choice that is not among these looks is let go, and the studio is told so.
+    if (held.choice && !known(held.choice)) {
+      held.choice = '';
+      tell();
+    }
     if (!held.choice && spec.preselect && known(spec.defaultId)) {
       held.choice = spec.defaultId;
       tell();

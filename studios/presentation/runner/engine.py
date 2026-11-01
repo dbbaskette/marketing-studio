@@ -3457,6 +3457,7 @@ class Engine(Jobs, Researching, DeskActions):
                          **self._research_tried(record, halted, root)}
                         if halted else None),
             'deliver': ({**said, 'revisions': list(record.get('revisions') or []),
+                         'receipts': delivering.receipts(root, record),
                          'download': self._rendered(root, record),
                          'slides': self._delivered_slides(root),
                          'last_build': self._last_build(record),

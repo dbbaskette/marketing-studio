@@ -1756,6 +1756,22 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertEqual(body['decision'], 'approve')
         self.assertNotIn('extra', body)
 
+    def test_approved_keeps_its_time_once_the_deck_no_longer_waits(self):
+        """#256: the deck's waiting toast goes once it is decided; Approved stays its time."""
+        path = self.saved_started()
+        listed = self.get('decks')
+        self.assertEqual([brief['path'] for brief in listed['needs']], [path])
+        moved = json.loads(json.dumps(listed))
+        moved['working'], moved['needs'] = moved['needs'], []
+        moved['working'][0].update(state='working', needs=False, sentence='Drafting the deck.')
+        result = self.deck_screen(path, [
+            {'poll': True}, {'click': 'Approve'}, {'poll': True}, {'snapshot': 'after'}],
+            **{'POST /api/decide': [ok(self.run_of(path))],
+               'GET /api/decks': [ok(listed), ok(listed), ok(moved)]})
+        toasts = result['snapshots']['after']['toasts']
+        self.assertTrue(any(said.startswith('Approved. It carries on by itself.')
+                            for said in toasts), toasts)
+
     def test_a_deck_made_as_powerpoint_is_sent_to_google_slides_from_its_screen(self):
         path = self.saved_started()
         self.slides.run.drive = False
@@ -1765,18 +1781,35 @@ class ScreenTests(ScriptedPage, PageCase):
         self.slides.run.drive = True
         sent = self.post('deliver', {'path': path})
         result = self.deck_screen(path, [
-            {'snapshot': 'fallback'}, {'click': 'Send to Google Slides'},
-            {'snapshot': 'sent'}], **{'GET /api/run': [ok(before), ok(sent)],
-                                      'POST /api/deliver': [ok(sent)]})
+            {'snapshot': 'fallback'}, {'click': 'Send to Google Slides'}, {'snapshot': 'asked'},
+            {'click': 'Cancel'}, {'snapshot': 'cancelled'}, {'click': 'Send to Google Slides'},
+            {'click': 'Send to Google Slides'}, {'snapshot': 'sent'}],
+            **{'GET /api/run': [ok(before), ok(sent)],
+               'POST /api/deliver': [ok(sent)]})
         fallback = result['snapshots']['fallback']
         self.assertIn("Google isn't connected, so this deck was made as a PowerPoint file.",
                       fallback['text'])
         self.assertIn('Send to Google Slides', fallback['buttons'])
+        # Nothing goes to Google on the first press (#257): its sheet says what goes, and as
+        # which revision, and Cancel sends nothing.
+        self.assertIn('Revision 1, delivered as a PowerPoint file, goes to Google Slides as '
+                      'revision 2.', result['snapshots']['asked']['sheet'])
+        self.assertEqual(result['snapshots']['asked']['posts'], 0)
+        self.assertEqual(result['snapshots']['cancelled']['posts'], 0)
         self.assertEqual([body for address, body in self.posts(result)],
                          [{'path': path}])
-        self.assertIn('The deck is in Google Slides now.', result['snapshots']['sent']['toasts'])
-        self.assertNotIn('Send to Google Slides', result['snapshots']['sent']['buttons'])
-        self.assertIn('Revision 2.', result['snapshots']['sent']['text'])
+        shot = result['snapshots']['sent']
+        self.assertIn('Revision 2 is in Google Slides now.', shot['toasts'])
+        self.assertNotIn('Send to Google Slides', shot['buttons'])
+        self.assertIn('Revision 2.', shot['text'])
+        # Both revisions keep their receipts, each opened its own way.
+        self.assertEqual([(one['revision'], one['format']) for one in sent['deliver']['receipts']],
+                         [(1, 'pptx'), (2, 'google')])
+        self.assertIn('Revision 2 · Google Slides', shot['text'])
+        self.assertIn('Revision 1 · PowerPoint file', shot['text'])
+        self.assertIn('Download revision 1', shot['buttons'])
+        self.assertIn('Open revision 2 in Google Slides, in a new tab',
+                      [link['name'] for link in shot['links']])
 
     def test_powerpoint_by_choice_offers_google_and_an_explicit_change_sheet(self):
         path = self.saved_started(output='pptx')

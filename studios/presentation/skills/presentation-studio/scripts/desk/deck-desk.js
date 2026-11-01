@@ -1049,7 +1049,7 @@
   // until Send is pressed here.
   function googleSheet() {
     const run = h.view.run;
-    const found = (run && run.desk && run.desk.delivered) || {};
+    const found = (run && ((run.desk && run.desk.delivered) || run.deliver)) || {};
     const form = make('form', 'create-flow');
     form.noValidate = true;
     const problem = h.problemLine();
@@ -1079,7 +1079,7 @@
       if (h.view.screen === 'deck' && h.view.path === path) {
         h.view.run = shown;
         h.paintDeck(false);
-        const heading = h.byId('desk-delivered-title');
+        const heading = h.byId('desk-delivered-title') || h.byId('title');
         if (heading) heading.focus();
       }
       h.refresh();
@@ -1988,12 +1988,36 @@
 
   // Escape puts Finishing away, as it does a sheet, when no sheet is open over it.
   function escaped(event) {
-    if (event.key !== 'Escape' || !h.view || h.view.screen !== 'deck' || h.view.sheet
-      || h.view.busy || !kit) return;
+    if (!h.view || h.view.screen !== 'deck' || h.view.sheet || !kit) return;
     const state = held.finish[h.view.path];
     if (!state || !state.finish) return;
+    if (event.key === 'Tab') {
+      keptInSheet(event);
+      return;
+    }
+    if (event.key !== 'Escape' || h.view.busy) return;
     if (event.preventDefault) event.preventDefault();
     kit.finishClose(state);
+  }
+
+  // On a phone Finishing is a modal sheet over the desk: Tab and Shift+Tab go round its own
+  // controls and never reach the desk hidden behind it.
+  function keptInSheet(event) {
+    const panel = document.querySelector('.desk-finish.desk-finish-sheet');
+    if (!panel) return;
+    const shown = (node) => {
+      for (let at = node; at && at !== panel; at = at.parentNode) if (at.hidden) return false;
+      return true;
+    };
+    const controls = Array.from(panel.querySelectorAll('button, a, input, textarea, select, '
+      + 'summary')).filter((node) => !node.disabled && node.tabIndex !== -1 && shown(node));
+    if (!controls.length) return;
+    if (event.preventDefault) event.preventDefault();
+    const at = controls.indexOf(document.activeElement);
+    const by = event.shiftKey ? -1 : 1;
+    const next = at < 0 ? (by > 0 ? 0 : controls.length - 1)
+      : (at + by + controls.length) % controls.length;
+    controls[next].focus();
   }
 
   function openTool(state, key) {
@@ -2027,6 +2051,9 @@
       title.tabIndex = -1;
     }
     if (panel.classList.contains('desk-finish-sheet')) {
+      // A modal sheet: what is behind it is out of reach (keptInSheet) and out of hearing.
+      panel.setAttribute('role', 'dialog');
+      panel.setAttribute('aria-modal', 'true');
       panel.setAttribute('aria-labelledby', 'desk-finish-title');
     }
     return panel;
@@ -2906,19 +2933,31 @@
     return [h.add(make('div', 'sheet-heading'), h.sheetTitle('Deliver the deck')), form];
   }
 
-  function landOnDelivered(path) {
-    if (held.landing !== path) return;
+  // The focus goes to the Delivered card once it is drawn, and is checked there: a screen
+  // drawn in a view transition, or a sheet taken away, can leave it on the page instead, so it
+  // is tried again a few frames later. Until the card is there it waits on the deck's title.
+  // Only while the focus has nowhere better to be: a person who has moved on is left there.
+  function landOnDelivered(path, tries = 10) {
+    if (held.landing !== path || h.view.path !== path) return;
     const card = h.byId('desk-delivered-title');
     const active = document.activeElement;
-    // Only while the focus has nowhere better to be: the person may have moved on.
-    const idle = !active || active === document.body || (active.id === 'title');
-    if (card) {
+    const idle = !active || active === document.body || active.id === 'title' || active === card;
+    if (!idle) {
       held.landing = null;
-      if (idle) card.focus();
-    } else if (idle) {
-      const title = h.byId('title');
-      if (title) title.focus({ preventScroll: true });
+      return;
     }
+    if (card) {
+      card.focus();
+      if (document.activeElement === card) {
+        held.landing = null;
+        return;
+      }
+    } else {
+      const title = h.byId('title');
+      if (title && active !== title) title.focus({ preventScroll: true });
+    }
+    // The card comes with a later drawing of the deck (`desk`), which tries again too.
+    if (tries > 0) window.setTimeout(() => landOnDelivered(path, tries - 1), 100);
   }
 
   async function deliver(run, blockers, pressed, problem) {

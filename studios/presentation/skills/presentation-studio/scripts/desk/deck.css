@@ -333,6 +333,30 @@
   margin-top: 0.6rem;
 }
 
+/* Toasts never cover the page's own controls: on a desktop they sit over the sidebar's
+   empty foot, under its screens; on a phone, over the bar of screens along the foot, one at
+   a time (app.js), where a tap still goes through to the bar. */
+@media (min-width: 52.01rem) {
+  .toasts {
+    left: 0.75rem;
+    right: auto;
+    bottom: calc(1rem + env(safe-area-inset-bottom));
+    justify-items: stretch;
+    width: 13rem;
+    max-width: 13rem;
+  }
+}
+
+@media (max-width: 52rem) {
+  .toasts {
+    left: 0.6rem;
+    right: 0.6rem;
+    bottom: calc(0.35rem + env(safe-area-inset-bottom));
+    justify-items: stretch;
+    max-width: none;
+  }
+}
+
 /* A delivery's receipts, one row each. */
 .desk-receipts {
   margin: 0.6rem 0 0;

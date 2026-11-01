@@ -2583,14 +2583,22 @@ class DeskFollowThroughTests(DeskPageCase):
     def test_finishing_on_a_phone_is_a_sheet_with_its_heading_focused(self):
         path = self.desk_deck()
         view = self.run_of(path)
+        tabs = [{'key': 'Tab'}, {'snapshot': 'tab-1'}, *[{'key': 'Tab'}] * 4,
+                {'snapshot': 'tab-5'}, {'key': 'Tab'}, {'snapshot': 'tab-6'}]
         result = self.run_page(self.answers(**{'GET /api/run': [ok(view)]}), [
-            {'click': 'Finishing'}, {'snapshot': 'open'}, {'click': 'Brand check'},
+            {'click': 'Finishing'}, {'snapshot': 'open'}, *tabs, {'click': 'Brand check'},
             {'snapshot': 'tool'}, {'key': 'Escape'}, {'snapshot': 'closed'}],
             state={'screen': 'deck', 'path': path}, narrow=True)
         shots = result['snapshots']
         self.assertEqual(shots['open']['focus'], 'desk-finish-title')
         self.assertEqual(shots['open']['desks'][0]['children'][-1],
                          ['desk-finish', 'desk-finish-sheet'])
+        self.assertEqual(shots['open']['dialogs'], [['true', 'desk-finish-title']])
+        # It is modal: Tab goes round its own controls, its Close and its four tools, and
+        # never reaches the desk behind it.
+        self.assertEqual(shots['tab-1']['focusKey'], 'desk-finish-close')
+        self.assertEqual(shots['tab-5']['focusKey'], 'desk-finish Rehearse')
+        self.assertEqual(shots['tab-6']['focusKey'], 'desk-finish-close')
         self.assertEqual(shots['tool']['focus'], 'desk-finish-title')
         # Escape puts it away, and the focus goes back to Finishing in the toolbar.
         self.assertEqual(shots['closed']['desks'][0]['children'], [['desk-column'],
@@ -2719,6 +2727,11 @@ class DeskFollowThroughTests(DeskPageCase):
         status, _, _, _ = self.raw('GET', '/api/download?' + urlencode(
             {'path': path, 'revision': '2'}))
         self.assertNotEqual(status, 200, 'a Google delivery has no file here')
+        # A revision that is not a plain whole number is refused as such, not a failure.
+        for odd in ('²', '1.0', '-1', ' 1'):
+            status, _, _, _ = self.raw('GET', '/api/download?' + urlencode(
+                {'path': path, 'revision': odd}))
+            self.assertEqual(status, 400, odd)
         # Lists show where it went in words; the link is a button of its own.
         brief = next(one for one in self.get('decks')['finished'] if one['path'] == path)
         self.assertEqual(brief['sentence'], 'Delivered as revision 2 to Google Slides.')

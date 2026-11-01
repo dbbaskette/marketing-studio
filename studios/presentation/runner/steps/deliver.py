@@ -53,6 +53,8 @@ NOTE = 4000
 # Why a PowerPoint receipt has no Download: only the last PowerPoint delivery is kept.
 REPLACED = 'Its file was replaced by revision {revision}’s PowerPoint file.'
 NOT_KEPT_HERE = 'Its file is no longer kept beside the deck.'
+UNRECORDED = ('This revision was delivered before Presentation Studio recorded which file it '
+              'delivered, so its file cannot be offered here.')
 
 
 def _title(run: dict, revision: int) -> str:
@@ -107,7 +109,7 @@ def receipts(root, run: dict) -> list[dict]:
     """Every delivered revision, oldest first, as its receipt: its revision, when, where it
     went ('google' with its link, or 'pptx'), and for a PowerPoint file whether it can still
     be downloaded here, or why not."""
-    out, latest = [], None
+    out, latest, unrecorded = [], None, set()
     for entry in run.get('revisions') or ():
         if not isinstance(entry, dict) or not isinstance(entry.get('revision'), int):
             continue
@@ -118,10 +120,13 @@ def receipts(root, run: dict) -> list[dict]:
             kept = receipt_file(root, run, entry['revision']) is not None
             shown.update(format='pptx', download=kept)
             latest = entry['revision']
+            if not entry.get('sha256'):
+                unrecorded.add(entry['revision'])
         out.append(shown)
     for shown in out:
         if shown['format'] == 'pptx' and not shown['download']:
             shown['why'] = (REPLACED.format(revision=latest) if latest != shown['revision']
+                            else UNRECORDED if shown['revision'] in unrecorded
                             else NOT_KEPT_HERE)
     return out
 

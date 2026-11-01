@@ -152,6 +152,22 @@ class PowerPointTests(Case):
         self.assertEqual(deliver.receipt_file(self.root, run, 3).read_bytes(),
                          b'PK\x03\x04 revision three')
 
+    def test_a_revision_recorded_without_its_hash_says_so(self):
+        """A PowerPoint revision recorded before revisions kept their hash cannot be matched
+        to the file beside the deck once it is no longer the delivery, and says why."""
+        deliver.deliver(self.root, self.run_, self.slides)
+        run = decks.read_run(self.root)
+        run['revisions'][0].pop('sha256')
+        decks.write_run(self.root, run)
+        self.assertTrue(deliver.receipts(self.root, run)[0]['download'], 'still the delivery')
+        deliver.record(self.root, run, deliver.upload(self.root, run, self.slides,
+                                                      output='google'))
+        run = decks.read_run(self.root)
+        self.assertTrue((self.root / 'deck.pptx').is_file())
+        first = deliver.receipts(self.root, run)[0]
+        self.assertFalse(first['download'])
+        self.assertEqual(first['why'], deliver.UNRECORDED)
+
     def test_asking_for_changes_takes_the_shared_file_away(self):
         deliver.deliver(self.root, self.run_, self.slides)
         run = decks.read_run(self.root)
