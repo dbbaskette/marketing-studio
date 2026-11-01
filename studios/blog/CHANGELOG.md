@@ -5,6 +5,17 @@ changes for authors first, then what changes for maintainers.
 
 ## Unreleased
 
+- **Bring accepted changes reads a rewritten paragraph as it was sent (#267).** A
+  paragraph rewritten outright, the opening's first paragraph included, or a paragraph
+  added, goes to the Doc as a deletion with the new words on the paragraph beside it.
+  Bring accepted changes now reads the two together. When the owner rejects such a change,
+  the Doc's words come back, as they do for any other rejected change. When the owner
+  accepted it and the desk changed it back, the part is refused. When the desk changed it
+  again, the desk keeps its words. A check that brings nothing back names the parts that
+  still read differently on the desk and in the Doc. It no longer says the two agree.
+  Maintainers: `_pull` in `desk_finish` reads each changed paragraph with a neighbour whose
+  carried lines reach into it, and returns `differs`.
+
 - **One library vocabulary, honest upload limits and clear source choices (#260).** The
   page says **team library** and **Document Library (this computer)** everywhere: **From
   the team library**, **From the Document Library (this computer)**, **Keep a copy in the

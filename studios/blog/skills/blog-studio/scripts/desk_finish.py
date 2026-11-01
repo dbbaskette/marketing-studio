@@ -3681,6 +3681,17 @@ def _pull(root, ident, directory, base, body):
             lines += [line.strip() for line in found[-1].get('lines') or []]
         return lines if where else None
 
+    def reaches(spot, key, forward):
+        """Whether the newest change carried for this unchanged baseline paragraph also
+        carried new lines after it (`forward`) or before it: a line the desk added or put in
+        place of a paragraph rides on the paragraph beside it (the one after it at the top
+        of the opening or under a heading), so that paragraph is part of what was sent."""
+        found = carried.get(spot)
+        lines = [line.strip() for line in (found[-1].get('lines') or [])] if found else []
+        if key not in lines:
+            return False
+        return lines[-1] != key if forward else lines[0] != key
+
     def merged(label, then_at, mine, theirs):
         """The part's text after the merge, or None when it is refused."""
         mine_raw, mine_keys = _lines(mine)
@@ -3694,10 +3705,34 @@ def _pull(root, ident, directory, base, body):
         then_keys = [key for key, _ in where]
         out, took = [], []
         for kind, (b0, b1), (o0, o1), (t0, t1) in _merge3(then_keys, mine_keys, their_keys):
-            suggested = sent_as(where[b0:b1]) if kind != 'same' else None
+            suggested = None
+            if kind != 'same':
+                # What was sent from here is read with any paragraph beside it, unchanged on
+                # both sides, whose sent lines reach into it: a paragraph rewritten outright
+                # goes as its deletion and the new words on its neighbour, and only the two
+                # together say what the desk sent (#267).
+                w0, w1, m0, m1, h0, h1 = b0, b1, o0, o1, t0, t1
+                if (
+                    b0 > 0
+                    and o0 > 0
+                    and t0 > 0
+                    and then_keys[b0 - 1] == mine_keys[o0 - 1] == their_keys[t0 - 1]
+                    and reaches(where[b0 - 1], then_keys[b0 - 1], True)
+                ):
+                    w0, m0, h0 = b0 - 1, o0 - 1, t0 - 1
+                if (
+                    b1 < len(then_keys)
+                    and o1 < len(mine_keys)
+                    and t1 < len(their_keys)
+                    and then_keys[b1] == mine_keys[o1] == their_keys[t1]
+                    and reaches(where[b1], then_keys[b1], False)
+                ):
+                    w1, m1, h1 = b1 + 1, o1 + 1, t1 + 1
+                suggested = sent_as(where[w0:w1])
+                mine_sent, theirs_sent = mine_keys[m0:m1], their_keys[h0:h1]
             if kind == 'same':
                 out += mine_raw[o0:o1]
-            elif kind == 'theirs' and suggested is not None and suggested == their_keys[t0:t1]:
+            elif kind == 'theirs' and suggested is not None and suggested == theirs_sent:
                 # The owner accepted what the desk sent, and the desk has since changed it
                 # back: neither is taken over the other.
                 withdrawn.append(label)
@@ -3705,7 +3740,7 @@ def _pull(root, ident, directory, base, body):
             elif kind == 'theirs' or (
                 # The desk's words here are exactly what it sent from this place as
                 # suggestions: the owner decided them, so the Doc's words stand.
-                kind in ('ours', 'conflict') and suggested == mine_keys[o0:o1]
+                kind in ('ours', 'conflict') and suggested == mine_sent
             ):
                 out += their_raw[t0:t1]
                 took += their_raw[t0:t1]
@@ -3819,11 +3854,27 @@ def _pull(root, ident, directory, base, body):
             'images': sent_images,
         },
     )
+    # The parts whose words still differ between the desk, as bringing back leaves it, and
+    # the Doc, so a check that brings nothing never reads as the two agreeing.
+    differs = ['Opening'] if _lines(opening)[1] != _lines(doc['opening'])[1] else []
+    paired = _matched(sections, doc['sections'])
+    for at, kept in enumerate(sections):
+        if (
+            at not in paired
+            or _lines(kept['text'])[1] != _lines(doc['sections'][paired[at]]['text'])[1]
+        ):
+            differs.append(name(kept['heading']))
+    differs += [
+        name(written['heading'])
+        for at, written in enumerate(doc['sections'])
+        if at not in paired.values()
+    ]
     return {
         'changes': changes,
         'refused': refused,
         'pictures': pictures,
         'withdrawn': withdrawn,
+        'differs': differs,
         'markdown': markdown,
     }
 
@@ -3886,8 +3937,9 @@ def _waiting(inline, record, base, pending):
     return sum(1 for row in rows if _still_waits(inline, row['id'])) or len(held)
 
 
-def _pull_said(found, waiting):
-    """Why nothing can be brought back now, or None when it can."""
+def _pull_said(found, waiting, unsent=False):
+    """Why nothing can be brought back now, or None when it can. `unsent`: the desk has
+    changes the Doc has not been sent."""
     if waiting:
         return (
             _counted(waiting, 'suggestion', 'suggestions')
@@ -3922,7 +3974,25 @@ def _pull_said(found, waiting):
             'brought back, so no image is swapped: say “Pull from Google Docs” in chat.'
         )
     if not found['changes']:
-        return 'Nothing to bring back: the desk has every accepted change in the Doc.'
+        said = 'Nothing to bring back: the desk has every accepted change in the Doc.'
+        differs = found.get('differs') or []
+        if not differs:
+            return said
+        said += (
+            ' '
+            + ', '.join('“' + name + '”' for name in differs)
+            + (' reads' if len(differs) == 1 else ' read')
+            + ' differently on the desk and in the Doc'
+        )
+        if unsent:
+            return said + ': the desk has changes the Doc has not been sent. Send them when ready.'
+        # Words the desk sent before, which the Doc's owner did not take as the desk has them
+        # now: neither replaces the other, and the two are said to differ.
+        return (
+            said + ': the desk’s words there went to the Doc before, and its owner did not take '
+            'them as the desk has them now. Say “Pull from Google Docs” in chat to choose the '
+            'wording for each.'
+        )
     return None
 
 
@@ -3945,7 +4015,12 @@ def google_pull(root, ident):
         sent = _sent(root, ident)
         sent['waiting'] = waiting
         studio.write_json(_sent_path(root, ident), sent)
-        said = _pull_said(found, waiting)
+        unsent = bool(
+            found['differs']
+            and not found['changes']
+            and (google_state(root, ident, directory, record) or {}).get('unsent')
+        )
+        said = _pull_said(found, waiting, unsent)
         studio.write_json(
             folder / 'preview.json',
             {
