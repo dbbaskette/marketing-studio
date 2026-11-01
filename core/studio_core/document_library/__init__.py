@@ -17,7 +17,8 @@ What a caller needs to know
     found.keyed(keys) / made.adopt(key=..., ...)   # existing work, added only when confirmed
 
 `adopt.py` previews and confirms Add existing work to library over the studios' remembered
-workspaces; `blog_existing.py` reads Blog Studio's team library for it, changing nothing.
+workspaces; `blog_existing.py`, `presentation_existing.py`, `training_existing.py` and
+`infographic_existing.py` read each studio's finished work for it, changing nothing.
 See `store.py` for the record contract. The library never selects context, never starts
 research or an assistant, and never shares anything: a project's choice is the project's.
 """

@@ -281,6 +281,27 @@ def _markdown(found: dict, kind: str) -> str:
     return '\n\n'.join(parts).strip() + '\n'
 
 
+def _pdf_part(pdf, shown: str, files: dict) -> dict | None:
+    """The record of finished work's PDF as `retain` and `adopt` take it, its bytes added to
+    `files` as `content.pdf` when it is saved. `pdf` is None, {'state': 'needs-export',
+    'reason': str} while no PDF exists, or {'state': 'saved', 'data': bytes}: a PDF the
+    studio already exported and checked is of exactly this work, up to LIMITS['pdf'] bytes,
+    kept as it is, never made or converted here; the library checks only that it is a PDF."""
+    if isinstance(pdf, dict) and pdf.get('state') == 'saved':
+        data = pdf.get('data')
+        if type(data) is not bytes or not data.startswith(b'%PDF-'):
+            raise LibraryError('A PDF is kept only once it has been exported.')
+        if len(data) > LIMITS['pdf']:
+            raise LibraryError(f'The PDF of "{shown}" is larger than the library keeps.')
+        files['content.pdf'] = data
+        return {'state': 'saved', 'file': 'content.pdf', 'media': MEDIA['.pdf'],
+                'bytes': len(data), 'sha256': _sha(data)}
+    if pdf is None or (isinstance(pdf, dict) and pdf.get('state') == 'needs-export'
+                       and isinstance(pdf.get('reason'), str)):
+        return {'state': 'needs-export', 'reason': pdf['reason'][:300]} if pdf else None
+    raise LibraryError('A PDF is kept only once it has been exported.')
+
+
 # --- the library ---------------------------------------------------------------------------
 
 class Library:
@@ -838,20 +859,7 @@ class Library:
         if len(encoded) > LIMITS['text']:
             raise LibraryError(f'"{shown}" is longer than the library keeps for one document.')
         files = {'content.md': encoded}
-        if isinstance(pdf, dict) and pdf.get('state') == 'saved':
-            data = pdf.get('data')
-            if type(data) is not bytes or not data.startswith(b'%PDF-'):
-                raise LibraryError('A PDF is kept only once it has been exported.')
-            if len(data) > LIMITS['pdf']:
-                raise LibraryError(f'The PDF of "{shown}" is larger than the library keeps.')
-            files['content.pdf'] = data
-            kept_pdf = {'state': 'saved', 'file': 'content.pdf', 'media': MEDIA['.pdf'],
-                        'bytes': len(data), 'sha256': _sha(data)}
-        elif pdf is None or (isinstance(pdf, dict) and pdf.get('state') == 'needs-export'
-                             and isinstance(pdf.get('reason'), str)):
-            kept_pdf = {'state': 'needs-export', 'reason': pdf['reason'][:300]} if pdf else None
-        else:
-            raise LibraryError('A PDF is kept only once it has been exported.')
+        kept_pdf = _pdf_part(pdf, shown, files)
         held = None
         if isinstance(project, dict):
             held = {'studio': studio, 'id': _plain(project.get('id'), 160),
@@ -874,22 +882,34 @@ class Library:
                         and (head.get('markdown') or {}).get('sha256') == record['markdown']['sha256']
                         and held_pdf.get('state') == wanted.get('state')
                         and held_pdf.get('sha256') == wanted.get('sha256'))
-                try:    # a kept PDF that went missing or changed is kept again
-                    whole = wanted.get('state') != 'saved' \
-                        or self._checked(place, held_pdf, LIMITS['pdf']) is not None
-                except LibraryError:
-                    whole = False
+                # a kept PDF that went missing or changed is kept again
+                whole = wanted.get('state') != 'saved' or self._pdf_whole(place, held_pdf)
                 if same and whole and self._state_of(place, head)[0] == 'readable':
                     return {'document': existing, 'revision': head['revision'], 'changed': False}
             self._tidy()
             kept = self._write(existing, record, files)
         return {'document': kept['id'], 'revision': kept['revision'], 'changed': True}
 
+    def _pdf_whole(self, place: Path, part: dict, hashed: bool = True) -> bool:
+        """Whether a revision's saved PDF is there and is the one it was kept with: checked
+        by its hash, or, without `hashed`, only by its size (cheap enough for a preview)."""
+        if not isinstance(part, dict) or part.get('state') != 'saved':
+            return False
+        if not hashed:
+            path = place / str(part.get('file') or '')
+            return '/' not in str(part.get('file')) and not path.is_symlink() and path.is_file() \
+                and path.stat().st_size == part.get('bytes')
+        try:
+            return self._checked(place, part, LIMITS['pdf']) is not None
+        except (LibraryError, OSError):
+            return False
+
     # existing work, added explicitly (adopt.py)
     def keyed(self, keys) -> dict:
         """{key: what the library holds under it now} for the keys it has: the document,
-        its newest revision, its title and the hashes of its Markdown and original. Keys the
-        library does not hold are left out. Nothing is written."""
+        its newest revision, its title and the hashes of its Markdown, its original and its
+        saved PDF (None when it has none, or when that file is gone or another size). Keys
+        the library does not hold are left out. Nothing is written."""
         wanted = {key for key in list(keys)[:LIMITS['documents']] if isinstance(key, str)}
         found = {}
         for row in self._index():
@@ -904,6 +924,8 @@ class Library:
                           'title': head.get('title'),
                           'markdown': (head.get('markdown') or {}).get('sha256'),
                           'original': (head.get('original') or {}).get('sha256'),
+                          'pdf': head['pdf'].get('sha256')
+                          if self._pdf_whole(place, head.get('pdf'), hashed=False) else None,
                           'whole': self._state_of(place, head)[0] != 'missing',
                           'hidden': bool(row.get('hidden'))}
         return found
@@ -925,18 +947,20 @@ class Library:
         return found
 
     def adopt(self, key, studio, kind, origin, title, text='', original=None, filename=None,
-              project=None, author=None, native=None, gaps=()) -> dict:
+              project=None, author=None, native=None, gaps=(), pdf=None) -> dict:
         """Keep existing work a person chose to add, found again by its key as `retain`
         finds finished work: readable Markdown when it has text, its original bytes when it
         has a file, and `native`, what the studio calls it (its own ID, revision, roles,
         voice and style), recorded as it was given. The same key reuses its document and a
-        revision is added only when the title, the text or the original changed, so adding
-        again adds nothing. Returns {'document', 'revision', 'changed'}.
+        revision is added only when the title, the text, the original or a saved PDF
+        changed, so adding again adds nothing. Returns {'document', 'revision', 'changed'}.
 
-        No PDF is taken: no studio's existing work holds a PDF checked against the revision
-        it was made from (Blog Studio keeps none), and the library never claims one it has
-        not checked. An adapter that has one would add a `pdf` part beside `original`,
-        verified as the delivered revision, rather than pass it as the original."""
+        `pdf` is what `retain` takes, and only an adapter that checked the PDF against the
+        exact revision it was made from passes it as 'saved' (a delivered deck's PDF by the
+        deck file it rendered, an approved infographic's by its export's manifest); every
+        other PDF is left out, never passed as the original. Blog Studio and Training Studio
+        keep none. Existing work with no saved PDF never takes away one the library already
+        keeps of the same text: that is the same work, so nothing is added."""
         if not isinstance(key, str) or not KEY.match(key) or key.split(':', 1)[0] != studio:
             raise LibraryError('Name the existing work by its studio and its own ID.')
         if kind not in KINDS or origin not in ORIGINS:
@@ -961,6 +985,7 @@ class Library:
                     'bytes': len(original), 'sha256': _sha(original)}
         if not encoded and part is None:
             raise LibraryError(f'"{shown}" has no text or file to keep.')
+        kept_pdf = _pdf_part(pdf, shown, files)
         try:
             described = json.dumps(native if native is not None else {}, ensure_ascii=False)
         except (TypeError, ValueError):
@@ -975,7 +1000,7 @@ class Library:
                     'revision': project.get('revision') if type(project.get('revision')) in (int, str) else None}
         record = {'title': shown, 'kind': kind, 'origin': origin, 'studio': studio, 'key': key,
                   'project': held, 'author': _plain(author, 100) if author else None,
-                  'operation': None, 'original': part, 'markdown': None, 'pdf': None,
+                  'operation': None, 'original': part, 'markdown': None, 'pdf': kept_pdf,
                   'native': json.loads(described) if native is not None else None,
                   'adopted': True,
                   'conversion': {'method': f'{studio}-existing-v1',
@@ -992,6 +1017,11 @@ class Library:
                 same = (head.get('title') == shown
                         and (head.get('markdown') or {}).get('sha256') == (record['markdown'] or {}).get('sha256')
                         and (head.get('original') or {}).get('sha256') == (part or {}).get('sha256'))
+                held_pdf = head.get('pdf') or {}
+                if (kept_pdf or {}).get('state') == 'saved':
+                    # a saved PDF is the same only when the head keeps exactly it, whole
+                    same = same and held_pdf.get('sha256') == kept_pdf['sha256'] \
+                        and self._pdf_whole(place, held_pdf)
                 if same and self._state_of(place, head)[0] != 'missing':
                     return {'document': existing, 'revision': head['revision'], 'changed': False}
             self._tidy()
