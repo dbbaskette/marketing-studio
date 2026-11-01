@@ -925,6 +925,8 @@ def view(engine, root) -> dict:
     jobs = (record.get('drafts') or {}).get('jobs') or ()
     return {
         **({'execution': record.get('execution'), 'saved_status': record.get('migration_saved_status')} if record.get('unfinished_migration') else {}),
+        # Whether the index is written, for the level's download, which includes it then.
+        'index_written': (root / pipeline.INDEX).is_file(),
         'flow': FLOW, 'title': session['title'], 'levels': [level or '' for level in levels],
         'progress': {'running': running, 'doing': doing,
                      'started_at': record.get('started_at'), 'minutes': None,

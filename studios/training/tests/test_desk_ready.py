@@ -326,8 +326,9 @@ class ReadyJourneyTests(RunnerAnswers, ReadyCase):
         kept = self.shelf()
         answers['POST /api/drafts/draft'] = [self.read_post('drafts/draft',
                                                             {'path': self.path, 'seen': seen})]
+        # On a phone the toolbar's words are short, and the name says what it marks.
         result = self.journey(answers, [
-            {'click': 'Mark every material ready'}, {'click': 'Mark 3 materials ready'},
+            {'click': 'Mark ready: every material'}, {'click': 'Mark 3 materials ready'},
             {'snapshot': 'marked'}, {'click': 'Undo'}, {'snapshot': 'undone'},
             # The toast's leaving, later, never takes the focus Undo put back.
             {'timer': 'gone'}, {'snapshot': 'gone'}], narrow=True)
@@ -337,15 +338,15 @@ class ReadyJourneyTests(RunnerAnswers, ReadyCase):
         shot = result['snapshots']['marked']
         self.assertIn('3 materials are marked ready. Guide and Brief are kept in the Document '
                       'Library. Undo', shot['toasts'])
-        self.assertNotIn('Mark every material ready', shot['buttons'])
+        self.assertNotIn('Mark ready: every material', shot['buttons'])
         self.assertEqual(shot['focus'], 'Undo')
         shot = result['snapshots']['undone']
         self.assertIn('Undone. 3 materials are drafts again. The Document Library keeps '
                       'revision 1 of Guide until you mark it ready again. The Document Library '
                       'keeps revision 1 of Brief until you mark it ready again.', shot['toasts'])
-        self.assertIn('Mark every material ready', shot['buttons'])
-        self.assertEqual(shot['focus'], 'Mark every material ready')
-        self.assertEqual(result['snapshots']['gone']['focus'], 'Mark every material ready')
+        self.assertIn('Mark ready: every material', shot['buttons'])
+        self.assertEqual(shot['focus'], 'Mark ready: every material')
+        self.assertEqual(result['snapshots']['gone']['focus'], 'Mark ready: every material')
         self.assertEqual(self.approvals(), before)
         self.assertEqual(self.shelf(), kept)
         self.assertEqual(len(kept), 2)

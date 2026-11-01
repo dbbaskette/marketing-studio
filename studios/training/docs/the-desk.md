@@ -23,7 +23,11 @@ Open the training on the desk. Each level has its own plan and materials; resear
 
 Sources collects the findings and references used in the training. A guide or brief's Sources section is maintained from its citations; change references in the text instead of typing into that section. You can read the research and plan, and decide how changes should reach the materials that depend on them.
 
-The toolbar's **Download level 101** (or **Download all**) gives every written material of the level, one file each, exactly as saved; a material's own Download is on its card. Downloading marks nothing ready and sends nothing.
+The toolbar's **Download level 101** (or **Download all**) opens a sheet whose **Download level 101 (.zip)** takes every written material of the level in one ZIP, exactly as saved, with the index once it is written. Each file in it is named by its level and what it is, such as `101-learner-guide.md`. Each material can also be downloaded alone, there or from its card. Downloading marks nothing ready and sends nothing.
+
+A Yoodli layout reads as Yoodli takes it: one list of its fields in order, each with its name, the characters it uses of Yoodli's limit, its text, and a **Copy** button named after the field. How to use the fields in Yoodli, and a copy of the whole layout, are folded away above the list.
+
+On a phone the desk keeps out of the way of what you read. The toolbar is one row with the title, the one filled action (such as **Mark ready**) and **More**, which holds Download, Google Doc and Finishing. The material and section tabs are one row that scrolls sideways, and choosing one brings what it shows to the top of the screen. While a sheet is open, Tab and Shift+Tab go round its own controls only.
 
 ## The deck
 
@@ -49,7 +53,7 @@ Ready can be taken back on purpose. The toast after Mark ready offers **Undo** w
 
 A later edit makes the material a draft again. Opening a Ready material for editing says so before you type (with the library revision it keeps), and the first save says it is back to Draft. Once all requested materials are ready, Training Studio writes the index. Ready is your approval and sends nothing by itself unless the training was started with Google Docs, which then follow readiness as before. A training made with local copies can make a Google Doc of one guide or brief from **Google Doc**, of exactly the version shown, and update it only when you ask; see [Google Docs](google-docs.md). You can look for changes in Google Docs and bring them back, resolving a conflict if both versions changed.
 
-**Finishing** opens on the material in front of you; **All materials** chooses another one of the level. It offers checks and proposals. Review each proposal and choose Apply, Edit or Skip. A proofread fix may request work; other findings can open a note for you to edit. Applied changes keep a version in History. Local checks create proposals without starting a job. When you request an AI check, it runs work to produce proposals; each proposal waits for your decision.
+**Finishing** opens on the material in front of you, beside it on a wide screen and above it on a phone, with its heading in view and focused; **Close** or Escape returns you to the button (to **More** on a phone). **All materials** chooses another one of the level. On the plan, or on Research & sources, which have no Finishing checks, it says so and lets you choose a material that has them. It offers checks and proposals. Review each proposal and choose Apply, Edit or Skip. A proofread fix may request work; other findings can open a note for you to edit. Applied changes keep a version in History. Local checks create proposals without starting a job. When you request an AI check, it runs work to produce proposals; each proposal waits for your decision.
 
 ## Working with teammates and older trainings
 

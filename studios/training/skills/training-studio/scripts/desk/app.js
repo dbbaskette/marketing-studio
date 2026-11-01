@@ -1290,6 +1290,28 @@ function toolbar(spec) {
     add(lead, add(node, icon('back')));
   }
   byId('actions').replaceChildren(...ordered(spec.actions));
+  // A screen read on a phone keeps its toolbar to one row: the title, its one filled action
+  // and More (`folded`), so the material fills the screen.
+  if (spec.compact) byId('toolbar').classList.add('toolbar-compact');
+  else byId('toolbar').classList.remove('toolbar-compact');
+}
+
+// On a phone, the one filled action stays in the toolbar and the rest go behind More, each
+// a full-height menu item, so the toolbar keeps to one row. Elsewhere they are unchanged.
+function folded(actions) {
+  actions = list(actions).filter(Boolean);
+  if (!narrow()) return actions;
+  const filled = actions.filter((node) => node.classList.contains('button-filled'));
+  const rest = actions.filter((node) => !filled.includes(node));
+  if (!rest.length) return filled;
+  const menu = make('details', 'menu');
+  menu.dataset.key = 'more-menu';
+  const opener = make('summary', 'button button-round shine');
+  opener.dataset.key = 'more';
+  opener.setAttribute('aria-label', 'More');
+  for (const node of rest) node.className = 'menu-item';
+  add(menu, add(opener, icon('more')), add(make('div', 'menu-list'), ...rest));
+  return [...filled, menu];
 }
 
 // A toolbar's actions: the one filled action first, then the rest, each quiet. A screen
@@ -1456,6 +1478,36 @@ function problemLine() {
   return node;
 }
 
+// While a sheet is open, Tab and Shift+Tab go round its own controls and nothing else.
+const FOCUSABLE = 'button, [href], input, select, textarea, summary, [tabindex]';
+function keepInSheet(event) {
+  const sheet = byId('sheet');
+  if (event.key !== 'Tab' || !sheet || sheet.hidden) return;
+  const stops = Array.from(sheet.querySelectorAll(FOCUSABLE)).filter((node) => !node.disabled
+    && node.tabIndex >= 0 && !node.closest('[inert]') && !node.closest('[hidden]')
+    && (node.tagName === 'SUMMARY' || !node.closest('details:not([open])'))
+    && (typeof node.getClientRects !== 'function' || node.getClientRects().length)
+    // Of a group of radio buttons, Tab stops on the chosen one only.
+    && !(node.type === 'radio' && !node.checked && node.name && sheet.querySelector(
+      'input[type="radio"][name="' + node.name + '"]:checked')));
+  const active = document.activeElement;
+  if (!stops.length) {
+    event.preventDefault();
+    sheet.focus();
+    return;
+  }
+  const first = stops[0];
+  const last = stops[stops.length - 1];
+  const inside = sheet.contains(active) && active !== sheet;
+  if (event.shiftKey && (!inside || active === first)) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && (!inside || active === last)) {
+    event.preventDefault();
+    first.focus();
+  }
+}
+
 // What a sheet's decision is sent with: a gate's own, or the one for what a deck says.
 function decider() {
   return outlined() ? decideOutline : decide;
@@ -1584,6 +1636,10 @@ function drawSheet() {
   // And it is the only thing that can be reached: everything behind it is inert until it is
   // put away, by its own buttons or by Escape.
   for (const id of ['main', 'sidebar', 'toolbar']) byId(id).inert = Boolean(shown);
+  // The skip link and a toast's button are outside those: the skip link is put away too, and
+  // Tab goes round the sheet's own controls (`keepInSheet`).
+  const skip = document.querySelector('.skip');
+  if (skip) skip.inert = Boolean(shown);
   if (!shown) {
     holder.replaceChildren();
     return;
@@ -9303,6 +9359,7 @@ function begin() {
     if (!document.hidden) refresh();
     else if (view.screen === 'run' && view.path && typeof shareDesk === 'function') shareDesk(view.path);
   });
+  document.addEventListener('keydown', keepInSheet);
   // Escape puts away whatever is open: a menu first, then the sheet.
   document.addEventListener('keydown', (event) => {
     if (event.key !== 'Escape') return;

@@ -194,6 +194,7 @@ const deskKit = Drafting.kit({
     },
     render: (held) => deskMaterialChanged(held),
     refresh: (held) => deskMaterialChanged(held),
+    finishClosed: () => focusFinishing(),
     reload: async (held) => {
       held.view = await ask('drafts/card', deskItem(held.id));
       held.pending = {}; held.editSeen = {}; held.recoveredParts = {};
@@ -299,18 +300,57 @@ function openFinishing(choose = false) {
     held.sources = false;
     held.material[held.level] = material.view.name;
     closeSheet(); deskKit.finishOpen(material);
+    revealFinishing();
   };
   const current = !held.sources && choices.find((material) =>
     material.view.name === held.material[held.level]);
   if (!choose && current) { open(current); return; }
   if (choices.length === 1) { open(choices[0]); return; }
-  DESK.kitSheet = [sheetTitle('Finishing'), make('p', '', 'Choose the material to check.'),
+  // What is shown has no checks of its own (the plan, or the sources): said, with the
+  // materials that do.
+  const shown = list(held.view?.cards).find((one) => one.name === held.material[held.level]);
+  const none = choose ? '' : held.sources ? 'Research & sources has no Finishing checks. '
+    : shown ? capital(cardTitle(shown).toLowerCase() === 'plan' ? 'the plan' : cardTitle(shown))
+      + ' has no Finishing checks. ' : '';
+  DESK.kitSheet = [sheetTitle('Finishing'), make('p', '', none + 'Choose the material to check.'),
     make('h3', 'sheet-part', '1. Choose a material'),
     ...choices.map((material) => capsule(cardTitle(material.view), 'quiet', () => open(material))),
     choices.length ? null : make('p', '', 'A guide, brief, practice or Yoodli layout opens here once it is written.'),
     capsule('Cancel', 'quiet', () => closeSheet())].filter(Boolean);
   openSheet('desk-kit', '')();
 }
+
+// Finishing, once open: its heading is brought into view under the toolbar and focused.
+function revealFinishing() {
+  const title = main().querySelector('.desk-finish-title');
+  if (!title) return;
+  title.tabIndex = -1;
+  title.focus({ preventScroll: true });
+  if (typeof title.getBoundingClientRect !== 'function') return;
+  const top = title.getBoundingClientRect().top;
+  const under = byId('toolbar').getBoundingClientRect().bottom;
+  const foot = narrow() ? byId('sidebar').getBoundingClientRect().height : 0;
+  if (top < under || top + 48 > window.innerHeight - foot) window.scrollBy(0, top - under - 12);
+}
+
+// The way back from Finishing, by Close or Escape: the Finishing button, or More on a phone,
+// where the button is one of its items.
+function focusFinishing() {
+  if (narrow() ? focusKey('more') : focusKey('desk-finishing')) return;
+  byId('title').focus({ preventScroll: true });
+}
+
+// Escape puts Finishing away when the focus is in it and nothing over it is open. It is
+// heard first, so a menu or a sheet open over the page is put away by the page instead.
+if (typeof document !== 'undefined') document.addEventListener('keydown', (event) => {
+  if (event.key !== 'Escape' || view.screen !== 'run' || !byId('sheet').hidden) return;
+  if (Array.from(document.querySelectorAll('.menu')).some((menu) => menu.open)) return;
+  const material = finishingMaterial();
+  const panel = main().querySelector('.desk-finish');
+  const active = document.activeElement;
+  if (!material || !panel || !(panel.contains(active) || active === document.body)) return;
+  deskKit.finishClose(material);
+}, true);
 
 // Before/after are labels inside a proposal card, keeping one heading level per card.
 const finishingSides = deskKit.sides;
@@ -894,14 +934,19 @@ function deskTabs(found, held) {
   }, 'desk-level');
 }
 
-// One material at a time. Reading navigation never approves or starts work.
+// One material at a time. Reading navigation never approves or starts work. On a phone the
+// tabs are one row that scrolls sideways, and choosing one brings what it shows into view.
 function workspaceTabs(label, options, selected, choose, key) {
   const bar = make('div', 'desk-workspace-tabs');
   bar.setAttribute('role', 'tablist'); bar.setAttribute('aria-label', label);
+  const chosen = (index) => {
+    choose(options[index].id);
+    const tab = byId(key + '-' + index);
+    if (tab) tab.focus({ preventScroll: true });
+    revealTabs(tab);
+  };
   options.forEach((option, index) => {
-    const go = capsule(option.label, 'quiet', () => {
-      choose(option.id); byId(key + '-' + index)?.focus();
-    }, key + ' ' + index);
+    const go = capsule(option.label, 'quiet', () => chosen(index), key + ' ' + index);
     go.setAttribute('role', 'tab'); go.id = key + '-' + index;
     go.setAttribute('aria-selected', String(option.id === selected));
     go.tabIndex = option.id === selected ? 0 : -1;
@@ -912,11 +957,30 @@ function workspaceTabs(label, options, selected, choose, key) {
       event.preventDefault();
       const next = event.key === 'Home' ? 0 : event.key === 'End' ? options.length - 1
         : (index + step + options.length) % options.length;
-      choose(options[next].id); byId(key + '-' + next)?.focus();
+      chosen(next);
     });
     bar.append(go);
   });
   return bar;
+}
+
+// After a tab is chosen: its row scrolls sideways to it, and, when what it shows would start
+// below the first screen, the page scrolls so the tabs sit just under the toolbar.
+function revealTabs(tab) {
+  const bar = tab && tab.parentNode;
+  if (!bar || typeof bar.getBoundingClientRect !== 'function') return;
+  if (bar.scrollWidth > bar.clientWidth) {
+    bar.scrollLeft = Math.max(0, tab.offsetLeft - (bar.clientWidth - tab.offsetWidth) / 2);
+  }
+  // On a phone the tabs always go to the top: what they show starts under them. Elsewhere
+  // only when its first lines (about 10rem of it) would be out of view.
+  const panel = byId(tab.getAttribute('aria-controls'));
+  const toolbar = byId('toolbar').getBoundingClientRect();
+  const top = bar.getBoundingClientRect().top;
+  const shown = panel ? panel.getBoundingClientRect().top + 160 : top;
+  if (narrow() || shown > window.innerHeight || top < toolbar.bottom) {
+    window.scrollBy(0, top - toolbar.bottom - 8);
+  }
 }
 
 function workspacePanel(key, index, node) {
@@ -1653,6 +1717,9 @@ function materialParts(held, found) {
     ...list(held.view.sections)];
   if (!sections.some(section => section.id === held.section)) held.section = sections[0]?.id;
   const sectionKey = headingId(found.name) + '-sections';
+  // A Yoodli layout is read as Yoodli takes it: its fields once, in order, each to copy.
+  const fielded = found.kind === 'yoodli' && !editing && list(held.view.fields).length;
+  if (fielded) sections.splice(0, sections.length);
   if (sections.length > 1) area.append(workspaceTabs('Section of ' + cardTitle(found),
     sections.map(section => ({id: section.id, label: section.heading})), held.section,
     id => { held.section = id; paintDesk(true); }, sectionKey));
@@ -1666,15 +1733,7 @@ function materialParts(held, found) {
     } else part = materialPart(held, section.id);
     area.append(sections.length > 1 ? workspacePanel(sectionKey, sections.indexOf(section), part) : part);
   }
-  if (found.kind === 'yoodli') {
-    for (const field of list(held.view.fields)) {
-      const title = list(field.heading).join(' / ');
-      area.append(add(make('section', 'card'), make('h2', 'card-title', title),
-        make('p', 'desk-plain', field.text), field.limit
-          ? make('p', 'quiet', field.text.length + ' of ' + field.limit.toLocaleString('en-US')
-            + ' characters') : null, copyButton('Copy', 'Copied.', field.text)));
-    }
-  }
+  if (fielded) area.append(...deskYoodliFields(held, found));
   const job = held.view.working || list(held.view.jobs).at(-1);
   if (job) {
     const checks = make('div', 'card');
@@ -1708,6 +1767,34 @@ function materialParts(held, found) {
   if (held.stale) deskKit.stale(held);
   if (!hasDeskRecovery(held)) deskKit.watch(held);
   return area;
+}
+
+// A Yoodli layout to copy from: how to use it in Yoodli folded away, then one list of its
+// fields in Yoodli's order, each with its name, the characters it uses of Yoodli's limit, its
+// text, and a Copy button named after it.
+function deskYoodliFields(held, found) {
+  const whole = String(held.view.opening || '');
+  const first = whole.search(/^## /m);
+  const intro = first > 0 ? whole.slice(0, first).trim() : '';
+  const how = add(make('details', 'card-part'), make('summary', '', 'How to use these fields in Yoodli'));
+  how.dataset.key = 'yoodli-how ' + found.name;
+  if (intro) how.append(window.StudioMarkdown.render(intro));
+  how.append(add(make('div', 'bar'), copyButton('Copy the whole layout', 'Copied.', whole,
+    'desk-copy ' + found.name + ' whole')));
+  const rows = make('ul', 'rows desk-yoodli-fields');
+  for (const field of list(held.view.fields)) {
+    const name = list(field.heading).join(' / ');
+    const text = String(field.text || '');
+    const used = text.length.toLocaleString('en-US') + (field.limit ? ' of '
+      + Number(field.limit).toLocaleString('en-US') : '') + ' characters';
+    const go = copyButton('Copy', 'Copied ' + name + '.', text, 'desk-yoodli-copy ' + name);
+    go.setAttribute('aria-label', 'Copy ' + name);
+    rows.append(add(make('li', 'row step desk-yoodli-field'),
+      add(make('div', 'row-text'), make('p', 'row-title', name), make('p', 'quiet', used),
+        make('p', 'desk-plain', text)), go));
+  }
+  return [add(card('Yoodli fields'), make('p', 'quiet', 'Paste each field into the Yoodli '
+    + 'Builder field of the same name, in this order.'), how, rows)];
 }
 
 // Said as a Ready material opens for editing, before anything is typed: a saved change
@@ -2222,6 +2309,12 @@ function paintDesk(fresh) {
       && levelCanBeReviewed(shown) && waiting.length) {
     const mark = capsule(named.length ? 'Mark this level ready' : 'Mark every material ready',
       lead === 'ready' ? 'filled' : '', () => confirmLevel(level, waiting), 'desk-level-ready');
+    // A phone's toolbar has one row: the shorter words, with the level in its name.
+    if (narrow()) {
+      mark.textContent = 'Mark ready';
+      mark.setAttribute('aria-label', named.length ? 'Mark ready: level ' + level
+        : 'Mark ready: every material');
+    }
     actions.push(mark);
   }
   // The toolbar's Download is the whole level's; each material's own is on its card.
@@ -2264,11 +2357,17 @@ function paintDesk(fresh) {
     finishing.scope = add(make('p', 'quiet desk-finishing-scope'),
       'Checking ' + cardTitle(finishing.view) + ' only. ', others);
   }
+  // Finishing sits beside the material on a wide screen, and above it on a phone, so it
+  // opens where the person is looking.
+  const reading = !finishing ? add(make('div', 'stack'), column)
+    : narrow() ? add(make('div', 'stack'), finishing.scope, finishing.panel, column)
+      : add(make('div', 'stack'), finishing.scope, add(make('div', 'desk-layout desk-finishing'),
+        column, finishing.panel));
   const layout = workspacePanel('desk-material', options.findIndex(one => one.id === selected),
-    held.sources ? sourcesPart(found) : add(make('div', 'stack'), column,
-      finishing ? finishing.scope : null, finishing ? finishing.panel : null));
-  place({ title: found.title || 'Untitled', back: true,
-    above: named.length ? [make('span', '', levelsText(named))] : [], actions }, [
+    held.sources ? sourcesPart(found) : reading);
+  place({ title: found.title || 'Untitled', back: true, compact: narrow(),
+    above: named.length ? [make('span', '', levelsText(named))] : [],
+    actions: folded(actions) }, [
     waitingPlan ? null : pageHead(preparingPlan ? 'I’ll prepare the topics and teaching plan for you to check, then build the training.' : conversation ? 'Read the retained materials. Make checked edits in conversation; only you mark a material ready.' : DESK_WORDS.lede),
     notice,
     conversation ? add(card('Editing in conversation'), make('p', '', 'No work is scheduled. Checked edits to the listed existing material parts and explicit broader scope changes happen in conversation; Mark ready is your decision.')) : null,
@@ -2488,12 +2587,22 @@ function deskSheet(kind) {
         make('p', 'step-name', cardTitle(one)), make('p', 'quiet', one.says)),
       downloadButton(one)));
     }
+    // One ZIP of them all, with the index once it is written; each one alone below it.
+    const zip = level ? 'Download level ' + level + ' (.zip)' : 'Download all (.zip)';
+    const bundle = capsule(zip, 'filled', (event) => downloadFile(view.path,
+      { bundle: 'level', level }, (level ? 'level-' + level + '-' : '') + 'materials.zip',
+      event.currentTarget), 'desk-download-zip');
     return [sheetTitle(level ? 'Download level ' + level : 'Download all'),
-      make('p', '', 'Every written material of ' + where + ', one file each, exactly as it is '
-      + 'saved now, Ready or a draft. Downloading marks nothing ready and sends nothing. One '
-      + 'material alone downloads from its own card.'),
-    ready.length ? items : make('p', 'quiet', 'Nothing of ' + where + ' is written yet.'),
-    add(make('div', 'bar'), close)];
+      make('p', '', 'Every written material of ' + where + ', exactly as it is saved now, Ready '
+      + 'or a draft, in one ZIP' + (found.index_written ? ' with the index' : '') + '. Each '
+      + 'file is named by ' + (level ? 'its level and ' : '') + 'what it is. Downloading marks '
+      + 'nothing ready and sends nothing.'),
+      found.index_written ? null : make('p', 'quiet', 'The index is not written yet, so it '
+        + 'is not in the ZIP.'),
+      ready.length ? add(make('div', 'bar'), bundle) : null,
+      ready.length ? make('h3', 'sheet-part', 'One at a time') : null,
+      ready.length ? items : make('p', 'quiet', 'Nothing of ' + where + ' is written yet.'),
+    add(make('div', 'bar'), close)].filter(Boolean);
   }
   const docs = found.docs || {};
   const automatic = Object.values(docs).some((doc) => doc.automatic);
