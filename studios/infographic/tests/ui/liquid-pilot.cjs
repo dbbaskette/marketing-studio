@@ -86,7 +86,6 @@ const assert = require('node:assert/strict');
     assert.equal(await studio.getByRole('dialog').evaluate(n=>getComputedStyle(n).backgroundColor),'rgb(255, 255, 255)');
     await studio.getByRole('button',{name:'Continue',exact:true}).click();
     await studio.getByLabel('How should we find the story?',{exact:true}).selectOption('direct');
-    await studio.getByRole('button',{name:'Continue',exact:true}).click();
     await studio.getByLabel('Page size',{exact:true}).selectOption('digital');
     await studio.getByRole('button',{name:'Save brief',exact:true}).click();
     await studio.locator('#actions').getByRole('button',{name:'Find the story',exact:true}).click();

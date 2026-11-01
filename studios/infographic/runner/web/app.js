@@ -62,9 +62,40 @@ let held = null, busy = false, picture = null, preferences = null;
 // The open infographic's toolbar primary action: the page shows that control at most once more.
 let primary = '';
 const draft = {research_first:false, materials: [], library: [], imported: [], step: 0, title: '', text: '', direction: 'suggest', audience: '', purpose: '', must: '', locked: '', exclusions: '', preset: 'a4'};
-const error = message => { $('notice').textContent = message; $('notice').hidden = !message; for(const node of document.querySelectorAll('[data-work-error]')){node.textContent=$('sheet').open?message:'';node.hidden=!message||!$('sheet').open;} };
-const toast = message => { const p = make('p', 'toast', message); $('toasts').replaceChildren(p); };
+// One problem, said once: in the open sheet when there is one, otherwise in the notice above
+// the page, which sits in the page's flow (so it covers nothing) and has its own Dismiss.
+let lastError = '';
+function error(message) {
+  lastError = message || '';
+  const inSheet = !!message && $('sheet').open;
+  for (const node of document.querySelectorAll('[data-work-error]')) { node.textContent = inSheet ? message : ''; node.hidden = !inSheet; }
+  const notice = $('notice');
+  if (!message || inSheet) { notice.hidden = true; notice.replaceChildren(); return; }
+  const dismiss = button('Dismiss', () => error('')); dismiss.dataset.free = '';
+  notice.replaceChildren(make('span', 'ig-notice-text', message), dismiss);
+  notice.hidden = false;
+  const box = notice.getBoundingClientRect();
+  if (box.top < 0 || box.bottom > innerHeight) notice.scrollIntoView({block: 'nearest'});
+}
+// The shared toast: it slides in, is read out once and leaves by itself after 4.2 seconds,
+// straight away when motion is reduced, as in Presentation Studio and shared setup.
+const calm = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+function toast(message) {
+  const node = make('p', 'toast glass', message); $('toasts').append(node);
+  while ($('toasts').children.length > 3) $('toasts').firstElementChild.remove();
+  setTimeout(() => { node.classList.add('toast-leaving'); setTimeout(() => node.remove(), calm() ? 0 : 260); }, 4200);
+}
 function button(label, action, primary=false) { const node = make('button', 'button' + (primary ? ' button-filled' : ''), label); node.type = 'button'; node.addEventListener('click', action); return node; }
+// A field's own problem: beside it, announced once, with the field marked invalid and
+// described by it. An empty message clears it. Returns false when a problem is shown.
+function invalid(f, message) {
+  f.wrap.querySelector('.ig-field-error')?.remove();
+  const described = (f.input.getAttribute('aria-describedby') || '').split(' ').filter(id => id && id !== f.input.id + '-error');
+  if (!message) { f.input.removeAttribute('aria-invalid'); if (described.length) f.input.setAttribute('aria-describedby', described.join(' ')); else f.input.removeAttribute('aria-describedby'); return true; }
+  const note = make('span', 'problem ig-field-error', message); note.id = f.input.id + '-error'; note.setAttribute('role', 'alert');
+  f.wrap.append(note); f.input.setAttribute('aria-invalid', 'true'); f.input.setAttribute('aria-describedby', [...described, note.id].join(' '));
+  f.input.focus(); return false;
+}
 function card(title, ...parts) { return add(make('section', 'card stack'), make('h2', 'card-title', title), ...parts); }
 function detail(title, ...parts) { return add(make('details'), make('summary', '', title), ...parts); }
 let fieldNumber = 0;
@@ -72,50 +103,102 @@ function field(label, value='', kind='input') { const wrap = make('label', 'fiel
 function stateLine(kind,words){const bead=make('span','bead');bead.dataset.state=kind;bead.setAttribute('aria-hidden','true');return add(make('p','state'),bead,document.createTextNode(words));}
 function lines(value) { return value.split('\n').map(v => v.trim()).filter(Boolean); }
 function list(items) { return add(make('ul'), ...items.map(item => make('li', '', item))); }
-function sheet(title, ...nodes) { $('sheet-body').replaceChildren(add(make('div', 'ig-sheet stack'), make('h2', 'sheet-title', title))); $('sheet-body').firstChild.firstChild.id = 'sheet-title'; const status=make('section','callout ig-work');status.dataset.workStatus='';status.setAttribute('role','status');status.setAttribute('aria-live','polite');const problem=make('p','problem');problem.dataset.workError='';problem.hidden=true;problem.setAttribute('role','alert');$('sheet-body').firstChild.append(status,problem,...nodes.filter(node=>node!=null&&node!==false)); if (!$('sheet').open) $('sheet').showModal(); paintWork(); }
+// A sheet: the shared sticky heading at its top and, when its last part is a bar of actions,
+// a sticky foot, so the main action and Cancel stay in reach on a phone.
+function foot(...controls) { return add(make('div', 'ig-sheet-foot'), add(make('div', 'create-foot bar'), ...controls.filter(Boolean))); }
+function sheet(title, ...nodes) {
+  const heading = make('h2', 'sheet-title', title); heading.id = 'sheet-title';
+  const status=make('section','callout ig-work');status.dataset.workStatus='';status.setAttribute('role','status');status.setAttribute('aria-live','polite');
+  const problem=make('p','problem');problem.dataset.workError='';problem.hidden=true;problem.setAttribute('role','alert');
+  const parts = nodes.filter(node => node != null && node !== false);
+  const last = parts.at(-1);
+  if (last?.classList?.contains('bar') && !last.closest?.('.ig-sheet-foot')) parts[parts.length - 1] = add(make('div', 'ig-sheet-foot'), last);
+  $('sheet-body').replaceChildren(add(make('div', 'ig-sheet stack'), add(make('div', 'ig-sheet-top'), add(make('div', 'sheet-heading'), heading)), status, problem, ...parts));
+  if (!$('sheet').open) $('sheet').showModal(); paintWork();
+}
 // The one number a person is told for a saved revision: its page revision (history.Pages).
 // Checks, reviews and approvals save revisions of their own but leave the page as it was.
 function pageOf(saved){return saved?.page_revision??saved?.revision;}
 function closeSheet() { $('sheet').close(); paintWork(); }
-let work = null, workTimer = null;
+// Long work belongs to one infographic. While it runs, only that infographic's conflicting
+// controls are locked: the sidebar, Home, Settings and other infographics stay usable, and
+// Stop waiting leaves the work running on this computer. `running` holds the work this tab is
+// waiting on, by infographic ID; `reading` is a sheet's own short read (a linked document).
+const running = new Map();
+let reading = null, workTimer = null;
+// Which screen is showing, so finished work never pulls the person back to it.
+let screen = 'home';
+function shownWork() { return reading || (held && running.get(held.project.id)) || null; }
 const workLabels = {'suggest':'Finding the story','build':'Building the page','art-direct':'Writing the art direction','image-start':'Generating artwork','inspect-images':'Inspecting the page','revise-story':'Revising the story','revise-art':'Revising the artwork','repair':'Repairing the page','preview':'Rendering the preview','export':'Preparing your files','google-deliver':'Delivering the Google Doc'};
 workLabels['image-recover']='Recovering saved artwork locally';
 workLabels['visual-layout']='Building the visual diagram layout';
 workLabels['approve']='Approving and preparing your files';
 workLabels['review']='Recording your review and running checks';
+const WAITING='This can take a few minutes. You can stop waiting and come back: the work keeps running on this computer, and your saved work is kept.';
 function paintWork() {
+  const work=shownWork();
   $('main').setAttribute('aria-busy',String(!!work));
   for(const surface of document.querySelectorAll('[data-work-status]')) {
     const inSheet=$('sheet').contains(surface),show=!!work&&(!$('sheet').open||inSheet);
     surface.hidden=!show;if(!show)continue;
-    const signature=work.label+'|'+work.detail+'|'+(work.pending||'');
+    const signature=work.label+'|'+work.detail+'|'+(work.pending||'')+'|'+(work.id||'');
     if(surface.dataset.message!==signature) {
       surface.dataset.message=signature;
       const bead=make('span','bead');bead.dataset.state=work.connected?'current':'review';bead.setAttribute('aria-hidden','true');
       const clock=make('span','quiet ig-work-clock');clock.dataset.workClock='';clock.setAttribute('aria-hidden','true');
       surface.replaceChildren(add(make('div','ig-work-heading'),bead,make('strong','',work.label),clock),make('p','quiet',work.detail));
-      if(work.cancel)surface.append(button('Cancel this request',work.cancel));
+      const controls=make('div','bar');
+      // Stop waiting leaves the work running; nothing is cancelled or repeated.
+      if(work.id&&!work.quiet){const stop=button('Stop waiting',()=>{closeSheet();void home();});stop.dataset.free='';controls.append(stop);}
+      if(work.cancel){const cancel=button('Cancel this request',work.cancel);cancel.dataset.free='';controls.append(cancel);}
+      if(controls.childElementCount)surface.append(controls);
     }
     const seconds=Math.max(0,Math.floor((Date.now()-work.started)/1000));
     surface.querySelector('[data-work-clock]').textContent=Math.floor(seconds/60)+':'+String(seconds%60).padStart(2,'0')+' elapsed';
   }
+  guard();
 }
-function beginWork(label, elapsed=0) {
-  clearInterval(workTimer);
-  $('toasts').replaceChildren();
-  work={label,started:Date.now()-elapsed*1000,connected:true,detail:'This can take a few minutes. Your saved work is kept.'};
-  workTimer=setInterval(paintWork,1000);paintWork();return work;
+// Lock the open infographic's own controls while its work runs, and release them after.
+// Navigation, Stop waiting, the view controls and the downloads (immutable files) stay free.
+function guard() {
+  const busyHere=!!(held&&running.has(held.project.id));
+  for(const node of document.querySelectorAll('#actions button, #main button, #sheet button')){
+    if(node.dataset.free!==undefined)continue;
+    if(busyHere&&node.dataset.locked===undefined){node.dataset.locked=node.disabled?'1':'';node.disabled=true;}
+    else if(!busyHere&&node.dataset.locked!==undefined){node.disabled=node.dataset.locked==='1';delete node.dataset.locked;}
+  }
 }
-function endWork(owner) { if(work===owner){clearInterval(workTimer);workTimer=null;work=null;paintWork();} }
-function connectionUncertain(owner) { if(work===owner){owner.connected=false;owner.label='Checking the connection';owner.detail='The connection was interrupted. Work may still be running on this computer. No request was repeated.';paintWork();} }
+function free(node){node.dataset.free='';return node;}
+// `id` names the infographic the work belongs to; without one it is a sheet's own read.
+function beginWork(label, elapsed=0, id=null) {
+  const owner={label,id,started:Date.now()-elapsed*1000,connected:true,detail:id?WAITING:'This can take a few minutes. Your saved work is kept.',title:held?.project.id===id?held.project.brief.title:''};
+  if(id)running.set(id,owner);else reading=owner;
+  if(!workTimer)workTimer=setInterval(paintWork,1000);
+  paintWork();return owner;
+}
+function endWork(owner) {
+  if(owner.id&&running.get(owner.id)===owner)running.delete(owner.id);
+  if(reading===owner)reading=null;
+  if(!running.size&&!reading){clearInterval(workTimer);workTimer=null;}
+  paintWork();
+}
+function connectionUncertain(owner) { owner.connected=false;owner.label='Checking the connection';owner.detail='The connection was interrupted. Work may still be running on this computer. No request was repeated.';paintWork(); }
+// Briefly locks every control, navigation too, for a short sheet-bound request.
 function lockControls() {
   const controls=[...document.querySelectorAll('button')].map(node=>[node,node.disabled]);controls.forEach(([node])=>node.disabled=true);
   return ()=>controls.forEach(([node,disabled])=>node.disabled=disabled);
 }
+// Finished work for an infographic the person has left: say so where they are, and
+// refresh Home's cards. They open it themselves to see the result.
+function elsewhere(owner,problem) {
+  const name='“'+(owner.title||'Your infographic')+'”';
+  if(problem)error(name+' could not finish: '+problem);else toast(name+' is ready. Open it to see the result.');
+  if(screen==='home')void drawHome();
+}
 function progressNotice(progress,owner,id) {
-  if(work!==owner)return;
+  if(running.get(id)!==owner)return;
   const current=progress.activity;
-  if(work===owner&&current?.state==='running'){owner.label=current.label;owner.started=Date.now()-current.elapsed_seconds*1000;owner.connected=true;owner.detail='Working on this computer. This can take a few minutes. Your saved work is kept.';paintWork();}
+  if(current?.state==='running'){owner.label=current.label;owner.started=Date.now()-current.elapsed_seconds*1000;owner.connected=true;owner.detail=WAITING;paintWork();}
   const pending=progress.recovery?.find(r=>!r.local_artwork_available&&['queued','running','unknown'].includes(r.state));
   if(pending&&owner.pending!==pending.attempt_id){owner.pending=pending.attempt_id;
     owner.cancel=async()=>{try{const latest=await request('/api/activity?id='+encodeURIComponent(id));await request('/api/action',{action:'image-cancel',id,expected_revision:latest.revision,request_id:pending.attempt_id});toast('Local adoption cancelled. Remote charges may remain unknown.');}catch(f){error(f.message);}};
@@ -136,14 +219,18 @@ function recoveredNotice(result) {
   else if(result?.state==='outdated')toast('The earlier result was kept and did not replace newer work.');
   else error(result?.state==='failed'?(result.problem||'The operation could not finish. Your saved work is kept.'):result?.state==='cancelled'?'The image request was cancelled. Remote charges may remain unknown.':'The earlier outcome could not be confirmed. Check the saved work and recovery controls before retrying.');
 }
+function here(id){return screen==='project'&&held?.project.id===id;}
 async function resumeActivity(id,current) {
-  busy=true;const unlock=lockControls(),owner=beginWork(current.label,current.elapsed_seconds);
-  try{const result=await recoverActivity(id,owner);await openProject(id);recoveredNotice(result);
-  }catch(f){error(f.message);}finally{endWork(owner);busy=false;unlock();}
+  if(running.has(id))return;
+  const owner=beginWork(current.label,current.elapsed_seconds,id);
+  try{const result=await recoverActivity(id,owner);
+    if(here(id)){endWork(owner);await openProject(id);recoveredNotice(result);}
+    else elsewhere(owner,['complete','outdated'].includes(result?.state)?'':(result?.problem||'The earlier outcome could not be confirmed. Open it to check the saved work.'));
+  }catch(f){if(here(id))error(f.message);else elsewhere(owner,f.message);}finally{endWork(owner);}
 }
 async function request(route, data) {
   const labels={'/api/remote-preview':'Reading the linked document','/api/source-preview':'Reading the uploaded file','/api/research-preview':'Reading the selected research'};
-  const owner=!work&&data!==undefined&&labels[route]?beginWork(labels[route]):null;
+  const owner=!shownWork()&&data!==undefined&&labels[route]?beginWork(labels[route]):null;
   try{const response = await fetch(route, {method: data === undefined ? 'GET' : 'POST', headers: {'X-Infographic-Studio-Token': token, ...(data === undefined ? {} : {'Content-Type': 'application/json'})}, ...(data === undefined ? {} : {body: JSON.stringify(data)})});
     const answer = await response.json(); if (!response.ok){const failure=Error(answer.error || 'This request could not be completed.');failure.status=response.status;throw failure;}return answer;
   }finally{if(owner)endWork(owner);}
@@ -182,13 +269,18 @@ function finished(verb){
     'restore':'Restored as revision '+n+'. Approval is not restored.','image-cancel':'The image request was cancelled on this computer. Remote charges may remain unknown.'}[verb]||'Saved.';
 }
 async function action(verb, values={}, revision=null, options={}) {
-  if (busy) return; busy = true; error(''); const id = held.project.id;
+  const id = held.project.id; if (running.has(id)) return; error('');
   const label=verb==='suggest'&&held.planning_response?.available&&!values.fresh?'Checking the saved proposal':workLabels[verb];
-  const unlock=lockControls(),owner=beginWork(label||'Saving your changes');
+  // A quiet action is short and belongs to an open sheet that reads its result, so it keeps
+  // every control still until it returns.
+  const unlock=options.quiet?lockControls():()=>{},owner=beginWork(label||'Saving your changes',0,id);
+  if(options.quiet){owner.quiet=true;owner.detail='This can take a moment. Your saved work is kept.';paintWork();}
   let checking=false;
   const polling=setInterval(async()=>{if(checking)return;checking=true;try{progressNotice(await request('/api/activity?id='+encodeURIComponent(id)),owner,id);}catch(f){connectionUncertain(owner);}finally{checking=false;}},2000);
   try {
     const answer = await request('/api/action', {action:verb, id, expected_revision:revision??held.project.revision, ...values});
+    if(!options.quiet&&!here(id)){const result=answer.result,state=result?.state;elsewhere(owner,['unknown','failed'].includes(state)?(imageProblems[result.reason]||imageUncertain):'');return result;}
+    clearInterval(polling);endWork(owner);
     closeSheet(); await openProject(id); if(options.quiet)return answer.result;
     const found=held?.recovery?.some(r=>r.local_artwork_available);
     if(['unknown','failed'].includes(answer.result?.state)&&found)error(imageFound);
@@ -200,10 +292,14 @@ async function action(verb, values={}, revision=null, options={}) {
   } catch (failure) {
     if(workLabels[verb]&&(!failure.status||failure.status>=500)){
       clearInterval(polling);connectionUncertain(owner);
-      try{const result=await recoverActivity(id,owner);await openProject(id);if(result)recoveredNotice(result);else error(failure.message);}catch(f){error(f.message);}
-    }else{await openProject(id);error(failure.message);}
+      try{const result=await recoverActivity(id,owner);
+        if(!here(id))elsewhere(owner,['complete','outdated'].includes(result?.state)?'':(result?.problem||failure.message));
+        else{endWork(owner);await openProject(id);if(result)recoveredNotice(result);else error(failure.message);}
+      }catch(f){if(here(id))error(f.message);else elsewhere(owner,f.message);}
+    }else if(here(id)||options.quiet){endWork(owner);await openProject(id);error(failure.message);}
+    else elsewhere(owner,failure.message);
   }
-  finally { clearInterval(polling); endWork(owner);busy = false;unlock(); }
+  finally { clearInterval(polling); endWork(owner);unlock(); }
 }
 function heading(title, ...actions) { for(const id of ['home','settings']){if((id==='settings')===title.startsWith('Settings'))$(id).setAttribute('aria-current','page');else $(id).removeAttribute('aria-current');} $('title').textContent = title; $('actions').replaceChildren(...actions); $('title').focus({preventScroll:true}); }
 function resetPicture() { if (picture) URL.revokeObjectURL(picture); picture = null; pictureFor = ''; }
@@ -211,17 +307,53 @@ function reviewCapturedSources(){
   const section=[...$('main').querySelectorAll('details')].find(node=>node.firstElementChild?.textContent==='Sources and facts');
   if(section){error('');section.open=true;section.scrollIntoView({block:'start'});section.firstElementChild.focus();}
 }
+// Where the person is, kept in this tab so a reload returns there: the screen, the open
+// infographic, its scroll position and open sections.
+function remember(where){screen=where;try{sessionStorage.setItem('infographic-studio-screen',where);}catch(f){}}
+function keepPlace(){
+  if(screen!=='project'||!held)return;
+  const open=[...$('main').querySelectorAll('details[open] > summary')].map(s=>s.textContent);
+  try{sessionStorage.setItem('infographic-studio-place',JSON.stringify({id:held.project.id,y:Math.round(scrollY),open}));}catch(f){}
+}
+let placeTimer=null;
+window.addEventListener('scroll',()=>{clearTimeout(placeTimer);placeTimer=setTimeout(keepPlace,250);},{passive:true});
+window.addEventListener('pagehide',keepPlace);
+function returnToPlace(id){
+  let place=null;try{place=JSON.parse(sessionStorage.getItem('infographic-studio-place')||'null');}catch(f){}
+  if(!place||place.id!==id)return;
+  const open=new Set(Array.isArray(place.open)?place.open:[]);
+  for(const summary of $('main').querySelectorAll('details > summary'))if(open.has(summary.textContent))summary.parentElement.open=true;
+  if(typeof place.y==='number')requestAnimationFrame(()=>requestAnimationFrame(()=>scrollTo(0,place.y)));
+}
+let homeTimer=null;
 async function home() {
-  if (busy) return; resetPicture(); held = null; error(''); heading('Infographics', button('New infographic', () => newSheet(), true),button('Team library',teamSheet));
+  resetPicture(); held = null; error(''); remember('home');
+  heading('Infographics', button('New infographic', () => newSheet(), true),button('Team repository',teamSheet));
+  delete $('main').dataset.home;
+  await drawHome();
+}
+// Home's cards, with the work each infographic is doing now. While any runs, the cards are
+// read again every few seconds; reading starts and repeats nothing.
+async function drawHome() {
+  clearTimeout(homeTimer);
+  if (screen !== 'home') return;
   try {
     const data = await request('/api/projects');
+    if (screen !== 'home') return;
+    // Redraw only when something a card says has changed, so focus and place stay put.
+    const said = JSON.stringify(data.projects.map(p => [p.id, p.title, p.problem, p.page_revision, p.readiness, p.activity?.state, p.activity?.label, running.has(p.id)]));
+    if ($('main').dataset.home === said) { if (data.projects.some(p => p.activity?.state === 'running' || running.has(p.id))) homeTimer = setTimeout(drawHome, 2000); return; }
+    $('main').dataset.home = said;
     const cards = data.projects.map(p => {
-      const node=card(p.title || 'Unreadable infographic', ...(p.problem?[make('p','problem',p.problem)]:[stateLine(p.readiness?.state||'current',p.readiness?.summary||'Saved'),make('p','quiet','Revision '+pageOf(p))]), button('Open ' + (p.title || p.id), () => openProject(p.id)));
-      node.classList.add('ig-project-card'); return node;
+      const working=p.activity?.state==='running'||running.has(p.id);
+      const state=working?stateLine('current','Working now: '+(p.activity?.label||running.get(p.id)?.label||'Working')):stateLine(p.readiness?.state||'current',p.readiness?.summary||'Saved');
+      const node=card(p.title || 'Unreadable infographic', ...(p.problem?[make('p','problem',p.problem)]:[state,make('p','quiet','Revision '+pageOf(p))]), button('Open ' + (p.title || p.id), () => openProject(p.id)));
+      node.classList.add('ig-project-card'); if(working)node.dataset.working=''; return node;
     });
     const intro=add(make('div','intro'),make('h2','large-title','Your infographics'),make('p','lede','Turn supplied information into one clear page.'));
     $('main').replaceChildren(intro, add(make('div','ig-project-list'),...cards));
     if (!cards.length) $('main').append(card('Make your first infographic', make('p','','Add notes, choose what matters, and review the page before exporting.')));
+    if (cards.some(node => node.dataset.working !== undefined)) homeTimer = setTimeout(drawHome, 2000);
   } catch (failure) { error(failure.message); }
 }
 async function bytes(file) { if (file.size > 16_000_000) throw Error('Choose a source no larger than 16 MB.'); return new Uint8Array(await file.arrayBuffer()); }
@@ -229,13 +361,18 @@ function encoded(raw) { let binary=''; for (const v of raw) binary += String.fro
 function retain(input, key) { input.addEventListener('input', () => { draft[key] = input.value; }); }
 async function newSheet() {
   error('');
-  const form = make('form', 'create-flow');
-  const names = ['1. Add information', '2. Set the direction', '3. Choose the page'];
-  add(form, make('p','lede',names[draft.step]));
+  // Two steps, each headed as a part of the sheet. The studio says what is missing beside the
+  // field itself, rather than leaving it to the browser's own check.
+  if (draft.step > 1) draft.step = 1;
+  const form = make('form', 'create-flow'); form.noValidate = true;
+  const names = ['1. Add information', '2. Set the direction and page'];
+  add(form, make('h3','sheet-part',names[draft.step]));
   const problem = make('p', 'problem'); problem.setAttribute('role','alert');
+  let title = null;
   if (draft.step === 0) {
-    const title = field('Working title',draft.title), text = field('Notes or text',draft.text,'textarea'); text.input.classList.add('ig-source-input'); title.input.required=true;
+    title = field('Working title',draft.title); const text = field('Notes or text',draft.text,'textarea'); text.input.classList.add('ig-source-input');
     retain(title.input,'title'); retain(text.input,'text'); add(form,title.wrap,text.wrap);
+    title.input.addEventListener('input',()=>{if(title.input.value.trim())invalid(title,'');});
     const upload = field('Upload files — text, Markdown, CSV, PDF, Word or HTML');
     upload.input.type = 'file'; upload.input.accept = '.txt,.md,.csv,.pdf,application/pdf,.docx,.html,.htm'; upload.input.multiple = true;
     upload.input.addEventListener('change', async () => {
@@ -266,7 +403,7 @@ async function newSheet() {
     const researchFirst=make('input');researchFirst.type='checkbox';researchFirst.checked=!!draft.research_first;researchFirst.addEventListener('change',()=>{draft.research_first=researchFirst.checked;});
     form.append(add(make('label','check'),researchFirst,document.createTextNode('Research this topic first')),make('p','quiet','You can save a topic and brief without source material, then choose references and optional external search.'));
     form.append(button('Import selected studio material',()=>handoffSheet(preview=>{draft.materials.push({preview,acknowledged:false});newSheet();})));
-    const fromLibrary=button('Add from library',()=>libraryPick(draftLibrary).then(done=>{if(done){closeSheet();newSheet();}}));fromLibrary.dataset.key='ig-new-library';form.append(fromLibrary);
+    const fromLibrary=button('Add from Document Library',()=>libraryPick(draftLibrary).then(done=>{if(done){closeSheet();newSheet();}}));fromLibrary.dataset.key='ig-new-library';form.append(fromLibrary);
     for(const chosen of draft.library){
       const kept=card(chosen.title,make('p','quiet','From the Document Library, revision '+chosen.revision+' · '+chosen.characters+' readable characters. It becomes a source when you save the brief.'),list(chosen.gaps));
       if(chosen.gaps.length){const ack=make('input');ack.type='checkbox';ack.checked=chosen.acknowledged;ack.addEventListener('change',()=>{chosen.acknowledged=ack.checked;});kept.append(add(make('label','check'),ack,document.createTextNode('I reviewed these gaps. Use only the readable text.')));}
@@ -293,17 +430,17 @@ async function newSheet() {
     for(const [value,label] of [['direct','I know what to show'],['suggest','Suggest the story'],['hybrid','Build on my ideas']]) { const option=make('option','',label); option.value=value; direction.input.append(option); } direction.input.value=draft.direction; retain(direction.input,'direction'); add(form,direction.wrap);
     for(const [key,label] of [['audience','Audience and prior knowledge'],['purpose','Desired takeaway or purpose'],['must','Must-show ideas — one per line']]) { const f=field(label,draft[key],key==='must'?'textarea':'input');retain(f.input,key);add(form,f.wrap); }
     const locked=field('Exact wording to preserve — one phrase per line',draft.locked,'textarea'), excluded=field('Leave out — one item per line',draft.exclusions,'textarea'); retain(locked.input,'locked');retain(excluded.input,'exclusions'); add(form,detail('Wording and exclusions',locked.wrap,excluded.wrap));
-  } else {
     const preset=field('Page size',draft.preset,'select');for(const [value,label] of [['a4','A4 portrait — 210 × 297 mm'],['letter','US Letter portrait — 8.5 × 11 in'],['digital','Digital portrait — 1080 × 1350 px']]) { const option=make('option','',label);option.value=value;preset.input.append(option); }preset.input.value=draft.preset;retain(preset.input,'preset');add(form,preset.wrap);
     try { preferences=await request('/api/preferences'); const capability=await request('/api/computer'); add(form,make('p','',capability.disclosure),make('p','quiet','Brand: '+(preferences.brand.brand || 'Choose in shared settings before composing.')),make('p','quiet','Saving this brief starts no assistant, image generation or installation.')); } catch(failure) {problem.textContent=failure.message;}
   }
-  const go=button(draft.step===2?'Save brief':'Continue',()=>{},true);go.type='submit';
+  const go=button(draft.step===1?'Save brief':'Continue',()=>{},true);go.type='submit';
   form.addEventListener('submit',async event=>{event.preventDefault();problem.textContent='';
-    if(draft.step===0 && (!draft.title.trim() || (!draft.research_first && !draft.text.trim() && !draft.upload && !draft.materials.length && !draft.library.length))) {problem.textContent='Give a title and some usable information.';return;}
+    if(draft.step===0 && !draft.title.trim()) {invalid(title,'Give this infographic a working title.');return;}
+    if(draft.step===0 && !draft.research_first && !draft.text.trim() && !draft.upload && !draft.materials.length && !draft.library.length) {problem.textContent='Add some information: paste notes, upload a file, add a document, or choose Research this topic first.';return;}
     if(draft.materials.some(m=>!m.preview.readable || (m.preview.warnings.length&&!m.acknowledged)) || draft.library.some(one=>one.gaps.length&&!one.acknowledged)) {problem.textContent='Review the file previews and acknowledge readable-only coverage, or remove unreadable files.';return;}
     if(draft.step===0 && draft.materials.reduce((n,m)=>n+m.preview.characters, draft.library.reduce((n,one)=>n+one.characters,draft.text.length))>120000){problem.textContent='Choose smaller files or explicit excerpts within 120,000 readable characters for one story-planning job. Nothing was sent to an assistant.';return;}
     if(draft.upload?.kind==='csv' && !draft.selection) {problem.textContent='Preview and confirm the CSV selection first.';return;}
-    if(draft.step<2) {draft.step++;closeSheet();newSheet();return;}
+    if(draft.step<1) {draft.step++;closeSheet();newSheet();return;}
     go.disabled=true;
     try { let p=draft.created;
       if(!p) {draft.request_id=draft.request_id||requestId();p=(await request('/api/projects',{title:draft.title,preset:draft.preset,direction:draft.direction,request_id:draft.request_id})).project;draft.created=p;}
@@ -329,7 +466,7 @@ async function newSheet() {
       closeSheet();Object.assign(draft,{research_first:false, materials:[],library:[],library_added:false,imported:[],notes_text:null,notes_source:null,step:0,request_id:null,created:null,upload:null,selection:null,csv:null,title:'',text:'',direction:'suggest',audience:'',purpose:'',must:'',locked:'',exclusions:'',preset:'a4'});await openProject(p.id);if(researchFirst)await researchSheet();else toast('Brief saved. Choose Find the story when you are ready to use your assistant.');
     }catch(failure){problem.textContent=failure.message+' Your answers are still here.';}finally{go.disabled=false;}
   });
-  add(form,problem,draft.created||draft.request_id?button('Open the saved draft',()=>{closeSheet();openProject(draft.created?.id||draft.request_id);}):null,add(make('div','create-foot bar'),go,draft.step?button('Back',()=>{draft.step--;closeSheet();newSheet();}):null,button('Cancel',closeSheet))); sheet('New infographic',form);
+  add(form,problem,draft.created||draft.request_id?button('Open the saved draft',()=>{closeSheet();openProject(draft.created?.id||draft.request_id);}):null,foot(go,draft.step?button('Back',()=>{draft.step--;closeSheet();newSheet();}):null,button('Cancel',closeSheet))); sheet('New infographic',form);
 }
 function csvSheet() {
   const data=draft.csv, form=make('form','ig-fields'); const rows=field('Data-row numbers, separated by commas',Array.from({length:data.row_count},(_,i)=>i+1).join(','));
@@ -340,10 +477,13 @@ function csvSheet() {
   add(form,problem,add(make('div','bar'),go,button('Back to information',()=>{closeSheet();newSheet();})));closeSheet();sheet('Select CSV data',form);
 }
 async function openProject(id) {
-  try { if(held?.project.id!==id)resetPicture(); held=await request('/api/desk?id='+encodeURIComponent(id)); renderProject();
+  try { if(held?.project.id!==id)resetPicture(); const found=await request('/api/desk?id='+encodeURIComponent(id));
+    clearTimeout(homeTimer);held=found;remember('project');renderProject();
     try{sessionStorage.setItem('infographic-studio-project',id);}catch(f){}
-    if(!busy&&held.activity?.state==='running')void resumeActivity(id,held.activity);
-    else if(!busy&&held.activity?.state==='failed'&&held.activity.problem)error(held.activity.problem);
+    // Work this tab is already waiting on shows its own progress; work found running after a
+    // reload, or started elsewhere, is followed without being started again.
+    if(!running.has(id)&&held.activity?.state==='running')void resumeActivity(id,held.activity);
+    else if(!running.has(id)&&held.activity?.state==='failed'&&held.activity.problem)error(held.activity.problem);
   }
   catch(failure) {error(failure.message);}
 }
@@ -377,7 +517,7 @@ function renderProject() {
   if(uncertain&&!recoverable){next=['Cancel uncertain request',()=>action('image-cancel',{request_id:uncertain.attempt_id})];needs='Cancel uncertain request: '+imageUncertain.charAt(0).toLowerCase()+imageUncertain.slice(1).replace(' Cancel it under Image work needs attention before starting new image work.',' New image work can start once it is cancelled.');}
   if(recoverable){next=['Recover saved artwork',()=>action('image-recover',{request_id:recoverable.attempt_id})];needs='Recover saved artwork: '+imageFound.charAt(0).toLowerCase()+imageFound.slice(1).replace(' Choose Recover saved artwork to place',' Recovering places');}
   primary=next[0];
-  heading(p.brief.title,button('Infographics',home),button(...next,true));
+  heading(p.brief.title,free(button('Infographics',home)),button(...next,true));
   const delivery=held.deliveries.find(d=>d.current) || held.deliveries[0];
   const parts=[make('p','lede','Choose the explanation, review the actual page, then approve its exact revision.'),standing(held.roadmap,p,delivery,needs)];
   if(held.recovery.length) parts.push(card('Image work needs attention',...held.recovery.map(r=>add(make('div','stack'),make('p','',r.message),r.local_artwork_available?button('Recover saved artwork',()=>action('image-recover',{request_id:r.attempt_id})):button('Cancel uncertain request',()=>action('image-cancel',{request_id:r.attempt_id}))))));
@@ -386,7 +526,7 @@ function renderProject() {
       button('Make this story visual',()=>reviseStorySheet(selected,true),true),
       nativeReady?button('Rebuild visual layout',()=>action('visual-layout')):make('p','quiet','This older plan uses sentence-length labels. Make a visual plan first so the diagrams remain readable.')));
   }
-  if(!p.stories.length)parts.push(savedPlan?card('Planning response saved',make('p','','Check the saved response locally, without using assistant allowance. Asking for a new plan starts a new assistant request.'),held.planning_response.detail?detail('What needs attention',make('p','',held.planning_response.detail)):null,button('Check saved proposal',()=>action('suggest')),button('Review source material',reviewCapturedSources),button('Ask for a new plan',()=>action('suggest',{fresh:true}))):card('Find a useful story',make('p','','Your supplied information is saved. The assistant proposes source-backed explanations; generation is a later explicit action.'),button('Find the story',()=>action('suggest')),detail('Author in your conversation',make('p','','Use native action JSON to save located facts and story proposals directly. A browser and nested planning assistant are not required.'))));
+  if(!p.stories.length)parts.push(savedPlan?card('Planning response saved',make('p','','Check the saved response locally, without using assistant allowance. Asking for a new plan starts a new assistant request.'),held.planning_response.detail?detail('What needs attention',make('p','',held.planning_response.detail)):null,button('Check saved proposal',()=>action('suggest')),button('Review source material',reviewCapturedSources),button('Ask for a new plan',()=>action('suggest',{fresh:true}))):card('Find a useful story',make('p','','Your supplied information is saved. The assistant proposes source-backed explanations; generation is a later explicit action.'),button('Find the story',()=>action('suggest')),detail('Advanced: author in your conversation',make('p','','Your assistant can save located facts and story proposals directly from a conversation, using Infographic Studio’s action JSON, without this page or a nested planning assistant. See docs/conversation.md.'))));
   if(held.planning_response?.problem)parts.push(card('Saved planning response needs attention',make('p','problem',held.planning_response.problem)));
   let chosenStory=null;
   if(p.stories.length){
@@ -400,7 +540,7 @@ function renderProject() {
   parts.push(chosenStory);
   if(p.scene) {
     parts.push(detail('Layout alternatives',button('Visual infographic',()=>nativeReady?action('visual-layout'):reviseStorySheet(selected,true)),button('Stacked blocks',()=>action('layout',{arrangement:'stack'})),button('Two columns',()=>action('layout',{arrangement:'columns'}))));
-    if(p.scene.art_regions?.length)parts.push(detail('Artwork and image brief',card('Explanatory artwork',button('Revise this artwork',reviseArtSheet),make('p','','Artwork is raster; labels and chart marks stay editable. Review the exact art direction before starting or editing an image.'),...p.assets.map(a=>button('Compose saved image '+a.id,()=>action('compose-image',{asset_id:a.id}))),button('Suggest precise art direction',()=>action('art-direct')),detail('Write the art direction yourself',button('Describe subjects and relationships',artSheet)),...p.image_briefs.map(b=>detail('Saved image brief',make('pre','ig-csv-preview',b.prompt),button('Generate artwork using selected provider',()=>startImage(b)))))));
+    if(p.scene.art_regions?.length)parts.push(detail('Artwork and image brief',card('Explanatory artwork',button('Revise this artwork',reviseArtSheet),make('p','','Artwork is raster; labels and chart marks stay editable. Review the exact art direction before starting or editing an image.'),...p.assets.map(a=>button('Compose saved image '+a.id,()=>action('compose-image',{asset_id:a.id}))),button('Suggest precise art direction',()=>action('art-direct')),detail('Advanced: write the art direction yourself',button('Describe subjects and relationships',artSheet)),...p.image_briefs.map(b=>detail('Saved image brief',make('pre','ig-csv-preview',b.prompt),button('Generate artwork using selected provider',()=>startImage(b)))))));
     if(delivery?.current)parts.push(finishCard(p,delivery,checked,approved));
   }
   for(const sent of held.google_deliveries||[])parts.push(card((sent.current?'Google delivery':'Earlier Google delivery')+' · revision '+pageOf(sent),sent.url?googleLink(sent.url,'Open delivered Google Doc'):make('p','quiet','Outcome uncertain. Read-only reconciliation checks for the saved request; it never resends.'),sent.url?null:button('Reconcile Google delivery',()=>action('google-deliver',{export_id:sent.export_id,request_id:sent.request_id,account:sent.account,folder:sent.folder,reconcile:true},sent.revision))));
@@ -416,6 +556,7 @@ function renderProject() {
   if(held.deliveries.length)parts.push(detail('Saved files',make('p','quiet','Every rendered revision keeps its files. Approved files never change; an edit makes a new draft.'),...held.deliveries.map(savedFiles)));
   parts.push(detail('History',make('p','quiet','Each saved revision is kept. Restoring makes new work and never brings back an approval.'),add(make('div','desk-versions'),...historyGroups(held.history).map((g,i)=>historyGroup(g,i===0))),held.history.length>=100&&held.history.at(-1).revision>0?button('Older revisions',olderHistory):null));
   $('main').replaceChildren(...parts.filter(Boolean));
+  paintWork();     // this infographic's running work, and its locked controls
   restoreBench();
 }
 // The visual editor keeps its place across saves, reloads and other actions in this tab:
@@ -429,7 +570,6 @@ function keepBench(){
   if(bench.project){benchStore.elements[bench.project]=bench.element;if(Object.keys(bench.drafts).length)benchStore.drafts[bench.project]=bench.drafts;else delete benchStore.drafts[bench.project];}
   try{sessionStorage.setItem('infographic-studio-bench',JSON.stringify(benchStore));}catch(f){}
 }
-function unsavedFor(id){return Object.keys(benchStore.drafts[id]||{}).length>0;}
 function when(value){const date=value?new Date(value):null;return date&&!isNaN(date)?date.toLocaleString([], {dateStyle:'medium',timeStyle:'short'}):'';}
 function ledgerItem(name,words,state,detail){
   const bead=make('span','bead');bead.dataset.state=state;bead.setAttribute('aria-hidden','true');
@@ -448,20 +588,23 @@ function workbench(p,delivery){
     img=make('img','ig-preview');img.alt='Rendered '+(delivery.draft?'draft':'approved')+' infographic, revision '+pageOf(delivery);
     if(p.scene){img.width=Math.round(p.scene.width);img.height=Math.round(p.scene.height);}
     figure=add(make('div','ig-figure'),img,mark);
-    const scroll=add(make('div','ig-preview-scroll'),figure);
-    const fit=button('Fit page',()=>zoom(false)),actual=button('Actual pixels',()=>zoom(true));
-    function zoom(original){img.classList.toggle('ig-preview-actual',original);figure.classList.toggle('ig-actual',original);fit.setAttribute('aria-pressed',String(!original));actual.setAttribute('aria-pressed',String(original));}
+    // The page's scroll region takes focus, so a keyboard can pan the page at actual pixels
+    // with the arrow keys, Page Up/Down, Home and End. The zoom controls sit just before it.
+    const scroll=add(make('div','ig-preview-scroll'),figure);scroll.tabIndex=0;scroll.setAttribute('role','region');
+    const fit=free(button('Fit page',()=>zoom(false))),actual=free(button('Actual pixels',()=>zoom(true)));
+    function zoom(original){img.classList.toggle('ig-preview-actual',original);figure.classList.toggle('ig-actual',original);fit.setAttribute('aria-pressed',String(!original));actual.setAttribute('aria-pressed',String(original));scroll.setAttribute('aria-label',original?'Page at actual pixels':'Page preview');}
     zoom(false);
-    const tools=add(make('div','ig-page-tools'),fit,actual);
+    const zooming=add(make('div','ig-page-tools'),fit,actual);
+    const tools=make('div','ig-page-tools');
     const which=delivery.draft?' draft':delivery.approved_current?'':' (earlier approved)';
-    for(const format of ['png','pdf','svg','text'])tools.append(button('Download '+FORMAT_NAMES[format]+which,async()=>{try{await download(delivery,format);}catch(f){error(f.message);}}));
-    if(delivery.approved_current){if(primary!=='Deliver approved page')tools.append(button('Deliver approved page',()=>deliverySheet(delivery)));tools.append(button('Share selected files with team',()=>shareSheet(delivery)));}
+    for(const format of ['png','pdf','svg','text'])tools.append(free(button('Download '+FORMAT_NAMES[format]+which,async()=>{try{await download(delivery,format);}catch(f){error(f.message);}})));
+    if(delivery.approved_current){if(primary!=='Deliver approved page')tools.append(button('Deliver approved page',()=>deliverySheet(delivery)));tools.append(button('Share to team repository',()=>shareSheet(delivery)));}
     const library=delivery.approved_current?keptPart(delivery):null;
     if(!p.scene)view.append(make('p','','Your current work, revision '+n+', has no page yet. '+again),make('p','quiet','This is revision '+pageOf(delivery)+(delivery.draft?', a draft.':'. Its approved files stay downloadable and unchanged.')));
     else if(kept)add(view,make('p','quiet','Shows approved revision '+pageOf(delivery)+'. Prepare the approved files for revision '+n+' on this computer so they carry its title. Nothing is sent anywhere.'),primary==='Prepare approved files'?null:button('Prepare approved files',()=>action('export',{draft:false}),true));
     else view.append(make('p','quiet',delivery.current?'Shows revision '+pageOf(delivery)+'. Select words on the page to edit them.':'Shows revision '+pageOf(delivery)+'. Your current work is revision '+n+'.'));
     if(!delivery.current&&p.scene&&!kept&&primary!=='Update preview')view.append(button('Update preview',()=>action('preview'),true));
-    view.append(scroll,tools);
+    view.append(zooming,scroll,tools);
     if(library)view.append(library);
     showPicture(delivery,img,p.id);
   }else if(p.scene)add(view,make('p','','No preview yet. Rendering is local and starts no assistant or image request.'),primary==='Create preview'?null:button('Create preview',()=>action('preview'),true));
@@ -519,7 +662,7 @@ async function saveWords(){
   if(text===chosen.text){delete bench.drafts[chosen.id];bench.unchanged=true;keepBench();bench.focus=true;renderProject();return;}
   const before=held.project.revision,result=await action('edit-text',{element_id:chosen.id,text});
   if(result&&typeof result.revision==='number'){delete bench.drafts[chosen.id];if(result.revision>before)bench.saved={revision:result.revision,label:chosen.label};else bench.unchanged=true;}
-  else{bench.drafts[chosen.id]=text;bench.failed=$('notice').textContent||'These words could not be saved.';}
+  else{bench.drafts[chosen.id]=text;bench.failed=lastError||'These words could not be saved.';}
   keepBench();bench.focus=true;if(held?.project.id===bench.project)renderProject();
 }
 function restoreBench(){
@@ -538,7 +681,7 @@ function showPicture(delivery,img,id){
 const FORMAT_NAMES={png:'PNG',pdf:'PDF',svg:'SVG',text:'text'};
 function savedFiles(d){
   const words=(d.draft?'Draft':'Approved')+' · revision '+pageOf(d)+(d.approved_current?' · current approval':d.current?' · matches current work':' · earlier');
-  return add(make('div','desk-version'),make('span','',words),add(make('div','ig-page-tools'),...['png','pdf','svg','text'].map(format=>{const node=button(format==='text'?'Text':FORMAT_NAMES[format],async()=>{try{await download(d,format);}catch(f){error(f.message);}});node.setAttribute('aria-label','Download '+FORMAT_NAMES[format]+', '+(d.draft?'draft':'approved')+' revision '+pageOf(d));return node;})));
+  return add(make('div','desk-version'),make('span','',words),add(make('div','ig-page-tools'),...['png','pdf','svg','text'].map(format=>{const node=free(button(format==='text'?'Text':FORMAT_NAMES[format],async()=>{try{await download(d,format);}catch(f){error(f.message);}}));node.setAttribute('aria-label','Download '+FORMAT_NAMES[format]+', '+(d.draft?'draft':'approved')+' revision '+pageOf(d));return node;})));
 }
 // History by page revision: each group is the revision that changed the page, then what the
 // revisions after it recorded (checks, a review, an approval, art direction, image requests).
@@ -598,7 +741,7 @@ function finishCard(p,delivery,checked,approved){
 async function approveRevision(){
   const result=await action('approve',{then_export:true});
   if(result?.approved&&result.problem)error('Revision '+pageOf(result)+' is approved, but its files are not ready: '+result.problem+' Choose Prepare approved files to try again on this computer.');
-  else if(result?.approved&&result.library?.state==='failed')error('Revision '+pageOf(result)+' is approved and its files are ready, but they were not kept in the Document Library: '+result.library.problem+' Choose Keep in library again.');
+  else if(result?.approved&&result.library?.state==='failed')error('Revision '+pageOf(result)+' is approved and its files are ready, but they were not kept in the Document Library: '+result.library.problem+' Choose Keep in Document Library again.');
 }
 // The shared Document Library (library.js). Add from library makes chosen revisions sources
 // of this infographic, Use revision N takes a newer one only when pressed, and approved files
@@ -608,7 +751,7 @@ function libraryPick(use){
   if(!window.StudioLibrary){error('The library could not be loaded. Reload the page.');return Promise.resolve(false);}
   // This infographic's own kept export cannot be a source for itself; the server refuses it too.
   const own=held?.library?.own||null;
-  return window.StudioLibrary.pick({studio:'infographic',noun:'infographic',max:40,post:(route,body)=>request('/api/'+route,body),use,
+  return window.StudioLibrary.pick({title:'Add from Document Library',studio:'infographic',noun:'infographic',max:40,post:(route,body)=>request('/api/'+route,body),use,
     unavailable:row=>own&&row.id===own?{label:'This infographic',detail:'Its own approved page cannot be a source for it.'}:null,
     refocus:()=>{const found=document.querySelector('[data-key="ig-library-add"]')||document.querySelector('[data-key="ig-new-library"]');if(found)found.closest('details')?.setAttribute('open','');return found;}});
 }
@@ -677,8 +820,8 @@ function sourceConfirm(name,replacing,run,back,cancel){
 }
 function libraryAddButton(){
   let rows=null;
-  const node=button('Add from library',()=>libraryPick(async picks=>{
-    if(busy)throw Error('This infographic is still working. Add from the library once it has finished.');
+  const node=button('Add from Document Library',()=>libraryPick(async picks=>{
+    if(running.has(held.project.id))throw Error('This infographic is still working. Add from the Document Library once it has finished.');
     rows=await libraryRows(picks);
   }).then(done=>{
     if(!done||!rows)return;
@@ -715,7 +858,7 @@ function libraryNote(s){
 function keptPart(delivery){
   const kept=held.library?.kept;
   if(kept&&kept.export===delivery.id&&kept.state==='kept')return make('p','quiet','Kept in the Document Library with its text and PDF (library revision '+kept.library_revision+').');
-  const again=button(kept&&kept.export===delivery.id?'Keep in library again':'Keep in Document Library',async()=>{
+  const again=button(kept&&kept.export===delivery.id?'Keep in Document Library again':'Keep in Document Library',async()=>{
     const result=await action('library-keep',{export_id:delivery.id},null,{quiet:true});
     if(result?.state==='kept')toast('Kept in the Document Library.');else if(result?.problem)error('Not kept in the Document Library: '+result.problem);
   });
@@ -734,7 +877,7 @@ function receiptSheet(delivery,receipts){
     if(result.url)return receiptCard('Google Doc','done','Delivered: approved revision '+pageOf(delivery)+'.',googleLink(result.url,'Open Google Doc'));
     const saved=(held?.google_deliveries||[]).some(g=>g.request_id===r.request_id);
     const uncertain=saved&&(!r.result||result.state==='unknown');
-    const resend=async()=>{const request_id=requestId();const again=await action('google-deliver',{export_id:delivery.id,request_id,folder:r.folder},delivery.revision,{quiet:true});receiptSheet(delivery,receipts.map(x=>x===r?{...r,request_id,result:again,problem:again?null:$('notice').textContent}:x));};
+    const resend=async()=>{const request_id=requestId();const again=await action('google-deliver',{export_id:delivery.id,request_id,folder:r.folder},delivery.revision,{quiet:true});receiptSheet(delivery,receipts.map(x=>x===r?{...r,request_id,result:again,problem:again?null:lastError}:x));};
     const check=async()=>{const again=await action('google-deliver',{export_id:delivery.id,request_id:r.request_id,folder:r.folder,reconcile:true},delivery.revision,{quiet:true});receiptSheet(delivery,receipts.map(x=>x===r?{...r,result:again}:x));};
     if(!saved)return receiptCard('Google Doc','late','Not delivered: '+(result.message||r.problem||'The request did not start.')+' No Google request was saved.',button('Send again',resend));
     return receiptCard('Google Doc',uncertain?'review':'late',(uncertain?'Not confirmed: ':'Not delivered: ')+(result.message||r.problem||'The outcome could not be confirmed.')+' Nothing was resent.',
@@ -757,14 +900,21 @@ function artSheet(){const raw=field('Precise image direction JSON (advanced)',''
 async function startImage(brief){
   try{preferences=await request('/api/preferences');const capability=await request('/api/computer');sheet('Generate artwork',make('p','',capability.disclosure),make('p','','This starts a provider request using the saved brief. Unknown outcomes are kept for explicit recovery; reopening never resubmits.'),add(make('div','bar'),button('Generate artwork',()=>action('image-start',{brief_id:brief.id,provider:preferences.image_provider,request_id:requestId()}),true),button('Cancel',closeSheet)));}catch(f){error(f.message);}
 }
-function reviewSheet(delivery){const observations=field('What did you inspect on the actual composed page?','','textarea');sheet('Review page',make('p','','Look at the rendered page for revision '+pageOf(delivery)+' at its intended size, then say what you checked. Recording your review runs the local checks straight after; nothing is approved.'),observations.wrap,add(make('div','bar'),button('Record review and run checks',()=>action('review',{export_id:delivery.id,observations:lines(observations.input.value),then_check:true}),true),button('Cancel',closeSheet)),detail('Optional: ask your assistant to inspect it',make('p','quiet','Your assistant looks at the actual page and artwork and records located findings. It uses your assistant allowance and never approves.'),button('Inspect page with assistant',()=>action('inspect-images',{then_check:true}))));}
+// What the person inspected is required: an empty review is refused beside the field, once.
+function reviewSheet(delivery){
+  const observations=field('What did you inspect on the actual composed page?','','textarea');
+  observations.input.addEventListener('input',()=>{if(lines(observations.input.value).length)invalid(observations,'');});
+  const record=()=>{const seen=lines(observations.input.value);if(!seen.length){invalid(observations,'Record what you inspected on the actual page.');return;}return action('review',{export_id:delivery.id,observations:seen,then_check:true});};
+  sheet('Review page',make('p','','Look at the rendered page for revision '+pageOf(delivery)+' at its intended size, then say what you checked. Recording your review runs the local checks straight after; nothing is approved.'),observations.wrap,detail('Optional: ask your assistant to inspect it',make('p','quiet','Your assistant looks at the actual page and artwork and records located findings. It uses your assistant allowance and never approves.'),button('Inspect page with assistant',()=>action('inspect-images',{then_check:true}))),add(make('div','bar'),button('Record review and run checks',record,true),button('Cancel',closeSheet)));
+}
 // `page` is the page revision the person chose; `version` is its newest saved revision.
 function restoreSheet(version,page=pageOf(version)){sheet('Restore revision '+page+'?',make('p','','Creates a new revision with this page. Current sources, images and deliveries remain in history; approval is not restored.'),detail('Advanced',make('p','quiet','Restores saved revision '+version.revision+', exact identity '+version.sha256.slice(0,12)+'.')),add(make('div','bar'),button('Restore as a new revision',()=>action('restore',{revision:version.revision,sha256:version.sha256}),true),button('Cancel',closeSheet)));}
 async function showSettings() {
-  if (busy) return;
+  remember('settings');
   held = null;
   resetPicture();
-  heading('Settings and capability', button('Infographics', home));
+  // A sidebar screen: its title as the sidebar names it, a lede, and no Back.
+  heading('Settings');
   try {
     preferences = await request('/api/preferences');
     const capability = await request('/api/computer');
@@ -772,46 +922,55 @@ async function showSettings() {
     sharedLink.href = '/onboarding/#token=' + encodeURIComponent(token) + '&view=settings';
     const model = field('Gemini image model', preferences.native.gemini_model || '');
     const teamEmail=field('Team Git email',preferences.native.team_email||'');
+    teamEmail.wrap.append(make('span','field-hint','The email your shared infographics are committed under in the team repository. Leave empty to use your Git email.'));
     const googleAccount=field('Google account email',preferences.native.google_account||''),googleFolder=field('Google Drive destination folder ID (optional)',preferences.native.google_folder||'');
     const renderer = field('Installed headless renderer path', preferences.native.renderer || '');
     renderer.input.placeholder = preferences.renderer || 'Use the renderer included in a prepared download';
+    // Provider status in the team's words: what is ready, what to do, and when the rest is
+    // checked. Nothing here signs in, generates or reads a credential.
     const messages = {
-      'assistant-missing': 'Install the selected assistant CLI before starting assistant work.',
-      'sign-in-required': 'Sign in to the selected assistant.',
+      'assistant-missing': 'Install the selected assistant on this computer before starting assistant work.',
+      'sign-in-required': 'Sign in to the selected assistant on this computer.',
       'gemini-key-required': 'Supply GEMINI_API_KEY in the server launch environment.',
       'gemini-model-required': 'Choose an image-capable Gemini model below.',
       'image-model-unavailable': 'Choose a Gemini image model available to your account.',
-      'image-tool-unavailable': 'The installed Codex does not expose its image tool.',
-      'manual-image-review-required': 'Use your own review of the actual page.',
-      'sign-in-not-checked': 'Sign-in is checked when you explicitly start assistant work.',
-      'image-tool-not-checked': 'Codex image-tool access awaits a live run.',
-      'image-model-access-not-checked': 'Gemini model access awaits a live run.',
-      'image-inspection-not-checked': 'Multimodal inspection awaits a live run.',
-      'generation-and-editing-not-live-verified': 'Generation and reference editing await live acceptance.'
+      'image-tool-unavailable': 'The installed Codex does not offer its image tool on this computer.',
+      'manual-image-review-required': 'Review the actual page yourself; your assistant cannot inspect images here.',
+      'sign-in-not-checked': 'Sign-in is checked the first time you start assistant work.',
+      'image-tool-not-checked': 'Image generation hasn’t been tried on this computer yet. It’s checked the first time you build artwork.',
+      'image-model-access-not-checked': 'Your Gemini image model hasn’t been tried on this computer yet. It’s checked the first time you build artwork.',
+      'image-inspection-not-checked': 'Assistant page inspection hasn’t been tried on this computer yet. It’s checked the first time you ask your assistant to inspect a page.',
+      'generation-and-editing-not-live-verified': 'Artwork generation and artwork revisions are checked the first time you use them.'
     };
     const imageDefaults = [];
     if (preferences.image_provider === 'gemini') imageDefaults.push(model.wrap);
-    imageDefaults.push(teamEmail.wrap,detail('Advanced Google account override',make('p','quiet','Leave empty to use the same existing Google sign-in as Blog Studio.'),googleAccount.wrap,googleFolder.wrap),make('p','quiet','Uses the selected existing gcloud sign-in only when you explicitly read or deliver a Google Doc. No login or account access starts here.'),detail('Advanced renderer setting', renderer.wrap),
+    const save = async (changes, said) => {
+      try {
+        await request('/api/preferences', {expected: preferences.native_revision, changes});
+        await showSettings();
+        toast(said);
+      } catch (failure) { error(failure.message); }
+    };
+    imageDefaults.push(detail('Advanced Google account override',make('p','quiet','Leave empty to use the same existing Google sign-in as Blog Studio.'),googleAccount.wrap,googleFolder.wrap),make('p','quiet','Uses the selected existing gcloud sign-in only when you explicitly read or deliver a Google Doc. No login or account access starts here.'),detail('Advanced renderer setting', renderer.wrap),
       make('p', 'quiet', 'Defaults apply to new work. Your existing workspace and saved brand stay in place.'),
-      button('Save defaults', async () => {
-        try {
-          const changes = {renderer: renderer.input.value,team_email:teamEmail.input.value,google_account:googleAccount.input.value,google_folder:googleFolder.input.value};
-          if (preferences.image_provider === 'gemini') changes.gemini_model = model.input.value;
-          await request('/api/preferences', {expected: preferences.native_revision, changes});
-          await showSettings();
-          toast('Defaults saved.');
-        } catch (failure) { error(failure.message); }
+      button('Save defaults', () => {
+        const changes = {renderer: renderer.input.value,google_account:googleAccount.input.value,google_folder:googleFolder.input.value};
+        if (preferences.image_provider === 'gemini') changes.gemini_model = model.input.value;
+        return save(changes, 'Defaults saved.');
       }, true));
     $('main').replaceChildren(
+      add(make('div','page-head'),make('p','lede','How Infographic Studio works on this computer: your assistant, the page renderer, the team repository and the defaults for new infographics.')),
       card('Assistant and image provider',
         make('p', '', capability.assistant + ' · ' + capability.image_provider),
-        make('p', '', capability.state === 'unavailable' ? 'Finish these prerequisites before generating artwork.' : 'Local prerequisites detected; provider access remains unverified.'),
+        make('p', '', capability.state === 'unavailable' ? 'Finish these steps before building artwork.' : 'Ready on this computer. Your assistant and image provider are checked the first time you use them.'),
         make('p', '', capability.disclosure),
         list([...capability.problems, ...capability.unknown].map(code => messages[code] || code))),
       card('Page renderer', make('p', '', capability.renderer_available
         ? 'Installed renderer found. Preview checks actual fonts, layout, and output.'
         : 'Configure an installed renderer, or use a prepared download that includes it. No browser is downloaded here.')),
-      card('Shared settings', sharedLink, make('p', 'quiet', 'Your infographic workspace stays local. Team connection and sharing happen only through explicit Team library actions.')),
+      card('Shared settings', sharedLink, make('p', 'quiet', 'Your infographic workspace stays local. Team connection and sharing happen only when you choose them in the team repository.')),
+      card('Team repository', make('p','quiet','Shared infographics live in the team repository set in shared settings. It is separate from the Document Library on this computer.'),
+        teamEmail.wrap, button('Save team email', () => save({team_email: teamEmail.input.value}, 'Team email saved.'))),
       card('Infographic defaults', ...imageDefaults));
   } catch (failure) { error(failure.message); }
 }
@@ -829,18 +988,21 @@ async function startDesk() {
     if(back.sheet==='team')await teamSheet();
     return;
   }
-  let id='';try{id=sessionStorage.getItem('infographic-studio-project')||'';}catch(f){}
-  if(id){try{const progress=await request('/api/activity?id='+encodeURIComponent(id)),desk=await request('/api/desk?id='+encodeURIComponent(id));const unsaved=unsavedFor(id);if(progress.activity?.state==='running'||desk.planning_response?.available||desk.recovery?.length||unsaved){await openProject(id);return;}}catch(f){}}
+  // A reload returns to the same screen: the last infographic, at the same place, in any
+  // state, unless the person had gone back to Home or Settings.
+  let id='',where='';try{id=sessionStorage.getItem('infographic-studio-project')||'';where=sessionStorage.getItem('infographic-studio-screen')||'';}catch(f){}
+  if(where==='settings'){await showSettings();return;}
+  if(id&&where!=='home'){await openProject(id);if(held?.project.id===id){returnToPlace(id);return;}error('');}
   await home();
 }
 $('sheet').addEventListener('close',paintWork);
 if(!token)error('Open Infographic Studio using the private link printed in your terminal.');else void startDesk();
 // Back from shared settings with the browser's Back button restores this page from its cache,
-// without running startDesk: drop the return marker and re-read an open Team library sheet.
+// without running startDesk: drop the return marker and re-read an open Team repository sheet.
 window.addEventListener('pageshow',event=>{
   if(!event.persisted||!token)return;
   try{sessionStorage.removeItem('infographic-studio-return');}catch(f){}
-  if($('sheet').open&&$('sheet-title')?.textContent==='Team library')void teamSheet();
+  if($('sheet').open&&$('sheet-title')?.textContent==='Team repository')void teamSheet();
 });
 
 function reviseArtSheet(){const change=field('What should change?','','textarea'),preserve=field('What should stay the same?','Keep all other subjects, relationships, brand, empty label regions and composition.','textarea');sheet('Revise the artwork',make('p','','This sends the saved original as a reference to your selected image provider. It uses provider allowance; the earlier artwork remains in history.'),change.wrap,preserve.wrap,add(make('div','bar'),button('Create referenced revision',()=>action('revise-art',{change:change.input.value,preserve:preserve.input.value,request_id:requestId()}),true),button('Cancel',closeSheet)));}
@@ -1005,7 +1167,7 @@ async function deliverySheet(delivery){
     const choice=format.input.value,receipts=[];
     try{
       if(choice!=='google'){try{await download(delivery,'pdf');receipts.push({kind:'pdf',ok:true});}catch(f){receipts.push({kind:'pdf',ok:false,message:f.message});}}
-      if(choice!=='pdf'){const result=await action('google-deliver',{export_id:delivery.id,request_id:savedRequest,folder:folder.input.value},null,{quiet:true});receipts.push({kind:'google',result,request_id:savedRequest,folder:folder.input.value,problem:result?null:$('notice').textContent});}
+      if(choice!=='pdf'){const result=await action('google-deliver',{export_id:delivery.id,request_id:savedRequest,folder:folder.input.value},null,{quiet:true});receipts.push({kind:'google',result,request_id:savedRequest,folder:folder.input.value,problem:result?null:lastError});}
       receiptSheet(delivery,receipts);
     }finally{go.disabled=false;}},true);
   sheet('Deliver approved page',make('p','','Approved revision '+pageOf(delivery)+'. To download its PNG, SVG or text instead, use the Download buttons beside the page.'),make('p','','PDF preserves the exact approved one-page render. A new Google Doc contains that page as an image, plus editable text and source notes. Your original document is kept. Google conversion layout requires visual review in Docs.'),make('p','quiet','Starts with your shared Marketing Studio delivery choice and existing Google sign-in.'),format.wrap,detail('Choose a destination folder',folder.wrap),problem,add(make('div','bar'),go,button('Cancel',closeSheet)));
@@ -1079,11 +1241,11 @@ function syncedWords(value){
 }
 async function teamSheet(){
   const problem=make('p','problem'),items=make('div','stack'),summary=make('div','stack');problem.setAttribute('role','alert');
-  const explain=detail('What connecting and sharing do',list(['Connect or sync copies the team library into a private folder on this computer. Nothing of yours is sent.','Share selected files, from an approved infographic, sends only the files you review and confirm.','Opening this library or changing its repository never shares a draft, source or artwork.']));
+  const explain=detail('What connecting and sharing do',list(['Connect or sync copies the team repository’s shared infographics into a private folder on this computer. Nothing of yours is sent.','Share to team repository, from an approved infographic, sends only the files you review and confirm.','Opening the team repository or changing it never shares a draft, source or artwork. The Document Library on this computer is separate.']));
   const configure=sharedSettingsLink('Configure shared repository','workspace-part');
   const failed=failure=>{problem.textContent=failure.message;problem.hidden=false;};
   let sync=null;
-  async function connect(){sync.disabled=true;problem.hidden=true;try{await request('/api/team',{operation:'connect'});await show();toast('Team library synced.');}catch(f){failed(f);sync.textContent='Retry connection';}finally{sync.disabled=false;}}
+  async function connect(){sync.disabled=true;problem.hidden=true;try{await request('/api/team',{operation:'connect'});await show();toast('Team repository synced.');}catch(f){failed(f);sync.textContent='Retry connection';}finally{sync.disabled=false;}}
   async function show(){
     let state;
     try{state=await request('/api/team');}catch(f){failed(f);return;}
@@ -1091,16 +1253,16 @@ async function teamSheet(){
     if(!state.configured){
       configure.classList.add('button-filled');
       summary.replaceChildren(stateLine('review','No shared repository yet'),
-        make('p','','The Team library uses the shared repository in shared settings. Choose Shared repository under Your workspace, save, and come back here to connect.'),
+        make('p','','Sharing uses the team repository set in shared settings. Choose Shared repository under Your workspace, save, and come back here to connect.'),
         make('p','quiet','Other studios keep their work in that repository too. Infographic Studio keeps its own work in your local workspace.'),
         ...(state.problem?[make('p','problem',state.problem)]:[]),add(make('div','bar'),configure),explain);
       return;
     }
     configure.classList.remove('button-filled');configure.textContent='Change shared repository';
-    sync=button(state.connected?'Sync team library':'Connect team library',connect,true);
+    sync=button(state.connected?'Sync team repository':'Connect team repository',connect,true);
     summary.replaceChildren(stateLine(state.connected?'done':'review',state.connected?'Connected':'Not connected yet'),
       make('p','','Repository: '+state.repository+' · branch '+state.branch),
-      make('p','quiet',state.connected?syncedWords(state.synced_at)+' The list below is your last synced copy; syncing again is explicit.':'Connect to copy the team library to this computer.'),
+      make('p','quiet',state.connected?syncedWords(state.synced_at)+' The list below is your last synced copy; syncing again is explicit.':'Connect to copy the team repository’s shared infographics to this computer.'),
       add(make('div','bar'),sync,configure),explain);
     if(state.workspace_owner)items.append(make('p','quiet','Your workspace owner ID: '+state.workspace_owner));
     if(state.pending)items.append(add(make('div','stack'),make('p','',state.pending===1?'One shared commit has not reached the team repository.':state.pending+' shared commits have not reached the team repository.'),button('Retry pending team push',async()=>{try{await request('/api/team',{operation:'retry',expected_commit:state.head});await show();}catch(f){failed(f);}})));
@@ -1114,9 +1276,24 @@ async function teamSheet(){
     }
   }
   problem.hidden=true;
-  sheet('Team library',summary,problem,items,add(make('div','create-foot bar'),button('Done',closeSheet)));await show();
+  sheet('Team repository',summary,problem,items,add(make('div','create-foot bar'),button('Done',closeSheet)));await show();
 }
+// Share to team repository. Its primary action never has to fail: with no repository set it
+// is Configure shared repository, and with one set but not connected it is Connect.
 async function shareSheet(delivery){
+  let state;
+  try{state=await request('/api/team');}catch(f){error(f.message);return;}
+  if(!state.configured){
+    const configure=sharedSettingsLink('Configure shared repository','workspace-part');configure.classList.add('button-filled');
+    sheet('Share to team repository',stateLine('review','No shared repository yet'),make('p','','Sharing sends reviewed files to the team repository set in shared settings, and none is set up yet. Choose Shared repository under Your workspace, save, and come back to share.'),make('p','quiet','Nothing is shared until you review the exact files. The Document Library on this computer is separate.'),add(make('div','bar'),configure,button('Cancel',closeSheet)));
+    return;
+  }
+  if(!state.connected){
+    const problem=make('p','problem');problem.setAttribute('role','alert');
+    const connect=button('Connect team repository',async()=>{connect.disabled=true;problem.textContent='';try{await request('/api/team',{operation:'connect'});toast('Team repository synced.');await shareSheet(delivery);}catch(f){problem.textContent=f.message;connect.textContent='Retry connection';}finally{connect.disabled=false;}},true);
+    sheet('Share to team repository',stateLine('review','Not connected yet'),make('p','','Repository: '+state.repository+' · branch '+state.branch),make('p','','Connect first: it copies the team repository’s shared infographics to this computer and sends nothing of yours. Then choose the files to share.'),problem,add(make('div','bar'),connect,button('Cancel',closeSheet)));
+    return;
+  }
   const editable=make('input');editable.type='checkbox';const include=add(make('label','check'),editable,document.createTextNode('Include editable project (private brief, facts and source metadata)'));
   const picks=make('div','stack'),sourceIds=new Set(),assetIds=new Set();
   for(const[kind,records,selected]of[['source',held.project.sources,sourceIds],['artwork',held.project.assets,assetIds]])for(const record of records){const check=make('input');check.type='checkbox';check.disabled=true;editable.addEventListener('change',()=>{check.disabled=!editable.checked;if(!editable.checked){check.checked=false;selected.clear();}});check.addEventListener('change',()=>{if(check.checked)selected.add(record.id);else selected.delete(record.id);});picks.append(add(make('label','check'),check,document.createTextNode('Include private '+kind+': '+(record.name||record.id))));}
@@ -1126,6 +1303,6 @@ async function shareSheet(delivery){
     const confirm=make('input');confirm.type='checkbox';const send=button('Share these files',()=>{if(selection.include_editable&&!confirm.checked){error('Confirm the displayed private inventory before sharing.');return;}action('team-share',{...selection,inventory_digest:result.inventory_digest,expected_head:result.expected_head,expected_claim:result.expected_claim,expected_connection:result.expected_connection,confirm_private:confirm.checked});},true);
     sheet('Confirm team sharing',make('p','','Only these files are committed and pushed to the configured team repository. Prompts and image job records are excluded.'),list(result.files.map(f=>f.file+' · '+f.bytes+' bytes')),selection.include_editable?add(make('label','check'),confirm,document.createTextNode('I am allowed to share the selected private project, sources and artwork.')):make('p','quiet','Approved delivery and title only.'),add(make('div','bar'),send,button('Cancel',closeSheet)));
   }catch(f){problem.textContent=f.message;}finally{preview.disabled=false;}},true);
-  sheet('Select files to share',make('p','','Default: the approved delivery and its title. Optional editable content needs separate selection. Connect the team library first.'),include,picks,problem,add(make('div','bar'),preview,button('Open team library',teamSheet),button('Cancel',closeSheet)));
+  sheet('Share to team repository',make('p','','Default: the approved delivery and its title, shared to '+state.repository+'. Optional editable content needs separate selection.'),include,picks,problem,detail('More team repository actions',button('Open team repository',teamSheet)),add(make('div','bar'),preview,button('Cancel',closeSheet)));
 }
 async function downloadShared(entry,format){try{const response=await fetch('/api/team-download?id='+encodeURIComponent(entry.id)+'&format='+format,{headers:{'X-Infographic-Studio-Token':token}});if(!response.ok)throw Error('This shared delivery is unavailable.');const url=URL.createObjectURL(await response.blob());const link=make('a');link.href=url;link.download=entry.title+'.'+format;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}catch(f){error(f.message);}}

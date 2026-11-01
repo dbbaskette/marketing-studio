@@ -20,12 +20,20 @@ def folder(root, studio):
         studio in PRODUCTS,
         "Choose Blog Studio, Presentation Studio or Training Studio.",
     )
-    root = Path(root).expanduser()
-    require(
-        root.is_absolute() and not any(p.is_symlink() for p in (root, *root.parents)),
-        "Choose a studio materials folder without links.",
-    )
     product, name, tool = PRODUCTS[studio]
+    require(isinstance(root, (str, os.PathLike)) and str(root).strip(),
+            f"Give the folder that holds {product}'s materials.")
+    root = Path(root).expanduser()
+    require(root.is_absolute(), f"Give the full path of {product}'s materials folder, starting with / or ~.")
+    require(
+        not any(p.is_symlink() for p in (root, *root.parents)),
+        f"{root} reaches {product}'s materials through a link. Choose the folder itself.",
+    )
+    # Say which folder and studio, and where to look, rather than a missing internal file.
+    require(root.is_dir(), f"No {product} materials folder was found at {root}. "
+                           f"Check {product}'s workspace in shared settings.")
+    require((root / "hub.json").is_file(), f"{root} is not a {product} materials folder: it has no "
+                                           f"hub.json. Check {product}'s workspace in shared settings.")
     marker = json.loads(_read(root, "hub.json", 10_000))
     require(
         marker.get("tool") == tool

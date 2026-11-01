@@ -20,9 +20,45 @@ const assert = require('node:assert/strict');
     await page.getByRole('heading',{name:'Page renderer',exact:true}).waitFor();
     assert(await page.getByText('Installed renderer found. Preview checks actual fonts, layout, and output.',{exact:true}).isVisible());
     assert.equal(await page.getByLabel('Gemini image model',{exact:true}).count(),0);
+    // Settings is a sidebar screen: titled as the sidebar names it, with a lede and no Back,
+    // in the team's words, and Team Git email beside the team repository it is for.
+    assert.equal(await page.locator('#title').innerText(),'Settings');
+    assert.equal(await page.locator('#actions button').count(),0,'No Back on a sidebar screen');
+    await page.locator('#main > .page-head > .lede').waitFor();
+    const settingsWords=await page.locator('#main').innerText();
+    assert(!/live run|live acceptance|acceptance|JSON/i.test(settingsWords),settingsWords);
+    assert.equal(await page.locator('.card').filter({has:page.getByRole('heading',{name:'Team repository',exact:true})}).getByLabel('Team Git email',{exact:true}).count(),1);
     await page.getByRole('button',{name:'Infographics',exact:true}).first().click();
     await page.getByRole('button',{name:'New infographic',exact:true}).click();
+    // Two steps, each a part of the sheet; the heading and the actions stay in reach while
+    // the sheet scrolls on a phone; a missing title is said beside the field, once.
+    const intake=page.getByRole('dialog',{name:'New infographic'});
+    assert.deepEqual(await intake.locator('.sheet-part').allInnerTexts(),['1. Add information']);
+    async function inReach(names){
+      await intake.evaluate(n=>{n.scrollTop=n.scrollHeight;});
+      for(const name of names){const box=await intake.getByRole('button',{name,exact:true}).boundingBox();assert(box&&box.y>=0&&box.y+box.height<=844,name+' stays in reach: '+JSON.stringify(box));}
+      const top=await intake.locator('#sheet-title').boundingBox();const frame=await intake.boundingBox();
+      assert(top&&top.y>=frame.y-1&&top.y<frame.y+40,'The heading stays at the top: '+JSON.stringify([top,frame]));
+      await intake.evaluate(n=>{n.scrollTop=0;});
+    }
+    await inReach(['Continue','Cancel']);
+    await intake.getByRole('button',{name:'Continue',exact:true}).click();
+    const titleField=intake.getByLabel('Working title',{exact:true});
+    assert.equal(await titleField.getAttribute('aria-invalid'),'true');
+    const titleError=await titleField.getAttribute('aria-describedby');
+    assert.equal(await page.locator('#'+titleError).innerText(),'Give this infographic a working title.');
+    assert.equal(await page.locator('[role="alert"]:visible').filter({hasText:'working title'}).count(),1,'One alert for one failed submit');
+    assert.equal(await page.locator('#notice').isVisible(),false);
+    assert.equal(await page.evaluate(()=>document.activeElement.getAttribute('aria-label')||document.activeElement.getAttribute('aria-labelledby')&&document.getElementById(document.activeElement.getAttribute('aria-labelledby')).textContent),'Working title');
+    // Import selected studio material names the folder and studio it could not find.
+    await intake.getByRole('button',{name:'Import selected studio material',exact:true}).click();
+    const handoff=page.getByRole('dialog',{name:'Import a selected studio material'});
+    const folder=await handoff.getByLabel('Studio materials folder',{exact:true}).inputValue();
+    await handoff.getByRole('button',{name:'List available materials',exact:true}).click();
+    await handoff.getByText('No Blog Studio materials folder was found at '+folder+". Check Blog Studio's workspace in shared settings.",{exact:true}).waitFor();
+    await handoff.getByRole('button',{name:'Cancel',exact:true}).click();
     await page.getByLabel('Working title',{exact:true}).fill('Synthetic rolling restart');
+    assert.equal(await page.getByLabel('Working title',{exact:true}).getAttribute('aria-invalid'),null,'Typing a title clears its problem');
     if(process.env.INFOGRAPHIC_STUDIO_TEST_REMOTE){
       await page.getByRole('button',{name:'Add a Google Doc, Slides or public page',exact:true}).click();
       await page.getByLabel('Document or page link',{exact:true}).fill(process.env.INFOGRAPHIC_STUDIO_TEST_SLIDES?'https://docs.google.com/presentation/d/synthetic_slides/edit':'https://docs.google.com/document/d/synthetic_source/edit');
@@ -31,10 +67,12 @@ const assert = require('node:assert/strict');
       await page.getByRole('heading',{name:process.env.INFOGRAPHIC_STUDIO_TEST_SLIDES?'Synthetic Google slides':'Synthetic Google source',exact:true}).waitFor();
     }else await page.getByLabel('Notes or text',{exact:true}).fill((await page.evaluate(()=>request('/api/fixture-source'))).text);
     await page.getByRole('button',{name:'Continue',exact:true}).click();
+    await intake.getByLabel('Page size',{exact:true}).waitFor();
+    assert.deepEqual(await intake.locator('.sheet-part').allInnerTexts(),['2. Set the direction and page'],'Page size is part of step 2: two steps');
     await page.getByLabel('How should we find the story?',{exact:true}).selectOption('direct');
     await page.getByLabel('Audience and prior knowledge',{exact:true}).fill('Technical practitioners');
-    await page.getByRole('button',{name:'Continue',exact:true}).click();
     await page.getByLabel('Page size',{exact:true}).selectOption('digital');
+    await inReach(['Save brief','Back','Cancel']);
     await page.getByRole('button',{name:'Save brief',exact:true}).click();
     await page.getByRole('heading',{name:'Find a useful story',exact:true}).waitFor();
     await page.locator('#actions').getByRole('button',{name:'Find the story',exact:true}).click();
@@ -165,10 +203,55 @@ const assert = require('node:assert/strict');
     await oneStatus();
     // The approved page's text and PDF are kept in the Document Library from the saved files.
     await page.getByText('Kept in the Document Library with its text and PDF (library revision 1).',{exact:true}).waitFor();
-    await page.getByRole('button',{name:'Actual pixels',exact:true}).click();
+    // Actual pixels by keyboard alone: the page's scroll region takes focus, is named, shows
+    // its focus ring and pans to every edge with the arrow, Home and End keys.
+    await page.getByRole('button',{name:'Fit page',exact:true}).focus();
+    await page.keyboard.press('Tab');await page.keyboard.press('Enter');
+    assert.equal(await page.getByRole('button',{name:'Actual pixels',exact:true}).getAttribute('aria-pressed'),'true');
+    await page.keyboard.press('Tab');
+    const region=page.getByRole('region',{name:'Page at actual pixels'});
+    assert(await region.evaluate(n=>n===document.activeElement),'The page at actual pixels takes focus next');
+    assert.notEqual(await region.evaluate(n=>getComputedStyle(n).outlineStyle),'none','A visible focus ring');
     assert(await page.locator('.ig-preview-scroll').evaluate(n=>n.scrollWidth>n.clientWidth));
     assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+    const edge=()=>region.evaluate(n=>({left:n.scrollLeft,top:n.scrollTop,right:Math.abs(n.scrollWidth-n.clientWidth-n.scrollLeft)<2,bottom:Math.abs(n.scrollHeight-n.clientHeight-n.scrollTop)<2}));
+    // Keyboard scrolling animates, so each key waits briefly before the edge is read.
+    const until=async(key,reached)=>{for(let n=0;n<80&&!reached(await edge());n++){await page.keyboard.press(key);await page.waitForTimeout(60);}};
+    await until('End',at=>at.bottom);await until('ArrowRight',at=>at.right);
+    let at=await edge();assert(at.right&&at.bottom,'Reached the right and bottom edges: '+JSON.stringify(at));
+    await until('Home',at=>at.top===0);await until('ArrowLeft',at=>at.left===0);
+    at=await edge();assert(at.left===0&&at.top===0,'Reached the left and top edges: '+JSON.stringify(at));
+    // Every scrollable region on the page can take keyboard focus (axe scrollable-region-focusable).
+    const unreachable=await page.evaluate(()=>[...document.querySelectorAll('body *')].filter(n=>{const s=getComputedStyle(n);const scrolls=(/(auto|scroll)/.test(s.overflowX)&&n.scrollWidth>n.clientWidth)||(/(auto|scroll)/.test(s.overflowY)&&n.scrollHeight>n.clientHeight);if(!scrolls||!n.getClientRects().length)return false;return n.tabIndex<0&&!n.querySelector('a[href],button,input,select,textarea,[tabindex]:not([tabindex="-1"])');}).map(n=>n.className||n.tagName));
+    assert.deepEqual(unreachable,[],'Scrollable regions are focusable');
     await page.getByRole('button',{name:'Fit page',exact:true}).click();
+    assert.equal(await page.locator('.ig-preview-scroll').getAttribute('aria-label'),'Page preview');
+    // Toasts leave by themselves after the shared delay.
+    await page.evaluate(()=>toast('Synthetic toast.'));
+    await page.getByText('Synthetic toast.',{exact:true}).waitFor();
+    await page.waitForTimeout(4700);
+    assert.equal(await page.getByText('Synthetic toast.',{exact:true}).count(),0,'The toast left after 4.2 seconds');
+    await page.emulateMedia({reducedMotion:'reduce'});
+    await page.evaluate(()=>toast('Synthetic calm toast.'));
+    await page.waitForTimeout(4320);
+    assert.equal(await page.getByText('Synthetic calm toast.',{exact:true}).count(),0,'With reduced motion it leaves at once, without sliding out');
+    await page.emulateMedia({reducedMotion:'no-preference'});
+    // Share to team repository: with no repository set, its primary action is to configure
+    // one, never an action that must fail.
+    await page.getByRole('button',{name:'Share to team repository',exact:true}).click();
+    const sharing=page.getByRole('dialog',{name:'Share to team repository'});
+    await sharing.getByRole('link',{name:'Configure shared repository',exact:true}).waitFor();
+    assert.match(await sharing.getByRole('link',{name:'Configure shared repository',exact:true}).getAttribute('class'),/button-filled/);
+    assert.equal(await sharing.getByRole('button',{name:'Review exact files to share',exact:true}).count(),0);
+    await sharing.getByRole('button',{name:'Cancel',exact:true}).click();
+    // A reload on a phone returns to the same infographic at the same place.
+    await page.getByRole('heading',{name:'Review and finish',exact:true}).scrollIntoViewIfNeeded();
+    await page.evaluate(()=>scrollBy(0,-40));
+    const place=await page.evaluate(()=>Math.round(scrollY));
+    await page.reload();
+    await page.getByRole('heading',{name:'Synthetic rolling restart',exact:true}).waitFor();
+    await page.locator('.ig-preview').waitFor();
+    await page.waitForFunction(y=>Math.abs(scrollY-y)<=4,place,{timeout:5000});
     const download=page.waitForEvent('download');await page.getByRole('button',{name:'Download SVG',exact:true}).click();
     const file=await download;assert.equal(file.suggestedFilename(),'infographic.svg');
     const source=fs.readFileSync(await file.path(),'utf8');assert(source.includes('One at a time'));assert(!source.includes('DRAFT — not approved'));
@@ -201,6 +284,14 @@ const assert = require('node:assert/strict');
     }
     await page.locator('#main').getByText('Review again',{exact:true}).click();
     await page.locator('#main').getByRole('button',{name:'Review page',exact:true}).click();
+    // An empty review is refused beside its field, announced once, never behind the sheet.
+    const reviewing=page.getByRole('dialog',{name:'Review page'});
+    await reviewing.getByRole('button',{name:'Record review and run checks',exact:true}).click();
+    const inspected=reviewing.getByLabel('What did you inspect on the actual composed page?',{exact:true});
+    assert.equal(await inspected.getAttribute('aria-invalid'),'true');
+    assert.equal(await page.locator('#'+(await inspected.getAttribute('aria-describedby'))).innerText(),'Record what you inspected on the actual page.');
+    assert.equal(await page.locator('[role="alert"]:visible').filter({hasText:'Record what you inspected'}).count(),1,'One alert');
+    assert.equal(await page.locator('#notice').isVisible(),false,'Nothing behind the sheet');
     await page.getByLabel('What did you inspect on the actual composed page?',{exact:true}).fill('I inspected the actual page again and confirmed its relationships.');
     await page.getByRole('button',{name:'Record review and run checks',exact:true}).click();
     await page.getByRole('heading',{name:'Earlier approval: review the current revision',exact:true}).waitFor();
@@ -254,6 +345,15 @@ const assert = require('node:assert/strict');
     await page.locator('#actions').getByRole('button',{name:'Prepare approved files',exact:true}).click();
     await page.getByRole('heading',{name:'Approved delivery',exact:true}).waitFor();
     assert.equal(await page.evaluate(()=>held.history[0].summary),'Renamed to “Synthetic rolling restarts”');
+    // A reload on a desktop returns to the same infographic, place and open sections.
+    await page.getByText('Saved files',{exact:true}).click();
+    await page.getByText('Saved files',{exact:true}).scrollIntoViewIfNeeded();
+    const desktopPlace=await page.evaluate(()=>Math.round(scrollY));
+    await page.reload();
+    await page.getByRole('heading',{name:'Synthetic rolling restarts',exact:true}).waitFor();
+    await page.waitForFunction(y=>Math.abs(scrollY-y)<=4,desktopPlace,{timeout:5000});
+    assert(await page.getByText('Saved files',{exact:true}).evaluate(n=>n.parentElement.open),'Open sections stay open');
+    await page.getByText('Saved files',{exact:true}).click();
     // Every route that changes sources asks first, names what it clears, and Cancel or Escape
     // changes nothing and returns focus to the control that started it.
     const atRevision=await page.evaluate(()=>held.project.revision);
@@ -329,16 +429,16 @@ const assert = require('node:assert/strict');
     await page.setViewportSize({width:390,height:844});
     const sourcesAt=await page.evaluate(()=>held.project.sources.length);
     await page.getByText('Sources and facts',{exact:true}).click();
-    await page.getByRole('button',{name:'Add from library',exact:true}).click();
-    const sheet=page.getByRole('dialog',{name:'Add from library'});
+    await page.getByRole('button',{name:'Add from Document Library',exact:true}).click();
+    const sheet=page.getByRole('dialog',{name:'Add from Document Library'});
     await sheet.getByRole('checkbox',{name:'Select Synthetic capacity notes'}).waitFor();
     // This infographic's own kept export is listed as unavailable, never as a source.
     await sheet.getByText('Choose documents for this infographic only.',{exact:false}).waitFor();
     assert(await sheet.getByRole('checkbox',{name:'Synthetic rolling restarts is unavailable: This infographic'}).isDisabled());
     await page.keyboard.press('Escape');
-    assert.equal(await page.getByRole('dialog',{name:'Add from library'}).count(),0);
+    assert.equal(await page.getByRole('dialog',{name:'Add from Document Library'}).count(),0);
     assert.equal(await page.evaluate(()=>held.project.sources.length),sourcesAt,'Cancel changes nothing');
-    await page.getByRole('button',{name:'Add from library',exact:true}).click();
+    await page.getByRole('button',{name:'Add from Document Library',exact:true}).click();
     await sheet.getByRole('checkbox',{name:'Select Synthetic capacity notes'}).click();
     await sheet.getByRole('checkbox',{name:'Selected: Synthetic capacity notes'}).waitFor();
     await sheet.getByRole('button',{name:'Use selected',exact:true}).click();
@@ -362,8 +462,8 @@ const assert = require('node:assert/strict');
     assert.equal(await page.getByLabel('Working title',{exact:true}).inputValue(),'Retained intake');
     // A new infographic starts with no library documents; one chosen here waits for Save brief.
     assert.equal(await page.getByText('It becomes a source when you save the brief.',{exact:false}).count(),0);
-    await page.getByRole('button',{name:'Add from library',exact:true}).click();
-    const picker=page.getByRole('dialog',{name:'Add from library'});
+    await page.getByRole('button',{name:'Add from Document Library',exact:true}).click();
+    const picker=page.getByRole('dialog',{name:'Add from Document Library'});
     await picker.getByRole('checkbox',{name:'Select Synthetic capacity notes'}).click();
     await picker.getByText('1 selected',{exact:true}).waitFor();
     await picker.getByRole('button',{name:'Use selected',exact:true}).click();
@@ -371,6 +471,6 @@ const assert = require('node:assert/strict');
     assert.equal(await page.getByLabel('Working title',{exact:true}).inputValue(),'Retained intake');
     await page.keyboard.press('Escape');
     assert.deepEqual(errors,[],'Browser runtime errors');
-    console.log('PASS: phone intake → source-backed story → actual render → focused edit → pixel review → checks → approval → SVG download → kept in the Document Library; history comparison; a rename that keeps the approval; source and brief changes that ask first; the earlier page card; this infographic’s own export unavailable in Add from library; Add from library on the desk and a new brief; 320/390/1280 light/dark/reduced-motion; no browser errors or horizontal overflow. Providers are injected.');
+    console.log('PASS: phone intake → source-backed story → actual render → focused edit → pixel review → checks → approval → SVG download → kept in the Document Library; history comparison; a rename that keeps the approval; source and brief changes that ask first; the earlier page card; this infographic’s own export unavailable in Add from Document Library; Add from Document Library on the desk and a new brief; one page revision on every surface, one status surface, one label per action, History and Compare in words, receipts without stray text; Settings layout and words; a two-step New infographic with field errors and a sticky heading and foot; keyboard panning at actual pixels; timed toasts; Share to team repository asks to configure first; reload returns to the same place at 390 and 1280; 320/390/1280 light/dark/reduced-motion; no browser errors or horizontal overflow. Providers are injected.');
   }catch(f){console.error(JSON.stringify({browser_errors:errors,text:page?await page.locator('body').innerText():''}));if(page&&process.env.INFOGRAPHIC_UI_RESULTS)await page.screenshot({path:path.join(process.env.INFOGRAPHIC_UI_RESULTS,'failure.png'),fullPage:true});throw f;}finally{if(browser)await browser.close();child.kill('SIGTERM');await new Promise(resolve=>{const timer=setTimeout(()=>{child.kill('SIGKILL');resolve();},5000);child.once('exit',()=>{clearTimeout(timer);resolve();});});}
 })().catch(e=>{console.error(e.message);process.exitCode=1;});

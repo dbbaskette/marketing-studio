@@ -93,6 +93,11 @@ class ActivityServerTests(Isolated):
                 self.assertEqual(calls, ['suggest'])
                 desk_value = request('GET', '/api/desk?id=' + project['id'])[1]
                 self.assertEqual(desk_value['activity']['id'], observed['activity']['id'])
+                # Home lists the work each infographic is doing, so it can be left running.
+                listed = request('GET', '/api/projects')[1]['projects']
+                self.assertEqual([(p['id'], p['activity']['state'], p['activity']['label']) for p in listed],
+                                 [(project['id'], 'running', 'Reading supplied information')])
+                self.assertEqual(calls, ['suggest'], 'Listing starts and repeats nothing')
             finally:
                 release.set()
                 caller.join(5)

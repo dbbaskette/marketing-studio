@@ -10,7 +10,7 @@ The first release implements qualitative and measured comparison, process, timel
 number callouts, component and measured parts-to-whole explanations, and conceptual explanations in A4, US Letter and 1080 × 1350 digital
 portrait. Remote reads, reviewed research imports and selected team sharing are explicit actions.
 The app does not start public research or OCR implicitly. Sources and generated files
-stay in the local workspace; connecting a team library keeps an independent private clone.
+stay in the local workspace; connecting the team repository keeps an independent private clone.
 
 ## Start
 
@@ -27,9 +27,19 @@ A missing shared configuration opens the same shared setup used by the other
 studios. Finishing setup or launching explicitly creates a missing local workspace;
 existing workspaces are preserved. Shared assistant, model, effort and brand choices
 remain authoritative. Infographic Studio keeps its local workspace even when other studios use a team
-repository. Team library → Connect or sync explicitly clones the configured repository;
-only Share selected files commits and pushes a reviewed inventory.
-The native Settings screen opens shared setup and separate image/renderer defaults.
+repository. **Team repository** → Connect or sync explicitly clones the configured repository;
+only **Share to team repository** commits and pushes a reviewed inventory.
+The native **Settings** screen opens shared setup, says what is ready on this computer (and
+that the assistant and image provider are checked the first time they are used), keeps
+**Team Git email** with the team repository, and holds the image and renderer defaults.
+
+Long assistant work belongs to its infographic: while it runs, only that infographic's
+conflicting controls wait. The sidebar, Home, Settings and other infographics stay usable,
+Home's card says what the infographic is doing, and **Stop waiting** leaves the work
+running on this computer; coming back shows its progress or result, and nothing is
+requested again. A reload returns to the same infographic, place and open sections.
+Problems appear once, beside the field or in a notice above the page with **Dismiss**;
+confirmations leave by themselves.
 
 Python 3.11+, Git and a compatible headless Chromium renderer are required. Prepared
 supported-platform packages include private Python, Node and a checksum-pinned
@@ -162,8 +172,10 @@ separate release gates, never inferred from fixture success.
    all document tabs or slides are included unless you choose their IDs. Slide text, table text and speaker notes are captured; visual-only content is identified as an extraction gap. Import uses that exact preview, without
    refetching. PDF requires an explicitly installed `pdftotext`; scanned pages need a readable
    text copy. Word means `.docx`, without OCR, linked-resource reads or embedded-object analysis.
-2. Set the audience, takeaway and must-show information. Choose a story, build the page,
-   edit, inspect actual pixels, run checks and approve the exact revision.
+2. **Set the direction and page:** the audience, takeaway, must-show information and page
+   size, then **Save brief**. The sheet has these two steps; its heading and its actions stay
+   in view on a phone. Choose a story, build the page, edit, inspect actual pixels (the page
+   pans with the keyboard once its region has focus), run checks and approve the exact revision.
    **Where this stands** is the one status surface: the route (Story, Draft page, Review
    and checks, Approved delivery) with the current step, what needs you (always naming the
    toolbar's one next action), your current work, the preview and the approved delivery,
@@ -202,7 +214,7 @@ session URLs remain in memory. A saved delivery intent precedes writes; after in
 **Reconcile Google delivery** performs reads only and never blindly creates another Doc.
 PDF remains available when Google access fails. An old delivery remains historical after edits.
 
-**Sources and facts → Add from library** (also on **New infographic**) chooses
+**Sources and facts → Add from Document Library** (also on **New infographic**) chooses
 documents from the Document Library that every studio shares on this computer:
 uploads, finished blogs, delivered decks and approved infographics. Each chosen
 revision is checked, then captured as a source of this infographic only, so it keeps
@@ -213,7 +225,7 @@ research, grants no web access and sends nothing to an assistant; it is refused 
 the infographic is working. After **Approve revision N**, the
 approved page's accessible text and PDF are kept in the library as an Infographic,
 from the saved files. If that fails, the approval and files stand and **Keep in
-library again** retries it locally. See
+Document Library again** retries it locally. See
 [the Document Library](../../docs/shared-setup.md#the-document-library).
 
 **Sources and facts → Use reviewed research** displays the exact infographic-purpose task
@@ -227,10 +239,12 @@ public work runs in supplied-only mode. Missing or changed captures block claims
 Presentation Studio or Training Studio `hub.json` folder. Select one file and review its
 preview. Refresh/replacement is explicit and creates a new source revision.
 
-**Team library** uses the shared repository in shared settings. With none set, it says so
-and offers **Configure shared repository**, which opens Shared settings at Your workspace.
-Saving or choosing Back returns to the same infographic and reopens Team library; nothing
-connects until you choose **Connect team library**. A configured library shows its
+**Team repository** uses the shared repository in shared settings. With none set, it says so
+and offers **Configure shared repository**, which opens Shared settings at Your workspace;
+**Share to team repository** offers the same, and with a repository set but not connected
+it offers **Connect team repository**, so its main action never has to fail.
+Saving or choosing Back returns to the same infographic and reopens Team repository; nothing
+connects until you choose **Connect team repository**. A configured repository shows its
 repository, branch, connection and last sync, read locally without fetching, so an offline
 or signed-out connection still lists its last copy. Access, missing-repository and network
 failures each name a recovery step without repeating Git's output or any credential, and

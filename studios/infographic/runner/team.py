@@ -199,7 +199,7 @@ def clean(folder):
 def connect(*, sync=False):
     chosen = connection()
     require(chosen["configured"], chosen["problem"] or
-            "Configure a shared repository in shared settings before connecting the Team library.")
+            "Configure a shared repository in shared settings before connecting the team repository.")
     folder = root()
     repository, branch, _ = configuration()
     with file_lock(data_root() / ".team.lock"):

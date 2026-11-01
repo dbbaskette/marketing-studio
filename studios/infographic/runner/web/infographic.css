@@ -5,7 +5,12 @@
 .ig-source-input { min-height: 11rem; }
 .ig-story-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr)); gap: 1.1rem; }
 .ig-sheet { max-width: 44rem; padding: 1.25rem; background: var(--card); }
-.ig-sheet .create-foot { padding-block: .75rem; }
+/* The shared sheet heading stays at the top and the actions at the foot while the sheet
+   scrolls, both opaque and reaching the sheet's edges. */
+.ig-sheet-top { position: sticky; top: 0; z-index: 3; margin: -1.25rem -1.25rem 0; padding: 1.25rem 1.25rem 0; background: var(--card); }
+.ig-sheet-foot { position: sticky; bottom: 0; z-index: 3; margin: 0 -1.25rem -1.25rem; padding: .5rem 1.25rem 1.25rem; background: var(--card); border-top: 1px solid var(--hair); }
+.ig-sheet-foot > .create-foot { padding-block: 0; }
+.ig-field-error { display: block; margin-top: .35rem; }
 .ig-sheet pre, .ig-sheet .field, .ig-sheet .card, .page pre { min-width: 0; overflow-wrap: anywhere; }
 .ig-sheet .create-flow { min-width: 0; }
 .ig-sheet .create-flow > * + * { margin-top: .9rem; }
@@ -15,10 +20,15 @@
 .ig-page-tools { display: flex; flex-wrap: wrap; gap: .6rem; }
 .ig-thumbnail { width: 100%; height: 5rem; }
 #sheet { max-height: 90dvh; overflow: auto; width: min(44rem, calc(100% - 2rem)); }
-#notice { position: fixed; bottom: 1rem; left: 1rem; right: 1rem; z-index: 100; }
+/* The notice sits in the page's flow above the page, so it never covers a control or the
+   bar along a phone's foot; Dismiss sits beside its words. */
+#notice { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem 1rem; }
+#notice[hidden] { display: none; }
+.ig-notice-text { flex: 1 1 18rem; min-width: 0; overflow-wrap: anywhere; }
+/* The page's scroll region takes keyboard focus; its ring sits inside its edge. */
+.ig-preview-scroll:focus-visible { outline-offset: -3px; }
 @media (max-width: 700px) {
   .ig-page-tools > * { flex: 1 1 auto; }
-  #notice { bottom: 5rem; }
 }
 .ig-outline-block { fill: var(--solid); stroke: var(--hair); }
 .ig-outline-label { fill: var(--quiet); font: 12px var(--plain); }
@@ -64,6 +74,7 @@
   .ig-ledger { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .4rem; }
   .ig-ledger-item { padding: .4rem .5rem; font-size: .85rem; }
   .ig-ledger-detail { display: none; }
+  .ig-ledger-item .bead { display: none; }
   /* The route in one row, so the page preview starts within the first phone screen. */
   .ig-roadmap { flex-wrap: nowrap; gap: .2rem; margin-bottom: .2rem; }
   .ig-roadmap > .workflow-step { flex: 1 1 0; min-width: 0; padding-inline: .15rem; text-align: center; overflow-wrap: anywhere; }
