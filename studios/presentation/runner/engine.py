@@ -2760,12 +2760,18 @@ class Engine(Jobs, Researching, DeskActions):
             raise FileNotFoundError(NO_PICTURE)
         return worker_tools.picture(file)
 
-    def download(self, path) -> tuple[str, bytes]:
-        """The rendered deck, as a PowerPoint file: (its name, its bytes)."""
+    def download(self, path, revision: int | None = None) -> tuple[str, bytes]:
+        """The rendered deck, as a PowerPoint file: (its name, its bytes). With `revision`,
+        that delivered revision's PowerPoint file, while it is kept beside the deck."""
         root = self.driven(path)
         if root is None:
             raise WorkspaceError('There is no deck there.')
         record = self._load(root)
+        if revision is not None:
+            kept = delivering.receipt_file(root, record, revision)
+            if kept is None:
+                raise WorkspaceError(f'Revision {revision} has no PowerPoint file kept here.')
+            return f'{root.name}-revision-{revision}.pptx', kept.read_bytes()
         deck = delivering.shared_file(root) or build.delivered_deck(root, record)
         labelled = decks.user_first(record) and not decks.on_desk(record)
         return f'{root.name}' + ('-unreviewed-first-draft' if labelled else '') + '.pptx', deck.read_bytes()
@@ -2928,10 +2934,11 @@ class Engine(Jobs, Researching, DeskActions):
             return 'waiting', f"A question is waiting for you: {record['question']['text']}"
         if nxt is None:
             said = decks.delivered(root) or {}
-            where = said.get('url') or said.get('pptx')
-            return 'finished', (f"Delivered as revision {said.get('revision')}"
-                                + (f': {where}.' if where else '.') + (
-                                    f" {said['notice']}" if said.get('notice') else ''))
+            # Where it went, in words: a list shows its link as a button of its own.
+            where = ' to Google Slides' if said.get('url') else ' as a PowerPoint file' \
+                if said.get('pptx') else ''
+            return 'finished', (f"Delivered as revision {said.get('revision')}{where}."
+                                + (f" {said['notice']}" if said.get('notice') else ''))
         if nxt.kind == 'gate' and gate_state(record, nxt.name) == 'waiting':
             return 'waiting', self._waiting_words(record, nxt)
         if decks.on_desk(record) and nxt.name in BUILT and nxt.name != 'build-start' \
@@ -3856,6 +3863,9 @@ class Engine(Jobs, Researching, DeskActions):
         finally:
             with self.files:
                 self._sending.discard(str(root))
+        # The Document Library is told of the new revision as after any delivery: the same
+        # deck adds no library revision, and its status names the deck revision it is of.
+        library_keep.keep(root, self._load(root), made)
         self._last()
         return self.view(root)
 

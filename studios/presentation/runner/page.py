@@ -26,7 +26,8 @@ What a caller needs to know
     image/png, only what `engine.picture` gives. Nothing is ever read from a place the
     request names.
   - `/api/download?path=`: the rendered deck, only what `engine.download` gives, as an
-    attachment named for the deck.
+    attachment named for the deck; with `&revision=N`, that delivered revision's PowerPoint
+    file while it is kept beside the deck (`deliver.receipt_file`).
   - `/api/storyboard?path=&expected=` (and POST, with the unsaved `slides`): the outline
     drawn as a wireframe storyboard, kept in the deck's work/drafts/, answered as {"src",
     "expected", "milliseconds"}. `src` is `/api/deck-draft?ticket=`, which the page's
@@ -260,7 +261,13 @@ class RunnerPage(server.Page):
         if path == '/api/slide':
             return HTTPStatus.OK, PNG, self.slide(one)
         if path == '/api/download':
-            return self.download(one('path'))
+            try:
+                revision = one('revision')
+            except server.Refusal:
+                revision = None
+            if revision is not None and not revision.isdigit():
+                raise server.Refusal(HTTPStatus.BAD_REQUEST, 'A revision is a whole number.')
+            return self.download(one('path'), int(revision) if revision else None)
         if path == '/api/storyboard':
             return server.as_json(HTTPStatus.OK, self.framing(one('path'), self.engine.storyboard(
                 self.deck(one('path')), None, one('expected'))))
@@ -341,9 +348,9 @@ class RunnerPage(server.Page):
         except OSError:
             raise server.Refusal(HTTPStatus.NOT_FOUND, engines.NO_PICTURE)
 
-    def download(self, path: str) -> tuple:
-        """The rendered deck, as a file to keep."""
-        name, data = self.engine.download(self.deck(path))
+    def download(self, path: str, revision: int | None = None) -> tuple:
+        """The rendered deck, or one delivered revision's PowerPoint file, as a file to keep."""
+        name, data = self.engine.download(self.deck(path), revision)
         name = NAMED.sub('-', name) or 'deck.pptx'
         return HTTPStatus.OK, PPTX, data, {
             'Content-Disposition': f'attachment; filename="{name}"'}
@@ -587,9 +594,13 @@ class RunnerPage(server.Page):
     def source_given(self, sent: dict) -> dict:
         """A source the person adds on the desk: {"path", "name", "content", "library"?} with
         the file in base64, and `library` true to keep it in the Document Library as well
-        (Keep in library) or false for this deck only, or {"path", "text", "title"} with text
-        they pasted."""
+        (Keep in library) or false for this deck only, or {"path", "text", "title",
+        "library"?} with text they pasted, kept in the library the same way."""
         deck = self.deck(server.text(sent, 'path'))
+        keep = sent.get('library', False)
+        if not isinstance(keep, bool):
+            raise server.Refusal(HTTPStatus.BAD_REQUEST, 'Choose Keep in library or Only this '
+                                 'project.')
         if sent.get('content') is None:
             text = sent.get('text')
             if not isinstance(text, str) or len(text) > SOURCE_LIMIT:
@@ -597,7 +608,7 @@ class RunnerPage(server.Page):
                                      'choose its file.')
             title = server.text(sent, 'title', needed=False)
             return self.desk(lambda: self.engine.desk_source(deck, None, text=text,
-                                                             title=title))
+                                                             title=title, keep=keep))
         data = sent.get('content')
         try:
             if not isinstance(data, str) or not data:
@@ -606,10 +617,6 @@ class RunnerPage(server.Page):
         except (binascii.Error, ValueError):
             raise server.Refusal(HTTPStatus.BAD_REQUEST, 'The file did not arrive whole. '
                                  'Choose it again.')
-        keep = sent.get('library', False)
-        if not isinstance(keep, bool):
-            raise server.Refusal(HTTPStatus.BAD_REQUEST, 'Choose Keep in library or Only this '
-                                 'project.')
         return self.desk(lambda: self.engine.desk_source(
             deck, server.text(sent, 'name'), given, title=server.text(sent, 'title',
                                                                        needed=False),

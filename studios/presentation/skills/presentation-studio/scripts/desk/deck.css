@@ -283,6 +283,35 @@
   min-width: 14rem;
 }
 
+/* Finishing beside the slides takes the place of the Sources aside, at its width, so the
+   slide chosen keeps its own width; on a wide screen it may be a little wider. On a phone it
+   is a sheet over the desk: its heading is on the screen when it opens, and Close or Escape
+   puts it away. */
+@media (min-width: 1100px) {
+  .desk-layout.desk-finishing {
+    grid-template-columns: minmax(0, 1fr) 18rem;
+  }
+}
+
+@media (min-width: 1600px) {
+  .desk-layout.desk-finishing {
+    grid-template-columns: minmax(0, 1fr) 24rem;
+  }
+}
+
+@media (max-width: 52rem) {
+  .desk-layout > .desk-finish.desk-finish-sheet {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+    overflow-y: auto;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
 /* The slide text waiting for approval: its boxes fill the column, and the question a typed
    change asks sits under its buttons. */
 .slide-text-review .fields > * + *,
@@ -301,5 +330,16 @@
 }
 
 .desk-research-found > * + * {
+  margin-top: 0.6rem;
+}
+
+/* A delivery's receipts, one row each. */
+.desk-receipts {
+  margin: 0.6rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.desk-receipts > li + li {
   margin-top: 0.6rem;
 }

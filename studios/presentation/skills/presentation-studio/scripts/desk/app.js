@@ -746,9 +746,10 @@ async function picture(params) {
     { headers: { [TOKEN_HEADER]: view.token }, cache: 'no-store' }), /^image\/png\b/);
 }
 
-// The rendered deck, as its bytes.
-async function deckFile(path) {
-  return bytes(await reach('download?' + new URLSearchParams({ path }).toString(),
+// The rendered deck, or one delivered revision's PowerPoint file, as its bytes.
+async function deckFile(path, revision) {
+  const asked = revision ? { path, revision: String(revision) } : { path };
+  return bytes(await reach('download?' + new URLSearchParams(asked).toString(),
     { headers: { [TOKEN_HEADER]: view.token }, cache: 'no-store' }));
 }
 
@@ -1395,6 +1396,7 @@ function drawSheet() {
   else if (view.sheet === 'reclassify') body = reclassifySheet();
   else if (view.sheet === 'desk-deliver') body = window.deckDesk.deliverSheet();
   else if (view.sheet === 'desk-history') body = window.deckDesk.historySheet();
+  else if (view.sheet === 'desk-google') body = window.deckDesk.googleSheet();
   else if (view.sheet === 'desk-migration') body = migrationSheet();
   else if (view.sheet === 'desk-ready') body = readySheet();
   else body = undoSheet();
@@ -5447,21 +5449,22 @@ async function openOnDesk(run, pressed) {
   }
 }
 
-async function downloadDeck(run, pressed) {
+// The deck as it is drawn now, or with `revision` that delivered revision's own file.
+async function downloadDeck(run, pressed, revision) {
   if (view.downloading) return;
   view.downloading = true;
   pressed.disabled = true;
   try {
-    const found = await deckFile(run.path);
+    const found = await deckFile(run.path, revision);
     const held = URL.createObjectURL(found);
     const node = make('a', 'offscreen', 'Download');
     node.href = held;
-    node.download = (run.id || 'deck') + '.pptx';
+    node.download = (run.id || 'deck') + (revision ? '-revision-' + revision : '') + '.pptx';
     document.body.append(node);
     node.click();
     node.remove();
     window.setTimeout(() => URL.revokeObjectURL(held), 60000);
-    toast('The deck is downloaded.');
+    toast(revision ? 'Revision ' + revision + ' is downloaded.' : 'The deck is downloaded.');
   } catch (failure) {
     toast(failure.message + ' Nothing was downloaded.');
   }

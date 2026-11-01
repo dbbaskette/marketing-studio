@@ -5,6 +5,33 @@ making decks first, then what changes for maintainers.
 
 ## Unreleased
 
+- **Every delivery keeps its receipt, and the desk keeps your focus and your edits.**
+  The **Delivered** card lists every revision with its format and time, and opens
+  each one: **Open in Google Slides**, or **Download revision N** while that
+  PowerPoint file is still kept beside the deck. A Google delivery no longer takes
+  the last PowerPoint file away. **Send to Google Slides** asks first, in a sheet
+  that says what goes and as which revision. The card also says whether the
+  Document Library kept the deck, from which deck revision, and that the library
+  counts its own revisions. Home and Decks say where a deck went in words, with
+  its link as a button. **Add from library** never offers the deck's own
+  delivery. **Keep in library** now keeps pasted text too. After **Skip**,
+  **Apply**, **Deliver** and **Add the pasted text** the focus lands beside what
+  changed, and each Apply and Skip is named for its proposal. Finishing keeps
+  the slide at its width on a desktop and opens as a sheet on a phone, its
+  heading focused; Escape closes it. Opening **Brand check** no longer turns
+  warnings into things that wait for you. A change on the Outline tab that is
+  not saved is listed before you deliver, said on its slide, kept when the
+  outline is read again, and **Deliver** waits until you save or discard it.
+  The Outline tab has its own sentence and names **Move up**, **Move down** and
+  **Remove** on each row.
+
+  For maintainers: run['revisions'] entries record `sha256`;
+  `deliver.receipt_file` and `deliver.receipts` read them, `/api/download` takes
+  `revision`, and `deliver.record`/`again` leave `deck.pptx` in place.
+  `deliver_again` keeps the deck in the library as `_deliver` does. The desk view
+  adds `receipts` and `own_library`, and `desk_library` refuses the deck's own
+  document. `/api/desk-source` takes `library` with pasted text. #257.
+
 - **The slide text and the look pause say what they ask, and drop nothing.**
   **Approve text & design deck** is the toolbar's filled action. A change typed
   in **Changes to slide text** is never lost: Approve asks whether to send it

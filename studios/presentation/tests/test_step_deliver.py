@@ -48,8 +48,10 @@ class GoogleTests(Case):
         self.assertNotIn('notice', record)
         self.assertEqual(json.loads((self.root / decks.DELIVER).read_text()), record)
         run = decks.read_run(self.root)
+        # Each revision keeps the hash of the deck it delivered, for its receipt.
         self.assertEqual(run['revisions'], [{'revision': 1, 'at': record['at'],
-                                             'url': record['url']}])
+                                             'url': record['url'],
+                                             'sha256': record['deck_sha256']}])
         self.assertIn(record['url'], (self.root / 'README.md').read_text())
         self.assertIn(record['url'], (self.space / 'README.md').read_text())
         self.assertEqual(self.tool.files[record['fileId']]['name'], 'Rolling restarts')
@@ -119,6 +121,36 @@ class PowerPointTests(Case):
         deliver.record(self.root, run, deliver.upload(self.root, run, self.slides,
                                                       output='google'))
         self.assertIsNone(deliver.shared_file(self.root), 'the file shared is the latest')
+
+    def test_every_revision_keeps_a_receipt_that_opens(self):
+        """#257: a PowerPoint delivery and then a Google one both keep their receipts."""
+        first = deliver.deliver(self.root, self.run_, self.slides)
+        run = decks.read_run(self.root)
+        second = deliver.record(self.root, run, deliver.upload(self.root, run, self.slides,
+                                                               output='google'))
+        run = decks.read_run(self.root)
+        self.assertEqual(deliver.receipts(self.root, run), [
+            {'revision': 1, 'at': first['at'], 'format': 'pptx', 'download': True},
+            {'revision': 2, 'at': second['at'], 'format': 'google', 'url': second['url']}])
+        # Revision 1's own file is still beside the deck, though it is not what is delivered.
+        self.assertIsNone(deliver.shared_file(self.root))
+        self.assertEqual(deliver.receipt_file(self.root, run, 1).read_bytes(),
+                         (self.root / build.DECK).read_bytes())
+        self.assertIsNone(deliver.receipt_file(self.root, run, 2))
+        # Changes asked for after delivery leave it too: it is revision 1's, not the new deck.
+        run = deliver.again(self.root, run, self.slides, 'Shorter, please.')
+        self.assertIsNone(deliver.shared_file(self.root))
+        self.assertIsNotNone(deliver.receipt_file(self.root, run, 1))
+        # A later PowerPoint delivery replaces it, and revision 1's receipt says so.
+        (self.root / build.DECK).write_bytes(b'PK\x03\x04 revision three')
+        deliver.deliver(self.root, decks.read_run(self.root), self.slides)
+        run = decks.read_run(self.root)
+        listed = deliver.receipts(self.root, run)
+        self.assertEqual([(one['revision'], one['format'], one.get('download')) for one in listed],
+                         [(1, 'pptx', False), (2, 'google', None), (3, 'pptx', True)])
+        self.assertEqual(listed[0]['why'], 'Its file was replaced by revision 3’s PowerPoint file.')
+        self.assertEqual(deliver.receipt_file(self.root, run, 3).read_bytes(),
+                         b'PK\x03\x04 revision three')
 
     def test_asking_for_changes_takes_the_shared_file_away(self):
         deliver.deliver(self.root, self.run_, self.slides)
