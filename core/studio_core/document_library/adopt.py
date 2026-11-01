@@ -92,6 +92,8 @@ def _scan(workspaces, content=False) -> tuple[list[dict], list[dict]]:
             candidate['root'] = root
             for part in ('pdf', 'pdf_sha', 'pdf_note'):
                 candidate.setdefault(part, None)     # an adapter whose work has no PDF
+            # What only the preview says (no PDF, and why): never kept as an extraction gap.
+            candidate['notes'] = list(candidate.get('notes') or ())
         candidates.extend(offered)
         one, many = FOUND[studio]
         rows.append({'studio': studio, 'label': label,
@@ -116,7 +118,7 @@ def _states(candidates) -> None:
         copy = uploads.get(one['studio'], {}).get(one['original_sha']) if one['original_sha'] else None
         if found is None and copy:
             one['state'], one['document'] = 'kept', None
-            one['gaps'] = ['Kept in the library when it was uploaded.', *one['gaps']]
+            one['notes'] = ['Kept in the library when it was uploaded.', *one['notes']]
         elif found is None:
             one['state'] = 'new'
         elif found['whole'] and found['title'] == one['title'] \
@@ -128,15 +130,15 @@ def _states(candidates) -> None:
             one['state'] = 'kept'
             if one['pdf_sha'] is None and found.get('pdf'):
                 one['held_pdf'] = True
-                one['gaps'] = [gap for gap in one['gaps'] if gap != one['pdf_note']]
+                one['notes'] = [note for note in one['notes'] if note != one['pdf_note']]
         else:
             one['state'] = 'changed'
         if not copy or found is not None:
             one['document'] = found
         if found and found.get('hidden'):
             # Adding it again keeps it hidden: only Restore brings it back.
-            one['gaps'] = ['Removed from the library. Restore it under Show hidden to use it again.',
-                           *one['gaps']]
+            one['notes'] = ['Removed from the library. Restore it under Show hidden to use it again.',
+                            *one['notes']]
 
 
 def _signature(candidates) -> str:
@@ -154,7 +156,7 @@ def _shown(one) -> dict:
             'kind_label': KINDS[one['kind']], 'origin_label': ORIGINS[one['origin']],
             'note': one['note'], 'author': one['author'],
             'formats': formats, 'format_labels': [FORMATS[name] for name in formats],
-            'readable': bool(one['markdown_sha']), 'gaps': one['gaps'][:6], 'state': one['state'],
+            'readable': bool(one['markdown_sha']), 'gaps': [*one['notes'], *one['gaps']][:6], 'state': one['state'],
             'state_label': {'new': 'Will be added',
                             'changed': f'Adds revision {found["revision"] + 1}' if found else 'Will be added',
                             'kept': 'Already in the library'}[one['state']]}

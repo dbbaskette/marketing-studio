@@ -233,7 +233,7 @@ def _candidate(root: Path, held_by: str, ident: str, content: bool
             'pdf': pdf, 'pdf_sha': pdf_sha, 'pdf_note': why, 'filename': None,
             'project': {'id': ident, 'title': project['brief'].get('title'),
                         'revision': export['revision']},
-            'native': native, 'gaps': [why] if why else [], 'note': 'Approved infographic',
+            'native': native, 'gaps': [], 'notes': [why] if why else [], 'note': 'Approved infographic',
             'folder': root / 'projects' / ident, 'ident': ident}, None, True
 
 

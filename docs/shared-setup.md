@@ -338,8 +338,12 @@ record with no readable text is kept as **Needs text**.
 Left out of every studio: drafts and unfinished work (counted in the preview), and
 anything whose records the studio itself could not open, each said. A deck with no
 recorded key and no `created`, or a training worked on only in a conversation, is left
-out and said: Keep in library in the studio keeps it. Each revision records `native`:
-the studio's own ID for the work, its delivery, material or export, and its revision.
+out and said: Keep in library in the studio keeps it. So is one whose
+`sources/library.json` is there but linked, too large or damaged: the studio may still
+read a key from it, so no key is made up. Each revision records `native`: the studio's
+own ID for the work, its delivery, material or export, and its revision. Why an item has
+no PDF is said in the preview and kept as the PDF's own reason, never as an extraction
+gap, so the document has the same gaps as the one the studio's own Keep in library makes.
 
 Presentation Studio's Deliver makes a deck's key the same way when `sources/library.json`
 has none, so a deck added here and delivered again later is one library document.

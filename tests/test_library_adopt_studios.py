@@ -609,6 +609,102 @@ class InfographicTests(StudiosCase):
         self.assertIn('not an Infographic Studio workspace', place['summary'])
 
 
+class SameAsKeptTests(StudiosCase):
+    """Work added here is the document the studio's own Keep in library makes: the same
+    gaps, so no studio asks to review gaps for it, and the same PDF state. Why there is no
+    PDF is said in the preview and in the PDF's own reason, never as an extraction gap."""
+
+    def described(self, title):
+        row = next(row for row in self.catalog() if row['title'] == title)
+        return library.opened().describe(row['id'])
+
+    def test_adopted_and_kept_documents_have_the_same_gaps(self):
+        self.decks.deck('added-deck', 'Added deck', pdf=None)
+        kept = self.decks.deck('kept-deck', 'Kept deck', pdf=None)
+        self.trainings.training('added-guide', 'Added guide', marked={'document@101': 'page'})
+        held = self.trainings.training('kept-guide', 'Kept guide', marked={'document@101': 'page'})
+        self.infographic('added1', 'Added page')
+        self.infographic('kept1', 'Kept page')
+        self.studio('presentation', KEEP_DECK, kept)
+        self.studio('training', KEEP_MATERIAL, held, 'document@101')
+        self.studio('infographic', INFOGRAPHIC_KEEP, self.pictures, self.owner, 'kept1')
+        found = adopt.preview(self.known)
+        # The preview still says why a deck has no PDF.
+        self.assertIn('no PDF of this delivered deck', ' '.join(self.items(found)['Added deck']['gaps']))
+        self.assertEqual(adopt.confirm(self.known, found['signature'])['added'], 3)
+        for one, other in (('Added deck', 'Kept deck'),
+                           ('Added guide: level 101 learner guide', 'Kept guide: level 101 learner guide'),
+                           ('Added page', 'Kept page')):
+            with self.subTest(one):
+                mine, theirs = self.described(one), self.described(other)
+                self.assertEqual((mine['gaps'], mine['formats'], mine['pdf'], mine['readable']),
+                                 (theirs['gaps'], theirs['formats'], theirs['pdf'], theirs['readable']))
+                self.assertEqual(mine['gaps'], [])
+        self.assertIn('no PDF of this delivered deck', self.described('Added deck')['pdf_note'])
+
+    def test_an_adopted_finished_blog_has_no_extraction_gap(self):
+        try:
+            from test_library_adopt import Workspace           # run from tests/ (discover)
+        except ImportError:
+            from tests.test_library_adopt import Workspace     # run as tests.<module>
+        blogs = Workspace(self.base / 'writing')
+        blogs.source('gateway-guide-1a2b3c4e', 'Gateway guide', '# Gateway guide\n\nRoutes.\n',
+                     library={'origin_kind': 'written-here', 'article': 'gateway-guide-1a2b3c4d'})
+        known = {**self.known, 'blog': {'root': str(blogs.root)}}
+        found = adopt.preview(known)
+        self.assertIn('no PDF', ' '.join(self.items(found)['Gateway guide']['gaps']))
+        adopt.confirm(known, found['signature'])
+        self.assertEqual(self.described('Gateway guide')['gaps'], [])
+
+
+class UnsafeRecordTests(StudiosCase):
+    """A studio's own key record that cannot be read safely is never guessed past: the
+    studio may still read a key from it, and a made-up one would be a second document."""
+
+    def test_a_deck_whose_key_record_is_linked_or_damaged_is_left_out(self):
+        linked = self.decks.deck('linked', 'Linked record')
+        elsewhere = write(self.base / 'elsewhere/library.json', {'key': 'presentation:linked-abcdefabcdef'})
+        (linked / 'sources').symlink_to(elsewhere.parent, target_is_directory=True)
+        damaged = self.decks.deck('damaged', 'Damaged record')
+        write(damaged / 'sources/library.json', '{not json')
+        large = self.decks.deck('large', 'Large record')
+        write(large / 'sources/library.json', {'key': 'presentation:large-abcdefabcdef', 'pad': 'x' * 30_000})
+        place = self.places(adopt.preview(self.known))['presentation']
+        self.assertEqual(place['count'], 0)
+        said = ' '.join(place['gaps'])
+        for title in ('Linked record', 'Damaged record', 'Large record'):
+            self.assertIn(f'“{title}” was left out: its Document Library record (sources/library.json) '
+                          'is linked, too large or damaged', said)
+
+    def test_a_training_whose_key_record_is_linked_is_left_out(self):
+        root = self.trainings.training('linked', 'Linked record', marked={'document@101': 'page'})
+        elsewhere = write(self.base / 'elsewhere/library.json', {'key': 'training:linked-abcdefabcdef'})
+        (root / 'sources').mkdir()
+        (root / 'sources/library.json').symlink_to(elsewhere)
+        place = self.places(adopt.preview(self.known))['training']
+        self.assertEqual(place['count'], 0)
+        self.assertIn('“Linked record” was left out: its Document Library record', ' '.join(place['gaps']))
+
+    def test_a_research_bundle_is_read_only_within_bounds(self):
+        root = self.trainings.training('bundle', 'Bundle', marked={'document@101': 'page'})
+        session = {**Trainings.session(root), 'research_contract': True}
+        reader = training_existing._Training(root, session)
+        self.assertFalse(reader.bundle_bounded(), 'No bundle: nothing to read.')
+        write(root / 'research/facts.json', {'schema': 2})
+        write(root / 'research/report.md', '# Report\n')
+        write(root / 'research/output.json', {'artifacts': [{'file': 'report.md', 'sha256': '0' * 64}]})
+        self.assertTrue(training_existing._Training(root, session).bundle_bounded())
+        write(root / 'research/report.md', b'x' * (training_existing.BUNDLE_FILE + 1))
+        self.assertFalse(training_existing._Training(root, session).bundle_bounded())
+        (root / 'research/report.md').unlink()
+        (root / 'research/report.md').symlink_to(root / 'intake.md')
+        reader = training_existing._Training(root, session)
+        self.assertFalse(reader.bundle_bounded())
+        with mock.patch('studio_core.research_contract.read_bundle') as read:
+            self.assertIsNone(reader.research_record())
+        read.assert_not_called()
+
+
 class AllStudiosTests(StudiosCase):
     def test_one_preview_of_every_studio_writes_nothing_and_adding_twice_adds_once(self):
         self.decks.deck('launch-plan', 'Launch plan')

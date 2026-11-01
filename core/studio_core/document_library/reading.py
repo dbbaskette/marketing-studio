@@ -36,6 +36,22 @@ def record(path: Path, limit: int = 256_000) -> dict | None:
     return found if isinstance(found, dict) else None
 
 
+def kept_record(root: Path, relative: str, limit: int) -> tuple[dict | None, bool]:
+    """(A studio's own JSON record, True); (None, True) when there is none at all; or (None,
+    False) when one is there but cannot be read safely: linked (the file or a folder on
+    its way), larger than `limit`, or not a JSON object. A caller that would otherwise make
+    up what the record says must refuse in the last case: the studio may still read it."""
+    place, parts = Path(root), Path(relative).parts
+    for part in parts:
+        place = place / part
+        if place.is_symlink():
+            return None, False
+        if not place.exists():
+            return None, True
+    found = record(place, limit)
+    return found, found is not None
+
+
 def sha(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 

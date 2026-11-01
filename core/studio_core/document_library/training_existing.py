@@ -54,6 +54,7 @@ RESEARCH_RECORD = '.harness-research/research.json'
 RESEARCH_COPY = 'research-report.md'
 RECORD = 1_000_000
 ENTRIES = 2_000
+BUNDLE_FILE, BUNDLE_TOTAL = 8_000_000, 256_000_000   # a research bundle's files, as Training Studio bounds them
 # Coverage notes, as Training Studio's gdocs.strip_comments finds them.
 COMMENT = re.compile(r'<!--\s*(?:covers|findings):.*?-->', re.DOTALL)
 FENCE = re.compile(r'^ {0,3}(`{3,}|~{3,})')
@@ -150,9 +151,34 @@ class _Training:
     def record_file(self) -> str:
         return 'research/facts.json' if self.session.get('research_contract') else RESEARCH_RECORD
 
+    def bundle_bounded(self) -> bool:
+        """Whether every file `research_contract.read_bundle` reads of the research bundle is
+        an ordinary file, reached by no link, within Training Studio's limits (8 MB each,
+        256 MB in all), so that reading it is bounded too."""
+        if getattr(self, '_bounded', None) is None:
+            manifest, safe = reading.kept_record(self.root, 'research/output.json', BUNDLE_FILE)
+            entries = (manifest or {}).get('artifacts')
+            names = ['facts.json', *(entry.get('file') if isinstance(entry, dict) else None
+                                     for entry in entries)] if isinstance(entries, list) else []
+            total, self._bounded = 0, safe and bool(names) and len(names) <= 10_001
+            for name in names if self._bounded else ():
+                place = self.root / 'research' / str(name)
+                if not migration.relative(name) or not reading.unlinked(self.root, f'research/{name}') \
+                        or place.is_symlink() or not place.is_file():
+                    self._bounded = False
+                    break
+                size = place.stat().st_size
+                total += size
+                if size > BUNDLE_FILE or total > BUNDLE_TOTAL:
+                    self._bounded = False
+                    break
+        return self._bounded
+
     def research_record(self):
         if self.session.get('research_contract'):
             from studio_core.research_contract import read_bundle
+            if not self.bundle_bounded():
+                return None
             try:
                 value, _ = read_bundle(self.root / 'research')
                 return value
@@ -231,8 +257,15 @@ class _Training:
 
 def _key(root: Path, run: dict | None) -> str | None:
     """The training's library key (`library._key`): the one recorded for it, else the one
-    made from its folder and the moment its run started; None when it has neither."""
-    held = (reading.record(root / STATUS, 100_000) or {}).get('key')
+    made from its folder and the moment its run started; None when it has neither. Raises
+    ValueError when that record is there but cannot be read safely: Training Studio may
+    still read a key from it, so none is made up here."""
+    status, safe = reading.kept_record(root, STATUS, 100_000)
+    if not safe:
+        raise ValueError('its Document Library record (sources/library.json) is linked, too '
+                         'large or damaged, so its library key cannot be read. Put that file '
+                         'right, then preview again')
+    held = (status or {}).get('key')
     if isinstance(held, str) and KEY.fullmatch(held):
         return held
     plain = re.sub(r'[^a-z0-9-]+', '-', root.name.lower()).strip('-')[:120] or 'training'
@@ -311,7 +344,7 @@ def _material(training: _Training, key: str, name: str, content: bool
             'markdown_sha': reading.sha(text.encode('utf-8')), 'original_sha': None,
             'pdf': None, 'pdf_sha': None, 'pdf_note': None, 'filename': None,
             'project': {'id': root.name, 'title': title, 'revision': digest[:12]},
-            'native': native, 'gaps': [NO_PDF], 'note': 'Marked ready',
+            'native': native, 'gaps': [], 'notes': [NO_PDF], 'note': 'Marked ready',
             'folder': root, 'material': name}, None
 
 
@@ -335,8 +368,11 @@ def _training(root: Path, content: bool) -> tuple[list[dict], list[str], int]:
                   and training.status(name) not in ('skipped', 'unavailable', 'not-started'))
     if not ready:
         return [], [], waiting
-    key = _key(root, run)
     title = _plain(session.get('title'), TITLE) or root.name
+    try:
+        key = _key(root, run)
+    except ValueError as refusal:
+        return [], [f'“{title[:120]}” was left out: {refusal}.'], waiting
     if key is None:   # a random key here would be a second document when Mark ready keeps it
         return [], [f'“{title[:120]}” was left out: Training Studio has no library key for it. '
                     'Choose Keep in library on each Ready guide or brief on its desk.'], waiting

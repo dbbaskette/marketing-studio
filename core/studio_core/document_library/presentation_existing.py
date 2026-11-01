@@ -92,8 +92,12 @@ def _run(folder: Path) -> dict | None:
 
 def _key(folder: Path, run: dict) -> tuple[str | None, str]:
     """(The deck's library key, where it came from): the one `sources/library.json`
-    records, else the one Presentation Studio makes from the deck's folder and creation."""
-    status = reading.record(folder / STATUS, 20_000) if reading.unlinked(folder, STATUS) else None
+    records, else the one Presentation Studio makes from the deck's folder and creation;
+    (None, 'unsafe') when that record is there but cannot be read safely: Presentation
+    Studio may still read a key from it, so none is made up here."""
+    status, safe = reading.kept_record(folder, STATUS, 20_000)
+    if not safe:
+        return None, 'unsafe'
     held = (status or {}).get('key')
     if isinstance(held, str) and KEY.fullmatch(held):
         return held, 'recorded'
@@ -185,6 +189,10 @@ def _candidate(folder: Path, content: bool) -> tuple[dict | None, str | None, bo
     if not text.strip():
         return None, (f'“{title[:120]}” was left out: it has no slide outline to add.'), True
     key, came_from = _key(folder, run)
+    if came_from == 'unsafe':
+        return None, (f'“{title[:120]}” was left out: its Document Library record '
+                      '(sources/library.json) is linked, too large or damaged, so its library '
+                      'key cannot be read. Put that file right, then preview again.'), True
     if key is None:
         return None, (f'“{title[:120]}” was left out: Presentation Studio has no library key '
                       'for it. Choose Keep in library on its desk in Presentation Studio.'), True
@@ -203,7 +211,7 @@ def _candidate(folder: Path, content: bool) -> tuple[dict | None, str | None, bo
             'pdf': pdf, 'pdf_sha': pdf_sha, 'pdf_note': why, 'filename': None,
             'project': {'id': folder.name, 'title': raw if isinstance(raw, str) else title,
                         'revision': revision},
-            'native': native, 'gaps': [why] if why else [], 'note': 'Delivered deck',
+            'native': native, 'gaps': [], 'notes': [why] if why else [], 'note': 'Delivered deck',
             'folder': folder}, None, True
 
 
