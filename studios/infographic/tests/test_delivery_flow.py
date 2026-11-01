@@ -65,7 +65,8 @@ class DeliveryFlowTests(Isolated):
         self.assertEqual(desk['page_revision'], page)
         self.assertEqual(desk['approval_words'], 'You approved revision ' + str(page) + '.')
         self.assertEqual({d['page_revision'] for d in desk['deliveries']}, {page}, 'Draft and approved files name one revision')
-        self.assertEqual(desk['library']['kept']['revision'], page, 'The Document Library entry names it too')
+        self.assertEqual((desk['library']['kept']['revision'], desk['library']['kept']['page_revision']),
+                         (done['revision'], page), 'The kept entry keeps the saved revision and names the page')
         self.assertEqual([e['page_revision'] for e in desk['history'][:3]], [page] * 3)
         edited = self.engine.edit_text(self.ident, 'b1_heading', 'One instance', expected_revision=done['revision'])
         after = self.stage()
@@ -73,6 +74,17 @@ class DeliveryFlowTests(Isolated):
         self.assertEqual(after['revision'], edited['revision'], 'An edit is a new page revision')
         self.assertIn('Earlier approved files for revision ' + str(page), after['downloads'])
         self.assertIsNone(edited['approval'])
+
+    def test_checking_again_after_approval_says_the_approval_was_withdrawn(self):
+        self.reviewed()
+        page = self.current()['revision'] - 1
+        done = self.engine.approve_and_export(self.ident, expected_revision=self.current()['revision'])
+        self.engine.check(self.ident, expected_revision=done['revision'])
+        again = self.stage()
+        self.assertIsNone(self.current()['approval'])
+        self.assertEqual((again['stage'], again['revision']), ('approve', page))
+        self.assertEqual(again['downloads'], 'The files approved earlier for revision ' + str(page)
+                         + ' stay unchanged in Saved files. A new review withdrew the approval until you approve again.')
 
     def test_needs_you_always_names_the_toolbar_action(self):
         manifest = self.engine.preview(self.ident, expected_revision=self.current()['revision'])

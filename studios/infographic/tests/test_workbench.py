@@ -114,6 +114,24 @@ class WorkbenchTests(Isolated):
         restored = history.restore(self.store, self.ident, built, expected_revision=edited['revision'])
         self.assertEqual(history.Pages(self.store, self.ident).of(restored['revision']), restored['revision'])
 
+    def test_a_restore_is_a_new_page_revision_even_when_it_equals_the_current_page(self):
+        start = self.current()['revision']
+        changed = self.engine.edit_text(self.ident, 'b1_heading', 'Changed words', expected_revision=start)
+        back = self.engine.edit_text(self.ident, 'b1_heading', 'One at a time', expected_revision=changed['revision'])
+        self.assertEqual(history.Pages(self.store, self.ident).of(back['revision']), back['revision'])
+        # Restoring the first revision makes content equal to the current page; it is still
+        # new work, so it has a number of its own and never repeats the current one.
+        restored = history.restore(self.store, self.ident, start, expected_revision=back['revision'])
+        pages = history.Pages(self.store, self.ident)
+        self.assertEqual((pages.of(restored['revision']), pages.of(back['revision'])),
+                         (restored['revision'], back['revision']))
+        checked = self.engine.check(self.ident, expected_revision=restored['revision'])
+        self.assertEqual(history.Pages(self.store, self.ident).of(checked['revision']), restored['revision'],
+                         'Bookkeeping after a restore keeps the restore’s number')
+        listed = history.entries(self.store, self.ident)
+        self.assertEqual([e['page_revision'] for e in listed[:2]], [restored['revision']] * 2)
+        self.assertNotEqual(listed[2]['page_revision'], restored['revision'])
+
     def test_compare_says_what_changed_in_words_and_hides_saved_fields_behind_advanced(self):
         built = self.current()['revision']
         approved = self.review_and_approve()

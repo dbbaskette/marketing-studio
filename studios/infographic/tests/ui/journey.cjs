@@ -100,8 +100,27 @@ const assert = require('node:assert/strict');
     await page.getByRole('dialog').getByRole('button',{name:'Build page',exact:true}).click();
     await page.locator('.ig-preview').waitFor();
     await page.waitForFunction(()=>{const i=document.querySelector('.ig-preview');return i&&i.complete&&i.naturalWidth===1080;});
-    if(scenario){
+    // While an action runs and until the infographic has been read again, its controls stay
+    // locked, so nothing can be sent against the revision the action replaced.
+    {
+      const heading=page.getByLabel('Words for Page heading',{exact:true});
+      const original=await heading.inputValue();
+      await heading.fill('Synthetic words typed during checks');
+      let slow=true;
+      await page.route('**/api/desk*',async route=>{if(slow)await new Promise(resolve=>setTimeout(resolve,1500));await route.continue();});
+      const answered=page.waitForResponse(r=>r.url().includes('/api/action'));
       await page.locator('#main').getByRole('button',{name:'Run checks again',exact:true}).click();
+      await answered;await page.waitForTimeout(200);
+      assert.equal(await page.getByRole('button',{name:'Save words',exact:true}).isDisabled(),true,'Save words waits for the re-read');
+      assert.equal(await page.locator('#actions').getByRole('button',{name:'Infographics',exact:true}).isDisabled(),false,'Navigation stays free');
+      await page.waitForFunction(()=>!document.querySelector('[data-work-status]:not([hidden])')&&!document.getElementById('ig-save-words').disabled);
+      slow=false;await page.unroute('**/api/desk*');
+      assert.equal(await page.evaluate(()=>held.project.revision),await page.evaluate(async()=>(await request('/api/project?id='+held.project.id)).project.revision),'Unlocked only with the current revision');
+      assert.equal(await page.getByLabel('Words for Page heading',{exact:true}).inputValue(),'Synthetic words typed during checks','Typed words are kept');
+      await page.getByLabel('Words for Page heading',{exact:true}).fill(original);
+      assert.equal(await page.locator('#notice').isVisible(),false);
+    }
+    if(scenario){
       const beforeEdit=await page.evaluate(()=>request('/api/desk?id='+held.project.id));
       assert(beforeEdit.project.checks.filter(c=>c.kind!=='visual').every(c=>c.status==='passed'),JSON.stringify(beforeEdit.project.checks));
     }
@@ -158,6 +177,17 @@ const assert = require('node:assert/strict');
     await page.getByRole('heading',{name:'Draft page',exact:true}).waitFor();
     // Where this stands is the one status surface: the route, Needs you (naming the toolbar's
     // primary action), the three revisions and the downloads. No control shows more than twice.
+    // A notice raised far down the page is brought fully into view below the sticky toolbar.
+    async function noticeInView(){
+      await page.evaluate(()=>scrollTo(0,document.body.scrollHeight));await page.waitForTimeout(200);
+      await page.evaluate(()=>error('Synthetic problem raised far down the page.'));await page.waitForTimeout(300);
+      const seen=await page.evaluate(()=>{const n=document.getElementById('notice').getBoundingClientRect(),bar=document.querySelector('.toolbar-wrap').getBoundingClientRect();
+        const at=(x,y)=>document.elementFromPoint(x,y)?.closest('#notice')!==null;
+        return {top:n.top,bottom:n.bottom,bar:bar.bottom,height:innerHeight,start:at(n.left+20,n.top+4),end:at(n.right-20,n.bottom-4)};});
+      assert(seen.top>=seen.bar&&seen.bottom<=seen.height&&seen.start&&seen.end,'The notice is fully visible below the toolbar: '+JSON.stringify(seen));
+      await page.locator('#notice').getByRole('button',{name:'Dismiss',exact:true}).click();
+      assert.equal(await page.locator('#notice').isVisible(),false);
+    }
     async function oneStatus(){
       const primary=await page.locator('#actions .button-filled').innerText();
       const needs=await page.locator('.ig-needs').innerText();
@@ -201,8 +231,9 @@ const assert = require('node:assert/strict');
     assert.equal(await page.locator('#main').getByText('(required)',{exact:false}).count(),0);
     assert.equal(await page.locator('#main').getByRole('button',{name:'Review page',exact:true}).isVisible(),false);
     await oneStatus();
+    await noticeInView();     // at 390
     // The approved page's text and PDF are kept in the Document Library from the saved files.
-    await page.getByText('Kept in the Document Library with its text and PDF (library revision 1).',{exact:true}).waitFor();
+    await page.getByText('Kept in the Document Library: approved revision '+reviewed+', with its text and PDF (library revision 1).',{exact:true}).waitFor();
     // Actual pixels by keyboard alone: the page's scroll region takes focus, is named, shows
     // its focus ring and pans to every edge with the arrow, Home and End keys.
     await page.getByRole('button',{name:'Fit page',exact:true}).focus();
@@ -294,7 +325,10 @@ const assert = require('node:assert/strict');
     assert.equal(await page.locator('#notice').isVisible(),false,'Nothing behind the sheet');
     await page.getByLabel('What did you inspect on the actual composed page?',{exact:true}).fill('I inspected the actual page again and confirmed its relationships.');
     await page.getByRole('button',{name:'Record review and run checks',exact:true}).click();
-    await page.getByRole('heading',{name:'Earlier approval: review the current revision',exact:true}).waitFor();
+    // Reviewing again withdraws the approval until the person approves again, and says so.
+    await page.getByRole('heading',{name:'Approval withdrawn: approve revision '+reviewed+' again',exact:true}).waitFor();
+    await page.getByText('Downloads: The files approved earlier for revision '+reviewed+' stay unchanged in Saved files. A new review withdrew the approval until you approve again.',{exact:true}).waitFor();
+    assert.match(await page.locator('.ig-ledger-item').nth(2).innerText(),new RegExp('Revision '+reviewed+' \\(withdrawn\\)'));
     // A newer review never inherits the earlier approval or its files.
     assert.equal(await page.getByRole('button',{name:'Deliver approved page',exact:true}).count(),0);
     await approve.waitFor();
@@ -353,6 +387,7 @@ const assert = require('node:assert/strict');
     await page.getByRole('heading',{name:'Synthetic rolling restarts',exact:true}).waitFor();
     await page.waitForFunction(y=>Math.abs(scrollY-y)<=4,desktopPlace,{timeout:5000});
     assert(await page.getByText('Saved files',{exact:true}).evaluate(n=>n.parentElement.open),'Open sections stay open');
+    await noticeInView();     // at 1280
     await page.getByText('Saved files',{exact:true}).click();
     // Every route that changes sources asks first, names what it clears, and Cancel or Escape
     // changes nothing and returns focus to the control that started it.

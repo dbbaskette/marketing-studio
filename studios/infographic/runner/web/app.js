@@ -74,8 +74,13 @@ function error(message) {
   const dismiss = button('Dismiss', () => error('')); dismiss.dataset.free = '';
   notice.replaceChildren(make('span', 'ig-notice-text', message), dismiss);
   notice.hidden = false;
-  const box = notice.getBoundingClientRect();
-  if (box.top < 0 || box.bottom > innerHeight) notice.scrollIntoView({block: 'nearest'});
+  showNotice();
+}
+// Bring the notice fully into view below the sticky toolbar, never under it.
+function showNotice() {
+  const notice = $('notice'); if (notice.hidden) return;
+  const box = notice.getBoundingClientRect(), below = document.querySelector('.toolbar-wrap').getBoundingClientRect().bottom;
+  if (box.top < below + 8 || box.bottom > innerHeight) scrollTo(0, Math.max(0, scrollY + box.top - below - 12));
 }
 // The shared toast: it slides in, is read out once and leaves by itself after 4.2 seconds,
 // straight away when motion is reduced, as in Presentation Studio and shared setup.
@@ -224,7 +229,7 @@ async function resumeActivity(id,current) {
   if(running.has(id))return;
   const owner=beginWork(current.label,current.elapsed_seconds,id);
   try{const result=await recoverActivity(id,owner);
-    if(here(id)){endWork(owner);await openProject(id);recoveredNotice(result);}
+    if(here(id)){await openProject(id);recoveredNotice(result);}
     else elsewhere(owner,['complete','outdated'].includes(result?.state)?'':(result?.problem||'The earlier outcome could not be confirmed. Open it to check the saved work.'));
   }catch(f){if(here(id))error(f.message);else elsewhere(owner,f.message);}finally{endWork(owner);}
 }
@@ -280,7 +285,7 @@ async function action(verb, values={}, revision=null, options={}) {
   try {
     const answer = await request('/api/action', {action:verb, id, expected_revision:revision??held.project.revision, ...values});
     if(!options.quiet&&!here(id)){const result=answer.result,state=result?.state;elsewhere(owner,['unknown','failed'].includes(state)?(imageProblems[result.reason]||imageUncertain):'');return result;}
-    clearInterval(polling);endWork(owner);
+    clearInterval(polling);
     closeSheet(); await openProject(id); if(options.quiet)return answer.result;
     const found=held?.recovery?.some(r=>r.local_artwork_available);
     if(['unknown','failed'].includes(answer.result?.state)&&found)error(imageFound);
@@ -294,9 +299,9 @@ async function action(verb, values={}, revision=null, options={}) {
       clearInterval(polling);connectionUncertain(owner);
       try{const result=await recoverActivity(id,owner);
         if(!here(id))elsewhere(owner,['complete','outdated'].includes(result?.state)?'':(result?.problem||failure.message));
-        else{endWork(owner);await openProject(id);if(result)recoveredNotice(result);else error(failure.message);}
+        else{await openProject(id);if(result)recoveredNotice(result);else error(failure.message);}
       }catch(f){if(here(id))error(f.message);else elsewhere(owner,f.message);}
-    }else if(here(id)||options.quiet){endWork(owner);await openProject(id);error(failure.message);}
+    }else if(here(id)||options.quiet){await openProject(id);error(failure.message);}
     else elsewhere(owner,failure.message);
   }
   finally { clearInterval(polling); endWork(owner);unlock(); }
@@ -581,7 +586,7 @@ function workbench(p,delivery){
   // With no current page there is nothing to update: say which page this is and the next step.
   const stage=held.roadmap?.stage,again=stage==='build'?'Build the page again to edit or approve it.':(stage==='choose'?'Choose a story':held.planning_response?.available?'Check the saved proposal':'Find the story')+' and build the page again to edit or approve it.';
   const kept=delivery&&!delivery.current&&p.approval;      // a rename kept the approval
-  const view=make('section','card stack ig-view');view.append(make('h2','card-title',!delivery?'Page preview':!p.scene?'Earlier page (revision '+pageOf(delivery)+')':kept?'Approved revision '+n+': prepare its files':!delivery.current?'Earlier preview: update it to see your changes':delivery.draft&&p.approval?'Approved revision '+n+': prepare its files':delivery.draft?'Draft page':delivery.approved_current?'Approved delivery':'Earlier approval: review the current revision'));
+  const view=make('section','card stack ig-view');view.append(make('h2','card-title',!delivery?'Page preview':!p.scene?'Earlier page (revision '+pageOf(delivery)+')':kept?'Approved revision '+n+': prepare its files':!delivery.current?'Earlier preview: update it to see your changes':delivery.draft&&p.approval?'Approved revision '+n+': prepare its files':delivery.draft?'Draft page':delivery.approved_current?'Approved delivery':pageOf(delivery)===n?'Approval withdrawn: approve revision '+n+' again':'Earlier approval: review the current revision'));
   const mark=make('div','ig-mark');mark.hidden=true;mark.setAttribute('aria-hidden','true');
   let img=null,figure=null;
   if(delivery){
@@ -660,7 +665,10 @@ async function saveWords(){
   const chosen=(held.elements||[]).find(n=>n.id===bench.element),input=$('ig-words');if(!chosen||!input)return;
   const text=input.value;bench.scroll=window.scrollY;bench.saved=null;bench.failed='';bench.unchanged=false;
   if(text===chosen.text){delete bench.drafts[chosen.id];bench.unchanged=true;keepBench();bench.focus=true;renderProject();return;}
-  const before=held.project.revision,result=await action('edit-text',{element_id:chosen.id,text});
+  const id=held.project.id,before=held.project.revision,result=await action('edit-text',{element_id:chosen.id,text});
+  // The person moved to another screen meanwhile: this result belongs to that infographic's
+  // own saved state, never to whatever is open now. Typed words stay in its kept drafts.
+  if(!here(id)||bench.project!==id)return;
   if(result&&typeof result.revision==='number'){delete bench.drafts[chosen.id];if(result.revision>before)bench.saved={revision:result.revision,label:chosen.label};else bench.unchanged=true;}
   else{bench.drafts[chosen.id]=text;bench.failed=lastError||'These words could not be saved.';}
   keepBench();bench.focus=true;if(held?.project.id===bench.project)renderProject();
@@ -696,7 +704,7 @@ function historyGroup(group,current){
   const later=(head?group.entries.slice(0,-1):group.entries).slice().reverse();
   const facts=[when((head||oldest).saved_at),'Revision '+group.page+(current?' (current)':''),head?.affected?.length?'Changed: '+head.affected.join(', '):'',newest.approved?'Approved':''].filter(Boolean).join(' · ');
   return add(make('div','desk-version'),add(make('div','ig-entry'),make('strong','',head?.summary||'Revision '+group.page),make('span','quiet',facts),
-      later.length?make('span','quiet','Then: '+later.map(v=>v.summary).join('; ')+'.'):null),
+      later.length?make('span','quiet','Then: '+[...new Set(later.map(v=>v.summary))].join('; ')+'.'):null),
     current?null:add(make('div','bar'),button('Compare revision '+group.page+' with current',()=>compareSheet(newest,group.page)),button('Restore revision '+group.page,()=>restoreSheet(newest,group.page))));
 }
 // Where this stands: the one status surface. The route, the one next step (named as the
@@ -714,7 +722,7 @@ function standing(map,p,delivery,needs){
     ledger=add(make('div','ig-ledger'),
       ledgerItem('Current work','Revision '+n,'current',held.readiness?.summary),
       ledgerItem('Preview',delivery?'Revision '+pageOf(delivery):'Not rendered yet',delivery?.current?'done':'review',delivery?(delivery.current?(pageOf(delivery)===n?'Shows your current work.':'Shows the same page as your current work, saved earlier as revision '+pageOf(delivery)+'.'):'Outdated: it does not show your latest changes.'):'Create a preview to see the page.'),
-      ledgerItem('Approved delivery',approvedFiles?'Revision '+pageOf(approvedFiles):'None yet',approvedFiles?.approved_current?'done':'review',approvedFiles?(approvedFiles.approved_current?'Matches your current work.':'Earlier files, kept unchanged.'):'Approve a checked revision to deliver it.'));
+      ledgerItem('Approved delivery',approvedFiles?'Revision '+pageOf(approvedFiles)+(!approvedFiles.approved_current&&pageOf(approvedFiles)===n?' (withdrawn)':''):'None yet',approvedFiles?.approved_current?'done':'review',approvedFiles?(approvedFiles.approved_current?'Matches your current work.':pageOf(approvedFiles)===n?'Approval withdrawn by a new review until you approve again. The files are kept unchanged.':'Earlier files, kept unchanged.'):'Approve a checked revision to deliver it.'));
     ledger.setAttribute('aria-label','Revisions');ledger.setAttribute('role','group');
   }
   return add(make('section','card stack ig-standing'),make('h2','card-title','Where this stands'),steps,line('Needs you:',needs,'ig-needs'),ledger,line('Downloads:',map.downloads));
@@ -729,7 +737,7 @@ function finishCard(p,delivery,checked,approved){
   const again=(words)=>detail('Review again',make('p','quiet',words),reviewing(),checking());
   if(approved)return card('Review and finish',stateLine('done',held.approval_words+' '+(prepared?'Download its files from the page above, or from Saved files further down.':'Prepare its files on this computer; nothing is sent anywhere.')),
     prepared||primary==='Prepare approved files'?null:button('Prepare approved files',()=>action('export',{draft:false}),true),
-    again('A new review records what you checked and runs the checks again. It never changes the approved files.'));
+    again('A new review, or running the checks again, withdraws this approval until you approve again. The approved files stay unchanged in Saved files.'));
   if(checked)return card('Review and finish',stateLine('done','Reviewed and checked: revision '+n+'. The checks passed against your latest review.'),
     again('Review the page again or rerun the checks if something changed outside this page. Approval still waits for you.'),
     step('Approve (your decision)','Approval applies to revision '+n+' only. Its final files are prepared on this computer straight after; a later change needs a new review.',button('Approve revision '+n,approveRevision,true)));
@@ -739,7 +747,8 @@ function finishCard(p,delivery,checked,approved){
     step('3. Approve (your decision)','Approval becomes available when the current checks pass against your latest review.'));
 }
 async function approveRevision(){
-  const result=await action('approve',{then_export:true});
+  const id=held.project.id,result=await action('approve',{then_export:true});
+  if(!here(id))return;     // said where the person is now (elsewhere)
   if(result?.approved&&result.problem)error('Revision '+pageOf(result)+' is approved, but its files are not ready: '+result.problem+' Choose Prepare approved files to try again on this computer.');
   else if(result?.approved&&result.library?.state==='failed')error('Revision '+pageOf(result)+' is approved and its files are ready, but they were not kept in the Document Library: '+result.library.problem+' Choose Keep in Document Library again.');
 }
@@ -857,7 +866,7 @@ function libraryNote(s){
 }
 function keptPart(delivery){
   const kept=held.library?.kept;
-  if(kept&&kept.export===delivery.id&&kept.state==='kept')return make('p','quiet','Kept in the Document Library with its text and PDF (library revision '+kept.library_revision+').');
+  if(kept&&kept.export===delivery.id&&kept.state==='kept')return make('p','quiet','Kept in the Document Library: approved revision '+pageOf(kept)+', with its text and PDF (library revision '+kept.library_revision+').');
   const again=button(kept&&kept.export===delivery.id?'Keep in Document Library again':'Keep in Document Library',async()=>{
     const result=await action('library-keep',{export_id:delivery.id},null,{quiet:true});
     if(result?.state==='kept')toast('Kept in the Document Library.');else if(result?.problem)error('Not kept in the Document Library: '+result.problem);
@@ -1268,7 +1277,7 @@ async function teamSheet(){
     if(state.pending)items.append(add(make('div','stack'),make('p','',state.pending===1?'One shared commit has not reached the team repository.':state.pending+' shared commits have not reached the team repository.'),button('Retry pending team push',async()=>{try{await request('/api/team',{operation:'retry',expected_commit:state.head});await show();}catch(f){failed(f);}})));
     if(state.connected&&!state.items.length)items.append(make('p','quiet','No infographics are shared yet. Share one from an approved delivery.'));
     for(const entry of state.items){
-      const cardNode=card(entry.title,make('p','quiet','Shared revision '+entry.revision+' · driver '+entry.claim.owner),list([...entry.missing.map(f=>'Missing or changed: '+f),...(entry.unshared_sources||[]).map(f=>'Private source not shared: '+f),...(entry.unshared_assets||[]).map(f=>'Private artwork not shared: '+f)]));
+      const cardNode=card(entry.title,make('p','quiet',(typeof entry.page_revision==='number'?'Shared approved revision '+entry.page_revision:'Shared approved infographic')+' · driver '+entry.claim.owner),list([...entry.missing.map(f=>'Missing or changed: '+f),...(entry.unshared_sources||[]).map(f=>'Private source not shared: '+f),...(entry.unshared_assets||[]).map(f=>'Private artwork not shared: '+f)]));
       const pdf=entry.files.find(f=>f.file==='delivery/page.pdf');if(pdf)cardNode.append(button('Download shared PDF',()=>downloadShared(entry,'pdf')));
       cardNode.append(button('Take over this shared infographic',async()=>{try{await request('/api/team',{operation:'claim',id:entry.id,expected_head:state.head,expected_claim:entry.claim});await show();}catch(f){failed(f);}}));
       if(entry.editable)cardNode.append(button('Import claimed editable copy',async()=>{try{const result=await request('/api/team',{operation:'take',id:entry.id,expected_head:state.head,expected_claim:entry.claim});closeSheet();await openProject(result.project.id);if(result.missing_sources.length||result.missing_assets.length)error('Editable copy imported without approval. Some private sources or artwork were not shared; supply them before rebuilding.');}catch(f){failed(f);}}));

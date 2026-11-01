@@ -17,7 +17,7 @@ class Pages:
 
     def __init__(self, store, ident, saved=()):
         self.store, self.ident = store, ident
-        self.bases, self.known = {}, {}
+        self.bases, self.known, self.restores = {}, {}, {}
         self.seed(saved)
 
     def seed(self, saved):
@@ -33,12 +33,19 @@ class Pages:
             self.bases[revision] = basis(found[0]) if len(found) == 1 else None
         return self.bases[revision]
 
+    def _restored(self, revision):
+        """A restore is new work even when its content equals the revision before it."""
+        if revision not in self.restores:
+            self.restores[revision] = restored(self.store, self.ident, revision)
+        return self.restores[revision]
+
     def of(self, revision):
         walked, here = [], revision
         while here not in self.known:
             walked.append(here)
             content = self._basis(here)
-            if here <= 0 or content is None or self._basis(here - 1) != content:
+            if (here <= 0 or content is None or self._basis(here - 1) != content
+                    or self._restored(here)):
                 self.known[here] = here
                 break
             here -= 1
@@ -198,11 +205,28 @@ def compare(store, ident, before, after):
             'advanced': raw}
 
 
+def _marker(revision):
+    return f'jobs/restored_{revision}/restore.json'
+
+
+def restored(store, ident, revision):
+    """True when saved revision `revision` was made by Restore (its marker, written once the
+    restore is saved). Read-only."""
+    path = store._project(ident) / _marker(revision)
+    return not path.is_symlink() and path.is_file()
+
+
 def restore(store, ident, revision, *, expected_revision, fingerprint=None):
+    """Restore an earlier revision as new work: the next revision, with no approval, checks
+    or image requests, and always a page revision of its own (its marker says so)."""
+    from .contracts import canonical
     with store.locked():
         current = store.read(ident)
         store.expect(current, expected_revision)
         previous = version(store, ident, revision, fingerprint)
-        restored = deepcopy(previous)
-        restored.update(revision=current['revision'] + 1, approval=None, checks=[], attempts=[], exports=[])
-        return store.commit_locked(current, restored)
+        made = deepcopy(previous)
+        made.update(revision=current['revision'] + 1, approval=None, checks=[], attempts=[], exports=[])
+        saved = store.commit_locked(current, made)
+        store.write_blob(ident, _marker(saved['revision']),
+                         canonical({'schema': 1, 'restored_from': revision, 'sha256': digest(saved)}))
+        return saved

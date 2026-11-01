@@ -40,6 +40,11 @@ class Engine:
         sent = listing(self.store, ident)
         for one in sent:
             one['page_revision'] = pages.of(one['revision'])
+        # The kept Document Library entry records the saved revision; the page names its page
+        # revision, worked out here for entries kept before `page_revision` was recorded.
+        kept = library.status(self.store, ident)
+        if kept and type(kept.get('revision')) is int and 'page_revision' not in kept:
+            kept['page_revision'] = pages.of(kept['revision'])
         return {'project': project, 'history': listed, 'page_revision': pages.of(project['revision']),
                 'approval_words': progress.approved_words(project['approval'], pages.of) if project['approval'] else None,
                 'planning_response': planning_responses.status(self.store, project),
@@ -49,7 +54,7 @@ class Engine:
                 'visual_review': review, 'review_checked': review_checked,
                 'google_deliveries': sent, 'deliveries': deliveries,
                 'library': {'sources': library.marked(self.store, project),
-                            'kept': library.status(self.store, ident),
+                            'kept': kept,
                             'own': library.own(self.store, ident)},
                 'elements': labels.elements(project), 'readiness': progress.readiness(project),
                 'roadmap': progress.roadmap(project, deliveries, review=review, review_checked=review_checked,

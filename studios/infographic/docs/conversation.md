@@ -196,7 +196,9 @@ and keeps the differing saved fields under `advanced`.
 
 `expected_revision` is always the saved revision. When you tell the person a number, use
 the page revision instead: `inspect` reports `page_revision` for the project, each
-delivery, Google delivery and history entry, and `approval_words`. Checks, reviews and
+delivery, Google delivery, history entry and kept Document Library entry (whose own
+`revision`, like every studio's, stays the saved revision), and `approval_words`. A restore
+always starts a page revision of its own. Checks, reviews and
 approvals save revisions of their own but leave the page as it was, so they keep the page
 revision the person reviewed.
 

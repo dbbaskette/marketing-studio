@@ -289,9 +289,11 @@ def keep(store, ident, export_id=None) -> dict:
     done = {'schema': 1, 'at': _now(), 'key': key(store, ident), 'export': export_id}
     try:
         project, delivery = _approved(store, ident, export_id)
-        # The library names the page revision the person approved, as the desk and receipts do.
+        # `revision` stays the saved revision, as the shared Document Library contract has it
+        # (other studios' adapters read it). `page_revision` is what the person is told.
         from .history import Pages
-        done.update(export=delivery['id'], revision=Pages(store, ident).of(delivery['revision']))
+        done.update(export=delivery['id'], revision=delivery['revision'],
+                    page_revision=Pages(store, ident).of(delivery['revision']))
         text = exports.read(store, ident, delivery['id'], 'text')[1].decode('utf-8')
         pdf = exports.read(store, ident, delivery['id'], 'pdf')[1]
         title = project['brief']['title']
@@ -321,4 +323,4 @@ def status(store, ident) -> dict | None:
     if not isinstance(found, dict) or found.get('state') not in ('kept', 'failed'):
         return None
     return {k: found.get(k) for k in ('state', 'at', 'export', 'revision', 'document',
-                                       'library_revision', 'pdf', 'problem') if k in found}
+                                       'library_revision', 'pdf', 'problem', 'page_revision') if k in found}

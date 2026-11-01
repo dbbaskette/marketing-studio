@@ -98,13 +98,19 @@ def roadmap(project, deliveries, *, review=None, review_checked=False, page=lamb
     if checks and not passed and stage in ('review', 'check') and any(c['status'] != 'passed' for c in checks):
         needs = 'Resolve the findings in Checks for this page, then Review page again. Checks run straight after.'
         action = ACTIONS['review']
+    withdrawn = (approved_files is None and earlier is not None and project['approval'] is None
+                 and page(earlier['revision']) == revision)
     if approved_files:
         downloads = 'Approved files for revision ' + str(page(approved_files['revision'])) + ': PNG, PDF, SVG and text.'
+    elif withdrawn:
+        # A new review or new checks of the same page withdrew its approval; its files stand.
+        downloads = ('The files approved earlier for revision ' + str(revision) + ' stay unchanged in Saved '
+                     'files. A new review withdrew the approval until you approve again.')
     elif preview is not None:
         downloads = 'Draft files for revision ' + str(page(preview['revision'])) + ', marked as drafts.'
     else:
         downloads = 'Nothing yet for the current revision.'
-    if earlier is not None and approved_files is None:
+    if earlier is not None and approved_files is None and not withdrawn:
         downloads += ' Earlier approved files for revision ' + str(page(earlier['revision'])) + ' stay in Saved files.'
     return {'stage': stage, 'position': position, 'steps': steps, 'revision': revision, 'action': action,
             'complete': ' '.join(complete) or 'Your brief and information are saved.', 'needs': needs,

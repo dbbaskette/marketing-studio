@@ -181,8 +181,12 @@ separate release gates, never inferred from fixture success.
    toolbar's one next action), your current work, the preview and the approved delivery,
    and what you can download. Every revision named is the page's revision: checks, a
    review and an approval are saved as revisions of their own, but they leave the page as
-   it was, so the button, the files, the receipts, History and the Document Library all
-   name the revision you reviewed. **Review and finish** has three parts: your review of
+   it was, so the button, the files, the receipts, History, the team repository and the
+   Document Library note on the page all name the revision you reviewed (the Document
+   Library's own entry keeps the saved revision, as every studio records it). A restore is
+   always new work with a number of its own. Reviewing or checking again after approval
+   withdraws the approval until you approve again; the approved files stay in Saved files.
+   **Review and finish** has three parts: your review of
    the actual page (**Review page**, required; recording it runs the local checks
    straight after), the checks (on this computer, starting no assistant or image request),
    and approval (your decision). Finished parts fold into one line, with **Review again**
