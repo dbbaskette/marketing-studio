@@ -3448,6 +3448,36 @@ def _unsent(directory, base, body, sent):
     return found
 
 
+def _unsent_kinds(directory, base, sent):
+    """How the desk's changes the Doc lacks went, read locally as `_unsent` reads them: 'never'
+    for one not sent to this baseline (or a title other than the Doc's name), 'hand' for one
+    that went as a comment for the owner to make by hand. Empty when all went as suggestions."""
+    from google_workflow import snapshot_path
+
+    path = directory / 'DRAFT.md'
+    body = path.read_text(errors='replace') if path.is_file() else ''
+    try:
+        baseline = snapshot_path(directory, base['transfer'], 'document').read_text()
+    except (OSError, ValueError):
+        return {'never'}
+    how = {
+        row.get('id', ''): row.get('kind', 'edit')
+        for row in sent['sent']
+        if row.get('base', base['transfer']) == base['transfer']
+    }
+    kinds = set()
+    for proposal in google_changes(baseline, body, _desk_title(body))[0]:
+        went = how.get(proposal['id'])
+        if went is None:
+            kinds.add('never')
+        elif went != 'edit':
+            kinds.add('hand')
+    title = _desk_title(body)
+    if sent['name'] and title is not None and title != sent['name']:
+        kinds.add('never')
+    return kinds
+
+
 # The Finishing tools as the desk names them, in the panel's order, for Home's status line.
 NAMES = {
     'copyedit': 'Copy edit',
@@ -3704,43 +3734,70 @@ def _pull(root, ident, directory, base, body):
         where = places[then_at]
         then_keys = [key for key, _ in where]
         out, took = [], []
-        for kind, (b0, b1), (o0, o1), (t0, t1) in _merge3(then_keys, mine_keys, their_keys):
-            suggested = None
-            if kind != 'same':
-                # What was sent from here is read with any paragraph beside it, unchanged on
-                # both sides, whose sent lines reach into it: a paragraph rewritten outright
-                # goes as its deletion and the new words on its neighbour, and only the two
-                # together say what the desk sent (#267).
-                w0, w1, m0, m1, h0, h1 = b0, b1, o0, o1, t0, t1
-                if (
-                    b0 > 0
-                    and o0 > 0
-                    and t0 > 0
-                    and then_keys[b0 - 1] == mine_keys[o0 - 1] == their_keys[t0 - 1]
-                    and reaches(where[b0 - 1], then_keys[b0 - 1], True)
-                ):
-                    w0, m0, h0 = b0 - 1, o0 - 1, t0 - 1
-                if (
-                    b1 < len(then_keys)
-                    and o1 < len(mine_keys)
-                    and t1 < len(their_keys)
-                    and then_keys[b1] == mine_keys[o1] == their_keys[t1]
-                    and reaches(where[b1], then_keys[b1], False)
-                ):
-                    w1, m1, h1 = b1 + 1, o1 + 1, t1 + 1
-                suggested = sent_as(where[w0:w1])
-                mine_sent, theirs_sent = mine_keys[m0:m1], their_keys[h0:h1]
+
+        def widened(b0, b1, o0, o1, t0, t1):
+            # With a paragraph beside the span, unchanged on both sides, whose sent lines reach
+            # into it: a paragraph rewritten outright goes as its deletion and the new words on
+            # its neighbour, and only the two together say what the desk sent (#267).
+            if (
+                b0 > 0
+                and o0 > 0
+                and t0 > 0
+                and then_keys[b0 - 1] == mine_keys[o0 - 1] == their_keys[t0 - 1]
+                and reaches(where[b0 - 1], then_keys[b0 - 1], True)
+            ):
+                b0, o0, t0 = b0 - 1, o0 - 1, t0 - 1
+            if (
+                b1 < len(then_keys)
+                and o1 < len(mine_keys)
+                and t1 < len(their_keys)
+                and then_keys[b1] == mine_keys[o1] == their_keys[t1]
+                and reaches(where[b1], then_keys[b1], False)
+            ):
+                b1, o1, t1 = b1 + 1, o1 + 1, t1 + 1
+            return b0, b1, o0, o1, t0, t1
+
+        def sent_is(span, keys, side):
+            """Whether the desk sent exactly these words from the span's baseline paragraphs,
+            as suggestions: `keys` as the desk (side 0) or the Doc (side 1) has them now."""
+            b0, b1, o0, o1, t0, t1 = span
+            suggested = sent_as(where[b0:b1])
+            return suggested is not None and suggested == keys[(o0, t0)[side] : (o1, t1)[side]]
+
+        chunks = _merge3(then_keys, mine_keys, their_keys)
+        for at, (kind, (b0, b1), (o0, o1), (t0, t1)) in enumerate(chunks):
             if kind == 'same':
                 out += mine_raw[o0:o1]
-            elif kind == 'theirs' and suggested is not None and suggested == theirs_sent:
-                # The owner accepted what the desk sent, and the desk has since changed it
-                # back: neither is taken over the other.
+                continue
+            # The chunk read alone, with the paragraphs beside it, and as one with the changed
+            # paragraphs next to it (a rewrite beside an edit is merged a paragraph at a time).
+            first = last = at
+            while first > 0 and chunks[first - 1][0] != 'same':
+                first -= 1
+            while last + 1 < len(chunks) and chunks[last + 1][0] != 'same':
+                last += 1
+            alone = (b0, b1, o0, o1, t0, t1)
+            around = [
+                widened(*alone),
+                widened(
+                    chunks[first][1][0],
+                    chunks[last][1][1],
+                    chunks[first][2][0],
+                    chunks[last][2][1],
+                    chunks[first][3][0],
+                    chunks[last][3][1],
+                ),
+            ]
+            if kind == 'theirs' and any(sent_is(span, their_keys, 1) for span in [alone, *around]):
+                # The owner accepted what the desk sent, all of it or a part, and the desk has
+                # since changed it back: neither is taken over the other.
                 withdrawn.append(label)
                 return None
-            elif kind == 'theirs' or (
-                # The desk's words here are exactly what it sent from this place as
-                # suggestions: the owner decided them, so the Doc's words stand.
-                kind in ('ours', 'conflict') and suggested == mine_sent
+            if kind == 'theirs' or (
+                # The desk's words here are exactly what it sent from these places as
+                # suggestions: the owner decided them, so the Doc's words stand. They are never
+                # read alone, so a change sent with its neighbour is never taken for a part.
+                kind in ('ours', 'conflict') and any(sent_is(span, mine_keys, 0) for span in around)
             ):
                 out += their_raw[t0:t1]
                 took += their_raw[t0:t1]
@@ -3937,9 +3994,9 @@ def _waiting(inline, record, base, pending):
     return sum(1 for row in rows if _still_waits(inline, row['id'])) or len(held)
 
 
-def _pull_said(found, waiting, unsent=False):
-    """Why nothing can be brought back now, or None when it can. `unsent`: the desk has
-    changes the Doc has not been sent."""
+def _pull_said(found, waiting, unsent=frozenset()):
+    """Why nothing can be brought back now, or None when it can. `unsent`: how the desk's
+    changes the Doc lacks went (`_unsent_kinds`)."""
     if waiting:
         return (
             _counted(waiting, 'suggestion', 'suggestions')
@@ -3984,15 +4041,20 @@ def _pull_said(found, waiting, unsent=False):
             + (' reads' if len(differs) == 1 else ' read')
             + ' differently on the desk and in the Doc'
         )
-        if unsent:
-            return said + ': the desk has changes the Doc has not been sent. Send them when ready.'
-        # Words the desk sent before, which the Doc's owner did not take as the desk has them
-        # now: neither replaces the other, and the two are said to differ.
-        return (
-            said + ': the desk’s words there went to the Doc before, and its owner did not take '
-            'them as the desk has them now. Say “Pull from Google Docs” in chat to choose the '
-            'wording for each.'
-        )
+        # What the desk did with what differs: kept changes it never sent, changes that went as
+        # comments for the owner to make by hand, or, with neither, suggestions the owner did
+        # not accept. Neither side replaces the other.
+        why = []
+        if 'never' in unsent:
+            why.append('some of the desk’s changes have not been sent to the Doc')
+        if 'hand' in unsent:
+            why.append('some went to the Doc as comments, for its owner to make by hand')
+        if not why:
+            why.append('the Doc’s owner did not accept what the desk sent')
+        said += ': ' + '; '.join(why) + '.'
+        if unsent == {'never'}:
+            return said + ' Send them when they are ready.'
+        return said + ' Say “Pull from Google Docs” in chat to choose the wording for each.'
     return None
 
 
@@ -4015,10 +4077,10 @@ def google_pull(root, ident):
         sent = _sent(root, ident)
         sent['waiting'] = waiting
         studio.write_json(_sent_path(root, ident), sent)
-        unsent = bool(
-            found['differs']
-            and not found['changes']
-            and (google_state(root, ident, directory, record) or {}).get('unsent')
+        unsent = (
+            _unsent_kinds(directory, base, sent)
+            if found['differs'] and not found['changes']
+            else set()
         )
         said = _pull_said(found, waiting, unsent)
         studio.write_json(
