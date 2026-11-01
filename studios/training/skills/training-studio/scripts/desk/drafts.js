@@ -29,6 +29,9 @@ const DESK_WORDS = {
     + 'quoted from them appear in the research report, which is shared.',
   documentsHint: 'Optional. Research reads them first, and starts once they are all added. '
     + 'You can choose several at once.',
+  // Add a source, once research has run: what is chosen waits for Update the research.
+  sourceHint: 'They wait, unread, until you choose Update the research. You can choose '
+    + 'several at once.',
 };
 // The sheets the desk opens over itself: a level's downloads, its Google Docs, and one the
 // shared kit asks for.
@@ -117,8 +120,12 @@ function deskApi(route, data) {
     rest.seen = material.view.seen;
   }
   const body = { ...item, ...rest };
-  return send(endpoint, body, endpoint === 'drafts/save' && smallDeskSave(body)
+  const sent = send(endpoint, body, endpoint === 'drafts/save' && smallDeskSave(body)
     ? { keepalive: true } : {});
+  if (endpoint !== 'drafts/save' || !material) return sent;
+  // Why a save was refused, in Training Studio's own words, until a save is taken.
+  return sent.then((answer) => { material.refused = ''; return answer; },
+    (failure) => { material.refused = failure.message; throw failure; });
 }
 
 // The shared kit is loaded before this script; without it there is no desk to draw.
@@ -576,7 +583,7 @@ function timeField(draft) {
 // The documents, added here before Start and listed with Remove. The page holds the files
 // until the training is made; Start then adds each, and says they are all added.
 // With `keep`, the Keep in library choice is offered for what is added (Add a source).
-function documentsPart(draft, changed = retell, keep = false) {
+function documentsPart(draft, changed = retell, keep = false, hint = DESK_WORDS.documentsHint) {
   const node = make('div', 'fields desk-documents');
   const fill = () => {
     const files = list(draft.files);
@@ -606,7 +613,8 @@ function documentsPart(draft, changed = retell, keep = false) {
         changed();
         focusKey('new-documents');
       },
-      accept: DESK_TYPES.join(',') + ',application/pdf', hint: DESK_WORDS.documentsHint }),
+      accept: DESK_TYPES.join(',') + ',application/pdf',
+      hint }),
     files.length ? add(make('div', 'card-part'), make('p', 'row-title',
       count(files.length, 'document', 'documents') + ' to add'), items) : null,
     keep ? keepChoice('new-documents-keep') : null, make('p', 'quiet', DESK_WORDS.kept));
@@ -618,7 +626,7 @@ function documentsPart(draft, changed = retell, keep = false) {
 // Where research looks, in one line, said again whenever a document or a choice changes.
 function researchLine(draft, line) {
   if (draft.sourceEditor) {
-    const chosen = draft.sourceEditor.choice();
+    const chosen = draft.sourceEditor.choice(startPicks(draft).length > 0);
     draft.research = {documents: chosen.documents, sites: Boolean(chosen.sites.length), web: chosen.web, picked: chosen.sites, added: []};
   } else draft.research.documents = list(draft.files).length > 0;
   line.textContent = researchProblem(draft)
@@ -637,6 +645,10 @@ function sourcesStep(draft, brand, looks) {
   if (!draft.sourceEditor && typeof StudioResearch !== 'undefined') {
     // Training Studio offers Keep in library for each file the editor captures.
     draft.sourceEditor = new StudioResearch.Editor({request: sent => send('research-sources', sent), keepChoice: true,
+      // Add from library: documents kept on this computer, pinned when the training starts.
+      library: (editor) => pickStartLibrary(draft, editor),
+      libraryFull: () => startPicks(draft).length >= START_PICKS,
+      extra: () => startPickList(draft),
       onChange: () => { if (draft.retell) draft.retell(); }});
   }
   return [draft.sourceEditor ? draft.sourceEditor.node : documentsPart(draft, retell, true),
@@ -646,6 +658,69 @@ function sourcesStep(draft, brand, looks) {
       ...agentFields(draft, 'new', 'For this training', told), drafted,
       make('p', 'quiet', limitsSays(limits) || 'No limits are set for this computer.'),
       make('p', 'quiet', 'Limits are changed in Settings.'))];
+}
+
+// The Document Library's documents chosen in New training, each {id, revision, title}: held
+// here until Start, which pins them before research starts. Nothing is sent before then.
+const START_PICKS = 40;
+function startPicks(draft) {
+  if (!Array.isArray(draft.library)) draft.library = [];
+  return draft.library;
+}
+
+// Add from library, in the sources editor: the shared sheet (library.js). Each chosen
+// revision is read once, for its title and to refuse one with no text to read.
+function pickStartLibrary(draft, editor) {
+  if (!window.StudioLibrary) {
+    toast('The Document Library could not be loaded. Reload the page.');
+    return;
+  }
+  const held = startPicks(draft);
+  window.StudioLibrary.pick({
+    studio: 'training', max: START_PICKS - held.length, noun: 'training',
+    post: (route, body) => send(route, body),
+    refocus: () => Array.from(document.querySelectorAll('[data-key]'))
+      .find((node) => node.dataset.key === 'research-library') || null,
+    use: async (picks) => {
+      const found = [];
+      for (const pick of picks) {
+        const read = await send('library-document', { id: pick.id, revision: pick.revision });
+        if (!read.readable) {
+          throw new Error('“' + (read.title || 'That document') + '” has no text that can be '
+            + 'read. Choose another.');
+        }
+        found.push({ id: pick.id, revision: pick.revision, title: read.title || 'Untitled' });
+      }
+      const chosen = new Set(found.map((one) => one.id));
+      const kept = [...held.filter((one) => !chosen.has(one.id)), ...found];
+      if (kept.length > START_PICKS) throw new Error(START_PICKS + ' documents from the library '
+        + 'is the most a new training takes. Remove one to add another.');
+      draft.library = kept;
+      editor.render();
+      editor.changed();
+      toast((found.length === 1 ? 'It is added.' : found.length + ' documents are added.')
+        + ' Research reads ' + (found.length === 1 ? 'it' : 'them') + ' when the training '
+        + 'starts.');
+    },
+  });
+}
+
+// The library's documents chosen so far, under the editor's own list, each with Remove.
+function startPickList(draft) {
+  const held = startPicks(draft);
+  if (!held.length) return null;
+  return add(make('ul', 'research-source-list'), ...held.map((one) => {
+    const remove = capsule('Remove', 'quiet', () => {
+      draft.library = held.filter((other) => other.id !== one.id);
+      draft.sourceEditor.render();
+      draft.sourceEditor.changed();
+      focusKey('research-library');
+    }, 'research-library-remove ' + one.id);
+    remove.setAttribute('aria-label', 'Remove ' + one.title);
+    return add(make('li', 'research-source-row'), add(make('div', 'research-source-copy'),
+      make('p', 'row-title', one.title), make('p', 'quiet', 'From the Document Library, '
+        + 'revision ' + one.revision)), remove);
+  }));
 }
 
 // The new-training sheet: three numbered steps in the order they are filled in, then Start
@@ -693,8 +768,11 @@ function deskBody(draft) {
     levels: LEVELS.filter((level) => draft.levels.includes(level)),
     brief_kind: draft.brief ? 'competitive' : 'product',
     time_limit: draft.time.trim() || null,
-    research_from: draft.sourceEditor ? draft.sourceEditor.choice() : researchChoice(draft),
+    research_from: draft.sourceEditor ? draft.sourceEditor.choice(startPicks(draft).length > 0)
+      : researchChoice(draft),
     ...(draft.sourceEditor ? {research_inputs: draft.sourceEditor.spec()} : {}),
+    ...(draft.sourceEditor && startPicks(draft).length ? { library: startPicks(draft)
+      .map(({ id, revision }) => ({ id, revision })) } : {}),
     research_questions: (draft.researchQuestions || '').split('\n'),
     deck_target: deck,
     brand: deck ? { brand: draft.brand, variant: draft.variant || null } : null,
@@ -1623,7 +1701,9 @@ function editToggle(held, found, editing) {
       desk.editing[found.name] = false;
       const why = keptOpen(held);
       if (why) {
-        desk.said = why;
+        // A refused save says why, in Training Studio's words, before what that means here.
+        desk.said = (held.refused && Object.keys(held.pending || {}).length
+          ? held.refused + ' ' : '') + why;
         paintDesk(true);
         return;
       }
@@ -1665,7 +1745,9 @@ function materialParts(held, found) {
   const area = make('div', 'desk-material stack');
   held.area = area;
   const editing = deskEditing(held, found);
-  const status = make('p', 'quiet desk-save-state', held.saved || '');
+  const status = make('p', 'quiet desk-save-state', held.refused
+    && Object.keys(held.pending || {}).length ? held.refused + ' Your text is kept here.'
+    : held.saved || '');
   status.setAttribute('role', 'status');
   held.status = status;
   const toggle = editToggle(held, found, editing);
@@ -2046,10 +2128,21 @@ async function addSource() {
       }
     });
     update.disabled = true;
+    // Or documents kept in the Document Library: pinned at once, with no upload and no new
+    // library entry, and read only when the research is updated.
+    const fromLibrary = libraryAdd(path, 'desk-source-library', (run) => {
+      if (sending) return;
+      view.run = run;
+      closeSheet();
+      deskHeld(path).sources = true;
+      drawDesk(false).then(() => focusKey('desk-update-research'));
+    });
     DESK.kitSheet = [sheetTitle('Add a source'),
       make('p', 'quiet', 'Add documents and read what updating the research will change.'),
       make('h3', 'sheet-part', '1. Add'),
-      documentsPart(chosen, () => { update.disabled = sending || !chosen.files.length; }, true),
+      documentsPart(chosen, () => { update.disabled = sending || !chosen.files.length; }, true,
+        DESK_WORDS.sourceHint),
+      add(make('div', 'bar'), fromLibrary),
       make('h3', 'sheet-part', '2. What it changes'), make('p', '', price.words),
       make('p', '', price.afterwards), price.widened ? make('p', '', price.widened) : null,
       status, add(make('div', 'bar'), update, capsule('Cancel', 'quiet', () => {
@@ -2291,7 +2384,8 @@ function paintDesk(fresh) {
   const lead = deskLead(run, held, ours);
   const drawn = JSON.stringify([found, run.state, run.question, run.problem, run.documents,
     run.mine, run.driver, run.taken, run.notice, run.outline, run.training_plan, run.training_plan_pending,
-    run.research_progress, run.timing, held.level, held.sources, held.material, held.said,
+    run.research_progress, run.timing, run.finished, view.issued, view.setup && view.setup.workspace,
+    held.level, held.sources, held.material, held.said,
     held.unsent && list(held.unsent.files).map((file) => file.name), held.unsent
       && held.unsent.why, lead, narrow()]);
   if (!fresh && drawn === held.drawn) return;
@@ -2325,6 +2419,16 @@ function paintDesk(fresh) {
       'desk-copies'));
     actions.push(capsule('Finishing', '', () => openFinishing(), 'desk-finishing'));
   }
+  // A finished training: its index to read, and Publish, as the Published screen says.
+  const finished = ours && !conversation && run.finished && found.index_written
+    ? run.finished : null;
+  if (finished) {
+    actions.push(capsule('Open the index', lead === '' && !view.sheet && !actions.some((node) =>
+      node.classList.contains('button-filled')) ? 'filled' : '',
+    () => show('index', { path: view.path, artifact: finished.index || 'README.md' }),
+    'index'));
+  }
+  const published = view.issued && view.issued.path === view.path ? view.issued : null;
   const notice = held.said ? make('p', 'notice', held.said) : null;
   if (notice) notice.setAttribute('role', 'alert');
   const available = shown.filter(one => one.state !== 'left-out');
@@ -2383,6 +2487,7 @@ function paintDesk(fresh) {
     adding(run) && ours && !held.unsent ? documentsCard(run, lead === 'documents') : null,
     preparingPlan || waitingPlan ? null : tabs,
     preparingPlan || waitingPlan ? null : levelStanding(found, level),
+    finished ? publishCard(run, published) : null,
     preparingPlan || waitingPlan ? null : materials,
     preparingPlan || waitingPlan ? null : layout,
   ], fresh);

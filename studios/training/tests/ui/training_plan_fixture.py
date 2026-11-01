@@ -26,6 +26,14 @@ def main():
             case.engine.plan_first = '--desk' not in sys.argv
             workspace_mode = '--workspace' in sys.argv
             case.engine.content_first = workspace_mode
+            if '--library' in sys.argv:
+                # One synthetic document in the disposable Document Library, to pin.
+                from studio_core import document_library
+                from runner import documents as real_documents
+                case.engine.documents = real_documents
+                document_library.opened(create=True).add_upload(
+                    'capacity-notes.md', b'# Capacity notes\n\nCapacity holds only when more '
+                    b'than one instance is running.\n')
             if workspace_mode:
                 from test_runner_deck import MAJOR
                 case.workers.found = [[MAJOR]]

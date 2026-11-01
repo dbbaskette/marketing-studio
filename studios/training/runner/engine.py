@@ -236,6 +236,7 @@ from studio_core.drafting import basis, guards
 
 from runner import agents, companion, deck, deck_edit, draft_jobs, drafts, gitstate, pipeline, settings, team, worker_tools
 from runner import library
+from studio_core.document_library import LibraryError
 from studio_core.document_library import context as library_context
 from runner import brand as brand_skill
 from runner import brand_source
@@ -1373,19 +1374,32 @@ class Engine(Reviewing):
 
     # --- starting and picking up ---------------------------------------------------------
 
-    def start(self, form: dict, *, execution='runner', scope=None, uploads=None, research_inputs=None, _source_start=None) -> dict:
-        """Make a training from the form's answers and start its run."""
+    def start(self, form: dict, *, execution='runner', scope=None, uploads=None, research_inputs=None, library=None, _source_start=None) -> dict:
+        """Make a training from the form's answers and start its run. `library` is the
+        Document Library's revisions chosen at the start ([{'id', 'revision'}]): each is read
+        and checked before anything is made, and pinned as one of the training's documents
+        before its research starts, as Add from library pins them on the desk."""
+        if library:
+            if not research_inputs or execution != 'runner':
+                raise WorkspaceError('Documents from the library are added at the start with '
+                                     'its sources. Add them on the desk otherwise.')
+            try:
+                library = library_context.picks(library)
+            except LibraryError as refusal:
+                raise WorkspaceError(str(refusal)) from None
         if research_inputs and execution == 'runner' and _source_start is None:
             try:
                 with research_sources.Start(self.space().root, research_inputs,
-                        {'product':'Training Studio','form':form}) as start:
+                        {'product':'Training Studio','form':form,
+                         **({'library': library} if library else {})}) as start:
                     previous = start.previous()
                     if previous:
                         self._load(Path(previous['path']))
                         self.wake(Path(previous['path']))
                         return previous
                     return self.start(form, execution=execution, scope=scope, uploads=uploads,
-                                      research_inputs=research_inputs, _source_start=start)
+                                      research_inputs=research_inputs, library=library,
+                                      _source_start=start)
             except ValueError as error:
                 raise WorkspaceError(str(error)) from error
         if not isinstance(form, dict):
@@ -1422,7 +1436,13 @@ class Engine(Reviewing):
         # A training on the desk has no review level: none is saved with it, and the shared
         # one is never written from its form.
         desk = drafts.on_desk(form)
-        selected_sources = research_sources.prepare_start(space.root, research_inputs) if research_inputs else None
+        # Documents pinned from the library are research's own material besides the editor's.
+        selected_sources = research_sources.prepare_start(space.root, research_inputs,
+                                                          primary=bool(library)) if research_inputs else None
+        try:
+            taken = library_context.snapshots(library) if library else []
+        except LibraryError as refusal:
+            raise WorkspaceError(str(refusal)) from None
         if selected_sources:
             form = {**form, 'research_from': selected_sources['research_from'],
                     'source_scope': pipeline.scope_of(selected_sources['research_from'])}
@@ -1438,6 +1458,12 @@ class Engine(Reviewing):
                 record.pop('review_layout')
             root = pipeline.create(space, form)
             try:
+                if taken:
+                    # Chosen with the start's own sources, they are all added: research
+                    # reads them from the first, with nothing more to confirm.
+                    self.documents.add_snapshots(root, taken)
+                    (root / pipeline.ADDED).parent.mkdir(parents=True, exist_ok=True)
+                    (root / pipeline.ADDED).write_text(home.now() + '\n', encoding='utf-8')
                 if review_policy.level(record) != 'step_by_step':
                     record['schema'] = 2
                 if contract:
@@ -1458,7 +1484,7 @@ class Engine(Reviewing):
                     if parallel:
                         record['research_execution']['workers'] = selected_sources['workers']
                     if record.get('documents') is not None:
-                        record['documents'].update(done=home.now(), count=len(selected_sources['sources']))
+                        record['documents'].update(done=home.now(), count=len(selected_sources['sources']) + len(taken))
                 session = workspace.load(root)
                 if contract:
                     session['research_contract'] = contract
@@ -6899,6 +6925,8 @@ class Engine(Reviewing):
         with self._lock:
             began = [worker['started_at'] for worker in run.workers.values()]
         return {'state': state, 'sentence': sentence, 'flow': record.get('flow'),
+                # A training worked on in conversation: lists say so, not that it waits.
+                **({'execution': 'conversation'} if drafts.in_conversation(record) else {}),
                 'can_open_desk': self._can_open_desk(record, found, state, mine),
                 'can_migrate_desk': bool(mine and not drafts.on_desk(record) and state != 'done'),
                 'needs': needs and mine,
@@ -7256,7 +7284,8 @@ class Engine(Reviewing):
             found = self._brief(root, record, surveyed)
             shown = {'path': str(root), 'id': root.name, 'title': title,
                      'state': found.get('state'), 'sentence': found.get('sentence'),
-                     'driver': found.get('driver')}
+                     'driver': found.get('driver'),
+                     **({'execution': found['execution']} if found.get('execution') else {})}
             if found.get('mine'):
                 dollars, tokens = spent(record)
                 runs.append({**shown, 'needs': bool(found.get('needs')),

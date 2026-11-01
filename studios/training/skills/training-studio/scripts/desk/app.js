@@ -136,6 +136,8 @@ const RUN_WORDS = {
   // A training a teammate's computer runs: only what was last shared is known here.
   elsewhere: ['none', 'Run by your teammates'],
 };
+// A training worked on in a conversation: nothing runs here, and it waits for nobody here.
+const CONVERSATION_WORDS = ['none', 'In conversation'];
 const STEP_WORDS = {
   done: ['done', 'Done'], working: ['current', 'Working'], waiting: ['review', 'Waiting for you'],
   failed: ['late', 'Failed'], 'to-do': ['none', 'To do'],
@@ -890,8 +892,14 @@ async function saidBy(response) {
 }
 
 function refusal(response, body) {
-  const said = body && body.error ? String(body.error)
+  let said = body && body.error ? String(body.error)
     : 'Training Studio gave no answer this page can read.';
+  // Too large: the private network link says what to do; Training Studio's own limit is
+  // said with what to do too.
+  if (response.status === 413 && !/Send something smaller/.test(said)) {
+    said += (/[.!?]$/.test(said) ? ' ' : '. ') + 'Send something smaller, or split the text '
+      + 'into shorter parts, and try again.';
+  }
   return new PageError(response.status === 403 ? 'refused' : 'failed', said, response.status);
 }
 
@@ -1483,6 +1491,8 @@ const FOCUSABLE = 'button, [href], input, select, textarea, summary, [tabindex]'
 function keepInSheet(event) {
   const sheet = byId('sheet');
   if (event.key !== 'Tab' || !sheet || sheet.hidden) return;
+  // A dialog opened over the sheet, such as Add from library, keeps its own focus.
+  if (document.querySelector('dialog[open]')) return;
   const stops = Array.from(sheet.querySelectorAll(FOCUSABLE)).filter((node) => !node.disabled
     && node.tabIndex >= 0 && !node.closest('[inert]') && !node.closest('[hidden]')
     && (node.tagName === 'SUMMARY' || !node.closest('details:not([open])'))
@@ -1876,8 +1886,9 @@ function rows(title, trainings, build, className) {
 
 // How a training is started, as the invitation and the Start a training card say it.
 const START_SAYS = 'Say what it is about and who it is for. Training Studio does the '
-  + 'research and writes the blueprint, the learner guide, the brief and the practice '
-  + 'scenarios on its own, and puts each on its desk for you to edit and mark ready.';
+  + 'research and writes the blueprint and the learner guide on its own, with a brief, '
+  + 'practice scenarios or a deck when you choose them, and puts each on its desk for you to '
+  + 'edit and mark ready.';
 const ASK_SAYS = 'Make a folder for your topic, start your assistant in that folder, and ask '
   + 'for the training in a sentence, for example:';
 const ASK_SENTENCE = 'Use training-studio to build a 101 training on rolling restarts.';
@@ -3603,6 +3614,7 @@ function asker(path) {
 }
 
 function runWords(run) {
+  if (run.execution === 'conversation') return CONVERSATION_WORDS;
   return RUN_WORDS[run.state] || RUN_WORDS.working;
 }
 
@@ -4717,7 +4729,9 @@ function newDraft() {
     deck: brand.brand ? (shared.output === 'google' ? 1 : 0) : DECKS.length - 1,
     brand: brand.brand || '', variant: brand.variant || '', copies: [], delivery: 0,
     walkthrough: false,
-    yoodli: false, materials: [], research: newResearch(),
+    // The learner guide is ticked to start with, as Home says: Start works with only the
+    // three boxes it needs filled.
+    yoodli: false, materials: ['document'], research: newResearch(),
     agent: agent.default === 'codex' ? 'codex' : 'claude',
     model: agent.model || '', other: false, effort: agent.effort || '', starting: false });
 }
@@ -4764,7 +4778,9 @@ function researchSummary(chosen) {
 
 // Why this choice cannot start, or nothing when it can.
 function researchProblem(draft) {
-  if (draft.sourceEditor) return draft.sourceEditor.valid() ? '' : 'Add readable sources or allow additional external search before starting.';
+  // Documents chosen from the Document Library are research's own sources too.
+  if (draft.sourceEditor) return draft.sourceEditor.valid(list(draft.library).length > 0) ? ''
+    : 'Add readable sources or allow additional external search before starting.';
   const research = draft.research;
   if (research.sites && !researchChoice(draft).sites.length) return RESEARCH_NO_SITES;
   const chosen = researchChoice(draft);
@@ -7749,7 +7765,11 @@ function publishCard(run, published) {
       add(node, state('late', 'It was not ready to use when it was published, and the '
         + 'revision says so.'));
     }
-    const notice = published.notice ? ' ' + published.notice : '';
+    // A workspace shared with nobody is said once, not again in the runner's own words.
+    const alone = /This workspace has no shared repository, so the revision is kept on this computer\.\s*/;
+    const said = (teamSpace() ? String(published.notice || '')
+      : String(published.notice || '').replace(alone, '')).trim();
+    const notice = said ? ' ' + said : '';
     add(node, published.shared ? state('done', 'Shared: your team can see this revision.'
       + notice)
       : state(notice ? 'late' : 'none', (teamSpace() ? 'Not shared with your team yet.'
@@ -8243,6 +8263,7 @@ function statusOf(found) {
   const run = found.run || {};
   return { path: found.path, title: found.title || known.title || 'Untitled',
     levels: found.levels || known.levels, state: run.state || found.state,
+    execution: found.execution || run.execution || '',
     sentence: run.sentence || found.sentence || '', queue: found.queue || run.queue || null,
     spent: found.spent || run.spent || {}, driver: found.driver || known.driver || null,
     needs: Boolean(found.needs), notice: found.notice || known.notice || '',
@@ -8251,6 +8272,7 @@ function statusOf(found) {
 
 function statusWords(found) {
   if (queued(found)) return ['none', 'Waiting its turn'];
+  if (found.execution === 'conversation') return CONVERSATION_WORDS;
   return RUN_WORDS[found.state] || STATES[found.state] || RUN_WORDS.working;
 }
 

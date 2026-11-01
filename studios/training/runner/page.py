@@ -703,6 +703,11 @@ class RunnerPage(desk.Page):
         if found and (found.get('flow') == 'desk' or found['state'] == 'done'):
             item['run'].update(flow=found.get('flow'),
                                can_open_desk=found.get('can_open_desk', False))
+        # Worked on in conversation: Home says In conversation, never that it waits for the
+        # person or that its index is in progress; nothing runs here.
+        conversation = bool(found and found.get('execution') == 'conversation')
+        if conversation:
+            item['run']['execution'] = 'conversation'
         if found and found.get('can_migrate_desk') and not found.get('flow') and found['state'] != 'done':
             item['run']['can_migrate_desk'] = True
         item['driver'] = found and found['driver']
@@ -712,6 +717,11 @@ class RunnerPage(desk.Page):
         if found is None or 'error' in item:
             return item
         item['stages'] = self.engine.review_beads(item['path'], item['stages'])
+        if conversation:
+            item['stages'] = [{**stage, 'state': 'not-started',
+                               'words': desk.STAGE_STATES['not-started']}
+                              if stage.get('state') == 'current' else stage
+                              for stage in item['stages'] or ()]
         # A worker in hand is activity too, from the moment it began.
         if found.get('busy_since') and item.get('activity_at'):
             item['activity_at'] = max(item['activity_at'], found['busy_since'])
@@ -881,9 +891,13 @@ class RunnerPage(desk.Page):
             return desk.as_json(HTTPStatus.OK,
                                 setup.apply(self.engine, shaped(setup.read, sent)))
         if path == '/api/trainings':
-            reference = sent.get('research_inputs')
-            form = shaped(pipeline.check_form, {k: v for k, v in sent.items() if k != 'research_inputs'}, self.engine.brands())
-            return desk.as_json(HTTPStatus.OK, self.engine.start(form, research_inputs=reference))
+            # The source editor's draft, and the Document Library's revisions chosen beside it.
+            reference, picks = sent.get('research_inputs'), sent.get('library')
+            form = shaped(pipeline.check_form, {k: v for k, v in sent.items()
+                                                if k not in ('research_inputs', 'library')},
+                          self.engine.brands())
+            return desk.as_json(HTTPStatus.OK, self.engine.start(form, research_inputs=reference,
+                                                                 library=picks))
         if path == '/api/run':
             return desk.as_json(HTTPStatus.OK, self.act(sent))
         if path == '/api/answer':

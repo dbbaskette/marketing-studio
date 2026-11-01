@@ -19,6 +19,15 @@ const chrome=page=>page.evaluate(()=>{const bar=document.getElementById('toolbar
 const firstLineShown=page=>page.evaluate(()=>{const doc=document.querySelector('.desk-reading .md > *, .desk-reading > p, .desk-yoodli-field .row-title');if(!doc)return 'nothing to read';const r=doc.getBoundingClientRect();const top=document.getElementById('toolbar').getBoundingClientRect().bottom;const side=document.getElementById('sidebar');const bottom=getComputedStyle(side).position==='fixed'?side.getBoundingClientRect().top:innerHeight;return r.top>=top-1&&r.top+16<=bottom?true:'first line at '+Math.round(r.top)+', view '+Math.round(top)+'-'+Math.round(bottom);});
 const small=page=>page.evaluate(()=>[...document.querySelectorAll('#toolbar button, #toolbar summary, [role=tab], .menu-item')].filter(n=>n.getClientRects().length&&getComputedStyle(n).visibility!=='hidden').filter(n=>n.getBoundingClientRect().height<43.5).map(n=>(n.getAttribute('aria-label')||n.textContent).trim()+' '+n.getBoundingClientRect().height));
 const noSideScroll=page=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth);
+// The page with every script run. The fixture's one-at-a-time server can reset a script's
+// connection while the engine is busy; the page is then loaded again, as a person would.
+async function opened(page,url){
+ for(let tries=0;;tries++){
+  await page.goto(url);
+  try{await page.waitForFunction(()=>typeof ask==='function'&&typeof paintDesk==='function',null,{timeout:10000});return;}
+  catch(e){if(tries>=3)throw e;}
+ }
+}
 (async()=>{
  const browser=await chromium.launch({headless:true,executablePath:process.env.INFOGRAPHIC_STUDIO_TEST_RENDERER});
  const shots=process.env.TRAINING_DESK_UI_RESULTS;
@@ -32,7 +41,7 @@ const noSideScroll=page=>page.evaluate(()=>document.documentElement.scrollWidth<
     page.on('pageerror',e=>errors.push(e.message));
     page.on('request',r=>{if(r.method()==='POST')writes.push(new URL(r.url()).pathname);});
     await page.addInitScript(({root})=>history.replaceState({screen:'run',path:root},''),{root});
-    await page.goto(url);
+    page.on('requestfailed',r=>console.error('Request failed: '+r.url()+' '+(r.failure()||{}).errorText));page.on('console',m=>{if(m.type()==='error')console.error('Console: '+m.text());});await opened(page,url);
     await page.waitForFunction(root=>ask('run',{path:root}).then(run=>run.state==='done'),root,{timeout:90000});
     await page.getByRole('tab',{name:/^Plan · Draft$/}).waitFor({timeout:30000});
     const phone=width<600;

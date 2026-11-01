@@ -43,6 +43,8 @@ When you change an input, a dependent material can be held because it was built 
 
 Use **Add a source** to add documents after research. The desk shows the price before you update the research. New or changed findings are marked, and dependent materials may be held for your decision. A change already in progress may need to finish or stop first. Existing documents stay in the training.
 
+**Add from library**, in the same sheet, takes documents already kept in the Document Library without uploading them again. They wait, unread, until you choose **Update the research**, and start nothing before then. A training researched from the public web reads your documents too from then on, as the sheet says first.
+
 ## Mark ready and Finishing
 
 Under the level tabs, one line says how many of the level's materials are ready, still to write, drafts to mark ready, or need attention or a decision. A material is ready on its own; a level is complete once all of its materials are, and downloads and Google Docs stay optional. While a deck's slide text waits for you, its tab says **Needs your text approval** and **Review slide text** takes you to it; materials not written yet say **Not written yet**, never Writing, while nothing works on them. Time so far is a detail you open; elapsed time is never an estimate of what is left.
@@ -61,7 +63,9 @@ In a shared workspace, one computer drives a training at a time. A teammate can 
 
 Trainings started before the desk keep their original review flow. Once a saved training is finished and nothing is waiting, **Open on the desk** brings it to the desk. Existing person-approved material stays ready where applicable; other material may return as a draft for your decision. Opening it again does not create another copy.
 
-Conversation-owned work supports explicit person Mark ready through the main desk or checked `studio desk ready`, without runner handoff or jobs. Retained helper-page decisions and approval-mode changes refuse conversation ownership under the shared write guard. `studio desk return-delivered` previews and losslessly sets aside an undelivered local deck in History, restoring proven delivered active state or prior absence; it does not publish or invent approval.
+Conversation-owned work supports explicit person Mark ready through the main desk or checked `studio desk ready`, without runner handoff or jobs. Its desk is for reading: each material's Mark ready and downloads, and nothing that only the runner does (no Edit, Finishing, Google Doc, Mark this level ready or Stop). Home, Trainings and Status say **In conversation**, never that it waits for you. A change the page sends anyway, such as a save, is refused with the reason and what to do, and the desk says so.
+
+Once every material is ready and the index is written, the desk offers **Open the index** and **Publish**, which makes the training's next numbered revision as the Published screen describes. Retained helper-page decisions and approval-mode changes refuse conversation ownership under the shared write guard. `studio desk return-delivered` previews and losslessly sets aside an undelivered local deck in History, restoring proven delivered active state or prior absence; it does not publish or invent approval.
 
 Unfinished saved trainings offer **Open on the desk** with a read-only preview and Apply/Cancel. The preview names retained material parts, holds, incomplete work and prerequisites. Apply preserves original records and files and assigns conversation execution; it starts no work and grants no approval or Ready. A known prior paused/stopped runner status stays in History. Later broader work requires explicit checked scope. Early, unsupported, missing-input or worker-marked trainings keep their saved flow; existing saved recovery may discard uncommitted work.
 

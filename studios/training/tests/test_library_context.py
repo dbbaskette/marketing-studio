@@ -164,11 +164,37 @@ class DeskTests(DeckCase):
         self.assertTrue(any(source['title'] == 'capacity'
                             for source in self.engine._sources(root, self.record(root))[0]))
 
-    def test_a_desk_training_that_reads_no_documents_is_not_widened(self):
+    def test_row_206_a_public_web_desk_training_takes_a_library_document_unread_until_updated(self):
+        # Issue #254: Add from library on a training researched from the public web, as Add
+        # a source does: research reads documents from now on, once the person updates it.
         root = self.start(flow='desk')
         self.to_end(root)
+        self.assertIsNone(self.record(root)['documents'])
         row = self.library.add_upload('capacity.md', NOTES)
-        with self.assertRaisesRegex(WorkspaceError, 'Add a source reads documents too'):
+        held = self.library.catalog()['total']
+        before = len(self.workers.of('research-result'))
+        self.engine.library_add(root, [{'id': row['id'], 'revision': 1}])
+        record = self.record(root)
+        self.assertTrue(record['research_from']['documents'])
+        self.assertTrue(record['research_from']['widened_at'])
+        self.assertEqual([one['name'] for one in record['documents']['later']], ['capacity.md'])
+        # Pinning starts nothing, uploads nothing and adds nothing to the library.
+        self.assertEqual(len(self.workers.of('research-result')), before)
+        self.assertEqual(self.library.catalog()['total'], held)
+        self.assertEqual(self.engine.view(root)['documents']['later'][0]['name'], 'capacity.md')
+        self.assertTrue((root / 'sources/.all-added').is_file())
+        self.engine.update_research(root)
+        self.to_end(root)
+        self.assertGreater(len(self.workers.of('research-result')), before)
+        self.assertIsNone(self.record(root)['problem'])
+        self.assertTrue(any(source['title'] == 'capacity'
+                            for source in self.engine._sources(root, self.record(root))[0]))
+
+    def test_a_saved_training_that_reads_no_documents_is_not_widened(self):
+        root = self.saved_start()
+        self.to_end(root)
+        row = self.library.add_upload('capacity.md', NOTES)
+        with self.assertRaisesRegex(WorkspaceError, 'research does not read documents'):
             self.engine.library_add(root, [{'id': row['id'], 'revision': 1}])
         self.assertIsNone(self.record(root)['documents'])
 
