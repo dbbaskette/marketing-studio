@@ -3829,6 +3829,269 @@ class GoogleBringBackSectionsTests(unittest.TestCase):
         self.assertEqual([h for h, _ in self.sections()], ['Alpha', 'Beta', 'Delta', 'Gamma'])
 
 
+def rewritten_doc():
+    """A synthetic Doc of a two-paragraph opening and two short sections, no words shared."""
+    import test_google_suggestions as fixtures
+
+    normal, heading = {'namedStyleType': 'NORMAL_TEXT'}, {'namedStyleType': 'HEADING_3'}
+    doc = fixtures.paragraph_doc(
+        ([('An opening line here.\n', {})], normal, None),
+        ([('A second opening line.\n', {})], normal, None),
+        ([('Alpha\n', {})], heading, None),
+        ([('Alpha text one.\n', {})], normal, None),
+        ([('Alpha text two.\n', {})], normal, None),
+        ([('Beta\n', {})], heading, None),
+        ([('Beta text.\n', {})], normal, None),
+    )
+    doc['title'] = 'Plans for Harbour'
+    return doc
+
+
+class GoogleBringBackRewrittenTests(unittest.TestCase):
+    """A paragraph rewritten outright, or a paragraph added, goes to the Doc as a deletion and
+    the new words on the paragraph beside it (#267). Bringing the Doc's text back reads the two
+    together: a rejected one is brought back wherever it is, the opening's first paragraph
+    included, and an accepted one the desk changed back, or changed again, is never taken
+    over the desk. The fake Doc model only; Google is read, never written."""
+
+    setUp = GoogleSendAllTests.setUp
+    act = GoogleSendAllTests.act
+    send = GooglePendingTests.send
+
+    OPENING = 'Wholly different words to start.'
+
+    def provider(self, fixtures):
+        import google_model
+
+        return google_model.Model(rewritten_doc())
+
+    def part(self, name):
+        draft = desk.read(self.root, self.ident)
+        if name == 'opening':
+            return 'opening', draft['opening']
+        found = next(s for s in draft['sections'] if name in s['heading'])
+        return found['id'], found['text']
+
+    def change(self, name, old, new):
+        part, text = self.part(name)
+        self.assertIn(old, text)
+        draft = desk.read(self.root, self.ident)
+        desk.save(self.root, self.ident, draft['revision'], part, text.replace(old, new))
+
+    def paragraphs(self, name):
+        return self.part(name)[1].split('\n\n')
+
+    def unsent(self):
+        return desk_jobs.view(self.root, self.ident)['google_state']['unsent']
+
+    def reject_all(self):
+        self.client.decide(accept_ids=set(), reject_ids=None)
+
+    def test_a_rejected_rewrite_of_the_openings_first_paragraph_is_brought_back(self):
+        self.change('opening', 'An opening line here.', self.OPENING)
+        self.send()
+        carried = desk_finish._sent(self.root, self.ident)['carried']
+        self.assertEqual(
+            [(entry['place'], entry['lines']) for entry in carried],
+            [
+                (['An opening line here.', 0], []),
+                (['A second opening line.', 0], [self.OPENING, 'A second opening line.']),
+            ],
+            'the deletion, and the new words on the paragraph after it',
+        )
+        self.reject_all()
+        writes = self.client.writes
+        found = self.act('google-compare')
+        self.assertTrue(found['ready'], found['said'])
+        self.assertEqual(
+            [(c['kind'], c['name']) for c in found['changes']], [('changed', 'Opening')]
+        )
+        self.assertIn(self.OPENING, found['changes'][0]['before'])
+        self.assertEqual(
+            found['changes'][0]['after'], 'An opening line here.\n\nA second opening line.'
+        )
+        self.act('google-take', preview=found['preview'], confirmed=True)
+        self.assertEqual(
+            self.paragraphs('opening'), ['An opening line here.', 'A second opening line.']
+        )
+        self.assertFalse(self.unsent())
+        self.assertEqual(
+            self.act('google-compare')['said'],
+            'Nothing to bring back: the desk has every accepted change in the Doc.',
+        )
+        self.assertEqual(self.client.writes, writes, 'nothing is written to Google')
+
+    def test_a_rejected_rewrite_or_new_paragraph_elsewhere_is_brought_back(self):
+        self.change('Alpha', 'Alpha text two.', 'Nothing alike remains.')
+        self.change('Beta', 'Beta text.', 'Beta text.\n\nA paragraph the desk added.')
+        self.send()
+        self.reject_all()
+        found = self.act('google-compare')
+        self.assertTrue(found['ready'], found['said'])
+        self.assertEqual([c['name'] for c in found['changes']], ['Alpha', 'Beta'])
+        self.act('google-take', preview=found['preview'], confirmed=True)
+        self.assertEqual(self.paragraphs('Alpha'), ['Alpha text one.', 'Alpha text two.'])
+        self.assertEqual(self.paragraphs('Beta'), ['Beta text.'])
+        self.assertFalse(self.unsent())
+
+    def test_an_accepted_rewrite_the_desk_changed_back_is_refused(self):
+        self.change('opening', 'An opening line here.', self.OPENING)
+        self.change('Beta', 'Beta text.', 'Beta text.\n\nA paragraph the desk added.')
+        self.send()
+        self.client.decide()
+        self.change('opening', self.OPENING, 'An opening line here.')
+        self.change('Beta', '\n\nA paragraph the desk added.', '')
+        found = self.act('google-compare')
+        self.assertFalse(found['ready'])
+        self.assertIn('you changed this back on the desk after sending it', found['said'])
+        self.assertIn('“Opening”', found['said'])
+        self.assertIn('“Beta”', found['said'])
+        self.assertEqual(
+            self.paragraphs('opening'), ['An opening line here.', 'A second opening line.']
+        )
+        self.assertEqual(self.paragraphs('Beta'), ['Beta text.'])
+
+    def test_a_desk_change_after_a_rejected_rewrite_is_kept_and_said_to_differ(self):
+        self.change('opening', 'An opening line here.', self.OPENING)
+        self.send()
+        self.reject_all()
+        # The desk now only removes the paragraph: the rejected deletion alone is not what it
+        # sent, so the Doc's paragraph never comes back over it.
+        self.change('opening', self.OPENING + '\n\n', '')
+        found = self.act('google-compare')
+        self.assertFalse(found['ready'])
+        self.assertEqual(found['changes'], [])
+        self.assertIn(
+            '“Opening” reads differently on the desk and in the Doc: the Doc’s owner did not '
+            'accept what the desk sent.',
+            found['said'],
+        )
+        self.assertEqual(self.paragraphs('opening'), ['A second opening line.'])
+        # A desk change never sent is said to be one.
+        self.change('Alpha', 'Alpha text one.', 'Alpha text first.')
+        self.assertTrue(self.unsent())
+        found = self.act('google-compare')
+        self.assertFalse(found['ready'])
+        self.assertIn(
+            '“Opening”, “Alpha” read differently on the desk and in the Doc: some of the '
+            'desk’s changes have not been sent to the Doc. Send them when they are ready.',
+            found['said'],
+        )
+        self.assertIn('Alpha text first.', self.part('Alpha')[1])
+
+    def decide_all_but(self, words):
+        """The owner accepts every suggestion except the insertions of `words`, which are
+        rejected (the deletions beside them are accepted)."""
+        inserted = {}
+        for item in self.client.items:
+            if item['ins']:
+                inserted[item['ins']] = inserted.get(item['ins'], '') + item['ch']
+        held = {name for name, text in inserted.items() if any(w in text for w in words)}
+        named = {item['ins'] for item in self.client.items if item['ins']} | {
+            item['del'] for item in self.client.items if item['del']
+        }
+        self.client.decide(accept_ids=named - held, reject_ids=None)
+
+    def assert_withdrawn(self, part, before):
+        writes = self.client.writes
+        found = self.act('google-compare')
+        self.assertFalse(found['ready'], found['said'])
+        self.assertIn('you changed this back on the desk after sending it', found['said'])
+        self.assertIn('“' + part + '”', found['said'])
+        self.assertEqual(desk.read(self.root, self.ident), before, 'the desk is never changed')
+        self.assertEqual(self.client.writes, writes)
+
+    def test_a_rewrite_accepted_in_part_then_changed_back_is_refused(self):
+        # The owner accepts the opening's deletion and rejects the new words carried on the
+        # paragraph after it; the desk then changes it back.
+        self.change('opening', 'An opening line here.', self.OPENING)
+        self.send()
+        self.decide_all_but([self.OPENING])
+        self.change('opening', self.OPENING, 'An opening line here.')
+        self.assert_withdrawn('Opening', desk.read(self.root, self.ident))
+
+    def test_a_mid_section_rewrite_accepted_in_part_then_changed_back_is_refused(self):
+        self.change('Alpha', 'Alpha text two.', 'Nothing alike remains.')
+        self.send()
+        self.decide_all_but(['Nothing alike'])
+        self.change('Alpha', 'Nothing alike remains.', 'Alpha text two.')
+        self.assert_withdrawn('Alpha', desk.read(self.root, self.ident))
+
+    def test_an_edit_accepted_beside_a_rejected_new_paragraph_then_changed_back_is_refused(self):
+        # "A new middle." rides on "Alpha text one."; the edit to the paragraph after it is
+        # accepted on its own, and the desk changes both back.
+        self.change(
+            'Alpha',
+            'Alpha text one.\n\nAlpha text two.',
+            'Alpha text one.\n\nA new middle.\n\nAlpha text 2.',
+        )
+        self.send()
+        self.decide_all_but(['A new middle.'])
+        self.change('Alpha', 'A new middle.\n\nAlpha text 2.', 'Alpha text two.')
+        self.assert_withdrawn('Alpha', desk.read(self.root, self.ident))
+
+    def test_a_rejected_rewrite_beside_an_edit_or_a_doc_edit_is_brought_back(self):
+        # A rewrite and an edit to the paragraph after it are merged a paragraph at a time;
+        # what was sent is read across both.
+        self.change(
+            'Alpha',
+            'Alpha text one.\n\nAlpha text two.',
+            'Something unrelated here.\n\nAlpha text 2.',
+        )
+        # The owner edits the paragraph after the opening's rewrite in the Doc.
+        self.change('opening', 'An opening line here.', self.OPENING)
+        self.send()
+        self.reject_all()
+        owner_types(self.client, 'A second opening line.', 'A second opening line, owned.')
+        found = self.act('google-compare')
+        self.assertTrue(found['ready'], found['said'])
+        self.act('google-take', preview=found['preview'], confirmed=True)
+        self.assertEqual(
+            self.paragraphs('opening'), ['An opening line here.', 'A second opening line, owned.']
+        )
+        self.assertEqual(self.paragraphs('Alpha'), ['Alpha text one.', 'Alpha text two.'])
+        # A desk edit made since the send is never taken back.
+        self.change('Alpha', 'Alpha text one.', 'Something unrelated here.')
+        self.send()
+        self.reject_all()
+        self.change('Alpha', 'Alpha text two.', 'Alpha text 2.')
+        found = self.act('google-compare')
+        self.assertFalse(found['ready'])
+        self.assertIn('some of the desk’s changes have not been sent', found['said'])
+        self.assertEqual(self.paragraphs('Alpha'), ['Something unrelated here.', 'Alpha text 2.'])
+
+    def test_changes_that_went_as_comments_are_said_to_be_the_owners_to_make(self):
+        class Commenting(type(self.client)):
+            def native_comments_update(self, file_id, revision, requests):
+                return self.native_review_update(file_id, revision, requests)
+
+        self.client.__class__ = Commenting
+        self.change('Alpha', 'Alpha text one.', 'Alpha text first.')
+        plan = self.act('google-plan', mode='comments')
+        self.act('google-send', plan=plan['plan'], confirmed=True)
+        found = self.act('google-compare')
+        self.assertFalse(found['ready'])
+        self.assertIn(
+            '“Alpha” reads differently on the desk and in the Doc: some went to the Doc as '
+            'comments, for its owner to make by hand.',
+            found['said'],
+        )
+        self.assertNotIn('not been sent', found['said'])
+        self.assertIn('Alpha text first.', self.part('Alpha')[1])
+
+    def test_a_sections_only_paragraph_rewritten_keeps_the_desks_words_said_to_differ(self):
+        # The new words go after the heading, which a bring-back cannot place, with a note the
+        # owner makes by hand: the desk keeps them, and says why the two differ.
+        self.change('Beta', 'Beta text.', 'Totally unrelated sentence.')
+        self.send()
+        self.reject_all()
+        found = self.act('google-compare')
+        self.assertFalse(found['ready'])
+        self.assertIn('“Beta” reads differently on the desk and in the Doc', found['said'])
+        self.assertNotIn('not been sent', found['said'])
+        self.assertEqual(self.paragraphs('Beta'), ['Totally unrelated sentence.'])
+
+
 class ImageFinishingTests(DeskCase):
     """Finishing, the Google suggestion plan and the pre-publish check with images present."""
 
