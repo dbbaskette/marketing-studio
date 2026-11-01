@@ -10,7 +10,7 @@ The first release implements qualitative and measured comparison, process, timel
 number callouts, component and measured parts-to-whole explanations, and conceptual explanations in A4, US Letter and 1080 × 1350 digital
 portrait. Remote reads, reviewed research imports and selected team sharing are explicit actions.
 The app does not start public research or OCR implicitly. Sources and generated files
-stay in the local workspace; connecting a team library keeps an independent private clone.
+stay in the local workspace; connecting the team repository keeps an independent private clone.
 
 ## Start
 
@@ -27,9 +27,19 @@ A missing shared configuration opens the same shared setup used by the other
 studios. Finishing setup or launching explicitly creates a missing local workspace;
 existing workspaces are preserved. Shared assistant, model, effort and brand choices
 remain authoritative. Infographic Studio keeps its local workspace even when other studios use a team
-repository. Team library → Connect or sync explicitly clones the configured repository;
-only Share selected files commits and pushes a reviewed inventory.
-The native Settings screen opens shared setup and separate image/renderer defaults.
+repository. **Team repository** → Connect or sync explicitly clones the configured repository;
+only **Share to team repository** commits and pushes a reviewed inventory.
+The native **Settings** screen opens shared setup, says what is ready on this computer (and
+that the assistant and image provider are checked the first time they are used), keeps
+**Team Git email** with the team repository, and holds the image and renderer defaults.
+
+Long assistant work belongs to its infographic: while it runs, only that infographic's
+conflicting controls wait. The sidebar, Home, Settings and other infographics stay usable,
+Home's card says what the infographic is doing, and **Stop waiting** leaves the work
+running on this computer; coming back shows its progress or result, and nothing is
+requested again. A reload returns to the same infographic, place and open sections.
+Problems appear once, beside the field or in a notice above the page with **Dismiss**;
+confirmations leave by themselves.
 
 Python 3.11+, Git and a compatible headless Chromium renderer are required. Prepared
 supported-platform packages include private Python, Node and a checksum-pinned
@@ -162,20 +172,34 @@ separate release gates, never inferred from fixture success.
    all document tabs or slides are included unless you choose their IDs. Slide text, table text and speaker notes are captured; visual-only content is identified as an extraction gap. Import uses that exact preview, without
    refetching. PDF requires an explicitly installed `pdftotext`; scanned pages need a readable
    text copy. Word means `.docx`, without OCR, linked-resource reads or embedded-object analysis.
-2. Set the audience, takeaway and must-show information. Choose a story, build the page,
-   edit, inspect actual pixels, run checks and approve the exact revision.
-   **Where this stands** shows the route (Story, Draft page, Review and checks, Approved
-   delivery) with the current step, what is complete, what needs you and what you can
-   download; the toolbar offers that one next action. **Review and finish** has three
-   parts: your review of the actual page (required; recording it runs the local checks
+2. **Set the direction and page:** the audience, takeaway, must-show information and page
+   size, then **Save brief**. The sheet has these two steps; its heading and its actions stay
+   in view on a phone. Choose a story, build the page, edit, inspect actual pixels (the page
+   pans with the keyboard once its region has focus), run checks and approve the exact revision.
+   **Where this stands** is the one status surface: the route (Story, Draft page, Review
+   and checks, Approved delivery) with the current step, what needs you (always naming the
+   toolbar's one next action), your current work, the preview and the approved delivery,
+   and what you can download. Every revision named is the page's revision: checks, a
+   review and an approval are saved as revisions of their own, but they leave the page as
+   it was, so the button, the files, the receipts, History, the team repository and the
+   Document Library note on the page all name the revision you reviewed (the Document
+   Library's own entry keeps the saved revision, as every studio records it). A restore is
+   always new work with a number of its own. Reviewing or checking again after approval
+   withdraws the approval until you approve again; the approved files stay in Saved files.
+   **Review and finish** has three parts: your review of
+   the actual page (**Review page**, required; recording it runs the local checks
    straight after), the checks (on this computer, starting no assistant or image request),
-   and approval (your decision). Assistant inspection is optional and separate.
-   **Approve revision N and prepare files** approves that exact checked revision and then
-   prepares its final files locally in the same action, so the page never shows the
-   approved revision as a new draft. If the files cannot be prepared (for example no
-   renderer), the approval is kept, no approved file is offered, and **Prepare approved
-   files** retries on this computer.
-3. **Deliver Google Doc or PDF** offers either or both. PDF is the exact approved one-page
+   and approval (your decision). Finished parts fold into one line, with **Review again**
+   behind a disclosure. Assistant inspection is optional and separate.
+   **Approve revision N** approves that exact checked revision and then prepares its final
+   files locally in the same action, so the page never shows the approved revision as a
+   new draft. If the files cannot be prepared (for example no renderer), the approval is
+   kept, no approved file is offered, and **Prepare approved files** retries on this
+   computer. **History** lists each page revision once, with what the revisions after it
+   recorded; **Compare** says what changed in words (words by element, sources, story,
+   layout) beside a thumbnail of each side, and keeps the saved fields under **Advanced**.
+3. **Deliver approved page** offers a PDF, a Google Doc or both; the PNG, SVG and text
+   downloads sit beside the page. PDF is the exact approved one-page
    local render. Google delivery creates a new native Doc containing the approved page image
    with alt text, plus editable accessible text and source notes. Artwork/layout in Docs is
    raster; the local SVG retains editable labels/charts. Inspect Google conversion in Docs
@@ -194,7 +218,7 @@ session URLs remain in memory. A saved delivery intent precedes writes; after in
 **Reconcile Google delivery** performs reads only and never blindly creates another Doc.
 PDF remains available when Google access fails. An old delivery remains historical after edits.
 
-**Sources and facts → Add from library** (also on **New infographic**) chooses
+**Sources and facts → Add from Document Library** (also on **New infographic**) chooses
 documents from the Document Library that every studio shares on this computer:
 uploads, finished blogs, delivered decks and approved infographics. Each chosen
 revision is checked, then captured as a source of this infographic only, so it keeps
@@ -202,10 +226,10 @@ working if the library changes. Like any new source, it clears the facts, story 
 page built from earlier sources. The source says which library revision it came from,
 and when a newer one is available, **Use revision N** takes it. Adding starts no
 research, grants no web access and sends nothing to an assistant; it is refused while
-the infographic is working. After **Approve revision N and prepare files**, the
+the infographic is working. After **Approve revision N**, the
 approved page's accessible text and PDF are kept in the library as an Infographic,
 from the saved files. If that fails, the approval and files stand and **Keep in
-library again** retries it locally. See
+Document Library again** retries it locally. See
 [the Document Library](../../docs/shared-setup.md#the-document-library).
 
 **Sources and facts → Use reviewed research** displays the exact infographic-purpose task
@@ -219,10 +243,12 @@ public work runs in supplied-only mode. Missing or changed captures block claims
 Presentation Studio or Training Studio `hub.json` folder. Select one file and review its
 preview. Refresh/replacement is explicit and creates a new source revision.
 
-**Team library** uses the shared repository in shared settings. With none set, it says so
-and offers **Configure shared repository**, which opens Shared settings at Your workspace.
-Saving or choosing Back returns to the same infographic and reopens Team library; nothing
-connects until you choose **Connect team library**. A configured library shows its
+**Team repository** uses the shared repository in shared settings. With none set, it says so
+and offers **Configure shared repository**, which opens Shared settings at Your workspace;
+**Share to team repository** offers the same, and with a repository set but not connected
+it offers **Connect team repository**, so its main action never has to fail.
+Saving or choosing Back returns to the same infographic and reopens Team repository; nothing
+connects until you choose **Connect team repository**. A configured repository shows its
 repository, branch, connection and last sync, read locally without fetching, so an offline
 or signed-out connection still lists its last copy. Access, missing-repository and network
 failures each name a recovery step without repeating Git's output or any credential, and

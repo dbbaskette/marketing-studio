@@ -419,8 +419,10 @@ class Store:
             try:
                 project = self.read(folder.name)
                 from .progress import readiness
+                from .history import Pages
                 result.append({'id': project['id'], 'title': project['brief']['title'],
-                               'revision': project['revision'], 'readiness': readiness(project)})
+                               'revision': project['revision'], 'readiness': readiness(project),
+                               'page_revision': Pages(self, project['id'], (project,)).of(project['revision'])})
             except Invalid:
                 result.append({'id': folder.name, 'problem': 'This infographic cannot be read safely.'})
         return result

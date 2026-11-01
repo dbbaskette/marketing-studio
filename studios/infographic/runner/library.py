@@ -289,13 +289,17 @@ def keep(store, ident, export_id=None) -> dict:
     done = {'schema': 1, 'at': _now(), 'key': key(store, ident), 'export': export_id}
     try:
         project, delivery = _approved(store, ident, export_id)
-        done.update(export=delivery['id'], revision=delivery['revision'])
+        # `revision` stays the saved revision, as the shared Document Library contract has it
+        # (other studios' adapters read it). `page_revision` is what the person is told.
+        from .history import Pages
+        done.update(export=delivery['id'], revision=delivery['revision'],
+                    page_revision=Pages(store, ident).of(delivery['revision']))
         text = exports.read(store, ident, delivery['id'], 'text')[1].decode('utf-8')
         pdf = exports.read(store, ident, delivery['id'], 'pdf')[1]
         title = project['brief']['title']
         kept = document_library.opened(create=True).retain(
             key=done['key'], studio='infographic', kind='infographic', title=title, text=text,
-            project={'id': ident, 'title': title, 'revision': delivery['revision']},
+            project={'id': ident, 'title': title, 'revision': done['revision']},
             pdf={'state': 'saved', 'data': pdf})
         done.update(state='kept', document=kept['document'], library_revision=kept['revision'],
                     pdf='saved')
@@ -319,4 +323,4 @@ def status(store, ident) -> dict | None:
     if not isinstance(found, dict) or found.get('state') not in ('kept', 'failed'):
         return None
     return {k: found.get(k) for k in ('state', 'at', 'export', 'revision', 'document',
-                                       'library_revision', 'pdf', 'problem') if k in found}
+                                       'library_revision', 'pdf', 'problem', 'page_revision') if k in found}

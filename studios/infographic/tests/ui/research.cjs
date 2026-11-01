@@ -17,7 +17,6 @@ const path=require('node:path'),fs=require('node:fs'),assert=require('node:asser
   await page.getByLabel('Research this topic first',{exact:true}).check();
   await page.getByRole('button',{name:'Continue',exact:true}).click();
   await page.getByLabel('Audience and prior knowledge',{exact:true}).fill('Synthetic learners');
-  await page.getByRole('button',{name:'Continue',exact:true}).click();
   await page.getByRole('button',{name:'Save brief',exact:true}).click();
   await page.getByRole('heading',{name:'Research this topic',exact:true}).waitFor();
   assert.equal((await page.evaluate(()=>request('/api/fixture-calls'))).calls.length,0);

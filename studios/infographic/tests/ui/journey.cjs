@@ -20,9 +20,45 @@ const assert = require('node:assert/strict');
     await page.getByRole('heading',{name:'Page renderer',exact:true}).waitFor();
     assert(await page.getByText('Installed renderer found. Preview checks actual fonts, layout, and output.',{exact:true}).isVisible());
     assert.equal(await page.getByLabel('Gemini image model',{exact:true}).count(),0);
+    // Settings is a sidebar screen: titled as the sidebar names it, with a lede and no Back,
+    // in the team's words, and Team Git email beside the team repository it is for.
+    assert.equal(await page.locator('#title').innerText(),'Settings');
+    assert.equal(await page.locator('#actions button').count(),0,'No Back on a sidebar screen');
+    await page.locator('#main > .page-head > .lede').waitFor();
+    const settingsWords=await page.locator('#main').innerText();
+    assert(!/live run|live acceptance|acceptance|JSON/i.test(settingsWords),settingsWords);
+    assert.equal(await page.locator('.card').filter({has:page.getByRole('heading',{name:'Team repository',exact:true})}).getByLabel('Team Git email',{exact:true}).count(),1);
     await page.getByRole('button',{name:'Infographics',exact:true}).first().click();
     await page.getByRole('button',{name:'New infographic',exact:true}).click();
+    // Two steps, each a part of the sheet; the heading and the actions stay in reach while
+    // the sheet scrolls on a phone; a missing title is said beside the field, once.
+    const intake=page.getByRole('dialog',{name:'New infographic'});
+    assert.deepEqual(await intake.locator('.sheet-part').allInnerTexts(),['1. Add information']);
+    async function inReach(names){
+      await intake.evaluate(n=>{n.scrollTop=n.scrollHeight;});
+      for(const name of names){const box=await intake.getByRole('button',{name,exact:true}).boundingBox();assert(box&&box.y>=0&&box.y+box.height<=844,name+' stays in reach: '+JSON.stringify(box));}
+      const top=await intake.locator('#sheet-title').boundingBox();const frame=await intake.boundingBox();
+      assert(top&&top.y>=frame.y-1&&top.y<frame.y+40,'The heading stays at the top: '+JSON.stringify([top,frame]));
+      await intake.evaluate(n=>{n.scrollTop=0;});
+    }
+    await inReach(['Continue','Cancel']);
+    await intake.getByRole('button',{name:'Continue',exact:true}).click();
+    const titleField=intake.getByLabel('Working title',{exact:true});
+    assert.equal(await titleField.getAttribute('aria-invalid'),'true');
+    const titleError=await titleField.getAttribute('aria-describedby');
+    assert.equal(await page.locator('#'+titleError).innerText(),'Give this infographic a working title.');
+    assert.equal(await page.locator('[role="alert"]:visible').filter({hasText:'working title'}).count(),1,'One alert for one failed submit');
+    assert.equal(await page.locator('#notice').isVisible(),false);
+    assert.equal(await page.evaluate(()=>document.activeElement.getAttribute('aria-label')||document.activeElement.getAttribute('aria-labelledby')&&document.getElementById(document.activeElement.getAttribute('aria-labelledby')).textContent),'Working title');
+    // Import selected studio material names the folder and studio it could not find.
+    await intake.getByRole('button',{name:'Import selected studio material',exact:true}).click();
+    const handoff=page.getByRole('dialog',{name:'Import a selected studio material'});
+    const folder=await handoff.getByLabel('Studio materials folder',{exact:true}).inputValue();
+    await handoff.getByRole('button',{name:'List available materials',exact:true}).click();
+    await handoff.getByText('No Blog Studio materials folder was found at '+folder+". Check Blog Studio's workspace in shared settings.",{exact:true}).waitFor();
+    await handoff.getByRole('button',{name:'Cancel',exact:true}).click();
     await page.getByLabel('Working title',{exact:true}).fill('Synthetic rolling restart');
+    assert.equal(await page.getByLabel('Working title',{exact:true}).getAttribute('aria-invalid'),null,'Typing a title clears its problem');
     if(process.env.INFOGRAPHIC_STUDIO_TEST_REMOTE){
       await page.getByRole('button',{name:'Add a Google Doc, Slides or public page',exact:true}).click();
       await page.getByLabel('Document or page link',{exact:true}).fill(process.env.INFOGRAPHIC_STUDIO_TEST_SLIDES?'https://docs.google.com/presentation/d/synthetic_slides/edit':'https://docs.google.com/document/d/synthetic_source/edit');
@@ -31,10 +67,12 @@ const assert = require('node:assert/strict');
       await page.getByRole('heading',{name:process.env.INFOGRAPHIC_STUDIO_TEST_SLIDES?'Synthetic Google slides':'Synthetic Google source',exact:true}).waitFor();
     }else await page.getByLabel('Notes or text',{exact:true}).fill((await page.evaluate(()=>request('/api/fixture-source'))).text);
     await page.getByRole('button',{name:'Continue',exact:true}).click();
+    await intake.getByLabel('Page size',{exact:true}).waitFor();
+    assert.deepEqual(await intake.locator('.sheet-part').allInnerTexts(),['2. Set the direction and page'],'Page size is part of step 2: two steps');
     await page.getByLabel('How should we find the story?',{exact:true}).selectOption('direct');
     await page.getByLabel('Audience and prior knowledge',{exact:true}).fill('Technical practitioners');
-    await page.getByRole('button',{name:'Continue',exact:true}).click();
     await page.getByLabel('Page size',{exact:true}).selectOption('digital');
+    await inReach(['Save brief','Back','Cancel']);
     await page.getByRole('button',{name:'Save brief',exact:true}).click();
     await page.getByRole('heading',{name:'Find a useful story',exact:true}).waitFor();
     await page.locator('#actions').getByRole('button',{name:'Find the story',exact:true}).click();
@@ -62,8 +100,27 @@ const assert = require('node:assert/strict');
     await page.getByRole('dialog').getByRole('button',{name:'Build page',exact:true}).click();
     await page.locator('.ig-preview').waitFor();
     await page.waitForFunction(()=>{const i=document.querySelector('.ig-preview');return i&&i.complete&&i.naturalWidth===1080;});
-    if(scenario){
+    // While an action runs and until the infographic has been read again, its controls stay
+    // locked, so nothing can be sent against the revision the action replaced.
+    {
+      const heading=page.getByLabel('Words for Page heading',{exact:true});
+      const original=await heading.inputValue();
+      await heading.fill('Synthetic words typed during checks');
+      let slow=true;
+      await page.route('**/api/desk*',async route=>{if(slow)await new Promise(resolve=>setTimeout(resolve,1500));await route.continue();});
+      const answered=page.waitForResponse(r=>r.url().includes('/api/action'));
       await page.locator('#main').getByRole('button',{name:'Run checks again',exact:true}).click();
+      await answered;await page.waitForTimeout(200);
+      assert.equal(await page.getByRole('button',{name:'Save words',exact:true}).isDisabled(),true,'Save words waits for the re-read');
+      assert.equal(await page.locator('#actions').getByRole('button',{name:'Infographics',exact:true}).isDisabled(),false,'Navigation stays free');
+      await page.waitForFunction(()=>!document.querySelector('[data-work-status]:not([hidden])')&&!document.getElementById('ig-save-words').disabled);
+      slow=false;await page.unroute('**/api/desk*');
+      assert.equal(await page.evaluate(()=>held.project.revision),await page.evaluate(async()=>(await request('/api/project?id='+held.project.id)).project.revision),'Unlocked only with the current revision');
+      assert.equal(await page.getByLabel('Words for Page heading',{exact:true}).inputValue(),'Synthetic words typed during checks','Typed words are kept');
+      await page.getByLabel('Words for Page heading',{exact:true}).fill(original);
+      assert.equal(await page.locator('#notice').isVisible(),false);
+    }
+    if(scenario){
       const beforeEdit=await page.evaluate(()=>request('/api/desk?id='+held.project.id));
       assert(beforeEdit.project.checks.filter(c=>c.kind!=='visual').every(c=>c.status==='passed'),JSON.stringify(beforeEdit.project.checks));
     }
@@ -118,57 +175,181 @@ const assert = require('node:assert/strict');
     await page.getByLabel('Words for Section 1 text',{exact:true}).fill(first.text);
     await page.locator('#actions').getByRole('button',{name:'Update preview',exact:true}).click();
     await page.getByRole('heading',{name:'Draft page',exact:true}).waitFor();
-    // Roadmap: one current step, and plain statements of what is done, needed and downloadable.
+    // Where this stands is the one status surface: the route, Needs you (naming the toolbar's
+    // primary action), the three revisions and the downloads. No control shows more than twice.
+    // A notice raised far down the page is brought fully into view below the sticky toolbar.
+    async function noticeInView(){
+      await page.evaluate(()=>scrollTo(0,document.body.scrollHeight));await page.waitForTimeout(200);
+      await page.evaluate(()=>error('Synthetic problem raised far down the page.'));await page.waitForTimeout(300);
+      const seen=await page.evaluate(()=>{const n=document.getElementById('notice').getBoundingClientRect(),bar=document.querySelector('.toolbar-wrap').getBoundingClientRect();
+        const at=(x,y)=>document.elementFromPoint(x,y)?.closest('#notice')!==null;
+        return {top:n.top,bottom:n.bottom,bar:bar.bottom,height:innerHeight,start:at(n.left+20,n.top+4),end:at(n.right-20,n.bottom-4)};});
+      assert(seen.top>=seen.bar&&seen.bottom<=seen.height&&seen.start&&seen.end,'The notice is fully visible below the toolbar: '+JSON.stringify(seen));
+      await page.locator('#notice').getByRole('button',{name:'Dismiss',exact:true}).click();
+      assert.equal(await page.locator('#notice').isVisible(),false);
+    }
+    async function oneStatus(){
+      const primary=await page.locator('#actions .button-filled').innerText();
+      const needs=await page.locator('.ig-needs').innerText();
+      assert(needs.includes(primary),'Needs you names the toolbar action: '+needs+' / '+primary);
+      assert.equal(await page.locator('.ig-ledger').count(),1);
+      assert.equal(await page.getByRole('heading',{name:'Where this stands',exact:true}).count(),1);
+      const repeated=await page.evaluate(()=>{const seen={};for(const n of document.querySelectorAll('#actions button, #main button')){if(!n.getClientRects().length&&!n.closest('details'))continue;const label=n.getAttribute('aria-label')||n.textContent;seen[label]=(seen[label]||0)+1;}return Object.entries(seen).filter(([,c])=>c>2);});
+      assert.deepEqual(repeated,[],'A control shows at most twice');
+    }
+    await oneStatus();
+    assert.equal(await page.getByRole('button',{name:'Update preview',exact:true}).count(),0,'One Update preview, and none once it is current');
     assert.equal(await page.locator('.ig-roadmap [aria-current="step"]').innerText(),'Review and checks');
     await page.getByText(/^Downloads: Draft files for revision \d+, marked as drafts\.$/).waitFor();
+    await page.getByRole('button',{name:'Download text draft',exact:true}).waitFor();
+    // On a phone the page preview starts within the first screen.
+    await page.evaluate(()=>scrollTo(0,0));
+    const previewTop=await page.locator('.ig-preview').evaluate(n=>n.getBoundingClientRect().top+scrollY);
+    assert(previewTop<844,'The preview starts within one phone screen: '+previewTop);
+    const reviewed=Number((await page.locator('.ig-ledger-item').first().innerText()).match(/Revision (\d+)/)[1]);
     // Optional assistant inspection runs the local checks straight after; nothing is approved.
-    await page.getByRole('button',{name:'Inspect page with assistant (optional)',exact:true}).click();
+    await page.locator('#main').getByRole('button',{name:'Inspect page with assistant',exact:true}).click();
     await page.getByText('Visual review: passed',{exact:true}).first().waitFor();
     const approve=page.locator('#actions').getByRole('button',{name:/^Approve revision \d+$/});
     await approve.waitFor();
+    // Checks saved a revision of their own: the page and its approval keep the reviewed number.
+    assert.equal(await approve.innerText(),'Approve revision '+reviewed);
+    await page.getByText('Approval applies to revision '+reviewed+' only.',{exact:false}).waitFor();
+    await page.getByText('Downloads: Draft files for revision '+reviewed+', marked as drafts.',{exact:true}).waitFor();
+    await oneStatus();
     assert.equal(await page.locator('.ig-roadmap [aria-current="step"]').innerText(),'Approved delivery');
     // Approval and local file preparation are one explicit action: no draft downloads in between.
-    await page.locator('#main').getByRole('button',{name:/^Approve revision \d+ and prepare files$/}).click();
+    await page.locator('#main').getByRole('button',{name:'Approve revision '+reviewed,exact:true}).click();
     await page.getByRole('heading',{name:'Approved delivery',exact:true}).waitFor();
     assert.equal(await page.getByRole('button',{name:'Download SVG draft',exact:true}).count(),0);
-    await page.getByText(/^Downloads: Approved files for revision \d+: PNG, PDF, SVG and text\.$/).waitFor();
+    await page.getByText('Downloads: Approved files for revision '+reviewed+': PNG, PDF, SVG and text.',{exact:true}).waitFor();
+    await page.getByText('You approved revision '+reviewed+'.',{exact:false}).first().waitFor();
+    assert.match(await page.locator('.ig-ledger-item').nth(2).innerText(),new RegExp('Revision '+reviewed+'\\b'));
+    assert.deepEqual(await page.evaluate(()=>held.deliveries.filter(d=>d.current).map(d=>[d.draft,d.page_revision])),[[false,reviewed],[true,reviewed]],'The draft and approved files name the same revision');
+    await page.getByText('Approved · revision '+reviewed+' · current approval',{exact:true}).waitFor({state:'attached'});
+    // Once approved, nothing reads as still required; reviewing again is behind a disclosure.
+    assert.equal(await page.locator('#main').getByText('(required)',{exact:false}).count(),0);
+    assert.equal(await page.locator('#main').getByRole('button',{name:'Review page',exact:true}).isVisible(),false);
+    await oneStatus();
+    await noticeInView();     // at 390
     // The approved page's text and PDF are kept in the Document Library from the saved files.
-    await page.getByText('Kept in the Document Library with its text and PDF (library revision 1).',{exact:true}).waitFor();
-    await page.getByRole('button',{name:'Actual pixels',exact:true}).click();
+    await page.getByText('Kept in the Document Library: approved revision '+reviewed+', with its text and PDF (library revision 1).',{exact:true}).waitFor();
+    // Actual pixels by keyboard alone: the page's scroll region takes focus, is named, shows
+    // its focus ring and pans to every edge with the arrow, Home and End keys.
+    await page.getByRole('button',{name:'Fit page',exact:true}).focus();
+    await page.keyboard.press('Tab');await page.keyboard.press('Enter');
+    assert.equal(await page.getByRole('button',{name:'Actual pixels',exact:true}).getAttribute('aria-pressed'),'true');
+    await page.keyboard.press('Tab');
+    const region=page.getByRole('region',{name:'Page at actual pixels'});
+    assert(await region.evaluate(n=>n===document.activeElement),'The page at actual pixels takes focus next');
+    assert.notEqual(await region.evaluate(n=>getComputedStyle(n).outlineStyle),'none','A visible focus ring');
     assert(await page.locator('.ig-preview-scroll').evaluate(n=>n.scrollWidth>n.clientWidth));
     assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+    const edge=()=>region.evaluate(n=>({left:n.scrollLeft,top:n.scrollTop,right:Math.abs(n.scrollWidth-n.clientWidth-n.scrollLeft)<2,bottom:Math.abs(n.scrollHeight-n.clientHeight-n.scrollTop)<2}));
+    // Keyboard scrolling animates, so each key waits briefly before the edge is read.
+    const until=async(key,reached)=>{for(let n=0;n<80&&!reached(await edge());n++){await page.keyboard.press(key);await page.waitForTimeout(60);}};
+    await until('End',at=>at.bottom);await until('ArrowRight',at=>at.right);
+    let at=await edge();assert(at.right&&at.bottom,'Reached the right and bottom edges: '+JSON.stringify(at));
+    await until('Home',at=>at.top===0);await until('ArrowLeft',at=>at.left===0);
+    at=await edge();assert(at.left===0&&at.top===0,'Reached the left and top edges: '+JSON.stringify(at));
+    // Every scrollable region on the page can take keyboard focus (axe scrollable-region-focusable).
+    const unreachable=await page.evaluate(()=>[...document.querySelectorAll('body *')].filter(n=>{const s=getComputedStyle(n);const scrolls=(/(auto|scroll)/.test(s.overflowX)&&n.scrollWidth>n.clientWidth)||(/(auto|scroll)/.test(s.overflowY)&&n.scrollHeight>n.clientHeight);if(!scrolls||!n.getClientRects().length)return false;return n.tabIndex<0&&!n.querySelector('a[href],button,input,select,textarea,[tabindex]:not([tabindex="-1"])');}).map(n=>n.className||n.tagName));
+    assert.deepEqual(unreachable,[],'Scrollable regions are focusable');
     await page.getByRole('button',{name:'Fit page',exact:true}).click();
+    assert.equal(await page.locator('.ig-preview-scroll').getAttribute('aria-label'),'Page preview');
+    // Toasts leave by themselves after the shared delay.
+    await page.evaluate(()=>toast('Synthetic toast.'));
+    await page.getByText('Synthetic toast.',{exact:true}).waitFor();
+    await page.waitForTimeout(4700);
+    assert.equal(await page.getByText('Synthetic toast.',{exact:true}).count(),0,'The toast left after 4.2 seconds');
+    await page.emulateMedia({reducedMotion:'reduce'});
+    await page.evaluate(()=>toast('Synthetic calm toast.'));
+    await page.waitForTimeout(4320);
+    assert.equal(await page.getByText('Synthetic calm toast.',{exact:true}).count(),0,'With reduced motion it leaves at once, without sliding out');
+    await page.emulateMedia({reducedMotion:'no-preference'});
+    // Share to team repository: with no repository set, its primary action is to configure
+    // one, never an action that must fail.
+    await page.getByRole('button',{name:'Share to team repository',exact:true}).click();
+    const sharing=page.getByRole('dialog',{name:'Share to team repository'});
+    await sharing.getByRole('link',{name:'Configure shared repository',exact:true}).waitFor();
+    assert.match(await sharing.getByRole('link',{name:'Configure shared repository',exact:true}).getAttribute('class'),/button-filled/);
+    assert.equal(await sharing.getByRole('button',{name:'Review exact files to share',exact:true}).count(),0);
+    await sharing.getByRole('button',{name:'Cancel',exact:true}).click();
+    // A reload on a phone returns to the same infographic at the same place.
+    await page.getByRole('heading',{name:'Review and finish',exact:true}).scrollIntoViewIfNeeded();
+    await page.evaluate(()=>scrollBy(0,-40));
+    const place=await page.evaluate(()=>Math.round(scrollY));
+    await page.reload();
+    await page.getByRole('heading',{name:'Synthetic rolling restart',exact:true}).waitFor();
+    await page.locator('.ig-preview').waitFor();
+    await page.waitForFunction(y=>Math.abs(scrollY-y)<=4,place,{timeout:5000});
     const download=page.waitForEvent('download');await page.getByRole('button',{name:'Download SVG',exact:true}).click();
     const file=await download;assert.equal(file.suggestedFilename(),'infographic.svg');
     const source=fs.readFileSync(await file.path(),'utf8');assert(source.includes('One at a time'));assert(!source.includes('DRAFT — not approved'));
+    // Every receipt, whole, partial or failed, lists only what happened: no stray text.
+    for(const receipts of [[{kind:'pdf',ok:true}],[{kind:'pdf',ok:true},{kind:'google',result:null,request_id:'synthetic_unsaved',problem:'Synthetic refusal.'}],[{kind:'pdf',ok:false,message:'Synthetic download refusal.'}]]){
+      await page.evaluate(sent=>receiptSheet(held.deliveries.find(d=>d.approved_current),sent),receipts);
+      const said=await page.getByRole('dialog').innerText();
+      assert(!/\bnull\b|\bundefined\b/.test(said),'Receipt text: '+said);
+      assert(said.includes('Approved revision '+reviewed+'.'));
+      await page.getByRole('dialog').getByRole('button',{name:'Done',exact:true}).click();
+    }
     if(process.env.INFOGRAPHIC_STUDIO_TEST_REMOTE){
-      await page.getByRole('button',{name:'Deliver Google Doc or PDF',exact:true}).click();
+      await page.locator('#actions').getByRole('button',{name:'Deliver approved page',exact:true}).click();
+      const delivering=page.getByRole('dialog',{name:'Deliver approved page'});
       assert.equal(await page.getByLabel('Google account email',{exact:true}).count(),0);
       assert.equal(await page.getByLabel('Output',{exact:true}).inputValue(),'google');
       await page.getByLabel('Output',{exact:true}).selectOption('both');
       const deliveredPdf=page.waitForEvent('download');
-      await page.getByRole('button',{name:'Deliver approved page',exact:true}).click();
+      await delivering.getByRole('button',{name:'Deliver approved page',exact:true}).click();
       assert.equal((await deliveredPdf).suggestedFilename(),'infographic.pdf');
       await page.getByRole('heading',{name:'Delivery receipt',exact:true}).waitFor();
-      await page.getByText(/^Downloaded: approved revision \d+\.$/).waitFor();
+      await page.getByText('Downloaded: approved revision '+reviewed+'.',{exact:true}).waitFor();
+      await page.getByText('Delivered: approved revision '+reviewed+'.',{exact:true}).waitFor();
+      assert(!/\bnull\b/.test(await page.getByRole('dialog').innerText()),'No stray text in the receipt');
       await page.getByRole('button',{name:'Download PDF again',exact:true}).waitFor();
       await page.getByRole('link',{name:'Open Google Doc',exact:true}).waitFor();
       assert.equal(await page.getByRole('link',{name:'Open Google Doc',exact:true}).getAttribute('href'),'https://docs.google.com/document/d/synthetic_delivered/edit');
       await page.getByRole('button',{name:'Done',exact:true}).click();
+      await page.getByRole('heading',{name:'Google delivery · revision '+reviewed,exact:true}).waitFor();
     }
-    await page.getByRole('button',{name:'Record my review and run checks',exact:true}).click();
+    await page.locator('#main').getByText('Review again',{exact:true}).click();
+    await page.locator('#main').getByRole('button',{name:'Review page',exact:true}).click();
+    // An empty review is refused beside its field, announced once, never behind the sheet.
+    const reviewing=page.getByRole('dialog',{name:'Review page'});
+    await reviewing.getByRole('button',{name:'Record review and run checks',exact:true}).click();
+    const inspected=reviewing.getByLabel('What did you inspect on the actual composed page?',{exact:true});
+    assert.equal(await inspected.getAttribute('aria-invalid'),'true');
+    assert.equal(await page.locator('#'+(await inspected.getAttribute('aria-describedby'))).innerText(),'Record what you inspected on the actual page.');
+    assert.equal(await page.locator('[role="alert"]:visible').filter({hasText:'Record what you inspected'}).count(),1,'One alert');
+    assert.equal(await page.locator('#notice').isVisible(),false,'Nothing behind the sheet');
     await page.getByLabel('What did you inspect on the actual composed page?',{exact:true}).fill('I inspected the actual page again and confirmed its relationships.');
     await page.getByRole('button',{name:'Record review and run checks',exact:true}).click();
-    await page.getByRole('heading',{name:'Earlier approval: review the current revision',exact:true}).waitFor();
+    // Reviewing again withdraws the approval until the person approves again, and says so.
+    await page.getByRole('heading',{name:'Approval withdrawn: approve revision '+reviewed+' again',exact:true}).waitFor();
+    await page.getByText('Downloads: The files approved earlier for revision '+reviewed+' stay unchanged in Saved files. A new review withdrew the approval until you approve again.',{exact:true}).waitFor();
+    assert.match(await page.locator('.ig-ledger-item').nth(2).innerText(),new RegExp('Revision '+reviewed+' \\(withdrawn\\)'));
     // A newer review never inherits the earlier approval or its files.
-    assert.equal(await page.getByRole('button',{name:'Deliver Google Doc or PDF',exact:true}).count(),0);
+    assert.equal(await page.getByRole('button',{name:'Deliver approved page',exact:true}).count(),0);
     await approve.waitFor();
+    assert.equal(await approve.innerText(),'Approve revision '+reviewed,'Reviewing again keeps the page revision');
     await approve.click();
     await page.getByRole('heading',{name:'Approved delivery',exact:true}).waitFor();
+    // History groups bookkeeping under its page revision: Compare and Restore belong to the
+    // revision that changed the page, and no saved field or hash shows outside Advanced.
     await page.getByText('History',{exact:true}).click();
     await page.getByText('Edited words',{exact:true}).first().waitFor();
+    const groups=await page.locator('.desk-versions > .desk-version').allInnerTexts();
+    assert(groups[0].includes('Revision '+reviewed+' (current)'),groups[0]);
+    assert(/Then: .*Ran checks: all passed.*Approved this exact revision/.test(groups[0]),groups[0]);
+    assert.equal(new Set(groups.map(g=>g.match(/Revision (\d+)/)[1])).size,groups.length,'Each page revision once');
+    assert(!/Exact identity|sha256|[0-9a-f]{12}/.test(await page.locator('#main').innerText()),'No hashes on the page');
     await page.getByRole('button',{name:/^Compare revision \d+ with current$/}).first().click();
-    await page.getByRole('button',{name:'Done',exact:true}).click();
+    const compared=page.getByRole('dialog');
+    await compared.getByText(/^Words: /).first().waitFor();
+    assert(!/[{}]|sha256|Before: null/.test(await compared.innerText()),'Compare speaks in words: '+await compared.innerText());
+    await compared.getByText('Advanced',{exact:true}).waitFor();
+    await compared.getByRole('button',{name:'Done',exact:true}).click();
     for(const width of [320,390,1280])for(const colorScheme of ['light','dark']){
       await page.setViewportSize({width,height:900});await page.emulateMedia({colorScheme,reducedMotion:'reduce'});
       assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Horizontal overflow at '+width+' '+colorScheme);
@@ -191,12 +372,23 @@ const assert = require('node:assert/strict');
     assert(renamed.stories.length&&renamed.scene,'A rename clears nothing');
     assert.equal(await page.evaluate(()=>document.activeElement.dataset.key),'ig-edit-brief');
     assert.equal(await page.locator('#title').innerText(),'Synthetic rolling restarts');
-    await page.getByRole('heading',{name:'Approved revision '+renamed.revision+': prepare its files',exact:true}).waitFor();
+    await page.getByRole('heading',{name:'Approved revision '+(await page.evaluate(()=>held.page_revision))+': prepare its files',exact:true}).waitFor();
+    assert.equal(await page.evaluate(()=>held.approval_words),'You approved revision '+reviewed+'. Renaming kept the approval for revision '+renamed.revision+'.');
     await page.getByRole('button',{name:'Download PDF (earlier approved)',exact:true}).waitFor();
     assert.equal(await page.getByRole('button',{name:'Update preview',exact:true}).count(),0);
     await page.locator('#actions').getByRole('button',{name:'Prepare approved files',exact:true}).click();
     await page.getByRole('heading',{name:'Approved delivery',exact:true}).waitFor();
     assert.equal(await page.evaluate(()=>held.history[0].summary),'Renamed to “Synthetic rolling restarts”');
+    // A reload on a desktop returns to the same infographic, place and open sections.
+    await page.getByText('Saved files',{exact:true}).click();
+    await page.getByText('Saved files',{exact:true}).scrollIntoViewIfNeeded();
+    const desktopPlace=await page.evaluate(()=>Math.round(scrollY));
+    await page.reload();
+    await page.getByRole('heading',{name:'Synthetic rolling restarts',exact:true}).waitFor();
+    await page.waitForFunction(y=>Math.abs(scrollY-y)<=4,desktopPlace,{timeout:5000});
+    assert(await page.getByText('Saved files',{exact:true}).evaluate(n=>n.parentElement.open),'Open sections stay open');
+    await noticeInView();     // at 1280
+    await page.getByText('Saved files',{exact:true}).click();
     // Every route that changes sources asks first, names what it clears, and Cancel or Escape
     // changes nothing and returns focus to the control that started it.
     const atRevision=await page.evaluate(()=>held.project.revision);
@@ -257,7 +449,7 @@ const assert = require('node:assert/strict');
     assert.deepEqual(cleared.files,approvedFiles,'Earlier approved files stay unchanged');
     // With no page, the card names the earlier page and the toolbar's next step.
     await page.getByRole('heading',{name:/^Earlier page \(revision \d+\)$/}).waitFor();
-    await page.getByText('Your current work, revision '+cleared.p.revision+', has no page yet. Find the story and build the page again to edit or approve it.',{exact:true}).waitFor();
+    await page.getByText('Your current work, revision '+(await page.evaluate(()=>held.page_revision))+', has no page yet. Find the story and build the page again to edit or approve it.',{exact:true}).waitFor();
     await page.locator('#actions').getByRole('button',{name:'Find the story',exact:true}).waitFor();
     await page.getByRole('button',{name:'Download PDF (earlier approved)',exact:true}).waitFor();
     assert.equal(await page.getByRole('button',{name:'Update preview',exact:true}).count(),0);
@@ -272,16 +464,16 @@ const assert = require('node:assert/strict');
     await page.setViewportSize({width:390,height:844});
     const sourcesAt=await page.evaluate(()=>held.project.sources.length);
     await page.getByText('Sources and facts',{exact:true}).click();
-    await page.getByRole('button',{name:'Add from library',exact:true}).click();
-    const sheet=page.getByRole('dialog',{name:'Add from library'});
+    await page.getByRole('button',{name:'Add from Document Library',exact:true}).click();
+    const sheet=page.getByRole('dialog',{name:'Add from Document Library'});
     await sheet.getByRole('checkbox',{name:'Select Synthetic capacity notes'}).waitFor();
     // This infographic's own kept export is listed as unavailable, never as a source.
     await sheet.getByText('Choose documents for this infographic only.',{exact:false}).waitFor();
     assert(await sheet.getByRole('checkbox',{name:'Synthetic rolling restarts is unavailable: This infographic'}).isDisabled());
     await page.keyboard.press('Escape');
-    assert.equal(await page.getByRole('dialog',{name:'Add from library'}).count(),0);
+    assert.equal(await page.getByRole('dialog',{name:'Add from Document Library'}).count(),0);
     assert.equal(await page.evaluate(()=>held.project.sources.length),sourcesAt,'Cancel changes nothing');
-    await page.getByRole('button',{name:'Add from library',exact:true}).click();
+    await page.getByRole('button',{name:'Add from Document Library',exact:true}).click();
     await sheet.getByRole('checkbox',{name:'Select Synthetic capacity notes'}).click();
     await sheet.getByRole('checkbox',{name:'Selected: Synthetic capacity notes'}).waitFor();
     await sheet.getByRole('button',{name:'Use selected',exact:true}).click();
@@ -305,8 +497,8 @@ const assert = require('node:assert/strict');
     assert.equal(await page.getByLabel('Working title',{exact:true}).inputValue(),'Retained intake');
     // A new infographic starts with no library documents; one chosen here waits for Save brief.
     assert.equal(await page.getByText('It becomes a source when you save the brief.',{exact:false}).count(),0);
-    await page.getByRole('button',{name:'Add from library',exact:true}).click();
-    const picker=page.getByRole('dialog',{name:'Add from library'});
+    await page.getByRole('button',{name:'Add from Document Library',exact:true}).click();
+    const picker=page.getByRole('dialog',{name:'Add from Document Library'});
     await picker.getByRole('checkbox',{name:'Select Synthetic capacity notes'}).click();
     await picker.getByText('1 selected',{exact:true}).waitFor();
     await picker.getByRole('button',{name:'Use selected',exact:true}).click();
@@ -314,6 +506,6 @@ const assert = require('node:assert/strict');
     assert.equal(await page.getByLabel('Working title',{exact:true}).inputValue(),'Retained intake');
     await page.keyboard.press('Escape');
     assert.deepEqual(errors,[],'Browser runtime errors');
-    console.log('PASS: phone intake → source-backed story → actual render → focused edit → pixel review → checks → approval → SVG download → kept in the Document Library; history comparison; a rename that keeps the approval; source and brief changes that ask first; the earlier page card; this infographic’s own export unavailable in Add from library; Add from library on the desk and a new brief; 320/390/1280 light/dark/reduced-motion; no browser errors or horizontal overflow. Providers are injected.');
+    console.log('PASS: phone intake → source-backed story → actual render → focused edit → pixel review → checks → approval → SVG download → kept in the Document Library; history comparison; a rename that keeps the approval; source and brief changes that ask first; the earlier page card; this infographic’s own export unavailable in Add from Document Library; Add from Document Library on the desk and a new brief; one page revision on every surface, one status surface, one label per action, History and Compare in words, receipts without stray text; Settings layout and words; a two-step New infographic with field errors and a sticky heading and foot; keyboard panning at actual pixels; timed toasts; Share to team repository asks to configure first; reload returns to the same place at 390 and 1280; 320/390/1280 light/dark/reduced-motion; no browser errors or horizontal overflow. Providers are injected.');
   }catch(f){console.error(JSON.stringify({browser_errors:errors,text:page?await page.locator('body').innerText():''}));if(page&&process.env.INFOGRAPHIC_UI_RESULTS)await page.screenshot({path:path.join(process.env.INFOGRAPHIC_UI_RESULTS,'failure.png'),fullPage:true});throw f;}finally{if(browser)await browser.close();child.kill('SIGTERM');await new Promise(resolve=>{const timer=setTimeout(()=>{child.kill('SIGKILL');resolve();},5000);child.once('exit',()=>{clearTimeout(timer);resolve();});});}
 })().catch(e=>{console.error(e.message);process.exitCode=1;});

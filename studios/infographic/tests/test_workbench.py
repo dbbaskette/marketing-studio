@@ -4,7 +4,7 @@ Rendering is the structural fake renderer; no assistant or provider runs.
 """
 from helpers import Isolated
 import test_desk_engine as desk
-from runner import exports, history, labels, progress
+from runner import exports, history, labels, progress, sources
 from runner.contracts import Invalid
 
 
@@ -97,6 +97,68 @@ class WorkbenchTests(Isolated):
                          (approved['revision'], 'Approved: ready to export and deliver'))
         fresh = self.store.create('Synthetic empty brief')
         self.assertEqual(progress.readiness(fresh)['summary'], 'Brief saved: add information')
+
+    def test_bookkeeping_revisions_carry_the_page_revision_they_recorded(self):
+        built = self.current()['revision']
+        approved = self.review_and_approve()     # preview, review, checks, approval
+        self.assertEqual(approved['revision'], built + 2)
+        pages = history.Pages(self.store, self.ident)
+        self.assertEqual([pages.of(r) for r in range(built, approved['revision'] + 1)], [built] * 3)
+        entries = history.entries(self.store, self.ident)
+        self.assertEqual([(e['revision'], e['page_revision']) for e in entries[:3]],
+                         [(built + 2, built), (built + 1, built), (built, built)])
+        self.assertEqual(self.store.listing()[0]['page_revision'], built, 'Home names the page revision')
+        edited = self.engine.edit_text(self.ident, 'b1_heading', 'One instance', expected_revision=approved['revision'])
+        self.assertEqual(history.Pages(self.store, self.ident).of(edited['revision']), edited['revision'])
+        # Restoring older content is new work: a new page revision, never the old number.
+        restored = history.restore(self.store, self.ident, built, expected_revision=edited['revision'])
+        self.assertEqual(history.Pages(self.store, self.ident).of(restored['revision']), restored['revision'])
+
+    def test_a_restore_is_a_new_page_revision_even_when_it_equals_the_current_page(self):
+        start = self.current()['revision']
+        changed = self.engine.edit_text(self.ident, 'b1_heading', 'Changed words', expected_revision=start)
+        back = self.engine.edit_text(self.ident, 'b1_heading', 'One at a time', expected_revision=changed['revision'])
+        self.assertEqual(history.Pages(self.store, self.ident).of(back['revision']), back['revision'])
+        # Restoring the first revision makes content equal to the current page; it is still
+        # new work, so it has a number of its own and never repeats the current one.
+        restored = history.restore(self.store, self.ident, start, expected_revision=back['revision'])
+        pages = history.Pages(self.store, self.ident)
+        self.assertEqual((pages.of(restored['revision']), pages.of(back['revision'])),
+                         (restored['revision'], back['revision']))
+        checked = self.engine.check(self.ident, expected_revision=restored['revision'])
+        self.assertEqual(history.Pages(self.store, self.ident).of(checked['revision']), restored['revision'],
+                         'Bookkeeping after a restore keeps the restore’s number')
+        listed = history.entries(self.store, self.ident)
+        self.assertEqual([e['page_revision'] for e in listed[:2]], [restored['revision']] * 2)
+        self.assertNotEqual(listed[2]['page_revision'], restored['revision'])
+
+    def test_compare_says_what_changed_in_words_and_hides_saved_fields_behind_advanced(self):
+        built = self.current()['revision']
+        approved = self.review_and_approve()
+        # A check-only or approval-only difference: no changes to the page, in words.
+        same = history.compare(self.store, self.ident, built, approved['revision'])
+        self.assertEqual((same['same'], same['changes']), (True, []))
+        self.assertEqual(same['since'], ['Ran checks: all passed', 'Approved this exact revision'])
+        self.assertEqual((same['before']['page_revision'], same['after']['page_revision']), (built, built))
+        edited = self.engine.edit_text(self.ident, 'b1_heading', 'One instance', expected_revision=approved['revision'])
+        changed = history.compare(self.store, self.ident, built, edited['revision'])
+        self.assertFalse(changed['same'])
+        self.assertEqual(changed['changes'], [{'what': 'Words: Section 1 heading', 'before': 'One at a time',
+                                               'after': 'One instance'}])
+        words = repr(changed['changes'])
+        for internal in ('scene', 'sha256', 'contract_sha256', 'None', 'null'):
+            self.assertNotIn(internal, words)
+        self.assertIn('scene', changed['advanced'], 'The saved fields stay available under Advanced')
+        # A rendered side names its saved files for a thumbnail; an unrendered side names none.
+        self.assertIsNotNone(changed['before']['export'])
+        self.assertIsNone(changed['after']['export'])
+        # Sources, the story and the brief are named, never shown as their saved records.
+        sourced = sources.capture(self.store, self.ident, b'More synthetic notes.', name='More notes',
+                                  expected_revision=edited['revision'])
+        found = {c['what']: c for c in history.compare(self.store, self.ident, edited['revision'], sourced['revision'])['changes']}
+        self.assertEqual(found['Source added']['after'], 'More notes')
+        self.assertEqual(found['Story choice'], {'what': 'Story choice', 'before': 'Restart one instance', 'after': 'None chosen'})
+        self.assertEqual(found['Page'], {'what': 'Page', 'before': 'Built page', 'after': 'No page'})
 
     def test_history_fingerprints_each_revision_once_per_page(self):
         from unittest import mock

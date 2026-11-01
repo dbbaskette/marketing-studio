@@ -18,7 +18,6 @@ const assert=require('node:assert/strict');
     await page.getByLabel('Notes or text',{exact:true}).fill('One instance restarts while the others serve.');
     await page.getByRole('button',{name:'Continue',exact:true}).click();
     await page.getByLabel('How should we find the story?',{exact:true}).selectOption('direct');
-    await page.getByRole('button',{name:'Continue',exact:true}).click();
     await page.getByLabel('Page size',{exact:true}).selectOption('digital');
     await page.getByRole('button',{name:'Save brief',exact:true}).click();
     await page.locator('#actions').getByRole('button',{name:'Find the story',exact:true}).click();
@@ -28,8 +27,22 @@ const assert=require('node:assert/strict');
     await page.locator('#actions').getByRole('button',{name:'Recover saved artwork',exact:true}).waitFor();
     const calls=await page.evaluate(()=>request('/api/fixture-calls'));
     assert.deepEqual(calls.calls,['story','art','image']);
+    // The notice, Image work needs attention, Needs you and the usage row agree: saved
+    // artwork was found, so each leads with that and names Recover saved artwork.
+    const lead='The image was made but not handed back.';
+    assert((await page.locator('#notice').innerText()).startsWith(lead),await page.locator('#notice').innerText());
+    await page.getByText(lead+' Recover saved artwork places it on the page on this computer, without a new image request.',{exact:true}).waitFor();
+    const needs=await page.locator('.ig-needs').innerText();
+    assert(needs.includes('Recover saved artwork: the image was made but not handed back.'),needs);
+    await page.getByText('Image requests and usage',{exact:true}).click();
+    await page.getByText('Codex image generation: the image was made but not handed back; saved artwork was found on this computer.',{exact:true}).waitFor();
+    assert(!(await page.locator('#main').innerText()).includes('codex · generate'),'Provider and state are words');
     await page.reload();await page.locator('#actions').getByRole('button',{name:'Recover saved artwork',exact:true}).click();
     await page.waitForFunction(()=>!document.querySelector('[data-work-status]:not([hidden])'));
+    // Recovery says what it did, and the usage row agrees.
+    await page.getByText(/^Recovered the saved artwork on this computer and placed it on the page, revision \d+\. No new image request was made\.$/).waitFor();
+    await page.getByText('Image requests and usage',{exact:true}).click();
+    await page.getByText('Codex image generation: recovered from saved artwork on this computer, without a new request.',{exact:true}).waitFor();
     const recovered=await page.evaluate(()=>request('/api/desk?id='+held.project.id));
     assert(recovered.project.scene.elements.some(e=>e.kind==='artwork'));
     assert.equal(await page.getByRole('heading',{name:'Image work needs attention',exact:true}).count(),0);
@@ -49,7 +62,6 @@ const assert=require('node:assert/strict');
     await page.getByLabel('Notes or text',{exact:true}).fill('One service instance restarts while all the other service instances continue serving existing requests.');
     await page.getByRole('button',{name:'Continue',exact:true}).click();
     await page.getByLabel('How should we find the story?',{exact:true}).selectOption('direct');
-    await page.getByRole('button',{name:'Continue',exact:true}).click();
     await page.getByLabel('Page size',{exact:true}).selectOption('digital');
     await page.getByRole('button',{name:'Save brief',exact:true}).click();
     await page.locator('#actions').getByRole('button',{name:'Find the story',exact:true}).click();

@@ -199,7 +199,7 @@ def clean(folder):
 def connect(*, sync=False):
     chosen = connection()
     require(chosen["configured"], chosen["problem"] or
-            "Configure a shared repository in shared settings before connecting the Team library.")
+            "Configure a shared repository in shared settings before connecting the team repository.")
     folder = root()
     repository, branch, _ = configuration()
     with file_lock(data_root() / ".team.lock"):
@@ -394,10 +394,14 @@ def inventory(
         files["delivery/" + Path(item["file"]).name] = exports.read(
             store, ident, export_id, item["format"]
         )[1]
+    # The page revision the person approved; `revision` stays the saved revision.
+    from .history import Pages
+
+    page = Pages(store, ident).of(p["revision"])
     files["README.md"] = (
         p["brief"]["title"]
-        + "\n\nApproved local revision "
-        + str(p["revision"])
+        + "\n\nApproved revision "
+        + str(page)
         + ".\n"
     ).encode()
     if include_editable:
@@ -432,6 +436,7 @@ def inventory(
         "id": ident,
         "title": p["brief"]["title"],
         "revision": p["revision"],
+        "page_revision": page,
         "editable": include_editable,
         "files": items,
         "source_ids": source_ids,

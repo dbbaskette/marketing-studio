@@ -36,6 +36,17 @@ class HandoffTests(Isolated):
             with self.assertRaises(Invalid):handoffs.prepare(root,'blog',name,hashlib.sha256(b'Synthetic private').hexdigest())
         with self.assertRaises(Invalid):handoffs.inventory(root,'training')
 
+    def test_a_missing_folder_is_named_with_its_studio(self):
+        # The page pre-fills each studio's usual folder; when it is not there, say which one.
+        missing=self.temp/'Studios'/'blog-workspace'/'blogs'
+        with self.assertRaises(Invalid) as refused:handoffs.inventory(str(missing),'blog')
+        self.assertEqual(str(refused.exception),'No Blog Studio materials folder was found at '+str(missing)
+                         +". Check Blog Studio's workspace in shared settings.")
+        plain=self.temp/'plain';plain.mkdir()
+        with self.assertRaises(Invalid) as refused:handoffs.inventory(str(plain),'presentation')
+        self.assertIn(str(plain)+' is not a Presentation Studio materials folder',str(refused.exception))
+        self.assertNotIn('Infographic Studio file',str(refused.exception))
+
 
 class TeamTests(Isolated):
     current=desk.DeskEngineTests.current

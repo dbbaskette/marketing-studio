@@ -93,7 +93,9 @@ class Page(shared.Page):
                                   'configured': self.store is not None, 'providers': 'not-checked',
                                   'generation_available': False})
         if path == '/api/projects':
-            return shared.as_json(HTTPStatus.OK, {'projects': self.store.listing()})
+            # Home shows the work each infographic is doing now; observing starts nothing.
+            return shared.as_json(HTTPStatus.OK, {'projects': [
+                {**item, 'activity': self.activity.snapshot(item['id'])} for item in self.store.listing()]})
         if path == '/api/project':
             return shared.as_json(HTTPStatus.OK, {'project': self.store.read(one('id'))})
         if path == '/api/source':

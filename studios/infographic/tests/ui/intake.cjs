@@ -34,11 +34,21 @@ print(base64.b64encode(b.getvalue()).decode())`], {encoding:'utf8'});
     ]);
     await page.getByRole('heading',{name:'synthetic.docx',exact:true}).waitFor();
     await page.getByRole('heading',{name:'notes.md',exact:true}).waitFor();
+    // A long sheet on a phone keeps Continue and Cancel in view, at its top and its end.
+    const sheet=page.getByRole('dialog',{name:'New infographic'});
+    for(const end of [0,1]){
+      await sheet.evaluate((n,end)=>{n.scrollTop=end?n.scrollHeight:0;},end);
+      assert(await sheet.evaluate(n=>n.scrollHeight>n.clientHeight),'The sheet is long enough to scroll');
+      for(const name of ['Continue','Cancel']){
+        const box=await sheet.getByRole('button',{name,exact:true}).boundingBox();
+        assert(box&&box.y>=0&&box.y+box.height<=844,name+' in view');
+        assert(await sheet.getByRole('button',{name,exact:true}).evaluate(n=>{const r=n.getBoundingClientRect();return document.elementFromPoint(r.left+r.width/2,r.top+r.height/2)===n;}),name+' is not covered');
+      }
+    }
     await page.getByRole('button',{name:'Continue',exact:true}).click();
     await page.getByText('Review the file previews and acknowledge readable-only coverage, or remove unreadable files.',{exact:true}).waitFor();
     await page.getByRole('checkbox',{name:'I reviewed these gaps. Use only the readable text.',exact:true}).check();
     assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
-    await page.getByRole('button',{name:'Continue',exact:true}).click();
     await page.getByRole('button',{name:'Continue',exact:true}).click();
     await page.getByRole('button',{name:'Save brief',exact:true}).click();
     await page.getByRole('heading',{name:'Find a useful story',exact:true}).waitFor();

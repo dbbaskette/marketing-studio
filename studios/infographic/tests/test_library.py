@@ -55,6 +55,11 @@ class ApprovedExportTests(LibraryCase):
                          ('infographic', 'infographic', ['markdown', 'pdf'], True))
         self.assertEqual(row['project'], {'studio': 'infographic', 'title': 'Restart one instance',
                                           'revision': done['revision']})
+        # The Document Library contract keeps the saved revision; the page revision the
+        # person is told is recorded beside it, and approval saved its own revision.
+        self.assertEqual(kept['page_revision'], done['page_revision'])
+        self.assertEqual(done['revision'], done['page_revision'] + 2)
+        self.assertEqual(library.status(self.store, self.ident)['revision'], done['revision'])
         text = exports.read(self.store, self.ident, done['export']['id'], 'text')[1]
         pdf = exports.read(self.store, self.ident, done['export']['id'], 'pdf')[1]
         self.assertEqual(self.library().download(kept['document'], 1, 'markdown')[2], text)
