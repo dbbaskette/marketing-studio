@@ -5,6 +5,23 @@ making decks first, then what changes for maintainers.
 
 ## Unreleased
 
+- **The slide text and the look pause say what they ask, and drop nothing.**
+  **Approve text & design deck** is the toolbar's filled action. A change typed
+  in **Changes to slide text** is never lost: Approve asks whether to send it
+  first or approve without it. Each slide's title, points and speaker notes can
+  be corrected in place and approved with no assistant job, and **What the
+  research found** is folded above the text. The looks are a proper radio group,
+  with the brand's default chosen until you pick another. Home, Decks, the toast
+  and the header say the same stage: "Waiting for you to approve the slide
+  text.", "Waiting for you to pick the look.", "Ready to deliver." and
+  Delivered. A deck shows one waiting toast at a time, and none once it is
+  decided. The Home badge counts decks only, as the greeting does.
+
+  For maintainers: `Drafting.slideContent` (shared) takes `edits`, `onEdit` and
+  `toolbar`, and its node has `decide`; `DeckPanels.lookPicker` (shared) has a
+  roving tabindex and `preselect`. The engine's `_waiting_words` gives a desk
+  deck's waiting sentence. #256.
+
 - **A library document beside your document stays a supporting source.** When
   a deck from a document has documents chosen from the library, the outline is
   written from your document alone. The library documents go to it under their

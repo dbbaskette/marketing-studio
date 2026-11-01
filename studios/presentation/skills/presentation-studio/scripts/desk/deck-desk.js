@@ -96,7 +96,12 @@
     // A source being added, the findings ticked to leave out, and Finishing: the panel's
     // state as the shared kit holds it, the proposal whose price is shown before it is
     // applied, and the words of a proposal being edited.
-    sources: {}, leave: {}, finish: {}, confirm: {}, editing: {} };
+    sources: {}, leave: {}, finish: {}, confirm: {}, editing: {},
+    // The slide text waiting for approval: the change typed for it and the words edited in
+    // it, by deck.
+    slideText: {},
+    // The deck whose Delivered card takes the focus once it is drawn, after Deliver.
+    landing: null };
 
   // The shared kit's Finishing panel, bound to this page: its shell and its list of tools
   // are the kit's, and each tool's view is the deck's own (`finishView`).
@@ -471,13 +476,18 @@
       return null;
     }
     h.view.busy = false;
-    if (done) h.toast(done);
+    // A toast that says work is under way is the deck's own, and goes once the work is done.
+    if (done) h.toast(done, found && found.desk && found.desk.working ? workToast(path) : undefined);
     if (turn === h.view.turn && h.view.screen === 'deck' && h.view.path === path) {
       h.view.run = found;
       h.paintDeck(false);
     }
     h.refresh();
     return found;
+  }
+
+  function workToast(path) {
+    return 'work\n' + path;
   }
 
   // What comes before everything else: a teammate's hold, a question, a step that stopped
@@ -500,7 +510,20 @@
     const route = h.routeWords(run);
     const runs = run.execution === 'conversation' ? 'In conversation' : h.theirs(run) ? (run.driver ? 'Run by ' + h.nameOf(run.driver)
       : 'Nobody is running it') : run.driver ? 'Runs on this computer' : '';
-    return [make('span', '', [route, 'On the desk', runs].filter(Boolean).join(' · '))];
+    return [make('span', '', [route, stageOf(run), runs].filter(Boolean).join(' · '))];
+  }
+
+  // Where the deck stands, in the words of the screen it shows: its slide text waits for
+  // approval, its look for a pick, it is on the desk, or it is delivered. Before it reaches
+  // the desk it is drafted (the slide text) or made.
+  function stageOf(run) {
+    const found = run.desk || {};
+    const gate = run.gate;
+    if (found.delivered) return 'Delivered';
+    if (gate && gate.content_first && gate.name === 'gate:outline') return 'Slide text';
+    if (pausedAtLook(run) || (gate && gate.name === 'gate:look')) return 'Look';
+    if (found.arrived) return 'On the desk';
+    return found.content_pending ? 'Slide text' : 'Being made';
   }
 
   // Pause, Resume and Delete, under More. Stop on the desk is the redraw's own, on its line.
@@ -540,11 +563,15 @@
     const title = run.title || 'Untitled';
     const desk = run.desk;
     const previews = run.build_progress && h.list(run.build_progress.slides).length;
+    const text = gate?.content_first && gate.name === 'gate:outline';
     h.placeParts({ title, above: above(run), back: true, actions: progressActions(run, lead),
       mark: ['progress', title, run.state, lead, read, run.driver, Boolean(run.question),
         run.problem, gate] }, [
       ...interruptions(run, lead, title),
-      gate?.content_first && gate.name === 'gate:outline' ? ['slide-text', [gate, read], () => slideTextReview(run, read)] : null,
+      // Folded above the text, so it is reached without going past every slide.
+      text && !read ? ['slide-text-research', [desk.research_items, desk.research],
+        () => researchFound(run)] : null,
+      text ? ['slide-text', [gate, read], () => slideTextReview(run, read)] : null,
       pause ? ['look-pause', [gate, lead, h.brandsFound()], () => lookPause(run, lead === 'look')]
         : ['progress', [run.state, run.sentence, desk.progress, Boolean(run.question),
           run.problem], () => progressPart(run)],
@@ -554,17 +581,58 @@
     h.tidyPictures();
   }
 
+  // The slide text waits for approval. Its words are boxes: a typo is put right here, with no
+  // assistant, and the edits go with the decision. What was typed and not sent is kept for
+  // the text it was typed for, through every drawing of the screen.
+  function slideTextOf(run) {
+    const gate = run.gate;
+    const path = h.view.path;
+    const kept = held.slideText[path] || (held.slideText[path] = { note: '', edits: null,
+      base: gate.expected });
+    if (kept.base !== gate.expected) Object.assign(kept, { edits: null, base: gate.expected });
+    return kept;
+  }
+
   function slideTextReview(run, read) {
     const gate = run.gate, path = h.view.path;
     if (read) return h.make('p', 'quiet', 'Slide text is waiting for approval on its owner’s computer.');
-    return Drafting.slideContent({slides: gate.slides,
-      note: held.deck[path]?.slideTextNote || '',
-      onNote: note => { (held.deck[path] ||= {}).slideTextNote = note; },
-      onDecision: async (decision, note) => {
-        const found = await h.send('decide', {path, gate: 'gate:outline', decision, note, expected: gate.expected});
+    const kept = slideTextOf(run);
+    const node = Drafting.slideContent({slides: gate.slides, toolbar: true,
+      note: kept.note, onNote: (note) => { kept.note = note; },
+      edits: kept.edits, onEdit: (slides) => { kept.edits = slides; },
+      onDecision: async (decision, note, edited) => {
+        const found = await h.send('decide', {path, gate: 'gate:outline', decision, note,
+          expected: gate.expected, ...(edited ? { extra: { edited } } : {})});
         if (h.view.path !== path) return;
-        (held.deck[path] ||= {}).slideTextNote = ''; h.view.run = found; h.refresh();
+        Object.assign(kept, { note: '', edits: null });
+        h.view.run = found;
+        h.paintDeck(false);
+        // The panel is gone: the focus goes to the head of the screen, not to the page.
+        const title = h.byId('title');
+        if (title) title.focus({ preventScroll: true });
+        h.refresh();
       }});
+    node.id = 'slide-text-review';
+    return node;
+  }
+
+  // What the research found, folded under the slide text: the findings the text is drafted
+  // from, and what it could not find. Nothing is run from here.
+  function researchFound(run) {
+    const found = run.desk || {};
+    const items = h.list(found.research_items).filter((item) => !item.left_out);
+    const gaps = h.list(found.research && found.research.gaps);
+    if (!items.length && !gaps.length) return null;
+    const node = make('details', 'card desk-research-found');
+    node.dataset.key = 'slide-text-research';
+    const summary = make('summary', '', 'What the research found');
+    summary.dataset.key = 'slide-text-research-summary';
+    return h.add(node, summary,
+      found.research && found.research.read ? make('p', 'quiet', found.research.read) : null,
+      items.length ? h.bullets(items.map((item) => (item.title || item.id)
+        + (item.headline ? ': ' + item.headline : ''))) : null,
+      gaps.length ? h.add(make('div'), make('p', 'row-title', 'What it could not find'),
+        h.bullets(gaps)) : null);
   }
 
   // Pause and Stop while it works, Resume once it is paused or stopped, then More.
@@ -575,6 +643,16 @@
       const node = h.capsule(label, kind, () => h.steer(action, node), action);
       actions.push(node);
     };
+    // The slide text's approval is the screen's one filled action, reached without going past
+    // every slide. It decides as the panel's own Approve does: a change still typed is asked
+    // about first.
+    const gate = run.gate;
+    if (gate && gate.content_first && gate.name === 'gate:outline' && !lead) {
+      actions.push(h.capsule('Approve text & design deck', 'filled', () => {
+        const panel = h.byId('slide-text-review');
+        if (panel && panel.decide) panel.decide('approve');
+      }, 'slide-text-approve-top'));
+    }
     if (run.state === 'working') press('Pause', '', 'pause');
     if (['working', 'waiting', 'paused'].includes(run.state)) press('Stop', 'quiet', 'stop');
     if (['paused', 'stopped'].includes(run.state) && !(run.problem && run.problem.action)) {
@@ -631,7 +709,8 @@
         + 'what each colour means and how cards are drawn on every slide.'),
       window.DeckPanels.lookPicker({
         name: 'the deck', looks: h.list(offered.looks), defaultId: offered.default,
-        sheet: offered.sheet, notes: h.list(offered.notes), failed: offered.failed,
+        // The brand's default is chosen until another is picked: Draw works at once.
+        preselect: true, sheet: offered.sheet, notes: h.list(offered.notes), failed: offered.failed,
         picked: { choice: pick.look, words: pick.words },
         changed: (now) => {
           pick.look = now.choice;
@@ -733,6 +812,8 @@
     const path = h.view.path;
     const title = run.title || 'Untitled';
     const working = Boolean(found.working);
+    // A toast that said a redraw is under way is let go once the slide shows it is done.
+    if (!working) h.dropToast(workToast(path));
     const pause = pausedAtLook(run);
     const lead = h.view.sheet || read ? '' : run.question ? 'answer'
       : run.problem && run.problem.action ? 'problem' : pause ? 'look'

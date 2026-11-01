@@ -22,43 +22,115 @@ const Drafting = (() => {
 
   // Shared content-only approval. Rendering and design belong to the adapter after
   // the exact version shown here has been accepted by the person.
-  function slideContent({slides, label, note = '', onNote = () => {}, onDecision}) {
+  //
+  // A change typed in the box is never dropped by Approve: it asks whether to send it first
+  // or approve without it. With `onEdit`, each slide's title, points and speaker notes are
+  // boxes the person corrects in place, with no assistant: `edits` is the slides as edited so
+  // far (or null), onEdit(slides) is told each change, and onDecision gets the edited slides
+  // as a third argument (null when nothing changed). `toolbar` says the studio shows Approve
+  // as its toolbar's filled action, so the panel's own is not filled. The panel's `decide`
+  // makes a decision as its own buttons do, for that toolbar button.
+  function slideContent({slides, label, note = '', onNote = () => {}, onDecision, edits = null,
+    onEdit = null, toolbar = false}) {
     const box = add(make('section', 'paper slide-text-review'),
       make('h2', 'doc-title', label || 'Review slide text'),
       make('p', 'quiet', 'Check the message, slide order, copy and speaker notes. Design and rendering start only after you approve this text.'));
+    const editing = typeof onEdit === 'function';
+    const given = JSON.stringify(slides || []);
+    const work = editing ? JSON.parse(Array.isArray(edits) ? JSON.stringify(edits) : given) : null;
+    const edited = () => editing && JSON.stringify(work) !== given;
+    if (editing) box.append(make('p', 'quiet', 'Correct a word here and approve: your edits go with your decision, and no assistant redrafts them.'));
     const items = make('ol', 'slide-text-list');
-    for (const slide of slides || []) {
-      const row = add(make('li', 'slide-text-item'), make('h3', 'row-title', slide.title || 'Untitled slide'));
+    // A box of one slide's words, named for its slide. Its words go into the edited slides.
+    let boxes = 0;
+    const wordBox = (slide, number, name, value, long, put) => {
+      const id = 'slide-text-' + (++boxes);
+      const field = make('label', 'field');
+      field.htmlFor = id;
+      const input = make(long ? 'textarea' : 'input', 'input');
+      input.id = id;
+      if (long) input.rows = 2; else input.type = 'text';
+      input.value = value || '';
+      input.dataset.key = 'slide-text ' + number + ' ' + name;
+      input.addEventListener('input', () => { put(input.value); onEdit(edited() ? work : null); });
+      return add(field, add(make('span', 'field-label', name), make('span', 'offscreen', ' of slide ' + number)), input);
+    };
+    (editing ? work : slides || []).forEach((slide, index) => {
+      const number = index + 1;
+      const row = make('li', 'slide-text-item');
+      if (editing) row.append(wordBox(slide, number, 'Title', slide.title, false, (value) => { slide.title = value; }));
+      else row.append(make('h3', 'row-title', slide.title || 'Untitled slide'));
       for (const key of ['subtitle', 'detail', 'focal', 'caveat', 'source']) {
         if (typeof slide[key] === 'string' && slide[key].trim()) row.append(make('p', 'desk-plain', slide[key]));
       }
-      const points = make('ul', 'outline-points');
-      for (const point of slide.points || []) {
-        const text = typeof point === 'string' ? point : [point.label, point.text].filter(Boolean).join(': ');
-        points.append(make('li', '', text));
-      }
+      const points = make(editing ? 'div' : 'ul', editing ? 'fields' : 'outline-points');
+      (slide.points || []).forEach((point, at) => {
+        if (!editing) {
+          const text = typeof point === 'string' ? point : [point.label, point.text].filter(Boolean).join(': ');
+          points.append(make('li', '', text));
+          return;
+        }
+        const name = 'Point ' + (at + 1);
+        if (typeof point === 'string') { points.append(wordBox(slide, number, name, point, true, (value) => { slide.points[at] = value; })); return; }
+        if (point && point.label) points.append(wordBox(slide, number, name + ' label', point.label, false, (value) => { point.label = value; }));
+        if (point && typeof point.text === 'string') points.append(wordBox(slide, number, name, point.text, true, (value) => { point.text = value; }));
+      });
       if (points.children.length) row.append(points);
-      if (slide.notes) row.append(add(make('details', 'outline-notes'), make('summary', '', 'Speaker notes'), make('p', 'desk-plain', slide.notes)));
+      if (editing) row.append(wordBox(slide, number, 'Speaker notes', slide.notes, true, (value) => { slide.notes = value; }));
+      else if (slide.notes) row.append(add(make('details', 'outline-notes'), make('summary', '', 'Speaker notes'), make('p', 'desk-plain', slide.notes)));
       items.append(row);
-    }
+    });
     const field = make('label', 'field');
     const text = make('textarea', 'input'); text.value = note; text.rows = 3;
-    text.addEventListener('input', () => onNote(text.value));
+    text.dataset.key = 'slide-text-note';
     add(field, make('span', 'field-label', 'Changes to slide text'), text);
     const problem = make('p', 'problem'); problem.setAttribute('role', 'alert');
     const actions = make('div', 'bar');
     const ask = make('button', 'button', 'Ask for changes');
-    const approve = make('button', 'button button-filled', 'Approve text & design deck');
-    async function decide(kind) {
+    const approve = make('button', 'button' + (toolbar ? '' : ' button-filled'), 'Approve text & design deck');
+    ask.dataset.key = 'slide-text-changes';
+    approve.dataset.key = 'slide-text-approve';
+    // Approve with a change still typed asks first: send it, or approve without it.
+    const pending = make('div', 'paper callout slide-text-pending');
+    pending.setAttribute('role', 'group');
+    pending.setAttribute('aria-label', 'Your typed change');
+    pending.hidden = true;
+    const sendFirst = make('button', 'button', 'Send these changes first');
+    const without = make('button', 'button', 'Approve without them');
+    sendFirst.dataset.key = 'slide-text-send-first';
+    without.dataset.key = 'slide-text-without';
+    add(pending, make('p', '', 'You typed a change to the slide text. Send these changes first, or approve without them?'), add(make('div', 'bar'), sendFirst, without));
+    const controls = [ask, approve, text, sendFirst, without];
+    let busy = false;
+    const off = (state) => { busy = state; for (const control of controls) control.disabled = state; };
+    text.addEventListener('input', () => { onNote(text.value); if (!text.value.trim()) pending.hidden = true; });
+    async function decide(kind, typed = 'ask') {
+      if (busy) return;
       if (kind === 'changes' && !text.value.trim()) { problem.textContent = 'Say what should change in the slide text.'; text.focus(); return; }
-      ask.disabled = approve.disabled = text.disabled = true; problem.textContent = '';
-      try { await onDecision(kind, kind === 'changes' ? text.value.trim() : null); }
+      if (kind === 'approve' && typed === 'ask' && text.value.trim()) {
+        problem.textContent = ''; pending.hidden = false; sendFirst.focus();
+        // Asked from the toolbar, the question is far down: it is brought to the middle, clear of
+        // the toasts at the foot of a phone.
+        if (typeof pending.scrollIntoView === 'function') pending.scrollIntoView({ block: 'center' });
+        return;
+      }
+      if (kind === 'approve' && typed === 'drop') { text.value = ''; onNote(''); }
+      pending.hidden = true;
+      off(true); problem.textContent = '';
+      try {
+        const said = kind === 'changes' ? text.value.trim() : null;
+        if (editing) await onDecision(kind, said, edited() ? work : null);
+        else await onDecision(kind, said);
+      }
       catch (error) { problem.textContent = error.message; }
-      finally { ask.disabled = approve.disabled = text.disabled = false; }
+      finally { off(false); }
     }
     ask.addEventListener('click', () => decide('changes'));
     approve.addEventListener('click', () => decide('approve'));
-    return add(box, items, field, problem, add(actions, ask, approve));
+    sendFirst.addEventListener('click', () => decide('changes'));
+    without.addEventListener('click', () => decide('approve', 'drop'));
+    box.decide = decide;
+    return add(box, items, field, problem, add(actions, ask, approve), pending);
   }
 
   // Words compared by a longest common subsequence, after the words both texts start and end

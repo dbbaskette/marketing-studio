@@ -809,12 +809,43 @@ class ProgressTests(DeskPageCase):
         after = self.post('desk-look', {'path': path, 'look': looks[1]['id']})
         self.assertEqual(after['gate']['name'], 'gate:build')
 
-    def test_a_look_pick_is_asked_for_before_it_is_sent(self):
+    def test_the_brands_default_look_is_chosen_until_another_is_picked(self):
+        """#256: Draw works straight away, with the brand's default."""
         path = self.started(flow='desk', look='pick')
-        result = self.open_deck(path, self.run_of(path), [
+        view = self.run_of(path)
+        offered = view['gate']['offered']
+        self.assertEqual(offered['default'], offered['looks'][0]['id'])
+        result = self.open_deck(path, view, [
+            {'snapshot': 'pause'}, {'click': 'Draw the deck in this look'}],
+            **{'POST /api/desk-look': [ok(view)]})
+        self.assertEqual(self.posts(result), [('/api/desk-look', {
+            'path': path, 'look': offered['default']})])
+        # Without a default, a look is still asked for before anything is sent.
+        bare = copy.deepcopy(view)
+        bare['gate']['offered']['default'] = None
+        result = self.open_deck(path, bare, [
             {'click': 'Draw the deck in this look'}, {'snapshot': 'unpicked'}])
         self.assertIn('Pick a look first.', result['snapshots']['unpicked']['text'])
         self.assertEqual(self.posts(result), [])
+
+    def test_the_looks_are_one_radio_group_for_the_keyboard(self):
+        """#256: one Tab stop; the arrow keys move the choice, and Space picks."""
+        path = self.started(flow='desk', look='pick')
+        view = self.run_of(path)
+        looks = view['gate']['offered']['looks']
+        first, second = looks[0]['name'], looks[1]['name']
+        result = self.open_deck(path, view, [
+            {'snapshot': 'pause'}, {'press': 'ArrowRight', 'on': first}, {'snapshot': 'moved'},
+            {'press': 'ArrowLeft', 'on': second}, {'snapshot': 'back'},
+            {'press': 'End', 'on': first}, {'click': 'Draw the deck in this look'}],
+            **{'POST /api/desk-look': [ok(view)]})
+        shots = result['snapshots']
+        self.assertEqual(shots['pause']['radios'], [[first, 'true', 0], [second, 'false', -1]])
+        self.assertEqual(shots['moved']['radios'], [[first, 'false', -1], [second, 'true', 0]])
+        self.assertEqual(shots['moved']['focus'], second)
+        self.assertEqual(shots['back']['radios'], [[first, 'true', 0], [second, 'false', -1]])
+        self.assertEqual(self.posts(result), [('/api/desk-look', {
+            'path': path, 'look': looks[-1]['id']})])
 
     def test_a_question_and_a_problem_come_before_progress(self):
         path = self.desk_deck()
@@ -2264,6 +2295,160 @@ class OpenOnDeskPageTests(DeskPageCase):
         # A deck on the desk already is not offered it again.
         shot = self.open_deck(path, opened, [{'snapshot': 'again'}])['snapshots']['again']
         self.assertNotIn('Open on the desk', shot['buttons'])
+
+
+APPROVE_TEXT = 'Approve text & design deck'
+
+
+class SlideTextStopTests(DeskPageCase):
+    """#256: the slide text waits for approval, and nothing typed there is dropped; every
+    stop says where the deck is in the words of the button that answers it."""
+
+    def setUp(self):
+        super().setUp()
+        self.engine.content_first = True
+
+    def text_deck(self, **changes) -> tuple[str, dict]:
+        path = self.started(flow='desk', **{'look': 'default', **changes})
+        view = self.run_of(path)
+        self.assertEqual(view['gate']['name'], 'gate:outline')
+        self.assertTrue(view['gate']['content_first'])
+        return path, view
+
+    def test_approve_with_a_typed_change_asks_before_it_drops_it(self):
+        path, view = self.text_deck()
+        typed = 'Make slide 4 title shorter.'
+        steps = [{'fill': 'Changes to slide text', 'value': typed},
+                 {'click': APPROVE_TEXT}, {'snapshot': 'asked'}]
+        dropped = self.open_deck(path, view, [*steps, {'click': 'Approve without them'}],
+                                 **{'POST /api/decide': [ok(view)]})
+        asked = dropped['snapshots']['asked']
+        self.assertIn('You typed a change to the slide text. Send these changes first, or '
+                      'approve without them?', asked['text'])
+        self.assertEqual(asked['posts'], 0, 'nothing is decided before the person chooses')
+        self.assertEqual(asked['focus'], 'Send these changes first')
+        self.assertEqual(self.posts(dropped), [('/api/decide', {
+            'path': path, 'gate': 'gate:outline', 'decision': 'approve', 'note': None,
+            'expected': view['gate']['expected']})])
+        sent = self.open_deck(path, view, [*steps, {'click': 'Send these changes first'}],
+                              **{'POST /api/decide': [ok(view)]})
+        self.assertEqual(self.posts(sent), [('/api/decide', {
+            'path': path, 'gate': 'gate:outline', 'decision': 'changes', 'note': typed,
+            'expected': view['gate']['expected']})])
+
+    def test_approve_is_the_toolbars_filled_action(self):
+        path, view = self.text_deck()
+        shot = self.open_deck(path, view, [{'snapshot': 'text'}])['snapshots']['text']
+        self.assertEqual(shot['toolbar'][0], {'name': APPROVE_TEXT, 'filled': True,
+                                              'quiet': False})
+        self.assertEqual(shot['filled'], [APPROVE_TEXT])
+        self.assertLayout(shot)
+        # Pressed with nothing typed, it approves at once.
+        result = self.open_deck(path, view, [{'click': APPROVE_TEXT}],
+                                **{'POST /api/decide': [ok(view)]})
+        self.assertEqual(self.posts(result), [('/api/decide', {
+            'path': path, 'gate': 'gate:outline', 'decision': 'approve', 'note': None,
+            'expected': view['gate']['expected']})])
+
+    def test_a_one_word_fix_is_approved_with_no_assistant_job(self):
+        from runner.steps import outline as outlines
+        path, view = self.text_deck()
+        slides = view['gate']['slides']
+        fixed = slides[3]['title'] + ' now'
+        result = self.open_deck(path, view, [
+            {'fill': 'Title of slide 4', 'value': fixed}, {'click': APPROVE_TEXT}],
+            **{'POST /api/decide': [ok(view)]})
+        ((address, sent),) = self.posts(result)
+        edited = copy.deepcopy(slides)
+        edited[3]['title'] = fixed
+        self.assertEqual(sent, {'path': path, 'gate': 'gate:outline', 'decision': 'approve',
+                                'note': None, 'expected': view['gate']['expected'],
+                                'extra': {'edited': edited}})
+        # The server takes it as it is sent: the title is saved, and the outline is not
+        # drafted again by an assistant.
+        drafted = len(self.workers.of('outline'))
+        self.post('decide', sent)
+        saved = json.loads((Path(path) / outlines.OUTLINE).read_text(encoding='utf-8'))
+        self.assertEqual(saved['slides'][3]['title'], fixed)
+        self.assertEqual(len(self.workers.of('outline')), drafted)
+        self.assertNotEqual(self.run_of(path)['gate'] and self.run_of(path)['gate']['name'],
+                            'gate:outline')
+
+    def test_the_research_found_is_reached_from_the_slide_text(self):
+        path, view = self.text_deck(research=True)
+        self.assertTrue(view['desk']['research_items'])
+        shot = self.open_deck(path, view, [{'snapshot': 'text'}])['snapshots']['text']
+        lines = shot['text'].split('\n')
+        self.assertIn('What the research found', shot['buttons'])
+        self.assertLess(lines.index('What the research found'), lines.index('Review slide text'))
+
+    def test_every_stop_says_where_it_is_as_its_screen_does(self):
+        path, view = self.text_deck(look='pick')
+        said = {}
+
+        def stop(name, run):
+            brief = next(one for one in self.get('decks')['needs'] if one['path'] == path)
+            shot = self.open_deck(path, run, [{'snapshot': name}])['snapshots'][name]
+            said[name] = (run['sentence'], brief['sentence'],
+                          next(line for line in shot['text'].split('\n')
+                               if line.startswith('From an idea · ')))
+
+        stop('text', view)
+        self.decided(path, 'gate:outline', expected=view['gate']['expected'])
+        looked = self.run_of(path)
+        stop('look', looked)
+        self.post('desk-look', {'path': path, 'look': looked['gate']['offered']['default']})
+        rested = self.run_of(path)
+        stop('desk', rested)
+        self.assertEqual(said, {
+            'text': ('Waiting for you to approve the slide text.',) * 2
+            + ('From an idea · Slide text',),
+            'look': ('Waiting for you to pick the look.',) * 2 + ('From an idea · Look',),
+            'desk': ('Ready to deliver.',) * 2 + ('From an idea · On the desk',)})
+        delivered = self.post('desk-deliver', {'path': path,
+                                               'expected': rested['desk']['expected'],
+                                               'blockers_seen': rested['desk']['blockers_seen']})
+        shot = self.open_deck(path, delivered, [{'snapshot': 'done'}])['snapshots']['done']
+        self.assertIn('From an idea · Delivered', shot['text'])
+
+    def test_a_deck_has_one_waiting_toast_and_none_once_it_is_decided(self):
+        path, view = self.text_deck()
+        listed = self.get('decks')
+        later = copy.deepcopy(listed)
+        later['needs'][0]['sentence'] = 'Waiting for you to pick the look.'
+        decided = copy.deepcopy(listed)
+        decided['working'], decided['needs'] = decided['needs'], []
+        decided['working'][0].update(state='working', sentence='Drawing the deck.', needs=False)
+        first = copy.deepcopy(listed)
+        first['needs'] = []
+        result = self.run_page(self.answers(**{'GET /api/decks': [
+            ok(first), ok(listed), ok(later), ok(decided)]}), [
+            {'snapshot': 'home'}, {'poll': True}, {'snapshot': 'waits'}, {'poll': True},
+            {'snapshot': 'later'}, {'poll': True}, {'snapshot': 'decided'}])
+        shots = result['snapshots']
+        title = listed['needs'][0]['title']
+        self.assertEqual(shots['waits']['toasts'],
+                         [title + ': Waiting for you to approve the slide text.'])
+        # The newer waiting line takes the place of the earlier one; once nothing waits, the
+        # deck's toast goes.
+        self.assertEqual(shots['later']['toasts'], [title + ': Waiting for you to pick the look.'])
+        self.assertEqual(shots['decided']['toasts'], [])
+
+    def test_the_badge_and_the_greeting_count_the_same(self):
+        setup = self.get('setup')
+        upkeep = {**(setup.get('upkeep') or {}), 'versions': {'key': 'newer', 'dismissed': False,
+                                                            'rows': []}}
+        answers = self.answers(**{'GET /api/setup': [ok({**setup, 'upkeep': upkeep})]})
+        home = self.run_page(answers, [{'snapshot': 'home'}])['snapshots']['home']
+        self.assertIn('Nothing needs you right now.', home['text'])
+        self.assertEqual(home['badge'], '')
+        self.assertFalse(home['title'].startswith('('))
+        self.text_deck()
+        answers = self.answers(**{'GET /api/setup': [ok({**setup, 'upkeep': upkeep})]})
+        home = self.run_page(answers, [{'snapshot': 'home'}])['snapshots']['home']
+        self.assertIn('One thing needs you.', home['text'])
+        self.assertEqual(home['badge'], '1 thing needs you')
+        self.assertTrue(home['title'].startswith('(1) '))
 
 
 class MigrationPageTests(DeskPageCase):

@@ -772,14 +772,35 @@ function calm() {
 }
 
 // A short message that slides in at the bottom right, is read out, and leaves by itself.
-// It is kept clear of the toolbar, so it never covers the main thing to do.
-function toast(text) {
+// It is kept clear of the toolbar, so it never covers the main thing to do. A toast with a
+// key (a deck's own, such as what it waits for) takes the place of the one before it with
+// that key, and is let go once what it says is no longer so. No more than TOASTS_SHOWN are
+// on the screen at once: the oldest leaves first.
+const TOASTS_SHOWN = 2;
+
+function toast(text, key) {
+  if (key) dropToast(key);
   const node = make('p', 'toast glass', text);
-  byId('toasts').append(node);
-  window.setTimeout(() => {
-    node.classList.add('toast-leaving');
-    window.setTimeout(() => node.remove(), calm() ? 0 : 260);
-  }, 4200);
+  if (key) node.dataset.toast = key;
+  const holder = byId('toasts');
+  holder.append(node);
+  const shown = Array.from(holder.children)
+    .filter((one) => !one.classList.contains('toast-leaving'));
+  for (const old of shown.slice(0, Math.max(0, shown.length - TOASTS_SHOWN))) toastLeaves(old);
+  window.setTimeout(() => toastLeaves(node), 4200);
+}
+
+function toastLeaves(node) {
+  if (!node.parentNode || node.classList.contains('toast-leaving')) return;
+  node.classList.add('toast-leaving');
+  window.setTimeout(() => node.remove(), calm() ? 0 : 260);
+}
+
+// The toast with this key, gone at once: what it said is no longer so.
+function dropToast(key) {
+  for (const node of Array.from(byId('toasts').children)) {
+    if (node.dataset && node.dataset.toast === key) node.remove();
+  }
 }
 
 // --- copying ----------------------------------------------------------------------
@@ -1115,11 +1136,12 @@ function focusKey(key) {
   return false;
 }
 
-// The tab's title leads with how many things need the person, so it shows from another tab.
-// Versions Home tells of count as one more thing.
+// The tab's title leads with how many decks need the person, so it shows from another tab.
+// It counts what Home's greeting counts: decks only. Versions Home tells of are a notice of
+// their own, not a thing that needs you.
 function setTitle(name) {
   if (name !== undefined) view.named = name;
-  const needs = view.needs + (versionsNotice() ? 1 : 0);
+  const needs = view.needs;
   const waiting = needs ? '(' + needs + ') ' : '';
   document.title = waiting + (view.named ? view.named + ' · ' : '') + 'Presentation Studio';
   const badge = byId('needs-count');
@@ -3421,7 +3443,7 @@ async function startDeck(pressed, how) {
   view.draft = null;
   view.sheet = '';
   drawSheet();
-  toast('Started. It is working on its own now.');
+  toast('Started. It is working on its own now.', deckToast(started.path));
   show('deck', { path: started.path }, true);
   refresh();
 }
@@ -5937,7 +5959,8 @@ async function decide(decision, note, problem, pressed, extra) {
   view.barred = '';
   paintDeck(false);
   toast(decision === 'approve' ? 'Approved. It carries on by itself. ' + CLOSE
-    : 'Your changes are noted. Once they are made, it comes back to you.');
+    : 'Your changes are noted. Once they are made, it comes back to you.',
+  deckToast(answered.path || view.path));
   window.scrollTo(0, 0);
   byId('title').focus({ preventScroll: true });
   refresh();
@@ -7452,6 +7475,11 @@ function waitingKey(brief) {
   return brief.path + '\n' + brief.sentence;
 }
 
+// The key of a deck's own toast: Started, then what it waits for, each in place of the last.
+function deckToast(path) {
+  return 'deck\n' + path;
+}
+
 // Tell the person, once, about each new thing that needs them. A notification that is
 // clicked opens the deck it was about.
 function took(found) {
@@ -7471,10 +7499,15 @@ function took(found) {
   }
   view.noticed = noticed;
   const keys = waiting.map(waitingKey);
+  // A deck's toast says what it waits for now: one that no longer waits, or waits for
+  // something else, lets its earlier toast go.
+  for (const key of view.known || []) {
+    if (!keys.includes(key)) dropToast(deckToast(key.split('\n')[0]));
+  }
   for (const brief of view.known ? waiting : []) {
     if (view.known.includes(waitingKey(brief))) continue;
     const said = (brief.title || 'Untitled') + ': ' + brief.sentence;
-    toast(said);
+    toast(said, deckToast(brief.path));
     if (alerts() !== 'granted') continue;
     try {
       const note = new Notification('Presentation Studio needs you',
@@ -7728,7 +7761,7 @@ function deskParts() {
     view, make, add, count, list, series, lower, capital, spoken, given, card, bullets, callout,
     state, button, capsule, chip, field, refuse, choice, explained, segmented, pickCard, oneOf,
     moreMenu, submitButton, alertLine, problemLine, say, outLink, pageHead, focusKey, byId,
-    send, ask, toast, notify, show, refresh, placeParts, fit, tidyPictures, pager, slideName,
+    send, ask, toast, dropToast, deckToast, notify, show, refresh, placeParts, fit, tidyPictures, pager, slideName,
     // A slide's picture, fetched with this page's key and held in memory: `image` is what the
     // server names it by, and `mark` changes when a newer one is drawn.
     picture: (image, alt, mark) => pictureAt(pictureOf(view.path, image), alt, mark),

@@ -26,7 +26,12 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
    await page.waitForFunction(()=>!document.querySelector('textarea').disabled);
    assert.deepEqual(calls.pop(),{kind:'changes',note:'Shorten the first slide.'});
    if(process.env.SLIDE_TEXT_UI_RESULTS){fs.mkdirSync(process.env.SLIDE_TEXT_UI_RESULTS,{recursive:true});await page.screenshot({path:path.join(process.env.SLIDE_TEXT_UI_RESULTS,'slide-text-'+width+'.png'),fullPage:true});}
+   // The change is still typed: Approve asks before it drops it, and sends nothing yet.
    await page.getByRole('button',{name:'Approve text & design deck',exact:true}).click();
+   await page.getByText('Send these changes first, or approve without them?').waitFor();
+   assert.equal(calls.length,0,'Approve with a typed change asks first');
+   assert.equal(await page.evaluate(()=>document.activeElement.textContent),'Send these changes first');
+   await page.getByRole('button',{name:'Approve without them',exact:true}).click();
    await page.waitForFunction(()=>!document.querySelector('textarea').disabled);
    assert.deepEqual(calls.pop(),{kind:'approve',note:null});assert.deepEqual(errors,[]);
    await page.close();
