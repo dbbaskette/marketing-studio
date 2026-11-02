@@ -9,15 +9,19 @@ changes for authors first, then what changes for maintainers.
   desk and in a GEO report, it now points out a claim missing the date, version, unit,
   region or audience needed to read it (and a measurement missing its method or sample),
   what the author observed against what others found, the conditions and tradeoffs after
-  a direct answer, vague headings and procedures that want numbered steps, charts and
-  video whose point is not in the text, old product names with no word on the current
-  one, and pricing, version or setup facts with no "as of" date. Decision support (who an
-  option suits, its limits, a next step) is suggested only where it fits. Each finding is
-  a located proposal to preview, then apply or skip; a missing date or baseline is asked
+  a direct answer, procedures that want numbered steps, charts and video whose point is
+  not in the text, old product names with no word on the current one, and, where it
+  matters, pricing, version or setup facts with no "as of" date. Decision support (who an
+  option suits, its limits, a next step) is suggested only where it fits. Each change is a
+  located proposal to preview, then apply or skip. A vague heading, which a change cannot
+  edit, is named with a clearer one in the review's advice, and so is any detail only the
+  author can supply (a date, a current name, what a chart or video shows): it is asked
   for, never invented, and a date is never refreshed without a change of facts. The FAQ,
   key takeaways and the other additions are described as aids for readers: none is said
-  to earn citations or rankings. Maintainers: `blog-geo-review.md` (with its primary
-  sources) and `manuscript_editor.CHECKS['geo']`.
+  to earn citations or rankings. Finishing's group of them is now **Reader aids and AI
+  search** (it was Improve discovery), and Tools' **Improve clarity for readers and AI
+  search** replaces the older citation readiness wording. Maintainers:
+  `blog-geo-review.md` (with its primary sources) and `manuscript_editor.CHECKS['geo']`.
 
 - **A GEO report for a published post (#277).** **Get a GEO report for a published post**,
   on Home and in New blog, takes a link, shows the page read only, and starts one job on
@@ -59,7 +63,7 @@ changes for authors first, then what changes for maintainers.
   `headers`.
 
 - **GEO additions on request, and a GEO review for each post that asks for one (#276).**
-  Finishing's **Improve discovery** group adds an FAQ, key takeaways, a comparison table,
+  Finishing's **Reader aids and AI search** group adds an FAQ, key takeaways, a comparison table,
   quotes from sources, image alt text, likely search questions and a definition-style
   opening, each a proposal previewed, then applied or skipped. An FAQ (3 to 6 questions)
   and key takeaways are sections you place, choosing and editing each question or point

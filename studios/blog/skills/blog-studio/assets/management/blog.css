@@ -208,7 +208,7 @@
 .desk-suggestion-summary{padding:.7rem 1.2rem;border-bottom:1px solid var(--hair)}
 .desk-suggestion-summary>p{margin:0 0 .35rem}
 
-/* Improve discovery: an FAQ or key takeaways chosen row by row (opaque, like any form), the
+/* Reader aids and AI search: an FAQ or key takeaways chosen row by row (opaque, like any form), the
    post's Include a GEO review choice after the group's tools, and a kept meta description. */
 .desk-section-rows{display:grid;gap:.7rem;min-width:0}
 .desk-section-row{display:grid;gap:.35rem;min-width:0;padding:.7rem;border:1px solid var(--hair);border-radius:12px;background:var(--paper)}

@@ -64,6 +64,9 @@ RESULT = {
 }
 
 
+HEADING_ADVICE = 'Rename “How it works” to “How a retry budget counts retries”.'
+
+
 class ReportCase(RouteCase):
     def site(self, html=None):
         site = Site()
@@ -248,6 +251,7 @@ class ReportTests(ReportCase):
                         'help': 'A reader knows which release the limit describes.',
                     }
                 ],
+                'summary': HEADING_ADVICE,
                 'sources_needed': [
                     {
                         'part': 'opening',
@@ -266,12 +270,14 @@ class ReportTests(ReportCase):
         for words in GUIDELINES + KEPT:
             self.assertIn(words, guidance)
         self.assertIn('a dated source with the baseline', guidance)
+        self.assertIn('a vague heading named\n  with a clearer one goes here', guidance)
         shown = self.get('geo-report', id=made['id'])
         self.assertEqual(shown['status'], 'ready')
         change = shown['recommendations'][0]
         self.assertEqual(change['kind'], 'change')
         self.assertEqual(change['help'], 'A reader knows which release the limit describes.')
         self.assertTrue(change['flag'], 'a version the post did not have waits to be checked')
+        self.assertEqual(shown['advice'], HEADING_ADVICE, 'heading advice is kept, not dropped')
         self.assertEqual(
             shown['sources_needed'][0]['kind'], 'a dated source for the limit and its version'
         )
@@ -281,6 +287,7 @@ class ReportTests(ReportCase):
         geo = self.get('desk', id=article)['finishing']['geo']
         item = geo['items'][0]
         self.assertEqual((item['state'], item['before']), ('open', 'retries per minute.'))
+        self.assertEqual(geo['summary'], HEADING_ADVICE)
         held = studio._HELD.set(True)
         self.addCleanup(studio._HELD.reset, held)
         desk_finish.skip(self.root, article, geo['job'], [item['id']])

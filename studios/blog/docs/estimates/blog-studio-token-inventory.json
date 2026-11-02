@@ -284,9 +284,9 @@
       "sha256": "0089bf45e07181335aca4891faf3f84e649e3a4d9729b3ea2300fc294f26c301"
     },
     "references/modules/blog-geo-review.md": {
-      "characters": 3807,
-      "estimated_tokens": 952,
-      "sha256": "2287346163692843016f44830c23494fe59df48241cd467597dc5f488b49a654"
+      "characters": 4136,
+      "estimated_tokens": 1034,
+      "sha256": "ec88b97adccdf54f37e8ed07b740de1539aae90d59749d2894bd86c5d3019b3a"
     },
     "references/modules/blog-google-export.md": {
       "characters": 3640,
@@ -389,9 +389,9 @@
       "sha256": "f3bb6d6da0b03de1e6d767bfd92f2845014dd74ad4c6910241adbcbe42dd9a25"
     },
     "references/page-tools.md": {
-      "characters": 7532,
-      "estimated_tokens": 1883,
-      "sha256": "1137d625531ff8d59e6a61cc063930baffd52cbf054b7b2fa5bd4caf41d2f015"
+      "characters": 7535,
+      "estimated_tokens": 1884,
+      "sha256": "ee60e960e7a95dc9941c2f77591f1cdfcbe41dba48416c78fe03db2852fc9310"
     },
     "references/privacy.md": {
       "characters": 4170,
@@ -809,7 +809,7 @@
       "sha256": "4c95901507d60239adadfec8ddd4001a409a52b5c5f7bf20b49bb10a79890142"
     }
   },
-  "library_tokens": 229270,
+  "library_tokens": 229353,
   "routes": {
     "outline_with_sources": {
       "files": [
@@ -894,7 +894,7 @@
         "references/conversation-desk.md"
       ],
       "scenario": "Saved article with selected evidence/voice; five requested feedback checks and stored coverage, without rewriting or an optional deep humanization rubric.",
-      "estimated_tokens": 9246
+      "estimated_tokens": 9328
     },
     "quick_polish": {
       "files": [

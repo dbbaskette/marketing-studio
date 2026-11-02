@@ -1,4 +1,4 @@
-"""Improve discovery on the desk: GEO additions on request, each previewed then applied or
+"""Reader aids and AI search on the desk: GEO additions on request, each previewed then applied or
 skipped, and a post's own Include a GEO review choice. Fake workers only; no provider runs."""
 
 import isolation  # noqa: F401  (first: keeps every test off this computer's own settings)
@@ -30,9 +30,11 @@ GUIDELINES = (
     'summarizes an embedded video',
     'Renamed products and aliases',
     '"as of" date',
-    'Never suggest refreshing a date without changing the facts',
+    'Where it matters',
+    'refreshing a date without changing the facts',
     'Decision support, where it fits',
     'Do not force these on a post they do not fit',
+    'you cannot see\nimages or video. Otherwise say in summary what the author needs to supply',
     'an aid for readers',
     'never present it as earning citations or rankings',
     'What Drives AI Citations?',
@@ -51,7 +53,12 @@ PROMISE = re.compile(
     r'\W+(?:\w+\W+){0,3}?(?:citations?|cited|rankings?|ranks?)\b',
     re.I,
 )
-CLAIM = 'The cache cuts costs by 40%. Pricing starts at $20 a month.'
+CLAIM = 'The cache cuts costs by 40%. Teams see fewer timeouts. Pricing starts at $20 a month.'
+PILOT = (
+    'Synthetic pilot report. In the 2025 pilot of 12 teams, the cache cut cloud costs by 40% '
+    'against the 2024 bill. Teams in the pilot reported fewer timeouts.'
+)
+CONTEXT = 'In the 2025 pilot of 12 teams, the cache cut cloud costs by 40% against the 2024 bill.'
 
 POST = """# A synthetic title
 
@@ -553,57 +560,74 @@ class GuidelineTests(AdditionCase):
             self.assertIn(words, guidance)
         self.assertIn('"as of" dates on time-sensitive facts', guidance, 'the check says it too')
         self.assertIn('the date or baseline a claim needs', guidance)
-        # Improve discovery's additions read the same guidance: each an aid for readers.
+        self.assertIn('research, authority, experience, facts', guidance)
+        # The Reader aids and AI search additions read the same guidance: each an aid for readers.
         job = self.queue('takeaways')
         for words in GUIDELINES + KEPT:
             self.assertIn(words, job['guidance'])
 
     def test_a_claim_missing_its_context_is_a_located_proposal_to_apply_or_skip(self):
         desk.save(self.root, self.ident, self.draft()['revision'], self.first, CLAIM)
+        desk.add_sources(self.root, self.ident, {'sources': [self.source(PILOT)]})
         self.seen = self.draft()['revision']
+        # The context comes from the supplied source; the price has none, so the missing
+        # "as of" date is asked for in summary rather than written in.
+        missing = 'Pricing starts at $20 a month needs an "as of" date: ask the author for it.'
         job, (payload, _, _) = self.run_geo(
             {
                 'suggestions': [
                     {
                         'part': self.first,
                         'before': 'The cache cuts costs by 40%.',
-                        'after': 'In our March 2026 pilot, the cache cut costs by 40% against '
-                        'the previous quarter.',
-                        'why': 'Claim context: gives the period and baseline.',
+                        'after': CONTEXT,
+                        'why': 'Claim context: the period, sample and baseline from the source.',
                     },
                     {
                         'part': self.first,
-                        'before': 'Pricing starts at $20 a month.',
-                        'after': 'As of March 2026, pricing starts at $20 a month.',
-                        'why': 'Time-sensitive: an "as of" date.',
+                        'before': 'Teams see fewer timeouts.',
+                        'after': 'Teams in the pilot reported fewer timeouts.',
+                        'why': 'Borrowed: says who observed it.',
                     },
                 ],
-                'summary': 'Name the source of the 40% saving.',
+                'summary': missing,
             }
         )
         self.assertIn(CLAIM, json.dumps(payload))
+        self.assertIn(PILOT, json.dumps(payload['sources']), 'the worker has the source')
         shown = self.shown('geo')
         self.assertEqual(self.draft()['sections'][0]['text'], CLAIM, 'nothing applied by itself')
-        self.assertEqual(shown['summary'], 'Name the source of the 40% saving.')
-        context, dated = shown['items']
+        self.assertEqual(shown['summary'], missing)
+        context, borrowed = shown['items']
         self.assertEqual((context['part'], context['state']), (self.first, 'open'))
         self.assertEqual(context['before'], 'The cache cuts costs by 40%.')
-        self.assertEqual(context['note'], 'Claim context: gives the period and baseline.')
-        self.assertTrue(context['flag'], 'a date the post did not have waits to be checked')
-        self.assertTrue(dated['flag'])
-        self.act('skip', job=job['id'], items=[dated['id']])
+        self.assertEqual(context['after'], CONTEXT)
+        self.assertEqual(borrowed['state'], 'open')
+        self.act('skip', job=job['id'], items=[borrowed['id']])
         self.act('apply', seen=self.seen, job=job['id'], items=[{'id': context['id']}])
         self.assertEqual(
             self.draft()['sections'][0]['text'],
-            'In our March 2026 pilot, the cache cut costs by 40% against the previous quarter. '
-            'Pricing starts at $20 a month.',
+            CONTEXT + ' Teams see fewer timeouts. Pricing starts at $20 a month.',
         )
         states = {item['id']: item['state'] for item in self.shown('geo')['items']}
-        self.assertEqual(states, {context['id']: 'applied', dated['id']: 'skipped'})
+        self.assertEqual(states, {context['id']: 'applied', borrowed['id']: 'skipped'})
+
+    def test_a_vague_heading_is_advice_in_summary_since_a_change_cannot_edit_it(self):
+        advice = 'Rename the heading “Second part” to “How the parser reads input”.'
+        _, (_, guidance, _) = self.run_geo({'suggestions': [], 'summary': advice})
+        self.assertIn('a vague heading named with a clearer one', guidance)
+        self.assertIn('a change cannot edit a heading', guidance)
+        shown = self.shown('geo')
+        self.assertEqual((shown['summary'], shown['items'], shown['dropped']), (advice, [], 0))
+        # A heading offered as a text change cannot be placed: the text holds no heading.
+        heading = self.draft()['sections'][1]['heading']
+        job = self.queue('geo')
+        self.ready(job, {'suggestions': [{'part': self.second, 'before': heading, 'after': 'X'}]})
+        self.assertEqual((self.shown('geo')['items'], self.shown('geo')['dropped']), ([], 1))
 
     def test_no_geo_words_a_person_reads_promise_citations_or_rankings(self):
         for path in (
             SKILL / 'assets/management/desk.js',
+            SKILL / 'assets/management/runner.js',
             SKILL / 'scripts/desk_finish.py',
             SKILL / 'scripts/geo_report.py',
         ):

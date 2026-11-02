@@ -1,4 +1,4 @@
-# Retrieval and citation readiness capability
+# Retrieval readiness and clarity capability
 
 Keep private inputs in the user's existing harness and selected private hub.
 Apply [data boundaries](../privacy.md) before research, media, or document
@@ -19,18 +19,23 @@ Also check, locating each finding in the passage it concerns:
   others found, and a borrowed fact links to its original source.
 - **Conditions and tradeoffs.** After a direct answer, the conditions and
   tradeoffs that limit it follow.
-- **Headings and steps.** Suggest a descriptive heading for a vague one
-  ("Overview", "More", "Details") and numbered steps where a section describes a
-  procedure.
+- **Headings and steps.** Name a vague heading ("Overview", "More", "Details")
+  with a clearer one as advice, since a change cannot edit a heading, and suggest
+  numbered steps where a section describes a procedure.
 - **Media in text.** Beyond alt text, nearby text states a chart's or figure's key
   point and summarizes an embedded video's important information.
 - **Renamed products and aliases.** An old name or alias says how it relates to the
   current name.
-- **Time-sensitive facts.** Pricing, compatibility, version and setup claims carry
-  an "as of" date. Never suggest refreshing a date without changing the facts.
+- **Time-sensitive facts.** Where it matters, pricing, compatibility, version and
+  setup claims carry an "as of" date; stable steps need none. Never suggest
+  refreshing a date without changing the facts.
 - **Decision support, where it fits.** Who an option suits and who it does not,
   its limitations, a comparison's method and date, and a useful next step or
   related link. Do not force these on a post they do not fit.
+
+Write any added detail (a date, a current name, a chart's or video's point, who
+observed something, a link) only from the post and its sources; you cannot see
+images or video. Otherwise say in summary what the author needs to supply.
 
 A concise definition, takeaway, FAQ, comparison table, follow-up answer, or
 self-contained explanation is an aid for readers: suggest one only when it helps

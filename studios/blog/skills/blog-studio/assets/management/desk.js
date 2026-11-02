@@ -893,7 +893,7 @@ const DESK_TOOLS=[
   {key:'voice',name:'Apply a voice',says:'The draft rewritten in one of your voice guides, section by section. Its facts, quotes, links and shape are kept.',run:'Apply the voice',doing:'Rewriting the draft in the voice guide, section by section…',opened:held=>sDeskGuides(held),options:(held,f)=>sDeskVoiceOptions(held,f),data:f=>({guide:f.guide}),ready:f=>!!f.guide,applyAll:true,counted:[' part rewritten',' parts rewritten'],empty:'Nothing to change: the draft already reads in this voice.',said:(set,said)=>{if(set.guide_name)said.unshift('In the voice of '+set.guide_name);if(set.kept)said.push(set.kept+(set.kept===1?' part already reads':' parts already read')+' in this voice');},flagged:flagged=>flagged+(flagged===1?' part that changes a fact, code or the part’s shape is':' parts that change a fact, code or a part’s shape are')+' left for you to check one by one.'},
   {key:'publish',name:'Before publishing',says:'The pre-publish check, the GEO review, Repurpose, and Send to Google Doc as suggestions.',view:held=>sDeskPublishView(held)},
 ];
-for(const tool of DESK_TOOLS)tool.group=({copyedit:'Polish the writing',humanize:'Polish the writing',proofread:'Check before sharing',facts:'Check claims',geo:'Improve discovery',faq:'Improve discovery',takeaways:'Improve discovery',table:'Improve discovery',quotes:'Improve discovery',opener:'Improve discovery',alt:'Improve discovery',queries:'Improve discovery',headline:'Shape and voice',feedback:'Shape and voice',voice:'Shape and voice',publish:'Send and download'})[tool.key];
+for(const tool of DESK_TOOLS)tool.group=({copyedit:'Polish the writing',humanize:'Polish the writing',proofread:'Check before sharing',facts:'Check claims',geo:'Reader aids and AI search',faq:'Reader aids and AI search',takeaways:'Reader aids and AI search',table:'Reader aids and AI search',quotes:'Reader aids and AI search',opener:'Reader aids and AI search',alt:'Reader aids and AI search',queries:'Reader aids and AI search',headline:'Shape and voice',feedback:'Shape and voice',voice:'Shape and voice',publish:'Send and download'})[tool.key];
 // One Finishing tool, by its key.
 function deskTool(key){return DESK_KIT.tool(key);}
 const DESK_LEVELS=[['light','Light'],['medium','Medium'],['strong','Strong']];
@@ -1031,7 +1031,7 @@ function sDeskGeoCard(held){
 }
 // Run GEO review: one explicit job, then the GEO review opens to follow it.
 async function sDeskRunGeo(held,button){await sDeskJob(held,button,'desk-finish',{tool:'geo'});if(held.finish&&held.view.working?.kind==='finish-geo')sDeskFinishTool(held,'geo');}
-// Include a GEO review, the post's own choice, shown after the Improve discovery tools.
+// Include a GEO review, the post's own choice, shown after the Reader aids and AI search tools.
 const DESK_GEO_SAYS='Once the full draft is written, one GEO review runs as part of this post’s work, and its proposals wait in Finishing for you to preview, then apply or skip. Off, nothing GEO runs by itself. You can run one at any time.';
 function sDeskGeoChoice(held){
   const state={on:!!held.view.geo_review?.include};
@@ -1874,8 +1874,8 @@ const DESK_KIT=Drafting.kit({
     // Review mode's paragraph editor saves before the parts typing left waiting.
     beforeFlush:held=>held.review?.editing?.dirty?sReviewSave(held):undefined,
     finishClosed:held=>sDeskReturnFocus(held),
-    // Include a GEO review, the post's own choice, after the Improve discovery tools.
-    groupAfter:(held,group)=>group==='Improve discovery'?sDeskGeoChoice(held):null,
+    // Include a GEO review, the post's own choice, after the Reader aids and AI search tools.
+    groupAfter:(held,group)=>group==='Reader aids and AI search'?sDeskGeoChoice(held):null,
     noteTarget:(held,item)=>{if(held.reading==='full')return false;const section=held.view.sections.find(row=>row.id===item.part);held.reading=section?'edit':'full';if(section)held.activePart=section.id;sDeskViewUrl(held);return true;},
     saved:(held,part,text)=>sDeskSaved(held,part,text),
     versionNote:version=>deskVersionNote(version),

@@ -27,7 +27,7 @@ TOOLS = {
     'finish-feedback': 'feedback',
     'finish-voice': 'voice',
     'finish-geo': 'geo',
-    # Improve discovery's additions on request (GEO): each one a proposal, never applied by itself.
+    # Reader aids and AI search additions on request (GEO): each one a proposal, never applied by itself.
     'finish-faq': 'faq',
     'finish-table': 'table',
     'finish-quotes': 'quotes',
@@ -1187,10 +1187,12 @@ def request(root, ident, draft, tool, level=None, guide=None, count=None):
         guidance += _reference('modules', 'blog-geo-review.md') + '\n\n' + shared + said
         guidance += (
             '\nPropose only changes requested by this GEO review. Invent no evidence, '
-            'research, authority, facts, links or approval. Preserve qualifiers and images. '
-            'Return JSON with suggestions [{part, before, after, why}] and an optional '
-            'summary string for advice without an edit, such as the date or baseline a '
-            'claim needs when no supplied evidence gives it. before must occur once in its '
+            'research, authority, experience, facts, links or approval. Preserve qualifiers '
+            'and images. Return JSON with suggestions [{part, before, after, why}] and an '
+            'optional summary string for advice without an edit, such as the date or '
+            'baseline a claim needs when no supplied evidence gives it, or a vague heading '
+            'named with a clearer one (a suggestion cannot change a heading, only the text '
+            'under it). before must occur once in its '
             'part. Changes are proposals the person previews before applying; do not '
             'return rewritten files. Empty suggestions means no changes.'
         )
@@ -1534,7 +1536,7 @@ def _read_geo(draft, found):
     return items, dropped, extra
 
 
-# Improve discovery's additions, each on request: an FAQ or key takeaways as a new section, a
+# Reader aids and AI search additions, each on request: an FAQ or key takeaways as a new section, a
 # comparison table or a quotation from a source after a paragraph, alt text for an image that
 # has none, a definition-style opening, and likely search questions (advice only). Each is a
 # proposal the person previews, then applies or skips; nothing is applied by itself. Each
@@ -1687,7 +1689,7 @@ def _found_section(draft, pattern):
 
 
 def _addition(root, ident, draft, tool, extra, shared_words, count):
-    """The payload, guidance and job details for one of Improve discovery's additions."""
+    """The payload, guidance and job details for one of the Reader aids and AI search additions."""
     import desk_jobs
 
     research, said = desk_jobs._research_extra(root, ident)

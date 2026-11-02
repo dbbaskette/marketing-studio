@@ -44,7 +44,7 @@ these options. Opening a tool starts no model, research or Google write.
   result and save a named copy separately. Counts are actual editorial counts,
   not verified platform limits. Nothing posts or schedules. Missing URLs stay
   marked. Saved copies and interrupted/failed tasks reopen from Tools.
-- **Clarity and citation readiness / title and opening:** prepare located
+- **Clarity for readers and AI search / title and opening:** prepare located
   suggestions in the existing editor. Choose one alternative per passage, adjust
   it, and explicitly save selected edits. No invented evidence or automatic CTA.
 - **Open as a Google Doc:** on Done for an older run, or **Make a Google Doc** on the

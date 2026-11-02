@@ -61,7 +61,9 @@ Return one JSON object in content, with no score, grade or ranking promise, shap
   "names the product the same way throughout"; help is one sentence saying how the change
   helps a reader or an assistant. Keep every qualifier, number, link and quotation the
   passage has. Empty suggestions means no changes.
-- summary: one or two sentences of advice that needs no edit, or "".
+- summary: one or two sentences of advice that needs no edit, or "": a vague heading named
+  with a clearer one goes here, since a suggestion cannot change a heading, as does a
+  detail the author must supply (a date, a current name, what a chart or video shows).
 - faq: {"questions": [{"question", "answer"}], "closing_cta", "summary"} as below.
 - takeaways: {"takeaways": ["..."], "summary"} as below.
 - tables: [{"part", "after_text", "table", "why"}] as below, or [] where the post compares
