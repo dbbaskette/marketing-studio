@@ -81,6 +81,10 @@ lays out slides or supplies material to build from.
 
 ## Work on the desk
 
+Available tools depend on the existing-deck mode. Brand only and Polish keep slide
+wording locked. Selected changes preserves speaker notes and does not offer earlier
+slide restoration; it patches a copy of the original deck.
+
 - **Words and speaker notes:** edit where you read them. Notes do not redraw slides.
   Words that cannot fit the existing drawing need your decision before a redraw.
 - **Slide notes:** explain what should change. A redraw affects that slide’s section;
