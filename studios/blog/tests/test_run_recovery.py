@@ -780,7 +780,8 @@ class UnreachableServiceTests(MeteredWorkerTests):
         self.assertIn('Codex could not reach OpenAI', str(self.failure('codex')))
         self.assertEqual(self.looked.call_args.args[0], 'api.openai.com')
 
-    def test_claude_code_that_could_not_connect_says_so(self):
+    def test_claude_code_that_could_not_connect_says_so_when_the_look_confirms_it(self):
+        self.found = ('unreachable', 'it did not answer within 4 seconds')
         self.claude('API Error: Connection error.')
         failure = self.failure('claude')
         self.assertEqual(
@@ -790,6 +791,13 @@ class UnreachableServiceTests(MeteredWorkerTests):
         )
         self.assertEqual(failure.said, ['API Error: Connection error.'])
         self.assertEqual(self.looked.call_args.args[0], 'api.anthropic.com')
+        # When this network lets the service through, it is not blamed.
+        self.found = None
+        self.assertEqual(
+            str(self.failure('claude')),
+            'Claude Code lost its connection to Anthropic before it finished. Try again in a '
+            'moment.',
+        )
 
     def test_claude_code_with_an_untrusted_certificate_says_so_from_either_ending(self):
         self.found = ('intercepted', 'unable to get local issuer certificate')
@@ -805,8 +813,52 @@ class UnreachableServiceTests(MeteredWorkerTests):
 
     def test_a_look_at_the_network_that_fails_still_says_it_could_not_connect(self):
         self.looked.side_effect = RuntimeError('synthetic')
-        self.claude('API Error: Connection error.')
+        self.claude('API Error: Unable to connect to API (SELF_SIGNED_CERT_IN_CHAIN)')
         self.assertIn('Claude Code could not reach Anthropic', str(self.failure('claude')))
+        self.codex(CODEX_CUT_OFF)
+        self.assertIn('Codex could not reach OpenAI from this network', str(self.failure('codex')))
+
+    def test_a_dropped_or_refused_connection_is_blamed_on_this_network_only_when_looked(self):
+        for said in (
+            'ERROR: Reconnecting... 5/5 (stream disconnected before completion: error sending '
+            'request for url (https://chatgpt.com/backend-api/codex/responses))',
+            'ERROR: unexpected status 502 Bad Gateway: connection reset by peer',
+        ):
+            with self.subTest(said=said):
+                self.found = None
+                self.codex(said)
+                self.assertEqual(
+                    str(self.failure('codex')),
+                    'Codex lost its connection to OpenAI before it finished. Try again in a '
+                    'moment.',
+                )
+                self.found = ('unreachable', 'it did not answer within 4 seconds')
+                self.assertEqual(
+                    str(self.failure('codex')),
+                    'Codex could not reach OpenAI from this network. '
+                    + OTHER_NETWORK.format('Claude Code'),
+                )
+
+    def test_words_about_certificates_or_connections_in_writing_are_not_errors(self):
+        self.found = ('intercepted', 'self-signed certificate in certificate chain')
+        for agent, make, said in (
+            (
+                'claude',
+                self.claude,
+                'I could not finish: the outline about certificate pinning needs a source.',
+            ),
+            ('claude', self.claude, 'Error: the outline about certificate pinning needs a source.'),
+            (
+                'codex',
+                self.codex,
+                'codex\nError: connect ECONNREFUSED 127.0.0.1:5432 means the database is down.\n'
+                'ERROR: the model returned an empty response',
+            ),
+        ):
+            with self.subTest(said=said):
+                make(said)
+                self.assertIn('Check its sign-in and usage under Status', str(self.failure(agent)))
+        self.looked.assert_not_called()
 
     def test_sign_in_and_usage_problems_keep_their_advice(self):
         for agent, make, said in (
@@ -887,17 +939,20 @@ class ErrorLineTests(unittest.TestCase):
     """Which of a failed run's lines are its own error lines, and what they say."""
 
     def test_only_lines_the_cli_marked_as_errors_are_read(self):
-        lines = [
+        lines = blog_worker.reachability.error_lines
+        codex = [
             'ERROR: workspace routing discovery failed',
             '[2026-11-02T10:00:00] ERROR: stream disconnected',
             '2026-11-02T10:00:00.123Z ERROR codex_core::client: error sending request',
-            'API Error: Connection error.',
-            'Error: connect ECONNREFUSED',
+        ]
+        claude = ['API Error: Connection error.', 'Error: connect ECONNREFUSED']
+        written = [
             'warning: workspace routing discovery failed',
             'The error was a connection refused.',
             'thinking about the certificate',
         ]
-        self.assertEqual(blog_worker.reachability.error_lines(lines), lines[:5])
+        self.assertEqual(lines(codex + claude + written, 'codex'), codex)
+        self.assertEqual(lines(claude + written, 'claude'), claude)
 
     def test_what_the_error_lines_say(self):
         failure = blog_worker.reachability.connection_failure
@@ -906,11 +961,14 @@ class ErrorLineTests(unittest.TestCase):
         self.assertIsNone(failure(['ERROR: Reconnecting... 2/5 (stream disconnected)']))
         self.assertEqual(
             failure(['ERROR: Reconnecting... 5/5 (stream disconnected: error sending request)']),
-            'network',
+            'dropped',
         )
+        self.assertEqual(failure(['ERROR: failed to connect to chatgpt.com:443']), 'dropped')
+        self.assertEqual(failure(['Error: certificate verify failed']), 'network')
+        self.assertIsNone(failure(['Error: the certificate pinning section needs a source']))
         self.assertIsNone(failure(['ERROR: unexpected status 401 Unauthorized']))
         self.assertIsNone(failure(['ERROR: connection refused', 'ERROR: usage limit reached']))
-        self.assertEqual(failure(['ERROR: failed to connect to chatgpt.com:443']), 'network')
+        self.assertIsNone(failure(['API Error: Connection error.'], ['Credit balance is too low']))
 
 
 class RunFailureTests(ResearchCase):

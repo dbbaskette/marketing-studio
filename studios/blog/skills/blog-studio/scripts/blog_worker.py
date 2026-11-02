@@ -67,7 +67,8 @@ def unreachable(engine, binary, env=None, kind='network'):
         found = None
     service = reachability.SERVICES[host]
     if not found and kind != 'network':
-        # Nothing says it is this network: the service may have been busy or down.
+        # Only a look at this network could say it is the network, and it found nothing:
+        # the service may have been busy or down.
         return (
             NAMES[engine]
             + ' lost its connection to '
@@ -459,14 +460,13 @@ def generate(engine, payload, guidance, seconds=600, web=False, stop=None, model
             echoes = echo_check(prompt, given, *strings(payload))
             kept = cleaned([*said, *tail(errors)], echoes)
             if network:
-                # A CLI that could not connect to its service says so, not sign-in. Only its
-                # own error lines are read: a reported error result, and the lines it marked
-                # as errors, never what the assistant thought or wrote.
-                reported = set(cleaned(said, echoes))
-                lines = [
-                    line for line in kept if line in reported or reachability.error_lines([line])
-                ]
-                kind = reachability.connection_failure(lines)
+                # A CLI that could not connect to its service says so, not sign-in. Only the
+                # lines it marked as its own errors are read for that, never what the
+                # assistant thought or wrote; a Claude Code error result can still say it
+                # was sign-in or a limit.
+                kind = reachability.connection_failure(
+                    reachability.error_lines(kept, engine), cleaned(said, echoes)
+                )
                 if kind:
                     message = unreachable(engine, binary, env, kind)
             return WorkerFailure(message, reason, kept)

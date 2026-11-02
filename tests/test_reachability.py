@@ -29,14 +29,25 @@ class BlockedTests(unittest.TestCase):
             found = reachability.blocked('service.example.com', seconds)
         return found, time.monotonic() - started
 
-    def test_a_slow_address_lookup_ends_with_the_time_limit_and_says_nothing(self):
-        found, took = self.look(connect=lambda *args, **named: time.sleep(2))
-        self.assertIsNone(found)
+    def test_a_slow_address_lookup_ends_with_the_time_limit_as_unreachable(self):
+        slow = lambda *args, **named: time.sleep(2)  # noqa: E731
+        with mock.patch.object(reachability.socket, 'getaddrinfo', side_effect=slow):
+            started = time.monotonic()
+            with mock.patch.object(reachability.urllib.request, 'getproxies', return_value={}):
+                found = reachability.blocked('service.example.com', 0.3)
+            took = time.monotonic() - started
+        self.assertEqual(found, ('unreachable', 'it did not answer within 0.3 seconds'))
         self.assertLess(took, 1.5)
 
-    def test_a_connection_that_times_out_says_nothing_either(self):
-        found, _ = self.look(connect=TimeoutError('timed out'))
-        self.assertIsNone(found)
+    def test_a_connection_that_times_out_is_unreachable(self):
+        found, _ = self.look(seconds=1, connect=TimeoutError('timed out'))
+        self.assertEqual(found, ('unreachable', 'it did not answer within 1 second'))
+        with mock.patch.object(reachability.urllib.request, 'getproxies', return_value={}), \
+                mock.patch.object(reachability.socket, 'create_connection',
+                                  side_effect=TimeoutError('timed out')):
+            self.assertEqual(reachability.reachable('chatgpt.com', 4),
+                             'chatgpt.com cannot be reached from this network (it did not '
+                             'answer within 4 seconds)')
 
     def test_a_refused_connection_and_an_intercepted_one_are_told_apart(self):
         found, _ = self.look(connect=OSError('Network is unreachable'))
