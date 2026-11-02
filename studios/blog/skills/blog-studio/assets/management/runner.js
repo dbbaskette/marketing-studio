@@ -36,7 +36,7 @@ function sDeskRowWords(found){
   const said=needs.length?needs.join(' · '):'On the desk';
   return said+(sent&&!/last sent/.test(said)?' · last sent '+sent:'')+(age?' · edited '+age:'');
 }
-function sWords(found){if(found.flow==='desk'&&found.status==='desk')return sDeskRowWords(found);if(sEditingRun(found)){if(found.status==='waiting-for-approval')return 'Suggestions ready';if(found.status==='paused'||found.status==='complete')return 'Ready to edit';if(found.status==='working')return {polish:'Polishing writing','factual-support':'Checking facts',shape:'Reviewing structure',geo:'Reviewing citation readiness',revise:'Revising draft'}[found.editor_check]||'Reviewing writing';}return RUN_LABELS[found.status]||found.status;}
+function sWords(found){if(found.flow==='desk'&&found.status==='desk')return sDeskRowWords(found);if(sEditingRun(found)){if(found.status==='waiting-for-approval')return 'Suggestions ready';if(found.status==='paused'||found.status==='complete')return 'Ready to edit';if(found.status==='working')return {polish:'Polishing writing','factual-support':'Checking facts',shape:'Reviewing structure',geo:'Reviewing clarity for AI search',revise:'Revising draft'}[found.editor_check]||'Reviewing writing';}return RUN_LABELS[found.status]||found.status;}
 function sNeeds(found){return ['waiting-for-approval','failed','needs-attention'].includes(found.status)||!!(found.needs||[]).length;}
 function sField(id,label,held,key,about={}){
   const box=sNode('div','field'),caption=sNode('label','field-label',label),input=sNode(about.options?'select':about.long?'textarea':'input','input'+(about.short?' input-short':''));caption.htmlFor=id;input.id=id;input.name=key;
@@ -381,10 +381,10 @@ async function sEditor(ident){
     advanced.append(sField('editor-research','Optional research',options,'research',{options:[['none','No new research (use saved evidence)'],...EDITOR_RESEARCH]}));
     const sources=sNode('div');advanced.append(disclosure('Choose evidence sources',sources));
     if(options.check!=='polish'){studio.options=await api('run-options');if(!current())return;sources.append(sSources(options));}
-    form.append(sField('editor-request','Anything to focus on? (optional)',options,'request',{long:true,max:8000,hint:'For example: tighten long sentences; keep the technical detail.'}),disclosure('Other editing actions',sField('editor-check','Editing action',options,'check',{options:[['polish','Polish writing'],['factual-support','Check facts against sources'],['shape','Feedback without a rewrite'],['geo','Improve clarity and citation readiness'],['revise','Revise the draft']],changed:async()=>{syncOptions();if(options.check!=='polish'){studio.options=await api('run-options');if(current())sources.replaceChildren(sSources(options));}}})),advanced);
+    form.append(sField('editor-request','Anything to focus on? (optional)',options,'request',{long:true,max:8000,hint:'For example: tighten long sentences; keep the technical detail.'}),disclosure('Other editing actions',sField('editor-check','Editing action',options,'check',{options:[['polish','Polish writing'],['factual-support','Check facts against sources'],['shape','Feedback without a rewrite'],['geo','Improve clarity for readers and AI search'],['revise','Revise the draft']],changed:async()=>{syncOptions();if(options.check!=='polish'){studio.options=await api('run-options');if(current())sources.replaceChildren(sSources(options));}}})),advanced);
     syncOptions();
-    const failed=operation?.status==='failed',label={polish:'Polish writing','factual-support':'Check facts against sources',shape:'Feedback without a rewrite',geo:'Review citation readiness',revise:'Revise draft'},command=()=>failed&&options.check===operation.editor_check?'Try again':label[options.check]||'Start';
-    const descriptions={polish:'Grammar, clarity and natural wording, using your writing rules. No research; your voice and meaning are preserved.','factual-support':'Check claims against the evidence you choose. Unverified claims stay marked as unverified.',geo:'Review clarity and citation readiness using saved evidence. Missing evidence stays marked.',shape:'Review the argument, order and relevance to your readers. Your manuscript stays unchanged.',revise:'Revise the saved draft within your instructions. Keep the author’s voice and meaningful technical detail.'};
+    const failed=operation?.status==='failed',label={polish:'Polish writing','factual-support':'Check facts against sources',shape:'Feedback without a rewrite',geo:'Review clarity for AI search',revise:'Revise draft'},command=()=>failed&&options.check===operation.editor_check?'Try again':label[options.check]||'Start';
+    const descriptions={polish:'Grammar, clarity and natural wording, using your writing rules. No research; your voice and meaning are preserved.','factual-support':'Check claims against the evidence you choose. Unverified claims stay marked as unverified.',geo:'Review clarity for readers and AI search using saved evidence. Missing evidence stays marked.',shape:'Review the argument, order and relevance to your readers. Your manuscript stays unchanged.',revise:'Revise the saved draft within your instructions. Keep the author’s voice and meaningful technical detail.'};
     const explanation=sNode('p','',failed?'No new suggestions were saved. Your manuscript and any earlier feedback are kept. Try this pass again or read the document below.':descriptions[options.check]);
     const go=sNode('button','button button-filled',command());go.type='submit';go.disabled=active||!access.actions.edit;form.append(go);
     // Keep the command label aligned when the optional action changes.
@@ -488,7 +488,7 @@ async function sMoreTools(id=null){
       task('Saved channel copies','Reopen named variants and their provenance.',()=>sVariants(id),!!id),
       task('History','Compare a saved revision, then explicitly restore it locally.',()=>sHistoryTool(found),!!id&&found.has_manuscript),
       task('Pre-publish check','Report headings, placeholders, links and evidence references without rewriting.',()=>sPrepublishTool(id),!!id&&found.has_manuscript),
-      task('Improve clarity and citation readiness','Review located passages using the saved evidence and voice.',()=>sFocusedTool(id,'geo'),!!id&&found.has_manuscript&&!found.working),
+      task('Improve clarity for readers and AI search','Review located passages using the saved evidence and voice.',()=>sFocusedTool(id,'geo'),!!id&&found.has_manuscript&&!found.working),
       task('Headline and opening','Compare focused alternatives and choose edits in the existing editor.',()=>sFocusedTool(id,'shape'),!!id&&found.has_manuscript&&!found.working),
       task('Delete this blog','Stops what is running, takes it out of your lists and keeps it for 30 days.',()=>sDeleteSheet({id,title:found.title,status:found.working?'working':''}),!!id&&access.actions.edit),
       ...(found.jobs||[]).map(job=>sButton(`Resume ${job.kind.replaceAll('-',' ')} · ${job.status}`,async()=>{const saved=await sTaskRead('Saved tool task','tool-job?job='+job.id);if(saved)sToolJob(saved);})),
@@ -529,7 +529,7 @@ function sFocusedTool(id,check){
     const request=(check==='shape'?'Focus only on the '+held.part+'. Offer up to three meaningfully different, supported alternatives as separate located edits with brief tradeoffs. Never apply or rename anything. Preserve technical qualifiers and author voice; invent no facts, offers, urgency or URLs. ':'')+held.focus;
     await api('editor-check',{id,expected:found.expected,check,request,research:'none',sources:found.sources});sCloseSheet();await sRoute('editor',id);
   }catch(error){problem.textContent=error.message;}finally{submit.disabled=false;}});
-  sOpenSheet(check==='geo'?'Improve clarity and citation readiness':'Headline and opening',form,sButton('Cancel',sCloseSheet));
+  sOpenSheet(check==='geo'?'Improve clarity for readers and AI search':'Headline and opening',form,sButton('Cancel',sCloseSheet));
 }
 
 async function sTaskRead(title,endpoint){

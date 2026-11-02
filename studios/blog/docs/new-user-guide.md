@@ -252,7 +252,7 @@ ask in chat to pull current content or refresh feedback. [Desk guide](editorial-
 
 Open a manuscript's **Tools** to recover revisions, compare Google edits,
 learn or audition an author voice or a style, interview an expert, prepare channel copies,
-check citation readiness or workshop an opening. Tools explain their input and
+check clarity for readers and AI search or workshop an opening. Tools explain their input and
 next step. Generated results wait for review; none publish or change defaults.
 See the [capability map](capabilities.md) for coverage and limits.
 

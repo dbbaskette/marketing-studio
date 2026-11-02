@@ -61,7 +61,9 @@ Return one JSON object in content, with no score, grade or ranking promise, shap
   "names the product the same way throughout"; help is one sentence saying how the change
   helps a reader or an assistant. Keep every qualifier, number, link and quotation the
   passage has. Empty suggestions means no changes.
-- summary: one or two sentences of advice that needs no edit, or "".
+- summary: one or two sentences of advice that needs no edit, or "": a vague heading named
+  with a clearer one goes here, since a suggestion cannot change a heading, as does a
+  detail the author must supply (a date, a current name, what a chart or video shows).
 - faq: {"questions": [{"question", "answer"}], "closing_cta", "summary"} as below.
 - takeaways: {"takeaways": ["..."], "summary"} as below.
 - tables: [{"part", "after_text", "table", "why"}] as below, or [] where the post compares
@@ -71,8 +73,9 @@ Return one JSON object in content, with no score, grade or ranking promise, shap
 - queries: the questions people might ask an AI assistant that this post answers, as below.
 - sources_needed: at most ten claims the post makes that would be stronger with a cited
   source: {"part", "claim", "kind"}. claim is the sentence copied exactly from that part;
-  kind says what kind of source would support it, such as "a benchmark the team ran" or
-  "the product's documentation". Never name, link or invent a source, statistic or quote.
+  kind says what kind of source would support it, such as "a benchmark the team ran",
+  "the product's documentation" or "a dated source with the baseline for the 40%". Never
+  name, link or invent a source, statistic, date or quote.
 """
 
 

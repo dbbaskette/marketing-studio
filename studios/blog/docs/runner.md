@@ -72,7 +72,7 @@ GEO review**, off by default. When it is ticked, one GEO review runs as part of 
 work once its full draft is written (after a first pass or Review mode's check, when there
 is one), and its proposals wait in Finishing for you to preview, then apply or skip. It
 never runs again by itself. The choice is kept in the post's own record and can be changed
-on its desk, under Finishing's Improve discovery tools; turned on for a written draft, its
+on its desk, under Finishing's Reader aids and AI search tools; turned on for a written draft, its
 one review runs then. Posts made before the choice existed have it off.
 
 **Edit or polish a draft** is one screen with no step tabs and no kind of post to choose:
@@ -353,11 +353,12 @@ nothing changes until you apply.
   checked at once with no assistant, with **Fix** on each finding.
 - **Check facts against sources**: each claim supported, not in your sources, or
   contradicted, with the passage, **Add a source** and **Keep it**.
-- **Improve discovery**: **GEO: retrieval readiness** proposes direct answers, clear
-  entities and useful evidence. Beside it, each addition is asked for on its own and
-  previewed before anything changes: an **FAQ** of 3 to 6 questions, each answered only
-  from the post and its sources (a question they do not answer is left out), and **Key
-  takeaways**, each added as a section you place (an FAQ goes at the end, before a closing
+- **Reader aids and AI search**: **GEO: retrieval readiness** proposes direct answers, clear
+  entities, claims with their context and dates, and useful evidence. Beside it, each
+  addition is an aid for readers, not a way to earn citations or rankings, asked for on
+  its own and previewed before anything changes: an **FAQ** of 3 to 6 questions, each
+  answered only from the post and its sources (a question they do not answer is left
+  out), and **Key takeaways**, each added as a section you place (an FAQ goes at the end, before a closing
   call to action, unless you pick another place), with every question, answer or point
   edited or dropped first and then all or only the ticked ones added. On a post that
   already has one, it proposes that section's new form instead of a second one. A

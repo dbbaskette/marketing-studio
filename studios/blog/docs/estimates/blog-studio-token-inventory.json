@@ -109,9 +109,9 @@
       "sha256": "b38cd4b72c09d3d25c82e2501fb159b4376a19f0ca50773dff7dc9cf16065dea"
     },
     "references/desk-migration.md": {
-      "characters": 3317,
-      "estimated_tokens": 830,
-      "sha256": "5a7a9568029ac0aa52f9bae617dae40e988494c56001ef0914a7f5fc391b2f96"
+      "characters": 3683,
+      "estimated_tokens": 921,
+      "sha256": "1fcdfa855eab35be1f159a6c26a198ede464713ab2e6c7e45d8c8d606314fe65"
     },
     "references/editorial/board.md": {
       "characters": 1598,
@@ -184,14 +184,14 @@
       "sha256": "38dd0a9a3a47db9c6b567568fbe24404fc967c50403741c70f8a6faf25780fcc"
     },
     "references/google/roundtrip.md": {
-      "characters": 7997,
-      "estimated_tokens": 2000,
-      "sha256": "64817d0d0cbf479021b5928efe0160ef15277b709e58893b5fc93fb6fec7c687"
+      "characters": 8391,
+      "estimated_tokens": 2098,
+      "sha256": "b4616b77325fcc070d76a8e884b5be2f922196b6e231f30ab1d758c5b3142b5a"
     },
     "references/google/start.md": {
-      "characters": 3440,
-      "estimated_tokens": 860,
-      "sha256": "488391ef2e48ca6673656c4ae608ec4efca73e2c2f28d1010e8fc1239510e5cf"
+      "characters": 3600,
+      "estimated_tokens": 900,
+      "sha256": "9eba80963fb45265a9c8a230e7c9dd08ff72a1e7d24173a1f9a22cac3c072920"
     },
     "references/google/status.md": {
       "characters": 3381,
@@ -284,9 +284,9 @@
       "sha256": "0089bf45e07181335aca4891faf3f84e649e3a4d9729b3ea2300fc294f26c301"
     },
     "references/modules/blog-geo-review.md": {
-      "characters": 1596,
-      "estimated_tokens": 399,
-      "sha256": "7629ccb9d2947ea78150b473fb592154d0428d7f354babac3f56c6e9ccce57bd"
+      "characters": 4136,
+      "estimated_tokens": 1034,
+      "sha256": "ec88b97adccdf54f37e8ed07b740de1539aae90d59749d2894bd86c5d3019b3a"
     },
     "references/modules/blog-google-export.md": {
       "characters": 3640,
@@ -389,9 +389,9 @@
       "sha256": "f3bb6d6da0b03de1e6d767bfd92f2845014dd74ad4c6910241adbcbe42dd9a25"
     },
     "references/page-tools.md": {
-      "characters": 7527,
-      "estimated_tokens": 1882,
-      "sha256": "7c814009caf858cb5ee66a253fec4bcb6cc2089e2df850b6961ffbe144274797"
+      "characters": 7535,
+      "estimated_tokens": 1884,
+      "sha256": "ee60e960e7a95dc9941c2f77591f1cdfcbe41dba48416c78fe03db2852fc9310"
     },
     "references/privacy.md": {
       "characters": 4170,
@@ -809,7 +809,7 @@
       "sha256": "4c95901507d60239adadfec8ddd4001a409a52b5c5f7bf20b49bb10a79890142"
     }
   },
-  "library_tokens": 228487,
+  "library_tokens": 229353,
   "routes": {
     "outline_with_sources": {
       "files": [
@@ -894,7 +894,7 @@
         "references/conversation-desk.md"
       ],
       "scenario": "Saved article with selected evidence/voice; five requested feedback checks and stored coverage, without rewriting or an optional deep humanization rubric.",
-      "estimated_tokens": 8693
+      "estimated_tokens": 9328
     },
     "quick_polish": {
       "files": [
@@ -1069,7 +1069,7 @@
         "SKILL.md",
         "references/desk-migration.md"
       ],
-      "estimated_tokens": 2144,
+      "estimated_tokens": 2235,
       "note": "Conditional: only after an explicit request to open eligible unfinished saved work on the desk."
     }
   },
@@ -1197,7 +1197,7 @@
       "files": [
         "references/google/roundtrip.md"
       ],
-      "estimated_tokens": 2000
+      "estimated_tokens": 2098
     },
     "status": {
       "files": [
@@ -1215,7 +1215,7 @@
       "files": [
         "references/google/start.md"
       ],
-      "estimated_tokens": 860
+      "estimated_tokens": 900
     }
   },
   "google_operations_note": "Unique Blog Studio instruction estimates. Each operation includes its router. Add adapter/checkpoint contracts and privacy once as applicable; parent, provider/plugin skills, document content and generated artifacts are additional.",
