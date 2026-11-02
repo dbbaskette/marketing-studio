@@ -453,6 +453,8 @@ const Drafting = (() => {
     // name}, feedback that can become a note), applyAll, counted ([one, many]), empty (the
     // line for an empty set), said(set, said) (more of the set's line), flagged(n), and
   // status(held, set) (its line in the tool list, for a set that proposes no changes).
+  // After an apply or a skip, focus goes to the next proposal's first control, or to the
+  // panel's title when none is left, so a keyboard user keeps their place (refocus).
     const commenting = () => (a.tools() || []).find(tool => tool.comments) || null;
     k.finishOpen = (held, key = null) => {
       const tool = key ? k.tool(key) : null;
@@ -610,12 +612,20 @@ const Drafting = (() => {
           for (const chosen of items) delete held.finish.editing[chosen.id];
           const done = held.view.finished || { applied: items.length, left: [] }, left = (done.left || []).length;
           a.ui.toast((done.applied === 1 ? 'Applied.' : 'Applied ' + done.applied + '.') + ' The earlier text is in History.' + k.finishedSaid(done) + (left ? ' ' + left + (left === 1 ? ' no longer fits and is' : ' no longer fit and are') + ' left for you.' : ''));
-          a.hooks.refresh(held, before); k.panelShow(held);
+          a.hooks.refresh(held, before); k.panelShow(held); k.refocus(held);
         } catch (error) { if (stale(error)) { held.stale = true; k.stale(held); } else a.ui.notice(error.message, true); }
       });
     };
     k.skip = async (held, set, ids, control) => {
-      await a.ui.busy(control, 'Setting aside…', async () => { try { const before = held.view; held.view = await a.api(a.routes.skip, { id: held.id, job: set.job, items: ids }); a.hooks.refresh(held, before); k.panelShow(held); } catch (error) { a.ui.notice(error.message, true); } });
+      await a.ui.busy(control, 'Setting aside…', async () => { try { const before = held.view; held.view = await a.api(a.routes.skip, { id: held.id, job: set.job, items: ids }); a.hooks.refresh(held, before); k.panelShow(held); k.refocus(held); } catch (error) { a.ui.notice(error.message, true); } });
+    };
+    k.refocus = held => {
+      const panel = held.panel; if (!panel || typeof panel.querySelectorAll !== 'function') return;
+      const next = Array.from(panel.querySelectorAll('.desk-proposal')).map(card => Array.from(card.querySelectorAll('button')).find(button => !button.disabled)).find(Boolean);
+      const title = panel.querySelector('.desk-finish-title'), target = next || title;
+      if (!target || typeof target.focus !== 'function') return;
+      if (target === title) title.setAttribute('tabindex', '-1');
+      target.focus();
     };
     // Feedback: comments shown in the panel and in their part's card, each a note in one click.
     k.commentKey = (view, part) => { const tool = commenting(), set = tool && (view?.finishing || {})[tool.key]; return set ? JSON.stringify(set.items.filter(item => item.part === part && item.state === 'open').map(item => item.id)) : ''; };
