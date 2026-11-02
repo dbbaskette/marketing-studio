@@ -30,6 +30,7 @@ to share; the output contains paths and versions, never credentials.
 | Setup says Blog Studio is open | Press Ctrl-C in the page’s terminal or close that window, then run setup again. File checks and computer checks can still run while the page is open. |
 | A start command is changed or missing | Run installer `check`, then `repair`. Your own or edited launcher files are preserved; move them aside yourself if you want setup to replace that command. |
 | A writing CLI or sign-in is missing | Choose **Status → Check this computer**, or run `sh ~/.local/share/blog-studio/studio check`. Follow the listed steps, then check again. |
+| A step says the assistant could not reach its service from this network | The assistant is signed in, but this network blocks or intercepts its connection; some company networks decrypt the connection to one service and not another. Try another network, or choose the other assistant for new work under **Settings → Writing preferences**. **Status → Check this computer** shows which service cannot be reached. |
 | You want a different writing folder | Run `sh ~/.local/share/blog-studio/studio --root /absolute/path/to/workspace`. The next launch remembers that folder. |
 
 ## In your tool

@@ -27,6 +27,12 @@ os.environ['STUDIOS_CONFIG'] = str(Path(PLACE) / 'config' / 'studios-config.json
 os.environ['STUDIOS_LIBRARY'] = str(Path(PLACE) / 'library')  # the shared Document Library
 os.environ['BLOG_STUDIO_DATA'] = str(Path(PLACE) / 'data')
 
+# No test looks at the network: every assistant's service is reachable unless a test says
+# otherwise by patching `reachability.blocked` itself.
+from studio_core import reachability  # noqa: E402
+
+reachability.blocked = lambda host, seconds=8: None
+
 
 def voices_on(root):
     """Turn on the older voice tools for a disposable workspace, as the hidden switch in
