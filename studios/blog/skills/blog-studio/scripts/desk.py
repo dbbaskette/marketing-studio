@@ -343,6 +343,11 @@ def create(root, data):
     if not manuscript.strip():
         raise ValueError('Paste or upload a draft to start on the desk.')
     draft = split(manuscript, title=title.strip())
+    if published:
+        import published_post
+
+        # A page's words are escaped in its Markdown; the title is kept as a reader sees it.
+        draft['title'] = published_post.plain(draft['title'])
     if desk_images.holds(draft['title']):
         raise ValueError(TITLE_IMAGE)
     if len(draft['sections']) > SECTIONS:

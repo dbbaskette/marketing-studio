@@ -3,6 +3,8 @@ site on 127.0.0.1, never the real network), from a team collection, and with Rev
 search (GEO) as the first pass. Page access is advice only. No provider job runs."""
 
 import isolation  # noqa: F401  (first: keeps every test off this computer's own settings)
+import re
+import unittest
 
 import desk_jobs
 import published_post
@@ -271,3 +273,220 @@ class CollectionTests(RouteCase):
         studio.persist(directory, 'sources', record)
         with self.assertRaisesRegex(ValueError, 'imported from one of your team collections'):
             self.post('published-preview', {'item': ident, 'location': 'local'})
+
+
+class HostilePageTests(unittest.TestCase):
+    """A hostile page of about 2 MB is read in bounded time and space, whatever its shape."""
+
+    SHAPES = {
+        'nested bylines': '<body><article><p>hi</p>' + '<span class="author">x' * 90_000,
+        'wide then long table': '<body><article><p>hi</p><table><tr>'
+        + '<td>a' * 60_000
+        + '<tr><td>a' * 60_000
+        + '</table>',
+        'wide then long table, closed': '<body><article><p>hi</p><table><tr>'
+        + '<td>a</td>' * 60_000
+        + '</tr>'
+        + '<tr><td>a</td></tr>' * 60_000
+        + '</table>',
+        'nested lists': '<body><article>' + '<ul><li>a' * 200_000,
+        'unclosed then stray end tags': '<body><article>' + '<div>' * 200_000 + '</p>' * 200_000,
+        'nested quotations': '<body><article>'
+        + '<blockquote>' * 100_000
+        + 'deep'
+        + '</blockquote>' * 100_000,
+        'sibling date lines': '<body><article><p>hi</p>' + '<div class="date">x</div>' * 60_000,
+    }
+
+    def test_each_shape_finishes_quickly_with_bounded_markdown(self):
+        import time
+
+        for name, html in self.SHAPES.items():
+            with self.subTest(shape=name):
+                started = time.monotonic()
+                found = published_post.article(html.encode(), 'https://blog.example.com/p')
+                self.assertLess(time.monotonic() - started, 5, name + ' took too long')
+                self.assertLessEqual(len(found['markdown']), published_post.MAX_TEXT + 2_000)
+                parser = found['parser']
+                self.assertLessEqual(len(parser.stack), published_post.MAX_DEPTH)
+                self.assertLessEqual(sum(len(e[2]) for e in parser.marked.values()), 200 * 200)
+
+    def test_a_table_is_capped_as_it_is_read(self):
+        html = '<body><article><table><tr>' + '<td>a</td>' * 5_000 + '</tr>'
+        html += '<tr><td>b</td></tr>' * 5_000 + '</table></article></body>'
+        found = published_post.article(html.encode(), 'https://blog.example.com/p')
+        rows = [line for line in found['markdown'].split('\n') if line.startswith('|')]
+        self.assertLessEqual(len(rows), published_post.MAX_ROWS + 1)
+        self.assertEqual(rows[0].count(' | ') + 1, published_post.MAX_COLUMNS)
+
+    def test_page_text_is_never_markup(self):
+        html = (
+            '<body><article><h1>Retry &lt;b&gt; budgets</h1><p>Text &lt;img src=x '
+            'onerror=alert(1)&gt; and [click](javascript:alert(2)) and '
+            '<a href="javascript:alert(3)">js</a> and '
+            '<a href="https://ok.example/x)](javascript:alert(4)">paren</a>.</p>'
+            '<pre>```\nx = 1\n```</pre></article></body>'
+        )
+        found = published_post.article(html.encode(), 'https://blog.example.com/p')
+        text = found['markdown']
+        self.assertEqual(found['title'], 'Retry <b> budgets', 'the title as a reader sees it')
+        self.assertIn('\\<img src=x onerror=alert(1)\\>', text)
+        self.assertIn('\\[click\\](javascript:alert(2))', text, 'text, never a link')
+        self.assertIsNone(re.search(r'(?<!\\)\]\(javascript', text), 'no link to a script')
+        self.assertIn('[paren](https://ok.example/x%29]%28javascript:alert%284%29)', text)
+        self.assertIn('````\n```\nx = 1\n```\n````', text, 'a fence longer than the code')
+
+
+class RobotsTests(unittest.TestCase):
+    """robots.txt read as RFC 9309 and Google read it, the same on every Python."""
+
+    URL = 'https://blog.example.com/posts/retry-budgets'
+
+    def check(self, text):
+        return published_post.robots_check(
+            self.URL, lambda url, scope, **named: (text.encode(), url, 'text/plain')
+        )
+
+    def test_rules_are_read_as_google_reads_them(self):
+        for text, blocked in (
+            ('User-agent: *\nDisallow: /\nAllow: /posts/\n', []),  # the longest match wins
+            ('User-agent: *\nAllow: /posts/\nDisallow: /\n', []),
+            (
+                'User-agent: *\nDisallow: /*budgets\n',
+                ['Googlebot', 'OAI-SearchBot', 'PerplexityBot'],
+            ),
+            ('User-agent: Googlebot\nDisallow: /posts/*\n', ['Googlebot']),
+            (
+                'User-agent: *\nDisallow: /posts/retry-budgets$\n',
+                ['Googlebot', 'OAI-SearchBot', 'PerplexityBot'],
+            ),
+            ('User-agent: *\nDisallow: /posts/retry$\n', []),
+            ('User-agent: bot\nDisallow: /\n', []),  # a token, never a substring
+            ('User-agent: Googlebot-News\nDisallow: /\n', []),
+            ('User-agent: *\nDisallow:\n', []),  # an empty Disallow allows everything
+            (
+                'User-agent: *\nDisallow: /\n\nUser-agent: googlebot/2.1\nAllow: /\n',
+                ['OAI-SearchBot', 'PerplexityBot'],
+            ),
+            ('User-agent: *\nDisallow: /posts/\nAllow: /posts/\n', []),  # Allow wins a tie
+            (
+                'User-agent: OAI-SearchBot\nUser-agent: PerplexityBot\nDisallow: /posts\n',
+                ['OAI-SearchBot', 'PerplexityBot'],
+            ),
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(self.check(text)['blocked'], blocked)
+
+    def test_gptbot_is_said_apart_and_a_page_that_is_not_text_is_not_checked(self):
+        said = self.check('User-agent: GPTBot\nDisallow: /\n')
+        self.assertEqual((said['blocked'], said['training_blocked']), ([], True))
+        not_text = published_post.robots_check(
+            self.URL, lambda url, scope, **named: (b'<html></html>', url, 'text/html')
+        )
+        self.assertEqual(not_text['status'], 'unknown')
+        page_as_text = self.check('<html><body>Not here</body></html>')
+        self.assertEqual(
+            page_as_text['status'], 'unknown', 'a page sent as text is not a robots.txt'
+        )
+
+    def test_a_hostile_pattern_never_backtracks(self):
+        import time
+
+        pattern = '/' + '*a' * 1000 + 'b$'
+        started = time.monotonic()
+        published_post.robots_allowed(
+            published_post.robots_groups('User-agent: *\nDisallow: ' + pattern),
+            'Googlebot',
+            '/' + 'a' * 2000,
+        )
+        self.assertLess(time.monotonic() - started, 1)
+
+
+class AccessWordingTests(unittest.TestCase):
+    """Page access says only what it found, and what it did not find as such."""
+
+    BODY = '<p>Retry budgets cap retries. ' + 'Words here. ' * 30 + '</p>'
+
+    def access(self, html, headers=None):
+        found = published_post.article(html.encode(), 'https://blog.example.com/p')
+        shown = published_post.access(
+            found, headers or {}, {'key': 'robots', 'status': 'unknown', 'said': ''}
+        )
+        return {check['key']: check for check in shown['checks']}
+
+    def test_dates_and_bylines_are_found_where_pages_put_them(self):
+        for name, html in (
+            (
+                'a written date',
+                '<article><h1>T</h1><p class="byline">By Jane Doe</p><p class="post-date">1 March 2025</p>',
+            ),
+            (
+                'a byline in the post header',
+                '<header class="post-header"><h1>T</h1><span class="author">Jane Doe</span><time datetime="2025-03-01">x</time></header><article>',
+            ),
+            (
+                'a By line with no class',
+                '<article><h1>T</h1><p>By Jane Doe · <time datetime="2025-03-01">1 March</time></p>',
+            ),
+            (
+                'an American date',
+                '<article><h1>T</h1><p class="byline">By Jane Doe</p><p class="meta">March 1, 2025</p>',
+            ),
+        ):
+            with self.subTest(case=name):
+                checks = self.access('<html><body>' + html + self.BODY + '</article></body></html>')
+                self.assertEqual(checks['byline']['status'], 'ok', checks['byline']['said'])
+                self.assertEqual(checks['byline']['byline'], 'Jane Doe')
+                self.assertEqual(checks['byline']['dates'][:1], ['2025-03-01'])
+
+    def test_an_unshown_updated_date_is_not_a_disagreement(self):
+        import json
+
+        data = {
+            '@type': 'BlogPosting',
+            'headline': 'T',
+            'author': {'name': 'Jane Doe'},
+            'datePublished': '2025-03-01T09:00:00Z',
+            'dateModified': '2025-04-02T09:00:00Z',
+        }
+        head = '<script type="application/ld+json">' + json.dumps(data) + '</script>'
+        page = (
+            '<html><head>'
+            + head
+            + '</head><body><article><h1>T</h1><p class="byline">By Jane Doe</p><time datetime="2025-03-01">1 March 2025</time>'
+        )
+        checks = self.access(page + self.BODY + '</article></body></html>')
+        self.assertEqual(checks['structured']['status'], 'ok', checks['structured']['said'])
+        shown = page.replace('</time>', '</time><p class="updated">Updated 9 April 2025</p>')
+        checks = self.access(shown + self.BODY + '</article></body></html>')
+        self.assertEqual(
+            checks['structured']['disagree'],
+            [{'field': 'updated date', 'data': '2025-04-02', 'page': '2025-04-09'}],
+        )
+
+    def test_x_robots_tag_names_the_crawlers_it_is_for(self):
+        page = '<html><body><article><h1>T</h1>' + self.BODY + '</article></body></html>'
+        self.assertEqual(
+            self.access(page, {'x_robots_tag': 'bingbot: noindex'})['noindex']['status'], 'ok'
+        )
+        said = self.access(page, {'x_robots_tag': 'googlebot: noindex, nofollow'})['noindex']
+        self.assertEqual(said['status'], 'problem')
+        self.assertIn('asks Google Search not to index it', said['said'])
+        said = self.access(page, {'x_robots_tag': 'max-snippet: 50, noindex'})['noindex']
+        self.assertIn('search engines and AI assistants', said['said'])
+
+    def test_what_is_not_found_is_said_as_not_found(self):
+        checks = self.access(
+            '<html><body><article><h1>T</h1>' + self.BODY + '</article></body></html>'
+        )
+        self.assertEqual(
+            checks['byline']['said'].split('.')[0],
+            'Blog Studio didn’t find an author byline or a published or updated date',
+        )
+        self.assertTrue(checks['noindex']['said'].startswith('Blog Studio didn’t find a noindex'))
+        meta = '<html><head><meta name="author" content="Jane Doe"><meta property="article:published_time" content="2025-03-01"></head>'
+        checks = self.access(
+            meta + '<body><article><h1>T</h1>' + self.BODY + '</article></body></html>'
+        )
+        self.assertEqual(checks['byline']['status'], 'note')
+        self.assertIn('its metadata names Jane Doe', checks['byline']['said'])
