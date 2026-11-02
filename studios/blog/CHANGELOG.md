@@ -21,10 +21,12 @@ changes for authors first, then what changes for maintainers.
   `published_post.access` and `robots_check`, and `tests/fake_site.py`, a local fake site
   for link reads. A page is read in bounded time and space whatever its shape (open
   elements, list and quotation depth, a table's size, a byline's words and the Markdown made
-  are capped as it is read), its words are never taken as markup, and robots.txt is read as
-  RFC 9309 says (`published_post.robots_groups` and `robots_allowed`: the most specific
-  product token, the longest match with Allow winning a tie, `*` and `$`), the same on every
-  Python, not with `urllib.robotparser`. Page access says what it did not find as such,
+  are capped as it is read), its words are kept as written with only what could become a
+  tag, a link or an image escaped, and robots.txt is read as RFC 9309 says
+  (`published_post.robots_groups` and `robots_allowed`: the most specific product token, the
+  longest match with Allow winning a tie, `*` and `$`, percent-escapes of unreserved
+  characters decoded, a byte order mark ignored), the same on every Python, not with
+  `urllib.robotparser`. Page access says what it did not find as such,
   reads written dates, header bylines and "By" lines, compares an updated date only when the
   page shows one, and takes an X-Robots-Tag's crawler name into account. The Markdown
   download holds no HTML and no link but http(s). The report's Google Doc is placed with no

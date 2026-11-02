@@ -325,6 +325,45 @@ class HostileReportTests(ReportCase):
                 self.post('geo-report-again', {'id': 'a' * 32, 'operation': 'c' * 32})
         self.assertEqual(site.requests, [])
 
+    def test_a_suggestion_quoting_the_visible_words_is_placed(self):
+        sentence = (
+            'Set retry_budget to 2*3 in the [beta] config. Use vector<int> and a '
+            'C:\\temp\\logs path.'
+        )
+        html = page().replace(
+            '<p>Try a budget on one route first.</p>',
+            '<p>' + sentence.replace('<', '&lt;') + '</p>',
+        )
+        site = Site()
+        site.page('/posts/retry-budgets', html)
+        with site.serving():
+            shown = self.post('published-preview', {'url': URL})
+        made = self.post(
+            'geo-report-start',
+            {
+                'operation': 'd' * 32,
+                'published': {'preview': shown['preview'], 'expected': shown['expected']},
+            },
+        )
+        draft = geo_report.read(self.root, made['id'])['draft']
+        part = draft['sections'][-1]['id']
+        suggestion = {
+            'part': part,
+            'before': 'to 2*3 in the [beta] config',
+            'after': 'to 6 in the [beta] config',
+            'why': 'states the value',
+            'help': 'A reader sees the number.',
+        }
+        report = self.finish(made['id'], {**RESULT, 'suggestions': [suggestion]})
+        changes = [r for r in report['recommendations'] if r['kind'] == 'change']
+        self.assertEqual([c['why'] for c in changes], ['states the value'], 'placed, not dropped')
+        # The desk copy's draft reads as the page did.
+        made = self.post('geo-report-desk', {'id': 'd' * 32, 'operation': 'e' * 32})
+        directory, _ = studio.item(self.root, 'articles', made['desk'])
+        self.assertIn(
+            sentence.replace('vector<int>', 'vector\\<int>'), (directory / 'DRAFT.md').read_text()
+        )
+
     def test_run_again_reads_an_http_collection_link_as_https(self):
         self.assertEqual(
             geo_report.link_again('http://blog.example.com/p'), 'https://blog.example.com/p'

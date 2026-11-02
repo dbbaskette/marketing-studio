@@ -91,8 +91,10 @@ MAX_COLUMNS = 30
 MAX_ROWS = 500
 MAX_MARKED = 200  # characters kept of a byline or a date line
 MAX_TEXT = 2 * LIMIT  # characters of Markdown made; past it the rest is not read
-# Characters page text may not use as Markdown: it is the page's words, never markup.
-TEXT_SPECIAL = re.compile(r'([\\`*\[\]<>])')
+# Page text is kept as written; only what could become HTML, a link or an image is escaped.
+TAG_START = re.compile(r'<(?=[A-Za-z/!?])')
+LINK_CLOSE = re.compile(r'\](?=[(\[:])')
+IMAGE_START = re.compile(r'!(?=\[)')
 UNESCAPE = re.compile(r'\\([\\`*_{}\[\]()#+\-.!|<>~])')
 
 
@@ -101,8 +103,32 @@ def _clean(text):
 
 
 def _md(text):
-    """Page text as Markdown text: its words, with nothing in it read as markup."""
-    return TEXT_SPECIAL.sub(r'\\\1', text)
+    """Page text as Markdown text: its words as written, with only what could become markup
+    or a link escaped: a < that could open a tag (before a letter, /, ! or ?), a ] that could
+    close a link or a reference (before (, [ or :) and a ! before [. *, _, >, backslashes and
+    backticks stay as they are, so the draft reads as the page did."""
+    text = TAG_START.sub(r'\\<', text)
+    text = LINK_CLOSE.sub(r'\\]', text)
+    return IMAGE_START.sub(r'\\!', text)
+
+
+class Words(str):
+    """A piece of a line that is the page's own words (not Markdown Blog Studio wrote)."""
+
+
+def _joined(pieces, piece, words):
+    """Add a piece to a line's pieces. Where the page's words end and the next piece begins
+    (across a tag, say), the end is escaped if the two together could make a tag, a link or
+    an image, as _md escapes them within one piece."""
+    if pieces and piece and isinstance(pieces[-1], Words):
+        before, first = pieces[-1], piece[0]
+        if (
+            (before.endswith(']') and first in '([:')
+            or (before.endswith('!') and first == '[')
+            or (before.endswith('<') and (first.isalpha() or first in '/!?'))
+        ):
+            pieces[-1] = Words(before[:-1] + '\\' + before[-1])
+    pieces.append(Words(piece) if words else piece)
 
 
 def plain(text):
@@ -406,9 +432,9 @@ class Article(HTMLParser):
             if text and target:
                 if len(self.links) < 500:
                     self.links.append({'url': href, 'text': plain(text)[:300]})
-                self.line.append('[' + text + '](' + target + ')')
+                _joined(self.line, '[' + text + '](' + target + ')', False)
             elif text:
-                self.line.append(text)
+                _joined(self.line, text, True)
         elif tag == 'code':
             if self.code:
                 self.line.append('`')
@@ -435,10 +461,7 @@ class Article(HTMLParser):
         # The page's words are text: nothing in them is read as Markdown. Inside inline
         # code they are literal already; a backtick there would end it, so it is left out.
         text = data.replace('`', '') if self.code else _md(data)
-        if self.link is not None:
-            self.link[1].append(text)
-        else:
-            self.line.append(text)
+        _joined(self.link[1] if self.link is not None else self.line, text, not self.code)
 
     def _meta(self, attrs):
         name = (attrs.get('name') or attrs.get('property') or '').lower()
@@ -464,7 +487,7 @@ class Article(HTMLParser):
         alt = _clean(attrs.get('alt', ''))[:300]
         self.images.append({'src': source, 'alt': alt})
         self.flush()
-        image = '![' + _md(alt) + '](' + target + ')'
+        image = '![' + alt.replace('[', '').replace(']', '') + '](' + target + ')'
         self.add('text', [image], len(image))
 
     def markdown(self, title):
@@ -863,8 +886,24 @@ def robots_groups(text):
         elif key in ('allow', 'disallow') and current is not None:
             agents_open = False
             if len(current['rules']) < ROBOTS_RULES:
-                current['rules'].append((key == 'allow', value[:ROBOTS_PATTERN]))
+                current['rules'].append((key == 'allow', robots_decoded(value[:ROBOTS_PATTERN])))
     return groups
+
+
+PERCENT = re.compile(r'%([0-9A-Fa-f]{2})')
+
+
+def robots_decoded(value):
+    """A robots.txt path or rule with its percent-encoded unreserved characters decoded (as
+    RFC 9309 compares them: %2D is -), and every other escape kept in one spelling."""
+
+    def one(found):
+        character = chr(int(found.group(1), 16))
+        if re.fullmatch(r'[A-Za-z0-9._~-]', character):
+            return character
+        return '%' + found.group(1).upper()
+
+    return PERCENT.sub(one, value)
 
 
 def _robots_matches(pattern, path):
@@ -931,13 +970,13 @@ def robots_check(url, fetch=None):
         )
         if kind and kind.split(';')[0].strip().lower() != 'text/plain':
             return unknown  # An HTML "not found" page is not a robots.txt.
-        text = content.decode('utf-8', 'replace')
+        text = content.decode('utf-8-sig', 'replace')  # A byte order mark is not text.
         if re.match(r'\s*<(?:!doctype|html|head|body)\b', text, re.I):
             return unknown  # A web page sent as text, such as a "not found" page.
         groups = robots_groups(text)
     except (ValueError, OSError):
         return unknown
-    path = (parts.path or '/') + ('?' + parts.query if parts.query else '')
+    path = robots_decoded((parts.path or '/') + ('?' + parts.query if parts.query else ''))
     blocked = [agent for agent, _ in SEARCH_AGENTS if not robots_allowed(groups, agent, path)]
     labels = [label + ' (' + agent + ')' for agent, label in SEARCH_AGENTS if agent in blocked]
     training = not robots_allowed(groups, TRAINING_AGENT, path)
@@ -1017,6 +1056,8 @@ def read(url, fetch=None):
     parser = found['parser']
     if parser.password and found['words'] < WORDS_FOR_LOGIN:
         raise ValueError(LOGIN)
+    if parser.full:
+        raise ValueError(TOO_LONG)
     if found['words'] < 1:
         raise ValueError(NO_TEXT)
     if len(found['markdown']) > LIMIT:
@@ -1069,7 +1110,8 @@ def from_copy(copy):
     found = None
     if copy['page'] is not None:
         found = article(copy['page'], copy['url'])
-        found.pop('parser')
+        if found.pop('parser').full:
+            raise ValueError(TOO_LONG)
     if found is None or found['words'] < 1:
         if copy['text'] is None:
             raise ValueError('This post has no readable text saved yet.')

@@ -311,6 +311,29 @@ class HostilePageTests(unittest.TestCase):
                 self.assertLessEqual(len(parser.stack), published_post.MAX_DEPTH)
                 self.assertLessEqual(sum(len(e[2]) for e in parser.marked.values()), 200 * 200)
 
+    def test_ordinary_words_are_kept_as_written(self):
+        sentence = (
+            'Set retry_budget to 2*3 in the [beta] config. Use vector<int> and a '
+            'C:\\temp\\logs path. Wow!'
+        )
+        html = '<body><article><h1>T</h1><p>' + sentence.replace('<', '&lt;') + '</p>'
+        html += '<p>See [this]<b>(x)</b>, and <i>!</i><a href="https://ok.example">a link</a>.</p>'
+        html += '<p>A &lt;<b>script</b>&gt; tag.</p></article></body>'
+        text = published_post.article(html.encode(), 'https://blog.example.com/p')['markdown']
+        self.assertIn(sentence.replace('vector<int>', 'vector\\<int>'), text)
+        # Across a tag, what would make a link, an image or a tag is escaped all the same.
+        self.assertIn('See [this\\](x)', text)
+        self.assertIn('\\![a link](https://ok.example)', text)
+        self.assertIn('A \\<script> tag.', text)
+
+    def test_a_paragraph_past_what_is_read_is_too_long_not_empty(self):
+        html = '<body><article><p>' + 'word ' * 100_000 + '</p></article></body>'
+        site = Site()
+        site.page('/long', html)
+        with site.serving():
+            with self.assertRaisesRegex(ValueError, 'longer than the desk holds'):
+                published_post.read('https://blog.example.com/long')
+
     def test_a_table_is_capped_as_it_is_read(self):
         html = '<body><article><table><tr>' + '<td>a</td>' * 5_000 + '</tr>'
         html += '<tr><td>b</td></tr>' * 5_000 + '</table></article></body>'
@@ -330,8 +353,8 @@ class HostilePageTests(unittest.TestCase):
         found = published_post.article(html.encode(), 'https://blog.example.com/p')
         text = found['markdown']
         self.assertEqual(found['title'], 'Retry <b> budgets', 'the title as a reader sees it')
-        self.assertIn('\\<img src=x onerror=alert(1)\\>', text)
-        self.assertIn('\\[click\\](javascript:alert(2))', text, 'text, never a link')
+        self.assertIn('\\<img src=x onerror=alert(1)>', text)
+        self.assertIn('[click\\](javascript:alert(2))', text, 'text, never a link')
         self.assertIsNone(re.search(r'(?<!\\)\]\(javascript', text), 'no link to a script')
         self.assertIn('[paren](https://ok.example/x%29]%28javascript:alert%284%29)', text)
         self.assertIn('````\n```\nx = 1\n```\n````', text, 'a fence longer than the code')
@@ -388,6 +411,27 @@ class RobotsTests(unittest.TestCase):
         self.assertEqual(
             page_as_text['status'], 'unknown', 'a page sent as text is not a robots.txt'
         )
+
+    def test_a_byte_order_mark_and_percent_escapes_are_read_as_rfc_9309_says(self):
+        every = ['Googlebot', 'OAI-SearchBot', 'PerplexityBot']
+        for text, blocked in (
+            ('\ufeffUser-agent: *\nDisallow: /posts/\n', every),
+            ('\ufeffUser-agent: Googlebot\nDisallow: /\n', ['Googlebot']),
+            ('User-agent: *\nDisallow: /posts/retry%2Dbudgets\n', every),
+            ('User-agent: *\nDisallow: /posts/retry%2dbudgets$\n', every),
+            ('User-agent: *\nDisallow: /posts%2Fretry\n', []),  # an encoded / stays one
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(self.check(text)['blocked'], blocked)
+        escaped = published_post.robots_check(
+            'https://blog.example.com/posts/retry%2Dbudgets',
+            lambda url, scope, **named: (
+                b'User-agent: *\nDisallow: /posts/retry-b',
+                url,
+                'text/plain',
+            ),
+        )
+        self.assertEqual(escaped['blocked'], every)
 
     def test_a_hostile_pattern_never_backtracks(self):
         import time
