@@ -657,6 +657,19 @@ A stopped run says what to do next beside the error:
   **What the assistant said** shows the last 20 lines its command printed, redacted
   and without any line that echoes the job it was given, kept in
   `.blog-runs/diagnostics/cli` on this computer only, and replaced by the next job.
+- **An assistant that could not reach its service** says so instead: "Codex could not
+  reach OpenAI from this network", or Claude Code and Anthropic, and when the connection
+  is being intercepted, as on a network that decrypts it, says that too. It suggests
+  another network, or the other assistant for new work under **Settings → Writing
+  preferences**. Blog Studio reads this only from the assistant's own error lines, never
+  from what it thought or wrote, then looks once at the service's TLS connection, sending
+  no request. Codex's `workspace routing discovery failed` and a certificate error are this
+  network. A connection that failed, was refused or kept dropping (`Reconnecting... 5/5`,
+  Claude Code's `Connection error`) is blamed on this network only when that look confirms
+  it, including a service that does not answer in time; otherwise the step says the
+  assistant lost its connection and to try again in a moment. Sign-in, usage, model and request errors keep their own advice. **Status →
+  Check this computer** makes the same look and names an assistant that is signed in but
+  cannot be used from this network; setup's checks never use the network.
 - **A step out of time** says it ran out of the time a step may take, with this
   blog's minutes. The limit is in **Settings → Step time limit** for new blogs;
   **Try again with more time** doubles it for this one.

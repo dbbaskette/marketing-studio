@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import re
 import unittest
+from unittest.mock import patch
 
 TESTS = Path(__file__).resolve().parent
 REAL_HOME = os.path.expanduser('~' + os.environ.get('USER', ''))
@@ -32,6 +33,13 @@ class IsolationTests(unittest.TestCase):
                 self.assertFalse(value.is_relative_to(home / '.config'), value)
                 self.assertFalse(value.is_relative_to(home / '.local'), value)
                 self.assertTrue(value.is_relative_to(place), value)
+
+    def test_no_test_looks_at_the_network_for_an_assistant(self):
+        from studio_core import reachability
+
+        with patch.object(reachability.socket, 'create_connection') as connect:
+            self.assertIsNone(reachability.reachable('chatgpt.com'))
+        connect.assert_not_called()
 
     def test_analysis_finds_no_assistant_in_the_shared_settings(self):
         import source_curator

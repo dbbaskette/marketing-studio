@@ -58,7 +58,7 @@ def main(argv=None):
     home = args.home.expanduser().resolve()
     data = (args.data_root or home / '.local/share/blog-studio').expanduser().resolve()
     if args.action == 'check':
-        found = computer.report(home)
+        found = computer.report(home, network=True)
         print(json.dumps(found, indent=2) if args.json else computer.describe(found))
         return 0
     previous_data = os.environ.get('BLOG_STUDIO_DATA')

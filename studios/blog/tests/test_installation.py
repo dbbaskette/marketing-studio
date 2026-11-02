@@ -537,6 +537,72 @@ class CommandLineTests(InstallationCase):
         self.assertIn('Team Hub (optional)', out)
         self.assertFalse(self.root.exists())
 
+    def test_setup_checks_this_computer_without_the_network(self):
+        """Setup never uses the network: its computer checks look at no assistant's service,
+        even with both assistants installed. A guard in the setup process refuses and
+        records any address lookup or connection that leaves this computer."""
+        guard, stand = self.home / 'guard', self.home / 'stand-ins'
+        guard.mkdir()
+        stand.mkdir()
+        record = self.home / 'network.log'
+        (guard / 'sitecustomize.py').write_text(
+            'import os, socket\n'
+            'LOG = os.environ["NETWORK_LOG"]\n'
+            'LOCAL = ("127.0.0.1", "::1", "localhost")\n'
+            'def refuse(what):\n'
+            '    with open(LOG, "a") as log:\n'
+            '        log.write(str(what) + "\\n")\n'
+            '    raise OSError("the network is refused in this test")\n'
+            'lookup, connect = socket.getaddrinfo, socket.socket.connect\n'
+            'def getaddrinfo(host, *rest, **named):\n'
+            '    if host not in LOCAL and host is not None: refuse(host)\n'
+            '    return lookup(host, *rest, **named)\n'
+            'def guarded(self, address):\n'
+            '    if isinstance(address, tuple) and address[0] not in LOCAL: refuse(address)\n'
+            '    return connect(self, address)\n'
+            'socket.getaddrinfo, socket.socket.connect = getaddrinfo, guarded\n'
+            'import http.client\n'
+            'http.client.HTTPConnection.set_tunnel = lambda self, host, *rest, **named: refuse(host)\n'
+        )
+        for name in ('codex', 'claude'):
+            (stand / name).write_text('#!/bin/sh\nexit 97\n')
+            (stand / name).chmod(0o700)
+        env = {
+            **{key: value for key, value in os.environ.items() if 'proxy' not in key.lower()},
+            'PYTHONPATH': str(guard),
+            'NETWORK_LOG': str(record),
+            'PATH': str(stand) + os.pathsep + os.environ['PATH'],
+        }
+        probe = subprocess.run(
+            [sys.executable, '-c', 'import socket; socket.getaddrinfo("example.invalid", 443)'],
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+        self.assertNotEqual(probe.returncode, 0, 'the guard refuses a lookup')
+        self.assertEqual(record.read_text(), 'example.invalid\n')
+        record.unlink()
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(REPO / 'installer/install.py'),
+                'check',
+                '--home',
+                str(self.home),
+                '--offline',
+                '--json',
+            ],
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        checked = json.loads(result.stdout)
+        labels = [row['label'] for row in checked['computer']['checks']]
+        self.assertIn('Claude Code', labels)
+        self.assertFalse(record.exists(), record.read_text() if record.exists() else '')
+        self.assertIsNone(checked['computer']['agents']['claude']['reachable'])
+
     def test_update_repair_and_check_default_to_the_harnesses_chosen_at_installation(self):
         code, out, err = self.main('install', '--target', 'codex', '--yes', '--json')
         self.assertEqual(code, 0, err)
