@@ -137,6 +137,8 @@ async function check(){
   await deskOutlineTab();
   await deskAddSource();
   await deskFinishing();
+  await deskMetaDescription();
+  await deskGeoAdditions();
   await deskStartTakeOver();
   await deskImages();
   await deskFocusJourney();
@@ -165,7 +167,7 @@ async function check(){
   await deskTakeOver();
   pageDefinesEveryElement();
   noUnusedPageParts();
-  const checks=['Review mode with suggestions that meet: a cut beside a word another fix changes keeping that word as context and still accepted, two that add the same word at one place never both landing, and Accept all leaving a rewrite that would retire a flagged fix','Review mode’s Accept all sending what is shown and not flagged from both sets in one request, a hidden fix never accepted, the toast counting what was accepted, carried and no longer fits, and a retired suggestion naming the one that changed its words; keys that carry their set; the Consistency label; a choice made while a paragraph is open closing it; Fix, Dismiss, the filter and the checkbox keeping focus across a redraw; Quick check read again after a pause, not on every save; and a dismissed finding staying dismissed when text before it moves','Review mode with human-sounding suggestions: the polish start’s checkbox with a strength shown in place, Copy edit then Humanize with Stop and the line for each, the fixes acted on while Humanize works, both tools’ suggestions in reading order with their labels and one count, a wording fix’s alternatives picked then accepted, a rewrite of words an accepted fix changed retiring and naming the fix, the Show filter, Accept all leaving flagged ones from both, Quick check’s findings listed with Fix and Dismiss, Check again rerunning both, the choice in Review mode’s own first check, and the paragraph being edited kept while Humanize lands','a save that finds sections reordered elsewhere draws them, the field typed in kept','Review mode, the polish start’s Check spelling and grammar: Copy edit queued and a calm line with Stop while it checks, the draft as readable text with its headings and an image thumbnail, each fix marked inline with its reason, Accept and Reject, Accept all leaving a flagged fix, Reject all, a paragraph edited in place with a fix that no longer fits dropping out, Check again, Review Google changes previewing suggestions and comments before a single Send action, a new paragraph, a removed one and a comment listed, none said to stay here, Copy and Download otherwise, Open the full desk and back, and the fixes stacked on a phone','typing on the desk while a poll and a job land: the title, the opening, a section’s text, section notes, the whole-draft note, an Outline brief, Finishing’s edit box and Review mode’s paragraph editor keep focus, caret and words, a field focused while its own section was rewritten shows the rewrite and types on from it, a section added meanwhile is drawn around the field, and a card the job changed is drawn again once focus leaves it','images on the desk: each part’s text shows its references as typed and no field holds image data, thumbnails under the parts that refer to them, an image kept nowhere said to be missing, the images read once and kept, autosaves free of image data, a pasted image shown as its reference, and Copy and Download with the images back at the end','Apply a voice in Finishing: a voice guide chosen, retired ones left out, each part before and after, Apply all leaving a part that changes a fact, code or its shape, and Skip','voice guides: the sidebar screen, a guide written by hand, one made from samples then read and edited, one being made discarded, and a saved one edited or retired','the voice switch: off by default, no Write as, Default voice, Change the voice, voice learning, Create voices for every author or voice-sample choices; kinds of post on their own screen with Back; on, each returns','Finishing on the desk: every tool listed with Copy edit first and Quick check in place of Proofread, Copy edit opening Review mode, Humanize previewed before and after with Apply, Edit, Skip and Apply all (a flagged change left), Quick check with Fix, facts with Add a source and Keep it, facts never applied all at once, headline alternatives, feedback in place and added to a typed note, the pre-publish check, a repurposed copy as a new blog, the Google Doc send with every change a suggestion or a comment, a full-screen sheet on a phone, a sheet opened from the panel on top on a phone and a tablet, a redraw on turning the screen, and no redraw under a focused control','an interview’s outline, a saved blog’s details and the old wizard’s address opening the desk start, the old Polish, paste and Google Doc addresses opening its polishing screen, a saved draft brought as it is','polishing a draft on one screen: no kind of post or step tabs, Check spelling and grammar by default with its line and no style, landing in Review mode, no silent Proofread and tighten, feedback first, a kind only to reshape, optional tone and sources, and A draft switching to it','desk starts: a kind of post, a topic with three editable angles, an outline written from or shaped first, sources and research ticks, the progress screen with its clock, Stop and Retry, the draft opening on its own, an overrun said as such, the Outline tab reordering, writing a section and the draft, bringing back a removed section, and Add a source with a file, a library post and a link, kept with the blog unless ticked','Open on the desk from Home’s finished drafts, Blogs and the manuscript editor','the writing desk: a pasted draft started, typing saved with its revision and session, a section note rewritten while its card works, a selection shortened, History compared and restored, a stale save, a whole-draft note, and a finished run opened on the desk','keep or not, file by file','review aside open by default and folded per blog','Apply the review’s findings, confirmed, three jobs','Open as a Google Doc, confirmed, private, once','starts on Home: a topic, an outline or notes, a draft, and the Done card’s Pre-publish and Repurpose','feedback','access and memory kinds','request ownership','curation conflicts','article/finding disclosures',
+  const checks=['Review mode with suggestions that meet: a cut beside a word another fix changes keeping that word as context and still accepted, two that add the same word at one place never both landing, and Accept all leaving a rewrite that would retire a flagged fix','Review mode’s Accept all sending what is shown and not flagged from both sets in one request, a hidden fix never accepted, the toast counting what was accepted, carried and no longer fits, and a retired suggestion naming the one that changed its words; keys that carry their set; the Consistency label; a choice made while a paragraph is open closing it; Fix, Dismiss, the filter and the checkbox keeping focus across a redraw; Quick check read again after a pause, not on every save; and a dismissed finding staying dismissed when text before it moves','Review mode with human-sounding suggestions: the polish start’s checkbox with a strength shown in place, Copy edit then Humanize with Stop and the line for each, the fixes acted on while Humanize works, both tools’ suggestions in reading order with their labels and one count, a wording fix’s alternatives picked then accepted, a rewrite of words an accepted fix changed retiring and naming the fix, the Show filter, Accept all leaving flagged ones from both, Quick check’s findings listed with Fix and Dismiss, Check again rerunning both, the choice in Review mode’s own first check, and the paragraph being edited kept while Humanize lands','a save that finds sections reordered elsewhere draws them, the field typed in kept','Review mode, the polish start’s Check spelling and grammar: Copy edit queued and a calm line with Stop while it checks, the draft as readable text with its headings and an image thumbnail, each fix marked inline with its reason, Accept and Reject, Accept all leaving a flagged fix, Reject all, a paragraph edited in place with a fix that no longer fits dropping out, Check again, Review Google changes previewing suggestions and comments before a single Send action, a new paragraph, a removed one and a comment listed, none said to stay here, Copy and Download otherwise, Open the full desk and back, and the fixes stacked on a phone','typing on the desk while a poll and a job land: the title, the opening, a section’s text, section notes, the whole-draft note, an Outline brief, Finishing’s edit box and Review mode’s paragraph editor keep focus, caret and words, a field focused while its own section was rewritten shows the rewrite and types on from it, a section added meanwhile is drawn around the field, and a card the job changed is drawn again once focus leaves it','images on the desk: each part’s text shows its references as typed and no field holds image data, thumbnails under the parts that refer to them, an image kept nowhere said to be missing, the images read once and kept, autosaves free of image data, a pasted image shown as its reference, and Copy and Download with the images back at the end','Apply a voice in Finishing: a voice guide chosen, retired ones left out, each part before and after, Apply all leaving a part that changes a fact, code or its shape, and Skip','voice guides: the sidebar screen, a guide written by hand, one made from samples then read and edited, one being made discarded, and a saved one edited or retired','the voice switch: off by default, no Write as, Default voice, Change the voice, voice learning, Create voices for every author or voice-sample choices; kinds of post on their own screen with Back; on, each returns','Improve discovery’s GEO additions: every tool listed in its group with the post’s Include a GEO review choice after them, an FAQ of 3 to 6 questions each ticked, edited or dropped and placed (before a closing call to action by default) and added all or ticked, the new form of an FAQ the post has, an out-of-date one only skipped, key takeaways after the opening, alt text said to come from what the post says, search questions as advice with Copy, Before publishing’s GEO review done, waiting, under way or out of date with Run GEO review beside the pre-publish check, and New blog’s choice off unless ticked','Repurpose’s SEO meta description counted in characters, refused over 155, kept with the post rather than made a new blog, copied, and said to be out of date after a change','Finishing on the desk: every tool listed with Copy edit first and Quick check in place of Proofread, Copy edit opening Review mode, Humanize previewed before and after with Apply, Edit, Skip and Apply all (a flagged change left), Quick check with Fix, facts with Add a source and Keep it, facts never applied all at once, headline alternatives, feedback in place and added to a typed note, the pre-publish check, a repurposed copy as a new blog, the Google Doc send with every change a suggestion or a comment, a full-screen sheet on a phone, a sheet opened from the panel on top on a phone and a tablet, a redraw on turning the screen, and no redraw under a focused control','an interview’s outline, a saved blog’s details and the old wizard’s address opening the desk start, the old Polish, paste and Google Doc addresses opening its polishing screen, a saved draft brought as it is','polishing a draft on one screen: no kind of post or step tabs, Check spelling and grammar by default with its line and no style, landing in Review mode, no silent Proofread and tighten, feedback first, a kind only to reshape, optional tone and sources, and A draft switching to it','desk starts: a kind of post, a topic with three editable angles, an outline written from or shaped first, sources and research ticks, the progress screen with its clock, Stop and Retry, the draft opening on its own, an overrun said as such, the Outline tab reordering, writing a section and the draft, bringing back a removed section, and Add a source with a file, a library post and a link, kept with the blog unless ticked','Open on the desk from Home’s finished drafts, Blogs and the manuscript editor','the writing desk: a pasted draft started, typing saved with its revision and session, a section note rewritten while its card works, a selection shortened, History compared and restored, a stale save, a whole-draft note, and a finished run opened on the desk','keep or not, file by file','review aside open by default and folded per blog','Apply the review’s findings, confirmed, three jobs','Open as a Google Doc, confirmed, private, once','starts on Home: a topic, an outline or notes, a draft, and the Done card’s Pre-publish and Repurpose','feedback','access and memory kinds','request ownership','curation conflicts','article/finding disclosures',
     'historical import preview/batching and source controls','diff-only saves and explicit ready/published confirmation',
     'analysis disclosure and per-operation choice','unreadable-blog notes','badge class whitelist','busy state',
     'refresh with a new selection','guided run decisions and handoff controls','a Google Doc already a blog here reopening on the desk from the polishing start, an unreadable answer said there with the link kept','review selection, preserved wording, late reads and in-flight saves','manual feedback and comments-only completion','brand skill inputs and confirmation','shared settings refusal/reload/retry, with the default voice','Interview me writes as a chosen voice','stops, now line, honest retry, note and phone toolbar','where new work stops, in Settings','one name for each thing','copy that says what the gates do','finish, done card, typed-title delete, restore and idea picks','your files on the desk start: one request, per-file text and roles, a refused role said, kept with the blog unless ticked, a Google Doc; an older run’s angle picks, none of these and check detail lines','voice samples from a list of links: suggested author, scope check, one site, batches, byline keep and learning','add to the library: files, links and a Doc checked then added, each post’s own author grouped, renamed, merged and completed, marked as samples and learned from with the usual confirmation','the library screen: role, kind and author filters, a selection, and its three actions','select all on the page and every match through the server, kept across filters','create voices for every author: two readable posts, one confirmation, updates not duplicates, each job reviewed, who was not queued, and a batch of at most the server’s limit','create a voice: links, uploads, a LinkedIn export and library posts in one samples list','moved controls: each view’s one primary action, Refresh Hub, Import, Upload and More filters','a name that might be one person: suggested, confirmed as the same person or kept apart, and an author edited in Review details','from the library on the desk start, with a learned style’s samples pre-ticked','Length on the desk start, for new writing only','voices and kinds of post sheet, style learning and the LinkedIn export','sample candidates and pending sources','a run’s voice and kind of post, with a confirmed change','Tools and Voices and kinds of post in plain sight','a refused research case listed by kind and verdict, kept on this computer','research rounds under way, what the last attempt took and what Try again does','Continue without research, confirmed, and the run’s stops line','Finish confirmed at every review level, naming the team library','failures that say what to do: Status and what the assistant said, where the time limit lives, setup that shows an assistant is missing','the desk start’s research ticks following Settings, changed for one blog','your sites on the desk start: the shared list prefilled, a site for one blog checked by the server, none ticked refused; the sites named at an older run’s research gate','a desk blog another computer drives: read only, Take over, Take this blog and Hand over, each with the desk’s version','a stopped desk start: Try again with more time, Continue without research confirmed, Open Status with what the assistant said, Retry and Delete this start','Make a Google Doc on the desk, confirmed, then Google Doc and suggestions; a Doc an older run links offers Open its run','Mark as published on the desk keeps the draft in the team library, and says so','the paste field up to 200,000 characters, and a library upload edited on the desk with the file’s text','the desk start puts the idea and one source inventory before optional writing preferences','one name each, and page sentences that name the page: first pass, Tools, kinds of post, voice guides, Settings, Home, Sources and a desk blog’s details','a desk start that stopped on another computer: who drives it, Take over or Take this blog with the desk’s version, then Retry','no page code nothing calls: the brand notice, the old run renderers, the Writing runs view and unused mode descriptions','Keep in library or Only this blog at upload, and Update available on the desk taken only with Use revision N','element ids'];
@@ -1364,6 +1366,14 @@ async function contextualTools(){
   f.set('job',{id:'a'.repeat(32),kind:'repurpose',status:'ready',metadata:{article:'fixture',words:150},result:{content:'Prepared copy',notes:'No posting'},source_changed:true});
   await f.run('sToolJob(job)');assert.ok(sheet().some(node=>node.textContent==='Return to current source'));
   assert.equal(sheet().some(node=>node.textContent==='Save named copy'),false);
+  // The older Tools path: an SEO meta description is counted in characters and kept with the
+  // blog, with no variant name and no word target.
+  await f.run("sRepurposeTool('fixture')");const copyFormat=sheet().find(node=>node.id==='copy-format');copyFormat.value='meta';await copyFormat.listeners.change();
+  assert.ok(!sheet().some(node=>node.id==='copy-words'),'no word target for a meta description');
+  f.set('job',{id:'e'.repeat(32),kind:'repurpose',status:'ready',metadata:{article:'fixture',format:'meta',words:null},result:{content:'A synthetic meta description.',notes:''},source_changed:false});
+  await f.run('sToolJob(job)');assert.ok(sheet().some(node=>node.textContent==='Keep with this blog'));
+  assert.ok(sheet().some(node=>node.textContent==='29 of 155 characters'));
+  assert.ok(!sheet().some(node=>node.id==='variant-name'),'kept with the blog, not a named copy');
   const pending=deferred(),g=fixture(()=>pending.promise);g.loadRunner();
   const read=g.run("sHistoryPreview({id:'fixture'},'draft-1.md')");g.run('sCloseSheet()');pending.resolve({changes:{changes:[]},scope:'Local'});await read;
   assert.equal(g.run('studio.sheet'),null);
@@ -4360,7 +4370,7 @@ async function deskFinishing(){
   assert.match(nodes().find(n=>/desk-layout/.test(n.className)).className,/desk-finishing/);
   assert.match(descendants(panel()).find(n=>/desk-finish-head/.test(n.className)).className,/\bglass\b/,'transient chrome uses the material');
   const tools=descendants(panel()).filter(n=>n.className==='pick-card').map(n=>n.textContent);
-  assert.deepEqual(tools,['Copy edit','Humanize','Quick check','Check facts against sources','GEO: retrieval readiness','Headline and opening','Feedback without a rewrite','Apply a voice','Before publishing']);
+  assert.deepEqual(tools,['Copy edit','Humanize','Quick check','Check facts against sources','GEO: retrieval readiness','FAQ','Key takeaways','Comparison table','Quotes from sources','Definition-style opening','Image alt text','Likely search questions','Headline and opening','Feedback without a rewrite','Apply a voice','Before publishing']);
   assert.ok(!tools.includes('Proofread'),'the mechanical check is Quick check, not Proofread');
   assert.ok(descendants(panel()).some(n=>n.textContent==='Dashes, repetition, source IDs, editorial notes and passages carried over from examples, checked at once with no assistant.'),'Quick check says what it checks');
   assert.equal(descendants(panel()).find(n=>n.textContent==='Apply a voice').disabled,false);
@@ -5052,6 +5062,184 @@ async function oneNameEach(){
 }
 // A desk start that stopped on another computer: the progress screen says who drives it and
 // offers Take over, posting the desk's version; once taken, Retry is on.
+// Improve discovery: the GEO additions on request (an FAQ placed and chosen question by
+// question, key takeaways, alt text said to be from the post, search questions as advice),
+// Include a GEO review on New blog and on the desk, and Run GEO review in Before publishing.
+async function deskGeoAdditions(){
+  let view=deskView({sections:[...deskView().sections,{id:'dddddddd',heading:'Next steps',brief:'',text:'Try it today.'}],geo_review:{include:false,status:'none'}}),job=0;
+  const t=deskStartFixture((url,data)=>{
+    if(url.startsWith('/api/desk?'))return view;
+    if(url==='/api/desk-finish'){view={...view,working:{id:'g'+(++job),kind:'finish-'+data.tool,status:'queued',busy:true,part:'finishing',action:data.tool},geo_review:data.tool==='geo'?{...view.geo_review,status:'working'}:view.geo_review};return view;}
+    if(url==='/api/desk-apply'){view={...view,revision:view.revision+1,finished:{applied:1,left:[]}};return view;}
+    if(url==='/api/desk-skip'){view={...view,finished:{skipped:1}};return view;}
+    if(url==='/api/desk-geo-option'){view={...view,geo_review:{...view.geo_review,include:data.include}};return view;}
+    if(url==='/api/desk-create')return {...deskView({id:'made'}),first_pass_problem:null};
+    return null;
+  });
+  const {f,requests,nodes,sheet}=t;
+  const panel=()=>nodes().find(n=>/(^| )desk-finish( |$)/.test(n.className));
+  const inPanel=label=>descendants(panel()).find(n=>n.textContent===label&&n.listeners.click);
+  const byId=id=>descendants(panel()).find(n=>n.id===id);
+  const item=id=>descendants(panel()).find(n=>n.dataset?.item===id);
+  const last=url=>requests.filter(r=>r.url===url).at(-1)?.data;
+  const show=async next=>{view=next;f.set('next',next);await f.run('studio.desk.view=next;sDeskPanelShow(studio.desk)');};
+  f.run("navigator={clipboard:{writeText:async value=>{window.copied=value;}}}");
+  await f.run("sRoute('desk','desk-blog').then(()=>sDeskChoose(studio.desk,'full'))");
+  await f.run("sDeskFinishOpen(studio.desk)");
+  // 1. The Improve discovery group lists every addition, with this post's GEO choice after them.
+  const list=descendants(panel()).filter(n=>n.className==='pick-card'||n.className==='desk-tool-group'||/desk-geo-choice/.test(n.className)).map(n=>n.className==='pick-card'?n.textContent:n.className==='desk-tool-group'?'#'+n.textContent:'[choice]');
+  const at=list.indexOf('#Improve discovery');
+  assert.deepEqual(list.slice(at,at+10),['#Improve discovery','GEO: retrieval readiness','FAQ','Key takeaways','Comparison table','Quotes from sources','Definition-style opening','Image alt text','Likely search questions','[choice]']);
+  const choice=byId('desk-geo-include');assert.equal(choice.checked,false,'off unless chosen');
+  assert.match(descendants(panel()).find(n=>n.id==='desk-geo-include-hint').textContent,/one GEO review runs as part of this post’s work.* Turned on, it runs now\.$/);
+  assert.equal(f.run("deskGeoDue({due:'ran',include:false})"),'This post’s GEO review has already run, so turning this on runs nothing more.');
+  assert.equal(f.run("deskGeoDue({due:'draft',include:true})"),'It runs once the full draft is written.');
+  choice.checked=true;choice.listeners.change();for(let i=0;i<10;i++)await new Promise(done=>setImmediate(done));
+  assert.deepEqual(last('/api/desk-geo-option'),{id:'desk-blog',include:true});
+  assert.equal(f.run('studio.desk.view.geo_review.include'),true);
+  // 2. FAQ: 3 to 6 questions, then each one ticked, edited or dropped, placed, and added.
+  await inPanel('FAQ').listeners.click();
+  await inPanel('4').listeners.click();await inPanel('Write the FAQ').listeners.click();
+  assert.deepEqual(last('/api/desk-finish'),{id:'desk-blog',seen:1,tool:'faq',count:4});
+  assert.ok(descendants(panel()).some(n=>n.textContent==='Writing questions a reader would ask next…'));
+  const questions=[{question:'Why parse once?',answer:'It saves time.'},{question:'What does it read?',answer:'Files.'},{question:'Is it fast?',answer:'Yes, in the post’s test.'}];
+  await show({...view,working:null,finishing:{faq:finishSet('faq',[{part:'new',insert:true,heading:'Frequently asked questions',before:'',after:'x',at:'dddddddd',cta:'dddddddd',questions,note:'Each answer comes only from the post and its sources; a question they do not answer was left out.'}],{count:4})}});
+  assert.ok(descendants(item('p1')).some(n=>n.textContent==='A new section: “Frequently asked questions”'));
+  assert.equal(descendants(panel()).find(n=>n.attributes?.['aria-label']==='Questions').children.find(n=>n.attributes?.['aria-pressed']==='true').textContent,'4','the count the set was made with');
+  assert.ok(descendants(item('p1')).some(n=>n.textContent==='All 3 questions go in.'));
+  const place=byId('desk-faq-place-p1');
+  assert.deepEqual(place.children.map(o=>[o.value,o.textContent]),[['aaaaaaaa','After the opening'],['bbbbbbbb','After “First part”'],['cccccccc','After “Second part”'],['dddddddd','After “Third part”'],['end','At the end, after “Next steps”']]);
+  assert.equal(place.value,'dddddddd','before the closing call to action by default');
+  assert.ok(descendants(item('p1')).some(n=>n.textContent==='Suggested: before “Next steps”, the closing call to action.'));
+  // The preview is what goes in; untick the second, edit the third's answer, move it.
+  const tick=byId('desk-faq-p1-1-on');tick.checked=false;tick.listeners.change();
+  const answer=byId('desk-faq-p1-2-answer');answer.value='Yes, as the post measures it.';answer.listeners.input();
+  place.value='end';place.listeners.change();
+  assert.ok(descendants(item('p1')).some(n=>n.textContent==='2 of 3 questions ticked.'));
+  const preview=descendants(item('p1')).find(n=>n.className==='desk-section-preview');
+  assert.deepEqual(descendants(preview).filter(n=>n.tagName==='strong').map(n=>n.textContent),['Why parse once?','Is it fast?'],'the preview reads as the post will, bold questions with no marks');
+  assert.ok(descendants(preview).some(n=>n.textContent==='Yes, as the post measures it.'),'the preview follows each edit');
+  assert.ok(!descendants(preview).some(n=>/\*\*/.test(n.textContent)),'no Markdown marks in the preview');
+  assert.ok(inPanel('Add all (3)'));
+  await inPanel('Add the ticked (2)').listeners.click();
+  assert.deepEqual(last('/api/desk-apply'),{id:'desk-blog',seen:1,job:view.finishing.faq.job,items:[{id:'p1',after:'**Why parse once?**\n\nIt saves time.\n\n**Is it fast?**\n\nYes, as the post measures it.',at:'end'}]});
+  assert.ok(descendants(f.get('toasts')).some(n=>n.textContent==='Added “Frequently asked questions” as a new section. To take it out, remove it on the Outline tab.'));
+  assert.ok(descendants(panel()).some(n=>n.focused),'focus stays in Finishing after Add');
+  // A post that already has an FAQ: its new form, with no place to pick and nothing added twice.
+  await show({...view,finishing:{faq:finishSet('faq',[{part:'bbbbbbbb',whole:true,before:'**Old?**\n\nOld.',after:'**New?**\n\nNew.',questions:[{question:'New?',answer:'New.'}]}])}});
+  assert.ok(descendants(item('p1')).some(n=>n.textContent==='This post already has this section, so this proposes its new form rather than a second one.'));
+  assert.ok(!byId('desk-faq-place-p1'));
+  await inPanel('Use all (1)').listeners.click();
+  assert.deepEqual(last('/api/desk-apply').items,[{id:'p1',after:'**New?**\n\nNew.'}]);
+  // The post changed since: out of date, with only Skip.
+  await show({...view,finishing:{faq:finishSet('faq',[{part:'new',insert:true,heading:'Frequently asked questions',before:'',after:'stale',at:'end',questions,present:false}])}});
+  assert.ok(descendants(item('p1')).some(n=>n.textContent==='The post changed since this was suggested, so it no longer fits. Run it again for the latest.'));
+  assert.ok(!inPanel('Add all (3)'));await inPanel('Skip').listeners.click();
+  assert.deepEqual(last('/api/desk-skip'),{id:'desk-blog',job:view.finishing.faq.job,items:['p1']});
+  // 3. Key takeaways: after the opening by default.
+  await inPanel('All tools').listeners.click();await inPanel('Key takeaways').listeners.click();
+  await show({...view,finishing:{takeaways:finishSet('takeaways',[{part:'new',insert:true,heading:'Key takeaways',before:'',after:'x',at:'aaaaaaaa',points:[{point:'Parse once.'},{point:'Keep it simple.'}]}])}});
+  assert.equal(byId('desk-takeaways-place-p1').value,'aaaaaaaa');
+  await inPanel('Add all (2)').listeners.click();
+  assert.deepEqual(last('/api/desk-apply').items,[{id:'p1',after:'- Parse once.\n- Keep it simple.',at:'aaaaaaaa'}]);
+  // 4. Alt text says plainly it is from what the post says, and is applied like any proposal.
+  await inPanel('All tools').listeners.click();await inPanel('Image alt text').listeners.click();
+  assert.ok(descendants(panel()).some(n=>/Blog Studio cannot see the images themselves/.test(n.textContent)));
+  await show({...view,finishing:{alt:finishSet('alt',[{part:'aaaaaaaa',before:'![](https://x.test/a.png)',after:'![A chart](https://x.test/a.png)',alt:true,note:'Written from what the post says about this image: its caption, the text around it and its file name. Blog Studio cannot see the image itself, so check this describes it.'}],{unknown:1})}});
+  assert.ok(descendants(panel()).some(n=>/1 image the post says nothing about: describe it yourself/.test(n.textContent)));
+  assert.ok(descendants(item('p1')).some(n=>/cannot see the image itself/.test(n.textContent)));
+  await descendants(item('p1')).find(n=>n.textContent==='Apply').listeners.click();
+  assert.deepEqual(last('/api/desk-apply').items,[{id:'p1'}]);
+  // 5. Likely search questions: advice listed with Copy, nothing to apply.
+  await inPanel('All tools').listeners.click();await inPanel('Likely search questions').listeners.click();
+  await show({...view,finishing:{queries:finishSet('queries',[],{queries:['How do parsers read files?','Why parse once?']})}});
+  assert.ok(descendants(panel()).some(n=>n.textContent==='Advice for you: these are not added to the post. Use them to check the post answers each one plainly.'));
+  assert.ok(!descendants(panel()).some(n=>/^Apply/.test(n.textContent)));
+  await inPanel('Copy the questions').listeners.click();assert.equal(f.run('window.copied'),'How do parsers read files?\nWhy parse once?');
+  await inPanel('All tools').listeners.click();
+  assert.ok(descendants(panel()).some(n=>n.textContent==='2 questions listed.'),'the tool list counts them');
+  // 6. Before publishing: the GEO review's state beside the pre-publish check, and Run GEO review.
+  await inPanel('Before publishing').listeners.click();
+  const cards=descendants(panel()).filter(n=>n.className==='card-title').map(n=>n.textContent);
+  assert.deepEqual(cards.slice(0,3),['Pre-publish check','GEO review','Repurpose']);
+  assert.ok(descendants(panel()).some(n=>n.textContent==='No GEO review for this post yet.'));
+  await inPanel('Run GEO review').listeners.click();
+  assert.deepEqual(last('/api/desk-finish'),{id:'desk-blog',seen:view.revision,tool:'geo'});
+  assert.equal(f.run('studio.desk.finish.tool'),'geo','it opens the GEO review to follow it');
+  await f.run("sDeskFinishTool(studio.desk,'publish')");
+  assert.ok(descendants(panel()).some(n=>n.textContent==='Under way: the GEO review is reading the post.'));
+  await show({...view,working:null,geo_review:{include:true,status:'waiting',waiting:'draft'}});
+  assert.ok(descendants(panel()).some(n=>n.textContent==='Waiting: it runs once the full draft is written.'));
+  await show({...view,geo_review:{include:true,status:'not-run',why:'conversation',due:'conversation'}});
+  assert.ok(descendants(panel()).some(n=>n.textContent==='Not run yet: this post’s work belongs to the conversation, so its GEO review does not run by itself here. Run GEO review to run it now.'));
+  await show({...view,geo_review:{include:true,status:'none',due:'ran'}});
+  assert.ok(descendants(panel()).some(n=>n.textContent==='No GEO review on this computer yet. This post’s one review already ran, so it does not run again by itself.'));
+  await show({...view,geo_review:{include:true,status:'done',open:2}});
+  assert.ok(descendants(panel()).some(n=>n.textContent==='Done: 2 proposals wait in GEO: retrieval readiness.'));
+  await show({...view,geo_review:{include:true,status:'stale',open:0}});
+  assert.ok(descendants(panel()).some(n=>n.textContent==='Out of date: the post changed since the GEO review ran. Run it again for the latest.'));
+  const requested=requests.filter(r=>r.url==='/api/desk-finish').length;
+  assert.equal(requested,2,'an out-of-date review only offers to run again');
+  await inPanel('Run GEO review again').listeners.click();
+  assert.equal(last('/api/desk-finish').tool,'geo');
+  // 7. New blog: Include a GEO review, off by default, sent only when ticked.
+  await f.run("sDeskBegin({have:'draft'})");
+  const box=nodes().find(n=>n.id==='desk-geo-review');assert.equal(box.checked,false);
+  t.type('desk-manuscript','# A synthetic draft\n\n## One\n\nSome text.');
+  box.checked=true;box.listeners.change();
+  await t.click('Leave it as it is');await t.submit();
+  assert.equal(requests.filter(r=>r.url==='/api/desk-create').at(-1).data.geo_review,true);
+  await f.run("sDeskBegin({have:'draft'})");t.type('desk-manuscript','# Another\n\n## One\n\nText.');
+  await t.click('Leave it as it is');await t.submit();
+  assert.ok(!('geo_review' in requests.filter(r=>r.url==='/api/desk-create').at(-1).data),'off is not sent');
+  await f.run("sDeskBegin({have:'topic'})");f.run('studio.deskStart.step=1');await f.run('sDeskStart()');
+  assert.ok(nodes().some(n=>n.id==='desk-geo-review'),'a new start offers it too');
+}
+// Repurpose's SEO meta description: counted in characters, refused over 155, kept with the
+// post (never a new blog), copied, and said to be out of date once the post changes.
+async function deskMetaDescription(){
+  let view=deskView();const meta='A synthetic description of how the parser reads files.';
+  const t=deskStartFixture((url,data)=>{
+    if(url.startsWith('/api/desk?'))return view;
+    if(url==='/api/tool-action')return {id:'m'.repeat(32),kind:'repurpose',status:'ready',metadata:{article:'desk-blog',format:'meta',words:null},result:{content:meta,notes:''}};
+    if(url==='/api/desk-meta'){view={...view,meta_description:{text:data.content.trim(),characters:Array.from(data.content.trim()).length,limit:155,saved_at:'x',out_of_date:false}};return view;}
+    return null;
+  });
+  const {f,requests,nodes}=t;
+  const panel=()=>nodes().find(n=>/(^| )desk-finish( |$)/.test(n.className));
+  const inPanel=label=>descendants(panel()).find(n=>n.textContent===label&&n.listeners.click);
+  const byId=id=>descendants(panel()).find(n=>n.id===id);
+  const last=url=>requests.filter(r=>r.url===url).at(-1)?.data;
+  f.run("navigator={clipboard:{writeText:async value=>{window.copied=value;}}}");
+  await f.run("sRoute('desk','desk-blog').then(()=>sDeskChoose(studio.desk,'full'))");
+  await f.run("sDeskFinishOpen(studio.desk,'publish')");
+  const format=byId('desk-copy-format');
+  assert.ok(format.children.some(o=>o.value==='meta'&&o.textContent==='SEO meta description'),'the format is listed');
+  format.value='meta';await format.listeners.change();
+  assert.equal(f.get('desk-copy-format').focused,true,'focus stays on the format after the card is drawn again');
+  assert.ok(!byId('desk-copy-words'),'the word target does not apply');assert.ok(!byId('desk-copy-url'));
+  assert.ok(descendants(panel()).some(n=>n.textContent==='One line of up to 155 characters, from the post’s own claims. It is kept with this post.'));
+  await inPanel('Write a meta description').listeners.click();
+  const made=last('/api/tool-action');assert.equal(made.kind,'repurpose');assert.equal(made.format,'meta');
+  assert.equal(byId('desk-meta').value,meta);
+  assert.ok(!inPanel('Make it a new blog'),'a meta description never becomes a new blog');
+  assert.ok(descendants(panel()).some(n=>n.textContent===Array.from(meta).length+' of 155 characters'));
+  // Over the limit: said plainly, and Keep waits until it is short enough.
+  const box=byId('desk-meta');box.value='x'.repeat(170);box.listeners.input();
+  assert.ok(descendants(panel()).some(n=>n.textContent==='170 characters: 15 over the 155 a meta description takes. Shorten it to keep it.'));
+  assert.equal(inPanel('Keep with this post').disabled,true);
+  box.value=meta+' ';box.listeners.input();assert.equal(inPanel('Keep with this post').disabled,false);
+  await inPanel('Copy').listeners.click();assert.equal(f.run('window.copied'),meta);
+  await inPanel('Keep with this post').listeners.click();
+  assert.deepEqual(last('/api/desk-meta'),{id:'desk-blog',job:'m'.repeat(32),content:meta+' '});
+  assert.ok(descendants(panel()).some(n=>n.textContent===meta),'the kept description is shown with the post');
+  assert.ok(descendants(panel()).some(n=>n.textContent===Array.from(meta).length+' of 155 characters · kept with this post'));
+  assert.ok(!descendants(panel()).some(n=>/may be out of date/.test(n.textContent)));
+  await inPanel('Copy the description').listeners.click();assert.equal(f.run('window.copied'),meta);
+  // The post changes afterwards: the description may be out of date.
+  f.set('next',{...view,meta_description:{...view.meta_description,out_of_date:true}});await f.run('studio.desk.view=next;sDeskPanelShow(studio.desk)');
+  assert.ok(descendants(panel()).some(n=>n.textContent==='The post changed after this description was written, so it may be out of date.'));
+}
 async function deskStartTakeOver(){
   const elsewhere='Ana has been running this blog from another computer since 20 October. It can be read here. Take it over to change it.';
   const stopped=extra=>startView({working:null,start:{...startView().start,busy:false,status:'failed',problem:'This step stopped. Choose Retry to start it again.',reason:'research',said:null,seconds:600,more:null},...extra});

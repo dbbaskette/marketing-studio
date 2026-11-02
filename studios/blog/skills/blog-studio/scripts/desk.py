@@ -48,6 +48,8 @@ CREATE = frozenset(
         'outline_source',
         'research_from',
         'research_inputs',
+        # Include a GEO review: one review once the full draft is written (desk_jobs.geo_due).
+        'geo_review',
     }
 )
 # What the person brings: a draft (edit), a topic (author), an outline written from or an
@@ -296,6 +298,8 @@ def create(root, data):
         else brand_skill.defaults()
     )
     brand = brand_skill.snapshot(brand_choice['brand'], brand_choice['variant'])
+    if type(data.get('geo_review', False)) is not bool:
+        raise ValueError('Choose whether to include a GEO review.')
     way = data.get('way', 'draft')
     if way not in WAYS:
         raise ValueError('Choose a topic, an outline or notes, or a draft.')
@@ -376,6 +380,8 @@ def create(root, data):
         record.pop('brand', None)
     record['flow'] = 'desk'
     record['title'] = draft['title']
+    if data.get('geo_review'):
+        record['geo_review'] = {'include': True}
     _attach(root, data, record)
     if style:
         record['style'] = studio.style_pin(root, style)
@@ -495,6 +501,8 @@ def _start(root, data, way, title, tone, length, style, author, brand):
     record['flow'] = 'desk'
     if brand:
         record['brand'] = brand
+    if data.get('geo_review'):
+        record['geo_review'] = {'include': True}
     _attach(root, data, record)
     # The native source inventory owns roles, library pins and selected Google tabs.
     # The shared editor can supply research policy without capturing those files again.
@@ -1433,7 +1441,9 @@ ROUTES = {
     # A newer Document Library revision of a source, taken only when asked (shared_library).
     'library-update': {'id', 'source'},
     # Finishing (desk_finish.py): a tool proposes, then the person applies or skips.
-    'finish': {'id', 'seen', 'tool', 'level', 'guide'},
+    'finish': {'id', 'seen', 'tool', 'level', 'guide', 'count'},
+    # Include a GEO review: this post's own choice, kept in its record (desk_jobs.geo_due).
+    'geo-option': {'id', 'include'},
     # Review mode's check: Copy edit, then Humanize when it is on (desk_jobs.review).
     'review': {'id', 'seen', 'humanize', 'voice_guide'},
     'apply': {'id', 'seen', 'job', 'items', 'all'},
@@ -1442,6 +1452,8 @@ ROUTES = {
     'unskip': {'id', 'job', 'items'},
     # Before publishing: a repurpose result as a new blog, and Google suggestions.
     'repurpose': {'id', 'job', 'title', 'content'},
+    # An SEO meta description from Repurpose, kept with this post rather than made a blog.
+    'meta': {'id', 'job', 'content'},
     'google-plan': {'id', 'mode'},
     'google-send': {'id', 'plan', 'confirmed'},
     # Bring the Doc's accepted text back: checked first (nothing changes), then taken.
@@ -1516,6 +1528,7 @@ def _create(root, data):
     problem = None
     if read_start(root, made['id']):
         desk_jobs.begin(root, made['id'])  # A problem is kept on the start, with Retry.
+        desk_jobs.geo_due(root, made['id'])
         return {
             **desk_jobs.view(root, made['id']),
             'first_pass_problem': None,
@@ -1530,6 +1543,7 @@ def _create(root, data):
             desk_jobs.first_pass(root, made['id'], 1, choice)
     except ValueError as error:
         problem = str(error)  # The blog is on the desk either way; the page says why.
+    desk_jobs.geo_due(root, made['id'])  # Once nothing else is under way.
     return {
         **desk_jobs.view(root, made['id']),
         'first_pass_problem': problem,
@@ -1627,8 +1641,22 @@ def dispatch(root, action, data):
             root, ident, data.get('job'), data.get('title'), data.get('content')
         )
         return {**desk_jobs.view(root, ident), 'made': made}
+    elif action == 'meta':
+        import article_tools
+
+        article_tools.keep_meta_job(root, ident, data.get('job'), data.get('content'))
+    elif action == 'geo-option':
+        desk_jobs.geo_option(root, ident, data.get('include'))
     elif action == 'finish':
-        desk_jobs.finish(root, ident, seen, data.get('tool'), data.get('level'), data.get('guide'))
+        desk_jobs.finish(
+            root,
+            ident,
+            seen,
+            data.get('tool'),
+            data.get('level'),
+            data.get('guide'),
+            count=data.get('count'),
+        )
     elif action == 'review':
         desk_jobs.review(
             root,

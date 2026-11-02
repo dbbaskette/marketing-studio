@@ -168,7 +168,8 @@ const Drafting = (() => {
   //   hooks     render(held), refresh(held, before), reload(held), beforeJob(held); and, when
   //             the studio has them: beforeFlush(held), saved(held, part, text),
   //             versionNote(version), extra(held, part), left(held, part, card),
-  //             started(held, view), landed(held, job)
+  //             started(held, view), landed(held, job), groupAfter(held, group) (a node
+  //             shown after a Finishing group's tools, such as a choice about that group)
   //   parts     title(view, part), textOf(view, part), nameOf(view, part), single(part),
   //             noted(view, part)
   //   words()   {thing, sources, doing, steps, named, withOpening, chain, ready(tab)}
@@ -450,7 +451,10 @@ const Drafting = (() => {
     // proposals: verdicts (a tag per claim, supported ones folded, Keep it, and source(held)
     // for Add a source), groups ([[part, name]] of alternatives, Use this), comments ({aspect:
     // name}, feedback that can become a note), applyAll, counted ([one, many]), empty (the
-    // line for an empty set), said(set, said) (more of the set's line) and flagged(n).
+    // line for an empty set), said(set, said) (more of the set's line), flagged(n), and
+  // status(held, set) (its line in the tool list, for a set that proposes no changes).
+  // After an apply or a skip, focus goes to the next proposal's first control, or to the
+  // panel's title when none is left, so a keyboard user keeps their place (refocus).
     const commenting = () => (a.tools() || []).find(tool => tool.comments) || null;
     k.finishOpen = (held, key = null) => {
       const tool = key ? k.tool(key) : null;
@@ -495,12 +499,15 @@ const Drafting = (() => {
       for(const [group,tools] of groups){
         if(group)list.append(make('h3','desk-tool-group',group));
         for(const tool of tools)list.append(a.ui.pickCard(tool.name, k.toolSays(held, tool.key) || tool.says, () => k.finishTool(held, tool.key)));
+        const after=group?hook('groupAfter', held, group):null;if(after)list.append(after);
       }
       return [make('p', 'quiet', 'Each tool proposes changes. Preview each one, then apply, edit or skip it. Nothing changes until you apply, and the earlier text stays in History.'), list];
     };
     k.toolSays = (held, key) => {
       const job = held.view.working; if (job && job.kind === 'finish-' + key) return 'Working on it…';
       const set = (held.view.finishing || {})[key]; if (!set) return '';
+      const tool = k.tool(key), said = tool && tool.status ? tool.status(held, set) : '';
+      if (said) return said;
       const open = set.items.filter(item => item.state === 'open').length;
       return open ? open + ' to review.' : 'Nothing left to review.';
     };
@@ -605,12 +612,20 @@ const Drafting = (() => {
           for (const chosen of items) delete held.finish.editing[chosen.id];
           const done = held.view.finished || { applied: items.length, left: [] }, left = (done.left || []).length;
           a.ui.toast((done.applied === 1 ? 'Applied.' : 'Applied ' + done.applied + '.') + ' The earlier text is in History.' + k.finishedSaid(done) + (left ? ' ' + left + (left === 1 ? ' no longer fits and is' : ' no longer fit and are') + ' left for you.' : ''));
-          a.hooks.refresh(held, before); k.panelShow(held);
+          a.hooks.refresh(held, before); k.panelShow(held); k.refocus(held);
         } catch (error) { if (stale(error)) { held.stale = true; k.stale(held); } else a.ui.notice(error.message, true); }
       });
     };
     k.skip = async (held, set, ids, control) => {
-      await a.ui.busy(control, 'Setting aside…', async () => { try { const before = held.view; held.view = await a.api(a.routes.skip, { id: held.id, job: set.job, items: ids }); a.hooks.refresh(held, before); k.panelShow(held); } catch (error) { a.ui.notice(error.message, true); } });
+      await a.ui.busy(control, 'Setting aside…', async () => { try { const before = held.view; held.view = await a.api(a.routes.skip, { id: held.id, job: set.job, items: ids }); a.hooks.refresh(held, before); k.panelShow(held); k.refocus(held); } catch (error) { a.ui.notice(error.message, true); } });
+    };
+    k.refocus = held => {
+      const panel = held.panel; if (!panel || typeof panel.querySelectorAll !== 'function') return;
+      const next = Array.from(panel.querySelectorAll('.desk-proposal')).map(card => Array.from(card.querySelectorAll('button')).find(button => !button.disabled)).find(Boolean);
+      const title = panel.querySelector('.desk-finish-title'), target = next || title;
+      if (!target || typeof target.focus !== 'function') return;
+      if (target === title) title.setAttribute('tabindex', '-1');
+      target.focus();
     };
     // Feedback: comments shown in the panel and in their part's card, each a note in one click.
     k.commentKey = (view, part) => { const tool = commenting(), set = tool && (view?.finishing || {})[tool.key]; return set ? JSON.stringify(set.items.filter(item => item.part === part && item.state === 'open').map(item => item.id)) : ''; };

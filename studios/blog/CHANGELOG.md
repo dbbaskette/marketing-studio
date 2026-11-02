@@ -5,6 +5,31 @@ changes for authors first, then what changes for maintainers.
 
 ## Unreleased
 
+- **GEO additions on request, and a GEO review for each post that asks for one (#276).**
+  Finishing's **Improve discovery** group adds an FAQ, key takeaways, a comparison table,
+  quotes from sources, image alt text, likely search questions and a definition-style
+  opening, each a proposal previewed, then applied or skipped. An FAQ (3 to 6 questions)
+  and key takeaways are sections you place, choosing and editing each question or point
+  and adding all or the ticked ones; on a post that has one, they propose its new form.
+  Quotations are checked word for word against the source, alt text says it comes from
+  what the post says because Blog Studio cannot see images, and search questions are
+  advice only. New blog has **Include a GEO review**, off by default and changeable under
+  the group on the desk: when it is on, one GEO review runs once the full draft is written
+  and its proposals wait in Finishing. Before publishing shows the review done, waiting,
+  under way or out of date, with **Run GEO review** beside the pre-publish check on every
+  post. Existing posts start with it off. Maintainers: `desk_finish.ADDITIONS` and
+  `ADDITION_READERS`, an inserted section applied by `_insert`, `desk_jobs.geo_due`,
+  `geo_option` and `geo_view`, the post's choice in its record as `geo_review`, and two
+  opt-in hooks in `ui-kit/drafting.js` (`groupAfter` and a tool's `status`).
+
+- **Repurpose writes an SEO meta description (#275).** Repurpose, on the desk and in the
+  older Tools path, offers **SEO meta description**: one line of up to 155 characters from
+  the post's own claims, in its voice. Its length is counted in characters as you edit it,
+  and anything longer is refused with a plain message; the word target does not apply.
+  **Keep with this post** keeps it in the blog's record, never as a new blog, ready to copy,
+  and it says the description may be out of date once the post changes. Maintainers:
+  `article_tools.keep_meta`, `meta_view` and the `desk-meta` route; Copy and Download
+  write no front matter, so export is unchanged.
 - **A step says when the assistant cannot reach its service from this network (#274).**
   A step whose assistant could not connect no longer sends you to check sign-in and usage.
   It says, for example, "Codex could not reach OpenAI from this network", says when the

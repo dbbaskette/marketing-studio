@@ -31,6 +31,13 @@ KINDS = {
     'finish-feedback',
     'finish-voice',
     'finish-geo',
+    'finish-faq',
+    'finish-table',
+    'finish-quotes',
+    'finish-takeaways',
+    'finish-alt',
+    'finish-queries',
+    'finish-opener',
 }
 DESK = (
     'desk-section',
@@ -48,6 +55,13 @@ DESK = (
     'finish-feedback',
     'finish-voice',
     'finish-geo',
+    'finish-faq',
+    'finish-table',
+    'finish-quotes',
+    'finish-takeaways',
+    'finish-alt',
+    'finish-queries',
+    'finish-opener',
 )
 
 
