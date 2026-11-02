@@ -92,7 +92,11 @@ def git_path():
     return path
 
 
-def report(home=None, sign_in=True):
+def report(home=None, sign_in=True, network=False):
+    """The read-only checks of this computer. `network` also looks at whether each
+    assistant's service can be reached, a TLS connection that sends no request: the Status
+    page and the check command ask for it; setup never does, since setup never uses the
+    network."""
     home = Path(home or Path.home())
     codex, claude, git, gh = cli_path('codex'), cli_path('claude'), git_path(), shutil.which('gh')
     commands = {'python3': ['python3', '--version']}
@@ -120,7 +124,7 @@ def report(home=None, sign_in=True):
     # A signed-in assistant can still be out of reach: a network can block or intercept
     # one service and not another. Claude Code's sign-in is not checked here, so its
     # service is looked at whenever it is installed.
-    reachability = core('reachability') if sign_in else None
+    reachability = core('reachability') if sign_in and network else None
     hosts = {}
     if reachability is not None:
         if codex and codex_signed:

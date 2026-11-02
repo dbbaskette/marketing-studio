@@ -833,6 +833,85 @@ class UnreachableServiceTests(MeteredWorkerTests):
         )
         self.looked.assert_not_called()
 
+    def test_model_request_and_usage_errors_keep_their_advice_whatever_was_retried(self):
+        retried = ''.join(
+            f'ERROR: Reconnecting... {n}/5 (exceeded retry limit, last status: 429 Too Many '
+            'Requests)\n'
+            for n in range(1, 6)
+        )
+        for said in (
+            # What the assistant thought is not an error line, whatever it mentions.
+            'thinking\n'
+            'A connection refused, or certificate verify failed, would explain the outage.\n'
+            'ERROR: unexpected status 400 Bad Request: {"detail":"The model is not supported '
+            'when using Codex with a ChatGPT account."}',
+            'ERROR: stream disconnected before completion: Your input exceeds the context '
+            'window of this model. Please adjust your input and try again.',
+            retried.strip(),
+            'codex\nThe service could not connect to the database: connection refused.\n'
+            'ERROR: the model returned an empty response',
+        ):
+            with self.subTest(said=said):
+                self.codex(said)
+                self.assertIn(
+                    'Check its sign-in and usage under Status', str(self.failure('codex'))
+                )
+        self.looked.assert_not_called()
+
+    def test_a_connection_that_kept_dropping_is_not_blamed_on_this_network_unconfirmed(self):
+        outage = (
+            ''.join(
+                f'ERROR: Reconnecting... {n}/5 (unexpected status 500 Internal Server Error)\n'
+                for n in range(1, 6)
+            )
+            + 'ERROR: unexpected status 500 Internal Server Error'
+        )
+        for said in (outage, 'ERROR: stream disconnected before completion'):
+            with self.subTest(said=said):
+                self.found = None
+                self.codex(said)
+                self.assertEqual(
+                    str(self.failure('codex')),
+                    'Codex lost its connection to OpenAI before it finished. Try again in a moment.',
+                )
+                # When the look at this network confirms it, the network is named.
+                self.found = ('intercepted', 'self-signed certificate in certificate chain')
+                self.assertIn(
+                    'Codex could not reach OpenAI from this network: the connection to '
+                    'chatgpt.com is being intercepted',
+                    str(self.failure('codex')),
+                )
+
+
+class ErrorLineTests(unittest.TestCase):
+    """Which of a failed run's lines are its own error lines, and what they say."""
+
+    def test_only_lines_the_cli_marked_as_errors_are_read(self):
+        lines = [
+            'ERROR: workspace routing discovery failed',
+            '[2026-11-02T10:00:00] ERROR: stream disconnected',
+            '2026-11-02T10:00:00.123Z ERROR codex_core::client: error sending request',
+            'API Error: Connection error.',
+            'Error: connect ECONNREFUSED',
+            'warning: workspace routing discovery failed',
+            'The error was a connection refused.',
+            'thinking about the certificate',
+        ]
+        self.assertEqual(blog_worker.reachability.error_lines(lines), lines[:5])
+
+    def test_what_the_error_lines_say(self):
+        failure = blog_worker.reachability.connection_failure
+        self.assertEqual(failure(CODEX_CUT_OFF.splitlines()), 'network')
+        self.assertEqual(failure(['ERROR: Reconnecting... 5/5']), 'dropped')
+        self.assertIsNone(failure(['ERROR: Reconnecting... 2/5 (stream disconnected)']))
+        self.assertEqual(
+            failure(['ERROR: Reconnecting... 5/5 (stream disconnected: error sending request)']),
+            'network',
+        )
+        self.assertIsNone(failure(['ERROR: unexpected status 401 Unauthorized']))
+        self.assertIsNone(failure(['ERROR: connection refused', 'ERROR: usage limit reached']))
+        self.assertEqual(failure(['ERROR: failed to connect to chatgpt.com:443']), 'network')
+
 
 class RunFailureTests(ResearchCase):
     def failing(self, error):

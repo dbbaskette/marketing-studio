@@ -19,7 +19,7 @@ import start_studio
 
 
 class ComputerTests(unittest.TestCase):
-    def check(self, agents=(), git=None, gh=None, signed=None):
+    def check(self, agents=(), git=None, gh=None, signed=None, network=False):
         def probe(command, cwd=None):
             if command[-2:] == ['login', 'status']:
                 return signed
@@ -37,7 +37,7 @@ class ComputerTests(unittest.TestCase):
             patch.object(computer.shutil, 'which', return_value=gh),
             patch.object(computer, 'probe', side_effect=probe),
         ):
-            return computer.report()
+            return computer.report(network=network)
 
     def test_missing_assistant_is_actionable_and_optional_hub_is_separate(self):
         found = self.check()
@@ -75,7 +75,7 @@ class ComputerTests(unittest.TestCase):
         with patch.object(
             reachability, 'blocked', side_effect=lambda host, seconds: blocked.get(host)
         ) as look:
-            found = self.check(**given)
+            found = self.check(network=True, **given)
         for call in look.call_args_list:
             self.assertEqual(call.args[1], computer.NETWORK_SECONDS)
         return found, sorted(call.args[0] for call in look.call_args_list)
@@ -125,13 +125,36 @@ class ComputerTests(unittest.TestCase):
         found, hosts = self.looked({}, agents=('codex',), signed=(1, 'Not logged in'))
         self.assertEqual(hosts, [])
         self.assertIsNone(found['agents']['codex']['reachable'])
+
+    def test_the_status_page_and_the_check_command_ask_for_the_network(self):
+        import management
+
+        empty = {'checks': [], 'notes': [], 'agents': {}}
+        with (
+            patch.object(computer, 'report', return_value=empty) as made,
+            patch('brand_skill.status', return_value={'brands': [], 'problem': '', 'name': ''}),
+        ):
+            management.view(Path(tempfile.gettempdir()), 'computer', {})
+            self.assertEqual(made.call_args.kwargs, {'network': True})
+            with patch('builtins.print'):
+                start_studio.main(['check', '--home', tempfile.gettempdir()])
+            self.assertEqual(made.call_args.kwargs, {'network': True})
+
+    def test_the_network_is_looked_at_only_when_asked(self):
+        from studio_core import reachability
+
+        with patch.object(reachability, 'blocked') as look:
+            found = self.check(('codex', 'claude'), signed=(0, 'Logged in using ChatGPT'))
+        look.assert_not_called()
+        self.assertIsNone(found['agents']['claude']['reachable'])
+        self.assertEqual(self.row(found, 'codex')['status'], 'ready')
         with patch.object(computer, 'unreachable') as look:
             with (
                 patch.object(computer, 'cli_path', return_value='/fixture/claude'),
                 patch.object(computer, 'git_path', return_value=None),
                 patch.object(computer, 'probe', return_value=None),
             ):
-                computer.report(sign_in=False)
+                computer.report(sign_in=False, network=True)
         look.assert_called_once_with([])
 
     def test_bundled_codex_sign_in_uses_a_command_that_exists(self):

@@ -9,12 +9,16 @@ changes for authors first, then what changes for maintainers.
   A step whose assistant could not connect no longer sends you to check sign-in and usage.
   It says, for example, "Codex could not reach OpenAI from this network", says when the
   connection is being intercepted, and suggests another network or the other assistant for
-  new work under **Settings → Writing preferences**. **Status → Check this computer** now
-  reports an assistant that is signed in but cannot be used from this network. A
-  connection that dropped and came back changes nothing. Maintainers: the TLS look moved
-  from the shared runner's `agents` to `studio_core.reachability` (`blocked`, `reachable`,
-  `codex_host`, `cannot_connect`), which `agents.ready()`, `blog_worker` and `computer`
-  share. `WorkerFailure.reason` stays `cli` and `said` keeps the same lines; a Claude Code
+  new work under **Settings → Writing preferences**. A connection that only kept dropping
+  says the assistant lost its connection and to try again in a moment, unless a look at
+  this network confirms it is the network. **Status → Check this computer** now reports an
+  assistant that is signed in but cannot be used from this network; setup's checks still
+  never use the network. A connection that dropped and came back changes nothing.
+  Maintainers: the TLS look moved from the shared runner's `agents` to
+  `studio_core.reachability` (`blocked`, `reachable`, `codex_host`, `error_lines`,
+  `connection_failure`), which `agents.ready()`, `blog_worker` and `computer` share. Each
+  look keeps to one time limit, address lookup included, and a look that runs out of time
+  says nothing. `computer.report(network=True)` asks for the look. `WorkerFailure.reason` stays `cli` and `said` keeps the same lines; a Claude Code
   run that exits with an error result now keeps that result in `said` too.
 
 - **Bring accepted changes reads a rewritten paragraph as it was sent (#267).** A

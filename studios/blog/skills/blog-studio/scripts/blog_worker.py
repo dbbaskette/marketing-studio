@@ -40,11 +40,13 @@ CHOOSE_ASSISTANT = 'Settings → Writing preferences'
 CHECK_SECONDS = 4  # How long each look at the network, or at Codex's sign-in, may take.
 
 
-def unreachable(engine, binary, env=None):
-    """What a run that failed because its assistant could not reach its service says: the
-    assistant, its service, and what to try. It looks once at the network, as Status →
-    Check this computer does, to say when the connection is being intercepted; it sends no
-    request, starts no job and never raises."""
+def unreachable(engine, binary, env=None, kind='network'):
+    """What a run that failed because its assistant could not connect to its service says:
+    the assistant, its service, and what to try. `kind` is what its error lines said
+    (`reachability.connection_failure`). It looks once at the network, as Status → Check
+    this computer does: a connection that only dropped is blamed on this network when that
+    look confirms it, and an intercepted connection is named. It sends no request, starts
+    no job and never raises."""
     host = reachability.HOSTS[engine]
     if engine == 'codex':
         try:
@@ -63,8 +65,17 @@ def unreachable(engine, binary, env=None):
         found = reachability.blocked(host, CHECK_SECONDS)
     except Exception:  # A look that fails must not hide why the run failed.
         found = None
+    service = reachability.SERVICES[host]
+    if not found and kind != 'network':
+        # Nothing says it is this network: the service may have been busy or down.
+        return (
+            NAMES[engine]
+            + ' lost its connection to '
+            + service
+            + ' before it finished. Try again in a moment.'
+        )
     other = NAMES['claude' if engine == 'codex' else 'codex']
-    said = NAMES[engine] + ' could not reach ' + reachability.SERVICES[host] + ' from this network'
+    said = NAMES[engine] + ' could not reach ' + service + ' from this network'
     if found and found[0] == 'intercepted':
         said += (
             ': the connection to ' + host + ' is being intercepted on this network, or its '
@@ -447,9 +458,17 @@ def generate(engine, payload, guidance, seconds=600, web=False, stop=None, model
                 return WorkerFailure(message, reason)
             echoes = echo_check(prompt, given, *strings(payload))
             kept = cleaned([*said, *tail(errors)], echoes)
-            # A CLI that failed because it could not reach its service says so, not sign-in.
-            if network and reachability.cannot_connect(kept):
-                message = unreachable(engine, binary, env)
+            if network:
+                # A CLI that could not connect to its service says so, not sign-in. Only its
+                # own error lines are read: a reported error result, and the lines it marked
+                # as errors, never what the assistant thought or wrote.
+                reported = set(cleaned(said, echoes))
+                lines = [
+                    line for line in kept if line in reported or reachability.error_lines([line])
+                ]
+                kind = reachability.connection_failure(lines)
+                if kind:
+                    message = unreachable(engine, binary, env, kind)
             return WorkerFailure(message, reason, kept)
 
         with (

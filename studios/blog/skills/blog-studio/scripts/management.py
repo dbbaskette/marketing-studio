@@ -2490,7 +2490,7 @@ def view(root, name, query):
         import computer
         import brand_skill
 
-        result = computer.report()
+        result = computer.report(network=True)
         brand = brand_skill.status(refresh=True)
         result['brand'] = brand
         result['checks'].append(

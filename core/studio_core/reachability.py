@@ -1,10 +1,11 @@
 """Whether an assistant's service can be reached from this network, and whether the error
-output of an assistant's failed run says it could not connect to its service.
+lines of an assistant's failed run say it could not connect to its service.
 
-`reachable(host)` connects over TLS and checks the service's certificate, sending no
-request and starting no agent. The shared runner's `ready()` and Blog Studio's Status →
-Check this computer both use it. `cannot_connect(lines)` reads what a failed run printed:
-it is a best effort, and `blocked(host)` is the real check.
+`reachable(host)` and `blocked(host)` connect over TLS and check the service's certificate,
+within one time limit, sending no request and starting no agent. The shared runner's
+`ready()` and Blog Studio's Status → Check this computer both use them.
+`connection_failure(error_lines(lines))` reads what a failed run printed: it is a best
+effort, and `blocked(host)` is the real check.
 """
 
 from __future__ import annotations
@@ -14,6 +15,7 @@ import http.client
 import re
 import socket
 import ssl
+import threading
 import urllib.parse
 import urllib.request
 
@@ -29,13 +31,25 @@ def codex_host(login_status: str) -> str:
 
 
 def blocked(host: str, seconds: float = 8) -> tuple[str, str] | None:
-    """Why `host` cannot be reached over TLS from this network, or None when it can:
-    ('intercepted', why) when the connection is made but its certificate is not trusted, as
-    on a network that decrypts the connection, else ('unreachable', why). It goes through
-    this computer's proxy when it has one, sends no request and never raises."""
+    """Why `host` cannot be reached over TLS from this network, or None when it can or
+    when that could not be told in time: ('intercepted', why) when the connection is made
+    but its certificate is not trusted, as on a network that decrypts the connection, else
+    ('unreachable', why). It goes through this computer's proxy when it has one, sends no
+    request and never raises.
+
+    `seconds` bounds the whole look, finding the address included: a look still going
+    then is left to end by itself, and says nothing."""
+    found: list = []
+    look = threading.Thread(target=lambda: found.append(_look(host, seconds)), daemon=True)
+    look.start()
+    look.join(seconds)
+    return found[0] if found else None
+
+
+def _look(host: str, seconds: float) -> tuple[str, str] | None:
     context = ssl.create_default_context()
-    proxy = urllib.request.getproxies().get('https')
     try:
+        proxy = urllib.request.getproxies().get('https')
         if proxy and not urllib.request.proxy_bypass(host):
             via = urllib.parse.urlsplit(proxy if '//' in proxy else f'//{proxy}')
             headers = {}
@@ -55,8 +69,12 @@ def blocked(host: str, seconds: float = 8) -> tuple[str, str] | None:
                 context.wrap_socket(plain, server_hostname=host).close()
     except ssl.SSLCertVerificationError as failure:
         return 'intercepted', str(failure.verify_message)
+    except TimeoutError:
+        return None  # Too slow to tell, which is not the same as blocked.
     except (OSError, http.client.HTTPException, ValueError) as failure:
         return 'unreachable', str(failure)
+    except Exception:  # A look that fails in another way says nothing about the network.
+        return None
     return None
 
 
@@ -82,64 +100,90 @@ def reachable(host: str, seconds: float = 8) -> str | None:
     return None if found is None else why(host, found)
 
 
-# How a failed run's error output says the assistant could not connect to its service.
-# Codex retries a dropped connection five times ("Reconnecting... 5/5") and then gives up,
-# often with "workspace routing discovery failed"; Claude Code says "Connection error" or
-# "Unable to connect", with a certificate error on a network that intercepts it. Words that
-# mean sign-in or an account limit win: those keep their own advice.
-CONNECTION = (
-    'stream disconnected',
-    'error sending request',
+# How a failed run's own error lines say the assistant could not connect to its service:
+# the lines a CLI marks as errors ("ERROR: ...", "API Error: ..."), or a Claude Code error
+# result, never what the assistant thought or wrote. Codex gives up after "Reconnecting...
+# 5/5", often with "workspace routing discovery failed"; Claude Code says "Connection error"
+# or "Unable to connect", with a certificate error on a network that intercepts it.
+NETWORK = (
     'routing discovery failed',
-    'connection failed',
+    'error sending request',
     'connection error',
+    'connection failed',
     'connection refused',
     'connection reset',
     'unable to connect',
     'failed to connect',
     'network is unreachable',
     'could not resolve host',
+    'dns error',
     'econnrefused',
     'econnreset',
+    'econnaborted',
     'etimedout',
     'enotfound',
-    'certificate verify failed',
-    'self-signed certificate',
-    'self signed certificate',
-    'unable to get local issuer certificate',
-    'invalid peer certificate',
-    'unknownissuer',
-    'self_signed_cert_in_chain',
-    'unable_to_get_issuer_cert_locally',
+    'certificate',
+    'self_signed_cert',
+    'unable_to_get_issuer_cert',
     'unable_to_verify_leaf_signature',
+    'unknownissuer',
 )
+# A connection that dropped: it may be this network, or the service itself.
+DROPPED = ('stream disconnected',)
+# Words that mean sign-in, an account limit, the model or the request: those keep their own
+# advice, even when the connection was being retried at the time.
 NOT_CONNECTION = (
     'not logged in',
     'not signed in',
     'please run /login',
     'unauthorized',
+    'forbidden',
     'invalid api key',
     'authentication',
     'usage limit',
     'rate limit',
+    'rate_limit',
+    'too many requests',
     'quota',
+    'insufficient',
+    'credit',
+    'context window',
+    'context length',
+    'model is not supported',
+    'model not found',
+    'model_not_found',
+    'bad request',
+    'invalid_request',
 )
-RETRY = re.compile(r'reconnecting\.{3}\s*(\d+)\s*/\s*(\d+)')
+STATUS = re.compile(r'\bstatus(?: code)?:?\s*4\d\d\b', re.I)  # a 4xx answer: the request
+ERROR_LINE = re.compile(
+    r'(?:\[[^\]]*\]\s*)?(?:\d{4}-\d\d-\d\d[T ][\d:.]+Z?\s+)?(?:api\s+)?error\b', re.I
+)
+RETRY = re.compile(r'reconnecting\.{3}\s*(\d+)\s*/\s*(\d+)', re.I)
 
 
-def cannot_connect(lines) -> bool:
-    """Whether a failed run's error output says the assistant could not connect to its
-    service. A retry notice ("Reconnecting... 2/5") counts only when it is the last retry:
-    a connection that dropped once and came back is not why a run failed."""
-    kept, gave_up = [], False
-    for line in lines:
-        low = str(line).lower()
-        retry = RETRY.search(low)
-        if retry:
-            gave_up = gave_up or retry.group(1) == retry.group(2)
-            continue
-        kept.append(low)
-    text = '\n'.join(kept)
-    if any(mark in text for mark in NOT_CONNECTION):
-        return False
-    return gave_up or any(mark in text for mark in CONNECTION)
+def error_lines(lines) -> list[str]:
+    """The lines a CLI marked as errors: 'ERROR: ...', 'Error: ...', 'API Error: ...'."""
+    return [str(line) for line in lines if ERROR_LINE.match(str(line).strip())]
+
+
+def connection_failure(errors) -> str | None:
+    """From a failed run's error lines alone (see `error_lines`), whether the assistant could
+    not connect to its service: 'network' when a line names a connection or certificate
+    failure, 'dropped' when its connection kept dropping and it gave up retrying, which may
+    be the service as much as this network, else None. A retry notice ('Reconnecting...
+    2/5') counts only as the last retry; sign-in, limit, model and request errors win."""
+    low = [str(line).lower() for line in errors]
+    text = '\n'.join(low)
+    if any(mark in text for mark in NOT_CONNECTION) or STATUS.search(text):
+        return None
+    gave_up = False
+    for line in low:
+        retry = RETRY.search(line)
+        if retry and retry.group(1) != retry.group(2):
+            continue  # An earlier retry is not why it failed: the last one says.
+        gave_up = gave_up or bool(retry)
+        if any(mark in line for mark in NETWORK):
+            return 'network'
+        gave_up = gave_up or any(mark in line for mark in DROPPED)
+    return 'dropped' if gave_up else None
