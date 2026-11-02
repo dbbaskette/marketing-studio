@@ -130,6 +130,8 @@ editing tool. Follow the [conversation guide](skills/training-studio/references/
 One computer drives a shared training at a time. Takeover is explicit; unshared
 work and missing private inputs are handled before changes continue. Shared defaults
 are common to all four studios, while each workspace stays where it was configured.
+Older conversation work can share finished trainings, and reuse your team's
+scenarios, audiences and research, through the [team hub](docs/team-hub.md).
 
 Older saved trainings keep their compatible flow. Eligible unfinished work offers
 **Open on the desk**, a read-only preview, then Apply/Cancel. It preserves original
