@@ -1939,6 +1939,7 @@ def _doc_suggestions(root, ident, draft):
 
 def view(root, ident):
     """The desk as the page reads it: the draft, its Markdown, its jobs and version counts."""
+    import article_tools
     import desk_finish
     import editorial
     import styles
@@ -2022,6 +2023,9 @@ def view(root, ident):
         'review': review_view(root, ident),
         # Whether research was read for this draft, and how many sources it drew on.
         'research': _research_read(directory),
+        # The SEO meta description kept with this post (Repurpose), and whether it may be
+        # out of date.
+        'meta_description': article_tools.meta_view(root, ident),
         # Whether the blog's Google Doc can take the desk's wording as suggestions.
         'google_suggestions': sendable,
         # Other people's suggestions pending in the blog's Google Doc, shown, never ours.

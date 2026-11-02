@@ -288,7 +288,10 @@ nothing changes until you apply.
   links. A part whose facts, code or shape changed is flagged.
 - **Before publishing**: the pre-publish check, **Repurpose** (each copy becomes a new
   blog on the desk) and **Send to Google Doc** as suggestions, for a blog started from a
-  Doc.
+  Doc. Repurpose's **SEO meta description** is one line of up to 155 characters, counted
+  as you edit it. It is kept with the post, in the blog's record, rather than made a new
+  blog, and it says when the post has changed since it was written. Copy and Download
+  write no front matter, so the description stays in the record to copy from.
 
 In the panel, each suggestion shows before and after side by side. **Apply**, **Edit** or **Skip** it,
 or **Apply all** for Humanize and Apply a voice (flagged ones wait to be checked

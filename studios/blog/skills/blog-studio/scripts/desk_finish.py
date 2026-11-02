@@ -4203,6 +4203,8 @@ def repurpose(root, ident, job_id, title, content):
     job = tool_jobs.read(root, job_id)
     if job.get('kind') != 'repurpose' or (job.get('metadata') or {}).get('article') != ident:
         raise ValueError('Choose prepared copy from this blog.')
+    if (job.get('metadata') or {}).get('format') == 'meta':
+        raise ValueError('A meta description is kept with its post, not made a new blog.')
     if job.get('applied'):
         made = job['applied'].get('desk') if isinstance(job['applied'], dict) else None
         if made:

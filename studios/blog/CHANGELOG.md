@@ -5,6 +5,15 @@ changes for authors first, then what changes for maintainers.
 
 ## Unreleased
 
+- **Repurpose writes an SEO meta description (#275).** Repurpose, on the desk and in the
+  older Tools path, offers **SEO meta description**: one line of up to 155 characters from
+  the post's own claims, in its voice. Its length is counted in characters as you edit it,
+  and anything longer is refused with a plain message; the word target does not apply.
+  **Keep with this post** keeps it in the blog's record, never as a new blog, ready to copy,
+  and it says the description may be out of date once the post changes. Maintainers:
+  `article_tools.keep_meta`, `meta_view` and the `desk-meta` route; Copy and Download
+  write no front matter, so export is unchanged.
+
 - **Bring accepted changes reads a rewritten paragraph as it was sent (#267).** A
   paragraph rewritten outright, the opening's first paragraph included, or a paragraph
   added, goes to the Doc as a deletion with the new words on the paragraph beside it.

@@ -832,7 +832,9 @@ function deskTool(key){return DESK_KIT.tool(key);}
 const DESK_LEVELS=[['light','Light'],['medium','Medium'],['strong','Strong']];
 // [run, doing] for each tool that runs a job, as the tools say them.
 const DESK_RUN=Object.fromEntries(DESK_TOOLS.filter(tool=>tool.run).map(tool=>[tool.key,[tool.run,tool.doing]]));
-const DESK_FORMATS=[['linkedin','LinkedIn feed copy'],['newsletter','Newsletter introduction'],['email','Announcement email'],['summary','Short summary'],['thread','Short thread']];
+const DESK_FORMATS=[['linkedin','LinkedIn feed copy'],['newsletter','Newsletter introduction'],['email','Announcement email'],['summary','Short summary'],['thread','Short thread'],['meta','SEO meta description']];
+// An SEO meta description is counted in characters and kept with its post, never a new blog.
+const DESK_META_LIMIT=155;
 function sDeskFinishOpen(held,tool=null){const input=held.cards?.[held.activePart]?.deskInput;held.returnFocus=input?{part:held.activePart,start:input.selectionStart,end:input.selectionEnd}:null;held.returnScroll=typeof window.scrollY==='number'?window.scrollY:0;const open=()=>held.stale?undefined:DESK_KIT.finishOpen(held,tool);if(Object.keys(held.pending||{}).length||held.outlineTimer||held.review?.editing?.dirty)return sDeskFlush(held).then(()=>sDeskOutlineFlush(held)).then(()=>Object.keys(held.pending||{}).length?undefined:open());return open();}
 function sDeskFinishClose(held){return DESK_KIT.finishClose(held);}
 function sDeskReturnFocus(held){const saved=held.returnFocus,input=saved&&held.cards?.[saved.part]?.deskInput;if(input){input.focus();input.setSelectionRange?.(saved.start,saved.end);}if(typeof window.scrollTo==='function')window.scrollTo(0,held.returnScroll||0);}
@@ -953,11 +955,13 @@ function sDeskPrepublishCard(held,p){
   return card;
 }
 function sDeskRepurposeCard(held,p){
-  const card=sCard('Repurpose',sNode('p','quiet','Prepare channel copy from the latest text; each copy you keep becomes a new blog on the desk. Nothing is posted.'));
+  const card=sCard('Repurpose',sNode('p','quiet','Prepare channel copy from the latest text; each copy you keep becomes a new blog on the desk. An SEO meta description is kept with this post instead. Nothing is posted.'));
+  const kept=held.view.meta_description;if(kept)card.append(sDeskMetaKept(kept));
   if(p.copyProblem)card.append(sNode('p','problem',p.copyProblem));
   if(p.made){card.append(sNode('p','','Made “'+p.made.title+'” as a new blog on the desk.'),sAdd(sNode('div','bar'),sButton('Open it',()=>sRoute('desk',p.made.id),'filled'),sButton('Prepare another',()=>{Object.assign(p,{job:null,content:null,title:'',made:null,copyProblem:''});sDeskPanelShow(held);})));return card;}
   const job=p.job;
   if(job&&['queued','working'].includes(job.status)){const note=sNode('p','desk-working-note','Preparing the copy…');note.setAttribute('role','status');card.append(note,sAdd(sNode('div','bar'),sButton('Cancel',async button=>{await busy(button,'Cancelling…',async()=>{try{p.job=await api('tool-action',{action:'job-control',job:job.id,control:'cancel'});}catch(error){p.copyProblem=error.message;}sDeskPanelShow(held);});})));sDeskRepurposeFollow(held,p);return card;}
+  if(job&&job.status==='ready'&&job.metadata?.format==='meta')return sDeskMetaReady(held,p,card,job);
   if(job&&job.status==='ready'){
     if(p.content===null)p.content=job.result?.content||'';
     if(!p.title)p.title=held.view.title+' ('+((DESK_FORMATS.find(([key])=>key===job.metadata?.format)||[])[1]||'copy')+')';
@@ -967,8 +971,30 @@ function sDeskRepurposeCard(held,p){
   }
   if(job&&job.error)card.append(sNode('p','problem',job.error));
   const prepare=sButton('Prepare copy',async button=>{await busy(button,'Starting…',async()=>{try{await sDeskFlush(held);p.job=await api('tool-action',{action:'job-create',kind:'repurpose',id:held.id,operation:operationId(),format:p.copy.format,words:Number(p.copy.words),audience:p.copy.audience,url:p.copy.url});p.content=null;p.title='';p.copyProblem='';}catch(error){p.copyProblem=error.message;}sDeskPanelShow(held);});},'filled');prepare.disabled=!sDeskCan(held);
-  card.append(sField('desk-copy-format','Copy format',p.copy,'format',{options:DESK_FORMATS}),sField('desk-copy-words','Target words',p.copy,'words',{type:'number',min:30,maximum:1500}),sField('desk-copy-reader','Reader (optional)',p.copy,'audience',{max:2000}),sField('desk-copy-url','Article URL (optional)',p.copy,'url',{max:2000}),sAdd(sNode('div','bar'),prepare));
+  const meta=p.copy.format==='meta';
+  if(meta)prepare.textContent='Write a meta description';
+  sAdd(card,sField('desk-copy-format','Copy format',p.copy,'format',{options:DESK_FORMATS,changed:()=>sDeskPanelShow(held)}),meta?sNode('p','quiet field-hint','One line of up to '+DESK_META_LIMIT+' characters, from the post’s own claims. It is kept with this post.'):sField('desk-copy-words','Target words',p.copy,'words',{type:'number',min:30,maximum:1500}),sField('desk-copy-reader','Reader (optional)',p.copy,'audience',{max:2000}),meta?null:sField('desk-copy-url','Article URL (optional)',p.copy,'url',{max:2000}),sAdd(sNode('div','bar'),prepare));
   return card;
+}
+// How long a meta description is, said plainly: over the limit, by how much.
+function sDeskMetaCount(text){const count=Array.from(String(text||'').trim()).length;return count>DESK_META_LIMIT?count+' characters: '+(count-DESK_META_LIMIT)+' over the '+DESK_META_LIMIT+' a meta description takes. Shorten it to keep it.':count+' of '+DESK_META_LIMIT+' characters';}
+// The meta description kept with this post, to copy, and whether the post changed since.
+function sDeskMetaKept(kept){
+  const box=sAdd(sNode('div','desk-meta-kept'),sNode('h3','sheet-part','SEO meta description'),sNode('p','desk-plain',kept.text),sNode('p','quiet',kept.characters+' of '+kept.limit+' characters · kept with this post'));
+  if(kept.out_of_date)box.append(sNode('p','decision-notice','The post changed after this description was written, so it may be out of date.'));
+  return sAdd(box,sAdd(sNode('div','bar'),sButton('Copy the description',async()=>{if(typeof navigator==='undefined'||!navigator.clipboard?.writeText)throw new Error('Select the description and copy it.');await navigator.clipboard.writeText(kept.text);sToast('Meta description copied.');})));
+}
+// A meta description ready to review: edited in place with its count, then kept with this
+// post (never a new blog), copied or discarded.
+function sDeskMetaReady(held,p,card,job){
+  if(p.content===null)p.content=(job.result?.content||'').trim();
+  const count=sNode('p','quiet',sDeskMetaCount(p.content));count.setAttribute('aria-live','polite');
+  const keep=sButton('Keep with this post',async button=>{await busy(button,'Keeping…',async()=>{try{held.view=await api('desk-meta',{id:held.id,job:job.id,content:p.content});Object.assign(p,{job:null,content:null,copyProblem:''});sToast('Meta description kept with this post. Nothing was published.');}catch(error){p.copyProblem=error.message;}sDeskPanelShow(held);});},'filled');
+  const over=()=>Array.from(String(p.content||'').trim()).length>DESK_META_LIMIT||!String(p.content||'').trim();
+  keep.disabled=!sDeskCan(held)||over();
+  const field=sField('desk-meta','The meta description',p,'content',{long:true,max:1000,changed:()=>{count.textContent=sDeskMetaCount(p.content);keep.disabled=!sDeskCan(held)||over();}});
+  const copy=sButton('Copy',async()=>{if(typeof navigator==='undefined'||!navigator.clipboard?.writeText)throw new Error('Select the description and copy it.');await navigator.clipboard.writeText(String(p.content||'').trim());sToast('Meta description copied.');});
+  return sAdd(card,field,count,job.result?.notes?sNode('p','quiet',job.result.notes):null,sAdd(sNode('div','bar'),keep,copy,sButton('Discard',()=>{Object.assign(p,{job:null,content:null});sDeskPanelShow(held);})));
 }
 function sDeskRepurposeFollow(held,p){
   if(p.following)return;p.following=true;

@@ -17,6 +17,11 @@ from test_desk import DRAFT, GOOGLE, IMAGE_ONE, IMAGE_TWO, DeskCase
 from test_desk_team import TeamCase
 
 
+def desk_jobs_blogs(root):
+    """Every blog in the workspace, as studio lists them."""
+    return [studio.read_json(path) for path in (root / 'articles').glob('*/session.json')]
+
+
 class FinishCase(DeskCase):
     def setUp(self):
         super().setUp()
@@ -2338,6 +2343,83 @@ class BeforePublishingTests(ToolCase):
                 'repurpose',
                 {'id': other['id'], 'job': job['id'], 'title': 'X', 'content': 'Y'},
             )
+
+    def meta_job(self, content='Synthetic parser notes, kept short.'):
+        import article_tools
+
+        made = article_tools.request(
+            self.root,
+            {
+                'kind': 'repurpose',
+                'id': self.ident,
+                'operation': secrets.token_hex(16),
+                'format': 'meta',
+            },
+        )
+        job = tool_jobs.read(self.root, made['id'])
+        job.update(status='ready', result={'content': content, 'notes': ''})
+        tool_jobs.write(self.root, job)
+        return job
+
+    def test_a_meta_description_is_asked_for_in_characters_not_words(self):
+        job = self.meta_job()
+        self.assertEqual(job['payload']['format'], 'SEO meta description')
+        self.assertEqual(job['payload']['target_characters'], 155)
+        self.assertNotIn('target_words', job['payload'])
+        self.assertIsNone(job['metadata']['words'])
+        self.assertIn('at most 155 characters', job['guidance'])
+        self.assertIn('no label', job['guidance'])
+
+    def test_a_meta_description_is_kept_with_its_post_and_never_becomes_a_blog(self):
+        job = self.meta_job()
+        before = {made['id'] for made in desk_jobs_blogs(self.root)}
+        self.assertIn(self.ident, before)
+        with self.assertRaisesRegex(ValueError, 'kept with its post, not made a new blog'):
+            self.act('repurpose', job=job['id'], title='Meta', content='Text.')
+        shown = self.act('meta', job=job['id'], content='  An edited synthetic description.  ')
+        self.assertEqual({made['id'] for made in desk_jobs_blogs(self.root)}, before, 'no new blog')
+        kept = shown['meta_description']
+        self.assertEqual(kept['text'], 'An edited synthetic description.')
+        self.assertEqual(kept['characters'], len('An edited synthetic description.'))
+        self.assertFalse(kept['out_of_date'])
+        _, record = studio.item(self.root, 'articles', self.ident)
+        self.assertEqual(record['meta_description']['text'], 'An edited synthetic description.')
+        self.assertEqual(
+            tool_jobs.read(self.root, job['id'])['applied'], {'meta': True, 'posted': False}
+        )
+        # The post changes after the description was written: it may be out of date.
+        desk.save(self.root, self.ident, self.draft()['revision'], self.second, 'Changed later.')
+        self.assertTrue(desk_jobs.view(self.root, self.ident)['meta_description']['out_of_date'])
+
+    def test_a_meta_description_over_155_characters_is_refused_plainly(self):
+        job = self.meta_job()
+        with self.assertRaisesRegex(ValueError, 'up to 155 characters, and this one has 156'):
+            self.act('meta', job=job['id'], content='x' * 156)
+        with self.assertRaisesRegex(ValueError, 'one line'):
+            self.act('meta', job=job['id'], content='One line.\nTwo lines.')
+        self.assertIsNone(desk_jobs.view(self.root, self.ident)['meta_description'])
+        self.act('meta', job=job['id'], content='x' * 155)  # Exactly the limit is kept.
+
+    def test_only_a_meta_description_job_from_this_blog_is_kept_as_one(self):
+        other = self.repurposed()
+        with self.assertRaisesRegex(ValueError, 'Only a meta description'):
+            self.act('meta', job=other['id'], content='Text.')
+
+    def test_the_tools_path_keeps_a_meta_description_with_the_blog(self):
+        import article_tools
+
+        job = self.meta_job('A synthetic description for the older tools path.')
+        receipt = article_tools.apply(self.root, {'job': job['id'], 'id': self.ident})
+        self.assertEqual(receipt['status'], 'meta-description-kept')
+        self.assertFalse(receipt['posted'])
+        found = article_tools.variants(self.root, self.ident)
+        self.assertEqual(found['variants'], [], 'not a named channel copy')
+        self.assertEqual(
+            found['meta_description']['text'], 'A synthetic description for the older tools path.'
+        )
+        long = self.meta_job('y' * 200)
+        with self.assertRaisesRegex(ValueError, '155 characters'):
+            article_tools.apply(self.root, {'job': long['id'], 'id': self.ident})
 
     def test_a_blog_without_a_google_doc_is_refused_readably(self):
         with self.assertRaisesRegex(ValueError, 'no Google Doc'):

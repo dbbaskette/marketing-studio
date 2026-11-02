@@ -1442,6 +1442,8 @@ ROUTES = {
     'unskip': {'id', 'job', 'items'},
     # Before publishing: a repurpose result as a new blog, and Google suggestions.
     'repurpose': {'id', 'job', 'title', 'content'},
+    # An SEO meta description from Repurpose, kept with this post rather than made a blog.
+    'meta': {'id', 'job', 'content'},
     'google-plan': {'id', 'mode'},
     'google-send': {'id', 'plan', 'confirmed'},
     # Bring the Doc's accepted text back: checked first (nothing changes), then taken.
@@ -1627,6 +1629,10 @@ def dispatch(root, action, data):
             root, ident, data.get('job'), data.get('title'), data.get('content')
         )
         return {**desk_jobs.view(root, ident), 'made': made}
+    elif action == 'meta':
+        import article_tools
+
+        article_tools.keep_meta_job(root, ident, data.get('job'), data.get('content'))
     elif action == 'finish':
         desk_jobs.finish(root, ident, seen, data.get('tool'), data.get('level'), data.get('guide'))
     elif action == 'review':

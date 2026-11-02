@@ -16,7 +16,17 @@ FORMATS = {
     'email': 'Announcement email',
     'summary': 'Short summary',
     'thread': 'Short thread',
+    # Kept with its post (keep_meta), never made a new blog; counted in characters, not words.
+    'meta': 'SEO meta description',
 }
+META_LIMIT = 155  # characters in one meta description
+META_GUIDANCE = (
+    'Write one SEO meta description for this post: a single line of at most 155 characters, '
+    'counting spaces, written from the latest text in the author’s voice. Use only claims the '
+    'post makes, keep its qualifiers, and invent no number, offer, name or result. Return only '
+    'the description itself: no label, quotation marks, heading, character count or commentary. '
+    'This prepares text only; nothing is published.'
+)
 
 
 def text(value, label, maximum=2000, required=True):
@@ -449,8 +459,10 @@ def request(root, data):
         chosen = data.get('format')
         if chosen not in FORMATS:
             raise ValueError('Choose a listed copy format.')
-        length = data.get('words', 150)
-        if type(length) is not int or not 30 <= length <= 1500:
+        meta = chosen == 'meta'
+        # A meta description is counted in characters: the word target does not apply.
+        length = None if meta else data.get('words', 150)
+        if not meta and (type(length) is not int or not 30 <= length <= 1500):
             raise ValueError('Choose a target from 30 to 1500 words.')
         folder, record = studio.item(root, 'articles', ident)
         metadata = {
@@ -474,9 +486,11 @@ def request(root, data):
             'source': desk_images.without(current['content']),  # Its images' data stays here.
             'voice': voice,
             'format': FORMATS[chosen],
-            'target_words': length,
+            **({'target_characters': META_LIMIT} if meta else {'target_words': length}),
             'audience': text(data.get('audience', ''), 'the reader', 2000, False),
-            'article_url': text(data.get('url', ''), 'the actual article URL', 2000, False),
+            'article_url': ''
+            if meta
+            else text(data.get('url', ''), 'the actual article URL', 2000, False),
         }
         if payload['article_url']:
             from urllib.parse import urlsplit
@@ -491,9 +505,10 @@ def request(root, data):
                 raise ValueError(
                     'Give an actual public article URL without credentials, or leave it blank.'
                 )
-        guidance = (
-            (REFERENCES / 'blog-repurpose.md').read_text()
-            + '\nPrepare only the selected format at approximately the requested editorial length. Keep essential qualifiers and the article’s supported facts and voice. Do not invent URLs, offers, quotations or experience. Missing article URLs remain clearly marked [ARTICLE URL]. This prepares copy only; send, post, schedule and recipient selection are unavailable. No current platform hard limit has been verified; report only actual counts.'
+        guidance = (REFERENCES / 'blog-repurpose.md').read_text() + (
+            '\n' + META_GUIDANCE
+            if meta
+            else '\nPrepare only the selected format at approximately the requested editorial length. Keep essential qualifiers and the article’s supported facts and voice. Do not invent URLs, offers, quotations or experience. Missing article URLs remain clearly marked [ARTICLE URL]. This prepares copy only; send, post, schedule and recipient selection are unavailable. No current platform hard limit has been verified; report only actual counts.'
         )
     elif kind in ('interview-question', 'interview-outline'):
         ident = data.get('id')
@@ -652,6 +667,16 @@ def apply(root, data):
             'style': result['id'],
             'revision': result['revision'],
             'status': result['status'],
+        }
+    elif kind == 'repurpose' and metadata.get('format') == 'meta':
+        # A meta description belongs to its post: it is kept in the blog's record, not made
+        # a named copy or a new blog.
+        kept = keep_meta(root, metadata['article'], content, metadata['source_sha256'], job['id'])
+        receipt = {
+            'id': metadata['article'],
+            'status': 'meta-description-kept',
+            'characters': kept['characters'],
+            'posted': False,
         }
     elif kind == 'repurpose':
         name = studio.identifier(data.get('name'))
@@ -889,10 +914,82 @@ def start_interview(root, data):
     return interview(root, record['id'])
 
 
+def meta_text(value):
+    """A meta description as it is kept: one line of 1 to 155 characters, refused plainly."""
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError('Write the meta description first.')
+    value = value.strip()
+    if '\n' in value:
+        raise ValueError('Keep the meta description to one line.')
+    if len(value) > META_LIMIT:
+        raise ValueError(
+            f'A meta description takes up to {META_LIMIT} characters, and this one has '
+            f'{len(value)}. Shorten it, then keep it.'
+        )
+    return value
+
+
+def _draft_digest(folder):
+    draft = folder / 'DRAFT.md'
+    return studio.digest(draft.read_bytes()) if draft.is_file() else None
+
+
+def keep_meta(root, ident, value, source_sha256, job=None):
+    """Keep a meta description with its post, in the blog's record, with the digest of the
+    text it was written from, so a later change to the post says it may be out of date."""
+    from team_workspace import guard
+
+    guard(root, ident)
+    value = meta_text(value)
+    folder, record = studio.item(root, 'articles', ident)
+    record['meta_description'] = {
+        'text': value,
+        'source_sha256': source_sha256,
+        'saved_at': studio.now(),
+        **({'job': job} if job else {}),
+    }
+    studio.persist(folder, 'articles', record)
+    return meta_view(root, ident)
+
+
+def keep_meta_job(root, ident, job_id, value):
+    """Keep a ready meta description job's text (as the person edited it) with this post."""
+    job = tool_jobs.read(root, job_id)
+    metadata = job.get('metadata') or {}
+    if job.get('kind') != 'repurpose' or metadata.get('article') != ident:
+        raise ValueError('Choose a meta description prepared for this blog.')
+    if metadata.get('format') != 'meta':
+        raise ValueError('Only a meta description is kept with its post.')
+    if job.get('status') != 'ready':
+        raise ValueError('Wait for the meta description before keeping it.')
+    kept = keep_meta(root, ident, value, metadata.get('source_sha256'), job['id'])
+    job['applied'] = {'meta': True, 'posted': False}
+    job['saved_content'] = kept['text']
+    tool_jobs.write(root, job)
+    return kept
+
+
+def meta_view(root, ident):
+    """The meta description kept with a post, its length, and whether the post changed since
+    it was written; None when there is none."""
+    folder, record = studio.item(root, 'articles', ident)
+    kept = record.get('meta_description')
+    if not isinstance(kept, dict) or not isinstance(kept.get('text'), str):
+        return None
+    return {
+        'text': kept['text'],
+        'characters': len(kept['text']),
+        'limit': META_LIMIT,
+        'saved_at': kept.get('saved_at'),
+        'out_of_date': _draft_digest(folder) != kept.get('source_sha256'),
+    }
+
+
 def variants(root, ident):
     folder, _ = studio.item(root, 'articles', ident)
     return {
         'id': ident,
+        'meta_description': meta_view(root, ident),
         'variants': [
             {'name': file.stem, 'provenance': studio.read_json(file.with_suffix('.meta.json'))}
             for file in sorted((folder / 'derived').glob('*.md'))
