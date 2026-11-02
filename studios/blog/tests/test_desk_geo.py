@@ -144,6 +144,10 @@ class FAQTests(AdditionCase):
             )
         self.assertEqual(len(self.draft()['sections']), 2)
 
+    def test_a_heading_that_only_mentions_faqs_is_not_the_posts_faq(self):
+        self.post(POST + '\n## Why FAQs fail\n\nThey repeat the post.\n')
+        self.assertNotIn('faq_section', self.queue('faq', count=3)['payload'])
+
     def test_running_it_again_on_a_post_with_an_faq_proposes_changes_to_that_faq(self):
         self.post(POST + '\n## FAQ\n\n**Old?**\n\nOld answer.\n')
         job = self.queue('faq', count=3)
@@ -222,6 +226,35 @@ class TableAndQuoteTests(AdditionCase):
         self.assertIn(table, self.draft()['sections'][0]['text'])
         self.assertEqual(desk.versions(self.root, self.ident, self.first)[0]['source'], 'finishing')
 
+    def anchored(self, text, after_text, tool='table'):
+        desk.save(self.root, self.ident, self.seen, self.second, text)
+        self.seen = self.draft()['revision']
+        table = '| Parser | Speed |\n| --- | --- |\n| Old | slow |'
+        row = {'part': self.second, 'after_text': after_text, 'table': table}
+        self.ready_geo('table', {'tables': [row]})
+        return self.set_of('table')
+
+    def test_a_table_never_lands_inside_a_paragraph_a_list_or_code(self):
+        wrapped = 'The old parser is slow.\nThe new parser is fast.\nBoth read the same files.'
+        self.assertEqual(self.anchored(wrapped, 'The old parser is slow.')['items'], [])
+        listed = 'Two parsers:\n\n- The old parser is slow.\n- The new parser is fast.'
+        self.assertEqual(self.anchored(listed, 'The old parser is slow.')['items'], [])
+        self.assertEqual(self.anchored(listed, 'The new parser is fast.')['items'], [])
+        fenced = 'Run this:\n\n```\nThe old parser is slow.\n\nmore code\n```\n\nDone.'
+        self.assertEqual(self.anchored(fenced, 'The old parser is slow.')['items'], [])
+        quoted = '> The old parser is slow.\n\nAfter the quote.'
+        self.assertEqual(self.anchored(quoted, 'The old parser is slow.')['items'], [])
+
+    def test_a_table_after_a_wrapped_paragraph_keeps_a_blank_line_on_each_side(self):
+        text = 'The old parser is slow.\nThe new parser is fast.\n\nBoth read the same files.'
+        found = self.anchored(text, 'The new parser is fast.')
+        self.act('apply', seen=self.seen, job=found['job'], items=[{'id': 'p1'}])
+        self.assertEqual(
+            desk.text_of(self.draft(), self.second),
+            'The old parser is slow.\nThe new parser is fast.\n\n'
+            '| Parser | Speed |\n| --- | --- |\n| Old | slow |\n\nBoth read the same files.',
+        )
+
     def test_no_comparison_is_an_empty_set_with_its_reason(self):
         self.ready_geo('table', {'tables': [], 'summary': 'The post compares nothing.'})
         self.assertEqual(self.set_of('table')['items'], [])
@@ -260,6 +293,57 @@ class TableAndQuoteTests(AdditionCase):
         item = found['items'][0]
         self.assertEqual(item['after'], after + '\n\n> ' + passage + '\n>\n> — Synthetic source')
         self.assertIn('Word for word from Synthetic source.', item['note'])
+        # Applied, the quotation is a block of its own: the paragraph after it stays prose.
+        desk.save(
+            self.root,
+            self.ident,
+            self.draft()['revision'],
+            self.first,
+            after + '\n\nThe next part.',
+        )
+        self.seen = self.draft()['revision']
+        job = self.queue('quotes')
+        row = {'source': source['id'], 'quote': passage, 'part': self.first, 'after_text': after}
+        self.ready(job, {'quotes': [row]})
+        self.act('apply', seen=self.seen, job=self.set_of('quotes')['job'], items=[{'id': 'p1'}])
+        self.assertTrue(
+            desk.text_of(self.draft(), self.first).endswith(
+                '> — Synthetic source\n\nThe next part.'
+            )
+        )
+        # A line that ends a line, not a paragraph, takes none.
+        desk.save(
+            self.root, self.ident, self.draft()['revision'], self.first, after + '\nThe next line.'
+        )
+        self.seen = self.draft()['revision']
+        job = self.queue('quotes')
+        self.ready(job, {'quotes': [row]})
+        self.assertEqual(self.set_of('quotes')['items'], [])
+
+    def test_a_quotation_is_whole_sentences_never_a_fragment_that_reverses_them(self):
+        text = 'It is not true that the parser is safe on every input file. It reads them all.'
+        desk.add_sources(self.root, self.ident, {'sources': [self.source(text)]})
+        self.seen = self.draft()['revision']
+        job = self.queue('quotes')
+        source = job['payload']['sources'][0]
+        after = 'It reads 12 files in 3 seconds at Acme Labs.'
+        rows = [
+            {'quote': 'true that the parser is safe on every input file.'},
+            {'quote': 'It is not true that the parser is safe on every input'},
+            {'quote': 'It is not true that the parser is safe on every input file.'},
+        ]
+        self.ready(
+            job,
+            {
+                'quotes': [
+                    {**row, 'source': source['id'], 'part': self.first, 'after_text': after}
+                    for row in rows
+                ]
+            },
+        )
+        found = self.set_of('quotes')
+        self.assertEqual(len(found['items']), 1)
+        self.assertIn('> It is not true that the parser is safe', found['items'][0]['after'])
 
 
 class AltTextTests(AdditionCase):
@@ -298,6 +382,11 @@ class AltTextTests(AdditionCase):
             '![Chart of parse time per file](https://x.test/parse-time.png)',
             desk.text_of(self.draft(), self.second),
         )
+
+    def test_alt_text_with_a_number_the_post_lacks_is_flagged(self):
+        job = self.queue('alt')
+        self.ready(job, {'alts': [{'image': 'i1', 'alt': 'Chart of 40 parse times'}]})
+        self.assertIn('adds a number', self.set_of('alt')['items'][0]['flag'])
 
     def test_an_edit_may_change_only_the_alt_words(self):
         job = self.queue('alt')
@@ -378,6 +467,16 @@ class QueriesAndOpenerTests(AdditionCase):
         self.assertEqual(self.draft()['opening'], 'A parser turns files into data.')
         self.assertEqual(desk.versions(self.root, self.ident, 'opening')[0]['source'], 'finishing')
 
+    def test_an_opening_that_is_a_list_or_takes_more_than_one_paragraph_is_left_out(self):
+        desk.save(self.root, self.ident, self.seen, 'opening', '- A list item.\n- Another.')
+        self.seen = self.draft()['revision']
+        self.ready_geo('opener', {'before': '- A list item.', 'after': 'A parser reads files.'})
+        self.assertEqual(self.set_of('opener')['items'], [])
+        desk.save(self.root, self.ident, self.seen, 'opening', 'An opening.')
+        self.seen = self.draft()['revision']
+        self.ready_geo('opener', {'before': 'An opening.', 'after': 'One.\n\nTwo paragraphs.'})
+        self.assertEqual(self.set_of('opener')['items'], [])
+
     def test_an_opening_that_is_not_the_start_is_left_out(self):
         self.ready_geo('opener', {'before': 'paragraph.', 'after': 'A definition.'})
         self.assertEqual(self.set_of('opener')['items'], [])
@@ -426,15 +525,16 @@ class GEOChoiceTests(StartCase):
         made = self.create(manuscript=DRAFT, first_pass='leave')
         self.assertNotIn('geo_review', self.record(made['id']))
         self.assertEqual(self.geo_jobs(made['id']), [])
-        self.assertEqual(made['geo_review'], {'include': False, 'status': 'none'})
+        self.assertEqual(made['geo_review'], {'include': False, 'status': 'none', 'due': 'now'})
         with self.assertRaisesRegex(ValueError, 'GEO review'):
             self.create(manuscript=DRAFT, geo_review='yes')
 
     def test_chosen_with_a_brought_draft_one_review_runs_once_and_applies_nothing(self):
         made = self.create(manuscript=DRAFT, first_pass='leave', geo_review=True)
-        self.assertEqual(self.record(made['id'])['geo_review'], {'include': True})
         found = self.geo_jobs(made['id'])
         self.assertEqual(len(found), 1)
+        kept = self.record(made['id'])['geo_review']
+        self.assertEqual((kept['include'], kept['job']), (True, found[0]['id']))
         self.assertTrue(found[0]['metadata']['desk']['auto'])
         self.assertEqual(desk_jobs.view(self.root, made['id'])['geo_review']['status'], 'working')
         result = {
@@ -449,7 +549,7 @@ class GEOChoiceTests(StartCase):
         self.assertEqual(shown['geo_review']['status'], 'done')
         self.assertEqual(shown['geo_review']['open'], 1)
         # Never again by itself: another job settling, or asking again, queues nothing.
-        self.assertIsNone(desk_jobs.geo_due(self.root, made['id']))
+        self.assertFalse(desk_jobs.geo_due(self.root, made['id']))
         self.assertEqual(len(self.geo_jobs(made['id'])), 1)
         # Its own proposal applied: still done. Any other change: out of date, not rerun.
         desk.dispatch(
@@ -503,14 +603,56 @@ class GEOChoiceTests(StartCase):
         with self.assertRaisesRegex(ValueError, 'GEO review'):
             desk.dispatch(self.root, 'geo-option', {'id': ident, 'include': 'on'})
         shown = desk.dispatch(self.root, 'geo-option', {'id': ident, 'include': True})
-        self.assertEqual(self.record(ident)['geo_review'], {'include': True})
+        kept = self.record(ident)['geo_review']
+        self.assertEqual((kept['include'], kept['job']), (True, self.geo_jobs(ident)[0]['id']))
+        self.assertTrue(kept['queued_at'], 'the post itself says its one review was queued')
         self.assertEqual(shown['geo_review']['include'], True)
         self.assertEqual(len(self.geo_jobs(ident)), 1)
         desk_jobs.stop(self.root, ident, self.geo_jobs(ident)[0]['id'])
         desk.dispatch(self.root, 'geo-option', {'id': ident, 'include': False})
-        self.assertEqual(self.record(ident)['geo_review'], {'include': False})
+        self.assertEqual(self.record(ident)['geo_review']['include'], False)
         desk.dispatch(self.root, 'geo-option', {'id': ident, 'include': True})
         self.assertEqual(len(self.geo_jobs(ident)), 1, 'one review per post, never rerun by itself')
         # On demand, always: Run GEO review is the ordinary finishing request.
         desk.dispatch(self.root, 'finish', {'id': ident, 'seen': 1, 'tool': 'geo'})
         self.assertEqual(len(self.geo_jobs(ident)), 2)
+
+    def test_the_one_review_is_never_queued_again_on_another_computer(self):
+        import shutil
+
+        made = self.create(manuscript=DRAFT, first_pass='leave', geo_review=True)
+        ident = made['id']
+        self.settle(self.geo_jobs(ident)[0], json.dumps({'suggestions': []}))
+        # A teammate takes the post over: the record travels, this computer's files do not.
+        shutil.rmtree(self.root / '.blog-runs' / 'desk-proposals' / ident)
+        self.assertTrue(self.record(ident)['geo_review']['queued_at'])
+        desk.dispatch(self.root, 'finish', {'id': ident, 'seen': 1, 'tool': 'feedback'})
+        feedback = [
+            job for job in desk_jobs.jobs(self.root, ident) if job['kind'] == 'finish-feedback'
+        ]
+        self.settle(feedback[0], json.dumps({'summary': 'Fine.', 'comments': []}))
+        self.assertEqual(len(self.geo_jobs(ident)), 1, 'no second review with no button press')
+        self.assertEqual(desk_jobs.view(self.root, ident)['geo_review']['status'], 'none')
+
+    def test_turned_on_after_a_current_review_that_review_is_the_one(self):
+        made = self.create(manuscript=DRAFT, first_pass='leave')
+        ident = made['id']
+        desk.dispatch(self.root, 'finish', {'id': ident, 'seen': 1, 'tool': 'geo'})
+        self.settle(self.geo_jobs(ident)[0], json.dumps({'suggestions': []}))
+        self.assertEqual(desk_jobs.view(self.root, ident)['geo_review']['due'], 'ran')
+        shown = desk.dispatch(self.root, 'geo-option', {'id': ident, 'include': True})
+        self.assertEqual(len(self.geo_jobs(ident)), 1, 'the current review stands for it')
+        self.assertTrue(self.record(ident)['geo_review']['queued_at'])
+        self.assertEqual(shown['geo_review']['status'], 'done')
+
+    def test_a_post_the_conversation_drives_says_it_does_not_run_by_itself(self):
+        made = self.create(manuscript=DRAFT, first_pass='leave')
+        ident = made['id']
+        directory, record = studio.item(self.root, 'articles', ident)
+        record['execution'] = 'conversation'
+        studio.persist(directory, 'articles', record)
+        shown = desk.dispatch(self.root, 'geo-option', {'id': ident, 'include': True})
+        self.assertEqual(self.geo_jobs(ident), [])
+        self.assertEqual(
+            (shown['geo_review']['status'], shown['geo_review']['why']), ('not-run', 'conversation')
+        )

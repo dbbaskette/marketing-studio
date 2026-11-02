@@ -5091,7 +5091,9 @@ async function deskGeoAdditions(){
   const at=list.indexOf('#Improve discovery');
   assert.deepEqual(list.slice(at,at+10),['#Improve discovery','GEO: retrieval readiness','FAQ','Key takeaways','Comparison table','Quotes from sources','Definition-style opening','Image alt text','Likely search questions','[choice]']);
   const choice=byId('desk-geo-include');assert.equal(choice.checked,false,'off unless chosen');
-  assert.match(descendants(panel()).find(n=>n.id==='desk-geo-include-hint').textContent,/one GEO review runs as part of this post’s work/);
+  assert.match(descendants(panel()).find(n=>n.id==='desk-geo-include-hint').textContent,/one GEO review runs as part of this post’s work.* Turned on, it runs now\.$/);
+  assert.equal(f.run("deskGeoDue({due:'ran',include:false})"),'This post’s GEO review has already run, so turning this on runs nothing more.');
+  assert.equal(f.run("deskGeoDue({due:'draft',include:true})"),'It runs once the full draft is written.');
   choice.checked=true;choice.listeners.change();for(let i=0;i<10;i++)await new Promise(done=>setImmediate(done));
   assert.deepEqual(last('/api/desk-geo-option'),{id:'desk-blog',include:true});
   assert.equal(f.run('studio.desk.view.geo_review.include'),true);
@@ -5103,6 +5105,7 @@ async function deskGeoAdditions(){
   const questions=[{question:'Why parse once?',answer:'It saves time.'},{question:'What does it read?',answer:'Files.'},{question:'Is it fast?',answer:'Yes, in the post’s test.'}];
   await show({...view,working:null,finishing:{faq:finishSet('faq',[{part:'new',insert:true,heading:'Frequently asked questions',before:'',after:'x',at:'dddddddd',cta:'dddddddd',questions,note:'Each answer comes only from the post and its sources; a question they do not answer was left out.'}],{count:4})}});
   assert.ok(descendants(item('p1')).some(n=>n.textContent==='A new section: “Frequently asked questions”'));
+  assert.equal(descendants(panel()).find(n=>n.attributes?.['aria-label']==='Questions').children.find(n=>n.attributes?.['aria-pressed']==='true').textContent,'4','the count the set was made with');
   assert.ok(descendants(item('p1')).some(n=>n.textContent==='All 3 questions go in.'));
   const place=byId('desk-faq-place-p1');
   assert.deepEqual(place.children.map(o=>[o.value,o.textContent]),[['aaaaaaaa','After the opening'],['bbbbbbbb','After “First part”'],['cccccccc','After “Second part”'],['dddddddd','After “Third part”'],['end','At the end, after “Next steps”']]);
@@ -5113,11 +5116,15 @@ async function deskGeoAdditions(){
   const answer=byId('desk-faq-p1-2-answer');answer.value='Yes, as the post measures it.';answer.listeners.input();
   place.value='end';place.listeners.change();
   assert.ok(descendants(item('p1')).some(n=>n.textContent==='2 of 3 questions ticked.'));
-  assert.ok(descendants(item('p1')).some(n=>n.className==='desk-plain'&&n.textContent==='**Why parse once?**\n\nIt saves time.\n\n**Is it fast?**\n\nYes, as the post measures it.'),'the preview is what goes in, following each edit');
+  const preview=descendants(item('p1')).find(n=>n.className==='desk-section-preview');
+  assert.deepEqual(descendants(preview).filter(n=>n.tagName==='strong').map(n=>n.textContent),['Why parse once?','Is it fast?'],'the preview reads as the post will, bold questions with no marks');
+  assert.ok(descendants(preview).some(n=>n.textContent==='Yes, as the post measures it.'),'the preview follows each edit');
+  assert.ok(!descendants(preview).some(n=>/\*\*/.test(n.textContent)),'no Markdown marks in the preview');
   assert.ok(inPanel('Add all (3)'));
   await inPanel('Add the ticked (2)').listeners.click();
   assert.deepEqual(last('/api/desk-apply'),{id:'desk-blog',seen:1,job:view.finishing.faq.job,items:[{id:'p1',after:'**Why parse once?**\n\nIt saves time.\n\n**Is it fast?**\n\nYes, as the post measures it.',at:'end'}]});
   assert.ok(descendants(f.get('toasts')).some(n=>n.textContent==='Added “Frequently asked questions” as a new section. To take it out, remove it on the Outline tab.'));
+  assert.ok(descendants(panel()).some(n=>n.focused),'focus stays in Finishing after Add');
   // A post that already has an FAQ: its new form, with no place to pick and nothing added twice.
   await show({...view,finishing:{faq:finishSet('faq',[{part:'bbbbbbbb',whole:true,before:'**Old?**\n\nOld.',after:'**New?**\n\nNew.',questions:[{question:'New?',answer:'New.'}]}])}});
   assert.ok(descendants(item('p1')).some(n=>n.textContent==='This post already has this section, so this proposes its new form rather than a second one.'));
@@ -5163,6 +5170,10 @@ async function deskGeoAdditions(){
   assert.ok(descendants(panel()).some(n=>n.textContent==='Under way: the GEO review is reading the post.'));
   await show({...view,working:null,geo_review:{include:true,status:'waiting',waiting:'draft'}});
   assert.ok(descendants(panel()).some(n=>n.textContent==='Waiting: it runs once the full draft is written.'));
+  await show({...view,geo_review:{include:true,status:'not-run',why:'conversation',due:'conversation'}});
+  assert.ok(descendants(panel()).some(n=>n.textContent==='Not run yet: this post’s work belongs to the conversation, so its GEO review does not run by itself here. Run GEO review to run it now.'));
+  await show({...view,geo_review:{include:true,status:'none',due:'ran'}});
+  assert.ok(descendants(panel()).some(n=>n.textContent==='No GEO review on this computer yet. This post’s one review already ran, so it does not run again by itself.'));
   await show({...view,geo_review:{include:true,status:'done',open:2}});
   assert.ok(descendants(panel()).some(n=>n.textContent==='Done: 2 proposals wait in GEO: retrieval readiness.'));
   await show({...view,geo_review:{include:true,status:'stale',open:0}});
@@ -5205,6 +5216,7 @@ async function deskMetaDescription(){
   const format=byId('desk-copy-format');
   assert.ok(format.children.some(o=>o.value==='meta'&&o.textContent==='SEO meta description'),'the format is listed');
   format.value='meta';await format.listeners.change();
+  assert.equal(f.get('desk-copy-format').focused,true,'focus stays on the format after the card is drawn again');
   assert.ok(!byId('desk-copy-words'),'the word target does not apply');assert.ok(!byId('desk-copy-url'));
   assert.ok(descendants(panel()).some(n=>n.textContent==='One line of up to 155 characters, from the post’s own claims. It is kept with this post.'));
   await inPanel('Write a meta description').listeners.click();

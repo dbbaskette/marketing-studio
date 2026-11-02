@@ -1550,11 +1550,10 @@ GEO_RULES = (
 FAQ_HEADING = 'Frequently asked questions'
 TAKEAWAYS_HEADING = 'Key takeaways'
 FAQ_FOUND = re.compile(
-    r'\b(?:faqs?|frequently asked questions|questions and answers|q\s?&\s?a|common questions)'
-    r'(?![\w&])',
+    r'(?:faqs?|frequently asked questions|questions and answers|q\s?&\s?a|common questions)',
     re.I,
 )
-TAKEAWAYS_FOUND = re.compile(r'\b(?:key takeaways|takeaways|tl;?\s?dr|at a glance)\b', re.I)
+TAKEAWAYS_FOUND = re.compile(r'(?:key takeaways|takeaways|tl;?\s?dr|at a glance|in short)', re.I)
 # A heading that closes a post with a call to action: an FAQ goes before it.
 CTA = re.compile(
     r'\b(?:next steps?|get started|try it|call to action|learn more|sign up|contact us|'
@@ -1677,8 +1676,13 @@ SEPARATOR = re.compile(r'^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)*\|?\s*$')
 
 
 def _found_section(draft, pattern):
-    """The section whose heading names it as an FAQ (or key takeaways), or None."""
-    return next((s for s in draft['sections'] if pattern.search(s['heading'] or '')), None)
+    """The section whose heading is just its name, as "FAQ" or "Frequently asked questions"
+    (or "Key takeaways"), at any level; "Why FAQs fail" is not the post's FAQ. None."""
+    for section in draft['sections']:
+        heading = re.sub(r'[*_#:.!?\s]+$', '', re.sub(r'^[*_#\s]+', '', section['heading'] or ''))
+        if pattern.fullmatch(' '.join(heading.split())):
+            return section
+    return None
 
 
 def _addition(root, ident, draft, tool, extra, shared_words, count):
@@ -1902,17 +1906,46 @@ def _read_takeaways(draft, found, job):
     return [item], dropped, extra
 
 
+BLANK = re.compile(r'\n[ \t]*\n')
+HEADING_LINE = re.compile(r' {0,3}#{1,6}(?:[ \t]|$)')
+INDENTED = re.compile(r'(?: {4}|\t)')
+
+
 def _paragraph_end(draft, part, text):
-    """`text` located once in its part, where it ends a paragraph (so something can go after
-    it), or None."""
+    """`text` located once in its part, where it ends a paragraph of prose: what follows it is
+    nothing or a blank line, and the paragraph it ends is not a list, a table, a quotation, a
+    heading or code. Something can go after it as a block of its own; None otherwise."""
     if part not in _prose_parts(draft):
         return None
     anchor = _located(draft, part, text)
     if anchor is None:
         return None
     whole = desk.text_of(draft, part)
-    rest = whole[whole.index(anchor) + len(anchor) :].lstrip(' \t')
-    return anchor if not rest.strip() or rest.startswith('\n') else None
+    at = whole.index(anchor)
+    end = at + len(anchor)
+    rest = whole[end:].lstrip(' \t')
+    if rest.strip() and not BLANK.match(rest):
+        return None  # It ends a line, not a paragraph: the next line would join the block.
+    lines = whole[:end].split('\n')
+    fenced = False
+    for line in lines:
+        if desk_images.FENCE.match(line):
+            fenced = not fenced
+    if fenced:
+        return None  # Inside fenced code.
+    starts = [m.end() for m in BLANK.finditer(whole, 0, at)]
+    paragraph = whole[starts[-1] if starts else 0 : end].strip('\n').split('\n')
+    for line in paragraph:
+        if (
+            desk_images.FENCE.match(line)
+            or desk_images.LIST_LINE.match(line)
+            or TABLE_LINE.match(line)
+            or QUOTE_LINE.match(line)
+            or HEADING_LINE.match(line)
+            or INDENTED.match(line)
+        ):
+            return None
+    return anchor
 
 
 def _read_table(draft, found, job):
@@ -1950,6 +1983,26 @@ def _plain(text):
     return ' '.join(str(text or '').replace('’', "'").replace('‘', "'").split())
 
 
+QUOTE_OPEN = '"\'“‘(['
+QUOTE_CLOSE = '"\'”’)]'
+
+
+def _whole_sentences(quote, source):
+    """Whether `quote` is in `source` (spacing aside) as one or more whole sentences: what
+    comes before it ends a sentence or a clause (or is nothing), and it ends a sentence."""
+    quote, source = _plain(quote).strip(QUOTE_OPEN + QUOTE_CLOSE + ' '), _plain(source)
+    if not quote or quote[-1] not in '.!?':
+        return False
+    at = source.find(quote)
+    while at != -1:
+        before = source[:at].rstrip(QUOTE_OPEN + ' ')
+        after = source[at + len(quote) :].lstrip(QUOTE_CLOSE)
+        if (not before or before[-1] in '.!?:;' + QUOTE_CLOSE) and (not after or after[0] == ' '):
+            return True
+        at = source.find(quote, at + 1)
+    return False
+
+
 def _read_quotes(draft, found, job):
     if not isinstance(found, dict):
         raise ValueError(UNREADABLE)
@@ -1965,7 +2018,7 @@ def _read_quotes(draft, found, job):
         if (
             source is None
             or not 20 <= len(quote) <= 800
-            or _plain(quote) not in _plain(source.get('text'))
+            or not _whole_sentences(quote, source.get('text'))
             or anchor is None
             or quote in seen
             or len(items) >= QUOTES_MOST
@@ -2108,7 +2161,7 @@ def _read_alt(draft, found, job):
                 'after': _with_alt(reference, alt),
                 'alt': True,
                 'note': ALT_NOTE + (' It rests on ' + why + '.' if why else ''),
-                'flag': '',
+                'flag': _added_facts(alt, _known(job)),
             }
         )
     unknown += sum(1 for name in wanted if name not in done)
@@ -2164,16 +2217,34 @@ def _read_opener(draft, found, job):
     opening = draft['opening']
     if not opening.strip():
         after = found['after'].strip()
-        if not after or len(after) > 1000 or desk.has_heading(after, desk.limit(draft)):
+        if not after or len(after) > 1000 or '\n' in after:
             return [], 1, {}
         item = {'part': 'opening', 'whole': True, 'before': '', 'after': after}
         return [{**item, 'note': note, 'flag': ''}], 0, {}
     before = _located(draft, 'opening', found.get('before'))
-    # It replaces the opening's first sentences, so they are where the opening starts.
-    if before is None or not opening.lstrip().startswith(before):
+    # It replaces the opening's first sentences, so they are where the opening starts, in a
+    # paragraph of prose (not a list, a table, a quotation or code), and it is prose too: one
+    # paragraph that joins the rest of that paragraph as the sentences it replaces did.
+    first = opening.lstrip().split('\n')[0]
+    if (
+        before is None
+        or not opening.lstrip().startswith(before)
+        or '\n' in before
+        or any(
+            rule.match(first)
+            for rule in (
+                desk_images.FENCE,
+                desk_images.LIST_LINE,
+                TABLE_LINE,
+                QUOTE_LINE,
+                HEADING_LINE,
+                INDENTED,
+            )
+        )
+    ):
         return [], 1, {}
     after = _replacement(draft, 'opening', before, found['after'])
-    if after is None or len(after) > 1000:
+    if after is None or len(after) > 1000 or '\n' in after:
         return [], 1, {}
     item = {'part': 'opening', 'before': before, 'after': after, 'note': note}
     return [{**item, 'flag': _flags(before, after)}], 0, {}

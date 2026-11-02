@@ -834,7 +834,7 @@ const DESK_TOOLS=[
   {key:'headline',name:'Headline and opening',says:'Alternatives for the title and the opening, to use or adjust.',run:'Suggest alternatives',doing:'Suggesting headlines and openings…',groups:[['title','Title'],['opening','Opening']]},
   {key:'feedback',name:'Feedback without a rewrite',says:'Comments on shape, argument, audience and claims. Nothing in the text changes.',run:'Get feedback',doing:'Reading the draft for feedback…',comments:DESK_ASPECTS},
   {key:'voice',name:'Apply a voice',says:'The draft rewritten in one of your voice guides, section by section. Its facts, quotes, links and shape are kept.',run:'Apply the voice',doing:'Rewriting the draft in the voice guide, section by section…',opened:held=>sDeskGuides(held),options:(held,f)=>sDeskVoiceOptions(held,f),data:f=>({guide:f.guide}),ready:f=>!!f.guide,applyAll:true,counted:[' part rewritten',' parts rewritten'],empty:'Nothing to change: the draft already reads in this voice.',said:(set,said)=>{if(set.guide_name)said.unshift('In the voice of '+set.guide_name);if(set.kept)said.push(set.kept+(set.kept===1?' part already reads':' parts already read')+' in this voice');},flagged:flagged=>flagged+(flagged===1?' part that changes a fact, code or the part’s shape is':' parts that change a fact, code or a part’s shape are')+' left for you to check one by one.'},
-  {key:'publish',name:'Before publishing',says:'The pre-publish check, Repurpose, and Send to Google Doc as suggestions.',view:held=>sDeskPublishView(held)},
+  {key:'publish',name:'Before publishing',says:'The pre-publish check, the GEO review, Repurpose, and Send to Google Doc as suggestions.',view:held=>sDeskPublishView(held)},
 ];
 for(const tool of DESK_TOOLS)tool.group=({copyedit:'Polish the writing',humanize:'Polish the writing',proofread:'Check before sharing',facts:'Check claims',geo:'Improve discovery',faq:'Improve discovery',takeaways:'Improve discovery',table:'Improve discovery',quotes:'Improve discovery',opener:'Improve discovery',alt:'Improve discovery',queries:'Improve discovery',headline:'Shape and voice',feedback:'Shape and voice',voice:'Shape and voice',publish:'Send and download'})[tool.key];
 // One Finishing tool, by its key.
@@ -962,7 +962,7 @@ function sDeskPublishView(held){
 // out-of-date review offers to run again; it never reruns by itself.
 function sDeskGeoCard(held){
   const geo=held.view.geo_review||{status:'none'},working=held.view.working;
-  const said={working:'Under way: the GEO review is reading the post.',done:geo.open?'Done: '+geo.open+(geo.open===1?' proposal waits':' proposals wait')+' in GEO: retrieval readiness.':'Done: nothing left to review.',stale:'Out of date: the post changed since the GEO review ran. Run it again for the latest.',waiting:geo.waiting==='draft'?'Waiting: it runs once the full draft is written.':'Waiting: it runs when the change under way ends.',none:'No GEO review for this post yet.'}[geo.status]||'';
+  const said={working:'Under way: the GEO review is reading the post.',done:geo.open?'Done: '+geo.open+(geo.open===1?' proposal waits':' proposals wait')+' in GEO: retrieval readiness.':'Done: nothing left to review.',stale:'Out of date: the post changed since the GEO review ran. Run it again for the latest.',waiting:geo.waiting==='draft'?'Waiting: it runs once the full draft is written.':'Waiting: it runs when the change under way ends.','not-run':geo.why==='conversation'?'Not run yet: this post’s work belongs to the conversation, so its GEO review does not run by itself here. Run GEO review to run it now.':'Not run yet. Run GEO review to run it now.',none:geo.include&&geo.due==='ran'?'No GEO review on this computer yet. This post’s one review already ran, so it does not run again by itself.':'No GEO review for this post yet.'}[geo.status]||'';
   const line=sNode('p',geo.status==='stale'?'decision-notice':'quiet',said);line.setAttribute('role','status');
   const again=geo.status==='done'||geo.status==='stale';
   const run=sButton(again?'Run GEO review again':'Run GEO review',button=>sDeskRunGeo(held,button),geo.status==='done'?'':'filled');run.disabled=!sDeskCan(held)||!!working;
@@ -978,7 +978,7 @@ async function sDeskRunGeo(held,button){await sDeskJob(held,button,'desk-finish'
 const DESK_GEO_SAYS='Once the full draft is written, one GEO review runs as part of this post’s work, and its proposals wait in Finishing for you to preview, then apply or skip. Off, nothing GEO runs by itself. You can run one at any time.';
 function sDeskGeoChoice(held){
   const state={on:!!held.view.geo_review?.include};
-  const box=sCheck('desk-geo-include','Include a GEO review',state,'on',DESK_GEO_SAYS+' Turned on for a written draft, it runs now.',async on=>{
+  const box=sCheck('desk-geo-include','Include a GEO review',state,'on',DESK_GEO_SAYS+' '+deskGeoDue(held.view.geo_review),async on=>{
     input.disabled=true;
     try{const before=held.view;held.view=await api('desk-geo-option',{id:held.id,include:on});const queued=held.view.working?.kind==='finish-geo';sToast(on?(queued?'A GEO review is under way for this post. Its proposals will wait in Finishing.':'This post includes a GEO review. It runs once the full draft is written.'):'No GEO review runs by itself for this post. You can still run one at any time.');sDeskRefresh(held,before);if(queued)sDeskWatch(held);}
     catch(error){state.on=!on;input.checked=!on;notice(error.message,true);}
@@ -987,6 +987,15 @@ function sDeskGeoChoice(held){
   box.className+=' desk-geo-choice';
   const input=box.querySelector('input');input.disabled=!sDeskCan(held);
   return box;
+}
+// What this post's GEO review does next, as the choice says it: on or off.
+function deskGeoDue(geo){
+  const due=(geo||{}).due||'now',on=!!(geo||{}).include;
+  if(due==='ran')return on?'Its one GEO review has run.':'This post’s GEO review has already run, so turning this on runs nothing more.';
+  if(due==='conversation')return 'This post’s work belongs to the conversation, so its GEO review does not run by itself here.';
+  if(due==='draft')return on?'It runs once the full draft is written.':'Turned on, it runs once the full draft is written.';
+  if(due==='busy')return on?'It runs when the change under way ends.':'Turned on, it runs when the change under way ends.';
+  return on?'It runs now.':'Turned on, it runs now.';
 }
 function deskSummarySaid(set,said){const summary=(set.summary||'').trim().replace(/\.+$/,'');if(summary)said.push(summary);}
 // Quotes from sources: a draft with no sources yet is told so, with Add a source.
@@ -1013,6 +1022,7 @@ function sDeskSectionView(held,key){
   const tool=deskTool(key),view=held.view,f=held.finish,set=(view.finishing||{})[key],words=DESK_SECTION_WORDS[key];
   const open=set&&set.items.some(item=>item.state==='open'&&item.present);
   const parts=[sNode('p','quiet',tool.says)];
+  if(key==='faq'&&set&&set.count&&f.faqCountFrom!==set.job){f.faqCount=String(set.count);f.faqCountFrom=set.job;}
   if(key==='faq')parts.push(sChoice('Questions',[['3','3'],['4','4'],['5','5'],['6','6']],f,'faqCount'));
   const run=sButton(set?tool.run+' again':tool.run,button=>sDeskJob(held,button,'desk-finish',{tool:key,...(key==='faq'?{count:Number(f.faqCount||5)}:{})}),open?'':'filled');run.disabled=!sDeskCan(held)||!!view.working;
   parts.push(sAdd(sNode('div','bar'),run),...sDeskToolLines(held,key));
@@ -1021,6 +1031,12 @@ function sDeskSectionView(held,key){
   if(!set.items.length){parts.push(sNode('p','',words.empty));return parts;}
   for(const item of set.items)parts.push(sDeskSectionProposal(held,set,item,key));
   return parts;
+}
+function sDeskSectionPreview(key,heading,chosen){
+  const box=sAdd(sNode('div','paper desk-side'),sNode('h4','sheet-part',heading));
+  if(!chosen.length)return sAdd(box,sNode('p','quiet','(Nothing ticked)'));
+  if(key==='faq'){for(const row of chosen)box.append(sAdd(sNode('p',''),sNode('strong','',row.question.trim())),sNode('p','',row.answer.trim()));return box;}
+  const list=sNode('ul','');for(const row of chosen)list.append(sNode('li','',row.point.trim()));return sAdd(box,list);
 }
 function deskSectionText(key,rows){return key==='faq'?rows.map(row=>'**'+row.question.trim()+'**\n\n'+row.answer.trim()).join('\n\n'):rows.map(row=>'- '+row.point.trim()).join('\n');}
 function sDeskSectionProposal(held,set,item,key){
@@ -1059,7 +1075,7 @@ function sDeskSectionProposal(held,set,item,key){
   function show(){
     const chosen=ready(),all=rows.length,count=chosen.length;
     // A new section reads as it will in the post; a new form is compared with the one there.
-    preview.replaceChildren(item.insert?sAdd(sNode('div','paper desk-side'),sNode('h4','sheet-part',item.heading),sNode('p','desk-plain',deskSectionText(key,chosen)||'(Nothing ticked)')):deskSides(item.before,deskSectionText(key,chosen)));
+    preview.replaceChildren(item.insert?sDeskSectionPreview(key,item.heading,chosen):deskSides(item.before,deskSectionText(key,chosen)));
     said.textContent=count===all?'All '+all+' '+(all===1?words.row:words.rows)+' go in.':count+' of '+all+' '+words.rows+' ticked.';
     const every=sButton((item.insert?'Add all':'Use all')+' ('+all+')',button=>add(rows.filter(row=>key==='faq'?row.question.trim()&&row.answer.trim():row.point.trim()),button),count&&count<all?'':'filled');
     every.disabled=!sDeskCan(held)||!!view.working||rows.some(row=>key==='faq'?!row.question.trim()||!row.answer.trim():!row.point.trim());
@@ -1077,7 +1093,7 @@ async function sDeskSectionAdd(held,set,item,key,mark,chosen,button){
       held.view=await api('desk-apply',{id:held.id,seen:held.view.revision,job:set.job,items:[entry]});
       delete held.finish.rows[mark];
       sToast(item.insert?'Added “'+item.heading+'” as a new section. To take it out, remove it on the Outline tab.':'Updated “'+deskHeading((before.sections.find(section=>section.id===item.part)||{}).heading||'')+'”. The earlier text is in History.');
-      sDeskRefresh(held,before);sDeskPanelShow(held);
+      sDeskRefresh(held,before);sDeskPanelShow(held);DESK_KIT.refocus(held);
     }catch(error){if(/changed since you opened/.test(error.message)){held.stale=true;DESK_KIT.stale(held);}else notice(error.message,true);}
   });
 }
@@ -1121,7 +1137,7 @@ function sDeskRepurposeCard(held,p){
   const prepare=sButton('Prepare copy',async button=>{await busy(button,'Starting…',async()=>{try{await sDeskFlush(held);p.job=await api('tool-action',{action:'job-create',kind:'repurpose',id:held.id,operation:operationId(),format:p.copy.format,words:Number(p.copy.words),audience:p.copy.audience,url:p.copy.url});p.content=null;p.title='';p.copyProblem='';}catch(error){p.copyProblem=error.message;}sDeskPanelShow(held);});},'filled');prepare.disabled=!sDeskCan(held);
   const meta=p.copy.format==='meta';
   if(meta)prepare.textContent='Write a meta description';
-  sAdd(card,sField('desk-copy-format','Copy format',p.copy,'format',{options:DESK_FORMATS,changed:()=>sDeskPanelShow(held)}),meta?sNode('p','quiet field-hint','One line of up to '+DESK_META_LIMIT+' characters, from the post’s own claims. It is kept with this post.'):sField('desk-copy-words','Target words',p.copy,'words',{type:'number',min:30,maximum:1500}),sField('desk-copy-reader','Reader (optional)',p.copy,'audience',{max:2000}),meta?null:sField('desk-copy-url','Article URL (optional)',p.copy,'url',{max:2000}),sAdd(sNode('div','bar'),prepare));
+  sAdd(card,sField('desk-copy-format','Copy format',p.copy,'format',{options:DESK_FORMATS,changed:()=>{sDeskPanelShow(held);document.getElementById('desk-copy-format')?.focus();}}),meta?sNode('p','quiet field-hint','One line of up to '+DESK_META_LIMIT+' characters, from the post’s own claims. It is kept with this post.'):sField('desk-copy-words','Target words',p.copy,'words',{type:'number',min:30,maximum:1500}),sField('desk-copy-reader','Reader (optional)',p.copy,'audience',{max:2000}),meta?null:sField('desk-copy-url','Article URL (optional)',p.copy,'url',{max:2000}),sAdd(sNode('div','bar'),prepare));
   return card;
 }
 // How long a meta description is, said plainly: over the limit, by how much.
