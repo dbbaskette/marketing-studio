@@ -50,6 +50,9 @@ CREATE = frozenset(
         'research_inputs',
         # Include a GEO review: one review once the full draft is written (desk_jobs.geo_due).
         'geo_review',
+        # A published post brought by its link, or from a team collection, as it was read and
+        # checked (published_post.staged): the desk works on a copy; the page is never changed.
+        'published',
     }
 )
 # What the person brings: a draft (edit), a topic (author), an outline written from or an
@@ -260,9 +263,9 @@ def create(root, data):
     _require_lock()
     if not isinstance(data, dict) or set(data) - CREATE:
         raise ValueError('This request has fields the page does not take.')
-    given = [key for key in ('manuscript', 'source', 'article') if data.get(key)]
+    given = [key for key in ('manuscript', 'source', 'article', 'published') if data.get(key)]
     if len(given) > 1:
-        raise ValueError('Bring one draft: pasted, uploaded or from a Google Doc.')
+        raise ValueError('Bring one draft: pasted, uploaded, from a Google Doc or from a link.')
     title = data.get('title') or ''
     tone = data.get('tone') or ''
     if not isinstance(title, str) or len(title.strip()) > 500 or '\n' in title.strip():
@@ -313,7 +316,7 @@ def create(root, data):
         raise ValueError(
             'A draft you bring takes no outline or point. Choose a topic or an outline.'
         )
-    existing = None
+    existing, published = None, None
     if given == ['article']:
         directory, existing = studio.item(root, 'articles', data['article'])
         import blog_runner
@@ -328,6 +331,11 @@ def create(root, data):
         title = title or existing['title']
     elif given == ['source']:
         manuscript = _source_text(root, data['source'])
+    elif given == ['published']:
+        import published_post
+
+        published = published_post.staged(root, data['published'])
+        manuscript = published['markdown']
     else:
         manuscript = data.get('manuscript') or ''
         if not isinstance(manuscript, str):
@@ -382,6 +390,12 @@ def create(root, data):
     record['title'] = draft['title']
     if data.get('geo_review'):
         record['geo_review'] = {'include': True}
+    if published:
+        import published_post
+
+        # Where this copy came from: the post's link (and its team collection entry), never
+        # the page itself. The published page and the collection entry are never changed.
+        record['published_post'] = published_post.origin(published)
     _attach(root, data, record)
     if style:
         record['style'] = studio.style_pin(root, style)
@@ -401,7 +415,13 @@ def create(root, data):
     }
     if existing is None:
         directory.mkdir()
-        studio.save_artifact(directory, 'original', manuscript, record, 'supplied manuscript')
+        studio.save_artifact(
+            directory,
+            'original',
+            manuscript,
+            record,
+            'a copy of a published post' if published else 'supplied manuscript',
+        )
     studio.save_artifact(directory, 'draft', join(draft), record, 'brought to the desk')
     _keep_images(directory, draft)
     studio.persist(directory, 'articles', record)
@@ -1466,7 +1486,8 @@ UNSHARED = ('skip', 'unskip', 'google-plan', 'google-send', 'google-compare', 'r
 
 
 # First passes that are a Finishing tool: they propose, and the draft is left as it is.
-FINISH_FIRST = ('copyedit', 'feedback')
+# Review for AI search (GEO) is the post's one GEO review, queued as the desk opens.
+FINISH_FIRST = ('copyedit', 'feedback', 'geo')
 
 
 def _create(root, data):
@@ -1487,7 +1508,8 @@ def _create(root, data):
     choice = data.pop('first_pass', 'leave')
     if choice not in (*desk_jobs.FIRST_PASSES, *FINISH_FIRST):
         raise ValueError(
-            'Choose Check spelling and grammar, feedback, reshape, tighten or leave it as it is.'
+            'Choose Check spelling and grammar, feedback, Review for AI search, reshape, tighten '
+            'or leave it as it is.'
         )
     # Check spelling and grammar may also suggest human-sounding wording, at a strength.
     humanize = desk_jobs.humanize_level(data.pop('humanize', None))
@@ -1537,6 +1559,8 @@ def _create(root, data):
     try:
         if choice == 'copyedit':
             desk_jobs.review(root, made['id'], 1, humanize, voice_guide)
+        elif choice == 'geo':
+            desk_jobs.geo_first(root, made['id'])
         elif choice in FINISH_FIRST:
             desk_jobs.finish(root, made['id'], 1, choice)
         else:

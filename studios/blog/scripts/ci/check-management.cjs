@@ -3161,10 +3161,11 @@ async function deskOtherWaysIn(){
 // Polishing or reviewing a draft is one screen: the draft, what happens first, and optional
 // tone and sources. No kind of post unless the draft is reshaped to one, and no step tabs.
 async function deskPolishStart(){
-  const t=deskStartFixture((url)=>{
+  const t=deskStartFixture((url,data)=>{
     if(url==='/api/desk-create')return {...deskView({id:'polished'}),first_pass_problem:null};
     if(url.startsWith('/api/desk?'))return deskView({id:'polished'});
     if(url==='/api/upload')return {files:[{filename:'facts.md',source:{id:'s1'},state:'ready',chars:80,note:''}]};
+    if(url==='/api/published-preview'){if(data.url==='https://blog.example.com/locked')return {__http:400,error:'This page asks for a sign-in, so Blog Studio could not read the post. Paste its text or upload it instead.'};return {status:'preview',preview:'p'.repeat(32),expected:'e'.repeat(32),title:'Retry budgets',content:'# Retry budgets\n\nA retry budget caps retries.',url:data.url||'https://blog.example.com/post',summary:{words:5,headings:0,links:0,images:1,images_without_alt:1},access:null,collection_item:data.item?{id:data.item,location:data.location}:null};}
     return null;});
   const creates=()=>t.requests.filter(r=>r.url==='/api/desk-create'),made=()=>creates().at(-1).data;
   const paste=()=>t.type('desk-manuscript','# A synthetic draft\n\n## One\n\nSome text.');
@@ -3180,7 +3181,7 @@ async function deskPolishStart(){
   single();
   assert.equal(t.byId('desk-kind'),undefined,'no kind of post unless reshaping');
   for(const id of ['desk-sites','desk-web','desk-length'])assert.equal(t.byId(id),undefined,id+' is for new writing');
-  assert.deepEqual(first().children.filter(n=>n.tagName==='button').map(n=>n.textContent),['Check spelling and grammar','Just give feedback','Reshape to fit a kind of post','Leave it as it is']);
+  assert.deepEqual(first().children.filter(n=>n.tagName==='button').map(n=>n.textContent),['Check spelling and grammar','Just give feedback','Review for AI search (GEO)','Reshape to fit a kind of post','Leave it as it is']);
   assert.deepEqual(pressed(),['Check spelling and grammar'],'checking spelling and grammar is the default');
   const firstCard=()=>t.nodes().find(n=>n.tagName==='section'&&descendants(n).includes(first()));
   assert.ok(descendants(firstCard()).some(n=>n.tagName==='p'&&n.textContent==='See each fix marked in your text, then accept or reject it. Nothing changes until you accept.'),'the line sits under the choices');
@@ -3214,6 +3215,44 @@ async function deskPolishStart(){
   assert.ok(t.nodes().some(n=>n.textContent==='Comments on shape, argument, audience and claims appear beside each part. Nothing in the text changes.'));
   await t.submit();
   sent=made();assert.equal(sent.first_pass,'feedback');assert.equal(sent.style,'');assert.equal(t.f.run('studio.desk.mode'),null,'feedback opens the full desk');assert.equal(t.f.run('studio.stage'),null);
+  // Review for AI search: the GEO review is queued as the desk opens, and Finishing opens at
+  // it; its proposals wait there. Nothing in the text changes.
+  await t.f.run("sDeskBegin({have:'draft'})");paste();
+  await t.click('Review for AI search (GEO)');
+  assert.ok(t.nodes().some(n=>n.textContent===t.f.run('DESK_POLISH_SAYS.geo')));
+  assert.match(t.f.run('DESK_POLISH_SAYS.geo'),/clearer answers, consistent names, cited evidence and passages that stand on their own/);
+  assert.equal(t.byId('desk-geo-review'),undefined,'the first pass is the GEO review: no second choice');
+  await t.submit();
+  sent=made();assert.equal(sent.first_pass,'geo');assert.equal(t.f.run('studio.desk.mode'),null,'the full desk');assert.equal(t.f.run('studio.desk.finish?.tool'),'geo','Finishing opens at the GEO review');
+  // Link to a published post: read once on a press, shown, then started on a copy.
+  await t.f.run("sDeskBegin({have:'draft'})");
+  await t.click('Link to a published post');
+  await t.click('Review for AI search (GEO)');
+  assert.equal(t.nodes().find(n=>n.tagName==='button'&&n.type==='submit').textContent,'Read the page and start');
+  const reads=t.requests.filter(r=>r.url==='/api/published-preview').length;
+  const startsBefore=creates().length;
+  await t.submit();
+  assert.ok(t.nodes().some(n=>n.className==='problem'&&n.textContent==='Paste the post’s link first.'));
+  t.type('desk-link','https://blog.example.com/locked');await t.click('Read the page');
+  assert.ok(t.nodes().some(n=>n.className==='problem'&&/asks for a sign-in/.test(n.textContent)),'a login wall is said plainly');
+  assert.equal(creates().length,startsBefore,'nothing starts from a refused read');
+  t.type('desk-link','https://blog.example.com/post');await t.click('Read the page');
+  assert.equal(t.requests.filter(r=>r.url==='/api/published-preview').length,reads+2);
+  assert.equal(creates().length,startsBefore,'reading starts nothing');
+  assert.ok(t.nodes().some(n=>n.attributes?.['aria-label']==='The post as it was read'),'the read is shown before starting');
+  assert.ok(t.nodes().some(n=>/1 image has no alt text/.test(n.textContent)));
+  assert.equal(t.nodes().find(n=>n.tagName==='button'&&n.type==='submit').textContent,'Start');
+  await t.submit();
+  sent=made();assert.deepEqual(sent.published,{preview:'p'.repeat(32),expected:'e'.repeat(32)});assert.equal(sent.first_pass,'geo');assert.equal(sent.manuscript,undefined);
+  // A post from a team collection: its saved text is shown, then a copy starts with the review.
+  await t.f.run("reviewForSearch({id:'post-1',location:'local',title:'Old post'})");
+  assert.equal(t.f.run('studio.deskStart.first_pass'),'geo');
+  for(let i=0;i<10;i++)await new Promise(resolve=>setImmediate(resolve));  // the saved post is read
+  assert.ok(t.nodes().some(n=>/A copy of “Old post” from your team library comes to the desk/.test(n.textContent)));
+  assert.ok(t.nodes().some(n=>n.attributes?.['aria-label']==='The post as saved in the collection'));
+  assert.deepEqual(t.requests.filter(r=>r.url==='/api/published-preview').at(-1).data,{item:'post-1',location:'local'});
+  await t.submit();
+  sent=made();assert.equal(sent.published.preview,'p'.repeat(32));assert.equal(sent.first_pass,'geo');
   // Reshape reveals the kind of post, the same catalog, and needs one.
   await t.f.run("sDeskBegin({have:'draft'})");paste();
   await t.click('Reshape to fit a kind of post');

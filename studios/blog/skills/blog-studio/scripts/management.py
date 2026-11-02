@@ -2289,6 +2289,20 @@ def dispatch(root, route, data):
         # A preview stages only the selected Doc on this computer; it does not
         # publish unrelated pending team work or start a writing job.
         return _dispatch(root, route, data)
+    if route == 'published-preview':
+        # A published post read by its link (the network read happens before the studio lock
+        # is taken, so a slow page never holds the workspace), or a post from a team
+        # collection, staged on this computer for the person to check. Nothing starts.
+        import published_post
+
+        if not isinstance(data, dict) or set(data) not in ({'url'}, {'item', 'location'}):
+            raise ValueError('Give the post’s link, or choose a post from a team collection.')
+        found = published_post.read(data['url']) if 'url' in data else None
+        with studio.locked(root):
+            authorize_write(root)
+            if found is None:
+                found = published_post.from_library(root, data['item'], data['location'])
+            return published_post.stage(root, found)
     if route == 'research-site':
         # A site added on a start form for one blog only: checked here, saved nowhere. The
         # shared list is changed in Shared settings.

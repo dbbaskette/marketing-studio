@@ -93,7 +93,7 @@ function sDeskResearchDefault(value){const ticks=OLD_RESEARCH[value]||(value&&ty
 function sDeskHeld(){
   if(studio.deskStart)return studio.deskStart;
   const defaults=studio.options?.settings?.defaults||{},preset=studio.deskPreset||{};studio.deskPreset=null;
-  return studio.deskStart={step:0,kind:'',style:'',researchOn:false,have:'topic',title:'',audience:'',point:'',angles:[],angle:null,angleOp:null,anglesBusy:false,anglesProblem:'',outline:'',outlineFrom:'paste',outlineFile:null,outlineWay:'outline',source:'paste',article:null,manuscript:'',url:'',file:null,preview:null,first_pass:null,humanizeOn:false,humanizeLevel:'light',geoReview:false,voiceOn:false,voiceGuide:'',files:[],role:'material',keep:false,from:{on:true,documents:true,sites:false,web:false,picked:[...sSharedSites()],added:[]},...sDeskResearchDefault(defaults.research),length:'style',tone:defaults.tone||'',operation:operationId(),upload:operationId(),...preset};
+  return studio.deskStart={step:0,kind:'',style:'',researchOn:false,have:'topic',title:'',audience:'',point:'',angles:[],angle:null,angleOp:null,anglesBusy:false,anglesProblem:'',outline:'',outlineFrom:'paste',outlineFile:null,outlineWay:'outline',source:'paste',article:null,manuscript:'',url:'',link:'',collection:null,collectionProblem:'',file:null,preview:null,first_pass:null,humanizeOn:false,humanizeLevel:'light',geoReview:false,voiceOn:false,voiceGuide:'',files:[],role:'material',keep:false,from:{on:true,documents:true,sites:false,web:false,picked:[...sSharedSites()],added:[]},...sDeskResearchDefault(defaults.research),length:'style',tone:defaults.tone||'',operation:operationId(),upload:operationId(),...preset};
 }
 // Home's tasks, New blog, the library's "Write a blog from these", an interview's outline and
 // a saved blog's details all start here.
@@ -154,8 +154,8 @@ function sDeskResearchOptions(held){
 // Polishing or reviewing a draft: the draft, what happens first, then Start. A kind of post
 // is asked for only to reshape the draft; sources are optional, for the fact check.
 // Check spelling and grammar is Finishing's Copy edit, opened in Review mode (sDeskReview).
-const DESK_POLISH_FIRST=[['copyedit','Check spelling and grammar'],['feedback','Just give feedback'],['reshape','Reshape to fit a kind of post'],['leave','Leave it as it is']];
-const DESK_POLISH_SAYS={copyedit:'See each fix marked in your text, then accept or reject it. Nothing changes until you accept.',feedback:'Comments on shape, argument, audience and claims appear beside each part. Nothing in the text changes.',reshape:'The sections and length are reshaped to the kind of post; a draft with no headings may be divided into sections. Your text is kept as a version first.',leave:'The draft opens on the desk as it is, for your own edits and notes.'};
+const DESK_POLISH_FIRST=[['copyedit','Check spelling and grammar'],['feedback','Just give feedback'],['geo','Review for AI search (GEO)'],['reshape','Reshape to fit a kind of post'],['leave','Leave it as it is']];
+const DESK_POLISH_SAYS={geo:'Recommends changes for clearer answers, consistent names, cited evidence and passages that stand on their own. They wait in Finishing to preview, then apply or skip. Nothing changes until you accept.',copyedit:'See each fix marked in your text, then accept or reject it. Nothing changes until you accept.',feedback:'Comments on shape, argument, audience and claims appear beside each part. Nothing in the text changes.',reshape:'The sections and length are reshaped to the kind of post; a draft with no headings may be divided into sections. Your text is kept as a version first.',leave:'The draft opens on the desk as it is, for your own edits and notes.'};
 function sDeskPolish(held){
   if(!DESK_POLISH_FIRST.some(([value])=>value===held.first_pass))held.first_pass=held.source==='saved'?'leave':'copyedit';
   // The kind of post goes with the draft only to reshape it, with a learned kind's samples.
@@ -163,8 +163,9 @@ function sDeskPolish(held){
   sFrame('Polish a draft',[],'Writing desk',()=>sRoute('home'));
   const form=sNode('form','narrow desk-start'),problem=sNode('p','problem',held.problem||'');problem.setAttribute('role','alert');delete held.problem;
   const again=()=>sDeskStartAgain(held);
-  const googleAction={copyedit:'Read and polish',feedback:'Read and review',reshape:'Read and reshape',leave:'Open Google Doc'}[held.first_pass];
-  const go=sNode('button','button button-filled',held.source==='google'?googleAction:'Start');go.type='submit';go.disabled=studio.busy||!access.actions.edit;
+  const googleAction={copyedit:'Read and polish',feedback:'Read and review',geo:'Read and review for AI search',reshape:'Read and reshape',leave:'Open Google Doc'}[held.first_pass];
+  const linkAction=held.preview?'Start':'Read the page and start';
+  const go=sNode('button','button button-filled',held.source==='google'?googleAction:held.source==='link'?linkAction:'Start');go.type='submit';go.disabled=studio.busy||!access.actions.edit;
   const first=sCard('What should happen first',sChoice('When the desk opens',DESK_POLISH_FIRST,held,'first_pass',()=>again()),sNode('p','quiet field-hint',DESK_POLISH_SAYS[held.first_pass]));
   // Check spelling and grammar may also suggest more human-sounding wording, at a strength,
   // mixed in with the fixes. Ticking it shows the strength in place, so focus stays put.
@@ -175,13 +176,13 @@ function sDeskPolish(held){
   const facts=fold('Check facts against your sources (optional)',held.factsOpen??held.files.length>0,open=>{held.factsOpen=open;},sNode('p','quiet','Finishing’s fact check reads these. They stay with this blog unless you keep them in the team library.'),...[...sFilesCard(held,problem,again,locked=>{go.disabled=locked||!access.actions.edit;}).children].slice(1));
   const instead=sButton('Writing something new? Start from a topic or an outline',()=>{held.have='topic';if(held.kind===null)held.step=0;else{held.style=held.kind;sStyleSamples(held);}sTop();sDeskStart();});instead.className+=' desk-instead';
   const linked=held.linkedRun;delete held.linkedRun;const run=linked?sButton('Open its run',()=>sRoute('run',linked)):null;
-  sAdd(form,...sDeskDraftIn(held),first,tone,facts,sDeskGeoStart(held),sAdd(sNode('div','form-foot'),problem,sAdd(sNode('div','bar'),go,run)),['saved','upload'].includes(held.source)?null:instead);
+  sAdd(form,...sDeskDraftIn(held),first,tone,facts,held.first_pass==='geo'?null:sDeskGeoStart(held),sAdd(sNode('div','form-foot'),problem,sAdd(sNode('div','bar'),go,run)),['saved','upload','collection'].includes(held.source)?null:instead);
   form.addEventListener('submit',async event=>{
     event.preventDefault();if(!access.actions.edit||studio.busy||held.starting)return;const said=sDeskHaveProblem(held);if(said){problem.textContent=said;return;}
     // A read that fails again says so as a new answer, so pressing the button visibly reads.
-    const failed=problem.textContent,needsRead=held.source==='google'&&!held.preview;problem.textContent='';
+    const failed=problem.textContent,needsRead=['google','link','collection'].includes(held.source)&&!held.preview;problem.textContent='';
     held.starting=true;const unlock=sFreezeControls(form);
-    try{await busy(go,needsRead?'Reading and starting…':'Starting…',async()=>{try{if(needsRead)await sDeskReadGoogle(held,{start:true});else await sDeskGo(held);}catch(error){const readFailed=needsRead&&!held.preview;problem.textContent=(readFailed&&failed?'Read again, and still: ':'')+error.message+(readFailed?' Your link is kept here; change the Doc or try again.':' Your choices and captured draft are kept here.');}});}
+    try{await busy(go,needsRead?'Reading and starting…':'Starting…',async()=>{try{if(needsRead&&held.source==='google')await sDeskReadGoogle(held,{start:true});else if(needsRead)await sDeskReadPublished(held,{start:true});else await sDeskGo(held);}catch(error){const readFailed=needsRead&&!held.preview;problem.textContent=(readFailed&&failed?'Read again, and still: ':'')+error.message+(readFailed?(held.source==='google'?' Your link is kept here; change the Doc or try again.':' Your link is kept here; change it or try again.'):' Your choices and captured draft are kept here.');}});}
     finally{held.starting=false;unlock();}
   });
   sPage(sNode('p','lede','Bring your draft and choose what happens first. No kind of post needed.'),form);
@@ -201,6 +202,7 @@ function sDeskHaveProblem(held){
     if(held.source==='paste'&&!held.manuscript.trim())return 'Paste your draft first.';
     if(held.source==='file'&&!held.file)return 'Choose a draft to upload.';
     if(held.source==='google'&&!held.url.trim())return 'Paste the Google Doc link first.';
+    if(held.source==='link'&&!held.link.trim())return 'Paste the post’s link first.';
     if(held.first_pass==='reshape'&&!held.kind)return 'Choose a kind of post to reshape the draft to.';
   }
   return '';
@@ -256,9 +258,23 @@ function sDeskOutlineIn(held){
 function sDeskDraftIn(held){
   const saved=held.article?sCheck('desk-saved','Use this blog’s saved draft',{on:held.source==='saved'},'on','It comes to the desk as it is, in the same blog. Its history is kept.',on=>{held.source=on?'saved':'paste';held.preview=null;sDeskStart();}):null;
   const uploaded=held.uploaded?sCheck('desk-uploaded','Use the file you uploaded',{on:held.source==='upload'},'on','“'+held.uploaded.name+'” comes to the desk as it is. It stays in the team library too.',on=>{held.source=on?'upload':'paste';held.preview=null;sDeskStart();}):null;
-  const kept=['saved','upload'].includes(held.source);
-  const card=sCard('Your draft',saved,uploaded,kept?null:sChoice('Where is your draft?',[['paste','Paste text'],['file','Upload a file'],['google','Google Doc']],held,'source',()=>{held.preview=null;sDeskStart();}));
+  const kept=['saved','upload','collection'].includes(held.source);
+  const card=sCard('Your draft',saved,uploaded,kept?null:sChoice('Where is your draft?',[['paste','Paste text'],['file','Upload a file'],['google','Google Doc'],['link','Link to a published post']],held,'source',()=>{held.preview=null;sDeskStart();}));
   if(held.source==='saved'){/* The blog's own draft: nothing to paste or read. */}
+  else if(held.source==='collection'){
+    // A post from a team collection: a copy comes to the desk; the collection keeps its entry.
+    card.append(sNode('p','','A copy of “'+(held.collection?.title||'this post')+'” from your team library comes to the desk. Its entry in the collection stays as it is.'));
+    if(held.preview)card.append(sPublishedPreview(held.preview,'The post as saved in the collection'));
+    else if(held.collectionProblem)card.append(sNode('p','problem',held.collectionProblem));
+    else{card.append(sNode('p','quiet','Reading the saved post…'));sDeskReadCollection(held);}
+  }
+  else if(held.source==='link'){
+    // A published post by its link: read once on a press, shown here, then started.
+    card.append(sField('desk-link','Link to the published post',held,'link',{required:true,max:2000,hint:'Its page is read once, without running anything on it, and shown here before anything starts. The desk works on a copy; the published page is never changed.',changed:()=>{held.preview=null;}}));
+    const read=sButton(held.preview?'Read the page again':'Read the page',button=>busy(button,'Reading…',async()=>{try{await sDeskReadPublished(held);}catch(error){held.problem=error.message;sDeskStart();}}));read.disabled=!access.actions.edit;
+    card.append(sAdd(sNode('div','bar'),read));
+    if(held.preview)card.append(sPublishedPreview(held.preview,'The post as it was read'));
+  }
   else if(held.source==='upload'){if(held.uploaded.text){const paper=sNode('article','paper doc');paper.setAttribute('aria-label','The uploaded file’s text');paper.append(window.StudioMarkdown?window.StudioMarkdown.render(held.uploaded.text):sNode('p','',held.uploaded.text));card.append(sNode('p','quiet',held.uploaded.truncated?'Its text as it was read, the first part shown:':'Its text as it was read:'),paper);}}
   else if(held.source==='paste')card.append(sField('desk-manuscript','Paste your draft',held,'manuscript',{long:true,max:1000000,required:true,hint:'Up to 200,000 characters of text; images in it are not counted. Its headings start the sections, at whatever level it uses.'}));
   else if(held.source==='file'){
@@ -286,6 +302,39 @@ async function sDeskReadGoogle(held,{start=false}={}){
   if(start){const made=await sDeskGo(held);if(made&&studio.screen==='desk'&&studio.id===made.id){const summary=held.preview.summary,notes=[];if(summary.selected_tab)notes.push('Opened only the tab “'+summary.selected_tab.title+'”.');if(summary.excluded_approval_blocks)notes.push('Leading approval fields stay in the original Google Doc.');if(notes.length)sToast(notes.join(' '));}return made;}
   sDeskStart();
 }
+// A published post's preview: what was read, said in a line, then its text, read only.
+function sPublishedShape(found){
+  const s=found.summary||{},said=[s.words+(s.words===1?' word':' words'),s.headings+(s.headings===1?' heading':' headings'),s.links+(s.links===1?' link':' links'),s.images+(s.images===1?' image':' images')];
+  if(s.images_without_alt)said.push(s.images_without_alt+(s.images_without_alt===1?' image has':' images have')+' no alt text');
+  return said.join(' · ');
+}
+function sPublishedPreview(found,label){
+  const box=sNode('div','published-preview'),paper=sNode('article','paper doc');paper.setAttribute('aria-label',label);
+  paper.append(window.StudioMarkdown?window.StudioMarkdown.render(found.content):sNode('p','',found.content));
+  box.append(sNode('p','','Check the text below, then start.'),sNode('p','quiet',sPublishedShape(found)),paper);
+  return box;
+}
+function sPublishedFound(found){
+  if(!found||found.status!=='preview'||typeof found.preview!=='string'||typeof found.expected!=='string'||typeof found.content!=='string'||typeof found.title!=='string')throw new Error('The page’s preview is incomplete. Read it again.');
+  return found;
+}
+// Read a published post by its link: one fetch on this press, shown before anything starts.
+async function sDeskReadPublished(held,{start=false}={}){
+  if(held.source==='collection')return sDeskReadCollection(held,{start});
+  const turn=studio.turn,found=sPublishedFound(await api('published-preview',{url:held.link.trim()}));if(turn!==studio.turn)return;
+  held.preview=found;
+  if(start)return sDeskGo(held);
+  sDeskStart();
+}
+async function sDeskReadCollection(held,{start=false}={}){
+  if(held.collectionReading)return;held.collectionReading=true;
+  const turn=studio.turn;
+  try{const found=sPublishedFound(await api('published-preview',{item:held.collection.id,location:held.collection.location||'local'}));if(turn!==studio.turn)return;held.preview=found;held.collectionProblem='';}
+  catch(error){held.collectionProblem=error.message;if(start)throw error;}
+  finally{held.collectionReading=false;}
+  if(start&&held.preview)return sDeskGo(held);
+  sDeskStartAgain(held);
+}
 // Check spelling and grammar's strength of human-sounding suggestions, or null for none.
 function sDeskPolishOptions(held){return held.first_pass==='copyedit'?{humanize:held.humanizeOn?held.humanizeLevel:null,...(held.voiceOn?{voice_guide:held.voiceGuide}:{})}:{};}
 async function sDeskGo(held){
@@ -298,6 +347,10 @@ async function sDeskGo(held){
     if(held.source==='saved')made=await api('desk-create',{...settings,article:held.article});
     else if(held.source==='upload')made=await api('desk-create',{...settings,source:held.uploaded.id});
     else if(held.source==='paste')made=await api('desk-create',{...settings,manuscript:held.manuscript});
+    else if(held.source==='link'||held.source==='collection'){
+      if(!held.preview)throw new Error('Read the page first.');
+      made=await api('desk-create',{...settings,published:{preview:held.preview.preview,expected:held.preview.expected}});
+    }
     else if(held.source==='file'){
       if(held.file.size>10*1024*1024)throw new Error('Choose a file up to 10 MiB.');
       const uploaded=await api('upload',{operation:held.upload,filename:held.file.name,title:held.title.trim()||held.file.name.replace(/\.[^.]+$/,''),content:await encodeImportFile(held.file),purpose:'manuscript',analyze:false});
@@ -329,7 +382,8 @@ async function sDeskGo(held){
   if(made.first_pass_problem)sToast('The first pass did not start: '+made.first_pass_problem);
   if(made.keep_problem)sToast(made.keep_problem);
   // Check spelling and grammar lands in Review mode; every other start on the full desk.
-  studio.desk={id:made.id,view:made,session:operationId()};await sRoute('desk',made.id,held.have==='draft'&&held.first_pass==='copyedit'?'review':null);
+  // Review for AI search opens Finishing at the GEO review, where its proposals will wait.
+  studio.desk={id:made.id,view:made,session:operationId(),...(held.have==='draft'&&held.first_pass==='geo'&&!made.first_pass_problem?{openTool:'geo'}:{})};await sRoute('desk',made.id,held.have==='draft'&&held.first_pass==='copyedit'?'review':null);
   return made;
 }
 
@@ -364,6 +418,7 @@ async function sDesk(ident){
   if(sDeskStarting(view))return sDeskProgress(held);
   if(!held.tab)held.tab=(view.start?.open==='outline'||view.conversation_scope==='outline')&&!sDeskHasText(view)?'outline':'draft';
   sDeskRender(held);
+  if(held.openTool){const tool=held.openTool;delete held.openTool;sDeskFinishOpen(held,tool);}
   sDeskWatch(held);
 }
 function sDeskStarting(view){return DESK_KIT.starting(view);}

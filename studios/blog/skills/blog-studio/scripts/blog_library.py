@@ -230,8 +230,9 @@ def time_left(deadline):
     return min(15, remaining)
 
 
-def read_within(response, raw, deadline):
-    """Read at most MAX_FETCH bytes; every wait is bounded by the time left for this address."""
+def read_within(response, raw, deadline, most=MAX_FETCH):
+    """Read at most `most` bytes (MAX_FETCH unless a caller asks for fewer); every wait is
+    bounded by the time left for this address."""
     chunks, size = [], 0
     while True:
         limit = time_left(deadline)
@@ -243,8 +244,8 @@ def read_within(response, raw, deadline):
         if not chunk:
             return b''.join(chunks)
         size += len(chunk)
-        if size > MAX_FETCH:
-            raise ValueError('Source exceeds the bounded fetch limit.')
+        if size > most:
+            raise ValueError(TOO_LARGE)
         chunks.append(chunk)
 
 
@@ -252,7 +253,12 @@ class Outside(ValueError):
     """A research page outside the sites its run may use; the sentence names them."""
 
 
-def fetch(url, scope, redirects=3, deadline=None, redirected_from=None):
+TOO_LARGE = 'Source exceeds the bounded fetch limit.'
+
+
+def fetch(
+    url, scope, redirects=3, deadline=None, redirected_from=None, limit=MAX_FETCH, headers=None
+):
     """Reject private addresses and pin the actual socket, including every redirect.
 
     `scope` is a collection's https base (a string), or a research run's
@@ -262,6 +268,8 @@ def fetch(url, scope, redirects=3, deadline=None, redirected_from=None):
     never sent: a '#' cannot hide a path from the check.
     One deadline covers the whole exchange, so a slow or stalled server cannot hold the
     workspace longer than FETCH_DEADLINE seconds. Network failures become plain messages.
+    `limit` lowers the byte limit for a small file (robots.txt); `headers`, a dict, is given
+    the final response's status and its X-Robots-Tag, for a published post's Page access.
     """
     deadline = deadline or time.monotonic() + FETCH_DEADLINE
     target = fetchable(url)
@@ -302,7 +310,20 @@ def fetch(url, scope, redirects=3, deadline=None, redirected_from=None):
             # Checked as the server sent it, and again as it is fetched, on the next hop.
             destination = urljoin(url, response.getheader('Location', ''))
             connection.close()
-            return fetch(destination, scope, redirects - 1, deadline, redirected_from=url)
+            return fetch(
+                destination,
+                scope,
+                redirects - 1,
+                deadline,
+                redirected_from=url,
+                limit=limit,
+                headers=headers,
+            )
+        if headers is not None:
+            headers.update(
+                status=response.status,
+                x_robots_tag=' '.join(response.getheader('X-Robots-Tag', '').split())[:1000],
+            )
         if response.status != 200:
             raise ValueError(
                 'Source returned HTTP '
@@ -310,9 +331,9 @@ def fetch(url, scope, redirects=3, deadline=None, redirected_from=None):
                 + '; historical snapshots were retained.'
             )
         length = response.getheader('Content-Length')
-        if length and int(length) > MAX_FETCH:
-            raise ValueError('Source exceeds the bounded fetch limit.')
-        content = read_within(response, raw, deadline)
+        if length and length.isdigit() and int(length) > limit:
+            raise ValueError(TOO_LARGE)
+        content = read_within(response, raw, deadline, limit)
         return content, canonical(url), response.getheader('Content-Type', '')
     except TimeoutError as exc:
         raise ValueError(TOO_SLOW) from exc

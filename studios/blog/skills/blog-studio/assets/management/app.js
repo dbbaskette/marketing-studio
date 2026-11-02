@@ -289,7 +289,7 @@ function render(state, result) {
       textCell(row,item.author||'Author unknown');
       textCell(row,(item.role==='voice-sample'&&!libraryVoices()?'Writing sample':LIBRARY_ROLES[item.role]||'Facts')+(item.kind_name?' · '+item.kind_name:'')+(libraryVoices()?['voice-sample','style-sample']:['style-sample']).filter(purpose=>purpose!==item.role&&(item.purposes||[]).includes(purpose)).map(purpose=>' · '+LIBRARY_ROLES[purpose].toLowerCase()).join(''));
       const status=textCell(row,'');status.append(element('span',libraryStatus(item),'badge'));
-      const action=textCell(row,'');action.append(button(access.actions.edit?'Review details':'Read reference',()=>curate(item)));if(item.historical)action.append(element('p','Historical reference'));}
+      const action=textCell(row,'');action.append(button(access.actions.edit?'Review details':'Read reference',()=>curate(item)));if(item.historical)action.append(element('p','Historical reference'));if(item.historical&&access.actions.edit&&typeof sDeskBegin==='function')action.append(button('Review for AI search',()=>reviewForSearch(item)));}
     if(view==='memory'){const cell=textCell(row,'');cell.append(button(item.title,()=>editMemory(item),'title-button'));if(item.conflict)cell.append(element('p','Competing revisions'));if(item.lesson_status)cell.append(element('p','Candidate lesson · '+item.lesson_status));textCell(row,item.kind);textCell(row,item.scope.level+(item.scope.key?' · '+item.scope.key:''));textCell(row,item.lesson?'Review / promote in chat':item.focused_workflow?'Manage in chat':item.kind==='decision'||item.conflict||!access.actions.memory?'Read details':'Open to read or edit');}
     Array.from(row.children).forEach((cell,index)=>cell.setAttribute('data-label',labels[index]));
     body.append(row);
@@ -298,6 +298,9 @@ function render(state, result) {
 // The selection bar shows while anything is ticked. A tick stays as you page and change the
 // filters, so the count can include rows not in view; Select all matching ticks what the
 // filters match at that moment, and later filters neither add to it nor take from it.
+// A post from a team collection, reviewed for AI search: a copy comes to the desk with the
+// GEO review as its first pass, after the person checks it; the collection entry stays.
+function reviewForSearch(item){return sDeskBegin({have:'draft',source:'collection',collection:{id:item.id,location:item.location||'local',title:item.title},first_pass:'geo'});}
 function librarySelectionBar() {
   const count=librarySelection.size,shown=view==='library'?libraryShown:[],ticked=shown.filter(item=>librarySelection.has(libraryKey(item))).length,hidden=count-ticked;
   $('library-selection').hidden=view!=='library'||!count||!access.actions.edit;

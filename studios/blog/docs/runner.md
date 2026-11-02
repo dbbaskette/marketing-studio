@@ -77,8 +77,15 @@ one review runs then. Posts made before the choice existed have it off.
 
 **Edit or polish a draft** is one screen with no step tabs and no kind of post to choose:
 
-- **Your draft**, pasted, uploaded or from a Google Doc (every tab is read, and the Doc is
-  not changed). The title is optional.
+- **Your draft**, pasted, uploaded, from a Google Doc (every tab is read, and the Doc is
+  not changed) or by **Link to a published post**. A link is read once, when you press
+  **Read the page** (or **Read the page and start**), through Blog Studio's bounded fetcher:
+  public addresses only, the link's own site, a deadline, limited redirects and 2 MB at most,
+  with nothing on the page run. Its title, headings, text, lists, quotations, tables, links
+  and images with their alt text are shown before anything starts. A page behind a sign-in,
+  a link that is not a web page (a PDF, say) and a page that is too large are refused
+  plainly. The desk works on a copy; the blog's record keeps the link, and the published
+  page is never changed. The title is optional.
 - **What should happen first**: **Check spelling and grammar** (the default, with no kind
   of post: "See each fix marked in your text, then accept or reject it. Nothing changes
   until you accept." Finishing's **Copy edit** starts as the blog is made, and the blog
@@ -86,7 +93,11 @@ one review runs then. Posts made before the choice existed have it off.
   wording** adds Finishing's **Humanize** to the same check, at **Light** (the default),
   **Medium** or **Strong**, shown once it is ticked), **Just give feedback** (Finishing's **Feedback
   without a rewrite** starts as the desk opens: comments beside each part, and nothing in
-  the text changes), **Reshape to fit a kind of post** (only this one shows **Kind of
+  the text changes), **Review for AI search (GEO)** (it recommends changes for clearer
+  answers, consistent names, cited evidence and passages that stand on their own: the
+  post's one GEO review starts as the desk opens, Finishing opens at it, and its proposals
+  wait there to preview, then apply or skip; nothing changes until you accept),
+  **Reshape to fit a kind of post** (only this one shows **Kind of
   post**, and needs one) or **Leave it as it is**. The opening is worked on with the
   sections, and a draft with no headings is worked on as one part. Only Reshape may add
   headings, to divide such a draft into the kind of post's sections; restoring the
@@ -104,6 +115,13 @@ After **Start** nothing stops for you. The page says "Nothing needed from you", 
 step under way (researching, outlining, drafting) with one clock, and offers **Stop**, and
 **Retry** if a step fails. The draft, or the outline for Shape, opens on the desk by
 itself.
+
+A post in an **Import old blogs** collection has **Review for AI search** in the team
+library. It opens this screen with the post's saved text shown and Review for AI search
+chosen; **Start** brings a copy of it to the desk. The collection's entry stays as it was.
+A post brought from a Google Doc can send the changes you accept back to that Doc as
+suggestions (Before publishing); one from a link or a file is downloaded, or made a new
+Google Doc, as usual.
 
 An interview's **Review outline and start a draft** and a saved blog's **Open writing
 run** (when it has no step-by-step run) open this start too, with the outline or the saved

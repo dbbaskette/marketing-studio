@@ -1,0 +1,94 @@
+"""A fake published site on 127.0.0.1, for reading a post by its link with no real network.
+
+Blog Studio's bounded fetcher (blog_library.fetch) only connects to public addresses over
+HTTPS, pinning the address it resolved. A test runs a plain local HTTP server, then makes the
+fetcher resolve every host to a documentation address and connect that pinned connection to
+the local server instead: the request, status, headers, redirects, size and time limits all
+go through the fetcher's own code against a real HTTP exchange.
+"""
+
+from contextlib import contextmanager
+import http.client
+import socket
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import threading
+from unittest.mock import patch
+
+import blog_library
+
+PUBLIC = [(2, 1, 6, '', ('192.0.2.10', 443))]  # TEST-NET-1, read as public by the patch below
+
+
+class Site:
+    """Pages by path: {path: (status, headers, body bytes)}; a path not listed is 404."""
+
+    def __init__(self, pages=None):
+        self.pages = dict(pages or {})
+        self.requests = []
+        site = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                site.requests.append((self.headers.get('Host'), self.path))
+                status, headers, body = site.pages.get(
+                    self.path, (404, {'Content-Type': 'text/plain'}, b'Not found')
+                )
+                self.send_response(status)
+                for key, value in headers.items():
+                    self.send_header(key, value)
+                self.send_header('Content-Length', str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *args):
+                pass
+
+        class Server(ThreadingHTTPServer):
+            daemon_threads = True
+
+            def handle_error(self, request, client_address):
+                pass  # A client that stops reading a large page is expected here.
+
+        self.server = Server(('127.0.0.1', 0), Handler)
+        self.port = self.server.server_address[1]
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+
+    def page(self, path, body, kind='text/html; charset=utf-8', status=200, **headers):
+        self.pages[path] = (
+            status,
+            {'Content-Type': kind, **headers},
+            body if isinstance(body, bytes) else body.encode(),
+        )
+
+    @contextmanager
+    def serving(self):
+        """Serve, with the fetcher's pinned HTTPS connection sent to this local server."""
+        port = self.port
+
+        class Local(http.client.HTTPConnection):
+            def __init__(self, hostname, address):
+                super().__init__('127.0.0.1', port, timeout=15)
+                self._host_header = hostname
+
+            def connect(self):
+                # Straight to the local server: getaddrinfo is the patched, public one.
+                self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                self.sock.settimeout(self.timeout)
+                self.sock.connect(('127.0.0.1', port))
+
+            def putrequest(self, method, url, **named):
+                super().putrequest(method, url, skip_host=True, **named)
+                self.putheader('Host', self._host_header)
+
+        public = patch.object(blog_library.socket, 'getaddrinfo', return_value=PUBLIC)
+        pinned = patch.object(blog_library, 'PinnedHTTPS', Local)
+        global_address = patch.object(
+            blog_library.ipaddress.IPv4Address, 'is_global', property(lambda self: True)
+        )
+        self.thread.start()
+        with public, pinned, global_address:
+            try:
+                yield self
+            finally:
+                self.server.shutdown()
+                self.server.server_close()

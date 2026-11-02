@@ -5,6 +5,19 @@ changes for authors first, then what changes for maintainers.
 
 ## Unreleased
 
+- **Review an existing or published post for AI search (#277).** New blog's polishing
+  screen has a first pass, **Review for AI search (GEO)**, for a pasted, uploaded or Google
+  Doc draft: the post's one GEO review starts as the desk opens and its proposals wait in
+  Finishing, opened at it. **Link to a published post** is a new draft source: the page is
+  read once on your press through the bounded fetcher, shown before anything starts, and
+  refused plainly behind a sign-in, as another type or when too large; the desk works on a
+  copy and the record keeps the link. A post in an Import old blogs collection has **Review
+  for AI search**, which brings a copy to the desk the same way and leaves the collection's
+  entry as it was. Maintainers: `published_post` (an `html.parser` article reader,
+  `stage`/`staged`, `from_library`), the `published-preview` route, `desk.create`'s
+  `published` field, `desk_jobs.geo_first`, and `blog_library.fetch`'s optional `limit` and
+  `headers`.
+
 - **GEO additions on request, and a GEO review for each post that asks for one (#276).**
   Finishing's **Improve discovery** group adds an FAQ, key takeaways, a comparison table,
   quotes from sources, image alt text, likely search questions and a definition-style
