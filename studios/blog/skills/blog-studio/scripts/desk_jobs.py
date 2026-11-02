@@ -1572,6 +1572,19 @@ def geo_due(root, ident):
         return False
 
 
+def geo_first(root, ident):
+    """Review for AI search (GEO) as a draft's first pass: the post's one GEO review, queued
+    as the desk opens. Its proposals wait in Finishing; nothing in the text changes until the
+    person applies them. The post's record says it was queued, so it never runs again by
+    itself, and Before publishing shows it done."""
+    directory, record = studio.item(root, 'articles', ident)
+    record['geo_review'] = {**(record.get('geo_review') or {}), 'include': True}
+    studio.persist(directory, 'articles', record)
+    job = finish(root, ident, desk.read(root, ident)['revision'], 'geo', chain={'auto': True})
+    _geo_mark(root, ident, job['id'])
+    return job
+
+
 def geo_option(root, ident, include):
     """Turn this post's GEO review on or off, in its record. Turned on for a written draft
     with no GEO review yet, its one review runs now (or when the change under way ends)."""

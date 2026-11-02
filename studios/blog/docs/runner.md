@@ -77,8 +77,15 @@ one review runs then. Posts made before the choice existed have it off.
 
 **Edit or polish a draft** is one screen with no step tabs and no kind of post to choose:
 
-- **Your draft**, pasted, uploaded or from a Google Doc (every tab is read, and the Doc is
-  not changed). The title is optional.
+- **Your draft**, pasted, uploaded, from a Google Doc (every tab is read, and the Doc is
+  not changed) or by **Link to a published post**. A link is read once, when you press
+  **Read the page** (or **Read the page and start**), through Blog Studio's bounded fetcher:
+  public addresses only, the link's own site, a deadline, limited redirects and 2 MB at most,
+  with nothing on the page run. Its title, headings, text, lists, quotations, tables, links
+  and images with their alt text are shown before anything starts. A page behind a sign-in,
+  a link that is not a web page (a PDF, say) and a page that is too large are refused
+  plainly. The desk works on a copy; the blog's record keeps the link, and the published
+  page is never changed. The title is optional.
 - **What should happen first**: **Check spelling and grammar** (the default, with no kind
   of post: "See each fix marked in your text, then accept or reject it. Nothing changes
   until you accept." Finishing's **Copy edit** starts as the blog is made, and the blog
@@ -86,7 +93,11 @@ one review runs then. Posts made before the choice existed have it off.
   wording** adds Finishing's **Humanize** to the same check, at **Light** (the default),
   **Medium** or **Strong**, shown once it is ticked), **Just give feedback** (Finishing's **Feedback
   without a rewrite** starts as the desk opens: comments beside each part, and nothing in
-  the text changes), **Reshape to fit a kind of post** (only this one shows **Kind of
+  the text changes), **Review for AI search (GEO)** (it recommends changes for clearer
+  answers, consistent names, cited evidence and passages that stand on their own: the
+  post's one GEO review starts as the desk opens, Finishing opens at it, and its proposals
+  wait there to preview, then apply or skip; nothing changes until you accept),
+  **Reshape to fit a kind of post** (only this one shows **Kind of
   post**, and needs one) or **Leave it as it is**. The opening is worked on with the
   sections, and a draft with no headings is worked on as one part. Only Reshape may add
   headings, to divide such a draft into the kind of post's sections; restoring the
@@ -104,6 +115,60 @@ After **Start** nothing stops for you. The page says "Nothing needed from you", 
 step under way (researching, outlining, drafting) with one clock, and offers **Stop**, and
 **Retry** if a step fails. The draft, or the outline for Shape, opens on the desk by
 itself.
+
+A post in an **Import old blogs** collection has **Review for AI search** in the team
+library. It opens this screen with the post's saved text shown and Review for AI search
+chosen; **Start** brings a copy of it to the desk. The collection's entry stays as it was.
+A post brought from a Google Doc can send the changes you accept back to that Doc as
+suggestions (Before publishing); one from a link or a file is downloaded, or made a new
+Google Doc, as usual.
+
+### GEO report for a published post
+
+**Get a GEO report for a published post**, on Home and in New blog, reviews a post that is
+already published without bringing it onto the desk. Give its link and press **Read the
+page**: the page is read once through the bounded fetcher, with the site's robots.txt as one
+small extra read (256 KB, 10 seconds), and shown read only with its **Page access**. Then
+**Get the GEO report** starts one job. The report is an opaque, typeset reading document:
+
+- a header with the post's title, its link and when it was read;
+- a summary of what already works, then the changes ranked by how much they help, each in a
+  sentence, with no score or grade;
+- the post with each change marked inline (inserted and deleted words, each numbered, with a
+  short reason beside it), and each suggested addition shown where it would go: key
+  takeaways, a definition-style opening, a comparison table where the post compares things,
+  alt text for images that lack it, and an FAQ (before a closing call to action);
+- **Questions this post answers**, as advice only;
+- **Sources needed**: claims that would be stronger with a cited source, saying what kind;
+- **Page access**: noindex in a robots meta tag or an X-Robots-Tag header, a sign-in, a
+  robots.txt that blocks Googlebot, OAI-SearchBot or PerplexityBot (blocking GPTBot, which
+  crawls only for training, is said apart as a separate choice), JSON-LD that disagrees with
+  the visible title, author or dates (an updated date only when the page shows one), and a
+  missing byline or date. robots.txt is read as RFC 9309 says: the most specific crawler
+  group, the longest matching rule, `*` and `$`. A missing or unreadable robots.txt is
+  "couldn't check", and a check that finds nothing says what Blog Studio didn't find. These are eligibility checks, never ranking promises;
+  site-level settings (Search Console's AI inclusion setting, IndexNow, crawler IP checks,
+  measurement) belong to the site owner and are named in one line, unchecked.
+
+The report keeps the desk's GEO rules: the post's own text is its evidence, nothing is
+invented, qualifiers stay, a number or link the post does not have is flagged, and
+additions go only after whole paragraphs. Afterwards, each on its own press:
+
+- **Download HTML** (one self-contained file with no scripts or remote resources that
+  prints cleanly to PDF) and **Download Markdown**.
+- **Make a Google Doc with these suggestions**: a new private Google Doc of the post, each
+  change a suggestion with its reason as a comment, and each addition a comment where it
+  would go. It goes through the post's desk copy, the blog the Doc is linked to, so accepted
+  changes can be brought back; it is checked first, and **Send to the Google Doc** sends it
+  once. Your own Google Doc and the live page are never touched.
+- **Edit this post on the desk**: a desk copy with the recommendations waiting in Finishing
+  to apply or skip; it opens again afterwards, and the report is kept.
+- **Run again**: the page is read again and a new report made, saying what changed on the
+  page since the last one (parts changed, added and removed, the word count, and how many
+  of the earlier recommended changes now read as suggested).
+
+Reports are kept on this computer (`.blog-runs/geo-reports`), listed in Blogs and on Home
+marked **GEO report**, never as drafts, and reopened from there.
 
 An interview's **Review outline and start a draft** and a saved blog's **Open writing
 run** (when it has no step-by-step run) open this start too, with the outline or the saved

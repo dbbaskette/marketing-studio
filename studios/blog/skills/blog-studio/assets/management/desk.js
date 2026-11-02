@@ -93,7 +93,7 @@ function sDeskResearchDefault(value){const ticks=OLD_RESEARCH[value]||(value&&ty
 function sDeskHeld(){
   if(studio.deskStart)return studio.deskStart;
   const defaults=studio.options?.settings?.defaults||{},preset=studio.deskPreset||{};studio.deskPreset=null;
-  return studio.deskStart={step:0,kind:'',style:'',researchOn:false,have:'topic',title:'',audience:'',point:'',angles:[],angle:null,angleOp:null,anglesBusy:false,anglesProblem:'',outline:'',outlineFrom:'paste',outlineFile:null,outlineWay:'outline',source:'paste',article:null,manuscript:'',url:'',file:null,preview:null,first_pass:null,humanizeOn:false,humanizeLevel:'light',geoReview:false,voiceOn:false,voiceGuide:'',files:[],role:'material',keep:false,from:{on:true,documents:true,sites:false,web:false,picked:[...sSharedSites()],added:[]},...sDeskResearchDefault(defaults.research),length:'style',tone:defaults.tone||'',operation:operationId(),upload:operationId(),...preset};
+  return studio.deskStart={step:0,kind:'',style:'',researchOn:false,have:'topic',title:'',audience:'',point:'',angles:[],angle:null,angleOp:null,anglesBusy:false,anglesProblem:'',outline:'',outlineFrom:'paste',outlineFile:null,outlineWay:'outline',source:'paste',article:null,manuscript:'',url:'',link:'',collection:null,collectionProblem:'',file:null,preview:null,first_pass:null,humanizeOn:false,humanizeLevel:'light',geoReview:false,voiceOn:false,voiceGuide:'',files:[],role:'material',keep:false,from:{on:true,documents:true,sites:false,web:false,picked:[...sSharedSites()],added:[]},...sDeskResearchDefault(defaults.research),length:'style',tone:defaults.tone||'',operation:operationId(),upload:operationId(),...preset};
 }
 // Home's tasks, New blog, the library's "Write a blog from these", an interview's outline and
 // a saved blog's details all start here.
@@ -117,7 +117,7 @@ function sDeskHave(held){
   const content=held.have==='topic'?sDeskTopic(held):[sDeskOutlineIn(held)],research=sDeskResearchOptions(held);
   parts.push(content[0],sFilesCard(held,problem,()=>sDeskStartAgain(held),()=>{}),...content.slice(1),research);
   const go=sNode('button','button button-filled','Continue');go.type='submit';go.disabled=!access.actions.edit;
-  form.append(...parts,sAdd(sNode('div','form-foot'),problem,sAdd(sNode('div','bar'),go)));
+  form.append(...parts,sAdd(sNode('div','form-foot'),problem,sAdd(sNode('div','bar'),go)),sGeoInstead());
   form.addEventListener('submit',event=>{event.preventDefault();if(studio.busy)return;const said=sDeskHaveProblem(held);if(said){problem.textContent=said;return;}held.step=1;sTop();sDeskStart();});
   return form;
 }
@@ -154,8 +154,8 @@ function sDeskResearchOptions(held){
 // Polishing or reviewing a draft: the draft, what happens first, then Start. A kind of post
 // is asked for only to reshape the draft; sources are optional, for the fact check.
 // Check spelling and grammar is Finishing's Copy edit, opened in Review mode (sDeskReview).
-const DESK_POLISH_FIRST=[['copyedit','Check spelling and grammar'],['feedback','Just give feedback'],['reshape','Reshape to fit a kind of post'],['leave','Leave it as it is']];
-const DESK_POLISH_SAYS={copyedit:'See each fix marked in your text, then accept or reject it. Nothing changes until you accept.',feedback:'Comments on shape, argument, audience and claims appear beside each part. Nothing in the text changes.',reshape:'The sections and length are reshaped to the kind of post; a draft with no headings may be divided into sections. Your text is kept as a version first.',leave:'The draft opens on the desk as it is, for your own edits and notes.'};
+const DESK_POLISH_FIRST=[['copyedit','Check spelling and grammar'],['feedback','Just give feedback'],['geo','Review for AI search (GEO)'],['reshape','Reshape to fit a kind of post'],['leave','Leave it as it is']];
+const DESK_POLISH_SAYS={geo:'Recommends changes for clearer answers, consistent names, cited evidence and passages that stand on their own. They wait in Finishing to preview, then apply or skip. Nothing changes until you accept.',copyedit:'See each fix marked in your text, then accept or reject it. Nothing changes until you accept.',feedback:'Comments on shape, argument, audience and claims appear beside each part. Nothing in the text changes.',reshape:'The sections and length are reshaped to the kind of post; a draft with no headings may be divided into sections. Your text is kept as a version first.',leave:'The draft opens on the desk as it is, for your own edits and notes.'};
 function sDeskPolish(held){
   if(!DESK_POLISH_FIRST.some(([value])=>value===held.first_pass))held.first_pass=held.source==='saved'?'leave':'copyedit';
   // The kind of post goes with the draft only to reshape it, with a learned kind's samples.
@@ -163,8 +163,9 @@ function sDeskPolish(held){
   sFrame('Polish a draft',[],'Writing desk',()=>sRoute('home'));
   const form=sNode('form','narrow desk-start'),problem=sNode('p','problem',held.problem||'');problem.setAttribute('role','alert');delete held.problem;
   const again=()=>sDeskStartAgain(held);
-  const googleAction={copyedit:'Read and polish',feedback:'Read and review',reshape:'Read and reshape',leave:'Open Google Doc'}[held.first_pass];
-  const go=sNode('button','button button-filled',held.source==='google'?googleAction:'Start');go.type='submit';go.disabled=studio.busy||!access.actions.edit;
+  const googleAction={copyedit:'Read and polish',feedback:'Read and review',geo:'Read and review for AI search',reshape:'Read and reshape',leave:'Open Google Doc'}[held.first_pass];
+  const linkAction=held.preview?'Start':'Read the page and start';
+  const go=sNode('button','button button-filled',held.source==='google'?googleAction:held.source==='link'?linkAction:'Start');go.type='submit';go.disabled=studio.busy||!access.actions.edit;
   const first=sCard('What should happen first',sChoice('When the desk opens',DESK_POLISH_FIRST,held,'first_pass',()=>again()),sNode('p','quiet field-hint',DESK_POLISH_SAYS[held.first_pass]));
   // Check spelling and grammar may also suggest more human-sounding wording, at a strength,
   // mixed in with the fixes. Ticking it shows the strength in place, so focus stays put.
@@ -175,13 +176,13 @@ function sDeskPolish(held){
   const facts=fold('Check facts against your sources (optional)',held.factsOpen??held.files.length>0,open=>{held.factsOpen=open;},sNode('p','quiet','Finishing’s fact check reads these. They stay with this blog unless you keep them in the team library.'),...[...sFilesCard(held,problem,again,locked=>{go.disabled=locked||!access.actions.edit;}).children].slice(1));
   const instead=sButton('Writing something new? Start from a topic or an outline',()=>{held.have='topic';if(held.kind===null)held.step=0;else{held.style=held.kind;sStyleSamples(held);}sTop();sDeskStart();});instead.className+=' desk-instead';
   const linked=held.linkedRun;delete held.linkedRun;const run=linked?sButton('Open its run',()=>sRoute('run',linked)):null;
-  sAdd(form,...sDeskDraftIn(held),first,tone,facts,sDeskGeoStart(held),sAdd(sNode('div','form-foot'),problem,sAdd(sNode('div','bar'),go,run)),['saved','upload'].includes(held.source)?null:instead);
+  sAdd(form,...sDeskDraftIn(held),first,tone,facts,held.first_pass==='geo'?null:sDeskGeoStart(held),sAdd(sNode('div','form-foot'),problem,sAdd(sNode('div','bar'),go,run)),['saved','upload','collection'].includes(held.source)?null:instead,['saved','upload','collection'].includes(held.source)?null:sGeoInstead());
   form.addEventListener('submit',async event=>{
     event.preventDefault();if(!access.actions.edit||studio.busy||held.starting)return;const said=sDeskHaveProblem(held);if(said){problem.textContent=said;return;}
     // A read that fails again says so as a new answer, so pressing the button visibly reads.
-    const failed=problem.textContent,needsRead=held.source==='google'&&!held.preview;problem.textContent='';
+    const failed=problem.textContent,needsRead=['google','link','collection'].includes(held.source)&&!held.preview;problem.textContent='';
     held.starting=true;const unlock=sFreezeControls(form);
-    try{await busy(go,needsRead?'Reading and starting…':'Starting…',async()=>{try{if(needsRead)await sDeskReadGoogle(held,{start:true});else await sDeskGo(held);}catch(error){const readFailed=needsRead&&!held.preview;problem.textContent=(readFailed&&failed?'Read again, and still: ':'')+error.message+(readFailed?' Your link is kept here; change the Doc or try again.':' Your choices and captured draft are kept here.');}});}
+    try{await busy(go,needsRead?'Reading and starting…':'Starting…',async()=>{try{if(needsRead&&held.source==='google')await sDeskReadGoogle(held,{start:true});else if(needsRead)await sDeskReadPublished(held,{start:true});else await sDeskGo(held);}catch(error){const readFailed=needsRead&&!held.preview;problem.textContent=(readFailed&&failed?'Read again, and still: ':'')+error.message+(readFailed?(held.source==='google'?' Your link is kept here; change the Doc or try again.':' Your link is kept here; change it or try again.'):' Your choices and captured draft are kept here.');}});}
     finally{held.starting=false;unlock();}
   });
   sPage(sNode('p','lede','Bring your draft and choose what happens first. No kind of post needed.'),form);
@@ -201,6 +202,7 @@ function sDeskHaveProblem(held){
     if(held.source==='paste'&&!held.manuscript.trim())return 'Paste your draft first.';
     if(held.source==='file'&&!held.file)return 'Choose a draft to upload.';
     if(held.source==='google'&&!held.url.trim())return 'Paste the Google Doc link first.';
+    if(held.source==='link'&&!held.link.trim())return 'Paste the post’s link first.';
     if(held.first_pass==='reshape'&&!held.kind)return 'Choose a kind of post to reshape the draft to.';
   }
   return '';
@@ -256,9 +258,23 @@ function sDeskOutlineIn(held){
 function sDeskDraftIn(held){
   const saved=held.article?sCheck('desk-saved','Use this blog’s saved draft',{on:held.source==='saved'},'on','It comes to the desk as it is, in the same blog. Its history is kept.',on=>{held.source=on?'saved':'paste';held.preview=null;sDeskStart();}):null;
   const uploaded=held.uploaded?sCheck('desk-uploaded','Use the file you uploaded',{on:held.source==='upload'},'on','“'+held.uploaded.name+'” comes to the desk as it is. It stays in the team library too.',on=>{held.source=on?'upload':'paste';held.preview=null;sDeskStart();}):null;
-  const kept=['saved','upload'].includes(held.source);
-  const card=sCard('Your draft',saved,uploaded,kept?null:sChoice('Where is your draft?',[['paste','Paste text'],['file','Upload a file'],['google','Google Doc']],held,'source',()=>{held.preview=null;sDeskStart();}));
+  const kept=['saved','upload','collection'].includes(held.source);
+  const card=sCard('Your draft',saved,uploaded,kept?null:sChoice('Where is your draft?',[['paste','Paste text'],['file','Upload a file'],['google','Google Doc'],['link','Link to a published post']],held,'source',()=>{held.preview=null;sDeskStart();}));
   if(held.source==='saved'){/* The blog's own draft: nothing to paste or read. */}
+  else if(held.source==='collection'){
+    // A post from a team collection: a copy comes to the desk; the collection keeps its entry.
+    card.append(sNode('p','','A copy of “'+(held.collection?.title||'this post')+'” from your team library comes to the desk. Its entry in the collection stays as it is.'));
+    if(held.preview)card.append(sPublishedPreview(held.preview,'The post as saved in the collection'));
+    else if(held.collectionProblem)card.append(sNode('p','problem',held.collectionProblem));
+    else{card.append(sNode('p','quiet','Reading the saved post…'));sDeskReadCollection(held);}
+  }
+  else if(held.source==='link'){
+    // A published post by its link: read once on a press, shown here, then started.
+    card.append(sField('desk-link','Link to the published post',held,'link',{required:true,max:2000,hint:'Its page is read once, without running anything on it, and shown here before anything starts. The desk works on a copy; the published page is never changed.',changed:()=>{held.preview=null;}}));
+    const read=sButton(held.preview?'Read the page again':'Read the page',button=>busy(button,'Reading…',async()=>{try{await sDeskReadPublished(held);}catch(error){held.problem=error.message;sDeskStart();}}));read.disabled=!access.actions.edit;
+    card.append(sAdd(sNode('div','bar'),read));
+    if(held.preview)card.append(sPublishedPreview(held.preview,'The post as it was read'));
+  }
   else if(held.source==='upload'){if(held.uploaded.text){const paper=sNode('article','paper doc');paper.setAttribute('aria-label','The uploaded file’s text');paper.append(window.StudioMarkdown?window.StudioMarkdown.render(held.uploaded.text):sNode('p','',held.uploaded.text));card.append(sNode('p','quiet',held.uploaded.truncated?'Its text as it was read, the first part shown:':'Its text as it was read:'),paper);}}
   else if(held.source==='paste')card.append(sField('desk-manuscript','Paste your draft',held,'manuscript',{long:true,max:1000000,required:true,hint:'Up to 200,000 characters of text; images in it are not counted. Its headings start the sections, at whatever level it uses.'}));
   else if(held.source==='file'){
@@ -286,6 +302,41 @@ async function sDeskReadGoogle(held,{start=false}={}){
   if(start){const made=await sDeskGo(held);if(made&&studio.screen==='desk'&&studio.id===made.id){const summary=held.preview.summary,notes=[];if(summary.selected_tab)notes.push('Opened only the tab “'+summary.selected_tab.title+'”.');if(summary.excluded_approval_blocks)notes.push('Leading approval fields stay in the original Google Doc.');if(notes.length)sToast(notes.join(' '));}return made;}
   sDeskStart();
 }
+// A published post's preview: what was read, said in a line, then its text, read only.
+function sPublishedShape(found){
+  const s=found.summary||{},said=[s.words+(s.words===1?' word':' words'),s.headings+(s.headings===1?' heading':' headings'),s.links+(s.links===1?' link':' links'),s.images+(s.images===1?' image':' images')];
+  if(s.images_without_alt)said.push(s.images_without_alt+(s.images_without_alt===1?' image has':' images have')+' no alt text');
+  return said.join(' · ');
+}
+// A published post's images are never loaded here: each is shown as its file name and alt text.
+function sPublishedText(markdown){return String(markdown||'').replace(/!\[([^\[\]\n]*)\]\(([^()\s]+)(?:\s+"[^"\n]*")?\)/g,(_,alt,src)=>'[Image: '+(src.split('/').pop().split('?')[0]||'image')+(alt.trim()?' — alt text: '+alt.trim():', no alt text')+']');}
+function sPublishedPreview(found,label){
+  const box=sNode('div','published-preview'),paper=sNode('article','paper doc');paper.setAttribute('aria-label',label);paper.tabIndex=-1;
+  paper.append(window.StudioMarkdown?window.StudioMarkdown.render(sPublishedText(found.content)):sNode('p','',found.content));
+  box.append(sNode('p','','Check the text below, then start.'),sNode('p','quiet',sPublishedShape(found)),paper);
+  return box;
+}
+function sPublishedFound(found){
+  if(!found||found.status!=='preview'||typeof found.preview!=='string'||typeof found.expected!=='string'||typeof found.content!=='string'||typeof found.title!=='string')throw new Error('The page’s preview is incomplete. Read it again.');
+  return found;
+}
+// Read a published post by its link: one fetch on this press, shown before anything starts.
+async function sDeskReadPublished(held,{start=false}={}){
+  if(held.source==='collection')return sDeskReadCollection(held,{start});
+  const turn=studio.turn,found=sPublishedFound(await api('published-preview',{url:held.link.trim()}));if(turn!==studio.turn)return;
+  held.preview=found;
+  if(start)return sDeskGo(held);
+  await sDeskStart();sPublishedFocus();
+}
+async function sDeskReadCollection(held,{start=false}={}){
+  if(held.collectionReading)return;held.collectionReading=true;
+  const turn=studio.turn;
+  try{const found=sPublishedFound(await api('published-preview',{item:held.collection.id,location:held.collection.location||'local'}));if(turn!==studio.turn)return;held.preview=found;held.collectionProblem='';}
+  catch(error){held.collectionProblem=error.message;if(start)throw error;}
+  finally{held.collectionReading=false;}
+  if(start&&held.preview)return sDeskGo(held);
+  sDeskStartAgain(held);
+}
 // Check spelling and grammar's strength of human-sounding suggestions, or null for none.
 function sDeskPolishOptions(held){return held.first_pass==='copyedit'?{humanize:held.humanizeOn?held.humanizeLevel:null,...(held.voiceOn?{voice_guide:held.voiceGuide}:{})}:{};}
 async function sDeskGo(held){
@@ -298,6 +349,10 @@ async function sDeskGo(held){
     if(held.source==='saved')made=await api('desk-create',{...settings,article:held.article});
     else if(held.source==='upload')made=await api('desk-create',{...settings,source:held.uploaded.id});
     else if(held.source==='paste')made=await api('desk-create',{...settings,manuscript:held.manuscript});
+    else if(held.source==='link'||held.source==='collection'){
+      if(!held.preview)throw new Error('Read the page first.');
+      made=await api('desk-create',{...settings,published:{preview:held.preview.preview,expected:held.preview.expected}});
+    }
     else if(held.source==='file'){
       if(held.file.size>10*1024*1024)throw new Error('Choose a file up to 10 MiB.');
       const uploaded=await api('upload',{operation:held.upload,filename:held.file.name,title:held.title.trim()||held.file.name.replace(/\.[^.]+$/,''),content:await encodeImportFile(held.file),purpose:'manuscript',analyze:false});
@@ -329,7 +384,8 @@ async function sDeskGo(held){
   if(made.first_pass_problem)sToast('The first pass did not start: '+made.first_pass_problem);
   if(made.keep_problem)sToast(made.keep_problem);
   // Check spelling and grammar lands in Review mode; every other start on the full desk.
-  studio.desk={id:made.id,view:made,session:operationId()};await sRoute('desk',made.id,held.have==='draft'&&held.first_pass==='copyedit'?'review':null);
+  // Review for AI search opens Finishing at the GEO review, where its proposals will wait.
+  studio.desk={id:made.id,view:made,session:operationId(),...(held.have==='draft'&&held.first_pass==='geo'&&!made.first_pass_problem?{openTool:'geo'}:{})};await sRoute('desk',made.id,held.have==='draft'&&held.first_pass==='copyedit'?'review':null);
   return made;
 }
 
@@ -364,6 +420,7 @@ async function sDesk(ident){
   if(sDeskStarting(view))return sDeskProgress(held);
   if(!held.tab)held.tab=(view.start?.open==='outline'||view.conversation_scope==='outline')&&!sDeskHasText(view)?'outline':'draft';
   sDeskRender(held);
+  if(held.openTool){const tool=held.openTool;delete held.openTool;sDeskFinishOpen(held,tool);}
   sDeskWatch(held);
 }
 function sDeskStarting(view){return DESK_KIT.starting(view);}
@@ -1836,3 +1893,171 @@ const DESK_KIT=Drafting.kit({
   progress:{stopped:held=>sDeskStopped(held),show:held=>sDeskProgress(held)},
 });
 if(typeof window.addEventListener==='function')window.addEventListener('resize',()=>{if(typeof clearTimeout==='function')clearTimeout(window.deskResize);window.deskResize=setTimeout(sDeskResized,150);});
+
+// GEO reports (geo_report.py): a published post's recommendations, kept here, listed in Blogs
+// as a GEO report rather than a draft, and reopened from there. A link, its read-only preview,
+// then one press starts one job. Nothing is brought to the desk unless the person asks, and
+// the live page is never changed. Every text from the report is set with textContent.
+const GEO_REPORT_SAYS='Point at a published post and get a report of the changes that would make it clearer for AI search: what already works, the changes ranked by how much they help, additions shown where they would go, the questions it answers and the sources it needs. Nothing is brought onto the desk, and the live page is never changed.';
+const GEO_ACCESS_WORDS={ok:'Fine',problem:'Check this',note:'Note',unknown:'Couldn’t check'};
+function sGeoBegin(){studio.geoStart=null;return sRoute('geo-start');}
+function sGeoHeld(){return studio.geoStart||(studio.geoStart={link:'',preview:null,problem:'',operation:operationId()});}
+function sGeoInstead(){const b=sButton('Only want recommendations for a published post? Get a GEO report',()=>sGeoBegin());b.className+=' desk-instead';b.disabled=!access.actions.edit;return b;}
+async function sGeoStart(){
+  const held=sGeoHeld();
+  sFrame('GEO report',[],'New blog',()=>sRoute('home'));
+  const form=sNode('form','narrow desk-start geo-start'),problem=sNode('p','problem',held.problem||'');problem.setAttribute('role','alert');held.problem='';
+  const card=sCard('The published post',sField('geo-link','Link to the published post',held,'link',{required:true,max:2000,hint:'Its page is read once when you press Read the page, without running anything on it, together with the site’s robots.txt. You see what was read before anything starts.',changed:()=>{held.preview=null;}}));
+  if(held.preview){
+    card.append(sPublishedPreview(held.preview,'The post as it was read'));
+    const again=sButton('Read the page again',button=>busy(button,'Reading…',()=>sGeoRead(held)));again.disabled=!access.actions.edit;card.append(sAdd(sNode('div','bar'),again));
+  }
+  const go=sNode('button','button button-filled',held.preview?'Get the GEO report':'Read the page');go.type='submit';go.disabled=!access.actions.edit;
+  sAdd(form,card,held.preview?sGeoAccess(held.preview.access,'Page access (as read)'):null,sAdd(sNode('div','form-foot'),problem,sAdd(sNode('div','bar'),go)),held.preview?sNode('p','quiet','One job reads this copy of the post and writes the report. It recommends; nothing on the page, the desk or Google changes.'):null);
+  form.addEventListener('submit',async event=>{
+    event.preventDefault();if(!access.actions.edit||studio.busy)return;
+    if(!held.link.trim()){problem.textContent='Paste the post’s link first.';return;}
+    if(!held.preview)return busy(go,'Reading…',()=>sGeoRead(held));
+    await busy(go,'Starting…',async()=>{try{const made=await api('geo-report-start',{operation:held.operation,published:{preview:held.preview.preview,expected:held.preview.expected}});studio.geoStart=null;await sRoute('geo-report',made.id);}catch(error){problem.textContent=error.message;}});
+  });
+  sPage(sNode('p','lede',GEO_REPORT_SAYS),form);
+}
+async function sGeoRead(held){
+  const turn=studio.turn;
+  try{const found=sPublishedFound(await api('published-preview',{url:held.link.trim()}));if(turn!==studio.turn)return;held.preview=found;}
+  catch(error){if(turn!==studio.turn)return;held.preview=null;held.problem=error.message+' Your link is kept here.';}
+  if(studio.screen==='geo-start'&&studio.geoStart===held){await sGeoStart();sPublishedFocus();}
+}
+// After a read, focus goes to what was read, so a keyboard user reads it before starting.
+function sPublishedFocus(){const paper=$('studio-page').querySelector('.published-preview .paper');if(paper&&typeof paper.focus==='function')paper.focus({preventScroll:false});}
+// Page access: advice only, each check in a line, and what it never promises.
+function sGeoAccess(access,title='Page access'){
+  const checks=(access&&access.checks)||[];if(!checks.length)return null;
+  const list=sNode('ul','geo-access');
+  for(const check of checks)list.append(sAdd(sNode('li','geo-access-'+(GEO_ACCESS_WORDS[check.status]?check.status:'note')),sNode('strong','',(GEO_ACCESS_WORDS[check.status]||'Note')+': '),document.createTextNode(check.said||'')));
+  return sCard(title,sNode('p','quiet',access.eligibility||''),list,sNode('p','quiet',access.site_owner||''));
+}
+function sGeoDate(value){return String(value||'').slice(0,10);}
+async function sGeoReport(ident){
+  const turn=studio.turn,shown=await api('geo-report?'+new URLSearchParams({id:ident}));if(turn!==studio.turn)return;
+  const held=studio.geoReport&&studio.geoReport.id===ident?studio.geoReport:(studio.geoReport={id:ident,google:null,problem:''});
+  held.view=shown;sGeoReportRender(held);
+  if(shown.status==='working')sGeoWatch(held,turn);
+}
+function sGeoWatch(held,turn){
+  setTimeout(async()=>{
+    if(turn!==studio.turn||studio.screen!=='geo-report'||studio.geoReport!==held)return;
+    try{const shown=await api('geo-report?'+new URLSearchParams({id:held.id}));if(turn!==studio.turn||studio.geoReport!==held)return;const changed=shown.status!==held.view.status;held.view=shown;if(changed)sGeoReportRender(held);if(shown.status==='working')sGeoWatch(held,turn);}
+    catch(error){notice(error.message,true);}
+  },DESK_POLL);
+}
+function sGeoReportRender(held){
+  const view=held.view,ready=view.status==='ready';
+  const again=sButton('Run again',button=>sGeoAgain(held,button));again.disabled=!access.actions.edit||view.status==='working';
+  const deskCopy=view.desk;
+  const edit=ready?sButton(deskCopy?'Open its desk copy':'Edit this post on the desk',button=>sGeoDesk(held,button),'filled'):null;if(edit)edit.disabled=!deskCopy&&!access.actions.edit;
+  sFrame('GEO report',[again,edit],'Blogs',()=>sRoute('blogs'));
+  const parts=[];
+  if(view.newer)parts.push(sAdd(sNode('div','decision-notice'),sNode('p','','A newer report of this page was made after this one.'),sButton('Open the newer report',()=>sRoute('geo-report',view.newer))));
+  else if(view.previous)parts.push(sAdd(sNode('div','bar'),sButton('Open the earlier report',()=>sRoute('geo-report',view.previous))));
+  if(view.status==='working'){const line=sNode('p','desk-working-note','Reading the post and writing its report. One job; nothing else changes.');line.setAttribute('role','status');parts.push(sCard(view.title,line,sNode('p','quiet','It opens here when it is ready. You can leave this page; the report is kept in Blogs.')));}
+  else if(!ready){const said=sNode('p','problem','The report did not finish: '+(view.error||'it stopped.'));said.setAttribute('role','alert');parts.push(sCard(view.title,said,sNode('p','quiet','Run again reads the page again and makes a new report.')));}
+  else parts.push(sGeoPaper(view),sGeoAfterwards(held));
+  if(held.problem){const said=sNode('p','problem',held.problem);said.setAttribute('role','alert');parts.unshift(said);held.problem='';}
+  sPage(...parts);
+}
+// The report itself: an opaque, typeset reading document.
+function sGeoPaper(view){
+  const paper=sNode('article','paper review-paper geo-report-paper');paper.setAttribute('aria-label','GEO report: '+view.title);
+  const head=sAdd(sNode('header','geo-report-head'),sNode('p','quiet geo-report-kind','GEO report'),sNode('h1','review-title',view.title));
+  if(view.url){const a=link(view.url,view.url);a.className='geo-report-link';head.append(sAdd(sNode('p',''),a));}
+  else if(view.collection_item)head.append(sNode('p','quiet','From a team collection'));
+  head.append(sNode('p','quiet','Read '+sGeoDate(view.read_at)+'. Recommendations only: nothing on the page was changed. These are not ranking promises.'));
+  paper.append(head);
+  if(view.changed)paper.append(sAdd(sNode('section','geo-report-part'),sNode('h2','review-heading','Since the last report'),sNode('p','',sGeoChanged(view.changed))));
+  const summary=sAdd(sNode('section','geo-report-part'),sNode('h2','review-heading','Summary'));
+  if(view.works.length)summary.append(sNode('h3','geo-report-sub','What already works'),sAdd(sNode('ul',''),...view.works.map(text=>sNode('li','',text))));
+  if(view.recommendations.length){
+    const list=sNode('ol','geo-report-ranked');
+    for(const row of view.recommendations){const item=sAdd(sNode('li',''),sNode('span','review-num',String(row.n)),row.label?sNode('strong','',row.label+': '):null,document.createTextNode((row.help||row.why||'')+' '),sNode('span','quiet','('+row.where+')'));if(row.flag)item.append(sNode('p','geo-report-flag',row.flag));list.append(item);}
+    summary.append(sNode('h3','geo-report-sub','Recommended, most helpful first'),list);
+  }else summary.append(sNode('p','','No changes are recommended.'));
+  if(view.advice)summary.append(sNode('p','',view.advice));
+  paper.append(summary);
+  const post=sAdd(sNode('section','geo-report-part geo-report-post'),sNode('h2','review-heading','The post with changes marked'),sAdd(sNode('p','quiet'),document.createTextNode('Inserted words are '),sNode('ins','review-new','marked like this'),document.createTextNode(', deleted ones '),sNode('del','review-old','like this'),document.createTextNode('. Each number is a recommendation in the summary.')));
+  for(const entry of view.post)post.append(...sGeoEntry(entry));
+  if(view.overlaps&&view.overlaps.length)post.append(sNode('p','quiet',(view.overlaps.length===1?'Recommendation ':'Recommendations ')+view.overlaps.join(', ')+' change words another one already changes, so '+(view.overlaps.length===1?'it is':'they are')+' listed in the summary only.'));
+  paper.append(post);
+  if(view.questions.length)paper.append(sAdd(sNode('section','geo-report-part'),sNode('h2','review-heading','Questions this post answers'),sNode('p','quiet','Advice only: questions people might ask an AI assistant that this post answers. Nothing is added to the post.'),sAdd(sNode('ul',''),...view.questions.map(text=>sNode('li','',text)))));
+  if(view.sources_needed.length)paper.append(sAdd(sNode('section','geo-report-part'),sNode('h2','review-heading','Sources needed'),sNode('p','quiet','Claims that would be stronger with a cited source, and what kind. No source is named or invented for you.'),sAdd(sNode('ul',''),...view.sources_needed.map(row=>sAdd(sNode('li',''),sNode('q','',row.claim),document.createTextNode(' '),sNode('span','quiet','('+row.where+')'),document.createTextNode(': '+row.kind+'.'))))));
+  const access=(view.access&&view.access.checks)||[];
+  if(access.length)paper.append(sAdd(sNode('section','geo-report-part'),sNode('h2','review-heading','Page access'),sNode('p','quiet',view.access.eligibility),sAdd(sNode('ul','geo-access'),...access.map(check=>sAdd(sNode('li','geo-access-'+(GEO_ACCESS_WORDS[check.status]?check.status:'note')),sNode('strong','',(GEO_ACCESS_WORDS[check.status]||'Note')+': '),document.createTextNode(check.said)))),sNode('p','quiet',view.access.site_owner)));
+  return paper;
+}
+function sGeoSegments(node,segments){
+  for(const [at,segment] of segments.entries()){
+    // A deletion and the insertion that replaces it are kept a space apart, as words.
+    if(segment.t==='del')node.append(sNode('del','review-old',segment.v),...(segments[at+1]?.t==='ins'?[document.createTextNode(' ')]:[]));
+    else if(segment.t==='ins')node.append(sNode('ins','review-new',segment.v));
+    else if(segment.t==='note'){const n=sNode('span','review-num',String(segment.n));n.setAttribute('aria-label','recommendation '+segment.n);node.append(n);}
+    else node.append(document.createTextNode(segment.v||''));
+  }
+  return node;
+}
+function sGeoNotes(entry){const notes=(entry.notes||[]).filter(note=>note.why);if(!notes.length)return null;return sAdd(sNode('p','review-why geo-report-why'),...notes.flatMap((note,at)=>[at?document.createTextNode(' · '):null,sNode('span','review-num',String(note.n)),document.createTextNode(' '+note.why)].filter(Boolean)));}
+function sGeoEntry(entry){
+  if(entry.type==='title')return [entry.segments?sGeoSegments(sNode('h3','geo-report-title'),entry.segments):sNode('h3','geo-report-title',entry.text),sGeoNotes(entry)].filter(Boolean);
+  if(entry.type==='heading')return [sNode('h4','geo-report-heading',entry.text)];
+  if(entry.type==='text'){const box=sNode('div','geo-report-text');box.append(window.StudioMarkdown?window.StudioMarkdown.render(sPublishedText(entry.markdown)):sNode('p','',entry.markdown));return [box];}
+  if(entry.type==='image')return [sNode('p','geo-report-image','Image: '+entry.name+' — '+(entry.alt?'alt text: '+entry.alt:'no alt text'))];
+  if(entry.type==='marked')return [sGeoSegments(sNode('p','review-text geo-report-marked'),entry.segments),sGeoNotes(entry)].filter(Boolean);
+  const box=sAdd(sNode('aside','geo-report-addition'),sAdd(sNode('p','geo-report-addition-label'),sNode('span','review-num',String(entry.n)),document.createTextNode(' Suggested addition: '+entry.label)),sNode('p','quiet',entry.note));
+  if(entry.heading)box.append(sNode('h5','geo-report-heading',entry.heading));
+  const text=sNode('div','geo-report-text');text.append(window.StudioMarkdown?window.StudioMarkdown.render(entry.markdown):sNode('p','',entry.markdown));box.append(text);
+  if(entry.flag)box.append(sNode('p','geo-report-flag',entry.flag));
+  return [box];
+}
+function sGeoChanged(changed){
+  if(changed.same)return 'The page’s text is the same as when it was read on '+sGeoDate(changed.since)+'.';
+  const said=['Since the page was read on '+sGeoDate(changed.since)+':'];
+  if(changed.changed?.length)said.push('changed '+changed.changed.join(', ')+';');
+  if(changed.added?.length)said.push('added '+changed.added.map(name=>'“'+name+'”').join(', ')+';');
+  if(changed.removed?.length)said.push('removed '+changed.removed.map(name=>'“'+name+'”').join(', ')+';');
+  said.push((changed.words||[0,0])[0]+' words then, '+(changed.words||[0,0])[1]+' now.');
+  if(changed.of)said.push(changed.taken+' of the '+changed.of+' changes the last report recommended now read as it suggested.');
+  return said.join(' ');
+}
+// Afterwards: the downloads and a new Google Doc, each only on a press.
+function sGeoAfterwards(held){
+  const view=held.view;
+  const html=sButton('Download HTML',button=>sGeoDownload(held,button,'html'));
+  const md=sButton('Download Markdown',button=>sGeoDownload(held,button,'md'));
+  const download=sCard('Download',sNode('p','quiet','One self-contained HTML file that prints cleanly to PDF, or Markdown.'),sAdd(sNode('div','bar'),html,md));
+  const g=held.google;
+  const google=sCard('Google Doc',sNode('p','quiet','Makes a new private Google Doc of the post, with each change as a suggestion and its reason as a comment, so you can accept or reject each one there. Additions go as comments where they would go. '+(view.desk?'This Doc is linked to the desk copy “'+(view.desk.title||view.title)+'”, so you can bring the changes you accept back there.':'A desk copy of the post is made too and the Doc is linked to it, so you can bring the changes you accept back there.')+' Your own Google Doc and the live page are never touched.'));
+  if(g&&g.sent){google.append(sNode('p','','Sent to the new Google Doc: '+g.plan.suggestions+(g.plan.suggestions===1?' suggestion':' suggestions')+' and '+g.plan.comments+(g.plan.comments===1?' comment.':' comments.')),sAdd(sNode('p',''),link(g.plan.url,'Open the Google Doc')));}
+  else if(g&&g.plan){
+    const p=g.plan,line=p.suggestions+(p.suggestions===1?' suggestion':' suggestions')+' and '+p.comments+(p.comments===1?' comment':' comments')+' are ready to send'+(p.left?'; '+p.left+(p.left===1?' recommendation could':' recommendations could')+' not be placed in the Doc':'')+'.';
+    const send=sButton('Send to the Google Doc',button=>busy(button,'Sending…',async()=>{try{await api('geo-report-google-send',{id:held.id,plan:p.plan,confirmed:true});g.sent=true;sToast('Sent. Accept or reject each suggestion in Google Docs.');sGeoReportRender(held);}catch(error){held.problem=error.message;sGeoReportRender(held);}}),'filled');
+    google.append(sNode('p','',line),sAdd(sNode('p',''),link(p.url,'The new Google Doc')),sAdd(sNode('div','bar'),send,sButton('Not now',()=>{held.google=null;sGeoReportRender(held);})));
+  }else{
+    const make=sButton('Make a Google Doc with these suggestions',button=>busy(button,'Making the Doc and checking…',async()=>{try{const plan=await api('geo-report-google-plan',{id:held.id,operation:held.googleOp||(held.googleOp=operationId()),mode:'auto'});held.google={plan,sent:false};held.view=await api('geo-report?'+new URLSearchParams({id:held.id}));sGeoReportRender(held);}catch(error){held.problem=error.message;sGeoReportRender(held);}}));
+    make.disabled=!access.actions.edit||!!(view.desk&&view.desk.changed);
+    sAdd(google,view.desk&&view.desk.changed?sNode('p','quiet','This post’s desk copy has changed since the report. Send its changes from the desk instead: Before publishing, Send to Google Doc as suggestions.'):null,sAdd(sNode('div','bar'),make));
+  }
+  return sAdd(sNode('div','stack geo-report-after'),download,google);
+}
+async function sGeoDownload(held,button,format){
+  await busy(button,'Preparing…',async()=>{const found=await api('geo-report-download?'+new URLSearchParams({id:held.id,format}));const blob=new Blob([found.content],{type:format==='html'?'text/html;charset=utf-8':'text/markdown;charset=utf-8'}),url=URL.createObjectURL(blob),a=sNode('a','');a.href=url;a.download=found.filename;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);});
+}
+async function sGeoDesk(held,button){
+  if(held.view.desk){studio.desk={id:held.view.desk.id,session:operationId()};return sRoute('desk',held.view.desk.id);}
+  await busy(button,'Making the desk copy…',async()=>{try{const made=await api('geo-report-desk',{id:held.id,operation:held.deskOp||(held.deskOp=operationId())});studio.desk={id:made.desk,session:operationId(),openTool:'geo'};sToast('A desk copy of the post is ready. The recommendations wait in Finishing.');await sRoute('desk',made.desk);}catch(error){held.problem=error.message;sGeoReportRender(held);}});
+}
+async function sGeoAgain(held,button){
+  await busy(button,'Reading the page again…',async()=>{try{const made=await api('geo-report-again',{id:held.id,operation:held.againOp||(held.againOp=operationId())});held.againOp=null;await sRoute('geo-report',made.id);}catch(error){held.problem=error.message;sGeoReportRender(held);}});
+}
+// In Blogs and on Home: each report marked a GEO report, never a draft.
+function sGeoCurrent(){return (studio.reports||[]).filter(row=>!row.newer);}
+function sGeoReportCard(row){return sCard(row.title,sAdd(sNode('p','quiet'),sNode('span','badge geo-report-badge','GEO report'),document.createTextNode((row.newer?' An earlier report, read ':' Read ')+sGeoDate(row.read_at))),sStatus(row.status==='ready'?'done':row.status==='working'?'current':'review',row.status==='ready'?'Ready to read':row.status==='working'?'Being written':'Did not finish'),sAdd(sNode('div','bar'),sButton('Open report',()=>sRoute('geo-report',row.id),'filled')));}
+function sGeoReportsCard(){const rows=sGeoCurrent().slice(0,5);if(!rows.length)return null;const list=sNode('ul','rows');for(const row of rows)list.append(sAdd(sNode('li','row'),sBead(row.status==='ready'?'done':row.status==='working'?'current':'review'),sAdd(sNode('div','row-text'),sNode('h3','row-title',row.title),sNode('p','row-says','GEO report · read '+sGeoDate(row.read_at))),sButton('Open report',()=>sRoute('geo-report',row.id))));return sCard('GEO reports',list);}

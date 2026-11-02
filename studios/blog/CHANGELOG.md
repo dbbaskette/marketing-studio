@@ -5,6 +5,45 @@ changes for authors first, then what changes for maintainers.
 
 ## Unreleased
 
+- **A GEO report for a published post (#277).** **Get a GEO report for a published post**,
+  on Home and in New blog, takes a link, shows the page read only, and starts one job on
+  one press. The report is a typeset reading document: what already works, the changes
+  ranked by how much they help (no score), the post with changes marked inline and a short
+  reason beside each, additions shown where they would go, the questions it answers, the
+  sources it needs, and **Page access** (noindex, a sign-in, robots.txt for Googlebot,
+  OAI-SearchBot and PerplexityBot with GPTBot said apart, JSON-LD against the visible title,
+  author and dates, and a byline and date), said as eligibility checks, never ranking
+  promises. Download it as one self-contained HTML file that prints to PDF, or Markdown;
+  make a new Google Doc with each change a suggestion and its reason a comment; **Edit this
+  post on the desk** with the recommendations in Finishing; or **Run again**, which says
+  what changed since. Reports are listed in Blogs as GEO reports. Maintainers: `geo_report`
+  (reusing `desk_finish`'s readers), the `geo-report-*` routes, the `geo-report` tool job,
+  `published_post.access` and `robots_check`, and `tests/fake_site.py`, a local fake site
+  for link reads. A page is read in bounded time and space whatever its shape (open
+  elements, list and quotation depth, a table's size, a byline's words and the Markdown made
+  are capped as it is read), its words are kept as written with only what could become a
+  tag, a link or an image escaped, and robots.txt is read as RFC 9309 says
+  (`published_post.robots_groups` and `robots_allowed`: the most specific product token, the
+  longest match with Allow winning a tie, `*` and `$`, percent-escapes of unreserved
+  characters decoded, a byte order mark ignored), the same on every Python, not with
+  `urllib.robotparser`. Page access says what it did not find as such,
+  reads written dates, header bylines and "By" lines, compares an updated date only when the
+  page shows one, and takes an X-Robots-Tag's crawler name into account. The Markdown
+  download holds no HTML and no link but http(s). The report's Google Doc is placed with no
+  lock held, and no page is read before write access is checked.
+- **Review an existing or published post for AI search (#277).** New blog's polishing
+  screen has a first pass, **Review for AI search (GEO)**, for a pasted, uploaded or Google
+  Doc draft: the post's one GEO review starts as the desk opens and its proposals wait in
+  Finishing, opened at it. **Link to a published post** is a new draft source: the page is
+  read once on your press through the bounded fetcher, shown before anything starts, and
+  refused plainly behind a sign-in, as another type or when too large; the desk works on a
+  copy and the record keeps the link. A post in an Import old blogs collection has **Review
+  for AI search**, which brings a copy to the desk the same way and leaves the collection's
+  entry as it was. Maintainers: `published_post` (an `html.parser` article reader,
+  `stage`/`staged`, `from_library`), the `published-preview` route, `desk.create`'s
+  `published` field, `desk_jobs.geo_first`, and `blog_library.fetch`'s optional `limit` and
+  `headers`.
+
 - **GEO additions on request, and a GEO review for each post that asks for one (#276).**
   Finishing's **Improve discovery** group adds an FAQ, key takeaways, a comparison table,
   quotes from sources, image alt text, likely search questions and a definition-style
