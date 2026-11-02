@@ -5,6 +5,21 @@ changes for authors first, then what changes for maintainers.
 
 ## Unreleased
 
+- **A GEO report for a published post (#277).** **Get a GEO report for a published post**,
+  on Home and in New blog, takes a link, shows the page read only, and starts one job on
+  one press. The report is a typeset reading document: what already works, the changes
+  ranked by how much they help (no score), the post with changes marked inline and a short
+  reason beside each, additions shown where they would go, the questions it answers, the
+  sources it needs, and **Page access** (noindex, a sign-in, robots.txt for Googlebot,
+  OAI-SearchBot and PerplexityBot with GPTBot said apart, JSON-LD against the visible title,
+  author and dates, and a byline and date), said as eligibility checks, never ranking
+  promises. Download it as one self-contained HTML file that prints to PDF, or Markdown;
+  make a new Google Doc with each change a suggestion and its reason a comment; **Edit this
+  post on the desk** with the recommendations in Finishing; or **Run again**, which says
+  what changed since. Reports are listed in Blogs as GEO reports. Maintainers: `geo_report`
+  (reusing `desk_finish`'s readers), the `geo-report-*` routes, the `geo-report` tool job,
+  `published_post.access` and `robots_check`, and `tests/fake_site.py`, a local fake site
+  for link reads.
 - **Review an existing or published post for AI search (#277).** New blog's polishing
   screen has a first pass, **Review for AI search (GEO)**, for a pasted, uploaded or Google
   Doc draft: the post's one GEO review starts as the desk opens and its proposals wait in

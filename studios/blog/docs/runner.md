@@ -123,6 +123,51 @@ A post brought from a Google Doc can send the changes you accept back to that Do
 suggestions (Before publishing); one from a link or a file is downloaded, or made a new
 Google Doc, as usual.
 
+### GEO report for a published post
+
+**Get a GEO report for a published post**, on Home and in New blog, reviews a post that is
+already published without bringing it onto the desk. Give its link and press **Read the
+page**: the page is read once through the bounded fetcher, with the site's robots.txt as one
+small extra read (256 KB, 10 seconds), and shown read only with its **Page access**. Then
+**Get the GEO report** starts one job. The report is an opaque, typeset reading document:
+
+- a header with the post's title, its link and when it was read;
+- a summary of what already works, then the changes ranked by how much they help, each in a
+  sentence, with no score or grade;
+- the post with each change marked inline (inserted and deleted words, each numbered, with a
+  short reason beside it), and each suggested addition shown where it would go: key
+  takeaways, a definition-style opening, a comparison table where the post compares things,
+  alt text for images that lack it, and an FAQ (before a closing call to action);
+- **Questions this post answers**, as advice only;
+- **Sources needed**: claims that would be stronger with a cited source, saying what kind;
+- **Page access**: noindex in a robots meta tag or an X-Robots-Tag header, a sign-in, a
+  robots.txt that blocks Googlebot, OAI-SearchBot or PerplexityBot (blocking GPTBot, which
+  crawls only for training, is said apart as a separate choice), JSON-LD that disagrees with
+  the visible title, author or dates, and a missing byline or date. A missing or unreadable
+  robots.txt is "couldn't check". These are eligibility checks, never ranking promises;
+  site-level settings (Search Console's AI inclusion setting, IndexNow, crawler IP checks,
+  measurement) belong to the site owner and are named in one line, unchecked.
+
+The report keeps the desk's GEO rules: the post's own text is its evidence, nothing is
+invented, qualifiers stay, a number or link the post does not have is flagged, and
+additions go only after whole paragraphs. Afterwards, each on its own press:
+
+- **Download HTML** (one self-contained file with no scripts or remote resources that
+  prints cleanly to PDF) and **Download Markdown**.
+- **Make a Google Doc with these suggestions**: a new private Google Doc of the post, each
+  change a suggestion with its reason as a comment, and each addition a comment where it
+  would go. It goes through the post's desk copy, the blog the Doc is linked to, so accepted
+  changes can be brought back; it is checked first, and **Send to the Google Doc** sends it
+  once. Your own Google Doc and the live page are never touched.
+- **Edit this post on the desk**: a desk copy with the recommendations waiting in Finishing
+  to apply or skip; it opens again afterwards, and the report is kept.
+- **Run again**: the page is read again and a new report made, saying what changed on the
+  page since the last one (parts changed, added and removed, the word count, and how many
+  of the earlier recommended changes now read as suggested).
+
+Reports are kept on this computer (`.blog-runs/geo-reports`), listed in Blogs and on Home
+marked **GEO report**, never as drafts, and reopened from there.
+
 An interview's **Review outline and start a draft** and a saved blog's **Open writing
 run** (when it has no step-by-step run) open this start too, with the outline or the saved
 draft already in place.

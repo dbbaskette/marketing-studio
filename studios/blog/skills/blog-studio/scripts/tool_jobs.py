@@ -38,6 +38,8 @@ KINDS = {
     'finish-alt',
     'finish-queries',
     'finish-opener',
+    # A GEO report for a published post (geo_report.py): recommendations only, no blog.
+    'geo-report',
 }
 DESK = (
     'desk-section',
@@ -343,7 +345,12 @@ def once(engine):
 
 
 def _ended(root, job):
-    """A desk job settles into its draft as soon as it ends, under the lock already held."""
+    """A desk job settles into its draft as soon as it ends, under the lock already held,
+    and a GEO report's job into its report."""
+    if job['kind'] == 'geo-report':
+        import geo_report
+
+        return geo_report.ended(root, job)
     if job['kind'] not in DESK:
         return None
     import desk_jobs

@@ -2007,6 +2007,8 @@ def _dispatch(root, route, data):
             import desk
 
             return desk.dispatch(root, route[5:], data)
+        if route in ('geo-report-desk', 'geo-report-google-plan', 'geo-report-google-send'):
+            return report_route(root, route, data)
         if route.startswith('run-'):
             from blog_runner import dispatch as run_dispatch
 
@@ -2246,6 +2248,61 @@ def keep_published(root, directory, record):
     return kept
 
 
+def report_start(root, route, data):
+    """A GEO report for a published post: started from a read the person checked, or Run
+    again, which reads the page again (before the studio lock is taken) and makes a new
+    report that says what changed since. One press, one read and one job."""
+    import geo_report
+    import published_post
+
+    if route == 'geo-report-start':
+        if not isinstance(data, dict) or set(data) != {'operation', 'published'}:
+            raise ValueError('Read the page first, then start its report.')
+        with studio.locked(root):
+            authorize_write(root)
+            if geo_report._path(root, data['operation']).is_file():
+                return geo_report.view(root, data['operation'])  # The same press again.
+            found = published_post.staged(root, data['published'])
+            return geo_report.start(root, data['operation'], found)
+    if not isinstance(data, dict) or set(data) != {'id', 'operation'}:
+        raise ValueError('Choose a GEO report to run again.')
+    with studio.locked(root):
+        earlier = geo_report.read(root, data['id'])
+        made = geo_report._path(root, data['operation'])
+        if made.is_file():
+            return geo_report.view(root, data['operation'])  # The same press again.
+    found = published_post.read(earlier['url']) if earlier.get('url') else None
+    with studio.locked(root):
+        authorize_write(root)
+        if found is None:
+            item = earlier.get('collection_item') or {}
+            found = published_post.from_library(root, item.get('id'), item.get('location'))
+        return geo_report.start(root, data['operation'], found, previous=data['id'])
+
+
+def report_route(root, route, data):
+    """A GEO report's afterwards, under the studio lock: Edit this post on the desk, and its
+    new Google Doc with suggestions, checked then sent once."""
+    import geo_report
+
+    fields = {
+        'geo-report-desk': {'id', 'operation'},
+        'geo-report-google-plan': {'id', 'operation', 'mode'},
+        'geo-report-google-send': {'id', 'plan', 'confirmed'},
+    }[route]
+    if not isinstance(data, dict) or set(data) - fields or 'id' not in data:
+        raise ValueError('This request has fields the page does not take.')
+    if route == 'geo-report-desk':
+        article = geo_report.desk_copy(root, data['id'], data.get('operation'))
+        return {**geo_report.view(root, data['id']), 'desk': article}
+    if route == 'geo-report-google-plan':
+        planned = geo_report.google_plan(
+            root, data['id'], data.get('mode', 'auto'), data.get('operation')
+        )
+        return {**planned, 'desk': geo_report.read(root, data['id']).get('desk')}
+    return geo_report.google_send(root, data['id'], data)
+
+
 def dispatch(root, route, data):
     if route in shared_library.BROWSE:
         # The shared Document Library: browsing reads and selects nothing for a blog.
@@ -2279,6 +2336,7 @@ def dispatch(root, route, data):
         'desk-google-plan',
         'desk-google-send',
         'desk-google-compare',
+        'geo-report-google-send',
     ):
         return _dispatch(root, route, data)
     if (
@@ -2303,6 +2361,8 @@ def dispatch(root, route, data):
             if found is None:
                 found = published_post.from_library(root, data['item'], data['location'])
             return published_post.stage(root, found)
+    if route in ('geo-report-start', 'geo-report-again'):
+        return report_start(root, route, data)
     if route == 'research-site':
         # A site added on a start form for one blog only: checked here, saved nowhere. The
         # shared list is changed in Shared settings.
@@ -2403,6 +2463,8 @@ def dispatch(root, route, data):
             ident = data.get('id')
         elif route == 'desk-repurpose':
             ident = result['made']['id']  # The new blog; the source changed nothing shared.
+        elif route in ('geo-report-desk', 'geo-report-google-plan'):
+            ident = result.get('desk')  # The report's desk copy, made or opened.
         elif route.startswith(('run-', 'editor-', 'desk-')) or route in (
             'schedule',
             'google-start',
@@ -2595,6 +2657,18 @@ def view(root, name, query):
             # one-time cleaning of a record kept before images moved out of its text, or
             # whose images were lost (desk._images_out), by the computer that drives it.
             return desk_jobs.view(root, arg('id'))
+    if name in ('geo-reports', 'geo-report', 'geo-report-download'):
+        import geo_report
+
+        with studio.locked(root):
+            if name == 'geo-reports':
+                return geo_report.listing(root)
+            if name == 'geo-report':
+                return geo_report.view(root, arg('id'))
+            if arg('format') not in ('md', 'html'):
+                raise ValueError('Choose Markdown or HTML.')
+            made = geo_report.markdown if arg('format') == 'md' else geo_report.page
+            return made(root, arg('id'))
     if name == 'manuscript':
         import manuscript_editor
 
