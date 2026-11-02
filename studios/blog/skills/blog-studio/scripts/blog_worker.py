@@ -12,6 +12,7 @@ import threading
 import time
 
 import source_curator
+from studio_core import reachability
 from studio_core.install_log import redact
 from studio_core.research_contract import HANDOFF
 
@@ -31,6 +32,51 @@ def cannot_start(engine):
         + STATUS
         + ', then try again.',
         'cli',
+    )
+
+
+# Where a person chooses the assistant new work uses, in Blog Studio's own words.
+CHOOSE_ASSISTANT = 'Settings → Writing preferences'
+CHECK_SECONDS = 4  # How long each look at the network, or at Codex's sign-in, may take.
+
+
+def unreachable(engine, binary, env=None):
+    """What a run that failed because its assistant could not reach its service says: the
+    assistant, its service, and what to try. It looks once at the network, as Status →
+    Check this computer does, to say when the connection is being intercepted; it sends no
+    request, starts no job and never raises."""
+    host = reachability.HOSTS[engine]
+    if engine == 'codex':
+        try:
+            done = subprocess.run(
+                [binary, 'login', 'status'],
+                stdin=subprocess.DEVNULL,
+                capture_output=True,
+                text=True,
+                timeout=CHECK_SECONDS,
+                env=env,
+            )
+            host = reachability.codex_host(done.stdout + done.stderr)
+        except (OSError, subprocess.SubprocessError, UnicodeError):
+            pass
+    try:
+        found = reachability.blocked(host, CHECK_SECONDS)
+    except Exception:  # A look that fails must not hide why the run failed.
+        found = None
+    other = NAMES['claude' if engine == 'codex' else 'codex']
+    said = NAMES[engine] + ' could not reach ' + reachability.SERVICES[host] + ' from this network'
+    if found and found[0] == 'intercepted':
+        said += (
+            ': the connection to ' + host + ' is being intercepted on this network, or its '
+            'certificate is not trusted here'
+        )
+    return (
+        said
+        + '. Try another network, or choose '
+        + other
+        + ' for new work under '
+        + CHOOSE_ASSISTANT
+        + '.'
     )
 
 
@@ -395,12 +441,16 @@ def generate(engine, payload, guidance, seconds=600, web=False, stop=None, model
             payload
         )
 
-        def failed(message, reason='cli', said=()):
+        def failed(message, reason='cli', said=(), network=False):
             # Only a CLI failure keeps what was said; a time limit or a stop needs none of it.
             if reason != 'cli':
                 return WorkerFailure(message, reason)
             echoes = echo_check(prompt, given, *strings(payload))
-            return WorkerFailure(message, reason, cleaned([*said, *tail(errors)], echoes))
+            kept = cleaned([*said, *tail(errors)], echoes)
+            # A CLI that failed because it could not reach its service says so, not sign-in.
+            if network and reachability.cannot_connect(kept):
+                message = unreachable(engine, binary, env)
+            return WorkerFailure(message, reason, kept)
 
         with (
             (folder / 'stdout').open('w+') as stdout,
@@ -447,7 +497,9 @@ def generate(engine, payload, guidance, seconds=600, web=False, stop=None, model
                     raise failed(
                         'The selected CLI failed. Check its sign-in and usage under '
                         + STATUS
-                        + ', then try again.'
+                        + ', then try again.',
+                        said=reported_error(engine, stdout),
+                        network=True,
                     )
                 stdout.seek(0)
                 raw = output.read_text() if engine == 'codex' else stdout.read(2_000_001)
@@ -461,6 +513,7 @@ def generate(engine, payload, guidance, seconds=600, web=False, stop=None, model
                             'The selected CLI could not finish this step. Check its sign-in and '
                             'usage under ' + STATUS + ', then try again.',
                             said=str(result.get('result') or '').splitlines(),
+                            network=True,
                         )
                     result = result.get('structured_output') or json.loads(result['result'])
                 if review:
@@ -498,6 +551,21 @@ def generate(engine, payload, guidance, seconds=600, web=False, stop=None, model
                         pass
                     process.wait()
                 reported(*spent)
+
+
+def reported_error(engine, stdout):
+    """The error a Claude Code run that exited with a failure reported in its JSON result,
+    as lines; nothing for Codex, or for output that is not such a result."""
+    if engine != 'claude':
+        return []
+    try:
+        stdout.seek(0)
+        result = json.loads(stdout.read(2_000_001))
+    except (OSError, ValueError):
+        return []
+    if not isinstance(result, dict) or not result.get('is_error'):
+        return []
+    return str(result.get('result') or '').splitlines()
 
 
 def schema_for(payload):

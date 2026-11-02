@@ -14,22 +14,51 @@ BUNDLED_CODEX = Path(
 )
 
 
-def harness_research():
-    """Whether Harness Research, with its checked research, is installed here. Research
-    from your sites needs it: it is what saves pages only from under them."""
+def core(name):
+    """A module of the shared studio core, or None where it cannot be loaded."""
+    import importlib
+
     try:
-        from studio_core import research_contract
+        return importlib.import_module('studio_core.' + name)
     except ImportError:
         # Setup loads this module by path, before the skill scripts are on sys.path.
         here = str(Path(__file__).resolve().parent)
         sys.path.insert(0, here)
         try:
-            from studio_core import research_contract
+            return importlib.import_module('studio_core.' + name)
         except ImportError:
-            return False
+            return None
         finally:
             sys.path.remove(here)
-    return research_contract.snapshot() is not None
+
+
+def harness_research():
+    """Whether Harness Research, with its checked research, is installed here. Research
+    from your sites needs it: it is what saves pages only from under them."""
+    research_contract = core('research_contract')
+    return research_contract is not None and research_contract.snapshot() is not None
+
+
+NETWORK_SECONDS = 4  # How long the look at each assistant's service may take.
+
+
+def unreachable(hosts):
+    """{host: why} for each of `hosts` this network does not let through, looked at side by
+    side. Like the shared runner's ready(), it only opens a TLS connection: it sends no
+    request and starts no assistant."""
+    reachability = core('reachability')
+    if reachability is None or not hosts:
+        return {}
+
+    def look(host):
+        try:
+            found = reachability.blocked(host, NETWORK_SECONDS)
+        except Exception:  # A look that fails says nothing about the network.
+            return None
+        return reachability.why(host, found) if found else None
+
+    with ThreadPoolExecutor(max_workers=len(hosts)) as pool:
+        return {host: said for host, said in zip(hosts, pool.map(look, hosts), strict=True) if said}
 
 
 def cli_path(name):
@@ -88,6 +117,29 @@ def report(home=None, sign_in=True):
         if codex and sign_in
         else None
     )
+    # A signed-in assistant can still be out of reach: a network can block or intercept
+    # one service and not another. Claude Code's sign-in is not checked here, so its
+    # service is looked at whenever it is installed.
+    reachability = core('reachability') if sign_in else None
+    hosts = {}
+    if reachability is not None:
+        if codex and codex_signed:
+            hosts['codex'] = reachability.codex_host(signed[1])
+        if claude:
+            hosts['claude'] = reachability.HOSTS['claude']
+    blocked = unreachable(list(dict.fromkeys(hosts.values())))
+    cut_off = {agent: blocked.get(host) for agent, host in hosts.items()}
+
+    def other(agent):
+        return 'Claude Code' if agent == 'codex' else 'Codex'
+
+    def network_step(agent):
+        return (
+            'Try another network, or choose '
+            + other(agent)
+            + ' for new work under Settings → Writing preferences, then check again.'
+        )
+
     checks = []
 
     def add(key, label, status, detail, next_step='', optional=False):
@@ -111,7 +163,17 @@ def report(home=None, sign_in=True):
             'No writing CLI was found.',
             'Install Codex or Claude Code, open it and sign in, then check again.',
         )
-    if codex:
+    if codex and cut_off.get('codex'):
+        add(
+            'codex',
+            'Codex',
+            'action',
+            'CLI found; signed in, but it cannot be used from this network: '
+            + cut_off['codex']
+            + '.',
+            network_step('codex'),
+        )
+    elif codex:
         login = 'codex' if shutil.which('codex') else shlex.quote(codex)
         add(
             'codex',
@@ -128,7 +190,15 @@ def report(home=None, sign_in=True):
             if codex_signed is False
             else 'Open Codex and sign in before starting a blog.',
         )
-    if claude:
+    if claude and cut_off.get('claude'):
+        add(
+            'claude',
+            'Claude Code',
+            'action',
+            'CLI found, but it cannot be used from this network: ' + cut_off['claude'] + '.',
+            network_step('claude'),
+        )
+    elif claude:
         add(
             'claude',
             'Claude Code',
@@ -226,8 +296,16 @@ def report(home=None, sign_in=True):
     return {
         'python': sys.version.split()[0],
         'agents': {
-            'codex': {'installed': bool(codex), 'signed_in': codex_signed},
-            'claude': {'installed': bool(claude), 'signed_in': None},
+            'codex': {
+                'installed': bool(codex),
+                'signed_in': codex_signed,
+                'reachable': None if 'codex' not in hosts else not cut_off['codex'],
+            },
+            'claude': {
+                'installed': bool(claude),
+                'signed_in': None,
+                'reachable': None if 'claude' not in hosts else not cut_off['claude'],
+            },
         },
         'checks': checks,
         'notes': [row['next_step'] for row in checks if row['next_step']],

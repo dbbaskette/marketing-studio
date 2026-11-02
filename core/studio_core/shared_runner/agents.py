@@ -54,19 +54,13 @@ What a caller needs to know
 """
 from __future__ import annotations
 
-import base64
-import http.client
 import json
 import os
 import shutil
-import socket
-import ssl
 import subprocess
 import tempfile
 import threading
 import time
-import urllib.parse
-import urllib.request
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -75,6 +69,7 @@ import home
 from workspace import WorkspaceError
 
 from runner import companion, settings, worker_tools
+from studio_core.reachability import codex_host, reachable
 
 # The studio's values, passed in by `for_product`. A plain import, made only to reach
 # `for_product`, has stand-ins.
@@ -433,40 +428,6 @@ def ask(command: list[str], env: dict | None = None, seconds: float = 20) -> tup
     return done.returncode, (done.stdout + done.stderr).strip()
 
 
-def reachable(host: str, seconds: float = 8) -> str | None:
-    """Why a service cannot be reached over TLS from this network, or None when it can.
-
-    It connects and checks the service's certificate, through this computer's proxy when
-    it has one, and sends no request. A network that intercepts the connection fails here
-    even though the agent is signed in.
-    """
-    context = ssl.create_default_context()
-    proxy = urllib.request.getproxies().get('https')
-    try:
-        if proxy and not urllib.request.proxy_bypass(host):
-            via = urllib.parse.urlsplit(proxy if '//' in proxy else f'//{proxy}')
-            headers = {}
-            if via.username:
-                secret = f'{via.username}:{via.password or ""}'.encode()
-                headers['Proxy-Authorization'] = 'Basic ' + base64.b64encode(secret).decode()
-            link = http.client.HTTPSConnection(via.hostname, via.port or 80,
-                                               timeout=seconds, context=context)
-            link.set_tunnel(host, 443, headers=headers)
-            try:
-                link.connect()
-            finally:
-                link.close()
-        else:
-            with socket.create_connection((host, 443), timeout=seconds) as plain:
-                context.wrap_socket(plain, server_hostname=host).close()
-    except ssl.SSLCertVerificationError as failure:
-        return (f'the connection to {host} is being intercepted on this network, or its '
-                f'certificate is not trusted here ({failure.verify_message})')
-    except (OSError, http.client.HTTPException) as failure:
-        return f'{host} cannot be reached from this network ({failure})'
-    return None
-
-
 # --- the adapters ----------------------------------------------------------------------
 
 class _Agent:
@@ -668,8 +629,7 @@ class Codex(_Agent):
     def signed_in(self, run) -> tuple[bool | None, str]:
         """Whether Codex says it is signed in, and which service that sign-in uses."""
         code, said = run([self.program, 'login', 'status'])
-        host = 'api.openai.com' if 'api key' in said.lower() else self.host
-        return (None if code is None else code == 0), host
+        return (None if code is None else code == 0), codex_host(said)
 
     def models(self, which=shutil.which, run=companion.run_command) -> dict:
         """The models Codex lists for choosing, as `codex debug models` prints them."""

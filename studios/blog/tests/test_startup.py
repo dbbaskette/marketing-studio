@@ -66,6 +66,74 @@ class ComputerTests(unittest.TestCase):
         ):
             self.assertIsNone(computer.probe(['fixture']))
 
+    def looked(self, blocked, **given):
+        """Check this computer where `blocked` maps the hosts this network does not let
+        through to what blocked() found. Returns the report and the hosts looked at; the
+        look is a stand-in, so nothing is contacted."""
+        from studio_core import reachability
+
+        with patch.object(
+            reachability, 'blocked', side_effect=lambda host, seconds: blocked.get(host)
+        ) as look:
+            found = self.check(**given)
+        for call in look.call_args_list:
+            self.assertEqual(call.args[1], computer.NETWORK_SECONDS)
+        return found, sorted(call.args[0] for call in look.call_args_list)
+
+    def row(self, found, key):
+        return next(x for x in found['checks'] if x['key'] == key)
+
+    def test_a_signed_in_assistant_this_network_cuts_off_is_reported(self):
+        found, hosts = self.looked(
+            {'chatgpt.com': ('intercepted', 'self-signed certificate in certificate chain')},
+            agents=('codex', 'claude'),
+            signed=(0, 'Logged in using ChatGPT'),
+        )
+        self.assertEqual(hosts, ['api.anthropic.com', 'chatgpt.com'])
+        codex = self.row(found, 'codex')
+        self.assertEqual(codex['status'], 'action')
+        self.assertEqual(
+            codex['detail'],
+            'CLI found; signed in, but it cannot be used from this network: the connection to '
+            'chatgpt.com is being intercepted on this network, or its certificate is not '
+            'trusted here (self-signed certificate in certificate chain).',
+        )
+        self.assertEqual(
+            codex['next_step'],
+            'Try another network, or choose Claude Code for new work under Settings → Writing '
+            'preferences, then check again.',
+        )
+        self.assertEqual(self.row(found, 'claude')['status'], 'manual')
+        self.assertEqual(found['agents']['codex']['reachable'], False)
+        self.assertEqual(found['agents']['claude']['reachable'], True)
+        self.assertIn('cannot be used from this network', computer.describe(found))
+
+    def test_claude_code_out_of_reach_and_codex_with_an_api_key(self):
+        found, hosts = self.looked(
+            {'api.anthropic.com': ('unreachable', 'timed out')},
+            agents=('codex', 'claude'),
+            signed=(0, 'Logged in using an API key - sk-proj-***'),
+        )
+        self.assertEqual(hosts, ['api.anthropic.com', 'api.openai.com'])
+        claude = self.row(found, 'claude')
+        self.assertEqual(claude['status'], 'action')
+        self.assertIn('api.anthropic.com cannot be reached from this network', claude['detail'])
+        self.assertIn('choose Codex for new work', claude['next_step'])
+        self.assertEqual(self.row(found, 'codex')['status'], 'ready')
+
+    def test_the_network_is_not_looked_at_without_a_signed_in_assistant(self):
+        found, hosts = self.looked({}, agents=('codex',), signed=(1, 'Not logged in'))
+        self.assertEqual(hosts, [])
+        self.assertIsNone(found['agents']['codex']['reachable'])
+        with patch.object(computer, 'unreachable') as look:
+            with (
+                patch.object(computer, 'cli_path', return_value='/fixture/claude'),
+                patch.object(computer, 'git_path', return_value=None),
+                patch.object(computer, 'probe', return_value=None),
+            ):
+                computer.report(sign_in=False)
+        look.assert_called_once_with([])
+
     def test_bundled_codex_sign_in_uses_a_command_that_exists(self):
         bundled = '/Applications/Synthetic app/codex'
         with (

@@ -21,6 +21,7 @@ from runner_support import BLUEPRINT, JobCase, still_running, written
 from runner import agents, settings, worker_tools
 from runner.agents import Claude, Codex, Job, Limits, Outcome, Scripted
 from workspace import WorkspaceError
+from studio_core import reachability
 
 SEARCH = 'rolling restart minimum instances'
 PAGE = 'https://docs.example.com/restarts'
@@ -1044,10 +1045,10 @@ class ReachableTests(unittest.TestCase):
         context = mock.Mock()
         if wrap:
             context.wrap_socket.side_effect = wrap
-        with mock.patch.object(agents.urllib.request, 'getproxies', return_value={}), \
-                mock.patch.object(agents.socket, 'create_connection',
+        with mock.patch.object(reachability.urllib.request, 'getproxies', return_value={}), \
+                mock.patch.object(reachability.socket, 'create_connection',
                                   side_effect=connect) as made, \
-                mock.patch.object(agents.ssl, 'create_default_context', return_value=context):
+                mock.patch.object(reachability.ssl, 'create_default_context', return_value=context):
             return agents.reachable('service.example.com'), made, context
 
     def test_a_service_that_answers_with_a_good_certificate_is_reachable(self):

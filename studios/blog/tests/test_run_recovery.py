@@ -678,6 +678,162 @@ class WorkerFailureTests(MeteredWorkerTests):
         )
 
 
+# What Codex printed when it could not connect through a network that intercepts the
+# connection to its service, with the session's own details replaced. It exited with a
+# failure after about 18 seconds.
+CODEX_CUT_OFF = """approval: never
+sandbox: read-only
+reasoning effort: high
+reasoning summaries: none
+session id: 00000000-0000-0000-0000-000000000000
+--------
+warning: Under-development features enabled: skip_host_skill_discovery.
+warning: Code Mode is unavailable because code-mode host is disabled.
+ERROR: Reconnecting... 2/5
+ERROR: Reconnecting... 3/5
+ERROR: Reconnecting... 4/5
+ERROR: Reconnecting... 5/5
+warning: Falling back from WebSockets to HTTPS transport. workspace routing discovery failed
+ERROR: Reconnecting... 1/5
+ERROR: Reconnecting... 2/5
+ERROR: Reconnecting... 3/5
+ERROR: Reconnecting... 4/5
+ERROR: Reconnecting... 5/5
+ERROR: workspace routing discovery failed
+ERROR: workspace routing discovery failed"""
+OTHER_NETWORK = (
+    'Try another network, or choose {} for new work under Settings → Writing preferences.'
+)
+
+
+class UnreachableServiceTests(MeteredWorkerTests):
+    """A run whose assistant could not reach its service says so, and what to try, from what
+    the assistant printed. The look at the network is a stand-in: nothing is contacted."""
+
+    def setUp(self):
+        super().setUp()
+        self.found = None
+        looked = patch.object(
+            blog_worker.reachability, 'blocked', side_effect=lambda *args: self.found
+        )
+        self.looked = looked.start()
+        self.addCleanup(looked.stop)
+
+    def codex(self, said, code=1, login='Logged in using ChatGPT'):
+        """A Codex stand-in that prints `said` to its error output and exits with `code`;
+        asked for its sign-in, it says `login`."""
+        self.executable(
+            'args=sys.argv[1:]\n'
+            "if args[:2]==['login','status']:\n"
+            f' print({login!r})\n'
+            ' sys.exit(0)\n'
+            f'sys.stderr.write({said!r}+chr(10))\n'
+            "value={'content':'# Synthetic','notes':'Fixture CLI; no account.'}\n"
+            "if '--output-last-message' in args:\n"
+            " Path(args[args.index('--output-last-message')+1]).write_text(json.dumps(value))\n"
+            f'sys.exit({code})\n'
+        )
+
+    def claude(self, result, code=1, stderr=''):
+        """A Claude Code stand-in that reports `result` as an error in its JSON answer."""
+        self.executable(
+            f'sys.stderr.write({stderr!r})\n'
+            f"print(json.dumps({{'type':'result','subtype':'success','is_error':True,"
+            f"'result':{result!r}}}))\n"
+            f'sys.exit({code})\n'
+        )
+
+    def failure(self, agent):
+        with self.assertRaises(blog_worker.WorkerFailure) as caught:
+            self.generate(agent)
+        self.assertEqual(caught.exception.reason, 'cli')
+        return caught.exception
+
+    def test_codex_that_could_not_connect_names_the_network_not_sign_in(self):
+        self.codex(CODEX_CUT_OFF)
+        failure = self.failure('codex')
+        self.assertEqual(
+            str(failure),
+            'Codex could not reach OpenAI from this network. '
+            + OTHER_NETWORK.format('Claude Code'),
+        )
+        self.assertNotIn('sign-in', str(failure))
+        # What it said is kept as before: its last twenty lines.
+        self.assertEqual(failure.said, CODEX_CUT_OFF.splitlines()[-20:])
+        self.assertEqual(self.looked.call_args.args, ('chatgpt.com', blog_worker.CHECK_SECONDS))
+
+    def test_an_intercepted_connection_is_named_as_intercepted(self):
+        self.found = ('intercepted', 'self-signed certificate in certificate chain')
+        self.codex(CODEX_CUT_OFF)
+        self.assertEqual(
+            str(self.failure('codex')),
+            'Codex could not reach OpenAI from this network: the connection to chatgpt.com is '
+            'being intercepted on this network, or its certificate is not trusted here. '
+            + OTHER_NETWORK.format('Claude Code'),
+        )
+
+    def test_codex_signed_in_with_an_api_key_is_looked_at_where_that_key_is_used(self):
+        self.found = ('unreachable', 'timed out')
+        self.codex(
+            'ERROR: stream disconnected before completion', login='Logged in using an API key'
+        )
+        self.assertIn('Codex could not reach OpenAI', str(self.failure('codex')))
+        self.assertEqual(self.looked.call_args.args[0], 'api.openai.com')
+
+    def test_claude_code_that_could_not_connect_says_so(self):
+        self.claude('API Error: Connection error.')
+        failure = self.failure('claude')
+        self.assertEqual(
+            str(failure),
+            'Claude Code could not reach Anthropic from this network. '
+            + OTHER_NETWORK.format('Codex'),
+        )
+        self.assertEqual(failure.said, ['API Error: Connection error.'])
+        self.assertEqual(self.looked.call_args.args[0], 'api.anthropic.com')
+
+    def test_claude_code_with_an_untrusted_certificate_says_so_from_either_ending(self):
+        self.found = ('intercepted', 'unable to get local issuer certificate')
+        for code in (0, 1):
+            with self.subTest(code=code):
+                self.claude(
+                    'API Error: Unable to connect to API (UNABLE_TO_GET_ISSUER_CERT_LOCALLY)', code
+                )
+                self.assertIn(
+                    'the connection to api.anthropic.com is being intercepted',
+                    str(self.failure('claude')),
+                )
+
+    def test_a_look_at_the_network_that_fails_still_says_it_could_not_connect(self):
+        self.looked.side_effect = RuntimeError('synthetic')
+        self.claude('API Error: Connection error.')
+        self.assertIn('Claude Code could not reach Anthropic', str(self.failure('claude')))
+
+    def test_sign_in_and_usage_problems_keep_their_advice(self):
+        for agent, make, said in (
+            ('claude', self.claude, 'Invalid API key · Please run /login'),
+            ('codex', self.codex, 'ERROR: Not logged in. Run codex login.'),
+            (
+                'codex',
+                self.codex,
+                'ERROR: Reconnecting... 1/5 (stream disconnected before completion)\n'
+                "ERROR: You've hit your usage limit.",
+            ),
+            ('codex', self.codex, 'ERROR: the model returned an empty response'),
+        ):
+            with self.subTest(said=said):
+                make(said)
+                failure = self.failure(agent)
+                self.assertIn('Check its sign-in and usage under Status', str(failure))
+        self.looked.assert_not_called()
+
+    def test_a_connection_that_recovered_changes_nothing(self):
+        self.codex('ERROR: Reconnecting... 1/5\nERROR: Reconnecting... 2/5', code=0)
+        self.assertEqual(
+            self.generate('codex'), {'content': '# Synthetic', 'notes': 'Fixture CLI; no account.'}
+        )
+        self.looked.assert_not_called()
+
+
 class RunFailureTests(ResearchCase):
     def failing(self, error):
         def worker(*args, **kwargs):
