@@ -71,8 +71,9 @@ Return one JSON object in content, with no score, grade or ranking promise, shap
 - queries: the questions people might ask an AI assistant that this post answers, as below.
 - sources_needed: at most ten claims the post makes that would be stronger with a cited
   source: {"part", "claim", "kind"}. claim is the sentence copied exactly from that part;
-  kind says what kind of source would support it, such as "a benchmark the team ran" or
-  "the product's documentation". Never name, link or invent a source, statistic or quote.
+  kind says what kind of source would support it, such as "a benchmark the team ran",
+  "the product's documentation" or "a dated source with the baseline for the 40%". Never
+  name, link or invent a source, statistic, date or quote.
 """
 
 

@@ -5,6 +5,20 @@ changes for authors first, then what changes for maintainers.
 
 ## Unreleased
 
+- **The GEO review checks more of what makes a passage reliable to reuse (#280).** On the
+  desk and in a GEO report, it now points out a claim missing the date, version, unit,
+  region or audience needed to read it (and a measurement missing its method or sample),
+  what the author observed against what others found, the conditions and tradeoffs after
+  a direct answer, vague headings and procedures that want numbered steps, charts and
+  video whose point is not in the text, old product names with no word on the current
+  one, and pricing, version or setup facts with no "as of" date. Decision support (who an
+  option suits, its limits, a next step) is suggested only where it fits. Each finding is
+  a located proposal to preview, then apply or skip; a missing date or baseline is asked
+  for, never invented, and a date is never refreshed without a change of facts. The FAQ,
+  key takeaways and the other additions are described as aids for readers: none is said
+  to earn citations or rankings. Maintainers: `blog-geo-review.md` (with its primary
+  sources) and `manuscript_editor.CHECKS['geo']`.
+
 - **A GEO report for a published post (#277).** **Get a GEO report for a published post**,
   on Home and in New blog, takes a link, shows the page read only, and starts one job on
   one press. The report is a typeset reading document: what already works, the changes

@@ -354,10 +354,11 @@ nothing changes until you apply.
 - **Check facts against sources**: each claim supported, not in your sources, or
   contradicted, with the passage, **Add a source** and **Keep it**.
 - **Improve discovery**: **GEO: retrieval readiness** proposes direct answers, clear
-  entities and useful evidence. Beside it, each addition is asked for on its own and
-  previewed before anything changes: an **FAQ** of 3 to 6 questions, each answered only
-  from the post and its sources (a question they do not answer is left out), and **Key
-  takeaways**, each added as a section you place (an FAQ goes at the end, before a closing
+  entities, claims with their context and dates, and useful evidence. Beside it, each
+  addition is an aid for readers, not a way to earn citations or rankings, asked for on
+  its own and previewed before anything changes: an **FAQ** of 3 to 6 questions, each
+  answered only from the post and its sources (a question they do not answer is left
+  out), and **Key takeaways**, each added as a section you place (an FAQ goes at the end, before a closing
   call to action, unless you pick another place), with every question, answer or point
   edited or dropped first and then all or only the ticked ones added. On a post that
   already has one, it proposes that section's new form instead of a second one. A

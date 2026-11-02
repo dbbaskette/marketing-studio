@@ -3,6 +3,8 @@ skipped, and a post's own Include a GEO review choice. Fake workers only; no pro
 
 import isolation  # noqa: F401  (first: keeps every test off this computer's own settings)
 import json
+from pathlib import Path
+import re
 
 import blog_runner
 import desk
@@ -13,6 +15,43 @@ import tool_jobs
 from test_desk import DRAFT
 from test_desk_finish import ToolCase
 from test_desk_start import WRITTEN, StartCase
+
+SKILL = Path(__file__).resolve().parents[1] / 'skills/blog-studio'
+# The playbook guidelines (#280) and the limits the GEO review keeps, as its guidance words
+# them. The GEO report's job reads the same words (test_geo_report).
+GUIDELINES = (
+    'Claim context',
+    'method, sample, environment',
+    'First-hand or borrowed',
+    'original source',
+    'Conditions and tradeoffs',
+    '("Overview", "More", "Details")',
+    'numbered steps',
+    'summarizes an embedded video',
+    'Renamed products and aliases',
+    '"as of" date',
+    'Never suggest refreshing a date without changing the facts',
+    'Decision support, where it fits',
+    'Do not force these on a post they do not fit',
+    'an aid for readers',
+    'never present it as earning citations or rankings',
+    'What Drives AI Citations?',
+)
+KEPT = (
+    'Do not force\nFAQ, question headings, brand mentions, certainty, sentence lengths, or schema',
+    'keyword density',
+    'tiny snippets',
+    'near-duplicates',
+    'expected outcome',
+    'Never invent a date, version, baseline or source',
+)
+# Words that would say an addition or a change earns citations or rankings.
+PROMISE = re.compile(
+    r'\b(?:boosts?|increases?|improves?|raises?|earns?|wins?|gains?|more|higher|better|top)\b'
+    r'\W+(?:\w+\W+){0,3}?(?:citations?|cited|rankings?|ranks?)\b',
+    re.I,
+)
+CLAIM = 'The cache cuts costs by 40%. Pricing starts at $20 a month.'
 
 POST = """# A synthetic title
 
@@ -490,6 +529,89 @@ class QueriesAndOpenerTests(AdditionCase):
         tool_jobs.once(blog_runner.Engine(self.root, worker=worker))
         self.assertEqual(self.set_of('takeaways')['items'][0]['state'], 'open')
         self.assertEqual(len(self.draft()['sections']), 2)
+
+
+class GuidelineTests(AdditionCase):
+    """The playbook guidelines reach the worker, and a finding comes back located."""
+
+    def run_geo(self, value):
+        seen = []
+
+        def worker(engine, payload, guidance, **options):
+            seen.append((payload, guidance, options))
+            return {'content': json.dumps(value), 'notes': ''}
+
+        job = self.queue('geo')
+        tool_jobs.once(blog_runner.Engine(self.root, worker=worker))
+        self.assertEqual(len(seen), 1)
+        return job, seen[0]
+
+    def test_the_desk_geo_review_gives_the_worker_every_guideline_and_keeps_its_limits(self):
+        _, (_, guidance, options) = self.run_geo({'suggestions': []})
+        self.assertEqual(options['web'], False)
+        for words in GUIDELINES + KEPT:
+            self.assertIn(words, guidance)
+        self.assertIn('"as of" dates on time-sensitive facts', guidance, 'the check says it too')
+        self.assertIn('the date or baseline a claim needs', guidance)
+        # Improve discovery's additions read the same guidance: each an aid for readers.
+        job = self.queue('takeaways')
+        for words in GUIDELINES + KEPT:
+            self.assertIn(words, job['guidance'])
+
+    def test_a_claim_missing_its_context_is_a_located_proposal_to_apply_or_skip(self):
+        desk.save(self.root, self.ident, self.draft()['revision'], self.first, CLAIM)
+        self.seen = self.draft()['revision']
+        job, (payload, _, _) = self.run_geo(
+            {
+                'suggestions': [
+                    {
+                        'part': self.first,
+                        'before': 'The cache cuts costs by 40%.',
+                        'after': 'In our March 2026 pilot, the cache cut costs by 40% against '
+                        'the previous quarter.',
+                        'why': 'Claim context: gives the period and baseline.',
+                    },
+                    {
+                        'part': self.first,
+                        'before': 'Pricing starts at $20 a month.',
+                        'after': 'As of March 2026, pricing starts at $20 a month.',
+                        'why': 'Time-sensitive: an "as of" date.',
+                    },
+                ],
+                'summary': 'Name the source of the 40% saving.',
+            }
+        )
+        self.assertIn(CLAIM, json.dumps(payload))
+        shown = self.shown('geo')
+        self.assertEqual(self.draft()['sections'][0]['text'], CLAIM, 'nothing applied by itself')
+        self.assertEqual(shown['summary'], 'Name the source of the 40% saving.')
+        context, dated = shown['items']
+        self.assertEqual((context['part'], context['state']), (self.first, 'open'))
+        self.assertEqual(context['before'], 'The cache cuts costs by 40%.')
+        self.assertEqual(context['note'], 'Claim context: gives the period and baseline.')
+        self.assertTrue(context['flag'], 'a date the post did not have waits to be checked')
+        self.assertTrue(dated['flag'])
+        self.act('skip', job=job['id'], items=[dated['id']])
+        self.act('apply', seen=self.seen, job=job['id'], items=[{'id': context['id']}])
+        self.assertEqual(
+            self.draft()['sections'][0]['text'],
+            'In our March 2026 pilot, the cache cut costs by 40% against the previous quarter. '
+            'Pricing starts at $20 a month.',
+        )
+        states = {item['id']: item['state'] for item in self.shown('geo')['items']}
+        self.assertEqual(states, {context['id']: 'applied', dated['id']: 'skipped'})
+
+    def test_no_geo_words_a_person_reads_promise_citations_or_rankings(self):
+        for path in (
+            SKILL / 'assets/management/desk.js',
+            SKILL / 'scripts/desk_finish.py',
+            SKILL / 'scripts/geo_report.py',
+        ):
+            found = [m.group(0) for m in PROMISE.finditer(path.read_text())]
+            self.assertEqual(found, [], path.name)
+        self.assertIsNone(PROMISE.search('Answers the questions a reader asks next.'))
+        self.assertTrue(PROMISE.search('An FAQ boosts your AI citations.'))
+        self.assertTrue(PROMISE.search('Key takeaways help it earn more citations.'))
 
 
 class GEOChoiceTests(StartCase):

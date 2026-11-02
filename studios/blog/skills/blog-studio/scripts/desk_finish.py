@@ -1189,7 +1189,8 @@ def request(root, ident, draft, tool, level=None, guide=None, count=None):
             '\nPropose only changes requested by this GEO review. Invent no evidence, '
             'research, authority, facts, links or approval. Preserve qualifiers and images. '
             'Return JSON with suggestions [{part, before, after, why}] and an optional '
-            'summary string for advice without an edit. before must occur once in its '
+            'summary string for advice without an edit, such as the date or baseline a '
+            'claim needs when no supplied evidence gives it. before must occur once in its '
             'part. Changes are proposals the person previews before applying; do not '
             'return rewritten files. Empty suggestions means no changes.'
         )

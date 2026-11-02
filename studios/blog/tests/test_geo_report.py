@@ -228,6 +228,66 @@ class ReportTests(ReportCase):
         listed = self.get('geo-reports')['items']
         self.assertEqual([row['newer'] for row in listed], [None, None])
 
+    def test_the_worker_reads_every_guideline_and_a_claim_context_change_is_placed(self):
+        import blog_runner
+        from test_desk_geo import GUIDELINES, KEPT
+
+        seen = []
+
+        def worker(engine, payload, guidance, **options):
+            seen.append((guidance, options))
+            works = next(s for s in payload['sections'] if s['heading'] == 'How it works')
+            value = {
+                **RESULT,
+                'suggestions': [
+                    {
+                        'part': works['id'],
+                        'before': 'retries per minute.',
+                        'after': 'retries per minute, as of version 2.3.',
+                        'why': 'time-sensitive: an "as of" version',
+                        'help': 'A reader knows which release the limit describes.',
+                    }
+                ],
+                'sources_needed': [
+                    {
+                        'part': 'opening',
+                        'claim': 'A retry budget caps the retries each route may make.',
+                        'kind': 'a dated source for the limit and its version',
+                    }
+                ],
+            }
+            return {'content': json.dumps(value), 'notes': ''}
+
+        self.addCleanup(lambda: blog_runner.ENGINES.pop(str(self.root), None))
+        made = self.begin()
+        tool_jobs.once(blog_runner.Engine(self.root, worker=worker))
+        guidance, options = seen[0]
+        self.assertEqual(options['web'], False)
+        for words in GUIDELINES + KEPT:
+            self.assertIn(words, guidance)
+        self.assertIn('a dated source with the baseline', guidance)
+        shown = self.get('geo-report', id=made['id'])
+        self.assertEqual(shown['status'], 'ready')
+        change = shown['recommendations'][0]
+        self.assertEqual(change['kind'], 'change')
+        self.assertEqual(change['help'], 'A reader knows which release the limit describes.')
+        self.assertTrue(change['flag'], 'a version the post did not have waits to be checked')
+        self.assertEqual(
+            shown['sources_needed'][0]['kind'], 'a dated source for the limit and its version'
+        )
+        # On the desk it waits in Finishing, to preview, then apply or skip.
+        desk_copy = self.post('geo-report-desk', {'id': made['id'], 'operation': 'b' * 32})
+        article = desk_copy['desk']
+        geo = self.get('desk', id=article)['finishing']['geo']
+        item = geo['items'][0]
+        self.assertEqual((item['state'], item['before']), ('open', 'retries per minute.'))
+        held = studio._HELD.set(True)
+        self.addCleanup(studio._HELD.reset, held)
+        desk_finish.skip(self.root, article, geo['job'], [item['id']])
+        geo = self.get('desk', id=article)['finishing']['geo']
+        self.assertEqual(geo['items'][0]['state'], 'skipped')
+        self.assertNotIn('version 2.3', desk.join(desk.read(self.root, article)))
+
     def test_an_interrupted_job_is_said_as_failed(self):
         made = self.begin()
         job = tool_jobs.read(self.root, made['id'])
