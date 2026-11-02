@@ -27,6 +27,14 @@ TOOLS = {
     'finish-feedback': 'feedback',
     'finish-voice': 'voice',
     'finish-geo': 'geo',
+    # Improve discovery's additions on request (GEO): each one a proposal, never applied by itself.
+    'finish-faq': 'faq',
+    'finish-table': 'table',
+    'finish-quotes': 'quotes',
+    'finish-takeaways': 'takeaways',
+    'finish-alt': 'alt',
+    'finish-queries': 'queries',
+    'finish-opener': 'opener',
 }
 KINDS = tuple(TOOLS)
 # The proposals are kept, read and skipped by the shared desk
@@ -68,7 +76,12 @@ class _BlogProposals(shared.Proposals):
 def _proposals(root):
     """Blog Studio's waiting proposals: sets keyed `blog`, in .blog-runs/desk-proposals."""
     return _BlogProposals(
-        desk.BlogStore(root), desk._drafting(root), TOOLS, owner='blog', together=SENTENCES
+        desk.BlogStore(root),
+        desk._drafting(root),
+        TOOLS,
+        owner='blog',
+        present=lambda draft, item: present(draft, item),
+        together=SENTENCES,
     )
 
 
@@ -114,8 +127,27 @@ _once = shared.once
 
 def present(draft, item):
     """Whether a proposal still fits the draft: its text is in its part, once, or the whole
-    part is as it was for an alternative to the whole part. A comment needs only its part."""
+    part is as it was for an alternative to the whole part. A comment needs only its part.
+    A new section (an FAQ or key takeaways) fits while the post is as the job read it and the
+    section it goes before is still there."""
+    if item.get('insert'):
+        return (
+            item.get('basis') == basis(draft)
+            and (item.get('at') == 'end' or desk.CODEC.section(draft, item.get('at')) is not None)
+            and len(draft['sections']) < desk.SECTIONS
+        )
     return shared.text_present(desk.CODEC)(draft, item)
+
+
+def basis(value):
+    """A short digest of a post's words, as a finishing job read them (its payload) or as the
+    draft is now, so a proposal drawn from the whole post can say the post changed since."""
+    rows = [value.get('title') or '', desk_images.scrub(value.get('opening') or '')]
+    rows += [
+        [section.get('id'), section.get('heading'), desk_images.scrub(section.get('text') or '')]
+        for section in value.get('sections') or []
+    ]
+    return studio.digest(json_text(rows).encode())[:16]
 
 
 def summary(root, ident, draft):
@@ -162,13 +194,18 @@ def apply(root, ident, seen, job, chosen, every=False):
         )
         if (
             not isinstance(entry, dict)
-            or set(entry) - {'id', 'after', 'alternative', 'job'}
+            or set(entry) - {'id', 'after', 'alternative', 'job', 'at'}
             or entry.get('id') not in items
             or (name, entry['id']) in named
         ):
             raise ValueError('Choose suggestions from this set.')
         named.add((name, entry['id']))
         item = items[entry['id']]
+        if item.get('insert') or 'at' in entry:
+            # A new section (an FAQ or key takeaways) is added on its own, where it is placed.
+            if not item.get('insert') or len(chosen) != 1 or every or name != job:
+                raise ValueError('Add a new section on its own.')
+            return _insert(root, ident, seen, job, found, item, entry)
         if 'comment' in item:
             raise ValueError('A comment changes nothing. Make it a note, or skip it.')
         if 'after' not in item and 'after' not in entry:
@@ -229,8 +266,12 @@ def apply(root, ident, seen, job, chosen, every=False):
             if every and _pick_flag(pick):
                 raise ValueError(FLAGGED)  # A change it took in made it one to check.
             # The shared text swap: GONE when its words are not there once; image data and
-            # references kept as Blog Studio's codec keeps them (desk._landed).
-            updated = shared.text_fit(desk.CODEC)(draft, item, after, text)
+            # references kept as Blog Studio's codec keeps them (desk._landed). Alt text
+            # changes only the words of one image reference, which the codec would put back.
+            if item.get('alt'):
+                updated = _alt_fit(draft, item, after, text)
+            else:
+                updated = shared.text_fit(desk.CODEC)(draft, item, after, text)
             # A change that only an image reference made, put back as it was, is no change.
             if updated.strip() == text.strip():
                 raise ValueError(SAME)
@@ -276,7 +317,7 @@ def apply(root, ident, seen, job, chosen, every=False):
         desk._set(draft, part, text)
         changed.append(part)
     if changed:
-        desk._write(root, ident, draft, changed)
+        draft = desk._write(root, ident, draft, changed)
     # Only once the draft is written are the proposals marked applied, and the others kept
     # in step with it.
     for pick in applied:
@@ -288,6 +329,9 @@ def apply(root, ident, seen, job, chosen, every=False):
                 if other.get('group') == item['group'] and other['state'] == 'open':
                     other['state'] = 'skipped'  # An alternative to the one chosen.
     for name in sorted(touched):
+        if held[name].get('kind') == 'finish-geo' and changed:
+            # The review's own changes do not make it out of date (geo_view).
+            held[name]['basis'] = basis(draft)
         studio.write_json(_path(root, ident, name), held[name])
     done = {'applied': len(applied), 'left': left}
     if carried:
@@ -1093,7 +1137,7 @@ POLISH_VOICE = (
 )
 
 
-def request(root, ident, draft, tool, level=None, guide=None):
+def request(root, ident, draft, tool, level=None, guide=None, count=None):
     """The kind, payload, guidance and job details for one finishing tool on this draft."""
     import blog_runner
     import desk_jobs
@@ -1149,6 +1193,9 @@ def request(root, ident, draft, tool, level=None, guide=None):
             'part. Changes are proposals the person previews before applying; do not '
             'return rewritten files. Empty suggestions means no changes.'
         )
+    elif tool in ADDITIONS:
+        payload, guidance, more = _addition(root, ident, draft, tool, extra, shared, count)
+        meta.update(more)
     elif tool == 'voice':
         # The guide's text is put in the payload: the desk's own context stays tone-only.
         chosen = _guide(root, guide)
@@ -1486,6 +1533,695 @@ def _read_geo(draft, found):
     return items, dropped, extra
 
 
+# Improve discovery's additions, each on request: an FAQ or key takeaways as a new section, a
+# comparison table or a quotation from a source after a paragraph, alt text for an image that
+# has none, a definition-style opening, and likely search questions (advice only). Each is a
+# proposal the person previews, then applies or skips; nothing is applied by itself. Each
+# writes only from the draft, its brief and its selected sources (blog-geo-review.md), and
+# works on any desk post, so a review of a published post can ask for the same ones.
+ADDITIONS = ('faq', 'table', 'quotes', 'takeaways', 'alt', 'queries', 'opener')
+GEO_RULES = (
+    'Write only from the draft, its brief, its selected sources and any research supplied. '
+    'Never invent a statistic, quotation, citation, link, name, result or experience: where '
+    'the evidence is missing, leave the addition out and say in summary what source would be '
+    'needed. Keep the author’s voice, stance and qualifiers. Do not promise rankings, '
+    'citations or traffic, and do not mention search engines or AI assistants in the text.'
+)
+FAQ_HEADING = 'Frequently asked questions'
+TAKEAWAYS_HEADING = 'Key takeaways'
+FAQ_FOUND = re.compile(
+    r'\b(?:faqs?|frequently asked questions|questions and answers|q\s?&\s?a|common questions)'
+    r'(?![\w&])',
+    re.I,
+)
+TAKEAWAYS_FOUND = re.compile(r'\b(?:key takeaways|takeaways|tl;?\s?dr|at a glance)\b', re.I)
+# A heading that closes a post with a call to action: an FAQ goes before it.
+CTA = re.compile(
+    r'\b(?:next steps?|get started|try it|call to action|learn more|sign up|contact us|'
+    r'get in touch|what to do next|your turn|join us|book a demo|start (?:your|a) free)\b',
+    re.I,
+)
+FAQ_COUNTS = (3, 4, 5, 6)
+TAKEAWAYS_MOST = 6
+TABLES_MOST = 2
+QUOTES_MOST = 3
+QUERIES_MOST = 10
+ALT_MOST = 20
+ALT_LIMIT = 125  # characters of alt text, as screen readers read it comfortably
+NO_COUNT = 'Choose 3 to 6 questions.'
+NO_QUOTE_SOURCES = 'Add a source first: quotations come only from your sources, word for word.'
+NO_IMAGES = 'This post has no images to describe.'
+ALL_ALT = 'Every image in this post already has alt text.'
+STALE_ADDITION = (
+    'This was suggested before the post’s latest changes, so it was not added. Run it again '
+    'for the latest.'
+)
+ALT_NOTE = (
+    'Written from what the post says about this image: its caption, the text around it and '
+    'its file name. Blog Studio cannot see the image itself, so check this describes it.'
+)
+ALT_KEEP = (
+    'Keep the image reference as it is, and change only the words between ![ and ], on one '
+    'line of up to 125 characters.'
+)
+FAQ = (
+    'Write a short FAQ for this post: the questions a reader of it would ask next, each with '
+    'an answer of one to three sentences. Write questions_wanted questions, or fewer when the '
+    'post cannot answer that many: a question the draft and its sources do not answer is left '
+    'out, never guessed. Each answer says only what the draft or its sources say. Do not repeat '
+    'the post’s headings as questions. Also name, in closing_cta, the id of the last section '
+    'when it is a closing call to action (the FAQ goes before it), or "" when there is none.'
+)
+FAQ_AGAIN = (
+    ' The post already has an FAQ, in faq_section: propose its new form instead of a second '
+    'one, keeping each question and answer that still holds, correcting any the draft no '
+    'longer supports, and adding the reader questions it misses.'
+)
+FAQ_JSON = (
+    'Return JSON in content: {"questions": [{"question": ..., "answer": ...}], "closing_cta": '
+    '..., "summary": ...}. Each question is one line ending with a question mark; each answer '
+    'is plain prose with no heading; summary says in a sentence what was left out and why, '
+    'or "".'
+)
+TAKEAWAYS = (
+    'Write the key takeaways of this post: three to five of its own points, each one short '
+    'line a reader could act on or remember, in the order the post makes them. Add no point '
+    'the post does not make.'
+)
+TAKEAWAYS_AGAIN = (
+    ' The post already has key takeaways, in takeaways_section: propose their new form instead '
+    'of a second set.'
+)
+TAKEAWAYS_JSON = (
+    'Return JSON in content: {"takeaways": ["...", ...], "summary": ...}, each takeaway one '
+    'line with no list mark; summary is one sentence or "".'
+)
+TABLE = (
+    'Where this post really compares things (options, versions, approaches, before and after), '
+    'propose a Markdown comparison table of what it says about them, placed after the '
+    'paragraph that makes the comparison. Build every cell from the post or its sources, '
+    'never fill a cell the post does not support, and propose no table where the post does '
+    'not compare things.'
+)
+TABLE_JSON = (
+    'Return JSON in content: {"tables": [{"part": ..., "after_text": ..., "table": ..., '
+    '"why": ...}], "summary": ...}, at most two. part is "opening" or the id of a section in '
+    'sections; after_text is the last sentence of the paragraph the table follows, copied '
+    'exactly from that part; table is a Markdown table with a header row and a separator '
+    'row; summary says, when there is no table, why ("" otherwise).'
+)
+QUOTES = (
+    'Propose up to three quotations from the sources that support a point the post makes: '
+    'each an exact passage copied word for word from one source in sources, never '
+    'paraphrased, joined or invented, placed after the paragraph whose point it supports. '
+    'Choose passages a reader would find useful, of one to three sentences.'
+)
+QUOTES_JSON = (
+    'Return JSON in content: {"quotes": [{"source": ..., "quote": ..., "part": ..., '
+    '"after_text": ..., "why": ...}], "summary": ...}. source is the id of the source in '
+    'sources; quote is copied exactly from its text; part is "opening" or the id of a section '
+    'in sections; after_text is the last sentence of the paragraph the quotation follows, '
+    'copied exactly from that part; summary is one sentence or "".'
+)
+ALT = (
+    'Write alt text for each image in images_without_alt. You cannot see the images: write '
+    'only from what the post says about each one, in its context (the paragraphs around it) '
+    'and its file name. Never describe what the image shows beyond what that says. Keep each '
+    'under 125 characters, plain, with no "Image of" or "Picture of". When the post says '
+    'nothing that tells what an image shows, return "" for its alt.'
+)
+ALT_JSON = (
+    'Return JSON in content: {"alts": [{"image": ..., "alt": ..., "why": ...}]}, image being '
+    'the image id from images_without_alt; why names what the alt rests on, such as "the '
+    'caption under it".'
+)
+QUERIES = (
+    'List the questions people might ask an AI assistant or a search engine that this post '
+    'answers well: five to ten, each as a person would type or say it. These are advice for '
+    'the author only; they are not added to the post. List only questions the post really '
+    'answers.'
+)
+QUERIES_JSON = 'Return JSON in content: {"queries": ["...", ...], "summary": ...}.'
+OPENER = (
+    'Propose a definition-style opening: one or two sentences that say plainly what the '
+    'post’s topic is and what the post argues, to replace the opening’s first one or two '
+    'sentences. Define only what the post itself says, in the author’s voice.'
+)
+OPENER_JSON = (
+    'Return JSON in content: {"before": ..., "after": ..., "why": ...}. before is the '
+    'opening’s first one or two sentences, copied exactly ("" when the opening is empty); '
+    'after is the one- or two-sentence replacement, with no heading.'
+)
+HTTP_IMAGE = re.compile(r'!\[([^\[\]\n]*)\]\((?![ \t]*<?data:)([^()\s]+)((?:[ \t]+"[^"\n]*")?)\)')
+SEPARATOR = re.compile(r'^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)*\|?\s*$')
+
+
+def _found_section(draft, pattern):
+    """The section whose heading names it as an FAQ (or key takeaways), or None."""
+    return next((s for s in draft['sections'] if pattern.search(s['heading'] or '')), None)
+
+
+def _addition(root, ident, draft, tool, extra, shared_words, count):
+    """The payload, guidance and job details for one of Improve discovery's additions."""
+    import desk_jobs
+
+    research, said = desk_jobs._research_extra(root, ident)
+    payload = {**_payload(draft, extra), **research}
+    common = _reference('modules', 'blog-geo-review.md') + '\n\n' + shared_words + said
+    common += '\n\n' + GEO_RULES + '\n'
+    meta = {}
+    if tool == 'faq':
+        if type(count) is not int or count not in FAQ_COUNTS:
+            raise ValueError(NO_COUNT)
+        meta['count'] = count
+        payload['questions_wanted'] = count
+        found = _found_section(draft, FAQ_FOUND)
+        guidance = FAQ
+        if found:
+            payload['faq_section'] = {key: found[key] for key in ('id', 'heading', 'text')}
+            guidance += FAQ_AGAIN
+        guidance += '\n\n' + common + FAQ_JSON
+    elif tool == 'takeaways':
+        found = _found_section(draft, TAKEAWAYS_FOUND)
+        guidance = TAKEAWAYS
+        if found:
+            payload['takeaways_section'] = {key: found[key] for key in ('id', 'heading', 'text')}
+            guidance += TAKEAWAYS_AGAIN
+        guidance += '\n\n' + common + TAKEAWAYS_JSON
+    elif tool == 'table':
+        guidance = TABLE + '\n\n' + common + TABLE_JSON
+    elif tool == 'quotes':
+        if not extra['sources']:
+            raise ValueError(NO_QUOTE_SOURCES)
+        guidance = QUOTES + '\n\n' + common + QUOTES_JSON
+    elif tool == 'alt':
+        wanted = _alt_wanted(draft)
+        if not wanted:
+            raise ValueError(ALL_ALT if _has_images(draft) else NO_IMAGES)
+        payload['images_without_alt'] = wanted
+        guidance = ALT + '\n\n' + common + ALT_JSON
+    elif tool == 'queries':
+        guidance = QUERIES + '\n\n' + common + QUERIES_JSON
+    else:
+        guidance = OPENER + '\n\n' + common + OPENER_JSON
+    return payload, guidance, meta
+
+
+def _known(job):
+    """Every word the job read: the post, its sources and its research, for the facts check."""
+    payload = job.get('payload') if isinstance(job.get('payload'), dict) else {}
+    texts = [str(payload.get('title') or ''), str(payload.get('opening') or '')]
+    for key in ('sections', 'sources'):
+        texts += [
+            str(row.get('text') or '') for row in payload.get(key) or [] if isinstance(row, dict)
+        ]
+    for key in ('research_bundle', 'research'):
+        if payload.get(key):
+            texts.append(json_text(payload[key]))
+    return '\n'.join(texts)
+
+
+def _added_facts(text, known):
+    """A flag when an addition has a number or a link that nothing the job read has."""
+    from studio_core import text_checks
+
+    found, have = text_checks.facts(text), text_checks.facts(known)
+    said = [
+        word
+        for key, word in (('numbers', 'a number'), ('links', 'a link'))
+        if {value for value, _ in found[key]} - {value for value, _ in have[key]}
+    ]
+    if not said:
+        return ''
+    return (
+        'Check the facts: this adds '
+        + ' and '.join(said)
+        + ' the post and its sources do not have.'
+    )
+
+
+def _line(value, limit):
+    """One line of plain text, or '' when it is not one."""
+    if not isinstance(value, str):
+        return ''
+    value = ' '.join(value.split()).strip()
+    return value if value and len(value) <= limit else ''
+
+
+def _payload_section(job, key):
+    payload = job.get('payload') if isinstance(job.get('payload'), dict) else {}
+    found = payload.get(key)
+    return found if isinstance(found, dict) and isinstance(found.get('id'), str) else None
+
+
+def _faq_place(draft, cta):
+    """Where an FAQ goes by default: before a closing call to action, else at the end. The
+    call to action is the last section, as the job named it or as its heading says."""
+    if len(draft['sections']) < 2:
+        return 'end', None
+    last = draft['sections'][-1]
+    if cta == last['id'] or CTA.search(last['heading'] or ''):
+        return last['id'], last['id']
+    return 'end', None
+
+
+def _section_item(draft, job, key, heading, text, at, extra):
+    """A new section, or a new form of the one the post already has (its whole text)."""
+    found = _payload_section(job, key)
+    current = desk.CODEC.section(draft, found['id']) if found else None
+    if current is not None:
+        return {
+            'part': current['id'],
+            'whole': True,
+            'before': desk_images.scrub(found.get('text') or ''),
+            'after': text,
+            **extra,
+        }
+    return {
+        'part': 'new',
+        'insert': True,
+        'heading': heading,
+        'before': '',
+        'after': text,
+        'at': at,
+        'basis': basis(job.get('payload') or {}),
+        **extra,
+    }
+
+
+def faq_text(rows):
+    """An FAQ's questions and answers as Markdown: each question in bold, then its answer."""
+    return '\n\n'.join('**' + row['question'] + '**\n\n' + row['answer'] for row in rows)
+
+
+def takeaways_text(rows):
+    return '\n'.join('- ' + row['point'] for row in rows)
+
+
+def _read_faq(draft, found, job):
+    if not isinstance(found, dict):
+        raise ValueError(UNREADABLE)
+    rows, dropped = _rows(found, 'questions', ('question', 'answer'))
+    count = ((job.get('metadata') or {}).get('desk') or {}).get('count') or 5
+    kept, seen = [], set()
+    deepest = desk.limit(draft)
+    for row in rows:
+        question = _line(row['question'], 300).strip('*# ').strip()
+        answer = row['answer'].strip()
+        if (
+            not question
+            or not answer
+            or len(answer) > 2000
+            or desk.has_heading(answer, deepest)
+            or question.casefold() in seen
+        ):
+            dropped += 1
+            continue
+        seen.add(question.casefold())
+        kept.append({'question': question, 'answer': answer})
+    dropped += max(0, len(kept) - count)
+    kept = kept[:count]
+    extra = {'count': count}
+    if _text(found.get('summary'), 2000):
+        extra['summary'] = _text(found['summary'], 2000)
+    if not kept:
+        return [], dropped, extra
+    text = faq_text(kept)
+    at, cta = _faq_place(draft, found.get('closing_cta'))
+    item = _section_item(
+        draft,
+        job,
+        'faq_section',
+        FAQ_HEADING,
+        text,
+        at,
+        {
+            'questions': kept,
+            'cta': cta,
+            'note': 'Each answer comes only from the post and its sources; a question they '
+            'do not answer was left out.',
+            'flag': _added_facts(text, _known(job)),
+        },
+    )
+    return [item], dropped, extra
+
+
+def _read_takeaways(draft, found, job):
+    if not isinstance(found, dict) or not isinstance(found.get('takeaways'), list):
+        raise ValueError(UNREADABLE)
+    kept, seen, dropped = [], set(), 0
+    for value in found['takeaways'][:20]:
+        point = _line(value.get('point') if isinstance(value, dict) else value, 300)
+        point = point.lstrip('-*• ').strip()
+        if not point or point.casefold() in seen or desk.has_heading(point, desk.limit(draft)):
+            dropped += 1
+            continue
+        seen.add(point.casefold())
+        kept.append({'point': point})
+    dropped += max(0, len(kept) - TAKEAWAYS_MOST)
+    kept = kept[:TAKEAWAYS_MOST]
+    summary = _text(found.get('summary'), 2000)
+    extra = {'summary': summary} if summary else {}
+    if not kept:
+        return [], dropped, extra
+    text = takeaways_text(kept)
+    first = draft['sections'][0]['id'] if draft['sections'] else 'end'
+    item = _section_item(
+        draft,
+        job,
+        'takeaways_section',
+        TAKEAWAYS_HEADING,
+        text,
+        first,
+        {
+            'points': kept,
+            'note': 'The post’s own points, in its order.',
+            'flag': _added_facts(text, _known(job)),
+        },
+    )
+    return [item], dropped, extra
+
+
+def _paragraph_end(draft, part, text):
+    """`text` located once in its part, where it ends a paragraph (so something can go after
+    it), or None."""
+    if part not in _prose_parts(draft):
+        return None
+    anchor = _located(draft, part, text)
+    if anchor is None:
+        return None
+    whole = desk.text_of(draft, part)
+    rest = whole[whole.index(anchor) + len(anchor) :].lstrip(' \t')
+    return anchor if not rest.strip() or rest.startswith('\n') else None
+
+
+def _read_table(draft, found, job):
+    if not isinstance(found, dict):
+        raise ValueError(UNREADABLE)
+    rows, dropped = _rows(found, 'tables', ('part', 'after_text', 'table'))
+    items, known = [], _known(job)
+    for row in rows:
+        anchor = _paragraph_end(draft, row['part'], row['after_text'])
+        lines = [line.strip() for line in row['table'].strip().splitlines()]
+        if (
+            anchor is None
+            or not 3 <= len(lines) <= 40
+            or not all(TABLE_LINE.match(line) for line in lines)
+            or not SEPARATOR.match(lines[1])
+            or len(items) >= TABLES_MOST
+        ):
+            dropped += 1
+            continue
+        table = '\n'.join(lines)
+        items.append(
+            {
+                'part': row['part'],
+                'before': anchor,
+                'after': anchor + '\n\n' + table,
+                'note': _text(row.get('why'), 500),
+                'flag': _added_facts(table, known),
+            }
+        )
+    summary = _text(found.get('summary'), 2000)
+    return items, dropped, {'summary': summary} if summary else {}
+
+
+def _plain(text):
+    return ' '.join(str(text or '').replace('’', "'").replace('‘', "'").split())
+
+
+def _read_quotes(draft, found, job):
+    if not isinstance(found, dict):
+        raise ValueError(UNREADABLE)
+    rows, dropped = _rows(found, 'quotes', ('source', 'quote', 'part', 'after_text'))
+    payload = job.get('payload') if isinstance(job.get('payload'), dict) else {}
+    sources = [s for s in payload.get('sources') or [] if isinstance(s, dict)]
+    items, seen = [], set()
+    for row in rows:
+        source = next((s for s in sources if row['source'] in (s.get('id'), s.get('name'))), None)
+        quote = ' '.join(row['quote'].split()).strip('"“”').strip()
+        anchor = _paragraph_end(draft, row['part'], row['after_text'])
+        # Word for word: the passage is in the source's own text, spacing aside.
+        if (
+            source is None
+            or not 20 <= len(quote) <= 800
+            or _plain(quote) not in _plain(source.get('text'))
+            or anchor is None
+            or quote in seen
+            or len(items) >= QUOTES_MOST
+        ):
+            dropped += 1
+            continue
+        seen.add(quote)
+        name = _line(source.get('name'), 300) or 'a source'
+        why = _text(row.get('why'), 500)
+        items.append(
+            {
+                'part': row['part'],
+                'before': anchor,
+                'after': anchor + '\n\n> ' + quote + '\n>\n> — ' + name,
+                'source': name,
+                'note': ' '.join(filter(None, [why, 'Word for word from ' + name + '.'])),
+                'flag': '',
+            }
+        )
+    summary = _text(found.get('summary'), 2000)
+    return items, dropped, {'summary': summary} if summary else {}
+
+
+def _image(text):
+    """(kind, target, alt) for text that is exactly one image: a reference to an image the
+    draft holds, or an ordinary http(s) image; None otherwise."""
+    text = text.strip()
+    found = desk_images.REFERENCE.fullmatch(text)
+    if found:
+        label = found.group(2) or found.group(1)
+        return 'reference', desk_images.key(label), found.group(1) if found.group(2) else ''
+    found = HTTP_IMAGE.fullmatch(text)
+    if found:
+        return 'link', found.group(2) + found.group(3), found.group(1)
+    return None
+
+
+def _with_alt(reference, alt):
+    found = desk_images.REFERENCE.fullmatch(reference)
+    if found:
+        return '![' + alt + '][' + (found.group(2) or found.group(1)) + ']'
+    found = HTTP_IMAGE.fullmatch(reference)
+    return '![' + alt + '](' + found.group(2) + found.group(3) + ')'
+
+
+def _image_parts(draft):
+    return ['opening'] + [s['id'] for s in draft['sections']]
+
+
+def _has_images(draft):
+    return any(
+        desk_images.REFERENCE.search(desk.text_of(draft, part))
+        or HTTP_IMAGE.search(desk.text_of(draft, part))
+        for part in _image_parts(draft)
+    )
+
+
+def _alt_wanted(draft):
+    """Each image in the text with no alt text of its own, with what the post says around it
+    and its file name, for a job that cannot see the images. An image kept in the Google Doc
+    shows a placeholder and is left as it is."""
+    held = draft.get('images') or {}
+    images = {desk_images.key(label): entry for label, entry in held.items()}
+    wanted = []
+    for part in _image_parts(draft):
+        text = desk.text_of(draft, part)
+        masked = desk_images._masked(text)
+        found = [(m, 'reference') for m in desk_images.REFERENCE.finditer(masked)]
+        found += [(m, 'link') for m in HTTP_IMAGE.finditer(masked)]
+        for match, kind in sorted(found, key=lambda pair: pair[0].start()):
+            reference = text[match.start() : match.end()]
+            alt = match.group(1).strip()
+            if kind == 'reference':
+                label = match.group(2) or match.group(1)
+                if not match.group(2):
+                    alt = ''  # ![image1][]: its words are its label, not alt text.
+                entry = images.get(desk_images.key(label))
+                name = (entry if isinstance(entry, dict) else {}).get('title') or label
+            else:
+                name = match.group(2).rsplit('/', 1)[-1].split('?')[0]
+            if (
+                (alt and not desk_images.OURS.fullmatch(alt))
+                or match.group(1).strip() == desk_images.KEPT_ALT
+                or not _once(text, reference)
+            ):
+                continue
+            paragraphs = re.split(r'\n[ \t]*\n', text)
+            at = len(re.split(r'\n[ \t]*\n', text[: match.start()])) - 1
+            around = '\n\n'.join(paragraphs[max(0, at - 1) : at + 2])
+            wanted.append(
+                {
+                    'image': 'i' + str(len(wanted) + 1),
+                    'part': part,
+                    'reference': reference,
+                    'file_name': str(name)[:200],
+                    'context': desk_images.scrub(around)[:1200],
+                }
+            )
+            if len(wanted) >= ALT_MOST:
+                return wanted
+    return wanted
+
+
+def _read_alt(draft, found, job):
+    if not isinstance(found, dict):
+        raise ValueError(UNREADABLE)
+    rows, dropped = _rows(found, 'alts', ('image', 'alt'))
+    payload = job.get('payload') if isinstance(job.get('payload'), dict) else {}
+    wanted = {
+        image.get('image'): image
+        for image in payload.get('images_without_alt') or []
+        if isinstance(image, dict)
+    }
+    items, unknown, done = [], 0, set()
+    for row in rows:
+        image = wanted.get(row['image'])
+        if image is None or row['image'] in done:
+            dropped += 1
+            continue
+        done.add(row['image'])
+        if not row['alt'].strip():
+            unknown += 1  # The post says nothing that tells what it shows.
+            continue
+        alt = _line(row['alt'], ALT_LIMIT)
+        reference = image.get('reference') or ''
+        if (
+            not alt
+            or '[' in alt
+            or ']' in alt
+            or _image(reference) is None
+            or _located(draft, image.get('part'), reference) != reference
+        ):
+            dropped += 1
+            continue
+        why = _text(row.get('why'), 300).rstrip('.')
+        items.append(
+            {
+                'part': image['part'],
+                'before': reference,
+                'after': _with_alt(reference, alt),
+                'alt': True,
+                'note': ALT_NOTE + (' It rests on ' + why + '.' if why else ''),
+                'flag': '',
+            }
+        )
+    unknown += sum(1 for name in wanted if name not in done)
+    return items, dropped, {'unknown': unknown} if unknown else {}
+
+
+def _alt_fit(draft, item, after, text):
+    """An image reference with new alt text in place of the one it had: the same image, and
+    only its words changed."""
+    if not _once(text, item['before']):
+        raise ValueError(GONE)
+    was, now = _image(item['before']), _image(after)
+    alt = now[2] if now else ''
+    if (
+        now is None
+        or was is None
+        or now[:2] != was[:2]
+        or not alt.strip()
+        or len(alt) > ALT_LIMIT
+        or '\n' in after.strip()
+    ):
+        raise ValueError(ALT_KEEP)
+    if now[0] == 'reference':
+        for label, entry in (draft.get('images') or {}).items():
+            if desk_images.key(label) == now[1] and isinstance(entry, dict):
+                draft['images'] = {**draft['images'], label: {**entry, 'alt': alt.strip()}}
+    at = text.index(item['before'])
+    return text[:at] + after.strip() + text[at + len(item['before']) :]
+
+
+def _read_queries(draft, found, job):
+    if not isinstance(found, dict) or not isinstance(found.get('queries'), list):
+        raise ValueError(UNREADABLE)
+    kept, seen, dropped = [], set(), 0
+    for value in found['queries'][:30]:
+        query = _line(value.get('query') if isinstance(value, dict) else value, 200)
+        if not query or query.casefold() in seen:
+            dropped += 1
+            continue
+        seen.add(query.casefold())
+        kept.append(query)
+    dropped += max(0, len(kept) - QUERIES_MOST)
+    extra = {'queries': kept[:QUERIES_MOST]}
+    if _text(found.get('summary'), 2000):
+        extra['summary'] = _text(found['summary'], 2000)
+    return [], dropped, extra
+
+
+def _read_opener(draft, found, job):
+    if not isinstance(found, dict) or not isinstance(found.get('after'), str):
+        raise ValueError(UNREADABLE)
+    note = _text(found.get('why'), 500)
+    opening = draft['opening']
+    if not opening.strip():
+        after = found['after'].strip()
+        if not after or len(after) > 1000 or desk.has_heading(after, desk.limit(draft)):
+            return [], 1, {}
+        item = {'part': 'opening', 'whole': True, 'before': '', 'after': after}
+        return [{**item, 'note': note, 'flag': ''}], 0, {}
+    before = _located(draft, 'opening', found.get('before'))
+    # It replaces the opening's first sentences, so they are where the opening starts.
+    if before is None or not opening.lstrip().startswith(before):
+        return [], 1, {}
+    after = _replacement(draft, 'opening', before, found['after'])
+    if after is None or len(after) > 1000:
+        return [], 1, {}
+    item = {'part': 'opening', 'before': before, 'after': after, 'note': note}
+    return [{**item, 'flag': _flags(before, after)}], 0, {}
+
+
+ADDITION_READERS = {
+    'finish-faq': _read_faq,
+    'finish-table': _read_table,
+    'finish-quotes': _read_quotes,
+    'finish-takeaways': _read_takeaways,
+    'finish-alt': _read_alt,
+    'finish-queries': _read_queries,
+    'finish-opener': _read_opener,
+}
+
+
+def _insert(root, ident, seen, job, found, item, entry):
+    """Add a proposed section (an FAQ or key takeaways) to the draft, where the person
+    placed it: before a section, or at the end. Only while the post is as the job read it."""
+    import desk_jobs
+
+    if item['state'] != 'open':
+        raise ValueError('This suggestion was already applied or skipped.')
+    draft = desk.read(root, ident)
+    desk.checked(draft, seen, ['outline'])
+    if any(desk_jobs.busy(other) for other in desk_jobs.jobs(root, ident)):
+        raise ValueError('A desk job is working on this draft. Wait for it, or stop it, then add.')
+    if not present(draft, {**item, 'at': 'end'}):
+        raise ValueError(STALE_ADDITION)
+    after = entry.get('after', item['after'])
+    if not isinstance(after, str) or not after.strip():
+        raise ValueError(EMPTY)
+    if len(after) > desk.LIMIT:
+        raise ValueError('Keep one part under 200,000 characters.')
+    after = after.strip()
+    desk.checked_text('new', after, desk.limit(draft))
+    at = entry.get('at', item.get('at'))
+    ids = [section['id'] for section in draft['sections']]
+    if at != 'end' and at not in ids:
+        raise ValueError('Choose where the new section goes.')
+    added = {'id': desk._id(set(ids)), 'heading': item['heading'], 'brief': '', 'text': after}
+    draft['sections'].insert(len(ids) if at == 'end' else ids.index(at), added)
+    desk._write(root, ident, draft, [added['id'], 'outline'])
+    item.update(state='applied', landed=after, section=added['id'], placed=at)
+    studio.write_json(_path(root, ident, job), found)
+    return {'applied': 1, 'left': [], 'added': added['id']}
+
+
 READERS = {
     'finish-copyedit': _read_copyedit,
     'finish-humanize': _read_humanize,
@@ -1528,6 +2264,8 @@ def settle(root, ident, draft, job):
             items, dropped, extra = _read_humanize(
                 draft, found, earlier=_earlier(job), fixes=_accepted(root, ident)
             )
+        elif job['kind'] in ADDITION_READERS:
+            items, dropped, extra = ADDITION_READERS[job['kind']](draft, found, job)
         else:
             items, dropped, extra = READERS[job['kind']](draft, found)
     except (TypeError, AttributeError, KeyError):
@@ -1537,6 +2275,11 @@ def settle(root, ident, draft, job):
         extra['level'] = meta['level']
     if meta.get('guide_name'):
         extra['guide_name'] = meta['guide_name']  # Which voice guide the set applies.
+    if job['kind'] == 'finish-geo':
+        # The post as the review read it, so Before publishing can say when it changed since.
+        extra['basis'] = basis(job.get('payload') or {})
+        if meta.get('auto'):
+            extra['auto'] = True  # The one review the post asked for when it was made.
     return keep(root, ident, job['id'], job['kind'], items, dropped=dropped, **extra)
 
 
@@ -3484,6 +4227,12 @@ NAMES = {
     'humanize': 'Humanize',
     'facts': 'Check facts',
     'geo': 'GEO',
+    'faq': 'FAQ',
+    'table': 'Comparison table',
+    'quotes': 'Quotes from sources',
+    'takeaways': 'Key takeaways',
+    'alt': 'Image alt text',
+    'opener': 'Definition opening',
     'headline': 'Headline and opening',
     'feedback': 'Feedback',
     'voice': 'Apply a voice',

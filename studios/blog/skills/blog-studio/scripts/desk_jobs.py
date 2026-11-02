@@ -41,6 +41,13 @@ KINDS = (
     'finish-feedback',
     'finish-voice',
     'finish-geo',
+    'finish-faq',
+    'finish-table',
+    'finish-quotes',
+    'finish-takeaways',
+    'finish-alt',
+    'finish-queries',
+    'finish-opener',
 )  # A blog's own desk jobs; desk-angles runs before there is a blog.
 FINISH = (
     'finish-copyedit',
@@ -50,6 +57,13 @@ FINISH = (
     'finish-feedback',
     'finish-voice',
     'finish-geo',
+    'finish-faq',
+    'finish-table',
+    'finish-quotes',
+    'finish-takeaways',
+    'finish-alt',
+    'finish-queries',
+    'finish-opener',
 )
 # The basis rule and the words a desk job is asked with are the shared desk's
 # (studio_core.drafting.basis and prompts).
@@ -1438,14 +1452,16 @@ def _start_view(root, ident, rows):
     }
 
 
-def finish(root, ident, seen, tool, level=None, guide=None, chain=None):
+def finish(root, ident, seen, tool, level=None, guide=None, chain=None, count=None):
     """Queue a finishing tool. It writes no part, so no card waits for it and no form is
     refused for it; its proposals are read against the draft when they come back. `chain`
-    is Review mode's: what to queue once this one settles."""
+    is Review mode's: what to queue once this one settles. `count` is an FAQ's questions."""
     import desk_finish
 
     draft = desk.read(root, ident)
-    kind, payload, guidance, meta = desk_finish.request(root, ident, draft, tool, level, guide)
+    kind, payload, guidance, meta = desk_finish.request(
+        root, ident, draft, tool, level, guide, count
+    )
     return _queue(
         root,
         ident,
@@ -1457,6 +1473,123 @@ def finish(root, ident, seen, tool, level=None, guide=None, chain=None):
         {'part': 'finishing', 'action': tool, **meta, **(chain or {})},
         parts=[],
     )
+
+
+# Include a GEO review: a post's own choice, kept in its record (off unless the person chose
+# it, so a post made before the choice existed has it off). When it is on, one GEO review runs
+# once the post's full draft is written and nothing else is under way; its proposals wait in
+# Finishing. It never runs again by itself: an out-of-date review says so, and the person runs
+# it again. Whether it was queued is kept on this computer beside the post's waiting
+# suggestions, so it is queued once.
+GEO_AUTO = 'geo-auto.json'
+GEO_CHOICE = 'Choose whether to include a GEO review.'
+
+
+def geo_included(record):
+    return (record.get('geo_review') or {}).get('include') is True
+
+
+def _geo_auto_path(root, ident):
+    return studio.inside(root, '.blog-runs', 'desk-proposals', studio.identifier(ident), GEO_AUTO)
+
+
+def geo_auto(root, ident):
+    """{job, at} once this post's own GEO review was queued here; {} before."""
+    target = _geo_auto_path(root, ident)
+    if not target.is_file() or target.is_symlink():
+        return {}
+    try:
+        found = studio.read_json(target)
+    except (ValueError, OSError):
+        return {}
+    return found if isinstance(found, dict) else {}
+
+
+def _written(draft, start):
+    """Whether the post's full draft is written: a start that wrote it has ended, or every
+    section has its text; a draft brought to the desk is written when it has any text."""
+    sections = draft['sections']
+    if not (draft['opening'].strip() or any(s['text'].strip() for s in sections)):
+        return False
+    if start is None:
+        return True
+    if not start.get('ended_at'):
+        return False
+    return 'draft' in (start.get('steps') or []) or all(s['text'].strip() for s in sections)
+
+
+def _geo_waiting(root, ident, draft):
+    """Why this post's GEO review has not run yet: 'draft' or 'busy'; '' when it may run."""
+    if not _written(draft, desk.read_start(root, ident)):
+        return 'draft'
+    if any(busy(job) for job in jobs(root, ident)):
+        return 'busy'
+    return ''
+
+
+def geo_due(root, ident):
+    """Queue the one GEO review this post asked for, when it is due. Best effort: it never
+    fails what called it, and a review that cannot be queued now waits for the next chance."""
+    try:
+        _guard(root, ident)
+        _, record = studio.item(root, 'articles', ident)
+        if not geo_included(record) or conversation_owned(root, ident) or geo_auto(root, ident):
+            return None
+        draft = desk.read(root, ident)
+        if _geo_waiting(root, ident, draft):
+            return None
+        job = finish(root, ident, draft['revision'], 'geo', chain={'auto': True})
+        studio.write_json(_geo_auto_path(root, ident), {'job': job['id'], 'at': studio.now()})
+        return job
+    except Exception:  # noqa: BLE001 - the choice waits; nothing the person did fails for it.
+        return None
+
+
+def geo_option(root, ident, include):
+    """Turn this post's GEO review on or off, in its record. Turned on for a written draft,
+    its one review runs now (or when the change under way ends)."""
+    if type(include) is not bool:
+        raise ValueError(GEO_CHOICE)
+    directory, record = studio.item(root, 'articles', ident)
+    if geo_included(record) != include:
+        record['geo_review'] = {'include': include}
+        studio.persist(directory, 'articles', record)
+    if include:
+        geo_due(root, ident)
+
+
+def geo_view(root, ident, draft, record, finishing, rows):
+    """The GEO review as Before publishing says it: whether the post asked for one, and
+    whether it is done, out of date (the post changed since), under way, waiting, or none."""
+    included = geo_included(record)
+    auto = geo_auto(root, ident)
+    found = finishing.get('geo')
+    working = next((row for row in rows if row['kind'] == 'finish-geo' and row['busy']), None)
+    if working:
+        status = 'working'
+    elif found:
+        import desk_finish
+
+        status = 'stale' if found.get('basis') not in (None, desk_finish.basis(draft)) else 'done'
+    elif included and not auto:
+        status = 'waiting'
+    else:
+        status = 'none'
+    shown = {'include': included, 'status': status}
+    if status == 'waiting':
+        shown['waiting'] = _geo_waiting(root, ident, draft) or 'busy'
+    if found:
+        shown['open'] = sum(1 for item in found.get('items', []) if item.get('state') == 'open')
+        shown['made_at'] = found.get('made_at')
+    last = next((row for row in reversed(rows) if row['kind'] == 'finish-geo'), None)
+    if (
+        last
+        and not last['busy']
+        and last['error']
+        and (not found or found.get('job') != last['id'])
+    ):
+        shown['problem'] = last['error']
+    return shown
 
 
 # Review mode ("Check spelling and grammar"): Copy edit, and when the person asked for it,
@@ -1811,7 +1944,9 @@ def _settle(root, job):
     if job['kind'] in FINISH:
         if (job['metadata'].get('desk') or {}).get('then'):
             _review_next(root, job)  # Review mode's Humanize, after its Copy edit.
+        geo_due(root, ident)
         return None  # Its proposals wait on this computer: nothing for the team to record.
+    geo_due(root, ident)  # The full draft may be written now.
     return ident
 
 
@@ -1822,6 +1957,16 @@ def ended(root, job):
         return _settle_angles(root, job) if unsettled(job) else None
     if unsettled(job):
         return _settle(root, job)
+    try:
+        return _ended(root, job)
+    finally:
+        if job.get('status') in ('failed', 'cancelled') and (job.get('metadata') or {}).get(
+            'article'
+        ):
+            geo_due(root, job['metadata']['article'])  # What waited on it may go ahead.
+
+
+def _ended(root, job):
     if job.get('status') == 'failed' and (job['metadata'].get('desk') or {}).get('start'):
         try:
             _guard(root, job['metadata']['article'])
@@ -1948,6 +2093,7 @@ def view(root, ident):
     directory, record = studio.item(root, 'articles', ident)
     sendable = desk_finish.google_ready(record)
     rows = [_row(job) for job in jobs(root, ident)][-60:]
+    finishing = desk_finish.summary(root, ident, draft)
     style_name = None
     if draft.get('style'):
         try:
@@ -2018,9 +2164,11 @@ def view(root, ident):
         'execution': record.get('execution', 'runner'),
         'conversation_scope': record.get('conversation_scope'),
         # Finishing: the newest suggestions from each tool, waiting on this computer.
-        'finishing': desk_finish.summary(root, ident, draft),
+        'finishing': finishing,
         # Review mode's check: whether it also suggests human-sounding wording, and how much.
         'review': review_view(root, ident),
+        # Include a GEO review, and how this post's GEO review stands (Before publishing).
+        'geo_review': geo_view(root, ident, draft, record, finishing, rows),
         # Whether research was read for this draft, and how many sources it drew on.
         'research': _research_read(directory),
         # The SEO meta description kept with this post (Repurpose), and whether it may be

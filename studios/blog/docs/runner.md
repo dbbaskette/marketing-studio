@@ -67,6 +67,14 @@ desk. A topic or an outline takes three steps; a draft takes one screen (below):
      draft next; **Shape an outline with me first** opens the outline on the desk.
    - **A draft** switches to the polishing screen.
 
+Both ways of starting, and the polishing screen, offer **GEO review (optional): Include a
+GEO review**, off by default. When it is ticked, one GEO review runs as part of the post's
+work once its full draft is written (after a first pass or Review mode's check, when there
+is one), and its proposals wait in Finishing for you to preview, then apply or skip. It
+never runs again by itself. The choice is kept in the post's own record and can be changed
+on its desk, under Finishing's Improve discovery tools; turned on for a written draft, its
+one review runs then. Posts made before the choice existed have it off.
+
 **Edit or polish a draft** is one screen with no step tabs and no kind of post to choose:
 
 - **Your draft**, pasted, uploaded or from a Google Doc (every tab is read, and the Doc is
@@ -280,13 +288,32 @@ nothing changes until you apply.
   checked at once with no assistant, with **Fix** on each finding.
 - **Check facts against sources**: each claim supported, not in your sources, or
   contradicted, with the passage, **Add a source** and **Keep it**.
+- **Improve discovery**: **GEO: retrieval readiness** proposes direct answers, clear
+  entities and useful evidence. Beside it, each addition is asked for on its own and
+  previewed before anything changes: an **FAQ** of 3 to 6 questions, each answered only
+  from the post and its sources (a question they do not answer is left out), and **Key
+  takeaways**, each added as a section you place (an FAQ goes at the end, before a closing
+  call to action, unless you pick another place), with every question, answer or point
+  edited or dropped first and then all or only the ticked ones added. On a post that
+  already has one, it proposes that section's new form instead of a second one. A
+  **Comparison table** or **Quotes from sources** (word for word, with the source named)
+  goes after the paragraph it belongs to, **Image alt text** is written from what the post
+  says about each image (Blog Studio cannot see the images, and says so), a
+  **Definition-style opening** is compared with your opening, and **Likely search
+  questions** are advice for you, never added to the post. Nothing invents a number,
+  quotation or link: one the post and its sources do not have is flagged. **Include a GEO
+  review**, under the group, is this post's own choice (see New blog). An addition made
+  before the post's latest changes no longer fits and is run again.
 - **Headline and opening**: alternatives to apply.
 - **Feedback without a rewrite**: comments on shape, argument, audience and claims, each
   made a section note in one click.
 - **Apply a voice**: the draft rewritten part by part in one of your
   [voice guides](#voice-guides), keeping its structure, facts, numbers, names, quotes and
   links. A part whose facts, code or shape changed is flagged.
-- **Before publishing**: the pre-publish check, **Repurpose** (each copy becomes a new
+- **Before publishing**: the pre-publish check and, beside it, the **GEO review**: whether
+  it is done, under way, waiting, or out of date because the post changed, with **Run GEO
+  review** on every post at any time. An out-of-date review offers to run again; it never
+  reruns by itself. Then **Repurpose** (each copy becomes a new
   blog on the desk) and **Send to Google Doc** as suggestions, for a blog started from a
   Doc. Repurpose's **SEO meta description** is one line of up to 155 characters, counted
   as you edit it. It is kept with the post, in the blog's record, rather than made a new

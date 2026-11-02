@@ -207,3 +207,13 @@
 .desk-reading-document{padding:.3rem}
 .desk-suggestion-summary{padding:.7rem 1.2rem;border-bottom:1px solid var(--hair)}
 .desk-suggestion-summary>p{margin:0 0 .35rem}
+
+/* Improve discovery: an FAQ or key takeaways chosen row by row (opaque, like any form), the
+   post's Include a GEO review choice after the group's tools, and a kept meta description. */
+.desk-section-rows{display:grid;gap:.7rem;min-width:0}
+.desk-section-row{display:grid;gap:.35rem;min-width:0;padding:.7rem;border:1px solid var(--hair);border-radius:12px;background:var(--paper)}
+.desk-section-row .field{margin:0}
+.desk-section-row .input{width:100%;max-width:100%;box-sizing:border-box}
+.desk-section-preview{min-width:0}
+.desk-geo-choice{grid-column:1/-1;margin:.1rem 0 .4rem}
+.desk-meta-kept{display:grid;gap:.35rem;min-width:0;padding:.7rem;border:1px solid var(--hair);border-radius:12px;background:var(--paper);overflow-wrap:anywhere}
