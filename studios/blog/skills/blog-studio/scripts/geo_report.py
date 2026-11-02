@@ -108,8 +108,12 @@ def _require_lock():
 # The job: one request with every part of the report, read by the desk's own readers.
 def _draft(found):
     """The post as the desk reads it (title, opening, sections and images), with no record."""
+    import published_post
+
     draft = desk.split(found['markdown'], title=found.get('title') or '')
-    draft['title'] = (draft['title'] or found.get('title') or 'Untitled post')[:500]
+    # The title as a reader sees it: a page's words are escaped in its Markdown.
+    title = published_post.plain(draft['title'])
+    draft['title'] = (title or found.get('title') or 'Untitled post')[:500]
     for section in draft['sections']:
         section.setdefault('brief', '')
     return draft
@@ -431,7 +435,7 @@ def changes_since(earlier, later):
 
 
 # The report as the page and the downloads show it.
-LINK = re.compile(r'!?\[([^\[\]\n]*)\]\(([^()\s]*)(?:\s+"[^"\n]*")?\)')
+LINK = re.compile(r'!?\[((?:\\.|[^\[\]\n\\])*)\]\(([^()\s]*)(?:\s+"[^"\n]*")?\)')
 REFERENCE_IMAGE = re.compile(r'!\[([^\[\]\n]*)\]\[[^\[\]\n]*\]')
 
 
@@ -446,11 +450,13 @@ def _plain(text):
             return '[Image: ' + name + (' — alt text: ' + alt if alt else ', no alt text') + ']'
         return found.group(1)
 
+    import published_post
+
     text = LINK.sub(image_or_link, str(text or ''))
     text = REFERENCE_IMAGE.sub(lambda found: '[Image: ' + (found.group(1) or 'image') + ']', text)
-    text = re.sub(r'(\*\*|__|`)', '', text)
-    text = re.sub(r'(?<![\w*])\*(?=\S)([^*\n]+?)(?<=\S)\*(?![\w*])', r'\1', text)
-    return text
+    text = re.sub(r'(?<!\\)(\*\*|__|`)', '', text)
+    text = re.sub(r'(?<![\w*\\])\*(?=\S)([^*\n]+?)(?<=[^\s\\])\*(?![\w*])', r'\1', text)
+    return published_post.plain(text)  # A page's escaped characters, as a reader sees them.
 
 
 def _segments(before, after):
@@ -855,9 +861,11 @@ def markdown(root, ident):
     shown = view(root, ident)
     if shown['status'] != 'ready':
         raise ValueError(NOT_READY)
-    lines = ['# GEO report: ' + shown['title'], '']
+    import published_post
+
+    lines = ['# GEO report: ' + published_post._md(shown['title']), '']
     lines += [
-        '<' + shown['url'] + '>' if shown['url'] else 'From a team collection',
+        'Link: ' + shown['url'] if shown['url'] else 'From a team collection',
         '',
         'Read ' + _date(shown['read_at']) + '. Recommendations only: nothing on the page was '
         'changed. These are not ranking promises.',
@@ -943,7 +951,9 @@ def markdown(root, ident):
         for row in _access_rows(shown['access']):
             lines.append('- ' + ACCESS_WORDS.get(row['status'], '') + ': ' + row['said'])
         lines += ['', shown['access']['site_owner'], '']
-    return {'filename': _filename(shown, '.md'), 'content': '\n'.join(lines).rstrip() + '\n'}
+    # The page's and the assistant's words never become raw HTML or a non-http(s) link.
+    content = published_post.safe_markdown('\n'.join(lines).rstrip() + '\n', download=True)
+    return {'filename': _filename(shown, '.md'), 'content': content}
 
 
 def _notes_markdown(entry):
@@ -1050,13 +1060,22 @@ def _inline_html(text):
 
 
 def _emphasis(escaped):
-    escaped = re.sub(r'`([^`\n]+)`', r'<code>\1</code>', escaped)
-    escaped = re.sub(r'\*\*([^*\n]+)\*\*', r'<strong>\1</strong>', escaped)
-    return re.sub(r'(?<![\w*])\*(?=\S)([^*\n]+?)(?<=\S)\*(?![\w*])', r'<em>\1</em>', escaped)
+    """Code, bold and italic in already escaped text; a backslash-escaped mark stays text and
+    loses its backslash."""
+    escaped = re.sub(r'(?<!\\)`([^`\n]+)(?<!\\)`', r'<code>\1</code>', escaped)
+    escaped = re.sub(r'(?<!\\)\*\*([^*\n]+?)(?<!\\)\*\*', r'<strong>\1</strong>', escaped)
+    escaped = re.sub(
+        r'(?<![\w*\\])\*(?=\S)([^*\n]+?)(?<=[^\s\\])\*(?![\w*])', r'<em>\1</em>', escaped
+    )
+    return re.sub(r'\\(&lt;|&gt;|&amp;|&quot;|&#x27;|[\\`*_{}\[\]()#+\-.!|~])', r'\1', escaped)
 
 
-def _markdown_html(text):
-    """A block of Markdown as HTML: paragraphs, lists, quotations, code and tables."""
+QUOTES_DEEP = 6  # quotation levels drawn; deeper ones are drawn as text at that depth
+
+
+def _markdown_html(text, depth=0):
+    """A block of Markdown as HTML: paragraphs, lists, quotations, code and tables. Never
+    recursive past QUOTES_DEEP, however the text is nested."""
     out = []
     for start, end in _blocks(text):
         block = text[start:end]
@@ -1066,7 +1085,7 @@ def _markdown_html(text):
             out.append('<pre><code>' + html.escape(code) + '</code></pre>')
         elif all(re.match(r'\s*\|', line) for line in lines) and len(lines) >= 2:
             rows = [
-                [cell.strip() for cell in line.strip().strip('|').split('|')]
+                [cell.strip() for cell in re.split(r'(?<!\\)\|', line.strip().strip('|'))]
                 for line in lines
                 if not desk_finish.SEPARATOR.match(line)
             ]
@@ -1095,13 +1114,13 @@ def _markdown_html(text):
                 + tag
                 + '>'
             )
-        elif all(line.lstrip().startswith('>') for line in lines):
+        elif all(line.lstrip().startswith('>') for line in lines) and depth < QUOTES_DEEP:
             inner = '\n'.join(re.sub(r'^\s*>\s?', '', line) for line in lines)
-            out.append('<blockquote>' + _markdown_html(inner) + '</blockquote>')
+            out.append('<blockquote>' + _markdown_html(inner, depth + 1) + '</blockquote>')
         elif re.match(r'#{1,6}\s', lines[0]):
             out.append('<h4>' + _inline_html(lines[0].lstrip('#').strip()) + '</h4>')
             if lines[1:]:
-                out.append(_markdown_html('\n'.join(lines[1:])))
+                out.append(_markdown_html('\n'.join(lines[1:]), QUOTES_DEEP))
         else:
             out.append('<p>' + '<br>'.join(_inline_html(line) for line in lines) + '</p>')
     return ''.join(out)
@@ -1461,6 +1480,14 @@ def _anchor(draft, kind, item):
     return _visible(lines[-1]) if lines else None
 
 
+def link_again(url):
+    """The link Run again reads: a team collection's http:// link is read as https://, the
+    only kind the bounded fetcher reads."""
+    if isinstance(url, str) and url.startswith('http://'):
+        return 'https://' + url[len('http://') :]
+    return url
+
+
 def _google_guard(root, record, article):
     directory, _ = studio.item(root, 'articles', article)
     if _desk_changed(directory, record):
@@ -1468,35 +1495,54 @@ def _google_guard(root, record, article):
     return studio.digest((directory / 'DRAFT.md').read_bytes() + record['id'].encode())
 
 
-def google_plan(root, ident, mode, operation):
-    """Check the report's recommendations against a new private Google Doc of the post:
-    the Doc is made once (through the post's desk copy, the blog it is linked to), then each
-    change is planned as a suggestion and each addition as a comment. Nothing is sent."""
-    import google_drive as drive
+MODES = ('auto', 'native', 'comments')
+
+
+def google_prepare(root, ident, article):
+    """Under the studio lock: the report's desk copy, unchanged since the report made it,
+    with its private Google Doc made once and linked (google_handoff's own reservation and
+    readback, which keep the blog's record in step and so run under the lock, as the desk's
+    Make a Google Doc does). Returns what placing the findings needs; nothing is planned."""
     import google_handoff
     import google_suggestions as suggestions
-    import manuscript_editor
-    from google_manuscript import PROJECTION, view as manuscript_view
 
-    if mode not in ('auto', 'native', 'comments'):
-        raise ValueError('Choose suggestions, comments or suggestions with comments fallback.')
     record = read(root, ident)
     if _status(root, record) != 'ready' or not record.get('result'):
         raise ValueError(NOT_READY)
-    article = desk_copy(root, ident, operation)
-    record = read(root, ident)
+    if record.get('desk') != article:
+        raise ValueError('Make this post’s desk copy first.')
     expected = _google_guard(root, record, article)
-    made = google_handoff.open_as_doc(root, article, desk=True)
     wanted = findings(record)
     if not wanted:
         raise ValueError('This report has nothing to send to a Google Doc.')
-    _, kept, target = suggestions.linked(root, article, 'draft')
+    made = google_handoff.open_as_doc(root, article, desk=True)
+    _, _, target = suggestions.linked(root, article, 'draft')
+    return {
+        'article': article,
+        'expected': expected,
+        'url': made['url'],
+        'findings': wanted,
+        'document_id': target['document_id'],
+        'tab_ids': target['tab_ids'],
+        'projection': target.get('projection'),
+    }
+
+
+def google_place(root, prepared, mode):
+    """Outside the lock: read the new Doc once and keep the findings it can take, each found
+    once and clear of the others. ([placed], how many could not be placed)."""
+    import google_drive as drive
+    import google_suggestions as suggestions
+    from google_manuscript import PROJECTION, view as manuscript_view
+
+    if mode not in MODES:
+        raise ValueError('Choose suggestions, comments or suggestions with comments fallback.')
     client = drive.Client(drive.account_for(root))
-    inline, accepted, _ = suggestions.read_for_review(client, target['document_id'], mode)
-    shown = manuscript_view(inline) if target.get('projection') == PROJECTION else inline
-    tabs = target['tab_ids']
+    inline, accepted, _ = suggestions.read_for_review(client, prepared['document_id'], mode)
+    shown = manuscript_view(inline) if prepared['projection'] == PROJECTION else inline
+    tabs = prepared['tab_ids']
     placed, left = [], 0
-    for finding in wanted:
+    for finding in prepared['findings']:
         try:
             located = suggestions.locate(shown, finding, tabs)
             suggestions.build(inline, placed + [located], tabs, accepted)
@@ -1506,16 +1552,41 @@ def google_plan(root, ident, mode, operation):
         placed.append(located)
     if not placed:
         raise ValueError('None of the recommendations could be placed in the Google Doc.')
-    plan = manuscript_editor.google_plan(client, root, article, placed, mode, expected, made['url'])
-    record['google'] = {'url': made['url'], 'desk': article, 'planned_at': studio.now()}
+    return placed, left
+
+
+def google_finish(root, ident, prepared, placed, left, mode):
+    """Under the lock again: the plan, bound to the desk copy as it still is (the desk's own
+    planning, which reads the Doc once more to bind it). Nothing is sent."""
+    import google_drive as drive
+    import manuscript_editor
+
+    record = read(root, ident)
+    article = prepared['article']
+    if _google_guard(root, record, article) != prepared['expected']:
+        raise ValueError(DESK_CHANGED)
+    client = drive.Client(drive.account_for(root))
+    plan = manuscript_editor.google_plan(
+        client, root, article, placed, mode, prepared['expected'], prepared['url']
+    )
+    record['google'] = {'url': prepared['url'], 'desk': article, 'planned_at': studio.now()}
     _write(root, record)
     return {
         **plan,
-        'url': made['url'],
+        'url': prepared['url'],
         'suggestions': sum(1 for f in placed if f['kind'] == 'edit'),
         'comments': sum(1 for f in placed if f['kind'] == 'comment'),
         'left': left,
     }
+
+
+def google_plan(root, ident, mode, operation):
+    """All three steps for a caller that holds the lock throughout (tests); the page's route
+    reads Google outside the lock (management.report_google)."""
+    article = desk_copy(root, ident, operation)
+    prepared = google_prepare(root, ident, article)
+    placed, left = google_place(root, prepared, mode)
+    return google_finish(root, ident, prepared, placed, left, mode)
 
 
 def google_send(root, ident, data):

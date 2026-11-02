@@ -4,6 +4,7 @@ again, and its new Google Doc with suggestions against the fake Google model onl
 
 import isolation  # noqa: F401  (first: keeps every test off this computer's own settings)
 import json
+import re
 from unittest.mock import patch
 
 import desk
@@ -236,6 +237,99 @@ class ReportTests(ReportCase):
         self.assertEqual(
             (shown['status'], shown['error']), ('failed', 'This task was interrupted.')
         )
+
+
+class HostileReportTests(ReportCase):
+    """A hostile page and a hostile result never become markup in a download."""
+
+    EVIL = (
+        '<!doctype html><html><head><title>Evil</title></head><body><main><article>'
+        '<h1>Retry &lt;script&gt;alert(3)&lt;/script&gt; budgets</h1>'
+        '<p class="byline">By Jane Doe</p>'
+        '<p>A retry budget caps the retries each route may make. &lt;img src=x '
+        'onerror=alert(5)&gt; and [click me](javascript:alert(6)) and '
+        '<a href="javascript:alert(7)">js link</a>.</p>'
+        '<h2>How it works</h2><p>Each route keeps a budget.</p>'
+        '<table><tr><td>&lt;b&gt;x&lt;/b&gt;</td><td>[a](javascript:alert(11))</td></tr>'
+        '<tr><td>1</td><td>2</td></tr></table>'
+        '<h2>Next steps</h2><p>Try a budget on one route first.</p>'
+        '</article></main></body></html>'
+    )
+
+    def report(self, html, operation='a' * 32, value=None):
+        site = Site()
+        site.page('/posts/retry-budgets', html)
+        with site.serving():
+            shown = self.post('published-preview', {'url': URL})
+        made = self.post(
+            'geo-report-start',
+            {
+                'operation': operation,
+                'published': {'preview': shown['preview'], 'expected': shown['expected']},
+            },
+        )
+        result = {**RESULT, 'suggestions': [], **(value or {})}
+        return self.finish(made['id'], result)
+
+    def test_the_markdown_download_holds_no_html_and_no_script_link(self):
+        shown = self.report(
+            self.EVIL,
+            value={
+                'works': ['<script>alert(12)</script> works'],
+                'queries': ['<img src=x onerror=alert(13)>', '[x](javascript:alert(14))'],
+            },
+        )
+        self.assertEqual(shown['title'], 'Retry <script>alert(3)</script> budgets')
+        md = self.get('geo-report-download', id='a' * 32, format='md')['content']
+        for unsafe in ('<script', '<img', '<b>', 'javascript:', '[x](', '[a](', '[click me]('):
+            self.assertNotIn(unsafe, md)
+        # Only http(s) targets follow an unescaped ](
+        targets = re.findall(r'(?<!\\)\]\(([^)]*)', md)
+        self.assertTrue(all(t.startswith(('https://', 'http://')) for t in targets), targets)
+        self.assertIn('&lt;img src=x onerror=alert(5)&gt;', md, 'the words are kept, as text')
+        page = self.get('geo-report-download', id='a' * 32, format='html')['content']
+        for unsafe in ('<script>alert', '<img src=x', 'href="javascript'):
+            self.assertNotIn(unsafe, page)
+
+    def test_deeply_nested_quotations_still_download(self):
+        html = (
+            '<html><body><article><h1>Deep</h1><p>Intro words here.</p>'
+            + '<blockquote>' * 1200
+            + 'deep'
+            + '</blockquote>' * 1200
+            + '<h2>S</h2><p>More words.</p></article></body></html>'
+        )
+        self.report(html, operation='b' * 32)
+        page = self.get('geo-report-download', id='b' * 32, format='html')['content']
+        self.assertIn('deep', page)
+        self.assertLessEqual(page.count('<blockquote>'), geo_report.QUOTES_DEEP)
+
+    def test_no_page_is_read_without_write_access(self):
+        import management
+
+        site = self.site()
+        with (
+            patch.object(management, 'authorize_write', side_effect=ValueError('No write access.')),
+            site.serving(),
+        ):
+            with self.assertRaisesRegex(ValueError, 'No write access'):
+                self.post('published-preview', {'url': URL})
+        self.assertEqual(site.requests, [], 'nothing was fetched')
+        self.ready()
+        site = self.site()
+        with (
+            patch.object(management, 'authorize_write', side_effect=ValueError('No write access.')),
+            site.serving(),
+        ):
+            with self.assertRaisesRegex(ValueError, 'No write access'):
+                self.post('geo-report-again', {'id': 'a' * 32, 'operation': 'c' * 32})
+        self.assertEqual(site.requests, [])
+
+    def test_run_again_reads_an_http_collection_link_as_https(self):
+        self.assertEqual(
+            geo_report.link_again('http://blog.example.com/p'), 'https://blog.example.com/p'
+        )
+        self.assertEqual(geo_report.link_again(URL), URL)
 
 
 class AfterwardsTests(ReportCase):

@@ -143,8 +143,10 @@ small extra read (256 KB, 10 seconds), and shown read only with its **Page acces
 - **Page access**: noindex in a robots meta tag or an X-Robots-Tag header, a sign-in, a
   robots.txt that blocks Googlebot, OAI-SearchBot or PerplexityBot (blocking GPTBot, which
   crawls only for training, is said apart as a separate choice), JSON-LD that disagrees with
-  the visible title, author or dates, and a missing byline or date. A missing or unreadable
-  robots.txt is "couldn't check". These are eligibility checks, never ranking promises;
+  the visible title, author or dates (an updated date only when the page shows one), and a
+  missing byline or date. robots.txt is read as RFC 9309 says: the most specific crawler
+  group, the longest matching rule, `*` and `$`. A missing or unreadable robots.txt is
+  "couldn't check", and a check that finds nothing says what Blog Studio didn't find. These are eligibility checks, never ranking promises;
   site-level settings (Search Console's AI inclusion setting, IndexNow, crawler IP checks,
   measurement) belong to the site owner and are named in one line, unchecked.
 

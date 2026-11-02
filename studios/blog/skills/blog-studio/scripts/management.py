@@ -2007,7 +2007,7 @@ def _dispatch(root, route, data):
             import desk
 
             return desk.dispatch(root, route[5:], data)
-        if route in ('geo-report-desk', 'geo-report-google-plan', 'geo-report-google-send'):
+        if route in ('geo-report-desk', 'geo-report-google-send'):
             return report_route(root, route, data)
         if route.startswith('run-'):
             from blog_runner import dispatch as run_dispatch
@@ -2266,28 +2266,32 @@ def report_start(root, route, data):
             return geo_report.start(root, data['operation'], found)
     if not isinstance(data, dict) or set(data) != {'id', 'operation'}:
         raise ValueError('Choose a GEO report to run again.')
+    copy = None
     with studio.locked(root):
+        authorize_write(root)  # Before anything is read from the network.
         earlier = geo_report.read(root, data['id'])
         made = geo_report._path(root, data['operation'])
         if made.is_file():
             return geo_report.view(root, data['operation'])  # The same press again.
-    found = published_post.read(earlier['url']) if earlier.get('url') else None
+        if not earlier.get('url'):
+            item = earlier.get('collection_item') or {}
+            copy = published_post.library_copy(root, item.get('id'), item.get('location'))
+    if copy is not None:
+        found = published_post.from_copy(copy)  # Parsed with no lock held.
+    else:
+        found = published_post.read(geo_report.link_again(earlier['url']))
     with studio.locked(root):
         authorize_write(root)
-        if found is None:
-            item = earlier.get('collection_item') or {}
-            found = published_post.from_library(root, item.get('id'), item.get('location'))
         return geo_report.start(root, data['operation'], found, previous=data['id'])
 
 
 def report_route(root, route, data):
-    """A GEO report's afterwards, under the studio lock: Edit this post on the desk, and its
-    new Google Doc with suggestions, checked then sent once."""
+    """A GEO report's afterwards, under the studio lock: Edit this post on the desk, and
+    sending its checked Google Doc plan once."""
     import geo_report
 
     fields = {
         'geo-report-desk': {'id', 'operation'},
-        'geo-report-google-plan': {'id', 'operation', 'mode'},
         'geo-report-google-send': {'id', 'plan', 'confirmed'},
     }[route]
     if not isinstance(data, dict) or set(data) - fields or 'id' not in data:
@@ -2295,12 +2299,34 @@ def report_route(root, route, data):
     if route == 'geo-report-desk':
         article = geo_report.desk_copy(root, data['id'], data.get('operation'))
         return {**geo_report.view(root, data['id']), 'desk': article}
-    if route == 'geo-report-google-plan':
-        planned = geo_report.google_plan(
-            root, data['id'], data.get('mode', 'auto'), data.get('operation')
-        )
-        return {**planned, 'desk': geo_report.read(root, data['id']).get('desk')}
     return geo_report.google_send(root, data['id'], data)
+
+
+def report_google(root, data):
+    """A new Google Doc of a reported post, checked (nothing sent): the desk copy is made
+    (or opened) as Edit this post on the desk makes it, its Doc made once under the lock, the
+    new Doc read with no lock held to place each finding, then the plan bound under the lock."""
+    import geo_report
+    from team_workspace import space, before, saved
+
+    if not isinstance(data, dict) or set(data) - {'id', 'operation', 'mode'} or 'id' not in data:
+        raise ValueError('This request has fields the page does not take.')
+    mode = data.get('mode', 'auto')
+    if mode not in geo_report.MODES:
+        raise ValueError('Choose suggestions, comments or suggestions with comments fallback.')
+    made = dispatch(root, 'geo-report-desk', {'id': data['id'], 'operation': data.get('operation')})
+    article = made['desk']
+    if space(root):
+        before(root, article)
+    with studio.locked(root):
+        authorize_write(root)
+        prepared = geo_report.google_prepare(root, data['id'], article)
+    shared = saved(root, article) if space(root) else None  # The Doc's link, recorded.
+    placed, left = geo_report.google_place(root, prepared, mode)
+    with studio.locked(root):
+        authorize_write(root)
+        planned = geo_report.google_finish(root, data['id'], prepared, placed, left, mode)
+    return {**planned, 'desk': article, **({'team_sync': shared} if shared else {})}
 
 
 def dispatch(root, route, data):
@@ -2355,14 +2381,22 @@ def dispatch(root, route, data):
 
         if not isinstance(data, dict) or set(data) not in ({'url'}, {'item', 'location'}):
             raise ValueError('Give the post’s link, or choose a post from a team collection.')
-        found = published_post.read(data['url']) if 'url' in data else None
+        with studio.locked(root):
+            authorize_write(root)  # Before anything is read from the network.
+            copy = (
+                published_post.library_copy(root, data['item'], data['location'])
+                if 'item' in data
+                else None
+            )
+        # The page is read, or the saved copy parsed, with no lock held.
+        found = published_post.read(data['url']) if copy is None else published_post.from_copy(copy)
         with studio.locked(root):
             authorize_write(root)
-            if found is None:
-                found = published_post.from_library(root, data['item'], data['location'])
             return published_post.stage(root, found)
     if route in ('geo-report-start', 'geo-report-again'):
         return report_start(root, route, data)
+    if route == 'geo-report-google-plan':
+        return report_google(root, data)
     if route == 'research-site':
         # A site added on a start form for one blog only: checked here, saved nowhere. The
         # shared list is changed in Shared settings.
@@ -2463,7 +2497,7 @@ def dispatch(root, route, data):
             ident = data.get('id')
         elif route == 'desk-repurpose':
             ident = result['made']['id']  # The new blog; the source changed nothing shared.
-        elif route in ('geo-report-desk', 'geo-report-google-plan'):
+        elif route == 'geo-report-desk':
             ident = result.get('desk')  # The report's desk copy, made or opened.
         elif route.startswith(('run-', 'editor-', 'desk-')) or route in (
             'schedule',

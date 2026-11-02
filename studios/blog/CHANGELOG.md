@@ -19,7 +19,16 @@ changes for authors first, then what changes for maintainers.
   what changed since. Reports are listed in Blogs as GEO reports. Maintainers: `geo_report`
   (reusing `desk_finish`'s readers), the `geo-report-*` routes, the `geo-report` tool job,
   `published_post.access` and `robots_check`, and `tests/fake_site.py`, a local fake site
-  for link reads.
+  for link reads. A page is read in bounded time and space whatever its shape (open
+  elements, list and quotation depth, a table's size, a byline's words and the Markdown made
+  are capped as it is read), its words are never taken as markup, and robots.txt is read as
+  RFC 9309 says (`published_post.robots_groups` and `robots_allowed`: the most specific
+  product token, the longest match with Allow winning a tie, `*` and `$`), the same on every
+  Python, not with `urllib.robotparser`. Page access says what it did not find as such,
+  reads written dates, header bylines and "By" lines, compares an updated date only when the
+  page shows one, and takes an X-Robots-Tag's crawler name into account. The Markdown
+  download holds no HTML and no link but http(s). The report's Google Doc is placed with no
+  lock held, and no page is read before write access is checked.
 - **Review an existing or published post for AI search (#277).** New blog's polishing
   screen has a first pass, **Review for AI search (GEO)**, for a pasted, uploaded or Google
   Doc draft: the post's one GEO review starts as the desk opens and its proposals wait in
