@@ -1134,6 +1134,9 @@ class OutlineTests(unittest.TestCase):
         self.assertIn('/flags/0: true', lines)
         self.assertIn('/flags/1: null', lines)
         self.assertIn('/odd~1key~0: string, 1 chars: "z"', lines)
+        # A key no pointer can name is left out, so it cannot pass as one.
+        lines, _ = content_address.outline({'a b\n/post/x: string': 'v', 'k' * 101: 'v', 'ok': 1})
+        self.assertEqual(lines, ['/ok: number'])
         # Many lines: cut at the line limit; long lines: cut at the size limit, in bytes.
         many = {'a%02d' % n: {'b%02d' % m: 'v' for m in range(60)} for n in range(60)}
         lines, cut = content_address.outline(many)

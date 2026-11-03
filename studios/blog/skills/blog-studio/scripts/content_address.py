@@ -626,8 +626,8 @@ def outline(data):
 
 
 def _children(pointer, value):
-    """A container's first items or keys, each with its JSON pointer: a key too long for a
-    pointer Blog Studio reads (POINTER) is left out."""
+    """A container's first items or keys, each with its JSON pointer: a key no pointer Blog
+    Studio reads (POINTER) can name, too long or holding a space, is left out."""
     if isinstance(value, list):
         return [(f'{pointer}/{at}', item) for at, item in enumerate(value[:OUTLINE_ITEMS])]
     if not isinstance(value, dict):
@@ -635,7 +635,7 @@ def _children(pointer, value):
     shown = []
     for key, item in list(value.items())[:OUTLINE_KEYS]:
         segment = str(key).replace('~', '~0').replace('/', '~1')
-        if len(segment) <= 100 and len(pointer) + len(segment) < 300:
+        if POINTER.fullmatch('/' + segment) and len(pointer) + len(segment) < 300:
             shown.append((pointer + '/' + segment, item))
     return shown
 
