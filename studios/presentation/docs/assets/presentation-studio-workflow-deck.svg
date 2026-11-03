@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="568" height="733" viewBox="0 0 568 733" role="img" aria-labelledby="title desc">
+<title id="title">Presentation Studio workflow, part 2 of 2: Design, refine and deliver</title>
+<desc id="desc">Steps in order: Draw look samples (If you chose to pick a look); Pick the look (One slide in each look); Design the deck (Harness Slides, in your brand); On the desk (Words, notes, Finishing); Deliver (Google Slides or PowerPoint); Delivered (Open or download revision N). Draw the deck in this look leads from Pick the look to Design the deck. On the desk can go to Redraw slide N (Its section is redrawn) and come back. Delivered can lead to A note or an edit (Makes the next revision). A note or an edit (Makes the next revision) returns to On the desk. Colours: filled boxes are your decisions or input, tinted boxes are assistant work and grey boxes are studio steps.</desc>
+<style>svg{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Helvetica,Arial,sans-serif}.title{font-weight:600}.bold{font-weight:700}.page,.you,.assistant,.studio{stroke-width:0.5}.wire{stroke-width:1.1}.page{fill:#ffffff;stroke:#d9dee6}.ink{fill:#1c1d22}.quiet{fill:#565a69}.accent-text{fill:#ac421d}.you{fill:#ac421d;stroke:#ac421d}.you-text{fill:#ffffff}.assistant{fill:#fff0e8;stroke:#ac421d}.studio{fill:#eef1f5;stroke:#a9b1bf}.wire{fill:none;stroke:#6b7080}.tip{fill:#6b7080}@media (prefers-color-scheme:dark){.page{fill:#191f29;stroke:#39404d}.ink{fill:#f3f4f8}.quiet{fill:#abb0c0}.accent-text{fill:#ffb493}.you{fill:#ffb493;stroke:#ffb493}.you-text{fill:#151c29}.assistant{fill:#452c24;stroke:#ffb493}.studio{fill:#262d39;stroke:#5d6576}.wire{fill:none;stroke:#9aa0b0}.tip{fill:#9aa0b0}}</style>
+<rect x="0.25" y="0.25" width="567.5" height="732.5" rx="16" class="page"/>
+<text x="20" y="34" font-size="13" class="accent-text title" text-anchor="start">Presentation Studio workflow · part 2 of 2</text>
+<text x="20" y="58" font-size="19" class="ink bold" text-anchor="start">Design, refine and deliver</text>
+<rect x="20" y="71" width="22" height="14" rx="4" class="you"/>
+<text x="50" y="82" font-size="12" class="quiet" text-anchor="start">You decide or give input</text>
+<rect x="204.598" y="71" width="22" height="14" rx="4" class="assistant"/>
+<text x="234.598" y="82" font-size="12" class="quiet" text-anchor="start">Assistant work</text>
+<rect x="336.271" y="71" width="22" height="14" rx="4" class="studio"/>
+<text x="366.271" y="82" font-size="12" class="quiet" text-anchor="start">Studio step</text>
+<path d="M284 164L284 198" class="wire"/>
+<path d="M284 204l-4 -7h8z" class="tip"/>
+<path d="M284 264L284 298" class="wire"/>
+<path d="M284 304l-4 -7h8z" class="tip"/>
+<text x="294" y="288" font-size="12" class="quiet title" text-anchor="start">Draw the deck in this look</text>
+<path d="M284 364L284 398" class="wire"/>
+<path d="M284 404l-4 -7h8z" class="tip"/>
+<path d="M284 481L284 515" class="wire"/>
+<path d="M284 521l-4 -7h8z" class="tip"/>
+<path d="M284 581L284 615" class="wire"/>
+<path d="M284 621l-4 -7h8z" class="tip"/>
+<path d="M388 436.5L410 436.5" class="wire"/>
+<path d="M416 436.5l-7 -4v8z" class="tip"/>
+<path d="M416 448.5L394 448.5" class="wire"/>
+<path d="M388 448.5l7 -4v8z" class="tip"/>
+<path d="M180 669L158 669" class="wire"/>
+<path d="M152 669l7 -4v8z" class="tip"/>
+<path d="M84 621L84 450.5Q84 442.5 92 442.5L174 442.5" class="wire"/>
+<path d="M180 442.5l-7 -4v8z" class="tip"/>
+<rect x="180" y="104" width="208" height="60" rx="10" class="studio"/>
+<text x="284" y="129" font-size="15" class="ink bold" text-anchor="middle">Draw look samples</text>
+<text x="284" y="150" font-size="13" class="quiet" text-anchor="middle">If you chose to pick a look</text>
+<rect x="180" y="204" width="208" height="60" rx="10" class="you"/>
+<text x="284" y="229" font-size="15" class="you-text bold" text-anchor="middle">Pick the look</text>
+<text x="284" y="250" font-size="13" class="you-text" text-anchor="middle">One slide in each look</text>
+<rect x="180" y="304" width="208" height="60" rx="10" class="assistant"/>
+<text x="284" y="329" font-size="15" class="ink bold" text-anchor="middle">Design the deck</text>
+<text x="284" y="350" font-size="13" class="quiet" text-anchor="middle">Harness Slides, in your brand</text>
+<rect x="180" y="404" width="208" height="77" rx="10" class="you"/>
+<text x="284" y="437.5" font-size="15" class="you-text bold" text-anchor="middle">On the desk</text>
+<text x="284" y="458.5" font-size="13" class="you-text" text-anchor="middle">Words, notes, Finishing</text>
+<rect x="180" y="521" width="208" height="60" rx="10" class="you"/>
+<text x="284" y="546" font-size="15" class="you-text bold" text-anchor="middle">Deliver</text>
+<text x="284" y="567" font-size="13" class="you-text" text-anchor="middle">Google Slides or PowerPoint</text>
+<rect x="180" y="621" width="208" height="96" rx="10" class="studio"/>
+<text x="284" y="664" font-size="15" class="ink bold" text-anchor="middle">Delivered</text>
+<text x="284" y="685" font-size="13" class="quiet" text-anchor="middle">Open or download revision N</text>
+<rect x="416" y="404" width="136" height="77" rx="10" class="you"/>
+<text x="484" y="429" font-size="15" class="you-text bold" text-anchor="middle">Redraw slide N</text>
+<text x="484" y="450" font-size="13" class="you-text" text-anchor="middle">Its section</text>
+<text x="484" y="467" font-size="13" class="you-text" text-anchor="middle">is redrawn</text>
+<rect x="16" y="621" width="136" height="96" rx="10" class="you"/>
+<text x="84" y="646" font-size="15" class="you-text bold" text-anchor="middle">A note or</text>
+<text x="84" y="665" font-size="15" class="you-text bold" text-anchor="middle">an edit</text>
+<text x="84" y="686" font-size="13" class="you-text" text-anchor="middle">Makes the</text>
+<text x="84" y="703" font-size="13" class="you-text" text-anchor="middle">next revision</text>
+</svg>

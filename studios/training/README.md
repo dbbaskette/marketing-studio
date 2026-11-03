@@ -77,6 +77,11 @@ optional tools. Missing capabilities are explained rather than silently substitu
    arrive. **Mark ready** is your approval of the material shown, not merely evidence
    that the assistant finished writing it.
 
+The plan, drawn. Filled boxes are your decisions or input, tinted boxes are
+assistant work and grey boxes are Training Studio's own steps.
+
+![Training Studio plan workflow: open Training Studio, complete shared setup the first time, then New training for the goal, materials and sources. Research uses Harness Research and an independent check, then the teaching plan sets topics, order, depth and timing. At Check the topics you either choose Ask for changes, which revises the teaching plan and keeps the research, or Build the training.](docs/assets/training-studio-workflow-plan.svg)
+
 ## Refine the training on the desk
 
 Edit a part, add a note or select a passage for a focused change. History retains
@@ -94,6 +99,12 @@ Choose Apply, Edit or Skip. Local checks and assistant-backed checks are identif
 serious blocking findings still prevent readiness. **Mark this level ready** previews
 its materials before confirmation. Undo or Return to draft retains History and
 previous library copies; editing a Ready material returns it to Draft.
+
+Building and finishing, drawn the same way:
+
+![Training Studio build and finish workflow: the assistant builds the guide, brief, practice and Yoodli layout. When a deck is chosen, Review slide text either goes to Ask for changes, which rewrites the slide text and returns, or Approve text & design deck, after which Harness Slides designs the deck in your brand. You refine on the desk with edits, notes and Finishing, settling material that Needs updating with Update or Keep as it is. Mark ready approves each material or a level; Return to draft, after an edit or Undo, brings it back to the desk. Once every material is ready the index is written, and you can share it if you choose: download, Google Doc or Publish.](docs/assets/training-studio-workflow-build.svg)
+
+Saved trainings begun before the desk keep their older flow, which is not drawn here.
 
 [The complete desk guide](docs/the-desk.md)
 

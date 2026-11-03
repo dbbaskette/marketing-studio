@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="480" height="680" viewBox="0 0 480 680" role="img" aria-labelledby="title desc">
+<title id="title">Presentation Studio workflow, part 1 of 2: Start and slide text</title>
+<desc id="desc">Steps in order: Open Presentation Studio (Shared setup the first time); New deck (Idea, document or existing deck); Read and research (Research first, if ticked); Draft the slide text (Titles, words, speaker notes); Review slide text (Fix words where they are); Approve text &amp; design deck (Design starts from this text). Review slide text can go to Ask for changes (Slide text redrafted) and come back. Colours: filled boxes are your decisions or input, tinted boxes are assistant work and grey boxes are studio steps.</desc>
+<style>svg{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Helvetica,Arial,sans-serif}.title{font-weight:600}.bold{font-weight:700}.page,.you,.assistant,.studio{stroke-width:0.5}.wire{stroke-width:1.1}.page{fill:#ffffff;stroke:#d9dee6}.ink{fill:#1c1d22}.quiet{fill:#565a69}.accent-text{fill:#ac421d}.you{fill:#ac421d;stroke:#ac421d}.you-text{fill:#ffffff}.assistant{fill:#fff0e8;stroke:#ac421d}.studio{fill:#eef1f5;stroke:#a9b1bf}.wire{fill:none;stroke:#6b7080}.tip{fill:#6b7080}@media (prefers-color-scheme:dark){.page{fill:#191f29;stroke:#39404d}.ink{fill:#f3f4f8}.quiet{fill:#abb0c0}.accent-text{fill:#ffb493}.you{fill:#ffb493;stroke:#ffb493}.you-text{fill:#151c29}.assistant{fill:#452c24;stroke:#ffb493}.studio{fill:#262d39;stroke:#5d6576}.wire{fill:none;stroke:#9aa0b0}.tip{fill:#9aa0b0}}</style>
+<rect x="0.25" y="0.25" width="479.5" height="679.5" rx="16" class="page"/>
+<text x="20" y="34" font-size="13" class="accent-text title" text-anchor="start">Presentation Studio workflow · part 1 of 2</text>
+<text x="20" y="58" font-size="19" class="ink bold" text-anchor="start">Start and slide text</text>
+<rect x="20" y="71" width="22" height="14" rx="4" class="you"/>
+<text x="50" y="82" font-size="12" class="quiet" text-anchor="start">You decide or give input</text>
+<rect x="204.598" y="71" width="22" height="14" rx="4" class="assistant"/>
+<text x="234.598" y="82" font-size="12" class="quiet" text-anchor="start">Assistant work</text>
+<rect x="336.271" y="71" width="22" height="14" rx="4" class="studio"/>
+<text x="366.271" y="82" font-size="12" class="quiet" text-anchor="start">Studio step</text>
+<path d="M134 164L134 198" class="wire"/>
+<path d="M134 204l-4 -7h8z" class="tip"/>
+<path d="M134 264L134 298" class="wire"/>
+<path d="M134 304l-4 -7h8z" class="tip"/>
+<path d="M134 364L134 398" class="wire"/>
+<path d="M134 404l-4 -7h8z" class="tip"/>
+<path d="M134 464L134 498" class="wire"/>
+<path d="M134 504l-4 -7h8z" class="tip"/>
+<path d="M134 564L134 598" class="wire"/>
+<path d="M134 604l-4 -7h8z" class="tip"/>
+<path d="M252 528L282 528" class="wire"/>
+<path d="M288 528l-7 -4v8z" class="tip"/>
+<path d="M288 540L258 540" class="wire"/>
+<path d="M252 540l7 -4v8z" class="tip"/>
+<rect x="16" y="104" width="236" height="60" rx="10" class="studio"/>
+<text x="134" y="129" font-size="15" class="ink bold" text-anchor="middle">Open Presentation Studio</text>
+<text x="134" y="150" font-size="13" class="quiet" text-anchor="middle">Shared setup the first time</text>
+<rect x="16" y="204" width="236" height="60" rx="10" class="you"/>
+<text x="134" y="229" font-size="15" class="you-text bold" text-anchor="middle">New deck</text>
+<text x="134" y="250" font-size="13" class="you-text" text-anchor="middle">Idea, document or existing deck</text>
+<rect x="16" y="304" width="236" height="60" rx="10" class="assistant"/>
+<text x="134" y="329" font-size="15" class="ink bold" text-anchor="middle">Read and research</text>
+<text x="134" y="350" font-size="13" class="quiet" text-anchor="middle">Research first, if ticked</text>
+<rect x="16" y="404" width="236" height="60" rx="10" class="assistant"/>
+<text x="134" y="429" font-size="15" class="ink bold" text-anchor="middle">Draft the slide text</text>
+<text x="134" y="450" font-size="13" class="quiet" text-anchor="middle">Titles, words, speaker notes</text>
+<rect x="16" y="504" width="236" height="60" rx="10" class="you"/>
+<text x="134" y="529" font-size="15" class="you-text bold" text-anchor="middle">Review slide text</text>
+<text x="134" y="550" font-size="13" class="you-text" text-anchor="middle">Fix words where they are</text>
+<rect x="16" y="604" width="236" height="60" rx="10" class="you"/>
+<text x="134" y="629" font-size="15" class="you-text bold" text-anchor="middle">Approve text &amp; design deck</text>
+<text x="134" y="650" font-size="13" class="you-text" text-anchor="middle">Design starts from this text</text>
+<rect x="288" y="504" width="156" height="60" rx="10" class="you"/>
+<text x="366" y="529" font-size="15" class="you-text bold" text-anchor="middle">Ask for changes</text>
+<text x="366" y="550" font-size="13" class="you-text" text-anchor="middle">Slide text redrafted</text>
+</svg>

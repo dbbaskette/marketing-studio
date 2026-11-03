@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="568" height="733" viewBox="0 0 568 733" role="img" aria-labelledby="title desc">
+<title id="title">Infographic Studio workflow, part 2 of 2: Review, approve and prepare</title>
+<desc id="desc">Steps in order: Edit words (New revision; Update preview); Review page (Record what you inspected); Run checks (Checks on this computer); Approve revision N (This checked revision only); Prepare approved files (PNG, PDF, SVG and text); Deliver approved page (Optional: Google Doc, PDF). Record review and run checks leads from Review page to Run checks. Run checks can lead to Repair findings (Then Review page again). Repair findings (Then Review page again) returns to Review page. Approve revision N can lead to A later change (Withdraws the approval). A later change (Withdraws the approval) returns to Edit words. Colours: filled boxes are your decisions or input, tinted boxes are assistant work and grey boxes are studio steps.</desc>
+<style>svg{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Helvetica,Arial,sans-serif}.title{font-weight:600}.bold{font-weight:700}.page,.you,.assistant,.studio{stroke-width:0.5}.wire{stroke-width:1.1}.page{fill:#ffffff;stroke:#d9dee6}.ink{fill:#1c1d22}.quiet{fill:#565a69}.accent-text{fill:#146970}.you{fill:#146970;stroke:#146970}.you-text{fill:#ffffff}.assistant{fill:#e5f4f3;stroke:#146970}.studio{fill:#eef1f5;stroke:#a9b1bf}.wire{fill:none;stroke:#6b7080}.tip{fill:#6b7080}@media (prefers-color-scheme:dark){.page{fill:#191f29;stroke:#39404d}.ink{fill:#f3f4f8}.quiet{fill:#abb0c0}.accent-text{fill:#8cdedb}.you{fill:#8cdedb;stroke:#8cdedb}.you-text{fill:#151c29}.assistant{fill:#1c383b;stroke:#8cdedb}.studio{fill:#262d39;stroke:#5d6576}.wire{fill:none;stroke:#9aa0b0}.tip{fill:#9aa0b0}}</style>
+<rect x="0.25" y="0.25" width="567.5" height="732.5" rx="16" class="page"/>
+<text x="20" y="34" font-size="13" class="accent-text title" text-anchor="start">Infographic Studio workflow · part 2 of 2</text>
+<text x="20" y="58" font-size="19" class="ink bold" text-anchor="start">Review, approve and prepare</text>
+<rect x="20" y="71" width="22" height="14" rx="4" class="you"/>
+<text x="50" y="82" font-size="12" class="quiet" text-anchor="start">You decide or give input</text>
+<rect x="204.598" y="71" width="22" height="14" rx="4" class="assistant"/>
+<text x="234.598" y="82" font-size="12" class="quiet" text-anchor="start">Assistant work</text>
+<rect x="336.271" y="71" width="22" height="14" rx="4" class="studio"/>
+<text x="366.271" y="82" font-size="12" class="quiet" text-anchor="start">Studio step</text>
+<path d="M284 164L284 198" class="wire"/>
+<path d="M284 204l-4 -7h8z" class="tip"/>
+<path d="M284 264L284 298" class="wire"/>
+<path d="M284 304l-4 -7h8z" class="tip"/>
+<text x="294" y="288" font-size="12" class="quiet title" text-anchor="start">Record review and run checks</text>
+<path d="M284 400L284 434" class="wire"/>
+<path d="M284 440l-4 -7h8z" class="tip"/>
+<path d="M284 517L284 551" class="wire"/>
+<path d="M284 557l-4 -7h8z" class="tip"/>
+<path d="M284 617L284 651" class="wire"/>
+<path d="M284 657l-4 -7h8z" class="tip"/>
+<path d="M388 352L410 352" class="wire"/>
+<path d="M416 352l-7 -4v8z" class="tip"/>
+<path d="M484 304L484 242Q484 234 476 234L394 234" class="wire"/>
+<path d="M388 234l7 -4v8z" class="tip"/>
+<path d="M180 478.5L158 478.5" class="wire"/>
+<path d="M152 478.5l7 -4v8z" class="tip"/>
+<path d="M84 440L84 142Q84 134 92 134L174 134" class="wire"/>
+<path d="M180 134l-7 -4v8z" class="tip"/>
+<rect x="180" y="104" width="208" height="60" rx="10" class="you"/>
+<text x="284" y="129" font-size="15" class="you-text bold" text-anchor="middle">Edit words</text>
+<text x="284" y="150" font-size="13" class="you-text" text-anchor="middle">New revision; Update preview</text>
+<rect x="180" y="204" width="208" height="60" rx="10" class="you"/>
+<text x="284" y="229" font-size="15" class="you-text bold" text-anchor="middle">Review page</text>
+<text x="284" y="250" font-size="13" class="you-text" text-anchor="middle">Record what you inspected</text>
+<rect x="180" y="304" width="208" height="96" rx="10" class="studio"/>
+<text x="284" y="347" font-size="15" class="ink bold" text-anchor="middle">Run checks</text>
+<text x="284" y="368" font-size="13" class="quiet" text-anchor="middle">Checks on this computer</text>
+<rect x="180" y="440" width="208" height="77" rx="10" class="you"/>
+<text x="284" y="473.5" font-size="15" class="you-text bold" text-anchor="middle">Approve revision N</text>
+<text x="284" y="494.5" font-size="13" class="you-text" text-anchor="middle">This checked revision only</text>
+<rect x="180" y="557" width="208" height="60" rx="10" class="studio"/>
+<text x="284" y="582" font-size="15" class="ink bold" text-anchor="middle">Prepare approved files</text>
+<text x="284" y="603" font-size="13" class="quiet" text-anchor="middle">PNG, PDF, SVG and text</text>
+<rect x="180" y="657" width="208" height="60" rx="10" class="you"/>
+<text x="284" y="682" font-size="15" class="you-text bold" text-anchor="middle">Deliver approved page</text>
+<text x="284" y="703" font-size="13" class="you-text" text-anchor="middle">Optional: Google Doc, PDF</text>
+<rect x="416" y="304" width="136" height="96" rx="10" class="you"/>
+<text x="484" y="329" font-size="15" class="you-text bold" text-anchor="middle">Repair</text>
+<text x="484" y="348" font-size="15" class="you-text bold" text-anchor="middle">findings</text>
+<text x="484" y="369" font-size="13" class="you-text" text-anchor="middle">Then Review</text>
+<text x="484" y="386" font-size="13" class="you-text" text-anchor="middle">page again</text>
+<rect x="16" y="440" width="136" height="77" rx="10" class="you"/>
+<text x="84" y="465" font-size="15" class="you-text bold" text-anchor="middle">A later change</text>
+<text x="84" y="486" font-size="13" class="you-text" text-anchor="middle">Withdraws</text>
+<text x="84" y="503" font-size="13" class="you-text" text-anchor="middle">the approval</text>
+</svg>

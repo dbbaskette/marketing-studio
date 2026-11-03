@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="480" height="697" viewBox="0 0 480 697" role="img" aria-labelledby="title desc">
+<title id="title">Infographic Studio workflow, part 1 of 2: Story and build</title>
+<desc id="desc">Steps in order: Open Infographic Studio (Shared setup the first time); New infographic (Add information, set direction); Find the story (Source-backed stories proposed); Choose a story (Use this story); Build page (Composed with your brand); Create preview (Rendered on this computer). Save brief leads from New infographic to Find the story. Choose a story can go to Ask for a revision (A revised story to choose) and come back. Colours: filled boxes are your decisions or input, tinted boxes are assistant work and grey boxes are studio steps.</desc>
+<style>svg{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Helvetica,Arial,sans-serif}.title{font-weight:600}.bold{font-weight:700}.page,.you,.assistant,.studio{stroke-width:0.5}.wire{stroke-width:1.1}.page{fill:#ffffff;stroke:#d9dee6}.ink{fill:#1c1d22}.quiet{fill:#565a69}.accent-text{fill:#146970}.you{fill:#146970;stroke:#146970}.you-text{fill:#ffffff}.assistant{fill:#e5f4f3;stroke:#146970}.studio{fill:#eef1f5;stroke:#a9b1bf}.wire{fill:none;stroke:#6b7080}.tip{fill:#6b7080}@media (prefers-color-scheme:dark){.page{fill:#191f29;stroke:#39404d}.ink{fill:#f3f4f8}.quiet{fill:#abb0c0}.accent-text{fill:#8cdedb}.you{fill:#8cdedb;stroke:#8cdedb}.you-text{fill:#151c29}.assistant{fill:#1c383b;stroke:#8cdedb}.studio{fill:#262d39;stroke:#5d6576}.wire{fill:none;stroke:#9aa0b0}.tip{fill:#9aa0b0}}</style>
+<rect x="0.25" y="0.25" width="479.5" height="696.5" rx="16" class="page"/>
+<text x="20" y="34" font-size="13" class="accent-text title" text-anchor="start">Infographic Studio workflow · part 1 of 2</text>
+<text x="20" y="58" font-size="19" class="ink bold" text-anchor="start">Story and build</text>
+<rect x="20" y="71" width="22" height="14" rx="4" class="you"/>
+<text x="50" y="82" font-size="12" class="quiet" text-anchor="start">You decide or give input</text>
+<rect x="204.598" y="71" width="22" height="14" rx="4" class="assistant"/>
+<text x="234.598" y="82" font-size="12" class="quiet" text-anchor="start">Assistant work</text>
+<rect x="336.271" y="71" width="22" height="14" rx="4" class="studio"/>
+<text x="366.271" y="82" font-size="12" class="quiet" text-anchor="start">Studio step</text>
+<path d="M134 164L134 198" class="wire"/>
+<path d="M134 204l-4 -7h8z" class="tip"/>
+<path d="M134 264L134 298" class="wire"/>
+<path d="M134 304l-4 -7h8z" class="tip"/>
+<text x="144" y="288" font-size="12" class="quiet title" text-anchor="start">Save brief</text>
+<path d="M134 364L134 398" class="wire"/>
+<path d="M134 404l-4 -7h8z" class="tip"/>
+<path d="M134 481L134 515" class="wire"/>
+<path d="M134 521l-4 -7h8z" class="tip"/>
+<path d="M134 581L134 615" class="wire"/>
+<path d="M134 621l-4 -7h8z" class="tip"/>
+<path d="M252 436.5L282 436.5" class="wire"/>
+<path d="M288 436.5l-7 -4v8z" class="tip"/>
+<path d="M288 448.5L258 448.5" class="wire"/>
+<path d="M252 448.5l7 -4v8z" class="tip"/>
+<rect x="16" y="104" width="236" height="60" rx="10" class="studio"/>
+<text x="134" y="129" font-size="15" class="ink bold" text-anchor="middle">Open Infographic Studio</text>
+<text x="134" y="150" font-size="13" class="quiet" text-anchor="middle">Shared setup the first time</text>
+<rect x="16" y="204" width="236" height="60" rx="10" class="you"/>
+<text x="134" y="229" font-size="15" class="you-text bold" text-anchor="middle">New infographic</text>
+<text x="134" y="250" font-size="13" class="you-text" text-anchor="middle">Add information, set direction</text>
+<rect x="16" y="304" width="236" height="60" rx="10" class="assistant"/>
+<text x="134" y="329" font-size="15" class="ink bold" text-anchor="middle">Find the story</text>
+<text x="134" y="350" font-size="13" class="quiet" text-anchor="middle">Source-backed stories proposed</text>
+<rect x="16" y="404" width="236" height="77" rx="10" class="you"/>
+<text x="134" y="437.5" font-size="15" class="you-text bold" text-anchor="middle">Choose a story</text>
+<text x="134" y="458.5" font-size="13" class="you-text" text-anchor="middle">Use this story</text>
+<rect x="16" y="521" width="236" height="60" rx="10" class="assistant"/>
+<text x="134" y="546" font-size="15" class="ink bold" text-anchor="middle">Build page</text>
+<text x="134" y="567" font-size="13" class="quiet" text-anchor="middle">Composed with your brand</text>
+<rect x="16" y="621" width="236" height="60" rx="10" class="studio"/>
+<text x="134" y="646" font-size="15" class="ink bold" text-anchor="middle">Create preview</text>
+<text x="134" y="667" font-size="13" class="quiet" text-anchor="middle">Rendered on this computer</text>
+<rect x="288" y="404" width="156" height="77" rx="10" class="you"/>
+<text x="366" y="429" font-size="15" class="you-text bold" text-anchor="middle">Ask for a revision</text>
+<text x="366" y="450" font-size="13" class="you-text" text-anchor="middle">A revised story</text>
+<text x="366" y="467" font-size="13" class="you-text" text-anchor="middle">to choose</text>
+</svg>

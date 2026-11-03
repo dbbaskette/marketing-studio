@@ -45,27 +45,37 @@ read-only checks and next steps. You can run the same report with
 
 Choose **New blog**, or one of Home's tasks (**Write from a topic or my documents**, **Work from my
 outline or notes**, **Edit or polish a draft**). A new blog is always made on the writing
-desk. A topic or an outline takes three steps; a draft takes one screen (below):
+desk. A topic or an outline takes two steps; a draft takes one screen (below):
 
-1. **What are you writing?** A card for each kind of post, with its usual shape and
-   length, and **Something else**.
-2. **Sources and settings.** Files, links, Google Docs and team library posts, each with
-   its role: facts that may be quoted, approved messaging (stated as the product's own
-   claims) or an example of the kind of post (its shape, never its facts). They stay with
-   this blog; one with **Keep in the team library** ticked goes to the library when you
-   press Start. For new writing, **Search my sites** and **Search the web too** research
-   before the outline. They start as **Settings → Writing preferences → Research for new
-   blogs from** ticks your sites and the public web (your documents are always read; your
-   sites only when the shared list has any), and you can change them for this blog. Both are
-   off unless ticked there. **Length** asks for the usual length, short or in
-   depth. **Tone** says how it sounds.
-3. **What do you have?**
-   - **A topic**: a working title, who it is for and the point to make. **Suggest
-     three angles** reads your sources and offers three cards; pick one and edit its
-     wording, or type your own point.
+1. **Idea and sources.**
+   - **What do you have?** **A topic**, **An outline or notes** or **A draft**. A draft
+     switches to the polishing screen.
+   - **A topic**: **Your topic** asks for a working title, who it is for and the point to
+     make. **Suggest three angles** reads your sources and offers three cards; **Use this
+     angle** picks one, and you can edit its wording or type your own point.
    - **An outline or notes**, pasted or uploaded: **Write from my outline** writes the
      draft next; **Shape an outline with me first** opens the outline on the desk.
-   - **A draft** switches to the polishing screen.
+   - **Sources for this blog**: files, links, Google Docs and team library posts, each with
+     its role: facts that may be quoted, approved messaging (stated as the product's own
+     claims) or an example of the kind of post (its shape, never its facts). They stay
+     with this blog; one with **Keep in the team library** ticked goes to the library when
+     you press Start.
+   - **Research (optional)**: **Research these sources before writing** researches before
+     the outline; leave it off to write directly from your sources. Where the page offers
+     **Search my sites** and **Search the web too**, they start as **Settings → Writing
+     preferences → Research for new blogs from** ticks your sites and the public web (your
+     documents are always read; your sites only when the shared list has any), and you can
+     change them for this blog. Both are off unless ticked there.
+
+   **Continue** goes to the next step.
+2. **Writing preferences.**
+   - **Kind of post (optional)**: a saved kind supplies a usual shape and length;
+     **Follow my idea and sources** leaves it open for this blog.
+   - **Length and tone**: **Length** asks for the usual length, short or in depth.
+     **Tone** says how it sounds.
+   - **GEO review (optional): Include a GEO review**, described below.
+
+   **Start** begins the work.
 
 Both ways of starting, and the polishing screen, offer **GEO review (optional): Include a
 GEO review**, off by default. When it is ticked, one GEO review runs as part of the post's
@@ -310,9 +320,10 @@ deciding on each fix, with the full desk one click away.
   interrupted by Blog Studio closing. Before a blog's first check, Review mode's own **Check spelling
   and grammar** offers the same choice; the choice is kept on this computer for **Check
   again**.
-- **When nothing is left to review**, a blog started from a Google Doc offers **Send
-  accepted changes to Google Doc**: the plan says how many suggestions and comments go,
-  and nothing is sent until **Send**. It sends every difference from the Google Doc as it
+- **When nothing is left to review**, a blog started from a Google Doc offers **Review
+  Google changes**. The next screen says how many suggestions and comments go, and
+  nothing is sent until **Send N changes** (**Send 1 change** for one). It sends every
+  difference from the Google Doc as it
   was read: the fixes you accepted and any edits you made, here or on the full desk.
   Nothing stays only here; see [what a send makes](#what-a-send-to-the-google-doc-makes).
   Rejected fixes are never sent. Other blogs offer **Copy** and **Download**.

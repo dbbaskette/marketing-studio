@@ -78,6 +78,11 @@ Brand add-ons may have their own prerequisites. Nothing installs them automatica
    PDF, Google Doc or both. The receipt lists each selected output and partial
    failures honestly. A local PDF retry sends nothing to Google.
 
+The story and build, drawn. Filled boxes are your decisions or input, tinted boxes
+are assistant work and grey boxes are Infographic Studio's own steps.
+
+![Infographic Studio story and build workflow: open Infographic Studio, with shared setup the first time. New infographic adds information and sets the direction, then Save brief. Find the story proposes source-backed stories. Choose a story with Use this story, or Ask for a revision and choose again. Build page composes the chosen story with your brand, and Create preview renders it on this computer.](docs/assets/infographic-studio-workflow-story.svg)
+
 ## A visual editor with clear revision states
 
 The preview stays beside **Edit words**. Select a named element, such as Page heading
@@ -94,6 +99,12 @@ font binaries. Another computer needs compatible fonts to edit SVG accurately.
 Long work stays attached to its infographic, so you can navigate elsewhere and
 return to its progress. **Stop waiting** does not cancel the underlying work.
 Reloading or losing a connection does not automatically repeat an uncertain request.
+
+Review to delivery, drawn the same way:
+
+![Infographic Studio review, approve and prepare workflow: Edit words, where each save makes a new revision and Update preview shows it. Review page records what you inspected, then Record review and run checks runs the checks on this computer; Repair findings, when they fail, returns you to Review page. Approve revision N approves that checked revision only; a later change withdraws the approval and returns to Edit words. Prepare approved files makes the PNG, PDF, SVG and text on this computer, and Deliver approved page optionally sends a Google Doc, a PDF or both.](docs/assets/infographic-studio-workflow-approve.svg)
+
+A page saved with the older text-paragraph layout first offers **Make this story visual**; that path is not drawn here.
 
 ## Provider choices and usage
 
