@@ -1,9 +1,12 @@
 # Install Marketing Studio
 
-Use `install.sh` in the product's root folder. Marketing Studio installs all
-three studios; each individual download installs only that studio. Builders use
-`package.sh` in the same source folder. See the [four-product command table](packaging.md)
-for the complete, consistent layout and local bundles with brand and private tools.
+Use `install.sh` in the product's root folder. The Marketing Studio release download
+installs all four studios: Blog Studio, Presentation Studio, Training Studio and
+Infographic Studio. Each individual download, `infographic-studio-installer.zip`
+included, installs only that studio. Builders use `package.sh` in the same source
+folder; its local Marketing Studio bundle holds Blog Studio, Presentation Studio and
+Training Studio only. See the [four-product command table](packaging.md) for the
+complete, consistent layout and local bundles with brand and private tools.
 
 ## Versioned platform downloads
 
@@ -155,8 +158,8 @@ python3 scripts/build_bundles.py --platform linux-arm64
 python3 scripts/build_bundles.py --platform linux-x64
 ```
 
-Each command produces a full bundle, three individual studio bundles, and SHA-256
-sidecars under `dist/`. Use `--studios presentation` to build one selection instead.
+Each command produces a full bundle with all four studios, four individual studio
+bundles (Infographic Studio's included), and SHA-256 sidecars under `dist/`. Use `--studios presentation` to build one selection instead.
 The individual Blog Studio bundle includes Harness Research without the slide engine.
 The runtime is platform-specific. Prepared slide dependencies must be pure JavaScript;
 the builder refuses native Node extensions rather than silently shipping binaries for

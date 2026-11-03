@@ -348,35 +348,12 @@ gap, so the document has the same gaps as the one the studio's own Keep in libra
 Presentation Studio's Deliver makes a deck's key the same way when `sources/library.json`
 has none, so a deck added here and delivered again later is one library document.
 
-## Where new work stops
+## Where new work stops (retired)
 
-Choose **Where new work stops** under You and your assistant. New browser
-runs in Presentation Studio and Training Studio, and Blog Studio runs started step by step
-in chat, save this choice. A new blog on Blog Studio's writing desk has no stops: its
-outline and draft are written after Start, and you edit them when you choose.
-
-| Choice | Reviews |
-| --- | --- |
-| Balanced (default) | Research and the planned direction together, then finished work. Training Studio also stops for the research plan first |
-| Automatic draft | Finished work only, and each drawn slide deck |
-| Step by step | Every existing stage |
-
-A slide deck pauses the same way in Presentation Studio and Training Studio, at
-the brand's three checkpoints: the wireframe draft of what it says, its look
-(picked from the brand's rendered samples), and the finished deck. Step by step
-stops at each; Balanced asks for the draft and the look in one stop, then the
-deck; Automatic draft stops only at the deck and uses the brand's default look,
-saying why. No stop is passed while a review or the brand's audit still finds
-something grave.
-
-Presentation Studio's direction stop includes research, the editable outline
-with its wireframe draft, and the brand's rendered looks to pick from. A Blog Studio run
-started in chat includes research with the outline, and the writing, independent review
-and requested handoff at the final stop; a blog on the desk has no stops.
-Training Studio reads the research plan before any research is run, then groups
-all selected levels into one stop, **Review the first drafts**, with each deck's
-wireframe draft and the brand's looks to pick from, stops at each drawn deck, then
-one review of the completed documents, decks and scenarios.
+The shared **Where new work stops** setting was retired in Marketing Studio 4.6.0. New
+work starts on the desk, with no stop level to choose; a studio's own decisions remain,
+such as approving a deck's slide text before design. Saved runs keep the review level
+they recorded. See [saved-work compatibility](saved-work-compatibility.md).
 
 ### Everyday choices, Advanced, and who owns a value
 
@@ -452,21 +429,12 @@ in the numbered list. Blog Studio's own first run asks only what Blog Studio use
 review level, delivery format or slide previews, and their saved values are left as they
 are.
 
-### Where a run stops
+### Where a run stops (retired)
 
-Training Studio's and Presentation Studio's start forms have a stops card (**Where this
-training stops**, **Where this deck stops**): the
-three levels as one control, the stops the chosen level makes for this run, and a chip,
-**Use this for new work in every studio**. The control sets this run's level only and
-starts at the shared level the form read. With the chip on, the level is written to the
-studios config, under its lock, when the run starts. Nothing on the form leaves it.
-
-Each studio's Settings has **Where new work stops**, saved at once the same way.
-Marketing Studio's onboarding page keeps its own control. A write from a form or a
-Settings page that read a level another studio has since changed is refused, with
-nothing written and nothing started: "Another studio changed where new work stops.
-Reload the page and try again." A file that cannot be read shows Step by step, and
-nothing is written to it.
+The start forms' stops cards, **Use this for new work in every studio** and each studio's
+**Where new work stops** in Settings were retired with the shared setting in Marketing
+Studio 4.6.0. New work starts on the desk; saved runs keep their recorded review level.
+See [saved-work compatibility](saved-work-compatibility.md).
 
 Once a run has started, one line under its stages says how many steps are left, where
 it next stops for you under its own level, and what it has spent so far, in dollars

@@ -1,10 +1,15 @@
 # Package and install the studios
 
-Every product has the same two entry points in its source folder:
+Every product has the same two entry points in its source folder. These local
+bundles are not the release downloads: `scripts/build_bundles.py` builds those, and its
+`marketing-studio-installer.zip` installs all four studios, with a separate
+`infographic-studio-installer.zip` (see [installation](installation.md#build-downloads)).
+The local Marketing Studio bundle below holds Blog Studio, Presentation Studio and
+Training Studio only.
 
 | Product | Source folder | Build its installer | Install it |
 | --- | --- | --- | --- |
-| Marketing Studio, including all three studios | Repository root | `bash package.sh` | `bash install.sh` |
+| Marketing Studio, with Blog Studio, Presentation Studio and Training Studio | Repository root | `bash package.sh` | `bash install.sh` |
 | Blog Studio | `studios/blog/` | `bash package.sh` | `bash install.sh` |
 | Presentation Studio | `studios/presentation/` | `bash package.sh` | `bash install.sh` |
 | Training Studio | `studios/training/` | `bash package.sh` | `bash install.sh` |
@@ -25,7 +30,7 @@ include Harness Slides and its production dependencies and image tools.
 From the repository root:
 
 ```sh
-bash package.sh                            # Marketing Studio and all three studios
+bash package.sh                            # Marketing Studio with Blog, Presentation and Training Studio
 bash studios/blog/package.sh               # Blog Studio only
 bash studios/presentation/package.sh       # Presentation Studio only
 bash studios/training/package.sh           # Training Studio only
@@ -98,8 +103,8 @@ Extract the complete ZIP and open Terminal in its **outermost folder**, beside
 bash install.sh
 ```
 
-The filename and location are identical in all four downloads. The Marketing
-Studio ZIP installs all three studios; each individual ZIP installs only its own
+The filename and location are identical in all four local bundles. The local Marketing
+Studio ZIP installs Blog Studio, Presentation Studio and Training Studio; each individual ZIP installs only its own
 studio and required shared components. A Marketing Studio bundle also accepts
 `bash install.sh --studios blog` to install a selection. Independent studio
 launchers remain available; existing workspaces and settings are preserved.
