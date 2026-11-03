@@ -28,7 +28,8 @@ data; it reads packs from the `brands` folder of whichever storage Marketing Stu
 - The pack schema, written down so that a pack can be made by hand, with any tools, or by
   Claude or Codex from source files.
 - Pack-building commands for the exact parts, and an authoring guide for the rest.
-- Packs for Tanzu Division, VMware by Broadcom and Broadcom, each with its own icon archive.
+- Packs for Tanzu Division, VMware by Broadcom, Broadcom and TrueSource by Broadcom, sharing
+  one icon library.
 - Harness Brand: a worker that serves the studios' brand-skill contract from packs, plus
   apply-brand's restyling.
 - Marketing Studio finds the packs in its storage, local or repository, and tells Harness
@@ -198,12 +199,16 @@ what the person points them at: "build the Tanzu pack from brands/tanzu/sources"
    source's SHA-256 into `brand.json`, so no one computes a hash by hand.
 6. The person looks at the previews, the contact sheet and the diff, then commits.
 
-The first three packs are built this way from: Tanzu Brand's templates
+The first four packs are built this way from: Tanzu Brand's templates
 (`tanzu-presentation-template.pptx`, `vmware-light-template.pptx`,
 `vmware-dark-template.pptx`, `broadcom-template.pptx`) and example compositions, the three 3 November Claude
 Design exports, and Tanzu Brand's brand rules, recipes, directions and audit values as the
 starting point for the judgement parts. Where an export and Tanzu Brand disagree on a
 colour or rule, the newer export wins and the change is listed for the person.
+TrueSource by Broadcom, added on 3 November, is Broadcom's template with a denser layer for
+TrueSource customer decks: its pack is built from `broadcom-template.pptx`, the TrueSource
+`tokens.json` and brand book (`README.md`) and the Broadcom logos, all as committed in
+harness-brand-skill's `truesource-brand` branch (commit 605a6e5).
 
 ## 4. The worker: Harness Brand
 
@@ -314,7 +319,7 @@ so the person can try again or discard it. The working copy is removed after a s
 discard. Two people updating one brand is caught as the studios catch it today: the save
 refuses when the pack in storage changed after the working copy was made.
 
-Building the first three packs (section 3) is done by hand in a session, with the commands
+Building the first four packs (section 3) is done by hand in a session, with the commands
 and the guide, before this section is built, so that the guide is tried on real material
 first.
 
@@ -326,7 +331,7 @@ first.
   made from two sources; `pack check` on a good pack and on broken ones;
   contract export and check, including the refusal after the pack changes; layouts, icon
   search and placement; the audit; restyle; the installer into a disposable home folder.
-- Once with the three real packs, in a disposable home: `pack check` passes, a contract
+- Once with the four real packs, in a disposable home: `pack check` passes, a contract
   exports for each brand and variant, Harness Slides accepts each, and one deck per brand
   builds and passes the audit.
 - Marketing Studio: focused tests that the data folder is given for local and repository
@@ -340,7 +345,7 @@ first.
 
 1. Write `docs/brand-pack-format.md` and `references/building-a-pack.md`; make Example Co.
 2. Build the `pack` commands.
-3. Build the `vmware-functional` icon library and the three packs from their sources; the
+3. Build the `vmware-functional` icon library and the four packs from their sources; the
    person reviews the contact sheet, the previews and the listed differences from Tanzu
    Brand.
 4. Build the rest of Harness Brand and its installer.
