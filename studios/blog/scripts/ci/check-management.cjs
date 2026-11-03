@@ -3263,8 +3263,9 @@ async function findTextJourney(){
   // The GEO report start: a page with no text offers the button, named for the assistant.
   await t.f.run('sGeoBegin()');
   t.type('geo-link',LINK);await t.submit();
-  assert.ok(t.nodes().some(n=>n.className==='problem'&&n.textContent.startsWith(NO_TEXT)),'the refusal is said');
   assert.ok(box(),'the offer is shown');
+  assert.deepEqual(t.nodes().filter(n=>n.className==='problem'&&n.textContent).map(n=>n.textContent),[NO_TEXT],'the refusal is said once');
+  assert.equal(inBox()[0].textContent,NO_TEXT,'first, in the offer');assert.equal(inBox()[0].attributes.role,'alert');
   assert.ok(inBox().some(n=>n.tagName==='button'&&n.textContent==='Ask Codex to find the post’s text'));
   assert.ok(inBox().some(n=>/Codex, your assistant/.test(n.textContent)&&/takes a minute or two/.test(n.textContent)),'it says it uses the assistant and how long');
   assert.equal(asks().length,0,'it never runs by itself');
@@ -3275,6 +3276,7 @@ async function findTextJourney(){
   assert.equal(line.textContent,'Codex is looking for where this page gets its text…');assert.equal(line.attributes.role,'status');
   const stop=inBox().find(n=>n.tagName==='button'&&n.textContent==='Stop');assert.ok(stop.focused,'focus follows the work');
   await t.tick();assert.equal(state.polls.length,1,'it is watched');assert.ok(box(),'still working');
+  assert.equal(inBox().find(n=>n.tagName==='button'&&n.textContent==='Stop'),stop,'not drawn again while it works, so focus stays on Stop');
   // A failure says why, with the paste advice, and offers to ask again.
   state.next='failed';await t.tick();
   const failed=inBox().find(n=>n.className==='problem');
@@ -3317,7 +3319,7 @@ async function findTextJourney(){
   t.f.run('studio.deskStart.find=null');await t.f.run('sDeskStart()');assert.equal(box(),undefined);
   await t.submit();
   assert.ok(box(),'Read the page and start offers it too');
-  assert.ok(t.nodes().some(n=>n.className==='problem'&&n.textContent===NO_TEXT+' Your link is kept here.'));
+  assert.deepEqual(t.nodes().filter(n=>n.className==='problem'&&n.textContent).map(n=>n.textContent),[NO_TEXT]);
   await t.click('Ask Codex to find the post’s text');state.next='ready';await t.tick();
   assert.ok(t.nodes().some(n=>n.attributes?.['aria-label']==='The post as it was read'),'found and shown before starting');
   assert.equal(t.nodes().find(n=>n.tagName==='button'&&n.type==='submit').textContent,'Start');

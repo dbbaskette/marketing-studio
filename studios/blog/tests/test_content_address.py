@@ -235,7 +235,7 @@ class FindTextTests(FindTextCase):
         moved.page('/content' + PATH + '.json', api(), kind='application/json')
         with moved.serving():
             error = self.refused_read()
-            self.assertIn('the content address Codex found for this site no longer', str(error))
+            self.assertIn('the content address Codex found for this site didn’t give', str(error))
             self.assertIn('HTTP 404', str(error))
             self.assertEqual(error.answer['code'], 'no-text')
             # A new recipe replaces the old one.

@@ -55,7 +55,7 @@ NO_TEXT = (
 )
 NO_TEXT_SAVED = (
     'No article text was found on this page, and the content address {assistant} found for '
-    'this site no longer gives it: {why} Paste the post’s text instead.'
+    'this site didn’t give it either. {why} Paste the post’s text instead.'
 )
 NOT_FOUND = 'This page was not found (HTTP {status}). Check the link.'
 REFUSED = 'The site refused to send this page (HTTP {status}). Check the link.'
