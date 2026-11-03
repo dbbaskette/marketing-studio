@@ -3,7 +3,14 @@
 Releases are published from `VERSION`. Each entry says what changes for people
 making decks first, then what changes for maintainers.
 
-## Unreleased
+## 4.9.0 — 2026-11-03
+
+- **Released with Marketing Studio 4.6.0.** Installs pin Harness Research 1.1.0 and
+  Harness Slides 0.16.0; the brand skill needs 0.14.0 or newer. Presentation Studio
+  4.9.0; guidance needs runtime 4.9.0. This changelog was started on 2026-10-30, so it
+  lists the changes since then; the desk and the other changes since Presentation
+  Studio 4.5.0 are summarised in Marketing Studio's
+  [release notes](../../docs/release-notes.md).
 
 - **Every delivery keeps its receipt, and the desk keeps your focus and your edits.**
   The **Delivered** card lists every revision with its format and time, and opens
