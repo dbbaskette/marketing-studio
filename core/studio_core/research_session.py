@@ -118,12 +118,43 @@ def check_frozen(value, spec):
         'Synthesis must preserve the registered evidence and its actual investigators.']
 
 
+def sections(questions):
+    """Questions that name the outline section they belong to ('section', and its
+    'section_title'), grouped by section in their order: [(id, title, questions)]. None when
+    any question names no section, so plans without an outline keep their areas as before."""
+    if not questions or not all(isinstance(q, dict) and isinstance(q.get('section'), str)
+                                and q['section'] for q in questions):
+        return None
+    grouped = {}
+    for question in questions:
+        grouped.setdefault(question['section'], [question.get('section_title') or question['section'], []])[1].append(question)
+    return [(ident, title, listed) for ident, (title, listed) in grouped.items()]
+
+
 def streams(task, limit=3):
+    """The research areas: at most 3 (harness-collection-v1), never more than the questions.
+
+    Questions from an approved training outline name their section: each area then holds
+    whole sections, one area for each section while there are no more sections than areas,
+    and neighbouring sections grouped together when there are, each area titled by them.
+    Otherwise questions are dealt to the areas in turn, as they always were."""
     questions = task.get('planning_questions') or [{'id': 'scope', 'question': task['scope']}]
     if isinstance(questions, dict):
         questions = [{'id': k, 'question': v} for k, v in questions.items()]
     if not isinstance(questions, list) or not questions:
         raise ValueError('Research needs an approved scope or questions.')
+    grouped = sections(questions)
+    if grouped:
+        count = min(3, max(1, int(limit)), len(grouped))
+        size, extra = divmod(len(grouped), count)
+        areas, start = [], 0
+        for i in range(count):
+            taken = grouped[start:start + size + (1 if i < extra else 0)]
+            start += len(taken)
+            areas.append({'id': f'area{i + 1}', 'title': '; '.join(title for _, title, _ in taken),
+                          'sections': [ident for ident, _, _ in taken],
+                          'questions': copy.deepcopy([q for _, _, listed in taken for q in listed])})
+        return areas
     count = min(3, max(1, int(limit)), len(questions))
     return [{'id': f'area{i + 1}', 'questions': copy.deepcopy(questions[i::count])} for i in range(count)]
 
@@ -359,6 +390,7 @@ class Workflow:
         kept = {s['id'] for s in status['workstreams'] if s['status'] == 'accepted'}
         tracked = {'schema': 1, 'phase': 'investigate', 'round': 1, 'round_limit': rc.ROUNDS, 'streams': [
             {'id': a['id'], 'questions': request['workstreams'][i]['questions'],
+             **({'title': a['title']} if a.get('title') else {}),
              'status': 'kept' if a['id'] in kept else 'waiting'} for i, a in enumerate(areas)]}
         state_lock = threading.RLock()
 

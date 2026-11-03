@@ -4,6 +4,7 @@ What a caller needs to know
 ---------------------------
     briefs.guidance('research-plan')            drafting the research questions
     briefs.guidance('research-question')        researching one question
+    briefs.guidance('scan')                     the quick scan that drafts a training outline
     briefs.guidance('blueprint')                drafting a blueprint for a plain training
     briefs.guidance('blueprint', level='301')   drafting one level's blueprint
     briefs.guidance('document', level='301')    writing a learner guide, here one level's
@@ -63,7 +64,7 @@ import workspace
 from workspace import WorkspaceError
 
 HERE = Path(__file__).resolve().parent
-JOBS = ('research-plan', 'research-plan-queue', 'research-question', 'blueprint', 'document', 'brief', 'scenario',
+JOBS = ('research-plan', 'research-plan-queue', 'research-question', 'scan', 'blueprint', 'document', 'brief', 'scenario',
         'yoodli', 'part', 'finish-sources', 'finish-time', 'finish-answers',
         'finish-humanize', 'finish-level', 'deck-outline', 'deck-section', 'deck-review')
 NAMED = ('document', 'brief', 'scenario')   # the writers a brand's naming rules are given to

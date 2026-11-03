@@ -62,7 +62,7 @@ class PrepareTests(JobCase):
                                                                 'brief_kind': 'sales'}})
         self.assertEqual(list(worker_tools.VALIDATORS), [
             'finishing', 'research-plan', 'blueprint', 'document', 'brief', 'scenario', 'yoodli', 'outline',
-            'section', 'part', 'slide-words', 'research-json'])
+            'section', 'part', 'slide-words', 'scan', 'research-json'])
 
     def test_a_finding_needs_a_question_id(self):
         with self.assertRaisesRegex(WorkspaceError, 'not a research question ID'):

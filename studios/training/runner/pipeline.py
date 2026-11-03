@@ -195,6 +195,10 @@ TRAINING = (
     ('intake', 'intake', 'code', 'Record your answers', 'Recording your answers'),
     ('research-plan', 'documents', 'gate', 'Add your documents',
      'Waiting for your documents'),
+    # Scan, outline, then fill in (#297): a quick, bounded look at the sources that drafts
+    # the training outline, put to the person before any research. Only that flow has it.
+    ('research-plan', 'scan', 'agent', 'Scan your sources and draft the training outline',
+     'Scanning your sources and drafting the training outline'),
     ('research-plan', 'research-plan', 'agent', 'Draft {it}', 'Drafting {it}'),
     ('research-plan', 'gate:research-plan', 'gate', *GATE),
     ('research', 'research-start', 'code', 'Hand the approved questions to research',
@@ -714,7 +718,8 @@ def _step(stage: str, ident: str, kind: str, label: str, doing: str,
 
 
 def steps(levels, stages=STAGES, practice=None, copies=(), documents: bool = False,
-          own=(), laid=(), deck: bool = False, synthesis: bool = False) -> tuple[Step, ...]:
+          own=(), laid=(), deck: bool = False, synthesis: bool = False,
+          outline: bool = False) -> tuple[Step, ...]:
     """Every step of a training, in the order it is walked.
 
     `stages` are the stages it wants, of those a person may leave out. `practice` gives
@@ -723,7 +728,8 @@ def steps(levels, stages=STAGES, practice=None, copies=(), documents: bool = Fal
     scenarios a person wrote, and `laid` those of them they have asked to have laid out.
     `deck` says a deck can be made here: it then has its steps in each level, after the
     brief, and otherwise one step, last. `synthesis` says the research is one authored
-    report and one independent check of it, and names the research step so.
+    report and one independent check of it, and names the research step so. `outline`
+    says the training is scanned and outlined before research (#297): it has the scan.
     """
     listed, practice = [], practice or {}
 
@@ -743,7 +749,8 @@ def steps(levels, stages=STAGES, practice=None, copies=(), documents: bool = Fal
 
     for row in TRAINING:
         # Row by row, so every level's blueprint is drafted before the first gate 3.
-        if row[0] in (*EACH_LEVEL, *LAST) or (row[1] == 'documents' and not documents):
+        if row[0] in (*EACH_LEVEL, *LAST) or (row[1] == 'documents' and not documents) \
+                or (row[1] == 'scan' and not outline):
             continue
         for level in (levels or [None]) if row[0] == 'blueprint' else [None]:
             lay(row, level)
@@ -933,6 +940,9 @@ def _done(step: Step, seen: _Seen) -> bool:
         return state['intake'] == 'approved'
     if step.id == 'documents':
         return seen.supplied
+    if step.id == 'scan':
+        from runner import outline_first
+        return outline_first.scanned(seen.root)
     if step.id == 'deck':
         return all(state.get(workspace.qualify('deck', level)) == 'approved'
                    for level in seen.session['levels'] or [None])
@@ -1271,9 +1281,10 @@ def survey(root: Path, run: dict | None = None, copies=(), supplied=(),
         kept.setdefault(entry['artifact'], []).append(entry)
     missing = cannot(session, deck_here)
     drawn = 'deck' in wanted(session) and not missing
+    from runner import training_plan
     listed = steps(session['levels'], wanted(session), named, kept, bool(given),
                    own - asked.keys(), own & asked.keys(), drawn,
-                   bool(run.get('research_contract')))
+                   bool(run.get('research_contract')), training_plan.outlined(run))
     # On the desk, what a change reaches is held, not remade: its steps, gates and copies are
     # left out until the person updates it or keeps it as it is. An update made closes here.
     if drafts.on_desk(run):
@@ -1294,7 +1305,7 @@ def survey(root: Path, run: dict | None = None, copies=(), supplied=(),
     seen = _Seen(root, session, state, asked, found, own, kept,
                  (run.get('copies') or {}).get('tried') or {}, True, decks,
                  drafts.copied(root, session, run) if drafts.on_desk(run) else None)
-    needed = any(not _done(step, seen) for step in listed if step.id in RESEARCHED)
+    needed = any(not _done(step, seen) for step in listed if step.id in (*RESEARCHED, 'scan'))
     seen = replace(seen, supplied=_supplied(root, given, supplied, needed))
     done = frozenset(step.id for step in listed if _done(step, seen))
     # On the desk the index is not due until every material is Ready: what the desk accepted
@@ -1306,7 +1317,6 @@ def survey(root: Path, run: dict | None = None, copies=(), supplied=(),
     if review_policy.level(run) != 'step_by_step' and not drafts.on_desk(run):
         from runner import reviews
         listed, done = reviews.group(root, session, run, listed, done)
-    from runner import training_plan
     if drafts.on_desk(run):
         listed, done = training_plan.group(root, session, run, listed, done)
     first = next((step for step in listed if step.id not in done), None)
@@ -1655,6 +1665,11 @@ def blueprint_work(root: Path, found: Survey, step: Step, request: dict | None,
         practice = 'Practice scenarios are wanted: plan them.'
     inputs = {'intake': _read(root / 'intake.md') or '',
               'research findings': findings_text(root)}
+    # Scanned and outlined before research (#297): the modules follow the approved outline.
+    from runner import outline_first
+    approved = outline_first.blueprint_input(root)
+    if approved:
+        inputs['training outline'] = approved
     earlier = _earlier(root, session, level)
     if earlier:
         inputs['earlier levels'] = earlier

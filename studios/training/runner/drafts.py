@@ -979,6 +979,8 @@ TEXT_WAITS = ('Needs your text approval: {it}. Read its slide text, then approve
               'for changes. Nothing is designed until you decide.')
 PLAN_WAITS = ('Needs your approval of the topics and teaching plan. Nothing more is built '
               'until you decide.')
+OUTLINE_WAITS = ('Needs your approval of the training outline. Research starts on the '
+                 'sections you approve; nothing more is spent until you decide.')
 ATTENTION = '{It} needs attention before it can be marked ready.'
 DRAFTS_LEFT = '{drafts} to read and mark ready.'
 ALL_READY = 'Every material is marked ready.'
@@ -1078,9 +1080,13 @@ def standing(engine, root, record: dict | None = None, found=None,
                'level': '', 'slide': None}
     elif found.next.kind == 'review' and getattr(found.next.step, 'id', '') == \
             'review:training-plan':
-        phase, now, words, said = 'decision', 'needs-you', 'Needs your plan approval', PLAN_WAITS
-        nxt = {'kind': 'plan', 'label': 'Review the teaching plan', 'material': None,
-               'level': '', 'slide': None}
+        from runner import training_plan
+        outlined = training_plan.outlined(record)   # before research (#297)
+        phase, now = 'decision', 'needs-you'
+        words = 'Needs your outline approval' if outlined else 'Needs your plan approval'
+        said = OUTLINE_WAITS if outlined else PLAN_WAITS
+        nxt = {'kind': 'plan', 'label': 'Review the training outline' if outlined
+               else 'Review the teaching plan', 'material': None, 'level': '', 'slide': None}
     elif deciding:
         phase, now, words = 'decision', 'needs-you', 'Needs your text approval'
         said = TEXT_WAITS.format(it=deciding['label'])

@@ -43,7 +43,7 @@ def own(text: str) -> str:
 
 class BriefTests(JobCase):
     def test_there_is_a_brief_for_each_job_and_no_other(self):
-        self.assertEqual(briefs.JOBS, ('research-plan', 'research-plan-queue', 'research-question', 'blueprint',
+        self.assertEqual(briefs.JOBS, ('research-plan', 'research-plan-queue', 'research-question', 'scan', 'blueprint',
                                        'document', 'brief', 'scenario', 'yoodli', 'part',
                                        'finish-sources', 'finish-time', 'finish-answers',
                                        'finish-humanize', 'finish-level',
@@ -57,7 +57,7 @@ class BriefTests(JobCase):
                           'deck-section.md',
                           'document.md', 'finish-answers.md', 'finish-humanize.md', 'finish-level.md',
                           'finish-sources.md', 'finish-time.md', 'level.md', 'naming.md', 'part.md', 'research-plan-queue.md', 'research-plan.md',
-                          'research-question.md', 'scenario.md', 'yoodli.md'])
+                          'research-question.md', 'scan.md', 'scenario.md', 'yoodli.md'])
         with self.assertRaisesRegex(WorkspaceError, 'There is a brief for: research-plan'):
             briefs.guidance('deck')
         with self.assertRaisesRegex(WorkspaceError, 'only a section of a deck is drawn again'):

@@ -262,7 +262,7 @@ READS = ('/api/capabilities', '/api/setup', '/api/agents', '/api/models', '/api/
          '/api/download', '/api/slide', '/api/status', '/api/published', '/api/delete', '/api/deck-draft-ticket',
          DRAFTS, CARD, VERSIONS, f'{DRAFTS}/update-preview', f'{DRAFTS}/slide-versions', f'{DRAFTS}/source-price',
          f'{DRAFTS}/proofread', f'{DRAFTS}/migration-preview', f'{DRAFTS}/doc-preview')
-WRITES = ('/api/training-plan', '/api/research-sources', SETTINGS, SETTINGS_SOURCES, '/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/answer',
+WRITES = ('/api/training-plan', '/api/outline-first', '/api/research-sources', SETTINGS, SETTINGS_SOURCES, '/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/answer',
           '/api/documents', '/api/copies', '/api/share', '/api/outline', '/api/review', '/api/drive',
           '/api/publish', '/api/adopt', '/api/fetch', '/api/delete', '/api/companions',
           '/api/asset', '/api/upgrade', '/api/restart', '/api/versions', '/api/redesign',
@@ -1191,7 +1191,14 @@ class RunnerPage(desk.Page):
             from runner import training_plan
             return desk.as_json(HTTPStatus.OK, training_plan.decide(
                 self.engine, desk.text(sent, 'path'), desk.text(sent, 'expected'),
-                desk.text(sent, 'decision'), desk.text(sent, 'note', False), sent.get('levels')))
+                desk.text(sent, 'decision'), desk.text(sent, 'note', False), sent.get('levels'),
+                sent.get('outline')))
+        if path == '/api/outline-first':
+            # An older stopped training moves to scan, outline, then fill in (#297), confirmed.
+            from runner import outline_first
+            return desk.as_json(HTTPStatus.OK, outline_first.switch(
+                self.engine, desk.text(sent, 'path'), desk.text(sent, 'expected'),
+                sent.get('confirmed')))
         if path == '/api/outline':
             return desk.as_json(HTTPStatus.OK, self.outline(sent))
         if path == '/api/look':

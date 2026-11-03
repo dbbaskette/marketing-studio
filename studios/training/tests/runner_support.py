@@ -166,6 +166,16 @@ FOUR = {'topic': 'Rolling restarts', 'items': [
     {'id': ident, 'question': question, 'public_query': f'rolling restart {ident}'}
     for ident, question in QUESTIONS.items()]}
 CHOSEN = {'brand': 'example-co', 'variant': 'light'}
+# What the quick scan hands back (#297): three sections for one training, none of it evidence.
+SCAN = {'sections': [
+    {'title': 'How a rolling restart works', 'objectives': ['Explain how batches replace instances'],
+     'questions': ['How does a rolling restart replace instances?'], 'covers': 'The page says batch by batch.'},
+    {'title': 'Keeping capacity during a restart', 'objectives': ['Say how many instances keep capacity'],
+     'questions': ['How many instances keep capacity during a restart?',
+                   'What starts the next batch of a rolling restart?'], 'covers': 'More than one instance.'},
+    {'title': 'Limits and downtime', 'objectives': ['Name what a rolling restart does not promise'],
+     'questions': ['Do rolling restarts guarantee zero downtime?'], 'covers': ''}],
+    'terms': ['rolling restart', 'health check'], 'documents': [], 'gaps': ['Nothing on rollback.']}
 NO_SLIDES = ('The slides tool is not on this computer. The Training Studio README says where '
              'to get it.')
 NO_BRAND_SKILL = ('No brand skill is on this computer. A deck is made with one: install the '
@@ -346,6 +356,7 @@ class Workers:
         self.design_said = None     # the design handed in with it, when one is asked for
         self.placing = {}       # what a composer adds to a slide below its words, by slide ID
         self.found = []     # what each review in turn finds; nothing, once this runs out
+        self.scan_said = SCAN     # what the quick scan hands back (#297)
 
     def then(self, kind: str, *acts) -> None:
         """Queue what the next jobs of one kind do: `research-plan`, `blueprint`,
@@ -407,6 +418,21 @@ class Workers:
             text = (tools.folder / source['local']).read_text()
             value = captured_dossier(payload['worker'], source, text, [item['id'] for item in self.plan['items']])
         accepted = tools.submit_artifact('research-result', json.dumps(value))
+        assert accepted[0], accepted[1]
+
+    def training_scan(self, tools, job):
+        """The quick scan (#297): skim what was offered, save a page where it may, and hand
+        back three sections, each with its research questions."""
+        index = tools._index()
+        for source in index:
+            assert tools.read_source(source['id'])[0]
+        if tools.job['fetch']:
+            assert tools.save_source(URL)[0]
+        said = dict(self.scan_said)
+        if not said.get('documents'):   # one line on each document the scan was offered
+            said['documents'] = [{'source': source['id'], 'covers': 'What ' + source['title'] + ' says.'}
+                                 for source in index if source.get('offered')]
+        accepted = tools.submit_artifact('training-scan', json.dumps(said))
         assert accepted[0], accepted[1]
 
     def research_plan(self, tools, job):
@@ -1645,7 +1671,8 @@ class StudioCase(unittest.TestCase):
                    'documents': self.documents, 'copies': self.copies, 'index': self.index,
                    # Historic fixtures exercise the saved serial protocol. New protocol
                    # integration tests explicitly use the production default.
-                   'background': self.BACKGROUND, 'parallel_research': False, 'content_first': False, 'plan_first': False, **options}
+                   'background': self.BACKGROUND, 'parallel_research': False, 'content_first': False, 'plan_first': False,
+                   'outline_first': False, **options}
         engine = self.engines.Engine(**options)
         self.addCleanup(engine.close)
         return engine

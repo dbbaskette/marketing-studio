@@ -528,10 +528,16 @@ def check_finishing(text, spec):
     return draft_finish.check_result(text, spec)
 
 
+def check_scan(text, spec):
+    """The quick scan's overview (#297): never research evidence."""
+    from runner import outline_first
+    return outline_first.check_scan(text, spec)
+
+
 VALIDATORS = {'finishing': check_finishing, 'research-plan': check_plan, 'blueprint': check_blueprint,
               'document': check_document, 'brief': check_brief, 'scenario': check_scenario,
               'yoodli': check_yoodli, 'outline': check_outline, 'section': check_section,
-              'part': check_part, 'slide-words': check_slide_words}
+              'part': check_part, 'slide-words': check_slide_words, 'scan': check_scan}
 VALIDATORS['research-json'] = check_research_json
 
 
@@ -645,9 +651,13 @@ def reviewed(slides, compiled: Path, output: Path, design: Path, how: dict) -> d
 def prepare(folder: Path, inputs: dict[str, str] | None = None,
             artifacts: dict[str, dict] | None = None, finding: str | None = None,
             sources=(), fetch: bool = False, ask: bool = True, review: dict | None = None,
-            look=None, runtimes: dict | None = None, research: dict | None = None) -> Path:
+            look=None, runtimes: dict | None = None, research: dict | None = None,
+            pages: int | None = None) -> Path:
     """Set a job's folder up: what the worker may read, and what it must hand back.
-    `research` is where its research may look; None for any public page."""
+    `research` is where its research may look; None for any public page. `pages` is the
+    most pages `save_source` keeps for the job, below MAX_SOURCES: the quick scan's cap."""
+    if pages is not None and (type(pages) is not int or not 0 <= pages <= MAX_SOURCES):
+        raise WorkspaceError(f'A job saves 0 to {MAX_SOURCES} pages.')
     folder = Path(folder)
     if (folder / 'job.json').exists():
         raise WorkspaceError(f'{folder} already holds a job. Give each job, and each new '
@@ -691,7 +701,8 @@ def prepare(folder: Path, inputs: dict[str, str] | None = None,
         'fetch': bool(fetch), 'ask': bool(ask), 'review': review,
         'look': list(look or (review or {}).get('slides') or ()),
         'runtimes': dict(runtimes or {}), 'prepared_at': home.now(),
-        **({'research': research} if research is not None else {})})
+        **({'research': research} if research is not None else {}),
+        **({'pages': pages} if pages is not None else {})})
     return folder
 
 
@@ -1353,6 +1364,9 @@ class WorkerTools:
         if len(index) >= MAX_SOURCES:
             raise Refusal(f'This job has saved {MAX_SOURCES} sources, which is the most it '
                           'may. Work from those.')
+        most = self.job.get('pages')
+        if most is not None and sum(not item.get('offered') for item in index) >= most:
+            raise Refusal(f'This job may save at most {most} pages, and has. Work from those.')
         final, headers, data = self._fetch(url)
         entry = self._keep(url, final, headers, data, len(index) + 1)
         home.write_json(self.folder / 'sources' / 'index.json', [*index, entry])

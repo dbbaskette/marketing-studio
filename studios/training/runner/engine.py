@@ -231,6 +231,7 @@ import checks
 import home
 from studio_core import deck_content
 from runner import training_plan
+from runner import outline_first
 from studio_core import brand_guidance, critic, deck_direction, deck_flow, model_profiles, review_policy, research_contract, research_session as research_parallel, research_transport as research_parallel_native, research_timing, research_sources, research_view, research_sites, step_times, stops
 import hub
 import workspace
@@ -439,23 +440,24 @@ def read_record(root: Path) -> dict | None:
     record = workspace.read_run(root)
     if record is None:
         return None
-    if not isinstance(record, dict) or record.get('schema') not in (SCHEMA, 2, 3, drafts.SCHEMA, research_parallel.RECORD_SCHEMA, training_plan.RECORD_SCHEMA) \
+    planned = (training_plan.RECORD_SCHEMA, training_plan.OUTLINE_SCHEMA)
+    if not isinstance(record, dict) or record.get('schema') not in (SCHEMA, 2, 3, drafts.SCHEMA, research_parallel.RECORD_SCHEMA, *planned) \
             or not isinstance(record.get('steps'), dict):
         raise WorkspaceError(f'The run record in {root.name} cannot be read, so the runner '
                              'will not drive this training.')
     if record.get('schema') == 2 and not record.get('review_policy'):
         raise WorkspaceError('This run is missing its saved review level. Restore its run record.')
-    if record.get('schema') == training_plan.RECORD_SCHEMA and not (training_plan.enabled(record) and drafts.on_desk(record)):
+    if record.get('schema') in planned and not (training_plan.enabled(record) and drafts.on_desk(record)):
         raise WorkspaceError('This training is missing its saved topics-review workflow.')
     contracted = (record.get('research_contract') or {}).get('schema') == 2
     # Runner desk records require a contract; focused conversations may be contract-free.
     if record.get('schema') == drafts.SCHEMA:
         contracted = drafts.on_desk(record) and (contracted or drafts.in_conversation(record))
     if (record.get('schema') == research_parallel.RECORD_SCHEMA or
-            record.get('schema') == training_plan.RECORD_SCHEMA and 'research_execution' in record) \
+            record.get('schema') in planned and 'research_execution' in record) \
             and not research_parallel.protocol(record):
         raise WorkspaceError('This run is missing its saved parallel research protocol. Restore its run record.')
-    if record.get('schema') in (3, drafts.SCHEMA, research_parallel.RECORD_SCHEMA, training_plan.RECORD_SCHEMA) and not contracted:
+    if record.get('schema') in (3, drafts.SCHEMA, research_parallel.RECORD_SCHEMA, *planned) and not contracted:
         raise WorkspaceError('This run is missing its saved research contract. Restore its run record.')
     return record
 
@@ -639,7 +641,8 @@ class Engine(Reviewing):
 
     def __init__(self, adapters=None, research=None, background: bool = True,
                  at_once: int = AT_ONCE, documents=None, copies=None, index=None,
-                 slides=None, brand=None, notifier=None, parallel_research=True, content_first=True, plan_first=True):
+                 slides=None, brand=None, notifier=None, parallel_research=True, content_first=True, plan_first=True,
+                 outline_first=True):
         self.adapters = dict(adapters or agents.AGENTS)
         self.notifier = notifier or team.Notifier()
         self.upkeep = None    # what `studio serve` keeps of the skills here; see `upkeep`
@@ -664,6 +667,9 @@ class Engine(Reviewing):
         self.parallel_research = parallel_research
         self.content_first = content_first
         self.plan_first = plan_first
+        # Scan, outline, then fill in (#297): new desk trainings get the outline gate before
+        # research. Saved trainings keep the flow they were started with.
+        self.outline_first = outline_first
         self.files = ProcessRLock(gitstate.write_lock_path, refusal=WorkspaceError)
         self._preparing_decks: dict[Path, deck_edit.PreparedEdit] = {}
         # What was typed on each desk and not committed yet, by the training's folder:
@@ -1485,7 +1491,11 @@ class Engine(Reviewing):
                 parallel = research_parallel.execution(self.research().runtime) if contract and self.parallel_research else None
                 if parallel:
                     record.update(schema=research_parallel.RECORD_SCHEMA, research_execution=parallel)
-                if desk and self.plan_first:
+                if desk and self.plan_first and self.outline_first:
+                    # Scanned and outlined before research (#297): the gate comes first.
+                    record.update(schema=training_plan.OUTLINE_SCHEMA,
+                                  training_plan={'schema': outline_first.PLAN_SCHEMA, 'revision': 0})
+                elif desk and self.plan_first:
                     record.update(schema=training_plan.RECORD_SCHEMA, training_plan={'schema': 1, 'revision': 0})
                 if selected_sources:
                     record['research_inputs'] = research_sources.install(selected_sources, root)
@@ -1860,6 +1870,8 @@ class Engine(Reviewing):
             self._report(root, step.step)
         elif step.step.id == 'research':
             self._research(root, run, found, step)
+        elif step.step.id == outline_first.STEP:
+            self._scan(root, run, found, step.step)
         elif step.step.id == 'package':
             self._package(root, step.step)
         elif step.step.id.startswith('copies:'):
@@ -4078,6 +4090,16 @@ class Engine(Reviewing):
                     record['drafts']['updates'][it.artifact]['deck_request'] = dict(asked)
                     self._store(root, record)
                     return  # survey the new inputs and request together
+        if it.id == 'research-plan' and training_plan.outlined(record) and not step.request:
+            with self.files:
+                workspace.write_atomic(root / pipeline.PLAN,
+                                       outline_first.plan_text(root, found).encode('utf-8'))
+                workspace.save(root, 'research-plan', built=True)
+                self._tried(record, it.id, home.now(), 0, 'kept')['attempts'][-1]['runner'] = True
+                record['research'] = {**(record.get('research') or {}), 'plan_from': 'outline'}
+                self._store(root, record)
+                self._commit(root, 'write the research plan from the approved training outline')
+            return
         if (it.id == 'research-plan' and record.get('research_contract')
                 and found.scope == 'supplied-only' and not step.request):
             with self.files:
@@ -4163,6 +4185,61 @@ class Engine(Reviewing):
         else:
             self._failed(root, it, outcome, started_at,
                          pipeline.why_not(handed, outcome.detail))
+
+    # --- the quick scan (#297) -------------------------------------------------------------
+
+    def _scan(self, root: Path, run: _Run, found: pipeline.Survey, it: pipeline.Step) -> None:
+        """One bounded try at the quick scan, which drafts the training outline. It is never
+        research: what it saves is not evidence. A try that does not finish stops the
+        training with Try again, so the scan is never run twice without the person."""
+        if not self._may_go(root):
+            return
+        record = self._load(root)
+        sources = self._sources(root, record) if record.get('documents') else None
+        work = outline_first.scan_work(root, found, sources, last_error(record, it.id),
+                                       record.get('research_questions') or [])
+        outcome, handed, started_at, folder = self._job(
+            root, run, it, work, limits=agents.Limits(seconds=outline_first.SCAN_SECONDS,
+                                                      dollars=outline_first.SCAN_DOLLARS))
+        try:
+            if outcome.reason == 'stopped':
+                return self._stopped(root, it, outcome, started_at)
+            accepted = handed['artifacts'].get(outline_first.NAME)
+            if accepted is not None:
+                with self.files:
+                    outline = outline_first.keep(root, accepted['text'], handed,
+                                                 record.get('research_questions') or [])
+                    record = self._load(root)
+                    self._tried(record, it.id, started_at, outcome.seconds, 'kept',
+                                **self._cost(outcome))
+                    self._store(root, record)
+                    count = len(outline['sections'])
+                    self._commit(root, f'scan the sources and draft the training outline ({count} sections)')
+                return
+            detail = pipeline.why_not(handed, outcome.detail)
+            budget = outcome.reason == 'limit' and outcome.budget
+            with self.files:
+                record = self._load(root)
+                self._tried(record, it.id, started_at, outcome.seconds,
+                            'limit' if budget else 'failed', detail, **self._cost(outcome))
+                self._store(root, record)
+                self._commit(root, f'the quick scan did not finish: {it.label}')
+            if budget and self._left(self._load(root)) < stops.floor(record['limits']['training_dollars']):
+                return self._spend_stop(root, it.label)
+            if stops.agent_stopped('', outcome, detail) is not None:
+                return self._problem(root, it.id, 'failed', stops.agent_stopped(
+                    self._title(record['agent']), outcome, detail), KEPT,
+                    action=stops.agent_action(outcome))
+            ran_out = ('It ran out of its ' + str(outline_first.SCAN_SECONDS // 60) + ' minutes'
+                       if outcome.reason == 'timeout' else
+                       'It reached its cap of $' + f'{outline_first.SCAN_DOLLARS:.2f}'
+                       if budget else 'It did not hand back an outline')
+            self._problem(root, it.id, 'failed', (
+                f'The quick scan did not finish. {ran_out}: {detail}'), (
+                'Nothing from the scan was kept, and no research has started. Try again runs '
+                'the quick scan once more.'))
+        finally:
+            shutil.rmtree(folder, ignore_errors=True)
 
     # --- research ------------------------------------------------------------------------
 
@@ -4281,6 +4358,9 @@ class Engine(Reviewing):
             # task's scope; one saved before keeps the scope it was researched under.
             about = pipeline._about(root, found.session) + (
                 '\n' + research_sites.scope_text(looks) if record.get('research_from') else '')
+            outlined = training_plan.outlined(record)
+            if outlined:   # the report is organized by the approved sections (#297)
+                about += outline_first.scope_text(root)
             intake = pipeline.answers(root)
             depth = (' at levels ' + ', '.join(found.session['levels'])) if found.session['levels'] else ''
             task = {'topic': intake.get('topic') or found.session['title'],
@@ -4292,7 +4372,8 @@ class Engine(Reviewing):
                         'plan and materials are authored afterward.'),
                     'scope': about,
                     'planning_questions': (home.read_json(root / pipeline.PLAN, {}).get('items') or []
-                                           if research_parallel.protocol(record) else found.research.questions),
+                                           if research_parallel.protocol(record) or outlined
+                                           else found.research.questions),
                     'requested_changes': step.request,
                     # Asked for at the research stop: the sources read again.
                     'refresh': (step.request or {}).get('refresh') is True,
@@ -6881,7 +6962,10 @@ class Engine(Reviewing):
             listed.append({
                 'id': step.id, 'label': (step.label.replace('Your review of ', 'Continue ') + ' automatically'
                                          if automatic else pipeline.FROM_FORM if step.id == 'research-plan'
-                                         and (record.get('research') or {}).get('plan_from') == 'form' else step.label),
+                                         and (record.get('research') or {}).get('plan_from') == 'form'
+                                         else outline_first.FROM_OUTLINE if step.id == 'research-plan'
+                                         and (record.get('research') or {}).get('plan_from') == 'outline'
+                                         else step.label),
                 'kind': 'code' if automatic else step.kind, 'status': status,
                 'attempts': len(tried),
                 'seconds': round(sum(attempt.get('seconds') or 0 for attempt in tried), 1)
@@ -7151,7 +7235,12 @@ class Engine(Reviewing):
             'outline': outline,
             **({'training_plan': training_plan.view(root, found, record),
                 'training_plan_pending': (record['training_plan'].get('approved') or {}).get('signature')
-                    != training_plan.signature(root, found.session, record)} if training_plan.enabled(record) else {}),
+                    != training_plan.signature(root, found.session, record),
+                **({'outline_first': True} if training_plan.outlined(record) else {})}
+               if training_plan.enabled(record) else {}),
+            # An older training stopped before its research was accepted may move to the
+            # outline-first flow, only when the person chooses it (#297).
+            'outline_offer': outline_first.offer(self, root, record, state, mine),
             'look': pipeline.look_view(root, found, level) if drawing else None,
             'deck': (pipeline.deck_view(root, found, level, self._live(run, drawing),
                                         self._given_up(record, drawing))

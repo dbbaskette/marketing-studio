@@ -172,7 +172,8 @@ def revision(root: Path, session: dict, record: dict) -> str:
              'report': workspace.sha256_file(root / pipeline.REPORT),
              'record': {key: record.get(key) for key in (
                  'research_from', 'research_questions', 'research_inputs', 'documents',
-                 'research', 'problem', 'halt', 'question', 'settings_changes')}}
+                 'research', 'problem', 'halt', 'question', 'settings_changes',
+                 'training_plan', 'schema')}}
     return hashlib.sha256(json.dumps(shown, sort_keys=True, default=str).encode()).hexdigest()
 
 
@@ -381,8 +382,11 @@ def _streams(engine, root: Path, workers: int) -> int:
     """How many research areas Harness Research's collection splits the plan into, which its
     task's digest names: a change of workers that changes it is a new collection."""
     plan = home.read_json(root / pipeline.PLAN, {})
-    asked = len(plan.get('items') or []) if isinstance(plan, dict) else 0
+    items = (plan.get('items') or []) if isinstance(plan, dict) else []
     limit = min(3, getattr(engine, 'at_once', 3), max(1, int(workers or 3)))
+    # A plan from a training outline is split by its sections (#297), not its questions.
+    grouped = research_parallel.sections(items)
+    asked = len(grouped) if grouped else len(items)
     return min(3, max(1, limit), max(1, asked))
 
 
@@ -438,7 +442,17 @@ def plan(engine, root: Path, session: dict, record: dict, sent: dict) -> dict:
     if unchanged_again:
         words.insert(1, 'Nothing research reads or is given changed, so researching again would '
                         'repeat it: the finished report is kept.')
-    if training_plan.enabled(record) and (record['training_plan'].get('approved')) and (
+    if training_plan.outlined(record):
+        # Scanned and outlined before research (#297): what research reads changed, so the
+        # outline is drafted again and put to the person before research starts. Only the
+        # typed questions changed: it is drafted again from the saved scan, at no cost.
+        if outcome in ('again', 'replanned'):
+            words.insert(-1, 'The training outline is drafted again from the saved quick scan '
+                             'with your new questions, for you to check before research starts.'
+                         if set(researched) <= {'research_questions'} else
+                         'A new quick scan drafts the training outline again, for you to check '
+                         'before research starts.')
+    elif training_plan.enabled(record) and (record['training_plan'].get('approved')) and (
             differs or 'levels' in changed or outcome == 'again'):
         words.insert(-1, 'You approved the topics and teaching plan; it is prepared again for '
                          'you to check before materials are built.')
@@ -528,7 +542,8 @@ class _Kept:
     """What a save may change, copied first, so a save that fails puts it all back."""
 
     FILES = ('intake.md', f'{workspace.STATE_DIR}/session.json', f'{workspace.STATE_DIR}/run.json',
-             pipeline.PLAN, pipeline.REPORT)
+             pipeline.PLAN, pipeline.REPORT, f'{workspace.STATE_DIR}/scan.json',
+             f'{workspace.STATE_DIR}/training-outline.json')   # outline_first's (#297)
     FOLDERS = ('sources/research-inputs',)
 
     def __init__(self, root: Path):
@@ -694,6 +709,18 @@ def _apply(engine, root: Path, found: dict) -> dict:
         if workspace.statuses(root, session).get('research-plan') == 'stale':
             workspace.keep_as_is(root, 'research-plan', reason='Kept when the training’s '
                                  'settings were changed: ' + series(found['names']) + '.', by='page')
+    if outcome in ('again', 'replanned') and training_plan.outlined(record):
+        # The outline is put to the person again before research (#297): drafted again from
+        # the saved scan when only the typed questions changed, else after a new scan.
+        from runner import outline_first
+        researched = [name for name in changed if name in RESEARCHED]
+        if set(researched) <= {'research_questions'} and (root / outline_first.SCAN).is_file():
+            outline_first.rebuild(root, new['research_questions'])
+        else:
+            outline_first.forget(root)
+        plan_record = record['training_plan']
+        plan_record.pop('approved', None)
+        plan_record['revision'] = plan_record.get('revision', 0) + 1
     if outcome in ('again', 'replanned', 'restarted'):
         (record.get('research_execution') or {}).pop('progress', None)
     # A blueprint is not out of date for a level added or the brief's kind alone.
