@@ -2046,7 +2046,7 @@ function progressPart(found, held, lead) {
       : 'Preparing the first material. It will appear here when it is ready.') : null;
   // What each assistant working now is doing, with Show activity (ui-kit/activity.js).
   const doing = progress.running && typeof StudioActivity !== 'undefined'
-    ? StudioActivity.live(run.workers) : null;
+    ? StudioActivity.live(run.workers, { load: jobLines(view.path) }) : null;
   return add(make('div'), callout('', building, line, status, doing, controls.childNodes.length ? controls : null,
     // Time is a detail, never an estimate of what is left: elapsed time keeps growing.
     run.timing ? (!run.research_progress || run.research_progress.phase === 'complete'

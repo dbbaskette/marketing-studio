@@ -26,6 +26,8 @@ class ActivityLogTests(StudioCase):
             for found in self.engine.trainings():
                 seen['view'] = self.engine.view(found)
                 seen['log'] = self.engine.activity(found)
+                ident = next(one['id'] for one in seen['view']['workers'])
+                seen['lines'] = self.engine.activity(found, job=ident, since=0)['lines']
                 seen['task'] = job.task
             return self.workers.question(tools, job)
 
@@ -36,8 +38,9 @@ class ActivityLogTests(StudioCase):
         self.to_gate(root, 'research')
         worker = next(one for one in seen['view']['workers']
                       if one['id'].startswith('research:'))
-        self.assertEqual(worker['now']['text'], 'Looking at what it was given')
-        self.assertEqual([line['text'] for line in worker['lines']],
+        self.assertEqual((worker['now']['text'], worker['count']),
+                         ('Looking at what it was given', 1))
+        self.assertEqual([line['text'] for line in seen['lines']],
                          ['Looking at what it was given'])
         self.assertRegex(worker['now']['at'], r'^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$')
         self.assertEqual(seen['log']['running'][0]['id'], worker['id'])
@@ -47,7 +50,7 @@ class ActivityLogTests(StudioCase):
         self.assertEqual(research['outcome'], 'finished')
         self.assertEqual(research['words'], 'Finished')
         self.assertEqual(research['label'], worker['label'])
-        said = [line['text'] for line in research['lines']]
+        said = [line['text'] for line in self.engine.activity(root, entry=research['id'])['lines']]
         self.assertEqual(said[0], 'Looking at what it was given')
         self.assertIn('Handing back the finding for ' + worker['id'].partition(':')[2], said)
         self.assertIn('The finding was accepted', said)
@@ -96,6 +99,18 @@ class ActivityLogTests(StudioCase):
         job = self.ending_of(fails('It stopped without finishing: its spending limit was '
                                    'reached', reason='limit'))
         self.assertEqual(job['outcome'], 'limit')
+
+    def test_a_log_that_cannot_be_written_never_stops_the_run(self):
+        # The files lock busy past its wait refuses with a WorkspaceError: the job is still
+        # kept and the run carries on to its gate, with nothing logged.
+        from unittest import mock
+        from workspace import WorkspaceError
+        with mock.patch('studio_core.activity_log.append',
+                        side_effect=WorkspaceError('The workspace is busy.')) as append:
+            root = self.saved_start()
+            self.assertTrue(append.called)
+        self.assertEqual(self.view(root)['state'], 'waiting')
+        self.assertEqual(self.engine.activity(root)['jobs'], [])
 
     def test_a_training_with_no_log_still_opens_and_says_so(self):
         self.workers.then('research-plan', fails())
@@ -147,8 +162,29 @@ class StoppedJobTests(StudioCase):
         job, = self.engine.activity(root)['jobs']
         self.assertEqual((job['step'], job['outcome'], job['words']),
                          ('research-plan', 'stopped', 'Stopped'))
-        self.assertEqual([line['text'] for line in job['lines']],
-                         ['Looking at what it was given'])
+        self.assertEqual([line['text'] for line in self.engine.activity(
+            root, entry=job['id'])['lines']], ['Looking at what it was given'])
+
+    def test_stop_still_stops_when_the_log_cannot_be_written(self):
+        from unittest import mock
+        from workspace import WorkspaceError
+        entered, go = threading.Event(), threading.Event()
+        self.addCleanup(go.set)
+
+        def working(tools, job):
+            tools.list_inputs()
+            entered.set()
+            go.wait(30)
+
+        self.workers.then('research-plan', working)
+        with mock.patch('studio_core.activity_log.append',
+                        side_effect=WorkspaceError('The workspace is busy.')):
+            root = self.saved_start()
+            self.assertTrue(entered.wait(30))
+            self.assertEqual(self.engine.act(root, 'stop')['state'], 'stopped')
+            go.set()
+            self.until(lambda: self.engine._run(root).thread is None)
+        self.assertEqual(self.view(root)['state'], 'stopped')
 
 
 if __name__ == '__main__':

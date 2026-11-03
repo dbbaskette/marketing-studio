@@ -3954,17 +3954,24 @@ class Engine(Reviewing):
             with self.files:
                 activity_log.append(root / ACTIVITY, activity_log.entry(
                     step.doing, step.id, started_at, ended, lines, detail))
-        except OSError:
+        except Exception:   # a busy files lock, a full disk: never a person's Stop or the run
             pass
 
-    def activity(self, path) -> dict:
-        """A training's Activity log: its finished jobs, newest first, and those running."""
+    def activity(self, path, entry: str | None = None, job: str | None = None,
+                 since: int = 0) -> dict:
+        """A training's Activity log: its finished jobs, newest first, without their lines,
+        and those running. With `entry`, one finished job's lines; with `job`, one running
+        job's lines from the `since`th on."""
         root = self.driven(path)
         if root is None:
             raise WorkspaceError('No run is driving this training.')
         run = self._run(root)
         with self._lock:
             running = list(run.workers.items())
+        if job is not None:
+            return activity_log.running_lines(running, job, since)
+        if entry is not None:
+            return activity_log.entry_lines(root / ACTIVITY, entry)
         return activity_log.view(root / ACTIVITY, running)
 
     @staticmethod

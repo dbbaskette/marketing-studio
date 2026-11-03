@@ -78,10 +78,17 @@ class Page(shared.Page):
                                        'recovery': Jobs(self.store, {}).recovery(ident)})
         if path == '/api/activity-log':
             ident = one('id')
-            shown = self.activity.snapshot(ident) if identifier(ident) else None
-            running = [(shown['worker']['id'], shown['worker'])] if shown and shown.get('worker') else []
-            running += [(worker['id'], worker) for worker in (self.research.workers(ident) if self.research else [])]
-            return shared.as_json(200, self.store.activity_log(ident, running))
+            def given(name):
+                try:
+                    return one(name)
+                except shared.Refusal:
+                    return None
+            since = given('since') or '0'
+            require(since.isdigit() and len(since) <= 9, 'Give since as a whole number.')
+            running = [*(self.activity.running(ident) if identifier(ident) else []),
+                       *(self.research.running(ident) if self.research else [])]
+            return shared.as_json(200, self.store.activity_log(
+                ident, running, entry=given('entry'), job=given('job'), since=int(since)))
         if path == '/api/history':
             return shared.as_json(HTTPStatus.OK, {'history': history.entries(self.store, one('id'))})
         if path == '/api/history-before':

@@ -72,6 +72,18 @@ class AuthorLinesTests(Isolated):
         self.assertEqual(seen, ['thread.started', 'item.completed'])
 
 
+    def test_every_last_event_is_read_however_much_arrives_at_the_end(self):
+        folder = self.temp / 'burst'
+        folder.mkdir()
+        script = ('import json, sys\n'
+                  'line = json.dumps({"type": "item.completed", "item": {"type": "reasoning"}, '
+                  '"pad": "x" * 60})\n'
+                  'sys.stdout.write((line + "\\n") * 20000)\n')
+        seen = []
+        execute([sys.executable, '-c', script], '', folder, 20, watch=seen.append)
+        self.assertEqual(len(seen), 20000)
+
+
 class ActivityEntryTests(Isolated):
     def setUp(self):
         super().setUp()
@@ -85,7 +97,11 @@ class ActivityEntryTests(Isolated):
             worker = self.activity.snapshot('p1')['worker']
             self.assertEqual(worker['label'], 'Finding the story')
             self.assertEqual(worker['now']['text'], 'Searching the web: synthetic counts')
-            self.assertEqual(len(worker['lines']), 2)
+            self.assertEqual(worker['count'], 2)
+            self.assertNotIn('lines', worker, 'a poll stays small')
+            (ident, job), = self.activity.running('p1')
+            self.assertEqual(ident, worker['id'])
+            self.assertEqual(job['lines'].count, 2)
             self.assertEqual(self.kept, [], 'nothing is logged while it runs')
         self.assertNotIn('worker', self.activity.snapshot('p1'))
         (ident, entry), = self.kept
@@ -108,6 +124,12 @@ class ActivityEntryTests(Isolated):
             report.said('Started')
             self.activity.outcome('p1', {'state': 'cancelled'})
         self.assertEqual(self.kept[-1][1]['outcome'], 'stopped')
+        # An outcome that could not be confirmed is not called out of time.
+        with self.activity.track('p1', 'image-start') as report:
+            report.said('Started')
+            self.activity.outcome('p1', {'state': 'unknown'})
+        self.assertEqual(self.kept[-1][1]['outcome'], 'failed')
+        self.assertIn('without a confirmed result', self.kept[-1][1]['detail'])
         with self.assertRaises(RuntimeError):
             with self.activity.track('p1', 'suggest') as report:
                 report.said('Started')
@@ -133,7 +155,7 @@ class StoreLogTests(Isolated):
             with activity.track(ident, 'suggest') as report, watching(report.said):
                 Author({'agent': agent}, run=answered(events))._call(TASK)
         jobs = store.activity_log(ident)['jobs']
-        self.assertEqual([job['lines'][0]['text'] for job in jobs],
+        self.assertEqual([store.activity_log(ident, entry=job['id'])['lines'][0]['text'] for job in jobs],
                          ['Started', 'Started on synthetic-model'])
         written = (self.workspace / 'projects' / ident / activity_log.FILE).read_text()
         self.assertNotIn(TASK, written)

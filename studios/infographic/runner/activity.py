@@ -29,8 +29,10 @@ LABELS = {
 }
 
 
-# How an operation ended, in the Activity log's words. A failure says more: see `ending`.
-ENDED = {'complete': 'finished', 'cancelled': 'stopped', 'unknown': 'timeout', 'outdated': 'failed'}
+# How an operation ended, in the Activity log's words. A failure says more: see `ending`. An
+# uncertain outcome (`unknown`) is not called out of time: it ended without a confirmed result.
+ENDED = {'complete': 'finished', 'cancelled': 'stopped', 'unknown': 'failed', 'outdated': 'failed'}
+UNCERTAIN = 'It ended without a confirmed result. Check the saved work before trying again.'
 
 
 def ending(item):
@@ -96,7 +98,8 @@ class Activity:
         try:
             self.keep(ident, activity_log.entry(
                 LABELS[item['action']], item['action'], item['started_at'], ending(item),
-                item['lines'], detail=item.get('problem')))
+                item['lines'], detail=item.get('problem')
+                or (UNCERTAIN if item['state'] == 'unknown' else None)))
         except Exception:
             pass
 
@@ -107,6 +110,15 @@ class Activity:
             if state in ('unknown', 'failed', 'cancelled', 'outdated', 'existing'):
                 with self.lock:
                     self.items[ident]['outcome'] = 'unknown' if state == 'existing' else state
+
+    def running(self, ident):
+        """The operation running for one infographic, as (id, job) for its lines, or none."""
+        with self.lock:
+            item = self.items.get(ident)
+            if item is None or item['state'] != 'running':
+                return []
+            return [(item['id'], {'label': LABELS[item['action']],
+                                  'started_at': item['started_at'], 'lines': item['lines']})]
 
     def snapshot(self, ident):
         with self.lock:

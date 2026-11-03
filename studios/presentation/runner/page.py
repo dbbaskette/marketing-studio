@@ -20,7 +20,8 @@ What a caller needs to know
     answered with no models and `problem`, and listing holds up nothing else).
   - `/api/decks`, every deck in the engine's four lists {"needs", "working", "finished",
     "elsewhere"}; `/api/run?path=` one deck's view (`engine.view`); `/api/activity?path=`
-    one deck's Activity log (`engine.activity`): each finished assistant job, newest first.
+    one deck's Activity log (`engine.activity`): each finished assistant job, newest first,
+    without its lines; `&entry=` one finished job's lines, `&job=&since=` one running job's.
   - `/api/slide?path=&kind=build|look|original&number=` (or `&name=sample` for the cover
     drawn in the deck's brand, `&name=sheet` for the brand's looks on one sheet and
     `kind=look&number=` for one look, or `contact-sheet` for the build's sheet): one picture as
@@ -260,7 +261,17 @@ class RunnerPage(server.Page):
         if path == '/api/run':
             return server.as_json(HTTPStatus.OK, self.run(one('path')))
         if path == '/api/activity':
-            return server.as_json(HTTPStatus.OK, self.engine.activity(self.deck(one('path'))))
+            def given(name):
+                try:
+                    return one(name)
+                except server.Refusal:
+                    return None
+            since = given('since') or '0'
+            if not since.isdigit() or len(since) > 9:
+                raise server.Refusal(HTTPStatus.BAD_REQUEST, 'Give since as a whole number.')
+            return server.as_json(HTTPStatus.OK, self.engine.activity(
+                self.deck(one('path')), entry=given('entry'), job=given('job'),
+                since=int(since)))
         if path == '/api/slide':
             return HTTPStatus.OK, PNG, self.slide(one)
         if path == '/api/download':

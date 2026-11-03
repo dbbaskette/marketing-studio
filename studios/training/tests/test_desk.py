@@ -7061,7 +7061,7 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
                  for n, text in enumerate(['Started', 'Looking at what it was given',
                                            'Searching the web: rolling restart capacity'])]
         worker = {'id': 'research:investigate-1-area1', 'label': 'Investigating research area 1',
-                  'started_at': '2030-01-02T03:04:00Z', 'now': lines[-1], 'lines': lines,
+                  'started_at': '2030-01-02T03:04:00Z', 'now': lines[-1],
                   'count': 3}
         run = a_desk_run()
         run['body'].update(research_progress=progress, workers=[worker],
@@ -7079,7 +7079,9 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
                             'words': 'Out of time', 'detail': 'It did not finish in 600 seconds.',
                             'lines': [], 'dropped': 0}],
                   'running': [worker], 'empty': None, 'limit': 200, 'lines': 200}
-        answers = self.on_desk(a_desk(), run, **{'GET /api/activity': [ok(logged)]})
+        # Show activity reads the job's lines once it is opened, then the log is read.
+        answers = self.on_desk(a_desk(), run, **{'GET /api/activity': [
+            ok({'lines': lines, 'count': 3, 'start': 0, 'running': True}), ok(logged)]})
         result = self.open_desk(answers, [
             {'snapshot': 'working'}, {'click': 'Show activity (3 steps)'}, {'snapshot': 'shown'},
             {'poll': True}, {'snapshot': 'again'},
@@ -7098,7 +7100,9 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
             self.assertGreater(at[0], at[1], 'newest first')
             self.assertIn('Started', text.split('Show activity (3 steps)')[1])
         # The Activity log reads the log when it is opened, newest first, with each outcome.
-        self.assertEqual(self.asked(result, 'activity'), ['/api/activity?' + urlencode({'path': str(self.root)})])
+        self.assertEqual(self.asked(result, 'activity'), [
+            '/api/activity?' + urlencode({'path': str(self.root), 'job': worker['id'], 'since': 0}),
+            '/api/activity?' + urlencode({'path': str(self.root)})])
         log = shown['log']['text'].split('Activity log')[-1]
         for text in ('1 job is still working', 'Finished', 'Out of time', 'Refresh'):
             self.assertIn(text, log)

@@ -41,7 +41,7 @@ class ActivityLogTests(StudioCase):
         jobs = self.engine.activity(root)['jobs']
         research = next(job for job in jobs if job['step'] == worker['id'])
         self.assertEqual((research['outcome'], research['label']), ('finished', worker['label']))
-        said = [line['text'] for line in research['lines']]
+        said = [line['text'] for line in self.engine.activity(root, entry=research['id'])['lines']]
         self.assertEqual(said[0], 'Looking at what it was given')
         self.assertIn('The finding was accepted', said)
 
@@ -77,6 +77,16 @@ class ActivityLogTests(StudioCase):
     def test_a_job_at_a_limit_is_logged_as_a_limit(self):
         job = self.first_outline(fails("You've hit your usage limit.", reason='limit'))
         self.assertEqual((job['outcome'], job['words']), ('limit', 'Reached a limit'))
+
+    def test_a_log_that_cannot_be_written_never_stops_the_deck(self):
+        from unittest import mock
+        from workspace import WorkspaceError
+        with mock.patch('studio_core.activity_log.append',
+                        side_effect=WorkspaceError('The workspace is busy.')) as append:
+            root = self.saved_start()
+            self.assertTrue(append.called)
+        self.assertEqual(self.waiting(root), 'gate:outline')
+        self.assertEqual(self.engine.activity(root)['jobs'], [])
 
     def test_a_deck_with_no_log_still_opens_and_says_so(self):
         root = self.saved_start()
@@ -124,8 +134,29 @@ class StoppedJobTests(StudioCase):
                                for job in self.engine.activity(root)['jobs']))
         job = next(job for job in self.engine.activity(root)['jobs'] if job['step'] == 'outline')
         self.assertEqual((job['outcome'], job['words']), ('stopped', 'Stopped'))
-        self.assertEqual([line['text'] for line in job['lines']],
-                         ['Looking at what it was given'])
+        self.assertEqual([line['text'] for line in self.engine.activity(
+            root, entry=job['id'])['lines']], ['Looking at what it was given'])
+
+    def test_stop_still_stops_when_the_log_cannot_be_written(self):
+        from unittest import mock
+        from workspace import WorkspaceError
+        entered, go = threading.Event(), threading.Event()
+        self.addCleanup(go.set)
+
+        def working(tools, job):
+            tools.list_inputs()
+            entered.set()
+            go.wait(30)
+
+        self.workers.then('outline', working)
+        with mock.patch('studio_core.activity_log.append',
+                        side_effect=WorkspaceError('The workspace is busy.')):
+            root = self.saved_start()
+            self.assertTrue(entered.wait(30))
+            self.assertEqual(self.engine.act(root, 'stop')['state'], 'stopped')
+            go.set()
+            self.until(lambda: self.engine._run(root).thread is None)
+        self.assertEqual(self.view(root)['state'], 'stopped')
 
 
 if __name__ == '__main__':

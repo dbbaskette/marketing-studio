@@ -59,12 +59,31 @@ class LinesTests(unittest.TestCase):
             'label': 'Investigating research area a', 'started_at': '2030-01-01T00:00:00Z',
             'lines': lines, 'folder': Path('/somewhere'), 'stop': threading.Event()})])
         self.assertEqual(shown['now']['text'], 'Reading saved source S3')
-        self.assertEqual([line['text'] for line in shown['lines']],
-                         ['Started', 'Reading saved source S3'])
-        self.assertEqual(set(shown), {'id', 'label', 'started_at', 'now', 'lines', 'count'})
+        # A poll carries the latest line and how many there are, never the lines themselves.
+        self.assertEqual(set(shown), {'id', 'label', 'started_at', 'now', 'count'})
+        self.assertEqual(shown['count'], 2)
         # A worker kept as plain strings, as an older caller or a test has it, still reads.
         old, = activity_log.live([('x', {'label': 'X', 'started_at': None, 'lines': ['Writing']})])
-        self.assertEqual(old['now'], {'at': None, 'text': 'Writing'})
+        self.assertEqual((old['now'], old['count']), ({'at': None, 'text': 'Writing'}, 1))
+
+    def test_an_open_show_activity_reads_only_the_lines_it_has_not_had(self):
+        lines = activity_log.Lines(limit=3)
+        workers = [('job', {'label': 'Job', 'started_at': None, 'lines': lines})]
+        for text in ('One', 'Two'):
+            lines.append(text)
+        first = activity_log.running_lines(workers, 'job', 0)
+        self.assertEqual(([line['text'] for line in first['lines']], first['count'],
+                          first['start']), (['One', 'Two'], 2, 0))
+        for text in ('Three', 'Four', 'Five'):
+            lines.append(text)
+        later = activity_log.running_lines(workers, 'job', first['count'])
+        self.assertEqual([line['text'] for line in later['lines']], ['Three', 'Four', 'Five'])
+        self.assertEqual(activity_log.running_lines(workers, 'job', 5)['lines'], [])
+        # Opened late, it is told the lines before the cap are not here.
+        late = activity_log.running_lines(workers, 'job', 0)
+        self.assertEqual((late['start'], len(late['lines'])), (2, 3))
+        self.assertEqual(activity_log.running_lines(workers, 'gone', 0),
+                         {'lines': [], 'count': 0, 'start': 0, 'running': False})
 
     def test_lines_can_be_appended_from_another_thread_while_read(self):
         lines = activity_log.Lines()
@@ -111,8 +130,14 @@ class LogTests(unittest.TestCase):
         self.assertEqual([job['label'] for job in jobs], [f'Job {n}' for n in range(4, -1, -1)])
         self.assertEqual([job['words'] for job in jobs],
                          ['Reached a limit', 'Out of time', 'Stopped', 'Failed', 'Finished'])
-        self.assertEqual(jobs[0]['lines'][0]['text'], 'Doing job 4')
-        self.assertRegex(jobs[0]['lines'][0]['at'], r'^\d{4}-\d\d-\d\dT')
+        # The view is headers: each job's lines are read when it is opened.
+        self.assertNotIn('lines', jobs[0])
+        self.assertEqual(jobs[0]['steps'], 1)
+        opened = activity_log.entry_lines(self.path, jobs[0]['id'])
+        self.assertEqual(opened['lines'][0]['text'], 'Doing job 4')
+        self.assertRegex(opened['lines'][0]['at'], r'^\d{4}-\d\d-\d\dT')
+        self.assertTrue(activity_log.entry_lines(self.path, 'nothing')['missing'])
+        jobs = activity_log.read(self.path)
         self.assertNotIn('detail', jobs[-1])   # a job that finished says no why
         self.assertIn('600 seconds', jobs[0]['detail'])
 

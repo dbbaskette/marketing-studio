@@ -824,7 +824,7 @@ function researching(run) {
 function researchActivity(run, controls = null) {
   const research = run.research_progress;
   if (!research || research.phase === 'complete') return null;
-  if (typeof StudioResearch !== 'undefined') return StudioResearch.progress(research, {timing: run.timing, controls, workers: run.workers});
+  if (typeof StudioResearch !== 'undefined') return StudioResearch.progress(research, {timing: run.timing, controls, workers: run.workers, lines: jobLines(view.path)});
   const names = { investigate: 'Investigating', synthesize: 'Combining findings', review: 'Independent check' };
   const node = add(card(names[research.phase] || 'Research'),
     make('p', 'quiet', 'Completed research areas are kept for retry.'));
@@ -5596,7 +5596,9 @@ function tickSteps(run) {
 }
 
 function workerItem(worker) {
-  const lines = list(worker.lines).map((line) => (typeof line === 'string' ? line : line.text));
+  // A poll carries the latest line (`now`), not every line: those are read while opened.
+  const lines = [...list(worker.lines).map((line) => (typeof line === 'string' ? line : line.text)),
+    ...(worker.lines === undefined && worker.now ? [worker.now.text] : [])];
   const item = add(make('li', 'worker'), add(make('div', 'computer-top'),
     make('p', 'row-title', worker.label),
     add(make('span', 'quiet'), 'Started ', when(worker.started_at))));
@@ -5614,7 +5616,9 @@ function workerItem(worker) {
 // What each assistant working now is doing: its latest line, and Show activity with every line
 // so far (ui-kit/activity.js). Without the shared piece, the older short list.
 function workersCard(run) {
-  if (typeof StudioActivity !== 'undefined') return add(card('Working now'), StudioActivity.live(run.workers));
+  if (typeof StudioActivity !== 'undefined') {
+    return add(card('Working now'), StudioActivity.live(run.workers, { load: jobLines(view.path) }));
+  }
   const items = make('ul', 'plain workers');
   for (const worker of list(run.workers)) items.append(workerItem(worker));
   return add(card('Working now'), items);
@@ -5624,7 +5628,13 @@ function workersCard(run) {
 // It is read when the person opens it, while the run works and after it ends.
 function activityLogCard(path) {
   if (typeof StudioActivity === 'undefined' || !path) return null;
-  return StudioActivity.logCard({ key: 'activity-log ' + path, load: () => ask('activity', { path }) });
+  return StudioActivity.logCard({ key: 'activity-log ' + path, load: () => ask('activity', { path }),
+    entry: (entry) => ask('activity', { path, entry }) });
+}
+
+// How a running job's lines are read while its Show activity is open: from the `since`th on.
+function jobLines(path) {
+  return (job, since) => ask('activity', { path, job, since });
 }
 
 function madeCard(training, theirs) {
@@ -9274,6 +9284,7 @@ async function catchUp() {
     notify('');
     setTitle();
     for (const node of document.querySelectorAll('time')) {
+      if (node.dataset.clock !== undefined) continue;   // an activity line's own clock time
       const then = Date.parse(node.dateTime);
       if (!Number.isNaN(then)) node.textContent = ago(then);
     }

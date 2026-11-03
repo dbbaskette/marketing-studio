@@ -237,11 +237,17 @@ class Store:
                     raise
                 time.sleep(0.1)
 
-    def activity_log(self, ident: str, running=()) -> dict:
-        """An infographic's Activity log, newest first, and what is running for it now."""
+    def activity_log(self, ident: str, running=(), entry: str | None = None,
+                     job: str | None = None, since: int = 0) -> dict:
+        """An infographic's Activity log, newest first without lines, and what is running for
+        it now; with `entry`, one finished job's lines; with `job`, one running job's."""
         self.read(ident)
         path = self._project(ident) / activity_log.FILE
         require(not path.is_symlink(), 'The Activity log cannot be a link.')
+        if job is not None:
+            return activity_log.running_lines(running, job, since)
+        if entry is not None:
+            return activity_log.entry_lines(path, entry)
         return activity_log.view(path, running)
 
     def _verify_owner(self):

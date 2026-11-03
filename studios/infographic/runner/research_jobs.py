@@ -30,11 +30,14 @@ class Jobs:
              'synthesize': 'Combining the evidence into the research report',
              'review': 'Independently checking the research'}
 
-    def workers(self, ident):
-        """The research jobs running now for one infographic, as the page shows them."""
+    def running(self, ident):
+        """The research jobs running now for one infographic, as (id, job) pairs."""
         with self.lock:
-            running = list((self.working.get(ident) or {}).items())
-        return activity_log.live(running)
+            return list((self.working.get(ident) or {}).items())
+
+    def workers(self, ident):
+        """The research jobs running now for one infographic, as the page polls them."""
+        return activity_log.live(self.running(ident))
 
     def folder(self, ident):
         require(identifier(ident), 'Choose a saved infographic.')

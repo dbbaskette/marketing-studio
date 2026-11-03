@@ -4,13 +4,15 @@ What a caller needs to know
 ---------------------------
     lines = activity_log.Lines()                 # give lines.append as agents' activity=
     run.workers[ident] = {'label': ..., 'started_at': ..., 'lines': lines}
-    activity_log.live(run.workers.items())       # running jobs, as the page shows them
+    activity_log.live(run.workers.items())       # running jobs, as a page polls them
+    activity_log.running_lines(run.workers.items(), ident, since)   # one job's lines, opened
     entry = activity_log.entry('Investigating research area 1', 'research:investigate-1-a',
                                started_at, activity_log.ending(outcome), lines,
                                detail=outcome.detail)
     with engine.files:                           # the studio's existing files lock
         activity_log.append(project / 'work' / activity_log.FILE, entry)
-    activity_log.view(project / 'work' / activity_log.FILE)   # newest first, for the page
+    activity_log.view(project / 'work' / activity_log.FILE)   # newest first, without lines
+    activity_log.entry_lines(project / 'work' / activity_log.FILE, entry_id)   # one entry's
 
 - A line is the plain sentence `agents` makes of one thing an assistant did ("Searching the
   web: …", "Reading saved source S3"), with the time it was said. Nothing else is kept:
@@ -19,16 +21,21 @@ What a caller needs to know
 - `Lines` keeps the newest LINES lines of a running job, the oldest dropped first, and how
   many were said in all. It is safe to append to from the worker's thread while the page
   reads it from another.
-- `live` is what a page is sent for each running job: its label, when it started, its latest
-  line as `now`, and its lines so far, oldest first, each `{'at', 'text'}`.
+- `live` is what a page is sent on every poll for each running job: its label, when it
+  started, its latest line as `now` and how many lines it has said, `count`; never the lines
+  themselves, so a poll stays small. `running_lines(workers, ident, since)` gives one running
+  job's lines from the `since`th on, oldest first, each `{'at', 'text'}`: the page asks for
+  them only while its Show activity is open, and only for the lines it has not had.
 - The log is a JSON Lines file, one finished job per line, newest last. It keeps the newest
   JOBS jobs. `append` adds one and trims the file only once it holds JOBS + SLACK, so it is
   one short write almost every time. Call it holding the studio's files lock; no lock is
   held while an assistant runs, because a job is logged only after it ended.
 - A job ends `finished`, `failed`, `stopped`, `timeout` (out of time) or `limit`, as
   `ending` reads an agents.Outcome. `WORDS` are those endings in plain words.
-- `view` reads the log newest first. A project with no log, or with one that cannot be read,
-  has no jobs, and `empty` says "No activity recorded yet."
+- `view` reads the log newest first, each job with its `steps` (how many lines it kept) but
+  without the lines; `entry_lines` gives one job's lines when the page opens it. A project
+  with no log, or with one that cannot be read, has no jobs, and `empty` says "No activity
+  recorded yet."
 """
 from __future__ import annotations
 
@@ -44,6 +51,7 @@ FILE = 'activity-log.jsonl'
 LINES = 200             # lines kept for one job, live and in the log
 JOBS = 200              # finished jobs a project's log keeps
 SLACK = 20              # jobs over JOBS before the file is trimmed
+SMALL = 30_000          # bytes: a log this small cannot hold JOBS + SLACK jobs, so is not counted
 LINE_LENGTH = 240       # characters in one line
 DETAIL_LENGTH = 300     # characters in the sentence that says why a job did not finish
 LABEL_LENGTH = 160
@@ -101,6 +109,14 @@ class Lines:
         with self._lock:
             return [dict(line) for line in self._kept]
 
+    def since(self, start: int) -> tuple[list[dict], int]:
+        """The lines kept from the `start`th said on, oldest first, and how many were said.
+        Lines dropped for the cap are not given again."""
+        with self._lock:
+            first = self.count - len(self._kept)
+            kept = list(self._kept)[max(0, start - first):] if start < self.count else []
+            return [dict(line) for line in kept], self.count
+
     def latest(self) -> dict | None:
         with self._lock:
             return dict(self._kept[-1]) if self._kept else None
@@ -130,17 +146,36 @@ def _lines(found) -> list[dict]:
 
 
 def live(workers) -> list[dict]:
-    """The running jobs as a page shows them: `(ident, worker)` pairs, where a worker has
-    `label`, `started_at` and `lines`."""
+    """The running jobs as a page polls them: `(ident, worker)` pairs, where a worker has
+    `label`, `started_at` and `lines`. Each is {id, label, started_at, now, count}."""
     shown = []
     for ident, worker in workers:
-        lines = _lines(worker.get('lines'))
         held = worker.get('lines')
+        if isinstance(held, Lines):
+            now, count = held.latest(), held.count
+        else:
+            lines = _lines(held)
+            now, count = (lines[-1] if lines else None), len(lines)
         shown.append({'id': ident, 'label': worker.get('label'),
-                      'started_at': worker.get('started_at'),
-                      'now': lines[-1] if lines else None, 'lines': lines,
-                      'count': held.count if isinstance(held, Lines) else len(lines)})
+                      'started_at': worker.get('started_at'), 'now': now, 'count': count})
     return shown
+
+
+def running_lines(workers, ident: str, since: int = 0) -> dict:
+    """One running job's lines from the `since`th on, for its open Show activity:
+    {lines, count, start}, where `start` is the number of the first line given. A job that has
+    ended has no lines here: its lines are in the log."""
+    for name, worker in workers:
+        if name != ident:
+            continue
+        held = worker.get('lines')
+        if isinstance(held, Lines):
+            lines, count = held.since(max(0, int(since)))
+        else:
+            every = _lines(held)
+            lines, count = every[max(0, int(since)):], len(every)
+        return {'lines': lines, 'count': count, 'start': count - len(lines), 'running': True}
+    return {'lines': [], 'count': 0, 'start': 0, 'running': False}
 
 
 def ending(outcome) -> str:
@@ -177,6 +212,8 @@ def append(path, found: dict, jobs: int = JOBS) -> None:
     line = json.dumps(found, ensure_ascii=False, separators=(',', ':')) + '\n'
     with open(path, 'a', encoding='utf-8') as log:
         log.write(line)
+    if path.stat().st_size < SMALL:
+        return
     data = path.read_bytes()
     if data.count(b'\n') <= jobs + SLACK:
         return
@@ -208,8 +245,17 @@ def read(path) -> list[dict]:
 
 
 def view(path, running=()) -> dict:
-    """The log as a page shows it: finished jobs newest first, the jobs running now, and a
-    sentence for a project with none."""
-    jobs = read(path)
+    """The log as a page shows it: finished jobs newest first, each without its lines but with
+    how many it kept (`steps`), the jobs running now, and a sentence for a project with none."""
+    jobs = [{**{key: value for key, value in job.items() if key != 'lines'},
+             'steps': len(job['lines'])} for job in read(path)]
     return {'jobs': jobs, 'running': live(running),
             'empty': None if jobs else EMPTY, 'limit': JOBS, 'lines': LINES}
+
+
+def entry_lines(path, ident: str) -> dict:
+    """One finished job's lines, oldest first, for the page that opens it: {id, lines}."""
+    for job in read(path):
+        if job.get('id') == ident:
+            return {'id': ident, 'lines': job['lines'], 'dropped': job.get('dropped', 0)}
+    return {'id': ident, 'lines': [], 'dropped': 0, 'missing': True}
