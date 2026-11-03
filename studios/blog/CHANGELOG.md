@@ -36,9 +36,10 @@ changes for authors first, then what changes for maintainers.
   checked work from the text as it came keeps it, so nothing is redone.
   Maintainers: `research_session.Workflow.asset` registers and offers
   `capture_text(text, kept)`, which is `shared_runner.worker_tools.tidy(text)` unless
-  a kept investigation under `sources/collection/` already holds only the untidied
-  text. Intake, the input fingerprint, the research basis and capture file names still
-  come from the text as it came.
+  that source's own kept copies (`kept_copies`, at
+  `sources/collection/<area>/<attempt>/<capture file>`) hold only the untidied text.
+  Intake, the input fingerprint, the research basis and capture file names still come
+  from the text as it came.
 
 ## 4.10.0 — 2026-11-03
 

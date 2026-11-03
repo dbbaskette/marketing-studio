@@ -135,12 +135,16 @@ def bytes_of(path):
     return path.read_bytes()
 
 
-def kept_copies(target):
-    """The hashes of every file kept investigations copied into this research."""
+def kept_copies(target, file):
+    """The hashes of the copies kept investigations hold of one registered capture.
+
+    An investigation keeps each source it cites at sources/collection/<area>/<attempt>/
+    followed by the source's registered capture file, which rc.uncaptured enforces.
+    """
     folder = target / 'sources/collection'
     if not folder.is_dir() or folder.is_symlink():
         return set()
-    return {hashlib.sha256(path.read_bytes()).hexdigest() for path in folder.rglob('*')
+    return {hashlib.sha256(path.read_bytes()).hexdigest() for path in folder.glob('*/*/' + file)
             if path.is_file() and not path.is_symlink()}
 
 
@@ -152,6 +156,7 @@ def capture_text(text, kept):
     Harness Research checks it against. Earlier Blog Studio and Infographic Studio runs
     gave investigators the text as it came; when a kept investigation already holds that
     untidied text, and not the tidied text, it stays registered so that evidence stays valid.
+    `kept` holds the hashes of this one source's kept copies, from kept_copies.
     """
     tidied = tidy(text)
     if tidied != text and hashlib.sha256(text.encode()).hexdigest() in kept \
@@ -258,12 +263,13 @@ class Workflow:
         inventory = json.loads((target / 'sources.json').read_text())['entries']
         # Registering again updates capture_sha256, so a capture registered untidied by an
         # earlier version is corrected here on Try again (#295).
-        kept, offered = kept_copies(target), []
+        offered = []
         for source, filename, linked in selected:
             origin = source.get('origin', source.get('url', ''))
             original = next(e for e in inventory if e.get('filename') == filename)
             entry = next(e for e in inventory if e.get('type') == 'url' and e['origin'] == origin) if linked else original
-            file, text = 'sources/selected/' + filename + '.txt', capture_text(source['text'], kept)
+            file = 'sources/selected/' + filename + '.txt'
+            text = capture_text(source['text'], kept_copies(target, file))
             rc.write(target, file, text)
             self.command(target, 'asset', 'source', {'id': entry['id'], 'outcome': 'captured',
                 'capture_file': file, 'accessed_at': source.get('accessed_at') or now(),
@@ -276,7 +282,7 @@ class Workflow:
                 raise ValueError('Public captures need explicit external-search permission.')
             # Names stay those of the text as it came, so an earlier capture is replaced.
             file = 'sources/public/' + digest([source['origin'], source['text']]) + '.txt'
-            text = capture_text(source['text'], kept)
+            text = capture_text(source['text'], kept_copies(target, file))
             rc.write(target, file, text)
             self.command(target, 'asset', 'source', {'id': 'public-' + digest([source['origin'], source['text']])[:32],
                 'role': 'discovered', 'origin': source['origin'], 'permission': 'public', 'outcome': 'captured',

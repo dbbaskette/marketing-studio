@@ -290,3 +290,24 @@ class SessionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'explicitly retry'): self.run_session()
         self.workflow.run(self.root,self.task,self.invoke,restart_stopped=True)
         self.assertEqual(self.workflow.command(case,'collection','status')['generation'],2)
+
+
+class CaptureTextTests(unittest.TestCase):
+    """Which text a source is registered with, decided from that source's kept copies alone."""
+    def test_each_source_decides_from_its_own_kept_copies(self):
+        with tempfile.TemporaryDirectory() as temp:
+            target = Path(temp)
+            first, second = 'sources/selected/first.txt', 'sources/selected/second.txt'
+            # The first source's legacy investigation kept it untidied; another source's
+            # kept copy happens to hold exactly the first one's tidied text.
+            rc.write(target, 'sources/collection/area1/1/' + first, UNTIDY)
+            rc.write(target, 'sources/collection/area2/1/' + second, tidy(UNTIDY))
+            rc.write(target, 'sources/collection/area1/1/documents/original.txt', tidy(UNTIDY))
+            self.assertEqual(session.kept_copies(target, first), {hashlib.sha256(UNTIDY.encode()).hexdigest()})
+            self.assertEqual(session.capture_text(UNTIDY, session.kept_copies(target, first)), UNTIDY)
+            self.assertEqual(session.capture_text(tidy(UNTIDY), session.kept_copies(target, second)), tidy(UNTIDY))
+            rc.write(target, 'sources/collection/area1/2/' + first, tidy(UNTIDY))
+            self.assertEqual(session.capture_text(UNTIDY, session.kept_copies(target, first)), tidy(UNTIDY),
+                             'Once the tidied text is kept, it is the one registered')
+            self.assertEqual(session.capture_text(UNTIDY, session.kept_copies(target, 'sources/selected/new.txt')),
+                             tidy(UNTIDY))

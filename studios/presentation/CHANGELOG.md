@@ -37,10 +37,11 @@ making decks first, then what changes for maintainers.
   registered unchanged.
   Maintainers: `research_session.Workflow.asset` registers and offers
   `capture_text(text, kept)`, which is `shared_runner.worker_tools.tidy(text)` unless
-  a kept investigation under `sources/collection/` already holds only the untidied
-  text. Registration runs on every start, and Harness Research's `asset source`
-  re-hashes `capture_sha256`; intake, the input fingerprint, the research basis and
-  capture file names still come from the text as it came.
+  that source's own kept copies (`kept_copies`, at
+  `sources/collection/<area>/<attempt>/<capture file>`) hold only the untidied text.
+  Registration runs on every start, and Harness Research's `asset source` re-hashes
+  `capture_sha256`; intake, the input fingerprint, the research basis and capture
+  file names still come from the text as it came.
 
 ## 4.9.0 — 2026-11-03
 
