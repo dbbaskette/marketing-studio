@@ -4,9 +4,13 @@ import json
 from pathlib import Path
 from unittest import mock
 
+import hashlib
+import os
 import unittest
 
 from test_runner_deck import DeckCase, PageCase
+import test_parallel_research  # its scripted worker, borrowed by name so its tests run once
+from studio_core import research_contract as contract
 import test_desk  # its screen tests' helpers, borrowed by name so its tests are not run here
 from test_desk import NODE, ScriptedPage, a_desk, a_desk_run, ok
 from test_desk import PageCase as DeskPageCase
@@ -60,6 +64,7 @@ class SettingsCase(DeckCase):
 class DiscardTests(SettingsCase):
     def test_documents_only_becomes_documents_and_web_with_three_questions(self):
         root = self.supplied()
+        drafts_before = set((self.space.root / '.research-sources').iterdir())
         stopped = self.view(root)
         self.assertEqual(stopped['state'], 'failed')
         self.assertTrue(stopped['settings']['may'], stopped['settings'])
@@ -81,7 +86,7 @@ class DiscardTests(SettingsCase):
         self.assertIn('$1.25', words)
         self.assertIn('cannot be undone', words)
         self.assertIn('Nothing starts until you press Continue.', words)
-        self.assertEqual(set(said['changed']), {'research_questions', 'sources'})
+        self.assertEqual(set(said['changed']), {'research_questions', 'search'})
         # A preview changes nothing.
         self.assertEqual(self.form(root)['revision'], shown['revision'])
         with self.assertRaisesRegex(WorkspaceError, 'confirm'):
@@ -95,7 +100,8 @@ class DiscardTests(SettingsCase):
         self.assertEqual(self.researched_jobs(), jobs, 'Nothing starts before Continue')
         self.assertEqual(len(self.log()), commits + 1)
         self.assertTrue(self.log()[-1].endswith("change the training's settings: the research "
-                                                'questions and the sources'), self.log()[-1])
+                                                'questions and where research may search'),
+                        self.log()[-1])
         record = self.record(root)
         self.assertEqual(record['research_from'], {'documents': True, 'sites': [], 'web': True})
         self.assertEqual(record['documents']['scope'], 'both')
@@ -104,6 +110,11 @@ class DiscardTests(SettingsCase):
         self.assertFalse((root / pipeline.PLAN).exists(), 'The plan is planned again')
         self.assertIn('The public web and your documents', (root / 'intake.md').read_text())
         self.assertEqual(record['settings_changes'][-1]['research'], 'replanned')
+        # The sheet's source drafts are taken away once the change is saved; only the
+        # start's own draft is left.
+        self.assertEqual({path for path in (self.space.root / '.research-sources').iterdir()
+                          if len(path.name) == 32}, {path for path in drafts_before
+                                                       if len(path.name) == 32})
         # Continue plans with three questions and researches with web access allowed.
         self.workers.plan = THREE
         self.engine.act(root, 'retry')
@@ -165,8 +176,12 @@ class DiscardTests(SettingsCase):
 
 class KeepTests(SettingsCase):
     def finished(self, **changes) -> Path:
+        """Research accepted, the plan and the guide made, and the brief stopped after its
+        three tries: a stop well past research."""
+        self.workers.then('brief', fails(), fails(), fails())
         root = self.start(flow='desk', materials=['document', 'brief'], **changes)
         self.to_end(root)
+        self.assertEqual(self.view(root)['state'], 'failed')
         return root
 
     def test_levels_and_brief_kind_keep_research_and_remake_only_what_depends(self):
@@ -195,6 +210,10 @@ class KeepTests(SettingsCase):
         self.assertEqual(state['blueprint@101'], 'approved', 'An added level keeps 101 as it is')
         self.assertEqual(state['brief@101'], 'not-started')
         self.assertEqual(session['settings']['brief_kind'], 'competitive')
+        # What stopped is not about these settings: the brief's stop stays, saying they changed.
+        problem = self.view(root)['problem']
+        self.assertEqual((problem['action'], problem['label']), ('retry', 'Try again'))
+        self.assertIn('Its settings were changed', problem['what'])
         self.engine.act(root, 'retry')
         self.assertEqual((root / pipeline.REPORT).read_bytes(), report)
         self.assertEqual((root / '101/blueprint.md').read_bytes(), blueprint)
@@ -229,6 +248,18 @@ class KeepTests(SettingsCase):
         held = settings_change.drafts.held(root, session, self.record(root))
         self.assertIn('blueprint', held, 'What is built from the intake waits for the person')
 
+    def test_research_again_is_not_offered_when_research_is_given_nothing_new(self):
+        root = self.finished()
+        draft = self.engine.settings_sources(root)
+        store = research_sources.Sources(self.space.root / '.research-sources')
+        draft = store.mutate(draft['id'], draft['revision'], 'configure', workers=2)
+        said = self.engine.change_settings(root, self.sent(
+            self.form(root), research_again=True,
+            research_inputs={'id': draft['id'], 'expected': draft['revision']}), preview=True)
+        self.assertEqual(said['changed'], ['workers'])
+        self.assertEqual(said['research'], 'kept')
+        self.assertFalse(said['confirm'])
+        self.assertIn('researching again would repeat it', ' '.join(said['words']))
 
     def test_research_again_sets_the_report_aside_and_researches_on_continue(self):
         root = self.finished()
@@ -293,6 +324,107 @@ class RefusalTests(SettingsCase):
                                            preview=True)
         self.assertEqual(said['research'], 'continues')
 
+    def test_a_finished_training_keeps_its_settings(self):
+        root = self.start(flow='desk', materials=['document'])
+        self.to_end(root)
+        if self.view(root)['state'] != 'done':
+            self.skipTest('The scripted desk training waits for Mark ready here.')
+        self.assertEqual(self.view(root)['settings'], {'may': False, 'why': settings_change.FINISHED})
+
+
+class StopTests(SettingsCase):
+    """What the stop before a change asked for is kept: more time, the spending limit, and
+    originals a check could not read."""
+
+    def stopped_as(self, root: Path, **problem) -> None:
+        record = self.record(root)
+        record['problem'] = {**record['problem'], **problem}
+        self.engine._store(root, record)
+
+    def test_a_stop_for_time_keeps_its_own_action_when_research_carries_on(self):
+        root = self.supplied()
+        self.stopped_as(root, action='more-time', label='Give it more time and try again',
+                        seconds=900)
+        self.engine.change_settings(root, self.sent(self.form(root), time_limit='40 minutes'))
+        problem = self.record(root)['problem']
+        self.assertEqual((problem['action'], problem['seconds']), ('more-time', 900))
+        with mock.patch.object(self.engine, 'wake'):
+            self.engine.act(root, 'more-time')
+        self.assertEqual(self.record(root)['more_time'], 1800)
+
+    def test_a_stop_for_time_gives_research_planned_again_the_same_room(self):
+        root = self.supplied()
+        self.stopped_as(root, action='more-time', label='Give it more time and try again',
+                        seconds=900)
+        self.engine.change_settings(root, self.sent(self.form(root), research_questions=QUESTIONS,
+                                                    confirmed=True))
+        problem = self.record(root)['problem']
+        self.assertEqual((problem['label'], problem['carried']), ('Continue', 'more-time'))
+        with mock.patch.object(self.engine, 'wake'):
+            self.engine.act(root, 'retry')
+        self.assertEqual(self.record(root)['more_time'], 1800)
+
+    def test_the_spending_limit_is_cleared_by_continue_after_a_change(self):
+        root = self.supplied()
+        self.stopped_as(root, action='resume', label='Carry on', step=None)
+        self.engine.change_settings(root, self.sent(self.form(root), research_questions=QUESTIONS,
+                                                    confirmed=True))
+        self.assertEqual(self.record(root)['problem']['carried'], 'resume')
+        with mock.patch.object(self.engine, 'wake'):
+            self.engine.act(root, 'retry')
+        self.assertEqual(self.record(root)['cleared'], 1.25)
+
+    def test_unreadable_originals_are_checked_again_when_research_restarts(self):
+        root = self.supplied(levels=['101'])
+        self.stopped_as(root, unreadable=['sources/research-inputs/missing.original.raw'])
+        with mock.patch.object(research_session, 'protocol', return_value=True):
+            self.engine.change_settings(root, self.sent(self.form(root), levels=['101', '201'],
+                                                        confirmed=True))
+        self.assertEqual(self.record(root)['problem']['unreadable'],
+                         ['sources/research-inputs/missing.original.raw'])
+
+
+class DetailTests(SettingsCase):
+    def test_an_unchanged_brand_is_not_checked_against_the_brand_skill(self):
+        root = self.supplied()
+        with workspace.locked(root):
+            session = workspace.load(root)
+            session['settings'].update(deck_target='pptx', brand='retired-brand/')
+            workspace.store(root, session)
+        shown = self.form(root)
+        self.assertEqual(shown['values']['brand'], {'brand': 'retired-brand', 'variant': None})
+        with mock.patch.object(self.engine, 'brands', return_value=[
+                {'brand': 'example-co', 'variants': ['light']}]):
+            said = self.engine.change_settings(root, self.sent(shown, time_limit='40 minutes'),
+                                               preview=True)
+            self.assertEqual(said['changed'], ['time_limit'])
+            with self.assertRaisesRegex(WorkspaceError, 'The brand is one of'):
+                self.engine.change_settings(root, self.sent(
+                    shown, brand={'brand': 'other-brand', 'variant': None}), preview=True)
+
+    def test_one_source_draft_a_training_at_a_time(self):
+        root = self.supplied()
+        first = self.engine.settings_sources(root)
+        second = self.engine.settings_sources(root)
+        folder = self.space.root / '.research-sources'
+        self.assertFalse((folder / first['id']).exists())
+        self.assertTrue((folder / second['id']).exists())
+
+    def test_a_saved_change_is_reported_saved_when_the_run_cannot_be_read_after(self):
+        root = self.supplied()
+        shown = self.form(root)
+        read, calls = self.engine.view, []
+
+        def flaky(path):
+            calls.append(path)
+            if len(calls) > 1:
+                raise RuntimeError('Synthetic read failure')
+            return read(path)
+        with mock.patch.object(self.engine, 'view', flaky):
+            made = self.engine.change_settings(root, self.sent(shown, time_limit='40 minutes'))
+        self.assertEqual(made, {'changed_settings': made['changed_settings']})
+        self.assertIn('40 minutes', (root / 'intake.md').read_text())
+
 
 class RouteTests(SettingsCase, PageCase):
     def test_the_form_its_preview_and_its_save_through_the_page(self):
@@ -306,7 +438,9 @@ class RouteTests(SettingsCase, PageCase):
         self.assertEqual(said['changed'], ['time_limit'])
         self.post('training-settings', {**sent, 'preview': 'yes'}, expect=400)
         made = self.post('training-settings', sent)
-        self.assertEqual(made['problem']['label'], 'Continue')
+        # Research carries on as it was, so the stop keeps its own Try again.
+        self.assertEqual(made['problem']['label'], 'Try again')
+        self.assertIn('Its settings were changed', made['problem']['what'])
         self.assertEqual(made['changed_settings']['changed'], ['time_limit'])
         refused = self.post('training-settings', sent, expect=409)
         self.assertIn('changed since this form was opened', refused['error'])
@@ -391,6 +525,18 @@ class SheetTests(ScriptedPage, DeskPageCase):
         self.assertIn('Nothing starts until you press Continue.', shots['saved']['text'])
         self.assertNotIn('Discard and save', shots['saved']['buttons'], 'The sheet is put away')
 
+    def test_sources_that_cannot_be_opened_leave_the_rest_of_the_form(self):
+        answers = self.stopped(**{'POST /api/training-settings/sources': [
+            {'status': 409, 'body': {'error': 'The sources this training reads could not be read.'}}]})
+        result = self.open_desk(answers, [{'click': 'Change settings'}, {'snapshot': 'form'},
+                                          {'click': 'Review the change'}], research=True)
+        form = result['snapshots']['form']['text']
+        self.assertIn('The sources this training reads could not be read. What research reads '
+                      'stays as it is.', form)
+        self.assertIn('1. What it teaches', form)
+        posted = [body for address, body in self.posts(result) if address == '/api/training-settings']
+        self.assertNotIn('research_inputs', posted[0])
+
     def test_cancel_sends_no_change(self):
         result = self.open_desk(self.stopped(), [
             {'click': 'Change settings'},
@@ -399,3 +545,71 @@ class SheetTests(ScriptedPage, DeskPageCase):
         self.assertEqual([address for address, _ in self.posts(result)
                           if address == '/api/training-settings'], [])
         self.assertNotIn('Review the change', result['snapshots']['put away']['buttons'])
+
+
+RUNTIME = os.environ.get('STUDIO_TEST_RESEARCH_RUNTIME')
+
+
+@unittest.skipUnless(RUNTIME, 'Set STUDIO_TEST_RESEARCH_RUNTIME for pinned helper tests.')
+class ParallelChangeTests(SettingsCase):
+    """The person's shape on the real pinned Harness Research collection: research from the
+    documents alone stopped, then documents and web search with three questions, then
+    Continue. Scripted workers only; nothing reaches a provider or the network."""
+
+    def setUp(self):
+        super().setUp()
+        from runner import research
+        from runner_support import URL
+        from synthesis_fixture import TEXT
+        self.engine.parallel_research = True
+        self.research = research.Research(Path(RUNTIME))
+        self.web.page(URL, TEXT, 'text/plain')
+        self.barrier, self.supplied_only, self.phases, self.caps = None, True, [], []
+        self.fetched = []
+        self.workers.queued['research-result'] = [fails(cost=1.0), *([self.investigate] * 12)]
+
+    def investigate(self, tools, job):
+        if 'questions' in json.loads(tools.read_input('research-task')[1]):
+            self.fetched.append(tools.job['fetch'])
+        self.supplied = True   # the borrowed worker reads the supplied capture
+        return test_parallel_research.ParallelNativeTests.worker(self, tools, job)
+
+    @staticmethod
+    def kept(folder: Path) -> dict:
+        return {str(path.relative_to(folder)): hashlib.sha256(path.read_bytes()).hexdigest()
+                for path in sorted(folder.rglob('*')) if path.is_file()}
+
+    def test_a_supplied_only_stop_researches_again_in_a_new_collection(self):
+        from synthesis_fixture import TEXT
+        store = research_sources.Sources(self.space.root / '.research-sources')
+        draft = store.create()
+        draft = store.mutate(draft['id'], draft['revision'], 'capture', kind='text',
+                             name='Synthetic deck', text=TEXT)
+        started = self.engine.start(pipeline.check_form({**FORM, 'flow': 'desk'}),
+                                    research_inputs={'id': draft['id'], 'expected': draft['revision']})
+        root = Path(started['path'])
+        self.assertEqual(self.view(root)['state'], 'failed', self.view(root)['problem'])
+        self.assertTrue(research_session.protocol(self.record(root)))
+        case = root / '.studio-research'
+        before = [folder for folder in case.iterdir() if folder.is_dir()]
+        self.assertEqual(len(before), 1)
+        old = self.kept(before[0])
+        shown = self.form(root)
+        sent = self.sent(shown, research_questions=QUESTIONS, research_inputs=self.external(root))
+        said = self.engine.change_settings(root, sent, preview=True)
+        self.assertEqual(said['research'], 'replanned')
+        self.assertEqual(said['discards']['dollars'], 1.0)
+        self.engine.change_settings(root, {**sent, 'confirmed': True})
+        self.fetched.clear()
+        self.workers.plan = THREE
+        self.engine.act(root, 'retry')
+        self.assertEqual(workspace.statuses(root, workspace.load(root))['research'], 'approved',
+                         self.view(root)['problem'])
+        after = [folder for folder in case.iterdir() if folder.is_dir()]
+        self.assertEqual(len(after), 2, 'A new collection, beside the earlier one')
+        self.assertEqual(self.kept(before[0]), old, 'The earlier collection is left as it was')
+        current = json.loads((case / 'current.json').read_text())['basis']
+        self.assertNotEqual(current, before[0].name)
+        self.assertTrue(self.fetched and all(self.fetched), 'Investigators may fetch pages now')
+        facts, _ = contract.read_bundle(root / 'research')
+        self.assertTrue(facts['review']['accepted'])

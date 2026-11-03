@@ -809,12 +809,19 @@ async function openChangeSettings(opener) {
   try {
     shown = await ask('training-settings', { path });
     if (!shown.may) throw new Error(shown.why);
-    if (!(shown.locked || {}).sources && typeof StudioResearch !== 'undefined') {
-      sources = await send('training-settings/sources', { path });
-    }
   } catch (failure) {
     toast(failure.message);
     return;
+  }
+  if (!(shown.locked || {}).sources && typeof StudioResearch !== 'undefined') {
+    try {
+      sources = await send('training-settings/sources', { path });
+    } catch (failure) {
+      // Its captures may be on another computer: what research reads stays as it is, and
+      // the rest of the form can still be changed. The save then sends no sources.
+      shown.locked = { ...(shown.locked || {}), sources: failure.message
+        + ' What research reads stays as it is.' };
+    }
   }
   const values = shown.values;
   const purposes = PURPOSES.includes(values.purpose) || !values.purpose ? PURPOSES.slice()
@@ -839,7 +846,14 @@ async function openChangeSettings(opener) {
   }
   view.changing = changing;
   openSheet('change-settings', opener)();
-  focusKey('change-topic');
+  settingsFocus();
+}
+
+// The first thing on the form that can be changed: the topic, unless it is locked.
+function settingsFocus() {
+  const first = byId('sheet').querySelector('form textarea:not([disabled]), '
+    + 'form input:not([disabled]), form .seg-option:not([disabled])');
+  if (first) first.focus({ preventScroll: true });
 }
 
 // Where research looks, said again as the sources change; a change after the review asks
@@ -937,15 +951,19 @@ async function saveSettings(pressed) {
   try {
     const done = await send('training-settings', { ...settingsBody(changing),
       confirmed: Boolean(changing.preview && changing.preview.confirm) });
-    view.run = done;
+    // A saved change whose run could not be read with it is read again below.
+    if (done && done.state) view.run = done;
     view.changing = null;
     closeSheet();
     toast('Its settings are changed. Nothing starts until you press Continue.');
     paintRun(false);
-    if (onTheDesk(view.run)) refresh();
+    refresh();
   } catch (failure) {
     pressed.disabled = false;
-    say(byId('change-problem'), failure.message + ' Nothing was changed.');
+    say(byId('change-problem'), failure.kind === 'stopped'
+      ? failure.message + ' It is not known whether the change was saved: close this and '
+        + 'open the training again to see.'
+      : failure.message + ' Nothing was changed.');
   }
 }
 
@@ -1067,7 +1085,7 @@ function settingsSheet() {
     changing.stage = 'form';
     changing.preview = null;
     paintSettings();
-    focusKey('change-topic');
+    settingsFocus();
   }, 'change-back') : null;
   const form = make('form', 'create-flow');
   form.noValidate = true;

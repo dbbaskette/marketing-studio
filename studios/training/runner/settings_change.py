@@ -33,17 +33,25 @@ import workspace
 from workspace import WorkspaceError
 
 import runner  # noqa: F401  puts the core on the import path
-from runner import drafts, pipeline
+from runner import drafts, pipeline, training_plan
 from studio_core import research_contract, research_session as research_parallel
-from studio_core import research_sites, research_sources
+from studio_core import research_sites, research_sources, stops
 from studio_core.research_view import series
 
-# A run that is not working: stopped, failed, waiting for a decision, paused or finished.
-ALLOWED = ('failed', 'stopped', 'waiting', 'paused', 'done')
-RESEARCHED = ('topic', 'audience', 'purpose', 'research_questions', 'sources')
+# A run that is not working: stopped, failed or waiting for a decision. Paused counts once
+# nothing is in hand (a pause that waits for a step to finish is busy): it is a stop that
+# keeps its place. A finished training is not turned back into work by a plain save.
+ALLOWED = ('failed', 'stopped', 'waiting', 'paused')
+FINISHED = ('This training is finished, so its settings stay as they are. Start a new '
+            'training to make it again with other settings.')
+RESEARCHED = ('topic', 'audience', 'purpose', 'research_questions', 'sources', 'search')
+# What the source panel changes: what research reads, where it may search, and how many
+# research workers it uses, which is how the work is done and not what is researched.
+SOURCE_KINDS = ('sources', 'search', 'workers')
 NAMES = {'topic': 'the topic', 'audience': 'the audience', 'purpose': 'what it is for',
          'time_limit': 'the time limit', 'levels': 'the levels', 'brief_kind': 'the brief',
          'research_questions': 'the research questions', 'sources': 'the sources',
+         'search': 'where research may search', 'workers': 'the research workers',
          'deck_target': 'the slide deck', 'brand': 'the deck’s brand',
          'delivery': 'how the deck is used', 'walkthrough': 'the slide walkthrough'}
 DECK_FIELDS = ('deck_target', 'brand', 'delivery', 'walkthrough')
@@ -85,6 +93,8 @@ def refusal(record: dict, state: str, mine: bool, busy: bool) -> str | None:
         return THEIRS
     if state == 'working' or busy:
         return WORKING
+    if state == 'done':
+        return FINISHED
     return None if state in ALLOWED else WORKING
 
 
@@ -207,10 +217,37 @@ def sources(engine, path) -> dict:
     shared, _ = studios_config.read()
     store = research_sources.Sources(engine.space().root / '.research-sources')
     try:
-        return store.from_inputs(root, record.get('research_inputs'), pipeline.research_of(record),
+        made = store.from_inputs(root, record.get('research_inputs'), pipeline.research_of(record),
                                  sites=research_sites.defaults(shared))
     except (OSError, ValueError, KeyError) as error:
         raise WorkspaceError(f'The sources this training reads could not be read: {error}') from None
+    _forget_draft(store, root, keep=made['id'])
+    return made
+
+
+def _drafts_file(store, root: Path) -> Path:
+    return store.root / 'settings' / (root.name + '.json')
+
+
+def _forget_draft(store, root: Path, keep: str | None = None) -> None:
+    """Take away the source draft an earlier Change settings sheet of this training opened,
+    and remember `keep` as the one open now. Only drafts this sheet made are ever taken."""
+    marker = _drafts_file(store, root)
+    try:
+        earlier = json.loads(marker.read_text()).get('id')
+    except (OSError, ValueError, AttributeError):
+        earlier = None
+    with store.lock:
+        if earlier and earlier != keep:
+            try:
+                shutil.rmtree(store.folder(earlier), ignore_errors=True)
+            except ValueError:
+                pass
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        if keep:
+            marker.write_text(json.dumps({'id': keep}))
+        else:
+            marker.unlink(missing_ok=True)
 
 
 # --- what a change does ------------------------------------------------------------------
@@ -289,11 +326,15 @@ def _checked(engine, root: Path, session: dict, record: dict, sent: dict) -> tup
     else:
         given['research_from'] = now['research_from']
     stages = session['settings']['stages']
+    # A brand that is not changing is not checked against the brand skill here now: one
+    # dropped or renamed since, or none on a deck training, never blocks another change.
+    same = (given['deck_target'] == now['deck_target'] and _brand_sent(given['brand'])
+            == _brand_sent(now['brand']))
     checked = pipeline.check_form({
         'title': session['title'], **given,
         'materials': [stage for stage in pipeline.MATERIALS if stage in stages],
         'copies': session['settings'].get('copies') or [], 'yoodli': 'yoodli' in stages,
-        'flow': 'desk'}, engine.brands())
+        'flow': 'desk'}, None if same else engine.brands())
     # The brand as the session keeps it ("brand/variant"), and as the form shows it.
     if checked['deck_target'] is None:
         checked['brand'] = None
@@ -302,14 +343,22 @@ def _checked(engine, root: Path, session: dict, record: dict, sent: dict) -> tup
     return checked, prepared
 
 
-def _sources_changed(root: Path, record: dict, prepared: dict | None, chosen: dict) -> bool:
-    """Whether the source panel's draft reads other sources, or searches elsewhere, than the
-    training's research does now."""
+def _brand_sent(value) -> tuple | None:
+    if not isinstance(value, dict) or not value.get('brand'):
+        return None
+    return (value.get('brand'), value.get('variant') or None)
+
+
+def _sources_changed(root: Path, record: dict, prepared: dict | None, chosen: dict) -> set:
+    """What the source panel's draft changes of what the training's research does now:
+    `sources` (what it reads, and its focus), `search` (whether and where it may search) and
+    `workers` (how many research workers it uses)."""
     if prepared is None:
-        return False
+        return set()
+    found = set()
     looked = pipeline.research_of(record)
-    if {key: looked[key] for key in ('documents', 'sites', 'web')} != chosen:
-        return True
+    if {key: looked[key] for key in ('sites', 'web')} != {key: chosen[key] for key in ('sites', 'web')}:
+        found.add('search')
     saved = record.get('research_inputs') or {}
     rows = []
     if saved:
@@ -320,8 +369,21 @@ def _sources_changed(root: Path, record: dict, prepared: dict | None, chosen: di
     before = sorted((row.get('id'), row.get('sha256'), row.get('original_sha256')) for row in rows)
     after = sorted((s.get('id'), s.get('sha256'), s.get('original_sha256')) for s in prepared['sources'])
     # A training started without the source panel reads with its defaults: 3 workers, no focus.
-    return before != after or (saved.get('workers') or 3, saved.get('focus') or '') != (
-        prepared['workers'], prepared['focus'] or '')
+    if before != after or (saved.get('focus') or '') != (prepared['focus'] or '') \
+            or bool(looked['documents']) != bool(chosen['documents']):
+        found.add('sources')
+    if (saved.get('workers') or 3) != prepared['workers']:
+        found.add('workers')
+    return found
+
+
+def _streams(engine, root: Path, workers: int) -> int:
+    """How many research areas Harness Research's collection splits the plan into, which its
+    task's digest names: a change of workers that changes it is a new collection."""
+    plan = home.read_json(root / pipeline.PLAN, {})
+    asked = len(plan.get('items') or []) if isinstance(plan, dict) else 0
+    limit = min(3, getattr(engine, 'at_once', 3), max(1, int(workers or 3)))
+    return min(3, max(1, limit), max(1, asked))
 
 
 def plan(engine, root: Path, session: dict, record: dict, sent: dict) -> dict:
@@ -336,8 +398,8 @@ def plan(engine, root: Path, session: dict, record: dict, sent: dict) -> dict:
            'delivery': checked['delivery'] if checked['deck_target'] else now['delivery'],
            'walkthrough': checked['walkthrough'] if checked['deck_target'] else now['walkthrough']}
     changed = [name for name in new if new[name] != now[name]]
-    if _sources_changed(root, record, prepared, checked['research_from']):
-        changed.append('sources')
+    kinds = _sources_changed(root, record, prepared, checked['research_from'])
+    changed += [kind for kind in SOURCE_KINDS if kind in kinds]
     stop = locked(root, session, record)
     for name in changed:
         if name in stop:
@@ -356,9 +418,15 @@ def plan(engine, root: Path, session: dict, record: dict, sent: dict) -> dict:
     before = (root / 'intake.md').read_text(encoding='utf-8') if (root / 'intake.md').is_file() else ''
     differs = [heading for heading, text in _lines(intake).items() if _lines(before).get(heading) != text]
     stages = ('deck_target' in changed and (now['deck_target'] is None) != (new['deck_target'] is None))
-    tasked = bool(differs or stages or researched)
+    saved_workers = (record.get('research_inputs') or {}).get('workers') or 3
+    split = 'workers' in changed and research_parallel.protocol(record) and \
+        _streams(engine, root, saved_workers) != _streams(engine, root, prepared['workers'])
+    tasked = bool(differs or stages or researched or split)
+    # Research again is fresh research only when research is given something new: with the
+    # same task and sources Harness Research would find its accepted collection and keep it.
+    unchanged_again = accepted and again and not tasked
     if accepted:
-        outcome = 'again' if again else 'kept'
+        outcome = 'again' if again and tasked else 'kept'
     elif researched:
         outcome = 'replanned'
     elif tasked and research_parallel.protocol(record):
@@ -367,6 +435,13 @@ def plan(engine, root: Path, session: dict, record: dict, sent: dict) -> dict:
         outcome = 'continues'
     lost = _discarded(record, outcome) if outcome in ('again', 'replanned', 'restarted') else None
     words = _words(root, session, record, changed, outcome, lost, researched, differs, new, now)
+    if unchanged_again:
+        words.insert(1, 'Nothing research reads or is given changed, so researching again would '
+                        'repeat it: the finished report is kept.')
+    if training_plan.enabled(record) and (record['training_plan'].get('approved')) and (
+            differs or 'levels' in changed or outcome == 'again'):
+        words.insert(-1, 'You approved the topics and teaching plan; it is prepared again for '
+                         'you to check before materials are built.')
     return {'changed': changed, 'names': [NAMES[name] for name in changed],
             'research': outcome, 'discards': lost,
             'confirm': bool(outcome == 'again' or (lost and lost['tries'])),
@@ -535,7 +610,13 @@ def save(engine, path, sent: dict, *, preview: bool = False) -> dict:
             raise
         finally:
             kept.close()
-    return {**engine.view(root), 'changed_settings': summary}
+    if found['prepared'] is not None:
+        _forget_draft(research_sources.Sources(engine.space().root / '.research-sources'), root)
+    try:
+        shown = engine.view(root)
+    except Exception:  # noqa: BLE001  the change is saved; the page reads the run again
+        shown = {}
+    return {**shown, 'changed_settings': summary}
 
 
 def _apply(engine, root: Path, found: dict) -> dict:
@@ -577,13 +658,13 @@ def _apply(engine, root: Path, found: dict) -> dict:
         workspace.approve(root, 'intake', by='page')
     record = engine._load(root)
     # The research inputs, from the source panel's draft.
-    if 'sources' in changed:
+    if any(kind in changed for kind in SOURCE_KINDS):
         prepared = found['prepared']
         record['research_inputs'] = _install(root, prepared)
         if research_parallel.protocol(record):
             record['research_execution']['workers'] = prepared['workers']
     chosen = checked['research_from']
-    if 'sources' in changed:
+    if 'sources' in changed or 'search' in changed:
         scope = pipeline.scope_of(chosen)
         given = record.get('documents')
         if chosen['documents']:
@@ -629,16 +710,30 @@ def _apply(engine, root: Path, found: dict) -> dict:
     summary = {'at': home.now(), 'changed': changed, 'research': outcome,
                'discards': found['discards']}
     record.setdefault('settings_changes', []).append(summary)
-    tries = previous.get('what') if previous and outcome in ('continues', 'kept') else None
-    record['problem'] = {
-        'state': 'waiting', 'step': None, 'action': 'retry', 'label': 'Continue',
-        'at': summary['at'], 'settings': True,
-        'what': 'Its settings were changed. ' + WAITS + (
-            ' Continue plans the research again with the new settings.'
-            if outcome in ('again', 'replanned') else
-            ' Continue starts the research again with the new settings.' if outcome == 'restarted'
-            else f' Continue tries again what stopped: {tries}' if tries else ''),
-        'kept': KEPT}
+    if previous and outcome in ('continues', 'kept'):
+        # The change does not address what stopped: the stop stays, with its own action
+        # (Try again, Give it more time, Carry on after the spending limit) and what that
+        # action needs, and says the settings changed.
+        record['problem'] = {**previous, 'settings_changed': summary['at'],
+                             'what': 'Its settings were changed; what stopped is not changed '
+                                     'by that. ' + previous.get('what', '')}
+    else:
+        # A stop for time or for the spending limit is carried into Continue, so research
+        # planned or started again is given the same room the stop's own action would give.
+        carried = {key: previous[key] for key in ('seconds',) if previous.get(key)}
+        if previous.get('action') in ('resume', stops.MORE_TIME):
+            carried['carried'] = previous['action']
+        if outcome == 'restarted' and previous.get('unreadable'):
+            carried['unreadable'] = previous['unreadable']
+        record['problem'] = {
+            'state': 'waiting', 'step': None, 'action': 'retry', 'label': 'Continue',
+            'at': summary['at'], 'settings': True, **carried,
+            'what': 'Its settings were changed. ' + WAITS + (
+                ' Continue plans the research again with the new settings.'
+                if outcome in ('again', 'replanned') else
+                ' Continue starts the research again with the new settings.'
+                if outcome == 'restarted' else ' Continue carries on with the new settings.'),
+            'kept': KEPT}
     record['halt'] = None
     engine._store(root, record)
     engine._commit(root, "change the training's settings: " + series(found['names']))
