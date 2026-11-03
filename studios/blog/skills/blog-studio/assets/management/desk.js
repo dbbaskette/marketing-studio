@@ -213,7 +213,7 @@ function sDeskTopic(held){
   const ready=held.files.filter(file=>file.state==='ready').length;
   const ask=sButton(held.angles.length?'Suggest three more':'Suggest three angles',button=>sDeskAskAngles(held,button));ask.disabled=!access.actions.edit||held.anglesBusy;
   const discovery=sCard('Need an angle?',sAdd(sNode('div','bar'),ask),sNode('p','quiet field-hint',ready?'Angles read your '+ready+(ready===1?' source.':' sources.'):'With no sources, angles work from the title and point.'));
-  if(held.anglesBusy){const working=sNode('p','desk-working-note','Finding three angles…');working.setAttribute('role','status');discovery.append(working);}
+  if(held.anglesBusy){const working=sNode('p','desk-working-note','Finding three angles…');working.setAttribute('role','status');discovery.append(working);const doing=sActivityNow(held.anglesActivity,{});if(doing)discovery.append(doing);}
   if(held.anglesProblem)discovery.append(sNode('p','problem',held.anglesProblem));
   if(!held.angles.length)return [card,discovery];
   const cards=sNode('div','desk-angles');cards.setAttribute('aria-label','Three angles');
@@ -240,7 +240,7 @@ async function sDeskAskAngles(held,button){
 }
 function sDeskAnglesShown(held,shown){
   if(held.angleOp!==shown.operation)return;
-  held.anglesBusy=!!shown.busy;
+  held.anglesBusy=!!shown.busy;held.anglesActivity=shown.activity||[];
   if(!shown.busy){if(shown.error)held.anglesProblem=shown.error;else{held.angles=shown.angles.map(angle=>({...angle}));held.angle=null;}}
   sDeskStartAgain(held);
   if(shown.busy)setTimeout(async()=>{if(held.angleOp!==shown.operation||studio.deskStart!==held)return;try{sDeskAnglesShown(held,await api('desk-angles?'+new URLSearchParams({operation:shown.operation})));}catch(error){held.anglesBusy=false;held.anglesProblem=error.message;sDeskStartAgain(held);}},DESK_POLL);
@@ -334,7 +334,7 @@ function sFindTextDraw(find,focus=false){
   if(view&&view.busy){
     const line=sNode('p','desk-working-note',who+' is looking for where this page gets its text…');line.setAttribute('role','status');
     const stop=sButton('Stop',button=>busy(button,'Stopping…',async()=>{try{find.view=await api('published-find-text-stop',{id:view.id});}catch(error){find.problem=error.message;}sFindTextDraw(find,true);}));stop.disabled=!can;
-    parts.push(line,sNode('p','quiet','It reads the page’s head and the scripts it loads from this site, and runs none of them. Blog Studio then reads the address it finds and checks that it holds this post. This takes a minute or two.'),sAdd(sNode('div','bar'),stop));
+    parts.push(line,sActivityNow(view.activity,{}),sNode('p','quiet','It reads the page’s head and the scripts it loads from this site, and runs none of them. Blog Studio then reads the address it finds and checks that it holds this post. This takes a minute or two.'),sAdd(sNode('div','bar'),stop));
   }else if(view&&view.status==='ready'){
     const line=sNode('p','desk-working-note','Found where this page gets its text. Reading the post…');line.setAttribute('role','status');parts.push(line);
   }else{
@@ -349,7 +349,7 @@ function sFindTextDraw(find,focus=false){
   }
   // Focus stays in the block when it is drawn again, on its button, for a keyboard user.
   const held=typeof document!=='undefined'&&document.activeElement&&box.contains(document.activeElement);
-  box.replaceChildren(...parts);
+  box.replaceChildren(...parts.filter(Boolean));
   if(focus||held){const first=box.querySelector('button');if(first&&typeof first.focus==='function')first.focus();}
 }
 async function sFindTextAsk(find,button){
@@ -364,7 +364,7 @@ function sFindTextWatch(find){
     let shown;try{shown=await api('published-find-text?'+new URLSearchParams({id:find.view.id}));}catch(error){find.problem=error.message;find.view=null;sFindTextDraw(find);return;}
     if(!find.current())return;
     const changed=shown.status!==find.view.status;find.view=shown;
-    if(shown.busy)return sFindTextWatch(find);  // Queued and working read the same.
+    if(shown.busy){sActivityUpdate(find.node,shown.activity,{});return sFindTextWatch(find);}  // Queued and working read the same.
     sFindTextDraw(find,changed);
     if(shown.status==='ready')await find.found(shown);  // Read again: from the address it found.
   },DESK_POLL);
@@ -496,7 +496,9 @@ function sDeskProgress(held){
   const view=held.view,start=view.start,p=DESK_KIT.progress(held,start.open==='outline'?'The outline':'The draft');
   // Driven on another computer, or by nobody: the start says so, and offers to take it.
   sFrame(view.title,[sDeskTeam(view),p.stop],sDeskDriverWords(view)||p.above,()=>sRoute('blogs'));
-  sPage(p.lede,sDeskElsewhere(view),p.stopped,...(start.research_progress&&typeof StudioResearch!=='undefined'?[StudioResearch.progress(start.research_progress)]:[]),p.card);
+  // What the assistant is doing: in the research panel while research runs, else on its own.
+  const of={id:held.id},researching=start.research_progress&&typeof StudioResearch!=='undefined';
+  sPage(p.lede,sDeskElsewhere(view),p.stopped,...(researching?[StudioResearch.progress(start.research_progress,{workers:view.activity||[],lines:sActivityLoad(of)})]:[sActivityNow(view.activity,of)]),p.card,sActivityLog(of));
   if(!start.problem)sDeskFollowStart(held);
 }
 // A stopped start: the ways on a run has. More time for a step out of time, no research for
@@ -673,7 +675,7 @@ function sDeskRender(held){
   held.problemSlot=sNode('div','desk-problem-slot');const problem=sDeskProblem(held);if(problem)held.problemSlot.append(problem);
   held.cards={};
   held.column=column;held.outlineStale=false;
-  if(held.tab==='outline'){held.wholeCard=null;held.wholeGo=null;column.append(held.problemSlot,...sDeskOutline(held));column.addEventListener('focusout',()=>setTimeout(()=>{if(held.outlineStale&&held.column===column&&!held.outlineTimer&&!sDeskTyping(column)&&sDeskCurrent(held)){held.outline=null;sDeskRender(held);}},0));}
+  if(held.tab==='outline'){held.wholeCard=null;held.wholeGo=null;column.append(held.problemSlot,...[sActivityNow(view.activity,{id:held.id})].filter(Boolean),...sDeskOutline(held));column.addEventListener('focusout',()=>setTimeout(()=>{if(held.outlineStale&&held.column===column&&!held.outlineTimer&&!sDeskTyping(column)&&sDeskCurrent(held)){held.outline=null;sDeskRender(held);}},0));}
   else{
     held.wholeCard=held.reading==='read'?null:sDeskWhole(held);
     for(const part of sDeskParts(held))held.cards[part]=sDeskPart(held,part);
@@ -681,7 +683,7 @@ function sDeskRender(held){
     held.queueSlot=sNode('div','desk-review-queue');const queue=sDeskReviewQueue(held);if(queue)held.queueSlot.append(queue);
     // In reading order: an object keyed by part ids lists all-digit ids first, so the cards are
     // placed by the parts' own order, never by the object's.
-    column.append(held.problemSlot,held.queueSlot,...[whole].filter(Boolean),...sDeskParts(held).map(part=>held.cards[part]));
+    column.append(held.problemSlot,...[sActivityNow(view.activity,{id:held.id})].filter(Boolean),held.queueSlot,...[whole].filter(Boolean),...sDeskParts(held).map(part=>held.cards[part]));
     held.noSections=view.sections.length?null:sDeskNoSections();if(held.noSections)column.append(held.noSections);
   }
   held.bar=sDeskSelectionBar(held);held.aside=sDeskAside(held);
@@ -700,6 +702,8 @@ function sDeskRender(held){
 function sDeskFocused(){return typeof document.activeElement==='object'?document.activeElement:null;}
 function sDeskTyping(node){const focused=sDeskFocused();return !!(node&&focused&&['INPUT','TEXTAREA','SELECT'].includes(String(focused.tagName).toUpperCase())&&typeof node.contains==='function'&&node.contains(focused));}
 function sDeskRefresh(held,before){
+  // What the assistant is doing, drawn again in place whatever else is drawn again.
+  sActivityUpdate($('studio-page'),held.view.activity,{id:held.id});
   if(held.mode==='review')return sDeskReviewRefresh(held,before);
   const view=held.view,order=found=>(found?.sections||[]).map(section=>section.id).join(',');
   if(held.tab==='outline'||held.shownTab!==held.tab){if((held.outlineTimer||held.tab==='outline'&&sDeskTyping(held.column))&&sDeskCurrent(held)){if(!held.outlineTimer)held.outlineStale=true;sDeskToolbar(held);const aside=sDeskAside(held);held.aside.replaceWith(aside);held.aside=aside;sDeskPanelSync(held);return;}held.outline=null;return sDeskRender(held);}
@@ -793,6 +797,8 @@ function sDeskAside(held){
   if(view.tone)sources.append(sNode('p','quiet','Tone: '+view.tone));
   aside.append(sources);
   const kept=sDeskKeptLine(view);if(kept)sources.append(kept);
+  // What the assistant did in each job for this blog, newest first: read when it is opened.
+  const log=sActivityLog({id:held.id});
   // Other people's suggestions pending in the Google Doc, each where it sits: decided there.
   const doc=view.doc_suggestions||{count:0,marks:[]};
   if(doc.count){
@@ -807,9 +813,10 @@ function sDeskAside(held){
   const list=sNode('ul','gap-items');for(const gap of gaps)list.append(sNode('li','',gap));
   aside.append(sAdd(sNode('section','paper aside-part'),sNode('h2','aside-title','Needs you before publishing'),gaps.length?list:sNode('p','quiet','Nothing yet. What a rewrite cannot support from your sources is listed here, never in the text.')));
   if(view.run)aside.append(sAdd(sNode('p','quiet'),sButton('Open the step-by-step run',()=>sRoute('run',view.id))));
-  if(!sNarrow())return aside;
-  // On a phone the sources and gaps fold under the draft.
-  const folded=disclosure('Sources and what needs you'+(gaps.length?' ('+gaps.length+')':''),...aside.children);folded.className='desk-aside desk-aside-folded';return folded;
+  if(!sNarrow()){if(log)aside.append(log);return aside;}
+  // On a phone the sources and gaps fold under the draft, and the Activity log follows them.
+  const folded=disclosure('Sources and what needs you'+(gaps.length?' ('+gaps.length+')':''),...aside.children);folded.className='desk-aside desk-aside-folded';
+  return log?sAdd(sNode('div','stack desk-aside-stack'),folded,log):folded;
 }
 
 // Saving as you type: one second after the last keystroke, against the revision last seen.
@@ -1502,7 +1509,7 @@ function sDeskReview(held){
   if(held.stale)sDeskStale(held);else status.textContent=held.saved||'';
   held.review.head=sReviewHead(held,state);held.review.headKey=sReviewHeadKey(held,state);held.review.paper=sReviewPaper(held,state);
   held.review.lede=sNode('p','lede',sReviewLede(state));
-  sPage(held.review.lede,status,held.review.head,held.review.paper);
+  sPage(held.review.lede,status,sActivityNow(held.view.activity,{id:held.id}),held.review.head,held.review.paper,sActivityLog({id:held.id}));
   sDeskImagesLoad(held);sReviewProof(held);sReviewFocusAfter(held);
 }
 // What needs the person first: the check under way, a problem, the count with Accept all and
@@ -2008,7 +2015,7 @@ async function sGeoReport(ident){
 function sGeoWatch(held,turn){
   setTimeout(async()=>{
     if(turn!==studio.turn||studio.screen!=='geo-report'||studio.geoReport!==held)return;
-    try{const shown=await api('geo-report?'+new URLSearchParams({id:held.id}));if(turn!==studio.turn||studio.geoReport!==held)return;const changed=shown.status!==held.view.status;held.view=shown;if(changed)sGeoReportRender(held);if(shown.status==='working')sGeoWatch(held,turn);}
+    try{const shown=await api('geo-report?'+new URLSearchParams({id:held.id}));if(turn!==studio.turn||studio.geoReport!==held)return;const changed=shown.status!==held.view.status;held.view=shown;if(changed)sGeoReportRender(held);else sActivityUpdate($('studio-page'),shown.activity,{report:held.id});if(shown.status==='working')sGeoWatch(held,turn);}
     catch(error){notice(error.message,true);}
   },DESK_POLL);
 }
@@ -2021,7 +2028,7 @@ function sGeoReportRender(held){
   const parts=[];
   if(view.newer)parts.push(sAdd(sNode('div','decision-notice'),sNode('p','','A newer report of this page was made after this one.'),sButton('Open the newer report',()=>sRoute('geo-report',view.newer))));
   else if(view.previous)parts.push(sAdd(sNode('div','bar'),sButton('Open the earlier report',()=>sRoute('geo-report',view.previous))));
-  if(view.status==='working'){const line=sNode('p','desk-working-note','Reading the post and writing its report. One job; nothing else changes.');line.setAttribute('role','status');parts.push(sCard(view.title,line,sNode('p','quiet','It opens here when it is ready. You can leave this page; the report is kept in Blogs.')));}
+  if(view.status==='working'){const line=sNode('p','desk-working-note','Reading the post and writing its report. One job; nothing else changes.');line.setAttribute('role','status');parts.push(sCard(view.title,line,sActivityNow(view.activity,{report:view.id}),sNode('p','quiet','It opens here when it is ready. You can leave this page; the report is kept in Blogs.')));}
   else if(!ready){const said=sNode('p','problem','The report did not finish: '+(view.error||'it stopped.'));said.setAttribute('role','alert');parts.push(sCard(view.title,said,sNode('p','quiet','Run again reads the page again and makes a new report.')));}
   else parts.push(sGeoPaper(view),sGeoAfterwards(held));
   if(held.find){
@@ -2030,6 +2037,8 @@ function sGeoReportRender(held){
     parts.unshift(sCard('Find the post’s text',sFindText(find,{current:()=>studio.screen==='geo-report'&&studio.geoReport===held&&held.find===find,found:()=>{held.find=null;return sGeoAgain(held,null);}})));
   }
   if(held.problem){const said=sNode('p','problem',held.problem);said.setAttribute('role','alert');parts.unshift(said);held.problem='';}
+  // What the assistant did for this report, newest first: read when it is opened.
+  parts.push(sActivityLog({report:view.id}));
   sPage(...parts);
 }
 // The report itself: an opaque, typeset reading document.

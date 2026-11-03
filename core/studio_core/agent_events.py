@@ -72,6 +72,8 @@ def describe(tool: str, given: dict) -> str:
         'submit_judgements': 'Handing in its judgement of every slide',
         'submit_coverage': 'Saying which slides address each objective',
         'web_search': f"Searching the web: {given.get('query', '')}",
+        # Claude Code's own tool for an answer in a required shape (--json-schema).
+        'StructuredOutput': 'Handing back its answer',
     }
     return clip(lines.get(tool, f'Using {tool}')).rstrip(': ')
 

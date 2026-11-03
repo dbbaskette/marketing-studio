@@ -13,6 +13,7 @@ from types import SimpleNamespace
 import uuid
 
 import studio
+import blog_activity
 import blog_worker
 import editorial
 import claims_map
@@ -2197,6 +2198,8 @@ class Engine:
         self.current = None
         self.thread = None
         self.sync_thread = None
+        # The assistant jobs running now, as the page shows them, and their Activity logs.
+        self.activity = blog_activity.Running(root)
 
     def local(self, ident):
         path = studio.inside(self.root, '.blog-runs', studio.identifier(ident) + '.json')
@@ -2389,6 +2392,9 @@ class Engine:
             'on_desk': on_desk,
             'enabled': local.get('enabled', False),
             'observation': 'Saved locally. Workers use your selected CLI sign-in. Public research links need review; no publishing is automatic.',
+            # What the assistant is doing now for this blog: each running job's label, start,
+            # latest line and how many it said (blog_activity). Never in a list's rows.
+            **({} if listing else {'activity': self.activity.live(blog_activity.blog(ident))}),
         }
 
     def once(self, ident):
@@ -2497,6 +2503,14 @@ class Engine:
         # Every CLI job this stage runs, metered: kept once it ends, whatever its outcome.
         meter, began = blog_worker.metered(), time.monotonic()
         metered = meter.__enter__()
+        # Each assistant call this stage makes is shown and logged as one of this blog's jobs.
+        watching = blog_activity.within(
+            self.activity,
+            blog_activity.blog(ident),
+            blog_activity.STAGES.get(found['next'], 'Working on ' + found['next']),
+            found['next'],
+        )
+        watching.__enter__()
         try:
             if found['next'] == 'research' and run.get('research_contract'):
                 import synthesis_research
@@ -2540,20 +2554,21 @@ class Engine:
                             'The claims map quoted passages that are not in your material: '
                             + said[0]
                         )
-                    result = self.worker(
-                        found['engine'],
-                        {
-                            **payload,
-                            'previous_output': result.get('content', ''),
-                            'validation_error': said[0],
-                        },
-                        guidance
-                        + '\nCorrect the previous output once. Quote each passage exactly from its named source; do not judge the claims.',
-                        seconds=max(1, int(remaining)),
-                        web=False,
-                        stop=self.stop,
-                        model_selection=found.get('model_selection'),
-                    )
+                    with blog_activity.labelled('Correcting the claims map'):
+                        result = self.worker(
+                            found['engine'],
+                            {
+                                **payload,
+                                'previous_output': result.get('content', ''),
+                                'validation_error': said[0],
+                            },
+                            guidance
+                            + '\nCorrect the previous output once. Quote each passage exactly from its named source; do not judge the claims.',
+                            seconds=max(1, int(remaining)),
+                            web=False,
+                            stop=self.stop,
+                            model_selection=found.get('model_selection'),
+                        )
                     said = claims_map.problems(result['content'], payload['sources'])
                     if said:
                         raise ValueError(
@@ -2570,24 +2585,25 @@ class Engine:
                     remaining = found['seconds'] - (time.monotonic() - started)
                     if self.stop.is_set() or self.closed.is_set() or remaining <= 0:
                         raise error
-                    result = self.worker(
-                        found['engine'],
-                        {
-                            **payload,
-                            'previous_output': result.get('content', ''),
-                            'validation_error': str(error),
-                        },
-                        guidance
-                        + '\nCorrect the previous output once using the structured editing review schema. '
-                        'Each before must be copied verbatim from the supplied manuscript, preserving punctuation and whitespace. '
-                        'Use kind edit/comment, verdict editorial for writing advice, and a short evidence explanation. '
-                        'Use IDs containing only letters, digits, underscores or hyphens. '
-                        'Do not remove legitimate findings to evade validation.',
-                        seconds=max(1, int(remaining)),
-                        web=False,
-                        stop=self.stop,
-                        model_selection=found.get('model_selection'),
-                    )
+                    with blog_activity.labelled('Correcting the review'):
+                        result = self.worker(
+                            found['engine'],
+                            {
+                                **payload,
+                                'previous_output': result.get('content', ''),
+                                'validation_error': str(error),
+                            },
+                            guidance
+                            + '\nCorrect the previous output once using the structured editing review schema. '
+                            'Each before must be copied verbatim from the supplied manuscript, preserving punctuation and whitespace. '
+                            'Use kind edit/comment, verdict editorial for writing advice, and a short evidence explanation. '
+                            'Use IDs containing only letters, digits, underscores or hyphens. '
+                            'Do not remove legitimate findings to evade validation.',
+                            seconds=max(1, int(remaining)),
+                            web=False,
+                            stop=self.stop,
+                            model_selection=found.get('model_selection'),
+                        )
                     try:
                         validate_review(result, review_source)
                     except ValueError as error:
@@ -2691,6 +2707,7 @@ class Engine:
                     )
                     self.keep_local(ident, state)
         finally:
+            watching.__exit__(None, None, None)
             meter.__exit__(None, None, None)
             self.note_job(ident, found['next'], began, metered)
             if pending:

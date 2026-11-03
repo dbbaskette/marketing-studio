@@ -405,6 +405,28 @@ record that cannot be divided yet keeps its headings as text in the opening, as 
 One job works on a blog at a time; the desk shows it and offers Stop. An edit from a form
 that is out of date is refused rather than written over newer text.
 
+### What the assistant is doing, and the Activity log
+
+Each assistant job working now shows its name, when it started and what it is doing now
+(**Now: …**, such as "Searching the web: …" or "Handing back its answer"); **Show
+activity** opens every line it has said so far, newest first, with times, and stays open
+as the page refreshes. You see it at the top of the draft on the desk, in the research
+panel while research runs, on a step-by-step run, on a GEO report being written and while
+the assistant finds where a page gets its text or suggests angles for a new blog.
+
+**Activity log**, beside the draft on the desk (under it on a phone), on a run and on a
+GEO report, lists each finished job for that blog or report newest first, with its times,
+how it ended (Finished, Failed, Stopped, Out of time or Reached a limit, with why) and its
+lines. It is read when you open it. Work for no blog, such as finding a page's text,
+angles for a new blog or learning a voice, is in the Activity log on **Status**. Each log
+keeps the latest 200 jobs. It holds only those plain lines, never the job's instructions,
+your text or what the assistant thought.
+
+The log is kept on this computer in the workspace's `.blog-runs/activity/` folder, one
+file for each blog or report. Like the rest of `.blog-runs`, Git ignores it in every
+workspace, so a team workspace never shares it or sees it as a change; each computer keeps
+its own. Deleting a blog lets its log go.
+
 ## Finishing
 
 **Finishing** opens a side panel (a full-screen sheet on a phone). Every tool suggests;
@@ -715,6 +737,10 @@ them are saved. That check is Harness Research's, so without it (see Status) you
 alone are refused. The runner uses your CLI account, with a time limit for each step. It
 does not hold an API key and has no spending limit; your account's usage charges or limits
 still apply.
+
+While a step runs, the run shows what its assistant is doing now and **Show activity**, and
+its **Activity log** keeps each step's job, as on the desk (see *What the assistant is
+doing, and the Activity log*).
 
 | It makes | You decide |
 | --- | --- |

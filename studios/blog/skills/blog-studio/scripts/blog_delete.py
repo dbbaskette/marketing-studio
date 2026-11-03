@@ -2,7 +2,7 @@
 
 A deletion stops whatever is running for the blog, its job and its tool jobs, and waits for
 them to end. Then it takes the blog out and removes what only this computer kept for it: its
-run state, diagnostics, receipts, upload ledgers and tool jobs. What happens to the blog's
+run state, diagnostics, Activity log, receipts, upload ledgers and tool jobs. What happens to the blog's
 own folder depends on where the blog lives:
 
 - In a local workspace the folder moves under `.blog-runs/deleted/<id>/blog`.
@@ -178,6 +178,9 @@ def _forget(root, ident):
     # What Finishing sent to the blog's Google Doc, kept on this computer.
     studio.inside(root, '.blog-runs', 'desk-google', ident + '.json').unlink(missing_ok=True)
     studio.inside(root, '.blog-runs', 'diagnostics', ident + '.json').unlink(missing_ok=True)
+    import blog_activity
+
+    blog_activity.forget(root, blog_activity.blog(ident))  # What its assistant jobs did.
     blog_runner.said_path(root, ident).unlink(missing_ok=True)
     active = studio.inside(root, '.active-article.json')
     if _names(active, ident, ('id',)):

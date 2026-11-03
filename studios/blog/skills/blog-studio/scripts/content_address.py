@@ -1186,18 +1186,20 @@ def second_look(engine, job, found, sent, final, shell, started):
         'outline': lines,
         'outline_cut': cut,
     }
+    import blog_activity
     import blog_worker
 
     try:
-        answer = engine.worker(
-            job['engine'],
-            payload,
-            job['guidance'] + '\n\n' + SECOND_LOOK,
-            seconds=int(left),
-            web=False,
-            stop=stop,
-            model_selection=job.get('model_selection'),
-        )
+        with blog_activity.labelled('Taking a second look at what the page sent'):
+            answer = engine.worker(
+                job['engine'],
+                payload,
+                job['guidance'] + '\n\n' + SECOND_LOOK,
+                seconds=int(left),
+                web=False,
+                stop=stop,
+                model_selection=job.get('model_selection'),
+            )
     except blog_worker.WorkerFailure as error:
         if error.reason != 'time-limit':
             raise

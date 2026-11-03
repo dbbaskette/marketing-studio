@@ -37,6 +37,7 @@ STATIC = {
     '/runner.js': ('runner.js', 'text/javascript; charset=utf-8'),
     '/drafting.js': ('drafting.js', 'text/javascript; charset=utf-8'),
     '/research.js': ('research.js', 'text/javascript; charset=utf-8'),
+    '/activity.js': ('activity.js', 'text/javascript; charset=utf-8'),
     '/desk.js': ('desk.js', 'text/javascript; charset=utf-8'),
     '/markdown.js': ('markdown.js', 'text/javascript; charset=utf-8'),
     '/blog.css': ('blog.css', 'text/css; charset=utf-8'),
@@ -2618,6 +2619,43 @@ def whole(value):
         raise ValueError('Use whole numbers for limit and offset.') from None
 
 
+def _doing(root, shown, subject, owner=None):
+    """A view with what the assistant is doing now for it (blog_activity): each running
+    job's label, start, latest line and how many lines it said; `owner` keeps only the jobs
+    of one piece of work. Read from memory, never from the workspace."""
+    import blog_runner
+
+    if isinstance(shown, dict):
+        shown = {**shown, 'activity': blog_runner.engine(root).activity.live(subject, owner)}
+    return shown
+
+
+def activity_view(root, query):
+    """GET /api/activity: a blog's (`id`), a GEO report's (`report`) or, with neither, the
+    workspace's Activity log, newest first. With `entry`, one finished job's lines; with
+    `job`, one running job's lines from the `since`th on. Its running lines are read from
+    memory and its log from this computer's `.blog-runs/activity`, so no lock is waited for."""
+    import blog_activity
+    import blog_runner
+
+    arg = lambda key: query.get(key, [None])[0]
+    if arg('id') is not None:
+        subject = blog_activity.blog(arg('id'))
+    elif arg('report') is not None:
+        subject = blog_activity.report(arg('report'))
+    else:
+        subject = blog_activity.WORKSPACE
+    running = blog_runner.engine(root).activity
+    if arg('job') is not None:
+        since = arg('since') or '0'
+        if not (since.isascii() and since.isdigit()) or len(since) > 9:
+            raise ValueError('Give since as a whole number.')
+        return running.lines(subject, arg('job'), int(since))
+    if arg('entry') is not None:
+        return blog_activity.entry(root, subject, arg('entry'))
+    return blog_activity.view(running, subject)
+
+
 def view(root, name, query):
     """Read-only desk views by name. Returns None for an unknown view."""
     arg = lambda key, default=None: query.get(key, [default])[0]
@@ -2710,7 +2748,12 @@ def view(root, name, query):
             if name == 'desk-images':
                 return desk_jobs.images_view(root, arg('id'))  # Read once by the page.
             if name == 'desk-angles':
-                return desk_jobs.angles_view(root, arg('operation'))
+                return _doing(
+                    root,
+                    desk_jobs.angles_view(root, arg('operation')),
+                    'workspace',
+                    arg('operation'),
+                )
             if name == 'desk-proofread':
                 import desk_finish
 
@@ -2727,12 +2770,15 @@ def view(root, name, query):
             # request for one an older process left. The one write a read may make is the
             # one-time cleaning of a record kept before images moved out of its text, or
             # whose images were lost (desk._images_out), by the computer that drives it.
-            return desk_jobs.view(root, arg('id'))
+            ident = arg('id')
+            return _doing(root, desk_jobs.view(root, ident), 'blog-' + str(ident))
     if name == 'published-find-text':
         import content_address
 
         with studio.locked(root):
-            return content_address.view(root, arg('id'))
+            return _doing(root, content_address.view(root, arg('id')), 'workspace', arg('id'))
+    if name == 'activity':
+        return activity_view(root, query)
     if name in ('geo-reports', 'geo-report', 'geo-report-download'):
         import geo_report
 
@@ -2740,7 +2786,8 @@ def view(root, name, query):
             if name == 'geo-reports':
                 return geo_report.listing(root)
             if name == 'geo-report':
-                return geo_report.view(root, arg('id'))
+                ident = arg('id')
+                return _doing(root, geo_report.view(root, ident), 'geo-report-' + str(ident))
             if arg('format') not in ('md', 'html'):
                 raise ValueError('Choose Markdown or HTML.')
             made = geo_report.markdown if arg('format') == 'md' else geo_report.page
