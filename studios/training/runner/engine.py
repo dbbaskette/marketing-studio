@@ -7134,6 +7134,8 @@ class Engine(Reviewing):
                          if asked else None),
             'problem': ({**{key: problem.get(key) for key in ('what', 'kept', 'action', 'label')},
                          **({'seconds': problem['seconds']} if problem.get('seconds') else {}),
+                         # Waiting for Continue after Change settings: its words say so.
+                         **({'settings': True} if problem.get('settings') else {}),
                          # The research check's objections, read where the stop is.
                          **({'objections': objections} if problem.get('objected')
                             and (root / objections).is_file() else {}),

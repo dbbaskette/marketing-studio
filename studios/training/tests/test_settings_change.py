@@ -4,7 +4,11 @@ import json
 from pathlib import Path
 from unittest import mock
 
+import unittest
+
 from test_runner_deck import DeckCase, PageCase
+from test_desk import NODE, ScriptedPage, TrainingDeskScreenTests, a_desk, a_desk_run, ok
+from test_desk import PageCase as DeskPageCase
 import helpers
 from runner_support import FORM, fails
 import workspace
@@ -300,3 +304,92 @@ class RouteTests(SettingsCase, PageCase):
         self.assertEqual(made['changed_settings']['changed'], ['time_limit'])
         refused = self.post('training-settings', sent, expect=409)
         self.assertIn('changed since this form was opened', refused['error'])
+
+
+SHOWN = {'path': '', 'title': 'Rolling restarts', 'may': True, 'why': None, 'revision': 'r1',
+         'values': {'topic': 'Rolling restarts on the platform', 'audience': 'Engineers',
+                    'purpose': 'Field enablement', 'time_limit': '25 minutes',
+                    'levels': ['101', '201'], 'brief_kind': 'product', 'research_questions': [],
+                    'research_from': {'documents': True, 'sites': [], 'web': False},
+                    'deck_target': None, 'brand': None, 'delivery': 'live', 'walkthrough': False},
+         'locked': {}, 'made_levels': ['101'], 'documents': 0,
+         'research': {'accepted': False, 'discards': {'tries': 1, 'seconds': 1260, 'dollars': 4.47}}}
+DRAFT = {'id': 'a' * 32, 'revision': 'b' * 32, 'external': False, 'restricted': False,
+         'sites': [], 'workers': 3, 'focus': '', 'formats': ['.txt'],
+         'sources': [{'id': 'c' * 32, 'name': 'Reference notes', 'kind': 'text',
+                      'origin': 'Reference notes', 'status': 'ready', 'warnings': [],
+                      'problem': None, 'tabs': [], 'selected_tabs': []}]}
+PREVIEW = {'changed': ['sources'], 'names': ['the sources'], 'research': 'replanned',
+           'discards': {'tries': 1, 'seconds': 1260, 'dollars': 4.47}, 'confirm': True,
+           'words': ['You changed the sources.', 'Research that has not been accepted into a '
+                     'finished report is discarded, and research is planned again with the new '
+                     'settings. The discarded tries took 21 minutes and $4.47. This cannot be '
+                     'undone.', 'Nothing starts until you press Continue.']}
+
+
+@unittest.skipUnless(NODE, 'Node is needed to run the page scripts without a browser')
+class SheetTests(ScriptedPage, DeskPageCase):
+    """The Change settings sheet, run in the page harness: opened from the stop's card,
+    reviewed, saved, or put away with nothing sent."""
+
+    answers = TrainingDeskScreenTests.answers
+    posts = TrainingDeskScreenTests.posts
+    started = TrainingDeskScreenTests.started
+    listed = TrainingDeskScreenTests.listed
+    detail = TrainingDeskScreenTests.detail
+    on_desk = TrainingDeskScreenTests.on_desk
+    open_desk = TrainingDeskScreenTests.open_desk
+
+    def stopped(self, **more) -> dict:
+        run = a_desk_run('failed', 'Research stopped.')
+        run['body'].update(problem={'what': 'Research did not finish.', 'kept': 'Saved work is kept.',
+                                    'action': 'retry', 'label': 'Try again'},
+                           settings={'may': True, 'why': None})
+        waiting = a_desk_run('waiting', 'Its settings were changed.')
+        waiting['body'].update(problem={'what': 'Its settings were changed. Nothing starts until '
+                                        'you press Continue.', 'kept': 'Everything else is kept.',
+                                        'action': 'retry', 'label': 'Continue', 'settings': True},
+                               settings={'may': True, 'why': None})
+        return self.on_desk(a_desk(running=False), run, **{
+            'GET /api/training-settings': [ok({**SHOWN, 'path': str(self.root)})],
+            'POST /api/training-settings/sources': [ok(DRAFT)],
+            'POST /api/research-sources': [ok({**DRAFT, 'external': True, 'revision': 'd' * 32})],
+            'POST /api/training-settings': [ok(PREVIEW), ok(waiting['body'])], **more})
+
+    def test_a_stop_opens_its_saved_settings_and_saves_after_review(self):
+        result = self.open_desk(self.stopped(), [
+            {'snapshot': 'stopped'},
+            {'click': 'Change settings'}, {'snapshot': 'form'},
+            {'fill': 'What should the research answer? (optional)', 'value': 'Why?\nHow?\nWhen?'},
+            {'click': 'Review the change'}, {'snapshot': 'review'},
+            {'click': 'Discard and save'}, {'snapshot': 'saved'}])
+        shots = result['snapshots']
+        self.assertIn('Change settings', shots['stopped']['buttons'])
+        self.assertIn('Try again', shots['stopped']['buttons'])
+        form = shots['form']['text']
+        # The shared source panel is checked in a real browser and by its own tests: the
+        # harness names only controls labelled by id.
+        for said in ('1. What it teaches', '2. What is made', '3. Research',
+                     'A level with work in it stays: 101.', 'Research from your documents.'):
+            self.assertIn(said, form)
+        self.assertIn('$4.47', shots['review']['text'])
+        self.assertIn('cannot be undone', shots['review']['text'])
+        posted = [body for address, body in self.posts(result) if address == '/api/training-settings']
+        self.assertEqual(len(posted), 2)
+        self.assertTrue(posted[0]['preview'])
+        self.assertTrue(posted[1]['confirmed'])
+        self.assertEqual(posted[1]['expected'], 'r1')
+        self.assertEqual(posted[1]['research_questions'], ['Why?', 'How?', 'When?'])
+        self.assertEqual(posted[1]['topic'], 'Rolling restarts on the platform')
+        self.assertNotIn('research_inputs', posted[1], 'Without the panel the sources stay as they are')
+        self.assertIn('Nothing starts until you press Continue.', shots['saved']['text'])
+        self.assertNotIn('Discard and save', shots['saved']['buttons'], 'The sheet is put away')
+
+    def test_cancel_sends_no_change(self):
+        result = self.open_desk(self.stopped(), [
+            {'click': 'Change settings'},
+            {'fill': 'What should it teach?', 'value': 'Something else'},
+            {'click': 'Cancel'}, {'snapshot': 'put away'}])
+        self.assertEqual([address for address, _ in self.posts(result)
+                          if address == '/api/training-settings'], [])
+        self.assertNotIn('Review the change', result['snapshots']['put away']['buttons'])

@@ -1467,6 +1467,7 @@ function closeSheet() {
   const opener = view.opener;
   view.sheet = '';
   view.after = null;
+  view.changing = null;
   view.deciding = null;
   view.doomed = null;
   view.leaving = null;
@@ -1650,6 +1651,7 @@ function drawSheet() {
     || (view.sheet === 'new' && view.draft) || (view.sheet === 'picture' && view.picture)
     || ['delete', 'bulk-delete', 'companions', 'upgrade', 'redesign', 'brand', 'copy-choice',
       'update-research', 'stop-run', 'desk-migration'].includes(view.sheet)
+    || (view.sheet === 'change-settings' && view.changing)
     || (DESK_SHEETS.includes(view.sheet) && view.run)
     || (view.sheet === 'approve-combined' && view.run && view.run.review)));
   holder.hidden = !shown;
@@ -1679,6 +1681,7 @@ function drawSheet() {
   else if (view.sheet === 'brand') body = brandSheet();
   else if (view.sheet === 'copy-choice') body = copyChoiceSheet();
   else if (view.sheet === 'update-research') body = updateResearchSheet();
+  else if (view.sheet === 'change-settings') body = settingsSheet();
   else if (view.sheet === 'stop-run') body = stopSheet();
   else if (view.sheet === 'approve-combined') body = combinedConfirm();
   else if (DESK_SHEETS.includes(view.sheet)) body = deskSheet(view.sheet);
@@ -5338,7 +5341,8 @@ function actionSays(run, found) {
     return 'Carry on starts that step again; everything finished before it is kept.';
   }
   if (found.action === 'more-time') return moreTime(found, 'training');
-  if (found.action !== 'retry') return '';
+  // Waiting after Change settings: what Continue does is said in what happened.
+  if (found.action !== 'retry' || found.settings) return '';
   // Research done as one report and one independent check carries on from its saved draft.
   if (found.research) return researchAgain(found.research);
   const step = failedStep(run, found);
@@ -5517,7 +5521,9 @@ function problemPart(run, lead) {
     add(make('p', ''), make('strong', '', 'What happened: '), found.what),
     keptPart(found.kept),
     does ? make('p', 'quiet', does) : null,
-    add(make('div', 'bar'), go, read, theirs ? null : alsoPart(found)), shown);
+    add(make('div', 'bar'), go, read, theirs ? null : alsoPart(found),
+      // Beside Try again: change what it was started with, then Continue (#296).
+      theirs ? null : settingsButton(run, 'problem-settings')), shown);
 }
 
 // Beside a stop's one action: Try again once Status has been put right, and deleting a

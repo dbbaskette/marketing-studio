@@ -786,6 +786,304 @@ function deskBody(draft) {
   };
 }
 
+// --- Change settings (#296) ------------------------------------------------------------------
+// A training's start form, filled in with what it was started with, on the same sheet the
+// start uses: three numbered steps, then what the change does, then its save and Cancel
+// together. Nothing changes until the save, and nothing starts until the person presses
+// Continue.
+
+// Offered on the stop's card and in the desk's toolbar while the run is not working.
+function settingsOffered(run) {
+  return Boolean(run && run.settings && run.settings.may && run.mine !== false);
+}
+
+function settingsButton(run, key, kind = '') {
+  return settingsOffered(run)
+    ? capsule('Change settings', kind, () => openChangeSettings(key), key) : null;
+}
+
+async function openChangeSettings(opener) {
+  const path = view.path;
+  let shown;
+  let sources = null;
+  try {
+    shown = await ask('training-settings', { path });
+    if (!shown.may) throw new Error(shown.why);
+    if (!(shown.locked || {}).sources && typeof StudioResearch !== 'undefined') {
+      sources = await send('training-settings/sources', { path });
+    }
+  } catch (failure) {
+    toast(failure.message);
+    return;
+  }
+  const values = shown.values;
+  const purposes = PURPOSES.includes(values.purpose) || !values.purpose ? PURPOSES.slice()
+    : [...PURPOSES, values.purpose];
+  const deck = DECKS.findIndex((kind) => kind[0] === values.deck_target);
+  const changing = {
+    path, shown, purposes, stage: 'form', preview: null,
+    draft: { topic: values.topic || '', audience: values.audience || '',
+      time: values.time_limit || '', purpose: Math.max(0, purposes.indexOf(values.purpose)),
+      levels: list(values.levels).slice(), brief: values.brief_kind === 'competitive' ? 1 : 0,
+      deck: deck < 0 ? DECKS.length - 1 : deck,
+      brand: (values.brand && values.brand.brand) || '',
+      variant: (values.brand && values.brand.variant) || '',
+      delivery: Math.max(0, DELIVERIES.findIndex((kind) => kind[0] === values.delivery)),
+      walkthrough: Boolean(values.walkthrough),
+      researchQuestions: list(values.research_questions).join('\n'), again: false },
+  };
+  if (sources) {
+    changing.editor = new StudioResearch.Editor({ request: (sent) => send('research-sources', sent),
+      keepChoice: true, value: sources, label: 'What research reads',
+      onChange: () => settingsEdited() });
+  }
+  view.changing = changing;
+  openSheet('change-settings', opener)();
+  focusKey('change-topic');
+}
+
+// Where research looks, said again as the sources change; a change after the review asks
+// for the review again before it can be saved.
+function settingsEdited() {
+  const changing = view.changing;
+  if (!changing) return;
+  const line = byId('change-research-line');
+  if (line && changing.editor) {
+    line.textContent = 'Research ' + researchSummary(changing.editor.choice(
+      Number(changing.shown.documents) > 0)) + '.';
+  }
+  if (changing.stage !== 'review') return;
+  changing.stage = 'form';
+  changing.preview = null;
+  paintSettings();
+}
+
+function paintSettings() {
+  if (view.sheet !== 'change-settings' || !view.changing) return;
+  byId('sheet').replaceChildren(...settingsSheet());
+}
+
+// A part of the form that cannot be changed now: what it is, and why.
+function settingsLocked(label, said, why) {
+  return add(make('div', 'field'), make('p', 'field-label', label), make('p', '', said),
+    make('p', 'quiet field-hint', why));
+}
+
+// What the save sends: every value on the form, checked against the revision it was read at.
+function settingsBody(changing) {
+  const { draft, shown, purposes } = changing;
+  const deck = DECKS[draft.deck][0];
+  return {
+    path: changing.path, expected: shown.revision,
+    topic: draft.topic.trim(), audience: draft.audience.trim(),
+    purpose: purposes[draft.purpose], time_limit: draft.time.trim() || null,
+    levels: LEVELS.filter((level) => draft.levels.includes(level)),
+    brief_kind: draft.brief ? 'competitive' : 'product',
+    research_questions: draft.researchQuestions.split('\n'),
+    deck_target: deck,
+    brand: deck ? { brand: draft.brand, variant: draft.variant || null } : null,
+    delivery: DELIVERIES[draft.delivery || 0][0], walkthrough: Boolean(draft.walkthrough),
+    ...(changing.editor ? { research_inputs: changing.editor.spec() } : {}),
+    research_again: Boolean(draft.again),
+  };
+}
+
+function settingsReady(changing) {
+  const { draft } = changing;
+  const missing = [['change-topic', draft.topic, 'Say what it should teach first.'],
+    ['change-audience', draft.audience, 'Say who it is for first.']]
+    .filter(([id, value, text]) => byId(id) && refuse(id, value.trim() ? '' : text)
+      .getAttribute('aria-invalid'));
+  const asked = byId('change-questions') ? questionsProblem(draft.researchQuestions) : '';
+  if (asked) {
+    refuse('change-questions', asked);
+    missing.push(['change-questions']);
+  }
+  if (missing.length) {
+    say(byId('change-problem'), 'Something above needs you.');
+    byId(missing[0][0]).focus();
+    return false;
+  }
+  if (changing.editor && !changing.editor.valid(Number(changing.shown.documents) > 0)) {
+    say(byId('change-problem'), 'Add readable sources or allow additional external search first.');
+    return false;
+  }
+  return true;
+}
+
+async function previewSettings(pressed) {
+  const changing = view.changing;
+  if (!changing || pressed.disabled || !settingsReady(changing)) return;
+  pressed.disabled = true;
+  try {
+    changing.preview = await send('training-settings', { ...settingsBody(changing), preview: true });
+    changing.stage = 'review';
+    paintSettings();
+    focusKey('change-review');
+  } catch (failure) {
+    pressed.disabled = false;
+    say(byId('change-problem'), failure.message);
+  }
+}
+
+async function saveSettings(pressed) {
+  const changing = view.changing;
+  if (!changing || pressed.disabled) return;
+  pressed.disabled = true;
+  try {
+    const done = await send('training-settings', { ...settingsBody(changing),
+      confirmed: Boolean(changing.preview && changing.preview.confirm) });
+    view.run = done;
+    view.changing = null;
+    closeSheet();
+    toast('Its settings are changed. Nothing starts until you press Continue.');
+    paintRun(false);
+    if (onTheDesk(view.run)) refresh();
+  } catch (failure) {
+    pressed.disabled = false;
+    say(byId('change-problem'), failure.message + ' Nothing was changed.');
+  }
+}
+
+function cancelSettings() {
+  view.changing = null;
+  closeSheet();
+}
+
+function settingsSheet() {
+  const changing = view.changing;
+  const { draft, shown } = changing;
+  const locked = shown.locked || {};
+  const values = shown.values;
+  const edited = () => settingsEdited();
+  const typed = (node) => {
+    for (const box of node.querySelectorAll('input, textarea, select')) {
+      box.addEventListener('input', edited);
+      box.addEventListener('change', edited);
+    }
+    return node;
+  };
+  const fixed = (name, label, said) => (locked[name] ? settingsLocked(label, said, locked[name]) : null);
+  // 1. What it teaches.
+  const topic = fixed('topic', 'What should it teach?', values.topic)
+    || typed(field('change-topic', 'What should it teach?', draft, 'topic', { long: true,
+      hint: 'What learners should be able to do, the depth you want, and any topics or '
+        + 'examples to include.' }));
+  const audience = fixed('audience', 'Who is it for?', values.audience)
+    || typed(field('change-audience', 'Who is it for?', draft, 'audience', { long: true,
+      hint: 'Their role, and what they already know.' }));
+  const time = typed(field('change-time', 'How long it should take (optional)', draft, 'time',
+    { hint: 'The learner’s time, including examples and practice.' }));
+  const purpose = fixed('purpose', 'What it is for', values.purpose)
+    || choice('What it is for', changing.purposes, draft.purpose, (index) => {
+      draft.purpose = index;
+      edited();
+    }, 'change-purpose');
+  // 2. What is made.
+  const made = list(shown.made_levels);
+  const levels = locked.levels ? settingsLocked('Levels', 'None', locked.levels)
+    : checkChoices('Levels', LEVELS.map((level) => [level, level]),
+      (level) => draft.levels.includes(level), (level, on) => {
+        draft.levels = draft.levels.filter((other) => other !== level);
+        if (on) draft.levels.push(level);
+        edited();
+      }, 'change-level', made.length ? 'A level with work in it stays: ' + series(made) + '.'
+        : 'Each selected level gets its own materials, and its own cost.');
+  for (const level of made) {
+    const box = levels.querySelector('input[data-key="change-level ' + level + '"]');
+    if (box) box.disabled = true;
+  }
+  const brief = choice('What the brief is about', ['One product or technology', 'A comparison'],
+    draft.brief, (index) => { draft.brief = index; edited(); }, 'change-brief');
+  let decks;
+  if (locked.deck_target) {
+    decks = [settingsLocked('The slide deck', (DECKS.find((kind) => kind[0] === values.deck_target)
+      || DECKS[DECKS.length - 1])[1], locked.deck_target)];
+  } else {
+    settleDeck(draft);
+    const able = brandsFound().length > 0;
+    const used = choice('How is this deck used?', DELIVERIES.map((kind) => kind[1]),
+      draft.delivery || 0, (index) => { draft.delivery = index; edited(); }, 'change-delivery');
+    const walk = add(make('div', 'field'), trainingTick('Walk through each slide’s design before '
+      + 'it is built', draft.walkthrough, (on) => { draft.walkthrough = on; edited(); },
+    'change-walkthrough'));
+    const brand = able ? typed(brandFields(draft)) : null;
+    const showDeck = () => {
+      const none = DECKS[draft.deck][0] === null;
+      for (const node of [used, walk, brand]) if (node) node.hidden = none;
+    };
+    const deck = choice('The slide deck', DECKS.map((kind) => kind[1]), draft.deck, (index) => {
+      draft.deck = index;
+      showDeck();
+      edited();
+    }, 'change-deck');
+    for (const option of able ? [] : deck.querySelectorAll('.seg-option[aria-pressed="false"]')) {
+      option.disabled = true;
+      option.classList.add('seg-absent');
+    }
+    showDeck();
+    decks = [deck, brand, used, walk];
+  }
+  // 3. Research.
+  const researched = shown.research || {};
+  const line = make('p', 'quiet research-line');
+  line.id = 'change-research-line';
+  line.textContent = 'Research ' + researchSummary(changing.editor
+    ? changing.editor.choice(Number(shown.documents) > 0) : values.research_from) + '.';
+  const sources = locked.sources ? settingsLocked('What research reads',
+    'Research ' + researchSummary(values.research_from) + '.', locked.sources)
+    : changing.editor ? changing.editor.node : null;
+  const questions = fixed('research_questions', 'What should the research answer?',
+    list(values.research_questions).join(' ') || 'No questions of your own.')
+    || typed(field('change-questions', 'What should the research answer? (optional)', draft,
+      'researchQuestions', { long: true,
+        hint: 'One question a line, at most 8, each up to 300 characters.' }));
+  const again = researched.accepted ? add(make('div', 'field'),
+    trainingTick('Research again with the new settings', draft.again,
+      (on) => { draft.again = on; edited(); }, 'change-again'),
+    make('p', 'quiet field-hint', 'The finished research report is kept unless this is ticked.'))
+    : null;
+  // What the change does, once it is reviewed, then the save.
+  const preview = changing.stage === 'review' ? changing.preview : null;
+  const review = preview ? add(make('section', 'create-step'),
+    make('h3', 'sheet-part', 'What this change does'),
+    bullets(list(preview.words), 'reasons'),
+    preview.confirm ? make('p', 'problem', 'This discards research and cannot be undone. '
+      + 'Cancel changes nothing.') : null) : null;
+  if (review) {
+    review.tabIndex = -1;
+    review.dataset.key = 'change-review';
+    review.setAttribute('role', 'status');
+  }
+  const go = preview
+    ? capsule(preview.confirm ? 'Discard and save' : 'Save the change', 'filled',
+      (event) => saveSettings(event.currentTarget), 'change-save')
+    : submitButton('Review the change', 'change-preview');
+  const back = preview ? capsule('Change the form', 'quiet', () => {
+    changing.stage = 'form';
+    changing.preview = null;
+    paintSettings();
+    focusKey('change-topic');
+  }, 'change-back') : null;
+  const form = make('form', 'create-flow');
+  form.noValidate = true;
+  form.addEventListener('submit', (event) => {
+    event.preventDefault();
+    if (!preview) previewSettings(go);
+  });
+  add(form,
+    make('p', 'quiet', 'These are the training’s saved settings. Nothing changes until you '
+      + 'review the change and save it, and nothing starts until you press Continue.'),
+    createStep(1, 'What it teaches', topic, audience, time, purpose),
+    createStep(2, 'What is made', levels, brief, ...decks),
+    createStep(3, 'Research', sources, line, questions, again),
+    review, alertLine('change-problem'),
+    add(make('div', 'bar create-foot'), go, back,
+      capsule('Cancel', 'quiet', cancelSettings, 'cancel')));
+  return [add(make('div', 'sheet-heading'), sheetTitle('Change settings'),
+    make('p', 'quiet', shown.title)), form];
+}
+
 // Each held document, added in turn. What could not be added is kept for the desk to offer
 // again; once all are in, the runner is told that is all of them and research starts.
 async function addHeld(path, files, status) {
@@ -2439,6 +2737,11 @@ function paintDesk(fresh) {
     actions.push(capsule('Google Doc', '', openSheet('desk-copies', 'desk-copies'),
       'desk-copies'));
     actions.push(capsule('Finishing', '', () => openFinishing(), 'desk-finishing'));
+  }
+  // Change settings, while the run is not working (#296).
+  if (ours && !conversation) {
+    const change = settingsButton(run, 'desk-settings');
+    if (change) actions.push(change);
   }
   // A finished training: its index to read, and Publish, as the Published screen says.
   const finished = ours && !conversation && run.finished && found.index_written
