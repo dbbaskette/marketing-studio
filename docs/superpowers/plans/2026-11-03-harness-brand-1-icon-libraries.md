@@ -2172,10 +2172,12 @@ echo "exit $?"
 node -e 'const r=require(process.argv[1]);console.log(r.icons,"icons");console.log(r.sources);console.log(r.skipped.length,"left out");for(const s of r.skipped.slice(0,20))console.log(" ",s.source,s.file,s.reason)' "$TMPDIR/harness-brand-review/report.json"
 ```
 
-Expected: `exit 0`, 920 icons: `broadcom-design-system.zip` adds 858 (five of its slugs
-are used twice for different drawings; the second of each is renamed from its name),
-`vmware-by-broadcom-design-system.zip` adds 31 and `tanzu-division-design-system.zip`
-adds 31. None are left out. (Counts from a dry run of this plan on 3 November 2026.)
+Expected: `exit 0`, 894 icons: `broadcom-design-system.zip` adds 858 (five of its slugs
+are used twice for different drawings, and the second of each is renamed from its name;
+26 of its slugs had a ligature dropped, such as `certi-ed`, and are taken from the name
+written out, so they meet the other sets' spelling), `vmware-by-broadcom-design-system.zip`
+adds 5 and `tanzu-division-design-system.zip` adds 31. None are left out. (Counts from
+the reviewed build on 3 November 2026.)
 
 - [ ] **Step 2: Check the Tanzu Division scale against Broadcom's on shared icons**
 
@@ -2227,7 +2229,9 @@ where they should be open (a cut-out drawn as a solid), off-centre, or the wrong
 next to their neighbours, especially among the icons added from the Tanzu Division and
 VMware by Broadcom sets (they come after Broadcom's 858). The dry run found the conversions
 sound; it also found that several added icons are `-v2` redesigns or near-duplicates of
-Broadcom icons under other names, which the person may want to keep or drop. Report the counts from Step 1,
+Broadcom icons under other names, which the person may want to keep or drop. The reviewed build also found that three slugs shared
+across sources (`test-developer`, `electric-car-2`, `external-link`) are drawn differently
+in the Tanzu Division set; Broadcom's drawing is the one kept. Report the counts from Step 1,
 the ratios from Step 2, and every icon left out with why.
 
 - [ ] **Step 5: Fix what the review finds, test first**
