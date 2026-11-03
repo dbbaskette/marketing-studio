@@ -2274,3 +2274,32 @@ git status --short
 
 Expected: the commits from Tasks 1 to 11 and a clean tree. Do not push. Tell the person
 the branch name, what the review found, and that Plan 2 (brand pack commands) is next.
+
+---
+
+## Outcome (3 November 2026)
+
+Carried out with a fresh implementer per task and a review after each; the branch
+`harness-brand-foundations` (23 commits on main 7c57038, 109 tests) is in
+`~/Projects/harness-brand-skill`, not pushed. Review changed several tasks, as noted in
+them: a glyph is a list of paths; sources skip macOS clutter, links and Office files and
+read a single SVG or icons.json; slugs write out ligatures; the command refuses a folder
+not named for the library, a `--fill-for` that names no source and two sources with the
+same name, and gains `--source`. The real `vmware-functional` build gives 894 icons
+(858 + 5 + 31), byte-identical across builds.
+
+### Carry-overs for later plans
+
+- Plan 2: decide whether `pack previews` re-draws or reuses a library's
+  `contact-sheet.svg`, and settle the spec's tree (the sheet sits beside `library.zip`).
+- Plan 3: build `vmware-functional` with `--source "VMware by Broadcom Functional Icons
+  library, July 2025"` and a `--usage` written for all three brands, not Broadcom's index
+  note. Review the five VMware-only additions (`2-icon-virtual-disk-object` is undersized,
+  `icon` is a poor name) and the 31 Tanzu `-v2` redraws with the person.
+- Plan 4: any extraction of ZIP entries to disk must refuse `..`, absolute paths,
+  backslashes, drive letters and repeated names, and cap the total size. `library.zip` and
+  `contact-sheet.svg` are each replaced atomically but not as a pair. Fill rule is always
+  even-odd per path; strokes on filled shapes are ignored; masks are all-or-nothing.
+  Rewrite the README (its "zips kept out of git" line is stale) and remove apply-brand and
+  the zips.
+- Plan 7: run the suite on a real Node 20 in the disposable-home check.
