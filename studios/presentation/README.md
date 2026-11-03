@@ -107,7 +107,7 @@ slide restoration; it patches a copy of the original deck.
 
 Design to delivery, drawn the same way:
 
-![Presentation Studio design, refine and deliver workflow: the brand draws one sample slide in each look. Pick the look only if you chose to, then Draw the deck in this look. The assistant designs the deck with Harness Slides in your brand. On the desk you change words and notes and use Finishing; Redraw slide N redraws that slide's section and returns. Deliver sends Google Slides or a PowerPoint file, and Delivered offers Open or Download revision N. A note or an edit after delivery makes the next revision on the desk.](docs/assets/presentation-studio-workflow-deck.svg)
+![Presentation Studio design, refine and deliver workflow: if you chose to pick a look, the brand draws one sample slide in each look; Pick the look, then Draw the deck in this look. The assistant designs the deck with Harness Slides in your brand. On the desk you change words and notes and use Finishing; Redraw slide N redraws that slide's section and returns. Deliver sends Google Slides or a PowerPoint file, and Delivered offers Open or Download revision N. A note or an edit after delivery makes the next revision on the desk.](docs/assets/presentation-studio-workflow-deck.svg)
 
 Saved decks that keep their older step-by-step review are not drawn here.
 

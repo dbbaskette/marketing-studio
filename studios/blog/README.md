@@ -67,7 +67,7 @@ workspaces, settings and unrelated skills are preserved.
 The start, drawn. Filled boxes are your decisions or input, tinted boxes are
 assistant work and grey boxes are Blog Studio's own steps.
 
-![Blog Studio start and write workflow: open Blog Studio, with shared setup the first time. New blog takes the idea and sources, then Writing preferences sets length, tone and an optional GEO review. The assistant researches, outlines and drafts with nothing needed from you, runs the GEO review only if you included it, and the draft opens on the desk for reading, Edit section or Full desk. Alternatively, Edit or polish a draft takes pasted text, an upload, a Google Doc or a link; What should happen first chooses the first pass, the assistant runs it (spelling, feedback, GEO or a reshape), and the draft opens on the same desk.](docs/assets/blog-studio-workflow-write.svg)
+![Blog Studio start and write workflow: open Blog Studio, with shared setup the first time. New blog takes the idea and sources, then Writing preferences sets length, tone and an optional GEO review. The assistant researches only if you ticked research, then outlines and drafts with nothing needed from you, runs the GEO review only if you included it, and the draft opens on the desk for reading, Edit section or Full desk. Alternatively, Edit or polish a draft takes pasted text, an upload, a Google Doc or a link; What should happen first chooses the first pass, the assistant runs it (spelling, feedback, GEO or a reshape), then the GEO review if you included it, and the draft opens on the same desk.](docs/assets/blog-studio-workflow-write.svg)
 
 ## Finish without losing your voice
 
@@ -87,7 +87,7 @@ under Advanced. Sources used as writing examples supply style, not factual evide
 
 Finishing and sending, drawn the same way:
 
-![Blog Studio finish and send workflow: on the desk you edit, add notes or select a passage, and Revise the draft rewrites a section or the whole draft and returns. Finishing tools propose copy edits, fact checks and reader aids, and each proposal waits for Apply, Edit or Skip. The pre-publish check reports headings, links and evidence without an assistant, and Run GEO review says when the review is out of date. Send to Google Doc sends the changes as suggestions, or you copy or download the post; Bring accepted changes brings the owner's accepted text back onto the desk. Mark as published records where it went.](docs/assets/blog-studio-workflow-finish.svg)
+![Blog Studio finish and send workflow: on the desk you edit, add notes or select a passage, and Revise the draft rewrites a section or the whole draft and returns. Finishing tools propose copy edits, fact checks and reader aids, and each proposal waits for Apply, Edit or Skip. The pre-publish check reports headings, links and evidence without an assistant, and Run GEO review says when the review is out of date. Send to Google Doc sends the changes as suggestions, after Make a Google Doc if the blog has none, or you copy or download the post; Bring accepted changes brings the owner's accepted text back onto the desk. Mark as published records where it went.](docs/assets/blog-studio-workflow-finish.svg)
 
 Blogs started before the desk keep their older step-by-step run, which is not drawn here.
 

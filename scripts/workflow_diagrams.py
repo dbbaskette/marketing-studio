@@ -22,7 +22,10 @@ ROLES = (('you', 'You decide or give input'), ('assistant', 'Assistant work'),
          ('studio', 'Studio step'))
 
 # Layout, in SVG units. No text is smaller than 12.
-PAD, MAIN, SIDE, GAP, ROW_GAP = 20, 236, 156, 36, 40
+PAD, ROW_GAP = 16, 40
+# Column widths (main, side, gap): roomy with one branch column, narrower with two so
+# a diagram with branches on both sides stays readable on a phone.
+ONE_SIDE, BOTH_SIDES = (236, 156, 36), (208, 136, 28)
 TITLE, SUB, SMALL = 15, 13, 12
 TITLE_LINE, SUB_LINE = 19, 17
 CORNER = 8
@@ -45,6 +48,18 @@ _BOLD = dict(zip(
                                 278)))
 
 
+_REGULAR['\u00a0'] = _BOLD['\u00a0'] = 278
+# Names that read badly split over two lines; wrapping keeps each together.
+UNSPLIT = ('Google Doc', 'Google Slides', 'Harness Research', 'Harness Slides',
+           'revision N')
+
+
+def together(value):
+    for name in UNSPLIT:
+        value = value.replace(name, name.replace(' ', '\u00a0'))
+    return value
+
+
 def width(value, size, bold=False):
     table = _BOLD if bold else _REGULAR
     return sum(table.get(ch, 667) for ch in value) * size / 1000 * 1.03
@@ -52,7 +67,7 @@ def width(value, size, bold=False):
 
 def greedy(value, size, room, bold):
     lines, line = [], ''
-    for word in value.split():
+    for word in value.split(' '):
         trial = f'{line} {word}'.strip()
         if line and width(trial, size, bold) > room:
             lines.append(line)
@@ -121,14 +136,14 @@ BLOG_WRITE = flow(
     (('open', 'studio', 'Open Blog Studio', 'Shared setup the first time'),
      ('new', 'you', 'New blog', 'Idea and sources'),
      ('prefs', 'you', 'Writing preferences', 'Length, tone, GEO review'),
-     ('write', 'assistant', 'Research, outline, draft', 'Nothing needed from you'),
+     ('write', 'assistant', 'Research, outline, draft', 'Research only if ticked'),
      ('geo', 'assistant', 'GEO review', 'Only if you included it'),
      ('desk', 'you', 'The desk', 'Read, Edit section, Full desk')),
     (('polish', 1, 1, 'you', 'Edit or polish a draft', 'Paste, upload, Doc or link'),
      ('first', 1, 2, 'you', 'What should happen first', 'Choose the first pass'),
      ('pass', 1, 3, 'assistant', 'First pass', 'Spelling, feedback, GEO, reshape')),
     (('open', 'polish', 'over', ''), ('polish', 'first', 'down', ''),
-     ('first', 'pass', 'down', ''), ('pass', 'desk', 'back', '')))
+     ('first', 'pass', 'down', ''), ('pass', 'geo', 'back', '')))
 
 BLOG_FINISH = flow(
     (('desk', 'you', 'The desk', 'Edit, notes, select a passage'),
@@ -136,7 +151,7 @@ BLOG_FINISH = flow(
      ('decide', 'you', 'Apply, Edit or Skip', 'Each proposal waits for you'),
      ('check', 'studio', 'Pre-publish check', 'Headings, links, evidence'),
      ('geo', 'assistant', 'Run GEO review', 'Says when it is out of date'),
-     ('send', 'you', 'Send to Google Doc', 'As suggestions, or copy it'),
+     ('send', 'you', 'Send to Google Doc', 'Make a Google Doc first, if none'),
      ('published', 'you', 'Mark as published', 'Records where it went')),
     (('revise', 1, 0, 'you', 'Revise the draft', 'A section or the whole'),
      ('bring', -1, 5, 'you', 'Bring accepted changes', 'Back onto the desk')),
@@ -162,8 +177,8 @@ PRESENTATION_TEXT = flow(
     (('text', 'changes', 'both', ''),))
 
 PRESENTATION_DECK = flow(
-    (('looks', 'studio', 'Draw look samples', 'One slide in each look'),
-     ('pick', 'you', 'Pick the look', 'Only if you chose to', 'Draw the deck in this look'),
+    (('looks', 'studio', 'Draw look samples', 'If you chose to pick a look'),
+     ('pick', 'you', 'Pick the look', 'One slide in each look', 'Draw the deck in this look'),
      ('design', 'assistant', 'Design the deck', 'Harness Slides, in your brand'),
      ('desk', 'you', 'On the desk', 'Words, notes, Finishing'),
      ('deliver', 'you', 'Deliver', 'Google Slides or PowerPoint'),
@@ -177,14 +192,14 @@ INFOGRAPHIC_STORY = flow(
     (('open', 'studio', 'Open Infographic Studio', 'Shared setup the first time'),
      ('new', 'you', 'New infographic', 'Add information, set direction', 'Save brief'),
      ('find', 'assistant', 'Find the story', 'Source-backed stories proposed'),
-     ('choose', 'you', 'Choose the story', 'Use this story'),
+     ('choose', 'you', 'Choose a story', 'Use this story'),
      ('build', 'assistant', 'Build page', 'Composed with your brand'),
-     ('preview', 'studio', 'Update preview', 'Rendered on this computer')),
+     ('preview', 'studio', 'Create preview', 'Rendered on this computer')),
     (('revise', 1, 3, 'you', 'Ask for a revision', 'A revised story to choose'),),
     (('choose', 'revise', 'both', ''),))
 
 INFOGRAPHIC_APPROVE = flow(
-    (('words', 'you', 'Edit words', 'Each save, a new revision'),
+    (('words', 'you', 'Edit words', 'New revision; Update preview'),
      ('review', 'you', 'Review page', 'Record what you inspected',
       'Record review and run checks'),
      ('checks', 'studio', 'Run checks', 'Checks on this computer'),
@@ -216,8 +231,8 @@ class Box:
     def __init__(self, node, x, w):
         self.id, self.col, self.row, self.role, self.title, self.sub = node
         self.x, self.w = x, w
-        self.titles = wrap(self.title, TITLE, w - 24, bold=True)
-        self.subs = wrap(self.sub, SUB, w - 24)
+        self.titles = wrap(together(self.title), TITLE, w - 24, bold=True)
+        self.subs = wrap(together(self.sub), SUB, w - 24)
         self.need = 12 + len(self.titles) * TITLE_LINE + 2 + len(self.subs) * SUB_LINE + 10
         self.y = self.h = 0
 
@@ -240,6 +255,7 @@ class Box:
 def layout(nodes, edges):
     left = any(node[1] < 0 for node in nodes)
     right = any(node[1] > 0 for node in nodes)
+    MAIN, SIDE, GAP = BOTH_SIDES if left and right else ONE_SIDE
     main_x = PAD + (SIDE + GAP if left else 0)
     places = {-1: (PAD, SIDE), 0: (main_x, MAIN), 1: (main_x + MAIN + GAP, SIDE)}
     total = main_x + MAIN + (GAP + SIDE if right else 0) + PAD
