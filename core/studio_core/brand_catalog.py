@@ -47,8 +47,8 @@ def choices(skill=None, home=None, run=subprocess.run, which=shutil.which, data=
                            env=brand_data.environment(dict(os.environ), data))
                 if done.returncode or len(done.stdout) > 1_000_000:
                     raise ValueError('The brand command did not return a readable list.')
-                data = json.loads(done.stdout)
-                brands = data.get('brands') if isinstance(data, dict) else data
+                listing = json.loads(done.stdout)
+                brands = listing.get('brands') if isinstance(listing, dict) else listing
                 if not isinstance(brands, list):
                     raise ValueError('The brand command did not return a list.')
                 valid = []

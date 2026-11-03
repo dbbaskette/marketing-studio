@@ -41,6 +41,13 @@ class BrandsFolderTests(unittest.TestCase):
         self.assertEqual(brand_data.folder({}), Path('~/Studios/brands').expanduser())
         self.assertEqual(brand_data.folder(None), Path('~/Studios/brands').expanduser())
 
+    def test_settings_of_the_wrong_kind_are_taken_as_not_given(self):
+        default = Path('~/Studios/brands').expanduser()
+        for shared in ({'schema': 1, 'local': '~/Studios'}, {'team': 'x'}, {'local': {'root': 5}},
+                       {'team': {'repository': 7}}, ['not', 'an', 'object']):
+            self.assertEqual(brand_data.folder(shared), default, shared)
+            self.assertEqual(brand_data.unplaced(shared), default, shared)
+
     def test_without_a_workspace_the_first_team_checkout_holding_packs_is_used(self):
         shared = {'team': {'repository': TEAM}}
         first, second, other = (self.base / name for name in ('first', 'second', 'other'))
