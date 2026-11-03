@@ -1053,6 +1053,12 @@ git commit -m "Turn one SVG icon into one glyph, dropping containers and reading
 
 ### Task 6: Reading a source
 
+> **Revised in review (3 November 2026):** `sourceFiles` also reads one SVG file, leaves out
+> hidden files, macOS `__MACOSX` folders and links, and refuses other files in a sentence;
+> `readSource` says when a source holds no icons; slugs keep accented letters. The
+> committed version is on the branch (commit "Leave macOS clutter and links out of icon
+> sources, read one SVG, and say when a source holds no icons").
+
 **Files:**
 - Create: `scripts/lib/icons/sources.mjs`
 - Test: `tests/sources.test.mjs`
@@ -1292,6 +1298,10 @@ test('a slug repeated within one index keeps both drawings, renaming the second 
   assert.deepEqual(built.skipped, []);
 });
 
+test('a source with no icons is named in the refusal', () => {
+  assert.throws(() => buildLibrary([{ label: 'empty.zip', files: new Map() }], options), /empty\.zip: It holds no icons/);
+});
+
 test('a picture library keeps each drawing as it is', () => {
   const built = buildLibrary([{ label: 's', files: new Map([['Logos/spring.svg', Buffer.from(SQUARE)]]) }],
     { ...options, kind: 'picture' });
@@ -1410,7 +1420,12 @@ export function buildLibrary(sources, { id, name, kind = 'glyph', version = '1',
   const skipped = [];
   let note = '';
   for (const { label, files } of sources) {
-    const held = readSource(files);
+    let held;
+    try {
+      held = readSource(files);
+    } catch (error) {
+      throw new Error(`${label}: ${error.message}`);
+    }
     const known = [...new Set(icons.map((icon) => icon.category))];
     const count = { source: label, added: 0, already: 0 };
     if (held.kind === 'index') {
@@ -1548,7 +1563,7 @@ export function checkLibrary(archive, { id } = {}) {
 - [ ] **Step 4: Run them to see them pass**
 
 Run: `node --test tests/library.test.mjs`
-Expected: `# pass 9`, `# fail 0`.
+Expected: `# pass 10`, `# fail 0`.
 
 - [ ] **Step 5: Commit**
 
@@ -1940,7 +1955,8 @@ Expected: `# pass 8`, `# fail 0`. Note that `pack check` on a broken archive pri
 - [ ] **Step 7: Run the whole suite**
 
 Run: `npm test`
-Expected: `# fail 0`, with 51 tests passing (1 + 5 + 4 + 9 + 8 + 5 + 9 + 2 + 8).
+Expected: `# fail 0`. (Review added tests to Tasks 2 to 6, so the total is larger than the
+plan's first count; every test must pass.)
 
 - [ ] **Step 8: Commit**
 
