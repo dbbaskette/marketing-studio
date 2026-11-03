@@ -8,4 +8,4 @@ discover_harness = true
 marketing-studio = https://github.com/dbbaskette/marketing-studio.git
 harness-research-skill = https://github.com/dbbaskette/harness-research-skill.git
 harness-slides-skill = https://github.com/dbbaskette/harness-slides-skill.git
-tanzu-brand = https://github.com/dbbaskette/tanzu-brand.git
+harness-brand-skill = https://github.com/dbbaskette/harness-brand-skill.git
