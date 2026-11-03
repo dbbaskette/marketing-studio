@@ -157,6 +157,14 @@ What a caller needs to know
   runner does next, not what an assistant in a conversation would.
 - Reading never starts or wakes a run: `GET /api/run` can be asked for as often as the
   page likes.
+- Change settings (#296): `GET /api/training-settings?path=` answers the training's start
+  form filled in with its saved values, what cannot be changed and why, and the `revision` a
+  save is checked against. `POST /api/training-settings/sources` {path} answers a source draft
+  holding what its research reads now, for the shared source panel. `POST
+  /api/training-settings` {path, expected, the form's fields, research_inputs?,
+  research_again?, preview?, confirmed?} says what the change does (`preview`), or saves it
+  and answers the run, which waits for Continue. It is 409 for an outdated form, while the run
+  works, and for a change that discards research and is not `confirmed`.
 - `GET /api/activity?path=` is a training's Activity log, `Engine.activity`: each finished
   assistant job, newest first, without its lines, and the jobs running now; `&entry=` one
   finished job's plain lines, and `&job=&since=` one running job's lines from the `since`th
@@ -245,14 +253,16 @@ DECIDED = tuple(f'{DRAFTS}/{action}' for action in ('ready', 'level-ready', 'dra
 TYPED = tuple(f'{DRAFTS}/{action}' for action in ('save', 'restore', 'share'))
 JOBS = tuple(f'{DRAFTS}/{action}' for action in ('note', 'revise', 'selection', 'stop', 'retry', 'layout', 'write-whole'))
 VERSIONS = f'{DRAFTS}/versions'
+SETTINGS = '/api/training-settings'   # Change settings (#296): the form, and its save
+SETTINGS_SOURCES = f'{SETTINGS}/sources'   # a source draft holding what research reads now
 CARD = f'{DRAFTS}/card'   # one card with its parts, as the shared kit reads it
 PART_LIMIT = 1_000_000   # bytes: one part of the largest size, as JSON
 READS = ('/api/capabilities', '/api/setup', '/api/agents', '/api/models', '/api/run',
-         '/api/activity',
+         '/api/activity', SETTINGS,
          '/api/download', '/api/slide', '/api/status', '/api/published', '/api/delete', '/api/deck-draft-ticket',
          DRAFTS, CARD, VERSIONS, f'{DRAFTS}/update-preview', f'{DRAFTS}/slide-versions', f'{DRAFTS}/source-price',
          f'{DRAFTS}/proofread', f'{DRAFTS}/migration-preview', f'{DRAFTS}/doc-preview')
-WRITES = ('/api/training-plan', '/api/research-sources', '/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/answer',
+WRITES = ('/api/training-plan', '/api/research-sources', SETTINGS, SETTINGS_SOURCES, '/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/answer',
           '/api/documents', '/api/copies', '/api/share', '/api/outline', '/api/review', '/api/drive',
           '/api/publish', '/api/adopt', '/api/fetch', '/api/delete', '/api/companions',
           '/api/asset', '/api/upgrade', '/api/restart', '/api/versions', '/api/redesign',
@@ -391,6 +401,10 @@ class RunnerPage(desk.Page):
             return desk.as_json(HTTPStatus.OK, desk_chat.migration_preview(self.engine, training))
         if path == '/api/run':
             return desk.as_json(HTTPStatus.OK, self.run(one('path')))
+        if path == SETTINGS:
+            training = self.driving(one('path'))
+            return desk.as_json(HTTPStatus.OK, self.typed(
+                lambda: self.engine.settings_form(training)))
         if path == '/api/activity':
             return desk.as_json(HTTPStatus.OK, self.engine.activity(
                 self.driving(one('path')), **activity_asked(one)))
@@ -876,6 +890,8 @@ class RunnerPage(desk.Page):
             except ValueError as error:
                 raise desk.Refusal(HTTPStatus.BAD_REQUEST, str(error)) from None
         self.engine.seen()
+        if path in (SETTINGS, SETTINGS_SOURCES):
+            return desk.as_json(HTTPStatus.OK, self.settings(path, sent))
         if path == '/api/drive':
             return desk.as_json(HTTPStatus.OK, self.drive(sent))
         if path == '/api/publish':
@@ -1207,6 +1223,22 @@ class RunnerPage(desk.Page):
         path = desk.text(sent, 'path')
         self.run(path)
         return path
+
+    def settings(self, path: str, sent: dict) -> dict:
+        """Change settings: a source draft of what research reads now, or what a change of
+        the form does (`preview`: true), or its save, checked against `expected`."""
+        training = self.driving(desk.text(sent, 'path'))
+        if path == SETTINGS_SOURCES:
+            return self.typed(lambda: self.engine.settings_sources(training))
+        if not isinstance(sent.get('preview', False), bool) or not isinstance(
+                sent.get('confirmed', False), bool) or not isinstance(
+                sent.get('research_again', False), bool):
+            raise desk.Refusal(HTTPStatus.BAD_REQUEST, 'Send preview, confirmed and '
+                               'research_again as true or false.')
+        if not isinstance(sent.get('expected'), str):
+            raise desk.Refusal(HTTPStatus.BAD_REQUEST, 'Send the revision the form was read at.')
+        return self.typed(lambda: self.engine.change_settings(
+            training, sent, preview=sent.get('preview', False)))
 
     def drive(self, sent: dict) -> dict:
         """Take a training, which takes over one someone else drives, or hand it over."""

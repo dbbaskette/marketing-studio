@@ -100,6 +100,14 @@ remake it from the current input, or **Keep as it is**. The proposed update says
 what it reaches and its available price history. New sources wait for the explicit
 research update; adding a document alone starts no research.
 
+**Change settings**, beside Try again when a training stops and in the desk's toolbar
+while nothing is working, opens the start form with the training's saved values: the
+topic, audience, levels, brief, deck, time limit, sources, external search and research
+questions. It says what the change does before saving. Research not yet accepted into a
+finished report is discarded and planned again, with the time and money it took said
+first; a finished report is kept unless you choose to research again. The training then
+waits for **Continue**.
+
 **Finishing** applies to the selected material and proposes checks or changes.
 Choose Apply, Edit or Skip. Local checks and assistant-backed checks are identified;
 serious blocking findings still prevent readiness. **Mark this level ready** previews

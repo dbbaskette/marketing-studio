@@ -6093,11 +6093,15 @@ class Engine(Reviewing):
                 # The check would stop the same way: say so again, and start nothing.
                 raise WorkspaceError(problem['what'])
             if action in ('resume', 'retry', stops.MORE_TIME):
+                # Continue after Change settings carries twice the time for each step from a
+                # stop for time before it (#296). Only Carry on lifts the spending limit.
+                carried = problem.get('carried') if problem.get('settings') else None
                 if problem.get('action') == 'resume':  # it may spend as much again
                     record['cleared'] = spent(record)[0] or 0.0
                 elif problem:
                     self._fresh(record, problem.get('step'))
-                if action == stops.MORE_TIME:  # this run's steps may take twice as long
+                if action == stops.MORE_TIME or carried == stops.MORE_TIME:
+                    # this run's steps may take twice as long
                     record['more_time'] = stops.more_time(
                         problem.get('seconds') or record['limits']['step_seconds'])
                 record['problem'] = record['halt'] = None
@@ -7134,6 +7138,8 @@ class Engine(Reviewing):
                          if asked else None),
             'problem': ({**{key: problem.get(key) for key in ('what', 'kept', 'action', 'label')},
                          **({'seconds': problem['seconds']} if problem.get('seconds') else {}),
+                         # Waiting for Continue after Change settings: its words say so.
+                         **({'settings': True} if problem.get('settings') else {}),
                          # The research check's objections, read where the stop is.
                          **({'objections': objections} if problem.get('objected')
                             and (root / objections).is_file() else {}),
@@ -7154,11 +7160,35 @@ class Engine(Reviewing):
                           if ending == 'deck' and not resting else None),
             'redesign': self._redesigns(found) if mine else [],
             'controls': self._controls(record, found, state, mine),
+            # Change settings (#296): offered while the run is not working, with why not.
+            'settings': self._settings_offer(root, record, state, mine),
             'finished': ({'ready': bool(report['ready']),
                           'limitations': list(report['limitations']),
                           'blocking': list(report['blocking']), 'index': report['file'],
                           'yoodli': self._yoodli(root, found.session)}
                          if report and not resting else None)}
+
+    def _settings_offer(self, root: Path, record: dict, state: str, mine: bool) -> dict:
+        """Whether Change settings is offered now, and why not when it is not."""
+        from runner import settings_change
+        why = settings_change.refusal(record, state, bool(mine),
+                                      self._desk_change_busy(root, record))
+        return {'may': why is None, 'why': why}
+
+    def settings_form(self, path) -> dict:
+        """A training's start form filled in with its saved values (runner/settings_change.py)."""
+        from runner import settings_change
+        return settings_change.form(self, path)
+
+    def settings_sources(self, path) -> dict:
+        """A source draft holding what a training's research reads now, for the source panel."""
+        from runner import settings_change
+        return settings_change.sources(self, path)
+
+    def change_settings(self, path, sent: dict, preview: bool = False) -> dict:
+        """Say what a change of settings does, or save it; the training then waits for Continue."""
+        from runner import settings_change
+        return settings_change.save(self, path, sent, preview=preview)
 
     @staticmethod
     def _research_view(record: dict) -> dict:

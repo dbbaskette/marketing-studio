@@ -78,6 +78,49 @@ class Sources:
         with self.lock:
             return self.shown(self.load(ident))
 
+    def from_inputs(self, item, saved, research_from, *, sites=()):
+        """A new draft that holds what an item's research reads now, so the shared editor
+        can change it: each saved capture, checked against its manifest first, and where
+        research may search (`research_from`, as the item's record pinned it). `sites` are
+        the shared ones a draft offers when the item searches no sites of its own. The
+        item's own snapshot is only read."""
+        item = Path(item)
+        rows = []
+        if saved:
+            sources(item, saved)   # every capture is what its manifest says, or a refusal
+            manifest = json.loads(rc.inside(item, 'sources/research-inputs/manifest.json').read_text())
+            rows = manifest['sources']
+        chosen = research_sites.effective(research_from)
+        with self.lock:
+            ident = secrets.token_hex(16)
+            folder = self.folder(ident)
+            folder.mkdir(mode=0o700)
+            kept = []
+            for row in rows:
+                raw = rc.inside(item, row['original']).read_bytes()
+                text = rc.inside(item, row['file']).read_text()
+                raw_name = 'captures/' + hashlib.sha256(raw).hexdigest() + '.raw'
+                text_name = 'captures/' + hashlib.sha256(text.encode()).hexdigest() + '.txt'
+                rc.write(folder, raw_name, raw)
+                rc.write(folder, text_name, text)
+                source = {k: row[k] for k in ('id', 'name', 'kind', 'origin', 'warnings', 'tabs',
+                          'selected_tabs', 'captured_at', 'sha256', 'original_sha256') if k in row}
+                source.update(status='ready', problem=None, file=text_name, original=raw_name)
+                source.setdefault('warnings', [])
+                source.setdefault('tabs', [])
+                source.setdefault('selected_tabs', [])
+                if source.get('kind') in ('url', 'google-doc', 'google-slides'):
+                    source['requested_url'] = source.get('origin')
+                kept.append(source)
+            restricted = bool(chosen['sites'])
+            value = {'schema': 1, 'owner': 'studio-research-sources', 'id': ident, 'revision': '',
+                     'external': bool(chosen['web'] or chosen['sites']), 'restricted': restricted,
+                     'sites': chosen['sites'] if restricted else research_sites.sites(list(sites)),
+                     'workers': int((saved or {}).get('workers') or 3),
+                     'focus': str((saved or {}).get('focus') or ''), 'sources': kept}
+            self.save(value)
+            return self.shown(value)
+
     def check(self, ident, expected):
         value = self.load(ident)
         require(value['revision'] == expected, 'These sources changed in another view. Reload; your entered links and text are kept.')
