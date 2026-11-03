@@ -2248,6 +2248,26 @@ def keep_published(root, directory, record):
     return kept
 
 
+def _assistant(root):
+    """The name of the assistant new work uses (Settings → Writing preferences)."""
+    import blog_runner
+    import content_address
+
+    return content_address.name(blog_runner.settings(root)['defaults']['engine'])
+
+
+def read_link(url, assistant):
+    """A published post read by its link, with no lock held. A page with no article text
+    says which assistant the page may ask where the page gets its text."""
+    import published_post
+
+    try:
+        return published_post.read(url)
+    except published_post.NoText as error:
+        error.answer['assistant'] = assistant
+        raise
+
+
 def report_start(root, route, data):
     """A GEO report for a published post: started from a read the person checked, or Run
     again, which reads the page again (before the studio lock is taken) and makes a new
@@ -2276,10 +2296,11 @@ def report_start(root, route, data):
         if not earlier.get('url'):
             item = earlier.get('collection_item') or {}
             copy = published_post.library_copy(root, item.get('id'), item.get('location'))
+        assistant = _assistant(root)
     if copy is not None:
         found = published_post.from_copy(copy)  # Parsed with no lock held.
     else:
-        found = published_post.read(geo_report.link_again(earlier['url']))
+        found = read_link(geo_report.link_again(earlier['url']), assistant)
     with studio.locked(root):
         authorize_write(root)
         return geo_report.start(root, data['operation'], found, previous=data['id'])
@@ -2388,11 +2409,24 @@ def dispatch(root, route, data):
                 if 'item' in data
                 else None
             )
+            assistant = _assistant(root)
         # The page is read, or the saved copy parsed, with no lock held.
-        found = published_post.read(data['url']) if copy is None else published_post.from_copy(copy)
+        found = (
+            read_link(data['url'], assistant) if copy is None else published_post.from_copy(copy)
+        )
         with studio.locked(root):
             authorize_write(root)
             return published_post.stage(root, found)
+    if route in ('published-find-text', 'published-find-text-stop'):
+        # Ask the assistant where a page built by scripts gets its text: one job on a press,
+        # queued under the lock; the network and the assistant run on the worker without it.
+        import content_address
+
+        with studio.locked(root):
+            authorize_write(root)
+            if route == 'published-find-text':
+                return content_address.start(root, data)
+            return content_address.stop(root, data)
     if route in ('geo-report-start', 'geo-report-again'):
         return report_start(root, route, data)
     if route == 'geo-report-google-plan':
@@ -2563,6 +2597,9 @@ def failure(exc, writing=False):
         return 400, {
             'error': 'This request was missing expected information. Reload the page and try again, or continue in chat.'
         }
+    if isinstance(exc, ValueError) and isinstance(getattr(exc, 'answer', None), dict):
+        # A refusal that offers the page a next step, such as a published page with no text.
+        return 400, {**exc.answer, 'error': str(exc)[:500]}
     if isinstance(exc, (ValueError, HubError, GoogleError)):
         return 400, {'error': str(exc)[:500]}
     if isinstance(exc, OSError):
@@ -2691,6 +2728,11 @@ def view(root, name, query):
             # one-time cleaning of a record kept before images moved out of its text, or
             # whose images were lost (desk._images_out), by the computer that drives it.
             return desk_jobs.view(root, arg('id'))
+    if name == 'published-find-text':
+        import content_address
+
+        with studio.locked(root):
+            return content_address.view(root, arg('id'))
     if name in ('geo-reports', 'geo-report', 'geo-report-download'):
         import geo_report
 

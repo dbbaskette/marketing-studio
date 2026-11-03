@@ -40,6 +40,9 @@ KINDS = {
     'finish-opener',
     # A GEO report for a published post (geo_report.py): recommendations only, no blog.
     'geo-report',
+    # Where a published page built by scripts gets its text (content_address.py): a recipe
+    # the assistant finds, read and checked by Blog Studio itself. No blog.
+    'find-text',
 }
 DESK = (
     'desk-section',
@@ -88,7 +91,9 @@ def write(root, value):
     target.chmod(0o600)
 
 
-def create(root, ident, kind, payload, guidance, basis, metadata):
+def create(root, ident, kind, payload, guidance, basis, metadata, seconds=None):
+    """Queue one job. `seconds` lowers the assistant's time for a short job below the time
+    a writing step may take (Settings)."""
     if kind not in KINDS:
         raise ValueError('Choose a supported tool task.')
     target = path(root, ident)
@@ -121,7 +126,7 @@ def create(root, ident, kind, payload, guidance, basis, metadata):
         'created_at': studio.now(),
         'attempts': 0,
         'engine': defaults['engine'],
-        'seconds': defaults['seconds'],
+        'seconds': min(defaults['seconds'], seconds) if seconds else defaults['seconds'],
         'model_profiles': model_profiles.snapshot(
             shared,
             defaults['engine'],
@@ -286,6 +291,12 @@ def once(engine):
 
             # Research before a desk start's writing: a plan, then research, as runs do.
             result = desk_jobs.research_run(engine, saved)
+        elif saved['kind'] == 'find-text':
+            import content_address
+
+            # The page and its scripts are read, the assistant asked and its address read
+            # and checked, all with no lock held.
+            result = content_address.run(engine, saved)
         else:
             result = engine.worker(
                 saved['engine'],
@@ -351,6 +362,10 @@ def _ended(root, job):
         import geo_report
 
         return geo_report.ended(root, job)
+    if job['kind'] == 'find-text':
+        import content_address
+
+        return content_address.ended(root, job)
     if job['kind'] not in DESK:
         return None
     import desk_jobs
@@ -381,8 +396,8 @@ def listing(root, article=None):
     for target in folder.glob('*.json'):
         try:
             value = read(root, target.stem)
-            if value['kind'] == 'desk-angles':
-                continue  # Angles for a blog not yet made belong to its start page.
+            if value['kind'] in ('desk-angles', 'find-text'):
+                continue  # Work for a blog not yet made belongs to the page that asked.
             if value['metadata'].get('article') == article:
                 values.append(
                     {key: value.get(key) for key in ('id', 'kind', 'status', 'created_at')}
