@@ -3798,6 +3798,12 @@ body[data-pilot="liquid"] .ig-outline-value { fill: var(--studio-color); font: 2
 .activity-note{font-size:.85rem;margin-top:.4rem}
 .activity-log{background:var(--card)}
 .activity-log-summary{display:flex;flex-direction:column;gap:.2rem;min-height:2.75rem;cursor:pointer}
+/* The two flex summaries draw their own disclosure triangle, as a native one would sit. */
+.activity-log-summary,.activity-entry-lines>summary{position:relative;padding-left:1.1rem;list-style:none}
+.activity-log-summary::-webkit-details-marker,.activity-entry-lines>summary::-webkit-details-marker{display:none}
+.activity-log-summary::before,.activity-entry-lines>summary::before{content:'▸';position:absolute;left:0;color:var(--quiet)}
+.activity-entry-lines>summary::before{top:.6rem}
+.activity-log[open]>.activity-log-summary::before,.activity-entry-lines[open]>summary::before{content:'▾'}
 .activity-log-summary>.quiet{font-size:.9rem}
 .activity-log-body{margin-top:.8rem}
 .activity-log-body>*+*{margin-top:.8rem}

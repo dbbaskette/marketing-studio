@@ -7100,7 +7100,7 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         # The Activity log reads the log when it is opened, newest first, with each outcome.
         self.assertEqual(self.asked(result, 'activity'), ['/api/activity?' + urlencode({'path': str(self.root)})])
         log = shown['log']['text'].split('Activity log')[-1]
-        for text in ('Working now', 'Finished', 'Out of time', 'Refresh'):
+        for text in ('1 job is still working', 'Finished', 'Out of time', 'Refresh'):
             self.assertIn(text, log)
         self.assertLess(log.index('Finished'), log.index('Out of time'))
         self.assertFalse(self.posts(result), 'Reading activity starts nothing')

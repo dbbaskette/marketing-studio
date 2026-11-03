@@ -157,10 +157,12 @@ const StudioActivity = (() => {
       body.replaceChildren(...parts);
       return;
     }
+    // A job still running is shown where the page shows its work, not again here.
+    const running = array(view.running).length;
     parts.push(make('p', 'quiet', 'Each assistant job that ended, newest first, with what it did. '
-      + 'It is kept on this computer for the latest ' + (view.limit || 200) + ' jobs.'));
-    const running = live(view.running, {title: 'Working now'});
-    if (running) parts.push(running);
+      + 'It is kept on this computer for the latest ' + (view.limit || 200) + ' jobs.'
+      + (running ? ' ' + running + (running === 1 ? ' job is' : ' jobs are') + ' still working and will appear here when '
+        + (running === 1 ? 'it ends.' : 'they end.') : '')));
     const jobs = array(view.jobs);
     if (jobs.length) {
       const list = make('ol', 'activity-entries');

@@ -118,7 +118,8 @@ const texts = (root, cls) => root.querySelectorAll(cls).map((n) => n.text.replac
   assert.deepEqual(entries.map((n) => n.querySelector('.activity-ending').text.trim()), ['Stopped', 'Out of time']);
   assert.match(entries[1].text, /It did not finish in 600 seconds\./);
   assert.deepEqual(entries[0].querySelectorAll('.activity-text').map((n) => n.textContent), [lines[2].text, lines[1].text, lines[0].text]);
-  assert.match(card.querySelector('.activity-log-body').text, /Working now/);
+  assert.match(card.querySelector('.activity-log-body').text, /1 job is still working and will appear here when it ends\./);
+  assert.equal(card.querySelector('.activity-live'), null, 'a running job is shown with the work, not again in the log');
   // A job in the log opens too, and stays open when the page is drawn again.
   entries[0].querySelector('summary').click();
   const again = activity.logCard({ key: 'activity-log /work/rolling-restarts', load: async () => { asked += 1; return answer; } });
