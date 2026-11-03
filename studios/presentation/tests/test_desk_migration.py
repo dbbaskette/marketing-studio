@@ -679,15 +679,16 @@ desk_chat.migrate(e,Path(sys.argv[1]),sys.argv[2])
         root = self.gated()
         marker = self.space.root / gitstate.MARKER
         values = json.loads(marker.read_bytes())
-        values['minimum_runtime'] = '4.9.0'
+        # Above both the migration floor and this checkout's own version.
+        values['minimum_runtime'] = '99.0.0'
         marker.write_text(json.dumps(values))
         before = marker.read_bytes()
-        with mock.patch.object(gitstate, 'installed', return_value='4.9.1'):
+        with mock.patch.object(gitstate, 'installed', return_value='99.0.1'):
             self.migrate(root)
         self.assertEqual(marker.read_bytes(), before)
-        with self.assertRaisesRegex(WorkspaceError, '4.9.0'):
+        with self.assertRaisesRegex(WorkspaceError, '99.0.0'):
             self.engine.hold(root, conversation=True)
-        with self.assertRaisesRegex(WorkspaceError, '4.9.0'):
+        with self.assertRaisesRegex(WorkspaceError, '99.0.0'):
             with gitstate.workspace_locked(self.space, self.engine.files, configured=True):
                 self.fail('older configured writer admitted')
 
