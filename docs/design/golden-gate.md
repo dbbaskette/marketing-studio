@@ -93,6 +93,7 @@ shared setup, Blog Studio, Presentation Studio and Training Studio:
 | Page | `.stack` (its parts `1.1rem` apart), `.page-head` (the `.lede` and a `.bar` beside it) |
 | Ticks | `label.check` with its checkbox; `.research-choices` and `.site-choices` for Research from |
 | Desk | `.desk-*` from `drafting.js`: the reading column and aside, part cards, the selection bar, History and the Finishing panel |
+| Assistant activity | `.activity-*` from `activity.js`: each running job's "Now:" line and its Show activity disclosure, and the Activity log card; drawn on the card or paper they sit in |
 
 A page stylesheet (`home.css`, `blog.css`, `deck.css`, or an inline style on a static page)
 lays out its own parts. It may size and place a shared control, but never draws one, never
