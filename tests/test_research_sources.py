@@ -30,6 +30,29 @@ class SourceTests(unittest.TestCase):
         self.assertTrue(all(s['permission'] == 'selected' for s in ready['sources']))
         self.assertEqual(self.network, ['https://example.invalid/reference'])
         self.assertEqual(ready['workers'], 3)
+    def test_a_draft_made_from_saved_inputs_holds_them_and_changes_none(self):
+        # Change settings (#296): the source panel opens on what an item's research reads.
+        from studio_core.research_sources import install
+        self.act('capture', kind='text', name='Notes', text='Synthetic supplied notes.')
+        self.act('capture', kind='url', url='https://example.invalid/reference')
+        item = self.root / 'item'
+        saved = install(self.sources.prepared(self.value['id'], self.value['revision']), item)
+        manifest = (item / 'sources/research-inputs/manifest.json').read_bytes()
+        chosen = {'documents': True, 'sites': [], 'web': True, 'widened_at': 'kept by a record'}
+        draft = self.sources.from_inputs(item, saved, chosen, sites=['https://docs.example.invalid'])
+        self.assertNotEqual(draft['id'], self.value['id'])
+        self.assertEqual([s['name'] for s in draft['sources']], [s['name'] for s in self.value['sources']])
+        self.assertTrue(draft['external'])
+        self.assertFalse(draft['restricted'])
+        self.assertEqual(draft['sites'], ['https://docs.example.invalid'])
+        again = self.sources.prepared(draft['id'], draft['revision'])
+        self.assertEqual(again['research_from'], {'documents': True, 'sites': [], 'web': True})
+        self.assertEqual(sorted(s['sha256'] for s in again['sources']),
+                         sorted(s['sha256'] for s in self.value['sources']))
+        self.assertEqual((item / 'sources/research-inputs/manifest.json').read_bytes(), manifest)
+        # A URL capture can be read again from the new draft; nothing was fetched to make it.
+        self.assertEqual(self.network, ['https://example.invalid/reference'])
+        self.assertTrue(self.sources.from_inputs(self.root / 'none', None, None)['sources'] == [])
     def test_bad_source_does_not_erase_ready_peers_or_silently_enter_research(self):
         self.act('capture', kind='text', name='Readable', text='Useful synthetic notes.')
         self.act('capture', kind='file', name='unsupported.exe', content='AA==')
