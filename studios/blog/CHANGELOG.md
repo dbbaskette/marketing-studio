@@ -3,7 +3,13 @@
 Releases are published from `skills/blog-studio/VERSION`. Each entry says what
 changes for authors first, then what changes for maintainers.
 
-## Unreleased
+## 4.10.0 — 2026-11-03
+
+- **Released with Marketing Studio 4.6.0.** Installs pin Harness Research 1.1.0 and
+  Harness Slides 0.16.0; the brand skill needs 0.14.0 or newer and was tested with
+  Tanzu Brand 0.14.1. Blog Studio 4.10.0; guidance needs runtime 4.10.0. This section
+  covers every change since 4.7.0. The 4.8.0, 4.9.0 and 4.9.1 version numbers were set
+  on the way and never published on their own.
 
 - **Finding a post's text takes a second look when the fields are empty (#285).** A page's
   scripts often build the address of its article without naming the fields in what comes

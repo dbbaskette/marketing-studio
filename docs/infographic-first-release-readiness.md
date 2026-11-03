@@ -2,7 +2,9 @@
 
 Implementation is merged in [PR #183](https://github.com/dbbaskette/marketing-studio/pull/183)
 and [PR #186](https://github.com/dbbaskette/marketing-studio/pull/186). The current native
-version is **0.2.0**. Follow-up feature completion does not imply first-release sign-off.
+version is **0.3.0**. Follow-up feature completion does not imply first-release sign-off.
+Marketing Studio 4.6.0 includes Infographic Studio 0.3.0 marked as not signed off: #152,
+#223 and #224 remain open, and inclusion in a release is not first-release sign-off.
 
 ## Verified implementation
 

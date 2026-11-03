@@ -223,9 +223,10 @@ class PinnedFloorTests(unittest.TestCase):
         slides = pins['companions']['harness-slides']
         self.assertEqual(slides['requirement'], '>=0.16.0')
         self.assertEqual(slides['version'], '0.16.0')
-        readme = (ROOT / 'README.md').read_text(encoding='utf-8')
-        self.assertIn('`>=0.16.0` for Harness Slides', readme)
-        self.assertNotIn('0.14.1', readme)
+        installation = (ROOT / 'docs/installation.md').read_text(encoding='utf-8')
+        self.assertIn('`requirement: ">=0.16.0"` for Harness Slides', installation)
+        for path in ('README.md', 'docs/installation.md'):
+            self.assertNotIn('0.14.1', (ROOT / path).read_text(encoding='utf-8'), path)
 
     def test_brand_skill_floor_is_not_installed(self):
         path = ROOT / 'pins/companions.json'
