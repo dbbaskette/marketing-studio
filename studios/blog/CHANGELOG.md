@@ -26,6 +26,21 @@ changes for authors first, then what changes for maintainers.
   `refusal` reads a 403's `error.status`, `errors[].reason` and `details[].reason`.
   A failed slide or tab re-choice in `research_sources` now keeps the ready capture.
 
+- **Research sources are kept as tidy text (#295).** Training Studio and
+  Presentation Studio research stopped after synthesis with "capture differs from the
+  accepted asset inventory" when a source had double or trailing spaces or several
+  blank lines, because the source was registered as it came while the assistant read
+  a tidied copy. Every studio now registers and gives the assistant the same tidied
+  text: one space between words, no trailing spaces and at most one blank line. In
+  Blog Studio, new research reads its sources that way; research that already kept
+  checked work from the text as it came keeps it, so nothing is redone.
+  Maintainers: `research_session.Workflow.asset` registers and offers
+  `capture_text(text, kept)`, which is `shared_runner.worker_tools.tidy(text)` unless
+  that source's own kept copies (`kept_copies`, at
+  `sources/collection/<area>/<attempt>/<capture file>`) hold only the untidied text.
+  Intake, the input fingerprint, the research basis and capture file names still come
+  from the text as it came.
+
 ## 4.10.0 — 2026-11-03
 
 - **Released with Marketing Studio 4.6.0.** Installs pin Harness Research 1.1.0 and
