@@ -90,6 +90,10 @@ SITE_NAMED = """<!doctype html><html><head><title>AI | Example Newsroom and Pres
 </head><body><div id="root"></div></body></html>"""
 
 
+TITLE_ONLY = """<!doctype html><html><head><title>AI | Example Newsroom and Press Releases</title>
+<meta name="description" content="{description}"></head><body><div id="root"></div></body></html>"""
+
+
 def one(name):
     """A recipe for a test's own address, which still names the post (by its slug), and the
     path the fake site serves it at."""
@@ -404,6 +408,53 @@ class RefusedRecipeTests(FindTextCase):
             {**recipe, 'text': ['/posts/*/body'], 'title': ''}, 'didn’t hold this post', site
         )
 
+    def test_one_items_title_does_not_tie_a_listing(self):
+        # A search whose first result is this post, under its own title, and then others.
+        site = self.site()
+        site.page(PATH, shell(title='Speed is the problem | Example Corp'))
+        results = [
+            {'title': 'Speed is the problem', 'body': '<p>Speed is the problem.</p>'},
+            {'title': 'Ten tips for gardens', 'body': '<p>Water your tomatoes at dawn.</p>'},
+            {'title': 'Release trains', 'body': '<p>Ship on a schedule.</p>'},
+        ]
+        recipe, path = one('search')
+        site.page(path, json.dumps({'results': results}), kind='application/json')
+        found = {**recipe, 'text': ['/results/*/body'], 'title': '/results/0/title'}
+        self.refused(found, 'didn’t hold this post', site)
+        # Nor does one picked by its place, or a text's own heading, in a listing.
+        site = self.site()
+        site.page(PATH, shell(title='Speed is the problem | Example Corp'))
+        headed = [{'body': '<h1>' + r['title'] + '</h1>' + r['body']} for r in results]
+        site.page(path, json.dumps({'results': headed}), kind='application/json')
+        self.refused({**recipe, 'text': ['/results/*/body'], 'title': ''}, 'didn’t hold', site)
+
+    def test_a_star_over_an_object_is_a_listing_too(self):
+        posts = {
+            'a': {'summary': OTHER_DESCRIPTION, 'body': '<p>First post.</p>'},
+            'b': {'summary': DESCRIPTION, 'body': '<p>Second post.</p>'},
+            'c': {'summary': 'Another.', 'body': '<p>Third post.</p>'},
+        }
+        recipe, path = one('posts')
+        for response, text in (
+            ({'posts': posts}, '/posts/*/body'),
+            (posts, '/*/body'),
+        ):
+            with self.subTest(text=text):
+                site = self.site()
+                site.page(path, json.dumps(response), kind='application/json')
+                self.refused({**recipe, 'text': [text], 'title': ''}, 'didn’t hold', site)
+
+    def test_a_named_title_beside_the_article_still_ties(self):
+        site = self.site()
+        site.page(PATH, shell(title='Speed is the problem | Example Corp'))
+        response = json.loads(api('Untitled', PARAGRAPHS, OTHER_DESCRIPTION, None))
+        response['meta'] = {'headline': 'Speed is the problem'}
+        recipe, path = one('meta')
+        site.page(path, json.dumps(response), kind='application/json')
+        with site.serving():
+            shown, _ = self.find({**recipe, 'title': '/meta/headline'})
+        self.assertEqual(shown['outcome'], 'found', shown['error'])
+
     def test_an_echo_of_the_request_is_not_this_post(self):
         # The address carries the post's path; an endpoint that echoes it ties nothing.
         site = self.site()
@@ -443,6 +494,11 @@ class RefusedRecipeTests(FindTextCase):
             ),
             (
                 SITE_NAMED.format(description=DESCRIPTION),
+                api('Example Newsroom and Press Releases', ['Water.'], OTHER_DESCRIPTION, None),
+            ),
+            # A lone <title>, with no og:title or og:site_name to say which part is the site.
+            (
+                TITLE_ONLY.format(description=DESCRIPTION),
                 api('Example Newsroom and Press Releases', ['Water.'], OTHER_DESCRIPTION, None),
             ),
             # A description too short to mean anything ties nothing.

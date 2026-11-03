@@ -195,10 +195,11 @@ shows its progress with **Stop**, and holds no lock on the workspace while it wo
    read within 2 MB. The fields are joined and made Markdown by the same parser and
    escaping as any page. The result is used only when it is tied to this page: its title
    is the page's title or `og:title` (or their main part, never the site's name, from
-   `og:site_name` or the trailing part both titles share); or the page's meta description
-   (40 characters or more) is in a field of the object the article's text fields belong
-   to, or of an object inside it but not inside a list, so one item of a listing of posts
-   never ties the rest. Then it is read, limited and staged exactly like any other read,
+   `og:site_name` or the trailing part both titles share, and never the last part of a lone
+   `<title>`); or the page's meta description (40 characters or more) is in a field of the
+   object the article's text fields belong to, or of an object inside it but not inside a
+   list, so one item of a listing of posts never ties the rest. The title counts, and heads
+   the post, only from such a place too; a `*` over an object is read as a listing. Then it is read, limited and staged exactly like any other read,
    and its preview says it was read from the site's content address and who found it.
 
 A recipe that works is kept for its host on this computer, in Blog Studio's data folder

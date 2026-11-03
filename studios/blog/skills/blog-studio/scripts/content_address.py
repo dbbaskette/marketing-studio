@@ -442,10 +442,19 @@ DESCRIPTION_CHARACTERS = 40  # A description shorter than this ties nothing to t
 STRINGS = 20_000  # string values read beside the article's text for the tie
 
 
-def _located(data, pointer):
+class Spread:
+    """An object a * fans out over, in a chain: like a list, its values may each be another
+    post, so it ends what the article's fields share and nothing is read inside it."""
+
+    def __init__(self, value):
+        self.value = value
+
+
+def _located(data, pointer, fanned=None):
     """(value, chain) for each value a JSON pointer names: `chain` is the containers from
     the response down to the one that holds the value. * is every item of a list (or every
-    value of an object)."""
+    value of an object: that object stands in the chain as a Spread, and its id is added to
+    `fanned`)."""
     found = [(data, ())]
     for raw in pointer.split('/')[1:]:
         key = raw.replace('~1', '/').replace('~0', '~')
@@ -455,7 +464,10 @@ def _located(data, pointer):
             if key == '*' and isinstance(value, list):
                 following.extend((item, here) for item in value[:2000])
             elif key == '*' and isinstance(value, dict):
-                following.extend((item, here) for item in list(value.values())[:2000])
+                if fanned is not None:
+                    fanned.add(id(value))
+                spread = (*chain, Spread(value))
+                following.extend((item, spread) for item in list(value.values())[:2000])
             elif isinstance(value, dict) and key in value:
                 following.append((value[key], here))
             elif isinstance(value, list) and key.isdigit() and int(key) < len(value):
@@ -480,11 +492,13 @@ def _shared(chains):
     return shared
 
 
-def _beside(shared):
+def _beside(shared, fanned=frozenset()):
     """The strings that sit in the objects all of the article's fields share: their own
-    values and those of objects inside them, never inside a list, where each item may be
-    another post (a listing joins several posts' texts; its items' summaries tie nothing)."""
-    found, waiting, seen = [], [value for value in shared if isinstance(value, dict)], set()
+    values and those of objects inside them, never inside a list or an object a * fans out
+    over (`fanned`), where each item may be another post (a listing joins several posts'
+    texts; its items' summaries tie nothing)."""
+    found, seen = [], set()
+    waiting = [value for value in shared if isinstance(value, dict) and id(value) not in fanned]
     while waiting and len(found) < STRINGS:
         value = waiting.pop()
         if id(value) in seen:
@@ -493,9 +507,21 @@ def _beside(shared):
         for item in list(value.values())[:2000]:
             if isinstance(item, str):
                 found.append(item)
-            elif isinstance(item, dict):
+            elif isinstance(item, dict) and id(item) not in fanned:
                 waiting.append(item)
     return found
+
+
+def _placed(chain, shared, fanned):
+    """Whether a value with this chain sits where _beside reads: in an object the article's
+    fields share, or in an object inside one reached by names alone, never through a list,
+    an item picked from one, or an object a * fans out over."""
+    same = 0
+    while same < min(len(chain), len(shared)) and chain[same] is shared[same]:
+        same += 1
+    return same > 0 and all(
+        isinstance(holder, dict) and id(holder) not in fanned for holder in chain[same - 1 :]
+    )
 
 
 def _titles(page):
@@ -510,9 +536,14 @@ def _titles(page):
     trailing = [_norm(parts[-1]) for parts in split if len(parts) > 1]
     site |= {part for part in trailing if trailing.count(part) > 1}
     site.discard('')
+    # A lone <title> (no og:title or og:site_name) cannot say which part is the site's name:
+    # its last part never stands for it on its own.
+    lone = len(shown) == 1 and not site
     found = set()
     for title, parts in zip(shown, split, strict=True):
         found.add(_norm(title))
+        if len(parts) > 1 and lone:
+            parts = parts[:-1]
         kept = [part for part in parts if _norm(part) not in site] if len(parts) > 1 else parts
         if kept:
             found.add(_norm(max(kept, key=lambda part: len(_norm(part)))))
@@ -595,26 +626,36 @@ def apply(found, final, shell, engine, fetch=None, rules=None):
             data = json.loads(content.decode('utf-8-sig'))
         except (ValueError, RecursionError):
             raise ValueError(UNREADABLE.format(assistant=said)) from None
+        fanned = set()  # objects a * fans out over: each value may be another post
         located = [
             (piece, chain)
             for pointer in found['text']
-            for piece, chain in _located(data, pointer)
+            for piece, chain in _located(data, pointer, fanned)
             if isinstance(piece, str) and piece.strip()
         ]
         if not located:
             raise ValueError(EMPTY.format(assistant=said))
+        shared = _shared([chain for _, chain in located])
+        # The title counts, for the tie and as the heading, only where a description may sit
+        # (_placed): beside the article, never one item's title in a listing.
         title = ''
-        if found['title']:
+        if found['title'] and '*' not in found['title'].split('/'):
             title = next(
-                (_plain_title(v) for v in _resolve(data, found['title']) if isinstance(v, str)), ''
+                (
+                    _plain_title(value)
+                    for value, chain in _located(data, found['title'], fanned)
+                    if isinstance(value, str) and _placed(chain, shared, fanned)
+                ),
+                '',
             )
         heading = '<h1>' + html.escape(title) + '</h1>' if title else ''
         body = ''.join(_html(piece) for piece, _ in located)
         read = published_post.article(('<article>' + heading + body + '</article>').encode(), final)
         parser = read['parser']
-        if not title and parser.h1:
-            title = published_post.plain(parser.h1[0])  # The text's own heading.
-        beside = _beside(_shared([chain for _, chain in located]))
+        whole = all(_placed(chain, shared, fanned) for _, chain in located)
+        if not title and parser.h1 and whole:
+            title = published_post.plain(parser.h1[0])  # One text's own heading.
+        beside = _beside(shared, fanned)
     else:
         if media not in ('text/html', 'application/xhtml+xml'):
             raise ValueError(UNREADABLE.format(assistant=said))
