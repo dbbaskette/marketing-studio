@@ -5,6 +5,8 @@
 Turn ideas, notes and rough drafts into blogs that sound like you. Start a new
 piece or bring an existing draft, including a Google Doc. Write with your signed-in
 Codex or Claude Code assistant, then read, edit and finish on one writing desk.
+Review any post, drafted or already published, for clarity to readers and AI search
+with a GEO review or report.
 
 Use Blog Studio independently or from [Marketing Studio](../../README.md). Google
 Docs and team sharing are optional; you can write entirely in a local workspace.
@@ -80,6 +82,75 @@ under Advanced. Sources used as writing examples supply style, not factual evide
 
 [Full desk and tool guide](docs/runner.md) · [Voice walkthrough](docs/new-user-guide.md)
 
+## Make posts clear for AI search (GEO)
+
+GEO, generative engine optimization, means making a post easy for AI search and
+answer engines to read, quote and attribute accurately. Blog Studio treats it as
+clarity for readers: the post's own text is the evidence, nothing is invented, and each
+change is a proposal you preview, then apply or skip.
+
+- **A GEO review of a draft.** **Include a GEO review**, off by default, is offered
+  when you start a new blog and when you polish a draft. When it is on, one review
+  runs once the full draft is written. You can combine it with **Check spelling and
+  grammar** on a pasted, uploaded or Google Doc draft.
+
+  To make GEO the first pass, choose **Review for AI search (GEO)**. It proposes:
+  - direct answers;
+  - consistent names;
+  - claims with their dates, versions and conditions;
+  - cited evidence;
+  - passages that make sense on their own.
+
+  A detail only you know, such as a date or a current product name, is asked for,
+  never made up. **Run GEO review** sits beside the pre-publish check on every post,
+  and says when a review is out of date because the post changed.
+- **Reader aids, on request.** Finishing's **Reader aids and AI search** group adds:
+  - an FAQ, with each answer taken only from the post and its sources;
+  - key takeaways;
+  - a comparison table;
+  - word-for-word quotes from your sources;
+  - image alt text;
+  - a definition-style opening;
+  - likely search questions, as advice only.
+
+  Each addition is an aid for readers, not a way to earn citations or rankings.
+  **Repurpose** writes an SEO meta description of up to 155 characters.
+- **A GEO report for a published post.** **Get a GEO report for a published post**,
+  on Home and in New blog, reviews a live post without bringing it onto the desk. The
+  page is read once, without running anything on it, and shown before anything starts.
+  The report shows:
+  - what already works;
+  - the changes ranked by how much they help, with no score;
+  - the post with each change marked inline beside its reason, and additions shown
+    where they would go;
+  - the questions the post answers and the sources it needs;
+  - **Page access**: noindex, a sign-in, robots.txt rules that block search crawlers
+    such as Googlebot, OAI-SearchBot or PerplexityBot, structured data that disagrees
+    with the page, and a missing byline or date.
+
+  These are eligibility checks, never ranking promises. You can:
+  - download the report as HTML (it prints to PDF) or Markdown;
+  - make a new Google Doc with each change as a suggestion;
+  - take the post to the desk;
+  - choose **Run again** later to see what changed. Reports are listed in Blogs.
+
+Some blogs send an empty page and fill it in with scripts, which Blog Studio never
+runs. For those, **Ask Codex to find the post’s text** (or Claude Code, as chosen in
+Settings) asks your assistant where the page gets its text:
+1. The assistant gets the page's head and excerpts of the scripts it loads from that
+   site, with no web access.
+2. Blog Studio reads the address it names itself: https, the post's own site, and
+   allowed by robots.txt.
+3. If the fields it named turn out empty, the assistant gets one second look, at an
+   outline of what that address returned.
+4. The text is used only when it matches the page's title or description.
+
+The address is remembered for that site on this computer, so the next post there
+reads straight away.
+
+[GEO review and reader aids](docs/runner.md#finishing) ·
+[GEO report](docs/runner.md#geo-report-for-a-published-post)
+
 ## Google Docs, sources and libraries
 
 A Google Doc is read through your computer’s existing Google sign-in; it need not
@@ -91,18 +162,10 @@ or comments. After a copy-edit review of an imported Doc, only accepted changes
 are sent as suggestions. Reconcile accepted Google edits through the supported
 workflow instead of overwriting a locally changed draft.
 
-**Link to a published post** and **Get a GEO report for a published post** read the
-page once, without running anything on it, and show what was read before anything
-starts. A page built by scripts has no text of its own: **Ask Codex to find the
-post’s text** (or Claude Code, as chosen under Settings) gives your assistant the
-page’s head and excerpts of the scripts it loads from that site. It has no web
-access and returns only where the page gets its text. Blog Studio reads that address
-itself (https, the post’s own host, allowed by robots.txt) and uses it only when it
-matches the page’s title or description. When the fields it named there are empty,
-your assistant gets one second look, at an outline of what that address sent, and
-names the article’s text, headings and title in it; the post is read in the
-response’s order, section by section. The address is remembered for that site on
-this computer, so the next post there is read straight away.
+**Link to a published post** brings a copy of a live post to the desk. The page is
+read once, without running anything on it, and shown before anything starts. The
+published page is never changed. A page built by scripts works as described in
+[Make posts clear for AI search](#make-posts-clear-for-ai-search-geo).
 
 The **team library** holds posts, examples and reusable material for a configured
 team; without a Team Hub, that collection stays on this computer. The shared local
