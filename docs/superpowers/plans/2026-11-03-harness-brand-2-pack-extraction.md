@@ -2089,3 +2089,61 @@ Expected: the commits from Tasks 2 to 8, and a clean tree. Do not push. Tell the
 - the branch name;
 - what the previews showed;
 - that Plan 3 (checking and authoring) is next.
+
+---
+
+## Outcome (3 November 2026)
+
+Carried out with a fresh implementer for each task and a review after each, in a clone of
+harness-brand-skill on branch `harness-brand-pack-extraction`. Reviews changed the code
+below as written in this plan; the branch holds the reviewed version, and the dry-run copy
+was kept in step with it.
+
+- **Task 2:** a long value holding `undefined`, a function or a symbol is written as JSON
+  does (left out of objects, `null` in lists), not as invalid text.
+- **Task 3:** `readZip` takes `maxBytes` and `maxEntries` and refuses before unpacking, so
+  a file that claims to be huge cannot exhaust memory. `attr` prefers an exact attribute
+  name, so `r:id` written before `id` is not mistaken for it. Relationship targets that are
+  absolute or %-encoded resolve; empty ones, or ones outside the package (`..` as a whole
+  path step), give `null`.
+- **Task 4:** token values are read as Claude Design writes them, `{light, dark}` objects
+  and `{name}` aliases, in every theme; only page-wide `tokens.css` rules set a theme
+  (`@media`, `.dark` and scoped rules are left out); a last declaration needs no semicolon;
+  `!important` is stripped; `var()` fallbacks are followed. The three exports give the same
+  colours with `tokens.css` and without it.
+- **Task 5:** a layout placeholder inherits from a master placeholder of its own family
+  (title or body), never a date, footer or slide number; a re-measure finds a layout by
+  name when the name is unique (PowerPoint renumbers layout parts on saving), and
+  `lostLayouts` names layouts whose added fields are no longer found; colours lightened or
+  darkened get `adjusted: true`; a layout's own colour map is used; the result says why the
+  master was chosen (`chosenBy`). Parity with Tanzu Brand's own measurements is exact on all
+  four templates (607 placeholders, 0 differences in bounds or text style).
+- **Task 6:** the template must be `templates/<variant>.pptx` and the variant and layout ids
+  safe file names, so previews never read or write outside the pack; every picture is
+  checked before any is written; pictures no layout uses are removed; LibreOffice's profile
+  is a proper file URL; a failing program is reported with what it said on stderr. A
+  stub-program test drives the renderer's command lines.
+- **Task 7:** a measure writes its two files beside themselves first and puts them in place
+  together; a `layouts.json` this command cannot read is refused and left as it is; errors
+  name the file they are about.
+- **Task 8:** packs name layouts by `name`, not by id; the examples agree with each other
+  (checked by a test); closing precedence, `cues` and `keys`, units, the dark fallback and
+  `infographicTypography` are described.
+- **Task 9:** tokens, measuring and previews ran on the three exports and four templates
+  with the counts this plan expects; the previews match their layouts, including after
+  Broadcom's hidden slide.
+
+161 tests pass.
+
+### Carry-overs for later plans
+
+- Plan 3 (`pack check`): a layout named in `brand.json` or `directions.json` must match
+  exactly one layout's `name`; a colour with no `light` value is invalid for a light
+  variant; every role's colour must be `#rrggbb` in the variant's theme; check nested
+  layout fields against the format document.
+- Plan 3 (`pack seal`): define the shape of `files` and `sources` in `brand.json` and
+  document it.
+- Plan 5 (contract export): give a layout's `rawName` where it differs from its `name`;
+  `design.nativeTemplate.layoutPart` and `masterPart` come from `layouts.json`;
+  `typography.code` from `fonts.mono`.
+- `pack previews` needs LibreOffice outside an agent sandbox.
