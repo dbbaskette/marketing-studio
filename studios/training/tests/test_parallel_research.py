@@ -166,6 +166,42 @@ class ParallelNativeTests(StudioCase):
         self.assertFalse(self.workers.of('document'))
         self.assertCountEqual(self.phases, ['investigate'] * 3 + ['synthesize', 'review'])
 
+    def test_outline_first_researches_each_approved_section_in_an_area_of_its_own(self):
+        # #297: a quick scan, the outline approved, then one area for each section, 3 at once.
+        from runner import outline_first, training_plan
+        self.engine.plan_first = self.engine.outline_first = True
+        self.assertIs(inspect.signature(engines.Engine).parameters['outline_first'].default, True)
+        areas = []
+
+        def worker(tools, job):
+            payload = json.loads(tools.read_input('research-task')[1])
+            if 'questions' in payload:
+                areas.append({q['section'] for q in payload['questions']})
+            return self.worker(tools, job)
+        self.workers.queued['research-result'] = [worker] * 12
+        root = self.start(flow='desk')
+        shown = self.view(root)
+        record = self.engine._load(root)
+        self.assertEqual(record['schema'], outline_first.RECORD_SCHEMA)
+        self.assertTrue(parallel.protocol(record))
+        plan = shown['training_plan']
+        self.assertEqual((shown['state'], plan['mode']), ('waiting', 'outline'))
+        self.assertEqual(self.phases, [], 'nothing is researched before the outline is approved')
+        self.assertEqual(len(plan['sections']), 3)
+        training_plan.decide(self.engine, root, plan['expected'], 'approve',
+                             outline={'sections': plan['sections'], 'separate': plan['separate']})
+        shown = self.view(root)
+        self.assertNotIn('harness-research', json.dumps(shown['problem']))
+        # The barrier of 3 holds each investigator until all 3 run side by side.
+        self.assertEqual(self.phases[:3], ['investigate'] * 3)
+        self.assertCountEqual(areas, [{'section-1'}, {'section-2'}, {'section-3'}])
+        progress = self.engine._load(root)['research_execution']['progress']
+        self.assertEqual([area['title'] for area in progress['streams']],
+                         [section['title'] for section in plan['sections']])
+        facts, _ = contract.read_bundle(root / 'research')
+        self.assertTrue(facts['review']['accepted'])
+        self.assertEqual(len({f['author'] for f in facts['facts']}), 3)
+
     def test_missing_or_unknown_parallel_protocol_refuses_resume(self):
         self.barrier = None
         root = self.start()
