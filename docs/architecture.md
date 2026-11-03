@@ -241,7 +241,8 @@ not enter shared inventories; private source/art bytes require explicit selectio
 
 Marketing Studio owns `studio_core.research_sources`, `google_reference`,
 `source_documents`, `research_session`, `research_transport` and `research_text`.
-The first three capture selected references; the controller coordinates bounded
+The first three capture selected references (`google_reference` reads Google
+Slides decks through `pptx_slides`, from a Google Drive PowerPoint export); the controller coordinates bounded
 invocations through the pinned Harness Research collection protocol. Harness
 Research owns packets, registries, assembly and review validation. Python does
 not implement another evidence merger.
