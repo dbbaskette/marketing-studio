@@ -97,7 +97,12 @@ class Sources:
                 if operation == 'tabs':
                     require(old is not None and old['kind'] in ('google-doc', 'google-slides'), 'Choose a Google source from this draft.')
                     data = {'kind': 'url', 'url': old['requested_url'], 'selected': data.get('selected')}
+                    if old['kind'] == 'google-slides':
+                        data['previous'] = self.previous(ident, old)
             captured = self.capture(data)
+            # A changed choice that cannot be read keeps the earlier capture and says why.
+            require(operation != 'tabs' or captured['status'] == 'ready',
+                    (captured.get('problem') or 'This source could not be read.') + ' The earlier capture is kept.')
             with self.lock:
                 current = self.check(ident, expected)
                 captured['id'] = old['id'] if old else secrets.token_hex(16)
@@ -135,6 +140,15 @@ class Sources:
                 else: source['status'] = 'excluded'
             self.save(current)
             return self.shown(current)
+
+    def previous(self, ident, source):
+        """An earlier deck read's slide order and Google Drive version, from what is stored."""
+        try:
+            stored = json.loads(rc.inside(self.folder(ident), source['original']).read_bytes())
+            version = stored.get('version')
+        except (OSError, ValueError, KeyError, TypeError, AttributeError):
+            version = None
+        return {'version': version, 'slides': [t.get('id') for t in source.get('tabs', []) if isinstance(t, dict)]}
 
     def saved(self):
         """Bounded inventory of verified local results; no personal folder picker or network scan."""
@@ -180,7 +194,8 @@ class Sources:
                 source['origin'] = url
                 if urlsplit(url).hostname == 'docs.google.com':
                     found = self.google(url, account=self.account() if callable(self.account) else self.account,
-                                        selected=data.get('selected'))
+                                        selected=data.get('selected'),
+                                        **({'previous': data['previous']} if data.get('previous') else {}))
                     source.update({k: found[k] for k in ('name', 'kind', 'origin', 'tabs', 'selected_tabs')})
                     raw, extracted = found['raw'], found['extracted']
                 else:

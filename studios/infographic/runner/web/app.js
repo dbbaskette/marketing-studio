@@ -1150,7 +1150,7 @@ function briefSheet(typed=null){
 
 function googleLink(url,label){const link=make('a','button',label);link.href=url;link.target='_blank';link.rel='noopener noreferrer';return link;}
 async function remoteSheet(done){
-  const url=field('Document or page link'),tabs=field('Tab or slide IDs, comma separated (optional; otherwise all)');
+  const url=field('Document or page link'),tabs=field('Tab IDs, or slides as slide-2, slide-5, comma separated (optional; otherwise all)');
   url.input.type='url';url.input.placeholder='Paste a Google Docs, Google Slides or public HTTPS link';
   const problem=make('p','problem');problem.setAttribute('role','alert');
   const go=button('Read and preview',async()=>{go.disabled=true;problem.textContent='';try{
