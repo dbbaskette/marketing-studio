@@ -77,6 +77,12 @@ optional tools. Missing capabilities are explained rather than silently substitu
    arrive. **Mark ready** is your approval of the material shown, not merely evidence
    that the assistant finished writing it.
 
+While the assistant works, each job shows what it is doing now as **Now: …**, and
+**Show activity** lists everything it has done so far, newest first, with times. The
+**Activity log** at the foot of the training keeps every finished job, how it ended
+(finished, failed, stopped, out of time or a limit) and what it did. It stays on this
+computer and is never shared.
+
 The plan, drawn. Filled boxes are your decisions or input, tinted boxes are
 assistant work and grey boxes are Training Studio's own steps.
 

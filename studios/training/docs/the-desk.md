@@ -80,6 +80,20 @@ The progress band shows which areas are working or kept. If an area fails, Retry
 reuses the checked areas. Fact objections revisit their area; wording objections
 return to synthesis. Every changed report receives an independent check.
 
+While research and every later job run, the progress band names each job, when it
+started and what it is doing now (**Now: …**). **Show activity** opens every line it has
+said so far, newest first, each with its time, and stays open as the page refreshes. The
+lines are the plain sentences the runner makes of the assistant's actions, such as
+"Searching the web: …" or "Reading saved source S3"; never the brief, the sources or the
+assistant's raw events.
+
+**Activity log**, at the foot of the desk and of the run screen, lists each finished
+assistant job, newest first: its name, its times, how it ended (Finished, Failed,
+Stopped, Out of time or Reached a limit) and its lines. It is read when you open it, while
+the training works and after it finishes, fails or stops. The runner keeps it in the
+training's `work/activity-log.jsonl`, which is never committed or shared, for the latest
+200 jobs and 200 lines a job. A training with no log says "No activity recorded yet."
+
 Elapsed time includes waiting and stopped time. Active time counts overlapping
 workers once; total assistant time adds their durations. Incomplete older timing
 history is identified. Existing trainings continue with their saved workflow.

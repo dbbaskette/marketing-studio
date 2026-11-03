@@ -5,6 +5,22 @@ making decks first, then what changes for maintainers.
 
 ## Unreleased
 
+- **See what the assistant is doing, and what it did (#294).** Each assistant job
+  working now shows its name, when it started and its latest action as "Now: …", and
+  **Show activity** opens everything it has done so far, newest first, with times; the
+  research panel shows the same while it collects evidence, combines findings and
+  checks sources. A deck's **Activity log**, on its screen and on the desk, lists each
+  finished job newest first with how it ended (finished, failed, stopped, out of time
+  or a limit) and its lines, whether the deck is still working, finished or stopped. A
+  deck with none says "No activity recorded yet." Only the plain lines are kept: never
+  the brief, sources or the assistant's raw events.
+  Maintainers: `studio_core.activity_log` keeps a running job's lines with their times
+  (200 a job) and appends each ended job to the deck's `work/activity-log.jsonl` (the
+  latest 200 jobs, never committed) under the files lock, after the job; `GET
+  /api/activity` reads it; `run.workers[]` gains `now` and `count`, and each line is
+  `{at, text}`. `ui-kit/activity.js` draws the lines and the log for every studio. The
+  event readers moved from `shared_runner.agents` to `studio_core.agent_events`.
+
 - **A Google Slides link in the shared source panel now reads (#292).**
   Decks were read through the Google Slides API, which a gcloud sign-in cannot call
   without a quota project, so pasting a deck's link failed with "lacks access" even
