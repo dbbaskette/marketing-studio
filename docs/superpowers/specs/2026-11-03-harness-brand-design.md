@@ -33,6 +33,8 @@ data; it reads packs from the `brands` folder of whichever storage Marketing Stu
   apply-brand's restyling.
 - Marketing Studio finds the packs in its storage, local or repository, and tells Harness
   Brand where they are.
+- A Brands section in Marketing Studio to make and update packs: add sources, see what is
+  extracted, review the assistant's proposals, and save to local or repository storage.
 - Harness Brand 1.0.0 released with an archive Marketing Studio's installer accepts.
 
 Not in scope: web, video and browser branding, the demo project, scenes, bumpers, the brand
@@ -227,7 +229,47 @@ Harness Brand builds the native icon library Harness Slides places icons from ou
   repository in Settings to `https://github.com/dbbaskette/harness-brand-skill` once 1.0.0
   is released.
 
-## 7. Testing
+## 7. Brands in Marketing Studio
+
+Making and updating packs is a section of Marketing Studio, beside Settings and Setup. It is
+a front for section 3's steps, not another way of doing them: Harness Brand never calls an
+assistant, and Marketing Studio never writes pack files itself except through the `pack`
+commands and the assistant's job. The page follows `docs/design/golden-gate.md`.
+
+1. **Brands** lists the packs in the storage's `brands` folder, each with its name, its
+   variants, whether it does slides, and what `pack check` says. It offers New brand and,
+   on each pack, Update.
+2. **Sources.** The person adds files: templates, a design-system export, an icon deck or
+   SVGs, guides. They are copied into `brands/<id>/sources/`; a file whose name is taken
+   is kept beside the old one only after the person says which to keep. New brand asks for
+   the id and name first.
+3. **Extract.** Marketing Studio runs `pack measure`, `pack tokens`, `pack icons` and
+   `pack previews` into a working copy of the pack, outside `brands/`, and shows what came
+   out: colour swatches for light and dark, the type styles, each layout with its preview,
+   the icon contact sheet, and the icons left out with why.
+4. **Interpret.** Marketing Studio runs the person's assistant (the `assistant` setting:
+   Claude Code or Codex) as a job on the working copy, told to follow
+   `references/building-a-pack.md`. The job may write only the pack's judgement files.
+   The page shows its proposals a part at a time (colour roles, layout relationships and
+   content ranges, `guide.md`, deck directions, audit limits), each rule with the source
+   it quotes. The person edits, accepts or sends a part back with a note, which runs the
+   job again for that part only. On Update, only what changed from the current pack is
+   shown.
+5. **Save.** `pack check` must pass; its problems are shown in its own sentences until it
+   does. Save copies the working copy into `brands/<id>/pack/` and commits sources and pack
+   together. With a team repository, the push happens only after the person's yes, as
+   other studio work does; with local Git, the commit is the save.
+
+A job that fails or is stopped leaves `brands/` untouched and the working copy as it was,
+so the person can try again or discard it. The working copy is removed after a save or a
+discard. Two people updating one brand is caught as the studios catch it today: the save
+refuses when the pack in storage changed after the working copy was made.
+
+Building the first three packs (section 3) is done by hand in a session, with the commands
+and the guide, before this section is built, so that the guide is tried on real material
+first.
+
+## 8. Testing
 
 - Harness Brand, with `node --test` on Example Co, whose sources are a small template, a
   small design-system zip, an icon deck and SVGs of each kind (plain, masked, with a
@@ -238,9 +280,13 @@ Harness Brand builds the native icon library Harness Slides places icons from ou
   exports for each brand and variant, Harness Slides accepts each, and one deck per brand
   builds and passes the audit.
 - Marketing Studio: focused tests that the data folder is given for local and repository
-  storage, and that a missing folder is reported. Disposable settings and workspaces only.
+  storage, and that a missing folder is reported. Brands: listing, adding sources,
+  extracting into a working copy, a stand-in assistant job that writes the judgement files,
+  sending one part back, the save refused by `pack check`, the save refused after the pack
+  changed in storage, and the commit in local and repository storage. Disposable settings,
+  workspaces and Git identities only; no real assistant job is started.
 
-## 8. Order of work
+## 9. Order of work
 
 1. Write `docs/brand-pack-format.md` and `references/building-a-pack.md`; make Example Co.
 2. Build the `pack` commands.
@@ -249,5 +295,6 @@ Harness Brand builds the native icon library Harness Slides places icons from ou
 4. Build the rest of Harness Brand and its installer.
 5. Put the sources and packs in `brands/` of tanzu-marketing-hub, after the person says yes
    to that push.
-6. The Marketing Studio changes.
+6. The Marketing Studio changes: the data folder for the studios (section 6), then Brands
+   (section 7).
 7. Tag and release harness-brand-skill 1.0.0 with the Mac archive and its checksum.
