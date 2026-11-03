@@ -91,6 +91,16 @@ or comments. After a copy-edit review of an imported Doc, only accepted changes
 are sent as suggestions. Reconcile accepted Google edits through the supported
 workflow instead of overwriting a locally changed draft.
 
+**Link to a published post** and **Get a GEO report for a published post** read the
+page once, without running anything on it, and show what was read before anything
+starts. A page built by scripts has no text of its own: **Ask Codex to find the
+post’s text** (or Claude Code, as chosen under Settings) gives your assistant the
+page’s head and excerpts of the scripts it loads from that site. It has no web
+access and returns only where the page gets its text. Blog Studio reads that address
+itself (https, the post’s own host, allowed by robots.txt) and uses it only when it
+matches the page’s title or description. The address is remembered for that site on
+this computer, so the next post there is read straight away.
+
 The **team library** holds posts, examples and reusable material for a configured
 team; without a Team Hub, that collection stays on this computer. The shared local
 **Document Library** is separate: keep uploads for reuse across studios, or choose

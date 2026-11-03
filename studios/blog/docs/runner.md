@@ -170,6 +170,39 @@ additions go only after whole paragraphs. Afterwards, each on its own press:
 Reports are kept on this computer (`.blog-runs/geo-reports`), listed in Blogs and on Home
 marked **GEO report**, never as drafts, and reopened from there.
 
+#### A page built by scripts
+
+Some blogs send an empty page and fetch the article with scripts, which Blog Studio never
+runs, so the read says no article text was found. Wherever a published link is read (Link
+to a published post, the GEO report's start and Run again), that message offers **Ask Codex
+to find the post's text**, named for the assistant chosen under Settings → Writing
+preferences. It runs only on that press, as one job (at most 3 minutes for the assistant),
+shows its progress with **Stop**, and holds no lock on the workspace while it works.
+
+1. Blog Studio reads the page and up to 8 scripts it loads from the post's own host
+   through the bounded fetcher, and gives the assistant the page's head (title, meta,
+   `og:*`, canonical) and about 200 KB of excerpts around `fetch(`, `api`, `json`, `url=`
+   and template strings. The assistant has no tools and no web access, and the page is
+   untrusted data, never instructions.
+2. It returns a recipe, never the article's words: an address template on the same host
+   with `{path}`, `{path_without_slash}`, `{slug}` or `{url}`, fixed query values, `json`
+   or `html`, and for JSON the pointers to the article's HTML or text fields (`*` for each
+   item of a list) and its title. Anything else, or any field long enough to hold text, is
+   refused.
+3. Blog Studio fills in the address and reads it itself: https only, the post's own host,
+   no credentials, key or port, and only when robots.txt allows it; the response is read
+   within 2 MB. The fields are joined and made Markdown by the same parser and escaping as
+   any page. The result is used only when its title is the page's title or `og:title`, or
+   the page's meta description appears in its text; then it is read, limited and staged
+   exactly like any other read, and its preview says it was read from the site's content
+   address and who found it.
+
+A recipe that works is kept for its host on this computer, in Blog Studio's data folder
+(`content-addresses.json`), never in a team repository. The next post on that host that
+finds no text is read from it straight away, with no assistant; when it no longer gives the
+post, the offer returns and a new recipe replaces the old one. A failure says why, with the
+paste-the-text advice.
+
 An interview's **Review outline and start a draft** and a saved blog's **Open writing
 run** (when it has no step-by-step run) open this start too, with the outline or the saved
 draft already in place.

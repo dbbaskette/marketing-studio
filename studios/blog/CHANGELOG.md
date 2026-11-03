@@ -5,6 +5,27 @@ changes for authors first, then what changes for maintainers.
 
 ## Unreleased
 
+- **A published post built by scripts can be read (#283).** Some blogs send an empty page
+  and fetch the article with scripts, which Blog Studio never runs, so reading the link
+  found no text. Now that message offers **Ask Codex to find the post’s text** (or Claude
+  Code, as chosen under Settings → Writing preferences), on Link to a published post, the
+  GEO report's start and Run again. It runs only on that press, takes a minute or two and
+  can be stopped. Blog Studio gives the assistant the page's head and bounded excerpts of
+  the scripts it loads from the same host; the assistant has no tools or web access and
+  returns a recipe, never the article's words: an address on the same host, fixed query
+  values, and where the article is in the response. Blog Studio reads that address itself
+  (https only, the post's own host, no credentials or port, allowed by robots.txt, within
+  2 MB), turns it into Markdown as it reads any page, and uses it only when its title or
+  the page's description matches the page; the read stages and is limited exactly like
+  any other, and its preview says quietly that it came from the site's content address.
+  A recipe that works is kept for that host on this computer, so the next post there is
+  read straight away with no assistant; when one stops working, the offer returns and a
+  new recipe replaces it. Maintainers: `content_address` (evidence, the recipe check, the
+  address check and read, the per-computer store in Blog Studio's data folder), the
+  `find-text` tool job, `blog_worker.CONTENT_ADDRESS_SCHEMA`, `published_post.NoText` and
+  `robots_rules`, and the `published-find-text` routes. Tests use a local fake of such a
+  site and stand-in assistants only.
+
 - **The GEO review checks more of what makes a passage reliable to reuse (#280).** On the
   desk and in a GEO report, it now points out a claim missing the date, version, unit,
   region or audience needed to read it (and a measurement missing its method or sample),
