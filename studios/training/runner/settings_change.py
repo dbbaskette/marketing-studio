@@ -611,7 +611,10 @@ def save(engine, path, sent: dict, *, preview: bool = False) -> dict:
         finally:
             kept.close()
     if found['prepared'] is not None:
-        _forget_draft(research_sources.Sources(engine.space().root / '.research-sources'), root)
+        try:
+            _forget_draft(research_sources.Sources(engine.space().root / '.research-sources'), root)
+        except Exception:  # noqa: BLE001  the change is saved; a draft left is only tidied later
+            pass
     try:
         shown = engine.view(root)
     except Exception:  # noqa: BLE001  the change is saved; the page reads the run again
@@ -710,29 +713,39 @@ def _apply(engine, root: Path, found: dict) -> dict:
     summary = {'at': home.now(), 'changed': changed, 'research': outcome,
                'discards': found['discards']}
     record.setdefault('settings_changes', []).append(summary)
-    if previous and outcome in ('continues', 'kept'):
+    if previous and not previous.get('settings') and outcome in ('continues', 'kept'):
         # The change does not address what stopped: the stop stays, with its own action
         # (Try again, Give it more time, Carry on after the spending limit) and what that
-        # action needs, and says the settings changed.
+        # action needs, and says the settings changed. Its own words are kept apart, so a
+        # second change says so once.
+        stopped = previous.get('stopped_what') or previous.get('what', '')
         record['problem'] = {**previous, 'settings_changed': summary['at'],
+                             'stopped_what': stopped,
                              'what': 'Its settings were changed; what stopped is not changed '
-                                     'by that. ' + previous.get('what', '')}
+                                     'by that. ' + stopped}
     else:
-        # A stop for time or for the spending limit is carried into Continue, so research
-        # planned or started again is given the same room the stop's own action would give.
+        # Waiting for Continue. A change saved over an earlier one keeps what that one said
+        # research does on Continue, unless this one does more.
+        if previous.get('settings') and outcome in ('continues', 'kept'):
+            outcome = previous.get('outcome') or outcome
+        # A stop for time is carried into Continue, so research planned or started again is
+        # given the same room Give it more time would give, and says so. The spending limit
+        # is never lifted here: only Carry on, which names it, lifts it.
+        more = (previous.get('carried') or previous.get('action')) == stops.MORE_TIME
         carried = {key: previous[key] for key in ('seconds',) if previous.get(key)}
-        if previous.get('action') in ('resume', stops.MORE_TIME):
-            carried['carried'] = previous['action']
-        if outcome == 'restarted' and previous.get('unreadable'):
+        if more:
+            carried['carried'] = stops.MORE_TIME
+        if outcome in ('restarted', 'continues') and previous.get('unreadable'):
             carried['unreadable'] = previous['unreadable']
         record['problem'] = {
             'state': 'waiting', 'step': None, 'action': 'retry', 'label': 'Continue',
-            'at': summary['at'], 'settings': True, **carried,
+            'at': summary['at'], 'settings': True, 'outcome': outcome, **carried,
             'what': 'Its settings were changed. ' + WAITS + (
                 ' Continue plans the research again with the new settings.'
                 if outcome in ('again', 'replanned') else
                 ' Continue starts the research again with the new settings.'
-                if outcome == 'restarted' else ' Continue carries on with the new settings.'),
+                if outcome == 'restarted' else ' Continue carries on with the new settings.')
+                + (' Continue also gives each step twice the time.' if more else ''),
             'kept': KEPT}
     record['halt'] = None
     engine._store(root, record)

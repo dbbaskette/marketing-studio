@@ -6093,12 +6093,12 @@ class Engine(Reviewing):
                 # The check would stop the same way: say so again, and start nothing.
                 raise WorkspaceError(problem['what'])
             if action in ('resume', 'retry', stops.MORE_TIME):
-                # Continue after Change settings carries what the stop before it would have
-                # done: the spending limit cleared, or twice the time for each step (#296).
+                # Continue after Change settings carries twice the time for each step from a
+                # stop for time before it (#296). Only Carry on lifts the spending limit.
                 carried = problem.get('carried') if problem.get('settings') else None
-                if problem.get('action') == 'resume' or carried == 'resume':
-                    record['cleared'] = spent(record)[0] or 0.0  # it may spend as much again
-                if problem and problem.get('action') != 'resume':
+                if problem.get('action') == 'resume':  # it may spend as much again
+                    record['cleared'] = spent(record)[0] or 0.0
+                elif problem:
                     self._fresh(record, problem.get('step'))
                 if action == stops.MORE_TIME or carried == stops.MORE_TIME:
                     # this run's steps may take twice as long

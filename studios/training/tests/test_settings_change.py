@@ -364,15 +364,62 @@ class StopTests(SettingsCase):
             self.engine.act(root, 'retry')
         self.assertEqual(self.record(root)['more_time'], 1800)
 
-    def test_the_spending_limit_is_cleared_by_continue_after_a_change(self):
+    def test_continue_after_a_change_never_lifts_the_spending_limit(self):
+        import dataclasses
+        from runner import engine as engines
         root = self.supplied()
         self.stopped_as(root, action='resume', label='Carry on', step=None)
         self.engine.change_settings(root, self.sent(self.form(root), research_questions=QUESTIONS,
                                                     confirmed=True))
-        self.assertEqual(self.record(root)['problem']['carried'], 'resume')
+        problem = self.record(root)['problem']
+        self.assertNotIn('carried', problem)
+        self.assertNotIn('twice the time', problem['what'])
+        # The limit is under what was spent: Continue runs into it and stops with Carry on.
+        tight = dataclasses.replace(engines.settings.load(), training_dollars=1.0)
+        with mock.patch.object(engines.settings, 'load', return_value=tight):
+            self.engine.act(root, 'retry')
+        record = self.record(root)
+        self.assertEqual(record['cleared'], 0.0, 'Only Carry on lifts the spending limit')
+        self.assertEqual((record['problem']['action'], record['problem']['label']),
+                         ('resume', 'Carry on'))
+
+    def test_a_carried_stop_for_time_says_so_and_survives_a_second_change(self):
+        root = self.supplied()
+        self.stopped_as(root, action='more-time', label='Give it more time and try again',
+                        seconds=900)
+        self.engine.change_settings(root, self.sent(self.form(root), research_questions=QUESTIONS,
+                                                    confirmed=True))
+        first = self.record(root)['problem']
+        self.assertIn('Continue also gives each step twice the time.', first['what'])
+        self.assertIn('plans the research again', first['what'])
+        # A second change, which on its own would carry research on, keeps both.
+        self.engine.change_settings(root, self.sent(self.form(root), time_limit='40 minutes'))
+        second = self.record(root)['problem']
+        self.assertEqual((second['carried'], second['seconds']), ('more-time', 900))
+        self.assertIn('plans the research again', second['what'])
+        self.assertEqual(second['what'].count('twice the time'), 1)
         with mock.patch.object(self.engine, 'wake'):
             self.engine.act(root, 'retry')
-        self.assertEqual(self.record(root)['cleared'], 1.25)
+        self.assertEqual(self.record(root)['more_time'], 1800)
+
+    def test_two_changes_that_leave_a_stop_say_so_once(self):
+        root = self.supplied()
+        stopped = self.record(root)['problem']['what']
+        self.engine.change_settings(root, self.sent(self.form(root), time_limit='40 minutes'))
+        self.engine.change_settings(root, self.sent(self.form(root), time_limit='50 minutes'))
+        problem = self.record(root)['problem']
+        self.assertEqual(problem['what'].count('Its settings were changed'), 1)
+        self.assertTrue(problem['what'].endswith(stopped))
+        self.assertEqual(problem['action'], 'retry')
+
+    def test_a_draft_that_cannot_be_tidied_still_reports_the_change_saved(self):
+        root = self.supplied()
+        sent = self.sent(self.form(root), research_questions=QUESTIONS,
+                         research_inputs=self.external(root), confirmed=True)
+        with mock.patch.object(settings_change, '_forget_draft', side_effect=OSError('Synthetic')):
+            made = self.engine.change_settings(root, sent)
+        self.assertEqual(made['changed_settings']['research'], 'replanned')
+        self.assertEqual(self.record(root)['research_questions'], QUESTIONS)
 
     def test_unreadable_originals_are_checked_again_when_research_restarts(self):
         root = self.supplied(levels=['101'])
