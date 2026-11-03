@@ -64,7 +64,8 @@ class PageFileTests(unittest.TestCase):
         self.assertEqual(set(server.PAGE), {'/', '/index.html', '/app.js', '/markdown.js',
                                             '/style.css', '/deck.css', '/deck-panels.js',
                                             '/deck-panels.css', '/lists.js', '/deck-desk.js',
-                                            '/drafting.js', '/research.js', '/library.js'})
+                                            '/drafting.js', '/research.js', '/library.js',
+                                            '/activity.js'})
 
     def test_the_page_has_nothing_its_own_policy_would_block(self):
         page = self.read('index.html')
@@ -75,7 +76,7 @@ class PageFileTests(unittest.TestCase):
         # markdown.js, the desk kit, the shared deck panels, the library sheet, app.js and the
         # deck desk: each a file, none inline.
         self.assertEqual(re.findall(r'<script\b[^>]*>(.*?)</script>', page, re.DOTALL),
-                         ['', '', '', '', '', '', '', ''])
+                         ['', '', '', '', '', '', '', '', ''])
 
     def test_the_shell_names_its_controls_and_its_regions(self):
         page = self.read('index.html')
@@ -868,6 +869,70 @@ class ScreenTests(ScriptedPage, PageCase):
         text = result['snapshots']['working']['text']
         self.assertIn(current['label'] + ' · 3 minutes · $0.42 so far · stops at $5.00', text)
         self.assertIn('Stop loses the step in hand; Pause lets it finish.', text)
+
+    def test_jobs_after_finished_research_show_in_their_own_card(self):
+        # Research done in parallel leaves its progress at "complete" for good: later jobs are
+        # not drawn into the "Research is ready" panel, but in Assistant jobs now (#294).
+        path = self.saved_started()
+        shown = self.run_of(path)
+        worker = {'id': 'outline', 'label': 'Drafting the outline', 'count': 1,
+                  'started_at': '2030-01-02T03:04:00Z',
+                  'now': {'at': '2030-01-02T03:04:05Z', 'text': 'Reading brief'}}
+        title = shown['title']
+        needs = any(brief['path'] == path for brief in self.get('decks')['needs'])
+        for phase, own_card in (('complete', True), ('investigate', False)):
+            with self.subTest(phase=phase):
+                shown.update(state='working', gate=None, sentence='Drafting the outline.',
+                             workers=[worker], research_progress={'phase': phase})
+                result = self.run_page(self.answers(**{'GET /api/run': [ok(shown)]}), [
+                    {'click': ('Review ' if needs else 'Open ') + title},
+                    {'snapshot': 'working'}], researchPanel=True)
+                text = result['snapshots']['working']['text']
+                self.assertIn('Research panel: ' + phase, text)
+                self.assertEqual('Assistant jobs now' in text, own_card)
+                self.assertEqual('with the assistants working now' in text, not own_card)
+                self.assertIn('Now: Reading brief' if own_card else 'Research panel', text)
+
+    def test_a_working_deck_shows_what_the_assistant_is_doing_and_its_activity_log(self):
+        # Its latest line as "Now:", Show activity with every line so far, and the deck's
+        # Activity log, read only when it is opened (#294).
+        path = self.saved_started()
+        shown = self.run_of(path)
+        lines = [{'at': '2030-01-02T03:04:00Z', 'text': 'Looking at what it was given'},
+                 {'at': '2030-01-02T03:04:05Z', 'text': 'Reading brief'}]
+        shown.update(state='working', gate=None, sentence='Drafting the outline.',
+                     workers=[{'id': 'outline', 'label': 'Drafting the outline',
+                               'started_at': '2030-01-02T03:04:00Z', 'now': lines[-1],
+                               'count': 2}])
+        logged = {'jobs': [{'id': 'j1', 'label': 'Classifying the request', 'step': 'classify',
+                            'started_at': '2030-01-02T03:00:00Z',
+                            'ended_at': '2030-01-02T03:02:00Z', 'outcome': 'failed',
+                            'words': 'Failed', 'detail': 'It stopped without finishing.',
+                            'lines': [lines[0]], 'dropped': 0}],
+                  'running': [], 'empty': None, 'limit': 200, 'lines': 200}
+        result = self.deck_screen(path, [
+            {'snapshot': 'working'}, {'click': 'Show activity (2 steps)'},
+            {'click': 'Activity logWhat the assistant did in each job, newest first'},
+            {'snapshot': 'log'}], **{'GET /api/run': [ok(shown)],
+                                     # Show activity reads the job's lines, then the log.
+                                     'GET /api/activity': [ok({'lines': lines, 'count': 2,
+                                                               'start': 0, 'running': True}),
+                                                           ok(logged)]})
+        working = result['snapshots']['working']
+        for text in ('Assistant jobs now', 'Drafting the outline', 'Now: Reading brief'):
+            self.assertIn(text, working['text'])
+        self.assertIn('Show activity (2 steps)', working['buttons'])
+        log = result['snapshots']['log']['text'].split('Activity log')[-1]
+        for text in ('Classifying the request', 'Failed', 'It stopped without finishing.'):
+            self.assertIn(text, log)
+        asked = [request['address'] for request in result['requests']
+                 if request['address'].startswith('/api/activity?')]
+        self.assertEqual(len(asked), 2)
+        self.assertIn('job=outline', asked[0])
+        self.assertIn('since=0', asked[0])
+        self.assertIn('Looking at what it was given', result['snapshots']['log']['text'])
+        self.assertFalse([request for request in result['requests']
+                          if request['method'] == 'POST'], 'reading activity starts nothing')
 
     def test_a_note_for_the_next_step_is_sent_from_the_deck_screen_and_replaced(self):
         path = self.saved_started()

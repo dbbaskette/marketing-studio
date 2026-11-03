@@ -588,6 +588,9 @@
           run.problem], () => progressPart(run)],
       previews ? ['previews', [run.build_progress, read, run.mine],
         () => previewsCard(run)] : null,
+      // What each assistant working now is doing, and the deck's Activity log.
+      h.list(run.workers).length ? ['workers', run.workers, () => h.workersCard(run)] : null,
+      ['activity-log', [h.view.path], () => h.activityLogCard(h.view.path)],
     ], fresh);
     h.tidyPictures();
   }
@@ -843,6 +846,7 @@
       pause ? ['look-pause', [run.gate, lead, h.brandsFound()], () => lookPause(run, lead === 'look')]
         : null,
       working ? ['working', [found.working, read], () => workingPart(run)] : null,
+      h.list(run.workers).length ? ['workers', run.workers, () => h.workersCard(run)] : null,
       !found.drawn_here ? ['away', [found.no_drawing, found.draw_here_price, read, working],
         () => run.execution === 'conversation' ? h.add(h.card('Drawing'),
           make('p', '', 'No checked drawing is available here. Continue the focused work in conversation.')) : awayPart(run)] : null,
@@ -864,6 +868,7 @@
       can && tab === 'slides' && !found.words_locked ? ['selection-bar', [path],
         () => selectionBar()] : null,
       layoutPart(run, tab, own, can, working, finish, fresh),
+      ['activity-log', [path], () => h.activityLogCard(path)],
     ], fresh);
     h.tidyPictures();
     if (found.delivered) landOnDelivered(path);

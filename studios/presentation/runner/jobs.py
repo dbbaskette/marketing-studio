@@ -22,6 +22,10 @@ What a caller needs to know
 - A deck that has spent what it may stops and asks before the next worker starts, and so
   does one with less than `stops.floor` left. A job that spent all the deck had left is not
   a failed try: the deck stops in the same way, to carry on.
+- While a worker runs, the page is shown its latest line and its lines so far, each with its
+  time. Each job that ends, however it ends, is added to the deck's Activity log,
+  `work/activity-log.jsonl`, never shared: its label and step, its times, how it ended and
+  its plain lines, never its brief or its events. `activity(path)` reads it for the page.
 - `Jobs` is a part of the engine and is not used alone: it reads and writes through the
   engine's `files`, `_load`, `_store`, `_commit`, `adapter` and `_look`.
 """
@@ -33,13 +37,12 @@ import secrets
 import shutil
 import threading
 import time
-from collections import deque
 from dataclasses import replace
 from pathlib import Path
 
 import runner  # noqa: F401  puts the core on the import path
 import home
-from studio_core import model_profiles, research_contract, stops
+from studio_core import activity_log, model_profiles, research_contract, stops
 from workspace import WorkspaceError
 
 from runner import agents, briefs, decks, settings, stages, worker_tools
@@ -58,7 +61,9 @@ FROM_AUTHOR = ('## Note from the author for this step\n\n'
 def quoted(text: str) -> str:
     """A person's note as a quoted block, so where it ends is plain."""
     return '\n'.join('> ' + line for line in text.splitlines()) or '> '
-LINES = 6               # the last things a worker did that the page is shown
+LINES = activity_log.LINES   # the things a worker did that the page is shown, newest kept
+# What each assistant job did, in the deck's folder: under work/, so never shared.
+ACTIVITY = Path('work') / activity_log.FILE
 
 # The gate each step feeds, so that a step run again for a person's request reads their note.
 FED = {'classify': 'gate:classify', 'inventory': 'gate:classify',
@@ -445,11 +450,11 @@ class Jobs:
                          tuple(worker_tools.command(folder)),
                          bounded,
                          record.get('model'), record.get('level_of_effort'))
-        lines, started_at, clock = deque(maxlen=LINES), home.now(), time.monotonic()
+        lines, started_at, clock = activity_log.Lines(LINES), home.now(), time.monotonic()
         with self._lock:
             run.workers[name] = {'label': doing, 'started_at': started_at, 'lines': lines,
                                  'folder': folder}
-        choice = None
+        choice = outcome = None
         try:
             choice = model_profiles.route(record, 'Presentation Studio', name,
                                           effort_key='level_of_effort',
@@ -467,16 +472,49 @@ class Jobs:
         finally:
             with self._lock:
                 run.workers.pop(name, None)
+            if outcome is None:     # something unforeseen went wrong
+                self._log_job(root, name, doing, started_at,
+                              'stopped' if run.stop.is_set() else 'failed', lines)
         if run.stop.is_set() and outcome.reason != 'stopped':
             outcome = replace(outcome, finished=False, reason='stopped')
         if not outcome.seconds:
             outcome = replace(outcome, seconds=round(time.monotonic() - clock, 1))
+        self._log_job(root, name, doing, started_at, activity_log.ending(outcome), lines,
+                      outcome.detail)
         if choice is not None:
             model_profiles.staged(self, choice, number, work.profile, started_at)
         handed = worker_tools.collect(folder)
         if handed.get('outside') and hasattr(self, '_keep_outside'):
             self._keep_outside(root, handed['outside'])
         return outcome, handed, started_at, folder
+
+    def _log_job(self, root: Path, name: str, doing: str, started_at: str, ended: str,
+                 lines, detail: str | None = None) -> None:
+        """Keep what a job did in the deck's Activity log, which is this computer's and never
+        shared. Best effort: a log that cannot be written never stops the deck."""
+        try:
+            with self.files:
+                activity_log.append(root / ACTIVITY, activity_log.entry(
+                    doing, name, started_at, ended, lines, detail))
+        except Exception:   # a busy files lock, a full disk: never a person's Stop or the deck
+            pass
+
+    def activity(self, path, entry: str | None = None, job: str | None = None,
+                 since: int = 0) -> dict:
+        """A deck's Activity log: its finished jobs, newest first, without their lines, and
+        those running. With `entry`, one finished job's lines; with `job`, one running job's
+        lines from the `since`th on."""
+        root = self.driven(path)
+        if root is None:
+            raise WorkspaceError('That is not a deck of this workspace.')
+        run = self._run(root)
+        with self._lock:
+            running = list(run.workers.items())
+        if job is not None:
+            return activity_log.running_lines(running, job, since)
+        if entry is not None:
+            return activity_log.entry_lines(root / ACTIVITY, entry)
+        return activity_log.view(root / ACTIVITY, running)
 
     @staticmethod
     def _cost(outcome: agents.Outcome) -> dict:

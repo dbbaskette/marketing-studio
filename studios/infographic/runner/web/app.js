@@ -113,7 +113,8 @@ function list(items) { return add(make('ul'), ...items.map(item => make('li', ''
 function foot(...controls) { return add(make('div', 'ig-sheet-foot'), add(make('div', 'create-foot bar'), ...controls.filter(Boolean))); }
 function sheet(title, ...nodes) {
   const heading = make('h2', 'sheet-title', title); heading.id = 'sheet-title';
-  const status=make('section','callout ig-work');status.dataset.workStatus='';status.setAttribute('role','status');status.setAttribute('aria-live','polite');
+  // Only the band's label and "Now:" line are a live region (paintWork), not the band.
+  const status=make('section','callout ig-work');status.dataset.workStatus='';status.setAttribute('aria-label','Work in progress');
   const problem=make('p','problem');problem.dataset.workError='';problem.hidden=true;problem.setAttribute('role','alert');
   const parts = nodes.filter(node => node != null && node !== false);
   const last = parts.at(-1);
@@ -146,22 +147,56 @@ function paintWork() {
   for(const surface of document.querySelectorAll('[data-work-status]')) {
     const inSheet=$('sheet').contains(surface),show=!!work&&(!$('sheet').open||inSheet);
     surface.hidden=!show;if(!show)continue;
-    const signature=work.label+'|'+work.detail+'|'+(work.pending||'')+'|'+(work.id||'');
-    if(surface.dataset.message!==signature) {
-      surface.dataset.message=signature;
-      const bead=make('span','bead');bead.dataset.state=work.connected?'current':'review';bead.setAttribute('aria-hidden','true');
+    // The band is built once for each piece of work and its controls, then only its words
+    // change: a control keeps the focus, and only the label and "Now:" line are announced.
+    // It is built again only when the work, its pending image, quiet or Cancel changes, so
+    // the handlers made here stay right: Stop waiting holds nothing, and Cancel calls the
+    // `cancel` of the work it was made for, which stays the same while that shape does.
+    const shape=(work.id||'')+'|'+(work.pending||'')+'|'+(work.quiet?'q':'')+'|'+(work.cancel?'c':'');
+    if(surface.dataset.shape!==shape) {
+      surface.dataset.shape=shape;
+      const bead=make('span','bead');bead.dataset.workBead='';bead.setAttribute('aria-hidden','true');
       const clock=make('span','quiet ig-work-clock');clock.dataset.workClock='';clock.setAttribute('aria-hidden','true');
-      surface.replaceChildren(add(make('div','ig-work-heading'),bead,make('strong','',work.label),clock),make('p','quiet',work.detail));
+      const said=make('div','ig-work-said');said.setAttribute('role','status');said.setAttribute('aria-live','polite');
+      const label=make('strong','');label.dataset.workLabel='';
+      const now=make('p','ig-work-now');now.dataset.workNow='';now.hidden=true;
+      add(said,label,now);
+      const detail=make('p','quiet');detail.dataset.workDetail='';
+      surface.replaceChildren(add(make('div','ig-work-heading'),bead,said,clock),detail);
       const controls=make('div','bar');
       // Stop waiting leaves the work running; nothing is cancelled or repeated.
-      if(work.id&&!work.quiet){const stop=button('Stop waiting',()=>{closeSheet();void home();});stop.dataset.free='';controls.append(stop);}
-      if(work.cancel){const cancel=button('Cancel this request',work.cancel);cancel.dataset.free='';controls.append(cancel);}
+      if(work.id&&!work.quiet){const stop=button('Stop waiting',()=>{closeSheet();void home();});stop.dataset.free='';stop.dataset.key='ig-work-stop-waiting';controls.append(stop);}
+      if(work.cancel){const cancel=button('Cancel this request',()=>work.cancel());cancel.dataset.free='';cancel.dataset.key='ig-work-cancel';controls.append(cancel);}
       if(controls.childElementCount)surface.append(controls);
     }
+    const text=(node,value)=>{if(node.textContent!==value)node.textContent=value;};
+    surface.querySelector('[data-work-bead]').dataset.state=work.connected?'current':'review';
+    text(surface.querySelector('[data-work-label]'),work.label);
+    text(surface.querySelector('[data-work-detail]'),work.detail);
+    const now=surface.querySelector('[data-work-now]'),doing=work.worker&&work.worker.now?work.worker.now.text:'';
+    now.hidden=!doing;text(now,doing?'Now: '+doing:'');
     const seconds=Math.max(0,Math.floor((Date.now()-work.started)/1000));
     surface.querySelector('[data-work-clock]').textContent=Math.floor(seconds/60)+':'+String(seconds%60).padStart(2,'0')+' elapsed';
   }
+  paintDoing(work);
   guard();
+}
+// What the assistant is doing, with Show activity, in the page itself rather than the sticky
+// band (ui-kit/activity.js): drawn again only when a new line arrives, keeping the focus, what
+// is open and where its list was scrolled to.
+function paintDoing(work) {
+  const holder=$('ig-doing');
+  if(!holder)return;
+  const worker=work&&work.id&&held?.project.id===work.id&&work.worker?work.worker:null;
+  const signature=worker?worker.id+'|'+worker.count:'';
+  if(holder.dataset.shown===signature)return;
+  holder.dataset.shown=signature;
+  if(!worker||typeof StudioActivity==='undefined'){holder.replaceChildren();holder.hidden=true;return;}
+  const id=work.id;
+  if(!holder.querySelector('.ig-doing-jobs'))holder.replaceChildren(make('h2','card-title','What the assistant is doing'),make('div','ig-doing-jobs'));
+  const load=(job,since)=>request('/api/activity-log?'+new URLSearchParams({id,job,since}));load.scope=id;
+  StudioActivity.update(holder.querySelector('.ig-doing-jobs'),[worker],{load});
+  holder.hidden=false;
 }
 // Lock the open infographic's own controls while its work runs, and release them after.
 // Navigation, Stop waiting, the view controls and the downloads (immutable files) stay free.
@@ -203,7 +238,7 @@ function elsewhere(owner,problem) {
 function progressNotice(progress,owner,id) {
   if(running.get(id)!==owner)return;
   const current=progress.activity;
-  if(current?.state==='running'){owner.label=current.label;owner.started=Date.now()-current.elapsed_seconds*1000;owner.connected=true;owner.detail=WAITING;paintWork();}
+  if(current?.state==='running'){owner.label=current.label;owner.started=Date.now()-current.elapsed_seconds*1000;owner.connected=true;owner.detail=WAITING;owner.worker=current.worker||null;paintWork();}
   const pending=progress.recovery?.find(r=>!r.local_artwork_available&&['queued','running','unknown'].includes(r.state));
   if(pending&&owner.pending!==pending.attempt_id){owner.pending=pending.attempt_id;
     owner.cancel=async()=>{try{const latest=await request('/api/activity?id='+encodeURIComponent(id));await request('/api/action',{action:'image-cancel',id,expected_revision:latest.revision,request_id:pending.attempt_id});toast('Local adoption cancelled. Remote charges may remain unknown.');}catch(f){error(f.message);}};
@@ -524,7 +559,8 @@ function renderProject() {
   primary=next[0];
   heading(p.brief.title,free(button('Infographics',home)),button(...next,true));
   const delivery=held.deliveries.find(d=>d.current) || held.deliveries[0];
-  const parts=[make('p','lede','Choose the explanation, review the actual page, then approve its exact revision.'),standing(held.roadmap,p,delivery,needs)];
+  const doing=make('section','card ig-doing');doing.id='ig-doing';doing.hidden=true;doing.setAttribute('aria-label','What the assistant is doing');
+  const parts=[make('p','lede','Choose the explanation, review the actual page, then approve its exact revision.'),doing,standing(held.roadmap,p,delivery,needs)];
   if(held.recovery.length) parts.push(card('Image work needs attention',...held.recovery.map(r=>add(make('div','stack'),make('p','',r.message),r.local_artwork_available?button('Recover saved artwork',()=>action('image-recover',{request_id:r.attempt_id})):button('Cancel uncertain request',()=>action('image-cancel',{request_id:r.attempt_id}))))));
   if(selected&&((p.scene&&!p.scene.visual_version)||!nativeReady)){
     parts.push(card('Make this a visual infographic',make('p','','Earlier versions and captured facts are kept. A visual plan uses concise labels, diagrams and comparisons rather than paragraph blocks.'),
@@ -559,6 +595,9 @@ function renderProject() {
   parts.push(detail('Sources and facts',updateSources,importMaterial,libraryAddButton(),make('p','quiet',LIBRARY_CLEARS),research,...p.sources.map(s=>card(s.name||s.id,make('p','quiet',s.characters+' captured characters'),...libraryNote(s),button('Review '+(s.name||s.id),()=>sourceTextSheet(s)))),list(held.source_findings.map(f=>f.message)),...p.facts.map(f=>card(f.statement,make('p','quiet','Supplied assertion; not independently corroborated.'),list((f.evidence||[]).map(q=>q.source_id+' ['+q.start+'–'+q.end+']: '+(q.quote||'')))))));
   if(held.image_history?.length)parts.push(detail('Image requests and usage',...held.image_history.map(a=>add(make('div','stack'),make('p','',usageWords(a)),make('p','quiet',a.usage?'Reported tokens: '+(a.usage.input_tokens??'unknown')+' in / '+(a.usage.output_tokens??'unknown')+' out. Cost: '+(a.usage.cost??'not reported')+'.':'Usage not reported; no estimate was invented.'),button('Inspect saved image request',()=>imageRequestSheet(a.id))))));
   if(held.deliveries.length)parts.push(detail('Saved files',make('p','quiet','Every rendered revision keeps its files. Approved files never change; an edit makes a new draft.'),...held.deliveries.map(savedFiles)));
+  // What the assistant did in each job, newest first, read only when it is opened.
+  if(typeof StudioActivity!=='undefined')parts.push(StudioActivity.logCard({key:'activity-log '+p.id,load:()=>request('/api/activity-log?id='+encodeURIComponent(p.id)),
+    entry:entry=>request('/api/activity-log?'+new URLSearchParams({id:p.id,entry}))}));
   parts.push(detail('History',make('p','quiet','Each saved revision is kept. Restoring makes new work and never brings back an approval.'),add(make('div','desk-versions'),...historyGroups(held.history).map((g,i)=>historyGroup(g,i===0))),held.history.length>=100&&held.history.at(-1).revision>0?button('Older revisions',olderHistory):null));
   $('main').replaceChildren(...parts.filter(Boolean));
   paintWork();     // this infographic's running work, and its locked controls
@@ -1206,7 +1245,9 @@ async function researchSheet(){
       const state=await request('/api/research-status?id='+encodeURIComponent(ident));
       status.replaceChildren();
       if(state){
-        const hooks={};
+        // What each research assistant is doing now, shown in the research panel.
+        const lines=(job,since)=>request('/api/activity-log?'+new URLSearchParams({id:ident,job,since}));lines.scope='research '+ident;
+        const hooks={workers:state.workers||[],lines};
         if(['working','pausing','stopping'].includes(state.state)){
           if(state.state==='working')hooks.pause=()=>control('pause');
           if(state.state!=='stopping')hooks.stop=()=>control('stop');

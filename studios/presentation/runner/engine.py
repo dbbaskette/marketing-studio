@@ -115,7 +115,7 @@ What a caller needs to know
 """
 from __future__ import annotations
 
-from studio_core import deck_content
+from studio_core import activity_log, deck_content
 from studio_core import deck_flow, research_session, research_sources, research_contract, research_sites, research_view, review_policy, stops
 
 import contextvars
@@ -3042,8 +3042,7 @@ class Engine(Jobs, Researching, DeskActions):
     def _workers(self, run: _Run) -> list[dict]:
         with self._lock:
             live = list(run.workers.items())
-        return [{'id': ident, 'label': worker['label'], 'started_at': worker['started_at'],
-                 'lines': list(worker['lines'])} for ident, worker in live]
+        return activity_log.live(live)
 
     @staticmethod
     def _drafted(root: Path | None) -> bool:

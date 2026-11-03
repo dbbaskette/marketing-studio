@@ -9,9 +9,9 @@ from studio_core import server as core
 from studio_core.document_library import context as library_context
 
 from .contracts import PRODUCT, Invalid
-from . import activity, api, computer, exports, history, settings, sources
+from . import activity, api, author, computer, exports, history, settings, sources
 from .engine import Engine
-from .validation import require
+from .validation import identifier, require
 
 WEB = Path(__file__).parent / 'web'
 shared = core.for_product(
@@ -21,9 +21,10 @@ shared = core.for_product(
      '/infographic.css': ('infographic.css', 'text/css; charset=utf-8'),
      '/app.js': ('app.js', 'text/javascript; charset=utf-8'),
      '/drafting.js': ('drafting.js', 'text/javascript; charset=utf-8'),
-     '/research.js': ('research.js', 'text/javascript; charset=utf-8')},
+     '/research.js': ('research.js', 'text/javascript; charset=utf-8'),
+     '/activity.js': ('activity.js', 'text/javascript; charset=utf-8')},
     None, Invalid, reads=('/api/status', '/api/projects', '/api/project', '/api/asset',
-                         '/api/desk', '/api/activity', '/api/source', '/api/preferences', '/api/computer', '/api/download', '/api/history', '/api/history-before', '/api/image-request', '/api/team', '/api/team-download', '/api/research-task', '/api/research-status'),
+                         '/api/desk', '/api/activity', '/api/activity-log', '/api/source', '/api/preferences', '/api/computer', '/api/download', '/api/history', '/api/history-before', '/api/image-request', '/api/team', '/api/team-download', '/api/research-task', '/api/research-status'),
     writes=('/api/research-job', '/api/research-control', '/api/research-sources', '/api/projects', '/api/project', '/api/action', '/api/preferences', '/api/csv-preview', '/api/csv-selection', '/api/source-preview', '/api/remote-preview', '/api/handoff-inventory', '/api/handoff-preview', '/api/research-preview', '/api/team', '/api/brand-current', *library_context.ROUTES))
 
 
@@ -33,7 +34,8 @@ class Page(shared.Page):
         self.store = store
         self.injected = engine is not None
         self.engine = engine or Engine(store)
-        self.activity = activity.Activity()
+        # Each operation an assistant worked in goes to its infographic's Activity log.
+        self.activity = activity.Activity(keep=store.keep_activity if store is not None else None)
         from .research_jobs import Jobs
         self.research = Jobs(store) if store is not None else None
 
@@ -74,6 +76,19 @@ class Page(shared.Page):
             return shared.as_json(200, {'activity': self.activity.snapshot(ident),
                                        'revision': project['revision'],
                                        'recovery': Jobs(self.store, {}).recovery(ident)})
+        if path == '/api/activity-log':
+            ident = one('id')
+            def given(name):
+                try:
+                    return one(name)
+                except shared.Refusal:
+                    return None
+            since = given('since') or '0'
+            require(since.isascii() and since.isdigit() and len(since) <= 9, 'Give since as a whole number.')
+            running = [*(self.activity.running(ident) if identifier(ident) else []),
+                       *(self.research.running(ident) if self.research else [])]
+            return shared.as_json(200, self.store.activity_log(
+                ident, running, entry=given('entry'), job=given('job'), since=int(since)))
         if path == '/api/history':
             return shared.as_json(HTTPStatus.OK, {'history': history.entries(self.store, one('id'))})
         if path == '/api/history-before':
@@ -148,7 +163,7 @@ class Page(shared.Page):
                 verb = sent.get('action') if isinstance(sent, dict) else None
                 if isinstance(verb, str) and verb in activity.LABELS:
                     self.store.read(sent.get('id'))
-                    with self.activity.track(sent['id'], verb) as report:
+                    with self.activity.track(sent['id'], verb) as report, author.watching(report.said):
                         found = api.engine(self.store) if configured else copy(self.engine)
                         found.progress = report
                         result = api.action(found, sent)

@@ -114,7 +114,7 @@ class LinkTests(unittest.TestCase):
     def test_the_shell_loads_only_its_own_files(self):
         shell = read('index.html')
         self.assertEqual(sorted(re.findall(r'(?:src|href)="([^"]*)"', shell)),
-                         ['#main', 'app.js', 'deck-desk.js', 'deck-panels.css', 'deck-panels.js',
+                         ['#main', 'activity.js', 'app.js', 'deck-desk.js', 'deck-panels.css', 'deck-panels.js',
                           'deck.css', 'drafting.js', 'library.js', 'lists.js', 'markdown.js', 'research.js',
                           'style.css'])
         # The list kit is the shared core's, loaded after the deck panels and before app.js.

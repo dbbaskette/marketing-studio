@@ -108,9 +108,37 @@ def stop_owned(prefix):
                     pass
 
 
-def execute(command, prompt, folder, seconds, stop=None):
-    """Bounded private event files and process-group lifetime; no shell invocation."""
+def execute(command, prompt, folder, seconds, stop=None, watch=None):
+    """Bounded private event files and process-group lifetime; no shell invocation.
+
+    `watch`, when given, is called with each event the assistant writes, decoded, while it
+    runs: what it is doing is read from them as they come. It never ends the job."""
     folder = Path(folder)
+    read, partial = [0], [b'']
+
+    def follow():
+        """Read what has arrived since last time, at most 1 MB; returns how much was read."""
+        if watch is None:
+            return 0
+        try:
+            with stdout.open('rb') as events:
+                events.seek(read[0])
+                arrived = events.read(1_000_000)
+        except OSError:
+            return 0
+        read[0] += len(arrived)
+        *whole, partial[0] = (partial[0] + arrived).split(b'\n')
+        for line in whole:
+            try:
+                event = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(event, dict):
+                try:
+                    watch(event)
+                except Exception:   # what is shown never stops the work
+                    pass
+        return len(arrived)
     stop = stop or threading.Event()
     stdout, stderr = folder / 'events.jsonl', folder / 'stderr.txt'
     with stdout.open('xb') as out, stderr.open('xb') as err:
@@ -139,6 +167,7 @@ def execute(command, prompt, folder, seconds, stop=None):
                 if stdout.stat().st_size > 64_000_000 or stderr.stat().st_size > 4_000_000:
                     state = 'failed'
                     break
+                follow()
                 time.sleep(.05)
             if stop.is_set():
                 state = 'cancelled'
@@ -152,6 +181,11 @@ def execute(command, prompt, folder, seconds, stop=None):
             writer.join(timeout=1)
             with _ACTIVE_LOCK:
                 _ACTIVE.pop(folder, None)
+    while follow():     # everything the assistant wrote before it ended, however much
+        pass
+    if watch is not None and partial[0].strip():
+        partial[0] += b'\n'
+        follow()
     raw = stdout.read_bytes()
     require(len(raw) <= 64_000_000, 'The image worker exceeded its event output limit.')
     return {'state': state, 'returncode': process.returncode, 'events': raw.decode('utf-8', errors='replace')}

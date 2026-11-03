@@ -19,7 +19,9 @@ What a caller needs to know
     ({"agent", "models", "levels", "source", "problem"}; a list that could not be made is
     answered with no models and `problem`, and listing holds up nothing else).
   - `/api/decks`, every deck in the engine's four lists {"needs", "working", "finished",
-    "elsewhere"}; `/api/run?path=` one deck's view (`engine.view`).
+    "elsewhere"}; `/api/run?path=` one deck's view (`engine.view`); `/api/activity?path=`
+    one deck's Activity log (`engine.activity`): each finished assistant job, newest first,
+    without its lines; `&entry=` one finished job's lines, `&job=&since=` one running job's.
   - `/api/slide?path=&kind=build|look|original&number=` (or `&name=sample` for the cover
     drawn in the deck's brand, `&name=sheet` for the brand's looks on one sheet and
     `kind=look&number=` for one look, or `contact-sheet` for the build's sheet): one picture as
@@ -157,7 +159,7 @@ from studio_core.shared_runner import page as _shared
 modules.bind(globals(), _shared, _shared.NAMES)
 
 READS = ('/api/capabilities', '/api/setup', '/api/agents', '/api/models', '/api/decks',
-         '/api/run', '/api/slide', '/api/download', '/api/status', '/api/published',
+         '/api/run', '/api/activity', '/api/slide', '/api/download', '/api/status', '/api/published',
          '/api/delete', '/api/file', '/api/known-decks', '/api/storyboard',
          '/api/desk-outline-price', '/api/desk-versions', '/api/desk-migration-preview', '/api/desk-ready-context')
 # The desk's changes: each is an engine method by the same name, with what it is sent.
@@ -258,6 +260,18 @@ class RunnerPage(server.Page):
                 if self.engine.driven(entry['path']) is None]})
         if path == '/api/run':
             return server.as_json(HTTPStatus.OK, self.run(one('path')))
+        if path == '/api/activity':
+            def given(name):
+                try:
+                    return one(name)
+                except server.Refusal:
+                    return None
+            since = given('since') or '0'
+            if not (since.isascii() and since.isdigit()) or len(since) > 9:
+                raise server.Refusal(HTTPStatus.BAD_REQUEST, 'Give since as a whole number.')
+            return server.as_json(HTTPStatus.OK, self.engine.activity(
+                self.deck(one('path')), entry=given('entry'), job=given('job'),
+                since=int(since)))
         if path == '/api/slide':
             return HTTPStatus.OK, PNG, self.slide(one)
         if path == '/api/download':

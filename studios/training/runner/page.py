@@ -157,6 +157,10 @@ What a caller needs to know
   runner does next, not what an assistant in a conversation would.
 - Reading never starts or wakes a run: `GET /api/run` can be asked for as often as the
   page likes.
+- `GET /api/activity?path=` is a training's Activity log, `Engine.activity`: each finished
+  assistant job, newest first, without its lines, and the jobs running now; `&entry=` one
+  finished job's plain lines, and `&job=&since=` one running job's lines from the `since`th
+  on, which the page asks for only while that job's Show activity is open.
 - A training started on the desk (`flow: 'desk'`) is shown and changed there: `GET
   /api/drafts?path=` answers `drafts.view`, and `POST /api/drafts/ready` {path, name,
   seen}, `/api/drafts/level-ready` {path, level, seen: {name: hash}}, `/api/drafts/draft`
@@ -244,6 +248,7 @@ VERSIONS = f'{DRAFTS}/versions'
 CARD = f'{DRAFTS}/card'   # one card with its parts, as the shared kit reads it
 PART_LIMIT = 1_000_000   # bytes: one part of the largest size, as JSON
 READS = ('/api/capabilities', '/api/setup', '/api/agents', '/api/models', '/api/run',
+         '/api/activity',
          '/api/download', '/api/slide', '/api/status', '/api/published', '/api/delete', '/api/deck-draft-ticket',
          DRAFTS, CARD, VERSIONS, f'{DRAFTS}/update-preview', f'{DRAFTS}/slide-versions', f'{DRAFTS}/source-price',
          f'{DRAFTS}/proofread', f'{DRAFTS}/migration-preview', f'{DRAFTS}/doc-preview')
@@ -331,6 +336,20 @@ def research_site(sent: dict) -> dict:
     return {'site': found, 'shown': research_sites.shown(found)}
 
 
+def activity_asked(one) -> dict:
+    """What a read of the Activity log asks for besides the training: one finished job's
+    lines (`entry`), or one running job's lines from the `since`th on (`job`)."""
+    def given(name):
+        try:
+            return one(name)
+        except desk.Refusal:
+            return None
+    since = given('since') or '0'
+    if not (since.isascii() and since.isdigit()) or len(since) > 9:
+        raise desk.Refusal(HTTPStatus.BAD_REQUEST, 'Give since as a whole number.')
+    return {'entry': given('entry'), 'job': given('job'), 'since': int(since)}
+
+
 class RunnerPage(desk.Page):
     """What the page may ask the runner, on top of what it may ask the desk."""
     reads = (*desk.READS, *READS)
@@ -372,6 +391,9 @@ class RunnerPage(desk.Page):
             return desk.as_json(HTTPStatus.OK, desk_chat.migration_preview(self.engine, training))
         if path == '/api/run':
             return desk.as_json(HTTPStatus.OK, self.run(one('path')))
+        if path == '/api/activity':
+            return desk.as_json(HTTPStatus.OK, self.engine.activity(
+                self.driving(one('path')), **activity_asked(one)))
         if path == '/api/delete':
             return desk.as_json(HTTPStatus.OK, self.engine.leaving(self.driving(one('path'))))
         if path == DRAFTS:

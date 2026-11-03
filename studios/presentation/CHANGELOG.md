@@ -5,6 +5,27 @@ making decks first, then what changes for maintainers.
 
 ## Unreleased
 
+- **See what the assistant is doing, and what it did (#294).** Each assistant job
+  working now shows its name, when it started and its latest action as "Now: …", and
+  **Show activity** opens everything it has done so far, newest first, with times; the
+  research panel shows the same while it collects evidence, combines findings and
+  checks sources. A deck's **Activity log**, on its screen and on the desk, lists each
+  finished job newest first with how it ended (finished, failed, stopped, out of time
+  or a limit) and its lines, whether the deck is still working, finished or stopped. A
+  deck with none says "No activity recorded yet." Only the plain lines are kept: never
+  the brief, sources or the assistant's raw events.
+  Maintainers: `studio_core.activity_log` keeps a running job's lines with their times
+  (200 a job) and appends each ended job to the deck's `work/activity-log.jsonl` (the
+  latest 200 jobs, never committed) under the files lock, after the job, and a log that
+  cannot be written never changes how the job ends. `run.workers[]` now carries `now` and
+  `count` in place of `lines`, so a poll stays small: `GET /api/activity?path=` reads the
+  log's headers, `&entry=` one finished job's lines and `&job=&since=` one running job's
+  lines from the `since`th on, which the page asks for only while its Show activity is open.
+  `ui-kit/activity.js` draws the lines and the log for every studio, keeping focus, what is
+  open and the list's scroll as the page redraws. The event readers moved from
+  `shared_runner.agents` to `studio_core.agent_events`. Jobs after research that finished
+  in parallel show in Assistant jobs now again, not in the "Research is ready" panel.
+
 - **A Google Slides link in the shared source panel now reads (#292).**
   Decks were read through the Google Slides API, which a gcloud sign-in cannot call
   without a quota project, so pasting a deck's link failed with "lacks access" even

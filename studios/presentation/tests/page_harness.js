@@ -260,7 +260,11 @@ class FakeElement extends FakeNode {
     document.activeElement = this;
     const event = { target: this, preventDefault() {} };
     this.dispatch('click', event);
-    if (this.tagName === 'SUMMARY' && this.parentNode) this.parentNode.open = !this.parentNode.open;
+    if (this.tagName === 'SUMMARY' && this.parentNode) {
+      // A disclosure opens or closes, and says so, as a browser's does.
+      this.parentNode.open = !this.parentNode.open;
+      this.parentNode.dispatch('toggle', { target: this.parentNode, currentTarget: this.parentNode });
+    }
     if (this.tagName === 'BUTTON' && this.type === 'submit') {
       for (let at = this.parentNode; at; at = at.parentNode) {
         if (at.tagName === 'FORM') at.dispatch('submit', event);
@@ -839,12 +843,25 @@ async function app(file) {
       return true;
     } };
   }
+  // A plan with {researchPanel: true} stands in for the shared research panel, which the
+  // repository's tests/activity_page_check.js and research_page_check.js check on their own
+  // (it draws an icon as markup, which this document refuses): it says its phase and whether
+  // it was given the assistants working now.
+  if (plan.researchPanel) {
+    window.StudioResearch = { progress: (state, hooks = {}) => {
+      const panel = document.createElement('section');
+      panel.className = 'research-progress';
+      panel.textContent = 'Research panel: ' + state.phase
+        + (Array.isArray(hooks.workers) && hooks.workers.length ? ', with the assistants working now' : '');
+      return panel;
+    } };
+  }
   // The shared desk kit (drafting.js, linked from ui-kit), then the page, then the deck desk,
   // in the order index.html loads them. A plan with {research: true} loads the shared source
   // editor (research.js) first, as the page does: Research first then offers it, and asks
   // POST /api/research-sources for its draft as soon as it is drawn.
-  for (const script of [...(plan.research ? ['research.js'] : []), 'markdown.js', 'drafting.js',
-    'app.js', 'deck-desk.js']) {
+  for (const script of ['activity.js', ...(plan.research ? ['research.js'] : []), 'markdown.js',
+    'drafting.js', 'app.js', 'deck-desk.js']) {
     vm.runInContext(fs.readFileSync(path.join(PAGE, script), 'utf8'), context, { filename: script });
   }
   await settle();

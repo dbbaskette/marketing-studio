@@ -37,7 +37,7 @@ from workspace import WorkspaceError
 
 VERSION = (helpers.SKILL / 'VERSION').read_text().strip()
 GETS = ('/api/capabilities', '/api/setup', '/api/agents', '/api/models', '/api/decks',
-        '/api/run', '/api/slide', '/api/download', '/api/status', '/api/published',
+        '/api/run', '/api/activity', '/api/slide', '/api/download', '/api/status', '/api/published',
         '/api/delete', '/api/file', '/api/computer', '/api/known-decks', '/api/storyboard',
         '/api/desk-outline-price', '/api/desk-versions', '/api/desk-migration-preview',
         '/api/desk-ready-context')

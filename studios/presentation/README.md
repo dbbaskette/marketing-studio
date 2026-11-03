@@ -65,6 +65,11 @@ Research. Missing prerequisites are shown before the work that needs them.
    creates the Google Slides link or PowerPoint result. Later changes produce a
    new delivery revision; the original source deck is never overwritten.
 
+While the assistant works, each job shows what it is doing now as **Now: …**, and
+**Show activity** lists everything it has done so far, newest first, with times. The
+deck's **Activity log** keeps every finished job, how it ended and what it did. It stays
+on this computer and is never shared.
+
 The start, drawn. Filled boxes are your decisions or input, tinted boxes are
 assistant work and grey boxes are Presentation Studio's own steps.
 

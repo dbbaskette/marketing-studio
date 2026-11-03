@@ -3,11 +3,15 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
+import secrets
 import threading
 import time
+from studio_core import activity_log
 from studio_core import research_contract as rc, research_session, research_sources, research_text
 from studio_core import public_fetch, source_documents, research_sites
 from . import research, settings, sources as project_sources
+from .activity import ending
+from .assistant_failure import AssistantFailure
 from .author import Author
 from .contracts import Invalid
 from .validation import identifier, require
@@ -19,6 +23,21 @@ class Jobs:
         self.fetch = fetch or public_fetch.fetch
         self.lock = threading.RLock()
         self.active = {}
+        self.working = {}       # ident -> {token: a running research job and its lines}
+
+    # What each research job is, in the words every studio uses for its research.
+    DOING = {'discovery': 'Finding public references', 'investigate': 'Investigating the sources',
+             'synthesize': 'Combining the evidence into the research report',
+             'review': 'Independently checking the research'}
+
+    def running(self, ident):
+        """The research jobs running now for one infographic, as (id, job) pairs."""
+        with self.lock:
+            return list((self.working.get(ident) or {}).items())
+
+    def workers(self, ident):
+        """The research jobs running now for one infographic, as the page polls them."""
+        return activity_log.live(self.running(ident))
 
     def folder(self, ident):
         require(identifier(ident), 'Choose a saved infographic.')
@@ -42,6 +61,7 @@ class Jobs:
             if not state: return None
             shown = {k: state[k] for k in ('state', 'request', 'project_revision', 'progress', 'problem') if k in state}
             shown['elapsed_seconds'] = round((state.get('ended') or time.time()) - state['started'])
+            shown['workers'] = self.workers(ident)
             if state['state'] in ('working', 'pausing', 'paused', 'stopping') and state.get('ended') is None and ident not in self.active:
                 shown.update(state='needs-attention', problem='The previous research host ended without a terminal observation. Its evidence is kept. Do not repeat uncertain invocations; inspect or restore their terminal records first.')
             return shown
@@ -113,7 +133,32 @@ class Jobs:
             require(not cancelled(), 'Research stopped or its infographic changed. Saved work is kept.')
             left = int(1800 - (time.monotonic() - started))
             require(left > 0, 'Research reached its total 30-minute limit. Checked evidence is kept.')
-            return author.research(phase, payload, guide, seconds=min(300, left), stop=stop, web=phase == 'discovery')
+            # What this job does is shown while it runs, and kept in the Activity log after.
+            lines, token = activity_log.Lines(), secrets.token_hex(6)
+            label = self.DOING.get(phase, 'Researching')
+            job = {'label': label, 'started_at': activity_log.now(), 'lines': lines}
+            with self.lock:
+                self.working.setdefault(ident, {})[token] = job
+            ended, detail = 'failed', None
+            try:
+                answer = author.research(phase, payload, guide, seconds=min(300, left), stop=stop,
+                                         web=phase == 'discovery', activity=lines.append)
+                ended = 'finished'
+                return answer
+            except AssistantFailure as failure:
+                ended, detail = ending({'state': 'failed', 'reason': failure.reason}), str(failure)
+                raise
+            except BaseException:
+                ended = 'stopped' if stop.is_set() else 'failed'
+                raise
+            finally:
+                with self.lock:
+                    (self.working.get(ident) or {}).pop(token, None)
+                try:
+                    self.store.keep_activity(ident, activity_log.entry(
+                        label, 'research:' + str(phase), job['started_at'], ended, lines, detail))
+                except Exception:   # a log that cannot be written never changes the research
+                    pass
         try:
             _, offered = research_sources.sources(root, state['inputs'])
             project = self.store.read(ident)

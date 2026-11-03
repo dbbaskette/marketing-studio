@@ -99,6 +99,12 @@ font binaries. Another computer needs compatible fonts to edit SVG accurately.
 
 Long work stays attached to its infographic, so you can navigate elsewhere and
 return to its progress. **Stop waiting** does not cancel the underlying work.
+While your assistant works, its progress shows what it is doing now (**Now: …**), and
+**Show activity** lists everything it has done so far, newest first, with times; research
+shows the same for each research assistant. **Activity log**, on the infographic's screen,
+keeps each finished assistant step and research job, how it ended and what it did, in
+`projects/<id>/activity-log.jsonl` on this computer. It is never a revision and never
+shared. Image generation and local steps add no lines.
 Reloading or losing a connection does not automatically repeat an uncertain request.
 
 Review to delivery, drawn the same way:

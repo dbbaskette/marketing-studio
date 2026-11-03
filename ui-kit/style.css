@@ -3778,3 +3778,42 @@ body[data-pilot="liquid"] .ig-outline-value { fill: var(--studio-color); font: 2
 .library-results:empty{display:none}
 .library-results>*+*{margin-top:.6rem}
 @media (max-width:37.5rem){.library-row{flex-direction:column;align-items:stretch}.library-tick,.library-row-text{flex:none}.library-tick>.library-row-text{flex:1 1 auto;min-width:0}.library-row-actions{justify-content:flex-start}}
+
+/* What an assistant is doing, and the Activity log (activity.js). Opaque reading surfaces:
+   the lines sit on the card or paper they are drawn in. */
+.activity-live{min-width:0}
+.activity-live>.card-title{font-size:1rem;margin-bottom:.4rem}
+.activity-jobs{list-style:none;margin:0;padding:0}
+.activity-job{min-width:0;padding:.8rem 0;border-top:1px solid var(--hair)}
+.activity-job:first-child{border-top:0;padding-top:.1rem}
+.activity-job>*+*{margin-top:.35rem}
+.activity-job-head{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:.2rem .8rem;overflow-wrap:anywhere}
+.activity-job-head>.quiet{font-size:.85rem}
+.activity-now{overflow-wrap:anywhere}
+.activity-more>summary,.activity-entry-lines>summary{min-height:2.75rem;padding:.6rem 0;cursor:pointer;color:var(--link);font-size:.93rem;font-weight:600}
+.activity-lines{list-style:none;margin:.2rem 0 0;padding:0;max-height:24rem;overflow:auto;font-size:.9rem;border-top:1px solid var(--hair)}
+.activity-lines>li{display:grid;grid-template-columns:auto minmax(0,1fr);gap:.2rem .8rem;padding:.4rem 0;border-bottom:1px solid var(--hair)}
+.activity-time{color:var(--quiet);font-variant-numeric:tabular-nums;white-space:nowrap}
+.activity-text{min-width:0;overflow-wrap:anywhere}
+.activity-note{font-size:.85rem;margin-top:.4rem}
+.activity-log{background:var(--card)}
+.activity-log-summary{display:flex;flex-direction:column;gap:.2rem;min-height:2.75rem;cursor:pointer}
+/* The two flex summaries draw their own disclosure triangle, as a native one would sit. */
+.activity-log-summary,.activity-entry-lines>summary{position:relative;padding-left:1.1rem;list-style:none}
+.activity-log-summary::-webkit-details-marker,.activity-entry-lines>summary::-webkit-details-marker{display:none}
+.activity-log-summary::before,.activity-entry-lines>summary::before{content:'▸';position:absolute;left:0;color:var(--quiet)}
+.activity-entry-lines>summary::before{top:.6rem}
+.activity-log[open]>.activity-log-summary::before,.activity-entry-lines[open]>summary::before{content:'▾'}
+.activity-log-summary>.quiet{font-size:.9rem}
+.activity-log-body{margin-top:.8rem}
+.activity-log-body>*+*{margin-top:.8rem}
+.activity-entries{list-style:none;margin:0;padding:0}
+.activity-entry{min-width:0;border-top:1px solid var(--hair)}
+.activity-entry-lines>summary{display:flex;flex-direction:column;gap:.15rem;color:var(--ink);font-weight:400}
+.activity-entry-head{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:.2rem .8rem;overflow-wrap:anywhere}
+.activity-entry-when{font-size:.85rem}
+.activity-ending{font-size:.85rem;font-weight:600}
+.activity-why{font-size:.9rem;overflow-wrap:anywhere;margin-bottom:.4rem}
+.activity-problem{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem 1rem}
+.research-progress>.activity-live{padding-top:1rem;border-top:1px solid var(--hair)}
+@media (max-width:40rem){.activity-lines>li{grid-template-columns:minmax(0,1fr)}.activity-lines{max-height:20rem}}
