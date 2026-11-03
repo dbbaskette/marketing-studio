@@ -84,7 +84,7 @@ class Page(shared.Page):
                 except shared.Refusal:
                     return None
             since = given('since') or '0'
-            require(since.isdigit() and len(since) <= 9, 'Give since as a whole number.')
+            require(since.isascii() and since.isdigit() and len(since) <= 9, 'Give since as a whole number.')
             running = [*(self.activity.running(ident) if identifier(ident) else []),
                        *(self.research.running(ident) if self.research else [])]
             return shared.as_json(200, self.store.activity_log(

@@ -16,6 +16,9 @@
  * lines already had are kept here, so each new line is fetched once and the list, its scroll
  * and what was read stay as they were when the page draws it again. A worker may instead
  * carry its `lines` (each {at, text} or a plain string), which are shown as they are.
+ * `load.scope`, when the studio sets it, names the project the jobs belong to: a job's kept
+ * lines are its project's, its id's and its start's, so another try of the same step, or the
+ * same step of another project, starts afresh. Jobs no longer drawn are let go.
  * Every disclosure is a native <details> with a data-key, and stays open when the page draws
  * it again, whether or not the page keeps open disclosures itself. */
 'use strict';
@@ -30,7 +33,10 @@ const StudioActivity = (() => {
   const array = (value) => Array.isArray(value) ? value : [];
   const opened = new Set();     // the data-keys of the disclosures open on this page
   const logs = new Map();       // log key -> {view, problem, at, loading, load, entry}
-  const jobs = new Map();       // a running job's key -> {lines, count, list, scroll, loading}
+  const jobs = new Map();       // scope, id -> {started, lines, count, list, scroll, loading}
+  const finished = new Map();   // scope -> [{label, at}]: jobs that ended while shown open
+  const KEEP = 200;             // lines this page keeps of one running job, newest
+  const ENDED_FOR = 30000;      // ms a job that ended while open is said to have ended
   const entries = new Map();    // a finished job's key -> {lines, dropped, loading, problem}
   const STALE = 5000;           // ms before an open log is read again when drawn
   const ENDINGS = {finished: 'done', failed: 'late', stopped: 'review', timeout: 'late', limit: 'review'};
@@ -102,10 +108,16 @@ const StudioActivity = (() => {
 
   // A running job's lines, kept across drawings: the same list, with the newest added at its
   // top, and the place it was scrolled to kept.
-  function heldLines(key) {
+  function heldLines(key, started = null, count = 0) {
     let held = jobs.get(key);
+    // Another try of the same step, started again or counting from the beginning: afresh.
+    if (held && (held.started !== started || count < held.count)) {
+      jobs.delete(key);
+      held = null;
+    }
     if (!held) {
-      held = {lines: [], count: 0, start: 0, list: make('ol', 'activity-lines'), scroll: 0, loading: false};
+      held = {started, lines: [], count: 0, start: 0, list: make('ol', 'activity-lines'), scroll: 0, loading: false};
+      held.key = key;
       held.list.addEventListener('scroll', () => { held.scroll = held.list.scrollTop; });
       jobs.set(key, held);
     }
@@ -126,14 +138,20 @@ const StudioActivity = (() => {
     if (!held.lines.length) held.start = Number(found.start) || 0;   // lines dropped before it was opened
     held.lines.push(...arrived);
     held.count = Number(found.count) || held.lines.length;
+    // A long job: only its newest KEEP lines are kept here, as the runner keeps them.
+    while (held.list.children.length > KEEP) held.list.removeChild(held.list.lastChild);
+    if (held.lines.length > KEEP) {
+      held.start += held.lines.length - KEEP;
+      held.lines = held.lines.slice(-KEEP);
+    }
   }
 
-  async function fetchLines(key, worker, load) {
-    const held = heldLines(key);
+  async function fetchLines(held, worker, load) {
     if (held.loading || !load) return;
     held.loading = true;
     try {
-      took(held, await load(worker.id, held.count));
+      const found = await load(worker.id, held.count);
+      if (jobs.get(held.key) === held) took(held, found);   // not for a try since let go
     } catch (failure) {
       held.problem = (failure && failure.message) || 'What it did could not be read.';
     } finally {
@@ -157,8 +175,9 @@ const StudioActivity = (() => {
       shown.append(lineList(given));
       return add(item, shown);
     }
-    const held = heldLines(key);
-    const ask = () => { if (count > held.count) fetchLines(key, worker, load); };
+    const held = heldLines(scopeOf(load) + '\n' + (worker.id || worker.label), worker.started_at || null, count);
+    held.label = worker.label || 'An assistant job';
+    const ask = () => { if (count > held.count) fetchLines(held, worker, load); };
     const shown = disclosure('activity-more', key, 'Show activity (' + steps(count) + ')', ask);
     shown.append(held.list);
     if (held.start > 0) shown.append(make('p', 'quiet activity-note', 'Showing the latest '
@@ -171,16 +190,38 @@ const StudioActivity = (() => {
     return add(item, shown);
   }
 
+  const scopeOf = (load) => String((load && load.scope) || '');
+
+  // Let go of the kept lines of this project's jobs that are no longer drawn; one that was
+  // open is said, for a little while, to have ended, so its lines do not just vanish.
+  function letGo(scope, found) {
+    const drawn = new Set(found.map((worker) => scope + '\n' + (worker.id || worker.label)));
+    const now = Date.now();
+    const said = (finished.get(scope) || []).filter((one) => now - one.at < ENDED_FOR);
+    for (const [key, held] of jobs) {
+      if (!key.startsWith(scope + '\n') || drawn.has(key)) continue;
+      if (held.label && opened.has('activity ' + key.slice(scope.length + 1))) said.push({label: held.label, at: now});
+      jobs.delete(key);
+    }
+    if (said.length) finished.set(scope, said); else finished.delete(scope);
+    return said;
+  }
+
   // The running jobs, or null when none runs. `title` heads them, when given.
   function live(workers, {title = null, load = null} = {}) {
     const found = array(workers);
+    const gone = load ? letGo(scopeOf(load), found) : [];
     if (!found.length) return null;
     const box = make('section', 'activity-live');
     box.setAttribute('aria-label', 'What the assistant is doing');
     if (title) box.append(make('h3', 'card-title', title));
     const list = make('ul', 'activity-jobs');
     for (const worker of found) list.append(job(worker, load));
-    return add(box, list);
+    add(box, list);
+    for (const one of gone) {
+      box.append(make('p', 'quiet activity-note', one.label + ' ended. What it did is in the Activity log.'));
+    }
+    return box;
   }
 
   // The running jobs drawn into `holder` again: the control that had the focus has it again.

@@ -149,6 +149,9 @@ function paintWork() {
     surface.hidden=!show;if(!show)continue;
     // The band is built once for each piece of work and its controls, then only its words
     // change: a control keeps the focus, and only the label and "Now:" line are announced.
+    // It is built again only when the work, its pending image, quiet or Cancel changes, so
+    // the handlers made here stay right: Stop waiting holds nothing, and Cancel calls the
+    // `cancel` of the work it was made for, which stays the same while that shape does.
     const shape=(work.id||'')+'|'+(work.pending||'')+'|'+(work.quiet?'q':'')+'|'+(work.cancel?'c':'');
     if(surface.dataset.shape!==shape) {
       surface.dataset.shape=shape;
@@ -191,7 +194,8 @@ function paintDoing(work) {
   if(!worker||typeof StudioActivity==='undefined'){holder.replaceChildren();holder.hidden=true;return;}
   const id=work.id;
   if(!holder.querySelector('.ig-doing-jobs'))holder.replaceChildren(make('h2','card-title','What the assistant is doing'),make('div','ig-doing-jobs'));
-  StudioActivity.update(holder.querySelector('.ig-doing-jobs'),[worker],{load:(job,since)=>request('/api/activity-log?'+new URLSearchParams({id,job,since}))});
+  const load=(job,since)=>request('/api/activity-log?'+new URLSearchParams({id,job,since}));load.scope=id;
+  StudioActivity.update(holder.querySelector('.ig-doing-jobs'),[worker],{load});
   holder.hidden=false;
 }
 // Lock the open infographic's own controls while its work runs, and release them after.
@@ -1242,7 +1246,8 @@ async function researchSheet(){
       status.replaceChildren();
       if(state){
         // What each research assistant is doing now, shown in the research panel.
-        const hooks={workers:state.workers||[],lines:(job,since)=>request('/api/activity-log?'+new URLSearchParams({id:ident,job,since}))};
+        const lines=(job,since)=>request('/api/activity-log?'+new URLSearchParams({id:ident,job,since}));lines.scope='research '+ident;
+        const hooks={workers:state.workers||[],lines};
         if(['working','pausing','stopping'].includes(state.state)){
           if(state.state==='working')hooks.pause=()=>control('pause');
           if(state.state!=='stopping')hooks.stop=()=>control('stop');

@@ -51,7 +51,11 @@ FILE = 'activity-log.jsonl'
 LINES = 200             # lines kept for one job, live and in the log
 JOBS = 200              # finished jobs a project's log keeps
 SLACK = 20              # jobs over JOBS before the file is trimmed
-SMALL = 30_000          # bytes: a log this small cannot hold JOBS + SLACK jobs, so is not counted
+# Bytes under which the log is not re-read to be counted. The smallest entry is about 140
+# bytes, so as many as about 215 can fit below this: the file stays bounded because it is
+# trimmed to JOBS once it is over SMALL and holds more than JOBS + SLACK, and `read` gives at
+# most JOBS whatever it holds.
+SMALL = 30_000
 LINE_LENGTH = 240       # characters in one line
 DETAIL_LENGTH = 300     # characters in the sentence that says why a job did not finish
 LABEL_LENGTH = 160

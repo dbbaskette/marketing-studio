@@ -267,7 +267,7 @@ class RunnerPage(server.Page):
                 except server.Refusal:
                     return None
             since = given('since') or '0'
-            if not since.isdigit() or len(since) > 9:
+            if not (since.isascii() and since.isdigit()) or len(since) > 9:
                 raise server.Refusal(HTTPStatus.BAD_REQUEST, 'Give since as a whole number.')
             return server.as_json(HTTPStatus.OK, self.engine.activity(
                 self.deck(one('path')), entry=given('entry'), job=given('job'),

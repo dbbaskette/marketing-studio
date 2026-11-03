@@ -127,6 +127,20 @@ class ActivityLogTests(StudioCase):
         found = served.engine.activity(served.driving(str(root)))
         self.assertTrue(found['jobs'])
         self.assertIn('/api/activity', page.READS)
+        # `since` is a whole number in ASCII digits: anything else is refused, never a 500.
+        import desk
+
+        def asked(**given):
+            def one(name):
+                if name not in given:
+                    raise desk.Refusal(400, f'Give {name}.')
+                return given[name]
+            return one
+        self.assertEqual(page.activity_asked(asked(job='research-plan', since='12')),
+                         {'entry': None, 'job': 'research-plan', 'since': 12})
+        for bad in ('²', '-1', '1e3', '9' * 10):
+            with self.assertRaises(desk.Refusal):
+                page.activity_asked(asked(job='research-plan', since=bad))
 
 
 

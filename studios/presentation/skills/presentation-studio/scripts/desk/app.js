@@ -5510,7 +5510,9 @@ function activityLogCard(path) {
 
 // How a running job's lines are read while its Show activity is open: from the `since`th on.
 function jobLines(path) {
-  return (job, since) => ask('activity', { path, job, since });
+  const read = (job, since) => ask('activity', { path, job, since });
+  read.scope = path;   // a job's lines are its own deck's: the same step elsewhere is another job
+  return read;
 }
 
 // Whether the research panel shows the assistants working now: while research runs. Finished

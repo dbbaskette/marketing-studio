@@ -19,6 +19,8 @@ class Node {
     return n;
   }
   get firstChild() { return this.children[0] || null; }
+  get lastChild() { return this.children[this.children.length - 1] || null; }
+  removeChild(n) { this.children = this.children.filter((c) => c !== n); n.parent = null; return n; }
   // Each line is 20px tall here, so a list's height says how many it holds.
   get scrollHeight() { return this.children.length * 20; }
   replaceChildren(...nodes) { for (const c of this.children) c.parent = null; this.children = []; this.append(...nodes); }
@@ -128,6 +130,49 @@ const said = (root) => root.querySelectorAll('.activity-text').map((n) => n.text
   first.querySelector('summary').click(); await settle();
   activity.update(longOne, [{ id: 'long', label: 'Long', now: lines[1], count: 250 }], { load: late });
   assert.match(longOne.text, /Showing the latest 2\./);
+
+  // Another try of the same step, with the same id: its lines are its own, read from the start,
+  // not the earlier try's (#294 review).
+  const tries = { 1: lines.slice(0, 5), 2: lines.slice(0, 2).map((one) => ({ ...one, text: 'Try 2: ' + one.text })) };
+  let trying = 1;
+  const triedAsked = [];
+  const tried = async (id, since) => { triedAsked.push([trying, since]); return { lines: tries[trying].slice(since), count: tries[trying].length, start: 0 }; };
+  tried.scope = '/work/rolling-restarts';
+  const step = (n, count) => ({ id: 'research-plan', label: 'Drafting the research plan', started_at: '2030-01-02T0' + n + ':00:00Z',
+    now: tries[n][count - 1], count });
+  const retry = new Node('div');
+  activity.update(retry, [step(1, 5)], { load: tried }).querySelector('summary').click(); await settle();
+  assert.equal(said(retry).length, 5);
+  trying = 2;
+  activity.update(retry, [step(2, 2)], { load: tried }); await settle();
+  assert.equal(retry.querySelector('summary').textContent, 'Show activity (2 steps)');
+  assert.deepEqual(triedAsked.at(-1), [2, 0], 'the new try is read from its first line');
+  assert.deepEqual(said(retry), ['Try 2: ' + lines[1].text, 'Try 2: ' + lines[0].text]);
+
+  // The same step of another training is another job: switching shows each its own lines.
+  const elsewhere = async (id, since) => ({ lines: [{ at: lines[0].at, text: 'Elsewhere: ' + id }].slice(since), count: 1, start: 0 });
+  elsewhere.scope = '/work/canary-releases';
+  const other = new Node('div');
+  activity.update(other, [{ ...step(2, 2), now: { at: lines[0].at, text: 'Elsewhere' }, count: 1 }], { load: elsewhere }); await settle();
+  assert.deepEqual(said(other), ['Elsewhere: research-plan']);
+  activity.update(retry, [step(2, 2)], { load: tried }); await settle();
+  assert.deepEqual(said(retry), ['Try 2: ' + lines[1].text, 'Try 2: ' + lines[0].text], 'each training keeps its own');
+
+  // A job that ends while its Show activity is open is said to have ended, while others run.
+  activity.update(retry, [{ id: 'research:author-1', label: 'Researching', started_at: lines[0].at, now: lines[0], count: 1 }], { load: tried });
+  assert.match(retry.text, /Drafting the research plan ended\. What it did is in the Activity log\./);
+
+  // A long job keeps its newest 200 lines here, and says so.
+  const many = Array.from({ length: 250 }, (_, n) => ({ at: lines[0].at, text: 'Line ' + n }));
+  const long = async (id, since) => ({ lines: many.slice(since), count: many.length, start: 0 });
+  long.scope = '/work/long';
+  const longer = new Node('div');
+  const big = { id: 'section-1', label: 'Drawing section 1', started_at: lines[0].at, now: many[249], count: 250 };
+  activity.update(longer, [big], { load: long }).querySelector('summary').click(); await settle();
+  activity.update(longer, [big], { load: long });
+  assert.equal(longer.querySelectorAll('.activity-text').length, 200);
+  assert.equal(said(longer)[0], 'Line 249');
+  assert.match(longer.text, /Showing the latest 200\./);
 
   // The research panel shows the same while it collects evidence, combines findings and checks
   // sources, and reads lines through the studio's own hook.

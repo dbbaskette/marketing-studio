@@ -345,7 +345,7 @@ def activity_asked(one) -> dict:
         except desk.Refusal:
             return None
     since = given('since') or '0'
-    if not since.isdigit() or len(since) > 9:
+    if not (since.isascii() and since.isdigit()) or len(since) > 9:
         raise desk.Refusal(HTTPStatus.BAD_REQUEST, 'Give since as a whole number.')
     return {'entry': given('entry'), 'job': given('job'), 'since': int(since)}
 
