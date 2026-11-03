@@ -3,6 +3,46 @@
 Releases are published from `VERSION`. Each entry says what changes for people
 making decks first, then what changes for maintainers.
 
+## Unreleased
+
+- **A Google Slides link in the shared source panel now reads (#292).**
+  Decks were read through the Google Slides API, which a gcloud sign-in cannot call
+  without a quota project, so pasting a deck's link failed with "lacks access" even
+  when Google Drive could open it. Now the deck is exported through Google Drive as
+  PowerPoint and its titles, text, tables, groups and speaker notes are read slide by
+  slide, in presentation order. Slide choices, the 1–200 slide limit and the
+  "changed while being read" refusal stay as they were. A source saved earlier still
+  opens from its stored capture; changing its slide choice matches the earlier slides
+  only while the deck is unchanged, and otherwise says so and keeps the earlier
+  capture. When Google refuses, the message says why: an API not enabled for the
+  sign-in's project, a sign-in missing Drive access (with the command to fix it), a
+  file this account cannot open, or a deck larger than the 10 MB Google Drive
+  exports, which is better uploaded as a PDF.
+  Maintainers: `studio_core.pptx_slides` reads the export with `zipfile` and expat
+  (size-capped parts, no DTDs or entities); `google_reference.capture` takes
+  `previous` and `slide_choice` resolves `slide-<n>-<digest>`, `slide-<n>` and
+  earlier identities; `google_api.Client.export_presentation` replaces
+  `presentation`, `slides.googleapis.com` is no longer an allowed destination, and
+  `refusal` reads a 403's `error.status`, `errors[].reason` and `details[].reason`.
+  A failed slide or tab re-choice in `research_sources` now keeps the ready capture.
+
+- **Research from a source with extra spaces finishes (#295).** When a source's
+  text had double or trailing spaces or several blank lines, as Google Slides decks
+  often do, research stopped after synthesis with "harness-research refused: Source …
+  capture differs from the accepted asset inventory". The source was registered with
+  Harness Research as it came, while the assistant read and quoted a tidied copy. Now
+  the tidied text is registered, so the two match. A deck that stopped this way
+  recovers with **Try again**: its checked investigations are kept, and only
+  synthesis and the independent review run again. Sources that were already tidy are
+  registered unchanged.
+  Maintainers: `research_session.Workflow.asset` registers and offers
+  `capture_text(text, kept)`, which is `shared_runner.worker_tools.tidy(text)` unless
+  that source's own kept copies (`kept_copies`, at
+  `sources/collection/<area>/<attempt>/<capture file>`) hold only the untidied text.
+  Registration runs on every start, and Harness Research's `asset source` re-hashes
+  `capture_sha256`; intake, the input fingerprint, the research basis and capture
+  file names still come from the text as it came.
+
 ## 4.9.0 — 2026-11-03
 
 - **Released with Marketing Studio 4.6.0.** Installs pin Harness Research 1.1.0 and

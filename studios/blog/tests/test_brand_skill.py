@@ -551,5 +551,81 @@ class BrandSkillTests(unittest.TestCase):
         self.assertFalse(list(self.root.rglob('brand.json')))
 
 
+class BrandsFolderTests(unittest.TestCase):
+    """The brand command is told the brands folder Harness Brand reads its packs from, in
+    HARNESS_BRAND_DATA, as the shared settings and Blog Studio's workspace say."""
+
+    SAID = 'import os; print(os.environ.get("HARNESS_BRAND_DATA"))'
+    TEAM = 'https://example.com/team/hub.git'
+
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory(prefix='blog-brands-folder-')
+        self.addCleanup(temp.cleanup)
+        self.base = Path(temp.name).resolve()
+        self.config = self.base / 'studios.json'
+        environment = patch.dict(
+            os.environ,
+            {'BLOG_STUDIO_DATA': str(self.base / 'data'), 'STUDIOS_CONFIG': str(self.config)},
+        )
+        environment.start()
+        self.addCleanup(environment.stop)
+        os.environ.pop('HARNESS_BRAND_DATA', None)
+
+    def shared(self, **values):
+        self.config.write_text(json.dumps({'schema': 1, **values}))
+
+    def workspace(self, repository):
+        """Blog Studio's record of a workspace in `clone`, and the folder's marker."""
+        from studio_sync import gitstate
+
+        clone = self.base / 'clone'
+        (clone / 'blogs').mkdir(parents=True, exist_ok=True)
+        (clone / 'blogs' / 'hub.json').write_text(
+            json.dumps(
+                {
+                    'tool': gitstate.TOOL,
+                    'schema': gitstate.SCHEMA,
+                    'name': 'hub',
+                    'branch': 'main',
+                    'folder': 'blogs',
+                    'repository': repository,
+                    'minimum_runtime': '0.0.0',
+                }
+            )
+        )
+        (self.base / 'data').mkdir(exist_ok=True)
+        (self.base / 'data' / 'workspace.json').write_text(
+            json.dumps(
+                {'schema': gitstate.SCHEMA, 'name': 'hub', 'repo': str(clone), 'folder': 'blogs'}
+            )
+        )
+        return clone
+
+    def told(self):
+        from studio_brand import brand
+
+        code, out, _ = brand.run_command([sys.executable, '-c', self.SAID])
+        self.assertEqual(code, 0)
+        return out.strip()
+
+    def test_with_a_team_repository_it_is_brands_in_blog_studio_s_checkout(self):
+        self.shared(team={'repository': self.TEAM})
+        self.assertEqual(self.told(), 'None', 'no workspace yet: nothing is named')
+        clone = self.workspace(self.TEAM)
+        self.assertEqual(self.told(), str(clone / 'brands'))
+        self.workspace(None)
+        self.assertEqual(self.told(), 'None', 'a folder that is not a checkout of it')
+
+    def test_with_local_storage_it_is_brands_in_the_local_root(self):
+        self.shared(local={'root': str(self.base / 'Studios')})
+        self.workspace(None)
+        self.assertEqual(self.told(), str(self.base / 'Studios' / 'brands'))
+
+    def test_a_folder_the_person_named_already_is_kept(self):
+        self.shared(local={'root': str(self.base / 'Studios')})
+        os.environ['HARNESS_BRAND_DATA'] = str(self.base / 'their-own')
+        self.assertEqual(self.told(), str(self.base / 'their-own'))
+
+
 if __name__ == '__main__':
     unittest.main()

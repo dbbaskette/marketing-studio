@@ -932,6 +932,8 @@ class StudioCase(unittest.TestCase):
             # The tests' data folders are temporary; the check of that is tested on its own.
             mock.patch.object(engines.agents, 'shared_temporary', lambda: []),
             mock.patch.object(engines.team, 'Notifier', lambda *given, **named: self.notifier),
+            # Nor does Setup's look for a Harness Brand that has no brand pack.
+            mock.patch.object(engines.brand_skill, 'packs', lambda *asked, **named: None),
             mock.patch.object(engines.brand_skill, 'found',
                               lambda *asked, **named: [] if self.brand is None
                               else [{'name': self.brand.name,
@@ -1298,6 +1300,8 @@ def fake_studio() -> Fake:
             mock.patch.object(engines.brand_skill, 'Brand', lambda *a, **k: brand),
             mock.patch.object(engines.agents, 'shared_temporary', lambda: []),
             mock.patch.object(engines.team, 'Notifier', lambda *a, **k: Notifier()),
+            # Nor does Setup's look for a Harness Brand that has no brand pack.
+            mock.patch.object(engines.brand_skill, 'packs', lambda *asked, **named: None),
             mock.patch.object(engines.brand_skill, 'found',
                               lambda *asked, **named: [{'name': brand.name,
                                                         'version': None,

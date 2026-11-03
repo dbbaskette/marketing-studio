@@ -1,12 +1,15 @@
 """Fixed Google destinations, exact permissioned captures and public network boundaries."""
 import json
+import sys
 from unittest import mock
-from helpers import Isolated
+from helpers import Isolated, ROOT
 from runner import intake, remote_sources, sources
 from runner.contracts import Invalid
 from runner.workspace import Store
 from studio_core import public_fetch
 from studio_core.google_api import Client, GoogleError, Response, DOC_MIME, SLIDES_MIME, active_account, access_token
+sys.path.insert(0, str(ROOT / 'tests'))
+import pptx_fixture
 
 
 def metadata():
@@ -106,22 +109,34 @@ class RemoteSourcesTests(Isolated):
         self.assertEqual(access_token(run=run,which=lambda name:'/synthetic/gcloud'),'synthetic-memory-only')
         self.assertNotIn('--account',run.call_args.args[0])
 
-    def test_slides_link_captures_text_tables_groups_and_speaker_notes_without_email(self):
-        def shape(ident,value):return {'objectId':ident,'shape':{'text':{'textElements':[{'textRun':{'content':value}}]}}}
-        slide={'objectId':'slide_a','pageElements':[shape('heading','Synthetic slide.'),{'elementGroup':{'children':[shape('group','Grouped material.')]}},
-            {'image':{'contentUrl':'https://private.invalid/signed-content'}},
-            {'objectId':'table','table':{'tableRows':[{'tableCells':[{'text':{'textElements':[{'textRun':{'content':'Count 12'}}]}}]}]}}],
-            'slideProperties':{'notesPage':{'notesProperties':{'speakerNotesObjectId':'notes'},'pageElements':[shape('notes','Speaker context.')]}}}
-        client=mock.Mock();client.file.return_value={**metadata(),'mimeType':SLIDES_MIME};client.presentation.return_value={'presentationId':'synthetic_doc','slides':[slide]}
+    def test_slides_link_captures_text_tables_groups_and_speaker_notes_through_drive(self):
+        client=mock.Mock(spec=Client);client.file.return_value={**metadata(),'mimeType':SLIDES_MIME}
+        client.export_presentation.return_value=pptx_fixture.deck(pptx_fixture.SAMPLE)
         preview=remote_sources.google('https://docs.google.com/presentation/d/synthetic_doc/edit#slide=id.slide_a',client=client)
         record,raw,extracted=intake.read(preview['id'])
-        self.assertEqual(record['kind'],'google-slides');self.assertIn('Speaker context.',extracted['text']);self.assertIn('Count 12',extracted['text'])
-        self.assertTrue(extracted['warnings']);self.assertNotIn(b'signed-content',raw);client.document.assert_not_called()
+        self.assertEqual(record['kind'],'google-slides');self.assertIn('Opening speaker context.',extracted['text']);self.assertIn('Count 12',extracted['text'])
+        self.assertIn('Grouped material.',extracted['text'])
+        self.assertTrue(extracted['warnings']);self.assertNotIn(b'rIdImage',raw);client.document.assert_not_called()
+        client.export_presentation.assert_called_once_with('synthetic_doc')
+        self.assertEqual(len(record['provenance']['tabs']),3)
         store=Store.setup(self.workspace);p=store.create('Synthetic slides import')
         p=intake.adopt(store,p['id'],preview['id'],expected_revision=0,acknowledge_warnings=True)
         self.assertEqual(p['sources'][0]['kind'],'google-slides')
 
+    def test_typed_slide_numbers_choose_slides_and_old_slide_ids_are_refused(self):
+        client=mock.Mock(spec=Client);client.file.return_value={**metadata(),'mimeType':SLIDES_MIME}
+        client.export_presentation.return_value=pptx_fixture.deck(pptx_fixture.SAMPLE)
+        url='https://docs.google.com/presentation/d/synthetic_doc/edit'
+        preview=remote_sources.google(url,tabs=['slide-2'],client=client)
+        _,raw,extracted=intake.read(preview['id'])
+        self.assertIn('Count 12',extracted['text']);self.assertNotIn('Synthetic opening',extracted['text'])
+        self.assertNotIn(b'Synthetic opening',raw)
+        with self.assertRaisesRegex(Invalid,'earlier slide identities'):remote_sources.google(url,tabs=['g2abc_0_5'],client=client)
+
     def test_slides_change_or_wrong_mime_refuses_and_keeps_prior_capture(self):
-        client=mock.Mock();client.file.side_effect=[{**metadata(),'mimeType':SLIDES_MIME},{**metadata(),'mimeType':SLIDES_MIME,'version':'new'}]
-        client.presentation.return_value={'presentationId':'synthetic_doc','slides':[{'objectId':'slide_a','pageElements':[]}]}
+        client=mock.Mock(spec=Client);client.file.side_effect=[{**metadata(),'mimeType':SLIDES_MIME},{**metadata(),'mimeType':SLIDES_MIME,'version':'new'}]
+        client.export_presentation.return_value=pptx_fixture.deck(pptx_fixture.SAMPLE[:1])
         with self.assertRaisesRegex(Invalid,'changed'):remote_sources.google('https://docs.google.com/presentation/d/synthetic_doc/edit',client=client)
+        client=mock.Mock(spec=Client);client.file.return_value=metadata()
+        with self.assertRaisesRegex(Invalid,'cannot capture'):remote_sources.google('https://docs.google.com/presentation/d/synthetic_doc/edit',client=client)
+        client.export_presentation.assert_not_called()

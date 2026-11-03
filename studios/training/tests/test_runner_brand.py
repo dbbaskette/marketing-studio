@@ -504,6 +504,99 @@ class CompanionsTests(unittest.TestCase):
         self.assertEqual(out.split(), ['/chosen/slides', 'None'])
 
 
+class BrandsFolderTests(unittest.TestCase):
+    """The brand skill is told the brands folder Harness Brand reads its packs from, in
+    HARNESS_BRAND_DATA, as the shared settings and this studio's workspace say."""
+
+    SAID = 'import os; print(os.environ.get("HARNESS_BRAND_DATA"))'
+    TEAM = 'https://example.com/team/hub.git'
+
+    def setUp(self):
+        holder = tempfile.TemporaryDirectory()
+        self.addCleanup(holder.cleanup)
+        self.base = Path(holder.name).resolve()
+        self.config = self.base / 'studios-config.json'
+        patch = mock.patch.dict(os.environ, {'STUDIOS_CONFIG': str(self.config)})
+        patch.start()
+        self.addCleanup(patch.stop)
+        os.environ.pop('HARNESS_BRAND_DATA', None)
+
+    def shared(self, **values):
+        self.config.write_text(json.dumps({'schema': 1, **values}))
+
+    def told(self, space=None) -> str:
+        from runner import gitstate
+        with mock.patch.object(gitstate, 'current', lambda: space):
+            code, out, _ = brand.run_command([sys.executable, '-c', self.SAID])
+        self.assertEqual(code, 0)
+        return out.strip()
+
+    def test_with_a_team_repository_it_is_brands_in_this_studio_s_checkout(self):
+        from runner import gitstate
+        self.shared(team={'repository': self.TEAM})
+        clone = self.base / 'clone'
+        space = gitstate.Workspace('hub', clone, 'work', 'main', self.TEAM)
+        self.assertEqual(self.told(space), str(clone / 'brands'))
+        # A workspace that is not a checkout of it, or none, says nothing.
+        local = gitstate.Workspace('mine', self.base / 'mine', 'work', 'main', None)
+        self.assertEqual((self.told(local), self.told(None)), ('None', 'None'))
+
+    def test_with_local_storage_it_is_brands_in_the_local_root(self):
+        self.shared(local={'root': str(self.base / 'Studios')})
+        self.assertEqual(self.told(), str(self.base / 'Studios' / 'brands'))
+
+    def test_a_folder_the_person_named_already_is_kept(self):
+        self.shared(local={'root': str(self.base / 'Studios')})
+        os.environ['HARNESS_BRAND_DATA'] = str(self.base / 'their-own')
+        self.assertEqual(self.told(), str(self.base / 'their-own'))
+
+
+class PacksLineTests(unittest.TestCase):
+    """Setup's one line for a Harness Brand that has no brand pack it can use."""
+
+    def setUp(self):
+        holder = tempfile.TemporaryDirectory()
+        self.addCleanup(holder.cleanup)
+        self.home = Path(holder.name).resolve()
+        config = self.home / 'studios-config.json'
+        config.write_text(json.dumps({'schema': 1, 'local': {'root': str(self.home)}}))
+        patches = (mock.patch.dict(os.environ, {'STUDIOS_CONFIG': str(config)}),
+                   mock.patch.object(Path, 'home', return_value=self.home))
+        for patch in patches:
+            patch.start()
+            self.addCleanup(patch.stop)
+        for name in (brand.VARIABLE, 'HARNESS_BRAND_DATA'):
+            os.environ.pop(name, None)
+        self.run = Commands()
+        self.claude = self.home / '.claude' / 'skills'
+        self.harness = skill(self.claude / 'harness-brand', 'harness-brand')
+        self.run.knows(self.harness, 'harness-brand', brands=None, title='Harness Brand')
+
+    def test_a_harness_brand_with_no_brands_folder_is_said_with_the_format(self):
+        from studio_core import brand_data
+        said = brand.packs(self.harness, run=self.run)
+        self.assertEqual(said, brand_data.missing(self.home / 'brands'))
+        self.assertIn('no brands folder at', said)
+        self.assertTrue(said.endswith(brand_data.FORMAT))
+        (self.home / 'brands').mkdir()
+        self.assertIn('holds no brand pack', brand.packs(self.harness, run=self.run))
+        self.assertEqual(sorted(path.name for path in (self.home / 'brands').iterdir()), [],
+                         'nothing is made')
+
+    def test_with_none_chosen_an_installed_harness_brand_is_found_for_the_line(self):
+        self.assertIn('no brands folder at', brand.packs(run=self.run))
+        other = skill(self.claude / 'acme-brand', 'acme-brand')
+        self.run.knows(other, 'acme-brand')
+        self.assertIsNone(brand.packs(run=self.run), 'another skill answers, and is in use')
+
+    def test_another_brand_skill_or_a_harness_brand_with_packs_says_nothing(self):
+        other = skill(self.claude / 'acme-brand', 'acme-brand')
+        self.run.knows(other, 'acme-brand', brands=None, title='Acme Brand')
+        self.assertIsNone(brand.packs(other, run=self.run))
+        self.run.knows(self.harness, 'harness-brand', title='Harness Brand')
+        self.assertIsNone(brand.packs(self.harness, run=self.run))
+
+
 class StandInTests(unittest.TestCase):
     """The stand-in is a made-up brand that behaves as a brand skill does."""
 

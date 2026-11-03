@@ -240,6 +240,23 @@ content. A tab-specific Doc URL selects that tab; a full reference URL visibly
 includes all tabs until the selection is narrowed. Missing tabs never fall back
 to the whole document. Unsupported objects are disclosed as capture limitations.
 
+A Google Slides link is read through Google Drive: the deck is exported as
+PowerPoint, within Marketing Studio's own 40 MB transfer cap, and its text is read slide by slide, in presentation order, from titles, text
+boxes, tables, groups and speaker notes. The Google Slides API is not used, so a
+gcloud sign-in without a quota project reads decks as it reads Docs. Each slide's
+identity is its position and a digest of its text (`slide-3-1a2b3c4d5e6f`), which
+stays the same while the deck is unchanged. Google Drive exports at most 10 MB,
+so upload a very large or image-heavy deck as a PDF instead. Choosing slides reads the deck again,
+and a chosen slide that has moved or changed is refused, never swapped for another.
+A source saved before this change still opens from its stored capture. Changing its
+slide choice maps the earlier Google Slides API identities by position only when
+the deck is still at the Google Drive version it was read at; otherwise the panel
+says so and keeps the earlier capture; removing the source and adding its link
+again includes all slides to choose from. When Google refuses a read, the panel names the cause: an
+API not enabled for the sign-in's project, a sign-in missing Drive access (with
+the `gcloud auth login … --enable-gdrive-access --force --no-activate` command),
+a file this account cannot open, or a deck too large for Drive to export.
+
 “Search for additional external sources” starts unchecked. Approved sites remain
 an optional stricter search boundary, including paths and redirects. A selected
 URL is a reference, not permission to explore its links. Keep unreadable rows by
@@ -255,6 +272,16 @@ located fact correction retries the affected area. An unchanged complete request
 can resume without another assistant request. Changed sources, task permissions
 or ownership cannot adopt an old or late response. A missing terminal observation
 blocks a blind retry; a process cancellation request is never called confirmation.
+
+Each selected or public source is registered in the topic asset as the text that
+investigators are given: one space between words, no trailing spaces and at most
+one blank line, as the studios' worker tools tidy what an assistant reads. The copy
+a kept investigation holds therefore matches the asset inventory that Harness
+Research's dossier check compares it with (#295). Registration runs again on every
+start, so Try again corrects a capture that an earlier version registered untidied;
+kept investigations are reused, and synthesis and review run again. Research whose
+kept investigations already hold the untidied text, as earlier Blog Studio and
+Infographic Studio runs do, keeps that registration so its evidence stays valid.
 
 Progress distinguishes elapsed time from observed active time and total assistant
 time. Overlapping assistants do not multiply wall time, and missing cost remains

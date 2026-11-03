@@ -262,6 +262,16 @@ class SecurityTests(IsolatedHome):
             self.assertEqual(json.loads(body), expected)
         self.assertEqual(shared.read()[0], before)
 
+    def test_installed_brands_are_listed_from_local_storage_s_brands_folder(self):
+        """Marketing Studio has no workspace: with local Git the one folder every studio
+        shares is named to the brand command."""
+        shared.update({'local': {'root': str(self.root / 'Studios')}})
+        expected = {'skills': [], 'problem': None}
+        with mock.patch('studio_core.brand_catalog.choices', return_value=expected) as lookup, \
+                mock.patch('marketing_studio.workspaces.checkouts', return_value=[]):
+            self.assertEqual(self.request('POST', '/api/brands', '{}', self.auth())[0], 200)
+        lookup.assert_called_once_with(None, data=self.root / 'Studios' / 'brands')
+
     def test_real_post_and_restart_keeps_setup(self):
         body = json.dumps({'changes': {'local': {'root': str(self.root / 'work')}}, 'seen': {}})
         self.assertEqual(self.request('POST', '/api/shared', body, self.auth())[0], 200)

@@ -61,6 +61,11 @@ class SharedSetupTests(IsolatedHome):
                 self.assertEqual(self.request(page, 'brands', {})[1], expected)
                 self.assertEqual(self.request(page, 'brands', {'skill': 'relative-folder'})[0], 409)
                 self.assertEqual(self.request(page, 'brands', {'skill': str(self.root / 'brand')})[0], 200)
+            # Shared setup has no workspace: local storage's brands folder is named, and
+            # with a team repository none, as its packs come with the studio's checkout.
+            local = shared.read()[0].get('local', {}).get('root') or '~/Studios'
+            self.assertEqual(lookup.call_args.kwargs['data'],
+                             Path(local).expanduser() / 'brands')
             self.assertEqual(shared.read()[0], before)
 
     def test_standalone_setup_completes_marketing_and_other_studios(self):

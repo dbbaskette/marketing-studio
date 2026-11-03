@@ -3,6 +3,44 @@
 Releases are published from `skills/blog-studio/VERSION`. Each entry says what
 changes for authors first, then what changes for maintainers.
 
+## Unreleased
+
+- **A Google Slides link in the shared source panel now reads (#292).**
+  Decks were read through the Google Slides API, which a gcloud sign-in cannot call
+  without a quota project, so pasting a deck's link failed with "lacks access" even
+  when Google Drive could open it. Now the deck is exported through Google Drive as
+  PowerPoint and its titles, text, tables, groups and speaker notes are read slide by
+  slide, in presentation order. Slide choices, the 1–200 slide limit and the
+  "changed while being read" refusal stay as they were. A source saved earlier still
+  opens from its stored capture; changing its slide choice matches the earlier slides
+  only while the deck is unchanged, and otherwise says so and keeps the earlier
+  capture. When Google refuses, the message says why: an API not enabled for the
+  sign-in's project, a sign-in missing Drive access (with the command to fix it), a
+  file this account cannot open, or a deck larger than the 10 MB Google Drive
+  exports, which is better uploaded as a PDF.
+  Maintainers: `studio_core.pptx_slides` reads the export with `zipfile` and expat
+  (size-capped parts, no DTDs or entities); `google_reference.capture` takes
+  `previous` and `slide_choice` resolves `slide-<n>-<digest>`, `slide-<n>` and
+  earlier identities; `google_api.Client.export_presentation` replaces
+  `presentation`, `slides.googleapis.com` is no longer an allowed destination, and
+  `refusal` reads a 403's `error.status`, `errors[].reason` and `details[].reason`.
+  A failed slide or tab re-choice in `research_sources` now keeps the ready capture.
+
+- **Research sources are kept as tidy text (#295).** Training Studio and
+  Presentation Studio research stopped after synthesis with "capture differs from the
+  accepted asset inventory" when a source had double or trailing spaces or several
+  blank lines, because the source was registered as it came while the assistant read
+  a tidied copy. Every studio now registers and gives the assistant the same tidied
+  text: one space between words, no trailing spaces and at most one blank line. In
+  Blog Studio, new research reads its sources that way; research that already kept
+  checked work from the text as it came keeps it, so nothing is redone.
+  Maintainers: `research_session.Workflow.asset` registers and offers
+  `capture_text(text, kept)`, which is `shared_runner.worker_tools.tidy(text)` unless
+  that source's own kept copies (`kept_copies`, at
+  `sources/collection/<area>/<attempt>/<capture file>`) hold only the untidied text.
+  Intake, the input fingerprint, the research basis and capture file names still come
+  from the text as it came.
+
 ## 4.10.0 — 2026-11-03
 
 - **Released with Marketing Studio 4.6.0.** Installs pin Harness Research 1.1.0 and

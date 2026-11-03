@@ -184,7 +184,7 @@ class SyncConfigTests(unittest.TestCase):
     def test_sample_targets_the_four_repositories_under_the_destination_home(self):
         selected = sync_repos.repositories(self.root, ROOT / 'sync.cfg.sample')
         self.assertEqual([repo.path for repo in selected], [self.home / 'Projects' / name for name in
-                         ('marketing-studio', 'harness-research-skill', 'harness-slides-skill', 'tanzu-brand')])
+                         ('marketing-studio', 'harness-research-skill', 'harness-slides-skill', 'harness-brand-skill')])
         self.assertEqual(len({repo.url for repo in selected}), 4)
         self.assertFalse((self.home / 'Projects').exists())
 

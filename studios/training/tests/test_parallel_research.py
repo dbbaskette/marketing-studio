@@ -1,5 +1,6 @@
 """Production runner transport with fictional evidence and the real pinned helper."""
 import copy
+import hashlib
 import inspect
 import json
 import os
@@ -10,7 +11,11 @@ import unittest
 from runner_support import StudioCase, URL
 from runner import engine as engines, research
 from studio_core import research_contract as contract, research_session as parallel
+from studio_core.shared_runner.worker_tools import tidy
 from synthesis_fixture import TEXT, dossier, review
+
+# Text with double and trailing spaces and three blank lines, as Google Slides can read.
+UNTIDY = 'Overview of  Synthetic  Queues   \n' + TEXT.replace('. More', '.  More') + '  \n\n\n\nDATA TSL \n'
 
 RUNTIME = os.environ.get('STUDIO_TEST_RESEARCH_RUNTIME')
 
@@ -30,7 +35,14 @@ class ParallelNativeTests(StudioCase):
     def worker(self, tools, job):
         payload = json.loads(tools.read_input('research-task')[1])
         self.caps.append(job.limits.dollars)
-        if 'questions' in payload:
+        if 'questions' in payload and getattr(self, 'supplied', False):
+            self.phases.append('investigate')
+            source = next(s for s in tools._index() if s.get('offered'))
+            value = dossier(payload['worker'], source['file'], source['url'], 'selected')
+            value['sources'][0]['original_file'] = source['original']
+            value = {k: value[k] for k in ('schema', 'sources', 'facts')}
+            value['gaps'] = []
+        elif 'questions' in payload:
             self.phases.append('investigate')
             if self.barrier: self.barrier.wait(10)
             self.assertTrue(tools.save_source(URL)[0])
@@ -179,3 +191,58 @@ class ParallelNativeTests(StudioCase):
             second=self.engine.start(form,research_inputs=reference)
         self.assertEqual(first,second)
         self.assertEqual(self.engine._load(Path(first['path']))['research_from'],{'documents':True,'sites':[],'web':False})
+
+    def supplied_start(self, text):
+        """A training researched only from pasted text, untidy as a Google Slides deck reads."""
+        from unittest.mock import patch
+        from runner_support import FORM
+        from runner import pipeline
+        from studio_core import research_sources
+        self.supplied, self.barrier = True, None
+        store = research_sources.Sources(self.engine.space().root / '.research-sources')
+        draft = store.create()
+        draft = store.mutate(draft['id'], draft['revision'], 'capture', kind='text', name='Synthetic deck', text=text)
+        with patch.object(self.engine, 'wake'):
+            started = self.engine.start(pipeline.check_form({**FORM, 'flow': 'desk'}),
+                                        research_inputs={'id': draft['id'], 'expected': draft['revision']})
+        root = Path(started['path'])
+        self.engine.wake(root)
+        return root
+
+    def registered(self, root):
+        entries = json.loads((parallel.case_for(root) / 'sources.json').read_text())['entries']
+        return [entry['capture_sha256'] for entry in entries if entry.get('capture_sha256')]
+
+    def researched(self, root):
+        """The reviewed research bundle. Only research is scripted for these trainings, so
+        a later step may stop; research itself must not."""
+        problem = json.dumps(self.view(root)['problem'])
+        self.assertNotIn('harness-research', problem)
+        self.assertNotIn('capture differs', problem)
+        facts, _ = contract.read_bundle(root / 'research')
+        self.assertTrue(facts['review']['accepted'])
+        return facts
+
+    def test_untidy_supplied_text_passes_the_dossier_check(self):
+        root = self.supplied_start(UNTIDY)
+        facts = self.researched(root)
+        self.assertEqual({source['permission'] for source in facts['sources']}, {'selected'})
+        supplied = self.engine._sources(root, self.engine._load(root))[1][0]['text']
+        self.assertNotEqual(tidy(supplied), supplied, 'The supplied text is not already tidy')
+        self.assertEqual(self.registered(root), [hashlib.sha256(tidy(supplied).encode()).hexdigest()])
+
+    def test_try_again_recovers_a_capture_registered_untidied(self):
+        # #295: an earlier version registered the text as it came, the kept investigations
+        # hold the tidied text the assistant read, and the dossier check refused synthesis.
+        from unittest.mock import patch
+        with patch.object(parallel, 'capture_text', lambda text, kept: text):
+            root = self.supplied_start(UNTIDY)
+        problem = self.view(root)['problem']
+        self.assertIn('capture differs from the accepted asset inventory', json.dumps(problem))
+        self.assertEqual(self.phases[-1], 'synthesize')
+        self.assertIn('investigate', self.phases)
+        self.phases.clear()
+        self.engine.act(root, 'retry')
+        self.researched(root)
+        self.assertEqual(self.phases, ['synthesize', 'review'],
+                         'Try again keeps the investigations; synthesis and review run again')

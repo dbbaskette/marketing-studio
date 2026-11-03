@@ -115,3 +115,21 @@ def connection(identifier, shared):
                   f'its work into {wanted["root"]} and leaves this workspace in place.')
     return {'state': 'disconnected', 'connect': True, 'workspace': found, 'to': to,
             'summary': summary, 'detail': detail}
+
+
+def checkouts():
+    """(repository folder, address) for each studio whose remembered workspace is in a Git
+    checkout with a remote, in the catalog's order: where Marketing Studio, which has no
+    workspace of its own, looks for a team repository's brands folder
+    (studio_core.brand_data.unplaced). The checkout is the nearest folder holding `.git`."""
+    found = []
+    for identifier in catalog.STUDIOS:
+        kept = remembered(identifier)
+        if not kept or not kept.get('repository'):
+            continue
+        root = Path(kept['root'])
+        top = next((folder for folder in (root, *root.parents) if (folder / '.git').exists()),
+                   None)
+        if top is not None:
+            found.append((top, kept['repository']))
+    return found

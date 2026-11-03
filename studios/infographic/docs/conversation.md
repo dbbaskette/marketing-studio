@@ -245,7 +245,13 @@ When a preview names extraction gaps, inspect them before adding
 refresh. The raw and normalized capture, locations and origin revision are immutable;
 adding or replacing a source clears the facts, story, page and approval built from the
 earlier sources, so tell the person and ask first when they exist. Google Docs and Slides links use the existing default Google sign-in. `--account` is optional for a deliberate override; import and delivery do not ask for email. Shared Marketing Studio output selects the initial delivery choice. Google tab/slide selection uses repeated
-`--tab TAB_ID`; leaving it empty includes all tabs. Pasted links do not trigger a fetch.
+`--tab TAB_ID`, or `--tab slide-2` for the second slide of a deck; leaving it empty includes all tabs or slides. Pasted links do not trigger a fetch.
+Google Slides decks are read through Google Drive as a PowerPoint export (titles, text,
+tables, groups and speaker notes, in presentation order), never through the Google
+Slides API. Google Slides API slide IDs (`#slide=id.…`) are no longer accepted as a
+choice: name slides by number instead. When Google refuses a read, the message names
+the cause: a service not enabled for the sign-in's project, a sign-in missing Drive
+access, a file this account cannot open, or a deck larger than Drive exports (10 MB).
 
 `library-browse` lists the shared Document Library and chooses nothing. `library` takes
 a JSON list of `{"id", "revision"}` from it: every revision is checked (present, readable,
