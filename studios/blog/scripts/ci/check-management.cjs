@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 class Element {
   constructor(tag='div'){this.tagName=tag;this.children=[];this.attributes={};this.listeners={};this.hidden=false;this.disabled=false;this.value='';this.textContent='';this.className='';this.dataset={};if(tag==='textarea')Object.defineProperty(this,'type',{get:()=> 'textarea'});}
-  append(...children){this.children.push(...children);for(const child of children)child.parent=this;}
+  append(...given){const children=given.map(child=>{if(typeof child!=='string')return child;const node=new Element('#text');node.textContent=child;return node;});this.children.push(...children);for(const child of children)child.parent=this;}
   get firstElementChild(){return this.children[0]||null;}
   get parentElement(){return this.parent||null;}
   prepend(...children){this.children.unshift(...children);for(const child of children)child.parent=this;}
@@ -19,7 +19,7 @@ class Element {
   removeAttribute(key){delete this.attributes[key];}
   addEventListener(key,fn){this.listeners[key]=fn;}
   querySelector(selector){return this.querySelectorAll(selector)[0]||null;}
-  querySelectorAll(selector){return this.children.flatMap(c=>[...(selector.startsWith('.')&&c.className.split(' ').includes(selector.slice(1))?[c]:selector==='[type=submit]'&&c.type==='submit'?[c]:['button','input','textarea','select'].includes(selector)&&c.tagName===selector?[c]:[]),...c.querySelectorAll(selector)]);}
+  querySelectorAll(selector){return this.children.flatMap(c=>[...(selector.startsWith('.')&&c.className.split(' ').includes(selector.slice(1))?[c]:selector==='[type=submit]'&&c.type==='submit'?[c]:['button','input','textarea','select','summary'].includes(selector)&&c.tagName===selector?[c]:[]),...c.querySelectorAll(selector)]);}
   showModal(){this.open=true;}
   close(){this.open=false;}
   focus(){this.focused=true;}
@@ -132,6 +132,7 @@ async function check(){
   await deskOtherWaysIn();
   await deskPolishStart();
   await geoReportJourney();
+  await activityViews();
   await findTextJourney();
   await deskResearchSites();
   await deskResearchDefault();
@@ -3168,6 +3169,54 @@ function geoReportView(extra={}){
     works:['It defines a retry budget first.'],recommendations:[{n:1,kind:'change',why:'names the subject',help:'The sentence stands on its own.',where:'in the opening',flag:''},{n:2,kind:'faq',label:'FAQ',why:'answers the questions readers ask next',help:'Answers the questions a reader asks next.',where:'before “Next steps”',flag:'Check the facts: this adds a number the post and its sources do not have.'}],advice:'',
     post:[{type:'title',text:'Retry budgets'},{type:'marked',segments:[{t:'text',v:'A budget caps retries. '},{t:'del',v:'It'},{t:'ins',v:'A retry budget'},{t:'text',v:' keeps a service up.'},{t:'note',n:1}],notes:[{n:1,why:'names the subject'}]},{type:'image',name:'chart.png',alt:''},{type:'addition',n:2,kind:'faq',label:'FAQ',heading:'Frequently asked questions',markdown:'**What is it?**\n\nA cap.',note:'From the post.',flag:'Check the facts.'},{type:'heading',level:2,text:'Next steps'},{type:'text',markdown:'Try one route.'}],
     overlaps:[],questions:['what is a retry budget'],sources_needed:[{part:'opening',claim:'A budget caps retries.',kind:'the product documentation',where:'the opening'}],dropped:0,...extra};
+}
+// What the assistant is doing and the Activity log (ui-kit/activity.js), on the run page, the
+// desk, a GEO report and Status. A running job shows its latest line and Show activity; its
+// lines are read only when opened, from the `since`th on; the log is read only when opened.
+async function activityViews(){
+  const asked=[];
+  const worker=(text,count)=>({id:'job1',label:'Writing the draft',started_at:'2026-11-03T10:00:00Z',now:{at:'2026-11-03T10:01:00Z',text},count});
+  const f=fixture(url=>{asked.push(url);
+    if(url.startsWith('/api/activity?')){const q=new URLSearchParams(url.split('?')[1]);
+      if(q.get('job'))return {lines:[{at:'2026-11-03T10:00:30Z',text:'Started on a model'},{at:'2026-11-03T10:01:00Z',text:'Searching the web: retry budgets'}].slice(Number(q.get('since'))),count:2,start:Number(q.get('since')),running:true};
+      if(q.get('entry'))return {id:q.get('entry'),lines:[{at:'2026-11-03T09:00:00Z',text:'Handing back its answer'}],dropped:0};
+      return {jobs:[{id:'e1',label:'Writing the outline',step:'outline',started_at:'2026-11-03T09:00:00Z',ended_at:'2026-11-03T09:02:00Z',outcome:'finished',words:'Finished',steps:1}],running:[],empty:null,limit:200,lines:200};}
+    if(url.startsWith('/api/desk?'))return deskView({activity:[worker('Thinking',1)],working:{id:'j1',kind:'desk-draft',status:'working'}});
+    return {items:[],total:0};});
+  f.loadRunner();f.run(fs.readFileSync('skills/blog-studio/assets/management/activity.js','utf8'));
+  const nodes=()=>descendants(f.get('studio-page')),text=()=>nodes().map(e=>e.textContent).join('|');
+  const stages=[{stage:'draft',label:'Draft',path:'DRAFT.md',status:'pending'}];
+  const found={id:'synthetic',title:'Synthetic blog',status:'working',next:'draft',approval:'page',expected:'v1',enabled:true,directory:'/synthetic',seconds:600,engine:'claude',mode:'write',review_level:'balanced',decisions:[],brief:{goal:'Explain',audience:'Authors'},notes:{},started_at:new Date().toISOString(),stages,activity:[worker('Thinking',1)]};
+  f.set('found',found);f.run("studio.screen='run';studio.id=found.id;sRun(found)");
+  assert.match(text(),/Writing the draft/);assert.match(text(),/Thinking/);assert.match(text(),/Show activity \(1 step\)/);
+  assert.ok(nodes().some(n=>n.className==='card activity-log'),'the run page has the Activity log');
+  // A new line changes only the activity: the page is not drawn again, the job is.
+  const before=f.run('studio.signature'),page=nodes().find(n=>n.className==='intro');
+  f.set('again',{...found,activity:[worker('Searching the web: retry budgets',2)]});
+  assert.equal(f.run('sRunSignature(again)'),before,'a new line alone does not draw the run again');
+  f.run("sActivityUpdate($('studio-page'),again.activity,{id:again.id})");
+  assert.match(text(),/Searching the web: retry budgets/);assert.match(text(),/Show activity \(2 steps\)/);
+  assert.ok(nodes().includes(page),'the rest of the run page stays as it was');
+  // Show activity reads the lines it has not had, for this blog, from the first.
+  const show=nodes().find(n=>n.tagName==='details'&&n.className==='activity-more');show.open=true;await show.listeners.toggle();
+  assert.ok(asked.includes('/api/activity?id=synthetic&job=job1&since=0'),asked.join('|'));
+  // The Activity log is read only once opened.
+  assert.equal(asked.filter(u=>/^\/api\/activity\?id=synthetic$/.test(u)).length,0);
+  const log=nodes().find(n=>n.className==='card activity-log');log.open=true;await log.listeners.toggle();await new Promise(r=>setTimeout(r,0));
+  assert.ok(asked.includes('/api/activity?id=synthetic'),asked.join('|'));
+  assert.match(text(),/Writing the outline/);
+  // The desk shows the job in its column and its Activity log beside the draft.
+  await f.run("sDesk('desk-blog')");
+  assert.match(text(),/Now: |Thinking/);
+  assert.ok(nodes().some(n=>n.className==='card activity-log'),'the desk has the Activity log');
+  // A GEO report that is working shows its job, and its own log.
+  f.set('report',{id:'r'.repeat(32),kind:'geo-report',title:'Retry budgets',url:'',status:'working',activity:[worker('Thinking',1)],works:[],recommendations:[],questions:[],sources_needed:[]});
+  f.run("studio.screen='geo-report';studio.geoReport={id:report.id,view:report};sGeoReportRender(studio.geoReport)");
+  assert.match(text(),/Thinking/);
+  assert.equal(nodes().filter(n=>n.className==='card activity-log').length,1);
+  // Status has the Activity log of work for no blog.
+  f.run("studio.settings={workspace:'/synthetic'};studio.listing=[];sStatusPage()");
+  assert.ok(nodes().some(n=>n.className==='card activity-log'),'Status has the workspace Activity log');
 }
 async function geoReportJourney(){
   const created=[];let googleSent=0;
