@@ -47,6 +47,11 @@ def doc_id(value):
 
 
 def extract_presentation(presentation, selected=None):
+    """Text, locations and warnings of the chosen slides, from the slide model.
+
+    The model is the Google Slides API's shape, which `pptx_slides.slides` builds from
+    a Google Drive PowerPoint export, so stored captures keep their shape.
+    """
     slides = presentation.get("slides", [])
     require(
         isinstance(slides, list) and 0 < len(slides) <= 200,
