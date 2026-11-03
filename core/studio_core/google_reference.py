@@ -4,6 +4,13 @@ import json
 import re
 from urllib.parse import urlsplit, parse_qs
 from studio_core.google_api import Client, DOC_MIME, SLIDES_MIME, GoogleError
+from studio_core import pptx_slides
+
+LEGACY = ("These slide choices were saved with Google's earlier slide identities, and the deck "
+          "has changed since, so they can't be matched to its slides safely. Read the link again "
+          "to include all slides, then choose slides again.")
+MOVED = ("A selected slide changed or moved since the deck was read. Read the link again to "
+         "include all slides, then choose slides again.")
 
 
 def require(value, message):
@@ -259,7 +266,64 @@ def tabs_of(document):
     return result or [{'id': 'body', 'title': 'Document'}]
 
 
-def capture(url, *, account=None, selected=None, client=None):
+def slide_choice(slides, selected, *, version=None, previous=None):
+    """The current identities of the chosen slides, or a refusal; never a guess.
+
+    `selected` holds identities from an earlier read of this deck (`slide-<n>-<digest>`,
+    which must still name the same position and text), `slide-<n>` for slide n of the
+    deck as read now, or, for a source saved before decks were read through Google Drive,
+    Google Slides API object IDs. Those are matched by position only when `previous`
+    gives that earlier read's slide order and Google Drive version, and the deck is still
+    at that version with the same number of slides.
+    """
+    if selected is None:
+        return None
+    require(
+        isinstance(selected, list)
+        and 0 < len(selected) <= pptx_slides.MOST_SLIDES
+        and len(set(selected)) == len(selected)
+        and all(isinstance(i, str) and 0 < len(i) <= 200 for i in selected),
+        "Choose distinct slide identities or include all slides.",
+    )
+    current = [slide["objectId"] for slide in slides]
+    earlier = previous.get("slides") if isinstance(previous, dict) else None
+    if (
+        isinstance(earlier, list)
+        and all(isinstance(i, str) for i in earlier)
+        and len(set(earlier)) == len(earlier)
+        and set(selected) <= set(earlier)
+        and not set(selected) & set(current)
+        and not any(pptx_slides.IDENTITY.fullmatch(i) for i in earlier)
+    ):
+        require(
+            previous.get("version") is not None
+            and previous.get("version") == version
+            and len(earlier) == len(current),
+            LEGACY,
+        )
+        return [current[earlier.index(i)] for i in selected]
+    chosen = []
+    for item in selected:
+        position = pptx_slides.POSITION.fullmatch(item)
+        if item in current:
+            chosen.append(item)
+        elif position:
+            require(int(position.group(1)) <= len(current),
+                    "This deck has " + str(len(current)) + " slides; choose slides it has.")
+            chosen.append(current[int(position.group(1)) - 1])
+        else:
+            require(False, MOVED if pptx_slides.IDENTITY.fullmatch(item) else LEGACY)
+    require(len(set(chosen)) == len(chosen), "Choose each slide once.")
+    return chosen
+
+
+def capture(url, *, account=None, selected=None, client=None, previous=None):
+    """Read one Google Docs or Google Slides link, keeping only the chosen tabs or slides.
+
+    A deck is exported through Google Drive as PowerPoint and read here; the Google
+    Slides API is never called. `previous`, for a deck, is the earlier read's
+    `{"version", "slides"}`, used only to match choices saved before that change.
+    """
     kind, ident = google_reference(url)
     pinned = tab_of(url) if kind == 'document' else None
     if selected is None and pinned is not None:
@@ -269,12 +333,18 @@ def capture(url, *, account=None, selected=None, client=None):
     require(before.get('id') == ident and before.get('mimeType') == (DOC_MIME if kind == 'document' else SLIDES_MIME)
             and not before.get('trashed') and before.get('capabilities', {}).get('canDownload') is True,
             'This account cannot capture this Google document. Check access or upload a permitted copy.')
-    native = client.document(ident) if kind == 'document' else client.presentation(ident)
-    require(native.get('documentId' if kind == 'document' else 'presentationId') == ident,
-            'Google returned a different document identity.')
-    choices = tabs_of(native) if kind == 'document' else [
-        {'id': slide.get('objectId'), 'title': 'Slide ' + str(i)} for i, slide in enumerate(native.get('slides', []), 1)]
-    extracted, snapshot = (extract_document if kind == 'document' else extract_presentation)(native, selected)
+    if kind == 'document':
+        native = client.document(ident)
+        require(native.get('documentId') == ident, 'Google returned a different document identity.')
+        choices = tabs_of(native)
+        extracted, snapshot = extract_document(native, selected)
+    else:
+        native = pptx_slides.slides(client.export_presentation(ident))
+        choices = [{'id': slide['objectId'], 'title': 'Slide ' + str(i)}
+                   for i, slide in enumerate(native['slides'], 1)]
+        chosen = slide_choice(native['slides'], selected, version=before.get('version'), previous=previous)
+        extracted, snapshot = extract_presentation(native, chosen)
+        extracted['extractor'] = 'google-slides-drive-pptx-v1'
     after = client.file(ident)
     require(before.get('version') and before.get('modifiedTime') and all(before.get(k) == after.get(k)
             for k in ('id', 'version', 'modifiedTime', 'mimeType', 'trashed', 'capabilities')),

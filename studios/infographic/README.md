@@ -62,7 +62,8 @@ Brand add-ons may have their own prerequisites. Nothing installs them automatica
    Infographic Studio keeps its own local workspace.
 2. **Choose New infographic and Add information.** Paste text, upload text,
    Markdown, PDF, Word or HTML files, select CSV rows/columns, or read a Google Doc,
-   Google Slides or a public HTTPS page. Review captured text and extraction gaps.
+   Google Slides (read through Google Drive) or a public HTTPS page. Review captured
+   text and extraction gaps.
    Picture-only PDFs need a readable text copy; Word intake means `.docx`.
 3. **Save the brief and choose a story.** Set the audience, takeaway, must-show
    information and page size. Planning uses your captured evidence. Choose the

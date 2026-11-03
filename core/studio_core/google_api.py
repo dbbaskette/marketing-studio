@@ -1,4 +1,8 @@
-"""Small fixed-destination Google Drive/Docs transport using explicit existing gcloud login."""
+"""Small fixed-destination Google Drive/Docs transport using explicit existing gcloud login.
+
+Google Slides decks are read as a Drive PowerPoint export, never through the Slides
+API, which a gcloud sign-in cannot call without a quota project.
+"""
 
 from __future__ import annotations
 
@@ -15,7 +19,23 @@ import urllib.request
 DOC_MIME = "application/vnd.google-apps.document"
 SLIDES_MIME = "application/vnd.google-apps.presentation"
 DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+PPTX_MIME = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
 LIMIT = 40_000_000
+ERROR_LIMIT = 65_536
+SERVICES = {
+    "slides.googleapis.com": "the Google Slides API",
+    "docs.googleapis.com": "the Google Docs API",
+    "drive.googleapis.com": "the Google Drive API",
+}
+SCOPE_REASONS = {"ACCESS_TOKEN_SCOPE_INSUFFICIENT", "insufficientPermissions"}
+DISABLED_REASONS = {"SERVICE_DISABLED", "accessNotConfigured", "USER_PROJECT_DENIED"}
+NO_PERMISSION_REASONS = {
+    "forbidden",
+    "cannotExportFile",
+    "insufficientFilePermissions",
+    "appNotAuthorizedToFile",
+}
+RATE_REASONS = {"rateLimitExceeded", "userRateLimitExceeded", "RATE_LIMIT_EXCEEDED"}
 EMAIL = re.compile(r"[^@\s/]{1,64}@[^@\s/]{1,180}\.[^@\s/]{1,60}\Z")
 
 
@@ -116,6 +136,70 @@ def access_token(selected=None, *, run=subprocess.run, which=shutil.which):
     return value
 
 
+def refusal(body, selected=None):
+    """A precise sentence for Google's 403 error body, or None for an unknown reason.
+
+    Only Google's fixed reason codes and a validated service host are read; no
+    token, message text or raw response goes into the sentence.
+    """
+    try:
+        error = json.loads(bytes(body[:ERROR_LIMIT]).decode("utf-8")).get("error")
+    except (TypeError, ValueError, UnicodeError, AttributeError):
+        return None
+    if not isinstance(error, dict):
+        return None
+    status = error.get("status") if isinstance(error.get("status"), str) else ""
+    items = [
+        item
+        for key in ("errors", "details")
+        if isinstance(error.get(key), list)
+        for item in error[key][:50]
+        if isinstance(item, dict)
+    ]
+    reasons = {item.get("reason") for item in items if isinstance(item.get("reason"), str)}
+    said = error.get("message") if isinstance(error.get("message"), str) else ""
+    if reasons & SCOPE_REASONS:
+        email = selected if isinstance(selected, str) and EMAIL.fullmatch(selected) else "you@example.com"
+        return (
+            "This Google sign-in was not given the access this needs. Sign in again with "
+            "Drive access by running `gcloud auth login " + email
+            + " --enable-gdrive-access --force --no-activate` in a terminal, then try again."
+        )
+    if reasons & DISABLED_REASONS or "quota project" in said.lower():
+        hosts = [
+            item["metadata"].get("service")
+            for item in items
+            if isinstance(item.get("metadata"), dict)
+        ]
+        host = next(
+            (
+                value
+                for value in hosts
+                if isinstance(value, str)
+                and re.fullmatch(r"[a-z0-9-]{1,60}\.googleapis\.com", value)
+            ),
+            None,
+        )
+        service = SERVICES.get(host, host or "this Google service")
+        return (
+            "Google has not enabled " + service + " for the sign-in's project, so it refused this request."
+            + ("" if host == "drive.googleapis.com" else " Reads through Google Drive are unaffected.")
+        )
+    if "exportSizeLimitExceeded" in reasons:
+        return (
+            "This file is larger than Google Drive can export (10 MB). Download it as a "
+            "PowerPoint or PDF file and upload that copy instead."
+        )
+    if reasons & RATE_REASONS:
+        return "Google is limiting requests. Keep the saved intent and retry an explicit read later."
+    if reasons & NO_PERMISSION_REASONS or status == "PERMISSION_DENIED":
+        return (
+            "This Google account cannot open this file. Ask its owner to share it with "
+            "this account, or upload a copy instead."
+        )
+    return None
+
+
 class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         return None
@@ -150,10 +234,6 @@ def fixed_url(value):
         or (
             parsed.netloc == "docs.googleapis.com"
             and parsed.path.startswith("/v1/documents/")
-        )
-        or (
-            parsed.netloc == "slides.googleapis.com"
-            and parsed.path.startswith("/v1/presentations/")
         )
     )
     decoded = urllib.parse.unquote(parsed.path)
@@ -241,7 +321,7 @@ class Client:
                     uncertain=method != "GET",
                 )
             if not 200 <= response.status < 300:
-                self.refuse(response.status, method)
+                self.refuse(response.status, method, response.data, account=self.account)
             if not json_result:
                 return response
             value = json.loads(response.data)
@@ -249,7 +329,13 @@ class Client:
                 raise ValueError("shape")
             return value
         except urllib.error.HTTPError as failure:
-            self.refuse(failure.code, method)
+            try:
+                body = failure.read(ERROR_LIMIT)
+            except (OSError, ValueError):
+                body = b""
+            finally:
+                failure.close()
+            self.refuse(failure.code, method, body, account=self.account)
         except GoogleError:
             raise
         except (OSError, ValueError, UnicodeError):
@@ -259,7 +345,7 @@ class Client:
             ) from None
 
     @staticmethod
-    def refuse(status, method):
+    def refuse(status, method, body=b"", *, account=None):
         message = {
             401: "Google sign-in expired for the selected account.",
             403: "The selected Google account lacks access, download permission or the required API scope.",
@@ -269,6 +355,8 @@ class Client:
             status,
             "Google refused this transfer. Existing local work and deliveries are kept.",
         )
+        if status == 403:
+            message = refusal(body, account) or message
         raise GoogleError(
             message,
             status=status,
@@ -292,10 +380,15 @@ class Client:
             + "?includeTabsContent=true"
         )
 
-    def presentation(self, file_id):
+    def export_presentation(self, file_id):
+        """The deck as PowerPoint bytes through Drive; the Slides API is never called."""
         return self.request(
-            "https://slides.googleapis.com/v1/presentations/" + identifier(file_id)
-        )
+            "https://www.googleapis.com/drive/v3/files/"
+            + identifier(file_id)
+            + "/export?"
+            + urllib.parse.urlencode({"mimeType": PPTX_MIME}),
+            json_result=False,
+        ).data
 
     def find_delivery(self, request_key):
         identifier(request_key)

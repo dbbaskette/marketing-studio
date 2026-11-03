@@ -240,6 +240,23 @@ content. A tab-specific Doc URL selects that tab; a full reference URL visibly
 includes all tabs until the selection is narrowed. Missing tabs never fall back
 to the whole document. Unsupported objects are disclosed as capture limitations.
 
+A Google Slides link is read through Google Drive: the deck is exported as
+PowerPoint (within Drive's 40 MB transfer cap; Google itself exports at most 10 MB)
+and its text is read slide by slide, in presentation order, from titles, text
+boxes, tables, groups and speaker notes. The Google Slides API is not used, so a
+gcloud sign-in without a quota project reads decks as it reads Docs. Each slide's
+identity is its position and a digest of its text (`slide-3-1a2b3c4d5e6f`), which
+stays the same while the deck is unchanged. Choosing slides reads the deck again,
+and a chosen slide that has moved or changed is refused, never swapped for another.
+A source saved before this change still opens from its stored capture. Changing its
+slide choice maps the earlier Google Slides API identities by position only when
+the deck is still at the Google Drive version it was read at; otherwise the panel
+says so and keeps the earlier capture, and reading the link again includes all
+slides to choose from. When Google refuses a read, the panel names the cause: an
+API not enabled for the sign-in's project, a sign-in missing Drive access (with
+the `gcloud auth login … --enable-gdrive-access --force --no-activate` command),
+a file this account cannot open, or a deck too large for Drive to export.
+
 “Search for additional external sources” starts unchecked. Approved sites remain
 an optional stricter search boundary, including paths and redirects. A selected
 URL is a reference, not permission to explore its links. Keep unreadable rows by
