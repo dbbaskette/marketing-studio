@@ -65,6 +65,14 @@ Research. Missing prerequisites are shown before the work that needs them.
    creates the Google Slides link or PowerPoint result. Later changes produce a
    new delivery revision; the original source deck is never overwritten.
 
+The start, drawn. Filled boxes are your decisions or input, tinted boxes are
+assistant work and grey boxes are Presentation Studio's own steps.
+
+![Presentation Studio start and slide text workflow: open Presentation Studio, with shared setup the first time. New deck starts from an idea, a document or an existing deck. The assistant reads the material and researches only if Research first is ticked, then drafts the titles, words and speaker notes. At Review slide text you fix words where they are, or Ask for changes, which redrafts the slide text and returns. Approve text & design deck starts the design from that text.](docs/assets/presentation-studio-workflow-text.svg)
+
+An existing deck at Brand only, Polish, Redesign, keep content or Selected changes
+has no slide text to approve; its changes are made on a copy of the deck.
+
 ## Choose how much an existing deck may change
 
 | Level | What may change |
@@ -96,6 +104,12 @@ slide restoration; it patches a copy of the original deck.
   timing. Apply or skip proposed changes yourself.
 - **Sources:** add files, text or a Document Library revision without silently
   rerunning research. Research updates are separate, explicit actions.
+
+Design to delivery, drawn the same way:
+
+![Presentation Studio design, refine and deliver workflow: the brand draws one sample slide in each look. Pick the look only if you chose to, then Draw the deck in this look. The assistant designs the deck with Harness Slides in your brand. On the desk you change words and notes and use Finishing; Redraw slide N redraws that slide's section and returns. Deliver sends Google Slides or a PowerPoint file, and Delivered offers Open or Download revision N. A note or an edit after delivery makes the next revision on the desk.](docs/assets/presentation-studio-workflow-deck.svg)
+
+Saved decks that keep their older step-by-step review are not drawn here.
 
 After delivery, deck text and an available matching PDF can be kept in the shared
 local Document Library. If the PDF cannot be kept, the page explains why rather than

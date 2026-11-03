@@ -90,6 +90,18 @@ class ReadmeGraphicsTests(unittest.TestCase):
         boxes, _, _ = diagrams.layout(nodes, edges)
         self.assertEqual(diagrams.problems(boxes, edges), ['a to c crosses b'])
 
+    def test_every_diagram_appears_in_the_graphics_notes_and_a_studio_document(self):
+        notes = (ROOT / 'docs/assets/readme-graphics.md').read_text(encoding='utf-8')
+        for path in diagrams.built():
+            name = Path(path).name
+            with self.subTest(diagram=name):
+                self.assertIn(path, notes)
+                studio = ROOT / Path(path).parents[2]
+                shown = [doc for doc in [studio / 'README.md', *studio.glob('docs/*.md')]
+                         if f'docs/assets/{name})' in doc.read_text(encoding='utf-8')
+                         or f'assets/{name})' in doc.read_text(encoding='utf-8')]
+                self.assertTrue(shown, f'{name} is not shown in its studio documents')
+
 
 if __name__ == '__main__':
     unittest.main()

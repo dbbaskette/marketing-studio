@@ -64,6 +64,11 @@ workspaces, settings and unrelated skills are preserved.
    Copy, download or choose a Google action yourself. Marking a blog as published
    records your decision; it does not publish to a website.
 
+The start, drawn. Filled boxes are your decisions or input, tinted boxes are
+assistant work and grey boxes are Blog Studio's own steps.
+
+![Blog Studio start and write workflow: open Blog Studio, with shared setup the first time. New blog takes the idea and sources, then Writing preferences sets length, tone and an optional GEO review. The assistant researches, outlines and drafts with nothing needed from you, runs the GEO review only if you included it, and the draft opens on the desk for reading, Edit section or Full desk. Alternatively, Edit or polish a draft takes pasted text, an upload, a Google Doc or a link; What should happen first chooses the first pass, the assistant runs it (spelling, feedback, GEO or a reshape), and the draft opens on the same desk.](docs/assets/blog-studio-workflow-write.svg)
+
 ## Finish without losing your voice
 
 **Polish** opens Review mode for marked copy edits. A voice guide and Humanize can
@@ -79,6 +84,12 @@ Assistant-backed tools start only when requested; proposals wait for your decisi
 **Voice guides** describe how writing should sound. Write one yourself or learn
 one from samples, then apply it deliberately. Older author-profile tools remain
 under Advanced. Sources used as writing examples supply style, not factual evidence.
+
+Finishing and sending, drawn the same way:
+
+![Blog Studio finish and send workflow: on the desk you edit, add notes or select a passage, and Revise the draft rewrites a section or the whole draft and returns. Finishing tools propose copy edits, fact checks and reader aids, and each proposal waits for Apply, Edit or Skip. The pre-publish check reports headings, links and evidence without an assistant, and Run GEO review says when the review is out of date. Send to Google Doc sends the changes as suggestions, or you copy or download the post; Bring accepted changes brings the owner's accepted text back onto the desk. Mark as published records where it went.](docs/assets/blog-studio-workflow-finish.svg)
+
+Blogs started before the desk keep their older step-by-step run, which is not drawn here.
 
 [Full desk and tool guide](docs/runner.md) · [Voice walkthrough](docs/new-user-guide.md)
 
@@ -147,6 +158,10 @@ Settings) asks your assistant where the page gets its text:
 
 The address is remembered for that site on this computer, so the next post there
 reads straight away.
+
+The GEO report, drawn the same way:
+
+![Blog Studio GEO report workflow: choose Get a GEO report for a published post from Home or New blog, give the Link to the published post and choose Read the page. Get the GEO report runs one assistant job and changes nothing else. Use the report to download it, make a Google Doc of suggestions or edit the post on the desk; Run again makes a new report that says what changed since the last one.](docs/assets/blog-studio-workflow-geo-report.svg)
 
 [GEO review and reader aids](docs/runner.md#finishing) ·
 [GEO report](docs/runner.md#geo-report-for-a-published-post)
