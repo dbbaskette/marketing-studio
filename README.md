@@ -14,7 +14,7 @@ You decide what is ready, what goes to Google, and what is shared.
 
 | Studio | Bring | Make and refine |
 | --- | --- | --- |
-| [Blog Studio](studios/blog/README.md) | A topic, outline, draft or Google Doc | Blogs, copy edits, voice-guided revisions and suggestions for the original author |
+| [Blog Studio](studios/blog/README.md) | A topic, outline, draft, Google Doc or published post's link | Blogs, copy edits, voice-guided revisions, suggestions for the original author, and GEO reviews and reports for clarity in AI search |
 | [Presentation Studio](studios/presentation/README.md) | An idea, document or existing deck | A branded slide deck, with slide text approval before design and focused changes afterward |
 | [Training Studio](studios/training/README.md) | A topic, audience and reference material | A teaching plan, learner guides, briefs, slides and practice at levels 101–401 |
 | [Infographic Studio](studios/infographic/README.md) | Documents, notes, links or measured data | A visual page with editable labels and charts, optional artwork and approved exports |
@@ -66,7 +66,9 @@ changing defaults does not move a workspace. Setup starts no assistant work.
 ### 3. Start a project
 
 - **Blog Studio:** start a new blog or choose **Edit or polish a draft**. Review
-  marked changes, edit a section, or use the full desk and Finishing tools.
+  marked changes, edit a section, or use the full desk and Finishing tools. To review a
+  post for readers and AI search, tick **Include a GEO review**. For a post that is already
+  live, choose **Get a GEO report for a published post**.
 - **Presentation Studio:** choose an idea, document or existing deck. Where a slide
   text review is required, choose **Approve text & design deck** before design starts.
   Refine the designed slides and choose **Deliver** yourself.
