@@ -1521,7 +1521,7 @@ class PageFileTests(unittest.TestCase):
         page = self.read('index.html')
         # The deck panels are the shared core's, served beside the page from its own origin.
         self.assertEqual(sorted(re.findall(r'(?:src|href)="([^"]*)"', page)),
-                         ['#main', 'app.js', 'deck-panels.css', 'deck-panels.js',
+                         ['#main', 'activity.js', 'app.js', 'deck-panels.css', 'deck-panels.js',
                           'drafting.js', 'drafts.js', 'library.js', 'lists.js', 'markdown.js', 'research.js',
                           'style.css'])
         # The list kit is the shared core's, loaded after the deck panels and before app.js,
@@ -4632,7 +4632,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         result = self.run_page(answers, [
             {'snapshot': 'home'},
             {'click': 'Open Rolling restarts'}, {'snapshot': 'working'},
-            {'click': 'What it did just before'},
+            {'click': 'Show activity (3 steps)'},
             {'poll': True}, {'snapshot': 'waiting'},
             {'poll': True}, {'snapshot': 'failed'},
             {'click': 'Try the research again'}, {'snapshot': 'again'},
@@ -4661,10 +4661,14 @@ class RunnerScreenTests(ScriptedPage, PageCase):
                         run['text'].index('All production steps'))
         self.assertLess(run['text'].index('Working now'),
                         run['text'].index('All production steps'))
-        # What a worker did before is there to open, and not in the way.
-        self.assertNotIn('Listed what to ask', run['text'].split('What it did just before')[0])
-        for action in ('Back', 'Pause', 'Stop', 'What it did just before'):
+        # What a worker did so far is there to open, and not in the way: its latest line is
+        # what it is doing now.
+        self.assertIn('Now: Drafting question 4', run['text'])
+        self.assertNotIn('Listed what to ask', run['text'].split('Show activity (3 steps)')[0])
+        for action in ('Back', 'Pause', 'Stop', 'Show activity (3 steps)'):
             self.assertIn(action, run['buttons'])
+        # The Activity log is there to open, after the work in progress.
+        self.assertTrue(any(name.startswith('Activity log') for name in run['buttons']))
         self.assertEqual((run['working'], run['pace']), (0, 2000),
                          'the production log is collapsed; live worker text remains visible')
         self.assertEqual(set(run['beads']) - {'done', 'current', 'none'}, set())
@@ -7045,6 +7049,70 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
             self.assertIn(text, shown['text'])
         self.assertIn('Stop', result['snapshots']['stop']['text'])
         self.assertFalse(self.posts(result), 'Opening Stop asks without starting another job')
+
+    def test_the_plan_screen_says_what_the_assistant_is_doing_during_research(self):
+        # Collecting evidence on the plan screen, with one investigator: its "Now:" line, and
+        # Show activity with every line so far, newest first, each with its time (#294). The
+        # shared research panel draws the same lines (tests/activity_page_check.js); here the
+        # desk's own progress band does, as it does for any job.
+        progress = {'phase': 'investigate', 'agents': {'count': 1, 'active': []}, 'streams': [
+            {'id': 'area1', 'questions': ['Capacity and constraints'], 'status': 'working'}]}
+        lines = [{'at': f'2030-01-02T03:04:0{n}Z', 'text': text}
+                 for n, text in enumerate(['Started', 'Looking at what it was given',
+                                           'Searching the web: rolling restart capacity'])]
+        worker = {'id': 'research:investigate-1-area1', 'label': 'Investigating research area 1',
+                  'started_at': '2030-01-02T03:04:00Z', 'now': lines[-1], 'lines': lines,
+                  'count': 3}
+        run = a_desk_run()
+        run['body'].update(research_progress=progress, workers=[worker],
+                           timing={'elapsed_seconds': 540, 'active_seconds': 480,
+                                   'assistant_seconds': 480})
+        logged = {'jobs': [{'id': 'j1', 'label': 'Drafting the research plan',
+                            'step': 'research-plan', 'started_at': '2030-01-02T02:50:00Z',
+                            'ended_at': '2030-01-02T02:55:00Z', 'outcome': 'finished',
+                            'words': 'Finished', 'lines': [
+                                {'at': '2030-01-02T02:51:00Z', 'text': 'Handing back research-plan'}],
+                            'dropped': 0},
+                           {'id': 'j0', 'label': 'Drafting the research plan',
+                            'step': 'research-plan', 'started_at': '2030-01-02T02:40:00Z',
+                            'ended_at': '2030-01-02T02:49:00Z', 'outcome': 'timeout',
+                            'words': 'Out of time', 'detail': 'It did not finish in 600 seconds.',
+                            'lines': [], 'dropped': 0}],
+                  'running': [worker], 'empty': None, 'limit': 200, 'lines': 200}
+        answers = self.on_desk(a_desk(), run, **{'GET /api/activity': [ok(logged)]})
+        result = self.open_desk(answers, [
+            {'snapshot': 'working'}, {'click': 'Show activity (3 steps)'}, {'snapshot': 'shown'},
+            {'poll': True}, {'snapshot': 'again'},
+            {'click': 'Activity logWhat the assistant did in each job, newest first'},
+            {'snapshot': 'log'}])
+        shown = result['snapshots']
+        working = shown['working']['text']
+        for text in ('Investigating', 'Investigating research area 1',
+                     'Now: Searching the web: rolling restart capacity'):
+            self.assertIn(text, working)
+        self.assertIn('Show activity (3 steps)', shown['working']['buttons'])
+        # Opened, it lists every line newest first; a refresh keeps it open.
+        for name in ('shown', 'again'):
+            text = shown[name]['text']
+            at = [text.index(line['text'], text.index('Show activity')) for line in lines[1:]]
+            self.assertGreater(at[0], at[1], 'newest first')
+            self.assertIn('Started', text.split('Show activity (3 steps)')[1])
+        # The Activity log reads the log when it is opened, newest first, with each outcome.
+        self.assertEqual(self.asked(result, 'activity'), ['/api/activity?' + urlencode({'path': str(self.root)})])
+        log = shown['log']['text'].split('Activity log')[-1]
+        for text in ('Working now', 'Finished', 'Out of time', 'Refresh'):
+            self.assertIn(text, log)
+        self.assertLess(log.index('Finished'), log.index('Out of time'))
+        self.assertFalse(self.posts(result), 'Reading activity starts nothing')
+
+    def test_a_training_with_no_activity_says_so_in_its_log(self):
+        answers = self.on_desk(a_desk(), None, **{'GET /api/activity': [ok({
+            'jobs': [], 'running': [], 'empty': 'No activity recorded yet.', 'limit': 200,
+            'lines': 200})]})
+        result = self.open_desk(answers, [
+            {'click': 'Activity logWhat the assistant did in each job, newest first'},
+            {'snapshot': 'log'}], narrow=True)
+        self.assertIn('No activity recorded yet.', result['snapshots']['log']['text'])
 
     def test_finishing_toolbar_opens_tools_and_applies_a_note_without_a_job(self):
         self.editing = 'Guide'

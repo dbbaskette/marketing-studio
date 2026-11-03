@@ -5472,7 +5472,7 @@ async function downloadDeck(run, pressed, revision) {
 // --- one deck: cost and workers ------------------------------------------------------------
 
 function workerItem(worker) {
-  const lines = list(worker.lines);
+  const lines = list(worker.lines).map((line) => (typeof line === 'string' ? line : line.text));
   const item = add(make('li', 'worker'), add(make('div', 'computer-top'),
     make('p', 'row-title', worker.label),
     add(make('span', 'quiet'), 'Started ', when(worker.started_at))));
@@ -5487,10 +5487,25 @@ function workerItem(worker) {
   return item;
 }
 
+// What each assistant job now is doing: its latest line, and Show activity with every line so
+// far (ui-kit/activity.js). Without the shared piece, the older short list.
 function workersCard(run) {
+  if (typeof StudioActivity !== 'undefined') return add(card('Assistant jobs now'), StudioActivity.live(run.workers));
   const items = make('ul', 'plain workers');
   for (const worker of list(run.workers)) items.append(workerItem(worker));
   return add(card('Assistant jobs now'), items);
+}
+
+// The deck's Activity log: each assistant job that ended, newest first, with what it did. It
+// is read when the person opens it, while the deck is made and after it is finished or stops.
+function activityLogCard(path) {
+  if (typeof StudioActivity === 'undefined' || !path) return null;
+  return StudioActivity.logCard({ key: 'activity-log ' + path, load: () => ask('activity', { path }) });
+}
+
+// Whether the research panel is on the screen, with the assistants it shows.
+function researching(run) {
+  return Boolean(run.research_progress && typeof StudioResearch !== 'undefined');
 }
 
 function costCard(run) {
@@ -6098,10 +6113,11 @@ function paintDeck(fresh) {
     gate ? ['gate', [gate, read, narrow() ? lead : '', Boolean(view.sheet), brandsFound()],
       () => gatePanel(run)] : null,
     noting(run) ? ['note', [run.note, run.state, read], () => notePart(run)] : null,
-    run.research_progress && typeof StudioResearch !== 'undefined' ? ['research-progress', run.research_progress, () => StudioResearch.progress(run.research_progress)] : null,
+    researching(run) ? ['research-progress', [run.research_progress, run.workers], () => StudioResearch.progress(run.research_progress, { workers: run.workers })] : null,
     run.build_progress ? ['build-progress', run.build_progress,
       () => buildProgressCard(run.build_progress)] : null,
-    list(run.workers).length ? ['workers', run.workers, () => workersCard(run)] : null,
+    // The research panel shows its own assistants; any other work shows them here.
+    list(run.workers).length && !researching(run) ? ['workers', run.workers, () => workersCard(run)] : null,
     ['timeline', [run.timeline, gate && gate.name, run.ahead], () => timelinePart(run)],
     run.deliver ? ['deliver', [run.deliver, run.contactSheet, read, view.downloading],
       () => deliverPart(run)] : null,
@@ -6111,6 +6127,7 @@ function paintDeck(fresh) {
     ['cost', [run.spent, run.agent, run.model, run.effort, view.setup && view.setup.limits],
       () => costCard(run)],
     ['steps', [run.timeline], () => stepsCard(run)],
+    ['activity-log', [view.path], () => activityLogCard(view.path)],
     ['saved-details', [run.path, run.build_feedback, run.note], () => savedDetails(run)],
     ['troubleshooting', [run.model_jobs, run.build_timing], () => troubleshootingDetails(run)],
     // What this computer runs for a team can be handed over, for anyone to take.
@@ -7769,6 +7786,7 @@ function deskParts() {
     state, button, capsule, chip, field, refuse, choice, explained, segmented, pickCard, oneOf,
     moreMenu, submitButton, alertLine, problemLine, say, outLink, pageHead, focusKey, byId,
     send, ask, toast, dropToast, deckToast, notify, show, refresh, placeParts, fit, tidyPictures, pager, slideName,
+    workersCard, activityLogCard,
     // A slide's picture, fetched with this page's key and held in memory: `image` is what the
     // server names it by, and `mark` changes when a newer one is drawn.
     picture: (image, alt, mark) => pictureAt(pictureOf(view.path, image), alt, mark),

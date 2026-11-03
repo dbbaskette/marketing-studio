@@ -815,10 +815,16 @@ function measuredTime(run) {
   return make('p', 'quiet measured-time', parts.join(' · '));
 }
 
+// Whether the research panel is on the screen, with the workers it shows.
+function researching(run) {
+  return Boolean(run.research_progress && run.research_progress.phase !== 'complete'
+    && typeof StudioResearch !== 'undefined');
+}
+
 function researchActivity(run, controls = null) {
   const research = run.research_progress;
   if (!research || research.phase === 'complete') return null;
-  if (typeof StudioResearch !== 'undefined') return StudioResearch.progress(research, {timing: run.timing, controls});
+  if (typeof StudioResearch !== 'undefined') return StudioResearch.progress(research, {timing: run.timing, controls, workers: run.workers});
   const names = { investigate: 'Investigating', synthesize: 'Combining findings', review: 'Independent check' };
   const node = add(card(names[research.phase] || 'Research'),
     make('p', 'quiet', 'Completed research areas are kept for retry.'));
@@ -5590,7 +5596,7 @@ function tickSteps(run) {
 }
 
 function workerItem(worker) {
-  const lines = list(worker.lines);
+  const lines = list(worker.lines).map((line) => (typeof line === 'string' ? line : line.text));
   const item = add(make('li', 'worker'), add(make('div', 'computer-top'),
     make('p', 'row-title', worker.label),
     add(make('span', 'quiet'), 'Started ', when(worker.started_at))));
@@ -5605,10 +5611,20 @@ function workerItem(worker) {
   return item;
 }
 
+// What each assistant working now is doing: its latest line, and Show activity with every line
+// so far (ui-kit/activity.js). Without the shared piece, the older short list.
 function workersCard(run) {
+  if (typeof StudioActivity !== 'undefined') return add(card('Working now'), StudioActivity.live(run.workers));
   const items = make('ul', 'plain workers');
   for (const worker of list(run.workers)) items.append(workerItem(worker));
   return add(card('Working now'), items);
+}
+
+// The training's Activity log: each assistant job that ended, newest first, with what it did.
+// It is read when the person opens it, while the run works and after it ends.
+function activityLogCard(path) {
+  if (typeof StudioActivity === 'undefined' || !path) return null;
+  return StudioActivity.logCard({ key: 'activity-log ' + path, load: () => ask('activity', { path }) });
 }
 
 function madeCard(training, theirs) {
@@ -7135,8 +7151,9 @@ function paintRun(fresh) {
     // While a deck is drawn, its sections and their latest previews are what there is to see.
     run.deck ? ['deck', [run.deck, run.outline && run.outline.level],
       () => deckCard(run)] : null,
-    run.research_progress ? ['research-progress', [run.research_progress, run.timing], () => researchActivity(run)] : null,
-    list(run.workers).length ? ['workers', run.workers, () => workersCard(run)] : null,
+    run.research_progress ? ['research-progress', [run.research_progress, run.timing, run.workers], () => researchActivity(run)] : null,
+    // The research panel shows its own workers; any other work shows them here.
+    list(run.workers).length && !researching(run) ? ['workers', run.workers, () => workersCard(run)] : null,
     ['made', [training.path, training.view && training.view.files, theirs],
       () => madeCard(training, theirs)],
     ['steps', [list(run.steps).map((step) => [step.id, step.label, step.kind, step.status,
@@ -7148,6 +7165,7 @@ function paintRun(fresh) {
       () => documentsCard(run, false)] : null,
     ['cost', [run.spent, run.agent, run.model, run.effort, limits.training_dollars],
       () => costCard(run)],
+    ['activity-log', [view.path], () => activityLogCard(view.path)],
     // Then what is finished.
     run.finished ? ['finished', [run.finished, lead, run.can_open_desk],
       () => finishedPart(run, lead === 'finished')] : null,

@@ -257,7 +257,11 @@ class FakeElement extends FakeNode {
     document.activeElement = this;
     const event = { target: this, currentTarget: this, preventDefault() {} };
     this.dispatch('click', event);
-    if (this.tagName === 'SUMMARY' && this.parentNode) this.parentNode.open = !this.parentNode.open;
+    if (this.tagName === 'SUMMARY' && this.parentNode) {
+      // A disclosure opens or closes, and says so, as a browser's does.
+      this.parentNode.open = !this.parentNode.open;
+      this.parentNode.dispatch('toggle', { target: this.parentNode, currentTarget: this.parentNode });
+    }
     if (this.tagName === 'BUTTON' && this.type === 'submit') {
       for (let at = this.parentNode; at; at = at.parentNode) {
         if (at.tagName === 'FORM') at.dispatch('submit', event);
@@ -817,8 +821,13 @@ async function app(file) {
       return true;
     } };
   }
-  // The shared desk kit before app.js, and the training desk, built on both, after it.
-  for (const script of ['markdown.js', 'drafting.js', 'app.js', 'drafts.js']) {
+  // The shared desk kit before app.js, and the training desk, built on both, after it. The
+  // shared activity lines (activity.js) come first, as index.html loads them; a plan with
+  // {activity: false} leaves them out, as a page without them would be. A plan with
+  // {research: true} loads the shared research panel (research.js) too.
+  for (const script of [...(plan.activity === false ? [] : ['activity.js']),
+    ...(plan.research ? ['research.js'] : []), 'markdown.js', 'drafting.js', 'app.js',
+    'drafts.js']) {
     vm.runInContext(fs.readFileSync(path.join(PAGE, script), 'utf8'), context, { filename: script });
   }
   await settle();

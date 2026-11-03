@@ -2044,7 +2044,10 @@ function progressPart(found, held, lead) {
     ? 'Next: review the topics and teaching plan before the materials are built.'
     : materials.length ? available + ' of ' + materials.length + ' drafts available. New drafts appear below as they finish.'
       : 'Preparing the first material. It will appear here when it is ready.') : null;
-  return add(make('div'), callout('', building, line, status, controls.childNodes.length ? controls : null,
+  // What each assistant working now is doing, with Show activity (ui-kit/activity.js).
+  const doing = progress.running && typeof StudioActivity !== 'undefined'
+    ? StudioActivity.live(run.workers) : null;
+  return add(make('div'), callout('', building, line, status, doing, controls.childNodes.length ? controls : null,
     // Time is a detail, never an estimate of what is left: elapsed time keeps growing.
     run.timing ? (!run.research_progress || run.research_progress.phase === 'complete'
       ? timeDetails(measuredTime(run)) : null) : progress.started_at
@@ -2508,6 +2511,8 @@ function paintDesk(fresh) {
     finished ? publishCard(run, published) : null,
     preparingPlan || waitingPlan ? null : materials,
     preparingPlan || waitingPlan ? null : layout,
+    // What the assistant did in each job, while it works and after it finishes or stops.
+    conversation ? null : activityLogCard(view.path),
   ], fresh);
   if (editing?.key && focusKey(editing.key) && typeof editing.start === 'number') {
     document.activeElement.selectionStart = editing.start;

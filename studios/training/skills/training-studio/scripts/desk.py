@@ -35,6 +35,7 @@ PAGE = {
     '/markdown.js': ('markdown.js', 'text/javascript; charset=utf-8'),
     '/drafting.js': ('drafting.js', 'text/javascript; charset=utf-8'),
     '/research.js': ('research.js', 'text/javascript; charset=utf-8'),
+    '/activity.js': ('activity.js', 'text/javascript; charset=utf-8'),
     '/drafts.js': ('drafts.js', 'text/javascript; charset=utf-8'),
     '/style.css': ('style.css', 'text/css; charset=utf-8'),
 }
