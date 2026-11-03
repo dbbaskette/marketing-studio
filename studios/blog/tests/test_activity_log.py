@@ -237,6 +237,17 @@ class StreamedRunsTests(Case):
         )
         self.assertEqual(self.log()[0]['outcome'], 'failed')
 
+    def test_a_line_never_keeps_a_secret_an_error_carried(self):
+        said = [
+            CODEX_EVENTS[0],
+            {'type': 'error', 'message': 'Bad request: api_key=sk-synthetic0000000000'},
+        ]
+        self.agent(codex=said + CODEX_EVENTS[1:])
+        self.generate('codex', seconds=10)
+        kept = json.dumps(self.log())
+        self.assertNotIn('sk-synthetic', kept)
+        self.assertIn('[redacted]', kept)
+
     def test_out_of_time_and_stop_end_as_they_did_and_are_logged_so(self):
         self.agent(wait=True)
         with self.assertRaises(blog_worker.WorkerFailure) as caught:

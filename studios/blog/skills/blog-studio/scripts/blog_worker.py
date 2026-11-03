@@ -714,7 +714,7 @@ class Events:
             return
         if self.watched is not None:
             for text in lines:
-                self.watched.say(text)
+                self.watched.say(secretless(text))  # Redacted as the CLI's own lines are.
 
     @staticmethod
     def _codex_error(event):
