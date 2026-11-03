@@ -7154,11 +7154,35 @@ class Engine(Reviewing):
                           if ending == 'deck' and not resting else None),
             'redesign': self._redesigns(found) if mine else [],
             'controls': self._controls(record, found, state, mine),
+            # Change settings (#296): offered while the run is not working, with why not.
+            'settings': self._settings_offer(root, record, state, mine),
             'finished': ({'ready': bool(report['ready']),
                           'limitations': list(report['limitations']),
                           'blocking': list(report['blocking']), 'index': report['file'],
                           'yoodli': self._yoodli(root, found.session)}
                          if report and not resting else None)}
+
+    def _settings_offer(self, root: Path, record: dict, state: str, mine: bool) -> dict:
+        """Whether Change settings is offered now, and why not when it is not."""
+        from runner import settings_change
+        why = settings_change.refusal(record, state, bool(mine),
+                                      self._desk_change_busy(root, record))
+        return {'may': why is None, 'why': why}
+
+    def settings_form(self, path) -> dict:
+        """A training's start form filled in with its saved values (runner/settings_change.py)."""
+        from runner import settings_change
+        return settings_change.form(self, path)
+
+    def settings_sources(self, path) -> dict:
+        """A source draft holding what a training's research reads now, for the source panel."""
+        from runner import settings_change
+        return settings_change.sources(self, path)
+
+    def change_settings(self, path, sent: dict, preview: bool = False) -> dict:
+        """Say what a change of settings does, or save it; the training then waits for Continue."""
+        from runner import settings_change
+        return settings_change.save(self, path, sent, preview=preview)
 
     @staticmethod
     def _research_view(record: dict) -> dict:
