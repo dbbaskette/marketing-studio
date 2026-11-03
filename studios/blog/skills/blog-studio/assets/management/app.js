@@ -188,7 +188,7 @@ async function api(route, data, signal) {
   }
   try {result=await response.json();}
   catch(error) {throw new Error('Blog Studio’s page sent a reply it could not read. Reload the page.');}
-  if(!response.ok){const error=new Error(result.error||'The operation could not be completed.');error.status=response.status;error.code=result.code;throw error;}
+  if(!response.ok){const error=new Error(result.error||'The operation could not be completed.');error.status=response.status;error.code=result.code;error.reply=result;throw error;}
   return result;
 }
 function link(url, text) {if(!/^https:\/\//.test(url||''))return element('span',text);const a=element('a',text);a.href=url;a.target='_blank';a.rel='noopener noreferrer';return a;}
