@@ -17,8 +17,9 @@ import stat
 import subprocess
 import tempfile
 import threading
+import time
 
-from studio_core import studios_config, workspace_setup
+from studio_core import activity_log, studios_config, workspace_setup
 
 from .contracts import (MAX_ASSET_BYTES, MAX_RECORD_BYTES, PRODUCT, Invalid,
                         advance, canonical, new_project, renamed, renaming)
@@ -220,6 +221,28 @@ class Store:
                 yield
             finally:
                 self._held.active = False
+
+    def keep_activity(self, ident: str, entry: dict, *, tries: int = 30) -> None:
+        """Add one finished assistant operation to an infographic's Activity log,
+        projects/<id>/activity-log.jsonl, under the workspace lock. It is this computer's:
+        never a revision, never shared. Called only after the assistant ended."""
+        for attempt in range(tries):
+            try:
+                with self.locked():
+                    self.read(ident)
+                    activity_log.append(self._project(ident) / activity_log.FILE, entry)
+                return
+            except Invalid as busy:
+                if 'Another Infographic Studio operation' not in str(busy) or attempt == tries - 1:
+                    raise
+                time.sleep(0.1)
+
+    def activity_log(self, ident: str, running=()) -> dict:
+        """An infographic's Activity log, newest first, and what is running for it now."""
+        self.read(ident)
+        path = self._project(ident) / activity_log.FILE
+        require(not path.is_symlink(), 'The Activity log cannot be a link.')
+        return activity_log.view(path, running)
 
     def _verify_owner(self):
         marker = _json(self.root, '.infographic-studio/workspace.json', 10_000)

@@ -146,12 +146,15 @@ function paintWork() {
   for(const surface of document.querySelectorAll('[data-work-status]')) {
     const inSheet=$('sheet').contains(surface),show=!!work&&(!$('sheet').open||inSheet);
     surface.hidden=!show;if(!show)continue;
-    const signature=work.label+'|'+work.detail+'|'+(work.pending||'')+'|'+(work.id||'');
+    const doing=work.worker&&work.worker.now?work.worker.now.text+'|'+work.worker.count:'';
+    const signature=work.label+'|'+work.detail+'|'+(work.pending||'')+'|'+(work.id||'')+'|'+doing;
     if(surface.dataset.message!==signature) {
       surface.dataset.message=signature;
       const bead=make('span','bead');bead.dataset.state=work.connected?'current':'review';bead.setAttribute('aria-hidden','true');
       const clock=make('span','quiet ig-work-clock');clock.dataset.workClock='';clock.setAttribute('aria-hidden','true');
-      surface.replaceChildren(add(make('div','ig-work-heading'),bead,make('strong','',work.label),clock),make('p','quiet',work.detail));
+      // What the assistant is doing now, with Show activity (ui-kit/activity.js).
+      const live=work.worker&&typeof StudioActivity!=='undefined'?StudioActivity.live([work.worker]):null;
+      surface.replaceChildren(add(make('div','ig-work-heading'),bead,make('strong','',work.label),clock),make('p','quiet',work.detail),live);
       const controls=make('div','bar');
       // Stop waiting leaves the work running; nothing is cancelled or repeated.
       if(work.id&&!work.quiet){const stop=button('Stop waiting',()=>{closeSheet();void home();});stop.dataset.free='';controls.append(stop);}
@@ -203,7 +206,7 @@ function elsewhere(owner,problem) {
 function progressNotice(progress,owner,id) {
   if(running.get(id)!==owner)return;
   const current=progress.activity;
-  if(current?.state==='running'){owner.label=current.label;owner.started=Date.now()-current.elapsed_seconds*1000;owner.connected=true;owner.detail=WAITING;paintWork();}
+  if(current?.state==='running'){owner.label=current.label;owner.started=Date.now()-current.elapsed_seconds*1000;owner.connected=true;owner.detail=WAITING;owner.worker=current.worker||null;paintWork();}
   const pending=progress.recovery?.find(r=>!r.local_artwork_available&&['queued','running','unknown'].includes(r.state));
   if(pending&&owner.pending!==pending.attempt_id){owner.pending=pending.attempt_id;
     owner.cancel=async()=>{try{const latest=await request('/api/activity?id='+encodeURIComponent(id));await request('/api/action',{action:'image-cancel',id,expected_revision:latest.revision,request_id:pending.attempt_id});toast('Local adoption cancelled. Remote charges may remain unknown.');}catch(f){error(f.message);}};
@@ -559,6 +562,8 @@ function renderProject() {
   parts.push(detail('Sources and facts',updateSources,importMaterial,libraryAddButton(),make('p','quiet',LIBRARY_CLEARS),research,...p.sources.map(s=>card(s.name||s.id,make('p','quiet',s.characters+' captured characters'),...libraryNote(s),button('Review '+(s.name||s.id),()=>sourceTextSheet(s)))),list(held.source_findings.map(f=>f.message)),...p.facts.map(f=>card(f.statement,make('p','quiet','Supplied assertion; not independently corroborated.'),list((f.evidence||[]).map(q=>q.source_id+' ['+q.start+'–'+q.end+']: '+(q.quote||'')))))));
   if(held.image_history?.length)parts.push(detail('Image requests and usage',...held.image_history.map(a=>add(make('div','stack'),make('p','',usageWords(a)),make('p','quiet',a.usage?'Reported tokens: '+(a.usage.input_tokens??'unknown')+' in / '+(a.usage.output_tokens??'unknown')+' out. Cost: '+(a.usage.cost??'not reported')+'.':'Usage not reported; no estimate was invented.'),button('Inspect saved image request',()=>imageRequestSheet(a.id))))));
   if(held.deliveries.length)parts.push(detail('Saved files',make('p','quiet','Every rendered revision keeps its files. Approved files never change; an edit makes a new draft.'),...held.deliveries.map(savedFiles)));
+  // What the assistant did in each job, newest first, read only when it is opened.
+  if(typeof StudioActivity!=='undefined')parts.push(StudioActivity.logCard({key:'activity-log '+p.id,load:()=>request('/api/activity-log?id='+encodeURIComponent(p.id))}));
   parts.push(detail('History',make('p','quiet','Each saved revision is kept. Restoring makes new work and never brings back an approval.'),add(make('div','desk-versions'),...historyGroups(held.history).map((g,i)=>historyGroup(g,i===0))),held.history.length>=100&&held.history.at(-1).revision>0?button('Older revisions',olderHistory):null));
   $('main').replaceChildren(...parts.filter(Boolean));
   paintWork();     // this infographic's running work, and its locked controls
@@ -1206,7 +1211,8 @@ async function researchSheet(){
       const state=await request('/api/research-status?id='+encodeURIComponent(ident));
       status.replaceChildren();
       if(state){
-        const hooks={};
+        // What each research assistant is doing now, shown in the research panel.
+        const hooks={workers:state.workers||[]};
         if(['working','pausing','stopping'].includes(state.state)){
           if(state.state==='working')hooks.pause=()=>control('pause');
           if(state.state!=='stopping')hooks.stop=()=>control('stop');
