@@ -449,10 +449,65 @@ def _norm(text):
 SEPARATOR = re.compile(r'\s+(?:[|–—·•:]|-|::)\s+')
 
 
-def tied(title, page, text):
-    """Whether what was read is this page's post: its title is the page's <title> or
-    og:title (or the longest part of one, as "Post | Site" is "Post"), or the page's meta
-    description appears in its text."""
+DESCRIPTION_CHARACTERS = 40  # A description shorter than this ties nothing to the page.
+STRINGS = 20_000  # string values of a response read for the tie
+
+
+def _strings(data):
+    """The string values in a JSON response, depth first, up to STRINGS of them."""
+    found, waiting = [], [data]
+    while waiting and len(found) < STRINGS:
+        value = waiting.pop()
+        if isinstance(value, str):
+            found.append(value)
+        elif isinstance(value, dict):
+            waiting.extend(reversed(list(value.values())[:2000]))
+        elif isinstance(value, list):
+            waiting.extend(reversed(value[:2000]))
+    return found
+
+
+def _path_key(value):
+    """A path as the tie compares it: decoded, without its query, fragment or the slashes at
+    either end. '' for the site's root, which ties nothing."""
+    from urllib.parse import unquote
+
+    return unquote(urlsplit(value.strip()).path).strip('/').casefold()
+
+
+def post_paths(final, page):
+    """The post's own path and its canonical path (on the same host), as _path_key reads
+    them; never the root."""
+    host = urlsplit(final).hostname
+    paths = {_path_key(final)}
+    if page.canonical:
+        canonical = urlsplit(urljoin(final, page.canonical))
+        if canonical.scheme in ('https', 'http') and canonical.hostname == host:
+            paths.add(_path_key(canonical.geturl()))
+    return {path for path in paths if path}
+
+
+def _path_of(value, host):
+    """The path a string value names, when it is a path or an address on the post's host:
+    a whole value only, never words that happen to contain one."""
+    value = value.strip()
+    if not value or len(value) > 2000 or any(character.isspace() for character in value):
+        return ''
+    parts = urlsplit(value)
+    if parts.scheme or parts.netloc:
+        if parts.scheme not in ('https', 'http') or parts.hostname != host:
+            return ''
+    return _path_key(value)
+
+
+def tied(title, page, text, strings=(), final=''):
+    """Whether what was read is this page's post. Any one of these ties it:
+    - its title is the page's <title> or og:title (or the longest part of one, as
+      "Post | Site" is "Post");
+    - the page's meta description (at least DESCRIPTION_CHARACTERS long) appears in its text
+      or in any string value of the response, such as a metadata field;
+    - the post's own path or the page's canonical path is a whole string value of the
+      response, or the path of an address there (never the site's root)."""
     wanted = _norm(title)
     if len(wanted) >= 3:
         for shown in (page.title, page.meta.get('og:title'), page.meta.get('twitter:title')):
@@ -463,9 +518,13 @@ def tied(title, page, text):
                 return True
     for key in ('description', 'og:description'):
         description = _norm(page.meta.get(key))
-        if len(description) >= 20 and description in _norm(text):
+        if len(description) < DESCRIPTION_CHARACTERS:
+            continue
+        if description in _norm(text) or any(description in _norm(value) for value in strings):
             return True
-    return False
+    paths = post_paths(final, page) if final else set()
+    host = urlsplit(final).hostname
+    return bool(paths) and any(_path_of(value, host) in paths for value in strings)
 
 
 def apply(found, final, shell, engine, fetch=None):
@@ -525,6 +584,7 @@ def apply(found, final, shell, engine, fetch=None):
         parser = read['parser']
         if not title and parser.h1:
             title = published_post.plain(parser.h1[0])  # The text's own heading.
+        strings = _strings(data)  # Its metadata fields too: a description, a path.
     else:
         if media not in ('text/html', 'application/xhtml+xml'):
             raise ValueError(UNREADABLE.format(assistant=said))
@@ -535,13 +595,14 @@ def apply(found, final, shell, engine, fetch=None):
             or parser.meta.get('og:title', '')
             or _clean(parser.title_tag)
         )
+        strings = [*parser.meta.values(), parser.canonical]
     parser = read['parser']
     if parser.full:
         raise ValueError(published_post.TOO_LONG)
     if read['words'] < 1:
         raise ValueError(EMPTY.format(assistant=said))
     page = head_of(shell)
-    if not tied(title, page, published_post.plain(read['markdown'])):
+    if not tied(title, page, published_post.plain(read['markdown']), strings, final):
         raise ValueError(NOT_THIS_POST.format(assistant=said))
     if not title:
         # Tied by its description: the page's own title heads it.
@@ -565,6 +626,7 @@ def head_of(shell):
     page = Head()
     page.title = _clean(parser.title_tag)[:500]
     page.meta = {key: value for key, value in parser.meta.items() if value}
+    page.canonical = parser.canonical
     return page
 
 

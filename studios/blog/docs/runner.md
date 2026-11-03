@@ -192,8 +192,11 @@ shows its progress with **Stop**, and holds no lock on the workspace while it wo
 3. Blog Studio fills in the address and reads it itself: https only, the post's own host,
    no credentials, key or port, and only when robots.txt allows it; the response is read
    within 2 MB. The fields are joined and made Markdown by the same parser and escaping as
-   any page. The result is used only when its title is the page's title or `og:title`, or
-   the page's meta description appears in its text; then it is read, limited and staged
+   any page. The result is used only when it is tied to this page: its title is the page's
+   title or `og:title`; or the page's meta description (40 characters or more) appears in
+   its text or in any field of the response, such as its metadata; or the post's own path,
+   or the page's canonical path, is a whole field of the response or the path of an address
+   there (never the site's root). Then it is read, limited and staged
    exactly like any other read, and its preview says it was read from the site's content
    address and who found it.
 

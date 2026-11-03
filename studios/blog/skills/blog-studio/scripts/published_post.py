@@ -212,6 +212,7 @@ class Article(HTMLParser):
         self.table = None
         self.title_tag, self.in_title = '', False
         self.meta = {}
+        self.canonical = ''  # its canonical link, which ties a content address to the page
         self.robots_meta = []
         self.ld = []
         self.ld_text = None
@@ -273,6 +274,12 @@ class Article(HTMLParser):
             self.in_title = True
         if tag == 'meta':
             self._meta(attrs)
+        if (
+            tag == 'link'
+            and not self.canonical
+            and 'canonical' in attrs.get('rel', '').lower().split()
+        ):
+            self.canonical = attrs.get('href', '').strip()[:2000]
         if tag == 'script' and 'ld+json' in attrs.get('type', '').lower():
             self.ld_text = []
         if tag == 'input' and attrs.get('type', '').lower() == 'password':

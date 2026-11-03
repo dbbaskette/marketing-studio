@@ -15,8 +15,9 @@ changes for authors first, then what changes for maintainers.
   returns a recipe, never the article's words: an address on the same host, fixed query
   values, and where the article is in the response. Blog Studio reads that address itself
   (https only, the post's own host, no credentials or port, allowed by robots.txt, within
-  2 MB), turns it into Markdown as it reads any page, and uses it only when its title or
-  the page's description matches the page; the read stages and is limited exactly like
+  2 MB), turns it into Markdown as it reads any page, and uses it only when it is tied to
+  the page: its title, the page's description (in the text or a metadata field) or the
+  post's own or canonical path (as a whole field) matches; the read stages and is limited exactly like
   any other, and its preview says quietly that it came from the site's content address.
   A recipe that works is kept for that host on this computer, so the next post there is
   read straight away with no assistant; when one stops working, the offer returns and a
