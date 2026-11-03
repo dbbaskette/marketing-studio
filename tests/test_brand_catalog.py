@@ -1,5 +1,6 @@
 """Explicit installed-brand discovery uses disposable homes and stub commands."""
 import json
+import os
 from pathlib import Path
 import subprocess
 import tempfile
@@ -46,6 +47,22 @@ class BrandCatalogTests(unittest.TestCase):
         result = brand_catalog.choices(home=self.home, which=lambda _: '/synthetic/node', run=malformed)
         self.assertEqual(result['skills'], [])
         self.assertIn('unreadable variants', result['problem'])
+
+    def test_the_brand_command_is_told_the_brands_folder_unless_one_is_named(self):
+        told = []
+
+        def recording(*args, **kwargs):
+            told.append(kwargs['env'].get('HARNESS_BRAND_DATA'))
+            return self.run_brand(*args, **kwargs)
+
+        packs = self.home / 'Studios' / 'brands'
+        with mock.patch.dict('os.environ', {}):
+            os.environ.pop('HARNESS_BRAND_DATA', None)
+            brand_catalog.choices(home=self.home, run=recording, which=lambda _: '/node', data=packs)
+            brand_catalog.choices(home=self.home, run=recording, which=lambda _: '/node')
+            os.environ['HARNESS_BRAND_DATA'] = '/their/own/brands'
+            brand_catalog.choices(home=self.home, run=recording, which=lambda _: '/node', data=packs)
+        self.assertEqual(told, [str(packs), None, '/their/own/brands'])
 
     def test_explicit_folder_does_not_inspect_other_installed_skills(self):
         with mock.patch.object(Path, 'home', return_value=self.home), mock.patch.object(

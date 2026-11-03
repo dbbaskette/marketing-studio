@@ -104,6 +104,28 @@ class RecordTests(unittest.TestCase):
         (data / 'page.json').write_text(json.dumps({'workspace': str(self.root / 'gone')}))
         self.assertIsNone(workspaces.remembered('blog'))
 
+    def test_checkouts_are_the_studios_repositories_with_a_remote_in_catalog_order(self):
+        """Where Marketing Studio, with no workspace of its own, looks for a team
+        repository's brands folder."""
+        with mock.patch.dict(os.environ, {'INFOGRAPHIC_STUDIO_DATA': str(self.root / 'ig-data')}):
+            self.assertEqual(workspaces.checkouts(), [])
+            local, folder = self.folder('blog', 'blog-workspace', None)
+            self.remember('blog', local, folder)
+            for identifier, name in (('training', 'hub-t'), ('presentation', 'hub-p')):
+                repo, folder = self.folder(identifier, name, 'https://example.com/team/hub.git')
+                (repo / '.git').mkdir()
+                self.remember(identifier, repo, folder)
+            (local / '.git').mkdir()
+            self.assertEqual(workspaces.checkouts(),
+                             [(self.root / 'hub-p', 'https://example.com/team/hub.git'),
+                              (self.root / 'hub-t', 'https://example.com/team/hub.git')])
+            shared = {'team': {'repository': 'https://example.com/team/hub'}}
+            from studio_core import brand_data
+            self.assertIsNone(brand_data.unplaced(shared, workspaces.checkouts()))
+            (self.root / 'hub-t' / 'brands').mkdir()
+            self.assertEqual(brand_data.unplaced(shared, workspaces.checkouts()),
+                             self.root / 'hub-t' / 'brands')
+
     def test_a_marker_of_another_tool_or_a_gone_folder_is_not_a_workspace(self):
         repo, folder = self.folder('training', 'hub', 'https://example.com/team/hub.git', tool='presentation-studio')
         self.remember('training', repo, folder)

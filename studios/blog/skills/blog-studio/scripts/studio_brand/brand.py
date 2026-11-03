@@ -24,6 +24,9 @@ What a caller needs to know
 - `audit` returns {'status', 'blockers': [...], 'warnings': [{'code', 'slide', 'says'}]}.
   A warning is not a refusal; the caller shows it.
 - When the skill says no, Refused is raised: a WorkspaceError that carries its lines.
+- The skill's command is told the brands folder Harness Brand reads its brand packs from,
+  in HARNESS_BRAND_DATA: the one the shared settings and Blog Studio's workspace say
+  (studio_core.brand_data). A value the person set already is kept.
 - No call here uses the network. Nothing a brand skill prints is ever run.
 - `Brand(run=...)` replaces how the command is run. The tests' stand-in, in
   tests/stand_ins/brand.py, has one made-up brand and needs neither Node nor an installed
@@ -120,9 +123,37 @@ def companion(folder: Path, *names: str) -> Path | None:
     return None
 
 
+def data() -> Path | None:
+    """The brands folder Harness Brand reads for Blog Studio, as the shared settings and the
+    workspace this computer remembers say (studio_core.brand_data), or None when it cannot be
+    known. The workspace's record is read as it is: nothing is migrated or set up."""
+    from studio_core import brand_data
+    from studio_sync import gitstate
+
+    repository = address = None
+    try:
+        kept = gitstate.home.read_json(gitstate.settings_path(), None)
+        if isinstance(kept, dict) and kept.get('schema') == gitstate.SCHEMA:
+            repository = Path(kept['repo'])
+            address = (gitstate.marker(repository, str(kept['folder'])) or {}).get('repository')
+    except (WorkspaceError, OSError, ValueError, KeyError, TypeError):
+        repository = address = None
+    return brand_data.current(repository, address)
+
+
+def told() -> dict:
+    """This process's environment, with the brands folder in HARNESS_BRAND_DATA unless it
+    is named already. A folder that cannot be known is not named."""
+    from studio_core import brand_data
+
+    env = dict(os.environ)
+    return brand_data.environment(env, None if env.get(brand_data.VARIABLE) else data())
+
+
 def run_command(command: list[str], cwd: Path | None = None) -> tuple[int, str, str]:
-    """Run the command line once: (exit code, standard output, standard error)."""
-    return companions.run_command(command, cwd, TIMEOUT, 'The brand skill')
+    """Run the command line once: (exit code, standard output, standard error). The skill
+    is told where the brand packs are (`told`)."""
+    return companions.run_command(command, cwd, TIMEOUT, 'The brand skill', told())
 
 
 def _lines(err: str, code: int) -> list[str]:

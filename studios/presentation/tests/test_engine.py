@@ -1093,6 +1093,23 @@ class BrandTests(StudioCase):
         form = json.loads((root / 'run.json').read_text())['form']
         self.assertEqual((form['brand'], form['variant']), ('example', 'dark'))
 
+    def test_a_harness_brand_with_no_pack_is_said_in_setup_in_one_line(self):
+        from runner import engine
+        line = 'Harness Brand finds no brands folder at /nowhere/brands. See the format.'
+        asked = []
+        with mock.patch.object(engine.brand_skill, 'packs',
+                               lambda runtime=None: asked.append(runtime) or line):
+            self.without_a_brand_skill()
+            needs = self.engine.deck_needs(fresh=True)
+        [item] = [item for item in needs['items'] if item['id'] == 'deck-brand']
+        self.assertEqual((item['state'], item['fix'], needs['brand']['problem']),
+                         ('missing', line, line))
+        self.assertEqual(set(asked), {self.settings.load().brand_skill}, 'the chosen skill')
+        # Any other brand skill's refusal is said as it was.
+        [item] = [item for item in self.engine.deck_needs(fresh=True)['items']
+                  if item['id'] == 'deck-brand']
+        self.assertTrue(item['fix'].startswith('No brand skill was found on this computer'))
+
     def test_a_brand_skill_named_where_there_is_none_is_said_as_it_is(self):
         from runner import engine
         self.without_a_brand_skill()

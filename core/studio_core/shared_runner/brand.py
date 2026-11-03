@@ -25,7 +25,10 @@ What a caller needs to know
   A warning is not a refusal; the caller shows it.
 - The skill's command is told the harness-slides and harness-research this runner uses, in
   HARNESS_SLIDES_ROOT and HARNESS_RESEARCH_ROOT, as harness-slides tells a brand adapter to
-  be told, so that the skill draws with the same copy wherever it was found.
+  be told, so that the skill draws with the same copy wherever it was found. It is told the
+  brands folder Harness Brand reads its brand packs from in HARNESS_BRAND_DATA: the one the
+  shared settings and this studio's workspace say (studio_core.brand_data). A value the
+  person set already is kept.
 - When the skill says no, Refused is raised: a WorkspaceError that carries its lines.
 - Only `guidance` start uses the network: the brand fetches the slides tool's public
   guidance, as its own handoff says. Nothing a brand skill prints is ever run.
@@ -58,6 +61,9 @@ Added to the above
   `brand_skill` requirement in the installed pins, or None.
 - `fonts()` is NO_ARIAL when the readiness check finds no Arial on this computer, else
   None.
+- `packs(runtime)` is Setup's one line when the brand skill in use is Harness Brand and
+  its brands folder is missing or holds no usable pack, else None. `runtime` is the skill
+  chosen in Settings, or None for the first that answers.
 - `ready()` returns the readiness check's own JSON, whatever it found: `ok`, and its
   `checks` and `capabilities`, each with a name and how it stands.
 - A brand that is the entry to slide building (`guides()`) starts a deck's slide task with
@@ -167,11 +173,25 @@ def companion(folder: Path, *names: str) -> Path | None:
 ROOTS = {'HARNESS_SLIDES_ROOT': 'slides', 'HARNESS_RESEARCH_ROOT': 'research'}
 
 
+def data() -> Path | None:
+    """The brands folder Harness Brand reads for this studio, as the shared settings and
+    this studio's workspace say (studio_core.brand_data), or None when it cannot be known."""
+    from studio_core import brand_data
+    try:
+        from runner import gitstate   # the workspace; it needs no brand skill
+        space = gitstate.current()
+    except (ImportError, WorkspaceError, OSError, ValueError):
+        space = None
+    return brand_data.current(space and space.repo, space and space.address)
+
+
 def told() -> dict:
     """This process's environment, with the harness-slides and harness-research this
-    runner uses named the way harness-slides tells a brand adapter to find them, unless
-    they are named already. A companion not found is not named."""
+    runner uses named the way harness-slides tells a brand adapter to find them, and the
+    brands folder in HARNESS_BRAND_DATA, unless they are named already. A companion not
+    found, or a folder that cannot be known, is not named."""
     from runner import research, slides   # the companions; neither needs a brand skill
+    from studio_core import brand_data
     env = dict(os.environ)
     for name, module in ROOTS.items():
         if env.get(name):
@@ -180,7 +200,7 @@ def told() -> dict:
             env[name] = str((slides if module == 'slides' else research).find_runtime())
         except WorkspaceError:
             continue
-    return env
+    return brand_data.environment(env, None if env.get(brand_data.VARIABLE) else data())
 
 
 def run_command(command: list[str], cwd: Path | None = None) -> tuple[int, str, str]:
@@ -260,6 +280,44 @@ def found(run=None, home: Path | None = None) -> list[dict]:
     Node there is nothing to ask, so none is found. `home` stands in for the home folder."""
     return [{'name': name, 'version': version, 'runtime': str(runtime), 'brands': brands}
             for runtime, _, (name, version), brands in _installed(run, home)]
+
+
+def packs(runtime: Path | str | None = None, run=None) -> str | None:
+    """Setup's one line when the brand skill in use is Harness Brand (its version line
+    starts so) and the brands folder it is told is missing or holds no pack it can use, else
+    None. `runtime` is the skill chosen in Settings. With none, the first skill that lists
+    brands is the one in use, and only when none does is an installed Harness Brand looked
+    for: one that lists none is not found. Each skill is asked its version and its brands,
+    and nothing is changed."""
+    from studio_core import brand_data
+    node = 'node' if run else shutil.which('node')
+    if node is None:
+        return None
+    if runtime is None:
+        if next(_installed(run), None) is not None:
+            return None
+        places = locations()
+    else:
+        places = [Path(runtime)]
+    for place in places:
+        try:
+            folder = place.resolve()
+        except (OSError, RuntimeError):
+            continue
+        hints = [name for name in (place.name, place.parent.name)
+                 if name != 'current'] or ['brand']
+        script = companion(folder, *hints)
+        if script is None:
+            continue
+        name, _ = _named(run or run_command, node, script, hints[0])
+        if not name.startswith(brand_data.SKILL):
+            if runtime is not None:
+                return None
+            continue
+        if _asked(run or run_command, node, script):
+            return None
+        return brand_data.missing(told().get(brand_data.VARIABLE))
+    return None
 
 
 def _variant(variant: str | None) -> list[str]:

@@ -10,6 +10,7 @@ import subprocess
 import tempfile
 
 from studio_core import brand_catalog
+from studio_core import brand_data as brand_folder
 
 from .contracts import Invalid, canonical, digest
 from .provider_capabilities import private_child_environment
@@ -17,6 +18,13 @@ from .validation import require, text
 
 HEX = re.compile(r'#[0-9a-fA-F]{6}\Z')
 FONT = re.compile(r'[A-Za-z0-9][A-Za-z0-9 ._-]{0,100}\Z')
+
+
+def brand_data() -> Path | None:
+    """The brands folder Harness Brand reads for Infographic Studio. Its workspace is
+    local Git only, so with local storage this is `<local.root>/brands`, and with a team
+    repository it cannot be known (None): Infographic Studio keeps no checkout of one."""
+    return brand_folder.current()
 
 
 def snapshot(contract: dict) -> dict:
@@ -57,8 +65,10 @@ def type_floors(pinned, digital):
 
 def export_selected(*, skill: Path, brand_id: str, variant: str | None = None,
                     run=subprocess.run, which=shutil.which) -> dict:
-    """Explicit selection; use the shared non-canvas contract, not slide templates."""
-    catalog = brand_catalog.choices(skill=skill, run=run, which=which)
+    """Explicit selection; use the shared non-canvas contract, not slide templates. The brand
+    command is told the brands folder Harness Brand reads (`data`)."""
+    data = brand_data()
+    catalog = brand_catalog.choices(skill=skill, run=run, which=which, data=data)
     selected = next((entry for entry in catalog['skills']
                      if any(brand['brand'] == brand_id for brand in entry['brands'])), None)
     require(selected is not None, catalog.get('problem') or 'Select an installed brand capability; none is installed automatically.')
@@ -72,8 +82,9 @@ def export_selected(*, skill: Path, brand_id: str, variant: str | None = None,
             command += ['--variant', variant]
         import os
         try:
+            # The minimal environment, and the one variable that says where the packs are.
             done = run(command, capture_output=True, text=True, timeout=60,
-                       env=private_child_environment(os.environ))
+                       env=brand_folder.environment(private_child_environment(os.environ), data))
             require(done.returncode == 0, 'The installed brand could not export its shared visual contract. Check its local compatibility.')
             path = output / 'brand-contract.json'
             require(path.is_file() and not path.is_symlink() and path.stat().st_size <= 1_000_000,
