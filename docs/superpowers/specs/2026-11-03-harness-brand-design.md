@@ -117,7 +117,7 @@ it without slides, and a slides contract for it is refused in a sentence.
 |---|---|
 | Corporate PowerPoint template, one per variant | `templates/`, the measured part of `layouts.json`, theme colours |
 | Claude Design export (`*-design-system.zip`) | `tokens.json` (dark values read from `tokens.css` when `tokens.json` has none), `assets/`, the brand book and component guidance for `guide.md` |
-| Icon library: a PowerPoint deck of native icons, a folder of SVGs, or an export's `assets/Icons/icons.json` | `icons.zip` |
+| Icon library: an export's `assets/Icons/icons.json`, or its SVGs | `icons.zip` |
 | Example decks of authored slides | `compositions/` |
 | Brand guides (PDF, Markdown, slides) | `guide.md`, `audit.json`, `directions.json` |
 
@@ -133,13 +133,17 @@ what the person points them at: "build the Tanzu pack from brands/tanzu/sources"
    - `pack measure <template.pptx> --variant V --into PACK`: copies the template into
      `templates/` and writes each layout's measured part into `layouts.json`.
    - `pack tokens <design-system.zip> --into PACK`: writes `tokens.json`.
-   - `pack icons <source> --into PACK`: writes `icons.zip`. From a native icon deck, each
-     icon's shapes become one path, without loss. From SVGs: `path` elements with their
-     transforms, scaled into the 0 to 100 box; a drawing made as a filled mask (the
-     Tanzu Division icons) uses its white paths as the glyph and black ones as cut-outs; a
-     container circle (the VMware by Broadcom icons) is dropped. Category from the folder
-     name, `name` from the folder's `README.md` row, else the file name. An icon that
-     cannot be one glyph is left out and named; the command never stops on one icon.
+   - `pack icons <source> --into PACK [--fill F]`: writes `icons.zip`. An export that
+     holds `assets/Icons/icons.json` (Broadcom's) is taken as it is. Otherwise its SVGs
+     are converted: `path`, `rect`, `circle`, `ellipse`, `polygon` and `polyline` elements
+     with their transforms, scaled so the view box fills `F` of the 0 to 100 box (default
+     1; the Tanzu Division icons are cut at 0.88 of their circle, as their README says); a
+     drawing made as a filled mask (the Tanzu Division icons) uses its mask's paths as the
+     glyph; a container circle (the VMware by Broadcom icons) is dropped. Category from
+     the folder name, `name` from the folder's `README.md` row, else the file name. An icon
+     that cannot be one glyph is left out and named; the command never stops on one icon.
+     All three exports draw from the one VMware by Broadcom functional icon library (July
+     2025), so a PowerPoint icon deck is not a source.
    - `pack scaffold --into PACK`: drafts `brand.json` and `audit.json` from what is there.
 2. **Judgement parts, by the agent**, following the guide: the colour roles, each layout's
    relationship, content range and search terms, `guide.md`, `directions.json` and the
@@ -150,12 +154,13 @@ what the person points them at: "build the Tanzu pack from brands/tanzu/sources"
 4. `pack check PACK` checks every file against the schema, the hashes, that every layout
    and asset named exists, that every role has a token, and that text roles pass WCAG AA
    on their backgrounds. It lists each problem in a sentence and fails on any.
-5. The person looks at the previews, the contact sheet and the diff, then commits.
+5. `pack seal PACK`, once `pack check` passes but for the hashes, writes each file's and
+   source's SHA-256 into `brand.json`, so no one computes a hash by hand.
+6. The person looks at the previews, the contact sheet and the diff, then commits.
 
 The first three packs are built this way from: Tanzu Brand's templates
 (`tanzu-presentation-template.pptx`, `vmware-light-template.pptx`,
-`vmware-dark-template.pptx`, `broadcom-template.pptx`), its native icon library
-(`bc-vmw-gs-functional-icons.pptx`) and example compositions, the three 3 November Claude
+`vmware-dark-template.pptx`, `broadcom-template.pptx`) and example compositions, the three 3 November Claude
 Design exports, and Tanzu Brand's brand rules, recipes, directions and audit values as the
 starting point for the judgement parts. Where an export and Tanzu Brand disagree on a
 colour or rule, the newer export wins and the change is listed for the person.
@@ -188,7 +193,7 @@ unusable, with the first problem, and is never used.
 | `guidance locate\|start\|resume\|cached ...` | the brand's entry to slide building, as the studios call it today |
 | `look samples\|choose\|status ...` | deck directions from `directions.json` and the person's pick |
 | `restyle --file deck.pptx --brand B [--variant V] [--output FILE]` | apply-brand's window dressing, from the pack; a Google Slides deck by link, in and out through gcloud |
-| `pack measure\|tokens\|icons\|scaffold\|previews\|check` | section 3 |
+| `pack measure\|tokens\|icons\|scaffold\|previews\|check\|seal` | section 3 |
 
 The exact arguments, outputs and refusals of the commands the studios call are the ones the
 studios' stand-in (`studios/presentation/tests/stand_ins/brand.py`) and
@@ -239,8 +244,8 @@ commands and the assistant's job. The page follows `docs/design/golden-gate.md`.
 1. **Brands** lists the packs in the storage's `brands` folder, each with its name, its
    variants, whether it does slides, and what `pack check` says. It offers New brand and,
    on each pack, Update.
-2. **Sources.** The person adds files: templates, a design-system export, an icon deck or
-   SVGs, guides. They are copied into `brands/<id>/sources/`; a file whose name is taken
+2. **Sources.** The person adds files: templates, a design-system export, icon SVGs or an
+   `icons.json`, guides. They are copied into `brands/<id>/sources/`; a file whose name is taken
    is kept beside the old one only after the person says which to keep. New brand asks for
    the id and name first.
 3. **Extract.** Marketing Studio runs `pack measure`, `pack tokens`, `pack icons` and
@@ -272,7 +277,7 @@ first.
 ## 8. Testing
 
 - Harness Brand, with `node --test` on Example Co, whose sources are a small template, a
-  small design-system zip, an icon deck and SVGs of each kind (plain, masked, with a
+  small design-system zip and SVG icons of each kind (plain, masked, with a
   container circle): each `pack` command; `pack check` on a good pack and on broken ones;
   contract export and check, including the refusal after the pack changes; layouts, icon
   search and placement; the audit; restyle; the installer into a disposable home folder.
