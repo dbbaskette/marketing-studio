@@ -61,7 +61,8 @@ harness-brand-skill/                 the worker, code only
   scripts/harness-brand.mjs          the companion command the studios run
   scripts/install-mac.mjs, scripts/install-skill.mjs
   scripts/lib/harness-install-sources.json
-  docs/brand-pack-format.md          the pack and icon library schemas (section 2)
+  docs/brand-pack-format.md          the pack schema (section 2)
+  docs/icon-library-format.md        the icon library schema (section 2), linked from it
   references/building-a-pack.md      the authoring guide for Claude or Codex (section 3)
   tests/, tests/fixtures/example/    a made-up brand, Example Co: sources and pack
 ```
@@ -103,7 +104,7 @@ relative to it.
 A brand without a template (`templates/` empty) is a brand for blogs only: `brands` lists
 it without slides, and a slides contract for it is refused in a sentence.
 
-### Icon libraries
+### Icon libraries (`docs/icon-library-format.md`)
 
 An icon library is kept once, in `brands/icon-libraries/<id>/`, and any brand may use it.
 All three brands use the one VMware by Broadcom functional library (July 2025), so it is
