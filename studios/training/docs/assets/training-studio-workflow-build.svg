@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="660" height="801" viewBox="0 0 660 801" role="img" aria-labelledby="title desc">
+<title id="title">Training Studio workflow, part 2 of 2: Build and finish</title>
+<desc id="desc">Steps in order: Build the materials (Guide, brief, practice, Yoodli); Review slide text (When a deck is chosen); Design the deck (Harness Slides, in your brand); Refine on the desk (Edit, notes, Finishing); Mark ready (Each material or a level); Index written (Once every material is ready); Share it, if you choose (Download, Google Doc, Publish). Approve text &amp; design deck leads from Review slide text to Design the deck. Review slide text can go to Ask for changes (Slide text rewritten) and come back. Refine on the desk can go to Needs updating (Update or Keep as it is) and come back. Mark ready can lead to Return to draft (After an edit or Undo). Return to draft (After an edit or Undo) returns to Refine on the desk. Colours: filled boxes are your decisions or input, tinted boxes are assistant work and grey boxes are studio steps.</desc>
+<style>svg{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Helvetica,Arial,sans-serif}.title{font-weight:600}.bold{font-weight:700}.page,.you,.assistant,.studio{stroke-width:0.5}.wire{stroke-width:1.1}.page{fill:#ffffff;stroke:#d9dee6}.ink{fill:#1c1d22}.quiet{fill:#565a69}.accent-text{fill:#7140b4}.you{fill:#7140b4;stroke:#7140b4}.you-text{fill:#ffffff}.assistant{fill:#f2eaff;stroke:#7140b4}.studio{fill:#eef1f5;stroke:#a9b1bf}.wire{fill:none;stroke:#6b7080}.tip{fill:#6b7080}@media (prefers-color-scheme:dark){.page{fill:#191f29;stroke:#39404d}.ink{fill:#f3f4f8}.quiet{fill:#abb0c0}.accent-text{fill:#d2b1ff}.you{fill:#d2b1ff;stroke:#d2b1ff}.you-text{fill:#151c29}.assistant{fill:#342947;stroke:#d2b1ff}.studio{fill:#262d39;stroke:#5d6576}.wire{fill:none;stroke:#9aa0b0}.tip{fill:#9aa0b0}}</style>
+<rect x="0.25" y="0.25" width="659.5" height="800.5" rx="16" class="page"/>
+<text x="24" y="34" font-size="13" class="accent-text title" text-anchor="start">Training Studio workflow · part 2 of 2</text>
+<text x="24" y="58" font-size="19" class="ink bold" text-anchor="start">Build and finish</text>
+<rect x="24" y="71" width="22" height="14" rx="4" class="you"/>
+<text x="54" y="82" font-size="12" class="quiet" text-anchor="start">You decide or give input</text>
+<rect x="208.598" y="71" width="22" height="14" rx="4" class="assistant"/>
+<text x="238.598" y="82" font-size="12" class="quiet" text-anchor="start">Assistant work</text>
+<rect x="340.271" y="71" width="22" height="14" rx="4" class="studio"/>
+<text x="370.271" y="82" font-size="12" class="quiet" text-anchor="start">Studio step</text>
+<path d="M330 164L330 198" class="wire"/>
+<path d="M330 204l-4 -7h8z" class="tip"/>
+<path d="M330 264L330 298" class="wire"/>
+<path d="M330 304l-4 -7h8z" class="tip"/>
+<text x="340" y="288" font-size="12" class="quiet title" text-anchor="start">Approve text &amp; design deck</text>
+<path d="M330 364L330 398" class="wire"/>
+<path d="M330 404l-4 -7h8z" class="tip"/>
+<path d="M330 481L330 515" class="wire"/>
+<path d="M330 521l-4 -7h8z" class="tip"/>
+<path d="M330 581L330 615" class="wire"/>
+<path d="M330 621l-4 -7h8z" class="tip"/>
+<path d="M330 681L330 715" class="wire"/>
+<path d="M330 721l-4 -7h8z" class="tip"/>
+<path d="M448 228L478 228" class="wire"/>
+<path d="M484 228l-7 -4v8z" class="tip"/>
+<path d="M484 240L454 240" class="wire"/>
+<path d="M448 240l7 -4v8z" class="tip"/>
+<path d="M448 436.5L478 436.5" class="wire"/>
+<path d="M484 436.5l-7 -4v8z" class="tip"/>
+<path d="M484 448.5L454 448.5" class="wire"/>
+<path d="M448 448.5l7 -4v8z" class="tip"/>
+<path d="M212 551L182 551" class="wire"/>
+<path d="M176 551l7 -4v8z" class="tip"/>
+<path d="M98 521L98 450.5Q98 442.5 106 442.5L206 442.5" class="wire"/>
+<path d="M212 442.5l-7 -4v8z" class="tip"/>
+<rect x="212" y="104" width="236" height="60" rx="10" class="assistant"/>
+<text x="330" y="129" font-size="15" class="ink bold" text-anchor="middle">Build the materials</text>
+<text x="330" y="150" font-size="13" class="quiet" text-anchor="middle">Guide, brief, practice, Yoodli</text>
+<rect x="212" y="204" width="236" height="60" rx="10" class="you"/>
+<text x="330" y="229" font-size="15" class="you-text bold" text-anchor="middle">Review slide text</text>
+<text x="330" y="250" font-size="13" class="you-text" text-anchor="middle">When a deck is chosen</text>
+<rect x="212" y="304" width="236" height="60" rx="10" class="assistant"/>
+<text x="330" y="329" font-size="15" class="ink bold" text-anchor="middle">Design the deck</text>
+<text x="330" y="350" font-size="13" class="quiet" text-anchor="middle">Harness Slides, in your brand</text>
+<rect x="212" y="404" width="236" height="77" rx="10" class="you"/>
+<text x="330" y="437.5" font-size="15" class="you-text bold" text-anchor="middle">Refine on the desk</text>
+<text x="330" y="458.5" font-size="13" class="you-text" text-anchor="middle">Edit, notes, Finishing</text>
+<rect x="212" y="521" width="236" height="60" rx="10" class="you"/>
+<text x="330" y="546" font-size="15" class="you-text bold" text-anchor="middle">Mark ready</text>
+<text x="330" y="567" font-size="13" class="you-text" text-anchor="middle">Each material or a level</text>
+<rect x="212" y="621" width="236" height="60" rx="10" class="studio"/>
+<text x="330" y="646" font-size="15" class="ink bold" text-anchor="middle">Index written</text>
+<text x="330" y="667" font-size="13" class="quiet" text-anchor="middle">Once every material is ready</text>
+<rect x="212" y="721" width="236" height="60" rx="10" class="you"/>
+<text x="330" y="746" font-size="15" class="you-text bold" text-anchor="middle">Share it, if you choose</text>
+<text x="330" y="767" font-size="13" class="you-text" text-anchor="middle">Download, Google Doc, Publish</text>
+<rect x="484" y="204" width="156" height="60" rx="10" class="you"/>
+<text x="562" y="229" font-size="15" class="you-text bold" text-anchor="middle">Ask for changes</text>
+<text x="562" y="250" font-size="13" class="you-text" text-anchor="middle">Slide text rewritten</text>
+<rect x="484" y="404" width="156" height="77" rx="10" class="you"/>
+<text x="562" y="429" font-size="15" class="you-text bold" text-anchor="middle">Needs updating</text>
+<text x="562" y="450" font-size="13" class="you-text" text-anchor="middle">Update or</text>
+<text x="562" y="467" font-size="13" class="you-text" text-anchor="middle">Keep as it is</text>
+<rect x="20" y="521" width="156" height="60" rx="10" class="you"/>
+<text x="98" y="546" font-size="15" class="you-text bold" text-anchor="middle">Return to draft</text>
+<text x="98" y="567" font-size="13" class="you-text" text-anchor="middle">After an edit or Undo</text>
+</svg>

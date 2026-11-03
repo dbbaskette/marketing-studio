@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="660" height="803" viewBox="0 0 660 803" role="img" aria-labelledby="title desc">
+<title id="title">Blog Studio workflow, part 2 of 3: Finish and send</title>
+<desc id="desc">Steps in order: The desk (Edit, notes, select a passage); Finishing (Copy edit, facts, reader aids); Apply, Edit or Skip (Each proposal waits for you); Pre-publish check (Headings, links, evidence); Run GEO review (Says when it is out of date); Send to Google Doc (As suggestions, or copy it); Mark as published (Records where it went). The desk can go to Revise the draft (A section or the whole) and come back. Send to Google Doc can lead to Bring accepted changes (Back onto the desk). Bring accepted changes (Back onto the desk) returns to The desk. Colours: filled boxes are your decisions or input, tinted boxes are assistant work and grey boxes are studio steps.</desc>
+<style>svg{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Helvetica,Arial,sans-serif}.title{font-weight:600}.bold{font-weight:700}.page,.you,.assistant,.studio{stroke-width:0.5}.wire{stroke-width:1.1}.page{fill:#ffffff;stroke:#d9dee6}.ink{fill:#1c1d22}.quiet{fill:#565a69}.accent-text{fill:#175fba}.you{fill:#175fba;stroke:#175fba}.you-text{fill:#ffffff}.assistant{fill:#e8f1ff;stroke:#175fba}.studio{fill:#eef1f5;stroke:#a9b1bf}.wire{fill:none;stroke:#6b7080}.tip{fill:#6b7080}@media (prefers-color-scheme:dark){.page{fill:#191f29;stroke:#39404d}.ink{fill:#f3f4f8}.quiet{fill:#abb0c0}.accent-text{fill:#9cc4ff}.you{fill:#9cc4ff;stroke:#9cc4ff}.you-text{fill:#151c29}.assistant{fill:#213653;stroke:#9cc4ff}.studio{fill:#262d39;stroke:#5d6576}.wire{fill:none;stroke:#9aa0b0}.tip{fill:#9aa0b0}}</style>
+<rect x="0.25" y="0.25" width="659.5" height="802.5" rx="16" class="page"/>
+<text x="24" y="34" font-size="13" class="accent-text title" text-anchor="start">Blog Studio workflow · part 2 of 3</text>
+<text x="24" y="58" font-size="19" class="ink bold" text-anchor="start">Finish and send</text>
+<rect x="24" y="71" width="22" height="14" rx="4" class="you"/>
+<text x="54" y="82" font-size="12" class="quiet" text-anchor="start">You decide or give input</text>
+<rect x="208.598" y="71" width="22" height="14" rx="4" class="assistant"/>
+<text x="238.598" y="82" font-size="12" class="quiet" text-anchor="start">Assistant work</text>
+<rect x="340.271" y="71" width="22" height="14" rx="4" class="studio"/>
+<text x="370.271" y="82" font-size="12" class="quiet" text-anchor="start">Studio step</text>
+<path d="M330 164L330 198" class="wire"/>
+<path d="M330 204l-4 -7h8z" class="tip"/>
+<path d="M330 264L330 298" class="wire"/>
+<path d="M330 304l-4 -7h8z" class="tip"/>
+<path d="M330 364L330 398" class="wire"/>
+<path d="M330 404l-4 -7h8z" class="tip"/>
+<path d="M330 464L330 498" class="wire"/>
+<path d="M330 504l-4 -7h8z" class="tip"/>
+<path d="M330 564L330 598" class="wire"/>
+<path d="M330 604l-4 -7h8z" class="tip"/>
+<path d="M330 683L330 717" class="wire"/>
+<path d="M330 723l-4 -7h8z" class="tip"/>
+<path d="M448 128L478 128" class="wire"/>
+<path d="M484 128l-7 -4v8z" class="tip"/>
+<path d="M484 140L454 140" class="wire"/>
+<path d="M448 140l7 -4v8z" class="tip"/>
+<path d="M212 643.5L182 643.5" class="wire"/>
+<path d="M176 643.5l7 -4v8z" class="tip"/>
+<path d="M98 604L98 142Q98 134 106 134L206 134" class="wire"/>
+<path d="M212 134l-7 -4v8z" class="tip"/>
+<rect x="212" y="104" width="236" height="60" rx="10" class="you"/>
+<text x="330" y="129" font-size="15" class="you-text bold" text-anchor="middle">The desk</text>
+<text x="330" y="150" font-size="13" class="you-text" text-anchor="middle">Edit, notes, select a passage</text>
+<rect x="212" y="204" width="236" height="60" rx="10" class="assistant"/>
+<text x="330" y="229" font-size="15" class="ink bold" text-anchor="middle">Finishing</text>
+<text x="330" y="250" font-size="13" class="quiet" text-anchor="middle">Copy edit, facts, reader aids</text>
+<rect x="212" y="304" width="236" height="60" rx="10" class="you"/>
+<text x="330" y="329" font-size="15" class="you-text bold" text-anchor="middle">Apply, Edit or Skip</text>
+<text x="330" y="350" font-size="13" class="you-text" text-anchor="middle">Each proposal waits for you</text>
+<rect x="212" y="404" width="236" height="60" rx="10" class="studio"/>
+<text x="330" y="429" font-size="15" class="ink bold" text-anchor="middle">Pre-publish check</text>
+<text x="330" y="450" font-size="13" class="quiet" text-anchor="middle">Headings, links, evidence</text>
+<rect x="212" y="504" width="236" height="60" rx="10" class="assistant"/>
+<text x="330" y="529" font-size="15" class="ink bold" text-anchor="middle">Run GEO review</text>
+<text x="330" y="550" font-size="13" class="quiet" text-anchor="middle">Says when it is out of date</text>
+<rect x="212" y="604" width="236" height="79" rx="10" class="you"/>
+<text x="330" y="638.5" font-size="15" class="you-text bold" text-anchor="middle">Send to Google Doc</text>
+<text x="330" y="659.5" font-size="13" class="you-text" text-anchor="middle">As suggestions, or copy it</text>
+<rect x="212" y="723" width="236" height="60" rx="10" class="you"/>
+<text x="330" y="748" font-size="15" class="you-text bold" text-anchor="middle">Mark as published</text>
+<text x="330" y="769" font-size="13" class="you-text" text-anchor="middle">Records where it went</text>
+<rect x="484" y="104" width="156" height="60" rx="10" class="you"/>
+<text x="562" y="129" font-size="15" class="you-text bold" text-anchor="middle">Revise the draft</text>
+<text x="562" y="150" font-size="13" class="you-text" text-anchor="middle">A section or the whole</text>
+<rect x="20" y="604" width="156" height="79" rx="10" class="you"/>
+<text x="98" y="629" font-size="15" class="you-text bold" text-anchor="middle">Bring accepted</text>
+<text x="98" y="648" font-size="15" class="you-text bold" text-anchor="middle">changes</text>
+<text x="98" y="669" font-size="13" class="you-text" text-anchor="middle">Back onto the desk</text>
+</svg>
