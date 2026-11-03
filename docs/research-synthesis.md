@@ -273,6 +273,16 @@ can resume without another assistant request. Changed sources, task permissions
 or ownership cannot adopt an old or late response. A missing terminal observation
 blocks a blind retry; a process cancellation request is never called confirmation.
 
+Each selected or public source is registered in the topic asset as the text that
+investigators are given: one space between words, no trailing spaces and at most
+one blank line, as the studios' worker tools tidy what an assistant reads. The copy
+a kept investigation holds therefore matches the asset inventory that Harness
+Research's dossier check compares it with (#295). Registration runs again on every
+start, so Try again corrects a capture that an earlier version registered untidied;
+kept investigations are reused, and synthesis and review run again. Research whose
+kept investigations already hold the untidied text, as earlier Blog Studio and
+Infographic Studio runs do, keeps that registration so its evidence stays valid.
+
 Progress distinguishes elapsed time from observed active time and total assistant
 time. Overlapping assistants do not multiply wall time, and missing cost remains
 unknown. Native budgets reserve allowance across concurrent workers. The optional

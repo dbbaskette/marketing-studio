@@ -26,6 +26,22 @@ making decks first, then what changes for maintainers.
   `refusal` reads a 403's `error.status`, `errors[].reason` and `details[].reason`.
   A failed slide or tab re-choice in `research_sources` now keeps the ready capture.
 
+- **Research from a source with extra spaces finishes (#295).** When a source's
+  text had double or trailing spaces or several blank lines, as Google Slides decks
+  often do, research stopped after synthesis with "harness-research refused: Source …
+  capture differs from the accepted asset inventory". The source was registered with
+  Harness Research as it came, while the assistant read and quoted a tidied copy. Now
+  the tidied text is registered, so the two match. A deck that stopped this way
+  recovers with **Try again**: its checked investigations are kept, and only
+  synthesis and the independent review run again. Sources that were already tidy are
+  registered unchanged.
+  Maintainers: `research_session.Workflow.asset` registers and offers
+  `capture_text(text, kept)`, which is `shared_runner.worker_tools.tidy(text)` unless
+  a kept investigation under `sources/collection/` already holds only the untidied
+  text. Registration runs on every start, and Harness Research's `asset source`
+  re-hashes `capture_sha256`; intake, the input fingerprint, the research basis and
+  capture file names still come from the text as it came.
+
 ## 4.9.0 — 2026-11-03
 
 - **Released with Marketing Studio 4.6.0.** Installs pin Harness Research 1.1.0 and
