@@ -9,6 +9,8 @@ go through the fetcher's own code against a real HTTP exchange.
 
 from contextlib import contextmanager
 import http.client
+import json
+import re
 import socket
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import threading
@@ -94,3 +96,79 @@ class Site:
             finally:
                 self.server.shutdown()
                 self.server.server_close()
+
+
+def modules(title, summary, sections, extra=None, before=None, lead=0):
+    """A response shaped like a headless CMS's: the post's title and summary, and its sections
+    as a list of modules, each a plain heading and an HTML body, with a module that holds no
+    text between them (and `lead` spacer modules before them). `before` and `extra` are
+    fields before and after the post. Nothing on the page or in its scripts names these."""
+    listed = [
+        {'kind': 'section', 'heading': heading, 'body': ''.join(f'<p>{p}</p>' for p in body)}
+        for heading, body in sections
+    ]
+    listed.insert(1, {'kind': 'image', 'src': '/img/diagram.png', 'alt': ''})
+    listed[:0] = [{'kind': 'spacer', 'size': 'large'} for _ in range(lead)]
+    post = {'title': title, 'summary': summary, 'modules': listed}
+    return json.dumps({**(before or {}), 'post': post, **(extra or {})})
+
+
+def menus(entries=12, links=8):
+    """A site's header and footer menus, as a page's JSON often carries them before its post:
+    many short fields, deeper than the post's own."""
+    menu = [
+        {
+            'label': f'Menu {n}',
+            'links': [
+                {'label': f'Link {m}', 'href': f'/topics/{n}/{m}', 'tags': ['a', 'b', 'c']}
+                for m in range(links)
+            ],
+        }
+        for n in range(entries)
+    ]
+    named = {
+        f'group{n}': {f'item{m}': {'label': 'x', 'href': '/x'} for m in range(links)}
+        for n in range(entries)
+    }
+    return {'site': {'header': menu, 'footer': menu, 'directory': named}}
+
+
+OUTLINE_LINE = re.compile(r'(?P<pointer>/\S*): (?P<kind>[a-z]+)')
+
+
+class Assistant:
+    """A stand-in assistant for a find-text job. `first` answers the page's evidence and
+    `second` the second look at a response's outline: each a value, or a function of the
+    payload. With no `second`, it reads the outline as a person would: the fields a list's
+    items hold as strings, under the names given in `fields`."""
+
+    def __init__(self, first, second=None, fields=None):
+        self.first, self.second, self.payloads = first, second, []
+        self.fields = fields or {'text': 'body', 'headings': 'heading', 'title': 'title'}
+
+    def __call__(self, payload):
+        self.payloads.append(payload)
+        if payload['response_kind'] == 'content-address':
+            answer = self.first
+        else:
+            answer = self.second or self.from_outline
+        return answer(payload) if callable(answer) else answer
+
+    def from_outline(self, payload):
+        strings = [
+            found['pointer']
+            for found in map(OUTLINE_LINE.match, payload['outline'])
+            if found and found['kind'] == 'string'
+        ]
+        listed = {re.sub(r'/\d+/', '/*/', p) for p in strings if re.search(r'/\d+/', p)}
+
+        def named(field, among):
+            return sorted(p for p in among if p.rsplit('/', 1)[1] == self.fields[field])
+
+        title = [p for p in named('title', strings) if not re.search(r'/\d+/', p)]
+        return {
+            'found': True,
+            'text': named('text', listed),
+            'headings': named('headings', listed),
+            'title': title[0] if title else '',
+        }

@@ -5,6 +5,22 @@ changes for authors first, then what changes for maintainers.
 
 ## Unreleased
 
+- **Finding a post's text takes a second look when the fields are empty (#285).** A page's
+  scripts often build the address of its article without naming the fields in what comes
+  back, so Codex or Claude Code could find the right address and still guess the fields
+  wrong, and the search failed with "held no text". Now Blog Studio gives the assistant
+  one second look within the same 3 minutes: a bounded outline of that response (each
+  field's pointer, type and first characters, a list's first items), shared fairly so a
+  site's menus never crowd out the post, and nothing from the page's scripts. The assistant names only where the text, section headings and title
+  are; the address stays as checked. The post is read in the response's order, section
+  by section, with its headings as `##` headings, and goes through every check as before.
+  Only the recipe that worked is kept for the site. Maintainers: `content_address`
+  splits `apply` into `response` and `article`, adds `second_look`, `outline`,
+  `pointers` and the `Empty` refusal, and orders fields with `_ordered`; recipes gain an
+  optional `headings` list (`blog_worker.CONTENT_ADDRESS_SCHEMA`), and the second look
+  uses `blog_worker.CONTENT_POINTERS_SCHEMA` (`response_kind` `content-pointers`).
+  `tests/fake_site.py` adds a module-list response and a stand-in assistant.
+
 - **A published post built by scripts can be read (#283).** Some blogs send an empty page
   and fetch the article with scripts, which Blog Studio never runs, so reading the link
   found no text. Now that message offers **Ask Codex to find the post’s text** (or Claude

@@ -187,23 +187,45 @@ shows its progress with **Stop**, and holds no lock on the workspace while it wo
 2. It returns a recipe, never the article's words: an address template on the same host
    with `{path}`, `{path_without_slash}`, `{slug}` or `{url}`, fixed query values, `json`
    or `html`, and for JSON the pointers to the article's HTML or text fields (`*` for each
-   item of a list) and its title. Anything else, any field long enough to hold text, or an
-   address with no placeholder (the same for every post) is refused.
+   item of a list), to its plain-text section headings (optional) and to its title.
+   Anything else, any field long enough to hold text, or an address with no placeholder
+   (the same for every post) is refused.
 3. Blog Studio fills in the address and reads it itself: https only, the post's exact host
    on the first request and every redirect, no credentials, key or port, and only when
    robots.txt allows it; a JSON recipe asks for `application/json`, and the response is
-   read within 2 MB. The fields are joined and made Markdown by the same parser and
-   escaping as any page. The result is used only when it is tied to this page: its title
+   read within 2 MB. The fields are joined in the response's order and made Markdown by
+   the same parser and escaping as any page: pointers that fan out over the same list (the
+   same path up to their first `*`) are read item by item, each item's headings (as `##`)
+   before its text; a pointer that shares no list is read whole, after the one before it.
+   The result is used only when it is tied to this page: its title
    is the page's title or `og:title` (or their main part, never the site's name, from
    `og:site_name` or the trailing part both titles share, and never the last part of a lone
    `<title>`); or the page's meta description (40 characters or more) is in a field of the
    object the article's text fields belong to, or of an object inside it but not inside a
    list, so one item of a listing of posts never ties the rest. The title counts, and heads
-   the post, only from such a place too; a `*` over an object is read as a listing. Then it is read, limited and staged exactly like any other read,
-   and its preview says it was read from the site's content address and who found it.
+   the post, only from such a place too; a `*` over an object is read as a listing.
+   Headings count with the text: they are placed and tied the same way. Then it is read,
+   limited and staged exactly like any other read, and its preview says it was read from
+   the site's content address and who found it.
+4. A page's scripts often build the address without naming the fields of its response, so
+   the address can be right and the fields empty. Then, once per job and within what is
+   left of its 3 minutes, the assistant has a second look: it is given an outline of that
+   response and nothing from the scripts, one line per field with its JSON pointer, its
+   type, and a string's length and first 80 characters or a list's length (a list's first
+   5 items and the fields its later items add, an object's first 60 keys, at most 12
+   levels, 400 lines and 60 KB). The budget is shared fairly among each field's branches,
+   so a large branch such as a site's menus never crowds out the post, and strings long
+   enough to be article text are shown first. It returns only text, heading and title
+   pointers (`CONTENT_POINTERS_SCHEMA`) for this post's own text, never a list of related
+   posts, or `found: false`; an answer that names another address, query or format is
+   refused. The same response is read again with those
+   pointers, through every check in step 3; it is not fetched again. When they find
+   nothing either, the failure says so, with the paste-the-text advice. Stop works
+   throughout, and the outline is untrusted data, never instructions.
 
-A recipe that works is kept for its host on this computer, in Blog Studio's data folder
-(`content-addresses.json`), never in a team repository. The next post on that host that
+A recipe that works, with the second look's pointers when it took one, is kept for its host
+on this computer, in Blog Studio's data folder (`content-addresses.json`), never in a team
+repository; one kept before headings were read still works. The next post on that host that
 finds no text is read from it straight away, with no assistant; when it no longer gives the
 post, the offer returns and a new recipe replaces the old one. A failure says why, with the
 paste-the-text advice.
