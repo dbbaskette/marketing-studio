@@ -6400,14 +6400,15 @@ async function steer(action, pressed) {
       } else await flushDesk(deskHeld(path));
     }
     // Continue, after Change settings, carries on with the new settings; it is not a retry.
-    const continuing = action === 'retry' && Boolean(view.run && view.run.problem
-      && view.run.problem.settings);
+    const continuing = action === 'retry' && view.run && view.run.problem
+      && view.run.problem.settings ? view.run.problem : null;
     const run = await send('run', { path: view.path, action });
     view.busy = false;
     if (turn !== view.turn) return;
     view.run = run;
     view.steered = '';
-    toast(continuing ? 'Carrying on with the new settings.' : STEERED[action]);
+    toast(continuing ? (continuing.flow ? 'Carrying on with the outline-first flow.'
+      : 'Carrying on with the new settings.') : STEERED[action]);
   } catch (failure) {
     view.busy = false;
     if (turn !== view.turn) return;

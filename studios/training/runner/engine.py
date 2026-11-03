@@ -7224,6 +7224,8 @@ class Engine(Reviewing):
                          **({'seconds': problem['seconds']} if problem.get('seconds') else {}),
                          # Waiting for Continue after Change settings: its words say so.
                          **({'settings': True} if problem.get('settings') else {}),
+                         # Waiting for Continue after the move to scan, outline, then fill in.
+                         **({'flow': problem['flow']} if problem.get('flow') else {}),
                          # The research check's objections, read where the stop is.
                          **({'objections': objections} if problem.get('objected')
                             and (root / objections).is_file() else {}),

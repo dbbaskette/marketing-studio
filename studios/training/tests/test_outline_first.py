@@ -307,7 +307,7 @@ class OlderTrainingTests(StudioCase):
         self.engine.wake(root)
         self.assertEqual(self.view(root)['state'], 'failed', 'nothing moves by itself')
         offer = self.view(root)['outline_offer']
-        self.assertIn('outline-first', offer['words'])
+        self.assertIn('quick scan', offer['words'])
         self.assertIn('discards the research plan', offer['confirm'])
         self.assertIn('$1.25', offer['confirm'])
         with self.assertRaises(WorkspaceError):

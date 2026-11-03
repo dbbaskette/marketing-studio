@@ -2720,11 +2720,15 @@ function outlineReview(plan, held) {
     held.outline = {expected: plan.expected, sections: copy(plan.sections), separate: copy(plan.separate)};
   }
   const edit = held.outline;
-  const redraw = (key) => { paintDesk(true); if (key) focusKey(key); };
+  // A repaint keeps the person's place: the control the change leads to has the focus, in view.
+  const redraw = (key) => {
+    paintDesk(true);
+    if (key && focusKey(key)) document.activeElement.scrollIntoView?.({block: 'center'});
+  };
   const box = add(make('section', 'paper slide-text-review outline-review'),
     make('h2', 'doc-title', 'Here’s what this training will cover'),
     make('p', 'quiet', 'A quick scan of your sources drafted this outline. Edit the sections '
-      + 'and what each still needs researched, then approve it. Research starts only on the '
+      + 'and the questions research should answer for each, then approve it. Research starts only on the '
       + 'sections you approve, up to three at a time.'));
   const sections = make('ol', 'outline-sections');
   edit.sections.forEach((section, index) => sections.append(outlineSection(edit, section, index, limits, redraw)));
@@ -2866,7 +2870,8 @@ function outlineOfferPart(offer, held) {
   const problem = make('p', 'problem'); problem.setAttribute('role', 'alert');
   if (!held.offerOpen) {
     const open = capsule('Use the outline-first flow…', '', () => {
-      held.offerOpen = true; paintDesk(true); focusKey('outline-offer-switch');
+      // The safe choice has the focus: a second Enter never discards anything.
+      held.offerOpen = true; paintDesk(true); focusKey('outline-offer-keep');
     }, 'outline-offer-open');
     return add(box, add(make('div', 'bar'), open));
   }

@@ -24,6 +24,13 @@ def main():
             preferences.finish(studios_config, lambda _: None)
             # --desk: straight to the desk, with no teaching plan to check first.
             case.engine.plan_first = '--desk' not in sys.argv
+            # --outline: scan, outline, then fill in (#297): the outline waits before research.
+            case.engine.outline_first = '--outline' in sys.argv
+            if '--older' in sys.argv:
+                # An older training whose research stopped after one paid try, opened by a
+                # runtime that offers the outline-first flow.
+                from runner_support import fails
+                case.workers.then('research-result', fails(cost=1.25))
             workspace_mode = '--workspace' in sys.argv
             case.engine.content_first = workspace_mode
             if '--library' in sys.argv:
@@ -40,6 +47,8 @@ def main():
             root = case.space.root if '--new' in sys.argv else case.begin(flow='desk', **({} if workspace_mode else {'deck_target': None, 'brand': None}),
                 **({'levels':['101','201']} if '--two-levels' in sys.argv else {}),
                 **({'yoodli': True} if '--yoodli' in sys.argv else {}))
+        if '--older' in sys.argv:
+            case.engine.outline_first = True
         server = desk.Desk(page=lambda port: page.RunnerPage(port, case.engine))
         server.start()
         print(json.dumps({'url': server.url, 'path': str(root)}), flush=True)

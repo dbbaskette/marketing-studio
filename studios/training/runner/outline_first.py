@@ -437,9 +437,9 @@ def blueprint_input(root: Path) -> str | None:
 
 # --- an older training's explicit move here ------------------------------------------------
 
-SWITCH_WORDS = ('Use the outline-first flow: a quick scan of your sources drafts the training '
-                'outline, you check and edit it, and research then fills in each section you '
-                'approve, up to three at a time.')
+SWITCH_WORDS = ('A quick scan of your sources drafts the training outline. You check and edit '
+                'it, and research then fills in each section you approve, up to three at a time, '
+                'instead of researching everything first.')
 SWITCH_DISCARDS = ('Switching discards the research plan and any research not yet accepted '
                    'into a finished report{took}. It cannot be undone. Nothing starts until you '
                    'press Continue.')
@@ -512,8 +512,10 @@ def switch(engine, path, expected, confirmed) -> dict:
         at = home.now()
         record.setdefault('flow_changes', []).append({'at': at, 'to': 'outline-first',
                                                       'discards': found['discards']})
+        # Waiting for Continue, as a change of settings waits (#296), saying what it does.
         record['problem'] = {'state': 'waiting', 'step': None, 'action': 'retry',
-                             'label': 'Continue', 'at': at, 'what': SWITCHED,
+                             'label': 'Continue', 'at': at, 'settings': True,
+                             'flow': 'outline-first', 'what': SWITCHED,
                              'kept': settings_change.KEPT}
         record['halt'] = None
         engine._store(root, record)
