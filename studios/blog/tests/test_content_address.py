@@ -950,7 +950,7 @@ class SecondLookTests(FindTextCase):
         payload = calls[1]['payload']
         outline = payload['outline']
         self.assertTrue(payload['outline_cut'])
-        self.assertEqual(len(outline), content_address.OUTLINE_LINES)
+        self.assertLessEqual(len(outline), content_address.OUTLINE_LINES)
         self.assertLessEqual(len('\n'.join(outline).encode()), content_address.OUTLINE_BYTES)
         self.assertIn('/post/modules: list of 1001', outline)
         self.assertIn('/post/modules/4: object, 3 keys', outline)
@@ -1008,6 +1008,60 @@ class SecondLookTests(FindTextCase):
         self.assertEqual(len(calls), 2)
         self.assertEqual(shown['status'], 'cancelled')
         self.assertEqual(self.kept(), {})
+
+    def test_a_sites_large_menus_before_the_post_leave_room_for_it(self):
+        # A page's JSON with the site's menus first: many short fields, more than the outline
+        # holds, before the post's own.
+        response = fake_site.modules(
+            'Speed is the problem', DESCRIPTION, SECTIONS, before=fake_site.menus()
+        )
+        with self.site(response).serving():
+            shown, calls = self.find(fake_site.Assistant(GUESSED))
+            self.assertEqual(shown['outcome'], 'found', shown['error'])
+            found = self.post('published-preview', {'url': URL})
+        self.assertEqual(found['content'], STAGED)
+        payload = calls[1]['payload']
+        self.assertTrue(payload['outline_cut'])
+        outline = payload['outline']
+        self.assertIn('/post/title: string, 20 chars: "Speed is the problem"', outline)
+        self.assertTrue(any(line.startswith('/post/modules/0/body: ') for line in outline))
+        self.assertTrue(any(line.startswith('/site/footer/') for line in outline), 'all shown')
+
+    def test_text_that_starts_after_a_run_of_other_items_is_named(self):
+        # Six spacers before the first section: the first items alone hold no text field.
+        response = fake_site.modules('Speed is the problem', DESCRIPTION, SECTIONS, lead=6)
+        with self.site(response).serving():
+            shown, calls = self.find(fake_site.Assistant(GUESSED))
+            self.assertEqual(shown['outcome'], 'found', shown['error'])
+            found = self.post('published-preview', {'url': URL})
+        self.assertEqual(found['content'], STAGED)
+        outline = calls[1]['payload']['outline']
+        self.assertNotIn('/post/modules/5: object, 2 keys', outline)
+        self.assertTrue(any(line.startswith('/post/modules/6/body: string') for line in outline))
+        self.assertIn('/post/modules/6/heading: string, 17 chars: "Why speed matters"', outline)
+        self.assertNotIn('/post/modules/6/kind: string, 7 chars: "section"', outline, 'once')
+
+    def test_a_second_look_that_runs_out_of_time_names_the_jobs_limit(self):
+        def slow(payload):
+            raise blog_worker.WorkerFailure(
+                'This step ran out of the time a step may take (37 seconds).', 'time-limit'
+            )
+
+        self.refused(
+            fake_site.Assistant(GUESSED, slow),
+            content_address.OUT_OF_TIME.replace('{limit}', '3 minutes'),
+        )
+        self.assertIn(
+            '(3 minutes in all)',
+            content_address.OUT_OF_TIME.format(limit='3 minutes', assistant='Codex'),
+        )
+
+    def test_the_guidance_names_only_this_posts_text(self):
+        for guidance in (content_address.FIND, content_address.SECOND_LOOK):
+            with self.subTest(guidance=guidance[:20]):
+                self.assertIn('never another post’s', guidance)
+                self.assertIn('related, recent or recommended posts', guidance)
+        self.assertIn('return found false', content_address.SECOND_LOOK)
 
     def test_no_second_look_without_time_left(self):
         with patch.object(content_address, 'LOOK_SECONDS', content_address.SECONDS + 1):
@@ -1103,6 +1157,38 @@ class OrderTests(unittest.TestCase):
 
 
 class OutlineTests(unittest.TestCase):
+    def test_a_large_branch_never_crowds_out_another(self):
+        before = fake_site.menus()
+        # Larger than the outline on its own.
+        lines, cut = content_address.outline(before)
+        self.assertTrue(cut)
+        response = json.loads(
+            fake_site.modules('Speed is the problem', DESCRIPTION, SECTIONS, before=before)
+        )
+        lines, cut = content_address.outline(response)
+        self.assertTrue(cut)
+        self.assertLessEqual(len(lines), content_address.OUTLINE_LINES)
+        for wanted in (
+            '/site: object, 3 keys',
+            '/post: object, 3 keys',
+            '/post/modules: list of 3',
+            '/post/modules/2/heading: string, 25 chars: "What early access changes"',
+        ):
+            self.assertIn(wanted, lines)
+        self.assertLess(lines.index('/site: object, 3 keys'), lines.index('/post: object, 3 keys'))
+
+    def test_long_text_is_shown_before_short_fields_beside_it(self):
+        # One branch, every object in it full of short fields, and the article's text last.
+        text = '<p>' + 'An article’s words. ' * 40 + '</p>'
+        chrome = {'k%02d' % n: {'j%02d' % m: 'short' for m in range(60)} for n in range(59)}
+        last = {'j%02d' % m: 'short' for m in range(59)}
+        chrome['k59'] = {**last, 'text': text}
+        lines, cut = content_address.outline({'page': chrome})
+        self.assertTrue(cut)
+        self.assertTrue(any(line.startswith('/page/k59/text: string, ') for line in lines))
+        self.assertIn('/page/k00: object, 60 keys', lines, 'and the levels above it')
+        self.assertIn('/page/k59: object, 60 keys', lines)
+
     def test_an_outline_is_bounded_in_lines_size_depth_and_items(self):
         deep = current = {}
         for _ in range(40):

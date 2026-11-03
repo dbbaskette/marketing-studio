@@ -10,8 +10,8 @@ changes for authors first, then what changes for maintainers.
   back, so Codex or Claude Code could find the right address and still guess the fields
   wrong, and the search failed with "held no text". Now Blog Studio gives the assistant
   one second look within the same 3 minutes: a bounded outline of that response (each
-  field's pointer, type and first characters, a list's first items), nothing from the
-  page's scripts. The assistant names only where the text, section headings and title
+  field's pointer, type and first characters, a list's first items), shared fairly so a
+  site's menus never crowd out the post, and nothing from the page's scripts. The assistant names only where the text, section headings and title
   are; the address stays as checked. The post is read in the response's order, section
   by section, with its headings as `##` headings, and goes through every check as before.
   Only the recipe that worked is kept for the site. Maintainers: `content_address`

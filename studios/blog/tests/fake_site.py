@@ -98,17 +98,39 @@ class Site:
                 self.server.server_close()
 
 
-def modules(title, summary, sections, extra=None):
+def modules(title, summary, sections, extra=None, before=None, lead=0):
     """A response shaped like a headless CMS's: the post's title and summary, and its sections
     as a list of modules, each a plain heading and an HTML body, with a module that holds no
-    text between them. Nothing on the page or in its scripts names these fields."""
+    text between them (and `lead` spacer modules before them). `before` and `extra` are
+    fields before and after the post. Nothing on the page or in its scripts names these."""
     listed = [
         {'kind': 'section', 'heading': heading, 'body': ''.join(f'<p>{p}</p>' for p in body)}
         for heading, body in sections
     ]
     listed.insert(1, {'kind': 'image', 'src': '/img/diagram.png', 'alt': ''})
+    listed[:0] = [{'kind': 'spacer', 'size': 'large'} for _ in range(lead)]
     post = {'title': title, 'summary': summary, 'modules': listed}
-    return json.dumps({'post': post, **(extra or {})})
+    return json.dumps({**(before or {}), 'post': post, **(extra or {})})
+
+
+def menus(entries=12, links=8):
+    """A site's header and footer menus, as a page's JSON often carries them before its post:
+    many short fields, deeper than the post's own."""
+    menu = [
+        {
+            'label': f'Menu {n}',
+            'links': [
+                {'label': f'Link {m}', 'href': f'/topics/{n}/{m}', 'tags': ['a', 'b', 'c']}
+                for m in range(links)
+            ],
+        }
+        for n in range(entries)
+    ]
+    named = {
+        f'group{n}': {f'item{m}': {'label': 'x', 'href': '/x'} for m in range(links)}
+        for n in range(entries)
+    }
+    return {'site': {'header': menu, 'footer': menu, 'directory': named}}
 
 
 OUTLINE_LINE = re.compile(r'(?P<pointer>/\S*): (?P<kind>[a-z]+)')

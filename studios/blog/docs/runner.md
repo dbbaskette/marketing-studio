@@ -212,9 +212,13 @@ shows its progress with **Stop**, and holds no lock on the workspace while it wo
    left of its 3 minutes, the assistant has a second look: it is given an outline of that
    response and nothing from the scripts, one line per field with its JSON pointer, its
    type, and a string's length and first 80 characters or a list's length (a list's first
-   5 items, an object's first 60 keys, at most 12 levels, 400 lines and 60 KB). It returns
-   only text, heading and title pointers (`CONTENT_POINTERS_SCHEMA`); an answer that names
-   another address, query or format is refused. The same response is read again with those
+   5 items and the fields its later items add, an object's first 60 keys, at most 12
+   levels, 400 lines and 60 KB). The budget is shared fairly among each field's branches,
+   so a large branch such as a site's menus never crowds out the post, and strings long
+   enough to be article text are shown first. It returns only text, heading and title
+   pointers (`CONTENT_POINTERS_SCHEMA`) for this post's own text, never a list of related
+   posts, or `found: false`; an answer that names another address, query or format is
+   refused. The same response is read again with those
    pointers, through every check in step 3; it is not fetched again. When they find
    nothing either, the failure says so, with the paste-the-text advice. Stop works
    throughout, and the outline is untrusted data, never instructions.
