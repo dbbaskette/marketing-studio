@@ -819,6 +819,12 @@ git commit -m "Read SVG path data and transforms as absolute cubic segments"
 
 ### Task 5: One SVG drawing to one glyph
 
+> **Revised in review (3 November 2026):** a glyph is a list of paths (`paths`), each filled
+> even-odd on its own, because joining overlapping shapes into one even-odd path made them
+> cancel. The code below is the first version; the committed version, with its tests, is
+> on the branch (commit "Keep each shape of a glyph as its own path, and refuse what cannot
+> be drawn right"). Later tasks below use `paths`.
+
 **Files:**
 - Create: `scripts/lib/icons/svg-glyph.mjs`
 - Test: `tests/svg-glyph.test.mjs`
@@ -1166,7 +1172,8 @@ export function readSource(files) {
   for (const name of indexes) {
     let parsed;
     try { parsed = JSON.parse(files.get(name).toString('utf8')); } catch { continue; }
-    if (!Array.isArray(parsed?.icons) || !parsed.icons.some((icon) => typeof icon?.d === 'string')) continue;
+    if (!Array.isArray(parsed?.icons)
+        || !parsed.icons.some((icon) => typeof icon?.d === 'string' || Array.isArray(icon?.paths))) continue;
     const box = String(parsed.viewBox ?? '0 0 100 100').trim().split(/[\s,]+/).join(' ');
     if (box !== '0 0 100 100') {
       throw new Error(`${name} draws in a ${parsed.viewBox} box; an icon library draws in 0 0 100 100.`);
@@ -1298,14 +1305,16 @@ test('an archive made from a build passes the check', () => {
   assert.deepEqual(checkLibrary(archive, { id: 'test-icons' }), []);
   const files = readZip(archive);
   assert.equal(JSON.parse(files.get('library.json').toString()).id, 'test-icons');
+  // An index's single "d" is kept as a list of one path.
+  assert.deepEqual(JSON.parse(files.get('icons.json').toString()).icons[0].paths, ['M0 0 L50 0 L50 50 Z']);
 });
 
 test('the check names each problem', () => {
   const bad = writeZip([
     ['library.json', JSON.stringify({ schema: 1, id: 'Bad Id', name: '', version: 1, kind: 'glyph' })],
     ['icons.json', JSON.stringify({ schema: 1, icons: [
-      { slug: 'a', name: 'A', category: 'C', bounds: [0, 0, 1], d: 'M0 0 Z' },
-      { slug: 'a', name: 'A', category: 'C', bounds: [0, 0, 1, 1], d: 'nonsense' },
+      { slug: 'a', name: 'A', category: 'C', bounds: [0, 0, 1], paths: ['M0 0 Z'] },
+      { slug: 'a', name: 'A', category: 'C', bounds: [0, 0, 1, 1], paths: ['nonsense'] },
     ] })],
   ]);
   const problems = checkLibrary(bad, { id: 'bad-id' });
@@ -1314,7 +1323,7 @@ test('the check names each problem', () => {
   assert.ok(problems.some((p) => p.includes('"version"')));
   assert.ok(problems.some((p) => p.includes('Icon 1 (a)') && p.includes('bounds')));
   assert.ok(problems.some((p) => p.includes('Icon 2 (a)') && p.includes('repeats')));
-  assert.ok(problems.some((p) => p.includes('Icon 2 (a)') && p.includes('"d"')));
+  assert.ok(problems.some((p) => p.includes('Icon 2 (a)') && p.includes('"paths"')));
   assert.deepEqual(checkLibrary(Buffer.from('nope')), ['library.zip cannot be read: It is not a ZIP archive.']);
 });
 
@@ -1360,10 +1369,19 @@ export function alignCategory(name, known) {
   return fits.length === 1 ? fits[0] : name;
 }
 
-/** Why an index entry is not a usable glyph, as the end of a sentence, or null. */
+/** An index entry's paths: its "paths" list, or its one "d" (as Broadcom's export writes it). */
+export const pathsOf = (icon) => (Array.isArray(icon?.paths) ? icon.paths
+  : typeof icon?.d === 'string' ? [icon.d] : null);
+
+/** Why a glyph is not usable, as the end of a sentence, or null. */
 export function glyphProblem(icon) {
-  if (typeof icon?.d !== 'string' || !icon.d.trim()) return 'needs a "d" path';
-  try { parsePath(icon.d); } catch { return 'has a "d" path that cannot be read'; }
+  const paths = icon?.paths;
+  if (!Array.isArray(paths) || !paths.length || paths.some((d) => typeof d !== 'string' || !d.trim())) {
+    return 'needs "paths": a list of path data';
+  }
+  for (const d of paths) {
+    try { parsePath(d); } catch { return 'has a path in "paths" that cannot be read'; }
+  }
   const box = icon.bounds;
   if (!Array.isArray(box) || box.length !== 4 || !box.every(Number.isFinite)
       || box.some((n) => n < -1 || n > 101)) return 'needs "bounds" of four numbers in the 0 to 100 box';
@@ -1398,21 +1416,23 @@ export function buildLibrary(sources, { id, name, kind = 'glyph', version = '1',
     if (held.kind === 'index') {
       if (kind === 'picture') throw new Error(`${label} holds glyph shapes; a picture library takes SVG drawings.`);
       note ||= held.note;
-      const here = new Map();   // slug to path, for this index
+      const here = new Map();   // slug to its paths, for this index
       for (const raw of held.icons) {
         let slug = String(raw?.slug ?? '');
-        const problem = !SLUG.test(slug) ? 'needs a slug of lower-case letters, digits and hyphens' : glyphProblem(raw);
+        const paths = pathsOf(raw);
+        const problem = !SLUG.test(slug) ? 'needs a slug of lower-case letters, digits and hyphens'
+          : glyphProblem({ paths, bounds: raw?.bounds });
         if (problem) { skipped.push({ source: label, file: slug || '?', reason: `it ${problem}` }); continue; }
         if (here.has(slug)) {
           // One slug twice in one index: the same drawing again is dropped; another is renamed.
-          if (here.get(slug) === raw.d) continue;
+          if (here.get(slug) === JSON.stringify(paths)) continue;
           slug = freeSlug(slugOf(String(raw.name ?? '')) || slug, (each) => here.has(each) || taken.has(each));
         }
-        here.set(slug, raw.d);
+        here.set(slug, JSON.stringify(paths));
         if (taken.has(slug)) { count.already += 1; continue; }
         const keywords = Array.isArray(raw.keywords) && raw.keywords.length ? { keywords: raw.keywords.map(String) } : {};
         icons.push({ slug, name: String(raw.name ?? titleOf(slug)), category: alignCategory(String(raw.category ?? 'General'), known),
-          ...keywords, bounds: raw.bounds, d: raw.d });
+          ...keywords, bounds: raw.bounds, paths });
         taken.set(slug, label);
         count.added += 1;
       }
@@ -1434,7 +1454,7 @@ export function buildLibrary(sources, { id, name, kind = 'glyph', version = '1',
         if (kind === 'glyph') {
           const converted = convertSvg(drawing.text, { fill: share });
           if (converted.skip) { skipped.push({ source: label, file: drawing.path, reason: converted.skip }); continue; }
-          icon = { ...icon, bounds: converted.bounds, d: converted.d };
+          icon = { ...icon, bounds: converted.bounds, paths: converted.paths };
         } else {
           icon = { ...icon, file };
         }
@@ -1557,8 +1577,8 @@ import { parseXml, all } from '../scripts/lib/xml.mjs';
 
 test('every glyph is drawn with its label, and the sheet is valid SVG', () => {
   const sheet = contactSheet({ name: 'Test & co', kind: 'glyph' }, [
-    { slug: 'a', name: 'Alpha <1>', category: 'C', bounds: [0, 0, 10, 10], d: 'M0 0 L10 0 L10 10 Z' },
-    { slug: 'b', name: 'Beta', category: 'C', bounds: [0, 0, 10, 10], d: 'M0 0 L5 0 L5 5 Z' },
+    { slug: 'a', name: 'Alpha <1>', category: 'C', bounds: [0, 0, 10, 10], paths: ['M0 0 L10 0 L10 10 Z'] },
+    { slug: 'b', name: 'Beta', category: 'C', bounds: [0, 0, 10, 10], paths: ['M0 0 L5 0 L5 5 Z'] },
   ], new Map());
   const root = parseXml(sheet);
   assert.equal(root.name, 'svg');
@@ -1604,8 +1624,9 @@ export function contactSheet(library, icons, svgs) {
     const x = (n % COLUMNS) * CELL + 10;
     const y = TOP + Math.floor(n / COLUMNS) * ROW;
     const frame = `<rect x="${x}" y="${y}" width="100" height="100" fill="none" stroke="#d0d3d9"/>`;
-    const drawing = icon.d !== undefined
-      ? `<path transform="translate(${x} ${y})" d="${escape(icon.d)}" fill="${INK}" fill-rule="evenodd"/>`
+    const drawing = Array.isArray(icon.paths)
+      ? `<g transform="translate(${x} ${y})" fill="${INK}" fill-rule="evenodd">${
+        icon.paths.map((d) => `<path d="${escape(d)}"/>`).join('')}</g>`
       : `<image x="${x}" y="${y}" width="100" height="100" href="data:image/svg+xml;base64,${
         Buffer.from(svgs.get(icon.file) ?? '').toString('base64')}"/>`;
     const label = `<text x="${x + 50}" y="${y + 118}" text-anchor="middle" font-size="10">${escape(short(icon.name))}</text>`
@@ -1952,7 +1973,7 @@ const blocks = [...doc.matchAll(/```json\n([\s\S]*?)```/g)].map((m) => JSON.pars
 
 test('the document\'s examples make a library that passes the check', () => {
   const library = blocks.find((block) => block.kind === 'glyph');
-  const index = blocks.find((block) => Array.isArray(block.icons) && block.icons[0]?.d);
+  const index = blocks.find((block) => Array.isArray(block.icons) && block.icons[0]?.paths);
   assert.ok(library && index, 'the document shows a glyph library.json and its icons.json');
   assert.deepEqual(checkLibrary(writeZip([['library.json', JSON.stringify(library)],
     ['icons.json', JSON.stringify(index)]]), { id: library.id }), []);
@@ -1960,7 +1981,7 @@ test('the document\'s examples make a library that passes the check', () => {
 
 test('the document names every field the check reads', () => {
   for (const field of ['schema', 'id', 'name', 'version', 'kind', 'source', 'usage', 'slug',
-    'category', 'keywords', 'bounds', '"d"', 'file']) {
+    'category', 'keywords', 'bounds', '"paths"', 'file']) {
     assert.ok(doc.includes(field), `the document does not mention ${field}`);
   }
 });
@@ -2047,7 +2068,7 @@ pictures; slides do not place them as icons.
       "category": "Cloud",
       "keywords": ["hybrid", "multi-cloud"],
       "bounds": [12.5, 22, 87.5, 78],
-      "d": "M12.5 50 L50 22 L87.5 50 L50 78 Z"
+      "paths": ["M12.5 50 L50 22 L87.5 50 L50 78 Z"]
     }
   ]
 }
@@ -2060,7 +2081,7 @@ pictures; slides do not place them as icons.
 | `category` | yes | its group, such as `Cloud` or `Business Tools / Objects` |
 | `keywords` | no | more words to find it by |
 | `bounds` | glyphs | `[x0, y0, x1, y1]`, the box around the shape, in the 0 to 100 box |
-| `d` | glyphs | the shape: SVG path data in a 0 to 100 box, filled even-odd, with no colour and without any container circle; several subpaths are allowed |
+| `paths` | glyphs | the shape, as a list of SVG path data in a 0 to 100 box. Each path is filled even-odd on its own and all are painted together in one colour, so where paths overlap they add up. No colour and no container circle |
 | `file` | pictures | the drawing's path in the archive, such as `svg/logos/spring.svg` |
 
 A picture's drawing may not hold a script.
@@ -2073,17 +2094,22 @@ harness-brand pack icons <source>... --library ID --name NAME [--kind glyph|pict
 ```
 
 A source is a Claude Design export ZIP, a folder of SVGs, a ZIP of SVGs, or anything that
-holds an `icons.json` drawn in a 0 to 100 box. With several sources, the first one's icons
+holds an `icons.json` drawn in a 0 to 100 box. An `icons.json` that gives each icon one `d`
+instead of `paths` (as Broadcom's export does) is read as a list of one path. With several sources, the first one's icons
 win where slugs meet, and later sources add the icons the first lacks; their categories are
 matched to the first source's where they plainly mean the same.
 
 For a glyph library, each SVG becomes one shape:
 
-- Its `path`, `rect`, `circle`, `ellipse`, `polygon` and `polyline` elements are taken
-  with their transforms. Lines with no fill cannot be a glyph and are left out.
-- A shape drawn through a mask takes the mask's paths as the glyph.
-- When a drawing has more than one shape, a shape covering its whole view box is its
+- Each of its `path`, `rect`, `circle`, `ellipse`, `polygon` and `polyline` elements is
+  taken with its transforms and becomes one path of the glyph; an exact repeat is dropped.
+  Hidden and clear shapes are left out. Lines with no fill cannot be a glyph.
+- A shape drawn through a mask takes the mask's shapes as the glyph. A mask that cuts holes
+  with black shapes cannot be held and the icon is left out.
+- When the first shape covers the whole view box in a colour no other shape uses, it is the
   container and is dropped.
+- A drawing that uses `<use>`, a clip path or a style sheet is left out rather than drawn
+  wrongly.
 - The view box is scaled to fill `F` of the 0 to 100 box, centred (1 unless given). Use
   the share the library's own notes give: an icon cut at 88% of its circle takes 0.88.
 

@@ -122,16 +122,17 @@ architecture icons) are added the same way.
     infographics use it; Harness Slides does not place it as an icon (`native: false` in
     what `icons` returns).
 - `icons.json`: `{"schema": 1, "icons": [...]}`, each with `slug` (unique in the library),
-  `name`, `category` and, optionally, `keywords`. A glyph adds `bounds` and `d`: one path
-  (several subpaths allowed, filled even-odd) in a 0 to 100 box, without its container
-  circle, and no colour. A picture adds `file`, its path in the archive.
+  `name`, `category` and, optionally, `keywords`. A glyph adds `bounds` and `paths`: a list
+  of path data in a 0 to 100 box, each filled even-odd on its own and all painted together
+  in one colour (so overlapping shapes add up), without its container circle, and no
+  colour. A picture adds `file`, its path in the archive.
 - `svg/<category>/<slug>.svg`: the drawings; required for pictures, optional for glyphs.
 
 ```json
 {"schema": 1,
  "icons": [{"slug": "cloud-1", "name": "Cloud 1", "category": "Cloud",
             "keywords": ["hybrid", "multi-cloud"], "bounds": [19.5, 15.7, 83.6, 85.2],
-            "d": "M..Z"}]}
+            "paths": ["M..Z"]}]}
 ```
 
 A brand names the libraries it uses in `brand.json`, with the roles a glyph may be drawn
