@@ -64,6 +64,25 @@ class BrandCatalogTests(unittest.TestCase):
             brand_catalog.choices(home=self.home, run=recording, which=lambda _: '/node', data=packs)
         self.assertEqual(told, [str(packs), None, '/their/own/brands'])
 
+    def test_every_skill_is_told_the_same_brands_folder(self):
+        second = self.home / '.claude/skills/other-brand'
+        (second / 'scripts').mkdir(parents=True)
+        (second / 'SKILL.md').write_text('Other brand')
+        (second / 'package.json').write_text('{"name":"other-brand"}')
+        (second / 'scripts/other-brand.mjs').write_text('// brands')
+        told = []
+
+        def recording(*args, **kwargs):
+            told.append(kwargs['env'].get('HARNESS_BRAND_DATA'))
+            return self.run_brand(*args, **kwargs)
+
+        packs = self.home / 'Studios' / 'brands'
+        with mock.patch.dict('os.environ', {}):
+            os.environ.pop('HARNESS_BRAND_DATA', None)
+            result = brand_catalog.choices(home=self.home, run=recording, which=lambda _: '/node', data=packs)
+        self.assertEqual(len(result['skills']), 2)
+        self.assertEqual(told, [str(packs), str(packs)])
+
     def test_explicit_folder_does_not_inspect_other_installed_skills(self):
         with mock.patch.object(Path, 'home', return_value=self.home), mock.patch.object(
                 brand_catalog.shutil, 'which', return_value=None):

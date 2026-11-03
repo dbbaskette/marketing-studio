@@ -3,6 +3,6 @@
   "sources": {
     "harness-slides": {"path": "../harness-slides-skill"},
     "harness-research": {"path": "../harness-research-skill"},
-    "brand": {"path": "../harness-brand-skill"}
+    "brand": {"path": "../tanzu-brand"}
   }
 }

@@ -32,17 +32,29 @@ FORMAT = 'https://github.com/dbbaskette/harness-brand-skill/blob/main/docs/brand
 LIBRARIES = 'icon-libraries'   # a reserved name in the folder, never a brand
 
 
+def _section(shared, name: str) -> dict:
+    """A section of the shared settings, or {} when it is missing or not an object."""
+    value = shared.get(name) if isinstance(shared, dict) else None
+    return value if isinstance(value, dict) else {}
+
+
+def _text(section: dict, key: str) -> str | None:
+    """A setting that should be text, or None when it is missing or anything else."""
+    value = section.get(key)
+    return value if isinstance(value, str) and value.strip() else None
+
+
 def folder(shared: dict, repository=None, address=None) -> Path | None:
     """The brands folder for a studio whose workspace is in `repository`, a checkout of
     `address` (None for a folder with no remote), as the shared settings say. None when it
-    cannot be known: a team repository, and a workspace that is not a checkout of it."""
-    shared = shared or {}
-    team = shared.get('team') or {}
-    if team.get('repository'):
-        if repository and same_address(address, team['repository']):
+    cannot be known: a team repository, and a workspace that is not a checkout of it.
+    Settings of the wrong kind are taken as not given."""
+    team = _text(_section(shared, 'team'), 'repository')
+    if team:
+        if repository and same_address(address, team):
             return Path(repository) / 'brands'
         return None
-    return Path((shared.get('local') or {}).get('root') or DEFAULT_ROOT).expanduser() / 'brands'
+    return Path(_text(_section(shared, 'local'), 'root') or DEFAULT_ROOT).expanduser() / 'brands'
 
 
 def unplaced(shared: dict, checkouts=()) -> Path | None:
@@ -54,8 +66,7 @@ def unplaced(shared: dict, checkouts=()) -> Path | None:
     checkout of that repository carries the same packs once it is up to date, so any one
     will do, and one that has the folder is preferred over one that has not been brought up
     to date. None when no checkout has one."""
-    team = (shared or {}).get('team') or {}
-    if not team.get('repository'):
+    if not _text(_section(shared, 'team'), 'repository'):
         return folder(shared)
     for repository, address in checkouts:
         found = folder(shared, repository, address)
@@ -70,7 +81,7 @@ def current(repository=None, address=None) -> Path | None:
     from studio_core import studios_config
     try:
         shared, problem = studios_config.read()
-    except OSError:
+    except (OSError, ValueError):
         return None
     return None if problem else folder(shared, repository, address)
 

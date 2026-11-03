@@ -127,7 +127,7 @@ def checkouts():
         kept = remembered(identifier)
         if not kept or not kept.get('repository'):
             continue
-        root = Path(kept['root'])
+        root = Path(kept['root']).expanduser()
         top = next((folder for folder in (root, *root.parents) if (folder / '.git').exists()),
                    None)
         if top is not None:
