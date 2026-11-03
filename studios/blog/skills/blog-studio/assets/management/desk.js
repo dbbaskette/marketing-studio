@@ -182,7 +182,7 @@ function sDeskPolish(held){
     // A read that fails again says so as a new answer, so pressing the button visibly reads.
     const failed=problem.textContent,needsRead=['google','link','collection'].includes(held.source)&&!held.preview;problem.textContent='';
     held.starting=true;const unlock=sFreezeControls(form);
-    try{await busy(go,needsRead?'Reading and starting…':'Starting…',async()=>{try{if(needsRead&&held.source==='google')await sDeskReadGoogle(held,{start:true});else if(needsRead)await sDeskReadPublished(held,{start:true});else await sDeskGo(held);}catch(error){const readFailed=needsRead&&!held.preview;problem.textContent=(readFailed&&failed?'Read again, and still: ':'')+error.message+(readFailed?(held.source==='google'?' Your link is kept here; change the Doc or try again.':' Your link is kept here; change it or try again.'):' Your choices and captured draft are kept here.');}});}
+    try{await busy(go,needsRead?'Reading and starting…':'Starting…',async()=>{try{if(needsRead&&held.source==='google')await sDeskReadGoogle(held,{start:true});else if(needsRead)await sDeskReadPublished(held,{start:true});else await sDeskGo(held);}catch(error){const readFailed=needsRead&&!held.preview;if(readFailed&&held.find){await sDeskFindShown(held);return;}problem.textContent=(readFailed&&failed?'Read again, and still: ':'')+error.message+(readFailed?(held.source==='google'?' Your link is kept here; change the Doc or try again.':' Your link is kept here; change it or try again.'):' Your choices and captured draft are kept here.');}});}
     finally{held.starting=false;unlock();}
   });
   sPage(sNode('p','lede','Bring your draft and choose what happens first. No kind of post needed.'),form);
@@ -270,9 +270,10 @@ function sDeskDraftIn(held){
   }
   else if(held.source==='link'){
     // A published post by its link: read once on a press, shown here, then started.
-    card.append(sField('desk-link','Link to the published post',held,'link',{required:true,max:2000,hint:'Its page is read once, without running anything on it, and shown here before anything starts. The desk works on a copy; the published page is never changed.',changed:()=>{held.preview=null;}}));
-    const read=sButton(held.preview?'Read the page again':'Read the page',button=>busy(button,'Reading…',async()=>{try{await sDeskReadPublished(held);}catch(error){held.problem=error.message;sDeskStart();}}));read.disabled=!access.actions.edit;
+    card.append(sField('desk-link','Link to the published post',held,'link',{required:true,max:2000,hint:'Its page is read once, without running anything on it, and shown here before anything starts. The desk works on a copy; the published page is never changed.',changed:()=>{held.preview=null;sFindTextGone(held);}}));
+    const read=sButton(held.preview?'Read the page again':'Read the page',button=>busy(button,'Reading…',()=>sDeskReadLink(held)));read.disabled=!access.actions.edit;
     card.append(sAdd(sNode('div','bar'),read));
+    if(held.find&&!held.preview){const find=held.find;card.append(sFindText(find,{current:()=>studio.screen==='desk-start'&&studio.deskStart===held&&held.find===find,found:()=>{held.find=null;return sDeskReadLink(held);}}));}
     if(held.preview)card.append(sPublishedPreview(held.preview,'The post as it was read'));
   }
   else if(held.source==='upload'){if(held.uploaded.text){const paper=sNode('article','paper doc');paper.setAttribute('aria-label','The uploaded file’s text');paper.append(window.StudioMarkdown?window.StudioMarkdown.render(held.uploaded.text):sNode('p','',held.uploaded.text));card.append(sNode('p','quiet',held.uploaded.truncated?'Its text as it was read, the first part shown:':'Its text as it was read:'),paper);}}
@@ -313,21 +314,80 @@ function sPublishedText(markdown){return String(markdown||'').replace(/!\[([^\[\
 function sPublishedPreview(found,label){
   const box=sNode('div','published-preview'),paper=sNode('article','paper doc');paper.setAttribute('aria-label',label);paper.tabIndex=-1;
   paper.append(window.StudioMarkdown?window.StudioMarkdown.render(sPublishedText(found.content)):sNode('p','',found.content));
-  box.append(sNode('p','','Check the text below, then start.'),sNode('p','quiet',sPublishedShape(found)),paper);
+  box.append(sNode('p','','Check the text below, then start.'),sNode('p','quiet',sPublishedShape(found)));
+  if(found.read_from&&found.read_from.found_by)box.append(sNode('p','quiet','Read from the site’s content address, found by '+found.read_from.found_by+'.'));
+  box.append(paper);
   return box;
 }
 function sPublishedFound(found){
   if(!found||found.status!=='preview'||typeof found.preview!=='string'||typeof found.expected!=='string'||typeof found.content!=='string'||typeof found.title!=='string')throw new Error('The page’s preview is incomplete. Read it again.');
   return found;
 }
+// A published page built by scripts: on a press, the assistant chosen under Settings works
+// out where the page gets its text, and Blog Studio reads that address itself and checks it.
+// It never runs by itself. find holds the link, the assistant's name and the job as shown.
+function sFindTextFrom(error,link){const said=error?.reply||{};return error&&error.code==='no-text'?{url:typeof said.url==='string'&&said.url?said.url:link,assistant:typeof said.assistant==='string'&&said.assistant?said.assistant:'Your assistant',said:error.message,view:null,problem:'',node:null,timer:false}:null;}
+function sFindText(find,{current,found}){const box=sNode('div','find-text');find.node=box;find.current=current;find.found=found;sFindTextDraw(find);if(find.view?.busy)sFindTextWatch(find);return box;}
+function sFindTextDraw(find,focus=false){
+  const box=find.node,view=find.view,who=find.assistant;if(!box)return;
+  const parts=[],can=access.actions.edit;
+  if(view&&view.busy){
+    const line=sNode('p','desk-working-note',who+' is looking for where this page gets its text…');line.setAttribute('role','status');
+    const stop=sButton('Stop',button=>busy(button,'Stopping…',async()=>{try{find.view=await api('published-find-text-stop',{id:view.id});}catch(error){find.problem=error.message;}sFindTextDraw(find,true);}));stop.disabled=!can;
+    parts.push(line,sNode('p','quiet','It reads the page’s head and the scripts it loads from this site, and runs none of them. Blog Studio then reads the address it finds and checks that it holds this post. This takes a minute or two.'),sAdd(sNode('div','bar'),stop));
+  }else if(view&&view.status==='ready'){
+    const line=sNode('p','desk-working-note','Found where this page gets its text. Reading the post…');line.setAttribute('role','status');parts.push(line);
+  }else{
+    const again=view&&['failed','cancelled'].includes(view.status);
+    if(view&&view.status==='failed'){const said=sNode('p','problem',view.error+(view.advice?' '+view.advice:''));said.setAttribute('role','alert');parts.push(said);}
+    else if(view&&view.status==='cancelled'){const said=sNode('p','quiet','Stopped. Nothing was kept.');said.setAttribute('role','status');parts.push(said);}
+    else if(find.said){const said=sNode('p','problem',find.said);said.setAttribute('role','alert');parts.push(said);}  // Why the read found no text.
+    if(find.problem){const said=sNode('p','problem',find.problem);said.setAttribute('role','alert');parts.push(said);find.problem='';}
+    const ask=sButton(again?'Ask '+who+' again':'Ask '+who+' to find the post’s text',button=>sFindTextAsk(find,button));ask.disabled=!can;
+    if(!again)parts.push(sNode('p','quiet',who+', your assistant, can work out where this page gets its text from its head and the scripts it loads, without running them. Blog Studio then reads that address itself and checks that it holds this post. It takes a minute or two. Or paste the post’s text instead.'));
+    parts.push(sAdd(sNode('div','bar'),ask));
+  }
+  // Focus stays in the block when it is drawn again, on its button, for a keyboard user.
+  const held=typeof document!=='undefined'&&document.activeElement&&box.contains(document.activeElement);
+  box.replaceChildren(...parts);
+  if(focus||held){const first=box.querySelector('button');if(first&&typeof first.focus==='function')first.focus();}
+}
+async function sFindTextAsk(find,button){
+  await busy(button,'Asking…',async()=>{try{find.view=await api('published-find-text',{operation:operationId(),url:find.url});}catch(error){find.problem=error.message;}});
+  if(!find.current())return;
+  sFindTextDraw(find,true);if(find.view?.busy)sFindTextWatch(find);
+}
+function sFindTextWatch(find){
+  if(find.timer)return;find.timer=true;
+  setTimeout(async()=>{
+    find.timer=false;if(!find.current()||!find.view)return;
+    let shown;try{shown=await api('published-find-text?'+new URLSearchParams({id:find.view.id}));}catch(error){find.problem=error.message;find.view=null;sFindTextDraw(find);return;}
+    if(!find.current())return;
+    const changed=shown.status!==find.view.status;find.view=shown;
+    if(shown.busy)return sFindTextWatch(find);  // Queued and working read the same.
+    sFindTextDraw(find,changed);
+    if(shown.status==='ready')await find.found(shown);  // Read again: from the address it found.
+  },DESK_POLL);
+}
 // Read a published post by its link: one fetch on this press, shown before anything starts.
+// A page with no text offers to ask the assistant where it gets its text (sFindText).
 async function sDeskReadPublished(held,{start=false}={}){
   if(held.source==='collection')return sDeskReadCollection(held,{start});
-  const turn=studio.turn,found=sPublishedFound(await api('published-preview',{url:held.link.trim()}));if(turn!==studio.turn)return;
-  held.preview=found;
+  const turn=studio.turn;let found;
+  try{found=sPublishedFound(await api('published-preview',{url:held.link.trim()}));}
+  catch(error){if(turn===studio.turn)held.find=sFindTextFrom(error,held.link.trim());throw error;}
+  if(turn!==studio.turn)return;
+  held.preview=found;held.find=null;
   if(start)return sDeskGo(held);
   await sDeskStart();sPublishedFocus();
 }
+// Read the page on its own button (or once its text was found): a refusal is said on the form.
+async function sDeskReadLink(held){try{await sDeskReadPublished(held);}catch(error){held.problem=held.find?'':error.message;if(held.find)await sDeskFindShown(held);else sDeskStartAgain(held);}}
+// A read that found no text: the form is drawn with the offer, and focus goes to its button.
+async function sDeskFindShown(held){if(studio.screen==='desk-start'&&studio.deskStart===held){await sDeskStart();sFindTextFocus();}}
+function sFindTextFocus(){const box=$('studio-page').querySelector('.find-text'),button=box&&box.querySelector('button');if(button&&typeof button.focus==='function')button.focus();}
+// The link changed: an offer to find the old link's text goes.
+function sFindTextGone(held){if(held.find?.node)held.find.node.hidden=true;held.find=null;}
 async function sDeskReadCollection(held,{start=false}={}){
   if(held.collectionReading)return;held.collectionReading=true;
   const turn=studio.turn;
@@ -1907,7 +1967,8 @@ async function sGeoStart(){
   const held=sGeoHeld();
   sFrame('GEO report',[],'New blog',()=>sRoute('home'));
   const form=sNode('form','narrow desk-start geo-start'),problem=sNode('p','problem',held.problem||'');problem.setAttribute('role','alert');held.problem='';
-  const card=sCard('The published post',sField('geo-link','Link to the published post',held,'link',{required:true,max:2000,hint:'Its page is read once when you press Read the page, without running anything on it, together with the site’s robots.txt. You see what was read before anything starts.',changed:()=>{held.preview=null;}}));
+  const card=sCard('The published post',sField('geo-link','Link to the published post',held,'link',{required:true,max:2000,hint:'Its page is read once when you press Read the page, without running anything on it, together with the site’s robots.txt. You see what was read before anything starts.',changed:()=>{held.preview=null;sFindTextGone(held);}}));
+  if(held.find&&!held.preview){const find=held.find;card.append(sFindText(find,{current:()=>studio.screen==='geo-start'&&studio.geoStart===held&&held.find===find,found:()=>{held.find=null;return sGeoRead(held);}}));}
   if(held.preview){
     card.append(sPublishedPreview(held.preview,'The post as it was read'));
     const again=sButton('Read the page again',button=>busy(button,'Reading…',()=>sGeoRead(held)));again.disabled=!access.actions.edit;card.append(sAdd(sNode('div','bar'),again));
@@ -1924,9 +1985,9 @@ async function sGeoStart(){
 }
 async function sGeoRead(held){
   const turn=studio.turn;
-  try{const found=sPublishedFound(await api('published-preview',{url:held.link.trim()}));if(turn!==studio.turn)return;held.preview=found;}
-  catch(error){if(turn!==studio.turn)return;held.preview=null;held.problem=error.message+' Your link is kept here.';}
-  if(studio.screen==='geo-start'&&studio.geoStart===held){await sGeoStart();sPublishedFocus();}
+  try{const found=sPublishedFound(await api('published-preview',{url:held.link.trim()}));if(turn!==studio.turn)return;held.preview=found;held.find=null;}
+  catch(error){if(turn!==studio.turn)return;held.preview=null;held.find=sFindTextFrom(error,held.link.trim());held.problem=held.find?'':error.message+' Your link is kept here.';}
+  if(studio.screen==='geo-start'&&studio.geoStart===held){await sGeoStart();if(held.find)sFindTextFocus();else sPublishedFocus();}
 }
 // After a read, focus goes to what was read, so a keyboard user reads it before starting.
 function sPublishedFocus(){const paper=$('studio-page').querySelector('.published-preview .paper');if(paper&&typeof paper.focus==='function')paper.focus({preventScroll:false});}
@@ -1963,6 +2024,11 @@ function sGeoReportRender(held){
   if(view.status==='working'){const line=sNode('p','desk-working-note','Reading the post and writing its report. One job; nothing else changes.');line.setAttribute('role','status');parts.push(sCard(view.title,line,sNode('p','quiet','It opens here when it is ready. You can leave this page; the report is kept in Blogs.')));}
   else if(!ready){const said=sNode('p','problem','The report did not finish: '+(view.error||'it stopped.'));said.setAttribute('role','alert');parts.push(sCard(view.title,said,sNode('p','quiet','Run again reads the page again and makes a new report.')));}
   else parts.push(sGeoPaper(view),sGeoAfterwards(held));
+  if(held.find){
+    // Run again found no text: the assistant may find where the page gets it, then Run again goes ahead.
+    const find=held.find;
+    parts.unshift(sCard('Find the post’s text',sFindText(find,{current:()=>studio.screen==='geo-report'&&studio.geoReport===held&&held.find===find,found:()=>{held.find=null;return sGeoAgain(held,null);}})));
+  }
   if(held.problem){const said=sNode('p','problem',held.problem);said.setAttribute('role','alert');parts.unshift(said);held.problem='';}
   sPage(...parts);
 }
@@ -2055,7 +2121,9 @@ async function sGeoDesk(held,button){
   await busy(button,'Making the desk copy…',async()=>{try{const made=await api('geo-report-desk',{id:held.id,operation:held.deskOp||(held.deskOp=operationId())});studio.desk={id:made.desk,session:operationId(),openTool:'geo'};sToast('A desk copy of the post is ready. The recommendations wait in Finishing.');await sRoute('desk',made.desk);}catch(error){held.problem=error.message;sGeoReportRender(held);}});
 }
 async function sGeoAgain(held,button){
-  await busy(button,'Reading the page again…',async()=>{try{const made=await api('geo-report-again',{id:held.id,operation:held.againOp||(held.againOp=operationId())});held.againOp=null;await sRoute('geo-report',made.id);}catch(error){held.problem=error.message;sGeoReportRender(held);}});
+  // A press reads the page again; once the assistant found where its text is, it goes ahead by itself.
+  const again=async()=>{try{const made=await api('geo-report-again',{id:held.id,operation:held.againOp||(held.againOp=operationId())});held.againOp=null;held.find=null;await sRoute('geo-report',made.id);}catch(error){if(studio.geoReport!==held)return;held.find=sFindTextFrom(error,held.view?.url||'');held.problem=held.find?'':error.message;sGeoReportRender(held);if(held.find)sFindTextFocus();}};
+  return button?busy(button,'Reading the page again…',again):again();
 }
 // In Blogs and on Home: each report marked a GEO report, never a draft.
 function sGeoCurrent(){return (studio.reports||[]).filter(row=>!row.newer);}

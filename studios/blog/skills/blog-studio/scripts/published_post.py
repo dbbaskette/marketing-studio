@@ -53,6 +53,16 @@ NO_TEXT = (
     'No article text was found on this page. It may be built by scripts, which Blog Studio '
     'never runs. Paste the post’s text instead.'
 )
+# A page that may be built by scripts: said once, as the page then offers to ask the
+# assistant where it gets its text, or to paste the post's text.
+NO_TEXT_FOUND = (
+    'No article text was found on this page. It may be built by scripts, which Blog Studio '
+    'never runs.'
+)
+NO_TEXT_SAVED = (
+    'No article text was found on this page, and the content address {assistant} found for '
+    'this site didn’t give it either. {why}'
+)
 NOT_FOUND = 'This page was not found (HTTP {status}). Check the link.'
 REFUSED = 'The site refused to send this page (HTTP {status}). Check the link.'
 BAD_LINK = 'Use the post’s public https link, without a password or port.'
@@ -96,6 +106,16 @@ TAG_START = re.compile(r'<(?=[A-Za-z/!?])')
 LINK_CLOSE = re.compile(r'\](?=[(\[:])')
 IMAGE_START = re.compile(r'!(?=\[)')
 UNESCAPE = re.compile(r'\\([\\`*_{}\[\]()#+\-.!|<>~])')
+
+
+class NoText(ValueError):
+    """No article text on a page that may be built by scripts. The page offers to ask the
+    person's assistant where the page gets its text (content_address); `answer` is what the
+    page is told besides the message."""
+
+    def __init__(self, message, url):
+        super().__init__(message)
+        self.answer = {'code': 'no-text', 'url': url}
 
 
 def _clean(text):
@@ -470,6 +490,9 @@ class Article(HTMLParser):
             self.robots_meta.append(content)
         elif name in (
             'og:title',
+            'og:description',  # These tie a content address's text to the page,
+            'twitter:title',
+            'og:site_name',  # and this says which part of its title is the site's name.
             'author',
             'article:author',
             'article:published_time',
@@ -946,21 +969,17 @@ def robots_allowed(groups, agent, path):
     return best is None or best[1]
 
 
-def robots_check(url, fetch=None):
-    """What the site's robots.txt says about this page for search crawlers: one small fetch
-    with a tight size and time limit. Missing or unreadable is "couldn't check"."""
+def robots_rules(url, fetch=None):
+    """The site's robots.txt, in one small fetch with a tight size and time limit:
+    ('read', groups); ('none', None) when the site sends none as text (a 4xx, or a web page
+    instead); or ('unreachable', None) when it could not be asked (a 5xx, a network failure
+    or too slow), which RFC 9309 reads as everything disallowed."""
     import blog_library
     import management
 
     fetch = fetch or blog_library.fetch
     parts = urlsplit(url)
     where = urlunsplit(('https', parts.netloc, '/robots.txt', '', ''))
-    unknown = {
-        'key': 'robots',
-        'status': 'unknown',
-        'said': 'Couldn’t check robots.txt: the site did not send a readable one. That is not '
-        'a problem in itself.',
-    }
     try:
         content, _, kind = fetch(
             where,
@@ -968,13 +987,32 @@ def robots_check(url, fetch=None):
             deadline=time.monotonic() + ROBOTS_SECONDS,
             limit=ROBOTS_BYTES,
         )
-        if kind and kind.split(';')[0].strip().lower() != 'text/plain':
-            return unknown  # An HTML "not found" page is not a robots.txt.
-        text = content.decode('utf-8-sig', 'replace')  # A byte order mark is not text.
-        if re.match(r'\s*<(?:!doctype|html|head|body)\b', text, re.I):
-            return unknown  # A web page sent as text, such as a "not found" page.
-        groups = robots_groups(text)
-    except (ValueError, OSError):
+    except ValueError as error:
+        status = re.search(r'returned HTTP (\d{3})', str(error))
+        return ('none' if status and status.group(1).startswith('4') else 'unreachable'), None
+    except OSError:
+        return 'unreachable', None
+    if kind and kind.split(';')[0].strip().lower() != 'text/plain':
+        return 'none', None  # An HTML "not found" page is not a robots.txt.
+    text = content.decode('utf-8-sig', 'replace')  # A byte order mark is not text.
+    if re.match(r'\s*<(?:!doctype|html|head|body)\b', text, re.I):
+        return 'none', None  # A web page sent as text, such as a "not found" page.
+    return 'read', robots_groups(text)
+
+
+def robots_check(url, fetch=None, rules=None):
+    """What the site's robots.txt says about this page for search crawlers. Missing or
+    unreadable is "couldn't check". `rules` is robots_rules' answer when it was read
+    already, so robots.txt is read once."""
+    parts = urlsplit(url)
+    unknown = {
+        'key': 'robots',
+        'status': 'unknown',
+        'said': 'Couldn’t check robots.txt: the site did not send a readable one. That is not '
+        'a problem in itself.',
+    }
+    state, groups = rules or robots_rules(url, fetch)
+    if state != 'read':
         return unknown
     path = robots_decoded((parts.path or '/') + ('?' + parts.query if parts.query else ''))
     blocked = [agent for agent, _ in SEARCH_AGENTS if not robots_allowed(groups, agent, path)]
@@ -1019,20 +1057,15 @@ def _text_page(text, base):
     }
 
 
-def read(url, fetch=None):
-    """Read a published post by its link: fetched once through the bounded fetcher, then its
-    article extracted; and robots.txt, for Page access. Network: call it outside the lock.
-    Refused plainly for a login, a type that is not a page, or a page too large."""
+def fetch_page(url, fetch, headers=None):
+    """A published post's page, fetched once through the bounded fetcher: (content, final
+    address, type). A sign-in, a missing page, a refusal and a page too large are said
+    plainly."""
     import blog_library
     import management
 
-    fetch = fetch or blog_library.fetch
-    if not isinstance(url, str) or not re.fullmatch(r'https://\S{4,2000}', url.strip()):
-        raise ValueError(BAD_LINK)
-    url = url.strip()
-    headers = {}
     try:
-        content, final, kind = fetch(url, management.LinkScope(url), headers=headers)
+        return fetch(url, management.LinkScope(url), headers=headers)
     except ValueError as error:
         said = str(error)
         status = re.search(r'returned HTTP (\d{3})', said)
@@ -1046,6 +1079,20 @@ def read(url, fetch=None):
         if said == blog_library.TOO_LARGE:
             raise ValueError(TOO_LARGE) from None
         raise ValueError(management.LINK_WORDS.get(said, said)) from None
+
+
+def read(url, fetch=None):
+    """Read a published post by its link: fetched once through the bounded fetcher, then its
+    article extracted; and robots.txt, for Page access. Network: call it outside the lock.
+    Refused plainly for a login, a type that is not a page, or a page too large."""
+    import blog_library
+
+    fetch = fetch or blog_library.fetch
+    if not isinstance(url, str) or not re.fullmatch(r'https://\S{4,2000}', url.strip()):
+        raise ValueError(BAD_LINK)
+    url = url.strip()
+    headers = {}
+    content, final, kind = fetch_page(url, fetch, headers)
     media = (kind or '').split(';')[0].strip().lower()
     if media in ('text/html', 'application/xhtml+xml'):
         found = article(content, final)
@@ -1058,13 +1105,36 @@ def read(url, fetch=None):
         raise ValueError(LOGIN)
     if parser.full:
         raise ValueError(TOO_LONG)
-    if found['words'] < 1:
+    rules = None  # The site's robots.txt, once read.
+    if found['words'] < 1 and media in ('text/html', 'application/xhtml+xml'):
+        # Perhaps a page built by scripts: the content address an assistant found for this
+        # site before is read, with no assistant; otherwise the page offers to ask for one.
+        found, rules = _from_saved_address(url, final, found, fetch)
+    elif found['words'] < 1:
         raise ValueError(NO_TEXT)
     if len(found['markdown']) > LIMIT:
         raise ValueError(TOO_LONG)
-    page = access(found, headers, robots_check(final, fetch))
+    page = access(found, headers, robots_check(final, fetch, rules))
     found.pop('parser')
     return {**found, 'url': url, 'final_url': final, 'read_at': studio.now(), 'access': page}
+
+
+def _from_saved_address(url, final, shell, fetch):
+    """The post read from the content address kept for its host, with no assistant, and the
+    site's robots.txt it read; NoText (which offers to ask the assistant) when there is
+    none or it no longer gives this post."""
+    import content_address
+
+    kept = content_address.saved(urlsplit(final).hostname)
+    if kept is None:
+        raise NoText(NO_TEXT_FOUND, url)
+    rules = robots_rules(final, fetch)
+    try:
+        read = content_address.apply(kept['recipe'], final, shell, kept['found_by'], fetch, rules)
+        return read, rules
+    except ValueError as error:
+        said = NO_TEXT_SAVED.format(assistant=content_address.name(kept['found_by']), why=error)
+        raise NoText(said, url) from None
 
 
 def parts_title(url):
@@ -1188,6 +1258,8 @@ def shown(token, value):
         'collection_item': value.get('collection_item'),
         'summary': _summary(value),
         'access': value.get('access'),
+        # Read from the site's content address, which an assistant found: said quietly.
+        'read_from': value.get('content_address'),
     }
 
 

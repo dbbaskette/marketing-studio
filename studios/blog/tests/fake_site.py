@@ -25,11 +25,13 @@ class Site:
     def __init__(self, pages=None):
         self.pages = dict(pages or {})
         self.requests = []
+        self.accepts = {}  # path: the Accept header it was asked with
         site = self
 
         class Handler(BaseHTTPRequestHandler):
             def do_GET(self):
                 site.requests.append((self.headers.get('Host'), self.path))
+                site.accepts[self.path] = self.headers.get('Accept')
                 status, headers, body = site.pages.get(
                     self.path, (404, {'Content-Type': 'text/plain'}, b'Not found')
                 )

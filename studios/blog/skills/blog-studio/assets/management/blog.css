@@ -222,6 +222,10 @@
 .published-preview{display:grid;gap:.5rem;min-width:0}
 .published-preview>p{margin:0}
 .published-preview>.paper{padding:1rem;max-height:28rem;overflow:auto;overflow-wrap:anywhere}
+/* Asking the assistant where a page built by scripts gets its text: part of the opaque form. */
+.find-text{display:grid;gap:.6rem;min-width:0;overflow-wrap:anywhere}
+.find-text>p{margin:0}
+.find-text[hidden]{display:none}
 .geo-report-paper{gap:1.6rem;overflow-wrap:anywhere}
 .geo-report-head{display:grid;gap:.35rem}
 .geo-report-head>p{margin:0}
