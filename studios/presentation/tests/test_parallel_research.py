@@ -1,5 +1,6 @@
 """Production runner transport with fictional evidence and the real pinned helper."""
 import copy
+import hashlib
 import inspect
 import json
 import os
@@ -30,7 +31,14 @@ class ParallelNativeTests(StudioCase):
     def worker(self, tools, job):
         payload = json.loads(tools.read_input('research-task')[1])
         self.caps.append(job.limits.dollars)
-        if 'questions' in payload:
+        if 'questions' in payload and getattr(self, 'supplied', False):
+            self.phases.append('investigate')
+            source = next(s for s in tools._index() if s.get('offered'))
+            value = dossier(payload['worker'], source['file'], source['url'], 'selected')
+            value['sources'][0]['original_file'] = source['original']
+            value = {k: value[k] for k in ('schema', 'sources', 'facts')}
+            value['gaps'] = []
+        elif 'questions' in payload:
             self.phases.append('investigate')
             if self.barrier: self.barrier.wait(10)
             self.assertTrue(tools.save_source(URL)[0])
@@ -89,3 +97,31 @@ class ParallelNativeTests(StudioCase):
         self.assertEqual(first,second)
         root=Path(first['path'])
         self.assertEqual(self.engine._load(root)['form']['research_from'],{'documents':True,'sites':[],'web':False})
+
+    def test_untidy_supplied_text_passes_the_dossier_check(self):
+        # #295: text with double and trailing spaces and three blank lines, as Google
+        # Slides can read, is registered as the tidied text the assistant reads and quotes.
+        from runner_support import FORM
+        from studio_core import research_sources
+        from studio_core.shared_runner.worker_tools import tidy
+        self.supplied, self.barrier = True, None
+        untidy = 'Overview of  Synthetic  Queues   \n' + TEXT.replace('. More', '.  More') + '  \n\n\n\nDATA TSL \n'
+        store = research_sources.Sources(self.engine.space().root / '.research-sources')
+        draft = store.create()
+        draft = store.mutate(draft['id'], draft['revision'], 'capture', kind='text', name='Synthetic deck', text=untidy)
+        started = self.engine.start({**FORM, 'flow': 'desk', 'research': True},
+                                    research_inputs={'id': draft['id'], 'expected': draft['revision']})
+        root = Path(started['path'])
+        problem = json.dumps(self.view(root)['problem'])
+        self.assertNotIn('harness-research', problem)
+        self.assertNotIn('capture differs', problem)
+        facts, _ = contract.read_bundle(root / 'research')
+        self.assertTrue(facts['review']['accepted'])
+        self.assertEqual({source['permission'] for source in facts['sources']}, {'selected'})
+        entries = json.loads((parallel.case_for(root) / 'sources.json').read_text())['entries']
+        registered = [entry['capture_sha256'] for entry in entries if entry.get('capture_sha256')]
+        self.assertEqual(len(registered), 1)
+        kept = (parallel.case_for(root) / facts['sources'][0]['file']).read_text()
+        self.assertNotEqual(kept, untidy)
+        self.assertEqual(kept, tidy(kept))
+        self.assertEqual(registered, [hashlib.sha256(kept.encode()).hexdigest()])
