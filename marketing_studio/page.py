@@ -8,7 +8,7 @@ import shutil
 from pathlib import Path
 
 from studio_core import preferences as shared_preferences
-from studio_core import brand_catalog, research_sites, runtime
+from studio_core import brand_catalog, brand_data, research_sites, runtime
 from studio_core.model_catalog import Catalog
 from studio_core import document_library
 from studio_core.document_library import adopt as library_adopt
@@ -192,7 +192,11 @@ class Home(server.Page):
             if skill is not None and (not isinstance(skill, str) or len(skill) > 2000
                                      or not Path(skill).expanduser().is_absolute()):
                 raise WorkspaceError('Choose an absolute installed brand skill folder, or leave it blank.')
-            return server.as_json(200, brand_catalog.choices(skill))
+            # Marketing Studio has no workspace of its own: local storage's brands folder,
+            # or a studio's checkout of the team repository that has one (brand_data.unplaced).
+            values, problem = shared.read()
+            data = None if problem else brand_data.unplaced(values, workspaces.checkouts())
+            return server.as_json(200, brand_catalog.choices(skill, data=data))
         if path == '/api/models':
             try:
                 return server.as_json(200, self.models.get(sent.get('agent'), refresh=True))

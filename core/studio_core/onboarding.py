@@ -7,7 +7,7 @@ import threading
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from studio_core import preferences, brand_catalog, research_sites, runtime
+from studio_core import preferences, brand_catalog, brand_data, research_sites, runtime
 from studio_core.model_catalog import Catalog
 from studio_core.server import for_product
 from studio_core.studios_config import for_product as config_for
@@ -54,7 +54,12 @@ class Controller:
                     if skill is not None and (not isinstance(skill, str) or len(skill) > 2000
                                              or not Path(skill).expanduser().is_absolute()):
                         raise ValueError('Choose an absolute installed brand skill folder, or leave it blank.')
-                    return protocol.as_json(200, brand_catalog.choices(skill))
+                    # Shared setup runs before a studio need have a workspace: local
+                    # storage's brands folder, and with a team repository none, since
+                    # its packs arrive with the studio's own checkout (brand_data.unplaced).
+                    values, problem = owner.store.read()
+                    data = None if problem else brand_data.unplaced(values, ())
+                    return protocol.as_json(200, brand_catalog.choices(skill, data=data))
                 if path.endswith('/models'):
                     return protocol.as_json(200, owner.models.get(sent.get('agent'), refresh=True))
                 with owner.lock:

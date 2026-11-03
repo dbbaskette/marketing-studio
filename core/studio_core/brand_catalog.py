@@ -1,4 +1,8 @@
-"""Read installed brand choices on explicit request; never install or update a skill."""
+"""Read installed brand choices on explicit request; never install or update a skill.
+
+`choices(skill, data=...)` tells each brand command the brands folder Harness Brand reads
+its packs from, in HARNESS_BRAND_DATA (studio_core.brand_data), unless that is set already.
+"""
 import json
 import os
 from pathlib import Path
@@ -6,8 +10,10 @@ import re
 import shutil
 import subprocess
 
+from studio_core import brand_data
 
-def choices(skill=None, home=None, run=subprocess.run, which=shutil.which):
+
+def choices(skill=None, home=None, run=subprocess.run, which=shutil.which, data=None):
     home = Path(home) if home is not None else Path.home()
     selected = skill or os.environ.get('BRAND_SKILL_RUNTIME')
     roots = [Path(selected).expanduser()] if selected else [
@@ -37,7 +43,8 @@ def choices(skill=None, home=None, run=subprocess.run, which=shutil.which):
                     if 'brands' not in source.read(200_000):
                         continue
                 done = run([node, str(script), 'brands', '--json'], capture_output=True,
-                           text=True, timeout=10)
+                           text=True, timeout=10,
+                           env=brand_data.environment(dict(os.environ), data))
                 if done.returncode or len(done.stdout) > 1_000_000:
                     raise ValueError('The brand command did not return a readable list.')
                 data = json.loads(done.stdout)

@@ -15,5 +15,5 @@
       "source_sha256": "f573c5b67db34ce948e7095d33a20477561037f7415f0fd84ccd02f92e940c16"
     }
   },
-  "adaptations": "Relative imports and Blog Git/settings adapters. Contract exports use the blog medium without a slide delivery flag. Installer wording names Blog Studio."
+  "adaptations": "Relative imports and Blog Git/settings adapters. Contract exports use the blog medium without a slide delivery flag. Installer wording names Blog Studio. Brand commands are told the brands folder in HARNESS_BRAND_DATA (studio_core.brand_data)."
 }

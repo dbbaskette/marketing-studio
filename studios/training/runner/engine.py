@@ -2074,7 +2074,10 @@ class Engine(Reviewing):
                 found['fonts'] = fonts() if fonts else None
                 found['contracts'] = bool(skill.contracts())
             except (WorkspaceError, OSError) as refusal:
-                found['brand']['problem'] = str(refusal)
+                # Harness Brand with no usable brand pack: one line that says where the
+                # packs go, in place of its refusal. Any other skill's refusal is as it was.
+                found['brand']['problem'] = brand_skill.packs(
+                    settings.load().brand_skill) or str(refusal)
             try:
                 found['skills'] = [entry for entry in brand_skill.found()
                                    if isinstance(entry, dict) and entry.get('runtime')]

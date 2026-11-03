@@ -3727,6 +3727,19 @@ class TroubleTests(DeckCase):
         self.brand = None
         self.assertEqual(missing(), [NO_BRAND_SKILL])
 
+    def test_a_harness_brand_with_no_pack_is_said_in_setup_in_one_line(self):
+        from runner import engine as engines
+        line = 'Harness Brand finds no brands folder at /nowhere/brands. See the format.'
+        self.brand = None
+        with mock.patch.object(engines.brand_skill, 'packs', lambda runtime=None: line):
+            needs = self.engine.deck_needs(fresh=True)
+        [item] = [item for item in needs['items'] if item['id'] == 'deck-brand']
+        self.assertEqual((item['state'], item['fix'], needs['brand']['problem']),
+                         ('missing', line, line))
+        [item] = [item for item in self.engine.deck_needs(fresh=True)['items']
+                  if item['id'] == 'deck-brand']
+        self.assertNotEqual(item['fix'], line, "any other skill's refusal is as it was")
+
     def test_a_computer_with_no_renderer_takes_the_training_through_everything_else(self):
         self.slides.have['drive'] = False
         root = self.saved_begin()
