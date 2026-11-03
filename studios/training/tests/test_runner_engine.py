@@ -2168,9 +2168,16 @@ class LiveTests(StudioCase):
         self.assertEqual((worker['id'], worker['label']),
                          ('research-plan', 'Drafting the research plan'))
         self.assertRegex(worker['started_at'], r'^\d{4}-\d\d-\d\dT')
-        self.assertEqual(worker['lines'], ['Handing back research-plan',
-                                           'The draft was accepted',
-                                           'Writing its own notes on the draft'])
+        said = ['Handing back research-plan', 'The draft was accepted',
+                'Writing its own notes on the draft']
+        self.assertEqual([line['text'] for line in worker['lines']], said)
+        self.assertTrue(all(re.match(r'^\d{4}-\d\d-\d\dT', line['at'])
+                            for line in worker['lines']))
+        self.assertEqual(worker['now']['text'], said[-1])
+        # The Activity log has the running job, and nothing finished yet.
+        logged = self.engine.activity(root)
+        self.assertEqual((logged['jobs'], logged['empty']), ([], 'No activity recorded yet.'))
+        self.assertEqual(logged['running'][0]['now']['text'], said[-1])
         self.assertEqual(self.steps(root)['research-plan']['status'], 'working')
         self.assertEqual(self.engine.brief(root)['needs'], False)
         # The worker's start is the run's last activity, until a try begins or ends later.
@@ -2182,6 +2189,11 @@ class LiveTests(StudioCase):
         self.until(lambda: self.state(root) == 'waiting')
         self.assertEqual(self.view(root)['workers'], [])
         self.assertIsNone(self.engine.brief(root)['busy_since'])
+        job, = self.engine.activity(root)['jobs']
+        self.assertEqual((job['label'], job['step'], job['outcome']),
+                         ('Drafting the research plan', 'research-plan', 'finished'))
+        self.assertEqual([line['text'] for line in job['lines']], said)
+        self.assertEqual(job['started_at'], worker['started_at'])
 
     def test_only_so_many_trainings_work_at_once(self):
         settings.save(replace(settings.load(), parallel=1))

@@ -49,6 +49,11 @@ What a caller needs to know
   not be made, and for each deck what its outline was written from, whether what it says
   is put to the person, what they decided, and which deck was saved. It is committed with
   everything else.
+- While a worker runs, the page is shown what it is doing: its latest line and its lines so
+  far, each with its time (`activity_log.live`). Each job that ends, however it ends, is
+  added to the training's Activity log, `work/activity-log.jsonl`, which is this computer's
+  and never shared: its label and step, its times, how it ended and its plain lines, never
+  its brief or its events. `activity(path)` reads it for the page.
 - One try at an agent step: an empty job folder under `agents.staging()`, a brief, a
   worker, and results taken only from what the worker tools accepted. A draft is saved
   through the core and committed. A step is tried up to three times, with the reason for
@@ -214,7 +219,7 @@ import subprocess
 import tempfile
 import threading
 import time
-from collections import Counter, deque
+from collections import Counter
 from dataclasses import replace
 from datetime import datetime, timezone
 from concurrent.futures import ThreadPoolExecutor
@@ -231,6 +236,7 @@ import hub
 import workspace
 from workspace import WorkspaceError
 from studio_core.process_lock import ProcessRLock
+from studio_core import activity_log
 from studio_core.shared_runner.write_markers import defer_share, mark_step
 from studio_core.drafting import basis, guards
 
@@ -252,8 +258,10 @@ RECORD = drafts.RECORD   # f'{workspace.STATE_DIR}/run.json'
 # Written when a step starts and removed when it ends, and never shared. One left behind
 # says the runner ended in the middle of a step, not that a person changed a file.
 IN_HAND = f'{workspace.STATE_DIR}/step.lock'
+# What each assistant job did, in the training's folder: under work/, so never shared.
+ACTIVITY = f'work/{activity_log.FILE}'
 AT_ONCE = 3             # research questions worked on at the same time
-LINES = 6               # the last things a worker did that the page is shown
+LINES = activity_log.LINES   # the things a worker did that the page is shown, newest kept
 OUTSIDE = 50            # addresses refused outside your sites that a run remembers
 READY_FOR = 60          # seconds a look at an agent is reused
 MODELS_FOR = 3600       # seconds a list of an agent's models is reused
@@ -3872,7 +3880,7 @@ class Engine(Reviewing):
         job = agents.Job(work.guidance, work.task, folder, work.profile,
                          tuple(worker_tools.command(folder)), limits, record.get('model'),
                          record.get('effort'))
-        lines, started_at, clock = deque(maxlen=LINES), home.now(), time.monotonic()
+        lines, started_at, clock = activity_log.Lines(LINES), home.now(), time.monotonic()
         stop, terminated = _WorkerStop(run.stop), threading.Event()
         with self.files:
             current = self._load(root)
@@ -3885,7 +3893,7 @@ class Engine(Reviewing):
             with self._lock:
                 run.workers[step.id] = {'label': step.doing, 'started_at': started_at,
                                         'lines': lines, 'folder': folder, 'stop': stop, 'terminated': terminated}
-        choice = None
+        choice = outcome = None
         try:
             if step.id.startswith(('deck-sections', 'deck-repair')):
                 with self.files:
@@ -3916,10 +3924,15 @@ class Engine(Reviewing):
             with self._lock:
                 run.workers.pop(step.id, None)
                 terminated.set()
+            if outcome is None:     # the run was stopped, or something unforeseen went wrong
+                self._log_job(root, step, started_at, 'stopped' if stop.is_set() else 'failed',
+                              lines)
         if stop.is_set() and outcome.reason != 'stopped':
             outcome = replace(outcome, finished=False, reason='stopped')
         if not outcome.seconds:
             outcome = replace(outcome, seconds=round(time.monotonic() - clock, 1))
+        self._log_job(root, step, started_at, activity_log.ending(outcome), lines,
+                      outcome.detail)
         if choice is not None:
             model_profiles.staged(self, choice, number, work.profile, started_at)
         handed = worker_tools.collect(folder)
@@ -3932,6 +3945,27 @@ class Engine(Reviewing):
                     [*(record.get('outside') or []), *handed['outside']]))[-OUTSIDE:]
                 self._store(root, record)
         return outcome, handed, started_at, folder
+
+    def _log_job(self, root: Path, step: pipeline.Step, started_at: str, ended: str, lines,
+                 detail: str | None = None) -> None:
+        """Keep what a job did in the training's Activity log, which is this computer's and
+        never shared. Best effort: a log that cannot be written never stops the run."""
+        try:
+            with self.files:
+                activity_log.append(root / ACTIVITY, activity_log.entry(
+                    step.doing, step.id, started_at, ended, lines, detail))
+        except OSError:
+            pass
+
+    def activity(self, path) -> dict:
+        """A training's Activity log: its finished jobs, newest first, and those running."""
+        root = self.driven(path)
+        if root is None:
+            raise WorkspaceError('No run is driving this training.')
+        run = self._run(root)
+        with self._lock:
+            running = list(run.workers.items())
+        return activity_log.view(root / ACTIVITY, running)
 
     @staticmethod
     def _cost(outcome: agents.Outcome) -> dict:
@@ -6862,11 +6896,10 @@ class Engine(Reviewing):
         return None if status == 'done' else last_error(record, step.id)
 
     def _workers(self, run: _Run) -> list[dict]:
-        """The workers running now, each with the last few things it did."""
+        """The workers running now, each with its latest line and the lines it said so far."""
         with self._lock:
             live = list(run.workers.items())
-        return [{'id': ident, 'label': worker['label'], 'started_at': worker['started_at'],
-                 'lines': list(worker['lines'])} for ident, worker in live]
+        return activity_log.live(live)
 
     def ahead(self, path) -> tuple[str, str] | None:
         """A run's state and what comes next, for the sentence shown after a decision.
