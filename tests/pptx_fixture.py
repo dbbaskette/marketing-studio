@@ -58,6 +58,7 @@ def slide_xml(slide):
         parts.append(group(5, ''.join(shape(10 + i, [line]) for i, line in enumerate(slide['group']))))
     if slide.get('picture'):
         parts.append(PICTURE)
+    parts.extend(slide.get('raw', ()))
     tree = ('<p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>'
             '<p:grpSpPr/>' + ''.join(parts))
     return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:sld ' + NS + '><p:cSld><p:spTree>' + tree + '</p:spTree></p:cSld></p:sld>'
@@ -85,6 +86,7 @@ def deck(slides, *, extra=None, missing=None, replace=None):
                     + str(number) + '.xml"/>')
         files['ppt/slides/slide' + str(number) + '.xml'] = slide_xml(slide)
         slide_rels = ['<Relationship Id="rIdImage" Type="' + REL + 'image" Target="../media/image1.png"/>']
+        slide_rels.extend(slide.get('rels', ()))
         if slide.get('notes'):
             files['ppt/notesSlides/notesSlide' + str(number) + '.xml'] = notes_xml(slide['notes'])
             slide_rels.append('<Relationship Id="rIdN" Type="' + REL + 'notesSlide" Target="../notesSlides/notesSlide'
@@ -104,6 +106,34 @@ def deck(slides, *, extra=None, missing=None, replace=None):
             archive.writestr(name, value if isinstance(value, bytes) else value.encode())
     return buffer.getvalue()
 
+
+def google_shape(ident, paragraphs, placeholder=None):
+    """A shape as Google Drive exports it: named for its Google Slides object and page."""
+    ph = '<p:nvPr><p:ph type="' + placeholder + '"/></p:nvPr>' if placeholder else '<p:nvPr/>'
+    return ('<p:sp><p:nvSpPr><p:cNvPr id="' + str(ident) + '" name="Google Shape;' + str(ident) + ';p13"/>'
+            '<p:cNvSpPr txBox="1"/>' + ph + '</p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/><a:lstStyle/>'
+            + ''.join(paragraphs) + '</p:txBody></p:sp>')
+
+
+MC = ('xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" '
+      'xmlns:p14="http://schemas.microsoft.com/office/powerpoint/2010/main"')
+GOOGLE = {
+    'raw': [
+        google_shape(54, ['<a:p><a:pPr marL="0" lvl="0"><a:buNone/></a:pPr><a:r><a:rPr lang="en" b="1"/>'
+                          '<a:t>Google </a:t></a:r><a:r><a:rPr lang="en"><a:hlinkClick r:id="rIdLink"/></a:rPr>'
+                          '<a:t>shaped title</a:t></a:r><a:endParaRPr lang="en"/></a:p>'], 'title'),
+        google_shape(55, ['<a:p><a:pPr algn="r"/><a:fld id="{00000000-1234-1234-1234-123412341234}" type="slidenum">'
+                          '<a:rPr lang="en"/><a:t>4</a:t></a:fld><a:endParaRPr lang="en"/></a:p>'], 'sldNum'),
+        '<mc:AlternateContent ' + MC + '><mc:Choice Requires="p14">'
+        + google_shape(56, ['<a:p><a:r><a:rPr lang="en"/><a:t>Choice text</a:t></a:r></a:p>'])
+        + '</mc:Choice><mc:Fallback>'
+        + google_shape(57, ['<a:p><a:r><a:rPr lang="en"/><a:t>Fallback text</a:t></a:r><a:endParaRPr/></a:p>'])
+        + '</mc:Fallback></mc:AlternateContent>',
+    ],
+    'rels': ['<Relationship Id="rIdLink" Type="' + REL + 'hyperlink" Target="https://example.invalid/page" TargetMode="External"/>',
+             '<Relationship Id="rIdOdd" Type="' + REL + 'hyperlink" Target="../../../outside.html"/>'],
+    'notes': 'Google speaker context.',
+}
 
 SAMPLE = [
     {'title': 'Synthetic opening', 'body': ['First point.', 'Second\npoint.'], 'notes': 'Opening speaker context.'},

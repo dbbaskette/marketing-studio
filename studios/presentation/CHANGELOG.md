@@ -16,7 +16,8 @@ making decks first, then what changes for maintainers.
   only while the deck is unchanged, and otherwise says so and keeps the earlier
   capture. When Google refuses, the message says why: an API not enabled for the
   sign-in's project, a sign-in missing Drive access (with the command to fix it), a
-  file this account cannot open, or a deck too large for Drive to export.
+  file this account cannot open, or a deck larger than the 10 MB Google Drive
+  exports, which is better uploaded as a PDF.
   Maintainers: `studio_core.pptx_slides` reads the export with `zipfile` and expat
   (size-capped parts, no DTDs or entities); `google_reference.capture` takes
   `previous` and `slide_choice` resolves `slide-<n>-<digest>`, `slide-<n>` and

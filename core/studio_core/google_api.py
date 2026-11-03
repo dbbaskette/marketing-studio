@@ -28,7 +28,7 @@ SERVICES = {
     "drive.googleapis.com": "the Google Drive API",
 }
 SCOPE_REASONS = {"ACCESS_TOKEN_SCOPE_INSUFFICIENT", "insufficientPermissions"}
-DISABLED_REASONS = {"SERVICE_DISABLED", "accessNotConfigured", "USER_PROJECT_DENIED"}
+DISABLED_REASONS = {"SERVICE_DISABLED", "accessNotConfigured"}
 NO_PERMISSION_REASONS = {
     "forbidden",
     "cannotExportFile",
@@ -183,16 +183,17 @@ def refusal(body, selected=None):
         service = SERVICES.get(host, host or "this Google service")
         return (
             "Google has not enabled " + service + " for the sign-in's project, so it refused this request."
-            + ("" if host == "drive.googleapis.com" else " Reads through Google Drive are unaffected.")
+            + ("" if host == "drive.googleapis.com"
+               else " Reads through Google Drive are unaffected. Upload a copy instead.")
         )
     if "exportSizeLimitExceeded" in reasons:
         return (
             "This file is larger than Google Drive can export (10 MB). Download it as a "
-            "PowerPoint or PDF file and upload that copy instead."
+            "PDF and upload that copy instead."
         )
     if reasons & RATE_REASONS:
         return "Google is limiting requests. Keep the saved intent and retry an explicit read later."
-    if reasons & NO_PERMISSION_REASONS or status == "PERMISSION_DENIED":
+    if reasons & NO_PERMISSION_REASONS or (status == "PERMISSION_DENIED" and not reasons):
         return (
             "This Google account cannot open this file. Ask its owner to share it with "
             "this account, or upload a copy instead."

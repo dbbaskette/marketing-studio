@@ -15,6 +15,7 @@ import hashlib
 import io
 import posixpath
 import re
+import struct
 import zipfile
 from xml.etree.ElementTree import TreeBuilder
 import xml.parsers.expat
@@ -35,7 +36,7 @@ MC = "{http://schemas.openxmlformats.org/markup-compatibility/2006}"
 TABLE = "http://schemas.openxmlformats.org/drawingml/2006/table"
 
 UNREADABLE = ("Google's PowerPoint export of this deck could not be read safely. "
-              "Upload a PowerPoint or PDF copy instead.")
+              "Download it as a PDF and upload that copy instead.")
 COUNT = "Choose a presentation with 1–200 readable slides."
 NESTED = "Slide groups are nested too deeply."
 IDENTITY = re.compile(r"slide-([1-9][0-9]{0,2})-([0-9a-f]{12})")
@@ -99,6 +100,12 @@ class Package:
     def __init__(self, data):
         if not isinstance(data, (bytes, bytearray)) or not 0 < len(data) <= LIMIT:
             refuse()
+        # Count entries from the end-of-central-directory record before zipfile lists them.
+        end = bytes(data[-65_557:]).rfind(b"PK\x05\x06")
+        if end < 0 or len(data[-65_557:]) - end < 22:
+            refuse()
+        if struct.unpack_from("<H", data[-65_557:], end + 10)[0] > MOST_ENTRIES:
+            refuse()
         try:
             self.zip = zipfile.ZipFile(io.BytesIO(bytes(data)))
             entries = self.zip.infolist()
@@ -138,7 +145,7 @@ class Package:
             resolved = posixpath.normpath(target[1:] if target.startswith("/")
                                           else posixpath.join(folder, target))
             if resolved.startswith("../") or resolved.startswith("/") or resolved == "..":
-                refuse()
+                continue  # Never followed; a slide or notes part it would name still refuses later.
             found[ident] = (kind, resolved)
         return found
 

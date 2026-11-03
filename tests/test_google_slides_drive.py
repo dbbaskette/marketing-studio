@@ -80,6 +80,22 @@ class DriveExportTests(unittest.TestCase):
         self.assertEqual(set(saved['tabs'][0]), {'id', 'number', 'text'})
         self.assertEqual(found['sha256'], hashlib.sha256(found['raw']).hexdigest())
 
+    def test_a_google_shaped_slide_reads_its_runs_and_fallback_only(self):
+        found = capture(FakeDrive(pptx_fixture.deck([pptx_fixture.SAMPLE[0], pptx_fixture.GOOGLE])))
+        saved = json.loads(found['raw'])['tabs'][1]
+        self.assertEqual(saved['text'], 'Google shaped title\nFallback text\nGoogle speaker context.\n')
+        self.assertEqual(saved['number'], 2)
+        labels = [l['label'] for l in found['extracted']['locations'] if l['label'].startswith('Slide 2')]
+        self.assertEqual(labels, ['Slide 2 / shape 54', 'Slide 2 / shape 57', 'Slide 2 speaker notes / shape 3'])
+        self.assertNotIn('Choice text', found['extracted']['text'])
+
+    def test_too_many_zip_entries_are_refused_before_listing(self):
+        deck = pptx_fixture.deck(pptx_fixture.SAMPLE[:1], extra={'ppt/media/' + str(i): b'' for i in range(30)})
+        with mock.patch.object(pptx_slides, 'MOST_ENTRIES', 20), mock.patch.object(zipfile, 'ZipFile') as opened:
+            with self.assertRaisesRegex(ValueError, 'could not be read safely'):
+                capture(FakeDrive(deck))
+        opened.assert_not_called()
+
     def test_identities_are_stable_and_choices_keep_only_the_chosen_slides(self):
         deck = pptx_fixture.deck(pptx_fixture.SAMPLE)
         first, second = capture(FakeDrive(deck)), capture(FakeDrive(deck))
@@ -176,10 +192,10 @@ class RefusalTests(unittest.TestCase):
     CASES = {
         'disabled': (error('PERMISSION_DENIED', detail='SERVICE_DISABLED', service='slides.googleapis.com'),
                      "Google has not enabled the Google Slides API for the sign-in's project, so it refused this request. "
-                     'Reads through Google Drive are unaffected.'),
+                     'Reads through Google Drive are unaffected. Upload a copy instead.'),
         'quota': (error('PERMISSION_DENIED', message='The docs.googleapis.com API requires a quota project, which is not set by default.'),
                   "Google has not enabled this Google service for the sign-in's project, so it refused this request. "
-                  'Reads through Google Drive are unaffected.'),
+                  'Reads through Google Drive are unaffected. Upload a copy instead.'),
         'scope': (error('PERMISSION_DENIED', detail='ACCESS_TOKEN_SCOPE_INSUFFICIENT'),
                   'This Google sign-in was not given the access this needs. Sign in again with Drive access by running '
                   '`gcloud auth login editor@example.invalid --enable-gdrive-access --force --no-activate` in a terminal, then try again.'),
@@ -188,9 +204,15 @@ class RefusalTests(unittest.TestCase):
                       'This Google account cannot open this file. Ask its owner to share it with this account, or upload a copy instead.'),
         'denied': (error('PERMISSION_DENIED'), None),
         'export size': (error(reason='exportSizeLimitExceeded'),
-                        'This file is larger than Google Drive can export (10 MB). Download it as a PowerPoint or PDF file and upload that copy instead.'),
+                        'This file is larger than Google Drive can export (10 MB). Download it as a PDF and upload that copy instead.'),
         'unknown': (error(reason='somethingNew'),
                     'The selected Google account lacks access, download permission or the required API scope.'),
+        'unknown denied': (error('PERMISSION_DENIED', reason='somethingNew'),
+                           'The selected Google account lacks access, download permission or the required API scope.'),
+        'domain policy': (error('PERMISSION_DENIED', reason='domainPolicy'),
+                          'The selected Google account lacks access, download permission or the required API scope.'),
+        'user project': (error('PERMISSION_DENIED', detail='USER_PROJECT_DENIED'),
+                         'The selected Google account lacks access, download permission or the required API scope.'),
         'unreadable': (b'<html>' + TOKEN.encode() + b'</html>',
                        'The selected Google account lacks access, download permission or the required API scope.'),
     }
@@ -294,7 +316,7 @@ class SavedSourceTests(unittest.TestCase):
     def test_an_old_choice_on_a_changed_deck_is_refused_and_the_old_capture_kept(self):
         self.drive.versions = ['9']
         revision = self.value['revision']
-        with self.assertRaisesRegex(ValueError, "earlier slide identities.*Read the link again.*earlier capture is kept"):
+        with self.assertRaisesRegex(ValueError, "earlier slide identities.*Remove this source and add its link again.*earlier capture is kept"):
             self.act('tabs', source='a' * 32, selected=['p'])
         kept = self.sources.read(self.value['id'])
         self.assertEqual(kept['revision'], revision)

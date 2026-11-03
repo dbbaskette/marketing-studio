@@ -7,10 +7,10 @@ from studio_core.google_api import Client, DOC_MIME, SLIDES_MIME, GoogleError
 from studio_core import pptx_slides
 
 LEGACY = ("These slide choices were saved with Google's earlier slide identities, and the deck "
-          "has changed since, so they can't be matched to its slides safely. Read the link again "
-          "to include all slides, then choose slides again.")
-MOVED = ("A selected slide changed or moved since the deck was read. Read the link again to "
-         "include all slides, then choose slides again.")
+          "has changed since, so they can't be matched to its slides safely. Remove this source "
+          "and add its link again to include all slides, then choose slides again.")
+MOVED = ("A selected slide changed or moved since the deck was read. Remove this source and "
+         "add its link again to include all slides, then choose slides again.")
 
 
 def require(value, message):
