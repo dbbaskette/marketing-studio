@@ -98,7 +98,7 @@ post’s text** (or Claude Code, as chosen under Settings) gives your assistant 
 page’s head and excerpts of the scripts it loads from that site. It has no web
 access and returns only where the page gets its text. Blog Studio reads that address
 itself (https, the post’s own host, allowed by robots.txt) and uses it only when it
-matches the page’s title, its description or the post’s own path. The address is remembered for that site on
+matches the page’s title or description. The address is remembered for that site on
 this computer, so the next post there is read straight away.
 
 The **team library** holds posts, examples and reusable material for a configured

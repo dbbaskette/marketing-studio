@@ -187,18 +187,19 @@ shows its progress with **Stop**, and holds no lock on the workspace while it wo
 2. It returns a recipe, never the article's words: an address template on the same host
    with `{path}`, `{path_without_slash}`, `{slug}` or `{url}`, fixed query values, `json`
    or `html`, and for JSON the pointers to the article's HTML or text fields (`*` for each
-   item of a list) and its title. Anything else, or any field long enough to hold text, is
-   refused.
-3. Blog Studio fills in the address and reads it itself: https only, the post's own host,
-   no credentials, key or port, and only when robots.txt allows it; the response is read
-   within 2 MB. The fields are joined and made Markdown by the same parser and escaping as
-   any page. The result is used only when it is tied to this page: its title is the page's
-   title or `og:title`; or the page's meta description (40 characters or more) appears in
-   its text or in any field of the response, such as its metadata; or the post's own path,
-   or the page's canonical path, is a whole field of the response or the path of an address
-   there (never the site's root). Then it is read, limited and staged
-   exactly like any other read, and its preview says it was read from the site's content
-   address and who found it.
+   item of a list) and its title. Anything else, any field long enough to hold text, or an
+   address with no placeholder (the same for every post) is refused.
+3. Blog Studio fills in the address and reads it itself: https only, the post's exact host
+   on the first request and every redirect, no credentials, key or port, and only when
+   robots.txt allows it; a JSON recipe asks for `application/json`, and the response is
+   read within 2 MB. The fields are joined and made Markdown by the same parser and
+   escaping as any page. The result is used only when it is tied to this page: its title
+   is the page's title or `og:title` (or their main part, never the site's name, from
+   `og:site_name` or the trailing part both titles share); or the page's meta description
+   (40 characters or more) is in a field of the object the article's text fields belong
+   to, or of an object inside it but not inside a list, so one item of a listing of posts
+   never ties the rest. Then it is read, limited and staged exactly like any other read,
+   and its preview says it was read from the site's content address and who found it.
 
 A recipe that works is kept for its host on this computer, in Blog Studio's data folder
 (`content-addresses.json`), never in a team repository. The next post on that host that

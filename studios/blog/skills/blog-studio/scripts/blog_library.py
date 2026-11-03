@@ -256,8 +256,18 @@ class Outside(ValueError):
 TOO_LARGE = 'Source exceeds the bounded fetch limit.'
 
 
+ACCEPT = 'text/html,application/xml,text/plain'
+
+
 def fetch(
-    url, scope, redirects=3, deadline=None, redirected_from=None, limit=MAX_FETCH, headers=None
+    url,
+    scope,
+    redirects=3,
+    deadline=None,
+    redirected_from=None,
+    limit=MAX_FETCH,
+    headers=None,
+    accept=None,
 ):
     """Reject private addresses and pin the actual socket, including every redirect.
 
@@ -270,6 +280,7 @@ def fetch(
     workspace longer than FETCH_DEADLINE seconds. Network failures become plain messages.
     `limit` lowers the byte limit for a small file (robots.txt); `headers`, a dict, is given
     the final response's status and its X-Robots-Tag, for a published post's Page access.
+    `accept` replaces the Accept header (ACCEPT), as a content address read as JSON asks.
     """
     deadline = deadline or time.monotonic() + FETCH_DEADLINE
     target = fetchable(url)
@@ -299,7 +310,7 @@ def fetch(
             urlunsplit(('', '', parsed.path or '/', parsed.query, '')),
             headers={
                 'User-Agent': 'BlogStudio/1.12 (explicit team collection import)',
-                'Accept': 'text/html,application/xml,text/plain',
+                'Accept': accept or ACCEPT,
             },
         )
         raw = connection.sock
@@ -318,6 +329,7 @@ def fetch(
                 redirected_from=url,
                 limit=limit,
                 headers=headers,
+                accept=accept,
             )
         if headers is not None:
             headers.update(

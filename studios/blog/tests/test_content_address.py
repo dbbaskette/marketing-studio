@@ -16,6 +16,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+import blog_library
 import blog_runner
 import blog_worker
 import content_address
@@ -79,6 +80,21 @@ def api(title='Speed is the problem', paragraphs=PARAGRAPHS, description=DESCRIP
     if url is not None:
         value['url'] = url
     return json.dumps(value)
+
+
+SLUG = PATH.rsplit('/', 1)[1]
+# A page whose site's name is said by og:site_name, with no og:title to compare with.
+SITE_NAMED = """<!doctype html><html><head><title>AI | Example Newsroom and Press Releases</title>
+<meta name="description" content="{description}">
+<meta property="og:site_name" content="Example Newsroom and Press Releases">
+</head><body><div id="root"></div></body></html>"""
+
+
+def one(name):
+    """A recipe for a test's own address, which still names the post (by its slug), and the
+    path the fake site serves it at."""
+    recipe = {**RECIPE, 'address': '/api/' + name + '?post={slug}', 'query': []}
+    return recipe, '/api/' + name + '?post=' + SLUG
 
 
 def api_path(path=PATH):
@@ -324,7 +340,7 @@ class RefusedRecipeTests(FindTextCase):
             ('http://www.example.com/api/getjson?url={path_without_slash}', 'is not https'),
             ('https://www.example.com:8443/api/getjson?url={path_without_slash}', 'names a port'),
             ('https://www.example.com:443/api/getjson?url={path_without_slash}', 'names a port'),
-            ('https://user:secret@www.example.com/api/getjson', 'user name, password or key'),
+            ('https://user:secret@www.example.com/api/{slug}', 'user name, password or key'),
             ('/api/getjson?api_key=abc&url={path}', 'user name, password or key'),
         ):
             with self.subTest(address=address):
@@ -343,41 +359,108 @@ class RefusedRecipeTests(FindTextCase):
 
     def test_a_response_too_large_is_refused(self):
         site = self.site()
-        site.page(
-            '/api/huge', b'{"title": "' + b'x' * (3 * 1024 * 1024) + b'"}', kind='application/json'
+        recipe, path = one('huge')
+        site.page(path, b'{"title": "' + b'x' * (3 * 1024 * 1024) + b'"}', kind='application/json')
+        self.refused(recipe, 'more than Blog Studio reads from a link (2 MB)', site)
+
+    def test_a_redirect_off_the_posts_host_is_refused_before_it_is_asked(self):
+        site = self.site()
+        recipe, path = one('moved')
+        site.page(path, b'', status=302, Location='https://api.example.com/api/getjson?x=1')
+        site = self.refused(recipe, 'on another host (api.example.com)', site)
+        self.assertEqual({host for host, _ in site.requests}, {HOST}, 'nothing off the host')
+
+    def test_the_json_read_asks_for_json(self):
+        site = self.site()
+        with site.serving():
+            shown, _ = self.find(RECIPE)
+        self.assertEqual(shown['outcome'], 'found', shown['error'])
+        self.assertEqual(site.accepts[api_path()], content_address.ACCEPT_JSON)
+        self.assertTrue(content_address.ACCEPT_JSON.startswith('application/json'))
+        self.assertEqual(site.accepts[PATH], blog_library.ACCEPT, 'every other read as before')
+
+    def test_an_address_the_same_for_every_post_is_refused(self):
+        # A listing of posts, one of whose summaries is this page's description.
+        site = self.site()
+        listing = json.dumps(
+            {
+                'posts': [
+                    {'title': 'One', 'summary': OTHER_DESCRIPTION, 'body': '<p>First post.</p>'},
+                    {'title': 'Two', 'summary': DESCRIPTION, 'body': '<p>Second post.</p>'},
+                    {'title': 'Three', 'summary': 'Another.', 'body': '<p>Third post.</p>'},
+                ]
+            }
         )
+        site.page('/api/posts', listing, kind='application/json')
+        fixed = {**RECIPE, 'address': '/api/posts', 'query': [], 'text': ['/posts/*/body']}
+        site = self.refused({**fixed, 'title': ''}, 'is the same for every post', site)
+        self.assertNotIn('/api/posts', [path for _, path in site.requests], 'never read')
+        # Named by the post, the listing is still several posts: a description in one of its
+        # items does not tie the joined text to this page.
+        site = self.site()
+        recipe, path = one('posts')
+        site.page(path, listing, kind='application/json')
         self.refused(
-            {**RECIPE, 'address': '/api/huge', 'query': []},
-            'more than Blog Studio reads from a link (2 MB)',
-            site,
+            {**recipe, 'text': ['/posts/*/body'], 'title': ''}, 'didn’t hold this post', site
         )
 
+    def test_an_echo_of_the_request_is_not_this_post(self):
+        # The address carries the post's path; an endpoint that echoes it ties nothing.
+        site = self.site()
+        echo = json.dumps(
+            {
+                'query': PATH,
+                'url': PATH,
+                'results': [
+                    {'title': 'Ten tips for gardens', 'body': '<p>Water your tomatoes at dawn.</p>'}
+                ],
+            }
+        )
+        site.page('/api/search?q=' + PATH, echo, kind='application/json')
+        recipe = {
+            'found': True,
+            'address': '/api/search?q={path}',
+            'query': [],
+            'format': 'json',
+            'text': ['/results/*/body'],
+            'title': '/results/0/title',
+        }
+        site = self.refused(recipe, 'didn’t hold this post', site)
+        self.assertIn('/api/search?q=' + PATH, [path for _, path in site.requests])
+
     def test_a_response_that_is_not_this_post_is_refused(self):
-        other = {**RECIPE, 'address': '/api/other', 'query': []}
-        for response in (
-            # Another post on the same host: its own path, description and title.
-            api('Ten tips for gardens', ['Water the plants.'], OTHER_DESCRIPTION, OTHER),
-            api('Ten tips', ['Water.'], OTHER_DESCRIPTION, 'https://www.example.com' + OTHER),
-            # The site's name alone does not tie it to the page, nor does the site's root, a
-            # path on another host, or the post's path inside words.
-            api('Example Newsroom', ['Water the plants.'], OTHER_DESCRIPTION, OTHER),
-            api('Example Corp', ['Water.'], OTHER_DESCRIPTION, '/'),
-            api('Ten tips', ['Water.'], OTHER_DESCRIPTION, 'https://www.example.com/'),
-            api('Ten tips', ['Water.'], OTHER_DESCRIPTION, 'https://www.other.example.net' + PATH),
-            api('Ten tips', ['Water.'], OTHER_DESCRIPTION, 'See ' + PATH + ' for more'),
+        recipe, path = one('other')
+        for page, response in (
+            # Another post on the same host: its own path, description and title. Its path,
+            # or this post's, in a field ties nothing either way.
+            (shell(), api('Ten tips for gardens', ['Water the plants.'], OTHER_DESCRIPTION, OTHER)),
+            (shell(), api('Ten tips for gardens', ['Water the plants.'], OTHER_DESCRIPTION, PATH)),
+            # The site's name alone does not tie it to the page.
+            (shell(), api('Example Newsroom', ['Water the plants.'], OTHER_DESCRIPTION, None)),
+            (
+                shell(title='AI | Example Newsroom and Press Releases'),
+                api('Example Newsroom and Press Releases', ['Water.'], OTHER_DESCRIPTION, None),
+            ),
+            (
+                SITE_NAMED.format(description=DESCRIPTION),
+                api('Example Newsroom and Press Releases', ['Water.'], OTHER_DESCRIPTION, None),
+            ),
             # A description too short to mean anything ties nothing.
-            api('Ten tips', ['Water.'], 'Example Newsroom', None),
+            (
+                shell(description='Example Newsroom'),
+                api('Ten tips', ['Water.'], 'Example Newsroom'),
+            ),
         ):
             with self.subTest(response=response):
                 site = self.site()
-                if 'Example Newsroom' in response and '"url"' not in response:
-                    site.page(PATH, shell(description='Example Newsroom'))
-                site.page('/api/other', response, kind='application/json')
-                self.refused(other, 'didn’t hold this post', site)
+                site.page(PATH, page)
+                site.page(path, response, kind='application/json')
+                self.refused(recipe, 'didn’t hold this post', site)
 
     def test_the_real_shape_stages_with_its_own_title(self):
-        # The SEO <title> differs from the response's title, and the description is only in a
-        # metadata field: the description and the url field tie it to the page.
+        # As the real site sends it: the SEO <title> differs from the response's title, and
+        # the page's description is only in the response's meta_description field, beside
+        # the article's modules in the same object.
         site = self.site()
         with site.serving():
             shown, _ = self.find(RECIPE)
@@ -392,20 +475,13 @@ class RefusedRecipeTests(FindTextCase):
         self.assertTrue(staged['markdown'].startswith('# Speed is the problem\n\n' + PARAGRAPHS[0]))
 
     def test_each_tie_alone_is_enough(self):
-        canonical = '/news/speed-is-the-problem'
+        nested = json.loads(api('Untitled', PARAGRAPHS, OTHER_DESCRIPTION, None))
+        nested['seo'] = {'description': DESCRIPTION}
         for name, page, response in (
-            # The description, only in a metadata field.
+            # The description, only in a metadata field beside the article, or in an object
+            # inside the one the article belongs to.
             ('description', shell(), api('Untitled', PARAGRAPHS, DESCRIPTION, None)),
-            # The post's own path: as written, without its first slash, or as its address.
-            ('path', shell(), api('Untitled', PARAGRAPHS, OTHER_DESCRIPTION, PATH)),
-            ('path', shell(), api('Untitled', PARAGRAPHS, OTHER_DESCRIPTION, PATH.lstrip('/'))),
-            ('address', shell(), api('Untitled', PARAGRAPHS, OTHER_DESCRIPTION, URL + '/')),
-            # The page's canonical path, where it differs from the link's.
-            (
-                'canonical',
-                shell(canonical=canonical),
-                api('Untitled', PARAGRAPHS, OTHER_DESCRIPTION, canonical),
-            ),
+            ('nested description', shell(), json.dumps(nested)),
             # The title, as "Post | Site".
             (
                 'title',
@@ -413,26 +489,43 @@ class RefusedRecipeTests(FindTextCase):
                 api('Speed is the problem', PARAGRAPHS, OTHER_DESCRIPTION, None),
             ),
         ):
-            with self.subTest(name=name, response=response):
+            with self.subTest(name=name):
                 site = self.site()
                 site.page(PATH, page)
-                site.page('/api/one', response, kind='application/json')
+                recipe, path = one('one')
+                site.page(path, response, kind='application/json')
                 with site.serving():
-                    shown, _ = self.find({**RECIPE, 'address': '/api/one', 'query': []})
+                    shown, _ = self.find(recipe)
                 self.assertEqual(shown['outcome'], 'found', shown['error'])
 
     def test_a_response_with_no_title_is_tied_by_the_pages_description(self):
         site = self.site()
         body = json.dumps({'body': '<p>' + DESCRIPTION + '</p><p>More words.</p>'})
-        site.page('/api/untitled', body, kind='application/json')
+        recipe, path = one('untitled')
+        site.page(path, body, kind='application/json')
         with site.serving():
-            shown, _ = self.find(
-                {**RECIPE, 'address': '/api/untitled', 'query': [], 'text': ['/body'], 'title': ''}
-            )
+            shown, _ = self.find({**recipe, 'text': ['/body'], 'title': ''})
             self.assertEqual(shown['outcome'], 'found', shown['error'])
             found = self.post('published-preview', {'url': URL})
         self.assertEqual(found['title'], SEO_TITLE, 'the page’s own title heads it')
         self.assertTrue(found['content'].startswith('# ' + SEO_TITLE + '\n\n' + DESCRIPTION))
+
+    def test_a_read_from_a_saved_address_asks_for_robots_txt_once(self):
+        site = self.site()
+        with site.serving():
+            self.find(RECIPE)
+            site.requests.clear()
+            found = self.post('published-preview', {'url': URL})
+        self.assertEqual(found['title'], 'Speed is the problem')
+        self.assertEqual([path for _, path in site.requests], [PATH, '/robots.txt', api_path()])
+        robots = next(check for check in found['access']['checks'] if check['key'] == 'robots')
+        self.assertEqual(robots['status'], 'ok', 'Page access still reads it')
+
+    def test_a_path_placeholder_after_a_slash_is_one_path(self):
+        made = content_address.address({**RECIPE, 'address': '/{path}.json', 'query': []}, URL)
+        self.assertEqual(made, 'https://' + HOST + PATH + '.json')
+        made = content_address.address({**RECIPE, 'address': '/v1/{path}', 'query': []}, URL)
+        self.assertEqual(made, 'https://' + HOST + '/v1/' + PATH.lstrip('/'))
 
     def test_a_malformed_recipe_or_one_that_returns_text_is_refused(self):
         words = 'Speed is the problem when quality comes last.'
@@ -535,7 +628,7 @@ class HostilePageTests(FindTextCase):
         body = json.dumps(
             {
                 'title': 'Speed is the problem',
-                'url': PATH,
+                'meta_description': DESCRIPTION,
                 'post': {
                     'article_modules': [
                         {
@@ -546,9 +639,10 @@ class HostilePageTests(FindTextCase):
                 },
             }
         )
-        site.page('/api/hostile', body, kind='application/json')
+        recipe, path = one('hostile')
+        site.page(path, body, kind='application/json')
         with site.serving():
-            shown, _ = self.find({**RECIPE, 'address': '/api/hostile', 'query': []})
+            shown, _ = self.find(recipe)
             self.assertEqual(shown['outcome'], 'found', shown['error'])
             found = self.post('published-preview', {'url': URL})
         text = found['content']

@@ -53,9 +53,15 @@ NO_TEXT = (
     'No article text was found on this page. It may be built by scripts, which Blog Studio '
     'never runs. Paste the post’s text instead.'
 )
+# A page that may be built by scripts: said once, as the page then offers to ask the
+# assistant where it gets its text, or to paste the post's text.
+NO_TEXT_FOUND = (
+    'No article text was found on this page. It may be built by scripts, which Blog Studio '
+    'never runs.'
+)
 NO_TEXT_SAVED = (
     'No article text was found on this page, and the content address {assistant} found for '
-    'this site didn’t give it either. {why} Paste the post’s text instead.'
+    'this site didn’t give it either. {why}'
 )
 NOT_FOUND = 'This page was not found (HTTP {status}). Check the link.'
 REFUSED = 'The site refused to send this page (HTTP {status}). Check the link.'
@@ -212,7 +218,6 @@ class Article(HTMLParser):
         self.table = None
         self.title_tag, self.in_title = '', False
         self.meta = {}
-        self.canonical = ''  # its canonical link, which ties a content address to the page
         self.robots_meta = []
         self.ld = []
         self.ld_text = None
@@ -274,12 +279,6 @@ class Article(HTMLParser):
             self.in_title = True
         if tag == 'meta':
             self._meta(attrs)
-        if (
-            tag == 'link'
-            and not self.canonical
-            and 'canonical' in attrs.get('rel', '').lower().split()
-        ):
-            self.canonical = attrs.get('href', '').strip()[:2000]
         if tag == 'script' and 'ld+json' in attrs.get('type', '').lower():
             self.ld_text = []
         if tag == 'input' and attrs.get('type', '').lower() == 'password':
@@ -491,8 +490,9 @@ class Article(HTMLParser):
             self.robots_meta.append(content)
         elif name in (
             'og:title',
-            'og:description',  # These two tie a content address's text to the page.
+            'og:description',  # These tie a content address's text to the page,
             'twitter:title',
+            'og:site_name',  # and this says which part of its title is the site's name.
             'author',
             'article:author',
             'article:published_time',
@@ -1000,9 +1000,10 @@ def robots_rules(url, fetch=None):
     return 'read', robots_groups(text)
 
 
-def robots_check(url, fetch=None):
+def robots_check(url, fetch=None, rules=None):
     """What the site's robots.txt says about this page for search crawlers. Missing or
-    unreadable is "couldn't check"."""
+    unreadable is "couldn't check". `rules` is robots_rules' answer when it was read
+    already, so robots.txt is read once."""
     parts = urlsplit(url)
     unknown = {
         'key': 'robots',
@@ -1010,7 +1011,7 @@ def robots_check(url, fetch=None):
         'said': 'Couldn’t check robots.txt: the site did not send a readable one. That is not '
         'a problem in itself.',
     }
-    state, groups = robots_rules(url, fetch)
+    state, groups = rules or robots_rules(url, fetch)
     if state != 'read':
         return unknown
     path = robots_decoded((parts.path or '/') + ('?' + parts.query if parts.query else ''))
@@ -1104,29 +1105,33 @@ def read(url, fetch=None):
         raise ValueError(LOGIN)
     if parser.full:
         raise ValueError(TOO_LONG)
+    rules = None  # The site's robots.txt, once read.
     if found['words'] < 1 and media in ('text/html', 'application/xhtml+xml'):
         # Perhaps a page built by scripts: the content address an assistant found for this
         # site before is read, with no assistant; otherwise the page offers to ask for one.
-        found = _from_saved_address(url, final, found, fetch)
+        found, rules = _from_saved_address(url, final, found, fetch)
     elif found['words'] < 1:
         raise ValueError(NO_TEXT)
     if len(found['markdown']) > LIMIT:
         raise ValueError(TOO_LONG)
-    page = access(found, headers, robots_check(final, fetch))
+    page = access(found, headers, robots_check(final, fetch, rules))
     found.pop('parser')
     return {**found, 'url': url, 'final_url': final, 'read_at': studio.now(), 'access': page}
 
 
 def _from_saved_address(url, final, shell, fetch):
-    """The post read from the content address kept for its host, with no assistant; NoText
-    (which offers to ask the assistant) when there is none or it no longer gives this post."""
+    """The post read from the content address kept for its host, with no assistant, and the
+    site's robots.txt it read; NoText (which offers to ask the assistant) when there is
+    none or it no longer gives this post."""
     import content_address
 
     kept = content_address.saved(urlsplit(final).hostname)
     if kept is None:
-        raise NoText(NO_TEXT, url)
+        raise NoText(NO_TEXT_FOUND, url)
+    rules = robots_rules(final, fetch)
     try:
-        return content_address.apply(kept['recipe'], final, shell, kept['found_by'], fetch)
+        read = content_address.apply(kept['recipe'], final, shell, kept['found_by'], fetch, rules)
+        return read, rules
     except ValueError as error:
         said = NO_TEXT_SAVED.format(assistant=content_address.name(kept['found_by']), why=error)
         raise NoText(said, url) from None

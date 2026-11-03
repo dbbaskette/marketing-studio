@@ -47,6 +47,10 @@ PASTE = 'Paste the post’s text instead.'
 # What a recipe or its address is refused for, each said plainly. {assistant} is its name.
 NOT_FOUND = '{assistant} did not find where this page gets its text.'
 MALFORMED = '{assistant}’s answer was not a content address Blog Studio can use.'
+NO_PLACEHOLDER = (
+    'The address {assistant} found is the same for every post (it has no {{path}}, {{slug}} '
+    'or {{url}} in it), so Blog Studio did not read it.'
+)
 OTHER_HOST = (
     'The address {assistant} found is on another host ({host}), not the post’s own, so Blog '
     'Studio did not read it.'
@@ -76,7 +80,6 @@ NOT_THIS_POST = (
     'The address {assistant} found didn’t hold this post: what it sent matches neither the '
     'page’s title nor its description.'
 )
-HAS_TEXT = 'This page has its text now. Read the page again.'
 STOPPED = 'Stopped. Nothing was read from the site.'
 
 FIND = (
@@ -91,7 +94,8 @@ FIND = (
     'https address on this host. Where the post’s own address goes, write a placeholder: '
     '{path} (its path, starting with /), {path_without_slash} (the same without the first /), '
     '{slug} (its last path segment) or {url} (its whole address). placeholders in the data '
-    'shows what each one is for this post.\n'
+    'shows what each one is for this post. An address with none of them is the same for '
+    'every post, and is refused.\n'
     '- query: the fixed query values the scripts add, such as locale=en-us, each as a name '
     'and a value.\n'
     '- format: json when the address returns JSON, html when it returns a web page.\n'
@@ -242,10 +246,9 @@ def _values(final):
 def evidence(final, content, fetch, stop=None):
     """What the assistant is given: the page's head, what its body starts with, and bounded
     excerpts of its inline scripts and of the scripts it loads from the same host, read
-    through the bounded fetcher within one deadline."""
-    import management
-
+    through the bounded fetcher within one deadline, never off that host."""
     page = head(content)
+    scope = HostScope(final, 'That script moves to another host ({host}), so it was not read.')
     host = urlsplit(final).hostname
     sources = []
     for src in page.scripts:
@@ -261,9 +264,7 @@ def evidence(final, content, fetch, stop=None):
         parts = urlsplit(address)
         shown = parts.path + ('?' + parts.query if parts.query else '')
         try:
-            body, _, _ = fetch(
-                address, management.LinkScope(final), deadline=deadline, limit=SCRIPT_BYTES
-            )
+            body, _, _ = fetch(address, scope, deadline=deadline, limit=SCRIPT_BYTES)
         except ValueError as error:
             unread.append({'src': shown, 'why': str(error)[:200]})
             continue
@@ -317,6 +318,9 @@ def recipe(value, engine):
         raise malformed
     if '{' in PLACEHOLDER.sub('', address) or '}' in PLACEHOLDER.sub('', address):
         raise malformed
+    if not PLACEHOLDER.search(address):
+        # A fixed address is the same for every post, so it cannot be this post's own.
+        raise ValueError(NO_PLACEHOLDER.format(assistant=said))
     if not isinstance(query, list) or len(query) > 10:
         raise malformed
     for pair in query:
@@ -361,9 +365,13 @@ def address(found, final):
 
     def fill(placeholder):
         key = placeholder.group(1)
-        return quote(values[key], safe='' if key == 'url' else SAFE)
+        value = values[key]
+        if key == 'path' and placeholder.string[: placeholder.start()].endswith('/'):
+            value = value.lstrip('/')  # /{path} is one path, never //host/... or /v1//...
+        return quote(value, safe='' if key == 'url' else SAFE)
 
-    target = urljoin(final, PLACEHOLDER.sub(fill, found['address']))
+    filled = PLACEHOLDER.sub(fill, found['address'])
+    target = urljoin(final, filled)
     parts = urlsplit(target)
     query = parts.query
     if found['query']:
@@ -399,25 +407,6 @@ def checked_address(target, final, engine):
     return target
 
 
-def _resolve(data, pointer):
-    """The values a JSON pointer names; * is every item of a list (or every value)."""
-    found = [data]
-    for raw in pointer.split('/')[1:]:
-        key = raw.replace('~1', '/').replace('~0', '~')
-        following = []
-        for value in found:
-            if key == '*' and isinstance(value, list):
-                following.extend(value[:2000])
-            elif key == '*' and isinstance(value, dict):
-                following.extend(list(value.values())[:2000])
-            elif isinstance(value, dict) and key in value:
-                following.append(value[key])
-            elif isinstance(value, list) and key.isdigit() and int(key) < len(value):
-                following.append(value[int(key)])
-        found = following[:5000]
-    return found
-
-
 MARKUP = re.compile(
     r'</[A-Za-z][\w-]*\s*>|<(?:p|div|br|h[1-6]|ul|ol|li|span|a|strong|em|b|i|u|img|figure|'
     r'table|tr|td|th|blockquote|pre|code|section|article)(?:\s[^<>]*)?/?>',
@@ -450,88 +439,125 @@ SEPARATOR = re.compile(r'\s+(?:[|–—·•:]|-|::)\s+')
 
 
 DESCRIPTION_CHARACTERS = 40  # A description shorter than this ties nothing to the page.
-STRINGS = 20_000  # string values of a response read for the tie
+STRINGS = 20_000  # string values read beside the article's text for the tie
 
 
-def _strings(data):
-    """The string values in a JSON response, depth first, up to STRINGS of them."""
-    found, waiting = [], [data]
-    while waiting and len(found) < STRINGS:
-        value = waiting.pop()
-        if isinstance(value, str):
-            found.append(value)
-        elif isinstance(value, dict):
-            waiting.extend(reversed(list(value.values())[:2000]))
-        elif isinstance(value, list):
-            waiting.extend(reversed(value[:2000]))
+def _located(data, pointer):
+    """(value, chain) for each value a JSON pointer names: `chain` is the containers from
+    the response down to the one that holds the value. * is every item of a list (or every
+    value of an object)."""
+    found = [(data, ())]
+    for raw in pointer.split('/')[1:]:
+        key = raw.replace('~1', '/').replace('~0', '~')
+        following = []
+        for value, chain in found:
+            here = (*chain, value)
+            if key == '*' and isinstance(value, list):
+                following.extend((item, here) for item in value[:2000])
+            elif key == '*' and isinstance(value, dict):
+                following.extend((item, here) for item in list(value.values())[:2000])
+            elif isinstance(value, dict) and key in value:
+                following.append((value[key], here))
+            elif isinstance(value, list) and key.isdigit() and int(key) < len(value):
+                following.append((value[int(key)], here))
+        found = following[:5000]
     return found
 
 
-def _path_key(value):
-    """A path as the tie compares it: decoded, without its query, fragment or the slashes at
-    either end. '' for the site's root, which ties nothing."""
-    from urllib.parse import unquote
-
-    return unquote(urlsplit(value.strip()).path).strip('/').casefold()
+def _resolve(data, pointer):
+    return [value for value, _ in _located(data, pointer)]
 
 
-def post_paths(final, page):
-    """The post's own path and its canonical path (on the same host), as _path_key reads
-    them; never the root."""
-    host = urlsplit(final).hostname
-    paths = {_path_key(final)}
-    if page.canonical:
-        canonical = urlsplit(urljoin(final, page.canonical))
-        if canonical.scheme in ('https', 'http') and canonical.hostname == host:
-            paths.add(_path_key(canonical.geturl()))
-    return {path for path in paths if path}
+def _shared(chains):
+    """The containers every chain passes through, from the response down: the object the
+    article's fields all belong to, and its ancestors."""
+    shared = list(chains[0]) if chains else []
+    for chain in chains[1:]:
+        same = 0
+        while same < min(len(shared), len(chain)) and shared[same] is chain[same]:
+            same += 1
+        del shared[same:]
+    return shared
 
 
-def _path_of(value, host):
-    """The path a string value names, when it is a path or an address on the post's host:
-    a whole value only, never words that happen to contain one."""
-    value = value.strip()
-    if not value or len(value) > 2000 or any(character.isspace() for character in value):
-        return ''
-    parts = urlsplit(value)
-    if parts.scheme or parts.netloc:
-        if parts.scheme not in ('https', 'http') or parts.hostname != host:
-            return ''
-    return _path_key(value)
+def _beside(shared):
+    """The strings that sit in the objects all of the article's fields share: their own
+    values and those of objects inside them, never inside a list, where each item may be
+    another post (a listing joins several posts' texts; its items' summaries tie nothing)."""
+    found, waiting, seen = [], [value for value in shared if isinstance(value, dict)], set()
+    while waiting and len(found) < STRINGS:
+        value = waiting.pop()
+        if id(value) in seen:
+            continue
+        seen.add(id(value))
+        for item in list(value.values())[:2000]:
+            if isinstance(item, str):
+                found.append(item)
+            elif isinstance(item, dict):
+                waiting.append(item)
+    return found
 
 
-def tied(title, page, text, strings=(), final=''):
-    """Whether what was read is this page's post. Any one of these ties it:
-    - its title is the page's <title> or og:title (or the longest part of one, as
-      "Post | Site" is "Post");
-    - the page's meta description (at least DESCRIPTION_CHARACTERS long) appears in its text
-      or in any string value of the response, such as a metadata field;
-    - the post's own path or the page's canonical path is a whole string value of the
-      response, or the path of an address there (never the site's root)."""
+def _titles(page):
+    """The page's titles as a response's title may match them: each whole, and its longest
+    part, leaving out the site's name (og:site_name, or a trailing part two titles share),
+    so "Post | Site" is "Post" and the site's name alone ties nothing."""
+    shown = [
+        t for t in (page.title, page.meta.get('og:title'), page.meta.get('twitter:title')) if t
+    ]
+    split = [SEPARATOR.split(title) for title in shown]
+    site = {_norm(page.meta.get('og:site_name'))}
+    trailing = [_norm(parts[-1]) for parts in split if len(parts) > 1]
+    site |= {part for part in trailing if trailing.count(part) > 1}
+    site.discard('')
+    found = set()
+    for title, parts in zip(shown, split, strict=True):
+        found.add(_norm(title))
+        kept = [part for part in parts if _norm(part) not in site] if len(parts) > 1 else parts
+        if kept:
+            found.add(_norm(max(kept, key=lambda part: len(_norm(part)))))
+    found.discard('')
+    return found
+
+
+def tied(title, page, beside):
+    """Whether what was read is this page's post: its title is one of the page's titles
+    (_titles), or the page's meta description (at least DESCRIPTION_CHARACTERS long) is in
+    one of the strings `beside` the article: for JSON, those in the object its text fields
+    share (_beside); for a web page, its text and its own metadata."""
     wanted = _norm(title)
-    if len(wanted) >= 3:
-        for shown in (page.title, page.meta.get('og:title'), page.meta.get('twitter:title')):
-            if not shown:
-                continue
-            longest = max(SEPARATOR.split(shown), key=lambda part: len(_norm(part)))
-            if wanted in (_norm(shown), _norm(longest)):
-                return True
+    if len(wanted) >= 3 and wanted in _titles(page):
+        return True
     for key in ('description', 'og:description'):
         description = _norm(page.meta.get(key))
-        if len(description) < DESCRIPTION_CHARACTERS:
-            continue
-        if description in _norm(text) or any(description in _norm(value) for value in strings):
+        if len(description) >= DESCRIPTION_CHARACTERS and any(
+            description in _norm(value) for value in beside
+        ):
             return True
-    paths = post_paths(final, page) if final else set()
-    host = urlsplit(final).hostname
-    return bool(paths) and any(_path_of(value, host) in paths for value in strings)
+    return False
 
 
-def apply(found, final, shell, engine, fetch=None):
+class HostScope:
+    """Where a content address or a script may be read from: the post's exact host and no
+    other, asked before the first request and every redirect, so nothing off it is asked."""
+
+    def __init__(self, final, said):
+        self.host, self.said = (urlsplit(final).hostname or '').lower(), said
+
+    def refuse(self, url, redirected_from=None):
+        host = (urlsplit(url).hostname or '').lower()
+        return None if host == self.host else self.said.format(host=host or 'an unknown address')
+
+
+ACCEPT_JSON = 'application/json, text/html;q=0.5, */*;q=0.1'
+
+
+def apply(found, final, shell, engine, fetch=None, rules=None):
     """Read the post from a checked recipe, as published_post.read would read its page: the
     address checked and allowed by robots.txt, the response size-bounded, its fields made
     Markdown by the Article parser, tied to the page, within the same limits. `shell` is the
-    page's own read (published_post.article). Network: call it with no lock held."""
+    page's own read (published_post.article); `rules` its site's robots.txt when it was read
+    already (published_post.robots_rules). Network: call it with no lock held."""
     import blog_library
     import management
     import published_post
@@ -540,15 +566,19 @@ def apply(found, final, shell, engine, fetch=None):
     said = name(engine)
     target = checked_address(address(found, final), final, engine)
     parts = urlsplit(target)
-    state, groups = published_post.robots_rules(final, fetch)
+    state, groups = rules or published_post.robots_rules(final, fetch)
     if state == 'unreachable':
         raise ValueError(ROBOTS_UNREACHABLE.format(assistant=said))
     path = published_post.robots_decoded(parts.path + ('?' + parts.query if parts.query else ''))
     if state == 'read' and not published_post.robots_allowed(groups, 'BlogStudio', path):
         raise ValueError(ROBOTS.format(assistant=said))
+    scope = HostScope(final, OTHER_HOST.replace('{assistant}', said))
     try:
         content, got, kind = fetch(
-            target, management.LinkScope(final), deadline=time.monotonic() + FETCH_SECONDS
+            target,
+            scope,
+            deadline=time.monotonic() + FETCH_SECONDS,
+            accept=ACCEPT_JSON if found['format'] == 'json' else None,
         )
     except ValueError as error:
         if str(error) == blog_library.TOO_LARGE:
@@ -565,13 +595,13 @@ def apply(found, final, shell, engine, fetch=None):
             data = json.loads(content.decode('utf-8-sig'))
         except (ValueError, RecursionError):
             raise ValueError(UNREADABLE.format(assistant=said)) from None
-        pieces = [
-            piece
+        located = [
+            (piece, chain)
             for pointer in found['text']
-            for piece in _resolve(data, pointer)
+            for piece, chain in _located(data, pointer)
             if isinstance(piece, str) and piece.strip()
         ]
-        if not pieces:
+        if not located:
             raise ValueError(EMPTY.format(assistant=said))
         title = ''
         if found['title']:
@@ -579,12 +609,12 @@ def apply(found, final, shell, engine, fetch=None):
                 (_plain_title(v) for v in _resolve(data, found['title']) if isinstance(v, str)), ''
             )
         heading = '<h1>' + html.escape(title) + '</h1>' if title else ''
-        fragment = '<article>' + heading + ''.join(_html(piece) for piece in pieces) + '</article>'
-        read = published_post.article(fragment.encode(), final)
+        body = ''.join(_html(piece) for piece, _ in located)
+        read = published_post.article(('<article>' + heading + body + '</article>').encode(), final)
         parser = read['parser']
         if not title and parser.h1:
             title = published_post.plain(parser.h1[0])  # The text's own heading.
-        strings = _strings(data)  # Its metadata fields too: a description, a path.
+        beside = _beside(_shared([chain for _, chain in located]))
     else:
         if media not in ('text/html', 'application/xhtml+xml'):
             raise ValueError(UNREADABLE.format(assistant=said))
@@ -595,14 +625,14 @@ def apply(found, final, shell, engine, fetch=None):
             or parser.meta.get('og:title', '')
             or _clean(parser.title_tag)
         )
-        strings = [*parser.meta.values(), parser.canonical]
+        beside = [published_post.plain(read['markdown']), *parser.meta.values()]
     parser = read['parser']
     if parser.full:
         raise ValueError(published_post.TOO_LONG)
     if read['words'] < 1:
         raise ValueError(EMPTY.format(assistant=said))
     page = head_of(shell)
-    if not tied(title, page, published_post.plain(read['markdown']), strings, final):
+    if not tied(title, page, beside):
         raise ValueError(NOT_THIS_POST.format(assistant=said))
     if not title:
         # Tied by its description: the page's own title heads it.
@@ -626,7 +656,6 @@ def head_of(shell):
     page = Head()
     page.title = _clean(parser.title_tag)[:500]
     page.meta = {key: value for key, value in parser.meta.items() if value}
-    page.canonical = parser.canonical
     return page
 
 

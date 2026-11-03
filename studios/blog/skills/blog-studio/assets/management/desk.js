@@ -182,7 +182,7 @@ function sDeskPolish(held){
     // A read that fails again says so as a new answer, so pressing the button visibly reads.
     const failed=problem.textContent,needsRead=['google','link','collection'].includes(held.source)&&!held.preview;problem.textContent='';
     held.starting=true;const unlock=sFreezeControls(form);
-    try{await busy(go,needsRead?'Reading and starting…':'Starting…',async()=>{try{if(needsRead&&held.source==='google')await sDeskReadGoogle(held,{start:true});else if(needsRead)await sDeskReadPublished(held,{start:true});else await sDeskGo(held);}catch(error){const readFailed=needsRead&&!held.preview;if(readFailed&&held.find){sDeskStartAgain(held);return;}problem.textContent=(readFailed&&failed?'Read again, and still: ':'')+error.message+(readFailed?(held.source==='google'?' Your link is kept here; change the Doc or try again.':' Your link is kept here; change it or try again.'):' Your choices and captured draft are kept here.');}});}
+    try{await busy(go,needsRead?'Reading and starting…':'Starting…',async()=>{try{if(needsRead&&held.source==='google')await sDeskReadGoogle(held,{start:true});else if(needsRead)await sDeskReadPublished(held,{start:true});else await sDeskGo(held);}catch(error){const readFailed=needsRead&&!held.preview;if(readFailed&&held.find){await sDeskFindShown(held);return;}problem.textContent=(readFailed&&failed?'Read again, and still: ':'')+error.message+(readFailed?(held.source==='google'?' Your link is kept here; change the Doc or try again.':' Your link is kept here; change it or try again.'):' Your choices and captured draft are kept here.');}});}
     finally{held.starting=false;unlock();}
   });
   sPage(sNode('p','lede','Bring your draft and choose what happens first. No kind of post needed.'),form);
@@ -344,7 +344,7 @@ function sFindTextDraw(find,focus=false){
     else if(find.said){const said=sNode('p','problem',find.said);said.setAttribute('role','alert');parts.push(said);}  // Why the read found no text.
     if(find.problem){const said=sNode('p','problem',find.problem);said.setAttribute('role','alert');parts.push(said);find.problem='';}
     const ask=sButton(again?'Ask '+who+' again':'Ask '+who+' to find the post’s text',button=>sFindTextAsk(find,button));ask.disabled=!can;
-    if(!again)parts.push(sNode('p','quiet','Some blogs are built by scripts, which Blog Studio never runs. '+who+', your assistant, can work out where this page gets its text from the page and its scripts. Blog Studio then reads that address itself and checks that it holds this post. It takes a minute or two.'));
+    if(!again)parts.push(sNode('p','quiet',who+', your assistant, can work out where this page gets its text from its head and the scripts it loads, without running them. Blog Studio then reads that address itself and checks that it holds this post. It takes a minute or two. Or paste the post’s text instead.'));
     parts.push(sAdd(sNode('div','bar'),ask));
   }
   // Focus stays in the block when it is drawn again, on its button, for a keyboard user.
@@ -382,7 +382,10 @@ async function sDeskReadPublished(held,{start=false}={}){
   await sDeskStart();sPublishedFocus();
 }
 // Read the page on its own button (or once its text was found): a refusal is said on the form.
-async function sDeskReadLink(held){try{await sDeskReadPublished(held);}catch(error){held.problem=held.find?'':error.message;sDeskStartAgain(held);}}
+async function sDeskReadLink(held){try{await sDeskReadPublished(held);}catch(error){held.problem=held.find?'':error.message;if(held.find)await sDeskFindShown(held);else sDeskStartAgain(held);}}
+// A read that found no text: the form is drawn with the offer, and focus goes to its button.
+async function sDeskFindShown(held){if(studio.screen==='desk-start'&&studio.deskStart===held){await sDeskStart();sFindTextFocus();}}
+function sFindTextFocus(){const box=$('studio-page').querySelector('.find-text'),button=box&&box.querySelector('button');if(button&&typeof button.focus==='function')button.focus();}
 // The link changed: an offer to find the old link's text goes.
 function sFindTextGone(held){if(held.find?.node)held.find.node.hidden=true;held.find=null;}
 async function sDeskReadCollection(held,{start=false}={}){
@@ -1984,7 +1987,7 @@ async function sGeoRead(held){
   const turn=studio.turn;
   try{const found=sPublishedFound(await api('published-preview',{url:held.link.trim()}));if(turn!==studio.turn)return;held.preview=found;held.find=null;}
   catch(error){if(turn!==studio.turn)return;held.preview=null;held.find=sFindTextFrom(error,held.link.trim());held.problem=held.find?'':error.message+' Your link is kept here.';}
-  if(studio.screen==='geo-start'&&studio.geoStart===held){await sGeoStart();sPublishedFocus();}
+  if(studio.screen==='geo-start'&&studio.geoStart===held){await sGeoStart();if(held.find)sFindTextFocus();else sPublishedFocus();}
 }
 // After a read, focus goes to what was read, so a keyboard user reads it before starting.
 function sPublishedFocus(){const paper=$('studio-page').querySelector('.published-preview .paper');if(paper&&typeof paper.focus==='function')paper.focus({preventScroll:false});}
@@ -2119,7 +2122,7 @@ async function sGeoDesk(held,button){
 }
 async function sGeoAgain(held,button){
   // A press reads the page again; once the assistant found where its text is, it goes ahead by itself.
-  const again=async()=>{try{const made=await api('geo-report-again',{id:held.id,operation:held.againOp||(held.againOp=operationId())});held.againOp=null;held.find=null;await sRoute('geo-report',made.id);}catch(error){if(studio.geoReport!==held)return;held.find=sFindTextFrom(error,held.view?.url||'');held.problem=held.find?'':error.message;sGeoReportRender(held);}};
+  const again=async()=>{try{const made=await api('geo-report-again',{id:held.id,operation:held.againOp||(held.againOp=operationId())});held.againOp=null;held.find=null;await sRoute('geo-report',made.id);}catch(error){if(studio.geoReport!==held)return;held.find=sFindTextFrom(error,held.view?.url||'');held.problem=held.find?'':error.message;sGeoReportRender(held);if(held.find)sFindTextFocus();}};
   return button?busy(button,'Reading the page again…',again):again();
 }
 // In Blogs and on Home: each report marked a GEO report, never a draft.

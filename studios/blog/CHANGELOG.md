@@ -13,12 +13,14 @@ changes for authors first, then what changes for maintainers.
   can be stopped. Blog Studio gives the assistant the page's head and bounded excerpts of
   the scripts it loads from the same host; the assistant has no tools or web access and
   returns a recipe, never the article's words: an address on the same host, fixed query
-  values, and where the article is in the response. Blog Studio reads that address itself
-  (https only, the post's own host, no credentials or port, allowed by robots.txt, within
-  2 MB), turns it into Markdown as it reads any page, and uses it only when it is tied to
-  the page: its title, the page's description (in the text or a metadata field) or the
-  post's own or canonical path (as a whole field) matches; the read stages and is limited exactly like
-  any other, and its preview says quietly that it came from the site's content address.
+  values, and where the article is in the response; an address that does not name the
+  post is refused. Blog Studio reads that address itself (https only, the post's exact
+  host on every redirect, no credentials or port, allowed by robots.txt, within 2 MB,
+  asking for JSON where the recipe says JSON), turns it into Markdown as it reads any
+  page, and uses it only when it is tied to the page: by its title, or by the page's
+  description in the object the article's fields belong to (a listing of several posts
+  never ties). The read then stages and is limited exactly like any other, and its
+  preview says quietly that it came from the site's content address.
   A recipe that works is kept for that host on this computer, so the next post there is
   read straight away with no assistant; when one stops working, the offer returns and a
   new recipe replaces it. Maintainers: `content_address` (evidence, the recipe check, the
