@@ -50,13 +50,18 @@ retired, which is a later decision.
     pack/             what Harness Brand reads (section 2)
   vmware/ ...
   broadcom/ ...
+  icon-libraries/     reserved name, never a brand id (section 2)
+    vmware-functional/
+      sources/        SVGs or an icons.json, as received
+      library.zip     the library
+    <any later library>/
 
 harness-brand-skill/                 the worker, code only
   SKILL.md
   scripts/harness-brand.mjs          the companion command the studios run
   scripts/install-mac.mjs, scripts/install-skill.mjs
   scripts/lib/harness-install-sources.json
-  docs/brand-pack-format.md          the schema (section 2)
+  docs/brand-pack-format.md          the pack and icon library schemas (section 2)
   references/building-a-pack.md      the authoring guide for Claude or Codex (section 3)
   tests/, tests/fixtures/example/    a made-up brand, Example Co: sources and pack
 ```
@@ -72,8 +77,9 @@ Changing storage between local and repository changes where packs are looked for
 nothing else. For the current setup that is `brands/` in `dbbaskette/tanzu-marketing-hub`.
 
 The three design-system zips and `apply-brand/brands/` leave harness-brand-skill and become
-sources in the packs. Harness Brand never runs Git and never writes into `brands/`; the
-pack-building commands write only into the `pack/` folder they are given.
+sources in the packs and the icon library. Harness Brand never runs Git and never writes
+into `brands/`; the pack-building commands write only into the `pack/` or library folder
+they are given.
 
 ## 2. The pack schema (`docs/brand-pack-format.md`)
 
@@ -83,33 +89,62 @@ relative to it.
 
 | File | Required | What it holds | Made by |
 |---|---|---|---|
-| `brand.json` | yes | `schema: 1`, `id`, `name`, `aliases`, `variants`, `defaultVariant`, the colour roles and PowerPoint theme colours per variant, fonts, canvas, the files below with their SHA-256, and the sources each was made from with theirs | person or agent; `pack scaffold` drafts it |
+| `brand.json` | yes | `schema: 1`, `id`, `name`, `aliases`, `variants`, `defaultVariant`, the colour roles and PowerPoint theme colours per variant, fonts, canvas, the icon libraries it uses (below), the files below with their SHA-256, and the sources each was made from with theirs | person or agent; `pack scaffold` drafts it |
 | `tokens.json` | yes | colours (light and dark values), type styles, spacing, radius, gradients, each with a usage note | `pack tokens` from a design-system export, else by hand |
 | `templates/<variant>.pptx` | yes, for slides | the native template: master, layouts and their artwork | the corporate template, as is |
 | `layouts.json` | yes, for slides | per variant: each template layout as measured (id, name, part, placeholders with bounds, size, colour and font, artwork to keep) and, for each, `relationship`, `contentRange`, `components`, `searchTerms` and `delivery` | `pack measure` writes the measured part; agent writes the rest |
 | `compositions/` | no | authored example slides (`compositions.pptx`) and `compositions.json`, in the shape of `layouts.json` | agent, from example decks |
-| `icons.zip` | yes | `icons.json` (below) and, optionally, `svg/<category>/<slug>.svg` for people | `pack icons` |
 | `guide.md` | yes | brand rules, voice and naming, slide recipes and standards, in plain words; the source of `DESIGN.md` and the voice guide in an exported contract | agent, from brand books and guides |
 | `directions.json` | yes, for slides | deck directions per variant: a default and alternatives, each with focal and neutral roles, meanings, motif and the cover, section, closing and thanks layouts; house rules | agent |
 | `audit.json` | yes | the checks the brand audit runs: smallest text, most words on a slide, allowed fonts, allowed colours (by role), corners, starter text, logo rules | agent; `pack scaffold` drafts the defaults |
 | `assets/` | yes | logos for light and dark grounds; art and supergraphics `brand.json` names | copied from sources |
 | `previews/` | no | a PNG per layout and an icon contact sheet, for review and for look samples | `pack previews` |
 
-`icons.json`:
+A brand without a template (`templates/` empty) is a brand for blogs only: `brands` lists
+it without slides, and a slides contract for it is refused in a sentence.
+
+### Icon libraries
+
+An icon library is kept once, in `brands/icon-libraries/<id>/`, and any brand may use it.
+All three brands use the one VMware by Broadcom functional library (July 2025), so it is
+one library, `vmware-functional`, not three copies. Others (product logos, partner or
+architecture icons) are added the same way.
+
+`library.zip` holds:
+
+- `library.json`: `schema: 1`, `id`, `name`, `version`, `source` (where it came from),
+  `usage` (its rules in plain words, such as "recolour only to brand colours; never
+  outline"), and `kind`:
+  - `glyph`: single-colour shapes, coloured by the brand and placed in slides as native
+    shapes.
+  - `picture`: artwork kept as drawn, in its own colours. Placed as a picture: blogs and
+    infographics use it; Harness Slides does not place it as an icon (`native: false` in
+    what `icons` returns).
+- `icons.json`: `{"schema": 1, "icons": [...]}`, each with `slug` (unique in the library),
+  `name`, `category` and, optionally, `keywords`. A glyph adds `bounds` and `d`: one path
+  (several subpaths allowed, filled even-odd) in a 0 to 100 box, without its container
+  circle, and no colour. A picture adds `file`, its path in the archive.
+- `svg/<category>/<slug>.svg`: the drawings; required for pictures, optional for glyphs.
 
 ```json
-{"schema": 1, "viewBox": "0 0 100 100", "note": "...",
+{"schema": 1,
  "icons": [{"slug": "cloud-1", "name": "Cloud 1", "category": "Cloud",
             "keywords": ["hybrid", "multi-cloud"], "bounds": [19.5, 15.7, 83.6, 85.2],
             "d": "M..Z"}]}
 ```
 
-Each icon is one single-colour glyph: one path (`d`, several subpaths allowed, filled
-even-odd) in a 0 to 100 box, without its container circle. `slug` is unique in the pack.
-Colour is never stored; it comes from the brand's roles when an icon is placed.
+A brand names the libraries it uses in `brand.json`, with the roles a glyph may be drawn
+in:
 
-A brand without a template (`templates/` empty) is a brand for blogs only: `brands` lists
-it without slides, and a slides contract for it is refused in a sentence.
+```json
+"icons": [{"library": "vmware-functional", "default": true,
+           "roles": ["headingPrimary", "accentAqua", "inkDeep"]}]
+```
+
+Icon search covers every library the brand names, its default first. `pack check` refuses
+a brand that names a library that is missing or does not pass, and a role the brand does
+not have. A brand's contract records each library's SHA-256 with the pack's, so a changed
+library makes contracts made before it out of date.
 
 ### Accepted sources
 
@@ -117,7 +152,7 @@ it without slides, and a slides contract for it is refused in a sentence.
 |---|---|
 | Corporate PowerPoint template, one per variant | `templates/`, the measured part of `layouts.json`, theme colours |
 | Claude Design export (`*-design-system.zip`) | `tokens.json` (dark values read from `tokens.css` when `tokens.json` has none), `assets/`, the brand book and component guidance for `guide.md` |
-| Icon library: an export's `assets/Icons/icons.json`, or its SVGs | `icons.zip` |
+| An export's `assets/Icons/icons.json`, or SVG icons (an export's, or any folder of them) | an icon library's `library.zip` |
 | Example decks of authored slides | `compositions/` |
 | Brand guides (PDF, Markdown, slides) | `guide.md`, `audit.json`, `directions.json` |
 
@@ -133,17 +168,20 @@ what the person points them at: "build the Tanzu pack from brands/tanzu/sources"
    - `pack measure <template.pptx> --variant V --into PACK`: copies the template into
      `templates/` and writes each layout's measured part into `layouts.json`.
    - `pack tokens <design-system.zip> --into PACK`: writes `tokens.json`.
-   - `pack icons <source> --into PACK [--fill F]`: writes `icons.zip`. An export that
-     holds `assets/Icons/icons.json` (Broadcom's) is taken as it is. Otherwise its SVGs
-     are converted: `path`, `rect`, `circle`, `ellipse`, `polygon` and `polyline` elements
+   - `pack icons <source>... --library ID --name NAME [--kind glyph|picture] [--fill F]
+     --into brands/icon-libraries/ID`: writes `library.zip` from one or more sources, the
+     first one's icons winning where slugs meet. A source that holds
+     `assets/Icons/icons.json` (Broadcom's export) is taken as it is. For a glyph library,
+     SVGs are converted: `path`, `rect`, `circle`, `ellipse`, `polygon` and `polyline` elements
      with their transforms, scaled so the view box fills `F` of the 0 to 100 box (default
      1; the Tanzu Division icons are cut at 0.88 of their circle, as their README says); a
      drawing made as a filled mask (the Tanzu Division icons) uses its mask's paths as the
      glyph; a container circle (the VMware by Broadcom icons) is dropped. Category from
      the folder name, `name` from the folder's `README.md` row, else the file name. An icon
      that cannot be one glyph is left out and named; the command never stops on one icon.
-     All three exports draw from the one VMware by Broadcom functional icon library (July
-     2025), so a PowerPoint icon deck is not a source.
+     A picture library keeps each SVG as it is. The first `vmware-functional` is made from
+     Broadcom's `icons.json` with the icons only the Tanzu Division and VMware by Broadcom
+     SVG sets have added. A PowerPoint icon deck is not a source.
    - `pack scaffold --into PACK`: drafts `brand.json` and `audit.json` from what is there.
 2. **Judgement parts, by the agent**, following the guide: the colour roles, each layout's
    relationship, content range and search terms, `guide.md`, `directions.json` and the
@@ -187,7 +225,7 @@ unusable, with the first problem, and is never used.
 | `contract export --medium slides\|blog --brand B [--variant V] [--delivery live\|reading] [--voice-profile FILE] --output NEW_DIR` | writes `brand-contract.json`, `DESIGN.md` and the voice and naming guide from the pack; the contract records the pack's hashes |
 | `contract check --file brand-contract.json` | refuses a contract whose pack has changed since |
 | `layouts --brand B [--variant V] [--query WORDS \| --id ID] [--relationship R] [--json]` | the layouts and compositions, for slide building |
-| `icons --query WORDS \| --id ID [--output icon.pptx \| --into deck.pptx --slide N --x --y --width] [--limit N] [--json]` | searches `icons.json`; places an icon as a native shape coloured by role |
+| `icons --query WORDS \| --id ID [--role R] [--output icon.pptx \| --into deck.pptx --slide N --x --y --width] [--limit N] [--json]` | searches the brand's icon libraries; places a glyph as a native shape in one of the brand's icon roles, or a picture as a picture |
 | `presentation --brand B [--variant V] --file deck.pptx [--json] [--strict]` | the brand audit from `audit.json`: `PASS`, `WARN` or `BLOCKED`, findings by slide number |
 | `doctor [--json]` | readiness: Node, Arial, LibreOffice and pdftoppm for previews, the packs |
 | `guidance locate\|start\|resume\|cached ...` | the brand's entry to slide building, as the studios call it today |
@@ -201,9 +239,9 @@ studios' stand-in (`studios/presentation/tests/stand_ins/brand.py`) and
 Harness Slides accepts from a brand adapter. Where Tanzu Brand's behaviour and the stand-in
 differ, the stand-in is the specification and the difference is noted in the plan.
 
-Harness Brand builds the native icon library Harness Slides places icons from out of
-`icons.zip`, and keeps it under `~/Library/Caches/harness-brand/<pack hash>/`
-(`$XDG_CACHE_HOME/harness-brand/` elsewhere). A changed pack has a new hash.
+Harness Brand builds the native icon deck Harness Slides places icons from out of each
+glyph library, and keeps it under `~/Library/Caches/harness-brand/<library hash>/`
+(`$XDG_CACHE_HOME/harness-brand/` elsewhere). A changed library has a new hash.
 
 ## 5. Installing and releasing
 
@@ -242,16 +280,20 @@ assistant, and Marketing Studio never writes pack files itself except through th
 commands and the assistant's job. The page follows `docs/design/golden-gate.md`.
 
 1. **Brands** lists the packs in the storage's `brands` folder, each with its name, its
-   variants, whether it does slides, and what `pack check` says. It offers New brand and,
-   on each pack, Update.
-2. **Sources.** The person adds files: templates, a design-system export, icon SVGs or an
-   `icons.json`, guides. They are copied into `brands/<id>/sources/`; a file whose name is taken
-   is kept beside the old one only after the person says which to keep. New brand asks for
-   the id and name first.
-3. **Extract.** Marketing Studio runs `pack measure`, `pack tokens`, `pack icons` and
-   `pack previews` into a working copy of the pack, outside `brands/`, and shows what came
-   out: colour swatches for light and dark, the type styles, each layout with its preview,
-   the icon contact sheet, and the icons left out with why.
+   variants, whether it does slides, and what `pack check` says, and the icon libraries,
+   each with its kind, its count and the brands that use it. It offers New brand and New
+   icon library and, on each, Update.
+2. **Sources.** The person adds files: templates, a design-system export, guides; for an
+   icon library, SVGs or an `icons.json`. They are copied into `brands/<id>/sources/` or
+   `brands/icon-libraries/<id>/sources/`; a file whose name is taken is kept beside the old
+   one only after the person says which to keep. New asks for the id and name first, and
+   a library's kind.
+3. **Extract.** Marketing Studio runs `pack measure`, `pack tokens` and `pack previews`
+   for a brand, or `pack icons` for a library, into a working copy outside `brands/`, and
+   shows what came out: colour swatches for light and dark, the type styles, each layout
+   with its preview; for a library, the contact sheet and the icons left out with why. A
+   brand's libraries and their roles are chosen on its page, from the libraries there are.
+   A library needs no assistant: after Extract it goes to Save.
 4. **Interpret.** Marketing Studio runs the person's assistant (the `assistant` setting:
    Claude Code or Codex) as a job on the working copy, told to follow
    `references/building-a-pack.md`. The job may write only the pack's judgement files.
@@ -277,8 +319,9 @@ first.
 ## 8. Testing
 
 - Harness Brand, with `node --test` on Example Co, whose sources are a small template, a
-  small design-system zip and SVG icons of each kind (plain, masked, with a
-  container circle): each `pack` command; `pack check` on a good pack and on broken ones;
+  small design-system zip, a small `icons.json`, SVG icons of each kind (plain, masked,
+  with a container circle) and a picture library: each `pack` command, including a library
+  made from two sources; `pack check` on a good pack and on broken ones;
   contract export and check, including the refusal after the pack changes; layouts, icon
   search and placement; the audit; restyle; the installer into a disposable home folder.
 - Once with the three real packs, in a disposable home: `pack check` passes, a contract
@@ -295,8 +338,9 @@ first.
 
 1. Write `docs/brand-pack-format.md` and `references/building-a-pack.md`; make Example Co.
 2. Build the `pack` commands.
-3. Build the three packs from their sources; the person reviews previews, contact sheets
-   and the listed differences from Tanzu Brand.
+3. Build the `vmware-functional` icon library and the three packs from their sources; the
+   person reviews the contact sheet, the previews and the listed differences from Tanzu
+   Brand.
 4. Build the rest of Harness Brand and its installer.
 5. Put the sources and packs in `brands/` of tanzu-marketing-hub, after the person says yes
    to that push.
