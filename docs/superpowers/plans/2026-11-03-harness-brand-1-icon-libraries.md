@@ -2109,9 +2109,14 @@ harness-brand pack icons <source>... --library ID --name NAME [--kind glyph|pict
   [--fill F] [--fill-for SOURCE=F]... [--version V] [--usage TEXT] --into brands/icon-libraries/ID
 ```
 
-A source is a Claude Design export ZIP, a folder of SVGs, a ZIP of SVGs, or anything that
-holds an `icons.json` drawn in a 0 to 100 box. An `icons.json` that gives each icon one `d`
-instead of `paths` (as Broadcom's export does) is read as a list of one path. With several sources, the first one's icons
+A source is a Claude Design export ZIP, a folder of SVGs, a ZIP of SVGs, a single SVG
+file, or anything that holds an `icons.json` drawn in a 0 to 100 box. Hidden files, macOS
+`__MACOSX` folders and links are left out. An `icons.json` that gives each icon one `d`
+instead of `paths` (as Broadcom's export does) is read as a list of one path.
+
+The folder given with `--into` must be named for the library. `--fill-for` names a source
+by its file or folder name, and a name that matches no source is refused. A build that is
+refused writes nothing and leaves an existing library as it was. With several sources, the first one's icons
 win where slugs meet, and later sources add the icons the first lacks; their categories are
 matched to the first source's where they plainly mean the same.
 
@@ -2131,6 +2136,10 @@ For a glyph library, each SVG becomes one shape:
 
 Category comes from the SVG's folder (without a leading `Functional ` or `Icons `), and
 the name from the folder's `README.md` table row for the file, else from the file name.
+Ligatures and other compatibility forms are written out in names and slugs, so an index
+slug such as `certi-ed` (from the name "certiﬁed") becomes `certified`. Within one source,
+a slug used twice for different drawings is kept for the first and the second gets one
+from its name or a number.
 Every icon left out is listed with why; the command never stops on one icon.
 
 `harness-brand pack check brands/icon-libraries/ID` checks a library against this format
