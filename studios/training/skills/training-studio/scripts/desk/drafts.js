@@ -2361,7 +2361,8 @@ function progressPart(found, held, lead) {
   const materials = list(found.cards).filter(one => one.state !== 'left-out');
   const available = materials.filter(one => one.seen).length;
   const status = progress.running ? make('p', 'quiet', run.training_plan_pending
-    ? 'Next: review the topics and teaching plan before the materials are built.'
+    ? (run.outline_first ? 'Next: check the training outline. Research starts only on the sections you approve.'
+      : 'Next: review the topics and teaching plan before the materials are built.')
     : materials.length ? available + ' of ' + materials.length + ' drafts available. New drafts appear below as they finish.'
       : 'Preparing the first material. It will appear here when it is ready.') : null;
   // What each assistant working now is doing, with Show activity (ui-kit/activity.js).
@@ -2709,6 +2710,183 @@ function trainingPlanReview(plan, held) {
   return add(box, label, levels.length > 1 ? scope : null, problem, add(make('div', 'bar'), change, build));
 }
 
+// The training outline (#297): drafted from a quick scan before any research, edited here
+// and approved as edited. Edits are kept in `held.outline` until approved, for the version
+// they were made on; a structural change repaints and puts the focus where it belongs.
+function outlineReview(plan, held) {
+  const path = view.path, turn = view.turn, limits = plan.limits || {};
+  const copy = (value) => JSON.parse(JSON.stringify(list(value)));
+  if (!held.outline || held.outline.expected !== plan.expected) {
+    held.outline = {expected: plan.expected, sections: copy(plan.sections), separate: copy(plan.separate)};
+  }
+  const edit = held.outline;
+  const redraw = (key) => { paintDesk(true); if (key) focusKey(key); };
+  const box = add(make('section', 'paper slide-text-review outline-review'),
+    make('h2', 'doc-title', 'Here’s what this training will cover'),
+    make('p', 'quiet', 'A quick scan of your sources drafted this outline. Edit the sections '
+      + 'and what each still needs researched, then approve it. Research starts only on the '
+      + 'sections you approve, up to three at a time.'));
+  const sections = make('ol', 'outline-sections');
+  edit.sections.forEach((section, index) => sections.append(outlineSection(edit, section, index, limits, redraw)));
+  box.append(sections);
+  const more = capsule('Add a section', 'quiet', () => {
+    edit.sections.push({title: '', objectives: [], questions: [{text: '', from: 'you'}]});
+    redraw('outline-title-' + (edit.sections.length - 1));
+  }, 'outline-add-section');
+  more.disabled = edit.sections.length >= (limits.sections || 12);
+  box.append(add(make('div', 'bar'), more));
+  if (edit.separate.length) {
+    const apart = add(make('div', 'outline-section'), make('h3', 'row-title', 'Other questions you asked'),
+      make('p', 'quiet', 'They fit no section closely, so research answers them in an area of their own.'));
+    apart.append(outlineQuestions(edit.separate, 'separate', 'other questions', limits, redraw, true));
+    box.append(apart);
+  }
+  box.append(scanFound(plan.scan || {}));
+  const problem = make('p', 'problem'); problem.setAttribute('role', 'alert');
+  const approve = capsule('Approve and start research', 'filled', () => decide(), 'outline-approve');
+  async function decide() {
+    if (view.busy) return;
+    const empty = edit.sections.findIndex((section) => !String(section.title || '').trim());
+    const unasked = edit.sections.findIndex((section) => !list(section.questions).some((q) => String(q.text || '').trim()));
+    if (!edit.sections.length) { problem.textContent = 'Keep at least one section.'; return; }
+    if (empty >= 0) { problem.textContent = 'Give section ' + (empty + 1) + ' a title.'; focusKey('outline-title-' + empty); return; }
+    if (unasked >= 0) { problem.textContent = 'Give section ' + (unasked + 1) + ' at least one research question.'; focusKey('outline-question-' + unasked + '-0'); return; }
+    view.busy = true; approve.disabled = true; problem.textContent = '';
+    try {
+      const run = await send('training-plan', {path, expected: plan.expected, decision: 'approve',
+        outline: {sections: edit.sections.map((section) => ({title: section.title,
+          objectives: list(section.objectives), questions: list(section.questions)})),
+        separate: edit.separate}});
+      if (view.turn !== turn) return;
+      held.outline = null; view.run = run;
+    } catch (error) { problem.textContent = error.message; }
+    finally { view.busy = false; approve.disabled = false; }
+    if (view.turn === turn && !problem.textContent) await drawDesk(true);
+  }
+  return add(box, problem, add(make('div', 'bar'), approve));
+}
+
+function outlineSection(edit, section, index, limits, redraw) {
+  const number = index + 1, name = section.title || 'section ' + number;
+  const item = make('li', 'outline-section');
+  const group = add(make('fieldset', 'outline-fieldset'), make('legend', 'row-title', 'Section ' + number));
+  const title = make('input', 'input'); title.value = section.title || ''; title.maxLength = limits.title || 120;
+  title.id = 'outline-title-' + index; title.dataset.key = title.id;
+  title.addEventListener('input', () => { section.title = title.value; });
+  const titled = add(make('label', 'field'), make('span', 'field-label', 'Section title'), title);
+  titled.htmlFor = title.id;
+  const aims = make('textarea', 'input'); aims.rows = 2; aims.value = list(section.objectives).join('\n');
+  aims.id = 'outline-objectives-' + index; aims.dataset.key = aims.id;
+  aims.setAttribute('aria-describedby', aims.id + '-hint');
+  aims.addEventListener('input', () => {
+    section.objectives = aims.value.split('\n').map((line) => line.trim()).filter(Boolean);
+  });
+  const hint = make('p', 'field-hint', 'One a line, at most ' + (limits.objectives || 5) + '.'); hint.id = aims.id + '-hint';
+  const aimed = add(make('label', 'field'), make('span', 'field-label', 'What learners will be able to do'), aims, hint);
+  aimed.htmlFor = aims.id;
+  const move = (by) => {
+    const [taken] = edit.sections.splice(index, 1);
+    edit.sections.splice(index + by, 0, taken);
+    redraw('outline-' + (by < 0 ? 'up' : 'down') + '-' + (index + by));
+  };
+  const up = capsule('Move up', 'quiet', () => move(-1), 'outline-up-' + index);
+  const down = capsule('Move down', 'quiet', () => move(1), 'outline-down-' + index);
+  const remove = capsule('Remove section', 'quiet', () => {
+    edit.sections.splice(index, 1);
+    redraw(edit.sections.length ? 'outline-title-' + Math.max(0, index - 1) : 'outline-add-section');
+  }, 'outline-remove-' + index);
+  up.disabled = index === 0; down.disabled = index === edit.sections.length - 1;
+  remove.disabled = edit.sections.length <= 1;
+  up.setAttribute('aria-label', 'Move ' + name + ' up'); down.setAttribute('aria-label', 'Move ' + name + ' down');
+  remove.setAttribute('aria-label', 'Remove ' + name);
+  add(group, titled, aimed, outlineQuestions(section.questions, String(index), name, limits, redraw, false),
+    add(make('div', 'bar outline-section-actions'), up, down, remove));
+  return add(item, group);
+}
+
+function outlineQuestions(questions, at, name, limits, redraw, apart) {
+  const part = make('div', 'outline-questions');
+  part.append(make('p', 'field-label', apart ? 'Questions' : 'What research still needs to find out'));
+  const rows = make('ul', 'outline-question-list');
+  questions.forEach((question, index) => {
+    const row = make('li', 'outline-question');
+    const input = make('input', 'input'); input.value = question.text || ''; input.maxLength = limits.text || 300;
+    input.id = 'outline-question-' + at + '-' + index; input.dataset.key = input.id;
+    input.setAttribute('aria-label', 'Research question ' + (index + 1) + ' of ' + name);
+    input.addEventListener('input', () => { question.text = input.value; });
+    const remove = capsule('Remove', 'quiet', () => {
+      questions.splice(index, 1);
+      redraw(questions.length ? 'outline-question-' + at + '-' + Math.max(0, index - 1)
+        : apart ? 'outline-approve' : 'outline-ask-' + at);
+    }, 'outline-question-remove-' + at + '-' + index);
+    remove.setAttribute('aria-label', 'Remove research question ' + (index + 1) + ' of ' + name);
+    add(row, input, question.from === 'form' ? make('span', 'tag', 'From your form') : null, remove);
+    rows.append(row);
+  });
+  part.append(rows);
+  if (!apart) {
+    const ask = capsule('Add a question', 'quiet', () => {
+      questions.push({text: '', from: 'you'});
+      redraw('outline-question-' + at + '-' + (questions.length - 1));
+    }, 'outline-ask-' + at);
+    ask.disabled = questions.length >= (limits.questions || 5);
+    ask.setAttribute('aria-label', 'Add a research question to ' + name);
+    part.append(add(make('div', 'bar'), ask));
+  }
+  return part;
+}
+
+// What the quick scan found, under a disclosure: never research evidence, and said so.
+function scanFound(scan) {
+  const found = add(make('details', 'outline-notes outline-scan'), make('summary', '', 'What the quick scan found'),
+    make('p', 'quiet', scan.note || 'The quick scan is a first look, not research.'));
+  if (list(scan.terms).length) found.append(make('h3', 'sheet-part', 'Key terms'), bullets(scan.terms, 'outline-points'));
+  if (list(scan.documents).length) {
+    found.append(make('h3', 'sheet-part', 'Your documents'),
+      bullets(scan.documents.map((entry) => entry.title + ': ' + entry.covers), 'outline-points'));
+  }
+  if (scan.most_pages !== undefined) {
+    const pages = list(scan.pages);
+    found.append(make('h3', 'sheet-part', 'Pages read'),
+      make('p', 'quiet', pages.length + ' of at most ' + scan.most_pages + ' pages.'));
+    if (pages.length) found.append(bullets(pages.map((page) => page.title || page.url), 'outline-points'));
+  }
+  if (list(scan.gaps).length) found.append(make('h3', 'sheet-part', 'Gaps'), bullets(scan.gaps, 'outline-points'));
+  const cost = [scan.seconds ? 'took ' + lasted(scan.seconds) : '',
+    scan.dollars !== null && scan.dollars !== undefined ? 'cost ' + money(scan.dollars) : ''].filter(Boolean);
+  if (cost.length) found.append(make('p', 'quiet', 'The quick scan ' + series(cost) + '. Nothing else has been spent yet.'));
+  return found;
+}
+
+// An older training stopped before its research was accepted may move to the outline-first
+// flow (#297), only when the person chooses it with what it discards in front of them.
+function outlineOfferPart(offer, held) {
+  const path = view.path, turn = view.turn;
+  const box = add(card('Try the outline-first flow'), make('p', '', offer.words));
+  const problem = make('p', 'problem'); problem.setAttribute('role', 'alert');
+  if (!held.offerOpen) {
+    const open = capsule('Use the outline-first flow…', '', () => {
+      held.offerOpen = true; paintDesk(true); focusKey('outline-offer-switch');
+    }, 'outline-offer-open');
+    return add(box, add(make('div', 'bar'), open));
+  }
+  const keep = capsule('Keep the current flow', 'quiet', () => {
+    held.offerOpen = false; paintDesk(true); focusKey('outline-offer-open');
+  }, 'outline-offer-keep');
+  const sure = capsule('Discard and switch', 'danger', async () => {
+    if (view.busy) return;
+    view.busy = true; sure.disabled = keep.disabled = true; problem.textContent = '';
+    try {
+      const run = await send('outline-first', {path, expected: offer.expected, confirmed: true});
+      if (view.turn !== turn) return;
+      held.offerOpen = false; view.run = run;
+    } catch (error) { problem.textContent = error.message; }
+    finally { view.busy = false; sure.disabled = keep.disabled = false; }
+    if (view.turn === turn && !problem.textContent) await drawDesk(true);
+  }, 'outline-offer-switch');
+  return add(box, make('p', 'notice', offer.confirm), problem, add(make('div', 'bar'), keep, sure));
+}
+
 function paintDesk(fresh) {
   const active = document.activeElement;
   const editing = !fresh && active && ['TEXTAREA', 'INPUT'].includes(active.tagName)
@@ -2725,6 +2903,7 @@ function paintDesk(fresh) {
   const lead = deskLead(run, held, ours);
   const drawn = JSON.stringify([found, run.state, run.question, run.problem, run.documents,
     run.mine, run.driver, run.taken, run.notice, run.outline, run.training_plan, run.training_plan_pending,
+    run.outline_offer, held.offerOpen,
     run.research_progress, run.timing, run.finished, view.issued, view.setup && view.setup.workspace,
     held.level, held.sources, held.material, held.said,
     held.unsent && list(held.unsent.files).map((file) => file.name), held.unsent
@@ -2818,7 +2997,9 @@ function paintDesk(fresh) {
   place({ title: found.title || 'Untitled', back: true, compact: narrow(),
     above: named.length ? [make('span', '', levelsText(named))] : [],
     actions: folded(actions) }, [
-    waitingPlan ? null : pageHead(preparingPlan ? 'I’ll prepare the topics and teaching plan for you to check, then build the training.' : conversation ? 'Read the retained materials. Make checked edits in conversation; only you mark a material ready.' : DESK_WORDS.lede),
+    waitingPlan ? null : pageHead(preparingPlan ? (run.outline_first
+      ? 'I’ll take a quick look at your sources and draft an outline for you to check. Research starts only on the sections you approve.'
+      : 'I’ll prepare the topics and teaching plan for you to check, then build the training.') : conversation ? 'Read the retained materials. Make checked edits in conversation; only you mark a material ready.' : DESK_WORDS.lede),
     notice,
     conversation ? add(card('Editing in conversation'), make('p', '', 'No work is scheduled. Checked edits to the listed existing material parts and explicit broader scope changes happen in conversation; Mark ready is your decision.')) : null,
     found.saved_status ? add(card('Saved runner history'), make('p', '', 'The earlier runner was ' + found.saved_status.halt + '. That status remains in the original saved records; no work was resumed.')) : null,
@@ -2826,10 +3007,12 @@ function paintDesk(fresh) {
     ours && run.notice ? noticePart(run) : null,
     ours ? needsPart(found, held, run) : null,
     conversation || waitingPlan ? null : progressPart(found, held, lead),
-    waitingPlan ? trainingPlanReview(run.training_plan, held) : null,
+    waitingPlan ? (run.training_plan.mode === 'outline' ? outlineReview(run.training_plan, held)
+      : trainingPlanReview(run.training_plan, held)) : null,
     ours && run.outline?.content_first && run.outline.waiting ? slideTextReview(run.outline, held) : null,
     run.question && ours ? questionPart(run, found.title) : null,
     run.problem ? problemPart(run, lead === 'problem') : null,
+    ours && !conversation && run.outline_offer ? outlineOfferPart(run.outline_offer, held) : null,
     adding(run) && ours && !held.unsent ? documentsCard(run, lead === 'documents') : null,
     preparingPlan || waitingPlan ? null : tabs,
     preparingPlan || waitingPlan ? null : levelStanding(found, level),
