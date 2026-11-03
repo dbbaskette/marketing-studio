@@ -1054,6 +1054,7 @@ def research_run(engine, job):
 
     import time
 
+    import blog_activity
     import blog_worker
 
     root, stop = engine.root, engine.stop
@@ -1073,15 +1074,16 @@ def research_run(engine, job):
         if stop.is_set():
             raise ValueError('Research stopped.')
         selection = model_profiles.route(job, 'Blog Studio', step, purpose='research')
-        return engine.worker(
-            job['engine'],
-            data,
-            guidance,
-            seconds=left(),
-            web=web,
-            stop=stop,
-            model_selection=selection,
-        )
+        with blog_activity.labelled(blog_activity.STAGES[step], step):
+            return engine.worker(
+                job['engine'],
+                data,
+                guidance,
+                seconds=left(),
+                web=web,
+                stop=stop,
+                model_selection=selection,
+            )
 
     _note_phase(root, job, 'Planning the research')
     plan = ask(job['payload'], job['guidance'], 'research-plan')['content']

@@ -11,8 +11,10 @@ import tempfile
 import threading
 import time
 
+import blog_activity
 import source_curator
 from studio_core import reachability
+from studio_core.agent_events import ClaudeEvents, CodexEvents, classify
 from studio_core.install_log import redact
 from studio_core.research_contract import HANDOFF
 
@@ -423,6 +425,13 @@ def generate(engine, payload, guidance, seconds=600, web=False, stop=None, model
     """
     if engine not in ('codex', 'claude'):
         raise ValueError('Choose Codex or Claude.')
+    # Inside a job of the engine's (blog_activity.within), what the assistant does is shown
+    # line by line while it runs and kept in its Activity log once it ends.
+    with blog_activity.job(stop) as watched:
+        return _generate(engine, payload, guidance, seconds, web, stop, model_selection, watched)
+
+
+def _generate(engine, payload, guidance, seconds, web, stop, model_selection, watched):
     try:
         binary = source_curator.executable(engine)
         # A Codex profile that cannot run unattended stops the job before it starts, too.
@@ -462,6 +471,7 @@ def generate(engine, payload, guidance, seconds=600, web=False, stop=None, model
                 'model_instructions_file=' + json.dumps(str(instructions)),
                 '--ephemeral',
                 '--skip-git-repo-check',
+                '--json',
                 '--sandbox',
                 'read-only',
                 '--cd',
@@ -485,7 +495,8 @@ def generate(engine, payload, guidance, seconds=600, web=False, stop=None, model
                 '--disable-slash-commands',
                 '--no-session-persistence',
                 '--output-format',
-                'json',
+                'stream-json',
+                '--verbose',
                 '--json-schema',
                 json.dumps(response_schema),
                 '--system-prompt',
@@ -526,6 +537,9 @@ def generate(engine, payload, guidance, seconds=600, web=False, stop=None, model
             # The policy and job guidance already are the system prompt or instructions file.
             stdin.write(given)
             stdin.seek(0)
+            # The CLI's event stream, read as it is written: what it is doing, for the page,
+            # and for Claude Code its result.
+            events = Events(folder / 'stdout', engine, watched)
             try:
                 process = subprocess.Popen(
                     command,
@@ -546,6 +560,7 @@ def generate(engine, payload, guidance, seconds=600, web=False, stop=None, model
                         raise ValueError('Run stopped. Saved work is kept.')
                     if stop is None:
                         time.sleep(0.1)
+                    events.follow()
                     if time.monotonic() >= deadline:
                         raise failed(
                             'This step ran out of the time a step may take ('
@@ -553,25 +568,34 @@ def generate(engine, payload, guidance, seconds=600, web=False, stop=None, model
                             + ').',
                             'time-limit',
                         )
-                    if stdout.tell() > 2_000_000 or (
-                        output.exists() and output.stat().st_size > 1_000_000
+                    if (
+                        stdout.tell() > STREAM_LIMIT
+                        or events.result_size > RESULT_LIMIT
+                        or (output.exists() and output.stat().st_size > 1_000_000)
                     ):
                         raise ValueError('The worker returned too much text. Saved work is kept.')
                     if stderr.tell() > 20_000_000:
                         raise failed('The selected CLI wrote too much to its error output.')
+                events.follow(final=True)
+                if watched is not None:
+                    watched.limited = events.limited()
                 if process.returncode:
                     raise failed(
                         'The selected CLI failed. Check its sign-in and usage under '
                         + STATUS
                         + ', then try again.',
-                        said=reported_error(engine, stdout),
+                        said=events.errors(),
                         network=True,
                     )
-                stdout.seek(0)
-                raw = output.read_text() if engine == 'codex' else stdout.read(2_000_001)
-                if len(raw) > 2_000_000:
-                    raise ValueError('The worker returned too much text.')
-                result = json.loads(raw)
+                if engine == 'codex':
+                    raw = output.read_text()
+                    if len(raw) > 2_000_000:
+                        raise ValueError('The worker returned too much text.')
+                    result = json.loads(raw)
+                else:
+                    if events.result_size > RESULT_LIMIT or stdout.tell() > STREAM_LIMIT:
+                        raise ValueError('The worker returned too much text.')
+                    result = events.result()
                 if engine == 'claude':
                     spent = usage(result)
                     if result.get('is_error'):
@@ -611,32 +635,122 @@ def generate(engine, payload, guidance, seconds=600, web=False, stop=None, model
             finally:
                 try:
                     os.killpg(process.pid, signal.SIGTERM)
-                except ProcessLookupError:
-                    pass
+                except (ProcessLookupError, PermissionError):
+                    pass  # Already gone; macOS refuses a group whose last process has exited.
                 try:
                     process.wait(timeout=3)
                 except subprocess.TimeoutExpired:
                     try:
                         os.killpg(process.pid, signal.SIGKILL)
-                    except ProcessLookupError:
+                    except (ProcessLookupError, PermissionError):
                         pass
                     process.wait()
                 reported(*spent)
 
 
-def reported_error(engine, stdout):
-    """The error a Claude Code run that exited with a failure reported in its JSON result,
-    as lines; nothing for Codex, or for output that is not such a result."""
-    if engine != 'claude':
-        return []
-    try:
-        stdout.seek(0)
-        result = json.loads(stdout.read(2_000_001))
-    except (OSError, ValueError):
-        return []
-    if not isinstance(result, dict) or not result.get('is_error'):
-        return []
-    return str(result.get('result') or '').splitlines()
+# The event stream may hold every search result and message the assistant saw; its final
+# result, the one part read as an answer, is held to what one answer may be.
+STREAM_LIMIT = 32_000_000
+RESULT_LIMIT = 2_000_000
+CHUNK = 4_000_000  # Bytes of the stream read at one look.
+
+
+class Events:
+    """A CLI's event stream (Claude Code's stream-json, Codex's --json), read as it grows.
+
+    Each whole line is decoded once. The shared readers (studio_core.agent_events) turn
+    each event into plain lines for `watched`, a blog_activity.Job, when there is one.
+    Claude Code's last `result` event is its answer, read as `--output-format json` gave
+    it; a stream with no such event falls back to its last object, as an older CLI or a
+    single printed result gives it. Codex's error events are its own error lines, as it
+    printed them before it streamed events, so a failure says what it did before."""
+
+    def __init__(self, path, engine, watched=None):
+        self.path, self.engine, self.watched = path, engine, watched
+        self.reader = CodexEvents() if engine == 'codex' else ClaudeEvents()
+        self.at, self.partial = 0, b''
+        self.found, self.last, self.result_size = None, None, 0
+        self.said: list[str] = []  # Codex's error lines, 'ERROR: …', newest last.
+
+    def follow(self, final=False):
+        """Read what was written since the last look; `final`, once the CLI ended, reads
+        all of it, the last line too."""
+        more = True
+        while more:
+            try:
+                with open(self.path, 'rb') as file:
+                    file.seek(self.at)
+                    arrived = file.read(CHUNK)
+            except OSError:
+                return
+            self.at += len(arrived)
+            *whole, self.partial = (self.partial + arrived).split(b'\n')
+            for line in whole:
+                self._line(line)
+            more = final and len(arrived) == CHUNK
+        if final and self.partial:
+            self._line(self.partial)
+            self.partial = b''
+
+    def _line(self, line):
+        if not line.strip():
+            return
+        try:
+            event = json.loads(line)
+        except ValueError:
+            return
+        if not isinstance(event, dict):
+            return
+        self.last = event
+        if event.get('type') == 'result':
+            self.found, self.result_size = event, max(self.result_size, len(line))
+        if self.engine == 'codex':
+            said = self._codex_error(event)
+            if said:
+                self.said = (self.said + ['ERROR: ' + said])[-SAID_LINES:]
+        try:
+            lines = self.reader.feed(event)
+        except Exception:  # What is shown never stops the work.
+            return
+        if self.watched is not None:
+            for text in lines:
+                self.watched.say(text)
+
+    @staticmethod
+    def _codex_error(event):
+        kind = event.get('type')
+        item = event.get('item') if isinstance(event.get('item'), dict) else {}
+        if kind == 'error':
+            return str(event.get('message') or '')
+        if kind == 'turn.failed':
+            return str((event.get('error') or {}).get('message') or '')
+        if kind == 'item.completed' and item.get('type') == 'error':
+            return str(item.get('message') or '')
+        return ''
+
+    def result(self):
+        """Claude Code's result, as one JSON object."""
+        found = self.found if self.found is not None else self.last
+        if found is None:
+            raise json.JSONDecodeError('No result', '', 0)
+        return found
+
+    def errors(self):
+        """The error a failed run reported: Claude Code's error result as lines, or Codex's
+        error lines."""
+        if self.engine == 'codex':
+            return list(self.said)
+        found = self.found if self.found is not None else self.last
+        if not isinstance(found, dict) or not found.get('is_error'):
+            return []
+        return str(found.get('result') or '').splitlines()
+
+    def limited(self):
+        """Whether the assistant said it reached an account or spending limit."""
+        if self.engine == 'codex':
+            said = self.reader.failure or self.reader.said or ''
+            return bool(said) and classify(said) == 'limit'
+        return self.reader.reason == 'limit'
 
 
 def schema_for(payload):

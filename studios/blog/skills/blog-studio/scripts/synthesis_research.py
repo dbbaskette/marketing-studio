@@ -119,6 +119,27 @@ def refusal_groups(refusal, case):
     return grouped(case)
 
 
+# Each research job as the page names it while it works and in the Activity log.
+PHASES = {
+    'discovery': 'Finding public sources',
+    'investigate': 'Investigating research area',
+    'synthesize': 'Combining the findings',
+    'review': 'Checking the research independently',
+    'author': 'Writing the research report',
+}
+
+
+def phase_words(phase, number, data):
+    """What a research job is doing, in plain words: its phase, its area and its round."""
+    words = PHASES.get(phase, 'Researching')
+    stream = (data.get('_execution') or {}).get('stream') if isinstance(data, dict) else None
+    if phase == 'investigate' and isinstance(stream, str):
+        words += ' ' + stream.removeprefix('area')[:40]  # Areas are area1, area2, …
+    if phase != 'discovery' and isinstance(number, int) and number > 1:
+        words += ', round ' + str(number)
+    return words
+
+
 def generate(
     directory,
     run,
@@ -135,6 +156,7 @@ def generate(
     when given, hears {'round', 'phase'} as each job starts (round 0 is public source
     discovery, before the first author) and {'job': ...} as each ends, with its seconds and
     the tokens and dollars its CLI reported."""
+    import blog_activity
     import blog_library
     import blog_worker
     from performance import extract
@@ -162,7 +184,10 @@ def generate(
         number = (data.get('_execution') or {}).get('round', rounds[0])
         tell({'round': number, 'phase': phase})
         began, outcome = time.monotonic(), 'failed'
-        with blog_worker.metered() as jobs:
+        with (
+            blog_worker.metered() as jobs,
+            blog_activity.labelled(phase_words(phase, number, data), 'research-' + phase),
+        ):
             try:
                 answer = worker(
                     run['engine'],

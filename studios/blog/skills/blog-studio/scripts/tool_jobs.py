@@ -285,6 +285,25 @@ def once(engine):
     if unstarted is not None:
         _share(root, unstarted)
         return
+    import blog_activity
+
+    # Each assistant call this job makes is shown and logged as one of its blog's jobs (a
+    # GEO report's, or the workspace's when it has neither).
+    try:
+        subject = blog_activity.of_job(saved)
+    except ValueError:
+        subject = blog_activity.WORKSPACE
+    watching = blog_activity.within(
+        getattr(engine, 'activity', None) or blog_activity.Running(root),
+        subject,
+        blog_activity.KINDS.get(saved['kind'], 'Working'),
+        saved['kind'],
+        # The page asks by the job's id, or for angles by the start's operation.
+        owner=((saved['metadata'].get('desk') or {}).get('operation') or ident)
+        if saved['kind'] == 'desk-angles'
+        else ident,
+    )
+    watching.__enter__()
     try:
         if saved['kind'] == 'desk-research':
             import desk_jobs
@@ -352,6 +371,7 @@ def once(engine):
                 shared = _ended(root, current)
         _share(root, shared)
     finally:
+        watching.__exit__(None, None, None)
         engine.current = None
 
 
