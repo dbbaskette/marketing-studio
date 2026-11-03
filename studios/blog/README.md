@@ -91,6 +91,11 @@ Finishing and sending, drawn the same way:
 
 Blogs started before the desk keep their older step-by-step run, which is not drawn here.
 
+While the assistant works, each job shows what it is doing now as **Now: …**, and
+**Show activity** lists everything it has done so far, newest first, with times. Each
+blog's **Activity log**, on the desk and on a run, keeps every finished job, how it ended
+and what it did. It stays on this computer and is never shared.
+
 [Full desk and tool guide](docs/runner.md) · [Voice walkthrough](docs/new-user-guide.md)
 
 ## Make posts clear for AI search (GEO)

@@ -205,6 +205,9 @@
 .desk-reading-part .doc img{max-width:100%;height:auto}
 
 .desk-reading-document{padding:.3rem}
+/* What the assistant is doing, at the top of the manuscript: inset as its parts are. */
+.desk-reading-document>.activity-holder{padding:1rem 1.2rem 0}
+@media(max-width:52rem){.desk-reading-document>.activity-holder{padding:1rem 1rem 0}}
 .desk-suggestion-summary{padding:.7rem 1.2rem;border-bottom:1px solid var(--hair)}
 .desk-suggestion-summary>p{margin:0 0 .35rem}
 

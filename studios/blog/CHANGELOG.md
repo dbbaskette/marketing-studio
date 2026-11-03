@@ -5,6 +5,32 @@ changes for authors first, then what changes for maintainers.
 
 ## Unreleased
 
+- **See what the assistant is doing, and keep an Activity log (#294).** While a job
+  runs, Blog Studio now shows what its assistant is doing as **Now: …** ("Searching the
+  web: …", "Handing back its answer"), and **Show activity** lists every line so far,
+  newest first, with times: on the desk, in the research panel, on a step-by-step run, on
+  a GEO report being written, and while the assistant finds a page's text or suggests
+  angles. Each blog's **Activity log** (on the desk and its run), and each GEO report's,
+  keeps every finished job, how it ended and what it did; work for no blog is in the log on
+  Status. Results, time limits, Stop, usage and error messages are as they were. The log
+  stays on this computer and is never shared.
+  Maintainers: `blog_worker.generate` runs Claude Code with `--output-format stream-json
+  --verbose` and Codex with `exec --json`, and reads their events as they arrive
+  (`blog_worker.Events`, through `studio_core.agent_events`). Claude Code's answer is its
+  last `result` event, or the one object an older CLI or a test fake prints; Codex's is
+  still its `--output-last-message` file. The event stream may reach 32 MB while a
+  result stays capped at 2 MB, and Codex's `error` and `turn.failed` events become its
+  `ERROR:` lines, so connection failures are named as before. `blog_activity` keeps the
+  running jobs on the engine (`Engine.activity`): `within` names the calls of a run stage
+  or tool job, `labelled` a research phase or correction, and each call that ends is
+  appended to `.blog-runs/activity/<blog-…|geo-report-…|workspace>.jsonl` under the studio
+  lock, best effort. `.blog-runs` is Git-ignored in every workspace, so the log is never
+  committed, shared or a team conflict. Views of a run, the desk, a GEO report, a
+  find-text job and angles carry `activity`; `GET /api/activity` serves a log
+  (`id`/`report`/neither), one entry's lines (`entry`) or a running job's lines
+  (`job`, `since`). `os.killpg` treats macOS's `PermissionError` for an exited group as
+  gone. The shared `describe` names Claude Code's `StructuredOutput` tool.
+
 - **A Google Slides link in the shared source panel now reads (#292).**
   Decks were read through the Google Slides API, which a gcloud sign-in cannot call
   without a quota project, so pasting a deck's link failed with "lacks access" even

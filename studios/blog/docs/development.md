@@ -34,6 +34,12 @@ desk parts are `ui-kit/drafting.js` (linked as `assets/management/drafting.js`,
 loaded before `desk.js`), and the desk's styles are in `ui-kit/style.css`; Review
 mode, the start, images and the publish view stay in `desk.js`.
 
+What a running assistant job is doing, and each blog's Activity log, are the shared
+`ui-kit/activity.js` (linked as `assets/management/activity.js`) and
+`studio_core.activity_log`; `scripts/blog_activity.py` keeps Blog Studio's running jobs
+and where each is logged (`.blog-runs/activity/`, which Git ignores), and
+`blog_worker.Events` reads the assistant's event stream through `studio_core.agent_events`.
+
 To try the skill from a checkout, open this repository in your AI tool and ask
 it to use `skills/blog-studio/SKILL.md`, or install the checkout into a
 disposable home:
