@@ -7,7 +7,8 @@ from unittest import mock
 import unittest
 
 from test_runner_deck import DeckCase, PageCase
-from test_desk import NODE, ScriptedPage, TrainingDeskScreenTests, a_desk, a_desk_run, ok
+import test_desk  # its screen tests' helpers, borrowed by name so its tests are not run here
+from test_desk import NODE, ScriptedPage, a_desk, a_desk_run, ok
 from test_desk import PageCase as DeskPageCase
 import helpers
 from runner_support import FORM, fails
@@ -207,8 +208,13 @@ class KeepTests(SettingsCase):
     def test_a_research_change_keeps_the_report_unless_research_again(self):
         root = self.finished()
         shown = self.form(root)
-        said = self.engine.change_settings(root, self.sent(shown, audience='Platform operators'),
-                                           preview=True)
+        # The source panel opens on what the public web training reads, and changes nothing.
+        draft = self.engine.settings_sources(root)
+        self.assertTrue(draft['external'])
+        said = self.engine.change_settings(root, self.sent(
+            shown, audience='Platform operators',
+            research_inputs={'id': draft['id'], 'expected': draft['revision']}), preview=True)
+        self.assertEqual(said['changed'], ['audience'])
         self.assertEqual(said['research'], 'kept')
         self.assertIn('Research again', ' '.join(said['words']))
         again = self.engine.change_settings(root, self.sent(
@@ -332,13 +338,13 @@ class SheetTests(ScriptedPage, DeskPageCase):
     """The Change settings sheet, run in the page harness: opened from the stop's card,
     reviewed, saved, or put away with nothing sent."""
 
-    answers = TrainingDeskScreenTests.answers
-    posts = TrainingDeskScreenTests.posts
-    started = TrainingDeskScreenTests.started
-    listed = TrainingDeskScreenTests.listed
-    detail = TrainingDeskScreenTests.detail
-    on_desk = TrainingDeskScreenTests.on_desk
-    open_desk = TrainingDeskScreenTests.open_desk
+    answers = test_desk.TrainingDeskScreenTests.answers
+    posts = test_desk.TrainingDeskScreenTests.posts
+    started = test_desk.TrainingDeskScreenTests.started
+    listed = test_desk.TrainingDeskScreenTests.listed
+    detail = test_desk.TrainingDeskScreenTests.detail
+    on_desk = test_desk.TrainingDeskScreenTests.on_desk
+    open_desk = test_desk.TrainingDeskScreenTests.open_desk
 
     def stopped(self, **more) -> dict:
         run = a_desk_run('failed', 'Research stopped.')

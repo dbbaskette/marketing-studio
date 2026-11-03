@@ -5517,7 +5517,8 @@ function problemPart(run, lead) {
       }
     }, 'read-objections');
   }
-  return callout('late', make('h2', 'aside-title', title),
+  // Waiting for Continue after Change settings is no failure: it is the person's to go on.
+  return callout(found.settings ? 'yours' : 'late', make('h2', 'aside-title', title),
     add(make('p', ''), make('strong', '', 'What happened: '), found.what),
     keptPart(found.kept),
     does ? make('p', 'quiet', does) : null,
@@ -6398,12 +6399,15 @@ async function steer(action, pressed) {
         });
       } else await flushDesk(deskHeld(path));
     }
+    // Continue, after Change settings, carries on with the new settings; it is not a retry.
+    const continuing = action === 'retry' && Boolean(view.run && view.run.problem
+      && view.run.problem.settings);
     const run = await send('run', { path: view.path, action });
     view.busy = false;
     if (turn !== view.turn) return;
     view.run = run;
     view.steered = '';
-    toast(STEERED[action]);
+    toast(continuing ? 'Carrying on with the new settings.' : STEERED[action]);
   } catch (failure) {
     view.busy = false;
     if (turn !== view.turn) return;

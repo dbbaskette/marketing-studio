@@ -920,6 +920,10 @@ async function previewSettings(pressed) {
     changing.stage = 'review';
     paintSettings();
     focusKey('change-review');
+    const review = document.activeElement;
+    if (review && review.dataset.key === 'change-review' && review.scrollIntoView) {
+      review.scrollIntoView({ block: 'nearest', behavior: calm() ? 'auto' : 'smooth' });
+    }
   } catch (failure) {
     pressed.disabled = false;
     say(byId('change-problem'), failure.message);

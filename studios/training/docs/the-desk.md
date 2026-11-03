@@ -45,6 +45,19 @@ Use **Add a source** to add documents after research. The desk shows the price b
 
 **Add from library**, in the same sheet, takes documents already kept in the Document Library without uploading them again. They wait, unread, until you choose **Update the research**, and start nothing before then. A training researched from the public web reads your documents too from then on, as the sheet says first.
 
+## Change settings
+
+**Change settings** changes what a training was started with without starting over. It sits beside **Try again** on the card that says the training has stopped, and in the desk's toolbar (the **More** menu on a phone), whenever the run is not working: stopped, failed, paused, waiting for you or finished. It is never offered while an assistant is working; stop the training first.
+
+It opens the start form on the same sheet, in the same three steps, filled in with the saved values: what it teaches, who it is for, how long it should take and what it is for; the levels, the brief and the deck, its brand and how it is used; and what research reads, in the same source panel as the start, with **Search for additional external sources** and your approved sites, and the research questions. The title stays as it is. A part that cannot be changed safely says why instead: a deck that has been begun, a level with work in it, a training without levels, or research made with the earlier research workflow that still holds its unfinished draft.
+
+**Review the change** says what the change does before anything is saved:
+
+- **Research that has not been accepted into a finished report is discarded**, and the research is planned again with the new settings, when you change the topic, audience, purpose, research questions, sources, external search or sites. The review says how many research tries that discards and the time and money they took, from the run record, and that it cannot be undone; the button then reads **Discard and save**. Other changes keep the research plan, but research not yet accepted starts again, because the research is given every setting on the form.
+- **A finished research report is kept** unless you tick **Research again with the new settings**. What depends on a change is held on the desk for you to **Update** or **Keep as it is**, as with any other change of input; a material you marked ready is never changed without your say. An added level, or another kind of brief, leaves the blueprints as they are and makes only what is new.
+
+**Save the change** writes intake.md, the training's records and its research inputs together, and records "change the training's settings: …" in the training's history. Then the training waits: nothing starts until you press **Continue**. **Cancel** changes nothing. A form opened before something else changed the training is refused; open Change settings again.
+
 ## Mark ready and Finishing
 
 Under the level tabs, one line says how many of the level's materials are ready, still to write, drafts to mark ready, or need attention or a decision. A material is ready on its own; a level is complete once all of its materials are, and downloads and Google Docs stay optional. While a deck's slide text waits for you, its tab says **Needs your text approval** and **Review slide text** takes you to it; materials not written yet say **Not written yet**, never Writing, while nothing works on them. Time so far is a detail you open; elapsed time is never an estimate of what is left.

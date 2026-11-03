@@ -319,7 +319,8 @@ def _sources_changed(root: Path, record: dict, prepared: dict | None, chosen: di
             rows = []
     before = sorted((row.get('id'), row.get('sha256'), row.get('original_sha256')) for row in rows)
     after = sorted((s.get('id'), s.get('sha256'), s.get('original_sha256')) for s in prepared['sources'])
-    return before != after or (saved.get('workers'), saved.get('focus') or '') != (
+    # A training started without the source panel reads with its defaults: 3 workers, no focus.
+    return before != after or (saved.get('workers') or 3, saved.get('focus') or '') != (
         prepared['workers'], prepared['focus'] or '')
 
 
