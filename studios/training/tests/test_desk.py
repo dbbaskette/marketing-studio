@@ -7919,7 +7919,22 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         shot = result['snapshots']['open']
         # On a phone too: the decision, and the deck it is about, with no editor beside it.
         self.assertIn('Review slide text', shot['buttons'])
-        self.assertEqual(list(shot['fields']), ['Changes to slide text'])
+        self.assertEqual(list(shot['fields']), ['Title of slide 1', 'Point 1 of slide 1'])
+
+    def test_old_outline_entry_opens_the_matching_modern_deck_without_a_decision(self):
+        deck = a_card('deck@201', state='decide', seen=None, actions=[],
+                      says='Needs your text approval.')
+        run = a_desk_run('waiting', 'Review slide text.')
+        run['body']['outline'] = {'content_first': True, 'waiting': True, 'level': '201',
+                                  'sha256': 'a' * 64, 'slides': [
+                                      {'title': 'Current words', 'points': ['Capacity']}]}
+        answers = self.on_desk(a_desk(a_card('blueprint@101'), deck, running=False), run)
+        result = self.run_page(answers, [{'snapshot': 'review'}],
+                               state={'screen': 'outline', 'path': str(self.root)})
+        shot = result['snapshots']['review']
+        self.assertIn('Review slide text · Level 201', shot['text'])
+        self.assertNotIn('Approve', shot['buttons'])
+        self.assertEqual(self.posts(result), [])
 
     def a_doc(self, name='document@101', **more) -> dict:
         """runner/drafts.py `doc_view` of a guide in a training made with local copies."""

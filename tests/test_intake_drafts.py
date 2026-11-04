@@ -43,6 +43,35 @@ class IntakeTests(unittest.TestCase):
         self.assertEqual(self.send('save', expected=held['revision'], patch={'step': 1}), held)
         self.assertIsNone(drafts.dispatch(self.data, 'workspace-b', {'action': 'read'})['draft'])
 
+    def test_slide_decision_binds_revision_and_blocks_a_concurrent_save(self):
+        import threading
+        from concurrent.futures import ThreadPoolExecutor
+        scope = {'project': 'synthetic', 'level': None}
+        value = {'basis': 'outline-a', 'edits': [{'title': 'Saved title'}], 'note': ''}
+        saved = drafts.slide_review(self.data, scope,
+            {'action': 'save', 'expected': 0, 'patch': value})
+        sent = {'decision': 'approve', 'seen': 'outline-a', 'edited': value['edits'],
+                'draft_revision': saved['revision']}
+        for changed in ({'draft_revision': 0}, {'draft_revision': None},
+                        {'seen': 'outline-b'}, {'edited': None}):
+            with self.assertRaises(drafts.Conflict), drafts.slide_decision(
+                    self.data, scope, {**sent, **changed}):
+                self.fail('Invalid approval reached its commit')
+        started = threading.Event()
+        def save():
+            started.set()
+            return drafts.slide_review(self.data, scope, {'action': 'save',
+                'expected': saved['revision'], 'patch': {'note': 'New concern'}})
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            with drafts.slide_decision(self.data, scope, sent):
+                future = pool.submit(save)
+                self.assertTrue(started.wait(1))
+                with self.assertRaises(TimeoutError):
+                    future.result(timeout=.1)
+            self.assertGreater(future.result(timeout=2)['revision'], saved['revision'])
+        with self.assertRaises(drafts.Conflict), drafts.slide_decision(self.data, scope, sent):
+            self.fail('Stale tab reached approval')
+
     def test_unreadable_or_linked_draft_is_preserved(self):
         file = drafts.path(self.data, 'workspace-a')
         file.parent.mkdir(parents=True)
