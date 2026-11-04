@@ -93,6 +93,7 @@ class ProfileTests(IsolatedHome):
                 ('Presentation Studio', 'build-review:1', 'main'),
                 ('Presentation Studio', 'build-repair:2', 'main'),
                 ('Presentation Studio', 'outline', 'quick'),
+                ('Presentation Studio', 'scan', 'quick'),
                 ('Training Studio', 'scan', 'quick'),
                 ('Training Studio', 'research:question-2', 'main'),
                 ('Training Studio', 'deck-review@301', 'main'),

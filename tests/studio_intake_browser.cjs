@@ -33,7 +33,7 @@ async function fixture(product,args=[]){
     await dialog.getByLabel(product==='training'?'What should it teach?':'What should they take away?',{exact:true}).fill('Explain safe rolling restarts.');
     await dialog.getByLabel('Who is it for?',{exact:true}).fill('New platform engineers');
     await dialog.getByRole('button',{name:'Next',exact:true}).click();
-    if(product==='presentation')await dialog.getByLabel('Research first',{exact:true}).check();
+    if(product==='presentation')await dialog.getByLabel('Research the approved story',{exact:true}).check();
     await dialog.getByRole('button',{name:'Paste text',exact:true}).click();
     await dialog.getByLabel('Source name',{exact:true}).fill('Synthetic restart notes');
     await dialog.getByLabel('Source text',{exact:true}).fill('A rolling restart replaces instances in batches. Keep capacity for the remaining workload.');

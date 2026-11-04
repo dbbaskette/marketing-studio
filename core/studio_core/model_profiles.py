@@ -275,13 +275,13 @@ def _legacy(product, base, purpose, policy):
     profile = 'main'
     if base in ('classify', 'extract', 'source-classification'):
         profile = 'quick'
-    elif product == 'Training Studio' and base == 'scan':
+    elif product in ('Training Studio', 'Presentation Studio') and base == 'scan':
         # The new outline-first job uses the saved older Quick choice on adoption.
         profile = 'quick'
     elif purpose != 'review' and (base in ('build-repair', 'deck-repair') or purpose == 'repair'):
         profile = 'complex'
     if product == 'Presentation Studio' and policy == 2:
-        if base in ('outline', 'classify', 'extract'):
+        if base in ('outline', 'classify', 'extract', 'scan'):
             profile = 'quick'
         elif purpose == 'repair-escalated':
             profile = 'complex'

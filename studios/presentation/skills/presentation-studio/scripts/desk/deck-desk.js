@@ -103,7 +103,7 @@
     sources: {}, leave: {}, finish: {}, confirm: {}, editing: {},
     // The slide text waiting for approval: the change typed for it and the words edited in
     // it, by deck.
-    slideText: {},
+    slideText: {}, stories: {},
     // The deck whose Delivered card takes the focus once it is drawn, after Deliver.
     landing: null };
 
@@ -135,6 +135,11 @@
     h = parts;
     kit = typeof Drafting === 'undefined' ? null : Drafting.kit(FINISHING);
     document.addEventListener('keydown', escaped);
+    window.addEventListener('beforeunload', event => {
+      if (Object.values(held.stories).some(story => story.dirty)) {
+        event.preventDefault(); event.returnValue = '';
+      }
+    });
   }
 
   function opens(run) {
@@ -275,9 +280,12 @@
     // How the document is read is kept when the kind changes, and matters only for one.
     const script = draft.route === 'document' && draft.readAs === 'spec';
     if (!existing && draft.research && !script) {
-      steps.push(['Research.', (draft.route === 'document' && !draft.readAs
+      steps.push(['Approve the slide story.', (draft.route === 'document' && !draft.readAs
         ? 'Only if your document turns out to be material to build from. ' : '')
-        + 'It is planned from your questions, or from the goal, and done on its own.']);
+        + 'One bounded Quick scan proposes the story. Edit its sections and research questions, '
+        + 'then approve before detailed research starts.']);
+      steps.push(['Targeted research.', 'Only the approved sections and questions are researched, '
+        + 'combined and independently checked. The scan supplies no evidence.']);
     }
     if (text) {
       steps.push(['Approve the slide text.', 'The titles, the words on each slide, their '
@@ -298,10 +306,11 @@
     steps.push(['Review the deck.', 'It opens on the desk, a card for each slide: change its '
       + 'words, or note a slide to redraw it.'],
     ['Deliver.', 'Always yours, when the deck is right.']);
-    const waits = [text ? 'approve the slide text' : '', picks ? 'pick the look' : '']
+    const waits = [!existing && draft.research && !script ? 'approve the slide story' : '',
+      text ? 'approve the slide text' : '', picks ? 'pick the look' : '']
       .filter(Boolean);
     return { steps, says: waits.length ? 'Before the desk, it waits for you '
-      + (waits.length > 1 ? 'twice: to ' + waits.join(', then to ') : 'to ' + waits[0]) + '.'
+      + (waits.length > 1 ? (waits.length === 2 ? 'twice' : 'three times') + ': to ' + waits.join(', then to ') : 'to ' + waits[0]) + '.'
       : 'It runs on its own until the deck opens on the desk.' };
   }
 
@@ -369,7 +378,7 @@
     const researched = draft.route !== 'existing';
     // An independent choice, so a native checkbox in label.check (golden-gate.md).
     const research = researched ? StudioLists.tick({ id: 'research-first',
-      label: 'Research first', on: draft.research, flip: (on) => {
+      label: 'Research the approved story', on: draft.research, flip: (on) => {
         draft.research = on;
         h.paintNew(false);
       } }) : null;
@@ -400,8 +409,8 @@
     return [
       researched ? h.add(make('div', 'field'), research, make('p', 'quiet field-hint',
         (draft.route === 'document' ? 'Only where your document turns out to be material to '
-          + 'build from. ' : '') + 'The research is planned from your questions, or from the '
-          + 'goal, and done on its own. What it found is kept with the deck.')) : null,
+          + 'build from. ' : '') + 'One Quick scan proposes a story. Edit and approve it before '
+          + 'targeted research, which is independently checked and kept with the deck.')) : null,
       asked ? h.researchFromField(draft) : null,
       asked ? h.field('research-questions', 'What should the research answer? '
         + '(optional)', draft, 'researchQuestions', { long: true, rows: 4,
@@ -583,6 +592,7 @@
       text && !read ? ['slide-text-research', [desk.research_items, desk.research],
         () => researchFound(run)] : null,
       text ? ['slide-text', [gate, read], () => slideTextReview(run, read)] : null,
+      gate?.name === 'gate:story' ? ['slide-story', [gate, read], () => storyReview(run, read)] : null,
       pause ? ['look-pause', [gate, lead, h.brandsFound()], () => lookPause(run, lead === 'look')]
         : ['progress', [run.state, run.sentence, desk.progress, Boolean(run.question),
           run.problem], () => progressPart(run)],
@@ -605,6 +615,71 @@
       base: gate.expected });
     if (kept.base !== gate.expected) Object.assign(kept, { edits: null, base: gate.expected });
     return kept;
+  }
+
+  function storyReview(run, read) {
+    const plan=run.gate,path=h.view.path;
+    if(read)return make('p','quiet','The slide story waits for approval on its owner’s computer.');
+    let kept=held.stories[path];
+    if(!kept || (!kept.dirty && kept.base!==plan.expected))kept=held.stories[path]={base:plan.expected,value:JSON.parse(JSON.stringify(plan.outline)),raw:{},dirty:false};
+    const value=kept.value;
+    const box=h.add(make('section','paper slide-text-review'),make('h2','doc-title','Review the slide story'),
+      make('p','quiet','Edit what each section should say and what needs research. Only approval starts detailed research. The scan supplies no evidence.'));
+    box.append(make('p','quiet',plan.scan.fallback?'The scan ended early. This incomplete starting story is ready for your edits.':'One Quick scan prepared this provisional story.'));
+    const scope=plan.source_policy||{};
+    box.append(make('p','quiet','After approval: '+[scope.documents?'your supplied documents':'',scope.sites?.length?'your selected sites':'',scope.web?'the public web':''].filter(Boolean).join(', ')+'.'));
+    box.append(h.add(make('details','outline-notes'),make('summary','','Scan overview, coverage and limits'),
+      make('p','quiet','Scan limits: '+Math.ceil(plan.limits.seconds/60)+' minutes, $'+plan.limits.dollars.toFixed(2)+' within the deck limits; external searches: 0.'),
+      make('p','',value.overview),...value.coverage.map(one=>make('p','',one.source+': '+one.covers)),...value.gaps.map(one=>make('p','quiet',one))));
+    const status=make('p','quiet',kept.dirty?'Unsaved story edits.':'Story saved. No detailed research has started.');status.setAttribute('role','status');
+    const problem=make('p','problem');problem.setAttribute('role','alert');
+    if(kept.base!==plan.expected)problem.textContent='The inputs or saved story changed while you edited. Copy your answers before reloading the latest story.';
+    const lines=text=>text.split('\n').map(one=>one.trim()).filter(Boolean);
+    function field(label,key,initial,update,long=true){
+      const input=make(long?'textarea':'input','input');input.id=key;input.dataset.key=key;
+      if(long)input.rows=3;else input.type='text';input.value=kept.raw[key]??initial;
+      input.addEventListener('input',()=>{kept.raw[key]=input.value;update(input.value);kept.dirty=true;input.removeAttribute('aria-invalid');status.textContent='Unsaved story edits.';});
+      const labelNode=h.add(make('label','field'),make('span','field-label',label),input);labelNode.htmlFor=key;return labelNode;
+    }
+    const sections=make('ol','slide-text-list');
+    for(const [index,section] of value.sections.entries()){
+      const key='story-'+section.id;
+      const remove=h.capsule('Remove section '+(index+1),'quiet',()=>{
+        value.sections.splice(index,1);for(const name of Object.keys(kept.raw))if(name.startsWith(key+'-'))delete kept.raw[name];kept.dirty=true;h.paintDeck(true);h.byId('story-add')?.focus();
+      },key+'-remove');remove.disabled=value.sections.length<=1;
+      sections.append(h.add(make('li','slide-text-item'),make('h3','sheet-part','Section '+(index+1)),
+        field('Section '+(index+1)+' title',key+'-title',section.title,text=>section.title=text,false),
+        field('Section '+(index+1)+' messages',key+'-messages',section.objectives.join('\n'),text=>section.objectives=lines(text)),
+        field('Section '+(index+1)+' research questions',key+'-questions',section.questions.join('\n'),text=>section.questions=lines(text)),remove));
+    }
+    const add=h.capsule('Add section','quiet',()=>{
+      let index=1;while(value.sections.some(one=>one.id==='section-new-'+index))index++;
+      const id='section-new-'+index;value.sections.push({id,title:'New section',objectives:['What should this section say?'],questions:['Which evidence does it need?']});
+      kept.dirty=true;h.paintDeck(true);h.byId('story-'+id+'-title')?.focus();
+    },'story-add');add.disabled=value.sections.length>=8;
+    box.append(sections,add,field('Your additional research questions','story-personal',value.personal_questions.join('\n'),text=>value.personal_questions=lines(text)));
+    async function decide(decision){
+      if(kept.sending)return;
+      problem.textContent='';
+      const fail=(key,text)=>{problem.textContent=text;const input=h.byId(key);input?.setAttribute('aria-invalid','true');input?.focus();};
+      for(const [index,section] of value.sections.entries()){
+        const key='story-'+section.id,at='Section '+(index+1)+': ';
+        if(!section.title.trim()||section.title.length>160)return fail(key+'-title',at+'give a title of 160 characters or fewer.');
+        if(!section.objectives.length||section.objectives.length>6||section.objectives.some(one=>one.length>500))return fail(key+'-messages',at+'keep one to six messages, at most 500 characters each.');
+        if(!section.questions.length||section.questions.length>3||section.questions.some(one=>one.length>400))return fail(key+'-questions',at+'keep one to three research questions, at most 400 characters each.');
+      }
+      if(value.personal_questions.length>8||value.personal_questions.some(one=>one.length>300))return fail('story-personal','Keep up to eight additional questions, at most 300 characters each.');
+      const controls=[...box.querySelectorAll('input,textarea,button')];const disabled=controls.map(node=>node.disabled);controls.forEach(node=>node.disabled=true);kept.sending=true;
+      try{
+        const result=await h.send('decide',{path,gate:'gate:story',decision,expected:kept.base,extra:{outline:value}});
+        kept.dirty=false;kept.base=null;
+        if(h.view.path===path){h.view.run=result;h.paintDeck(true);h.byId('title')?.focus();}
+        if(decision==='save')h.toast('Story saved. No assistant work started.');
+        h.refresh();
+      }catch(error){problem.textContent=error.message;}
+      finally{kept.sending=false;controls.forEach((node,index)=>node.disabled=disabled[index]);}
+    }
+    return h.add(box,problem,status,bar(h.capsule('Save story','quiet',()=>decide('save'),'story-save'),h.capsule('Approve story & research','filled',()=>decide('approve'),'story-approve')));
   }
 
   function slideTextReview(run, read) {

@@ -5,6 +5,15 @@ making decks first, then what changes for maintainers.
 
 ## Unreleased
 
+- New researched desk decks use one bounded saved Quick-profile scan and an editable
+  slide story before research. Save without model work; approve exact retained sections,
+  messages and questions before independently checked research and slide-text drafting.
+  Stop/timeout keeps a usable provisional story without escalation. Existing scripts,
+  selected edits and saved older flows keep their direct routes. New records use schema 5,
+  refused by older runtimes. Slide-text, look and delivery decisions remain explicit.
+- Share provisional-scope validation and excerpt limits with Training Studio. Research
+  source permissions and the pinned companion protocol remain unchanged.
+
 - **New deck saves your place in three real pages.** Source, Audience, and Research and
   review keep answers and source pins through Back, Next, reload and Save and close.
   Only Start begins work. Explicit discard clears the private form and keeps captured

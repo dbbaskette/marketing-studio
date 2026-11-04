@@ -1,6 +1,6 @@
 # Marketing Studio audit implementation roadmap
 
-Status: Weeks 1–3 authorized for implementation, verification, PR publication and merge.
+Status: Weeks 1–8 authorized for implementation, verification, PR publication and merge.
 Basis: audit tracker [#326](https://github.com/dbbaskette/marketing-studio/issues/326), checked 2026-11-04.
 Scope: all 14 new audit issues (#312–#325), plus existing #297 and #305. #326 is the tracking/closure issue.
 
@@ -161,14 +161,14 @@ Implementers own focused behavior checks and the required relevant component sui
 
 Review the cross-boundary risks explicitly: stale scope/approval, duplicate provider requests, evidence reuse after changed inputs, pending unsaved edits, concurrent settings updates, stop/retry/reconnect, old saved tasks and local-only home browsing.
 
-All verification uses disposable state and scripted providers. Paid-provider work, Google writes, deployment and user upgrades remain separate actions. The user authorized implementation, PR publication and merge for Weeks 1–3.
+All verification uses disposable state and scripted providers. Paid-provider work, Google writes, deployment and user upgrades remain separate actions. The user authorized implementation, PR publication and merge for Weeks 1–8, with a separate verified PR merged after each cohort.
 
 ## Completion record
 
 - [x] Read audit tracker and current dependencies.
 - [x] Confirm #294–#296 are closed and #297/#305 plus #312–#325 remain open.
 - [x] Map every audit implementation issue to a cohort.
-- [x] User authorizes Weeks 1–3, each through PR publication and merge.
+- [x] User authorizes Weeks 1–8, each through PR publication and merge.
 - [x] Week 1 merged in [PR #327](https://github.com/dbbaskette/marketing-studio/pull/327), squash `c954191edb7f72bd8d9a6ff946360f58825c99f0`. Clean full shared/native suites, browser and package/CLI checks recorded on the PR.
 - [x] Week 2 merged in [PR #328](https://github.com/dbbaskette/marketing-studio/pull/328), squash `16d164fb4dc7a6e360ac5fb7f7d1dcc77b2009e6`. Full shared, all four native suites, real browser and installer/CLI acceptance passed with disposable state.
 - [x] Week 3 implemented and verified in [PR #329](https://github.com/dbbaskette/marketing-studio/pull/329). Full Training Studio suite (3,173 tests), shared suite (958 tests), native browser journey, package and installer/CLI acceptance passed with disposable state. The shared VM's real-PDF reader skip passed separately on the host. The PR records the tested revisions and merge outcome.

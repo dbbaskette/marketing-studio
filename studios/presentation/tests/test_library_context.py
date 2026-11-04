@@ -276,7 +276,7 @@ class StartSourceTests(LibraryCase):
         picks = [{'id': 'a' * 32, 'revision': 1}]
         for form in ({'route': 'existing', 'research': True}, {'route': 'scratch'}):
             with self.subTest(form=form), self.assertRaisesRegex(WorkspaceError,
-                                                                 'Research first'):
+                                                                 'Research the approved story'):
                 Engine._start_library(form, picks)
         self.assertEqual(Engine._start_library({'route': 'document', 'research': True},
                                                picks), picks)

@@ -306,7 +306,9 @@ class RuleTests(PageCase):
         self.assertEqual(self.page.body_limit('/api/research-sources', without), server.BODY_LIMIT)
         self.assertEqual(self.page.body_limit('/api/intake-draft', with_key), 32_000_000)
         self.assertEqual(self.page.body_limit('/api/intake-draft', without), server.BODY_LIMIT)
-        for target in set(POSTS) - {'/api/intake-draft', '/api/decks', '/api/picture', '/api/desk-source', '/api/research-sources'}:
+        self.assertEqual(self.page.body_limit('/api/decide', with_key), 512_000)
+        self.assertEqual(self.page.body_limit('/api/decide', without), server.BODY_LIMIT)
+        for target in set(POSTS) - {'/api/decide', '/api/intake-draft', '/api/decks', '/api/picture', '/api/desk-source', '/api/research-sources'}:
             self.assertEqual(self.page.body_limit(target, with_key), server.BODY_LIMIT, target)
 
     def test_a_source_added_on_the_desk_may_be_large_only_with_the_key(self):
@@ -1329,14 +1331,15 @@ class WireTests(WireCase):
         self.assertEqual(status, 200, body[:300])
         path = json.loads(body)['path']
         for target in ('/api/answer', '/api/decide', '/api/run', '/api/setup'):
+            limit = 512_000 if target == '/api/decide' else 64_000
             try:
-                status, _, body = self.ask(target, {'path': path, 'id': 'x' * 70_000})
+                status, _, body = self.ask(target, {'path': path, 'id': 'x' * (limit + 1000)})
             except urllib.error.URLError as reset:
                 self.assertIsInstance(reset.reason, (ConnectionResetError, BrokenPipeError),
                                       target)
                 continue
             self.assertEqual((status, json.loads(body)['error']), (413, 'A change is at most '
-                             '64,000 bytes, with its length stated.'), target)
+                             f'{limit:,} bytes, with its length stated.'), target)
 
     def test_stopping_the_server_ends_the_engine(self):
         self.server.stop()

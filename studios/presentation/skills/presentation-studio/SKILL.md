@@ -5,12 +5,12 @@ description: Create, inspect and revise branded slide materials on the Presentat
 
 # Presentation Studio
 
-Use the checked `studio desk` commands for conversation work. No browser or nested assistant is needed. Focused requests never imply drawing, delivery, approval or design answers. `studio serve` still opens the page.
+Use checked `studio desk` commands in conversation; no browser or nested assistant. Focused requests never imply drawing, delivery, approval or design answers. `studio serve` opens the [native page](references/native-story.md).
 
 ## Rules
 
 - **Only the person approves.** Checked submissions record inputs and provenance, never approval or Ready.
-- **Slides use Harness Slides.** Its contracts, compile, preview, patch, comparison and brand checks still apply. Never write slide files directly or invent checked drawings or research.
+- **Slides use Harness Slides.** Keep its contracts, compile, preview, patch, comparison and brand checks. Never write slide files directly or invent checked drawings or research.
 - **Respect requested scope.** Require an explicit finite material list derived from the person's request. Add or remove scope only after they explicitly ask; never widen to make a submission pass.
 - **Design answers are the person's.** Never choose a look or fill design answers from permission to draft. Preserve saved choices; obtain the person’s actual answers.
 - **Keep originals.** An existing deck is read and its result is a new file. Preserve sources, pins, History, Google baselines and team ownership.

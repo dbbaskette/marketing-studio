@@ -12,6 +12,7 @@ REQUIRED = (
     'SKILL.md',
     'VERSION',
     'references/routes.md',
+    'references/native-story.md',
     'references/levels.md',
     'references/workspace.md',
     'scripts/validate_package.py',
@@ -43,6 +44,7 @@ def loading_sets() -> dict[str, tuple[list[str], int]]:
         'start': (['SKILL.md', 'references/routes.md'], 2000),
         'existing': (['SKILL.md', 'references/routes.md', 'references/levels.md'], 2500),
         'workspace': (['SKILL.md', 'references/workspace.md'], 2000),
+        'native-story': (['SKILL.md', 'references/native-story.md'], 2000),
     }
 
 
