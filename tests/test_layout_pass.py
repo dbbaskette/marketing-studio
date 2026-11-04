@@ -291,7 +291,10 @@ class SharedSetupJourneyTests(PageLayoutTests):
         shown = shots['shown']
         self.assertEqual(shown['words']['save-state'], 'All changes saved')
         self.assertEqual(shown['words']['models-owner'], 'Override')
-        self.assertIn('By task: 2 of 3 tasks have their own model', shown['words']['models-state'])
+        # The page is given the saved file as it is here, without the kinds the server works
+        # out from Main and Complex (test_model_profiles covers those): only Quick is its own.
+        self.assertIn('By task: 1 of 6 kinds of work have their own model or reasoning',
+                      shown['words']['models-state'])
         self.assertEqual((shown['words']['release-owner'], shown['words']['release-state']),
                          ('Override', 'Pinned to v1.4.0'))
         self.assertEqual(shown['words']['research-state'], '1 site')

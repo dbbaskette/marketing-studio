@@ -116,7 +116,8 @@
               <div class="model-heading"><div><p class="quiet">Keep one model for everything, or choose a model for each kind of task.</p></div>
                 <div class="field"><p class="field-label" id="model-mode-label">Model routing</p><div class="segmented" data-count="2" data-at="0" role="radiogroup" aria-labelledby="model-mode-label"><span class="seg-thumb" aria-hidden="true"></span><label class="seg-option"><input type="radio" name="models.mode" value="single" checked>One model</label><label class="seg-option"><input type="radio" name="models.mode" value="by_task">By task</label></div></div></div>
               <div id="model-profiles" hidden>
-                <p class="field-hint quiet">Quick handles extraction, classification and Presentation Studio outlines. Main handles research, drafting, slides, review and the first repair. Complex handles repeated slide findings and other dedicated repairs. Blog Studio uses Main for every job. New work saves these choices; existing work keeps its models.</p>
+                <p class="field-hint quiet">Choose a model and reasoning level for each kind of work, in every studio. New work saves these choices. Work already started keeps its own until you choose Use the current model settings on it while it is stopped.</p>
+                <p id="profile-new" class="field-hint" role="status" hidden></p>
                 <div id="profile-cards" class="profile-cards"></div>
                 <div id="profile-review" class="paper callout" data-kind="yours" role="status" hidden><p>The assistant changed. Check the model IDs and reasoning levels before using these profiles with this assistant.</p><button type="button" id="confirm-profiles" class="button">Use these profiles with this assistant</button></div>
                 <p class="field-hint quiet">Use model IDs available in your signed-in account. The studios send your choice directly to the selected assistant and stop if it cannot be used.</p>

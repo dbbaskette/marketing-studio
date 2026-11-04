@@ -141,8 +141,7 @@
   clear: both;
 }
 
-.profile-card > * + *,
-.profile-explicit > * + * {
+.profile-card > * + * {
   margin-top: 0.6rem;
 }
 

@@ -802,6 +802,92 @@ function settingsButton(run, key, kind = '') {
     ? capsule('Change settings', kind, () => openChangeSettings(key), key) : null;
 }
 
+// --- Use the current model settings ----------------------------------------------------------
+// A training keeps the model and reasoning it started with for each kind of work. This brings
+// a stopped one up to date with Settings: the sheet lists each kind that changes, before and
+// after, and nothing changes until the person saves it. What stopped it stays as it was.
+
+function modelsOffered(run) {
+  return Boolean(run && run.current_models && run.current_models.may && run.mine !== false);
+}
+
+function modelsButton(run, key, kind = 'quiet') {
+  return modelsOffered(run)
+    ? capsule('Use the current model settings', kind, () => openModels(key), key) : null;
+}
+
+async function openModels(opener) {
+  const path = view.path;
+  view.usingModels = { path, shown: null };
+  openSheet('use-models', opener)();
+  let shown;
+  try {
+    shown = await ask('training-models', { path });
+  } catch (failure) {
+    shown = { failed: failure.message };
+  }
+  if (view.sheet !== 'use-models' || !view.usingModels || view.usingModels.path !== path) return;
+  view.usingModels.shown = shown;
+  drawSheet();
+  byId('sheet').focus();
+}
+
+// A model and reasoning level as the sheet says them.
+function choiceWords(choice) {
+  const model = (choice && choice.model) || 'the assistant’s default model';
+  return model + ' · ' + ((choice && choice.effort) ? choice.effort + ' reasoning'
+    : 'default reasoning');
+}
+
+function modelsSheet() {
+  const found = (view.usingModels || {}).shown;
+  const head = add(make('div', 'sheet-heading'), sheetTitle('Use the current model settings'));
+  const cancel = capsule(found && !found.failed && found.may && list(found.changes).length
+    ? 'Cancel' : 'Close', 'quiet', () => { view.usingModels = null; closeSheet(); }, 'cancel');
+  if (!found) return [head, make('p', 'quiet', 'Reading what would change.'),
+    add(make('div', 'bar'), cancel)];
+  if (found.failed || !found.may) {
+    return [head, make('p', '', (found.failed || found.why) + ' Nothing was changed.'),
+      add(make('div', 'bar'), cancel)];
+  }
+  const changes = list(found.changes);
+  if (!changes.length) {
+    return [head, make('p', '', 'This training already uses the current model settings, so '
+      + 'there is nothing to change.'), add(make('div', 'bar'), cancel)];
+  }
+  const rows = add(make('ul', 'plain'), ...changes.map((change) => add(make('li', ''),
+    make('strong', '', change.title + ': '),
+    choiceWords(change.before) + ' → ' + choiceWords(change.after))));
+  const problem = problemLine();
+  const save = capsule('Use these models', 'filled', () => saveModels(problem, save), 'send');
+  return [head,
+    make('p', 'quiet', 'Settings choose a model and reasoning level for each kind of work. '
+      + 'This training started with earlier choices. Using the current ones changes:'),
+    rows, make('p', 'quiet', found.kept), problem, add(make('div', 'bar'), save, cancel)];
+}
+
+async function saveModels(problem, pressed) {
+  const using = view.usingModels;
+  if (!using || !using.shown || pressed.disabled) return;
+  pressed.disabled = true;
+  try {
+    const done = await send('training-models', { path: using.path,
+      expected: using.shown.expected });
+    if (done && done.state) view.run = done;
+    view.usingModels = null;
+    closeSheet();
+    toast('It uses the current model settings for the jobs still to run.');
+    paintRun(false);
+    refresh();
+  } catch (failure) {
+    pressed.disabled = false;
+    say(problem, failure.kind === 'stopped'
+      ? failure.message + ' It is not known whether the change was saved: close this and '
+        + 'open the training again to see.'
+      : failure.message + ' Nothing was changed.');
+  }
+}
+
 async function openChangeSettings(opener) {
   const path = view.path;
   let shown;
@@ -2764,6 +2850,8 @@ function paintDesk(fresh) {
   if (ours && !conversation) {
     const change = settingsButton(run, 'desk-settings');
     if (change) actions.push(change);
+    const models = modelsButton(run, 'desk-models', '');
+    if (models) actions.push(models);
   }
   // A finished training: its index to read, and Publish, as the Published screen says.
   const finished = ours && !conversation && run.finished && found.index_written

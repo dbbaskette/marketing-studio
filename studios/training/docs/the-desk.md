@@ -58,6 +58,10 @@ It opens the start form on the same sheet, in the same three steps, filled in wi
 
 **Save the change** writes intake.md, the training's records and its research inputs together, and records "change the training's settings: …" in the training's history. Then the training waits: nothing starts until you press **Continue**. **Cancel** changes nothing. A form opened before something else changed the training is refused; open Change settings again.
 
+## Use the current model settings
+
+A training saves the model and reasoning level it uses for each kind of work (Quick, Research, Combining, Checking, Writing and Fixing) when it starts, so a later change in **Settings → Advanced → Models and reasoning** reaches only new trainings. **Use the current model settings**, beside **Change settings** on the stop's card and in the desk's toolbar, brings a stopped training up to date: it lists each kind whose model or reasoning would change, before and after (for example, "Research: high reasoning → medium reasoning"), and changes nothing until you press **Use these models**. Only the jobs still to run use them: finished work is kept, and what stopped the training stays, with its own button (**Try again**, **Give it more time**, **Carry on**). It works on any stopped training of yours, including one started before Change settings existed, and it is recorded as "use the current model settings: …" in the training's history. The [shared setup guide](../../../docs/shared-setup.md#models-by-kind-of-work) says what runs on each kind.
+
 ## Mark ready and Finishing
 
 Under the level tabs, one line says how many of the level's materials are ready, still to write, drafts to mark ready, or need attention or a decision. A material is ready on its own; a level is complete once all of its materials are, and downloads and Google Docs stay optional. While a deck's slide text waits for you, its tab says **Needs your text approval** and **Review slide text** takes you to it; materials not written yet say **Not written yet**, never Writing, while nothing works on them. Time so far is a detail you open; elapsed time is never an estimate of what is left.

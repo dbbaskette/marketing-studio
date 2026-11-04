@@ -331,9 +331,11 @@ function describeAdvanced() {
   const byTask = form.elements['models.mode']?.value === 'by_task';
   const model = value('assistant.model'), effort = value('assistant.effort');
   const single = `${model || 'the assistant’s default model'}${effort ? `, ${effort} reasoning` : model ? '' : ' and reasoning'}`;
-  const chosen = profileNames.filter(name => (form.elements[`models.${name}.selection`]?.value || 'inherit') !== 'inherit').length;
+  // A kind of work is its own when it has a model or a reasoning level of its own.
+  const chosen = profileNames.filter(name => (form.elements[`models.${name}.selection`]?.value || 'inherit') !== 'inherit'
+    || value(`models.${name}.effort`)).length;
   $('#models-state').textContent = !byTask ? `One model: ${single}`
-    : chosen ? `By task: ${chosen} of 3 tasks have their own model; the rest use ${single}` : `By task: every task uses ${single}`;
+    : chosen ? `By task: ${chosen} of ${profileNames.length} kinds of work have their own model or reasoning; the rest use ${single}` : `By task: every kind of work uses ${single}`;
   owner('#models-owner', byTask || Boolean(model || effort));
   $('#models-pointer').textContent = `Uses ${byTask ? 'models chosen by task' : single}. ${setup ? 'You can change this in Shared settings, Advanced, after setup.' : 'Change it under Advanced: Models and reasoning.'}`;
   const release = value('brand.release');
@@ -422,10 +424,22 @@ async function addSite() {
 }
 $('#research-site-add').addEventListener('click', addSite);
 $('#research-site-input').addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); addSite(); } });
-const profileNames = ['quick', 'main', 'complex'];
+const profileNames = ['quick', 'research', 'combining', 'checking', 'writing', 'fixing'];
+const profileTitles = {quick: 'Quick', research: 'Research', combining: 'Combining', checking: 'Checking', writing: 'Writing', fixing: 'Fixing'};
+const profileDescriptions = {
+  quick: 'Sorting and extracting, and the quick scan that drafts a training outline',
+  research: 'Searching and reading sources',
+  combining: 'Turning research findings into the report',
+  checking: 'Independent checks and reviews of research, drafts and decks',
+  writing: 'Outlines, plans, drafts, slides and materials',
+  fixing: 'Repairs after a check keeps failing'
+};
 function profileLevels(select, selected, model = null) {
   const levels = catalogModel(model)?.levels || snapshot.efforts[form.elements['assistant.agent'].value];
-  select.replaceChildren(new Option('Assistant’s default', ''));
+  // A kind on the shared model with no reasoning of its own uses the shared reasoning.
+  const kind = /^models\.(\w+)\.effort$/.exec(select.name)?.[1];
+  const inherited = kind && (form.elements[`models.${kind}.selection`]?.value || 'inherit') === 'inherit';
+  select.replaceChildren(new Option(inherited ? 'Same as the shared reasoning' : 'Assistant’s default', ''));
   for (const level of levels) select.add(new Option(level, level));
   if (selected && !levels.includes(selected)) select.add(new Option(`${selected} (review for this model)`, selected));
   select.value = selected || '';
@@ -435,8 +449,14 @@ function profilesChanged() {
   $('#model-profiles').hidden = !byTask;
   $('#profile-review').hidden = !byTask || profileAgent === form.elements['assistant.agent'].value;
   for (const name of profileNames) {
-    const explicit = form.elements[`models.${name}.selection`].value === 'explicit';
-    document.querySelector(`[data-profile="${name}"] .profile-explicit`).hidden = !explicit;
+    const selection = form.elements[`models.${name}.selection`].value;
+    const card = document.querySelector(`[data-profile="${name}"]`);
+    card.querySelector('.profile-model').hidden = selection !== 'explicit';
+    card.querySelector('.profile-effort').hidden = selection === 'provider_default';
+    // On the shared model, no reasoning of its own means the shared reasoning.
+    const effort = form.elements[`models.${name}.effort`];
+    const unset = effort.options?.[0];
+    if (unset && !unset.value) unset.text = selection === 'inherit' ? 'Same as the shared reasoning' : 'Assistant’s default';
   }
   syncSegments();
 }
@@ -444,27 +464,31 @@ function fillProfiles() {
   profileAgent = snapshot.shared.models?.agent || form.elements['assistant.agent'].value;
   form.elements['models.mode'].value = snapshot.shared.models?.mode || 'single';
   const cards = $('#profile-cards'); cards.replaceChildren();
-  const descriptions = {quick: 'Extraction and classification', main: 'Research, writing and slides', complex: 'Dedicated repair work'};
+  const fresh = (snapshot.shared.models?.new || []).filter(name => profileNames.includes(name));
+  const note = $('#profile-new');
+  note.hidden = fresh.length === 0;
+  note.textContent = fresh.length ? `New: ${fresh.map(name => profileTitles[name]).join(', ')}. ` +
+    'They start from your earlier Main and Complex choices, with Research, Combining and Checking at medium reasoning. Save settings to keep them.' : '';
   for (const name of profileNames) {
     const saved = snapshot.shared.models?.profiles?.[name] || {};
-    const title = name[0].toUpperCase() + name.slice(1);
+    const title = profileTitles[name];
     const card = element('fieldset', '', 'paper profile-card'); card.dataset.profile = name;
-    card.append(element('legend', title, 'field-label'), element('p', descriptions[name], 'field-hint quiet'));
+    card.append(element('legend', title, 'field-label'), element('p', profileDescriptions[name], 'field-hint quiet'));
     const choice = element('div', '', 'field');
     const choiceLabel = element('label', `${title} model choice`, 'field-label'); choiceLabel.htmlFor = `models-${name}-selection`;
     const selection = element('select', '', 'input'); selection.id = choiceLabel.htmlFor; selection.name = `models.${name}.selection`;
     for (const [value, text] of [['inherit', 'Use shared model above'], ['provider_default', 'Assistant’s default'], ['explicit', 'Choose a model']]) selection.add(new Option(text, value));
     selection.value = saved.selection || 'inherit'; selection.addEventListener('change', profilesChanged);
     choice.append(choiceLabel, selection); card.append(choice);
-    const fields = element('div', '', 'profile-explicit');
-    const modelField = element('div', '', 'field'), modelLabel = element('label', `${title} model`, 'field-label');
+    const modelField = element('div', '', 'field profile-model'), modelLabel = element('label', `${title} model`, 'field-label');
     const input = element('input', '', 'input'); input.id = modelLabel.htmlFor = `models-${name}-model`;
     input.name = `models.${name}.model`; input.maxLength = 100; input.autocomplete = 'off'; input.value = saved.model || '';
     modelField.append(modelLabel, input);
-    const effortField = element('div', '', 'field'), effortLabel = element('label', `${title} reasoning`, 'field-label');
+    const effortField = element('div', '', 'field profile-effort'), effortLabel = element('label', `${title} reasoning`, 'field-label');
     const effort = element('select', '', 'input'); effort.id = effortLabel.htmlFor = `models-${name}-effort`; effort.name = `models.${name}.effort`;
-    profileLevels(effort, saved.effort, saved.model); effortField.append(effortLabel, effort);
-    fields.append(modelField, effortField); card.append(fields); cards.append(card);
+    effortField.append(effortLabel, effort);
+    card.append(modelField, effortField); cards.append(card);
+    profileLevels(effort, saved.effort, saved.model);
     modelPicker(input, `${title} model`);
   }
   profilesChanged();

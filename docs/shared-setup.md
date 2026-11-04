@@ -70,47 +70,66 @@ task needs them. Looking at Studios, its refresh and **Check this computer** run
 assistant, sign in to nothing, install no studio, prepare no workspace and start no paid
 work: they look for commands on this computer and read Git's own settings.
 
-## Models by task
+## Models by kind of work
 
 In **Shared settings → Advanced → Models and reasoning**, choose
-**One model** or **By task**. Each profile can inherit the shared model above,
-use the assistant's default without model or reasoning flags, or select a model
-and reasoning level from dropdowns. **Enter a model ID…** supports custom or
-unlisted IDs. Saved IDs remain selectable when a catalog changes or cannot load.
-Codex choices come from its read-only CLI model list. Claude Code uses the studios’
-existing bundled model reference, with its source and date shown; that list does
-not establish availability in your account. **Refresh models** retries a failed
-listing without changing saved settings or starting a provider job. A failed listing
-says why when the reason is known, such as Codex not being found or not finishing;
-the CLI's own output is not shown.
-Changing assistants requires reviewing the profiles before saving them.
+**One model** or **By task**. By task gives each kind of work its own model and
+reasoning level, in every studio. Each kind can use the shared model above (at the
+shared reasoning or a reasoning level of its own), use the assistant's default without
+model or reasoning flags, or use a model and reasoning level chosen from dropdowns.
+**Enter a model ID…** supports custom or unlisted IDs. Saved IDs remain selectable
+when a catalog changes or cannot load. Codex choices come from its read-only CLI model
+list. Claude Code uses the studios’ existing bundled model reference, with its source
+and date shown; that list does not establish availability in your account. **Refresh
+models** retries a failed listing without changing saved settings or starting a
+provider job. A failed listing says why when the reason is known, such as Codex not
+being found or not finishing; the CLI's own output is not shown.
+Changing assistants requires reviewing the kinds of work before saving them.
 
-| Profile | Tasks |
+| Kind | What runs on it |
 | --- | --- |
-| Quick | Presentation Studio classification and extraction; Blog Studio source classification |
-| Main | Research planning and questions, synthesis, teaching blueprints, writing, slide construction and ordinary independent review |
-| Complex | Dedicated slide repairs in Presentation Studio and Training Studio; returning a Blog Studio review to its draft for repair |
+| Quick | Classification and extraction in Presentation Studio, Blog Studio's source classification, Presentation Studio's outline, and Training Studio's scan that drafts a training outline |
+| Research | Research planning, searching and reading: research questions and investigators, Blog Studio's research rounds, its claims map, and finding where a page gets its text |
+| Combining | Turning findings into the research report and brief (Harness Research's author and the parallel synthesis) |
+| Checking | Independent checks and reviews: the research check, draft, deck and slide reviews, and Blog Studio's fact check, feedback, GEO review and GEO report |
+| Writing | Outlines, teaching blueprints, guides, briefs, scenarios, drafts, slides, desk edits and finishing passes, and anything not named here |
+| Fixing | Repairs after a check keeps failing: Training Studio's deck repairs, Presentation Studio's escalated repairs, and returning a Blog Studio review to its draft |
 
-Training Studio currently has no separate model-based extraction step. Its research
-and writing use Main, and dedicated slide repairs use Complex. Compilation,
-rendering, exporting and other deterministic steps do not start model jobs.
-Retries keep the same profile. Review stays on Main even after a Complex repair.
-Routing uses structured pipeline steps, never words in your prompt or another
-model call. A model that fails is not replaced with another model.
+Compilation, rendering, exporting and other deterministic steps do not start model
+jobs. Retries keep the same kind. Routing uses structured pipeline steps, never words
+in your prompt or another model call (`model_profiles.kind_of`). A model that fails is
+not replaced with another model.
 
-New blogs, presentations and trainings save resolved profiles and the routing
-policy in their run record. Later shared edits affect new work. An explicit
-work-level assistant/model/reasoning choice that differs from the shared choice
-uses that single model for the work. Older records retain their single-model
-behavior. Job records distinguish requested choices from actual model/effort;
+**Settings saved before the kinds of work** name Quick, Main and Complex. They are
+read, never rewritten: until a kind is saved, Quick keeps its choice, Writing takes
+Main's, Fixing takes Complex's, and Research, Combining and Checking take Main's
+model at **medium** reasoning, so research and checks run faster without changing
+anything you chose. The page says which kinds are new; saving keeps them. Main and
+Complex stay in the file for studios not yet updated.
+
+New blogs, presentations and trainings save resolved choices, as routing policy 3, in
+their run record. Later shared edits affect new work. Work saved under policies 1 and 2
+keeps its Quick, Main and Complex choices and routes exactly as it did. An explicit
+work-level assistant/model/reasoning choice that differs from the shared choice uses
+that single model for the work. Older records retain their single-model behavior. Job
+records name the kind and distinguish requested choices from actual model/effort;
 actual values remain unknown when the CLI does not report them.
 
-Profiles live in the existing `studios-config.json`, under `models`, with schema 1,
+**Use the current model settings.** A stopped or waiting Training Studio training
+offers this on its stop card and in the desk toolbar. It lists each kind whose model or
+reasoning would change, before and after, and changes nothing until it is saved. Only
+the jobs still to run use the new choices: finished work is kept, a running job is never
+changed, and what stopped the training stays with its own action. The training keeps
+its own assistant and starting model, and the save is committed as "use the current
+model settings: …".
+
+The choices live in the existing `studios-config.json`, under `models`, with schema 1,
 mode `single` or `by_task`, assistant binding `agent`, and `profiles.quick`,
-`profiles.main`, `profiles.complex`. Each contains `selection` (`inherit`,
-`provider_default`, or `explicit`), and optional `model` and `effort`. Every studio
-reads this same file; nested saves use its adjacent lock, preserve unrelated
-settings, and reject conflicting stale edits.
+`profiles.research`, `profiles.combining`, `profiles.checking`, `profiles.writing`
+and `profiles.fixing` (and the older `profiles.main` and `profiles.complex`). Each
+contains `selection` (`inherit`, `provider_default`, or `explicit`), and optional
+`model` and `effort`. Every studio reads this same file; nested saves use its adjacent
+lock, preserve unrelated settings, and reject conflicting stale edits.
 
 ## Research sites
 
