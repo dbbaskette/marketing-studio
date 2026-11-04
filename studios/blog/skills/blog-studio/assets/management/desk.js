@@ -706,7 +706,7 @@ function sDeskRefresh(held,before){
   sActivityUpdate($('studio-page'),held.view.activity,{id:held.id});
   if(held.mode==='review')return sDeskReviewRefresh(held,before);
   const view=held.view,order=found=>(found?.sections||[]).map(section=>section.id).join(',');
-  if(held.tab==='outline'||held.shownTab!==held.tab){if((held.outlineTimer||held.tab==='outline'&&sDeskTyping(held.column))&&sDeskCurrent(held)){if(!held.outlineTimer)held.outlineStale=true;sDeskToolbar(held);const aside=sDeskAside(held);held.aside.replaceWith(aside);held.aside=aside;sDeskPanelSync(held);return;}held.outline=null;return sDeskRender(held);}
+  if(held.tab==='outline'||held.shownTab!==held.tab){if((held.outlineTimer||held.tab==='outline'&&sDeskTyping(held.column))&&sDeskCurrent(held)){if(!held.outlineTimer)held.outlineStale=true;sDeskToolbar(held);const focus=sFocusHeld(held.aside),aside=sDeskAside(held);held.aside.replaceWith(aside);held.aside=aside;sFocusAgain(focus,aside);sDeskPanelSync(held);return;}held.outline=null;return sDeskRender(held);}
   if(!held.cards||!before||!sDeskCurrent(held))return sDeskRender(held);
   if(order(before)!==order(view))return sDeskReorder(held,before);
   sDeskToolbar(held);
@@ -719,7 +719,7 @@ function sDeskRefresh(held,before){
     if(changed&&!sDeskTyping(old)){const card=sDeskPart(held,part);old.replaceWith(card);held.cards[part]=card;}
     else{if(changed)old.deskStale=true;sDeskPartState(held,part,old,was&&!now);}
   }
-  const aside=sDeskAside(held);held.aside.replaceWith(aside);held.aside=aside;
+  const focus=sFocusHeld(held.aside),aside=sDeskAside(held);held.aside.replaceWith(aside);held.aside=aside;sFocusAgain(focus,aside);
   sDeskPanelSync(held);
   sDeskImagesLoad(held);
 }
@@ -758,7 +758,7 @@ function sDeskReorder(held,before){
   else held.column.append(...order);
   held.cards=cards;
   if(!view.sections.length){held.noSections=sDeskNoSections();held.column.append(held.noSections);}
-  const aside=sDeskAside(held);held.aside.replaceWith(aside);held.aside=aside;
+  const focus=sFocusHeld(held.aside),aside=sDeskAside(held);held.aside.replaceWith(aside);held.aside=aside;sFocusAgain(focus,aside);
   sDeskPanelSync(held);
   sDeskImagesLoad(held);
 }
