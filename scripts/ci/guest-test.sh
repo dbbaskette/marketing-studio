@@ -153,6 +153,8 @@ if [[ "${1:-full}" == infographic-planning || "${1:-full}" == infographic-activi
   bundle="$(find dist -maxdepth 1 -name "$pattern" -print -quit)"
   [[ -n "$bundle" ]] || { echo 'A prepared Infographic Studio-only Apple Silicon package is required.' >&2; exit 1; }
   "$python" scripts/ci/infographic_bundle_acceptance.py "$bundle" 2>&1 | tee "$results_dir/infographic-bundle.log"
+elif [[ "${1:-full}" == blog-intake ]]; then
+  (cd studios/blog && BLOG_STUDIO_REQUIRE_LINT=1 BLOG_STUDIO_TEST_JOBS=4 bash scripts/ci/check.sh "$python" "$results_dir/blog-studio" && node scripts/ci/check-management.cjs > "$results_dir/blog-management.json") 2>&1 | tee "$results_dir/blog-checks.log"
 elif [[ "${1:-full}" == blog-google-tabs ]]; then
   # Full Blog Studio verification plus package boundaries and disposable CLI journeys.
   (

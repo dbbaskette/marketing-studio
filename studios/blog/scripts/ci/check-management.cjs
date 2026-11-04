@@ -19,7 +19,7 @@ class Element {
   removeAttribute(key){delete this.attributes[key];}
   addEventListener(key,fn){this.listeners[key]=fn;}
   querySelector(selector){return this.querySelectorAll(selector)[0]||null;}
-  querySelectorAll(selector){return this.children.flatMap(c=>[...(selector.startsWith('.')&&c.className.split(' ').includes(selector.slice(1))?[c]:selector==='[type=submit]'&&c.type==='submit'?[c]:selector==='[data-key]'&&c.dataset&&c.dataset.key!==undefined?[c]:selector==='details[data-key]'&&c.tagName==='details'&&c.dataset&&c.dataset.key!==undefined?[c]:['button','input','textarea','select','summary'].includes(selector)&&c.tagName===selector?[c]:[]),...c.querySelectorAll(selector)]);}
+  querySelectorAll(selector){return this.children.flatMap(c=>[...(selector.startsWith('.')&&c.className.split(' ').includes(selector.slice(1))?[c]:selector==='[type=submit]'&&c.type==='submit'?[c]:selector==='[data-key]'&&c.dataset&&c.dataset.key!==undefined?[c]:selector==='details[data-key]'&&c.tagName==='details'&&c.dataset&&c.dataset.key!==undefined?[c]:['form','button','input','textarea','select','summary'].includes(selector)&&c.tagName===selector?[c]:[]),...c.querySelectorAll(selector)]);}
   showModal(){this.open=true;}
   close(){this.open=false;}
   focus(){this.focused=true;}
@@ -32,8 +32,8 @@ function deferred(){let resolve,reject;const promise=new Promise((yes,no)=>{reso
 function fixture(responder=()=>({items:[],total:0})){
   const nodes=new Map();const get=id=>{if(!nodes.has(id))nodes.set(id,new Element());return nodes.get(id);};
   const document={getElementById:get,createElement:t=>new Element(t),createElementNS:(_,t)=>new Element(t),createDocumentFragment:()=>new Element('fragment'),createTextNode:text=>{const node=new Element('#text');node.textContent=text;return node;},querySelector:s=>s==='dialog[open]'?[...nodes.values()].find(n=>n.open):null,querySelectorAll:s=>[...nodes.values()].flatMap(n=>n.querySelectorAll(s))};
-  const stored=new Map();
-  const context=vm.createContext({document,location:{hash:'#fixture',pathname:'/'},sessionStorage:{getItem:key=>stored.get(key)||'',setItem:(key,value)=>stored.set(key,value),removeItem:key=>stored.delete(key)},history:{replaceState:()=>{},pushState:()=>{}},window:{},URLSearchParams,AbortController,Uint8Array,TextEncoder,btoa,FormData:class{constructor(form){this.values=descendants(form).filter(e=>e.name).map(e=>[e.name,e.value]);}[Symbol.iterator](){return this.values[Symbol.iterator]();}},confirm:()=>true,crypto:{getRandomValues:values=>require('node:crypto').webcrypto.getRandomValues(values)},setInterval:()=>0,setTimeout:()=>0,fetch:async(url,options)=>{const result=await responder(url,options);return result&&result.__http?{ok:false,status:result.__http,json:async()=>result}:{ok:true,status:200,json:async()=>result};},console});
+  const stored=new Map();let intake={revision:0,draft:null};
+  const context=vm.createContext({document,location:{hash:'#fixture',pathname:'/'},sessionStorage:{getItem:key=>stored.get(key)||'',setItem:(key,value)=>stored.set(key,value),removeItem:key=>stored.delete(key)},history:{replaceState:()=>{},pushState:()=>{}},window:{},URLSearchParams,AbortController,Uint8Array,TextEncoder,btoa,atob,clearTimeout:()=>{},FormData:class{constructor(form){this.values=descendants(form).filter(e=>e.name).map(e=>[e.name,e.value]);}[Symbol.iterator](){return this.values[Symbol.iterator]();}},confirm:()=>true,crypto:{getRandomValues:values=>require('node:crypto').webcrypto.getRandomValues(values)},setInterval:()=>0,setTimeout:()=>0,fetch:async(url,options)=>{if(url==='/api/intake-draft'){const sent=JSON.parse(options.body);if(sent.action!=='read'&&sent.expected!==intake.revision)return {ok:false,status:409,json:async()=>({error:'This intake changed in another tab.'})};if(sent.action==='save')intake={revision:intake.revision+1,draft:{...(intake.draft||{}),...sent.patch}};if(sent.action==='discard')intake={revision:intake.revision+1,draft:null};return {ok:true,status:200,json:async()=>JSON.parse(JSON.stringify(intake))};}const result=await responder(url,options);return result&&result.__http?{ok:false,status:result.__http,json:async()=>result}:{ok:true,status:200,json:async()=>result};},console});
   const source=fs.readFileSync('skills/blog-studio/assets/management/app.js','utf8').split("for(const b of document.querySelectorAll('[data-view]'))")[0];
   vm.runInContext(source,context);
   vm.runInContext("access={status:'local-only',message:'Local only',actions:{edit:true,memory:false,refresh:false}}",context);
@@ -127,6 +127,7 @@ async function check(){
   await deskOpenFromLists();
   await deskLeaveShares();
   await deskReturnAndGoogle();
+  await deskIntakePersistence();
   await deskTopicStart();
   await deskOutlineStarts();
   await deskOtherWaysIn();
@@ -3031,6 +3032,28 @@ function deskStartFixture(answer=()=>null){
   return {f,requests,timers,nodes,tick,sheet,byId,type,submit,click};
 }
 function startView(extra={}){return deskView({id:'started',sections:[],opening:'',start:{way:'topic',steps:['research','outline','draft'],step:'research',job:'r1',started_at:new Date().toISOString(),ended_at:null,problem:'',open:'draft',minutes:14,phase:'',busy:true,status:'working',doing:'Researching'},working:{id:'r1',kind:'desk-research',status:'working',busy:true,part:'research'},...extra});}
+async function deskIntakePersistence(){
+  const t=deskStartFixture();await t.f.run('sDeskBegin()');
+  await t.f.run(`Object.assign(studio.deskStart,{title:'Kept brief',audience:'Operators',point:'Retain work',step:1,tone:'Plain',files:[{id:'capture',state:'ready'}],sourceDraft:{id:'sources',expected:3},file:{name:'draft.md',size:5,arrayBuffer:async()=>new TextEncoder().encode('Hello').buffer}});sDeskKeep(studio.deskStart,false)`);
+  await t.click('Save and close');
+  assert.equal(t.f.run('studio.screen'),'home');
+  const operation=t.f.run('studio.deskStart.operation');
+  t.f.run('studio.deskStart=null;studio.intake=null');await t.f.run('sDeskStart()');
+  assert.equal(t.f.run('studio.deskStart.title'),'Kept brief');
+  assert.equal(t.f.run('studio.deskStart.step'),1);
+  assert.equal(t.f.run('studio.deskStart.operation'),operation);
+  assert.equal(t.f.run('studio.deskStart.files[0].id'),'capture');
+  assert.equal(t.f.run('studio.deskStart.sourceDraft.id'),'sources');
+  assert.equal(await t.f.run('encodeImportFile(studio.deskStart.file)'),btoa('Hello'));
+  t.f.run("sBlogIntake().request=async()=>{throw Error('Changed in another tab')};studio.deskStart.title='Local correction'");
+  assert.equal(await t.f.run('sDeskKeep(studio.deskStart)'),false);
+  assert.equal(t.f.run('studio.deskStart.title'),'Local correction');
+  assert.match(t.f.run('sBlogIntake().problem'),/Changed in another tab/);
+  assert.equal(t.requests.filter(item=>item.url==='/api/desk-create').length,0);
+  await assert.rejects(()=>t.f.run('sDeskGo(studio.deskStart)'),/Changed in another tab/);
+  const clean=deskStartFixture();await clean.f.run('sDeskBegin()');await clean.click('Discard draft');
+  assert.equal(clean.f.run('studio.deskStart'),null);assert.equal(clean.f.run('sBlogIntake().saved'),null);
+}
 async function deskTopicStart(){
   let polls=0;
   const angles=[{headline:'Retries that keep work',point:'A retry resumes from the last checkpoint.',audience:'Operators'},{headline:'Why jobs stop',point:'Most stops are timeouts.',audience:'Developers'},{headline:'A checkpoint primer',point:'Checkpoints are cheap.',audience:'Newcomers'}];
@@ -3088,7 +3111,8 @@ async function deskTopicStart(){
   assert.ok(!t.requests.some(r=>r.url==='/api/source-keep'),'the server keeps a ticked file once the blog is made, not the page before');
   const made=t.requests.find(r=>r.url==='/api/desk-create').data;
   const latest=t.requests.filter(r=>r.url==='/api/desk-angles').at(-1).data.operation;
-  assert.deepEqual({...made,operation:undefined},{operation:undefined,style:'how-to',tone:'Warm',sources:['s1'],library:[],keep:['s1'],title:'Why jobs stop',way:'topic',length:'deep',research_from:{sites:['https://docs.example.com'],web:true},angles:latest,point:'Most stops are timeouts.',audience:'Developers'});
+  assert.ok(Number.isInteger(made.intake_revision)&&made.intake_revision>0);
+  assert.deepEqual({...made,operation:undefined},{intake_revision:made.intake_revision,operation:undefined,style:'how-to',tone:'Warm',sources:['s1'],library:[],keep:['s1'],title:'Why jobs stop',way:'topic',length:'deep',research_from:{sites:['https://docs.example.com'],web:true},angles:latest,point:'Most stops are timeouts.',audience:'Developers'});
   assert.equal(t.f.run('studio.screen'),'desk');
 }
 async function deskOutlineStarts(){
@@ -3158,7 +3182,7 @@ async function deskOtherWaysIn(){
   assert.equal(t.f.run('studio.screen'),'desk-start');assert.equal(t.f.run('studio.deskStart.title'),'An empty blog');assert.equal(t.f.run('studio.deskStart.have'),'topic');
   // The old wizard's address opens a fresh desk start.
   await t.f.run("studioNavigate('new')");
-  assert.equal(t.f.run('studio.screen'),'desk-start');assert.equal(t.f.run('studio.deskStart.title'),'','a fresh start');
+  assert.equal(t.f.run('studio.screen'),'desk-start');assert.equal(t.f.run('studio.deskStart.title'),'An empty blog','New blog resumes the unfinished intake');
   assert.equal(t.f.get('title').textContent,'New blog');
 }
 // A GEO report for a published post: Home's task, a link read and shown, one press for one
