@@ -320,6 +320,28 @@ const StudioResearch = (() => {
       }
       box.append(correction);
     }
+    const evidenceRows=array(state.streams).filter(row=>row.status==='kept'&&row.evidence);
+    if(evidenceRows.length&&!['stopped','stopping','paused','pausing','invalidated'].includes(phase)){
+      const evidence=make('details','research-correction-details');evidence.dataset.key='research-evidence';
+      const toggle=make('summary','',phase==='complete'?'Earlier investigator evidence':'Read accepted findings — unreviewed');toggle.dataset.key='research-evidence-toggle';evidence.append(toggle);
+      evidence.append(make('p','field-label',phase==='complete'?'Superseded by the checked research report.':'Unreviewed evidence draft — incomplete; synthesis and independent check pending.'));
+      evidence.append(make('p','quiet','Read-only accepted packets. '+(array(state.streams).length-evidenceRows.length)+' research areas remain without a readable accepted packet. These findings cannot be approved or delivered as a final report.'));
+      for(const row of evidenceRows){
+        const value=row.evidence,part=make('section','paper research-section-preview');
+        part.append(make('h4','row-title',array(row.questions).map(q=>typeof q==='string'?q:q.question||q.text||q.id).join('; ')));
+        part.append(make('p','quiet','Source basis '+String(value.basis).slice(0,12)+' · generation '+value.generation+' · attempt '+value.attempt));
+        for(const fact of array(value.facts)){
+          part.append(make('p','',fact.statement));
+          for(const citation of array(fact.citations)){const source=array(value.sources).find(s=>s.id===citation.source);part.append(make('p','quiet',(source?source.title: citation.source)+': '+citation.quote+(citation.locator?' — '+citation.locator:'')));}
+        }
+        for(const source of array(value.sources))part.append(make('p','quiet','Source: '+source.title+' · '+source.origin+' · '+source.permission+' · '+source.context+(source.context_note?' — '+source.context_note:'')));
+        for(const limitation of array(value.limitations))part.append(make('p','quiet','Limitation: '+limitation));
+        if(value.truncated)part.append(make('p','quiet','Preview shortened; the complete accepted evidence is retained.'));
+        evidence.append(part);
+      }
+      box.append(evidence);
+      if(Number.isFinite(state.first_finding_seconds))box.append(make('p','quiet','First accepted finding readable at '+state.first_finding_seconds+' seconds.'));
+    }
     const combining = array(state.combining);
     if (combining.length) {
       const keptDrafts = combining.filter(row => row.status === 'kept').length;
