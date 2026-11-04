@@ -5,6 +5,20 @@ changes for authors first, then what changes for maintainers.
 
 ## Unreleased
 
+- **The Activity log can never change how a job ended, and the keyboard keeps its place
+  (follow-up to #300).** A workspace that could not be read or locked while a job was
+  being logged could turn a finished job into a failed one, or replace why a job failed,
+  so **Try again with more time** and what the assistant said went missing. Now only the
+  log entry is lost. A Codex failure whose reason is plain text is read as it came. On
+  the angles step, the desk's Outline tab, a start's progress and the desk's side column,
+  which are drawn again on each poll, the keyboard focus stays on Show activity or the
+  Activity log, and a card just opened stays open.
+  Maintainers: `blog_activity.Running.end` builds and writes the entry inside one
+  `except Exception`, as Training Studio and Presentation Studio do; `blog_worker.Events`
+  reads Codex's error lines inside the guard around `reader.feed`; `sPage` and the desk's
+  side-column redraw keep the focus by `data-key` and each `details[data-key]`'s open state
+  as the page shows it (`sFocusHeld`, `sFocusAgain` in runner.js).
+
 - **See what the assistant is doing, and keep an Activity log (#294).** While a job
   runs, Blog Studio now shows what its assistant is doing as **Now: …** ("Searching the
   web: …", "Handing back its answer"), and **Show activity** lists every line so far,

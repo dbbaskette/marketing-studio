@@ -150,12 +150,14 @@ class Running:
         return found
 
     def end(self, found: Job, ended: str, detail: str | None = None) -> None:
+        """Let the job go and add it to its log. Best effort, whatever goes wrong: it is called
+        as an assistant call ends, and must never change that call's result or failure."""
         with self._lock:
             self._jobs.pop(found.id, None)
-        entry = activity_log.entry(
-            found.label, found.step, found.started_at, ended, found.lines, detail=detail
-        )
         try:
+            entry = activity_log.entry(
+                found.label, found.step, found.started_at, ended, found.lines, detail=detail
+            )
             target = path(self.root, found.subject)
             if target.is_symlink():
                 return
@@ -165,8 +167,8 @@ class Running:
             else:
                 with studio.locked(self.root):
                     activity_log.append(target, entry)
-        except (ValueError, OSError):
-            pass  # A busy or unwritable workspace loses the entry, never the work.
+        except Exception:  # noqa: BLE001 - a busy, unwritable or unreadable workspace
+            pass  # loses the entry, never the work; Training and Presentation Studio do so too.
 
     def items(self, subject, owner=None) -> list:
         """The subject's running jobs as (id, worker) pairs, oldest first; with `owner`, only
