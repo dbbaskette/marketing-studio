@@ -319,6 +319,25 @@ findings and sections refer to the facts. Training Studio and Presentation Studi
 (worker tools) and Blog Studio and Infographic Studio (`research_text.Transport`)
 share these checks.
 
+The synthesis job and the independent review are treated the same way. The
+synthesizer, and a serial research author, is handed `synthesis_outline`: what each
+part it returns takes (findings, sections, brief, optional comparisons), the shape
+of a finding, a section, a statement and a comparison with their required fields,
+choices and minimum counts, all read by `research_contract.synthesis_outline` from the
+pinned schema, and the rules Harness Research enforces beyond it (which IDs each
+`refs` may name, gap blocks, distinct IDs, one cell per comparison subject, text
+bounds). A refused synthesis lists every problem at once: `compose_shape` names every
+missing part, and `synthesis_problems` holds the helper's `synthesis save` rules for
+findings, sections, brief and comparisons, so the helper, which stops at the first,
+runs only once these pass, and still decides. The independent review is handed
+`review_outline` (its fields from the pinned schema) beside its `review_template`, and
+is now checked inside its own job: `review_problems` holds every rule of the helper's
+review check except the reviewer's identity and stale evidence, which the studio
+controls, so a review left with a pending verdict, an empty note, a missing item or a
+changed hash is corrected by the reviewer instead of failing the research after the
+job. `tests/test_research_synthesis_problems.py` checks each of these rules against the
+real pinned helper, in both directions.
+
 Progress distinguishes elapsed time from observed active time and total assistant
 time. Overlapping assistants do not multiply wall time, and missing cost remains
 unknown. Native budgets reserve allowance across concurrent workers. The optional

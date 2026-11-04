@@ -38,7 +38,10 @@ EVIDENCE = ('Investigate only your assigned questions within the supplied task a
 COMPOSE = ('Write connected findings, report sections and an authored brief from the immutable '
            'evidence. Return schema 2 JSON containing findings, sections, brief and optional '
            'comparisons only. The host includes the registered sources/facts unchanged. '
-           'Preserve actual investigators and gaps; request registered investigation for new facts. ')
+           'Preserve actual investigators and gaps; request registered investigation for new facts. '
+           + rc.SYNTHESIZED + ' ')
+# What a synthesis returns, and which of its parts must hold at least one item.
+COMPOSED = ('schema', 'findings', 'sections', 'brief', 'comparisons')
 
 
 def digest(value):
@@ -96,13 +99,23 @@ def preparation(value, spec):
                     {'text': g, 'kind': 'gap', 'refs': []} for g in gaps] or [
                     {'text': PENDING, 'kind': 'gap', 'refs': []}]}]}
     if spec.get('research_mode') == 'compose':
-        if set(value) - {'schema', 'findings', 'sections', 'brief', 'comparisons'}:
-            raise ValueError('Return findings, sections, brief and optional comparisons only. Evidence is kept unchanged.')
-        for name in ('findings', 'sections', 'brief'):
-            if not isinstance(value.get(name), list) or not value[name]:
-                raise ValueError(f'Return {name} as a nonempty array.')
+        problems = compose_shape(value)
+        if problems:
+            raise ValueError(' '.join(problems))
         return {**copy.deepcopy(spec['evidence_base']), **value}
     return value
+
+
+def compose_shape(value):
+    """Every way a synthesis's parts differ from what the studio asks for: only its own parts,
+    and findings, sections and brief each a nonempty array (#303: all of them at once)."""
+    problems = []
+    if set(value) - set(COMPOSED):
+        problems.append('Return findings, sections, brief and optional comparisons only. Evidence is kept unchanged.')
+    for name in ('findings', 'sections', 'brief'):
+        if not isinstance(value.get(name), list) or not value[name]:
+            problems.append(f'Return {name} as a nonempty array.')
+    return problems
 
 
 def evidence_gaps(value):
@@ -406,6 +419,9 @@ class Workflow:
         review, dossier = (prior.get('review') or {}), prior.get('dossier')
         # Every source each investigator is given, with each field it must return (#303).
         outline = rc.source_outline(offered, self.runtime)
+        # And the exact shape the synthesis and the review return.
+        synthesis_outline = rc.synthesis_outline(self.runtime)
+        review_outline = rc.review_outline(self.runtime)
         for number in range(1, rc.ROUNDS + 1):
             require()
             tracked['round'] = number
@@ -510,6 +526,7 @@ class Workflow:
             worker = 'synthesizer-' + secrets.token_hex(12)
             report('synthesize')
             payload = {'task': task, 'worker': worker, 'evidence': base, 'gaps': registry['gaps'],
+                'synthesis_outline': synthesis_outline,
                 'previous_dossier': dossier, 'previous_review': review, 'return': COMPOSE + rc.IDS_FOR_QUESTIONS,
                 '_execution': {'phase': 'synthesize', 'round': number, 'mode': 'compose', 'evidence_base': base}}
             text, _ = invoke('synthesize', (self.runtime / 'references/synthesize.md').read_text(), payload, offered_final, False)
@@ -525,7 +542,8 @@ class Workflow:
             output = rc.output_root(case)
             payload = {'task': task, 'worker': reviewer, 'dossier': dossier, 'review_template': status['review_template'],
                 **{key: (output / (key + '.md')).read_text() for key in ('report', 'brief', 'evidence')},
-                'return': 'Independently inspect the exact saved evidence and prose. Return complete review JSON. Read each capture and supplied original; report access gaps honestly.',
+                'review_outline': review_outline,
+                'return': 'Independently inspect the exact saved evidence and prose. Return complete review JSON. Read each capture and supplied original; report access gaps honestly. ' + rc.REVIEWED,
                 '_execution': {'phase': 'review', 'round': number}}
             text, _ = invoke('review', (self.runtime / 'references/review-synthesis.md').read_text(), payload, offered_final, False)
             require()

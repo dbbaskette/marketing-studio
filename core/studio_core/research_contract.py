@@ -452,6 +452,10 @@ class Workflow:
                 if outline:
                     payload['source_outline'] = outline
                     payload['return'] += ' ' + OUTLINED
+                shaped = synthesis_outline(self.runtime, required=('sections',))
+                if shaped:
+                    payload['synthesis_outline'] = shaped
+                    payload['return'] += ' ' + SYNTHESIZED
                 previous = case / '.harness-research/synthesis.json'
                 if previous.is_file():
                     state = json.loads(previous.read_text())
@@ -512,6 +516,10 @@ class Workflow:
                            'evidence': (case / 'research/evidence.md').read_text(),
                            'return': 'Independent review JSON for this exact digest. Inspect saved context and '
                                      'original sources. Record unavailable originals honestly. Never fabricate approval.'}
+                checked = review_outline(self.runtime)
+                if checked:
+                    payload['review_outline'] = checked
+                    payload['return'] += ' ' + REVIEWED
                 result, _ = invoke(phase, guide, payload, sources, False)
                 write(case, 'review.json', result)
                 status = self.command(case, 'review', 'review.json', worker)
@@ -774,7 +782,7 @@ OUTLINED = ('source_outline lists every source the studio gave you. Build each s
             'file and Origin), with permission public. Copy every quote character for character '
             'from the capture it cites.')
 # What JavaScript's trim() removes: Harness Research refuses text that is only these.
-JS_SPACE = frozenset('\t\n\v\f\r﻿  ')
+JS_SPACE = frozenset('\t\n\v\f\r\ufeff\u2028\u2029')
 
 
 def pinned(runtime):
@@ -882,7 +890,7 @@ def capture_texts(sources, captures, folder):
             text = (Path(folder) / entry['local']).read_bytes().decode('utf-8')
         except (OSError, UnicodeDecodeError):
             continue   # The helper says why it cannot read it.
-        texts.setdefault(source['id'], text.removeprefix('﻿'))
+        texts.setdefault(source['id'], text.removeprefix('\ufeff'))
     return texts
 
 
@@ -1049,6 +1057,401 @@ def source_metadata(value, runtime):
     return result, problems
 
 
+# The synthesis and review rules Harness Research enforces beyond its schema, in the studio's
+# words, beside the shapes read from that schema. synthesis_problems and review_problems check
+# each of them.
+SYNTHESIS_RULES = (
+    'A block of kind gap may have empty refs; every other block needs at least one ref. A '
+    "finding's summary is never a gap.",
+    "A finding's support, counter, and the refs of its summary, implications, conditions and gaps "
+    'name fact IDs from the evidence; so do comparison cell refs. Report and brief block refs '
+    'name fact or finding IDs. No refs list repeats an ID.',
+    'Finding IDs are distinct from each other and from every source and fact ID. Section IDs are '
+    'distinct within sections, and brief section IDs within the brief.',
+    'Each comparison has at least two distinct subjects. Each row has a distinct criterion and '
+    'exactly one cell per subject, naming it.',
+    'Text holds at most 4,000 characters for a title, subject or criterion, 30,000 for a block '
+    'and 10,000 for a comparison cell.',
+)
+SYNTHESIZED = ('synthesis_outline gives the exact shape of what you return, from the pinned '
+               'Harness Research schema: build it from that outline and its rules, and check '
+               'every reference against the evidence IDs before you hand it back.')
+REVIEW_RULES = (
+    'Start from review_template and keep its digest, each original\'s sha256 (and '
+    'original_sha256 when it has one), and every fact, finding and prose ID, exactly once each.',
+    'Give every item a verdict and a note that explains it, including supported ones: an empty '
+    'note is refused.',
+    'Set read_original true only when you read that source (and its original, when it has one); '
+    'when false, give access_error: what the tool answered.',
+)
+REVIEWED = ('review_outline says what each field of the review takes, from the pinned Harness '
+            'Research schema. A refusal lists everything to correct at once.')
+# Said once, after everything a refused synthesis needs corrected.
+SYNTHESIS_TAIL = ('Correct all of these and hand the whole synthesis back within this job. The '
+                  'registered evidence is kept unchanged.')
+LIMITS.update(block=30000, cell=10000, note=20000)
+ID_PATTERN = '^[a-z0-9][a-z0-9-]{0,63}$'
+
+
+def pinned_schema(runtime):
+    """The whole pinned Harness Research synthesis schema."""
+    return json.loads((Path(runtime) / 'references/synthesis.schema.json').read_text())
+
+
+def described(rule):
+    """What a schema rule asks for, in words, or a mapping of an inline object's fields."""
+    if not isinstance(rule, dict):
+        return 'any value'
+    if '$ref' in rule:
+        name = str(rule['$ref']).rsplit('/', 1)[-1]
+        return f'a {name}, shaped as shapes.{name}'
+    if 'const' in rule:
+        return 'exactly ' + json.dumps(rule['const'])
+    if isinstance(rule.get('enum'), list):
+        return 'one of ' + ', '.join(map(str, rule['enum']))
+    kind = rule.get('type')
+    if kind == 'string':
+        pattern = rule.get('pattern')
+        if pattern == ID_PATTERN:
+            return 'an ID: lowercase letters, digits and hyphens, at most 64'
+        if pattern == '^[a-f0-9]{64}$':
+            return 'a SHA-256 digest, copied exactly'
+        return 'nonempty text' if rule.get('minLength') else 'text'
+    if kind == 'boolean':
+        return 'true or false'
+    if kind == 'array':
+        least = rule.get('minItems')
+        items = described(rule.get('items'))
+        said = 'an array' + (f' of at least {least}' if least else '')
+        if isinstance(items, dict):
+            return {'is': said + ' objects, each:' if least else said + ' of objects, each:',
+                    'each': items}
+        return said + ', each ' + items + (', with no repeats' if rule.get('uniqueItems') else '')
+    if kind == 'object' and isinstance(rule.get('properties'), dict):
+        return fields(rule)
+    return 'any value'
+
+
+def fields(definition):
+    """{field: what it takes}, for each field of a schema definition, required ones first said."""
+    required, when = set(definition.get('required') or ()), conditions(definition)
+    shaped = {}
+    for name, rule in (definition.get('properties') or {}).items():
+        said = described(rule)
+        said = said[:1].upper() + said[1:] if isinstance(said, str) else said
+        lead = ('Required.' if name in required else
+                ' '.join(f'Required when {other} is {json.dumps(value)}.' for other, value in when[name])
+                if name in when else 'Optional.')
+        shaped[name] = {'is': lead + ' ' + said['is'][:1].upper() + said['is'][1:], 'each': said['each']} \
+            if isinstance(said, dict) and 'each' in said else \
+            {'is': lead + ' An object:', 'fields': said} if isinstance(said, dict) else lead + ' ' + said
+    return shaped
+
+
+def synthesis_outline(runtime, keys=('findings', 'sections', 'brief', 'comparisons'),
+                      required=('findings', 'sections', 'brief')):
+    """The exact shape of a synthesis: each part it returns, the shape of a finding, a section,
+    a statement (a block) and a comparison, read from the pinned schema, and the rules
+    Harness Research enforces beyond it. `required` names the parts the studio requires to be
+    nonempty. None when the pinned schema cannot be read."""
+    try:
+        schema = pinned_schema(runtime)
+        top, definitions = schema['properties'], schema['$defs']
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    parts, needed = {}, set(schema.get('required') or ())
+    for key in keys:
+        if key in top:
+            said = described(top[key])
+            said = said if isinstance(said, str) else said.get('is', '')
+            parts[key] = ('Required, with at least one item. ' if key in required else
+                          'Required. ' if key in needed else 'Optional. ') + said[:1].upper() + said[1:]
+    shapes = {name: fields(definitions[name]) for name in ('finding', 'section', 'statement', 'comparison')
+              if isinstance(definitions.get(name), dict)}
+    return {'note': SYNTHESIZED, 'return': parts, 'shapes': shapes, 'rules': list(SYNTHESIS_RULES)}
+
+
+def review_outline(runtime):
+    """What each field of an independent review takes, from the pinned schema, and the rules
+    Harness Research enforces beyond it. None when the pinned schema cannot be read."""
+    try:
+        definition = pinned_schema(runtime)['$defs']['review']
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    return {'note': REVIEWED, 'fields': fields(definition), 'rules': list(REVIEW_RULES)}
+
+
+def distinct(values):
+    """Whether values are all different, as JavaScript's Set counts strings."""
+    texts = [value for value in values if isinstance(value, str)]
+    return len(texts) == len(values) and len(set(texts)) == len(texts)
+
+
+def block_problems(value, allowed, kinds, label):
+    """Why Harness Research's block() would refuse a statement, as a list of words."""
+    if not isinstance(value, dict):
+        return [f'{label} must be an object with text, kind and refs']
+    said = []
+    wrong = wrong_text(value.get('text'), LIMITS['block'])
+    if wrong:
+        said.append(f'{label} text {wrong}')
+    if kinds and value.get('kind') not in kinds:
+        said.append(f'{label} kind must be one of ' + ', '.join(kinds))
+    said += refs_problems(value.get('refs'), allowed, f'{label} refs', value.get('kind') != 'gap')
+    return said
+
+
+def refs_problems(refs, allowed, label, required=True):
+    """Why Harness Research's refs() would refuse a list of references."""
+    if not isinstance(refs, list):
+        return [f'{label} must be an array']
+    if required and not refs:
+        return [f'{label} need at least one ID']
+    unknown = [ref for ref in refs if not isinstance(ref, str) or ref not in allowed]
+    if unknown or not distinct(refs):
+        return [f'{label} ' + (f'name unknown ID(s): {", ".join(clipped(ref, 64) for ref in unknown[:5])}'
+                               if unknown else 'repeat an ID')]
+    return []
+
+
+def synthesis_problems(value, runtime, shaped=False):
+    """What the pinned helper's synthesis save would refuse in findings, sections, brief and
+    comparisons, every one at once. The helper stops at the first; these are its rules
+    (validateDossier), with the shapes and choices read from the pinned schema. `shaped` when
+    the studio has already said which parts are missing or not arrays. Nothing when the pinned
+    schema cannot be read."""
+    try:
+        definitions = pinned(runtime)
+        finding_rule, section_rule = definitions['finding'], definitions['section']
+        kinds = list((definitions['statement']['properties'].get('kind') or {}).get('enum') or [])
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        return []
+    finding_id = (finding_rule.get('properties') or {}).get('id')
+    section_id = (section_rule.get('properties') or {}).get('id')
+    problems = []
+    rows = value.get('sources') if isinstance(value.get('sources'), list) else []
+    facts = value.get('facts') if isinstance(value.get('facts'), list) else []
+    source_ids = {row.get('id') for row in rows if isinstance(row, dict) and isinstance(row.get('id'), str)}
+    fact_ids = {fact.get('id') for fact in facts if isinstance(fact, dict) and isinstance(fact.get('id'), str)}
+    findings = value.get('findings')
+    if not isinstance(findings, list):
+        findings = []
+        if not shaped:
+            problems.append('findings must be an array.')
+    named = [finding.get('id') if isinstance(finding, dict) else None for finding in findings]
+    finding_ids = {ident for ident in named if isinstance(ident, str)}
+    for index, finding in enumerate(findings):
+        ident = named[index]
+        name = ident if isinstance(ident, str) and ident else f'number {index + 1}'
+        if not isinstance(finding, dict):
+            problems.append(f'Finding {name}: return it as an object.')
+            continue
+        said = []
+        if not identifier(ident, finding_id or {'pattern': ID_PATTERN}):
+            said.append('id must be lowercase letters, digits and hyphens (at most 64)')
+        elif named.count(ident) > 1:
+            said.append('another finding has the same id')
+        elif ident in source_ids or ident in fact_ids:
+            said.append('its id is also a source or fact id; give it its own')
+        wrong = wrong_text(finding.get('title'))
+        if wrong:
+            said.append(f'title {wrong}')
+        said += block_problems(finding.get('summary'), fact_ids, kinds, 'summary')
+        if isinstance(finding.get('summary'), dict) and finding['summary'].get('kind') == 'gap':
+            said.append('its summary is a gap: a summary needs evidence; put unknowns in gaps')
+        said += refs_problems(finding.get('support'), fact_ids, 'support')
+        said += refs_problems(finding.get('counter'), fact_ids, 'counter', False)
+        for group in ('implications', 'conditions', 'gaps'):
+            blocks = finding.get(group)
+            if not isinstance(blocks, list):
+                said.append(f'{group} must be an array (it may be empty)')
+                continue
+            for number, block in enumerate(blocks, start=1):
+                said += block_problems(block, fact_ids, kinds, f'{group} {number}')
+        if said:
+            problems.append(f'Finding {name}: ' + '; '.join(said) + '.')
+    evidence = fact_ids | finding_ids
+    parts = [('Report', 'sections', value.get('sections'), True)]
+    if 'brief' in value:
+        parts.append(('Brief', 'brief', value.get('brief'), True))
+    for label, key, sections, needed in parts:
+        if not isinstance(sections, list):
+            if not shaped:
+                problems.append(f'{key} must be an array.')
+            continue
+        if not sections:
+            if not shaped:
+                problems.append('At least one report section is required.' if key == 'sections'
+                                else 'The brief needs at least one section.')
+            continue
+        ids = [section.get('id') if isinstance(section, dict) else None for section in sections]
+        for index, section in enumerate(sections):
+            ident = ids[index]
+            name = f'{label} section ' + (ident if isinstance(ident, str) and ident else f'number {index + 1}')
+            if not isinstance(section, dict):
+                problems.append(f'{name}: return it as an object.')
+                continue
+            said = []
+            if not identifier(ident, section_id or {'pattern': ID_PATTERN}):
+                said.append('id must be lowercase letters, digits and hyphens (at most 64)')
+            elif ids.count(ident) > 1:
+                said.append(f'another {label.lower()} section has the same id')
+            wrong = wrong_text(section.get('title'))
+            if wrong:
+                said.append(f'title {wrong}')
+            blocks = section.get('blocks')
+            if not isinstance(blocks, list) or not blocks:
+                said.append('blocks must be a nonempty array')
+            else:
+                for number, block in enumerate(blocks, start=1):
+                    said += block_problems(block, evidence, kinds, f'block {number}')
+            if said:
+                problems.append(f'{name}: ' + '; '.join(said) + '.')
+    raw = value.get('comparisons')
+    comparisons = [] if raw is None or raw is False or raw == '' or (
+        isinstance(raw, (int, float)) and not isinstance(raw, bool) and raw == 0) else raw
+    if not isinstance(comparisons, list):
+        problems.append('comparisons must be an array, or left out.')
+        comparisons = []
+    for index, comparison in enumerate(comparisons, start=1):
+        name = f'Comparison {index}'
+        if not isinstance(comparison, dict):
+            problems.append(f'{name}: return it as an object.')
+            continue
+        said = []
+        wrong = wrong_text(comparison.get('title'))
+        if wrong:
+            said.append(f'title {wrong}')
+        subjects = comparison.get('subjects')
+        if not isinstance(subjects, list):
+            said.append('subjects must be an array')
+            subjects = None
+        elif len(subjects) < 2 or not distinct(subjects) or any(wrong_text(s) for s in subjects):
+            said.append('subjects must be at least two distinct, nonempty names')
+        rows_ = comparison.get('rows')
+        if not isinstance(rows_, list):
+            said.append('rows must be an array')
+            rows_ = []
+        criteria = []
+        for number, row in enumerate(rows_, start=1):
+            if not isinstance(row, dict):
+                said.append(f'row {number} must be an object')
+                continue
+            criterion = row.get('criterion')
+            wrong = wrong_text(criterion)
+            if wrong:
+                said.append(f'row {number} criterion {wrong}')
+            elif criterion in criteria:
+                said.append(f'row {number} repeats the criterion {clipped(criterion, 60)!r}')
+            criteria.append(criterion)
+            cells = row.get('cells')
+            if not isinstance(cells, list):
+                said.append(f'row {number} cells must be an array')
+                continue
+            named_cells = [cell.get('subject') if isinstance(cell, dict) else None for cell in cells]
+            if subjects is not None and (len(cells) != len(subjects) or not distinct(named_cells)
+                                         or any(subject not in subjects for subject in named_cells)):
+                said.append(f'row {number} needs exactly one cell per subject, naming it')
+            for place_, cell in enumerate(cells, start=1):
+                if not isinstance(cell, dict):
+                    said.append(f'row {number} cell {place_} must be an object')
+                    continue
+                wrong = wrong_text(cell.get('text'), LIMITS['cell'])
+                if wrong:
+                    said.append(f'row {number} cell {place_} text {wrong}')
+                said += refs_problems(cell.get('refs'), fact_ids, f'row {number} cell {place_} refs')
+        if said:
+            problems.append(f'{name}: ' + '; '.join(said) + '.')
+    return problems
+
+
+def review_problems(review, template, runtime=None):
+    """What the pinned helper's validateReview would refuse in an independent review, every
+    one at once, checked against the review_template the reviewer was given. The helper stops
+    at the first; these are all of its rules except the reviewer's identity and stale evidence,
+    which the studio controls, with the choices read from the pinned schema."""
+    try:
+        definition = pinned_schema(runtime)['$defs']['review']['properties'] if runtime else {}
+    except (OSError, ValueError, KeyError, TypeError):
+        definition = {}
+
+    def choices(group, field, fallback):
+        rule = definition.get(group) or {}
+        rule = (rule.get('items') or rule) if group != 'assessment' else rule
+        found = ((rule.get('properties') or {}).get(field) or {}).get('enum')
+        return list(found) if isinstance(found, list) else list(fallback)
+
+    if not isinstance(review, dict):
+        return ['Return the review as one JSON object, filled in from review_template.']
+    problems = []
+    if review.get('schema') != 2:
+        problems.append('Set "schema": 2.')
+    if review.get('digest') != template.get('digest'):
+        problems.append(f"Set digest to {template.get('digest')!r}, exactly as review_template gives it.")
+    expected = [item for item in template.get('originals') or () if isinstance(item, dict)]
+    originals = review.get('originals')
+    if not isinstance(originals, list):
+        problems.append('originals must be an array, one entry for each source in review_template.')
+    else:
+        given = [item.get('source') if isinstance(item, dict) else None for item in originals]
+        wanted = [item.get('source') for item in expected]
+        if len(originals) != len(wanted) or not distinct(given) or set(given) != set(wanted):
+            problems.append(f'originals must hold exactly one entry for each of the {len(wanted)} '
+                            'source(s) in review_template: ' + ', '.join(map(str, wanted[:40])) + '.')
+        for item in expected:
+            found = next((entry for entry in originals if isinstance(entry, dict)
+                          and entry.get('source') == item.get('source')), None)
+            if found is None:
+                continue
+            name = item.get('source')
+            if found.get('sha256') != item.get('sha256') or (
+                    'original_sha256' in item and found.get('original_sha256') != item['original_sha256']):
+                problems.append(f'Original {name}: copy sha256' + (' and original_sha256' if 'original_sha256' in item
+                                                                    else '') + ' exactly from review_template.')
+            if not isinstance(found.get('read_original'), bool):
+                problems.append(f'Original {name}: set read_original to true or false.')
+            elif found['read_original'] is False and wrong_text(found.get('access_error')):
+                problems.append(f'Original {name}: read_original is false, so give access_error: what '
+                                'the tool answered.')
+    for group in ('facts', 'findings', 'prose'):
+        items, wanted = review.get(group), [item.get('id') for item in template.get(group) or ()
+                                            if isinstance(item, dict)]
+        if not isinstance(items, list):
+            problems.append(f'{group} must be an array, one entry for each in review_template.')
+            continue
+        given = [item.get('id') if isinstance(item, dict) else None for item in items]
+        if len(items) != len(wanted) or not distinct(given) or set(given) != set(wanted):
+            missing = [ident for ident in wanted if ident not in given]
+            problems.append(f'{group} must hold exactly one entry for each of the {len(wanted)} in '
+                            'review_template' + (', and is missing ' + ', '.join(map(str, missing[:10]))
+                                                 if missing else '') + '.')
+        verdicts = choices(group, 'verdict', ('supported', 'unsupported', 'narrow'))
+        unjudged, unexplained = [], []
+        for ident in wanted:
+            found = next((item for item in items if isinstance(item, dict) and item.get('id') == ident), None)
+            if found is None:
+                continue
+            if found.get('verdict') not in verdicts:
+                unjudged.append(ident)
+            if wrong_text(found.get('note'), LIMITS['note']):
+                unexplained.append(ident)
+        if unjudged:
+            problems.append(f'{group}: set verdict to one of {", ".join(verdicts)} for '
+                            f'{len(unjudged)} item(s), such as ' + ', '.join(map(str, unjudged[:5])) + '.')
+        if unexplained:
+            problems.append(f'{group}: give a note explaining the verdict for {len(unexplained)} '
+                            'item(s), such as ' + ', '.join(map(str, unexplained[:5])) + '.')
+    assessment = review.get('assessment') if isinstance(review.get('assessment'), dict) else {}
+    for field, fallback in (('coverage', ('accurate', 'needs-revision')),
+                            ('usefulness', ('adequate', 'needs-revision'))):
+        allowed = choices('assessment', field, fallback)
+        if assessment.get(field) not in allowed:
+            problems.append(f'assessment.{field} must be one of {", ".join(allowed)}.')
+    if wrong_text(assessment.get('note'), LIMITS['note']):
+        problems.append('assessment.note must explain the assessment.')
+    return problems
+
+
 def check_json(text, spec):
     """Check a research hand-back and say everything wrong with it at once.
 
@@ -1067,6 +1470,9 @@ def check_json(text, spec):
         value = json.loads(text)
         if not isinstance(value, dict):
             problems.append('Return a schema-2 JSON object.')
+        elif isinstance(spec.get('review_template'), dict):
+            # An independent review, checked against the template it was given (#303).
+            problems += review_problems(value, spec['review_template'], spec.get('runtime'))
         elif isinstance(value.get('sources'), list) and any(not isinstance(source, dict) for source in value['sources']):
             problems.append('Return each source as an object.')
             if value.get('schema') != 2:
@@ -1074,7 +1480,19 @@ def check_json(text, spec):
         elif mode or ('captures' in spec and isinstance(value.get('sources'), list)):
             if value.get('schema') != 2:
                 problems.append('Return a schema-2 JSON object: set "schema": 2.')
-            if mode:
+            if mode == 'compose':
+                from studio_core.research_session import COMPOSED, compose_shape, preparation
+                shape = compose_shape(value)
+                problems += shape
+                if shape:   # Check the parts it did return as well.
+                    value = {**copy.deepcopy(spec.get('evidence_base') or {}),
+                             **{key: part for key, part in value.items() if key in COMPOSED}}
+                    value.setdefault('sources', [])
+                    value.setdefault('facts', [])
+                else:
+                    value = preparation(value, spec)
+                kept = json.dumps(value)
+            elif mode:
                 from studio_core.research_session import preparation
                 try:
                     value = preparation(value, spec)
@@ -1096,19 +1514,23 @@ def check_json(text, spec):
             if mode or matched or standardized:
                 kept = json.dumps(normalized)
             value = normalized
-            if spec.get('runtime') and mode != 'compose':
-                texts = capture_texts(value['sources'], captures, spec.get('folder'))
-                found, flawed_sources, flawed_facts = packet_problems(
-                    value, texts, spec['runtime'], spec.get('worker'), mode)
-                problems += found
+            if spec.get('runtime'):
+                flawed_sources, flawed_facts = set(), set()
+                if mode != 'compose':
+                    texts = capture_texts(value['sources'], captures, spec.get('folder'))
+                    found, flawed_sources, flawed_facts = packet_problems(
+                        value, texts, spec['runtime'], spec.get('worker'), mode)
+                    problems += found
+                if mode != 'evidence':   # A synthesis, or a whole dossier: its prose too.
+                    problems += synthesis_problems(value, spec['runtime'], shaped=mode == 'compose')
                 if not problems:
                     problems += refused(value, spec)
                 elif mode == 'evidence':
                     problems += aside(value, spec, captures, flawed_sources, flawed_facts)
-            elif spec.get('runtime') and not problems:
-                problems += refused(value, spec)
             if mode == 'evidence' and any(problem != UNFINISHED for problem in problems):
                 problems.append(TAIL)
+            elif mode == 'compose' and problems:
+                problems.append(SYNTHESIS_TAIL)
             if not problems and standardized and not mode:
                 warnings.append('Standardized source date metadata as source_date; dates and evidence are unchanged.')
             if not problems and matched and not mode:
@@ -1427,6 +1849,9 @@ def native(engine, root, run, task, sources, product):
             # learns of a refusal while it can still correct it.
             result.update(runtime=str(tool.runtime), node=shutil.which('node'),
                           worker=payload['worker'], task={key: task[key] for key in TASK_FIELDS})
+        elif isinstance(payload.get('review_template'), dict):
+            # The review is checked against its template inside the job, as the helper will.
+            result.update(runtime=str(tool.runtime), review_template=payload['review_template'])
         doing = doing_words(phase, number)
         told = ('' if phase == 'author' else
                 ' list_inputs names the original of each supplied source that has one: read it '

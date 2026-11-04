@@ -65,8 +65,21 @@ class SessionTests(unittest.TestCase):
             value['sections'][0]['blocks'][0]['refs'] = [ref]
             value['brief'][0]['blocks'][0]['refs'] = [value['findings'][0]['id']]
             value = {k: value[k] for k in ('schema', 'findings', 'sections', 'brief')}
+            if getattr(self, 'outlined', None):   # #303: told its exact shape, and passes its check
+                self.assertEqual(set(payload['synthesis_outline']['shapes']), {'finding', 'section', 'statement', 'comparison'})
+                self.assertIn('synthesis_outline', payload['return'])
+                spec = {'runtime': RUNTIME, 'worker': payload['worker'], 'research_mode': 'compose',
+                        'evidence_base': payload['evidence'], 'task': {k: self.task[k] for k in rc.TASK_FIELDS},
+                        'captures': [{'file': s['file'], 'local': s['file'], 'origin': s['origin'],
+                                      'permission': s['permission'], 'original': s.get('original')}
+                                     for s in offered],
+                        'folder': str(session.case_for(self.root))}
+                self.assertEqual(rc.check_json(json.dumps(value), spec)[0], [])
             return json.dumps(session.preparation(value, {'research_mode': 'compose', 'evidence_base': payload['evidence']})), []
         value = review(payload['review_template'])
+        if getattr(self, 'outlined', None):
+            self.assertIn('review_outline', payload)
+            self.assertEqual(rc.review_problems(value, payload['review_template'], RUNTIME), [])
         if self.refuse_fact:
             self.refuse_fact = False
             value['facts'][0].update(verdict='narrow', note='Synthetic located fact correction')

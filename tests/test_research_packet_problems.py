@@ -255,7 +255,7 @@ class PinnedHelperTests(Case, unittest.TestCase):
         astral = '\U0001F600' * 2001   # 4002 UTF-16 units, as JavaScript counts them
         cases = {
             'publisher missing': lambda v: v['sources'][0].pop('publisher'),
-            'publisher blank': lambda v: v['sources'][0].update(publisher=' 　\n'),
+            'publisher blank': lambda v: v['sources'][0].update(publisher=' \u3000\n'),
             'publisher too long': lambda v: v['sources'][0].update(publisher=long),
             'publisher too long in UTF-16': lambda v: v['sources'][0].update(publisher=astral),
             'publisher not text': lambda v: v['sources'][0].update(publisher=7),
