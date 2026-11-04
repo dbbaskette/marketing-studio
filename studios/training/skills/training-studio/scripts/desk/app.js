@@ -6059,7 +6059,7 @@ function updateResearchSheet() {
   const held = (view.run && view.run.documents) || {};
   const names = list(held.later).map((entry) => entry.name);
   const problem = problemLine();
-  const impact = StudioResearch.impact(view.run?.change_impact);
+  const impact = view.run?.change_impact && typeof StudioResearch !== 'undefined' && StudioResearch.impact ? StudioResearch.impact(view.run.change_impact) : null;
   const go = capsule('Update it', 'filled', async () => {
     go.disabled = true;
     try {

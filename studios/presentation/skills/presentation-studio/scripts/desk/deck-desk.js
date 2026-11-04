@@ -2031,7 +2031,7 @@
     leave.disabled = working || same();
     const plan = found.change_impact;
     const key = path + ':' + (plan?.expected || '');
-    const impact = StudioResearch.impact(plan, impactChoices.get(key));
+    const impact = plan && typeof StudioResearch !== 'undefined' && StudioResearch.impact ? StudioResearch.impact(plan, impactChoices.get(key)) : null;
     if (impact) { impactChoices.clear(); impactChoices.set(key, impact.selected); }
     const again = h.capsule('Research again', '', () => act('desk-research-again',
       { path, expected: found.expected, ...(impact ? {impact: impact.value()} : {}) }, again, 'The research runs again with your sources '

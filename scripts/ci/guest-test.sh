@@ -224,7 +224,7 @@ elif [[ "${1:-full}" == audit-week6-finish ]]; then
   # only the stale pin-version assertion required correction. Finish its targeted
   # contract and every full affected native suite, package and CLI gate.
   {
-    PYTHONPATH=tests "$python" -m unittest test_companion_versions.PinnedFloorTests -v
+    PYTHONPATH=tests "$python" -m unittest test_companion_versions.PinnedFloorTests test_research_impact -v
     "$python" scripts/workflow_diagrams.py --check
     (cd studios/presentation && "$python" scripts/ci/run_tests.py --jobs 4 && "$python" skills/presentation-studio/scripts/validate_package.py)
     (cd studios/training && bash scripts/ci/check.sh "$python")
