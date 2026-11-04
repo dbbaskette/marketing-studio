@@ -704,13 +704,13 @@ class Events:
         self.last = event
         if event.get('type') == 'result':
             self.found, self.result_size = event, max(self.result_size, len(line))
-        if self.engine == 'codex':
-            said = self._codex_error(event)
-            if said:
-                self.said = (self.said + ['ERROR: ' + said])[-SAID_LINES:]
         try:
+            if self.engine == 'codex':
+                said = self._codex_error(event)
+                if said:
+                    self.said = (self.said + ['ERROR: ' + said])[-SAID_LINES:]
             lines = self.reader.feed(event)
-        except Exception:  # What is shown never stops the work.
+        except Exception:  # noqa: BLE001 - what is shown never stops the work.
             return
         if self.watched is not None:
             for text in lines:
@@ -723,7 +723,9 @@ class Events:
         if kind == 'error':
             return str(event.get('message') or '')
         if kind == 'turn.failed':
-            return str((event.get('error') or {}).get('message') or '')
+            error = event.get('error')
+            # An error that is not an object is said as it came.
+            return str(error.get('message') or '' if isinstance(error, dict) else error or '')
         if kind == 'item.completed' and item.get('type') == 'error':
             return str(item.get('message') or '')
         return ''
