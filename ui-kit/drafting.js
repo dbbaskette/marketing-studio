@@ -98,7 +98,7 @@ const Drafting = (() => {
         if (!Object.keys(patch).length) continue;
         try {
           const held = await this.request({action:'save', expected:this.revision, patch});
-          this.revision = held.revision; this.saved = held.draft;
+          this.revision = held.revision; this.saved = Object.hasOwn(held, 'draft') ? held.draft : found;
           this.encoded = {...this.encoded,...encoded}; this.problem = '';
         } catch (error) {
           this.problem = error.message || 'The intake could not be saved. Your answers are still here.';

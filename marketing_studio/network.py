@@ -51,7 +51,7 @@ BODY_LIMITS = {
                  '/api/research-sources': 12_000_000, '/api/documents': 12_000_000,
                  '/api/asset': 12_000_000, '/api/drafts/source': 12_000_000,
                  '/api/drafts/save': 1_000_000},
-    'infographic': {'/api/research-sources': 24_000_000, '/api/source-preview': 24_000_000,
+    'infographic': {'/api/intake-draft': 32_000_000, '/api/research-sources': 24_000_000, '/api/source-preview': 24_000_000,
                     '/api/action': 24_000_000, '/api/csv-preview': 24_000_000,
                     '/api/csv-selection': 24_000_000},
 }

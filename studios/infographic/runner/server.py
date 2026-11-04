@@ -23,9 +23,9 @@ shared = core.for_product(
      '/drafting.js': ('drafting.js', 'text/javascript; charset=utf-8'),
      '/research.js': ('research.js', 'text/javascript; charset=utf-8'),
      '/activity.js': ('activity.js', 'text/javascript; charset=utf-8')},
-    None, Invalid, reads=('/api/status', '/api/projects', '/api/project', '/api/asset',
+    None, Invalid, reads=('/api/intake-draft', '/api/status', '/api/projects', '/api/project', '/api/asset',
                          '/api/desk', '/api/activity', '/api/activity-log', '/api/source', '/api/preferences', '/api/computer', '/api/download', '/api/history', '/api/history-before', '/api/image-request', '/api/team', '/api/team-download', '/api/research-task', '/api/research-status'),
-    writes=('/api/research-job', '/api/research-control', '/api/research-sources', '/api/projects', '/api/project', '/api/action', '/api/preferences', '/api/csv-preview', '/api/csv-selection', '/api/source-preview', '/api/remote-preview', '/api/handoff-inventory', '/api/handoff-preview', '/api/research-preview', '/api/team', '/api/brand-current', *library_context.ROUTES))
+    writes=('/api/intake-draft', '/api/research-job', '/api/research-control', '/api/research-sources', '/api/projects', '/api/project', '/api/action', '/api/preferences', '/api/csv-preview', '/api/csv-selection', '/api/source-preview', '/api/remote-preview', '/api/handoff-inventory', '/api/handoff-preview', '/api/research-preview', '/api/team', '/api/brand-current', *library_context.ROUTES))
 
 
 class Page(shared.Page):
@@ -41,6 +41,10 @@ class Page(shared.Page):
         self.research = Jobs(store) if store is not None else None
 
     def body_limit(self, target, headers):
+        if target.partition('?')[0] == '/api/intake-draft':
+            try: self.check_token(headers)
+            except shared.Refusal: return super().body_limit(target, headers)
+            return 32_000_000
         if target == '/api/research-sources':
             try: self.check_token(headers)
             except shared.Refusal: return super().body_limit(target, headers)
@@ -54,6 +58,9 @@ class Page(shared.Page):
     def read(self, path, one):
         if path not in ('/api/preferences', '/api/computer', '/api/status'):
             require(self.store is not None, 'Finish shared setup before opening Infographic Studio projects.')
+        if path == '/api/intake-draft':
+            from . import intake_draft
+            return shared.as_json(200, intake_draft.dispatch(self.store, {'action': 'read'}))
         if path == '/api/team-download':
             from . import team
             mime,raw=team.download(one('id'),one('format'))
@@ -129,6 +136,9 @@ class Page(shared.Page):
         raise shared.Refusal(HTTPStatus.NOT_FOUND, 'Nothing is served here.')
 
     def write(self, path, sent):
+        if path == '/api/intake-draft':
+            from . import intake_draft
+            return shared.as_json(200, intake_draft.dispatch(self.store, sent))
         if path in library_context.ROUTES:
             # Browsing the shared Document Library chooses nothing and changes no infographic.
             try:

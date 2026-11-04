@@ -35,6 +35,29 @@ class NativeServerTests(Isolated):
         response = connection.getresponse()
         return response.status, dict(response.getheaders()), response.read()
 
+    def test_private_intake_roundtrip_conflict_and_compact_save_start_no_project(self):
+        status,_,raw=self.request('GET','/api/intake-draft')
+        held=json.loads(raw);self.assertEqual((status,held['revision'],held['draft']),(200,0,None))
+        self.assertFalse((self.data/'intake-drafts').exists())
+        patch={'title':'Unfinished synthetic brief','text':'Synthetic notes','step':1,'upload':{'data':'x'*100000}}
+        status,_,raw=self.request('POST','/api/intake-draft',{'action':'save','expected':0,'patch':patch})
+        self.assertEqual(status,200);self.assertLess(len(raw),1000)
+        revision=json.loads(raw)['revision']
+        self.assertEqual(json.loads(self.request('GET','/api/intake-draft')[2])['draft'],patch)
+        self.assertEqual(self.request('POST','/api/intake-draft',{'action':'save','expected':0,'patch':{'title':'Conflicting tab'}})[0],409)
+        self.assertEqual(self.store.listing(),[])
+        self.assertEqual(self.request('POST','/api/intake-draft',{'action':'discard','expected':revision})[0],200)
+        self.assertIsNone(json.loads(self.request('GET','/api/intake-draft')[2])['draft'])
+
+    def test_intake_reports_missing_captures_without_import_or_jobs(self):
+        value={'materials':[{'preview':{'id':'a'*32},'acknowledged':True}], 'step':0}
+        status,_,raw=self.request('POST','/api/intake-draft',{'action':'save','expected':0,'patch':value})
+        self.assertEqual(status,200)
+        self.assertEqual(json.loads(raw)['missing'],['a'*32])
+        self.assertEqual(self.store.listing(),[])
+        self.assertEqual(self.request('POST','/api/intake-draft',{'action':'save','expected':1,'patch':{'materials':['unsafe']}})[0],409)
+        self.assertEqual(self.request('GET','/api/intake-draft',token=False)[0],403)
+
     def test_real_loopback_rejects_bad_host_missing_token_and_foreign_origin(self):
         self.assertEqual(self.request('GET', '/api/projects', token=False)[0], 403)
         self.assertEqual(self.request('GET', '/api/projects', host='example.invalid')[0], 403)
