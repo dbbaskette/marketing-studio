@@ -479,6 +479,26 @@ def main(argv=None):
         if args.command in ('doctor', 'check', 'status'):
             return offline(args)
         action = {'command': 'setup' if args.command == 'setup' else 'open', 'studio': args.studio}
+        if args.command == 'open' and (args.no_open or args.lan):
+            found = session.quietly_current()
+            if found is not None:
+                if args.lan and not found.get('phone'):
+                    raise WorkspaceError('Marketing Studio is running without phone access. '
+                                         'To enable it, run: marketing-studio restart --all --lan')
+                problem = session.differs(found, None if args.lan == 'auto' else args.lan, args.port)
+                if problem:
+                    raise WorkspaceError(problem)
+                report = Report(args)
+                running_home(report, found, False)
+                if not args.no_open:
+                    if args.studio:
+                        answer = control.request(state.data_root(), action)
+                        if answer is None or answer.get('error'):
+                            raise WorkspaceError((answer or {}).get('error') or
+                                                 'Marketing Studio stopped answering. Try again shortly.')
+                    elif not server.show(found['phone'] if args.lan else found['url']):
+                        return report.show(1, 'A browser could not be opened. Use the private link in your terminal.')
+                return report.show()
         if not args.no_open and not args.lan:
             result = control.request(state.data_root(), action)
             if result is not None:

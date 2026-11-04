@@ -343,7 +343,7 @@ time.sleep(60)
         tools = self.root / 'bin'
         tools.mkdir(exist_ok=True)
         codex = tools / 'codex'
-        codex.write_text('#!/bin/sh\nsleep 60\n')
+        codex.write_text('#!/bin/sh\nsleep 60 &\nwait\n')
         codex.chmod(0o755)
         folder = self.root / 'Application Support/jobs' / name / 'stand'
         return f"""import json, os, subprocess, time
@@ -442,16 +442,37 @@ time.sleep(60)
     def test_force_ends_a_job_started_in_its_own_session(self):
         with self.fixture(self.busy_bridge('deck-9', own_session=True)):
             self.launcher.open('training', self.preferences, {})
-            jobs = waited(lambda: self.launcher.jobs('training'))
+            def ready_job():
+                jobs = self.launcher.jobs('training')
+                for job in jobs:
+                    try:
+                        group = os.getpgid(job['pid'])
+                    except ProcessLookupError:
+                        continue
+                    if group == job['pid'] and job.get('started') and launching.started(job['pid']) == job['started'] \
+                            and launching.assistant(launching.command_of(job['pid']) or '') == job['assistant']:
+                        return jobs
+                return None
+            jobs = waited(ready_job)
+            self.assertTrue(jobs, 'Owned job did not reach its stable session/start/assistant identity.')
         job = jobs[0]
-        self.addCleanup(lambda: launching.alive(job['pid']) and os.killpg(job['pid'], signal.SIGKILL))
-        self.assertEqual(os.getpgid(job['pid']), job['pid'])
-        self.assertTrue(self.launcher.stop('training'))
-        self.assertTrue(launching.alive(job['pid']))  # its own session outlives the studio
-        self.assertEqual(launching.end_jobs([{**job, 'started': 'Sat Jan  1 00:00:00 2000'}]), [])
-        self.assertTrue(launching.alive(job['pid']))
-        self.assertEqual(launching.end_jobs(jobs), jobs)
-        self.assertFalse(launching.alive(job['pid']))
+        self.addCleanup(launching.end_jobs, [job])
+        trace = []
+        def observe(stage):
+            try: group = os.getpgid(job['pid'])
+            except ProcessLookupError: group = None
+            trace.append({'stage': stage, 'pid': job['pid'], 'group': group,
+                          'started': launching.started(job['pid']), 'command': launching.command_of(job['pid'])})
+        observe('ready')
+        self.assertEqual(trace[-1]['group'], job['pid'], trace)
+        self.assertTrue(self.launcher.stop('training'), trace)
+        observe('studio-stopped')
+        self.assertTrue(launching.alive(job['pid']), trace)  # its own session outlives the studio
+        self.assertEqual(launching.end_jobs([{**job, 'started': 'Sat Jan  1 00:00:00 2000'}]), [], trace)
+        observe('wrong-start-refused')
+        self.assertTrue(launching.alive(job['pid']), trace)
+        self.assertEqual(launching.end_jobs(jobs), jobs, trace)
+        self.assertFalse(launching.alive(job['pid']), trace)
 
     @unittest.skipUnless(PS, 'Listing processes is not permitted here.')
     def test_stopping_a_group_waits_for_every_member(self):
