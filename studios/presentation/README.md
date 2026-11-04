@@ -13,7 +13,9 @@ research. Your own brand skill supplies the visual identity.
 
 [Install](#install) · [Your first deck](#your-first-deck) · [Runner guide](docs/runner.md)
 
-Completed research section drafts survive a failed peer; retry unfinished work.
+Completed research section drafts can be read while the final check is pending and
+survive a failed peer; retry unfinished work. Save a private queued note to revisit
+in an explicit research change; it does not change an assistant's current work.
 Source changes first show the affected scope, while wording and notes can stay
 local. Final independent checks and exact-revision approval remain necessary.
 See the [incremental workflow guide](../../docs/incremental-workflow.md).
@@ -65,8 +67,11 @@ Research. Missing prerequisites are shown before the work that needs them.
    remove sections and questions; Save story starts no assistant. Approval starts
    targeted research and independent checking. The scan supplies no accepted evidence.
 4. **Review the slide text.** For an idea, document or full rework, read titles,
-   visible words, order and speaker notes. Ask for changes or choose
-   **Approve text & design deck**. Design starts after that approval. Pick a look
+   visible words, order and speaker notes, one slide at a time. Correct titles,
+   points and notes directly; corrections and review position save privately across
+   reloads. **Save corrections** starts no assistant or design work. Use **Ask for
+   changes** for an assistant revision, or **Approve text & design deck** to approve
+   all slide text with your corrections. Pick a look
    when you chose to pick one; genuine questions, failures and limits can also need you.
 5. **Refine the designed deck.** The navigator shows every slide and what needs
    attention. Work on the selected slide, review findings, and use Finishing.

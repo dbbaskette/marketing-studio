@@ -72,6 +72,25 @@ work: they look for commands on this computer and read Git's own settings.
 
 ## Models by kind of work
 
+### Quick scan speed
+
+**Shared settings → Assistant → Quick scan speed** shows the effective Quick model
+and reasoning, including when it inherits a deliberative shared choice. Select
+**Low**, **Medium** or **High** reasoning and choose **Use this Quick choice**, or
+open **Choose Quick model** for the full model controls. The shortcut keeps the
+selected model ID and enables task routing. Review the other task choices before
+**Save settings**; saving starts no work. If Quick uses the assistant's default,
+choose an explicit or shared model before applying a reasoning override.
+
+The editable-outline target is 60 seconds, separate from the scan's 180-second and
+$0.25 caps. These are workflow targets and limits, not measured provider promises.
+A lower reasoning choice does not guarantee a faster response. An incomplete scan
+can still leave a starting outline to refine before approving deeper research.
+New work pins its resolved choices; existing work changes only through its explicit
+model-settings action. Source permissions and final independent checks stay intact.
+
+### Full task routing
+
 In **Shared settings → Advanced → Models and reasoning**, choose
 **One model** or **By task**. By task gives each kind of work its own model and
 reasoning level, in every studio. Each kind can use the shared model above (at the
