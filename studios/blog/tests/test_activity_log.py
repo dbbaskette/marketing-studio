@@ -394,6 +394,35 @@ class EngineTests(Case):
         self.assertEqual(self.generate(seconds=10), VALUE)
         self.assertFalse((self.base / 'elsewhere.jsonl').exists())
 
+    def test_a_log_that_raises_anything_never_changes_how_the_call_ended(self):
+        def broken(root):
+            raise RuntimeError('Synthetic: the workspace could not be read.')
+
+        with patch.object(blog_activity.studio, 'locked', broken):
+            self.agent()
+            self.assertEqual(self.generate(seconds=10), VALUE)  # The result is kept.
+            self.agent(wait=True)
+            with self.assertRaises(blog_worker.WorkerFailure) as caught:
+                self.generate(seconds=1)
+            self.assertEqual(caught.exception.reason, 'time-limit')  # Try again with more time.
+            self.assertIn('ran out of the time', str(caught.exception))
+            stop = threading.Event()
+            threading.Timer(0.5, stop.set).start()
+            with self.assertRaises(ValueError) as caught:
+                self.generate(seconds=20, stop=stop)
+            self.assertEqual(str(caught.exception), 'Run stopped. Saved work is kept.')
+        self.assertEqual(self.running.live('blog-synthetic'), [])
+        self.assertEqual(self.log(), [])
+
+    def test_a_failed_turn_whose_error_is_not_an_object_still_says_why(self):
+        failing = [CODEX_EVENTS[0], {'type': 'turn.failed', 'error': 'Synthetic: turn failed.'}]
+        self.agent(codex=failing, code=1, last=None)
+        with self.assertRaises(blog_worker.WorkerFailure) as caught:
+            self.generate('codex', seconds=10)
+        self.assertIn('The selected CLI failed', str(caught.exception))
+        self.assertIn('ERROR: Synthetic: turn failed.', caught.exception.said)
+        self.assertEqual(self.log()[0]['outcome'], 'failed')
+
     def test_forgetting_a_blog_lets_its_log_go(self):
         self.agent()
         self.generate(seconds=10)
