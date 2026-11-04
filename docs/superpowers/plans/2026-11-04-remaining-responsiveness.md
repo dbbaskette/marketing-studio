@@ -40,3 +40,20 @@ The complete 63-sample local rendering measurement and decision are recorded in
 `docs/render-performance-measurement.md`. No extra renderer is justified by the
 measured conversion cost. The script's summary-only recovery reused completed
 measurements after correcting its helper-version metadata path.
+
+## Delivered verification for #345
+
+Completed contributions expose bounded read-only excerpts only after their saved
+digest and current section identity validate. Source labels come from that exact
+section's assigned evidence. First-readable timing precedes final independent-check
+timing; no second author/checker is added. The entire affected section workflow
+module passes, including failed-sibling retention, exact preview/source identity,
+retry counts and a checked final result. The shared research page and private-note
+modules pass. Both native capability/request-boundary groups pass.
+
+Protected native browsers pass retained draft reading, a failed sibling, private
+note save/reload, earlier-basis warning and replacement by the checked result, with
+zero additional jobs. Queued notes never become instructions to an in-flight
+worker: the person copies a concern into an explicit research refresh and approves
+its existing impact preview. Saved drafts do not confer delivery eligibility or
+approval. These are offline state/UI checks, not live model quality or timing.

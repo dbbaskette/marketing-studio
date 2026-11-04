@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased — 4.15.0
+
+Completed research sections expose saved read-only prose before final checking. Previews name their revision and assigned sources and remain ineligible for delivery. Queued concerns save privately across reloads without changing evidence or starting work; apply actual changes through the existing explicit refresh/impact flow. Timing separates the first readable section from the checked result.
+
 ## Unreleased — 4.14.1
 
 Idle desks check a compact change signal before reading content again. Active work keeps its existing cadence; focus and reconnect catch up immediately. Incomplete metadata checks fall back to full reads, and connection failures back off.

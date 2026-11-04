@@ -12,6 +12,40 @@ const StudioResearch = (() => {
   const message = error => error && error.message || String(error || 'This action could not finish.');
   const summary = state => !state ? 'Loading sources…' : state.external ? (state.restricted ? 'Use supplied sources and search approved sites.' : 'Use supplied sources and search the public web.') : 'Use supplied sources only.';
 
+  const queuedNotes = new Map();
+  function noteEditor(row, hooks) {
+    if (typeof Drafting === 'undefined' || !hooks.notes || !hooks.notesScope) return null;
+    const key = hooks.notesScope + '\n' + row.id;
+    let held = queuedNotes.get(key);
+    if (!held) {
+      class Note extends Drafting.Intake {
+        constructor() { super(sent => hooks.notes(row.id, sent));this.state={basis:row.preview.basis,note:''};this.hydrated=false;this.notify=()=>{}; }
+        snapshot(value) { return {basis:value.basis,note:value.note}; }
+        status() { this.notify(); }
+        async loadNote() { const saved=await this.load();if(!this.hydrated){this.hydrated=true;if(saved)Object.assign(this.state,saved);}return this.state; }
+      }
+      held=new Note();queuedNotes.set(key,held);
+    }
+    const box=make('div','paper'),entry=field('Note for the next research change',held.state.note,'research-queued-note-'+row.id,true);
+    entry.input.disabled=!held.hydrated;
+    const status=make('p','quiet field-hint');status.setAttribute('role','status');
+    const save=button('Save queued note',async()=>{
+      save.disabled=true;
+      try { await held.loadNote();held.state={basis:row.preview.basis,note:entry.input.value};await held.keep(held.state); }
+      finally { save.disabled=false;held.notify(); }
+    },'research-queue-save-'+row.id);
+    entry.input.addEventListener('input',()=>{held.state.note=entry.input.value;status.textContent='Note is not queued until you save.';});
+    const show=()=>{status.textContent=held.problem||((held.writing||held.pending)?'Saving queued note…':held.saved?'Queued privately. Evidence and scope are unchanged.':'No queued note.');if(held.saved?.basis&&held.saved.basis!==row.preview.basis)status.textContent+=' This note belongs to an earlier section revision; review it before applying a change.';};
+    held.notify=show;
+    const copy=button('Copy note for research refresh',async()=>{
+      try { if(typeof navigator!=='undefined'&&navigator.clipboard){await navigator.clipboard.writeText(entry.input.value);status.textContent='Copied. Use the research refresh impact preview to apply an explicit change.';}else{entry.input.focus();entry.input.select?.();status.textContent='Copy the selected note, then use the research refresh impact preview.';} }
+      catch { status.textContent='Copy the note manually, then use the research refresh impact preview.'; }
+    },'research-queue-copy-'+row.id);
+    add(box,entry.wrap,add(make('div','bar'),save,copy),status,make('p','quiet field-hint','Saving queues a concern only. After research pauses or finishes, use the existing research refresh to preview affected sections and approve the actual change. Notes never alter in-flight evidence or final checked output.'));
+    held.loadNote().then(()=>{entry.input.value=held.state.note;entry.input.disabled=false;show();}).catch(error=>{status.textContent=message(error);});
+    return box;
+  }
+
   class Editor {
     constructor(adapter) {
       this.a = adapter;
@@ -293,8 +327,21 @@ const StudioResearch = (() => {
       const summary = make('summary', '', keptDrafts + ' of ' + combining.length + ' section drafts kept');
       summary.dataset.key = 'research-combining-toggle'; details.append(summary);
       const list = make('ul');
-      for (const row of combining) list.append(make('li', '', array(row.questions).map(q => typeof q === 'string' ? q : q.question || q.text || q.id).join('; ') + ' · ' + (row.status === 'kept' ? 'Draft kept' : row.status === 'working' ? 'Combining' : row.status === 'failed' ? 'Retry needed' : 'Waiting')));
+      for (const row of combining) {
+        const item=make('li','',array(row.questions).map(q => typeof q === 'string' ? q : q.question || q.text || q.id).join('; ') + ' · ' + (row.status === 'kept' ? 'Draft kept' : row.status === 'working' ? 'Combining' : row.status === 'failed' ? 'Retry needed' : 'Waiting'));
+        if(row.preview){
+          const preview=make('details','paper');preview.dataset.key='research-preview-'+row.id;
+          const toggle=make('summary','',phase==='complete'?'Earlier section draft and queued note':'Read saved section draft');toggle.dataset.key='research-preview-toggle-'+row.id;preview.append(toggle);
+          add(preview,make('p','field-label',phase==='complete'?'Superseded by the checked research report.':'Draft—independent check pending'),make('p','quiet','Read-only saved prose for this approved section. Not eligible for final delivery. Revision '+String(row.preview.basis).slice(0,12)+'.'));
+          for(const section of array(row.preview.sections)){preview.append(make('h4','row-title',section.title));for(const text of String(section.text||'').split('\n\n'))preview.append(make('p','',text));}
+          if(row.preview.truncated)preview.append(make('p','quiet','Preview shortened; the complete saved draft is retained.'));
+          preview.append(make('p','quiet','Sources: '+array(row.preview.sources).map(source=>source.title+' ('+source.permission+')').join('; ')+'. Preview adds no sources or permissions.'));
+          preview.append(...[noteEditor(row,hooks)].filter(Boolean));item.append(preview);
+        }
+        list.append(item);
+      }
       details.append(list); box.append(details);
+      if(Number.isFinite(state.first_readable_seconds))box.append(make('p','quiet','First saved section readable at '+state.first_readable_seconds+' seconds'+(Number.isFinite(state.checked_result_seconds)?'; checked result at '+state.checked_result_seconds+' seconds.':'; final independent check still pending.')));
       if (phase !== 'complete') box.append(make('p', 'quiet', 'Section drafts are kept for retry. The assembled research still needs its independent check.'));
     }
     const areas = array(state.streams || state.workstreams);

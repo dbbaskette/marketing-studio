@@ -57,3 +57,10 @@ review, then rebuild affected blueprints and briefs.
 
 Report blocked network or access honestly. Never describe incomplete research
 as current. Then read the blueprint reference.
+
+On the native page, **Read saved section draft** shows read-only prose with its
+section revision and source limits while the independent check is pending. It is
+not checked evidence or a deliverable. **Save queued note** keeps a private concern;
+it changes no scope/evidence and starts no work. After pausing or finishing, use
+the existing research refresh impact preview to approve the actual change. Earlier
+notes retain their original basis; checked output supersedes draft previews.

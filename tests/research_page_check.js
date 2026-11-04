@@ -114,5 +114,8 @@ const key=(editor,k)=>all(editor.node).find(n=>n.dataset.key===k);
  assert.ok(corrected.some(n=>n.textContent==='Correction round 2 of 3'));
  assert.ok(corrected.some(n=>n.textContent.includes('sources are not being researched again')));
  assert.ok(corrected.some(n=>n.textContent==='Synthetic prose correction'));
+ const previewState={phase:'review',first_readable_seconds:2,combining:[{id:'area1',questions:['Saved question'],status:'kept',preview:{basis:'revision1',sections:[{title:'Saved heading',text:'Saved prose is visible without another author.'}],sources:[{title:'Selected source',permission:'selected'}]}}]};
+ const draftNodes=all(kit.progress(previewState));assert.ok(draftNodes.some(n=>n.textContent==='Draft—independent check pending'));assert.ok(draftNodes.some(n=>n.textContent==='Saved prose is visible without another author.'));assert.ok(draftNodes.some(n=>n.textContent.includes('Not eligible for final delivery')));
+ const completeNodes=all(kit.progress({...previewState,phase:'complete',checked_result_seconds:9}));assert.ok(completeNodes.some(n=>n.textContent==='Superseded by the checked research report.'));assert.ok(completeNodes.some(n=>n.textContent.includes('checked result at 9 seconds')));
  console.log('PASS shared source editor: explicit scope, mixed links, validation, draft/focus preservation, progress, no provider actions');
 })().catch(error=>{console.error(error);process.exitCode=1;});

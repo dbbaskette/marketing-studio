@@ -136,6 +136,22 @@ def combine(case, task, areas, registry, base, offered, invoke, *, round, guidan
         with lock:
             for row in progress:
                 if row['id'] == ident: row['status'] = state
+                receipt = saved['sections'].get(row['id']) or {}
+                if row['status'] == 'kept' and receipt.get('digest') == fingerprint(receipt.get('content')):
+                    content = receipt['content']
+                    left = 24000
+                    excerpts = []
+                    for section in content.get('sections', [])[:12]:
+                        words = '\n\n'.join(str(block.get('text', '')) for block in section.get('blocks', []))
+                        excerpts.append({'title': str(section.get('title', ''))[:500], 'text': words[:left]})
+                        left -= min(left, len(words))
+                        if left <= 0: break
+                    row['preview'] = {'basis': receipt['basis'], 'digest': receipt['digest'],
+                        'sections': excerpts, 'truncated': left <= 0,
+                        'sources': [{'title': source.get('title', source.get('id', 'Source')),
+                                     'permission': source.get('permission', 'unknown')}
+                                    for source in evidence(next(area for area in areas if area['id'] == row['id']))['sources'][:40]]}
+                else: row.pop('preview', None)
             notify(copy.deepcopy(progress))
     def store():
         rc.write(case, str(path.relative_to(case)), json.dumps(saved))

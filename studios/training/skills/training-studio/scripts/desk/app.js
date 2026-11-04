@@ -816,6 +816,10 @@ function measuredTime(run) {
 }
 
 // Whether the research panel is on the screen, with the workers it shows.
+function researchNoteHooks(path) {
+  return {notesScope:path,notes:(id,sent)=>sent.action==='read'?ask('research-note',{path,id}):send('research-note',{path,id,...sent})};
+}
+
 function researching(run) {
   return Boolean(run.research_progress && run.research_progress.phase !== 'complete'
     && typeof StudioResearch !== 'undefined');
@@ -823,8 +827,8 @@ function researching(run) {
 
 function researchActivity(run, controls = null) {
   const research = run.research_progress;
-  if (!research || research.phase === 'complete') return null;
-  if (typeof StudioResearch !== 'undefined') return StudioResearch.progress(research, {timing: run.timing, controls, workers: run.workers, lines: jobLines(view.path)});
+  if (!research) return null;
+  if (typeof StudioResearch !== 'undefined') return StudioResearch.progress(research, {timing: run.timing, controls, workers: run.workers, lines: jobLines(view.path),...researchNoteHooks(view.path)});
   const names = { investigate: 'Investigating', synthesize: 'Combining findings', review: 'Independent check' };
   const node = add(card(names[research.phase] || 'Research'),
     make('p', 'quiet', 'Completed research areas are kept for retry.'));
