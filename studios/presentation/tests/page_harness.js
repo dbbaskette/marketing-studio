@@ -906,7 +906,7 @@ async function app(file) {
   }
   // The shared desk kit (drafting.js, linked from ui-kit), then the page, then the deck desk,
   // in the order index.html loads them. A plan with {research: true} loads the shared source
-  // editor (research.js) first, as the page does: Research first then offers it, and asks
+  // editor (research.js) first, as the page does: Research the approved story then offers it, and asks
   // POST /api/research-sources for its draft as soon as it is drawn.
   for (const script of ['activity.js', ...(plan.research ? ['research.js'] : []), 'markdown.js',
     'drafting.js', 'app.js', 'deck-desk.js']) {

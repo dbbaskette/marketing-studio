@@ -425,13 +425,13 @@ class RunnerPage(server.Page):
         the key. Anyone else's request there is held to the usual limit, so it is refused
         unread."""
         address = target.partition('?')[0]
-        if address == '/api/intake-draft':
+        if address in ('/api/intake-draft', '/api/decide'):
             try:
                 self.check_token(headers)
             except server.Refusal:
                 return super().body_limit(target, headers)
             from studio_core.intake_drafts import LIMIT
-            return LIMIT
+            return 512_000 if address == '/api/decide' else LIMIT
         if address in (DECKS, PICTURE, SOURCE, '/api/research-sources'):
             try:
                 self.check_token(headers)
@@ -676,7 +676,7 @@ class RunnerPage(server.Page):
         if gate not in engines.WORDS:
             raise server.Refusal(HTTPStatus.BAD_REQUEST, 'A decision is made at one of the '
                                  'gates: ' + ', '.join(engines.WORDS) + '.')
-        if decision not in engines.DECISIONS:
+        if decision not in engines.DECISIONS and not (gate == 'gate:story' and decision == 'save'):
             raise server.Refusal(HTTPStatus.BAD_REQUEST, 'A decision is to approve, or to ask '
                                  'for changes: ' + ', '.join(engines.DECISIONS) + '.')
         if extra is not None and not isinstance(extra, dict):

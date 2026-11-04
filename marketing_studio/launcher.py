@@ -89,6 +89,13 @@ def alive(pid):
         return False
     # A finished process its parent has not collected yet is not running.
     status = ps('-o', 'stat=', '-p', str(pid))
+    if not (status or '').strip():
+        # It can exit between the first PID probe and ps. Missing process-list
+        # access still means unknown/alive when a second PID probe succeeds.
+        try:
+            os.kill(pid, 0)
+        except (ProcessLookupError, PermissionError):
+            return False
     return not (status or '').strip().startswith('Z')
 
 

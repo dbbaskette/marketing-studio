@@ -32,6 +32,7 @@ What a caller needs to know
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 import secrets
 import shutil
@@ -434,6 +435,11 @@ class Jobs:
         the next step goes with it, once."""
         work = self._noted(root, name, doing, work)
         record = self._load(root)
+        from runner import slide_story
+        if name == 'outline' and slide_story.applies(record):
+            work = replace(work, prepared={**work.prepared, 'inputs': {**work.prepared.get('inputs', {}),
+                'approved-slide-story': json.dumps(record['slide_story']['outline'], ensure_ascii=False)}},
+                task=work.task + '\n\nFollow approved-slide-story for the section sequence and messages. Use checked research for factual claims; the scan supplies no evidence.')
         if hasattr(self, '_confined'):
             # A job that saves pages keeps to where the deck's research may look.
             work = self._confined(root, record, work)

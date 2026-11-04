@@ -15,6 +15,16 @@ retain the older adapter; existing runs never change research formats on resume.
 
 ## Handoff and execution
 
+New researched Presentation Studio desks first run one bounded Quick scan and wait for
+an editable slide-story approval. Only retained sections/questions enter the collection
+plan; the complete approved story also reaches the slide-text author. Saving a title or
+question starts no model job. Ready scripts and selected edits retain direct routes.
+The scan uses bounded supplied excerpts, zero external searches, at most 180 seconds
+and $0.25 within existing limits, and never supplies accepted evidence. Partial/fallback
+stories survive stop/timeout without escalation. Schema-5 records preserve this order;
+older records keep their saved flow. The existing whole-dossier independent check and
+subsequent slide-text approval still apply.
+
 The studio passes its actual task as ordinary-language `purpose`, separately from
 `audience`, `scope` and `source_mode`. Presentation research prioritizes messages
 and visual explanation, blog research the argument and objections, and training

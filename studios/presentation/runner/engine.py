@@ -148,6 +148,7 @@ from runner import build_progress, library_keep, team, worker_tools
 from runner import brand as brand_skill
 from runner import brand_source
 from runner import research as research_cli
+from runner import slide_story
 from runner import slides as slides_tool
 from runner.jobs import (FED, KEPT_SO_FAR, NEXT_NOTE, Gone as _Gone, Halted as _Halted, Jobs,
                          Run as _Run, Slots as _Slots, attempts, first, gate_state,
@@ -184,7 +185,7 @@ SHEET = 'contact-sheet'
 # opened the same way.
 RUN = {
     'intake-source': '_intake_source', 'classify': '_classify', 'inventory': '_inventory',
-    'gate:classify': '_gate', 'research-plan': '_research_plan',
+    'gate:classify': '_gate', 'scan': '_scan', 'gate:story': '_gate', 'research-plan': '_research_plan',
     'gate:research-plan': '_gate', 'research': '_research',
     'research-report': '_research_report', 'gate:research': '_gate', 'extract': '_extract',
     'outline': '_outline', 'gate:outline': '_gate', 'brand': '_brand_step',
@@ -194,12 +195,12 @@ RUN = {
     'build-repair': '_build_repair', 'build-render': '_build_render', 'gate:build': '_gate',
     'deliver': '_deliver'}
 # What each gate decides on, as a commit and a sentence say it.
-WORDS = {'gate:classify': 'classification', 'gate:research-plan': 'research plan',
+WORDS = {'gate:story': 'slide story', 'gate:classify': 'classification', 'gate:research-plan': 'research plan',
          'gate:research': 'research', 'gate:outline': 'outline', 'gate:look': 'look',
          'gate:build': 'deck'}
 # What a desk deck waits for, in the words of the screen and the button that answer it:
 # Review slide text and Approve text & design deck, Pick the look, and Deliver.
-DESK_WAITING = {'slide-text': 'Waiting for you to approve the slide text.',
+DESK_WAITING = {'gate:story': 'Waiting for you to approve the slide story before research.', 'slide-text': 'Waiting for you to approve the slide text.',
                 'gate:look': 'Waiting for you to pick the look.',
                 'gate:build': 'Ready to deliver.'}
 # The build's steps, whose work is kept under work/build/ on the computer that did it.
@@ -339,7 +340,7 @@ class Engine(Jobs, Researching, DeskActions):
     """Drives every deck in this computer's workspace."""
 
     def __init__(self, adapters=None, research=None, slides=None, brand=None, drive=None,
-                 background: bool = True, at_once: int = AT_ONCE, notifier=None, parallel_research=True, content_first=True):
+                 background: bool = True, at_once: int = AT_ONCE, notifier=None, parallel_research=True, content_first=True, story_first=True, scan_budget=None):
         self.adapters = dict(adapters or agents.AGENTS)
         self.notifier = notifier or team.Notifier()
         self.research = research or research_cli.Research
@@ -349,6 +350,8 @@ class Engine(Jobs, Researching, DeskActions):
         self.background, self.at_once = background, at_once
         self.parallel_research = parallel_research
         self.content_first = content_first
+        self.story_first = story_first
+        self.story_budget = slide_story.budget(scan_budget)
         self.upkeep = None    # what `studio serve` keeps of the skills here
         self.files = ProcessRLock(gitstate.write_lock_path, refusal=WorkspaceError)
         self._lock = threading.RLock()
@@ -458,15 +461,17 @@ class Engine(Jobs, Researching, DeskActions):
         except (OSError, ValueError):
             raise WorkspaceError(f'The run record in {Path(root).name} cannot be read, so the '
                                  'runner will not drive this deck.') from None
-        if not isinstance(record, dict) or record.get('schema') not in (decks.SCHEMA, 2, 3, 4) \
+        if not isinstance(record, dict) or record.get('schema') not in (decks.SCHEMA, 2, 3, 4, 5) \
                 or not isinstance(record.get('steps'), dict):
             raise WorkspaceError(f'The run record in {Path(root).name} cannot be read, so the '
                                  'runner will not drive this deck.')
         if record.get('schema') == 2 and not record.get('review_policy'):
             raise WorkspaceError('This run is missing its saved review level. Restore its run record.')
-        if record.get('schema') == 4 and not research_session.protocol(record):
+        if record.get('schema') in (4, 5) and not research_session.protocol(record):
             raise WorkspaceError('Restore the saved research collection protocol before continuing.')
-        if record.get('schema') in (3, 4) and (record.get('research_contract') or {}).get('schema') != 2:
+        if record.get('schema') == 5 and not (slide_story.valid(record) and decks.on_desk(record)):
+            raise WorkspaceError('Restore the saved slide-story workflow before continuing.')
+        if record.get('schema') in (3, 4, 5) and (record.get('research_contract') or {}).get('schema') != 2:
             raise WorkspaceError('This run is missing its saved research contract. Restore its run record.')
         for key, value in (('gates', {}), ('answers', {}), ('said', {}), ('question', None),
                            ('halted', None), ('cleared', 0.0), ('research', None),
@@ -885,6 +890,10 @@ class Engine(Jobs, Researching, DeskActions):
                     parallel = research_session.execution(self.research().runtime) if self.parallel_research else None
                     if parallel:
                         record.update(schema=4, research_execution={**parallel, **({'workers': selected_sources['workers']} if selected_sources else {})})
+                if contract and self.story_first and decks.on_desk(record):
+                    if not research_session.protocol(record):
+                        raise WorkspaceError('The slide-story flow needs Harness Research 1.1 collection support. Install a compatible helper explicitly before starting.')
+                    record.update(schema=5, slide_story={'schema': 1, 'revision': 0, 'outline': None, 'limits': dict(self.story_budget)})
                 self._store(root, record)
                 self._commit(root, 'set up its run' + (
                     f", driven by {record['driver']['name']}" if record['driver'] else ''))
@@ -909,7 +918,7 @@ class Engine(Jobs, Researching, DeskActions):
         form = form if isinstance(form, dict) else {}
         if form.get('route') == 'existing' or not form.get('research'):
             raise WorkspaceError('Documents from the library are added at the start only with '
-                                 'Research first, for a deck from an idea or a document. Add '
+                                 'Research the approved story, for a deck from an idea or a document. Add '
                                  'them on the desk otherwise.')
         try:
             return library_context.picks(picks)
@@ -1865,6 +1874,12 @@ class Engine(Jobs, Researching, DeskActions):
                         root, record, self._text(handed, outlines.NAME), extracted=True),
                     'keep the outline read from your deck')
 
+    def _scan(self, root, run, step):
+        return slide_story.scan(self, root, run, step)
+
+    def _show_story(self, root, record):
+        return slide_story.view(self, root, record)
+
     def _outline(self, root: Path, run: _Run, step: stages.Step) -> None:
         contract = self._contract(root)
         self._agent(root, run, step,
@@ -2129,6 +2144,10 @@ class Engine(Jobs, Researching, DeskActions):
         if root is None:
             raise WorkspaceError('There is no deck there.')
         saved = self._load(root)
+        if gate == slide_story.GATE:
+            if not isinstance(extra, dict):
+                raise WorkspaceError('Send the edited story with the decision.')
+            return slide_story.decide(self, root, expected, decision, (extra or {}).get('outline'))
         if not deck_content.checkpoint(saved, gate):
             desk.refuse_on_desk(saved)   # other desk decisions stay on their own routes
         if decision == 'approve' and saved.get('research_contract') and (saved.get('steps', {}).get('research-report') or {}).get('done'):
@@ -3109,7 +3128,7 @@ class Engine(Jobs, Researching, DeskActions):
         # The research stops keep their own words; the deck's stop says the whole deck's.
         if nxt.name == 'gate:build':
             shown['last_build'] = self._last_build(record)
-        elif nxt.name not in ('gate:research-plan', 'gate:research'):
+        elif nxt.name not in ('gate:research-plan', 'gate:research', 'gate:story'):
             shown['redo'] = self._redo(record, nxt.name)
         if nxt.name == 'gate:outline' and stages.level(record) == 'balanced':
             shown['research'] = self._show_research(root, record)

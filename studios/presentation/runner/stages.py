@@ -29,6 +29,8 @@ PIPELINE: tuple[Step, ...] = (
        'Listing every slide in your deck'),
     _s('gate:classify', 'classify', 'gate', 'Confirm what you gave',
        'Waiting for you to confirm what kind of material this is'),
+    _s('scan', 'story', 'agent', 'Quick scan for the slide story', 'Scanning the supplied scope'),
+    _s('gate:story', 'story', 'gate', 'Approve the slide story', 'Waiting for story approval before research'),
     _s('research-plan', 'research', 'agent', 'Plan the research',
        'Deciding what to look up'),
     _s('gate:research-plan', 'research', 'gate', 'Approve the research plan',
@@ -86,6 +88,9 @@ def _level(run: dict) -> Optional[str]:
 
 def _has(run: dict, name: str) -> bool:
     route, level = _route(run), _level(run)
+    if name in ('scan', 'gate:story'):
+        from runner import slide_story
+        return bool(slide_story.applies(run))
     existing = route == 'existing'
     if name == 'gate:classify':
         return route in ('document', 'existing')

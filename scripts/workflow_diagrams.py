@@ -172,11 +172,13 @@ BLOG_GEO = flow(
 PRESENTATION_TEXT = flow(
     (('open', 'studio', 'Open Presentation Studio', 'Shared setup the first time'),
      ('new', 'you', 'New deck', 'Idea, document or existing deck'),
-     ('research', 'assistant', 'Read and research', 'Research first, if ticked'),
+     ('scan', 'assistant', 'Quick scan', 'For researched ideas or material'),
+     ('story', 'you', 'Review the slide story', 'Edit sections and research gaps', 'Approve story & research'),
+     ('research', 'assistant', 'Research approved sections', 'Independent checking follows'),
      ('draft', 'assistant', 'Draft the slide text', 'Titles, words, speaker notes'),
      ('text', 'you', 'Review slide text', 'Fix words where they are'),
      ('approve', 'you', 'Approve text & design deck', 'Design starts from this text')),
-    (('changes', 1, 4, 'you', 'Ask for changes', 'Slide text redrafted'),),
+    (('changes', 1, 6, 'you', 'Ask for changes', 'Slide text redrafted'),),
     (('text', 'changes', 'both', ''),))
 
 PRESENTATION_DECK = flow(

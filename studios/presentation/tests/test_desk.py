@@ -391,7 +391,7 @@ class ScreenTests(ScriptedPage, PageCase):
             {'click': 'New deck'}, {'click': 'A document'},
             {'click': 'Paste the text'}, {'fill': 'The text', 'value': 'Synthetic notes.'},
             {'fill': 'A short title', 'value': 'Synthetic deck'},
-            {'snapshot': 'off'}, {'tick': 'Research first'}, {'snapshot': 'offered'},
+            {'snapshot': 'off'}, {'tick': 'Research the approved story'}, {'snapshot': 'offered'},
             {'tick': 'your sites'}, {'snapshot': 'sites'},
             {'tick': 'the public web'}, {'tick': 'docs.example.com'},
             {'fill': 'Add a site for this piece of work', 'value': 'learn.example.org/guide/'},
@@ -408,16 +408,16 @@ class ScreenTests(ScriptedPage, PageCase):
             self.assertIsNone(FORBIDDEN_WORDS.search(shot['text']))
         # A document's research reads the documents alone until more is ticked: your sites
         # stay off, the shared list ready under them.
-        # Research first is a checkbox of its own, ticked first (#255).
+        # Research the approved story is a checkbox of its own, ticked first (#255).
         self.assertEqual(offered['chosen'], [])
-        self.assertEqual(offered['ticked'], ['Research first', 'your documents'])
+        self.assertEqual(offered['ticked'], ['Research the approved story', 'your documents'])
         for button in ('your sites (2)', 'the public web'):
             self.assertIn(button, offered['buttons'])
         self.assertNotIn('Add a site for this piece of work', offered['fields'])
         self.assertIn('Research from your documents.', offered['text'])
         self.assertIn(self.ONLY_DOCUMENTS, offered['text'])
         self.assertNotIn(self.SEARCHED, offered['text'])
-        self.assertEqual(sites['ticked'], ['Research first', 'your documents', 'your sites (2)',
+        self.assertEqual(sites['ticked'], ['Research the approved story', 'your documents', 'your sites (2)',
                                            'blog.example.com/platform', 'docs.example.com'])
         self.assertIn('Add a site for this piece of work', sites['fields'])
         self.assertIn('It is for this deck only; your shared list is changed in Shared settings.',
@@ -426,7 +426,7 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertNotIn(self.ONLY_DOCUMENTS, sites['text'])
         self.assertIn('Research from your documents and 2 of your sites '
                       '(blog.example.com/platform, docs.example.com).', sites['text'])
-        self.assertEqual(chosen['ticked'], ['Research first', 'your documents', 'your sites (2)',
+        self.assertEqual(chosen['ticked'], ['Research the approved story', 'your documents', 'your sites (2)',
                                             'the public web', 'blog.example.com/platform',
                                             'learn.example.org/guide'])
         self.assertEqual(chosen['fields']['Add a site for this piece of work'], '')
@@ -458,8 +458,8 @@ class ScreenTests(ScriptedPage, PageCase):
         answers = self.answers(**{'GET /api/setup': [self.setup_with(research_sites=self.SITES)]})
         shot = self.run_page(answers, [
             {'click': 'New deck'}, {'click': 'An idea'}, {'fill': 'A short title', 'value': 'Synthetic deck'},
-            {'tick': 'Research first'}, {'snapshot': 'web'}])['snapshots']['web']
-        self.assertEqual(shot['ticked'], ['Research first', 'the public web'])
+            {'tick': 'Research the approved story'}, {'snapshot': 'web'}])['snapshots']['web']
+        self.assertEqual(shot['ticked'], ['Research the approved story', 'the public web'])
         self.assertIn('your sites (2)', shot['buttons'])
         self.assertIn('Research from the public web.', shot['text'])
         self.assertNotIn(self.ONLY_DOCUMENTS, shot['text'])
@@ -474,7 +474,7 @@ class ScreenTests(ScriptedPage, PageCase):
         result = self.run_page(answers, [
             {'click': 'New deck'}, {'click': 'An idea'},
             {'fill': 'A short title', 'value': 'Synthetic deck'},
-            {'tick': 'Research first'}, {'snapshot': 'web'},
+            {'tick': 'Research the approved story'}, {'snapshot': 'web'},
             {'tick': 'the public web'}, {'click': 'Start'}, {'snapshot': 'nowhere'},
             {'tick': 'your sites'}, {'snapshot': 'none'}, {'click': 'Start'},
             {'snapshot': 'no-site'}, {'click': 'Add the site'}, {'snapshot': 'empty'},
@@ -486,7 +486,7 @@ class ScreenTests(ScriptedPage, PageCase):
         shots = result['snapshots']
         # A deck from an idea has no documents to offer; it reads the public web.
         self.assertNotIn('your documents', shots['web']['buttons'])
-        self.assertEqual(shots['web']['ticked'], ['Research first', 'the public web'])
+        self.assertEqual(shots['web']['ticked'], ['Research the approved story', 'the public web'])
         self.assertIn('Research from the public web.', shots['web']['text'])
         self.assertIn(research_sites.EMPTY, shots['nowhere']['sheet'])
         self.assertEqual(shots['nowhere']['focus'], 'research-sites')
@@ -663,7 +663,7 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertIn('Its model', opened['fields'])
         for old in ('AI review', 'AI critique', 'Research it first'):
             self.assertNotIn(old, opened['text'])
-        self.assertIn('Research first', result['snapshots']['about']['buttons'])
+        self.assertIn('Research the approved story', result['snapshots']['about']['buttons'])
         # The goal's words never flip the first draft: a desk deck sends no choice of it.
         self.assertEqual(result['errors'], [])
         posted = [body for address, body in self.posts(result) if address == '/api/decks']
@@ -741,14 +741,14 @@ class ScreenTests(ScriptedPage, PageCase):
     def test_the_research_chip_and_the_start_line_say_the_desk_runs_on_its_own(self):
         gated = (('You approve the research plan, then the findings, before the outline is '
                   'drafted.'), 'You see what it found with the outline.')
-        words = ('The research is planned from your questions, or from the goal, and done on '
-                 'its own. What it found is kept with the deck.')
+        words = ('One Quick scan proposes a story. Edit and approve it before targeted '
+                 'research, which is independently checked and kept with the deck.')
         for level in ('step_by_step', 'balanced', 'automatic'):
             answers = self.answers(**{'GET /api/setup': [self.setup_with(review_level=level)]})
             result = self.run_page(answers, [
                 {'click': 'New deck'}, {'click': 'An idea'},
                 {'fill': 'A short title', 'value': 'Rolling restarts'},
-                {'tick': 'Research first'}, {'snapshot': 'about'},
+                {'tick': 'Research the approved story'}, {'snapshot': 'about'},
                 {'snapshot': 'last'}, {'click': 'Use the brand’s default look'},
                 {'snapshot': 'default'}])
             with self.subTest(level=level):
@@ -759,9 +759,9 @@ class ScreenTests(ScriptedPage, PageCase):
                 # What happens after Start is said from the choices: research, the slide
                 # text to approve, then the look to pick, or the brand's default with no stop.
                 plan = last['sheet'][last['sheet'].index('What happens after Start'):]
-                self.assertIn('Before the desk, it waits for you twice: to approve the slide '
-                              'text, then to pick the look.', plan)
-                self.assertLess(plan.index('Research.'), plan.index('Approve the slide text.'))
+                self.assertIn('Before the desk, it waits for you three times: to approve the slide '
+                              'story, then to approve the slide text, then to pick the look.', plan)
+                self.assertLess(plan.index('Targeted research.'), plan.index('Approve the slide text.'))
                 self.assertLess(plan.index('Approve the slide text.'),
                                 plan.index('Pick the look.'))
                 self.assertLess(plan.index('Pick the look.'), plan.index('Review the deck.'))
@@ -769,7 +769,7 @@ class ScreenTests(ScriptedPage, PageCase):
                 self.assertIn('choose Approve text & design deck. Nothing is designed until you '
                               'approve.', plan)
                 default = result['snapshots']['default']['sheet']
-                self.assertIn('Before the desk, it waits for you to approve the slide text.',
+                self.assertIn('Before the desk, it waits for you twice: to approve the slide story, then to approve the slide text.',
                               default)
                 self.assertIn('The brand’s default look. Once the text is approved, the slides '
                               'are designed in it, with no stop.', default)

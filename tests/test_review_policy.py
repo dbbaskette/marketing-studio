@@ -197,8 +197,8 @@ class EveryRealGateTests(unittest.TestCase):
                              'gate:research-plan', 'review:direction', 'review:final'},
                 'automatic': {'documents', 'intake', 'deck', 'gate:deck',
                               'review:direction', 'review:final'}}
-    PRESENTATION = {'balanced': {'gate:outline', 'gate:build'},
-                    'automatic': {'gate:build'}}
+    PRESENTATION = {'balanced': {'gate:story', 'gate:outline', 'gate:build'},
+                    'automatic': {'gate:story', 'gate:build'}}
     BLOG = {'balanced': {'outline', 'package'}, 'automatic': {'package'}}
 
     def test_every_training_gate(self):
@@ -220,7 +220,7 @@ class EveryRealGateTests(unittest.TestCase):
 
     def test_every_presentation_gate(self):
         gates = presentation_gates()
-        self.assertEqual(gates, {'gate:classify', 'gate:research-plan', 'gate:research',
+        self.assertEqual(gates, {'gate:story', 'gate:classify', 'gate:research-plan', 'gate:research',
                                  'gate:outline', 'gate:look', 'gate:build'})
         for mode, stops in self.PRESENTATION.items():
             run = {'review_policy': {'schema': 1, 'level': mode}}

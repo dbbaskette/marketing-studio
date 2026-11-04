@@ -291,6 +291,14 @@ class Researching:
                     # Pages from your sites are public captures: documents and sites is
                     # mixed, sites alone public.
                     'source_mode': research_sites.source_mode(looks)}
+            from runner import slide_story
+            if slide_story.applies(record):
+                task['approved_slide_story'] = record['slide_story']['outline']
+                task['presentation_intake'] = form
+                task['source_policy'] = looks
+                from studio_core import scope_scan
+                task['scope'] = scope_scan.research_scope(task['scope'],
+                    task['approved_slide_story']['sections'], 'task.approved_slide_story')
             try:
                 if research_session.protocol(record):
                     research_transport.native(self, root, run, task, offered, 'presentation')
@@ -660,6 +668,14 @@ class Researching:
 
     def _research_plan(self, root: Path, run: Run, step: stages.Step) -> None:
         record = self._load(root)
+        from runner import slide_story
+        if slide_story.applies(record):
+            with self.files:
+                record = self._load(root)
+                self._keep_plan(root, record, slide_story.plan(self, root, record))
+                record['research'] = {**(record.get('research') or {}), 'plan_from': 'story'}
+                self._done(root, step, time.monotonic(), 'write the research plan from the approved story', record)
+            return
         # Research that reads only the person's documents, and any research of a desk deck,
         # is planned from the form, with no job: a desk deck has no stop to see a plan at.
         if (record.get('research_contract')

@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased — 4.9.1
+
+- Share strict provisional-outline validation and bounded source excerpts with Presentation
+  Studio; the saved Training Studio workflow and approval contract remain unchanged.
+
 ## Unreleased — 4.9.0
 
 - Outline-first records use schema 7 so older runtimes refuse to drive them. Existing
