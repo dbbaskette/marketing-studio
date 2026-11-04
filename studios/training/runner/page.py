@@ -262,7 +262,7 @@ SETTINGS_SOURCES = f'{SETTINGS}/sources'   # a source draft holding what researc
 MODELS = '/api/training-models'   # Use the current model settings: what changes, and its save
 CARD = f'{DRAFTS}/card'   # one card with its parts, as the shared kit reads it
 PART_LIMIT = 1_000_000   # bytes: one part of the largest size, as JSON
-READS = ('/api/slide-text-draft', '/api/spending-policy', '/api/outline-flow', '/api/intake-draft', '/api/capabilities', '/api/setup', '/api/agents', '/api/models', '/api/run',
+READS = ('/api/updates', '/api/slide-text-draft', '/api/spending-policy', '/api/outline-flow', '/api/intake-draft', '/api/capabilities', '/api/setup', '/api/agents', '/api/models', '/api/run',
          '/api/activity', SETTINGS, MODELS,
          '/api/download', '/api/slide', '/api/status', '/api/published', '/api/delete', '/api/deck-draft-ticket',
          DRAFTS, CARD, VERSIONS, f'{DRAFTS}/update-preview', f'{DRAFTS}/slide-versions', f'{DRAFTS}/source-price',
@@ -374,6 +374,10 @@ class RunnerPage(desk.Page):
     # --- reads ---------------------------------------------------------------------------
 
     def read(self, path: str, one):
+        if path == '/api/updates':
+            from studio_core import polling
+            return desk.as_json(HTTPStatus.OK, polling.snapshot(self.engine, home.data_root()))
+
         if path == '/api/slide-text-draft':
             try: level = one('level')
             except desk.Refusal: level = None

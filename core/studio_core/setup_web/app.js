@@ -342,6 +342,7 @@ function describeAdvanced() {
     : chosen ? `By task: ${chosen} of ${profileNames.length} kinds of work have their own model or reasoning; the rest use ${single}` : `By task: every kind of work uses ${single}`;
   owner('#models-owner', byTask || Boolean(model || effort));
   $('#models-pointer').textContent = `Uses ${byTask ? 'models chosen by task' : single}. ${setup ? 'You can change this in Shared settings, Advanced, after setup.' : 'Change it under Advanced: Models and reasoning.'}`;
+  describeQuick();
   const release = value('brand.release');
   $('#release-state').textContent = release ? `Pinned to ${release}` : 'Newest release';
   owner('#release-owner', Boolean(release));
@@ -464,6 +465,26 @@ function profilesChanged() {
   }
   syncSegments();
 }
+function describeQuick() {
+  const node = $('#quick-effective');if (!node) return;
+  const value = name => form.elements[name]?.value || '';
+  const routed = value('models.mode') === 'by_task';
+  const choice = routed ? value('models.quick.selection') || 'inherit' : 'inherit';
+  const model = choice === 'provider_default' ? 'assistant default' : choice === 'explicit' ? value('models.quick.model') : value('assistant.model') || 'assistant default';
+  const effort = choice === 'provider_default' ? 'assistant default' : (routed && value('models.quick.effort')) || value('assistant.effort') || 'assistant default';
+  node.textContent = `Effective Quick: ${model}, ${effort} reasoning. ` + (!routed ? 'One model also applies its full reasoning to the first scan. ' : '') + (['high','xhigh','max','ultra'].includes(effort) ? 'This is a deliberative setting for a provisional scan. ' : '') + 'No work starts when you save these choices.';
+  $('#apply-quick').disabled = value('models.quick.selection') === 'provider_default' || (profileAgent && profileAgent !== value('assistant.agent'));
+}
+$('#apply-quick').addEventListener('click', () => {
+  const effort = form.elements['models.quick.effort'];
+  if (!effort || $('#apply-quick').disabled) return;
+  if (![...effort.options].some(option => option.value === $('#quick-effort').value)) effort.add(new Option($('#quick-effort').value, $('#quick-effort').value));
+  effort.value = $('#quick-effort').value;
+  form.elements['models.mode'].value = 'by_task';
+  profilesChanged();$('#models-more').open = true;saveState();describeQuick();
+});
+$('#review-quick').addEventListener('click', () => { $('#models-more').open = true;form.elements['models.mode'].value = 'by_task';profilesChanged();saveState();form.elements['models.quick.selection']?.focus(); });
+
 function fillProfiles() {
   profileAgent = snapshot.shared.models?.agent || form.elements['assistant.agent'].value;
   form.elements['models.mode'].value = snapshot.shared.models?.mode || 'single';

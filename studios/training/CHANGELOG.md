@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased — 4.13.1
+
+Idle desks check a compact change signal before reading content again. Active work keeps its existing cadence; focus and reconnect catch up immediately. Incomplete metadata checks fall back to full reads, and connection failures back off.
+
 ## Unreleased — 4.13.0
 
 Slide-text review shows one slide at a time with a compact picker and collapsed speaker notes. Corrections, feedback and selection save privately across reloads without starting work. Earlier corrections remain available when the outline changes; approval uses only the exact validated current text.

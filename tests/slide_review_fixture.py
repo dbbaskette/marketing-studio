@@ -47,11 +47,13 @@ def main():
                     case.engine._store(root,record)
                 else:
                     record=case.engine._load(root);case.engine._edit_outline(root,record,value['slides']);case.engine._store(root,record)
+        reads_count={}
         class Fixture(page.RunnerPage):
             reads=(*page.RunnerPage.reads,'/api/fixture-review-state')
             def read(self,address,one):
                 if address=='/api/fixture-review-state':
-                    return protocol.as_json(200,{'jobs':len(case.workers.jobs)})
+                    return protocol.as_json(200,{'jobs':len(case.workers.jobs),'reads':dict(reads_count)})
+                reads_count[address]=reads_count.get(address,0)+1
                 return super().read(address,one)
         web=protocol.Desk(page=lambda port:Fixture(port,case.engine));web.start()
         print(json.dumps({'url':web.url,'path':str(root),'slides':args.slides}),flush=True)
