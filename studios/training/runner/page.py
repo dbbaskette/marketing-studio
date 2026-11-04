@@ -1438,7 +1438,7 @@ class RunnerPage(desk.Page):
                                    'whole. Add it again.')
         keep = kept(sent) if action == 'add' else False
         self.run(path)
-        found = self.engine.supply(path, action, name, data)
+        found = self.engine.supply(path, action, name, data, **({'impact': sent.get('impact')} if sent.get('impact') is not None else {}))
         # Kept in the Document Library too, when the person chose to, once the training took it.
         return {**found, 'library_kept': library.upload(name, data)} if keep else found
 

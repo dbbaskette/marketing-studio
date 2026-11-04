@@ -189,7 +189,7 @@ from studio_core import modules
 from studio_core.shared_runner import slides as _shared
 modules.bind(globals(), _shared, _shared.NAMES)
 
-RELEASE = '0.16.0'      # what a person is told to update to, as the installer pins it
+RELEASE = '0.17.0'      # what a person is told to update to, as the installer pins it
 # What a new deck needs of the slides tool, by the names its `version` lists: NEEDED for a
 # deck approved on its words and its look, as the brand's checkpoints are, and DESIGN_NEEDED
 # besides for one whose slides' designs are walked through first, when the person asks.

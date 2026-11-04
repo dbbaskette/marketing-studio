@@ -131,6 +131,7 @@
     () => '0123456789abcdef'[Math.floor(Math.random() * 16)]).join('');
   let saving = null;
 
+  const impactChoices = new Map();
   function init(parts) {
     h = parts;
     kit = typeof Drafting === 'undefined' ? null : Drafting.kit(FINISHING);
@@ -2028,8 +2029,12 @@
       { path, ids: [...ticked] }, leave, 'The outline and the look samples are being made '
       + 'again without them.'), 'desk-leave-out');
     leave.disabled = working || same();
+    const plan = found.change_impact;
+    const key = path + ':' + (plan?.expected || '');
+    const impact = plan && typeof StudioResearch !== 'undefined' && StudioResearch.impact ? StudioResearch.impact(plan, impactChoices.get(key)) : null;
+    if (impact) { impactChoices.clear(); impactChoices.set(key, impact.selected); }
     const again = h.capsule('Research again', '', () => act('desk-research-again',
-      { path, expected: found.expected }, again, 'The research runs again with your sources '
+      { path, expected: found.expected, ...(impact ? {impact: impact.value()} : {}) }, again, 'The research runs again with your sources '
       + 'as they are now.'), 'desk-research-again');
     again.disabled = working || !found.expected;
     const gaps = account ? h.list(account.gaps) : [];
@@ -2037,7 +2042,7 @@
       gaps.length ? h.add(make('div'), h.add(make('p'), make('strong', '',
         'What it could not find')), h.bullets(gaps)) : null,
       bar(leave), make('p', 'quiet', found.leave_out_price || ''),
-      bar(again), make('p', 'quiet', found.research_price || ''));
+      impact?.node, bar(again), make('p', 'quiet', found.research_price || ''));
   }
 
   // --- Finishing: the shared kit's panel, with the deck's four tools -----------------------------

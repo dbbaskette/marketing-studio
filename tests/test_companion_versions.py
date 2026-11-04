@@ -218,11 +218,11 @@ class CompanionVersionsTests(unittest.TestCase):
 
 
 class PinnedFloorTests(unittest.TestCase):
-    def test_slides_floor_is_the_pinned_release(self):
+    def test_slides_floor_preserves_supported_runtime_and_lock_names_new_release(self):
         pins = json.loads((ROOT / 'pins/companions.json').read_text(encoding='utf-8'))
         slides = pins['companions']['harness-slides']
         self.assertEqual(slides['requirement'], '>=0.16.0')
-        self.assertEqual(slides['version'], '0.16.0')
+        self.assertEqual(slides['version'], '0.17.0')
         installation = (ROOT / 'docs/installation.md').read_text(encoding='utf-8')
         self.assertIn('`requirement: ">=0.16.0"` for Harness Slides', installation)
         for path in ('README.md', 'docs/installation.md'):

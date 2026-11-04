@@ -155,8 +155,12 @@ def combine(case, task, areas, registry, base, offered, invoke, *, round, guidan
         selected = evidence(area)
         source_files = {source['file'] for source in selected['sources']}
         captures = [source for source in offered if source['file'] in source_files]
-        identity = fingerprint([PROTOCOL, {key: task[key] for key in rc.TASK_FIELDS}, area,
-            selected, [[source['file'], hashlib.sha256(rc.inside(case, source['file']).read_bytes()).hexdigest(),
+        bound = copy.deepcopy(selected)
+        for source in bound['sources']:
+            if source['permission'] == 'selected' and source.get('original_file') and not source['origin'].startswith(('https://', 'http://')):
+                source['origin'] = 'retained-original:' + source['original_file']
+        identity = fingerprint([PROTOCOL, {key: (area['questions'] if key == 'planning_questions' else (context or {}).get('scope_identity', task[key]) if key == 'scope' else task[key]) for key in rc.TASK_FIELDS}, area,
+            bound, [[source['file'], hashlib.sha256(rc.inside(case, source['file']).read_bytes()).hexdigest(),
                 hashlib.sha256(rc.inside(case, source['original']).read_bytes()).hexdigest() if source.get('original') else None]
                 for source in captures], context])
         with lock:

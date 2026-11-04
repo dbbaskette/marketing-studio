@@ -6059,10 +6059,11 @@ function updateResearchSheet() {
   const held = (view.run && view.run.documents) || {};
   const names = list(held.later).map((entry) => entry.name);
   const problem = problemLine();
+  const impact = view.run?.change_impact && typeof StudioResearch !== 'undefined' && StudioResearch.impact ? StudioResearch.impact(view.run.change_impact) : null;
   const go = capsule('Update it', 'filled', async () => {
     go.disabled = true;
     try {
-      view.run = await send('documents', { path: view.path, action: 'update' });
+      view.run = await send('documents', { path: view.path, action: 'update', ...(impact ? {impact: impact.value()} : {}) });
       closeSheet();
       toast('The research runs again with ' + series(names) + '.');
       paintRun(false);
@@ -6076,6 +6077,7 @@ function updateResearchSheet() {
   return [sheetTitle('Update the research?'),
     make('p', '', 'The research reads ' + series(names) + ' with the documents it read '
       + 'before.'),
+    ...(impact ? [impact.node] : []),
     held.update_price ? make('p', 'quiet', held.update_price.words) : null,
     problem, add(make('div', 'bar'), go, capsule('Cancel', 'quiet', closeSheet, 'cancel'))];
 }

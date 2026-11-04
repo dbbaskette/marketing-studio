@@ -219,6 +219,26 @@ elif [[ "${1:-full}" == audit-week3 || "${1:-full}" == audit-week4 ]]; then
     (cd studios/training && bash scripts/ci/check.sh "$python")
     bash scripts/ci/acceptance.sh "$python" "$results_dir/checks"
   } 2>&1 | tee "$results_dir/tests.log"
+elif [[ "${1:-full}" == audit-week6-final ]]; then
+  # Shared/real-helper/browser and all 2,181 Presentation Studio tests passed.
+  # Training Studio completed all 3,175 tests; only these classes observed the
+  # optional response key, absent-node handling or updated release label. Rerun
+  # each affected complete class, then package and every installer/CLI gate.
+  {
+    (cd studios/training && "$python" scripts/ci/run_tests.py test_desk.LibraryScreenTests test_desk.RunnerScreenTests test_runner_page.LaterTests test_runner_page.PullCopyTests test_runner_page.RunTests test_runner_page.WireTests test_runner_slides.CurrentTests test_runner_slides.FindingTheRuntimeTests && "$python" skills/training-studio/scripts/validate_package.py)
+    bash scripts/ci/acceptance.sh "$python" "$results_dir/checks"
+  } 2>&1 | tee "$results_dir/tests.log"
+elif [[ "${1:-full}" == audit-week6-finish ]]; then
+  # Root 968 checks and both browser journeys completed on the unchanged runtime;
+  # only the stale pin-version assertion required correction. Finish its targeted
+  # contract and every full affected native suite, package and CLI gate.
+  {
+    PYTHONPATH=tests "$python" -m unittest test_companion_versions.PinnedFloorTests test_research_impact -v
+    "$python" scripts/workflow_diagrams.py --check
+    (cd studios/presentation && "$python" scripts/ci/run_tests.py --jobs 4 && "$python" skills/presentation-studio/scripts/validate_package.py)
+    (cd studios/training && bash scripts/ci/check.sh "$python")
+    bash scripts/ci/acceptance.sh "$python" "$results_dir/checks"
+  } 2>&1 | tee "$results_dir/tests.log"
 elif [[ "${1:-full}" == audit-week3-final ]]; then
   # The complete shared suite and final outline browser passed on unchanged
   # application flow. Repeat all native tests after the copy assertion and JSON
