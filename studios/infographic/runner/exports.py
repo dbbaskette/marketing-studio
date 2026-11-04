@@ -41,6 +41,27 @@ def validate_manifest(value, export_id, project=None):
     return value
 
 
+def manifests(store, project):
+    """Validated delivery metadata only; no raster/source reads or provider work."""
+    ident = project['id']
+    root = store._project(ident) / 'exports'
+    require(not root.is_symlink(), 'The export directory cannot be a link.')
+    if not root.exists():
+        return []
+    found = []
+    for folder in root.iterdir():
+        if folder.name.startswith('e_') and not folder.is_symlink() and folder.is_dir():
+            try:
+                manifest = json.loads(_read(store.root,
+                    f'projects/{ident}/exports/{folder.name}/manifest.json', 100_000))
+                validate_manifest(manifest, folder.name)
+            except (OSError, ValueError):
+                continue
+            found.append({**manifest, 'current': manifest['basis'] == basis(project)
+                          and manifest['scene_digest'] == digest(project['scene'])})
+    return sorted(found, key=lambda item: (item['revision'], not item['draft']), reverse=True)
+
+
 def build(store, ident, *, expected_revision, executable, draft=False, renderer=render.render):
     from . import visual_review
     with store.locked():

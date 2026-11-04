@@ -57,38 +57,27 @@ class Engine:
                 'library': {'sources': library.marked(self.store, project),
                             'kept': kept,
                             'own': library.own(self.store, ident)},
-                'elements': labels.elements(project), 'readiness': progress.readiness(project, recovery),
+                'elements': labels.elements(project), 'readiness': progress.readiness(project, recovery, deliveries),
                 'roadmap': progress.roadmap(project, deliveries, review=review, review_checked=review_checked,
                                             page=pages.of)}
 
     def deliveries(self, ident):
         project = self.store.read(ident)
-        root = self.store._project(ident) / 'exports'
-        require(not root.is_symlink(), 'The export directory cannot be a link.')
-        if not root.exists():
+        found = exports.manifests(self.store, project)
+        if not found:
             return []
-        found = []
         review_checked = visual_review.checked(self.store, project)
         try:
             for source in project['sources']:sources.read(self.store,project,source)
             sources_intact=True
         except (ValueError,OSError):sources_intact=False
-        for folder in root.iterdir():
-            if folder.name.startswith('e_') and not folder.is_symlink() and folder.is_dir():
-                try:
-                    manifest = json.loads(_read(self.store.root,
-                        f'projects/{ident}/exports/{folder.name}/manifest.json', 100_000))
-                    exports.validate_manifest(manifest, folder.name)
-                except (OSError, ValueError):
-                    continue  # Incomplete delivery is never advertised as downloadable.
-                found.append({**manifest, 'current': manifest['basis'] == basis(project)
-                              and manifest['scene_digest'] == digest(project['scene']),
-                              'approved_current': not manifest['draft'] and project['approval'] is not None
-                              and manifest['revision'] == project['revision']
-                              and manifest['approval_digest'] == digest(project['approval'])
-                              and manifest['checks_digest'] == digest(project['checks'])
-                              and review_checked and sources_intact})
-        return sorted(found, key=lambda item: (item['revision'], not item['draft']), reverse=True)
+        for manifest in found:
+            manifest['approved_current'] = (not manifest['draft'] and project['approval'] is not None
+                and manifest['revision'] == project['revision']
+                and manifest['approval_digest'] == digest(project['approval'])
+                and manifest['checks_digest'] == digest(project['checks'])
+                and review_checked and sources_intact)
+        return found
 
     def propose(self, ident, *, expected_revision, automatic=False, fresh=False):
         with file_lock(self.store._project(ident) / 'jobs/author.lock'):
