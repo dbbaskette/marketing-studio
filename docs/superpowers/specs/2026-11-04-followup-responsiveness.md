@@ -12,3 +12,26 @@ Review of #336–#347, discovered while completing the remaining backlog. The ow
 ## Verification
 
 Use disposable settings, workspaces, identities, fake providers and protected real pages. Test the failure, conflict and recovery contracts and 390/1280 light/dark, keyboard and reduced effects at coherent milestones. Retain measured synthetic request/byte counts separately from live provider latency. Use the shared Tart runner for the integrated relevant suites and required package/CLI acceptance, reusing valid evidence for unchanged code. No provider call, real Google write, deployment or machine-specific operational record belongs in this change.
+
+## Proportional verification (owner clarification)
+
+The owner requested testing effort to match the size and risk of each change.
+Focused UI/copy changes use their affected module checks and one relevant browser
+journey. Shared saved-state/approval/concurrency contracts use their complete affected
+module suites and explicit conflict/recovery cases. Broad native suites are reserved
+for substantial runtime changes; unrelated studio, installer and provider checks are
+reused from valid unchanged-source evidence. A rebase, evidence note or test-fixture
+correction does not trigger another full-suite run. Existing required release gates
+remain intact.
+
+For the Home/preview cohort, the shared suite completed 1,032 cases and the Infographic
+Studio suite completed 262. One renderer-error inheritance mismatch in combined
+approval/export was repaired; its complete affected delivery/recovery/render modules
+then passed 30 cases. The real Home and preview-recovery browser journeys passed,
+including freshness/removal, focused controls, disconnection, reload, safe guidance
+and local-only retry. Native pipeline code in Blog Studio, Training Studio and
+Presentation Studio is unchanged, so their completed Brands/spending suite and
+package/launch evidence is reused. No additional four-studio rerun is required for
+this focused cohort. The original tested source is `15d123a1`, renderer correction
+`0e1d9764`; rebasing changes only the previously corrected spending test fixtures and
+verification entries. Operational logs/screenshots stay private.
