@@ -18,6 +18,9 @@ class DraftingPageTests(unittest.TestCase):
                               timeout=120)
         self.assertEqual(done.returncode, 0, done.stderr or done.stdout)
 
+    def test_slide_correction_conflict_recovery(self):
+        self.group('correctionRecovery')
+
     def test_shared_slide_text_checkpoint(self):
         self.group('slideContent')
 

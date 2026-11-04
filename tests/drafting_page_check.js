@@ -138,6 +138,43 @@ function studio(answers = {}) {
 }
 
 const groups = {
+  async correctionRecovery() {
+    context.confirm=()=>true;
+    const original=Array.from({length:30},(_,i)=>({title:'Slide '+(i+1),points:['Point'],notes:'Notes'}));
+    let held={revision:1,draft:{basis:'outline',edits:null,note:''}},failRead=false,failSave=false;
+    const calls=[];
+    const draft=new Drafting.ReviewDraft(async sent=>{
+      calls.push(sent);
+      if(sent.action==='read'){if(failRead)throw Error('Read unavailable');return JSON.parse(JSON.stringify(held));}
+      if(failSave)throw Error('Disk unavailable');
+      if(sent.expected!==held.revision){const error=Error('Stale');error.status=409;throw error;}
+      held={revision:held.revision+1,draft:sent.action==='save'?{...held.draft,...sent.patch}:null};return held;
+    },'outline');
+    await draft.load();
+    let decisions=0;
+    const panel=()=>Drafting.slideContent({slides:original,onEdit:()=>{},onDecision:()=>{decisions++;},persistence:draft});
+    let page=panel();
+    const button=(name)=>all(page).find(n=>n.tagName==='button'&&n.textContent===name);
+    const field=(name)=>all(page).find(n=>n.getAttribute('aria-label')===name);
+    const title=()=>all(page).find(n=>n.dataset.key?.match(/^slide-text \d+ Title$/));
+    title().value='Local first';await title().fire('input');await button('Next slide').fire('click');
+    title().value='Local second';await title().fire('input');
+    held={revision:2,draft:{basis:'outline',edits:original.map((s,i)=>({...s,title:i===29?'Remote thirtieth':s.title})),note:'Remote feedback'}};
+    await button('Save corrections').fire('click');assert(draft.stale);
+    const copy=JSON.parse(field('All local corrections').value);assert.equal(copy.edits[0].title,'Local first');assert.equal(copy.edits[1].title,'Local second');assert.equal(copy.edits.length,30);
+    const writes=calls.filter(c=>c.action==='save').length;
+    await button('Next slide').fire('click');await draft.keep(draft.state);await page.decide('approve');
+    assert.equal(calls.filter(c=>c.action==='save').length,writes);assert.equal(decisions,0);
+    page=panel();assert.equal(JSON.parse(field('All local corrections').value).edits[1].title,'Local second');
+    failRead=true;await button('Compare latest corrections').fire('click');assert.match(page.textContent,/Read unavailable/);assert(draft.stale);
+    failRead=false;await button('Compare latest corrections').fire('click');assert.match(page.textContent,/Different slides: 1, 2, 30/);assert.match(page.textContent,/Feedback differs/);
+    const before=JSON.stringify(held);await button('Use latest corrections').fire('click');assert.equal(JSON.stringify(held),before,'loading latest performs no writes');assert(!draft.stale);assert.equal(draft.state.edits[29].title,'Remote thirtieth');assert.equal(JSON.parse(field('All local corrections').value).edits[0].title,'Local first');
+    held={...held,revision:3};title().value='Another correction';await title().fire('input');await button('Save corrections').fire('click');assert(draft.stale,'new remote race is refused again');
+    await button('Compare latest corrections').fire('click');await button('Use latest corrections').fire('click');
+    failSave=true;title().value='Keep on error';await title().fire('input');await button('Save corrections').fire('click');assert.match(page.textContent,/Disk unavailable/);assert.equal(draft.state.edits[0].title,'Keep on error');
+    failSave=false;await button('Save corrections').fire('click');assert.equal(held.draft.edits[0].title,'Keep on error');assert.equal(decisions,0);
+    const reloaded=new Drafting.ReviewDraft(async()=>JSON.parse(JSON.stringify(held)),'outline');await reloaded.load();assert.equal(reloaded.state.edits[0].title,'Keep on error');
+  },
   async slideContent() {
     const decisions = [], notes = [];
     const panel = Drafting.slideContent({slides: [{title: '<unsafe>', points: [{label: 'Claim', text: 'A short supported claim.'}], notes: 'Presenter explanation.'}],

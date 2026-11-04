@@ -103,6 +103,7 @@ const Drafting = (() => {
         } catch (error) {
           this.problem = error.message || 'The intake could not be saved. Your answers are still here.';
           this.pending = null;
+          this.failed?.(error);
           return false;
         }
       }
@@ -194,7 +195,7 @@ const Drafting = (() => {
   // makes a decision as its own buttons do, for that toolbar button.
   class ReviewDraft extends Intake {
     constructor(request, basis) {
-      super(request);this.basis=basis;this.conflict=null;this.restored=false;this.notify=()=>{};
+      super(request);this.basis=basis;this.conflict=null;this.restored=false;this.notify=()=>{};this.stale=false;this.latest=null;this.recovery=null;
       this.state={basis,edits:null,note:'',selected:0,notes_open:false};
     }
     status(){this.notify(this);}
@@ -207,9 +208,25 @@ const Drafting = (() => {
       }
       return this.state;
     }
-    queueReview(){if(!this.conflict)this.queue(this.state);else this.status();}
-    async write(){await this.load();if(this.conflict){this.pending=null;this.status();return false;}return super.write();}
+    failed(error){if(error.status===409){this.stale=true;this.problem='';this.latest=null;this.recovery=JSON.parse(JSON.stringify(this.state));}}
+    async compareLatest(){
+      try {this.latest=await this.request({action:'read'});this.problem='';return true;}
+      catch(error){this.problem=error.message||'Latest corrections could not be read. Your local corrections are kept.';return false;}
+      finally {this.status();}
+    }
+    useLatest(){
+      if(!this.latest)return false;
+      const held=this.latest;this.revision=held.revision;this.saved=held.draft;this.encoded={};
+      for(const [key,value] of Object.entries(held.draft||{}))this.encoded[key]=JSON.stringify(value);
+      this.pending=null;clearTimeout(this.timer);this.timer=null;this.stale=false;this.problem='';
+      this.conflict=held.draft?.basis&&held.draft.basis!==this.basis?held.draft:null;
+      Object.assign(this.state,{basis:this.basis,edits:null,note:'',selected:0,notes_open:false},this.conflict?{}:held.draft||{});
+      this.latest=null;this.status();return true;
+    }
+    queueReview(){if(!this.conflict&&!this.stale)this.queue(this.state);else this.status();}
+    async write(){await this.load();if(this.conflict||this.stale){this.pending=null;this.status();return false;}return super.write();}
     async discardReview(){
+      if(this.stale){this.status();return false;}
       if(this.conflict)this.pending=null;
       const done=await super.discard();
       if(done){this.conflict=null;Object.assign(this.state,{basis:this.basis,edits:null,note:'',selected:0,notes_open:false});}
@@ -317,7 +334,7 @@ const Drafting = (() => {
     text.addEventListener('input', () => { onNote(text.value);remember();if (!text.value.trim()) pending.hidden = true; });
     async function decide(kind, typed = 'ask') {
       if (busy) return;
-      if(persistence){await persistence.load();if(persistence.conflict){problem.textContent='Review the earlier saved corrections before deciding this version.';return;}}
+      if(persistence){await persistence.load();if(persistence.conflict||persistence.stale){persistence.status();return;}}
       if (kind === 'changes' && !text.value.trim()) { problem.textContent = 'Say what should change in the slide text.'; text.focus(); return; }
       if (kind === 'approve' && typed === 'ask' && text.value.trim()) {
         problem.textContent = ''; pending.hidden = false; sendFirst.focus();
@@ -336,8 +353,8 @@ const Drafting = (() => {
         else await onDecision(kind, said);
         if(persistence)await persistence.discardReview();
       }
-      catch (error) { problem.textContent = error.message; }
-      finally { off(false); }
+      catch (error) { if(persistence&&error.status===409)persistence.failed(error);problem.textContent = persistence?.stale||persistence?.problem ? '' : error.message; }
+      finally { off(false);persistence?.status(); }
     }
     ask.addEventListener('click', () => decide('changes'));
     approve.addEventListener('click', () => decide('approve'));
@@ -350,16 +367,34 @@ const Drafting = (() => {
     if(persistence){
       const save=make('button','button','Save corrections'),discard=make('button','button button-quiet','Discard corrections');save.type=discard.type='button';
       box.append(add(make('div','bar'),save,discard));
+      const recovery=make('div','paper callout');recovery.hidden=true;box.append(recovery);
       const hydrate=()=>{const value=persistence.state;if(editing){work.splice(0,work.length,...JSON.parse(JSON.stringify(Array.isArray(value.edits)?value.edits:slides||[])));onEdit(edited()?work:null);}text.value=value.note||'';onNote(text.value);selected=Math.max(0,Math.min(value.selected||0,all().length-1));notesOpen=!!value.notes_open;drawSlide();};
       const show=()=>{
-        saved.textContent=persistence.conflict?'Earlier corrections need your review.':persistence.problem||((persistence.pending||persistence.writing)?'Saving corrections…':(persistence.saved?'Review draft saved privately. No design work started.':'No local corrections yet. Design waits for approval.'));
+        saved.textContent=persistence.stale?(persistence.problem||'Corrections changed in another tab. Your local edits are kept below.'):persistence.conflict?'Earlier corrections need your review.':persistence.problem||((persistence.pending||persistence.writing)?'Saving corrections…':(persistence.saved?'Review draft saved privately. No design work started.':'No local corrections yet. Design waits for approval.'));
         saved.className=persistence.problem?'problem':'quiet field-hint';
         earlier.hidden=!persistence.conflict;
-        if(!busy){for(const control of items.querySelectorAll('input,textarea'))control.disabled=Boolean(persistence.conflict);text.disabled=ask.disabled=approve.disabled=save.disabled=Boolean(persistence.conflict);}
+        if(!busy){for(const control of items.querySelectorAll('input,textarea'))control.disabled=Boolean(persistence.conflict||persistence.stale);text.disabled=ask.disabled=approve.disabled=save.disabled=Boolean(persistence.conflict||persistence.stale);discard.disabled=persistence.stale;}
+        recovery.hidden=!persistence.recovery;
+        if(persistence.recovery){
+          const local=make('textarea','input');local.readOnly=true;local.rows=6;local.setAttribute('aria-label','All local corrections');local.value=JSON.stringify(persistence.recovery,null,2);
+          const copy=make('button','button','Copy all local corrections');copy.type='button';
+          copy.addEventListener('click',async()=>{local.focus();local.select?.();try{await navigator.clipboard.writeText(local.value);copy.textContent='Copied all local corrections';}catch(_){copy.textContent='Selected — copy the complete text';}});
+          const compare=make('button','button','Compare latest corrections');compare.type='button';
+          compare.addEventListener('click',async()=>{compare.disabled=true;await persistence.compareLatest();});
+          recovery.replaceChildren(make('h3','row-title','Recover your corrections'),make('p','','All local slides and feedback are kept here for copying. Copy before closing or reloading this page. Load the latest saved version, then paste any corrections you want to keep into its slide fields. Nothing is merged automatically.'),local,copy);
+          if(persistence.stale)recovery.append(compare);
+          if(persistence.stale&&persistence.latest){
+            const remote=persistence.latest.draft||{},left=persistence.recovery.edits||slides||[],right=remote.edits||slides||[];
+            const differences=[];for(let i=0;i<Math.max(left.length,right.length);i++)if(JSON.stringify(left[i])!==JSON.stringify(right[i]))differences.push(String(i+1));
+            recovery.append(make('p','', 'Different slides: '+(differences.join(', ')||'none')+'. Feedback '+((persistence.recovery.note||'')===(remote.note||'')?'matches.':'differs.')+(remote.basis&&remote.basis!==persistence.basis?' The saved version belongs to an earlier outline.':'')));
+            const latest=make('textarea','input');latest.readOnly=true;latest.rows=6;latest.setAttribute('aria-label','Latest saved corrections');latest.value=JSON.stringify(remote,null,2);recovery.append(latest);
+            const use=make('button','button','Use latest corrections');use.type='button';use.addEventListener('click',()=>{if(!confirm('Load the latest saved corrections into this review? Your local recovery copy stays below. No corrections will be overwritten on the server.'))return;persistence.useLatest();hydrate();problem.textContent='';show();});recovery.append(use);
+          }
+        }
         if(persistence.conflict){const value=persistence.conflict;const content=make('textarea','input');content.readOnly=true;content.rows=6;content.setAttribute('aria-label','Earlier saved corrections');content.value=(value.edits||[]).map((slide,i)=>(i+1)+'. '+slide.title+'\n'+(slide.points||[]).map(p=>typeof p==='string'?p:[p.label,p.text].filter(Boolean).join(': ')).join('\n')+'\n'+(slide.notes||'')).join('\n\n')+'\nFeedback: '+(value.note||'');earlier.replaceChildren(make('p','','The outline changed after these corrections were saved. Copy the corrections you need, then discard this earlier draft to review the current outline.'),content);}
       };
       persistence.notify=show;
-      save.addEventListener('click',async()=>{remember();if(!await persistence.keep(persistence.state))problem.textContent=persistence.problem||'Review the earlier corrections first.';show();});
+      save.addEventListener('click',async()=>{remember();await persistence.keep(persistence.state);problem.textContent='';show();});
       discard.addEventListener('click',async()=>{if(!confirm('Discard these saved corrections and use the current outline? The outline and approved files are kept.'))return;if(await persistence.discardReview()){hydrate();problem.textContent='';}show();});
       if(persistence.restored){hydrate();show();}
       else {off(true);persistence.load().then(()=>{if(!box.isConnected)return;hydrate();off(false);show();}).catch(error=>{problem.textContent=error.message;off(false);});}
