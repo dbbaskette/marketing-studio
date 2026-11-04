@@ -20,7 +20,7 @@ def budget(value=None):
 
 def enabled(record):
     value = record.get('slide_story')
-    return record.get('schema') == SCHEMA and isinstance(value, dict) and type(value.get('schema')) is int and value['schema'] == 1
+    return record.get('schema') in (SCHEMA, 6) and isinstance(value, dict) and type(value.get('schema')) is int and value['schema'] == 1
 
 
 def applies(record):

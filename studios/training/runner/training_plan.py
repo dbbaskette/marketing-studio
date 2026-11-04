@@ -17,9 +17,9 @@ STEP = 'review:training-plan'
 
 def enabled(record):
     value = record.get('training_plan')
-    if record.get('schema') not in (RECORD_SCHEMA, outline_first.RECORD_SCHEMA) or not isinstance(value, dict):
+    if record.get('schema') not in (RECORD_SCHEMA, outline_first.RECORD_SCHEMA, 8) or not isinstance(value, dict):
         return False
-    if ((record['schema'] == outline_first.RECORD_SCHEMA and not outline_first.enabled(record))
+    if ((record['schema'] in (outline_first.RECORD_SCHEMA, 8) and not outline_first.enabled(record))
             or (record['schema'] == RECORD_SCHEMA and 'outline_first' in record)):
         return False
     if type(value.get('schema')) is not int or value['schema'] != 1:

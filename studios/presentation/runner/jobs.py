@@ -429,12 +429,15 @@ class Jobs:
         return replace(work, task=work.task + '\n\n' + FROM_AUTHOR.format(
             text='\n\n'.join(quoted(text) for text in carried)))
 
-    def _job(self, root: Path, run: Run, name: str, doing: str, work, deck: bool = True, *, limits=None):
+    def _job(self, root: Path, run: Run, name: str, doing: str, work, deck: bool = True, *, limits=None, section=None):
         """Run one worker on one job. Returns how the agent ended, what the worker tools
         accepted from it, when it started and the job's folder. A note the person left for
         the next step goes with it, once."""
         work = self._noted(root, name, doing, work)
         record = self._load(root)
+        if section:
+            record = {**record, 'limits': {**record['limits'], 'step_seconds': max(record['limits']['step_seconds'],
+                (record.get('section_synthesis') or {}).get('more_time', {}).get(section, 0))}}
         from runner import slide_story
         if name == 'outline' and slide_story.applies(record):
             work = replace(work, prepared={**work.prepared, 'inputs': {**work.prepared.get('inputs', {}),

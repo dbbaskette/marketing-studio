@@ -61,3 +61,19 @@ def research_stop(folder):
     sources = [*value['sources'], dict(id='mine-a', permission='selected'), dict(id='mine-b', permission='selected')]
     sources[0].update(context='partial', context_note='Pages 1 to 4 only.')
     return published_bundle(folder, findings=value['findings'], sources=sources, evidence=value['facts'])
+
+
+def section_value(payload):
+    """Small fictional author output for actual worker-tool validation."""
+    if 'completed_sections' in payload:
+        first = payload['completed_sections']['findings'][0]['id']
+        return {'schema': 2, 'sections': [], 'brief': [{'id': 'takeaway', 'title': 'Takeaway',
+            'blocks': [{'text': 'More than one instance keeps capacity.', 'kind': 'summary', 'refs': [first]}]}]}
+    import copy
+    ident = payload['section']['questions'][0]['id']
+    fact = payload['evidence']['facts'][0]['id']
+    finding = copy.deepcopy(dossier(payload['worker'])['findings'][0])
+    finding.update(id=ident, summary={'text': 'More than one instance keeps capacity.', 'kind': 'summary', 'refs': [fact]},
+        support=[fact], counter=[], conditions=[], implications=[], gaps=[])
+    return {'schema': 2, 'findings': [finding], 'sections': [{'id': ident, 'title': 'Section ' + ident,
+        'blocks': [{'text': 'More than one instance keeps capacity.', 'kind': 'summary', 'refs': [ident]}]}]}

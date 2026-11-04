@@ -27,6 +27,7 @@ What a caller needs to know
 """
 from __future__ import annotations
 
+from studio_core import research_sections
 import contextvars
 import json
 import re
@@ -317,7 +318,8 @@ class Researching:
                             self._title(record.get('agent')), outcome, outcome.detail), KEPT,
                             action=stops.agent_action(outcome))
                     elif outcome.reason == 'timeout':
-                        self._out_of_time(root, 'research', 'The research', record, 1)
+                        if not research_sections.timeout(self, root, refusal, 'presentation'):
+                            self._out_of_time(root, 'research', 'The research', record, 1)
                     else:
                         self._problem(root, 'research', 'failed', str(refusal), KEPT)
                     raise Halted()

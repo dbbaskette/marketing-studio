@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased — 4.10.0
+
+New outline-first work keeps section contributions across retries, combines at most three at once, and gives only a timed-out contribution more time. A short final author reads the contributions; the supported independent whole-report check still gates use. Existing saved flows retain their schemas and helper versions.
+
 ## Unreleased — 4.9.1
 
 - Share strict provisional-outline validation and bounded source excerpts with Presentation
