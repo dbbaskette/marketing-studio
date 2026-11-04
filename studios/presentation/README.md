@@ -13,6 +13,11 @@ research. Your own brand skill supplies the visual identity.
 
 [Install](#install) · [Your first deck](#your-first-deck) · [Runner guide](docs/runner.md)
 
+Completed research section drafts survive a failed peer; retry unfinished work.
+Source changes first show the affected scope, while wording and notes can stay
+local. Final independent checks and exact-revision approval remain necessary.
+See the [incremental workflow guide](../../docs/incremental-workflow.md).
+
 ## Install
 
 Choose an available platform or Presentation Studio subset bundle from

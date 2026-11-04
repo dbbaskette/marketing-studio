@@ -38,6 +38,8 @@ class CoreTests(unittest.TestCase):
             with self.subTest(studio=identifier):
                 payload = bundles.inventory(ROOT, [identifier])
                 self.assertIn('docs/shared-setup.md', payload)
+                for guide in ('incremental-workflow.md', 'research-synthesis.md', 'audit-integration-evidence.md'):
+                    self.assertIn('docs/' + guide, payload)
                 for asset in ('index.html', 'app.js', 'home.css', 'style.css'):
                     self.assertIn('core/studio_core/setup_web/' + asset, payload)
                     self.assertIn('studios/' + identifier + '/skills/' + identifier
