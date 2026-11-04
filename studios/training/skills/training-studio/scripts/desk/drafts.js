@@ -2734,26 +2734,36 @@ function deskLead(run, held, ours) {
 }
 
 function slideTextReview(outline, held) {
-  const path = view.path, turn = view.turn;
-  const review = Drafting.slideContent({slides: outline.slides,
-    label: 'Review slide text' + (outline.level ? ' · Level ' + outline.level : ''),
-    note: held.slideTextNote || '', onNote: note => { held.slideTextNote = note; },
-    onDecision: async (decision, note) => {
-      const result = await send('outline', {path, level: outline.level || null,
-        decision: decision === 'changes' ? 'revise' : 'approve', note, seen: outline.sha256});
-      if (view.turn !== turn) return;
-      held.slideTextNote = ''; view.run = result; await drawDesk(true);
-    }});
-  review.id = 'slide-text-review';
-  // The note's label wraps it; it is also named by id, so every reader finds its name.
-  const note = review.querySelector('textarea');
-  const label = note && note.parentNode;
-  if (note && label && label.tagName === 'LABEL') {
-    note.id = 'slide-text-note';
-    label.htmlFor = note.id;
-    note.dataset.key = 'slide-text-note';
+  const path=view.path,turn=view.turn,key=outline.level||'';
+  held.slideTextReviews ||= {};
+  let state=held.slideTextReviews[key];
+  if(!state||state.basis!==outline.sha256){
+    state=held.slideTextReviews[key]={basis:outline.sha256,note:'',edits:null,
+      draft:new Drafting.ReviewDraft(sent=>sent.action==='read'?ask('slide-text-draft',{path,level:outline.level||''}):send('slide-text-draft',{path,level:outline.level||null,...sent}),outline.sha256)};
   }
+  const review=Drafting.slideContent({slides:outline.slides,
+    label:'Review slide text'+(outline.level?' · Level '+outline.level:''),persistence:state.draft,
+    note:state.note,onNote:note=>state.note=note,
+    edits:state.edits,onEdit:slides=>state.edits=slides,
+    onDecision:async(decision,note,edited)=>{
+      const result=await send('outline',{path,level:outline.level||null,
+        decision:decision==='changes'?'revise':'approve',note,seen:outline.sha256,
+        ...(edited?{edited}:{})});
+      if(view.turn!==turn)return;
+      state.note='';state.edits=null;view.run=result;await drawDesk(true);
+    }});
+  review.id='slide-text-review';
   return review;
+}
+
+function slideTextNotice(outline,held,shown){
+  const deck=shown.find(one=>one.kind==='deck');
+  const open=capsule('Review slide text','quiet',()=>{
+    if(deck){held.sources=false;held.material[held.level||'']=deck.name;paintDesk(true);}
+    const heading=byId('slide-text-review')?.querySelector('h2');if(heading){heading.tabIndex=-1;heading.focus({preventScroll:true});}
+  },'desk-open-slide-text');
+  return add(make('section','paper slide-text-notice'),make('h2','doc-title','Deck text needs your approval'),
+    make('p','quiet','Review and correct the slide text in Deck before design starts. The other training materials stay available below.'),open);
 }
 
 // The provisional teaching scope is edited locally; only explicit approval starts research.
@@ -2943,6 +2953,8 @@ function paintDesk(fresh) {
   const ours = deskOurs();
   const conversation = found.execution === 'conversation';
   // The level is settled first: what leads depends on what of it waits for Mark ready.
+  if(!fresh&&held.slideTextBasis===run.outline?.sha256&&run.outline?.content_first&&run.outline.waiting&&document.activeElement?.closest?.('#slide-text-review'))return;
+  held.slideTextBasis=run.outline?.sha256;
   const tabs = deskTabs(found, held);
   const lead = deskLead(run, held, ours);
   const drawn = JSON.stringify([found, run.state, run.question, run.problem, run.documents,
@@ -3022,6 +3034,7 @@ function paintDesk(fresh) {
     paintDesk(true);
   }, 'desk-material');
   const column = add(make('div', 'desk-column'), ...shown.filter(one => one.name === selected).map(deskCard));
+  if(ours&&run.outline?.content_first&&run.outline.waiting&&shown.some(one=>one.name===selected&&one.kind==='deck'))column.prepend(slideTextReview(run.outline,held));
   if (!shown.length) column.append(make('p', 'quiet', 'Nothing is made at this level.'));
   const finishing = finishingMaterial();
   if (finishing) {
@@ -3052,7 +3065,7 @@ function paintDesk(fresh) {
     ours ? needsPart(found, held, run) : null,
     conversation || waitingPlan ? null : progressPart(found, held, lead),
     waitingPlan ? trainingPlanReview(run.training_plan, held) : null,
-    ours && run.outline?.content_first && run.outline.waiting ? slideTextReview(run.outline, held) : null,
+    ours && run.outline?.content_first && run.outline.waiting ? slideTextNotice(run.outline, held, shown) : null,
     run.question && ours ? questionPart(run, found.title) : null,
     run.problem ? problemPart(run, lead === 'problem') : null,
     adding(run) && ours && !held.unsent ? documentsCard(run, lead === 'documents') : null,

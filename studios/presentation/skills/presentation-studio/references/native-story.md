@@ -15,3 +15,5 @@ dossier. A refresh first previews changed inputs and affected sections. Retain
 unaffected evidence through the supported protocol; never carry approval merely
 because a slide image is unchanged. Notes-only and focused word edits keep their
 direct route. Research, local saving and final delivery remain distinct decisions.
+
+Slide-text review keeps corrections, feedback, selected slide and speaker-note visibility privately across reloads. Save corrections starts no work. The picker shows one slide at a time; approval covers the whole current outline. If the outline changed, copy needed earlier corrections and explicitly discard that draft before deciding. Local corrections are validated and approved as the exact text sent to design.

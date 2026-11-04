@@ -1627,3 +1627,34 @@ def patch_section(section: dict, slide: str, field: str, old: str, new: str) -> 
     node, key = found[0]
     node[key] = node[key].replace(old, new)
     return made
+
+
+def local_corrections(outline: dict, edited) -> dict:
+    """Apply only title, point-label/text and note corrections to this exact slide order."""
+    import copy
+    current = shown(outline)
+    if not isinstance(edited, list) or len(edited) != len(current):
+        raise ValueError('Keep every slide in its current order for a local correction.')
+    made = copy.deepcopy(outline)
+    for original, displayed, changed in zip(slides_of(made), current, edited):
+        if not isinstance(changed, dict) or {k: v for k, v in changed.items() if k not in ('title', 'points', 'notes')} != {k: v for k, v in displayed.items() if k not in ('title', 'points', 'notes')}:
+            raise ValueError('Local corrections keep slide identities, order, sources and structure. Ask for changes for a broader revision.')
+        for field in ('title', 'notes'):
+            value = changed.get(field)
+            if value is None and field == 'notes': value = ''
+            if not isinstance(value, str) or len(value) > (1000 if field == 'title' else 16000) or field == 'title' and not value.strip():
+                raise ValueError('Give a short title and bounded speaker notes for each slide.')
+            if value != (displayed.get(field) or ''):
+                original[field] = value
+        points = changed.get('points')
+        if not isinstance(points, list) or len(points) != len(displayed['points']):
+            raise ValueError('Keep the number of points for a local correction.')
+        for raw, before, after in zip(_points(original), displayed['points'], points):
+            if not isinstance(after, dict) or {k:v for k,v in after.items() if k not in ('label','text')} != {k:v for k,v in before.items() if k not in ('label','text')}:
+                raise ValueError('Local corrections keep the structure of each point.')
+            for key in ('label','text'):
+                value = after.get(key)
+                if not isinstance(value,str) or len(value)>4000:
+                    raise ValueError('Keep point corrections within four thousand characters.')
+                if value != before.get(key): raw[key] = value
+    return made

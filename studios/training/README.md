@@ -90,7 +90,7 @@ optional tools. Missing capabilities are explained rather than silently substitu
    starts research only for that scope. The checked evidence and approved outline
    makes the selected materials. There is no sample lesson to approve.
 4. **Review requested slide text.** If you selected a deck, **Review slide text**
-   shows its words and notes. Ask for changes or choose **Approve text & design deck**
+   opens the Deck tab with one slide at a time. Corrections, notes and selection save privately across reloads; the Guide, Brief and Plan tabs stay available. Ask for changes or choose **Approve text & design deck**
    for that version before design starts.
 5. **Read, edit and mark ready.** Material tabs show the formatted guide, brief,
    slides and practice; level tabs keep the depth separate. Review results as they

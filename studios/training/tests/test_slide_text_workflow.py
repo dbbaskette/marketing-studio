@@ -62,3 +62,80 @@ class CurrentCriticRepairTests(DeckCase):
         job = [spec for kind, _, spec in self.workers.jobs if kind == 'review'][-1]
         self.assertEqual(len(job['review']['slides']), 6)
         self.assertEqual(self.built(root)['rounds'][-1]['review']['findings'], [])
+
+
+class LocalTextCorrections(DeckCase):
+    def test_approval_checks_and_designs_exactly_the_locally_corrected_text(self):
+        from copy import deepcopy
+        from runner import pipeline
+        self.engine.content_first=True
+        root=self.begin(flow='desk')
+        shown=self.view(root)['outline']
+        edited=deepcopy(shown['slides'])
+        edited[0]['title']='Rolling restarts, corrected locally'
+        edited[1]['notes']='Emphasize available capacity.'
+        self.assertFalse(self.workers.of('section'))
+        self.engine.outline(root,None,'approve',seen=shown['sha256'],edited=edited)
+        kept=pipeline.outline_of(root,None)
+        self.assertEqual(kept['slides'][0]['title'],edited[0]['title'])
+        self.assertEqual(kept['slides'][1]['notes'],edited[1]['notes'])
+        approval=self.engine._load(root)['deck']['']['approved']
+        from workspace import sha256_file
+        self.assertEqual(approval['sha256'],sha256_file(pipeline.place(root,None,pipeline.OUTLINE)))
+        self.assertTrue(self.workers.of('section'))
+
+    def test_local_corrections_cannot_change_slide_structure_or_approve_another_version(self):
+        from copy import deepcopy
+        from runner import pipeline
+        self.engine.content_first=True
+        root=self.begin(flow='desk')
+        shown=self.view(root)['outline'];before=pipeline.place(root,None,pipeline.OUTLINE).read_bytes()
+        edited=deepcopy(shown['slides']);edited[0]['id']='another-slide'
+        with self.assertRaises(WorkspaceError):self.engine.outline(root,None,'approve',seen=shown['sha256'],edited=edited)
+        edited=deepcopy(shown['slides']);edited[0]['title']='Local correction'
+        with self.assertRaises(WorkspaceError):self.engine.outline(root,None,'approve',seen='earlier-version',edited=edited)
+        self.assertEqual(pipeline.place(root,None,pipeline.OUTLINE).read_bytes(),before)
+        self.assertFalse(self.workers.of('section'))
+
+
+class ConcurrentLocalCorrections(DeckCase):
+    def test_changed_teaching_inputs_during_validation_cannot_be_approved(self):
+        from copy import deepcopy
+        from unittest import mock
+        from runner import pipeline,worker_tools
+        import workspace
+        self.engine.content_first=True
+        root=self.begin(flow='desk');shown=self.view(root)['outline']
+        before=pipeline.place(root,None,pipeline.OUTLINE).read_bytes()
+        edited=deepcopy(shown['slides']);edited[0]['title']='Local correction'
+        original=worker_tools.check_outline
+        def changed(*args,**kwargs):
+            result=original(*args,**kwargs)
+            session=workspace.load(root)
+            file=root/workspace.artifact(root,session,'blueprint')['file']
+            file.write_text(file.read_text()+'\nConcurrent teaching input change.\n')
+            return result
+        with mock.patch.object(worker_tools,'check_outline',changed),self.assertRaises(WorkspaceError):
+            self.engine.outline(root,None,'approve',seen=shown['sha256'],edited=edited)
+        self.assertEqual(pipeline.place(root,None,pipeline.OUTLINE).read_bytes(),before)
+        self.assertFalse(self.workers.of('section'))
+
+
+class PrivateTextDrafts(PageCase):
+    def test_saved_corrections_are_private_revision_checked_and_start_no_pipeline_work(self):
+        from copy import deepcopy
+        from runner import pipeline
+        self.engine.content_first=True
+        root=self.begin(flow='desk');shown=self.view(root)['outline']
+        before=pipeline.place(root,None,pipeline.OUTLINE).read_bytes();jobs=len(self.workers.jobs)
+        held=self.post('slide-text-draft',{'path':str(root),'action':'read'})
+        edited=deepcopy(shown['slides']);edited[0]['title']='Private pending correction'
+        sent={'path':str(root),'action':'save','expected':held['revision'],
+            'patch':{'basis':shown['sha256'],'edits':edited,'note':'Explain the risk','selected':1}}
+        saved=self.post('slide-text-draft',sent)
+        self.assertNotIn('draft',saved)
+        self.assertEqual(self.post('slide-text-draft',{'path':str(root),'action':'read'})['draft']['edits'],edited)
+        self.post('slide-text-draft',sent,expect=409)
+        self.assertEqual(len(self.workers.jobs),jobs)
+        self.assertEqual(pipeline.place(root,None,pipeline.OUTLINE).read_bytes(),before)
+        self.assertIsNone(self.engine._load(root)['deck'][''].get('approved'))

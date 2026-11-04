@@ -76,3 +76,28 @@ def dispatch(data, scope, sent):
         finally:
             pending.unlink(missing_ok=True)
         return value
+
+
+def slide_review(data, scope, sent):
+    """Private corrections only: no outline, approval or pipeline record is changed."""
+    patch = sent.get('patch') if isinstance(sent, dict) else None
+    if patch is not None:
+        allowed = {'basis', 'edits', 'note', 'selected', 'notes_open', 'intakeOpen'}
+        if not isinstance(patch, dict) or set(patch) - allowed:
+            raise ValueError('Save only the displayed slide-text corrections.')
+        if 'basis' in patch and (not isinstance(patch['basis'], str) or not 1 <= len(patch['basis']) <= 256):
+            raise ValueError('Keep the outline identity with these corrections.')
+        if 'edits' in patch and patch['edits'] is not None and (not isinstance(patch['edits'], list)
+                or len(patch['edits']) > 100 or not all(isinstance(slide, dict) for slide in patch['edits'])):
+            raise ValueError('Keep up to one hundred slide corrections.')
+        if 'note' in patch and (not isinstance(patch['note'], str) or len(patch['note']) > 4000):
+            raise ValueError('Keep feedback within four thousand characters.')
+        if 'selected' in patch and (type(patch['selected']) is not int or not 0 <= patch['selected'] < 100):
+            raise ValueError('Choose a slide in this review.')
+        if len(json.dumps(patch).encode()) > 480_000:
+            raise ValueError('These corrections exceed the saved-draft text limit.')
+    try:
+        held = dispatch(data, {'kind': 'slide-text-review', 'work': scope}, sent)
+    except Conflict:
+        raise Conflict('These corrections changed in another tab. Copy your unsaved text, then reload this review. No design work started.') from None
+    return {'revision': held['revision']} if sent.get('action') == 'save' else held

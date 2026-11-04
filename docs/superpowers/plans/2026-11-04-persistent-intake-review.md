@@ -21,5 +21,23 @@ form or corrections never approves output or runs an assistant, researcher or re
 
 Maintain native ownership, shared settings locks, source scope, final evidence checks,
 legacy run decisions and old approved exports. Native runtime/guidance minimums move
-together where new documented actions require them. Full relevant suites and package
-checks use the existing disposable Tart infrastructure; no personal state or providers.
+together where new documented actions require them. Verification covers the changed shared store/editor modules, native route and approval
+modules, bridge limits, package validators and six/thirty-slide protected browser
+journeys. Reuse unchanged full-suite evidence from PRs #348–350. No personal state
+or providers are used; no repeated four-studio gate is warranted.
+
+## Verification
+
+The complete affected shared draft/editor modules pass (18 cases), Training Studio
+slide-text workflow (7), Presentation Studio slide-text workflow (3), native review
+API/capability/request-boundary groups (12 Presentation Studio and 9 Training Studio),
+and bridge-limit module (3). Both skill package validators pass. Infographic Studio's
+private-intake API checks and real captured-source reload journey pass.
+
+Protected native browser journeys pass for both deck studios at six and thirty
+slides, 390/1280 widths, light/dark and reduced motion. Edits, notes and selection
+survive reload; one editor stays bounded; focus/caret survive polling; private saves
+start zero pipeline jobs. Additional six-slide journeys retain older-basis corrections,
+block their approval and allow explicit discard without changing the outline or jobs.
+All fixtures use disposable state and scripted workers; these checks make no live
+model latency, provider-quality or owner-acceptance claim.

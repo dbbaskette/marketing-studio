@@ -43,6 +43,7 @@ class Element {
 function all(node) { return node.children.flatMap(child => [child, ...all(child)]); }
 function classes(node) { return String(node.className || '').split(' ').filter(Boolean); }
 function matches(node, selector) {
+  if(selector.includes(','))return selector.split(',').some(part=>matches(node,part.trim()));
   if (selector.startsWith('.')) return selector.slice(1).split('.').every(name => classes(node).includes(name));
   const [tag, cls] = selector.split('.');
   return node.tagName === tag && (!cls || classes(node).includes(cls));
@@ -143,7 +144,7 @@ const groups = {
       onNote: text => notes.push(text), onDecision: async (...args) => { decisions.push(args); }});
     assert.ok(panel.textContent.includes('<unsafe>'));
     assert.equal(all(panel).filter(n => n.tagName === 'img' || n.tagName === 'iframe').length, 0);
-    const buttons = all(panel).filter(n => n.tagName === 'button');
+    const buttons = ['Ask for changes','Approve text & design deck','Send these changes first','Approve without them'].map(label=>all(panel).find(n=>n.tagName==='button'&&n.textContent===label));
     assert.equal(buttons[1].textContent, 'Approve text & design deck');
     await buttons[0].fire('click'); assert.equal(decisions.length, 0);
     const input = all(panel).find(n => n.tagName === 'textarea');
