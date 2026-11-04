@@ -7,7 +7,7 @@ import threading
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from studio_core import preferences, brand_catalog, research_sites, runtime
+from studio_core import preferences, brand_catalog, brand_data, research_sites, runtime
 from studio_core.model_catalog import Catalog
 from studio_core.server import for_product
 from studio_core.studios_config import for_product as config_for
@@ -38,7 +38,7 @@ class Controller:
 
         class Page(protocol.Page):
             reads = ('/onboarding/api/home', '/onboarding/api/models')
-            writes = ('/onboarding/api/shared', '/onboarding/api/setup', '/onboarding/api/models', '/onboarding/api/brands', '/onboarding/api/research-site')
+            writes = ('/onboarding/api/shared', '/onboarding/api/setup', '/onboarding/api/models', '/onboarding/api/brands', '/onboarding/api/brands-repository', '/onboarding/api/research-site')
 
             def read(self, path, one):
                 if path.endswith('/models'):
@@ -49,6 +49,12 @@ class Controller:
                 if path.endswith('/research-site'):
                     # One site checked as a save would check it; nothing is saved.
                     return protocol.as_json(200, {'site': research_sites.site(sent.get('site'))})
+                if path.endswith('/brands-repository'):
+                    # Only the saved setting is fetched, so a form never fetches an address it did not save.
+                    values, problem = owner.store.read()
+                    if problem:
+                        raise ValueError(problem)
+                    return protocol.as_json(200, brand_data.bring((values.get('brand') or {}).get('brands')))
                 if path.endswith('/brands'):
                     skill = sent.get('skill')
                     if skill is not None and (not isinstance(skill, str) or len(skill) > 2000

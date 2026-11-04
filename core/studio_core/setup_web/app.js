@@ -764,7 +764,7 @@ function wantedValues() {
     wanted.share = value('share');
   }
   if (!setup || step === 2) {
-    wanted.brand = Object.fromEntries(['repository', 'release', 'brand', 'variant', 'skill'].map(key => [key, value(`brand.${key}`)]));
+    wanted.brand = Object.fromEntries(['repository', 'release', 'brand', 'variant', 'skill', 'brands'].map(key => [key, value(`brand.${key}`)]));
     if (!blogAlone()) {
       wanted.output = value('output');
       wanted.render = {previews: value('render.previews')};
@@ -1005,6 +1005,16 @@ $('#find-brands').addEventListener('click', async () => {
     }
     $('#brand-catalog-status').textContent = found.problem || 'Choose a brand and variant. Your saved choices change only when you save.';
   } catch (error) { $('#brand-catalog-status').textContent = `${error.message} Your form is kept; you can enter the IDs below.`; }
+  finally { button.disabled = false; }
+});
+$('#get-brands').addEventListener('click', async () => {
+  const button = $('#get-brands'), status = $('#brand-brands-status'); button.disabled = true;
+  status.textContent = 'Getting the brands… Your form is kept.';
+  try {
+    const got = await api('brands-repository', {});
+    const how = {cloned: 'Copied', updated: 'Updated', used: 'Using'}[got.action] || 'Using';
+    status.textContent = `${how} ${got.brands.length} brand${got.brands.length === 1 ? '' : 's'} (${got.brands.join(', ')}) at ${got.folder}. The brand skills read them from there.`;
+  } catch (error) { status.textContent = `${error.message} Your form is kept.`; }
   finally { button.disabled = false; }
 });
 form.elements['assistant.agent'].addEventListener('change', () => { efforts(''); form.elements['assistant.model'].value = ''; for (const name of profileNames) { const select = form.elements[`models.${name}.effort`]; profileLevels(select, select.value); } for (const picker of modelPickers.values()) renderModelPicker(picker); profilesChanged(); if ($('#models-more').open) loadModels(); });
