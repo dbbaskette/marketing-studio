@@ -286,6 +286,17 @@ const StudioResearch = (() => {
       }
       box.append(correction);
     }
+    const combining = array(state.combining);
+    if (combining.length) {
+      const keptDrafts = combining.filter(row => row.status === 'kept').length;
+      const details = make('details', 'research-correction-details'); details.dataset.key = 'research-combining';
+      const summary = make('summary', '', keptDrafts + ' of ' + combining.length + ' section drafts kept');
+      summary.dataset.key = 'research-combining-toggle'; details.append(summary);
+      const list = make('ul');
+      for (const row of combining) list.append(make('li', '', array(row.questions).map(q => typeof q === 'string' ? q : q.question || q.text || q.id).join('; ') + ' · ' + (row.status === 'kept' ? 'Draft kept' : row.status === 'working' ? 'Combining' : row.status === 'failed' ? 'Retry needed' : 'Waiting')));
+      details.append(list); box.append(details);
+      if (phase !== 'complete') box.append(make('p', 'quiet', 'Section drafts are kept for retry. The assembled research still needs its independent check.'));
+    }
     const areas = array(state.streams || state.workstreams);
     const kept = areas.filter(a => ['kept', 'accepted'].includes(a.status)).length;
     const working = areas.filter(a => ['running', 'working'].includes(a.status)).length;

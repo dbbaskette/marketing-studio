@@ -81,3 +81,18 @@ def captured_dossier(worker, source, text, finding_ids=None):
     if finding_ids is not None:
         value['findings'] = [{**copy.deepcopy(value['findings'][0]), 'id': ident} for ident in finding_ids]
     return value
+
+def section_value(payload):
+    """Small fictional author output for actual worker-tool validation."""
+    if 'completed_sections' in payload:
+        first = payload['completed_sections']['findings'][0]['id']
+        return {'schema': 2, 'sections': [], 'brief': [{'id': 'takeaway', 'title': 'Takeaway',
+            'blocks': [{'text': 'More than one instance keeps capacity.', 'kind': 'summary', 'refs': [first]}]}]}
+    import copy
+    ident = payload['section']['questions'][0]['id']
+    fact = payload['evidence']['facts'][0]['id']
+    finding = copy.deepcopy(dossier(payload['worker'])['findings'][0])
+    finding.update(id=ident, summary={'text': 'More than one instance keeps capacity.', 'kind': 'summary', 'refs': [fact]},
+        support=[fact], counter=[], conditions=[], implications=[], gaps=[])
+    return {'schema': 2, 'findings': [finding], 'sections': [{'id': ident, 'title': 'Section ' + ident,
+        'blocks': [{'text': 'More than one instance keeps capacity.', 'kind': 'summary', 'refs': [ident]}]}]}

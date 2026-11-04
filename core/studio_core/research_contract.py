@@ -394,10 +394,13 @@ class Workflow:
         self.runtime = Path(runtime) if runtime else find_runtime()
         self.call = call
 
-    def command(self, case, action, file=None, worker=None):
+    def command(self, case, action, file=None, worker=None, *, reuse_context=None):
         args = ['synthesis', action, '--project', str(case)]
         if file:
             args += ['--file', file, '--worker', worker]
+        if reuse_context is not None:
+            if action != 'save': raise ValueError('Reuse context is only valid for synthesis save.')
+            args += ['--reuse-unchanged', '--context', str(reuse_context)]
         if self.call:
             return self.call(*args)
         node = shutil.which('node')
@@ -748,7 +751,7 @@ def took(seconds, dollars):
 # schema, and were checked against Harness Research LIMITS_VERIFIED_WITH. A re-pin to another
 # version fails tests/test_research_packet_problems.py until the gated parity tests
 # (STUDIO_TEST_RESEARCH_RUNTIME) are run against it and this is updated.
-LIMITS_VERIFIED_WITH = '1.1.0'
+LIMITS_VERIFIED_WITH = '1.1.1'
 TEXT_LIMIT = 4000
 LIMITS = {'statement': 10000, 'quote': 30000}
 # Fields the studio knows and checks against its own captures: an investigator copies them.
@@ -1486,6 +1489,7 @@ def check_json(text, spec):
     kept = text
     matched = 0
     mode = spec.get('research_mode')
+    composed = mode in ('compose', 'compose-section', 'compose-final')
     try:
         value = json.loads(text)
         if not isinstance(value, dict):
@@ -1543,20 +1547,20 @@ def check_json(text, spec):
             value = normalized
             if spec.get('runtime'):
                 flawed_sources, flawed_facts = set(), set()
-                if mode != 'compose':
+                if not composed:
                     texts = capture_texts(value['sources'], captures, spec.get('folder'))
                     found, flawed_sources, flawed_facts = packet_problems(
                         value, texts, spec['runtime'], spec.get('worker'), mode)
                     problems += found
                 if mode != 'evidence':   # A synthesis, or a whole dossier: its prose too.
-                    problems += synthesis_problems(value, spec['runtime'], shaped=mode == 'compose')
+                    problems += synthesis_problems(value, spec['runtime'], shaped=composed)
                 if not problems:
                     problems += refused(value, spec)
                 elif mode == 'evidence':
                     problems += aside(value, spec, captures, flawed_sources, flawed_facts)
             if mode == 'evidence' and any(problem != UNFINISHED for problem in problems):
                 problems = tailed(problems, TAIL)
-            elif mode == 'compose' and problems:
+            elif composed and problems:
                 problems = tailed(problems, SYNTHESIS_TAIL)
             if not problems and standardized and not mode:
                 warnings.append('Standardized source date metadata as source_date; dates and evidence are unchanged.')
@@ -1728,7 +1732,7 @@ def refused(value, spec):
     can still correct it then; afterwards a refusal would end the whole research step."""
     dossier = {**copy.deepcopy(value), **(spec.get('task') or {})}
     worker = spec.get('worker')
-    if spec.get('research_mode') == 'compose':
+    if spec.get('research_mode') in ('compose', 'compose-section', 'compose-final'):
         from studio_core.research_session import check_frozen
 
         frozen = check_frozen(dossier, spec)

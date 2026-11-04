@@ -15,7 +15,7 @@ SECONDS, DOLLARS, INPUT_CHARS = 180, 0.25, 48_000
 
 
 def enabled(record):
-    return (record.get('schema') == RECORD_SCHEMA and isinstance(record.get('outline_first'), dict)
+    return (record.get('schema') in (RECORD_SCHEMA, 8) and isinstance(record.get('outline_first'), dict)
             and record['outline_first'].get('schema') == SCHEMA)
 
 

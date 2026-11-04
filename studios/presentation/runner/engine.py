@@ -118,6 +118,7 @@ from __future__ import annotations
 from studio_core import activity_log, deck_content
 from studio_core import deck_flow, research_session, research_sources, research_contract, research_sites, research_view, review_policy, stops
 
+from studio_core import research_sections
 import contextvars
 import json
 import hashlib
@@ -340,7 +341,7 @@ class Engine(Jobs, Researching, DeskActions):
     """Drives every deck in this computer's workspace."""
 
     def __init__(self, adapters=None, research=None, slides=None, brand=None, drive=None,
-                 background: bool = True, at_once: int = AT_ONCE, notifier=None, parallel_research=True, content_first=True, story_first=True, scan_budget=None):
+                 background: bool = True, at_once: int = AT_ONCE, notifier=None, parallel_research=True, content_first=True, story_first=True, scan_budget=None, section_synthesis=True):
         self.adapters = dict(adapters or agents.AGENTS)
         self.notifier = notifier or team.Notifier()
         self.research = research or research_cli.Research
@@ -351,6 +352,7 @@ class Engine(Jobs, Researching, DeskActions):
         self.parallel_research = parallel_research
         self.content_first = content_first
         self.story_first = story_first
+        self.section_synthesis = section_synthesis
         self.story_budget = slide_story.budget(scan_budget)
         self.upkeep = None    # what `studio serve` keeps of the skills here
         self.files = ProcessRLock(gitstate.write_lock_path, refusal=WorkspaceError)
@@ -461,17 +463,19 @@ class Engine(Jobs, Researching, DeskActions):
         except (OSError, ValueError):
             raise WorkspaceError(f'The run record in {Path(root).name} cannot be read, so the '
                                  'runner will not drive this deck.') from None
-        if not isinstance(record, dict) or record.get('schema') not in (decks.SCHEMA, 2, 3, 4, 5) \
+        if not isinstance(record, dict) or record.get('schema') not in (decks.SCHEMA, 2, 3, 4, 5, 6) \
                 or not isinstance(record.get('steps'), dict):
             raise WorkspaceError(f'The run record in {Path(root).name} cannot be read, so the '
                                  'runner will not drive this deck.')
         if record.get('schema') == 2 and not record.get('review_policy'):
             raise WorkspaceError('This run is missing its saved review level. Restore its run record.')
-        if record.get('schema') in (4, 5) and not research_session.protocol(record):
+        if record.get('schema') == 6 and not research_sections.enabled(record):
+            raise WorkspaceError('Restore this deck’s saved section combining policy.')
+        if record.get('schema') in (4, 5, 6) and not research_session.protocol(record):
             raise WorkspaceError('Restore the saved research collection protocol before continuing.')
-        if record.get('schema') == 5 and not (slide_story.valid(record) and decks.on_desk(record)):
+        if record.get('schema') in (5, 6) and not (slide_story.valid(record) and decks.on_desk(record)):
             raise WorkspaceError('Restore the saved slide-story workflow before continuing.')
-        if record.get('schema') in (3, 4, 5) and (record.get('research_contract') or {}).get('schema') != 2:
+        if record.get('schema') in (3, 4, 5, 6) and (record.get('research_contract') or {}).get('schema') != 2:
             raise WorkspaceError('This run is missing its saved research contract. Restore its run record.')
         for key, value in (('gates', {}), ('answers', {}), ('said', {}), ('question', None),
                            ('halted', None), ('cleared', 0.0), ('research', None),
@@ -894,6 +898,8 @@ class Engine(Jobs, Researching, DeskActions):
                     if not research_session.protocol(record):
                         raise WorkspaceError('The slide-story flow needs Harness Research 1.1 collection support. Install a compatible helper explicitly before starting.')
                     record.update(schema=5, slide_story={'schema': 1, 'revision': 0, 'outline': None, 'limits': dict(self.story_budget)})
+                    if self.section_synthesis:
+                        record.update(schema=6, section_synthesis=research_sections.pin(self.research().runtime))
                 self._store(root, record)
                 self._commit(root, 'set up its run' + (
                     f", driven by {record['driver']['name']}" if record['driver'] else ''))
@@ -2665,7 +2671,7 @@ class Engine(Jobs, Researching, DeskActions):
                         record['cleared'] = spent(record)[0] or 0.0
                     if action != 'resume':
                         self._fresh(record, halted.get('step'))
-                    if action == stops.MORE_TIME:  # this deck's steps may take twice as long
+                    if action == stops.MORE_TIME and not research_sections.grant(record, halted):
                         record['more_time'] = stops.more_time(
                             halted.get('seconds') or (record.get('limits') or {}).get(
                                 'step_seconds') or settings.load().step_seconds)

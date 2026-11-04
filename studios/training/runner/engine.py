@@ -230,6 +230,7 @@ import computer
 import checks
 import home
 from studio_core import deck_content
+from studio_core import research_sections
 from runner import training_plan, outline_first
 from studio_core import brand_guidance, critic, deck_direction, deck_flow, model_profiles, review_policy, research_contract, research_session as research_parallel, research_transport as research_parallel_native, research_timing, research_sources, research_view, research_sites, step_times, stops
 import hub
@@ -440,26 +441,28 @@ def read_record(root: Path) -> dict | None:
     if record is None:
         return None
     schemas = (SCHEMA, 2, 3, drafts.SCHEMA, research_parallel.RECORD_SCHEMA,
-               training_plan.RECORD_SCHEMA, outline_first.RECORD_SCHEMA)
+               training_plan.RECORD_SCHEMA, outline_first.RECORD_SCHEMA, 8)
     if not isinstance(record, dict) or record.get('schema') not in schemas or not isinstance(record.get('steps'), dict):
         raise WorkspaceError(f'The run record in {root.name} cannot be read, so the runner '
                              'will not drive this training.')
     schema = record['schema']
+    if schema == 8 and not research_sections.enabled(record):
+        raise WorkspaceError('Restore this training’s saved section combining policy.')
     if schema == 2 and not record.get('review_policy'):
         raise WorkspaceError('This run is missing its saved review level. Restore its run record.')
-    if schema in (training_plan.RECORD_SCHEMA, outline_first.RECORD_SCHEMA) and not (
+    if schema in (training_plan.RECORD_SCHEMA, outline_first.RECORD_SCHEMA, 8) and not (
             training_plan.enabled(record) and drafts.on_desk(record)):
         raise WorkspaceError('This training is missing its saved outline or topics-review workflow.')
     contracted = (record.get('research_contract') or {}).get('schema') == 2
     # Runner desk records require a contract; focused conversations may be contract-free.
     if schema == drafts.SCHEMA:
         contracted = drafts.on_desk(record) and (contracted or drafts.in_conversation(record))
-    parallel = schema in (research_parallel.RECORD_SCHEMA, outline_first.RECORD_SCHEMA) or (
+    parallel = schema in (research_parallel.RECORD_SCHEMA, outline_first.RECORD_SCHEMA, 8) or (
         schema == training_plan.RECORD_SCHEMA and 'research_execution' in record)
     if parallel and not research_parallel.protocol(record):
         raise WorkspaceError('This run is missing its saved parallel research protocol. Restore its run record.')
     if schema in (3, drafts.SCHEMA, research_parallel.RECORD_SCHEMA,
-                  training_plan.RECORD_SCHEMA, outline_first.RECORD_SCHEMA) and not contracted:
+                  training_plan.RECORD_SCHEMA, outline_first.RECORD_SCHEMA, 8) and not contracted:
         raise WorkspaceError('This run is missing its saved research contract. Restore its run record.')
     return record
 
@@ -643,7 +646,7 @@ class Engine(Reviewing):
 
     def __init__(self, adapters=None, research=None, background: bool = True,
                  at_once: int = AT_ONCE, documents=None, copies=None, index=None,
-                 slides=None, brand=None, notifier=None, parallel_research=True, content_first=True, plan_first=True, outline_first=True):
+                 slides=None, brand=None, notifier=None, parallel_research=True, content_first=True, plan_first=True, outline_first=True, section_synthesis=True):
         self.adapters = dict(adapters or agents.AGENTS)
         self.notifier = notifier or team.Notifier()
         self.upkeep = None    # what `studio serve` keeps of the skills here; see `upkeep`
@@ -669,6 +672,7 @@ class Engine(Reviewing):
         self.content_first = content_first
         self.plan_first = plan_first
         self.outline_first = outline_first
+        self.section_synthesis = section_synthesis
         self.files = ProcessRLock(gitstate.write_lock_path, refusal=WorkspaceError)
         self._preparing_decks: dict[Path, deck_edit.PreparedEdit] = {}
         # What was typed on each desk and not committed yet, by the training's folder:
@@ -1499,6 +1503,8 @@ class Engine(Reviewing):
                     if self.outline_first:
                         record.update(schema=outline_first.RECORD_SCHEMA,
                                       outline_first={'schema': 1, 'outline': None})
+                        if self.section_synthesis:
+                            record.update(schema=8, section_synthesis=research_sections.pin(self.research().runtime))
                 if selected_sources:
                     record['research_inputs'] = research_sources.install(selected_sources, root)
                     if parallel:
@@ -3877,13 +3883,16 @@ class Engine(Reviewing):
         return replace(work, task=work.task + '\n\n' + FROM_AUTHOR.format(
             text='\n\n'.join(quoted(text) for text in carried)))
 
-    def _job(self, root: Path, run: _Run, step: pipeline.Step, work: pipeline.Work, *, limits=None):
+    def _job(self, root: Path, run: _Run, step: pipeline.Step, work: pipeline.Work, *, limits=None, section=None):
         """Run one worker on one job. Returns how the agent ended, what the worker tools
         accepted from it, when it started and the job's folder. A note the person left for
         the next step goes with it, once."""
         if not step.id.startswith('draft:'):
             work = self._noted(root, step, work)
         record = self._load(root)
+        if section:
+            record = {**record, 'limits': {**record['limits'], 'step_seconds': max(record['limits']['step_seconds'],
+                (record.get('section_synthesis') or {}).get('more_time', {}).get(section, 0))}}
         if outline_first.enabled(record) and step.stage in ('blueprint', 'document', 'brief', 'scenario', 'yoodli', 'deck'):
             scope = json.dumps(record['outline_first']['outline'], ensure_ascii=False)
             work = replace(work, prepared={**work.prepared, 'inputs': {**work.prepared.get('inputs', {}),
@@ -4241,6 +4250,7 @@ class Engine(Reviewing):
                 self._title(record['agent']), outcome, outcome.detail), KEPT,
                 action=stops.agent_action(outcome))
         if outcome.reason == 'timeout':
+            if research_sections.timeout(self, root, refusal, 'training'): return
             return self._out_of_time(root, 'research', 'The research', record, 1)
         kept = ('Completed, checked research areas are kept privately for retry. Only missing or refused areas run again.'
                 if research_parallel.protocol(record) else KEPT)
@@ -6138,7 +6148,7 @@ class Engine(Reviewing):
                     record['cleared'] = spent(record)[0] or 0.0
                 elif problem:
                     self._fresh(record, problem.get('step'))
-                if action == stops.MORE_TIME or carried == stops.MORE_TIME:
+                if (action == stops.MORE_TIME or carried == stops.MORE_TIME) and not research_sections.grant(record, problem):
                     # this run's steps may take twice as long
                     record['more_time'] = stops.more_time(
                         problem.get('seconds') or record['limits']['step_seconds'])

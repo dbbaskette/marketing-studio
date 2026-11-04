@@ -19,7 +19,7 @@ import threading
 from datetime import datetime, timezone
 from urllib.parse import urlsplit
 
-from studio_core import research_contract as rc, research_timing
+from studio_core import research_contract as rc, research_timing, research_sections
 from studio_core.shared_runner.worker_tools import tidy
 
 PROTOCOL = 'harness-collection-v1'
@@ -99,6 +99,8 @@ def preparation(value, spec):
                 'sections': [{'id': 'collection', 'title': 'Evidence collection', 'blocks': [
                     {'text': g, 'kind': 'gap', 'refs': []} for g in gaps] or [
                     {'text': PENDING, 'kind': 'gap', 'refs': []}]}]}
+    if spec.get('research_mode') in ('compose-section', 'compose-final'):
+        return research_sections.prepared(value, spec)
     if spec.get('research_mode') == 'compose':
         problems = compose_shape(value)
         if problems:
@@ -142,6 +144,16 @@ def streams(task, limit=3):
         raise ValueError('Research needs an approved scope or questions.')
     count = min(3, max(1, int(limit)), len(questions))
     return [{'id': f'area{i + 1}', 'questions': copy.deepcopy(questions[i::count])} for i in range(count)]
+
+
+def section_streams(task):
+    questions = task.get('planning_questions')
+    if not isinstance(questions, list) or not 1 <= len(questions) <= 64:
+        raise ValueError('Section research needs one to 64 approved questions.')
+    ids = [item.get('id') for item in questions if isinstance(item, dict)]
+    if len(ids) != len(questions) or any(not isinstance(ident, str) or not ident for ident in ids) or len(set(ids)) != len(ids):
+        raise ValueError('Every approved section needs its own question ID.')
+    return [{'id': 'area-' + digest(item['id'])[:40], 'questions': [copy.deepcopy(item)]} for item in questions]
 
 
 def bytes_of(path):
@@ -209,12 +221,14 @@ def unresolved(root):
     return False
 
 
-def corrections(review, registry):
+def corrections(review, registry, *, sectioned=False):
     owners = {global_id: mapping['workstream'] for mapping in registry['mappings']
               for global_id in mapping['facts'].values()}
     selected = {owners[f['id']] for f in review.get('facts', [])
                 if f.get('id') in owners and f.get('verdict') not in ('supported', 'pending')}
-    if not selected and (review.get('assessment') or {}).get('coverage') == 'needs-revision':
+    prose_only = sectioned and any(row.get('verdict') not in ('supported', 'pending')
+        for key in ('findings', 'prose') for row in review.get(key, []))
+    if not selected and not prose_only and (review.get('assessment') or {}).get('coverage') == 'needs-revision':
         selected = set(owners.values())
     return selected
 
@@ -308,12 +322,13 @@ class Workflow:
         return target, offered
 
     def run(self, root, task, invoke, sources=(), *, limit=3, progress=lambda state: None,
-            allowed=lambda: True, cancelled=lambda: False, readable=None, restart_stopped=False, **_):
+            allowed=lambda: True, cancelled=lambda: False, readable=None, restart_stopped=False,
+            section_policy=None, section_context=None, **_):
         if capability(self.runtime) is None:
             raise ValueError('This workflow needs the complete Harness Research 1.1 collection runtime.')
         if unresolved(root):
             raise ValueError('An earlier research invocation has no confirmed terminal observation. Confirm it ended before retrying; saved evidence is kept.')
-        areas = streams(task, limit)
+        areas = section_streams(task) if section_policy else streams(task, limit)
         basis = digest([task, [[s.get('file'), s.get('origin'), s.get('permission'),
             hashlib.sha256(s['text'].encode()).hexdigest(),
             hashlib.sha256(bytes_of(s['original_path'])).hexdigest() if s.get('original_path') else None]
@@ -410,9 +425,21 @@ class Workflow:
                 self.command(case, 'collection', 'pause')
                 raise InterruptedError('Research paused; accepted evidence is kept.')
 
+        reuse_context = None
+        context_unchanged = True
+        if section_policy and section_policy.get('reuse'):
+            if research_sections.reuse_capability(self.runtime) != section_policy['reuse']:
+                raise ValueError('Restore the saved unchanged-save capability before continuing.')
+            reuse_context = '.harness-research/studio-review-context.json'
+            context = {'schema': 1, 'protocol': research_sections.fingerprint([capability(self.runtime), section_policy['reuse']]),
+                'guidance': research_sections.fingerprint([research_sections.PROTOCOL, section_context]),
+                'independence': research_sections.fingerprint((section_context or {}).get('checking'))}
+            context_file = rc.inside(case, reuse_context)
+            context_unchanged = context_file.exists() and json.loads(context_file.read_bytes()) == context
+            rc.write(case, reuse_context, json.dumps(context))
         previous = case / '.harness-research/synthesis.json'
         prior = json.loads(bytes_of(previous)) if previous.exists() else {}
-        if (prior.get('review') or {}).get('accepted'):
+        if context_unchanged and (prior.get('review') or {}).get('accepted'):
             verified = self.helper.command(case, 'verify')
             if verified.get('status') == 'complete':
                 report('complete')
@@ -524,20 +551,38 @@ class Workflow:
                 'path': rc.inside(case, s['file']),
                 **({'original': s['original_file'], 'original_path': rc.inside(case, s['original_file'])}
                    if s.get('original_file') else {})} for s in base['sources']]
-            worker = 'synthesizer-' + secrets.token_hex(12)
-            report('synthesize')
-            payload = {'task': task, 'worker': worker, 'evidence': base, 'gaps': registry['gaps'],
-                'synthesis_outline': synthesis_outline,
-                'previous_dossier': dossier, 'previous_review': review, 'return': COMPOSE + rc.IDS_FOR_QUESTIONS,
-                '_execution': {'phase': 'synthesize', 'round': number, 'mode': 'compose', 'evidence_base': base}}
-            text, _ = invoke('synthesize', (self.runtime / 'references/synthesize.md').read_text(), payload, offered_final, False)
-            require()
-            dossier = json.loads(text)
+            if section_policy:
+                def section_progress(values):
+                    with state_lock:
+                        tracked['combining'] = values
+                    report('synthesize')
+                dossier, worker = research_sections.combine(case, task, areas, registry, base,
+                    offered_final, invoke, round=number,
+                    guidance=(self.runtime / 'references/synthesize.md').read_text(),
+                    policy={**section_policy, 'workers': limit}, require=require,
+                    notify=section_progress, context=section_context)
+                require()
+            else:
+                worker = 'synthesizer-' + secrets.token_hex(12)
+                report('synthesize')
+                payload = {'task': task, 'worker': worker, 'evidence': base, 'gaps': registry['gaps'],
+                    'synthesis_outline': synthesis_outline,
+                    'previous_dossier': dossier, 'previous_review': review, 'return': COMPOSE + rc.IDS_FOR_QUESTIONS,
+                    '_execution': {'phase': 'synthesize', 'round': number, 'mode': 'compose', 'evidence_base': base}}
+                text, _ = invoke('synthesize', (self.runtime / 'references/synthesize.md').read_text(), payload, offered_final, False)
+                require()
+                dossier = json.loads(text)
             if check_frozen(dossier, {'evidence_base': base}):
                 raise ValueError('Synthesis changed registered evidence; investigator work is kept.')
             dossier.update({k: task[k] for k in rc.TASK_FIELDS})
             rc.write(case, 'dossier.json', json.dumps(dossier))
-            status = self.helper.command(case, 'save', 'dossier.json', worker)
+            status = self.helper.command(case, 'save', 'dossier.json', worker, **(
+                {'reuse_context': reuse_context} if reuse_context else {}))
+            if status.get('save_result') == 'no-change' and status.get('status') == 'complete':
+                verified = self.helper.command(case, 'verify')
+                if verified.get('status') == 'complete':
+                    report('complete')
+                    return rc.read_bundle(rc.output_root(case))
             report('review')
             reviewer = 'reviewer-' + secrets.token_hex(12)
             output = rc.output_root(case)
@@ -561,10 +606,11 @@ class Workflow:
             said = (readable(cause) if readable else '') if cause else None
             if cause and said is not None:
                 raise rc.CheckCouldNotFinish(rc.objections(case), number - 1, cause, said or None)
-            for stream in corrections(review, registry):
+            affected = sorted(corrections(review, registry, sectioned=bool(section_policy)))
+            if section_policy: research_sections.invalidate(case, review, affected)
+            for stream in affected:
                 self.command(case, 'collection', 'retry', {'workstream': stream, 'reason': 'The independent review requested evidence correction.'})
                 report(stream=stream, state='waiting')
-            affected = sorted(corrections(review, registry))
             notes = [item['note'] for item in review.get('facts', [])
                      if item.get('verdict') not in ('supported', 'pending') and item.get('note')]
             assessment = review.get('assessment') or {}
