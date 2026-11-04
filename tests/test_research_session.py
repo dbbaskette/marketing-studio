@@ -272,6 +272,52 @@ class SessionTests(unittest.TestCase):
         self.run_session()
         self.assertEqual([area for phase, area in self.calls if phase == 'investigate'], ['area2'])
 
+    def test_accepted_findings_arrive_before_slow_failed_peer_and_retry(self):
+        self.barrier = None
+        readable = threading.Event()
+        original = self.invoke
+        def invoke(phase, guidance, payload, offered, fetch):
+            if phase == 'investigate' and payload['_execution']['stream'] == 'area2':
+                self.assertTrue(readable.wait(10), 'accepted evidence must arrive before all peers finish')
+                raise ValueError('Slow peer failed')
+            return original(phase, guidance, payload, offered, fetch)
+        def progress(state):
+            self.states.append(state)
+            if any(row.get('evidence') for row in state['streams']): readable.set()
+        with self.assertRaisesRegex(ValueError, 'Slow peer failed'):
+            self.workflow.run(self.root, self.task, invoke, progress=progress)
+        first = next(s for s in self.states if any(r.get('evidence') for r in s['streams']))
+        self.assertEqual(first['phase'], 'investigate')
+        preview = next(r['evidence'] for r in first['streams'] if r.get('evidence'))
+        self.assertEqual(preview['generation'], 1)
+        self.assertEqual(preview['attempt'], 1)
+        self.assertTrue(preview['request_digest']); self.assertTrue(preview['basis'])
+        self.assertIn('capacity', preview['facts'][0]['statement'])
+        self.assertNotIn('checked_result_seconds', self.states[-1])
+        self.assertEqual(sum(bool(r.get('evidence')) for r in self.states[-1]['streams']), 2)
+        self.calls.clear(); self.states.clear(); self.run_session()
+        self.assertEqual([area for phase, area in self.calls if phase == 'investigate'], ['area2'])
+        final = self.states[-1]
+        self.assertEqual(next(r['evidence']['attempt'] for r in final['streams'] if r['id'] == 'area2'), 2)
+        self.assertTrue(all(r.get('evidence') for r in final['streams']))
+
+    def test_cancellation_removes_previously_visible_accepted_evidence(self):
+        self.barrier = None
+        stopped = threading.Event()
+        original = self.invoke
+        def invoke(phase, guidance, payload, offered, fetch):
+            if phase == 'investigate' and payload['_execution']['stream'] != 'area1':
+                self.assertTrue(stopped.wait(10))
+            return original(phase, guidance, payload, offered, fetch)
+        def progress(state):
+            self.states.append(state)
+            if any(row.get('evidence') for row in state['streams']): stopped.set()
+        with self.assertRaises(InterruptedError):
+            self.workflow.run(self.root, self.task, invoke, progress=progress, cancelled=stopped.is_set)
+        self.assertTrue(any(any(r.get('evidence') for r in s['streams']) for s in self.states))
+        self.assertFalse(any(r.get('evidence') for r in self.states[-1]['streams']))
+        self.assertFalse(any(phase == 'synthesize' for phase, _ in self.calls))
+
     def test_selected_upload_retains_original_and_selected_permission(self):
         self.task['source_mode'] = 'selected'
         facts, _ = self.run_session([{'file': 'sources/notes.txt', 'path': self.capture, 'text': TEXT,

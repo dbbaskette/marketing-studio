@@ -153,6 +153,8 @@ if [[ "${1:-full}" == infographic-planning || "${1:-full}" == infographic-activi
   bundle="$(find dist -maxdepth 1 -name "$pattern" -print -quit)"
   [[ -n "$bundle" ]] || { echo 'A prepared Infographic Studio-only Apple Silicon package is required.' >&2; exit 1; }
   "$python" scripts/ci/infographic_bundle_acceptance.py "$bundle" 2>&1 | tee "$results_dir/infographic-bundle.log"
+elif [[ "${1:-full}" == early-evidence ]]; then
+  PYTHONPATH=core:tests "$python" -m unittest discover -s tests -v > "$results_dir/shared-tests.log" 2>&1
 elif [[ "${1:-full}" == native-polling-finish ]]; then
   PYTHONPATH=core:tests "$python" -m unittest test_polling -v > "$results_dir/final-polling.log" 2>&1
   (cd studios/presentation && "$python" scripts/ci/run_tests.py --jobs 4 test_desk.ScreenTests test_desk_page.DeskFollowThroughTests test_desk_page.FinishingPageTests test_desk_page.SecondReviewTests test_desk_page.SlideTextStopTests test_engine_process_lock.EngineProcessLockTests && "$python" skills/presentation-studio/scripts/validate_package.py) > "$results_dir/presentation-tests.log" 2>&1

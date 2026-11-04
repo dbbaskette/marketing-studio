@@ -19,7 +19,7 @@ import threading
 from datetime import datetime, timezone
 from urllib.parse import urlsplit
 
-from studio_core import research_contract as rc, research_timing, research_sections
+from studio_core import research_contract as rc, research_timing, research_sections, research_preview
 from studio_core.shared_runner.worker_tools import tidy
 
 PROTOCOL = 'harness-collection-v1'
@@ -400,7 +400,9 @@ class Workflow:
             with state_lock:
                 if phase: tracked['phase'] = phase
                 for area in tracked['streams']:
-                    if area['id'] == stream: area['status'] = state
+                    if area['id'] == stream:
+                        area['status'] = state
+                        if state != 'kept': area.pop('evidence', None)
                 with host_lock:
                     timing = research_timing.account(host['started'], host['attempts'])
                     active = [{'id': a['worker'], 'phase': a['phase'], 'stream': a.get('stream'),
@@ -412,6 +414,8 @@ class Workflow:
                 if timing['incomplete']:
                     timing.update(active_seconds=None, assistant_seconds=None)
                 tracked['timing'] = timing
+                if phase in ('stopped', 'paused', 'invalidated') or cancelled():
+                    for area in tracked['streams']: area.pop('evidence', None)
                 if phase == 'complete': tracked['checked_result_seconds'] = timing.get('elapsed_seconds')
                 progress(copy.deepcopy(tracked))
 
@@ -421,12 +425,15 @@ class Workflow:
         def require():
             if any(hashlib.sha256(bytes_of(path)).hexdigest() != expected for path, expected in original_hashes):
                 self.command(case, 'collection', 'stop')
+                report('invalidated')
                 raise ValueError('A selected original changed during research. Earlier evidence is kept; capture and approve its new revision.')
             if cancelled():
                 self.command(case, 'collection', 'stop')
+                report('stopped')
                 raise InterruptedError('Research stopped; accepted evidence is kept.')
             if not allowed():
                 self.command(case, 'collection', 'pause')
+                report('paused')
                 raise InterruptedError('Research paused; accepted evidence is kept.')
 
         reuse_context = None
@@ -465,6 +472,11 @@ class Workflow:
             require()
             tracked['round'] = number
             status = self.command(case, 'collection', 'status')
+            accepted = research_preview.restored(case, json.loads(bytes_of(state_file)), basis)
+            with state_lock:
+                for row in tracked['streams']:
+                    row.pop('evidence', None)
+                    if row['id'] in accepted: row['evidence'] = accepted[row['id']]
             pending = []
             for area in areas:
                 saved = next(s for s in status['workstreams'] if s['id'] == area['id'])
@@ -526,7 +538,13 @@ class Workflow:
                     packet = {'schema': 1, 'request_digest': registered['request_digest'],
                         'generation': registered['generation'], **terminal, 'sources': value['sources'],
                         'facts': value['facts'], 'limitations': [], 'gaps': gaps}
+                    require()
                     self.command(case, 'collection', 'accept', packet)
+                    with state_lock:
+                        for row in tracked['streams']:
+                            if row['id'] == area['id']: row['evidence'] = research_preview.evidence(packet, basis)
+                        if 'first_finding_seconds' not in tracked:
+                            tracked['first_finding_seconds'] = research_timing.account(host['started'], host['attempts']).get('elapsed_seconds')
                     report(stream=area['id'], state='kept')
                 except BaseException as error:
                     # invoke returns/raises only after the transport confirms termination.
