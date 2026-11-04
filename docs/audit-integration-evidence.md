@@ -15,7 +15,7 @@ policy #304 and Infographic Studio first-release acceptance #224 remain separate
 | One-slide edit in a 30-slide deck | One changed slide rasterized; slides 14–16 inspected in the middle-slide fixture; 27 compatible inspections reusable | Whole-PDF conversion still occurs; final whole-deck consistency and exact-revision approval remain required |
 | Failed infographic preview | Retry invokes no assistant or image operation | Changed revisions reject stale recovery actions |
 | Failed artwork placement | Retry places the existing generated asset; one original image generation and art-direction request | Uncertain image requests retain their separate recovery protocol |
-| 5,000 saved work folders | Home scans at most 100 folders and returns at most 12 rows per studio; dense compact fixture took about 4 ms | One local macOS/Python 3.14 fixture, not a provider or network latency benchmark; bounded enumeration need not return all workspace items |
+| 5,000 saved work folders | Home scans at most 100 folders and returns at most 12 rows per studio; dense compact fixture took about 6 ms | One local macOS/Python 3.14 fixture, not a provider or network latency benchmark; bounded enumeration need not return all workspace items |
 | Resting change-impact view | Two polls read selected bytes once; confirmation reads again | External unmanaged edits can remain visually cached for at most 30 seconds; confirmation always revalidates bytes |
 
 The Activity log separates first saved useful result, assistant-active wall time,
@@ -41,9 +41,9 @@ tested commits and aggregate reruns rather than claiming one uninterrupted pass.
   installed-workspace build/review checks, merged and released before pinning.
 - Week 6: shared/native full-suite evidence plus affected-class compatibility
   corrections, actual-helper contracts, both browsers and installer/CLI acceptance.
-- Week 8 browser matrix passed on commit `717bf2807734829be8a9d6742e883bffd3cfb5d1`
-  (tree `1bcebcf2f02ded1f7b84ea4795de789f4157c5e5`) on macOS 27.0.1,
-  Python 3.14.5 and Node 26.11.1. Four real browser journeys, 14 package/overview
+- Week 8 browser matrix passed on commit `ceb6fd3223a381fe50d4a43a51e5e9ef7c687db4`
+  (tree `c6b118a10ca6e690a1f97363c2925d0f6a46791b`) on macOS 27.0.1,
+  Python 3.14.5 and Node 26.11.1. Four real browser journeys, 15 package/overview
   contracts, both native package/context-budget checks and nine workflow diagrams
   passed. The cohort plan records scope and evidence reuse.
 

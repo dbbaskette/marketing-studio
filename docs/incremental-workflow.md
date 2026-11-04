@@ -39,7 +39,8 @@ The Activity log distinguishes time to a first saved result, assistant activity,
 checking and waiting for a person; unrecorded boundaries stay unknown.
 
 Marketing Studio's home shows bounded summaries of saved Needs you, In progress
-and Recent work. These describe last-saved state, not live process health. Resume
+and Recent work from compact metadata under each item’s ignored work folder.
+These describe last-saved state, not live process health. Resume
 opens the existing native work without approving its pending decision. Missing
 workspaces and limited lists are stated explicitly.
 

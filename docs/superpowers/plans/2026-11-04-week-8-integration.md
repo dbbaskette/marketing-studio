@@ -19,8 +19,8 @@ record the actual tested tree and evidence limits before publication and merge.
 ## Verification record
 
 Final browser/package test candidate: commit
-`717bf2807734829be8a9d6742e883bffd3cfb5d1`, tree
-`1bcebcf2f02ded1f7b84ea4795de789f4157c5e5`.
+`ceb6fd3223a381fe50d4a43a51e5e9ef7c687db4`, tree
+`c6b118a10ca6e690a1f97363c2925d0f6a46791b`.
 Host: macOS 27.0.1 (26A434), Python 3.14.5, Node 26.11.1, pinned disposable
 Chromium/Playwright tools. Home, Infographic Studio recovery, Training Studio
 outline/timeout/adoption and Presentation Studio story/affected-work journeys
@@ -28,7 +28,7 @@ passed. Both new native resume fragments and existing history navigation open
 the correct pending gate. Keyboard Escape/Enter recovery passed. The zoom check
 explicitly asserts a 640 CSS-pixel viewport before testing overflow.
 
-Package/overview contracts: 14 tests passed. Both native package/context-budget
+Package/overview contracts: 15 tests passed. Both native package/context-budget
 validators and all nine generated workflow diagrams passed. Selected phone,
 dark recovery and zoom-emulation captures received visual inspection. Subsequent
 documentation records reuse this unchanged application and browser-source evidence.
