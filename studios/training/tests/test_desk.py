@@ -8379,7 +8379,7 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
 
     def test_253_on_a_phone_the_toolbar_keeps_one_filled_action_and_folds_the_rest(self):
         desk = self.on_desk(a_desk(levels=('101',), running=False))
-        phone = self.open_desk(desk, [{'snapshot': 'phone'}, {'click': 'More'},
+        phone = self.open_desk(desk, [{'snapshot': 'phone'}, {'click': 'More'}, {'poll': True},
                                       {'snapshot': 'more'}], narrow=True)
         wide = self.open_desk(desk, [{'snapshot': 'wide'}])
         shot = phone['snapshots']['phone']
