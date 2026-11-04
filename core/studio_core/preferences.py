@@ -11,7 +11,7 @@ EFFORTS = {'claude': ('low', 'medium', 'high', 'xhigh', 'max'),
            'codex': ('none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra')}
 FIELDS = {'person': {'name'}, 'assistant': {'agent', 'model', 'effort'},
           'team': {'repository', 'branch'}, 'local': {'root'}, 'render': {'previews'},
-          'brand': {'repository', 'release', 'brand', 'variant', 'skill'}}
+          'brand': {'repository', 'release', 'brand', 'variant', 'skill', 'brands'}}
 
 
 def repository(value):
@@ -72,8 +72,8 @@ def check(changes, current):
             if value is not None and (not isinstance(value, str) or len(value) > 2000
                                       or any(ord(c) < 32 for c in value)):
                 raise WorkspaceError('Use short text without control characters for settings.')
-    for group in ('team', 'brand'):
-        address = (merged.get(group) or {}).get('repository')
+    for group, key in (('team', 'repository'), ('brand', 'repository'), ('brand', 'brands')):
+        address = (merged.get(group) or {}).get(key)
         if address:
             repository(address)
     assistant = merged.get('assistant') or {}

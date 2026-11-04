@@ -8,7 +8,7 @@ import shutil
 from pathlib import Path
 
 from studio_core import preferences as shared_preferences
-from studio_core import brand_catalog, research_sites, runtime
+from studio_core import brand_catalog, brand_data, research_sites, runtime
 from studio_core.model_catalog import Catalog
 from studio_core import document_library
 from studio_core.document_library import adopt as library_adopt
@@ -21,7 +21,7 @@ from .network import VIA_HEADER
 
 class Home(server.Page):
     reads = ('/api/home', '/api/computer', '/api/models')
-    writes = ('/api/shared', '/api/setup', '/api/open', '/api/connect', '/api/computer', '/api/paths', '/api/models', '/api/brands', '/api/research-site',
+    writes = ('/api/shared', '/api/setup', '/api/open', '/api/connect', '/api/computer', '/api/paths', '/api/models', '/api/brands', '/api/brands-repository', '/api/research-site',
               *library_context.ROUTES, '/api/library-upload', '/api/library-download',
               '/api/library-existing', '/api/library-adopt', '/api/library-hide')
     UPLOAD = '/api/library-upload'
@@ -185,6 +185,15 @@ class Home(server.Page):
             # One site checked as a save would check it; nothing is saved.
             try:
                 return server.as_json(200, {'site': research_sites.site(sent.get('site'))})
+            except ValueError as error:
+                raise WorkspaceError(str(error)) from error
+        if path == '/api/brands-repository':
+            # Only the saved setting is fetched, so a form never fetches an address it did not save.
+            values, problem = shared.read()
+            if problem:
+                raise WorkspaceError(problem)
+            try:
+                return server.as_json(200, brand_data.bring((values.get('brand') or {}).get('brands')))
             except ValueError as error:
                 raise WorkspaceError(str(error)) from error
         if path == '/api/brands':

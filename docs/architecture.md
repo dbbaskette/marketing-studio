@@ -102,6 +102,14 @@ choices. Content-specific defaults, limits, notifications and update preferences
 remain optional native controls.
 Preparation starts no assistant job and never moves an existing workspace.
 
+`brand.brands` names the brands repository: every brand the studios use, kept apart
+from any team's storage (for example the private `dbbaskette/broadcom-brands`). It is a
+Git address or a folder on this computer. Saving it fetches nothing. The Brand card's
+Get brands action (`studio_core.brand_data.bring`) clones a Git address into Marketing
+Studio's data folder under `brands/`, or fast-forwards that copy, uses a folder as it is,
+and records the result in Harness Brand's `harness-brand/data` file, which Harness Brand
+and apply-brand read wherever they run.
+
 When Marketing Studio opens a studio, it names its own tab and passes its address in
 the link's fragment. The studio accepts that address only for the same host on another
 port, and shows a "Marketing Studio" item that brings the tab forward. A Marketing
