@@ -1,12 +1,37 @@
 # Infographic Studio first-release readiness
 
-Implementation is merged in [PR #183](https://github.com/dbbaskette/marketing-studio/pull/183)
-and [PR #186](https://github.com/dbbaskette/marketing-studio/pull/186). The current native
-version is **0.3.0**. Follow-up feature completion does not imply first-release sign-off.
-Marketing Studio 4.6.0 includes Infographic Studio 0.3.0 marked as not signed off: #152,
-#223 and #224 remain open, and inclusion in a release is not first-release sign-off.
+The current source candidate is **Marketing Studio 4.12.0 / Infographic Studio 0.5.0**.
+Implementation is merged through PRs #183, #186, #231 and the audit follow-ups;
+this is not first-release sign-off or publication. [#224](https://github.com/dbbaskette/marketing-studio/issues/224)
+is the single remaining release/acceptance gate. #152 and #223 are consolidated
+tracking; their unfulfilled provider, visual/accessibility and owner criteria are
+preserved in #224 and the [concrete acceptance packet](infographic-live-acceptance.md).
 
-## Verified implementation
+## Current verification and reuse
+
+The broad integrated Brands gate in [PR #349](https://github.com/dbbaskette/marketing-studio/pull/349)
+completed 8,530 reported cases on application tree
+`b557f6c3ba8126e6d837c64fed13260ba73a7000` (rebased candidate `6dd98992`):
+1,028 shared, 258 Infographic Studio, 1,876 Blog Studio, 2,187 Presentation Studio
+and 3,181 Training Studio. Corrected spending fixtures, affected groups and all
+setup/installer/launch/shared-workspace acceptance then passed. Two known PDF-reader
+skips retain earlier dedicated evidence. Environment: disposable macOS 27.0,
+Python 3.13.15, Node 22.23.2.
+
+Subsequent narrow changes use affected-module and real protected-browser evidence:
+[preview recovery/Home #350](https://github.com/dbbaskette/marketing-studio/pull/350),
+[private intake/compact review #351](https://github.com/dbbaskette/marketing-studio/pull/351)
+and [idle reads/Quick settings #352](https://github.com/dbbaskette/marketing-studio/pull/352).
+Their plans identify the tested source and verification boundaries. Reuse unchanged
+native pipeline/package evidence; a documentation change or unchanged merge does
+not justify repeating every suite. Required publication/platform gates remain intact.
+No automated run used personal workspaces or live providers. This evidence does not
+claim live artwork quality, Google fidelity or owner acceptance.
+
+The table below retains the original implementation evidence as historical evidence
+for its exact source, rather than presenting old case counts as the current tree.
+
+## Original implementation evidence (historical)
 
 | Area | Tracking | Evidence |
 | --- | --- | --- |
@@ -18,7 +43,7 @@ Marketing Studio 4.6.0 includes Infographic Studio 0.3.0 marked as not signed of
 | Integrated offline verification | #170 | 686 Marketing Studio tests and 139 Infographic Studio tests passed without skips on the integrated application tree; retained Tart and native package acceptance |
 
 The tested application tree is `4b15913e`, integrated into merged `04e05732` through
-PR #186. Subsequent acceptance/documentation changes preserve that application tree.
+PR #186. The subsequent acceptance/documentation changes for that milestone preserved that application tree.
 Source-only helper fixtures, real installed PDF extraction and actual rendering are
 included. Automated providers/accounts are synthetic. The independent Apple Silicon
 bundle imports Word and exports all four formats after its download and Marketing
@@ -26,9 +51,9 @@ Studio are removed. No Research/Slides runtime or image/document SDK is required
 for ordinary use. Detailed machine-specific logs and generated content stay outside
 this repository.
 
-## Remaining release decisions
+## Remaining release decisions (all owned by #224)
 
-- **#152 — Codex live execution.** The scoped generate/reference-edit adapter and its
+- **Codex live execution (from #152).** The scoped generate/reference-edit adapter and its
   normalized outcomes (missing image tool, sign-in, quota, malformed asset, timeout)
   are implemented and covered with stubbed event streams; only live acceptance remains.
   With explicit authorization, generate a PNG using
@@ -36,7 +61,7 @@ this repository.
   reference-guided edit and inspect actual returned and composed images. Saved
   events, owned bytes and the normalized outcome must agree. Never replace an
   uncertain attempt with an automatic duplicate request.
-- **#223 — Visual editor and owner illustration acceptance** (consolidates #171). The
+- **Visual editor and owner illustration acceptance (from #223)** (consolidates #171). The
   persistent visual editor, human element names, revision states and readable history
   are implemented and covered with disposable fixtures. What remains is the visual and
   accessibility acceptance with actual artwork: present actual artwork and composed
@@ -53,8 +78,8 @@ this repository.
   sanitized conclusions and limitations; never write credentials or private output
   into issues or this repository.
 
-Provider epic #139 remains open while #152 is unfulfilled. Milestone 2 remains open
-until #223 and #224 pass; #171, #172 and #143 are superseded by them. There is no automatic release tag,
+Provider epic #139 is closed historical tracking. Milestone 2 remains open until
+#224 passes all preserved gates; #152, #223, #171, #172 and #143 are superseded tracking. There is no automatic release tag,
 public package publication or production upgrade as part of a code merge.
 
 ## Acceptance sequence
@@ -70,7 +95,7 @@ public package publication or production upgrade as part of a code merge.
    checks and obtain the owner's explicit decision. No assistant grants approval.
 5. Exercise exact-revision approval, PNG/PDF/SVG/text downloads and invalidation
    after a source/brand/text/art edit. Keep old approved exports as history.
-6. Link sanitized acceptance conclusions to #152/#223/#224, close verified gates
+6. Link sanitized acceptance conclusions to #224, close verified gates
    and the milestone, then follow separately authorized publication instructions.
 
 ## Testing the merged app

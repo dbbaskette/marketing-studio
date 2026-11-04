@@ -26,7 +26,7 @@ const StudioResearch = (() => {
       }
       held=new Note();queuedNotes.set(key,held);
     }
-    const box=make('div','paper'),entry=field('Note for the next research change',held.state.note,'research-queued-note-'+row.id,true);
+    const box=make('div','paper research-queued-note'),entry=field('Note for the next research change',held.state.note,'research-queued-note-'+row.id,true);
     entry.input.disabled=!held.hydrated;
     const status=make('p','quiet field-hint');status.setAttribute('role','status');
     const save=button('Save queued note',async()=>{
@@ -324,13 +324,14 @@ const StudioResearch = (() => {
     if (combining.length) {
       const keptDrafts = combining.filter(row => row.status === 'kept').length;
       const details = make('details', 'research-correction-details'); details.dataset.key = 'research-combining';
-      const summary = make('summary', '', keptDrafts + ' of ' + combining.length + ' section drafts kept');
+      const summary = make('summary', '', phase==='complete'?'Earlier drafts and queued notes':keptDrafts + ' of ' + combining.length + ' section drafts kept');
       summary.dataset.key = 'research-combining-toggle'; details.append(summary);
       const list = make('ul');
       for (const row of combining) {
-        const item=make('li','',array(row.questions).map(q => typeof q === 'string' ? q : q.question || q.text || q.id).join('; ') + ' · ' + (row.status === 'kept' ? 'Draft kept' : row.status === 'working' ? 'Combining' : row.status === 'failed' ? 'Retry needed' : 'Waiting'));
+        if(phase==='complete'&&!row.preview)continue;
+        const item=make('li','',array(row.questions).map(q => typeof q === 'string' ? q : q.question || q.text || q.id).join('; ') + ' · ' + (phase==='complete'?'Earlier draft':row.status === 'kept' ? 'Draft kept' : row.status === 'working' ? 'Combining' : row.status === 'failed' ? 'Retry needed' : 'Waiting'));
         if(row.preview){
-          const preview=make('details','paper');preview.dataset.key='research-preview-'+row.id;
+          const preview=make('details','paper research-section-preview');preview.dataset.key='research-preview-'+row.id;
           const toggle=make('summary','',phase==='complete'?'Earlier section draft and queued note':'Read saved section draft');toggle.dataset.key='research-preview-toggle-'+row.id;preview.append(toggle);
           add(preview,make('p','field-label',phase==='complete'?'Superseded by the checked research report.':'Draft—independent check pending'),make('p','quiet','Read-only saved prose for this approved section. Not eligible for final delivery. Revision '+String(row.preview.basis).slice(0,12)+'.'));
           for(const section of array(row.preview.sections)){preview.append(make('h4','row-title',section.title));for(const text of String(section.text||'').split('\n\n'))preview.append(make('p','',text));}

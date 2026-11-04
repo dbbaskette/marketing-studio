@@ -53,6 +53,15 @@ Application runtime is Python 3.11+. Prepared runtime versions are fixed in
 tooling in `tests/ui/package-lock.json`. Exact fonts and the selected brand's own
 local prerequisites remain explicit. Fonts are not silently substituted or shipped.
 
+## Current source and evidence
+
+The candidate native runtime is 0.5.0, included in Marketing Studio 4.12.0 source.
+[Readiness](../../../docs/infographic-first-release-readiness.md) identifies the
+broad gate and later affected checks; historical results below retain their original
+source. Follow [the concrete live packet](../../../docs/infographic-live-acceptance.md)
+for the remaining #224 gates. No live/provider/owner sign-off is inferred from these
+versions or offline evidence. The platform matrix above remains unchanged.
+
 ## Separate live and owner gates — pending
 
 Do not mark these passed from mocks, command help, a saved prompt or a success message.

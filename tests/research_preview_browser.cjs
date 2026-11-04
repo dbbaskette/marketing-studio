@@ -1,5 +1,5 @@
 /* Saved draft UI and private concerns, scripted native state, no live research. */
-const {chromium}=require('playwright'),{spawn}=require('node:child_process'),assert=require('node:assert/strict'),path=require('node:path');
+const {chromium}=require('playwright'),{spawn}=require('node:child_process'),assert=require('node:assert/strict'),path=require('node:path'),fs=require('node:fs');
 async function fixture(product){
  const child=spawn(process.env.PYTHON||'python3',['tests/slide_review_fixture.py',product,'--research-preview'],{stdio:['ignore','pipe','pipe']});let diagnostic='';child.stderr.on('data',b=>diagnostic+=b);
  const data=await new Promise((resolve,reject)=>{let raw='';const timer=setTimeout(()=>reject(Error('Fixture timeout '+diagnostic)),30000);child.stdout.on('data',b=>{raw+=b;if(raw.includes('\n')){clearTimeout(timer);resolve(JSON.parse(raw.split('\n')[0]));}});child.once('exit',code=>{clearTimeout(timer);reject(Error('Fixture exit '+code+' '+diagnostic));});});
@@ -19,6 +19,7 @@ async function openPreview(page){const panel=page.getByRole('region',{name:'Rese
    await panel.getByText(/This note belongs to an earlier section revision/).waitFor();
    await page.evaluate(()=>ask('fixture-research-stage',{phase:'complete'}));await page.evaluate(()=>refresh());
    await panel.getByText('Superseded by the checked research report.',{exact:true}).waitFor();
+   for(const width of [390,1280])for(const colorScheme of ['light','dark']){await page.setViewportSize({width,height:950});await page.emulateMedia({colorScheme,reducedMotion:'reduce'});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));if(process.env.RESEARCH_PREVIEW_RESULTS){fs.mkdirSync(process.env.RESEARCH_PREVIEW_RESULTS,{recursive:true});await panel.scrollIntoViewIfNeeded();await page.screenshot({path:path.join(process.env.RESEARCH_PREVIEW_RESULTS,`${product}-${width}-${colorScheme}.png`)});}}
    assert.equal((await page.evaluate(()=>ask('fixture-review-state'))).jobs,before.jobs);
    assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));assert.deepEqual(errors,[]);
    console.log(`PASS ${product}: saved read-only section, failed sibling, private queued note/reload, earlier revision warning, checked-result replacement, zero jobs`);
