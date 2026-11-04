@@ -101,7 +101,7 @@ class CollectionPreflightTests(unittest.TestCase):
                 bad = copy.deepcopy(self.value)
                 bad['facts'][0]['kind'] = 'inference'
                 return bad
-            self.assertIn('Unknown fact field: kind', payload['validation_error'])
+            self.assertIn('Fact fact-a: unknown field(s) kind', payload['validation_error'])
             self.assertEqual(json.loads(payload['previous_output'])['facts'][0]['kind'], 'inference')
             return self.value
 

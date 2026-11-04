@@ -216,7 +216,7 @@ class HelperCheckTests(unittest.TestCase):
         broken['sections'] = {'explain': broken['sections'][0]}
         found = check_json(json.dumps(broken), self.spec(RUNTIME))[0]
         self.assertEqual(len(found), 1)
-        self.assertIn('Harness Research refused this dossier', found[0])
+        self.assertIn('sections must be an array', found[0])   # Said by the studio first (#303).
 
     @unittest.skipUnless(RUNTIME, 'set STUDIO_TEST_RESEARCH_RUNTIME to a Harness Research runtime')
     def test_real_helper_rechecks_the_quote_after_exact_handle_repair(self):
@@ -229,7 +229,7 @@ class HelperCheckTests(unittest.TestCase):
         value['facts'][0]['citations'][0]['quote'] = 'Words this source never said.'
         checked = check_json(json.dumps(value), self.spec(RUNTIME))
         self.assertTrue(checked[0])
-        self.assertIn('Exact quote not found', checked[0][0])
+        self.assertIn('is not in source source-a exactly', checked[0][0])
         self.assertEqual(checked[2], [], 'a refused dossier is not described as repaired')
 
 

@@ -45,6 +45,8 @@ class SessionTests(unittest.TestCase):
             if self.fail_area and area == 'area2':
                 self.fail_area = False
                 raise ValueError('Synthetic area failure')
+            if getattr(self, 'outlined', None):
+                return self.outlined(payload, offered)
             if self.handed:
                 return self.cite_every(payload, self.handed(offered))
             source = offered[0] if offered else {'file': 'sources/source.txt', 'origin': 'https://example.invalid/docs', 'permission': 'public', 'path': self.capture}
@@ -63,8 +65,21 @@ class SessionTests(unittest.TestCase):
             value['sections'][0]['blocks'][0]['refs'] = [ref]
             value['brief'][0]['blocks'][0]['refs'] = [value['findings'][0]['id']]
             value = {k: value[k] for k in ('schema', 'findings', 'sections', 'brief')}
+            if getattr(self, 'outlined', None):   # #303: told its exact shape, and passes its check
+                self.assertEqual(set(payload['synthesis_outline']['shapes']), {'finding', 'section', 'statement', 'comparison'})
+                self.assertIn('synthesis_outline', payload['return'])
+                spec = {'runtime': RUNTIME, 'worker': payload['worker'], 'research_mode': 'compose',
+                        'evidence_base': payload['evidence'], 'task': {k: self.task[k] for k in rc.TASK_FIELDS},
+                        'captures': [{'file': s['file'], 'local': s['file'], 'origin': s['origin'],
+                                      'permission': s['permission'], 'original': s.get('original')}
+                                     for s in offered],
+                        'folder': str(session.case_for(self.root))}
+                self.assertEqual(rc.check_json(json.dumps(value), spec)[0], [])
             return json.dumps(session.preparation(value, {'research_mode': 'compose', 'evidence_base': payload['evidence']})), []
         value = review(payload['review_template'])
+        if getattr(self, 'outlined', None):
+            self.assertIn('review_outline', payload)
+            self.assertEqual(rc.review_problems(value, payload['review_template'], RUNTIME), [])
         if self.refuse_fact:
             self.refuse_fact = False
             value['facts'][0].update(verdict='narrow', note='Synthetic located fact correction')
@@ -128,6 +143,35 @@ class SessionTests(unittest.TestCase):
     @staticmethod
     def sha(text):
         return hashlib.sha256(text.encode()).hexdigest()
+
+    def test_investigators_built_from_the_outline_pass_their_check_the_first_time(self):
+        # #303: each investigator is handed every source with each field it must return, so
+        # the packet it builds from that outline passes the job's own check, and the collection.
+        self.task['source_mode'] = 'mixed'; self.barrier = None
+        checked = []
+
+        def outlined(payload, offered):
+            outline = payload['source_outline']
+            self.assertEqual([entry['file'] for entry in outline['sources']], [s['file'] for s in offered])
+            self.assertIn('source_outline', payload['return'])
+            captures = self.worker_job(offered)
+            self.assertEqual([entry['id'] for entry in outline['sources']], [c['id'] for c in captures])
+            sources = [{**entry, 'publisher': 'Synthetic publisher', 'context': 'full'} for entry in outline['sources']]
+            value = {'schema': 2, 'sources': sources, 'gaps': [], 'facts': [
+                {'id': 'fact-a', 'statement': 'More than one instance keeps capacity.', 'author': payload['worker'],
+                 'citations': [{'source': s['id'], 'quote': 'More than one instance keeps capacity.'} for s in sources]}]}
+            spec = {'kind': 'research-json', 'runtime': RUNTIME, 'worker': payload['worker'], 'research_mode': 'evidence',
+                    'task': {k: self.task[k] for k in rc.TASK_FIELDS}, 'captures': captures,
+                    'folder': str(Path(captures[0]['path']).parent.parent)}
+            problems, _, _, kept = rc.check_json(json.dumps(value), spec)
+            checked.append(problems)
+            return kept, captures
+
+        self.outlined = outlined
+        _, manifest = self.run_session(self.untidy_sources())
+        self.assertEqual(manifest['status'], 'complete')
+        self.assertEqual(checked, [[]] * 3)
+        self.assertEqual([phase for phase, _ in self.calls], ['investigate'] * 3 + ['synthesize', 'review'])
 
     def test_untidy_selected_and_public_sources_pass_the_dossier_check(self):
         self.task['source_mode'] = 'mixed'; self.barrier = None; self.handed = self.worker_job

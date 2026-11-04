@@ -5,6 +5,27 @@ making decks first, then what changes for maintainers.
 
 ## Unreleased
 
+- **Research assistants get their evidence accepted sooner (#303).** Each research
+  assistant is now told, up front, every field each source needs: the source's ID, file,
+  exact origin and permission are filled in for it, and it is told what to add (who
+  published the source, whether its capture is full or partial, and its date only when
+  the source states one). When it hands back evidence with problems, it is told all of
+  them in one short list instead of one at a time, so research takes fewer assistant
+  turns. The assistant that combines the evidence is told the exact shape of the report
+  and brief it returns, and the independent check is told what each part of its review
+  takes; each is told everything to correct at once too, and the check now corrects its
+  review inside its own job instead of the research failing afterwards. What is accepted
+  is unchanged: nothing Harness Research refuses is accepted.
+  Maintainers: `source_outline` (from `research_contract.source_outline`, read from the
+  pinned helper's schema) is in each investigator's and serial author's research-task
+  input, with `synthesis_outline` for the synthesis and serial author and
+  `review_outline` for the review, and the job's text says to build from them. The worker tools'
+  research-json check (`research_contract.check_json`) gathers every studio check and
+  `packet_problems` (evidence) or `compose_shape` and `synthesis_problems` (synthesis)
+  before the pinned helper, which runs as before when they find nothing; a review job's
+  artifact now carries its `review_template`, and `review_problems` checks it in the job.
+  See `docs/research-synthesis.md`.
+
 - **See what the assistant is doing, and what it did (#294).** Each assistant job
   working now shows its name, when it started and its latest action as "Now: …", and
   **Show activity** opens everything it has done so far, newest first, with times; the
