@@ -117,7 +117,7 @@ def roadmap(project, deliveries, *, review=None, review_checked=False, page=lamb
             'downloads': downloads}
 
 
-def readiness(project, recovery=None):
+def readiness(project, recovery=None, deliveries=()):
     """A short working state for lists. Exact revision identity is reported beside it."""
     if recovery and recovery.get('current') and recovery.get('state') == 'failed' and recovery.get('step') in ('font-check', 'preview'):
         return {'state': 'review', 'summary': 'Preview failed: retry the saved preview'}
@@ -131,7 +131,9 @@ def readiness(project, recovery=None):
     if any(a['state'] in ('queued', 'running', 'unknown') for a in project['attempts']):
         return {'state': 'review', 'summary': 'Artwork request needs checking'}
     if project['scene'] is not None:
-        return {'state': 'current', 'summary': 'Page built: review the preview'}
+        if any(delivery['current'] for delivery in deliveries):
+            return {'state': 'current', 'summary': 'Page built: review the preview'}
+        return {'state': 'current', 'summary': 'Page changed: update the preview' if deliveries else 'Page saved: create a preview'}
     if project['selected_story'] is not None:
         return {'state': 'current', 'summary': 'Story chosen: build the page'}
     if project['stories']:

@@ -708,8 +708,8 @@ function inspector(p,names,img,mark){
     if(bench.unchanged&&!unsaved){state.className='ig-save-state';state.textContent='Nothing changed, so no revision was made. These words are already in revision '+held.page_revision+'.';return;}
     if(bench.saved&&!unsaved&&bench.saved.revision===held.project.revision){
       // The toolbar's Update preview is the one control for this; the words say so.
-      const stale=!held.deliveries.find(d=>d.current);state.className='ig-save-state';
-      state.textContent='Saved '+bench.saved.label+' as revision '+held.page_revision+'. '+(stale?'The preview still shows an earlier revision. Choose Update preview to see this change before review.':'');
+      const stale=!held.deliveries.find(d=>d.current),earlier=held.deliveries.length>0;state.className='ig-save-state';
+      state.textContent='Saved '+bench.saved.label+' as revision '+held.page_revision+'. '+(stale?(earlier?'The preview still shows an earlier revision. Choose Update preview to see this change before review.':'No preview has been created yet. Choose Create preview to see this change before review.'):'');
       return;
     }
     state.className='ig-save-state quiet';state.textContent=unsaved?'Unsaved words. Saving makes a new revision; approval is never carried over.':'Saving makes a new revision. Approval is never carried over.';
@@ -964,6 +964,7 @@ function receiptSheet(delivery,receipts){
     partial?make('p','quiet','What succeeded is kept. Retrying the PDF is a download on this computer and sends nothing to Google.'):null,add(make('div','create-foot bar'),button('Done',closeSheet,true)));
 }
 function recoveryContent(r) {
+  if(!r.current)return add(make('div','stack'),make('p','','An earlier step failed: '+r.label+'. Your page has changed since then.'),make('p','quiet','This failure does not describe the current page. Use the current page action above to continue; nothing was retried automatically.'),r.diagnostic?make('p','field-hint','Earlier diagnostic reference: '+r.diagnostic):null);
   const retry=r.current&&r.next_action?button(r.next_label,()=>action(r.next_action,r.next_values,r.revision),true):null;
   return add(make('div','stack'),make('p','',r.message||r.label+' could not finish.'),r.help?make('p','quiet',r.help):null,make('p','quiet','Completed: '+(r.completed.join(', ')||'Earlier saved work')+'.'),make('p','quiet','Your saved page, artwork and image request identity are kept. '+(['preview','export','compose-image'].includes(r.next_action)?'This local retry does not generate artwork.':'Retry composition continues the saved build, including artwork when the page requires it.')),r.diagnostic?make('p','field-hint','Diagnostic reference: '+r.diagnostic):null,retry);
 }

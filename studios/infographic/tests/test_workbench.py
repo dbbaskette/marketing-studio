@@ -89,7 +89,7 @@ class WorkbenchTests(Isolated):
 
     def test_desk_and_home_report_readiness_with_the_exact_revision(self):
         inspected = self.engine.inspect(self.ident)
-        self.assertEqual(inspected['readiness']['summary'], 'Page built: review the preview')
+        self.assertEqual(inspected['readiness']['summary'], 'Page saved: create a preview')
         self.assertEqual([e['id'] for e in inspected['elements']], [e['id'] for e in labels.elements(inspected['project'])])
         approved = self.review_and_approve()
         listed = self.store.listing()[0]
@@ -97,6 +97,29 @@ class WorkbenchTests(Isolated):
                          (approved['revision'], 'Approved: ready to export and deliver'))
         fresh = self.store.create('Synthetic empty brief')
         self.assertEqual(progress.readiness(fresh)['summary'], 'Brief saved: add information')
+
+    def test_preview_readiness_tracks_failure_edits_and_current_delivery(self):
+        from runner import build_recovery
+        from unittest import mock
+        def shown(summary, action):
+            view = self.engine.inspect(self.ident)
+            self.assertEqual(view['readiness']['summary'], summary)
+            self.assertEqual(self.store.listing()[0]['readiness'], view['readiness'])
+            self.assertEqual(view['roadmap']['action'], action)
+        shown('Page saved: create a preview', 'Create preview')
+        build_recovery.keep(self.store, self.ident, 'preview', state='failed')
+        self.assertEqual(self.store.listing()[0]['readiness']['summary'], 'Preview failed: retry the saved preview')
+        self.engine.edit_text(self.ident, 'headline', 'Changed heading', expected_revision=self.current()['revision'])
+        shown('Page saved: create a preview', 'Create preview')
+        self.assertFalse(self.engine.inspect(self.ident)['workflow_recovery']['current'])
+        self.engine.preview(self.ident, expected_revision=self.current()['revision'])
+        shown('Page built: review the preview', 'Review page')
+        self.engine.edit_text(self.ident, 'headline', 'A newer heading', expected_revision=self.current()['revision'])
+        shown('Page changed: update the preview', 'Update preview')
+        with mock.patch.object(sources, 'read', side_effect=AssertionError('Home must not read source bytes')):
+            self.assertEqual(self.store.listing()[0]['readiness']['summary'], 'Page changed: update the preview')
+        self.engine.preview(self.ident, expected_revision=self.current()['revision'])
+        shown('Page built: review the preview', 'Review page')
 
     def test_bookkeeping_revisions_carry_the_page_revision_they_recorded(self):
         built = self.current()['revision']
