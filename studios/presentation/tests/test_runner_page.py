@@ -36,7 +36,7 @@ from runner.steps import deliver, finishing
 from workspace import WorkspaceError
 
 VERSION = (helpers.SKILL / 'VERSION').read_text().strip()
-GETS = ('/api/capabilities', '/api/setup', '/api/agents', '/api/models', '/api/decks',
+GETS = ('/api/intake-draft', '/api/capabilities', '/api/setup', '/api/agents', '/api/models', '/api/decks',
         '/api/run', '/api/activity', '/api/slide', '/api/download', '/api/status', '/api/published',
         '/api/delete', '/api/file', '/api/computer', '/api/known-decks', '/api/storyboard',
         '/api/desk-outline-price', '/api/desk-versions', '/api/desk-migration-preview',
@@ -52,14 +52,14 @@ DESK_POSTS = ('/api/desk-note', '/api/desk-deck-note', '/api/desk-stop', '/api/d
 # The shared Document Library's browsing routes: each reads, and selects nothing.
 LIBRARY_POSTS = ('/api/library', '/api/library-document', '/api/library-filters',
                  '/api/library-matching')
-POSTS = ('/api/research-sources', '/api/setup/check', '/api/setup', '/api/decks', '/api/run', '/api/decide',
+POSTS = ('/api/intake-draft', '/api/research-sources', '/api/setup/check', '/api/setup', '/api/decks', '/api/run', '/api/decide',
          '/api/answer', '/api/share', '/api/fetch', '/api/drive', '/api/publish',
          '/api/delete', '/api/bring', '/api/companions', '/api/upgrade', '/api/restart',
          '/api/versions', '/api/computer', '/api/brand', '/api/brand/install',
          '/api/shared', '/api/deliver', '/api/storyboard', '/api/review-draft', '/api/build-feedback', '/api/progress-seen',
          '/api/note', '/api/research-site', '/api/picture',
          '/api/picture-remove', '/api/desk-outline-price', *DESK_POSTS, *LIBRARY_POSTS)
-BOTH = ('/api/setup', '/api/decks', '/api/run', '/api/delete', '/api/computer', '/api/storyboard',
+BOTH = ('/api/intake-draft', '/api/setup', '/api/decks', '/api/run', '/api/delete', '/api/computer', '/api/storyboard',
         '/api/desk-outline-price')
 LISTED = [{'name': 'gpt-6-sol', 'label': 'GPT-6-Sol (gpt-6-sol)', 'family': None,
            'about': 'Previous generation workhorse model.', 'default_level': 'medium',
@@ -163,6 +163,22 @@ class PageCase(Asking, StudioCase):
     def setUp(self):
         super().setUp()
         self.ready_page()
+
+
+class IntakeDraftTests(PageCase):
+    def test_private_intake_roundtrip_and_stale_tab_start_no_work(self):
+        workers = len(self.workers.jobs)
+        self.assertEqual(self.get('intake-draft'), {'revision': 0, 'draft': None})
+        saved = self.post('intake-draft', {'action': 'save', 'expected': 0,
+            'patch': {'title': 'Synthetic private intake', 'step': 1,
+                      'library': [{'id': 'document', 'revision': 3}]}})
+        self.assertEqual(self.get('intake-draft'), saved)
+        self.post('intake-draft', {'action': 'save', 'expected': 0,
+            'patch': {'title': 'Stale tab'}}, expect=409)
+        self.assertEqual(self.get('intake-draft'), saved)
+        cleared = self.post('intake-draft', {'action': 'discard', 'expected': saved['revision']})
+        self.assertIsNone(cleared['draft'])
+        self.assertEqual(len(self.workers.jobs), workers)
 
 
 class CapabilityTests(PageCase):
@@ -288,7 +304,9 @@ class RuleTests(PageCase):
         self.assertEqual(self.page.body_limit('/api/decks?x=1', with_key), page.DECKS_LIMIT)
         self.assertEqual(self.page.body_limit('/api/research-sources', with_key), 12_000_000)
         self.assertEqual(self.page.body_limit('/api/research-sources', without), server.BODY_LIMIT)
-        for target in set(POSTS) - {'/api/decks', '/api/picture', '/api/desk-source', '/api/research-sources'}:
+        self.assertEqual(self.page.body_limit('/api/intake-draft', with_key), 32_000_000)
+        self.assertEqual(self.page.body_limit('/api/intake-draft', without), server.BODY_LIMIT)
+        for target in set(POSTS) - {'/api/intake-draft', '/api/decks', '/api/picture', '/api/desk-source', '/api/research-sources'}:
             self.assertEqual(self.page.body_limit(target, with_key), server.BODY_LIMIT, target)
 
     def test_a_source_added_on_the_desk_may_be_large_only_with_the_key(self):

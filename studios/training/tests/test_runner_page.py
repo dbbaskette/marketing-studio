@@ -43,12 +43,12 @@ LISTED = [{'name': 'gpt-6-sol', 'label': 'GPT-6-Sol (gpt-6-sol)', 'family': None
            'levels': ['low', 'medium', 'high', 'xhigh']},
           {'name': 'gpt-6-luna', 'label': 'GPT-6-Luna (gpt-6-luna)', 'family': None,
            'about': None, 'default_level': None, 'levels': ['low', 'medium', 'high']}]
-GETS = ('/api/capabilities', '/api/setup', '/api/agents', '/api/models', '/api/run')
-POSTS = ('/api/training-plan', '/api/research-sources', '/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/answer',
+GETS = ('/api/intake-draft', '/api/capabilities', '/api/setup', '/api/agents', '/api/models', '/api/run')
+POSTS = ('/api/intake-draft', '/api/training-plan', '/api/research-sources', '/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/answer',
          '/api/documents', '/api/copies', '/api/share', '/api/companions', '/api/asset',
          '/api/upgrade', '/api/restart', '/api/versions', '/api/brand', '/api/brand/install', '/api/review',
          '/api/note', '/api/research-site')
-BOTH =('/api/setup', '/api/run', '/api/trainings')
+BOTH = ('/api/intake-draft', '/api/setup', '/api/run', '/api/trainings')
 RUN_KEYS = ['agent', 'ahead', 'can_migrate_desk', 'can_open_desk', 'clash', 'controls', 'copies', 'current_models', 'decided', 'deck', 'deck_left', 'documents', 'driver', 'effort',
             'finished', 'flow', 'kept', 'last_shared', 'look', 'mine', 'model', 'model_mode', 'note', 'notice', 'outline', 'problem',
             'question', 'queue', 'redesign', 'research_from', 'research_progress', 'review', 'review_level', 'sentence', 'settings', 'spent', 'state', 'steps', 'taken', 'timing',
@@ -161,6 +161,22 @@ class FirstTimeCase(PageCase):
             self.assertTrue(gitstate.sync(gitstate.join(str(remote), **named))['shared'])
 
 
+class IntakeDraftTests(PageCase):
+    def test_private_intake_roundtrip_and_stale_tab_start_no_work(self):
+        workers = len(self.workers.jobs)
+        self.assertEqual(self.get('intake-draft'), {'revision': 0, 'draft': None})
+        saved = self.post('intake-draft', {'action': 'save', 'expected': 0,
+            'patch': {'title': 'Synthetic private intake', 'step': 1,
+                      'library': [{'id': 'document', 'revision': 3}]}})
+        self.assertEqual(self.get('intake-draft'), saved)
+        self.post('intake-draft', {'action': 'save', 'expected': 0,
+            'patch': {'title': 'Stale tab'}}, expect=409)
+        self.assertEqual(self.get('intake-draft'), saved)
+        cleared = self.post('intake-draft', {'action': 'discard', 'expected': saved['revision']})
+        self.assertIsNone(cleared['draft'])
+        self.assertEqual(len(self.workers.jobs), workers)
+
+
 class CapabilityTests(PageCase):
     def test_the_runner_says_it_is_here(self):
         self.assertEqual(self.get('capabilities'), {'runner': True, 'version': VERSION})
@@ -210,7 +226,7 @@ class RuleTests(PageCase):
     def setUp(self):
         super().setUp()
         self.path = self.saved_started()
-        self.bodies = {'/api/training-plan': {'path':'nowhere', 'expected':'none', 'decision':'approve'}, '/api/research-sources': {'action':'create'}, '/api/setup/check': {'path': str(self.base / 'elsewhere')},
+        self.bodies = {'/api/intake-draft': {'action': 'read'}, '/api/training-plan': {'path':'nowhere', 'expected':'none', 'decision':'approve'}, '/api/research-sources': {'action':'create'}, '/api/setup/check': {'path': str(self.base / 'elsewhere')},
                        '/api/setup': {'limits': {'parallel': 4}},
                        '/api/trainings': {**FORM, 'title': 'Health checks'},
                        '/api/run': {'path': self.path, 'action': 'stop'},
@@ -2066,12 +2082,13 @@ class LaterTests(PageCase):
         self.assertEqual(self.page.body_limit('/api/documents?x=1', headers), 12_000_000)
         self.assertEqual(self.page.body_limit('/api/asset', headers), 12_000_000)
         self.assertEqual(self.page.body_limit('/api/research-sources', headers), 12_000_000)
+        self.assertEqual(self.page.body_limit('/api/intake-draft', headers), 32_000_000)
         for token in (False, 'not-the-key'):
-            for target in ('/api/documents', '/api/asset', '/api/research-sources'):
+            for target in ('/api/documents', '/api/asset', '/api/research-sources', '/api/intake-draft'):
                 self.assertEqual(self.page.body_limit(target, self.headers(token=token)),
                                  desk.BODY_LIMIT, 'a stranger is never read at length')
         for target in (*desk.WRITES, *(path for path in POSTS
-                                       if path not in ('/api/documents', '/api/asset', '/api/research-sources')),
+                                       if path not in ('/api/documents', '/api/asset', '/api/research-sources', '/api/intake-draft')),
                        '/api/documents/more', '/api/nothing', '/', '//[', ''):
             self.assertEqual(self.page.body_limit(target, headers), 64_000, target)
         self.assertEqual(desk.Page(self.PORT).body_limit('/api/documents', headers), 64_000,

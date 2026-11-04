@@ -20,7 +20,9 @@ const StudioResearch = (() => {
       this.keep = adapter.keepChoice ? true : null;
       this.kept = {};     // source id -> what the Document Library said of its file
       this.value = adapter.value || null;
+      this.resume = adapter.resume || null;
       this.urls = ''; this.text = ''; this.name = 'Pasted notes'; this.busy = false; this.problem = ''; this.reading = '';
+      for(const key of ['urls','text','name','pasting','keep']) if(adapter.entry && adapter.entry[key] !== null && adapter.entry[key] !== undefined) this[key] = adapter.entry[key];
       this.node = make('section', 'research-source-editor stack');
       this.node.setAttribute('aria-label', adapter.label || 'Research sources');
       this.render();
@@ -29,7 +31,7 @@ const StudioResearch = (() => {
     async load() {
       if (this.busy) return;
       this.busy = true; this.render();
-      try { this.value = await this.a.request(this.value ? {action: 'read', id: this.value.id} : {action: 'create'}); this.problem = ''; }
+      try { this.value = await this.a.request(this.value || this.resume ? {action: 'read', id: (this.value || this.resume).id} : {action: 'create'}); this.resume = null; this.problem = ''; }
       catch (error) { this.problem = message(error); }
       finally { this.busy = false; this.render(); this.changed(); }
     }
@@ -126,7 +128,7 @@ const StudioResearch = (() => {
       group.dataset.at = String(at); group.dataset.count = '2';
       const thumb = make('span', 'seg-thumb'); thumb.setAttribute('aria-hidden', 'true'); group.append(thumb);
       options.forEach((text, index) => {
-        const option = button(text, () => { if (this.keep !== (index === 0)) { this.keep = index === 0; this.render(); } }, 'research-keep-' + index);
+        const option = button(text, () => { if (this.keep !== (index === 0)) { this.keep = index === 0; this.render(); this.changed(); } }, 'research-keep-' + index);
         option.className = 'seg-option'; option.setAttribute('aria-pressed', String(index === at)); group.append(option);
       });
       return add(make('div', 'field research-keep'), make('p', 'field-label', 'Where an uploaded file is kept'), group, make('p', 'field-hint', says[at]));
@@ -153,7 +155,7 @@ const StudioResearch = (() => {
       file.setAttribute('aria-label', 'Upload source files');
       file.addEventListener('change', () => this.files(file.files));
       const actions = add(make('div', 'bar'), button('Choose files', () => file.click(), 'research-files'),
-        button(this.pasting ? 'Close pasted text' : 'Paste text', () => { this.pasting = !this.pasting; this.render(); }, 'research-paste'));
+        button(this.pasting ? 'Close pasted text' : 'Paste text', () => { this.pasting = !this.pasting; this.render(); this.changed(); }, 'research-paste'));
       // Optional, per studio: Add from library, which the studio's own adapter opens (the
       // shared StudioLibrary.pick) and whose picks it lists under the sources (`extra`).
       if (this.a.library) actions.append(button('Add from library', () => this.a.library(this), 'research-library'));

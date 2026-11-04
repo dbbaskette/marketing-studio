@@ -363,25 +363,32 @@ class LayoutTests(test_desk.ScriptedPage, test_desk.PageCase):
               {'fill': 'Who is it for?', 'value': 'Platform engineers new to it.'}]
 
     def test_new_training_is_one_sheet_in_numbered_steps(self):
-        result = self.run_page(self.begun(), [{'click': 'New training'}, {'snapshot': 'sheet'}])
-        shot = result['snapshots']['sheet']
-        sheet = shot['sheet']
-        steps = ['1. Goal and audience', '2. Materials and levels', '3. Sources and settings']
-        self.assertEqual([part for part in shot['parts'] if part[:2] in ('1.', '2.', '3.', '4.')],
-                         steps)
-        self.assertEqual(sorted(steps, key=sheet.index), steps)
-        self.assertEqual(shot['filled'], ['Start'])
-        self.assertTrue(sheet.rstrip().endswith('Start\nCancel'), sheet[-200:])
-        self.assertNotIn('Continue', shot['buttons'])
-        self.assertNotIn('Back a step', shot['buttons'])
-        self.assertEqual([control['name'] for control in shot['toolbar']], [])
+        result = self.run_page(self.begun(), [
+            {'click': 'New training'}, {'snapshot': 'goal'}, *self.FILLED,
+            {'click': 'Next'}, {'snapshot': 'sources'},
+            {'click': 'Next'}, {'snapshot': 'review'}], strictIntake=True)
+        headings = ['1. Goal and audience', '2. Sources and questions', '3. Outputs and review']
+        for index, name in enumerate(['goal', 'sources', 'review']):
+            shot = result['snapshots'][name]
+            self.assertIn(headings[index], shot['sheet'])
+            for other in headings:
+                if other != headings[index]:
+                    self.assertNotIn(other, shot['sheet'])
+            self.assertEqual(shot['filled'], ['Start' if index == 2 else 'Next'])
+            self.assertIn('Save and close', shot['buttons'])
+            self.assertIn('Discard draft', shot['buttons'])
+            self.assertEqual(shot['posts'], 0)
 
     def test_the_last_step_and_where_research_looks_sit_above_start(self):
-        result = self.run_page(self.begun(), [{'click': 'New training'}, {'snapshot': 'sheet'}])
-        sheet = result['snapshots']['sheet']['sheet']
-        looks = sheet.index('Research from the public web.')
-        self.assertLess(sheet.index('3. Sources and settings'), looks)
-        self.assertLess(looks, sheet.rindex('Start\nCancel'))
+        result = self.run_page(self.begun(), [
+            {'click': 'New training'}, *self.FILLED, {'click': 'Next'},
+            {'snapshot': 'sources'}, {'click': 'Next'}, {'snapshot': 'review'}], strictIntake=True)
+        sources = result['snapshots']['sources']['sheet']
+        self.assertIn('Research from the public web.', sources)
+        self.assertNotIn('Start', result['snapshots']['sources']['buttons'])
+        review = result['snapshots']['review']['sheet']
+        self.assertLess(review.index('3. Outputs and review'), review.rindex('Start'))
+        self.assertIn('Outputs:', review)
 
     def test_the_sheet_sends_what_the_wizard_sent(self):
         result = self.run_page(self.begun(), [
@@ -420,20 +427,20 @@ class LayoutTests(test_desk.ScriptedPage, test_desk.PageCase):
             {'snapshot': 'no materials'}])
         empty = result['snapshots']['empty']
         self.assertEqual((empty['focus'], empty['posts']), ('new-title', 0))
-        self.assertIn('Something above is missing.', empty['sheet'])
+        self.assertIn('Give it a title first.', empty['sheet'])
         self.assertIn('Choose at least one material to make, or a slide deck.',
                       result['snapshots']['no materials']['sheet'])
         self.assertEqual(self.posts(result), [])
 
     def test_cancel_keeps_the_draft_for_the_session(self):
         result = self.run_page(self.begun(), [
-            {'click': 'New training'}, {'fill': 'A short title', 'value': 'Rolling restarts'},
+            {'click': 'New training'}, *self.FILLED,
             {'tick': 'Reference brief'}, {'click': 'Cancel'}, {'snapshot': 'closed'},
             {'click': 'New training'}, {'snapshot': 'again'}])
         shots = result['snapshots']
         self.assertEqual(shots['closed']['sheet'], '')
         self.assertEqual(shots['closed']['heading'], 'Home')
-        self.assertEqual(shots['again']['fields']['A short title'], 'Rolling restarts')
+        self.assertEqual(shots['again']['intakeValues']['new-title'], 'Rolling restarts')
         self.assertIn('Reference brief', shots['again']['trainingChecked'])
         self.assertEqual(self.posts(result), [])
 
@@ -452,7 +459,7 @@ class LayoutTests(test_desk.ScriptedPage, test_desk.PageCase):
         answers['GET /api/setup'] = [ok(shared)]
         result = self.run_page(answers, [
             {'click': 'New training'}, *self.FILLED,
-            {'snapshot': 'research'}, {'tick': 'Your sites (2)'}, {'snapshot': 'sites'},
+            {'intakePage': 1}, {'snapshot': 'research'}, {'tick': 'Your sites (2)'}, {'snapshot': 'sites'},
             {'tick': 'The public web'}, {'click': 'Start'}])
         research = result['snapshots']['research']
         self.assertEqual(test_desk.research_ticks(research), ['The public web'])

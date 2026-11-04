@@ -285,6 +285,11 @@ class FakeElement extends FakeNode {
     return this.all().filter((node) => selector.split(',').some((one) => matches(node, one.trim())));
   }
 
+  closest(selector) {
+    for(let node=this;node;node=node.parentNode)if(node.nodeType === 1 && matches(node,selector))return node;
+    return null;
+  }
+
   querySelector(selector) {
     return this.querySelectorAll(selector)[0] || null;
   }
@@ -583,7 +588,7 @@ function snapshot() {
     focus: document.activeElement === document.body ? '(nowhere)'
       : document.activeElement ? (document.activeElement.id || name(document.activeElement)) : '',
     notice: document.getElementById('notice').hidden ? '' : document.getElementById('notice').textContent,
-    current: document.body.querySelectorAll('[aria-current]').map(name),
+    current: document.body.querySelectorAll('[aria-current]').filter(node => node.getAttribute('aria-current') !== 'step').map(name),
     sheet: sheet.hidden ? '' : words(sheet).replace(/\n+/g, '\n'),
     toasts: document.body.querySelectorAll('.toast').map((node) => node.textContent),
     links: document.body.querySelectorAll('a').filter((node) => visible(node) && node.href)
@@ -591,7 +596,13 @@ function snapshot() {
         target: node.target })),
     off: controls.filter((node) => visible(node) && node.disabled)
       .map((node) => name(node) || node.id),
-    posts: report.requests.filter((request) => request.method === 'POST').length,
+    posts: report.requests.filter(request => request.method === 'POST' && request.address !== '/api/intake-draft').length,
+    intakePosts: report.requests.filter(request => request.method === 'POST' && request.address === '/api/intake-draft').length,
+    deskSummary: document.body.querySelector('.desk-summary') ? words(document.body.querySelector('.desk-summary')) : '',
+    intakeText: document.body.querySelector('.intake-body')?.textContent || '',
+    intakePressed: document.body.querySelectorAll('.intake-body [aria-pressed="true"]').map(name),
+    intakeTicked: document.body.querySelectorAll('.intake-body input').filter(n => n.checked).map(name),
+    intakeValues: Object.fromEntries(document.body.querySelectorAll('.intake-body input, .intake-body textarea, .intake-body select').map(node => [node.id || node.dataset.key,node.value])),
     badge: badge.hidden ? '' : badge.textContent,
     fields: Object.fromEntries(boxes().map(([label, held]) => [label, held.value])),
     // What each of the browser's own lists offers, in order, under the words of its label.
@@ -694,6 +705,34 @@ function build(shell) {
   }
 }
 
+// Existing field-focused journeys use the real Back/Next controls to reach an intake
+// field. No hidden control is edited and no validation or final Start is bypassed.
+async function reachIntake(step, strict) {
+  if(strict)return;
+  const kind=step.click ? 'click' : step.fill !== undefined || step.attach !== undefined
+    || step.enter !== undefined || step.select !== undefined ? 'box' : step.tick ? 'tick' : '';
+  let label=step.click || step.fill || step.attach || step.enter || step.select || step.tick;
+  if((!kind || !label) && step.intakePage === undefined)return;
+  const lookup=()=>kind === 'click' ? control(label) : kind === 'tick' ? checkbox(label) : box(label);
+  if(step.intakePage === undefined){try{lookup();return;}catch(_){}}
+  const body=document.body.querySelector('.intake-body');if(!body)return;
+  if(label === 'Cancel'){step.click='Save and close';return;}
+  const fieldName=node => node.getAttribute('aria-label') || labelOf(node)?.textContent?.trim() || name(node);
+  const candidate=body.all().find(n => ['BUTTON','SUMMARY','INPUT','TEXTAREA','SELECT'].includes(n.tagName)
+    && (fieldName(n) === label || fieldName(n).startsWith(label)));
+  const target=candidate?.closest('.create-step');
+  const destination=step.intakePage !== undefined ? step.intakePage : label === 'Start' ? body.children.length-1 : target ? body.children.indexOf(target) : -1;
+  if(destination < 0)return;
+  for(let tries=0;tries<4;tries++){
+    const index=body.children.findIndex(n => !n.hidden);
+    if(index === destination)return;
+    const direction=document.body.querySelector('[data-key="'+(destination < index ? 'intake-back' : 'continue')+'"]');
+    if(!direction || direction.disabled)return;
+    direction.click();await settle();
+    if(body.children.findIndex(n => !n.hidden) === index){if(label === 'Start')step.click='Next';return;}
+  }
+}
+
 async function app(file) {
   const plan = JSON.parse(fs.readFileSync(file, 'utf8'));
   const answers = plan.answers;
@@ -781,6 +820,13 @@ async function app(file) {
         body: options && options.body ? JSON.parse(options.body) : null });
       // An answer can be kept for one address, query and all, or for every query of it.
       const held = answers[method + ' ' + address] || answers[key];
+      if (!held && address.split('?')[0] === '/api/intake-draft') {
+        plan.intake ||= {revision:0,draft:null};
+        const sent=options?.body ? JSON.parse(options.body) : {action:'read'};
+        if(sent.action !== 'read')plan.intake={revision:plan.intake.revision+1,
+          draft:sent.action === 'discard' ? null : {...(plan.intake.draft || {}),...sent.patch}};
+        return {ok:true,status:200,json:async () => JSON.parse(JSON.stringify(plan.intake))};
+      }
       if (!held) return { ok: false, status: 404, json: async () => ({ error: 'No answer for ' + key }) };
       const answer = held.length > 1 ? held.shift() : held[0];
       if (answer.pending) return new Promise(() => {});
@@ -834,6 +880,7 @@ async function app(file) {
   const shots = {};
   for (const step of plan.steps) {
     try {
+      await reachIntake(step, plan.strictIntake);
       if (step.storageUpdate) Object.assign(storage, step.storageUpdate);
       if (step.storageReplace) {
         for (const key of Object.keys(storage)) delete storage[key];
@@ -843,6 +890,7 @@ async function app(file) {
         report.storageSnapshots = report.storageSnapshots || {};
         report.storageSnapshots[step.captureStorage] = { ...storage };
       }
+      if(step.disclose){const d=document.body.querySelector('[data-key="'+step.disclose+'"]');if(d && !d.open)d.querySelector('summary').click();}
       if (step.snapshot) shots[step.snapshot] = snapshot();
       if (step.click) control(step.click, step.index || 0).click();
       // {edit: a material's Edit control}: open it for editing unless it is open already, as

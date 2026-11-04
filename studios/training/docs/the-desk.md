@@ -4,6 +4,20 @@ Conversation can create, inspect and save the same desk records with `studio des
 
 The desk is where you read, change and finish a new training as Training Studio makes it. Start with **New training**: describe the learning goal and audience, choose materials and research sources, then check the summary and start. You can leave and return while work continues. Progress shows what is being made, time and cost, and anything that needs you; pause, resume or stop work from the run.
 
+## Start in three short pages
+
+**New training** has Goal and audience, Sources and questions, then Outputs and review.
+Back and Next keep your answers and source choices. The last page describes the next
+operation and the selected materials, with assistant limits under a disclosure.
+**Start** creates the training and begins work. Moving between pages starts no work.
+
+Your unfinished form is saved privately on this computer for its configured workspace,
+including its current page, captured source identity and selected Library revisions.
+Reload returns to an open form; **Save and close** leaves it closed until you reopen
+New training. **Discard draft** asks once, then removes only the unfinished form.
+Captured sources, Library documents and existing trainings are kept. A save conflict
+between tabs asks you to preserve your unsaved answers and reload the saved version.
+
 ## Check the topics, then build
 
 New trainings first research and plan what to teach. **Here’s what this training will
@@ -64,7 +78,7 @@ A training saves the model and reasoning level it uses for each kind of work (Qu
 
 ## Mark ready and Finishing
 
-Under the level tabs, one line says how many of the level's materials are ready, still to write, drafts to mark ready, or need attention or a decision. A material is ready on its own; a level is complete once all of its materials are, and downloads and Google Docs stay optional. While a deck's slide text waits for you, its tab says **Needs your text approval** and **Review slide text** takes you to it; materials not written yet say **Not written yet**, never Writing, while nothing works on them. Time so far is a detail you open; elapsed time is never an estimate of what is left.
+Under the level tabs, one line says how many of the level's materials are ready, still to write, drafts to mark ready, or need attention or a decision. A material is ready on its own; a level is complete once all of its materials are, and downloads and Google Docs stay optional. The fuller readiness explanation is under **About Ready and delivery** below the material, so the material comes first. While a deck's slide text waits for you, its tab says **Needs your text approval** and **Review slide text** takes you to it; materials not written yet say **Not written yet**, never Writing, while nothing works on them. Time so far is a detail you open; elapsed time is never an estimate of what is left.
 
 **Mark ready** records your approval of a material. You can also mark a level ready: **Mark this level ready** appears only while one of the level's materials is a draft waiting for it, and it opens a sheet first. The sheet lists each material it will mark as **Opened** or **Not opened yet** (with a way to open it), says which guides and briefs go to the Document Library, and ends with its submit and **Cancel**; Cancel changes nothing and returns you to the button. The desk stops at the first material that needs attention. Settle holds, grave deck findings and other blocking checks first.
 

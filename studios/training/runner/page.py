@@ -262,12 +262,12 @@ SETTINGS_SOURCES = f'{SETTINGS}/sources'   # a source draft holding what researc
 MODELS = '/api/training-models'   # Use the current model settings: what changes, and its save
 CARD = f'{DRAFTS}/card'   # one card with its parts, as the shared kit reads it
 PART_LIMIT = 1_000_000   # bytes: one part of the largest size, as JSON
-READS = ('/api/capabilities', '/api/setup', '/api/agents', '/api/models', '/api/run',
+READS = ('/api/intake-draft', '/api/capabilities', '/api/setup', '/api/agents', '/api/models', '/api/run',
          '/api/activity', SETTINGS, MODELS,
          '/api/download', '/api/slide', '/api/status', '/api/published', '/api/delete', '/api/deck-draft-ticket',
          DRAFTS, CARD, VERSIONS, f'{DRAFTS}/update-preview', f'{DRAFTS}/slide-versions', f'{DRAFTS}/source-price',
          f'{DRAFTS}/proofread', f'{DRAFTS}/migration-preview', f'{DRAFTS}/doc-preview')
-WRITES = ('/api/training-plan', '/api/research-sources', SETTINGS, SETTINGS_SOURCES, MODELS, '/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/answer',
+WRITES = ('/api/intake-draft', '/api/training-plan', '/api/research-sources', SETTINGS, SETTINGS_SOURCES, MODELS, '/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/answer',
           '/api/documents', '/api/copies', '/api/share', '/api/outline', '/api/review', '/api/drive',
           '/api/publish', '/api/adopt', '/api/fetch', '/api/delete', '/api/companions',
           '/api/asset', '/api/upgrade', '/api/restart', '/api/versions', '/api/redesign',
@@ -374,6 +374,13 @@ class RunnerPage(desk.Page):
     # --- reads ---------------------------------------------------------------------------
 
     def read(self, path: str, one):
+        if path == '/api/intake-draft':
+            from studio_core import intake_drafts
+            try:
+                return desk.as_json(HTTPStatus.OK, intake_drafts.dispatch(home.data_root(),
+                    gitstate.workspace_identity(self.engine.workspace), {'action':'read'}))
+            except ValueError as error:
+                raise desk.Refusal(HTTPStatus.BAD_REQUEST, str(error)) from None
         self.engine.seen()
         if path == '/api/download':
             def given(name):
@@ -633,6 +640,13 @@ class RunnerPage(desk.Page):
         desk, by whoever holds the key. Anyone else's request there is held to the desk's
         limit, so it is refused unread."""
         address = target.partition('?')[0]
+        if address == '/api/intake-draft':
+            try:
+                self.check_token(headers)
+            except desk.Refusal:
+                return super().body_limit(target, headers)
+            from studio_core.intake_drafts import LIMIT
+            return LIMIT
         if address in ('/api/research-sources', DOCUMENTS, ASSET, f'{DRAFTS}/save', f'{DRAFTS}/source'):
             try:
                 self.check_token(headers)
@@ -886,6 +900,16 @@ class RunnerPage(desk.Page):
     # --- writes --------------------------------------------------------------------------
 
     def write(self, path: str, sent: dict):
+        if path == '/api/intake-draft':
+            from studio_core import intake_drafts
+            try:
+                value = intake_drafts.dispatch(home.data_root(),
+                    gitstate.workspace_identity(self.engine.workspace), sent)
+                return desk.as_json(HTTPStatus.OK, value)
+            except intake_drafts.Conflict as error:
+                raise desk.Refusal(HTTPStatus.CONFLICT, str(error)) from None
+            except ValueError as error:
+                raise desk.Refusal(HTTPStatus.BAD_REQUEST, str(error)) from None
         if path in library_context.ROUTES:
             try:
                 return desk.as_json(HTTPStatus.OK, library_context.answer(path, sent, 'training'))

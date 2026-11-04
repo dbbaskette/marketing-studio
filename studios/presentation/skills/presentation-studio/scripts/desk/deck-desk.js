@@ -166,35 +166,35 @@
     const draft = h.view.draft;
     if (!draft.look) draft.look = 'pick';
     if (draft.readAs === undefined) draft.readAs = '';
-    const go = h.submitButton('Start', 'continue');
-    const cancel = h.capsule('Cancel', 'quiet', h.closeSheet, 'cancel');
     const drafted = make('span', '');
-    const told = () => {
-      drafted.textContent = 'It is drafted by ' + h.words.AGENT_NAMES[draft.agent]
-        + h.draftModelWords(draft) + '.';
-    };
+    const told = () => { drafted.textContent = 'Drafted by ' + h.words.AGENT_NAMES[draft.agent]
+      + h.draftModelWords(draft) + '.'; };
     told();
-    const plan = make('div', 'new-plan');
-    plan.id = 'new-roadmap';
-    const retell = () => plan.replaceChildren(...roadmapParts(draft));
+    const plan = make('details','new-plan'); plan.dataset.key = 'new-roadmap';
+    const retell = () => plan.replaceChildren(make('summary','','What happens after Start'),...roadmapParts(draft));
     retell();
-    const form = make('form', 'create-flow');
-    form.noValidate = true;
-    // Enter in a box starts the deck, as Start does: every step is checked first.
-    form.addEventListener('submit', (event) => {
-      event.preventDefault();
-      h.startDeck(go, { ready, form: formFor });
-    });
-    h.add(form, h.createStep(1, 'What you start from', kindCards(draft),
-      ...(draft.route ? sourceStep(draft) : [])));
-    if (draft.route) {
-      h.add(form, h.createStep(2, 'Audience and goal', ...goalStep(draft)),
-        h.createStep(3, 'Research and settings', ...settingsStep(draft, told, retell)),
-        h.add(make('section', 'create-step'), make('h3', 'sheet-part', 'What happens after Start'),
-          plan, h.add(make('p', 'quiet'), drafted, ' You can close this page meanwhile.')));
-    }
-    h.add(form, h.alertLine('new-problem'),
-      h.add(make('div', 'bar create-foot'), draft.route ? go : null, cancel));
+    const form = make('form', 'create-flow'); form.noValidate = true;
+    form.append(h.alertLine('new-problem'));
+    const steps = [h.createStep(1,'What you start from',kindCards(draft),
+      ...(draft.route ? sourceStep(draft) : [])),
+      h.createStep(2,'Audience and goal',...goalStep(draft)),
+      h.createStep(3,'Research and settings',...settingsStep(draft,told,retell),
+        make('p','quiet','Next: ' + (roadmap(draft)?.steps[0]?.[0] || 'Choose what you start from.')),
+        plan,h.add(make('p','quiet'),drafted,' ',h.limitsSays(h.view.setup?.limits || {}) || 'No limits are set.'))];
+    const validate = (index,final = false) => {
+      if (!draft.route) {h.say(h.byId('new-problem'),'Choose what you start from first.');h.focusKey('kind scratch');return false;}
+      if(index === 0 && !final)return true;
+      if(index === 2 && !final)return true;
+      const name = index === 0 ? (draft.route === 'existing' ? 'Your deck and what changes' : 'Your document') : 'What it is about';
+      const missing = index === 0 && draft.route === 'scratch' ? []
+        : index === 2 ? (draft.research && draft.route !== 'existing' ? h.missingIn(draft,'Research sources') : [])
+          : h.missingIn(draft,name,false);
+      if (missing.length) {h.say(h.byId('new-problem'),'Complete this step before continuing.');h.focusKey(missing[0]);return false;}
+      h.say(h.byId('new-problem'),'');return true;
+    };
+    h.intakeStore().pages(form,{draft,steps,names:['Source','Audience','Review'],validate,
+      start:go => h.startDeck(go,{ready,form:formFor}),close:h.closeSheet,
+      discarded:() => {h.view.draft = null;}});
     return [h.add(make('div', 'sheet-heading'), h.sheetTitle('New deck')), form];
   }
 
@@ -839,7 +839,7 @@
     const can = !read && found.drawn_here && run.execution !== 'conversation';
     const finish = can && !own && kit && finishing();
     const outlineEditable = Boolean(can && found.outline && found.outline.editable);
-    h.placeParts({ title, above: above(run), back: true, actions: deskActions(run, lead),
+    h.placeParts({ title, above: above(run), back: true, compact: h.narrow(), actions: deskActions(run, lead),
       mark: ['desk', title, run.state, lead, read, run.driver, working, found.drawn_here,
         Boolean(found.delivered), found.expected, h.view.downloading, finish] }, [
       ...interruptions(run, lead, title),
@@ -923,7 +923,13 @@
       ? h.capsule('Mark ready', lead === 'ready' ? 'filled' : '',
         () => openDeskPreview(run, 'ready'), 'mark-ready') : null;
     if (ready) ready.disabled = !found.can_mark_ready;
-    return [ready, deliver, download, finish, moreFor(run)];
+    const actions = [ready, deliver, download, finish, moreFor(run)].filter(Boolean);
+    if (!h.narrow()) return actions;
+    const primary = actions.filter(node => node.classList.contains('button-filled'));
+    const rest = actions.filter(node => !primary.includes(node)).flatMap(node =>
+      node.tagName === 'DETAILS' ? Array.from(node.querySelector('.menu-list').children) : [node]);
+    for(const node of rest) if(node.tagName === 'BUTTON')node.className='menu-item';
+    return [...primary,h.moreMenu('More',rest,'desk-more')];
   }
 
   // The redraw under way, said above the desk, with Stop.
@@ -1350,7 +1356,15 @@
           + 'check ran') + '. ' + deliveredAs(run) + ' Nothing is sent until you confirm it in '
           + 'Deliver.')));
     }
-    return node;
+    const details = make('details','desk-summary');
+    details.dataset.key='desk-summary';details.open=blockers.length > 0;
+    const counts = [!delivers ? 'Where the deck stands' : blockers.length ? h.count(blockers.length,'blocker','blockers')
+      : !found.drawn_here ? 'Needs a local drawing' : !ready ? 'Delivery waits for unfinished work' : 'Nothing blocks delivery',
+      waiting.length ? waiting.length + ' waiting for you' : '',
+      looks.length ? looks.length + ' worth a look' : ''].filter(Boolean);
+    node.querySelector('.card-title')?.remove();
+    node.className='paper desk-summary-content';
+    return h.add(details,make('summary','desk-summary-toggle',counts.join(' · ')),node);
   }
 
   // Where Deliver sends the deck, as its sheet says it.
@@ -1971,6 +1985,7 @@
   }
 
   function toggleFinishing() {
+    for(const menu of document.querySelectorAll('.menu'))menu.open=false;
     const state = finishState(h.view.path);
     if (state.finish) {
       kit.finishClose(state);
@@ -1988,7 +2003,7 @@
   }
 
   function landOnToggle() {
-    h.focusKey('desk-finishing');
+    h.focusKey(h.narrow() ? 'desk-more' : 'desk-finishing');
   }
 
   // Escape puts Finishing away, as it does a sheet, when no sheet is open over it.

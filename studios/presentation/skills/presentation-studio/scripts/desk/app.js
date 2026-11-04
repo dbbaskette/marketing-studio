@@ -641,7 +641,7 @@ function narrow() {
 
 function moreMenu(label, items, key) {
   const menu = make('details', 'menu');
-  menu.dataset.key = key;
+  menu.dataset.key = key + '-menu';
   const opener = make('summary', 'button button-round shine');
   opener.dataset.key = key;
   opener.setAttribute('aria-label', label);
@@ -1090,6 +1090,8 @@ function toolbar(spec) {
     add(lead, add(node, icon('back')));
   }
   byId('actions').replaceChildren(...ordered(spec.actions));
+  if (spec.compact) byId('toolbar').classList.add('toolbar-compact');
+  else byId('toolbar').classList.remove('toolbar-compact');
 }
 
 // A toolbar's actions: the one filled action first, then the rest, each quiet. A screen
@@ -1290,6 +1292,14 @@ function openSheet(kind, opener) {
 }
 
 function closeSheet() {
+  if (view.sheet === 'new' && view.draft && !view.closingIntake) {
+    return intakeStore().keep(view.draft, false).then(saved => {
+      if (!saved) return;
+      view.closingIntake = true;
+      closeSheet();
+      view.closingIntake = false;
+    });
+  }
   const opener = view.opener;
   view.sheet = '';
   view.doomed = null;
@@ -1465,7 +1475,19 @@ function newButton(kind) {
 
 // The new-deck sheet, over Home or Decks, at a route when one is given. Elsewhere it opens
 // over Home. A draft is kept for the session: Cancel puts the sheet away and keeps it.
-function openNew(route) {
+let privateIntake = null;
+function intakeStore() {
+  if (!privateIntake) privateIntake = new Drafting.Intake(sent => sent.action === 'read' ? ask('intake-draft') : send('intake-draft', sent));
+  return privateIntake;
+}
+async function restoreIntake() {
+  const saved = await intakeStore().load();
+  if (!view.draft && saved) view.draft = Object.assign(newDraft(), saved, {starting:false, reading:false});
+  return saved;
+}
+
+async function openNew(route) {
+  await restoreIntake();
   if (!['home', 'decks'].includes(view.screen)) {
     show('new');
     if (route) chooseRoute(route);
@@ -3266,6 +3288,7 @@ function researchFromField(draft) {
   if (typeof StudioResearch !== 'undefined') {
     if (!draft.sourceEditor) draft.sourceEditor = new StudioResearch.Editor({
       request: sent => send('research-sources', sent),
+      resume: draft.sourceDraft, entry: draft.sourceEntry,
       // An uploaded file is kept in the Document Library too, unless Only this project.
       keepChoice: true,
       library: (editor) => pickLibrary(draft, editor),
@@ -3274,6 +3297,7 @@ function researchFromField(draft) {
       policyHint: searchSays,
       onChange: () => {
         if (draft.retell) draft.retell();
+        if(view.sheet === 'new' && view.draft === draft && !draft.starting)intakeStore().keep(draft);
         // A refusal Start said beside the sources goes once they can be used.
         if (view.draft === draft && !researchProblem(draft)) say(byId('research-from-problem'), '');
       }
@@ -3357,7 +3381,7 @@ function paintNew(fresh) {
 }
 
 // What is missing in one step, said beside each box: the boxes, by key, that need an answer.
-function missingIn(draft, name) {
+function missingIn(draft, name, includeResearch = true) {
   const missing = [];
   const need = (id, wanted, text) => {
     if (refuse(id, wanted ? '' : text).getAttribute('aria-invalid')) missing.push(id);
@@ -3387,6 +3411,8 @@ function missingIn(draft, name) {
     const number = Number(minutes);
     need('new-minutes', !minutes || (Number.isInteger(number) && number >= 1 && number <= 240),
       'Give a whole number of minutes, from 1 to 240, or leave it empty.');
+  }
+  if (name === 'Research sources' || name === 'What it is about' && includeResearch) {
     if (draft.research && draft.route !== 'existing') {
       const why = researchProblem(draft);
       say(byId('research-from-problem'), why);
@@ -3463,6 +3489,7 @@ async function startDeck(pressed, how) {
     pressed.focus();
     return;
   }
+  await intakeStore().discard();
   view.draft = null;
   view.sheet = '';
   drawSheet();
@@ -7784,8 +7811,9 @@ function begin() {
     if (!document.hidden) refresh();
   });
   // Escape puts the sheet away.
+  document.addEventListener('keydown', event => Drafting.trapSheet(event, byId('sheet')));
   document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape' && !byId('sheet').hidden && !view.busy) closeSheet();
+    if (event.key === 'Escape' && !document.querySelector('dialog[open]') && !byId('sheet').hidden && !view.busy) closeSheet();
   });
   // The arrow keys turn the slides, from the slides themselves or from the head of the
   // screen. They are left alone in a sheet, in a box, and with a modifier held, which is how
@@ -7811,7 +7839,15 @@ function begin() {
     return;
   }
   open(window.history.state || { screen: 'home' });
-  refresh();
+  refresh().then(async () => {
+    if (!view.setup) return;
+    const saved = await restoreIntake();
+    if (saved?.intakeOpen && view.screen === 'home' && !view.sheet) openNew();
+  });
+  window.addEventListener('beforeunload', event => {
+    if (privateIntake && (privateIntake.pending || privateIntake.writing || privateIntake.problem)
+        && view.draft) {event.preventDefault(); event.returnValue = '';}
+  });
 }
 
 // --- the deck desk -------------------------------------------------------------------------
@@ -7820,7 +7856,7 @@ function begin() {
 
 function deskParts() {
   return {
-    view, make, add, count, list, series, lower, capital, spoken, given, card, bullets, callout,
+    view, make, add, count, list, series, lower, capital, spoken, given, card, bullets, callout, intakeStore, narrow,
     state, button, capsule, chip, field, refuse, choice, explained, segmented, pickCard, oneOf,
     moreMenu, submitButton, alertLine, problemLine, say, outLink, pageHead, focusKey, byId,
     send, ask, toast, dropToast, deckToast, notify, show, refresh, placeParts, fit, tidyPictures, pager, slideName,

@@ -103,7 +103,8 @@ class LayoutTests(test_desk.ScriptedPage, test_runner_page.PageCase):
         # Home's way in opens the desk's start at that kind, with the document asked for
         # first.
         self.assertEqual(shot['parts'][0], '1. What you start from')
-        self.assertIn('3. Research and settings', shot['parts'])
+        self.assertNotIn('3. Research and settings', shot['parts'])
+        self.assertIn('Next', shot['buttons'])
         self.assertIn('Paste the text', shot['buttons'])
         self.assertEqual(shot['heading'], 'Home')
 
@@ -325,40 +326,48 @@ class LayoutTests(test_desk.ScriptedPage, test_runner_page.PageCase):
     def test_new_deck_is_one_sheet_in_numbered_steps(self):
         result = self.run_page(self.answers(), [
             {'click': 'New deck'}, {'snapshot': 'routes'},
-            {'click': 'A document'}, {'snapshot': 'document'}])
+            {'click': 'A document'}, {'snapshot': 'source'},
+            {'click': 'Next'}, {'snapshot': 'audience'},
+            {'fill': 'A short title', 'value': 'Synthetic deck'},
+            {'click': 'Next'}, {'snapshot': 'review'}], strictIntake=True)
         shots = result['snapshots']
         self.assertEqual(shots['routes']['heading'], 'Home')
-        self.assertIn('1. What you start from', shots['routes']['sheet'])
-        sheet = shots['document']['sheet']
         steps = ['1. What you start from', '2. Audience and goal', '3. Research and settings']
-        self.assertEqual([step for step in steps if step in sheet], steps)
-        self.assertEqual(sorted(steps, key=sheet.index), steps)
-        self.assertNotIn('4. ', sheet)
-        self.assertTrue(sheet.rstrip().endswith('Start\nCancel'), sheet[-200:])
-        self.assertEqual(shots['document']['filled'], ['Start'])
-        self.assertEqual(shots['document']['heading'], 'Home')
+        for index, name in enumerate(['source', 'audience', 'review']):
+            shot = shots[name]
+            self.assertIn(steps[index], shot['sheet'])
+            for other in steps:
+                if other != steps[index]:
+                    self.assertNotIn(other, shot['sheet'])
+            self.assertEqual(shot['filled'], ['Start' if index == 2 else 'Next'])
+            self.assertIn('Save and close', shot['buttons'])
+            self.assertIn('Discard draft', shot['buttons'])
+            self.assertEqual(shot['posts'], 0)
 
     def test_an_idea_has_the_same_three_steps_with_its_brief_and_no_document(self):
         result = self.run_page(self.answers(), [
-            {'click': 'New deck'}, {'click': 'An idea'}, {'snapshot': 'idea'}])
-        sheet = result['snapshots']['idea']['sheet']
-        for step in ('1. What you start from', '2. Audience and goal', '3. Research and settings'):
-            self.assertIn(step, sheet)
-        self.assertNotIn('4. ', sheet)
-        self.assertIn('What should it cover? (optional)', sheet)
-        self.assertNotIn('Where the document is', sheet)
+            {'click': 'New deck'}, {'click': 'An idea'}, {'snapshot': 'source'},
+            {'click': 'Next'}, {'fill': 'A short title', 'value': 'Synthetic deck'},
+            {'snapshot': 'audience'}, {'click': 'Next'}, {'snapshot': 'review'}], strictIntake=True)
+        source = result['snapshots']['source']['sheet']
+        self.assertIn('What should it cover? (optional)', source)
+        self.assertNotIn('Where the document is', source)
+        for name, heading in [('source', '1. What you start from'), ('audience', '2. Audience and goal'), ('review', '3. Research and settings')]:
+            self.assertIn(heading, result['snapshots'][name]['sheet'])
+            self.assertEqual(result['snapshots'][name]['posts'], 0)
 
     def test_start_checks_every_step_and_focuses_the_first_gap(self):
         result = self.run_page(self.answers(), [
-            {'click': 'New deck'}, {'click': 'A document'},
-            {'click': 'Start'}, {'snapshot': 'missing'}])
-        missing = result['snapshots']['missing']
-        self.assertEqual(missing['posts'], 0)
-        self.assertIn('Something above is missing.', missing['sheet'])
-        self.assertIn('Choose the file first.', missing['sheet'])
-        self.assertIn('Give it a title first.', missing['sheet'])
-        # The desk's start asks for the document first, then the title, in its second step.
-        self.assertEqual(missing['focus'], 'new-file')
+            {'click': 'New deck'}, {'click': 'A document'}, {'click': 'Next'},
+            {'click': 'Next'}, {'snapshot': 'title'},
+            {'fill': 'A short title', 'value': 'Synthetic deck'}, {'click': 'Next'},
+            {'click': 'Start'}, {'snapshot': 'source'}], strictIntake=True)
+        title, source = result['snapshots']['title'], result['snapshots']['source']
+        self.assertIn('Give it a title first.', title['sheet'])
+        self.assertEqual(title['focus'], 'new-title')
+        self.assertIn('Choose the file first.', source['sheet'])
+        self.assertEqual(source['focus'], 'new-file')
+        self.assertEqual(source['posts'], 0)
 
     def test_the_sheet_sends_what_the_wizard_sent(self):
         answers = self.answers(**{'POST /api/decks': [ok({'path': '/nowhere', 'id': 'x'})],
@@ -389,7 +398,7 @@ class LayoutTests(test_desk.ScriptedPage, test_runner_page.PageCase):
         shots = result['snapshots']
         self.assertEqual(shots['closed']['sheet'], '')
         self.assertEqual(shots['again']['fields']['A short title'], 'Kept for later')
-        self.assertEqual(result['requests'][-1]['method'], 'GET')
+        self.assertTrue(any(one['address'] == '/api/intake-draft' and one['method'] == 'POST' for one in result['requests']))
         self.assertEqual(self.posts(result), [])
 
     def test_screen_new_still_opens_the_form(self):
@@ -448,7 +457,8 @@ class LayoutTests(test_desk.ScriptedPage, test_runner_page.PageCase):
         sheet = result['snapshots']['document']['sheet']
         self.assertLess(sheet.index('1. What you start from'), sheet.index('An idea'))
         self.assertLess(sheet.index('An existing deck'), sheet.index('Where the document is'))
-        self.assertLess(sheet.index('Where the document is'), sheet.index('2. Audience and goal'))
+        self.assertNotIn('2. Audience and goal', sheet)
+        self.assertIn('Next', result['snapshots']['document']['buttons'])
 
 
     # --- the deck screen, kept light -----------------------------------------------
@@ -620,7 +630,7 @@ class LayoutTests(test_desk.ScriptedPage, test_runner_page.PageCase):
 
     def test_no_two_parts_of_the_new_deck_sheet_share_a_key(self):
         result = self.run_page(self.answers(), [
-            {'click': 'New deck'}, {'click': 'An idea'}, {'click': 'Brand, output and assistant'},
+            {'click': 'New deck'}, {'click': 'An idea'}, {'fill': 'A short title', 'value': 'Synthetic deck'}, {'intakePage': 2}, {'click': 'Brand, output and assistant'},
             {'snapshot': 'options'}])
         self.assertEqual(result['snapshots']['options']['keyedTwice'], [])
 
