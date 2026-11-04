@@ -30,3 +30,24 @@ Focused shared/native/pinned-helper and real-browser checks precede one complete
 integrated Tart gate (all four studios because the UI/activity/settings are shared),
 plus package/context budgets, existing intake/outline journeys and installer/CLI
 acceptance. No provider or real workspace is used.
+
+## Verification result
+
+Application behavior was verified at `4c621568` and unchanged in final candidate
+`82e07fc1` (tree `c1c415016e4d030c8c5631abf08519e6b296e9e3`). The disposable Tart
+macOS 27.0 environment used Python 3.13.15, Node 22.23.2 and locked test tooling.
+Full coverage completed for 984 shared, 258 Infographic Studio, 1,876 Blog Studio,
+2,187 Presentation Studio and 3,181 Training Studio cases (8,486 total reported).
+Two suite-declared PDF-reader skips retain their earlier dedicated acceptance.
+Old section-list, API inventory/body and hard-stop fixture assumptions were corrected;
+the affected 133 Training Studio and 11 Presentation Studio cases passed in the final
+Tart continuation. No application behavior changed after the full-suite runs.
+
+The actual protected Training Studio, Presentation Studio and shared-setup browser
+journeys passed at 390/1280 px in light/dark, retaining input DOM/focus, warnings and
+concurrent peer-studio choices. Existing Home, outline/story and local recovery
+journeys also passed. Native/shared setup, source-independent setup, authenticated
+launch/reuse/owned cleanup for every studio, the 41-step synthetic hub journey and
+39-command shared-studio journey passed. All work used disposable identities,
+settings, repositories and processes. No real provider, account or workspace was used.
+Detailed operational logs and screenshots remain outside this repository.
