@@ -38,3 +38,10 @@ The final subset documentation packaging contract passed all 15 tests on commit
 `6d93b94b37f75e861702d9ed76ea6b5768d9f969`). Each subset contains the workflow
 guide and its referenced compatibility/evidence documents. This packaging-only
 change reuses the unchanged native application and browser results above.
+
+
+The final rebase onto Week 7's merged main was content-identical to the verified
+Week 8 branch (`git diff` empty before these evidence-only records). The native
+application runtime therefore retains the complete fresh Week 7 gate. All four
+revised workflow diagrams also received visual inspection as embedded images.
+No installed skill, real workspace, provider or Google delivery was modified.

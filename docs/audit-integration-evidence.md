@@ -41,6 +41,13 @@ tested commits and aggregate reruns rather than claiming one uninterrupted pass.
   installed-workspace build/review checks, merged and released before pinning.
 - Week 6: shared/native full-suite evidence plus affected-class compatibility
   corrections, actual-helper contracts, both browsers and installer/CLI acceptance.
+- Week 7: a complete fresh integrated gate passed on commit
+  `4a6ba2b555810d1946e3ac53c0ff2e3dc1539e02`, tree
+  `3dba8a81604362cb8a883b4fa1a1ae93c8bf165d`: shared 975, Infographic Studio 258,
+  Blog Studio 1,876, Presentation Studio 2,183 and Training Studio 3,177 tests.
+  Home/recovery browsers, all package checks and every installer/CLI acceptance
+  passed on macOS 27.0, Python 3.13.15 and Node 22.23.2. PR #333 merged with
+  exactly that tested tree. Its owned VM was deleted.
 - Week 8 browser matrix passed on commit `ceb6fd3223a381fe50d4a43a51e5e9ef7c687db4`
   (tree `c6b118a10ca6e690a1f97363c2925d0f6a46791b`) on macOS 27.0.1,
   Python 3.14.5 and Node 26.11.1. Four real browser journeys, 15 package/overview

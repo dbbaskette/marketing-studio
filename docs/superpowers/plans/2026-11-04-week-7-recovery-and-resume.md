@@ -40,3 +40,23 @@ rehashes actual source bytes and invalidates the cache before accepting a scope.
 Native tests verify two polls read once and confirmation reads again with zero
 assistant work. Unmanaged external edits can remain visually cached for at most
 30 seconds, but cannot pass confirmation with an outdated expected identity.
+
+
+## Completion evidence
+
+Merged in [PR #333](https://github.com/dbbaskette/marketing-studio/pull/333), squash
+`5f0b05d8e9cf27a0c739f06f6eba7cd229403d0a`. Its tree exactly matches the final
+complete Tart gate at `4a6ba2b555810d1946e3ac53c0ff2e3dc1539e02`:
+`3dba8a81604362cb8a883b4fa1a1ae93c8bf165d`. Shared 975, Infographic Studio 258,
+Blog Studio 1,876, Presentation Studio 2,183 and Training Studio 3,177 tests,
+both home/recovery browsers, every package check and standalone/shared setup,
+authenticated launch/reuse/cleanup, Hub 41-step and CLI 39-command acceptance
+passed. Two explicit PDF-reader acceptance skips retain separately passing Week 4
+synthetic-PDF evidence. Environment: macOS 27.0, Python 3.13.15, Node 22.23.2.
+The disposable VM was deleted; GitGuardian passed before merge. No providers ran.
+
+The final fresh gate includes corrections found during integration: derived home
+metadata stays under ignored work folders, scratch validators cannot publish it,
+and checked content/proposal identities omit it. A concurrent edit during a failed
+render leaves recovery bound to the revision that failed. The regression tests
+and all native compatibility flows passed after those corrections.
