@@ -61,21 +61,26 @@ async function fixture(args=[]){
     }
     assert.equal(after.problem,null,JSON.stringify(after.problem));assert.equal(after.gate.name,'gate:outline');
     assert.equal(after.timeline.find(s=>s.name==='scan').attempts,1);
-    await page.evaluate(() => {
+    const surface=await browser.newPage({viewport:{width,height:844}});
+    await surface.setContent('<html><body data-product="Presentation Studio"><main class="page"></main></body></html>');
+    await surface.addStyleTag({path:path.resolve(__dirname,'../../../../ui-kit/style.css')});
+    await surface.addScriptTag({path:path.resolve(__dirname,'../../../../ui-kit/research.js')});
+    await surface.evaluate(() => {
       const plan={expected:'synthetic-scope',changed_inputs:[{name:'Section B notes',kind:'added'}],sections:[{id:'a',title:'Section A',required:false},{id:'b',title:'Section B',required:true}],reuse_note:'Select every section affected by the added source.',outputs:[{name:'Learner guide and slides',scope:'Only dependent sections'}],final_check:'A fresh independent check and exact-final consistency remain required.'};
       window.auditImpact=StudioResearch.impact(plan);
       document.querySelector('main').replaceChildren(auditImpact.node, StudioResearch.progress({phase:'synthesize',combining:[{id:'a',questions:['Section A'],status:'kept'},{id:'b',questions:['Section B'],status:'working'}],streams:[],agents:{count:1,active:[{id:'synthetic',phase:'synthesize'}]}}));
     });
-    await page.getByLabel('Section A',{exact:true}).uncheck();
-    assert.deepEqual(await page.evaluate(()=>auditImpact.value()),{expected:'synthetic-scope',sections:['b']});
-    assert.equal(await page.getByLabel('Section B · Required',{exact:true}).isDisabled(),true);
-    await page.getByText('1 of 2 section drafts kept',{exact:true}).click();
-    await page.getByText('Section A · Draft kept',{exact:true}).waitFor();
+    await surface.getByLabel('Section A',{exact:true}).uncheck();
+    assert.deepEqual(await surface.evaluate(()=>auditImpact.value()),{expected:'synthetic-scope',sections:['b']});
+    assert.equal(await surface.getByLabel('Section B · Required',{exact:true}).isDisabled(),true);
+    await surface.getByText('1 of 2 section drafts kept',{exact:true}).click();
+    await surface.getByText('Section A · Draft kept',{exact:true}).waitFor();
     for(const colorScheme of ['light','dark']) {
-      await page.emulateMedia({colorScheme,reducedMotion:'reduce'});
-      assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
-      if(process.env.PRESENTATION_STORY_RESULTS)await page.screenshot({path:path.join(process.env.PRESENTATION_STORY_RESULTS,`impact-${width}-${colorScheme}.png`)});
+      await surface.emulateMedia({colorScheme,reducedMotion:'reduce'});
+      assert(await surface.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+      if(process.env.PRESENTATION_STORY_RESULTS)await surface.screenshot({path:path.join(process.env.PRESENTATION_STORY_RESULTS,`impact-${width}-${colorScheme}.png`)});
     }
+    await surface.close();
     assert.deepEqual(errors,[]);console.log('PASS editable outline and affected-work/combining components '+width);await page.close();
    }finally{await test.stop();}
   }
