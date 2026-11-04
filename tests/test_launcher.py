@@ -72,6 +72,16 @@ class BridgeTests(unittest.TestCase):
 
 
 class LauncherTests(unittest.TestCase):
+    def test_exit_between_pid_probe_and_status_read_is_confirmed(self):
+        with mock.patch.object(launching.os, 'kill', side_effect=[None, ProcessLookupError]), \
+                mock.patch.object(launching, 'ps', return_value=''):
+            self.assertFalse(launching.alive(12345))
+
+    def test_missing_process_list_never_claims_an_existing_pid_has_exited(self):
+        with mock.patch.object(launching.os, 'kill', return_value=None), \
+                mock.patch.object(launching, 'ps', return_value=None):
+            self.assertTrue(launching.alive(12345))
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)

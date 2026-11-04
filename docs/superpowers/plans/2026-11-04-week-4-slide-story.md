@@ -19,3 +19,5 @@ Reuse the shared strict provisional-scope validator and excerpt budget from Trai
 Verify scripted native API and pinned-helper integration, real browser at phone/desktop widths and light/dark by keyboard, full affected suites/package/CLI gates in disposable state. Record exact tested trees, reuse unchanged evidence, publish and merge the verified Week 4 PR before Week 5.
 
 Delivery: [PR #330](https://github.com/dbbaskette/marketing-studio/pull/330); final verification and merge outcome are recorded on the PR.
+
+Verification found and repaired a shared process-observation race: a PID can exit between its initial probe and the process-list read. A second existence probe confirms that exit while unavailable process-list access still leaves an existing PID alive/unknown. Start-time/assistant identity checks still precede signalling. Deterministic race/unknown-access checks and five complete policy/launcher test orders cover the repair.

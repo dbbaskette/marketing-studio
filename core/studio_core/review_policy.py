@@ -100,7 +100,7 @@ def automatic(record, product, gate, last=None, holding=(), first='outline',
     and at `last`. `run_gates`, every gate the run has, lets a combined deck stop be held
     where the run has a stop (deck_flow.stops)."""
     chosen = level(record)
-    if chosen == 'step_by_step' or holding:
+    if chosen == 'step_by_step' or holding or product == 'presentation' and gate == 'gate:story':
         return False
     # A deck's checkpoints pause the same way in every studio: the brand's draft, look and
     # final, as deck_flow.PAUSES says for this level.
