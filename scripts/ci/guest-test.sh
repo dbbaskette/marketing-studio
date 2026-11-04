@@ -162,6 +162,9 @@ elif [[ "${1:-full}" == blog-google-tabs ]]; then
   ) 2>&1 | tee "$results_dir/blog-checks.log"
   PYTHONPATH=tests "$python" -m unittest test_suite -v 2>&1 | tee "$results_dir/package-tests.log"
   bash scripts/ci/acceptance.sh "$python" "$results_dir/checks" 2>&1 | tee "$results_dir/acceptance.log"
+elif [[ "${1:-full}" == backlog-launchers ]]; then
+  "$python" -m unittest discover -s tests -v 2>&1 | tee "$results_dir/shared-tests.log"
+  bash scripts/ci/acceptance.sh "$python" "$results_dir/checks" 2>&1 | tee "$results_dir/acceptance.log"
 elif [[ "${1:-full}" == network ]]; then
   # The LAN bridge is shared by all studios. Exercise the complete home/core/
   # installer suite without starting any provider jobs or using signed-in state.

@@ -115,6 +115,44 @@ class CliTests(Disposable):
         self.assertEqual(ipc.path.stat().st_mode & 0o777, 0o600)
         self.assertNotIn('token', output.getvalue())
 
+    def test_running_home_links_reuse_control_and_keep_private_output_terminal_only(self):
+        found = {'pid': 123, 'port': 43210, 'url': 'http://127.0.0.1:43210/#token=private-local',
+                 'phone': 'http://192.168.1.9:43210/#token=private-phone', 'lan': '192.168.1.9', 'studios': []}
+        actions = []
+        def handle(action):
+            actions.append(action)
+            return found if action['command'] == 'state' else {'opened': True}
+        ipc = control.Control(self.data, handle);self.addCleanup(ipc.close)
+        with mock.patch.object(cli, 'singleton', side_effect=AssertionError('Started another home')), \
+                mock.patch.object(cli.server, 'show', return_value=True) as show, \
+                mock.patch.object(cli.network, 'discover_address', side_effect=AssertionError('Rediscovered LAN')):
+            terminal = Terminal()
+            with contextlib.redirect_stdout(terminal):
+                self.assertEqual(cli.main(['open', '--no-open']), 0)
+            self.assertIn(found['url'], terminal.getvalue());self.assertIn(found['phone'], terminal.getvalue())
+            show.assert_not_called()
+            for options in (['--no-open'], ['--no-open', '--json'], ['--lan', '--json']):
+                output = io.StringIO()
+                with contextlib.redirect_stdout(output):
+                    self.assertEqual(cli.main(['open', *options]), 0)
+                self.assertNotIn('private-', output.getvalue())
+                self.assertEqual(json.loads(output.getvalue())['address'], found['url'].split('#')[0])
+            terminal = Terminal()
+            with contextlib.redirect_stdout(terminal):self.assertEqual(cli.main(['open', '--lan']), 0)
+            show.assert_called_with(found['phone'])
+            self.assertTrue(all(a['command'] == 'state' for a in actions))
+
+    def test_running_home_without_phone_access_refuses_lan_without_starting(self):
+        found = {'port': 43210, 'url': 'http://127.0.0.1:43210/#token=private', 'phone': None, 'lan': None}
+        ipc = control.Control(self.data, lambda _: found);self.addCleanup(ipc.close)
+        error = io.StringIO()
+        with contextlib.redirect_stderr(error), contextlib.redirect_stdout(io.StringIO()), \
+                mock.patch.object(cli, 'singleton', side_effect=AssertionError('Started another home')), \
+                mock.patch.object(cli.server, 'show', side_effect=AssertionError('Opened a browser')):
+            self.assertEqual(cli.main(['open', '--lan']), 2)
+        self.assertIn('restart --all --lan', error.getvalue())
+        self.assertNotIn('private', error.getvalue())
+
     def test_control_refuses_unknown_commands_and_unmanaged_paths(self):
         ipc = control.Control(self.data, lambda _: self.fail('Called action'))
         self.addCleanup(ipc.close)

@@ -9,7 +9,10 @@ computer; nothing needs installing on the phone.
 1. Connect both devices to the same trusted network.
 2. Run `marketing-studio start --all --lan` to start it in the background, or
    `marketing-studio serve --lan` to keep it in this terminal. If Marketing Studio
-   is already running, use `marketing-studio restart --all --lan` instead.
+   is already running without phone access, use `marketing-studio restart --all --lan`
+   instead. With phone access already enabled, `marketing-studio open --lan` reuses
+   it, and `marketing-studio open --no-open` shows both private links in a terminal.
+   Pipes and `--json` receive addresses without session keys.
 3. Follow the private phone link printed in that terminal. After shared setup,
    the computer's own home page also offers **Continue on your phone**: scan its
    QR code with the phone's camera, or use **Copy link**.

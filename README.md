@@ -120,6 +120,8 @@ marketing-studio open infographic
 | `marketing-studio setup` | Complete setup or open shared settings |
 | `marketing-studio start --all` | Start installed studios in the background |
 | `marketing-studio start --all --lan` | Enable private phone access on trusted Wi-Fi |
+| `marketing-studio open --no-open` | Show links for the running home in your terminal |
+| `marketing-studio open --lan` | Open its existing phone-access link |
 | `marketing-studio restart --all` | Restart home and running studios, preserving the phone address |
 | `marketing-studio restart --ts` | Restart Training Studio only |
 | `marketing-studio stop --all` | Stop home and the studios |
