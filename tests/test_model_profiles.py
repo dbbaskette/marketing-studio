@@ -306,3 +306,14 @@ class KindTests(IsolatedHome):
         with self.assertRaisesRegex(ValueError, 'Give a model ID for the Checking profile'):
             preferences.save(shared, {'models': {'profiles': {'checking': {'selection': 'explicit', 'model': None}}}},
                              shared.read()[0])
+
+    def test_the_settings_page_is_given_the_kinds_beside_the_saved_file(self):
+        shared.update({k: v for k, v in earlier().items() if k != 'schema'})
+        found = self.page.snapshot()
+        # The saved file stays as it is, for the form to compare its changes with.
+        self.assertNotIn('research', found['shared']['models']['profiles'])
+        self.assertEqual(found['models_shown']['profiles']['research']['effort'], 'medium')
+        self.assertIn('research', found['models_shown']['new'])
+        from studio_core.onboarding import Controller
+        studio = Controller(8000, 'a' * 40, 'Training Studio', 'X-Test', lambda _: None, shared)
+        self.assertEqual(studio.snapshot()['models_shown'], found['models_shown'])

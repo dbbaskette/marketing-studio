@@ -133,6 +133,15 @@ def profiles_of(models):
     return chosen, new
 
 
+def shown(values):
+    """The kinds of work as the settings form fills them in, beside the saved file the form
+    compares its changes with; None when the saved settings are not readable as such."""
+    try:
+        return visible(values) if isinstance(values, dict) else None
+    except Exception:  # noqa: BLE001  the form falls back to the saved file as it is
+        return None
+
+
 def visible(values):
     models = values.get('models', {})
     if not isinstance(models, dict):

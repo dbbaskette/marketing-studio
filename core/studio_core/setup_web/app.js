@@ -335,6 +335,7 @@ function describeAdvanced() {
   const chosen = profileNames.filter(name => (form.elements[`models.${name}.selection`]?.value || 'inherit') !== 'inherit'
     || value(`models.${name}.effort`)).length;
   $('#models-state').textContent = !byTask ? `One model: ${single}`
+    : chosen === profileNames.length ? 'By task: every kind of work has its own model or reasoning'
     : chosen ? `By task: ${chosen} of ${profileNames.length} kinds of work have their own model or reasoning; the rest use ${single}` : `By task: every kind of work uses ${single}`;
   owner('#models-owner', byTask || Boolean(model || effort));
   $('#models-pointer').textContent = `Uses ${byTask ? 'models chosen by task' : single}. ${setup ? 'You can change this in Shared settings, Advanced, after setup.' : 'Change it under Advanced: Models and reasoning.'}`;
@@ -464,13 +465,15 @@ function fillProfiles() {
   profileAgent = snapshot.shared.models?.agent || form.elements['assistant.agent'].value;
   form.elements['models.mode'].value = snapshot.shared.models?.mode || 'single';
   const cards = $('#profile-cards'); cards.replaceChildren();
-  const fresh = (snapshot.shared.models?.new || []).filter(name => profileNames.includes(name));
+  // The kinds as the server works them out (with those not yet saved), else the saved file.
+  const shownModels = snapshot.models_shown || snapshot.shared.models || {};
+  const fresh = (shownModels.new || []).filter(name => profileNames.includes(name));
   const note = $('#profile-new');
   note.hidden = fresh.length === 0;
   note.textContent = fresh.length ? `New: ${fresh.map(name => profileTitles[name]).join(', ')}. ` +
-    'They start from your earlier Main and Complex choices, with Research, Combining and Checking at medium reasoning. Save settings to keep them.' : '';
+    'Until you choose otherwise, they use your earlier Main and Complex choices, with Research, Combining and Checking at medium reasoning.' : '';
   for (const name of profileNames) {
-    const saved = snapshot.shared.models?.profiles?.[name] || {};
+    const saved = shownModels.profiles?.[name] || {};
     const title = profileTitles[name];
     const card = element('fieldset', '', 'paper profile-card'); card.dataset.profile = name;
     card.append(element('legend', title, 'field-label'), element('p', profileDescriptions[name], 'field-hint quiet'));

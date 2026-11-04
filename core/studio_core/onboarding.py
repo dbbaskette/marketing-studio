@@ -75,6 +75,8 @@ class Controller:
         values, problem = self.store.read()
         return {'shared': values, 'shared_problem': problem,
                 'setup': {'done': not problem and preferences.ready(values)},
+                # Each kind of work as the form fills it in, with the kinds not yet saved.
+                'models_shown': None if problem else preferences.model_profiles.shown(values),
                 'studios': [], 'efforts': preferences.EFFORTS,
                 'assistant_default': runtime.assistant_default()}
 

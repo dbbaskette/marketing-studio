@@ -55,6 +55,11 @@ Checking, not Fixing.
 
   The page lists which kinds are new, and a save keeps them. No choice the person saved
   is changed. This meets #305's requirement that existing saved profiles are untouched.
+- **What the page is given.** Marketing Studio's page and each studio's setup page send
+  the saved file as `shared`, and the kinds as worked out as `models_shown`. The form
+  fills its cards from `models_shown`, but it still compares its changes with `shared`,
+  so a kind not yet saved is never mistaken for a conflicting edit. The first save sends
+  every kind as shown, which turns the starting values into saved choices.
 - **The Settings screen** shows six cards with plain descriptions. The reasoning menu
   shows unless the kind uses the assistant's default. Its first entry reads "Same as the
   shared reasoning" for a kind on the shared model. The Advanced summary counts the kinds
