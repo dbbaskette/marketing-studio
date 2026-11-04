@@ -64,7 +64,11 @@ class ActivityLogTests(StudioCase):
         self.assertNotIn(seen['task'][:60], written)
         self.assertNotIn('"type"', written)
         for line in written.splitlines():
-            for one in json.loads(line)['lines']:
+            item = json.loads(line)
+            if 'checkpoint' in item:
+                self.assertEqual(set(item), {'checkpoint', 'unit', 'at'})
+                continue
+            for one in item['lines']:
                 self.assertFalse(one['text'].startswith(('{', '[')))
 
         # The log is this computer's and never shared: it is in no commit and leaves the
