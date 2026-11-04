@@ -19,3 +19,8 @@
   relevant suite once before completion; prefer the shared Tart runner on macOS.
 - Public content must not contain session keys, credentials, private team content,
   or machine-specific operational records.
+
+- Match verification scope to the change. Focused UI, copy and appearance changes use
+  affected module checks and one relevant browser journey. Do not rerun all four
+  studios for every change; use broad suites for substantial shared runtime or
+  approval/persistence changes, and reuse valid evidence for unchanged code.
