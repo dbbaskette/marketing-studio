@@ -214,7 +214,8 @@ elif [[ "${1:-full}" == audit-week3 ]]; then
   } 2>&1 | tee "$results_dir/tests.log"
 elif [[ "${1:-full}" == audit-week3-final ]]; then
   # The complete shared suite and final outline browser passed on unchanged
-  # application code. Repeat all native tests after its Home-copy assertion repair.
+  # application flow. Repeat all native tests after the copy assertion and JSON
+  # example loading-budget accounting repairs, then run every CLI acceptance gate.
   (cd studios/training && bash scripts/ci/check.sh "$python") 2>&1 | tee "$results_dir/training-tests.log"
   bash scripts/ci/acceptance.sh "$python" "$results_dir/checks" 2>&1 | tee "$results_dir/tests.log"
 elif [[ "${1:-full}" == audit-week2-training-final ]]; then
