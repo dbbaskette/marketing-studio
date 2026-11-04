@@ -24,6 +24,10 @@ Captured sources and located facts support the story. A build does not silently
 start public research, OCR or an image request. Assistant and image usage are
 identified before their respective actions.
 
+## Resume an unfinished form
+
+New infographic saves your answers, step and captured-source acknowledgements privately. **Save and close** keeps the form across reloads; **Discard draft** removes only that form. Missing captures ask for replacement. Saving the form starts no assistant or image request.
+
 ## Preview recovery
 
 A failed local preview keeps the saved composition and artwork. The recovery panel

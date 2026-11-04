@@ -44,14 +44,14 @@ SHARED_LIMIT = 64_000
 BLOG_LIMIT = 15 * 1024 * 1024
 BODY_LIMITS = {
     'marketing': {'/api/library-upload': 12_000_000, '/api/brand-source': 56_000_000},
-    'presentation': {'/api/decide': 512_000, '/api/intake-draft': 32_000_000,
+    'presentation': {'/api/slide-text-draft': 512_000, '/api/decide': 512_000, '/api/intake-draft': 32_000_000,
                      '/api/research-sources': 12_000_000, '/api/decks': 120_000_000,
                      '/api/desk-source': 12_000_000, '/api/picture': 28_000_000},
-    'training': {'/api/training-plan': 512_000, '/api/intake-draft': 32_000_000,
+    'training': {'/api/slide-text-draft': 512_000, '/api/outline': 512_000, '/api/training-plan': 512_000, '/api/intake-draft': 32_000_000,
                  '/api/research-sources': 12_000_000, '/api/documents': 12_000_000,
                  '/api/asset': 12_000_000, '/api/drafts/source': 12_000_000,
                  '/api/drafts/save': 1_000_000},
-    'infographic': {'/api/research-sources': 24_000_000, '/api/source-preview': 24_000_000,
+    'infographic': {'/api/intake-draft': 32_000_000, '/api/research-sources': 24_000_000, '/api/source-preview': 24_000_000,
                     '/api/action': 24_000_000, '/api/csv-preview': 24_000_000,
                     '/api/csv-selection': 24_000_000},
 }

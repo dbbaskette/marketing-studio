@@ -61,7 +61,19 @@ const $ = id => document.getElementById(id);
 let held = null, busy = false, picture = null, preferences = null;
 // The open infographic's toolbar primary action: the page shows that control at most once more.
 let primary = '';
-const draft = {research_first:false, materials: [], library: [], imported: [], step: 0, title: '', text: '', direction: 'suggest', audience: '', purpose: '', must: '', locked: '', exclusions: '', preset: 'a4'};
+const emptyIntake = () => ({research_first:false, materials: [], library: [], imported: [], step: 0, title: '', text: '', direction: 'suggest', audience: '', purpose: '', must: '', locked: '', exclusions: '', preset: 'a4'});
+const draft = emptyIntake();
+let intakeLoaded=false, missingCaptures=[];
+const privateIntake = new Drafting.Intake(async sent => {
+  const found=sent.action==='read'?await request('/api/intake-draft'):await request('/api/intake-draft',sent);
+  missingCaptures=found.missing||[];
+  return found;
+});
+async function keepIntake(open=true) {
+  if(!await privateIntake.keep(draft,open))throw Error(privateIntake.problem||'The unfinished brief could not be saved. Your answers are kept here.');
+}
+function resetIntake(){for(const key of Object.keys(draft))delete draft[key];Object.assign(draft,emptyIntake());}
+
 // One problem, said once: in the open sheet when there is one, otherwise in the notice above
 // the page, which sits in the page's flow (so it covers nothing) and has its own Dismiss.
 let lastError = '';
@@ -400,6 +412,7 @@ async function bytes(file) { if (file.size > 16_000_000) throw Error('Choose a s
 function encoded(raw) { let binary=''; for (const v of raw) binary += String.fromCharCode(v); return btoa(binary); }
 function retain(input, key) { input.addEventListener('input', () => { draft[key] = input.value; }); }
 async function newSheet() {
+  try{if(!intakeLoaded){const saved=await privateIntake.load();if(saved)Object.assign(draft,saved);intakeLoaded=true;}await keepIntake();}catch(failure){error(failure.message);return;}
   error('');
   // Two steps, each headed as a part of the sheet. The studio says what is missing beside the
   // field itself, rather than leaving it to the browser's own check.
@@ -429,7 +442,7 @@ async function newSheet() {
           if (!kinds[suffix]) throw Error('Choose text, Markdown, CSV, PDF, Word (.docx) or HTML.');
           if (suffix === 'csv') {
             new TextDecoder('utf-8',{fatal:true}).decode(raw);
-            draft.upload = {data:encoded(raw),kind:'csv',name:file.name}; draft.selection = null;
+            draft.upload = {data:encoded(raw),kind:'csv',name:file.name}; draft.selection = null;draft.upload_added=false;
             draft.csv = await request('/api/csv-preview',{data:draft.upload.data}); csvSheet(); return;
           }
           const preview = await request('/api/source-preview',{data:encoded(raw),kind:kinds[suffix],name:file.name});
@@ -451,11 +464,12 @@ async function newSheet() {
       form.append(kept);
     }
     form.append(button('Add a Google Doc, Slides or public page',()=>remoteSheet(preview=>{draft.materials.push({preview,acknowledged:false});newSheet();})));
-    if(draft.upload)form.append(button('Remove selected CSV',()=>{draft.upload=null;draft.csv=null;draft.selection=null;newSheet();}));
+    if(draft.upload)form.append(button('Remove selected CSV',()=>{draft.upload=null;draft.csv=null;draft.selection=null;draft.upload_added=false;newSheet();}));
     for (const material of draft.materials) {
       const preview = material.preview;
       const coverage = card(preview.name,make('p','quiet',preview.characters+' readable characters · '+preview.locations.length+' located parts'),
         detail('Preview readable text',make('pre','ig-csv-preview',preview.excerpt)),list(preview.warnings));
+      if(missingCaptures.includes(preview.id))coverage.append(make('p','problem','This saved source capture is unavailable. Remove it and add the source again; your other answers are kept.'));
       if (!preview.readable) coverage.append(make('p','problem','No readable text was found. Remove this file and supply an accessible text or Word version.'));
       if (preview.warnings.length && preview.readable) {
         const ack = make('input'); ack.type = 'checkbox'; ack.checked = material.acknowledged;
@@ -480,33 +494,44 @@ async function newSheet() {
     if(draft.materials.some(m=>!m.preview.readable || (m.preview.warnings.length&&!m.acknowledged)) || draft.library.some(one=>one.gaps.length&&!one.acknowledged)) {problem.textContent='Review the file previews and acknowledge readable-only coverage, or remove unreadable files.';return;}
     if(draft.step===0 && draft.materials.reduce((n,m)=>n+m.preview.characters, draft.library.reduce((n,one)=>n+one.characters,draft.text.length))>120000){problem.textContent='Choose smaller files or explicit excerpts within 120,000 readable characters for one story-planning job. Nothing was sent to an assistant.';return;}
     if(draft.upload?.kind==='csv' && !draft.selection) {problem.textContent='Preview and confirm the CSV selection first.';return;}
-    if(draft.step<1) {draft.step++;closeSheet();newSheet();return;}
-    go.disabled=true;
-    try { let p=draft.created;
-      if(!p) {draft.request_id=draft.request_id||requestId();p=(await request('/api/projects',{title:draft.title,preset:draft.preset,direction:draft.direction,request_id:draft.request_id})).project;draft.created=p;}
-      p=(await request('/api/project',{id:p.id,expected_revision:p.revision,brief:{...p.brief,title:draft.title,preset:draft.preset,direction:draft.direction,audience:draft.audience,purpose:draft.purpose,must_show:lines(draft.must).map((text,i)=>({id:'r'+i,text})),locked_words:lines(draft.locked),exclusions:lines(draft.exclusions)}})).project;draft.created=p;
+    if(missingCaptures.length){problem.textContent='A saved source capture is unavailable. Return to Information, remove it and add the source again.';return;}
+    if(draft.step<1) {try{draft.step++;await keepIntake();closeSheet();await newSheet();}catch(failure){problem.textContent=failure.message;}return;}
+    const controls=[...form.querySelectorAll('input,textarea,select,button')], disabled=controls.map(node=>node.disabled);controls.forEach(node=>node.disabled=true);
+    try { draft.request_id=draft.request_id||requestId();await keepIntake();
+      let p=draft.created;
+      if(p){const current=(await request('/api/project?id='+encodeURIComponent(p.id))).project;if(current.revision!==p.revision)throw Error('The saved infographic changed after this form was saved. Open the saved draft to continue from its current version.');}
+      if(!p) {draft.request_id=draft.request_id||requestId();p=(await request('/api/projects',{title:draft.title,preset:draft.preset,direction:draft.direction,request_id:draft.request_id})).project;draft.created=p;await keepIntake();if(p.revision!==0)throw Error('This saved infographic already has work. Open the kept infographic to continue; nothing was overwritten.');}
+      p=(await request('/api/project',{id:p.id,expected_revision:p.revision,brief:{...p.brief,title:draft.title,preset:draft.preset,direction:draft.direction,audience:draft.audience,purpose:draft.purpose,must_show:lines(draft.must).map((text,i)=>({id:'r'+i,text})),locked_words:lines(draft.locked),exclusions:lines(draft.exclusions)}})).project;draft.created=p;await keepIntake();
       for (const material of draft.materials) {
         if (draft.imported.includes(material.preview.id)) continue;
         p=(await request('/api/action',{action:'source-import',id:p.id,expected_revision:p.revision,capture_id:material.preview.id,acknowledge_warnings:material.acknowledged})).result;
-        draft.created=p; draft.imported.push(material.preview.id);
+        draft.created=p; draft.imported.push(material.preview.id);await keepIntake();
       }
       if (draft.library.length && !draft.library_added) {
         p=(await request('/api/action',{action:'library',id:p.id,expected_revision:p.revision,picks:draft.library.map(({id,revision})=>({id,revision})),acknowledge_warnings:draft.library.some(one=>one.gaps.length)})).result;
-        draft.created=p; draft.library_added=true;
+        draft.created=p; draft.library_added=true;await keepIntake();
       }
-      if (draft.upload) {
+      if (draft.upload && !draft.upload_added) {
         p=(await request('/api/action',{action:'source',id:p.id,expected_revision:p.revision,...draft.upload,selection:draft.selection})).result;
-        draft.created=p;
+        draft.created=p;draft.upload_added=true;await keepIntake();
       }
       if (draft.text.trim() && draft.notes_text !== draft.text) {
         p=(await request('/api/action',{action:'source',id:p.id,expected_revision:p.revision,data:encoded(new TextEncoder().encode(draft.text)),kind:'text',name:'Pasted notes',...(draft.notes_source?{replace_id:draft.notes_source}:{})})).result;
-        draft.created=p; draft.notes_text=draft.text; draft.notes_source=p.sources.find(source=>source.name==='Pasted notes').id;
+        draft.created=p; draft.notes_text=draft.text; draft.notes_source=p.sources.find(source=>source.name==='Pasted notes').id;await keepIntake();
       }
       const researchFirst=draft.research_first;
-      closeSheet();Object.assign(draft,{research_first:false, materials:[],library:[],library_added:false,imported:[],notes_text:null,notes_source:null,step:0,request_id:null,created:null,upload:null,selection:null,csv:null,title:'',text:'',direction:'suggest',audience:'',purpose:'',must:'',locked:'',exclusions:'',preset:'a4'});await openProject(p.id);if(researchFirst)await researchSheet();else toast('Brief saved. Choose Find the story when you are ready to use your assistant.');
-    }catch(failure){problem.textContent=failure.message+' Your answers are still here.';}finally{go.disabled=false;}
+      if(!await privateIntake.discard())throw Error(privateIntake.problem);
+      closeSheet();resetIntake();await openProject(p.id);if(researchFirst)await researchSheet();else toast('Brief saved. Choose Find the story when you are ready to use your assistant.');
+    }catch(failure){problem.textContent=failure.message+' Your answers are still here.';if(draft.created)problem.append(button('Open the kept infographic',()=>{closeSheet();openProject(draft.created.id);}));}finally{controls.forEach((node,index)=>node.disabled=disabled[index]);}
   });
-  add(form,problem,draft.created||draft.request_id?button('Open the saved draft',()=>{closeSheet();openProject(draft.created?.id||draft.request_id);}):null,foot(go,draft.step?button('Back',()=>{draft.step--;closeSheet();newSheet();}):null,button('Cancel',closeSheet))); sheet('New infographic',form);
+  const saved=make('p','quiet field-hint');saved.dataset.intakeStatus='true';saved.setAttribute('role','status');
+  for(const event of ['input','change'])form.addEventListener(event,()=>privateIntake.queue(draft));
+  const discard=button('Discard draft',async()=>{if(!confirm('Discard this unfinished form? Captured sources and any saved infographic stay in place.'))return;if(await privateIntake.discard()){resetIntake();closeSheet();}else problem.textContent=privateIntake.problem;});
+  add(form,problem,saved,draft.created||draft.request_id?button('Open the saved draft',async()=>{await keepIntake(false);closeSheet();openProject(draft.created?.id||draft.request_id);}):null,
+    foot(go,draft.step?button('Back',async()=>{draft.step--;await keepIntake();closeSheet();newSheet();}):null,
+      button('Save and close',async()=>{try{await keepIntake(false);closeSheet();}catch(failure){problem.textContent=failure.message;}}),discard));
+  sheet('New infographic',form);privateIntake.status();
+
 }
 function csvSheet() {
   const data=draft.csv, form=make('form','ig-fields'); const rows=field('Data-row numbers, separated by commas',Array.from({length:data.row_count},(_,i)=>i+1).join(','));
@@ -1052,6 +1077,7 @@ async function startDesk() {
   if(where==='settings'){await showSettings();return;}
   if(id&&where!=='home'){await openProject(id);if(held?.project.id===id){returnToPlace(id);return;}error('');}
   await home();
+  const saved=await privateIntake.load();if(saved?.intakeOpen)await newSheet();
 }
 $('sheet').addEventListener('close',paintWork);
 if(!token)error('Open Infographic Studio using the private link printed in your terminal.');else void startDesk();

@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased — 4.13.0
+
+Slide-text review shows one slide at a time with a compact picker and collapsed speaker notes. Corrections, feedback and selection save privately across reloads without starting work. Earlier corrections remain available when the outline changes; approval uses only the exact validated current text.
+
 ## Unreleased — 4.12.0
 
 New work warns and continues at its project spending amount by default. Shared settings can choose Stop and ask; saved work has an explicit, stale-safe spending choice. Old tasks keep hard-stop behavior and Carry on. Warning mode supplies a $5 budget per job, keeps smaller Quick-scan budgets and time limits, records crossings once in Activity and shows them on the desk and home. Dollar enforcement and reporting depend on the assistant. Policy saves start no work or new research.

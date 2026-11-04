@@ -158,7 +158,7 @@ from studio_core.document_library import context as library_context
 from studio_core.shared_runner import page as _shared
 modules.bind(globals(), _shared, _shared.NAMES)
 
-READS = ('/api/spending-policy', '/api/intake-draft', '/api/capabilities', '/api/setup', '/api/agents', '/api/models', '/api/decks',
+READS = ('/api/slide-text-draft', '/api/spending-policy', '/api/intake-draft', '/api/capabilities', '/api/setup', '/api/agents', '/api/models', '/api/decks',
          '/api/run', '/api/activity', '/api/slide', '/api/download', '/api/status', '/api/published',
          '/api/delete', '/api/file', '/api/known-decks', '/api/storyboard',
          '/api/desk-outline-price', '/api/desk-versions', '/api/desk-migration-preview', '/api/desk-ready-context')
@@ -195,7 +195,7 @@ SOURCE_LIMIT = 12_000_000     # bytes: a document of up to 8 MB, in base64, with
 # What a desk change takes as it is sent, not as text.
 RAW = ('slides', 'field', 'ids', 'again', 'picks')
 WHOLE = ('seen', 'start', 'end', 'index')   # whole numbers, from zero
-WRITES = ('/api/spending-policy', '/api/intake-draft', '/api/research-sources', '/api/setup/check', '/api/setup', '/api/decks', '/api/run', '/api/decide',
+WRITES = ('/api/slide-text-draft', '/api/spending-policy', '/api/intake-draft', '/api/research-sources', '/api/setup/check', '/api/setup', '/api/decks', '/api/run', '/api/decide',
           '/api/answer', '/api/share', '/api/fetch', '/api/drive', '/api/publish',
           '/api/delete', '/api/bring', '/api/companions', '/api/upgrade', '/api/restart',
           '/api/versions', '/api/brand', '/api/brand/install', '/api/shared',
@@ -237,6 +237,11 @@ class RunnerPage(server.Page):
     # --- reads ---------------------------------------------------------------------------
 
     def read(self, path: str, one):
+        if path == '/api/slide-text-draft':
+            try: level = one('level')
+            except server.Refusal: level = None
+            return self.write(path, {'path': one('path'), 'level': level or None, 'action': 'read'})
+
         if path == '/api/spending-policy':
             from studio_core import spending
             return server.as_json(HTTPStatus.OK, spending.get(self.engine, one('path'), 'presentation'))
@@ -428,13 +433,13 @@ class RunnerPage(server.Page):
         the key. Anyone else's request there is held to the usual limit, so it is refused
         unread."""
         address = target.partition('?')[0]
-        if address in ('/api/intake-draft', '/api/decide'):
+        if address in ('/api/intake-draft', '/api/decide', '/api/slide-text-draft'):
             try:
                 self.check_token(headers)
             except server.Refusal:
                 return super().body_limit(target, headers)
             from studio_core.intake_drafts import LIMIT
-            return 512_000 if address == '/api/decide' else LIMIT
+            return LIMIT if address == '/api/intake-draft' else 512_000
         if address in (DECKS, PICTURE, SOURCE, '/api/research-sources'):
             try:
                 self.check_token(headers)
@@ -446,6 +451,25 @@ class RunnerPage(server.Page):
     # --- changes -------------------------------------------------------------------------
 
     def write(self, path: str, sent: dict):
+        if path == '/api/slide-text-draft':
+            from studio_core import intake_drafts
+            try:
+                if not isinstance(sent.get('path'), str):
+                    raise ValueError('Choose a saved project for these corrections.')
+                root = self.engine.driven(sent['path'])
+                if root is None: raise ValueError('Choose saved work in this workspace.')
+                level = sent.get('level')
+                if level is not None and (not isinstance(level, str) or len(level) > 80):
+                    raise ValueError('Choose a level from this review.')
+                scope = {'workspace': gitstate.workspace_identity(self.engine.workspace),
+                         'project': str(root), 'level': level or None}
+                values = {key: value for key, value in sent.items() if key not in ('path', 'level')}
+                return server.as_json(HTTPStatus.OK, intake_drafts.slide_review(home.data_root(), scope, values))
+            except intake_drafts.Conflict as failure:
+                raise server.Refusal(HTTPStatus.CONFLICT, str(failure)) from None
+            except ValueError as failure:
+                raise server.Refusal(HTTPStatus.BAD_REQUEST, str(failure)) from None
+
         if path == '/api/spending-policy':
             from studio_core import spending
             if not isinstance(sent, dict) or set(sent) != {'path', 'expected', 'policy'}:

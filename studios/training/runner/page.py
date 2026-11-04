@@ -262,12 +262,12 @@ SETTINGS_SOURCES = f'{SETTINGS}/sources'   # a source draft holding what researc
 MODELS = '/api/training-models'   # Use the current model settings: what changes, and its save
 CARD = f'{DRAFTS}/card'   # one card with its parts, as the shared kit reads it
 PART_LIMIT = 1_000_000   # bytes: one part of the largest size, as JSON
-READS = ('/api/spending-policy', '/api/outline-flow', '/api/intake-draft', '/api/capabilities', '/api/setup', '/api/agents', '/api/models', '/api/run',
+READS = ('/api/slide-text-draft', '/api/spending-policy', '/api/outline-flow', '/api/intake-draft', '/api/capabilities', '/api/setup', '/api/agents', '/api/models', '/api/run',
          '/api/activity', SETTINGS, MODELS,
          '/api/download', '/api/slide', '/api/status', '/api/published', '/api/delete', '/api/deck-draft-ticket',
          DRAFTS, CARD, VERSIONS, f'{DRAFTS}/update-preview', f'{DRAFTS}/slide-versions', f'{DRAFTS}/source-price',
          f'{DRAFTS}/proofread', f'{DRAFTS}/migration-preview', f'{DRAFTS}/doc-preview')
-WRITES = ('/api/spending-policy', '/api/outline-flow', '/api/intake-draft', '/api/training-plan', '/api/research-sources', SETTINGS, SETTINGS_SOURCES, MODELS, '/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/answer',
+WRITES = ('/api/slide-text-draft', '/api/spending-policy', '/api/outline-flow', '/api/intake-draft', '/api/training-plan', '/api/research-sources', SETTINGS, SETTINGS_SOURCES, MODELS, '/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/answer',
           '/api/documents', '/api/copies', '/api/share', '/api/outline', '/api/review', '/api/drive',
           '/api/publish', '/api/adopt', '/api/fetch', '/api/delete', '/api/companions',
           '/api/asset', '/api/upgrade', '/api/restart', '/api/versions', '/api/redesign',
@@ -374,6 +374,11 @@ class RunnerPage(desk.Page):
     # --- reads ---------------------------------------------------------------------------
 
     def read(self, path: str, one):
+        if path == '/api/slide-text-draft':
+            try: level = one('level')
+            except desk.Refusal: level = None
+            return self.write(path, {'path': one('path'), 'level': level or None, 'action': 'read'})
+
         if path == '/api/spending-policy':
             from studio_core import spending
             return desk.as_json(HTTPStatus.OK, spending.get(self.engine, one('path'), 'training'))
@@ -646,13 +651,13 @@ class RunnerPage(desk.Page):
         desk, by whoever holds the key. Anyone else's request there is held to the desk's
         limit, so it is refused unread."""
         address = target.partition('?')[0]
-        if address in ('/api/intake-draft','/api/training-plan'):
+        if address in ('/api/intake-draft','/api/training-plan','/api/slide-text-draft','/api/outline'):
             try:
                 self.check_token(headers)
             except desk.Refusal:
                 return super().body_limit(target, headers)
             from studio_core.intake_drafts import LIMIT
-            return 512_000 if address == '/api/training-plan' else LIMIT
+            return LIMIT if address == '/api/intake-draft' else 512_000
         if address in ('/api/research-sources', DOCUMENTS, ASSET, f'{DRAFTS}/save', f'{DRAFTS}/source'):
             try:
                 self.check_token(headers)
@@ -906,6 +911,25 @@ class RunnerPage(desk.Page):
     # --- writes --------------------------------------------------------------------------
 
     def write(self, path: str, sent: dict):
+        if path == '/api/slide-text-draft':
+            from studio_core import intake_drafts
+            try:
+                if not isinstance(sent.get('path'), str):
+                    raise ValueError('Choose a saved project for these corrections.')
+                root = self.engine.driven(sent['path'])
+                if root is None: raise ValueError('Choose saved work in this workspace.')
+                level = sent.get('level')
+                if level is not None and (not isinstance(level, str) or len(level) > 80):
+                    raise ValueError('Choose a level from this review.')
+                scope = {'workspace': gitstate.workspace_identity(self.engine.workspace),
+                         'project': str(root), 'level': level or None}
+                values = {key: value for key, value in sent.items() if key not in ('path', 'level')}
+                return desk.as_json(HTTPStatus.OK, intake_drafts.slide_review(home.data_root(), scope, values))
+            except intake_drafts.Conflict as failure:
+                raise desk.Refusal(HTTPStatus.CONFLICT, str(failure)) from None
+            except ValueError as failure:
+                raise desk.Refusal(HTTPStatus.BAD_REQUEST, str(failure)) from None
+
         if path == '/api/spending-policy':
             from studio_core import spending
             if not isinstance(sent, dict) or set(sent) != {'path', 'expected', 'policy'}:
@@ -1327,7 +1351,7 @@ class RunnerPage(desk.Page):
         self.run(path)
         return self.engine.outline(path, level or None, decision, note,
                                    desk.text(sent, 'seen', False),
-                                   desk.text(sent, 'design', False))
+                                   desk.text(sent, 'design', False), sent.get('edited'))
 
     def look(self, sent: dict) -> dict:
         """Record the look the person chose for a deck from the brand's samples, with their

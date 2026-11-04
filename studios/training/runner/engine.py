@@ -3551,7 +3551,7 @@ class Engine(Reviewing):
         return False
 
     def outline(self, path, level: str | None, decision: str, note: str | None = None,
-                seen: str | None = None, design: str | None = None) -> dict:
+                seen: str | None = None, design: str | None = None, edited=None) -> dict:
         """Record what a person decided about what a deck says, as the page heard it:
         `approve`, or `revise` with what should change. Nothing else calls this: the
         engine puts an outline to the person and waits. `seen` is the outline that was read
@@ -3565,6 +3565,32 @@ class Engine(Reviewing):
         note = (note or '').strip() or None
         if decision == 'revise' and not note:
             raise WorkspaceError('Say what should change.')
+        corrected = None
+        if edited is not None:
+            # Validate the whole corrected outline outside the engine lock. A second
+            # exact-input check below refuses concurrent changes before writing anything.
+            with self.files:
+                prior = self._load(root)
+                found = self._survey(root, prior)
+                if not deck_content.enabled(prior) or found.next.kind != 'outline' or self._level(found.next.step) != level:
+                    raise WorkspaceError('Local corrections are available while slide text waits for approval.')
+                pending = self._decided(prior, level)
+                if seen != (pending.get('waiting') or {}).get('sha256') or (pending.get('waiting') or {}).get('design'):
+                    raise WorkspaceError('The slide text changed. Read the current version before approving corrections.')
+                try:
+                    updated = deck.local_corrections(pipeline.outline_of(root, level), edited)
+                except ValueError as failure:
+                    raise WorkspaceError(str(failure)) from None
+                source_basis = pipeline.made_from(root, found.session, workspace.qualify('deck', level))
+                spec = {'brand': str(pipeline.contract(root, found.decks[level])),
+                    'blueprint': pipeline._text(root, found.session, workspace.qualify('blueprint', level)) or '',
+                    'known': pipeline.research_ids(root), 'delivery': pipeline.delivery_of(found.session)}
+            with tempfile.TemporaryDirectory(prefix='training-text-check-') as scratch:
+                problems, outcomes, warnings, text = worker_tools.check_outline(
+                    json.dumps(updated, ensure_ascii=False), spec, self.slides(), Path(scratch))
+            if problems:
+                raise WorkspaceError('The corrected slide text does not pass its checks. ' + ' '.join(problems[:5]))
+            corrected = (source_basis, text, outcomes, warnings)
         with self.files:
             record = self._load(root)
             step = self._survey(root, record).next
@@ -3576,6 +3602,16 @@ class Engine(Reviewing):
                     and seen != kept['waiting']['sha256']) or (
                     asked and design is not None and design != asked['revision']):
                 raise WorkspaceError(CHANGED.format(it=workspace.sentence(says)))
+            if corrected is not None:
+                source_basis, text, outcomes, warnings = corrected
+                found = self._survey(root, record)
+                if pipeline.made_from(root, found.session, workspace.qualify('deck', level)) != source_basis:
+                    raise WorkspaceError('The teaching inputs changed while the corrections were checked. Read the current slide text and approve again.')
+                workspace.write_atomic(pipeline.place(root, level, pipeline.OUTLINE), text.encode())
+                changed_hash = workspace.sha256_file(pipeline.place(root, level, pipeline.OUTLINE))
+                kept['waiting']['sha256'] = changed_hash
+                kept['outline'].update(sha256=changed_hash, at=home.now(), checks=outcomes,
+                                       warnings=warnings, notes=None)
             if asked:
                 self._answer(root, level, asked, decision, note, says)
             if decision == 'approve':

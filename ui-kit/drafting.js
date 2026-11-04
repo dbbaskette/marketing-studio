@@ -98,7 +98,7 @@ const Drafting = (() => {
         if (!Object.keys(patch).length) continue;
         try {
           const held = await this.request({action:'save', expected:this.revision, patch});
-          this.revision = held.revision; this.saved = held.draft;
+          this.revision = held.revision; this.saved = Object.hasOwn(held, 'draft') ? held.draft : found;
           this.encoded = {...this.encoded,...encoded}; this.problem = '';
         } catch (error) {
           this.problem = error.message || 'The intake could not be saved. Your answers are still here.';
@@ -192,8 +192,33 @@ const Drafting = (() => {
   // as a third argument (null when nothing changed). `toolbar` says the studio shows Approve
   // as its toolbar's filled action, so the panel's own is not filled. The panel's `decide`
   // makes a decision as its own buttons do, for that toolbar button.
+  class ReviewDraft extends Intake {
+    constructor(request, basis) {
+      super(request);this.basis=basis;this.conflict=null;this.restored=false;this.notify=()=>{};
+      this.state={basis,edits:null,note:'',selected:0,notes_open:false};
+    }
+    status(){this.notify(this);}
+    async load(){
+      const saved=await super.load();
+      if(!this.restored){
+        this.restored=true;
+        if(saved?.basis&&saved.basis!==this.basis)this.conflict=saved;
+        else if(saved)Object.assign(this.state,saved,{basis:this.basis});
+      }
+      return this.state;
+    }
+    queueReview(){if(!this.conflict)this.queue(this.state);else this.status();}
+    async write(){await this.load();if(this.conflict){this.pending=null;this.status();return false;}return super.write();}
+    async discardReview(){
+      if(this.conflict)this.pending=null;
+      const done=await super.discard();
+      if(done){this.conflict=null;Object.assign(this.state,{basis:this.basis,edits:null,note:'',selected:0,notes_open:false});}
+      this.status();return done;
+    }
+  }
+
   function slideContent({slides, label, note = '', onNote = () => {}, onDecision, edits = null,
-    onEdit = null, toolbar = false}) {
+    onEdit = null, toolbar = false, persistence = null}) {
     const box = add(make('section', 'paper slide-text-review'),
       make('h2', 'doc-title', label || 'Review slide text'),
       make('p', 'quiet', 'Check the message, slide order, copy and speaker notes. Design and rendering start only after you approve this text.'));
@@ -201,6 +226,10 @@ const Drafting = (() => {
     const given = JSON.stringify(slides || []);
     const work = editing ? JSON.parse(Array.isArray(edits) ? JSON.stringify(edits) : given) : null;
     const edited = () => editing && JSON.stringify(work) !== given;
+    const saved=make('p','quiet field-hint');saved.setAttribute('role','status');
+    const earlier=make('div','paper callout');earlier.hidden=true;
+    let selected=0, notesOpen=false;
+    const remember=()=>{if(persistence){Object.assign(persistence.state,{basis:persistence.basis,edits:edited()?work:null,note:text.value,selected,notes_open:notesOpen});persistence.queueReview();}};
     if (editing) box.append(make('p', 'quiet', 'Correct a word here and approve: your edits go with your decision, and no assistant redrafts them.'));
     const items = make('ol', 'slide-text-list');
     // A box of one slide's words, named for its slide. Its words go into the edited slides.
@@ -214,12 +243,32 @@ const Drafting = (() => {
       if (long) input.rows = 2; else input.type = 'text';
       input.value = value || '';
       input.dataset.key = 'slide-text ' + number + ' ' + name;
-      input.addEventListener('input', () => { put(input.value); onEdit(edited() ? work : null); });
+      input.addEventListener('input', () => { put(input.value); onEdit(edited() ? work : null);remember(); });
       return add(field, add(make('span', 'field-label', name), make('span', 'offscreen', ' of slide ' + number)), input);
     };
-    (editing ? work : slides || []).forEach((slide, index) => {
+    const all=()=>editing?work:slides||[];
+    const picker=make('select','input');picker.setAttribute('aria-label','Slide to review');picker.dataset.key='slide-text-picker';
+    const before=make('button','button','Previous slide'),next=make('button','button','Next slide');before.type=next.type='button';
+    before.dataset.key='slide-text-previous';next.dataset.key='slide-text-next';
+    const position=make('p','quiet');position.setAttribute('role','status');
+    const navigation=add(make('div','bar'),picker,before,next);
+    function selectSlide(index,focus=false){
+      selected=Math.max(0,Math.min(index,all().length-1));drawSlide();remember();
+      if(focus){const heading=items.querySelector('h3');heading?.focus({preventScroll:true});}
+    }
+    picker.addEventListener('change',()=>selectSlide(Number(picker.value)));
+    before.addEventListener('click',()=>selectSlide(selected-1,true));next.addEventListener('click',()=>selectSlide(selected+1,true));
+    function drawSlide(){
+      const list=all();picker.replaceChildren();
+      list.forEach((slide,index)=>{const option=make('option','',(index+1)+'. '+(slide.title||'Untitled slide'));option.value=String(index);picker.append(option);});
+      picker.value=String(selected);before.disabled=selected<=0;next.disabled=selected>=list.length-1;
+      position.textContent='Slide '+(selected+1)+' of '+list.length+'. Approval covers all '+list.length+' slides. Viewing a slide does not approve it.';
+      items.replaceChildren();boxes=0;
+      const slide=list[selected];if(!slide)return;
+      const index=selected;
       const number = index + 1;
-      const row = make('li', 'slide-text-item');
+      const row = make('li', 'slide-text-item');row.value=number;
+      const currentTitle=make('h3','row-title','Slide '+number);currentTitle.tabIndex=-1;row.append(currentTitle);
       if (editing) row.append(wordBox(slide, number, 'Title', slide.title, false, (value) => { slide.title = value; }));
       else row.append(make('h3', 'row-title', slide.title || 'Untitled slide'));
       for (const key of ['subtitle', 'detail', 'focal', 'caveat', 'source']) {
@@ -238,10 +287,10 @@ const Drafting = (() => {
         if (point && typeof point.text === 'string') points.append(wordBox(slide, number, name, point.text, true, (value) => { point.text = value; }));
       });
       if (points.children.length) row.append(points);
-      if (editing) row.append(wordBox(slide, number, 'Speaker notes', slide.notes, true, (value) => { slide.notes = value; }));
+      if (editing) {const notes=add(make('details','outline-notes'),make('summary','','Speaker notes and delivery'),wordBox(slide, number, 'Speaker notes', slide.notes, true, (value) => { slide.notes = value; }));notes.open=notesOpen;notes.addEventListener('toggle',()=>{notesOpen=notes.open;remember();});row.append(notes);}
       else if (slide.notes) row.append(add(make('details', 'outline-notes'), make('summary', '', 'Speaker notes'), make('p', 'desk-plain', slide.notes)));
       items.append(row);
-    });
+    }
     const field = make('label', 'field');
     const text = make('textarea', 'input'); text.value = note; text.rows = 3;
     text.dataset.key = 'slide-text-note';
@@ -264,10 +313,11 @@ const Drafting = (() => {
     add(pending, make('p', '', 'You typed a change to the slide text. Send these changes first, or approve without them?'), add(make('div', 'bar'), sendFirst, without));
     const controls = [ask, approve, text, sendFirst, without];
     let busy = false;
-    const off = (state) => { busy = state; for (const control of controls) control.disabled = state; };
-    text.addEventListener('input', () => { onNote(text.value); if (!text.value.trim()) pending.hidden = true; });
+    const off = (state) => { busy = state;for(const control of box.querySelectorAll('input,textarea,select,button'))control.disabled=state;for(const control of controls)control.disabled=state;if(!state){before.disabled=selected<=0;next.disabled=selected>=all().length-1;} };
+    text.addEventListener('input', () => { onNote(text.value);remember();if (!text.value.trim()) pending.hidden = true; });
     async function decide(kind, typed = 'ask') {
       if (busy) return;
+      if(persistence){await persistence.load();if(persistence.conflict){problem.textContent='Review the earlier saved corrections before deciding this version.';return;}}
       if (kind === 'changes' && !text.value.trim()) { problem.textContent = 'Say what should change in the slide text.'; text.focus(); return; }
       if (kind === 'approve' && typed === 'ask' && text.value.trim()) {
         problem.textContent = ''; pending.hidden = false; sendFirst.focus();
@@ -280,9 +330,11 @@ const Drafting = (() => {
       pending.hidden = true;
       off(true); problem.textContent = '';
       try {
+        if(persistence){remember();if(!await persistence.keep(persistence.state))throw Error(persistence.problem||'The corrections could not be saved. Copy your changes before reloading.');}
         const said = kind === 'changes' ? text.value.trim() : null;
         if (editing) await onDecision(kind, said, edited() ? work : null);
         else await onDecision(kind, said);
+        if(persistence)await persistence.discardReview();
       }
       catch (error) { problem.textContent = error.message; }
       finally { off(false); }
@@ -292,7 +344,27 @@ const Drafting = (() => {
     sendFirst.addEventListener('click', () => decide('changes'));
     without.addEventListener('click', () => decide('approve', 'drop'));
     box.decide = decide;
-    return add(box, items, field, problem, add(actions, ask, approve), pending);
+    const feedback=add(make('details','outline-notes'),make('summary','','Ask your assistant for slide-text changes'),field);feedback.open=Boolean(note);
+    add(box,navigation,position,items,feedback,earlier,saved,problem,add(actions,ask,approve),pending);
+    drawSlide();
+    if(persistence){
+      const save=make('button','button','Save corrections'),discard=make('button','button button-quiet','Discard corrections');save.type=discard.type='button';
+      box.append(add(make('div','bar'),save,discard));
+      const hydrate=()=>{const value=persistence.state;if(editing){work.splice(0,work.length,...JSON.parse(JSON.stringify(Array.isArray(value.edits)?value.edits:slides||[])));onEdit(edited()?work:null);}text.value=value.note||'';onNote(text.value);selected=Math.max(0,Math.min(value.selected||0,all().length-1));notesOpen=!!value.notes_open;drawSlide();};
+      const show=()=>{
+        saved.textContent=persistence.conflict?'Earlier corrections need your review.':persistence.problem||((persistence.pending||persistence.writing)?'Saving corrections…':(persistence.saved?'Review draft saved privately. No design work started.':'No local corrections yet. Design waits for approval.'));
+        saved.className=persistence.problem?'problem':'quiet field-hint';
+        earlier.hidden=!persistence.conflict;
+        if(!busy){for(const control of items.querySelectorAll('input,textarea'))control.disabled=Boolean(persistence.conflict);text.disabled=ask.disabled=approve.disabled=save.disabled=Boolean(persistence.conflict);}
+        if(persistence.conflict){const value=persistence.conflict;const content=make('textarea','input');content.readOnly=true;content.rows=6;content.setAttribute('aria-label','Earlier saved corrections');content.value=(value.edits||[]).map((slide,i)=>(i+1)+'. '+slide.title+'\n'+(slide.points||[]).map(p=>typeof p==='string'?p:[p.label,p.text].filter(Boolean).join(': ')).join('\n')+'\n'+(slide.notes||'')).join('\n\n')+'\nFeedback: '+(value.note||'');earlier.replaceChildren(make('p','','The outline changed after these corrections were saved. Copy the corrections you need, then discard this earlier draft to review the current outline.'),content);}
+      };
+      persistence.notify=show;
+      save.addEventListener('click',async()=>{remember();if(!await persistence.keep(persistence.state))problem.textContent=persistence.problem||'Review the earlier corrections first.';show();});
+      discard.addEventListener('click',async()=>{if(!confirm('Discard these saved corrections and use the current outline? The outline and approved files are kept.'))return;if(await persistence.discardReview()){hydrate();problem.textContent='';}show();});
+      if(persistence.restored){hydrate();show();}
+      else {off(true);persistence.load().then(()=>{if(!box.isConnected)return;hydrate();off(false);show();}).catch(error=>{problem.textContent=error.message;off(false);});}
+    }
+    return box;
   }
 
   // Words compared by a longest common subsequence, after the words both texts start and end
@@ -866,6 +938,6 @@ const Drafting = (() => {
     return k;
   }
 
-  return { DIFF_LIMIT, SAVE_WAIT, POLL, SELECTION, make, add, words, diffWords, age, kit, slideContent, Intake, trapSheet };
+  return { DIFF_LIMIT, SAVE_WAIT, POLL, SELECTION, make, add, words, diffWords, age, kit, slideContent, ReviewDraft, Intake, trapSheet };
 })();
 if (typeof module === 'object' && module.exports) module.exports = Drafting;

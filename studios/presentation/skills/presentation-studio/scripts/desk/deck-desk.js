@@ -615,7 +615,8 @@
     const path = h.view.path;
     const kept = held.slideText[path] || (held.slideText[path] = { note: '', edits: null,
       base: gate.expected });
-    if (kept.base !== gate.expected) Object.assign(kept, { edits: null, base: gate.expected });
+    if (kept.base !== gate.expected) Object.assign(kept, { note: '', edits: null, draft: null, base: gate.expected });
+    if(!kept.draft)kept.draft=new Drafting.ReviewDraft(sent=>sent.action==='read'?h.ask('slide-text-draft',{path}):h.send('slide-text-draft',{path,...sent}),gate.expected);
     return kept;
   }
 
@@ -688,7 +689,7 @@
     const gate = run.gate, path = h.view.path;
     if (read) return h.make('p', 'quiet', 'Slide text is waiting for approval on its owner’s computer.');
     const kept = slideTextOf(run);
-    const node = Drafting.slideContent({slides: gate.slides, toolbar: true,
+    const node = Drafting.slideContent({slides: gate.slides, toolbar: true, persistence: kept.draft,
       note: kept.note, onNote: (note) => { kept.note = note; },
       edits: kept.edits, onEdit: (slides) => { kept.edits = slides; },
       onDecision: async (decision, note, edited) => {
