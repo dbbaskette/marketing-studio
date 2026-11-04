@@ -3831,7 +3831,8 @@ class RunnerScreenTests(ScriptedPage, PageCase):
                       'after each decision: your team sees the drafts', said,
                       'Claude Code, with the model it chooses itself',
                       'A step may take up to 15 minutes.',
-                      'A training stops and asks you once it has spent $20.00.',
+                      'The project spending amount is $20.00.',
+                      'New-work warning or stop behavior is in Shared settings, Spending.',
                       'Up to 2 trainings run at once.'):
             self.assertIn(shown, settings['text'])
         self.assertEqual(settings['heading'], 'Settings')
@@ -3865,7 +3866,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         saved = shots['saved']
         self.assertEqual((saved['heading'], saved['current']), ('Settings', ['Settings']))
         self.assertIn('The set-up is saved.', saved['toasts'])
-        self.assertIn('once it has spent $30.00', saved['text'])
+        self.assertIn('The project spending amount is $30.00.', saved['text'])
 
     def test_a_folder_on_this_computer_is_set_up_without_anyone_to_share_with(self):
         check = {'ok': True, 'found': {'name': 'try-out', 'folder': 'trainings',

@@ -41,7 +41,7 @@ GETS = ('/api/spending-policy', '/api/intake-draft', '/api/capabilities', '/api/
         '/api/delete', '/api/file', '/api/computer', '/api/known-decks', '/api/storyboard',
         '/api/desk-outline-price', '/api/desk-versions', '/api/desk-migration-preview',
         '/api/desk-ready-context')
-DESK_POSTS = ('/api/spending-policy', '/api/desk-note', '/api/desk-deck-note', '/api/desk-stop', '/api/desk-deliver',
+DESK_POSTS = ('/api/desk-note', '/api/desk-deck-note', '/api/desk-stop', '/api/desk-deliver',
               '/api/desk-draw-here', '/api/desk-outline', '/api/desk-reread', '/api/desk-look',
               '/api/desk-look-again', '/api/desk-words', '/api/desk-notes',
               '/api/desk-selection', '/api/desk-redraw-words', '/api/desk-discard',
@@ -52,7 +52,7 @@ DESK_POSTS = ('/api/spending-policy', '/api/desk-note', '/api/desk-deck-note', '
 # The shared Document Library's browsing routes: each reads, and selects nothing.
 LIBRARY_POSTS = ('/api/library', '/api/library-document', '/api/library-filters',
                  '/api/library-matching')
-POSTS = ('/api/intake-draft', '/api/research-sources', '/api/setup/check', '/api/setup', '/api/decks', '/api/run', '/api/decide',
+POSTS = ('/api/spending-policy', '/api/intake-draft', '/api/research-sources', '/api/setup/check', '/api/setup', '/api/decks', '/api/run', '/api/decide',
          '/api/answer', '/api/share', '/api/fetch', '/api/drive', '/api/publish',
          '/api/delete', '/api/bring', '/api/companions', '/api/upgrade', '/api/restart',
          '/api/versions', '/api/computer', '/api/brand', '/api/brand/install',

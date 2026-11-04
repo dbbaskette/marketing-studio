@@ -226,7 +226,7 @@ class RuleTests(PageCase):
     def setUp(self):
         super().setUp()
         self.path = self.saved_started()
-        self.bodies = {'/api/outline-flow': {'path': 'nowhere', 'expected': 'old'}, '/api/intake-draft': {'action': 'read'}, '/api/training-plan': {'path':'nowhere', 'expected':'none', 'decision':'approve'}, '/api/research-sources': {'action':'create'}, '/api/setup/check': {'path': str(self.base / 'elsewhere')},
+        self.bodies = {'/api/spending-policy': {'path': self.path, 'expected': 'stale', 'policy': 'warn'}, '/api/outline-flow': {'path': 'nowhere', 'expected': 'old'}, '/api/intake-draft': {'action': 'read'}, '/api/training-plan': {'path':'nowhere', 'expected':'none', 'decision':'approve'}, '/api/research-sources': {'action':'create'}, '/api/setup/check': {'path': str(self.base / 'elsewhere')},
                        '/api/setup': {'limits': {'parallel': 4}},
                        '/api/trainings': {**FORM, 'title': 'Health checks'},
                        '/api/run': {'path': self.path, 'action': 'stop'},

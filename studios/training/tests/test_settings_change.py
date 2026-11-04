@@ -368,6 +368,9 @@ class StopTests(SettingsCase):
         import dataclasses
         from runner import engine as engines
         root = self.supplied()
+        record = self.record(root)
+        record['spending_policy'] = 'hard-stop'
+        self.engine._store(root, record)
         self.stopped_as(root, action='resume', label='Carry on', step=None)
         self.engine.change_settings(root, self.sent(self.form(root), research_questions=QUESTIONS,
                                                     confirmed=True))

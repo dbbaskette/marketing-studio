@@ -271,6 +271,14 @@ elif [[ "${1:-full}" == audit-week8 ]]; then
   (cd studios/presentation && "$python" skills/presentation-studio/scripts/validate_package.py)
   (cd studios/training && "$python" skills/training-studio/scripts/validate_package.py)
   PYTHONPATH=tests "$python" -m unittest test_suite test_work_overview -v 2>&1 | tee "$results_dir/package-tests.log"
+elif [[ "${1:-full}" == backlog-spending-acceptance ]]; then
+  # Full Training Studio completed on unchanged application code; old hard-stop
+  # fixture assumptions and the exhaustive route request bodies are corrected.
+  {
+    (cd studios/training && "$python" scripts/ci/run_tests.py --jobs 4 test_desk.RunnerScreenTests test_settings_change.StopTests test_parallel_research.ParallelNativeTests test_runner_page.RuleTests)
+    (cd studios/presentation && PYTHONPATH=tests "$python" -m unittest test_runner_page.CapabilityTests test_runner_page.RuleTests -v)
+    bash scripts/ci/acceptance.sh "$python" "$results_dir/checks"
+  } 2>&1 | tee "$results_dir/tests.log"
 elif [[ "${1:-full}" == backlog-spending-final ]]; then
   # The complete shared, Infographic, Blog and Presentation suites completed.
   # Only the exhaustive API route lists changed; cover page auth/methods again,
