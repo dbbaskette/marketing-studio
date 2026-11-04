@@ -533,6 +533,8 @@ VALIDATORS = {'finishing': check_finishing, 'research-plan': check_plan, 'bluepr
               'yoodli': check_yoodli, 'outline': check_outline, 'section': check_section,
               'part': check_part, 'slide-words': check_slide_words}
 VALIDATORS['research-json'] = check_research_json
+from runner.outline_first import validate as check_provisional_outline
+VALIDATORS['provisional-outline'] = check_provisional_outline
 
 
 # --- pictures, and the renderer ----------------------------------------------------------

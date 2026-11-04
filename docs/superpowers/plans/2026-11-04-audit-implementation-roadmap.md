@@ -170,5 +170,6 @@ All verification uses disposable state and scripted providers. Paid-provider wor
 - [x] Map every audit implementation issue to a cohort.
 - [x] User authorizes Weeks 1–3, each through PR publication and merge.
 - [x] Week 1 merged in [PR #327](https://github.com/dbbaskette/marketing-studio/pull/327), squash `c954191edb7f72bd8d9a6ff946360f58825c99f0`. Clean full shared/native suites, browser and package/CLI checks recorded on the PR.
-- [ ] Record Week 2 and Week 3 PRs and verification as each cohort completes.
+- [x] Week 2 merged in [PR #328](https://github.com/dbbaskette/marketing-studio/pull/328), squash `16d164fb4dc7a6e360ac5fb7f7d1dcc77b2009e6`. Full shared, all four native suites, real browser and installer/CLI acceptance passed with disposable state.
+- [ ] Record Week 3 PR and verification on completion.
 

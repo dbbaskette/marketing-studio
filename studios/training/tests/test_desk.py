@@ -4482,7 +4482,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         three = shots['three']
         self.assertEqual(three['filled'], ['Start'])
         self.assertNotIn('Back a step', three['buttons'])
-        for shown in ('Next: research, then a teaching plan for you to review.', 'Claude Code',
+        for shown in ('Next: one Quick scan, then your outline approval before detailed research and writing.', 'Claude Code',
                       'A step may take up to 15 minutes.',
                       'Claude Code, with the model it chooses itself.'):
             self.assertIn(shown, three['sheet'])

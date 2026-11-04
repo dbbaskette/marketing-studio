@@ -230,7 +230,7 @@ import computer
 import checks
 import home
 from studio_core import deck_content
-from runner import training_plan
+from runner import training_plan, outline_first
 from studio_core import brand_guidance, critic, deck_direction, deck_flow, model_profiles, review_policy, research_contract, research_session as research_parallel, research_transport as research_parallel_native, research_timing, research_sources, research_view, research_sites, step_times, stops
 import hub
 import workspace
@@ -439,23 +439,27 @@ def read_record(root: Path) -> dict | None:
     record = workspace.read_run(root)
     if record is None:
         return None
-    if not isinstance(record, dict) or record.get('schema') not in (SCHEMA, 2, 3, drafts.SCHEMA, research_parallel.RECORD_SCHEMA, training_plan.RECORD_SCHEMA) \
-            or not isinstance(record.get('steps'), dict):
+    schemas = (SCHEMA, 2, 3, drafts.SCHEMA, research_parallel.RECORD_SCHEMA,
+               training_plan.RECORD_SCHEMA, outline_first.RECORD_SCHEMA)
+    if not isinstance(record, dict) or record.get('schema') not in schemas or not isinstance(record.get('steps'), dict):
         raise WorkspaceError(f'The run record in {root.name} cannot be read, so the runner '
                              'will not drive this training.')
-    if record.get('schema') == 2 and not record.get('review_policy'):
+    schema = record['schema']
+    if schema == 2 and not record.get('review_policy'):
         raise WorkspaceError('This run is missing its saved review level. Restore its run record.')
-    if record.get('schema') == training_plan.RECORD_SCHEMA and not (training_plan.enabled(record) and drafts.on_desk(record)):
-        raise WorkspaceError('This training is missing its saved topics-review workflow.')
+    if schema in (training_plan.RECORD_SCHEMA, outline_first.RECORD_SCHEMA) and not (
+            training_plan.enabled(record) and drafts.on_desk(record)):
+        raise WorkspaceError('This training is missing its saved outline or topics-review workflow.')
     contracted = (record.get('research_contract') or {}).get('schema') == 2
     # Runner desk records require a contract; focused conversations may be contract-free.
-    if record.get('schema') == drafts.SCHEMA:
+    if schema == drafts.SCHEMA:
         contracted = drafts.on_desk(record) and (contracted or drafts.in_conversation(record))
-    if (record.get('schema') == research_parallel.RECORD_SCHEMA or
-            record.get('schema') == training_plan.RECORD_SCHEMA and 'research_execution' in record) \
-            and not research_parallel.protocol(record):
+    parallel = schema in (research_parallel.RECORD_SCHEMA, outline_first.RECORD_SCHEMA) or (
+        schema == training_plan.RECORD_SCHEMA and 'research_execution' in record)
+    if parallel and not research_parallel.protocol(record):
         raise WorkspaceError('This run is missing its saved parallel research protocol. Restore its run record.')
-    if record.get('schema') in (3, drafts.SCHEMA, research_parallel.RECORD_SCHEMA, training_plan.RECORD_SCHEMA) and not contracted:
+    if schema in (3, drafts.SCHEMA, research_parallel.RECORD_SCHEMA,
+                  training_plan.RECORD_SCHEMA, outline_first.RECORD_SCHEMA) and not contracted:
         raise WorkspaceError('This run is missing its saved research contract. Restore its run record.')
     return record
 
@@ -639,7 +643,7 @@ class Engine(Reviewing):
 
     def __init__(self, adapters=None, research=None, background: bool = True,
                  at_once: int = AT_ONCE, documents=None, copies=None, index=None,
-                 slides=None, brand=None, notifier=None, parallel_research=True, content_first=True, plan_first=True):
+                 slides=None, brand=None, notifier=None, parallel_research=True, content_first=True, plan_first=True, outline_first=True):
         self.adapters = dict(adapters or agents.AGENTS)
         self.notifier = notifier or team.Notifier()
         self.upkeep = None    # what `studio serve` keeps of the skills here; see `upkeep`
@@ -664,6 +668,7 @@ class Engine(Reviewing):
         self.parallel_research = parallel_research
         self.content_first = content_first
         self.plan_first = plan_first
+        self.outline_first = outline_first
         self.files = ProcessRLock(gitstate.write_lock_path, refusal=WorkspaceError)
         self._preparing_decks: dict[Path, deck_edit.PreparedEdit] = {}
         # What was typed on each desk and not committed yet, by the training's folder:
@@ -1442,6 +1447,9 @@ class Engine(Reviewing):
             contract = None
         if contract is None:
             raise WorkspaceError(NO_SYNTHESIS)
+        if self.plan_first and self.outline_first and (not self.parallel_research
+                or not research_parallel.execution(self.research().runtime)):
+            raise WorkspaceError('The outline-first flow needs Harness Research 1.1 collection support. Install a compatible helper explicitly before starting.')
         # A training on the desk has no review level: none is saved with it, and the shared
         # one is never written from its form.
         desk = drafts.on_desk(form)
@@ -1488,6 +1496,9 @@ class Engine(Reviewing):
                     record.update(schema=research_parallel.RECORD_SCHEMA, research_execution=parallel)
                 if desk and self.plan_first:
                     record.update(schema=training_plan.RECORD_SCHEMA, training_plan={'schema': 1, 'revision': 0})
+                    if self.outline_first:
+                        record.update(schema=outline_first.RECORD_SCHEMA,
+                                      outline_first={'schema': 1, 'outline': None})
                 if selected_sources:
                     record['research_inputs'] = research_sources.install(selected_sources, root)
                     if parallel:
@@ -1856,6 +1867,8 @@ class Engine(Reviewing):
 
     def _do(self, root: Path, run: _Run, found: pipeline.Survey,
             step: pipeline.Next) -> None:
+        if step.step.id == 'scan':
+            return outline_first.scan(self, root, run, found, step)
         if step.step.id.startswith('review-sample'):
             return self._review_sample(root, found, step.step)
         drawing = DECK.get(pipeline.bare(step.step.id)) if step.step.stage == 'deck' else None
@@ -3871,6 +3884,10 @@ class Engine(Reviewing):
         if not step.id.startswith('draft:'):
             work = self._noted(root, step, work)
         record = self._load(root)
+        if outline_first.enabled(record) and step.stage in ('blueprint', 'document', 'brief', 'scenario', 'yoodli', 'deck'):
+            scope = json.dumps(record['outline_first']['outline'], ensure_ascii=False)
+            work = replace(work, prepared={**work.prepared, 'inputs': {**work.prepared.get('inputs', {}),
+                'approved-teaching-outline': scope}}, task=work.task + '\n\nFollow the approved teaching sections, objectives and questions in approved-teaching-outline. Only checked research supplies facts; the provisional scan supplies no evidence.')
         if work.prepared.get('fetch'):
             # A job that saves pages keeps to where the run says research may look: its
             # tools refuse a page outside your sites, and it is told to search them first.
@@ -4092,17 +4109,20 @@ class Engine(Reviewing):
                     self._store(root, record)
                     return  # survey the new inputs and request together
         if (it.id == 'research-plan' and record.get('research_contract')
-                and found.scope == 'supplied-only' and not step.request):
+                and (outline_first.enabled(record) or found.scope == 'supplied-only') and not step.request):
             with self.files:
-                workspace.write_atomic(root / pipeline.PLAN, pipeline.plan_from_form(
-                    root, found, record.get('research_questions') or []).encode('utf-8'))
+                plan = (outline_first.research_plan(root, found, record, self._sources(root, record)[0] if record.get('documents') else [])
+                        if outline_first.enabled(record) else pipeline.plan_from_form(
+                            root, found, record.get('research_questions') or []))
+                workspace.write_atomic(root / pipeline.PLAN, plan.encode('utf-8'))
                 workspace.save(root, 'research-plan', built=True)
                 self._tried(record, it.id, home.now(), 0, 'kept')['attempts'][-1]['runner'] = True
-                record['research'] = {**(record.get('research') or {}), 'plan_from': 'form'}
+                record['research'] = {**(record.get('research') or {}), 'plan_from': 'outline' if outline_first.enabled(record) else 'form'}
                 if review_policy.level(record) != 'step_by_step':
                     workspace.accept_policy(root, 'research-plan', record['review_policy'])
                 self._store(root, record)
-                self._commit(root, 'write the research plan from the form')
+                self._commit(root, 'write the research plan from the approved outline'
+                             if outline_first.enabled(record) else 'write the research plan from the form')
             return
         sources = (self._sources(root, record)
                    if it.id == 'research-plan' and record.get('documents') else None)
@@ -4294,6 +4314,8 @@ class Engine(Reviewing):
             # task's scope; one saved before keeps the scope it was researched under.
             about = pipeline._about(root, found.session) + (
                 '\n' + research_sites.scope_text(looks) if record.get('research_from') else '')
+            if outline_first.enabled(record):
+                about = outline_first.research_scope(record, about)
             intake = pipeline.answers(root)
             depth = (' at levels ' + ', '.join(found.session['levels'])) if found.session['levels'] else ''
             task = {'topic': intake.get('topic') or found.session['title'],
@@ -4312,6 +4334,9 @@ class Engine(Reviewing):
                     # Pages from your sites are public captures: documents and sites are
                     # 'mixed', sites alone 'public', documents alone 'selected'.
                     'source_mode': research_sites.source_mode(looks)}
+            if outline_first.enabled(record):
+                task['teaching_outline'] = record['outline_first']['outline']
+                task['teaching_intake'] = intake
             try:
                 if research_parallel.enabled(record, task):
                     research_parallel_native.native(self, root, run, task, offered)
@@ -6893,7 +6918,9 @@ class Engine(Reviewing):
                     holding=pipeline.holding(root, found, step) if root is not None else ())
             listed.append({
                 'id': step.id, 'label': (step.label.replace('Your review of ', 'Continue ') + ' automatically'
-                                         if automatic else pipeline.FROM_FORM if step.id == 'research-plan'
+                                         if automatic else 'Research plan from your approved outline' if step.id == 'research-plan'
+                                         and (record.get('research') or {}).get('plan_from') == 'outline'
+                                         else pipeline.FROM_FORM if step.id == 'research-plan'
                                          and (record.get('research') or {}).get('plan_from') == 'form' else step.label),
                 'kind': 'code' if automatic else step.kind, 'status': status,
                 'attempts': len(tried),
@@ -7162,6 +7189,7 @@ class Engine(Reviewing):
             'research_from': self._research_view(record),
             'copies': self._copies(found, (record.get('copies') or {}).get('remote')),
             'outline': outline,
+            **({'outline_first': True} if outline_first.enabled(record) else {}),
             **({'training_plan': training_plan.view(root, found, record),
                 'training_plan_pending': (record['training_plan'].get('approved') or {}).get('signature')
                     != training_plan.signature(root, found.session, record)} if training_plan.enabled(record) else {}),

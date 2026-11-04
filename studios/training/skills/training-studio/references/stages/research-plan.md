@@ -1,8 +1,11 @@
 # Research plan
 
-Draft the questions `harness-research` will answer, and have the user approve them, before any research runs. A run aimed at the wrong questions is the most expensive mistake in the pipeline.
+Plan questions before research. The person approves the scope; saved work keeps its gates.
 
 ## Draft
+
+Outline-first page work writes this plan locally from approved sections and questions,
+without another planning assistant. Saved work keeps the following behavior:
 
 A browser run with supplied-only synthesis writes this plan from the form without a
 planning job: at most eight optional questions, each up to 300 characters, or one about

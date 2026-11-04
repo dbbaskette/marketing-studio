@@ -195,6 +195,23 @@ elif [[ "${1:-full}" == marketing-home ]]; then
   node studios/infographic/tests/ui/home-readiness.cjs 2>&1 | tee "$results_dir/home-readiness-browser.log"
   "$python" -m unittest discover -s tests -v 2>&1 | tee "$results_dir/home-tests.log"
   bash scripts/ci/acceptance.sh "$python" "$results_dir/checks" 2>&1 | tee "$results_dir/home-acceptance.log"
+elif [[ "${1:-full}" == audit-week3 ]]; then
+  # One complete gate for the final Training Studio outline-first flow. Unchanged
+  # Presentation Studio, Blog Studio and Infographic Studio retain Week 2 evidence.
+  export INFOGRAPHIC_STUDIO_TEST_RENDERER="$("$python" scripts/ci/infographic-renderer.py --output "$work/outline-graphics" --cache "$work/outline-graphics-cache")"
+  mkdir -p "$work/outline-browser"
+  cp studios/infographic/tests/ui/package*.json "$work/outline-browser/"
+  touch "$work/outline-npm-user.conf" "$work/outline-npm-global.conf"
+  env HOME="$work/outline-browser-home" NPM_CONFIG_USERCONFIG="$work/outline-npm-user.conf" NPM_CONFIG_GLOBALCONFIG="$work/outline-npm-global.conf" \
+    npm ci --prefix "$work/outline-browser" --ignore-scripts --no-audit --no-fund > "$results_dir/outline-browser-tools.log" 2>&1
+  export NODE_PATH="$work/outline-browser/node_modules" PYTHON="$python" TRAINING_OUTLINE_RESULTS="$results_dir/outline-ui"
+  node studios/training/tests/ui/outline.cjs 2>&1 | tee "$results_dir/outline-browser.log"
+  {
+    "$python" scripts/workflow_diagrams.py --check
+    "$python" -m unittest discover -s tests -v
+    (cd studios/training && bash scripts/ci/check.sh "$python")
+    bash scripts/ci/acceptance.sh "$python" "$results_dir/checks"
+  } 2>&1 | tee "$results_dir/tests.log"
 elif [[ "${1:-full}" == audit-week2-training-final ]]; then
   # Every other complete suite and both native browser journeys passed. Only old
   # Training Studio layout/body-cap assertions changed; repeat its whole suite

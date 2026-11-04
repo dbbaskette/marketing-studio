@@ -66,8 +66,9 @@ optional tools. Missing capabilities are explained rather than silently substitu
 2. **Choose New training.** Explain what learners should be able to do, their
    starting knowledge, the levels, time and materials. Add reference documents and
    choose where research may look: documents, approved sites and/or the public web.
-3. **Check the topics.** **Here’s what this training will cover** shows coverage,
-   depth and timing. **Ask for changes** revises the plan; **Build the training**
+3. **Review the training outline.** One bounded Quick scan proposes sections, objectives
+   and research questions. Edit, add or remove them, then **Approve outline & research**
+   starts research only for that scope. The checked evidence and approved outline
    makes the selected materials. There is no sample lesson to approve.
 4. **Review requested slide text.** If you selected a deck, **Review slide text**
    shows its words and notes. Ask for changes or choose **Approve text & design deck**
@@ -86,7 +87,7 @@ computer and is never shared.
 The plan, drawn. Filled boxes are your decisions or input, tinted boxes are
 assistant work and grey boxes are Training Studio's own steps.
 
-![Training Studio plan workflow: open Training Studio, complete shared setup the first time, then New training for the goal, materials and sources. Research uses Harness Research and an independent check, then the teaching plan sets topics, order, depth and timing. At Check the topics you either choose Ask for changes, which revises the teaching plan and keeps the research, or Build the training.](docs/assets/training-studio-workflow-plan.svg)
+![Training Studio plan workflow: open Training Studio, complete shared setup the first time, then New training for the goal, materials and sources. One Quick scan proposes an editable outline. Approve the retained sections and questions before Harness Research investigates up to three areas, combines the findings and independently checks the report. Teaching plans and materials then follow the approved scope.](docs/assets/training-studio-workflow-plan.svg)
 
 ## Refine the training on the desk
 

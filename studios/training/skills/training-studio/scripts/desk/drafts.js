@@ -753,7 +753,7 @@ function deskStart() {
   const retell = draft.retell;
   draft.retell = () => {
     retell();
-    summary.textContent = 'Next: research, then a teaching plan for you to review. Outputs: '
+    summary.textContent = 'Next: one Quick scan, then your outline approval before detailed research and writing. Outputs: '
       + [...draft.materials.map(id => MATERIALS.find(one => one[0] === id)?.[1] || id),
         ...(DECKS[draft.deck][0] ? ['Slide deck'] : [])].join(', ') + '. '
       + AGENT_NAMES[draft.agent] + draftModelWords(draft) + '. '
@@ -2756,7 +2756,113 @@ function slideTextReview(outline, held) {
   return review;
 }
 
+// The provisional teaching scope is edited locally; only explicit approval starts research.
+function outlinePlanReview(plan, held) {
+  const path=view.path,turn=view.turn;
+  if(!held.outlineEdit || (!held.outlineDirty && held.outlineBasis!==plan.expected)){
+    held.outlineBasis=plan.expected;
+    held.outlineEdit=JSON.parse(JSON.stringify(plan.outline));held.outlineRaw={};
+  }
+  const value=held.outlineEdit;
+  const saved=make('p','quiet',held.outlineDirty?'Unsaved outline edits. Save outline or approve this version.':'Outline saved. No detailed research has started.');saved.setAttribute('role','status');
+  const box=add(make('section','paper slide-text-review'),
+    make('h2','doc-title','Review the training outline'),
+    make('p','quiet','Edit the sections, objectives and questions. Approval starts detailed research; the scan supplies no teaching evidence.'));
+  const status=plan.inputs_changed ? 'The inputs changed since this scan. Revise this starting outline for the current goal and source choices; no extra scan ran automatically.' : plan.scan.fallback ? 'The quick scan ended before a complete outline was accepted. This starting outline is incomplete and ready for your edits.' : 'One Quick scan prepared this provisional outline.';
+  box.append(make('p','quiet',status));
+  const allowed=plan.research_from||{};
+  const scope=[allowed.documents?'your supplied documents':'',list(allowed.sites).length?'your selected sites':'',allowed.web?'the public web':''].filter(Boolean).join(', ');
+  box.append(make('p','quiet','After approval: research uses '+scope+'. Up to '+Math.min(plan.workers,value.sections.length)+' areas run in parallel; combining and independent checking follow.'));
+  const overview=add(make('details','outline-notes'),make('summary','','Scan overview, coverage and limits'),
+    make('p','quiet','Scan limits: '+Math.ceil(plan.limits.seconds/60)+' minutes and $'+plan.limits.dollars.toFixed(2)+', within the training limits. External searches: '+plan.limits.searches+'.'),
+    make('p','',value.overview),bullets(value.key_terms,'outline-points'),
+    ...list(value.coverage).map(one=>make('p','',one.source+': '+one.covers)),bullets(value.gaps,'outline-points'));
+  box.append(overview);
+  const local=(label,initial,key,update,long=true)=>{
+    const node=make(long?'textarea':'input','input');if(long)node.rows=3;else node.type='text';
+    node.id=key;node.dataset.key=key;node.value=held.outlineRaw[key]??initial;
+    node.addEventListener('input',()=>{held.outlineRaw[key]=node.value;update(node.value);node.removeAttribute('aria-invalid');held.outlineDirty=true;saved.textContent='Unsaved outline edits. Save outline or approve this version.';});
+    const field=add(make('label','field'),make('span','field-label',label),node);field.htmlFor=key;
+    return field;
+  };
+  const array=raw=>raw.split('\n').map(s=>s.trim()).filter(Boolean);
+  const sections=make('ol','slide-text-list');
+  for(const [index,section] of value.sections.entries()){
+    const key='outline-'+section.id;
+    const remove=capsule('Remove section '+(index+1),'quiet',()=>{
+      value.sections.splice(index,1);for(const field of Object.keys(held.outlineRaw))if(field.startsWith(key+'-'))delete held.outlineRaw[field];held.outlineDirty=true;paintDesk(true);focusKey('outline-add');
+    },key+'-remove');remove.disabled=value.sections.length<=1;
+    const row=add(make('li','slide-text-item'),make('h3','sheet-part','Section '+(index+1)),
+      local('Section '+(index+1)+' title',section.title,key+'-title',text=>section.title=text,false),
+      local('Section '+(index+1)+' learning objectives',section.objectives.join('\n'),key+'-objectives',text=>section.objectives=array(text)),
+      local('Section '+(index+1)+' research questions',section.questions.join('\n'),key+'-questions',text=>section.questions=array(text)),
+      make('p','field-hint','One objective per line, up to six. One research question per line, up to three.'),remove);
+    sections.append(row);
+  }
+  const addSection=capsule('Add section','quiet',()=>{
+    let at=1;while(value.sections.some(one=>one.id==='section-new-'+at))at++;
+    const id='section-new-'+at;
+    value.sections.push({id,title:'New section',objectives:['Describe the learning objective.'],questions:['What should research establish for this section?']});
+    held.outlineDirty=true;paintDesk(true);focusKey('outline-'+id+'-title');
+  },'outline-add');addSection.disabled=value.sections.length>=8;
+  box.append(sections,addSection,local('Your additional research questions',value.personal_questions.join('\n'),'outline-personal',text=>value.personal_questions=array(text)),
+    make('p','field-hint','Questions from the form stay here in your words. Edit or remove them before approval; research includes every question you keep. Up to eight, one per line.'));
+  const problem=make('p','problem');problem.setAttribute('role','alert');
+  if(held.outlineBasis!==plan.expected)problem.textContent='The inputs or saved outline changed while you edited. Your answers are kept here. Copy them before reloading the latest outline.';
+  const save=capsule('Save outline','quiet',()=>decide('save'),'outline-save');
+  const approve=capsule('Approve outline & research','filled',()=>decide('approve'),'training-plan-build');
+  async function decide(decision){
+    if(view.busy)return;
+    problem.textContent='';
+    const fail=(key,message)=>{problem.textContent=message;const node=box.querySelector('[data-key="'+key+'"]');if(node){node.setAttribute('aria-invalid','true');node.focus();}return false;};
+    for(const [index,section] of value.sections.entries()){
+      const key='outline-'+section.id,at='Section '+(index+1)+': ';
+      if(!section.title.trim()||section.title.length>160)return fail(key+'-title',at+'give a title of 160 characters or fewer.');
+      if(!section.objectives.length||section.objectives.length>6||section.objectives.some(s=>s.length>500))return fail(key+'-objectives',at+'keep one to six learning objectives, each at most 500 characters.');
+      if(!section.questions.length||section.questions.length>3||section.questions.some(s=>s.length>400))return fail(key+'-questions',at+'ask one to three research questions, each at most 400 characters.');
+    }
+    if(value.personal_questions.length>8||value.personal_questions.some(s=>s.length>300))return fail('outline-personal','Keep up to eight additional questions, each at most 300 characters.');
+    view.busy=true;
+    const controls=[...box.querySelectorAll('input,textarea,button')];controls.forEach(node=>node.disabled=true);
+    try{
+      const result=await send('training-plan',{path,expected:held.outlineBasis,decision,outline:value});
+      if(view.turn!==turn)return;
+      held.outlineDirty=false;held.outlineBasis=null;view.run=result;
+      if(decision==='save')toast('Outline saved. No assistant work started.');
+    }catch(error){problem.textContent=error.message;}
+    finally{view.busy=false;controls.forEach(node=>node.disabled=false);}
+    if(view.turn===turn&&!problem.textContent)await drawDesk(true);
+  }
+  return add(box,problem,saved,add(make('div','bar'),save,approve));
+}
+
+async function openOutlineFlow(){
+  const path=view.path;
+  try{
+    const preview=await ask('outline-flow',{path});
+    const problem=make('p','problem');problem.setAttribute('role','alert');
+    const use=capsule('Use the outline-first flow','filled',async()=>{
+      if(view.busy)return;
+      view.busy=true;use.disabled=true;
+      try{
+        view.run=await send('outline-flow',{path,expected:preview.expected});
+        closeSheet();await drawDesk(true);toast('Flow changed. Resume training starts the quick scan.');
+      }catch(error){problem.textContent=error.message;}
+      finally{view.busy=false;use.disabled=false;}
+    },'outline-flow-adopt');
+    DESK.kitSheet=[sheetTitle('Plan before research'),
+      make('p','',preview.reason||'Choose the outline before paying for detailed research.'),
+      make('h3','sheet-part','What is kept'),bullets(preview.keeps,'outline-points'),
+      make('h3','sheet-part','What is replaced'),bullets(preview.replaces,'outline-points'),
+      make('p','quiet',preview.next),problem,
+      add(make('div','bar'),preview.can_adopt?use:null,capsule('Cancel','quiet',closeSheet,'cancel'))];
+    openSheet('desk-kit','outline-flow')();
+  }catch(error){toast(error.message);}
+}
+
+
 function trainingPlanReview(plan, held) {
+  if(plan.outline_first)return outlinePlanReview(plan,held);
   const path = view.path, turn = view.turn;
   const box = add(make('section', 'paper slide-text-review'),
     make('h2', 'doc-title', 'Here’s what this training will cover'),
@@ -2874,6 +2980,7 @@ function paintDesk(fresh) {
   }
   // Change settings, while the run is not working (#296).
   if (ours && !conversation) {
+    if(!run.outline_first && (run.state === 'stopped' || run.state === 'paused' || run.problem))actions.push(capsule('Plan before research','',openOutlineFlow,'outline-flow'));
     const change = settingsButton(run, 'desk-settings');
     if (change) actions.push(change);
     const models = modelsButton(run, 'desk-models', '');
@@ -2932,7 +3039,7 @@ function paintDesk(fresh) {
   place({ title: found.title || 'Untitled', back: true, compact: narrow(),
     above: named.length ? [make('span', '', levelsText(named))] : [],
     actions: folded(actions) }, [
-    waitingPlan ? null : pageHead(preparingPlan ? 'I’ll prepare the topics and teaching plan for you to check, then build the training.' : conversation ? 'Read the retained materials. Make checked edits in conversation; only you mark a material ready.' : DESK_WORDS.lede),
+    waitingPlan ? null : pageHead(preparingPlan ? (run.outline_first ? 'One Quick scan prepares an editable outline. Detailed research waits for your approval.' : 'I’ll prepare the topics and teaching plan for you to check, then build the training.') : conversation ? 'Read the retained materials. Make checked edits in conversation; only you mark a material ready.' : DESK_WORDS.lede),
     notice,
     conversation ? add(card('Editing in conversation'), make('p', '', 'No work is scheduled. Checked edits to the listed existing material parts and explicit broader scope changes happen in conversation; Mark ready is your decision.')) : null,
     found.saved_status ? add(card('Saved runner history'), make('p', '', 'The earlier runner was ' + found.saved_status.halt + '. That status remains in the original saved records; no work was resumed.')) : null,

@@ -47,7 +47,7 @@ BODY_LIMITS = {
     'presentation': {'/api/intake-draft': 32_000_000,
                      '/api/research-sources': 12_000_000, '/api/decks': 120_000_000,
                      '/api/desk-source': 12_000_000, '/api/picture': 28_000_000},
-    'training': {'/api/intake-draft': 32_000_000,
+    'training': {'/api/training-plan': 512_000, '/api/intake-draft': 32_000_000,
                  '/api/research-sources': 12_000_000, '/api/documents': 12_000_000,
                  '/api/asset': 12_000_000, '/api/drafts/source': 12_000_000,
                  '/api/drafts/save': 1_000_000},

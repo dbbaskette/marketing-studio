@@ -678,6 +678,10 @@ def _apply(engine, root: Path, found: dict) -> dict:
             record['documents'] = None
         record['research_from'] = chosen
     record['research_questions'] = new['research_questions']
+    if record.get('outline_first', {}).get('outline'):
+        record['outline_first']['inputs_changed'] = True
+        if 'research_questions' in changed:
+            record['outline_first']['outline']['personal_questions'] = list(new['research_questions'])
     # Research: planned again, started again, carried on or kept.
     if outcome in ('again', 'replanned'):
         _set_aside(root, 'research-plan')

@@ -9459,6 +9459,7 @@ function begin() {
     if (view.screen === 'run' && view.path && typeof leaveDesk === 'function') leaveDesk(view.path);
   });
   window.addEventListener('beforeunload', (event) => {
+    if(view.screen === 'run' && DESK.held[view.path]?.outlineDirty){event.preventDefault();event.returnValue='';}
     if (view.screen === 'run' && DESK.held[view.path] && pendingDeskEdits(view.path).length
         && !keepDeskRecovery(view.path)) { event.preventDefault(); event.returnValue = ''; }
   });

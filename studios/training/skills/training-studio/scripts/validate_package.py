@@ -10,6 +10,7 @@ DESCRIPTION = re.compile(r'^description:\s*(.+)$', re.MULTILINE)
 BUDGET = {'description': 100, 'skill': 1000, 'reference': 1000, 'example': 1200}
 MODES = ('roleplay', 'pitch', 'tutor', 'questionnaire')
 STAGE_TEMPLATES = {
+    'scan': ('assets/examples/provisional-outline.json',),
     'research-plan': (),
     'research-handoff': (),
     'blueprint': ('assets/examples/blueprint.md',),
