@@ -14,7 +14,7 @@ from studio_core import document_library
 from studio_core.document_library import adopt as library_adopt
 from studio_core.document_library import context as library_context
 
-from . import catalog, server, shared, state, validation, workspaces
+from . import catalog, server, shared, state, validation, workspaces, work_overview
 from .errors import WorkspaceError
 from .network import VIA_HEADER
 
@@ -98,7 +98,7 @@ class Home(server.Page):
             row['readiness'] = self.readiness(row, problem, done, agent)
             # Read from each studio's own records: never started, never guessed from a folder's name.
             row['workspace'] = workspaces.connection(row['id'], values) if done and row['installed'] else None
-        return {'studios': studios,
+        return {'studios': studios, 'work_overview': work_overview.snapshot(studios),
                 'shared': values, 'shared_problem': problem, 'setup': {**preferences, 'done': not problem and self.configured(values)},
                 # Each kind of work as the form fills it in, with the kinds not yet saved.
                 'models_shown': None if problem else shared_preferences.model_profiles.shown(values),
@@ -269,8 +269,13 @@ class Home(server.Page):
                     raise WorkspaceError(problem)
                 # This computer keeps the loopback link; only a phone is given a studio's bridge.
                 remote = getattr(self.caller, 'remote', False)
-                return server.as_json(200, {'link': self.launcher.open(sent.get('studio'), preferences, values,
-                                                                       remote=remote)})
+                resume = sent.get('resume')
+                if resume is not None:
+                    try: work_overview.check(sent.get('studio'), resume)
+                    except (ValueError, KeyError) as error: raise WorkspaceError(str(error)) from None
+                link = self.launcher.open(sent.get('studio'), preferences, values, remote=remote)
+                if resume is not None: link = work_overview.link(sent.get('studio'), resume, link)
+                return server.as_json(200, {'link': link})
             elif path == '/api/connect':
                 preferences = state.read()
                 values, problem = shared.read()

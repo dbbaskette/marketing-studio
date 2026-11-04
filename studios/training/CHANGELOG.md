@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased — 4.11.1
+
+Saved work publishes compact metadata for Marketing Studio’s Needs you, In progress and Recent work overview. Direct resume opens the saved editing/decision context. Metadata browsing starts no studio or provider work.
+
 ## Unreleased — 4.11.0
 
 New section workflows preview affected research before refresh. Added sources can target selected sections; changed or removed inputs require wider invalidation. Retained investigator packets and drafts are revalidated, and assembled research still needs a fresh independent check. Wording, notes-only edits and existing section updates keep their direct routes.

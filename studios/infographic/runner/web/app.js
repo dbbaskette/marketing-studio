@@ -272,7 +272,7 @@ async function request(route, data) {
   const labels={'/api/remote-preview':'Reading the linked document','/api/source-preview':'Reading the uploaded file','/api/research-preview':'Reading the selected research'};
   const owner=!shownWork()&&data!==undefined&&labels[route]?beginWork(labels[route]):null;
   try{const response = await fetch(route, {method: data === undefined ? 'GET' : 'POST', headers: {'X-Infographic-Studio-Token': token, ...(data === undefined ? {} : {'Content-Type': 'application/json'})}, ...(data === undefined ? {} : {body: JSON.stringify(data)})});
-    const answer = await response.json(); if (!response.ok){const failure=Error(answer.error || 'This request could not be completed.');failure.status=response.status;throw failure;}return answer;
+    const answer = await response.json(); if (!response.ok){const failure=Error(answer.error || 'This request could not be completed.');failure.status=response.status;failure.recovery=answer.recovery;throw failure;}return answer;
   }finally{if(owner)endWork(owner);}
 }
 // Normalized image outcomes. Each says what happened and the next safe step; nothing is retried.
@@ -336,7 +336,7 @@ async function action(verb, values={}, revision=null, options={}) {
         if(!here(id))elsewhere(owner,['complete','outdated'].includes(result?.state)?'':(result?.problem||failure.message));
         else{await openProject(id);if(result)recoveredNotice(result);else error(failure.message);}
       }catch(f){if(here(id))error(f.message);else elsewhere(owner,f.message);}
-    }else if(here(id)||options.quiet){await openProject(id);error(failure.message);}
+    }else if(here(id)||options.quiet){await openProject(id);if(failure.recovery){closeSheet();recoverySheet(failure.recovery);}else error(failure.message);}
     else elsewhere(owner,failure.message);
   }
   finally { clearInterval(polling); endWork(owner);unlock(); }
@@ -552,6 +552,8 @@ function renderProject() {
   if(p.scene&&needsArtwork){next=['Build page',compose];needs='Build page: this page still needs its artwork.';}
   if(selected&&!nativeReady&&(!p.scene||!p.scene.visual_version)){next=['Make this story visual',()=>reviseStorySheet(selected,true)];needs='Make this story visual: its labels are too long for diagrams, so your assistant suggests a visual plan first.';}
   else if(selected&&p.scene&&!p.scene.visual_version){next=['Rebuild visual layout',()=>action('visual-layout')];needs='Rebuild visual layout: this page uses an older layout. Rebuilding runs on this computer.';}
+  const failedStep=held.workflow_recovery;
+  if(failedStep?.current&&failedStep.state==='failed'&&failedStep.next_action){next=[failedStep.next_label,()=>action(failedStep.next_action,failedStep.next_values,failedStep.revision)];needs=failedStep.next_label+': '+failedStep.label+' could not finish. Completed work is kept.';}
   const recoverable=held.recovery.find(r=>r.local_artwork_available),uncertain=held.recovery.find(r=>!r.local_artwork_available);
   // New image work is refused while a request is uncertain, so cancelling it comes first.
   if(uncertain&&!recoverable){next=['Cancel uncertain request',()=>action('image-cancel',{request_id:uncertain.attempt_id})];needs='Cancel uncertain request: '+imageUncertain.charAt(0).toLowerCase()+imageUncertain.slice(1).replace(' Cancel it under Image work needs attention before starting new image work.',' New image work can start once it is cancelled.');}
@@ -561,6 +563,7 @@ function renderProject() {
   const delivery=held.deliveries.find(d=>d.current) || held.deliveries[0];
   const doing=make('section','card ig-doing');doing.id='ig-doing';doing.hidden=true;doing.setAttribute('aria-label','What the assistant is doing');
   const parts=[make('p','lede','Choose the explanation, review the actual page, then approve its exact revision.'),doing,standing(held.roadmap,p,delivery,needs)];
+  if(held.workflow_recovery?.state==='failed') parts.push(card('Work kept after a failed step',recoveryContent(held.workflow_recovery)));
   if(held.recovery.length) parts.push(card('Image work needs attention',...held.recovery.map(r=>add(make('div','stack'),make('p','',r.message),r.local_artwork_available?button('Recover saved artwork',()=>action('image-recover',{request_id:r.attempt_id})):button('Cancel uncertain request',()=>action('image-cancel',{request_id:r.attempt_id}))))));
   if(selected&&((p.scene&&!p.scene.visual_version)||!nativeReady)){
     parts.push(card('Make this a visual infographic',make('p','','Earlier versions and captured facts are kept. A visual plan uses concise labels, diagrams and comparisons rather than paragraph blocks.'),
@@ -935,6 +938,11 @@ function receiptSheet(delivery,receipts){
   sheet('Delivery receipt',make('p','','Approved revision '+pageOf(delivery)+'. Each format you chose is listed with what happened.'),...parts,
     partial?make('p','quiet','What succeeded is kept. Retrying the PDF is a download on this computer and sends nothing to Google.'):null,add(make('div','create-foot bar'),button('Done',closeSheet,true)));
 }
+function recoveryContent(r) {
+  const retry=r.current&&r.next_action?button(r.next_label,()=>action(r.next_action,r.next_values,r.revision),true):null;
+  return add(make('div','stack'),make('p','',r.label+' could not finish.'),make('p','quiet','Completed: '+(r.completed.join(', ')||'Earlier saved work')+'.'),make('p','quiet','Your saved page, artwork and image request identity are kept. '+(['preview','export','compose-image'].includes(r.next_action)?'This local retry does not generate artwork.':'Retry composition continues the saved build, including artwork when the page requires it.')),r.diagnostic?make('p','field-hint','Diagnostic reference: '+r.diagnostic):null,retry);
+}
+function recoverySheet(r){sheet('Continue from the saved step',recoveryContent(r),button('Back to the page',closeSheet));}
 async function compose(){
   try {
     const capability=await request('/api/computer');
@@ -1029,6 +1037,8 @@ if (homeLink) {
   if (sameTab) $('go-suite').removeAttribute('target');
 }
 async function startDesk() {
+  const resumeId=launch.get('resume');
+  if(resumeId&&/^[A-Za-z0-9_-]{1,64}$/.test(resumeId)){await openProject(resumeId);return;}
   // Back from shared settings: reopen the same infographic and sheet. Connecting stays a choice.
   let back=null;try{back=JSON.parse(sessionStorage.getItem('infographic-studio-return')||'null');sessionStorage.removeItem('infographic-studio-return');}catch(f){}
   if(back&&typeof back==='object'&&!Array.isArray(back)){

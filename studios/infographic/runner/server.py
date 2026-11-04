@@ -178,9 +178,12 @@ class Page(shared.Page):
                 else:
                     result = api.action(self.engine, sent)
                 return shared.as_json(HTTPStatus.OK, {'result': result})
-            except Invalid:
-                raise
             except Exception as failure:
+                from . import build_recovery
+                recovery = build_recovery.read(self.store, sent.get('id')) if isinstance(sent.get('id'), str) else None
+                if getattr(failure, 'workflow_recovery', None) and recovery and recovery.get('current') and recovery.get('state') == 'failed':
+                    return shared.as_json(422, {'error': recovery['label'] + ' could not finish. Completed work is kept.', 'recovery': recovery})
+                if isinstance(failure, Invalid): raise
                 raise Invalid('Infographic Studio could not complete this action. Saved sources, history and earlier deliveries are kept.') from failure
         if path == '/api/preferences':
             require(isinstance(sent, dict) and set(sent) == {'changes', 'expected'}, 'Save only the shown native defaults and their revision.')

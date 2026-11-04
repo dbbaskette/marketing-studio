@@ -645,7 +645,36 @@ async function refreshHomeStatus(){
     for(const line of document.querySelectorAll('.studio-readiness')){const studio=snapshot.studios.find(s=>s.id===line.closest('[data-studio]')?.dataset.studio)||{installed:true};line.replaceWith(readinessBlock({...studio,readiness:{state:'review',label:'Not checked',detail:'Marketing Studio did not answer, so this was not checked. If it was restarted, open the new private link from its terminal.',action:null}}));}
   }finally{homeRefreshing=false;}
 }
+async function resumeWork(studio, item, button) {
+  const sameTab=inThisTab(query=>window.matchMedia(query).matches);
+  const tab=sameTab?null:window.open('about:blank',`marketing-${studio.id}`);
+  button.disabled=true;button.textContent='Opening…';
+  try {
+    const result=await api('open',{studio:studio.id,resume:item.id});
+    if(sameTab)location.href=withHome(result.link,true);
+    else if(tab)tab.location.href=withHome(result.link);
+    else{const link=element('a','Open saved work','button');link.href=withHome(result.link);link.target=`marketing-${studio.id}`;$('#message').replaceChildren(link);$('#message').hidden=false;link.focus();}
+  }catch(error){if(tab)tab.close();problem(error);button.disabled=false;button.textContent=item.action;}
+}
+function renderWorkOverview(){
+  const host=$('#work-overview');if(!host)return;host.replaceChildren();
+  const rows=[];
+  for(const studio of snapshot.studios)for(const item of snapshot.work_overview?.[studio.id]?.items||[])rows.push({studio,item});
+  for(const [state,title] of [['needs-you','Needs you'],['in-progress','In progress'],['recent','Recent work']]){
+    const selected=rows.filter(row=>row.item.state===state).sort((a,b)=>b.item.observed_at.localeCompare(a.item.observed_at)).slice(0,6);
+    if(!selected.length)continue;
+    const group=element('section','','stack');group.append(element('h2',title,'section-title'));
+    for(const {studio,item} of selected){const row=element('article','','paper work-summary');const copy=element('div','','stack');copy.append(element('p',studio.name,'field-hint'),element('h3',item.title,'card-title'),element('p',state==='in-progress'?'Last saved work was in progress; open to check current activity.':item.action,'quiet'));const button=element('button',item.action,'button button-quiet');button.addEventListener('click',()=>resumeWork(studio,item,button));row.append(copy,button);group.append(row);}
+    host.append(group);
+  }
+  if(!rows.length&&Object.keys(snapshot.work_overview||{}).length)host.append(element('p','No readable saved work summaries are available yet. Open a studio to view its saved work.','quiet'));
+  const limited=Object.values(snapshot.work_overview||{}).some(row=>row.limited);
+  if(rows.length)host.append(element('p',limited?'Showing a bounded selection of saved metadata. Open a studio for all work.':'Saved status; opening work checks its current state.','quiet'));
+  const unavailable=snapshot.studios.filter(studio=>snapshot.work_overview?.[studio.id]?.state==='unavailable');
+  if(unavailable.length)host.append(element('p','Saved work metadata is unavailable for '+unavailable.map(s=>s.name).join(', ')+'. Launch cards remain available.','quiet'));
+}
 function renderHome(refreshPaths = true) {
+  renderWorkOverview();
   const list = $('#studio-list'); list.replaceChildren();
   for (const studio of snapshot.studios) {
     const card = element('article', '', 'card studio-card');

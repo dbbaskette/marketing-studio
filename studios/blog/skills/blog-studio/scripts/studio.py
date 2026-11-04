@@ -133,6 +133,26 @@ def atomic(path, data):
 
 def write_json(path, value):
     atomic(path, (json.dumps(value, indent=2, ensure_ascii=False) + '\n').encode())
+    path = Path(path)
+    if (
+        path.name == 'session.json'
+        and path.parent.parent.name == 'articles'
+        and isinstance(value, dict)
+    ):
+        try:
+            from studio_core import work_summary
+
+            stage = (value.get('editorial') or {}).get('stage') or value.get('stage')
+            work_summary.save(
+                path.parent,
+                value.get('title'),
+                'recent' if stage in ('ready', 'published') else 'needs-you',
+                'Open editorial work'
+                if stage in ('ready', 'published')
+                else 'Continue the saved blog',
+            )
+        except (OSError, ImportError):
+            pass
 
 
 def read_json(path):

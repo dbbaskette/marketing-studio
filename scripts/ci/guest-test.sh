@@ -239,6 +239,28 @@ elif [[ "${1:-full}" == audit-week6-finish ]]; then
     (cd studios/training && bash scripts/ci/check.sh "$python")
     bash scripts/ci/acceptance.sh "$python" "$results_dir/checks"
   } 2>&1 | tee "$results_dir/tests.log"
+elif [[ "${1:-full}" == audit-week7-finish ]]; then
+  # Shared, Infographic Studio and both browser gates passed. Continue after
+  # formatting the Blog Studio save hook; application behavior is unchanged.
+  {
+    (cd studios/blog && BLOG_STUDIO_REQUIRE_LINT=1 BLOG_STUDIO_TEST_JOBS=4 bash scripts/ci/check.sh "$python" "$results_dir/blog-studio")
+    (cd studios/presentation && "$python" scripts/ci/run_tests.py --jobs 4 && "$python" skills/presentation-studio/scripts/validate_package.py)
+    (cd studios/training && bash scripts/ci/check.sh "$python")
+    bash scripts/ci/acceptance.sh "$python" "$results_dir/checks"
+  } 2>&1 | tee "$results_dir/tests.log"
+elif [[ "${1:-full}" == audit-week7-browser || "${1:-full}" == audit-week7-full ]]; then
+  export INFOGRAPHIC_STUDIO_TEST_RENDERER="$("$python" scripts/ci/infographic-renderer.py --output "$work/recovery-graphics" --cache "$work/recovery-cache")"
+  mkdir -p "$work/recovery-browser"
+  cp studios/infographic/tests/ui/package*.json "$work/recovery-browser/"
+  touch "$work/recovery-user.conf" "$work/recovery-global.conf"
+  env HOME="$work/recovery-home" NPM_CONFIG_USERCONFIG="$work/recovery-user.conf" NPM_CONFIG_GLOBALCONFIG="$work/recovery-global.conf" npm ci --prefix "$work/recovery-browser" --ignore-scripts --no-audit --no-fund > "$results_dir/browser-tools.log" 2>&1
+  export NODE_PATH="$work/recovery-browser/node_modules" PYTHON="$python" INFOGRAPHIC_UI_RESULTS="$results_dir/recovery-ui" HOME_LAUNCHPAD_RESULTS="$results_dir/home-ui"
+  node tests/home_launchpad.cjs 2>&1 | tee "$results_dir/home-browser.log"
+  node studios/infographic/tests/ui/build-recovery.cjs 2>&1 | tee "$results_dir/recovery-browser.log"
+  if [[ "${1:-full}" == audit-week7-full ]]; then
+    "$python" scripts/workflow_diagrams.py --check
+    bash scripts/ci/check.sh "$python" "$results_dir/checks" 2>&1 | tee "$results_dir/tests.log"
+  fi
 elif [[ "${1:-full}" == audit-week3-final ]]; then
   # The complete shared suite and final outline browser passed on unchanged
   # application flow. Repeat all native tests after the copy assertion and JSON

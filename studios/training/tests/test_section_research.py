@@ -94,3 +94,24 @@ class SectionResearchTests(StudioCase):
         self.assertEqual(record['section_synthesis']['more_time'][ident], 600)
         subsequent = self.section_jobs[len(previous):]
         self.assertEqual(subsequent, [(ident, 600), ('final', 120)])
+
+    def test_preview_polling_reuses_local_metadata_but_confirmation_rehashes_sources(self):
+        from studio_core import research_impact
+        root = self.start()
+        story = self.view(root)['training_plan']
+        original = self.engine._research
+        def finish(*args):
+            original(*args); args[1].stop.set()
+        with mock.patch.object(self.engine, '_research', side_effect=finish):
+            training_plan.decide(self.engine, root, story['expected'], 'approve', outline=story['outline'])
+        self.engine._research_impact_cache = {}
+        record = self.engine._load(root)
+        jobs = len(self.workers.jobs)
+        with mock.patch.object(research_impact, 'native_sources', wraps=research_impact.native_sources) as read:
+            one = research_impact.native(self.engine, root, record, "training")
+            self.assertIsNotNone(one)
+            self.assertEqual(research_impact.native(self.engine, root, record, "training"), one)
+            self.assertEqual(read.call_count, 1)
+            research_impact.native(self.engine, root, record, "training", {'expected': one['expected'], 'sections': [row['id'] for row in one['sections']]})
+            self.assertEqual(read.call_count, 2)
+        self.assertEqual(len(self.workers.jobs), jobs)

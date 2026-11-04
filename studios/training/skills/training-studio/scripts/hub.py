@@ -74,6 +74,10 @@ def run(repo: Path, *args: str, input: str | None = None,
     env = {key: value for key, value in os.environ.items() if key not in INHERITED}
     env.update(GIT_TERMINAL_PROMPT='0', GIT_EDITOR='true',
                GIT_CEILING_DIRECTORIES=str(repo.parent))
+    if subcommand(args) == 'status':
+        # Polling must not refresh the shared index while a writer stages a checkpoint.
+        # Git still takes every mandatory lock for write commands.
+        env['GIT_OPTIONAL_LOCKS'] = '0'
     if index is not None:
         env['GIT_INDEX_FILE'] = str(index.resolve())
     if subcommand(args) in REMOTE and not own_ssh(repo, env):

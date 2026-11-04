@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased — 4.10.1
+
+Saved work publishes compact metadata for Marketing Studio’s Needs you, In progress and Recent work overview. Direct resume opens the saved editing/decision context. Metadata browsing starts no studio or provider work.
+
 Releases are published from `skills/blog-studio/VERSION`. Each entry says what
 changes for authors first, then what changes for maintainers.
 

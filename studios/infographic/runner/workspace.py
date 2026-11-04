@@ -302,6 +302,9 @@ class Store:
             raise Invalid('An existing immutable revision is damaged.')
         _atomic(folder / 'current.json', canonical({'schema': 1, 'id': project['id'],
                                                   'revision': project['revision'], 'sha256': value}))
+        from studio_core import work_summary
+        try: work_summary.save(folder, project['brief']['title'], 'recent' if project['approval'] else 'needs-you', 'Open delivery' if project['approval'] else 'Review the saved infographic')
+        except OSError: pass
 
     def create(self, title: str, *, preset='a4', direction='suggest', request_id=None) -> dict:
         with self.locked():
