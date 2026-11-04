@@ -175,11 +175,11 @@
         <dialog id="brands-sheet" class="dialog" aria-labelledby="brands-sheet-title">
           <header class="dialog-header"><h2 id="brands-sheet-title">New brand</h2><button type="button" id="brands-sheet-close" class="button button-quiet">Close</button></header>
           <form id="brands-sheet-form" class="dialog-content create-flow" method="dialog">
-            <div class="create-step"><h3 class="sheet-part">1. Name it</h3>
+            <div class="create-step">
               <div class="field"><label class="field-label" for="brands-new-name">Name</label><input id="brands-new-name" class="input" name="name" maxlength="80" autocomplete="off" required aria-describedby="brands-new-name-hint"><p id="brands-new-name-hint" class="field-hint quiet">For people, such as Tanzu Division.</p></div>
               <div class="field"><label class="field-label" for="brands-new-id">Id</label><input id="brands-new-id" class="input input-typed" name="id" maxlength="63" autocomplete="off" spellcheck="false" required pattern="[a-z0-9][a-z0-9-]*" aria-describedby="brands-new-id-hint"><p id="brands-new-id-hint" class="field-hint quiet">The folder name under brands/: lower-case letters, digits and hyphens, such as tanzu. It cannot be changed later.</p></div>
             </div>
-            <fieldset id="brands-new-kind" class="create-step research-choices" hidden><legend class="sheet-part">2. Choose its kind</legend>
+            <fieldset id="brands-new-kind" class="create-step research-choices" hidden><legend class="field-label">Kind</legend>
               <label class="check"><input type="radio" name="kind" value="glyph" checked><span>Glyph: one-colour shapes the brand colours, placed in slides as native shapes</span></label>
               <label class="check"><input type="radio" name="kind" value="picture"><span>Picture: artwork kept in its own colours, for blogs and infographics</span></label>
             </fieldset>

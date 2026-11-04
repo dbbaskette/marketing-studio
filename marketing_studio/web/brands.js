@@ -372,9 +372,9 @@
         item.append(pair, text);
         colours.append(item);
       }
-      shown.push(el('h4', 'Colours', 'sheet-part'), colours);
+      shown.push(el('p', 'Colours', 'field-label'), colours);
       if (work.tokens.styles.length) {
-        shown.push(el('h4', 'Type styles', 'sheet-part'), table('Type styles', ['Style', 'Group', 'Size', 'Line height', 'Weight'],
+        shown.push(el('p', 'Type styles', 'field-label'), table('Type styles', ['Style', 'Group', 'Size', 'Line height', 'Weight'],
           work.tokens.styles.map(style => {
             const row = el('tr');
             row.append(el('th', style.name, '', {scope: 'row'}), el('td', style.group || '—'), el('td', style.fontSize || '—'),
@@ -393,12 +393,12 @@
           el('span', `${layout.id}${layout.relationship ? ` · ${layout.relationship}` : ''}${layout.used ? '' : ' · no example slide'}`, 'field-hint quiet'));
         grid.append(item);
       }
-      shown.push(el('h4', `Layouts, ${variant}`, 'sheet-part'), grid);
+      shown.push(el('p', `Layouts, ${variant}`, 'field-label'), grid);
     }
     if (work.extracted?.draft?.length) {
       const list = el('ul', '', 'quiet');
       for (const line of work.extracted.draft) list.append(el('li', line));
-      shown.push(el('h4', 'What the draft leaves to review', 'sheet-part'), list);
+      shown.push(el('p', 'What the draft leaves to review', 'field-label'), list);
     }
     return shown;
   }
@@ -448,7 +448,7 @@
           item.append(swatch(role.value, `${role.role}: ${role.value || 'missing'}`), text);
           list.append(item);
         }
-        node.append(el('h4', `Colour roles, ${variant}`, 'sheet-part'), list);
+        node.append(el('p', `Colour roles, ${variant}`, 'field-label'), list);
       }
     }
     if (part.quotes.length) {
