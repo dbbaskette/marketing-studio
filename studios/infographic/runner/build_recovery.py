@@ -15,7 +15,7 @@ ACTIONS = {'composition': ('build', 'Retry composition'), 'font-check': ('previe
     'place-artwork': ('compose-image', 'Place saved artwork'), 'artwork': (None, 'Review image work needs attention')}
 
 
-def read(store, ident):
+def read(store, ident, project=None):
     try:
         value = json.loads(_read(store.root, f'projects/{ident}/{FILE}', 16000))
         if not isinstance(value, dict) or value.get('schema') != 1 or value.get('step') not in LABELS: return None
@@ -30,9 +30,16 @@ def read(store, ident):
         if not isinstance(value.get('completed'), list) or len(value['completed']) > 8 or any(not isinstance(v,str) or len(v)>100 for v in value['completed']): return None
         if value.get('diagnostic') and not re.fullmatch('[a-f0-9]{16}', value['diagnostic']): return None
         value.update(label=LABELS[value['step']], next_label=label)
-        current = store.read(ident)
+        current = project if project is not None else store.read(ident)
         value['current'] = value.get('revision') == current['revision']
         if not value['current']: value.update(next_action=None, next_label='Earlier recovery; review the current page')
+        category = value.get('error_category')
+        from .render import RENDER_ERRORS
+        if category in RENDER_ERRORS:
+            value['message'], value['help'] = RENDER_ERRORS[category]
+        else:
+            value.pop('message', None)
+            value.pop('help', None)
         return value
     except (ValueError, OSError, TypeError, RecursionError): return None
 
@@ -45,6 +52,14 @@ def keep(store, ident, step, completed=(), *, state='working', error=None, value
         'next_action': action if state == 'failed' else None, 'next_label': label,
         'next_values': values or {}, 'category': step if state == 'failed' else None}
     if error:
+        from .render import RenderError, RENDER_ERRORS
+        import subprocess
+        category = error.category if isinstance(error, RenderError) else (
+            'timeout' if isinstance(error, subprocess.TimeoutExpired) else
+            'renderer-unusable' if isinstance(error, (FileNotFoundError, PermissionError)) else 'unknown')
+        if step in ('font-check', 'preview', 'export'):
+            data['error_category'] = category
+            data['message'], data['help'] = RENDER_ERRORS[category]
         reference = secrets.token_hex(8)
         data['diagnostic'] = reference
         # No exception values, prompts, credentials or absolute paths enter the receipt.

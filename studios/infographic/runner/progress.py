@@ -117,8 +117,10 @@ def roadmap(project, deliveries, *, review=None, review_checked=False, page=lamb
             'downloads': downloads}
 
 
-def readiness(project):
+def readiness(project, recovery=None):
     """A short working state for lists. Exact revision identity is reported beside it."""
+    if recovery and recovery.get('current') and recovery.get('state') == 'failed' and recovery.get('step') in ('font-check', 'preview'):
+        return {'state': 'review', 'summary': 'Preview failed: retry the saved preview'}
     checks = project['checks']
     if project['approval'] is not None:
         return {'state': 'done', 'summary': 'Approved: ready to export and deliver'}

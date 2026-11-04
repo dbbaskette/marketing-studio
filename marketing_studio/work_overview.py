@@ -20,23 +20,35 @@ def listing(identifier):
     root = Path(remembered['root'])
     folder = root / ('projects' if identifier == 'infographic' else 'articles' if identifier == 'blog' else '')
     if folder.is_symlink() or not folder.is_dir(): return {'state':'unavailable','items':[],'note':'The saved workspace is unavailable.'}
-    rows, visited, limited, scanned = [], 0, False, 0
+    candidates, indexed, index_limited = work_summary.indexed(folder, MAX_FOLDERS)
+    rows, visited, limited, scanned, seen = [], 0, index_limited, 0, set()
+    for ident in candidates[:MAX_FOLDERS]:
+        visited += 1
+        seen.add(ident)
+        row = work_summary.read(folder / ident)
+        if row: rows.append(row)
     try:
         with os.scandir(folder) as entries:
             for entry in entries:
                 scanned += 1
                 if scanned > 200: limited=True;break
-                if entry.name.startswith('.'): continue
+                if entry.name.startswith('.') or entry.name in seen: continue
                 if visited >= MAX_FOLDERS: limited=True;break
                 visited += 1
                 if entry.is_symlink() or not entry.is_dir(follow_symlinks=False): continue
                 row = work_summary.read(Path(entry.path)) or work_summary.legacy(identifier, Path(entry.path))
                 if row: rows.append(row)
     except OSError: return {'state':'unavailable','items':[],'note':'The saved workspace is unavailable.'}
+    priority = {'needs-you': 0, 'in-progress': 1, 'recent': 2}
+    rows.sort(key=lambda row: (row['id']))
     rows.sort(key=lambda row: row['observed_at'], reverse=True)
+    rows.sort(key=lambda row: priority[row['state']])
+    omitted = sum(row['state'] == 'needs-you' for row in rows[MAX_SHOWN:])
     return {'state':'saved','items':rows[:MAX_SHOWN],'limited':limited or len(rows)>MAX_SHOWN,
         'note':'Saved status; opening work checks its current state. Older work uses bounded current metadata; oversized or unreadable records are omitted.',
-        'folders_read':visited,'seconds':round(time.monotonic()-started,4)}
+        'pending_omitted':omitted,'pending_more_possible':limited,
+        'coverage':'indexed-and-bounded-legacy' if indexed else 'bounded-legacy',
+        'folders_read':visited,'indexed_candidates':len(candidates),'seconds':round(time.monotonic()-started,4)}
 
 
 def snapshot(studios):

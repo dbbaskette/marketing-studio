@@ -15,6 +15,7 @@ IDENT = re.compile(r'[A-Za-z0-9][A-Za-z0-9_-]{0,127}')
 
 def save(root, title, state='needs-you', action='Open saved work', warning=None):
     root = Path(root)
+    if state not in STATES: return
     if root.is_symlink() or not root.is_dir() or not IDENT.fullmatch(root.name): return
     value = {'schema': 1, 'id': root.name, 'title': str(title or 'Untitled')[:200],
         'state': state, 'action': str(action)[:120], 'observed_at': datetime.now(timezone.utc).isoformat()}
@@ -29,7 +30,70 @@ def save(root, title, state='needs-you', action='Open saved work', warning=None)
         with pending.open('x', encoding='utf-8') as stream:
             os.chmod(pending, 0o600); json.dump(value, stream)
         os.replace(pending, target)
+        index_save(root, value)
     finally: pending.unlink(missing_ok=True)
+
+
+INDEX = 'studios-work-overview'
+STATES = ('needs-you', 'in-progress', 'recent')
+
+
+def index_root(folder):
+    cache = Path(os.environ.get('XDG_CACHE_HOME') or (Path.home() / '.cache'))
+    key = hashlib.sha256(str(Path(folder).resolve()).encode()).hexdigest()
+    return cache / INDEX / key
+
+
+def index_save(root, value):
+    """Incremental metadata only; never rebuild a workspace index on a Home read."""
+    base = index_root(root.parent)
+    if base.is_symlink():
+        return
+    folder = base / value['state']
+    if folder.is_symlink():
+        return
+    folder.mkdir(parents=True, exist_ok=True, mode=0o700)
+    target = folder / (root.name + '.json')
+    if target.is_symlink():
+        return
+    pending = folder / ('.summary-' + secrets.token_hex(8))
+    try:
+        with pending.open('x', encoding='utf-8') as stream:
+            os.chmod(pending, 0o600)
+            json.dump({'schema': 1, 'id': root.name}, stream)
+        os.replace(pending, target)
+        for other in STATES:
+            stale = base / other / target.name
+            if other != value['state'] and not stale.parent.is_symlink():
+                stale.unlink(missing_ok=True)
+    finally:
+        pending.unlink(missing_ok=True)
+
+
+def indexed(folder, limit=100):
+    """Bounded candidate ids by decision priority. Actual owned summaries stay authoritative."""
+    base = index_root(folder)
+    if base.is_symlink() or not base.is_dir():
+        return [], False, False
+    found, limited = [], False
+    for state in STATES:
+        shelf = base / state
+        if shelf.is_symlink():
+            continue
+        try:
+            with os.scandir(shelf) as entries:
+                seen = 0
+                for entry in entries:
+                    seen += 1
+                    if seen > limit:
+                        limited = True
+                        break
+                    ident = entry.name.removesuffix('.json')
+                    if entry.name.endswith('.json') and IDENT.fullmatch(ident) and not entry.is_symlink() and entry.is_file(follow_symlinks=False):
+                        found.append(ident)
+        except OSError:
+            continue
+    return list(dict.fromkeys(found)), True, limited
 
 
 def read(folder):

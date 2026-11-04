@@ -940,7 +940,7 @@ function receiptSheet(delivery,receipts){
 }
 function recoveryContent(r) {
   const retry=r.current&&r.next_action?button(r.next_label,()=>action(r.next_action,r.next_values,r.revision),true):null;
-  return add(make('div','stack'),make('p','',r.label+' could not finish.'),make('p','quiet','Completed: '+(r.completed.join(', ')||'Earlier saved work')+'.'),make('p','quiet','Your saved page, artwork and image request identity are kept. '+(['preview','export','compose-image'].includes(r.next_action)?'This local retry does not generate artwork.':'Retry composition continues the saved build, including artwork when the page requires it.')),r.diagnostic?make('p','field-hint','Diagnostic reference: '+r.diagnostic):null,retry);
+  return add(make('div','stack'),make('p','',r.message||r.label+' could not finish.'),r.help?make('p','quiet',r.help):null,make('p','quiet','Completed: '+(r.completed.join(', ')||'Earlier saved work')+'.'),make('p','quiet','Your saved page, artwork and image request identity are kept. '+(['preview','export','compose-image'].includes(r.next_action)?'This local retry does not generate artwork.':'Retry composition continues the saved build, including artwork when the page requires it.')),r.diagnostic?make('p','field-hint','Diagnostic reference: '+r.diagnostic):null,retry);
 }
 function recoverySheet(r){sheet('Continue from the saved step',recoveryContent(r),button('Back to the page',closeSheet));}
 async function compose(){

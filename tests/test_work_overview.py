@@ -1,5 +1,6 @@
 """Bounded saved metadata and direct-resume links do not launch or read content."""
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -14,6 +15,8 @@ class OverviewTests(unittest.TestCase):
     def setUp(self):
         temp=tempfile.TemporaryDirectory();self.addCleanup(temp.cleanup)
         self.root=Path(temp.name)
+        cache=mock.patch.dict(os.environ, {'XDG_CACHE_HOME': str(self.root/'.private-cache')})
+        cache.start();self.addCleanup(cache.stop)
         patch=mock.patch.object(work_overview.workspaces,'remembered',return_value={'root':str(self.root)})
         patch.start();self.addCleanup(patch.stop)
 
@@ -30,6 +33,42 @@ class OverviewTests(unittest.TestCase):
         self.assertNotIn(str(self.root),json.dumps(rows))
         self.assertNotIn('Never read',json.dumps(rows))
         self.assertEqual({row['id'] for row in rows},{'outline','running','done'})
+
+    def test_pending_decisions_precede_newer_recent_work_before_truncation(self):
+        self.item('old-decision')
+        for number in range(12): self.item(f'recent-{number}', 'recent')
+        found=work_overview.listing('training')
+        self.assertEqual(len(found['items']),12)
+        self.assertEqual(found['items'][0]['id'],'old-decision')
+        self.assertEqual(found['pending_omitted'],0)
+
+    def test_index_finds_pending_work_beyond_the_legacy_scan_without_content_reads(self):
+        for number in range(150): (self.root/f'legacy-{number}').mkdir()
+        self.item('last-decision')
+        with mock.patch.object(work_summary,'legacy',return_value=None) as legacy:
+            found=work_overview.listing('training')
+        self.assertEqual(found['items'][0]['id'],'last-decision')
+        self.assertLessEqual(found['folders_read'],100)
+        self.assertLessEqual(legacy.call_count,100)
+        self.assertEqual(found['coverage'],'indexed-and-bounded-legacy')
+        self.assertTrue(found['limited'])
+
+    def test_omitted_pending_count_and_index_state_changes_are_honest(self):
+        for number in range(15): self.item(f'decision-{number}')
+        found=work_overview.listing('training')
+        self.assertEqual(found['pending_omitted'],3)
+        work_summary.save(self.root/'decision-0','Done','recent')
+        found=work_overview.listing('training')
+        self.assertEqual(found['pending_omitted'],2)
+        self.assertFalse((work_summary.index_root(self.root)/'needs-you/decision-0.json').exists())
+
+    def test_an_unavailable_index_keeps_reads_bounded_and_does_not_rebuild_it(self):
+        for number in range(110): (self.root/f'legacy-{number}').mkdir()
+        before=sorted(self.root.iterdir())
+        found=work_overview.listing('training')
+        self.assertEqual(found['coverage'],'bounded-legacy')
+        self.assertTrue(found['limited'])
+        self.assertEqual(sorted(self.root.iterdir()),before)
 
     def test_summary_work_directory_links_are_neither_read_nor_written(self):
         with tempfile.TemporaryDirectory() as temporary:

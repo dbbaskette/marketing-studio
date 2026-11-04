@@ -50,7 +50,7 @@ class InstalledRendererTests(unittest.TestCase):
         svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 750"><image x="10" y="10" width="20" height="20" href="data:image/png;base64,' + invalid + '"/></svg>'
         with tempfile.TemporaryDirectory(prefix='infographic-decode-test-') as folder:
             destination = Path(folder) / 'invalid'
-            with self.assertRaisesRegex(ValueError, 'invalid assets'):
+            with self.assertRaisesRegex(ValueError, 'embedded image'):
                 render.render(svg, preset='digital', fonts=['Arial'], executable=executable, destination=destination)
             self.assertFalse(destination.exists())
 
@@ -94,3 +94,19 @@ class InstalledRendererTests(unittest.TestCase):
                     render.render(svg, preset='digital', fonts=fonts,
                                   executable=executable, destination=output)
                 self.assertFalse(output.exists())
+
+
+class SafeProcessFailures(unittest.TestCase):
+    def test_process_failure_and_timeout_are_fixed_categories_without_stderr(self):
+        from unittest import mock
+        import subprocess
+        for timeout in (False, True):
+            with self.subTest(timeout=timeout), tempfile.TemporaryDirectory() as directory:
+                process = mock.Mock(pid=12345, returncode=1)
+                process.communicate.side_effect = [subprocess.TimeoutExpired(['private-command'], 1), (b'', b'private stderr')] if timeout else None
+                if not timeout: process.communicate.return_value = (b'', b'private stderr /machine/path')
+                with mock.patch.object(render.subprocess, 'Popen', return_value=process), mock.patch.object(render.os, 'killpg'):
+                    with self.assertRaises(render.RenderError) as stopped:
+                        render._run(Path('/synthetic/renderer'), Path(directory), [], 1)
+                self.assertEqual(stopped.exception.category, 'timeout' if timeout else 'renderer-unusable')
+                self.assertNotIn('private', str(stopped.exception))

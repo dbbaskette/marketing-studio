@@ -135,3 +135,49 @@ class BuildRecoveryTests(Isolated):
         self.assertEqual(calls,['one-image'])
         self.assertEqual(self.engine.assistant.art_direction.call_count,1)
         self.assertEqual(build_recovery.read(self.store,self.ident)['state'],'complete')
+
+
+class SafeRendererFailures(Isolated):
+    def setUp(self):
+        super().setUp()
+        fixtures.setup_desk(self)
+        self.engine.assistant = mock.Mock()
+        self.provider = mock.Mock()
+        self.engine.adapters = {'synthetic': self.provider}
+
+    def test_safe_categories_are_durable_and_home_does_not_claim_a_preview(self):
+        from runner.render import RenderError, RENDER_ERRORS
+        for category in RENDER_ERRORS:
+            with self.subTest(category=category):
+                self.renderer.side_effect = RenderError(category)
+                with self.assertRaises(RenderError):
+                    self.engine.preview(self.ident, expected_revision=6)
+                record = build_recovery.read(self.store, self.ident)
+                self.assertEqual(record['error_category'], category)
+                self.assertEqual((record['message'], record['help']), RENDER_ERRORS[category])
+                self.assertEqual(self.store.listing()[0]['readiness']['summary'], 'Preview failed: retry the saved preview')
+                self.assertEqual(self.engine.inspect(self.ident)['readiness']['summary'], 'Preview failed: retry the saved preview')
+        self.renderer.side_effect = fixtures.fake_renderer
+        self.engine.preview(self.ident, expected_revision=6)
+        self.assertEqual(self.store.listing()[0]['readiness']['summary'], 'Page built: review the preview')
+        self.assertEqual(self.engine.assistant.mock_calls, [])
+        self.assertEqual(self.provider.mock_calls, [])
+
+    def test_tampered_display_text_and_private_exception_values_are_not_exposed(self):
+        self.renderer.side_effect = RuntimeError('private-token /private/machine secret source')
+        with self.assertRaises(RuntimeError): self.engine.preview(self.ident, expected_revision=6)
+        path = self.store._project(self.ident) / build_recovery.FILE
+        value = json.loads(path.read_bytes())
+        value.update(message='private-token', help='/private/machine')
+        path.write_text(json.dumps(value))
+        shown = build_recovery.read(self.store, self.ident)
+        self.assertEqual(shown['error_category'], 'unknown')
+        self.assertNotIn('private-token', json.dumps(shown))
+        self.assertNotIn('/private/machine', json.dumps(shown))
+
+    def test_missing_renderer_also_has_a_persisted_recovery(self):
+        from runner.render import RenderError
+        engine = fixtures.Engine(self.store)
+        engine.executable = None
+        with self.assertRaises(RenderError): engine.preview(self.ident, expected_revision=6)
+        self.assertEqual(build_recovery.read(self.store, self.ident)['error_category'], 'renderer-unusable')

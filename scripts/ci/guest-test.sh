@@ -279,6 +279,21 @@ elif [[ "${1:-full}" == backlog-spending-acceptance ]]; then
     (cd studios/presentation && PYTHONPATH=tests "$python" -m unittest test_runner_page.CapabilityTests test_runner_page.RuleTests -v)
     bash scripts/ci/acceptance.sh "$python" "$results_dir/checks"
   } 2>&1 | tee "$results_dir/tests.log"
+elif [[ "${1:-full}" == followup-home-recovery ]]; then
+  export INFOGRAPHIC_STUDIO_TEST_RENDERER="$("$python" scripts/ci/infographic-renderer.py --output "$work/graphics" --cache "$work/graphics-cache")"
+  mkdir -p "$work/browser"
+  cp studios/infographic/tests/ui/package*.json "$work/browser/"
+  touch "$work/npm-user.conf" "$work/npm-global.conf"
+  env HOME="$work/browser-home" NPM_CONFIG_USERCONFIG="$work/npm-user.conf" NPM_CONFIG_GLOBALCONFIG="$work/npm-global.conf" npm ci --prefix "$work/browser" --ignore-scripts --no-audit --no-fund > "$results_dir/browser-tools.log" 2>&1
+  export NODE_PATH="$work/browser/node_modules" PYTHON="$python" HOME_LAUNCHPAD_RESULTS="$results_dir/home-ui" INFOGRAPHIC_UI_RESULTS="$results_dir/recovery-ui"
+  node tests/home_launchpad.cjs 2>&1 | tee "$results_dir/home-browser.log"
+  node studios/infographic/tests/ui/build-recovery.cjs 2>&1 | tee "$results_dir/recovery-browser.log"
+  # Focused UI/metadata/renderer changes: reuse the unchanged native pipeline,
+  # installer and launch evidence; cover only affected module suites and pages.
+  {
+    PYTHONPATH=tests "$python" -m unittest test_work_overview test_layout_pass test_ui_consistency -v
+    PYTHONPATH=studios/infographic/tests "$python" -m unittest test_build_recovery test_delivery_flow test_render test_workbench -v
+  } 2>&1 | tee "$results_dir/tests.log"
 elif [[ "${1:-full}" == backlog-brands ]]; then
   export INFOGRAPHIC_STUDIO_TEST_RENDERER="$("$python" scripts/ci/infographic-renderer.py --output "$work/graphics" --cache "$work/graphics-cache")"
   mkdir -p "$work/browser"

@@ -13,7 +13,12 @@ const path=require('node:path'),fs=require('node:fs'),assert=require('node:asser
   await page.getByRole('dialog',{name:'Build this page',exact:true}).getByRole('button',{name:'Build page',exact:true}).click();
   const recovery=page.getByRole('dialog',{name:'Continue from the saved step',exact:true});await recovery.waitFor();
   await recovery.getByText('Completed: Page composition.',{exact:true}).waitFor();
+  await recovery.getByText('The local preview could not finish.',{exact:true}).waitFor();
+  await recovery.getByText(/Check the renderer and fonts in Settings/).waitFor();
   await page.keyboard.press('Escape');await recovery.waitFor({state:'hidden'});
+  await page.evaluate(()=>home());
+  await page.getByText('Preview failed: retry the saved preview',{exact:true}).waitFor();
+  await page.goto(data.url+'&resume='+data.id);
   await page.reload();
   await page.getByRole('heading',{name:'Work kept after a failed step',exact:true}).waitFor();
   for(const width of [320,390,1280])for(const colorScheme of ['light','dark']){

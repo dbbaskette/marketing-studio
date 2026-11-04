@@ -43,6 +43,8 @@ class El {
   addEventListener(name, listener) { (this.listeners[name] ||= []).push(listener); }
   fire(name, event = {}) { for (const listener of this.listeners[name] || []) listener({ preventDefault() {}, key: event.key, target: this, ...event }); }
   append(...nodes) { for (const node of nodes) this.children.push(node); }
+  contains(node) { return this === node || this.children.some(child => child?.contains?.(node)); }
+  insertBefore(node, before) { this.children = this.children.filter(child => child !== node); const at = this.children.indexOf(before); this.children.splice(at < 0 ? this.children.length : at, 0, node); }
   prepend(...nodes) { this.children.unshift(...nodes); }
   replaceChildren(...nodes) { this.children = [...nodes]; }
   before() {} after() {} remove() {} replaceWith() {} focus() { focused = this; } select() {} setSelectionRange() {}
