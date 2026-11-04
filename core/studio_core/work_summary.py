@@ -8,7 +8,7 @@ import re
 import secrets
 import stat
 
-FILE = '.studio-summary.json'
+FILE = 'work/.studio-summary.json'
 LIMIT = 12_000
 IDENT = re.compile(r'[A-Za-z0-9][A-Za-z0-9_-]{0,127}')
 
@@ -18,9 +18,12 @@ def save(root, title, state='needs-you', action='Open saved work'):
     if root.is_symlink() or not root.is_dir() or not IDENT.fullmatch(root.name): return
     value = {'schema': 1, 'id': root.name, 'title': str(title or 'Untitled')[:200],
         'state': state, 'action': str(action)[:120], 'observed_at': datetime.now(timezone.utc).isoformat()}
+    local = root / 'work'
+    if local.is_symlink() or local.exists() and not local.is_dir(): return
+    local.mkdir(exist_ok=True)
     target = root / FILE
     if target.is_symlink() or target.exists() and not target.is_file(): return
-    pending = root / ('.summary-' + secrets.token_hex(8))
+    pending = local / ('.summary-' + secrets.token_hex(8))
     try:
         with pending.open('x', encoding='utf-8') as stream:
             os.chmod(pending, 0o600); json.dump(value, stream)
@@ -31,6 +34,7 @@ def save(root, title, state='needs-you', action='Open saved work'):
 def read(folder):
     folder = Path(folder)
     if folder.is_symlink() or not folder.is_dir(): return None
+    if (folder / 'work').is_symlink(): return None
     path = folder / FILE
     try:
         if path.is_symlink() or not path.is_file() or path.stat().st_size > LIMIT: return None

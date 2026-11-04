@@ -62,6 +62,22 @@ class BuildRecoveryTests(Isolated):
         self.assertIsNone(build_recovery.read(self.store, self.ident))
         self.assertIsNone(current['approval'])
 
+    def test_edit_during_failed_render_keeps_recovery_on_the_failed_revision(self):
+        def edited_then_failed(*args, **kwargs):
+            current = self.store.read(self.ident)
+            self.store.update(self.ident, {'brief': {**current['brief'], 'title': 'Concurrent edit'}},
+                              expected_revision=current['revision'])
+            raise RuntimeError('synthetic render failure after a concurrent edit')
+        self.renderer.side_effect = edited_then_failed
+        with self.assertRaises(RuntimeError):
+            self.engine.build(self.ident, expected_revision=6, request_id='concurrent-edit')
+        recovery = build_recovery.read(self.store, self.ident)
+        self.assertEqual(recovery['revision'], 6)
+        self.assertFalse(recovery['current'])
+        self.assertIsNone(recovery['next_action'])
+        self.assertEqual(self.engine.assistant.mock_calls, [])
+        self.assertEqual(self.provider.mock_calls, [])
+
     def test_api_returns_safe_substep_receipt_for_a_failed_preview(self):
         from runner import server
         page=server.Page(8000,self.store,self.engine)

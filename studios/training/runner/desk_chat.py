@@ -95,6 +95,8 @@ def _files(root, proposals=True):
                 raise WorkspaceError('Conversation inputs cannot traverse linked files or folders.')
         for name in names:
             file = Path(folder) / name
+            if file.relative_to(root).as_posix() == 'work/.studio-summary.json':
+                continue  # Derived home metadata is not content or a proposal dependency.
             details = file.stat()
             if not stat.S_ISREG(details.st_mode):
                 raise WorkspaceError('Conversation inputs must be ordinary files.')
@@ -166,6 +168,7 @@ def _staged_engine(engine):
             setattr(staged, name, dict(getattr(staged, name)))
     staged._active_steps = set()
     staged._local_decks_only = True
+    staged._summary_disabled = True  # Scratch validation must not publish home metadata.
     staged._held = lambda path: Path(path)
     staged.driven = lambda path: Path(path)
     staged.hold = lambda *args, **kwargs: None
@@ -553,6 +556,8 @@ def _publish(engine, space, root, stage, before, owner=True):
                 else:
                     _path(root, name).unlink(missing_ok=True)
             gitstate.commit(space, workspace.load(root)['title'] + ': keep checked conversation work', [root])
+            from studio_core import work_summary
+            work_summary.native('training', root, engine._load(root))
         except BaseException:
             for name in changed:
                 if name in before:

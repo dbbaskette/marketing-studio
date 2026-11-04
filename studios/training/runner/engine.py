@@ -776,7 +776,8 @@ class Engine(Reviewing):
     def _store(self, root: Path, record: dict) -> None:
         workspace.write_run(root, record)
         from studio_core import work_summary
-        work_summary.native('training', root, record)
+        if not getattr(self, '_summary_disabled', False):
+            work_summary.native('training', root, record)
         activity_log.observe(root / ACTIVITY, record)
 
     def _wanted(self, root: Path, record: dict) -> list[dict]:

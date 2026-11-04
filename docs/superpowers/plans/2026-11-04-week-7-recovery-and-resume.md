@@ -9,7 +9,10 @@ record only exception type and stack basenames, not raw exception values or
 prompts. The API returns a safe receipt; the page replaces an outdated build
 dialog, and reload shows the same recovery card.
 
-Each studio writes a compact metadata sidecar when it saves work. Marketing
+Each studio writes a compact metadata sidecar under its ignored work/ folder when
+it saves work. Scratch validators never publish it; checked Training Studio publication
+updates it only after committing the native result. Derived metadata is excluded
+from checked content/proposal identities. Marketing
 Studio reads only these bounded sidecars, at most 100 folders and 12 rows per
 studio, without importing engines, initializing workspaces or contacting
 providers. Show saved Needs you / In progress / Recent work above launch cards;

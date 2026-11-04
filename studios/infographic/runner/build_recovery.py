@@ -37,11 +37,11 @@ def read(store, ident):
     except (ValueError, OSError, TypeError, RecursionError): return None
 
 
-def keep(store, ident, step, completed=(), *, state='working', error=None, values=None):
+def keep(store, ident, step, completed=(), *, state='working', error=None, values=None, revision=None):
     project = store.read(ident)
     action, label = ACTIONS[step]
     data = {'schema': 1, 'step': step, 'label': LABELS[step], 'state': state,
-        'completed': list(completed), 'revision': project['revision'],
+        'completed': list(completed), 'revision': project['revision'] if revision is None else revision,
         'next_action': action if state == 'failed' else None, 'next_label': label,
         'next_values': values or {}, 'category': step if state == 'failed' else None}
     if error:

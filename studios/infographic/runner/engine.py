@@ -155,21 +155,21 @@ class Engine:
             from .validation import identifier
             require(identifier(request_id), 'Give this build an owned request identity.')
             self.store.expect(self.store.read(ident), expected_revision)
-            checkpoint = {'step': 'composition', 'completed': [], 'asset': None}
+            checkpoint = {'step': 'composition', 'completed': [], 'asset': None, 'revision': expected_revision}
             build_recovery.keep(self.store, ident, checkpoint['step'])
             try:
                 result = self._build(ident, expected_revision=expected_revision, request_id=request_id, checkpoint=checkpoint)
-                build_recovery.keep(self.store, ident, checkpoint['step'], checkpoint['completed'], state='complete')
+                build_recovery.keep(self.store, ident, checkpoint['step'], checkpoint['completed'], state='complete', revision=checkpoint['revision'])
                 return result
             except Exception as failure:
                 values = {'asset_id': checkpoint['asset']} if checkpoint['step'] == 'place-artwork' else {}
                 if checkpoint['step'] == 'composition': values['request_id'] = request_id
-                build_recovery.keep(self.store, ident, checkpoint['step'], checkpoint['completed'], state='failed', error=failure, values=values)
+                build_recovery.keep(self.store, ident, checkpoint['step'], checkpoint['completed'], state='failed', error=failure, values=values, revision=checkpoint['revision'])
                 raise
 
     def _build(self, ident, *, expected_revision, request_id, checkpoint=None):
         """Explicit page build: plan, author art direction, generate if needed, compose, preview."""
-        checkpoint = checkpoint if checkpoint is not None else {'step': 'composition', 'completed': [], 'asset': None}
+        checkpoint = checkpoint if checkpoint is not None else {'step': 'composition', 'completed': [], 'asset': None, 'revision': expected_revision}
         from .image_jobs import Jobs
         from .validation import identifier
         require(identifier(request_id), 'Give this build an owned request identity.')
@@ -182,6 +182,7 @@ class Engine:
             project = scene.adopt_best(self.store, ident, expected_revision=project['revision'])
         checkpoint['completed'] = ['Page composition']
         checkpoint['step'] = 'font-check'
+        checkpoint['revision'] = project['revision']
         # Establish actual font/layout capability before spending image-provider usage.
         self.preview(ident, expected_revision=project['revision'])
         checkpoint['completed'].append('Font and layout preflight')
@@ -210,10 +211,12 @@ class Engine:
                 project = self.store.read(ident)
                 asset_id = next(a for a in project['attempts'] if a['id'] == request_id)['asset_ids'][0]
             checkpoint['step'] = 'place-artwork'
+            checkpoint['revision'] = project['revision']
             checkpoint['asset'] = asset_id
             checkpoint['completed'].append('Saved artwork')
             project = self.compose_asset(ident, asset_id, expected_revision=project['revision'])
             checkpoint['step'] = 'preview'
+            checkpoint['revision'] = project['revision']
             checkpoint['completed'].append('Placed artwork')
             return self.preview(ident, expected_revision=project['revision'])
         checkpoint['step'] = 'preview'
@@ -364,7 +367,7 @@ class Engine:
                                      executable=self.executable, draft=draft, **kwargs)
         except Exception as failure:
             build_recovery.keep(self.store, ident, 'preview' if draft else 'export', ['Saved page and artwork'],
-                state='failed', error=failure, values={} if draft else {'draft': False})
+                state='failed', error=failure, values={} if draft else {'draft': False}, revision=expected_revision)
             raise
         prior = build_recovery.read(self.store, ident)
         if prior and prior.get('state') == 'failed' and prior['step'] in ('preview', 'font-check', 'export'):

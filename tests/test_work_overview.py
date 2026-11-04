@@ -31,6 +31,15 @@ class OverviewTests(unittest.TestCase):
         self.assertNotIn('Never read',json.dumps(rows))
         self.assertEqual({row['id'] for row in rows},{'outline','running','done'})
 
+    def test_summary_work_directory_links_are_neither_read_nor_written(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / 'owned';root.mkdir()
+            outside = Path(temporary) / 'outside';outside.mkdir()
+            (root / 'work').symlink_to(outside, target_is_directory=True)
+            work_summary.save(root, 'Synthetic title')
+            self.assertEqual(list(outside.iterdir()), [])
+            self.assertIsNone(work_summary.read(root))
+
     def test_resume_preserves_session_fragment_and_refuses_missing_or_escaping_work(self):
         self.item('outline')
         link=work_overview.link('training','outline','http://127.0.0.1:8000/#token=synthetic&home=local')
