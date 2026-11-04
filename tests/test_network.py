@@ -495,14 +495,14 @@ class NetworkCliTests(unittest.TestCase):
             with self.subTest(value=value), self.assertRaises(WorkspaceError):
                 network.private_address(value)
 
-    def test_cli_network_mode_is_explicit_and_never_silently_reuses_local_server(self):
+    def test_cli_network_mode_is_explicit_and_refuses_a_local_only_running_home(self):
         self.assertIsNone(cli.parser().parse_args(['serve']).lan)
         self.assertEqual(cli.parser().parse_args(['serve', '--lan']).lan, 'auto')
         self.assertEqual(cli.parser().parse_args(['open', 'blog', '--lan', '192.168.1.2']).lan, '192.168.1.2')
         with mock.patch.object(cli, 'singleton', side_effect=WorkspaceError('Already running')), \
-                mock.patch.object(cli.control, 'request') as reuse, contextlib.redirect_stderr(io.StringIO()):
+                mock.patch.object(cli.control, 'request', return_value={'phone': None, 'lan': None}) as reuse, contextlib.redirect_stderr(io.StringIO()):
             self.assertEqual(cli.main(['open', '--lan']), 2)
-            reuse.assert_not_called()
+            reuse.assert_called_once_with(cli.state.data_root(), {'command': 'state'})
 
     def test_cli_json_does_not_disclose_private_lan_link(self):
         lan = mock.Mock()

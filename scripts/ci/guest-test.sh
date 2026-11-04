@@ -162,6 +162,10 @@ elif [[ "${1:-full}" == blog-google-tabs ]]; then
   ) 2>&1 | tee "$results_dir/blog-checks.log"
   PYTHONPATH=tests "$python" -m unittest test_suite -v 2>&1 | tee "$results_dir/package-tests.log"
   bash scripts/ci/acceptance.sh "$python" "$results_dir/checks" 2>&1 | tee "$results_dir/acceptance.log"
+elif [[ "${1:-full}" == backlog-launchers-finish ]]; then
+  # Full shared gate completed; only the former never-reuse mock needed updating.
+  PYTHONPATH=tests "$python" -m unittest test_network test_cli -v 2>&1 | tee "$results_dir/affected-tests.log"
+  bash scripts/ci/acceptance.sh "$python" "$results_dir/checks" 2>&1 | tee "$results_dir/acceptance.log"
 elif [[ "${1:-full}" == backlog-launchers ]]; then
   "$python" -m unittest discover -s tests -v 2>&1 | tee "$results_dir/shared-tests.log"
   bash scripts/ci/acceptance.sh "$python" "$results_dir/checks" 2>&1 | tee "$results_dir/acceptance.log"
