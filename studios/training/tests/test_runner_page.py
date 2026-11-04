@@ -2083,13 +2083,14 @@ class LaterTests(PageCase):
         self.assertEqual(self.page.body_limit('/api/asset', headers), 12_000_000)
         self.assertEqual(self.page.body_limit('/api/research-sources', headers), 12_000_000)
         self.assertEqual(self.page.body_limit('/api/intake-draft', headers), 32_000_000)
-        self.assertEqual(self.page.body_limit('/api/training-plan', headers), 512_000)
+        for target in ('/api/training-plan', '/api/slide-text-draft', '/api/outline'):
+            self.assertEqual(self.page.body_limit(target, headers), 512_000)
         for token in (False, 'not-the-key'):
-            for target in ('/api/documents', '/api/asset', '/api/research-sources', '/api/intake-draft', '/api/training-plan'):
+            for target in ('/api/documents', '/api/asset', '/api/research-sources', '/api/intake-draft', '/api/training-plan', '/api/slide-text-draft', '/api/outline'):
                 self.assertEqual(self.page.body_limit(target, self.headers(token=token)),
                                  desk.BODY_LIMIT, 'a stranger is never read at length')
         for target in (*desk.WRITES, *(path for path in POSTS
-                                       if path not in ('/api/documents', '/api/asset', '/api/research-sources', '/api/intake-draft', '/api/training-plan')),
+                                       if path not in ('/api/documents', '/api/asset', '/api/research-sources', '/api/intake-draft', '/api/training-plan', '/api/slide-text-draft', '/api/outline')),
                        '/api/documents/more', '/api/nothing', '/', '//[', ''):
             self.assertEqual(self.page.body_limit(target, headers), 64_000, target)
         self.assertEqual(desk.Page(self.PORT).body_limit('/api/documents', headers), 64_000,
