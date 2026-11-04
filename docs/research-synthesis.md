@@ -381,15 +381,16 @@ Timeout/stop preserves an editable outline or an explicitly incomplete starting 
 The person saves or approves local section/objective/question edits against the exact
 intake and source basis. Only approval writes the research plan, with one item per retained
 section; additional typed questions stay visible and are included with the first retained
-section. Existing collection grouping caps concurrent areas at three and keeps the saved
-round limits. The task asks for a report organized by approved sections. Combining and
-independent review still check the complete dossier under the pinned 1.1.0 contract.
+section. Older saved collection grouping caps concurrent areas at three and keeps the saved
+round limits. New section flows follow the incremental protocol below. Independent
+review still checks the complete dossier under the pinned 1.1.1 contract.
 Teaching-plan/material workers receive the approved scope with the checked research.
 
 Old records retain their flow. Explicit adoption is limited to supported stopped runner
 desks before any report or teaching plan; it preserves the private unfinished case as
-history and starts no work until Resume training. Presentation Studio's corresponding change and
-reusable independently checked sections are later work. No companion protocol is changed.
+history and starts no work until Resume training. Presentation Studio now offers the
+corresponding editable story gate. Section drafts remain distinct from independently
+checked final evidence, as described below.
 
 
 ## Incremental native research and refresh

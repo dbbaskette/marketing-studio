@@ -52,7 +52,8 @@ async function fixture(args=[]){
     }
     if(width===1280){
      const zoom=await page.context().newCDPSession(page);
-     await zoom.send('Emulation.setDeviceMetricsOverride',{width:640,height:422,deviceScaleFactor:2,mobile:false});
+     await page.setViewportSize({width:640,height:422});
+await zoom.send('Emulation.setDeviceMetricsOverride',{width:640,height:422,deviceScaleFactor:2,mobile:false});assert.equal(await page.evaluate(()=>innerWidth),640,'200% equivalent CSS viewport');
      assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'200% equivalent layout overflow');
      await zoom.send('Emulation.clearDeviceMetricsOverride');await zoom.detach();await page.setViewportSize({width,height:844});
     }

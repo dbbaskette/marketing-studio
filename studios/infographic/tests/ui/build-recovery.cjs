@@ -23,7 +23,8 @@ const path=require('node:path'),fs=require('node:fs'),assert=require('node:asser
   }
   assert.equal(await page.locator('#actions').getByRole('button',{name:'Retry preview',exact:true}).count(),1);
   const zoom=await page.context().newCDPSession(page);
-  await zoom.send('Emulation.setDeviceMetricsOverride',{width:640,height:450,deviceScaleFactor:2,mobile:false});
+  await page.setViewportSize({width:640,height:450});
+await zoom.send('Emulation.setDeviceMetricsOverride',{width:640,height:450,deviceScaleFactor:2,mobile:false});assert.equal(await page.evaluate(()=>innerWidth),640,'200% equivalent CSS viewport');
   assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'200% equivalent layout overflow');
   await zoom.send('Emulation.clearDeviceMetricsOverride');await zoom.detach();await page.setViewportSize({width:1280,height:900});
   const retry=page.locator('#actions').getByRole('button',{name:'Retry preview',exact:true});await retry.focus();await retry.press('Enter');
