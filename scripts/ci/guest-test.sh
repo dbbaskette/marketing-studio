@@ -239,6 +239,15 @@ elif [[ "${1:-full}" == audit-week6-finish ]]; then
     (cd studios/training && bash scripts/ci/check.sh "$python")
     bash scripts/ci/acceptance.sh "$python" "$results_dir/checks"
   } 2>&1 | tee "$results_dir/tests.log"
+elif [[ "${1:-full}" == audit-week7-finish ]]; then
+  # Shared, Infographic Studio and both browser gates passed. Continue after
+  # formatting the Blog Studio save hook; application behavior is unchanged.
+  {
+    (cd studios/blog && BLOG_STUDIO_REQUIRE_LINT=1 BLOG_STUDIO_TEST_JOBS=4 bash scripts/ci/check.sh "$python" "$results_dir/blog-studio")
+    (cd studios/presentation && "$python" scripts/ci/run_tests.py --jobs 4 && "$python" skills/presentation-studio/scripts/validate_package.py)
+    (cd studios/training && bash scripts/ci/check.sh "$python")
+    bash scripts/ci/acceptance.sh "$python" "$results_dir/checks"
+  } 2>&1 | tee "$results_dir/tests.log"
 elif [[ "${1:-full}" == audit-week7-browser || "${1:-full}" == audit-week7-full ]]; then
   export INFOGRAPHIC_STUDIO_TEST_RENDERER="$("$python" scripts/ci/infographic-renderer.py --output "$work/recovery-graphics" --cache "$work/recovery-cache")"
   mkdir -p "$work/recovery-browser"
