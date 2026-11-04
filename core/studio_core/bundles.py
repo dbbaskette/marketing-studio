@@ -12,7 +12,8 @@ ROOT_FILES = ('VERSION', 'LICENSE', 'README.md', 'SUITE.json', 'distribution.jso
               'Open Marketing Studio.command', 'docs/architecture.md', 'docs/testing.md', 'docs/packaging.md',
               'docs/provenance.md', 'docs/installation.md', 'docs/core-status.md', 'docs/migration-plan.md',
               'docs/shared-setup.md', 'docs/local-network.md', 'docs/repository-sync.md', 'docs/local-presentation-bundle.md',
-              'docs/migration/imports.json')
+              'docs/migration/imports.json', 'docs/incremental-workflow.md',
+              'docs/research-synthesis.md', 'docs/audit-integration-evidence.md')
 NATIVE_DIRS = {'skills', 'runner', 'installer', 'bootstrap', 'guidance', 'docs'}
 NATIVE_FILES = {'README.md', 'LICENSE', 'VERSION', 'install.sh'}
 SKIP = {'__pycache__', '.git', '.DS_Store', '.pytest_cache'}
