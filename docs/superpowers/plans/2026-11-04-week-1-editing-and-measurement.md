@@ -22,3 +22,14 @@ Authorized scope: #312, #313, #314 and #319; companion feasibility for later coh
 Timing is recorded activity, not a provider-speed benchmark or ETA. Journals are bounded; historical jobs predating instrumentation may have no usable timing. The journal cannot make a successful content save fail.
 
 Week 3 can use the pinned research area protocol. Section-level independent review reuse remains later companion work; the current independent review covers the complete dossier.
+
+## State-transition checks
+
+| Before | Event | After | Evidence |
+| --- | --- | --- | --- |
+| Saved editor | First input, dirty status, autosave | Same focused control and selection | Presentation Studio words regression and native keyboard journey |
+| Open More menu | Routine poll | Menu remains open | Training Studio desk class and native browser journey |
+| Open More menu | Choose Finishing, then Close/Escape | Finishing takes focus; dismissal returns to closed More | Training Studio desk class |
+| Pending slide-design approval | Private timing milestone saved | Same content approval remains usable | ApprovedReviewFixTests and DeckReviewLifecycleTests |
+| Prepared slide edit | Live activity changes | Content publishes; live journal survives | PublicationTests |
+| Pending approval | Content/design/source changes | Existing outdated-input refusal remains | Existing checked-edit and approval tests |
