@@ -27,6 +27,7 @@ import subprocess
 from pathlib import Path
 
 from studio_core import preferences
+from studio_core.process_lock import ProcessRLock
 
 SECONDS = 300     # for one clone or pull
 
@@ -111,7 +112,20 @@ def record(folder: Path) -> None:
     pending.replace(target)
 
 
+def lock_path(folder: Path) -> Path:
+    identity = hashlib.sha256(str(Path(folder).resolve()).encode()).hexdigest()
+    return data_root() / 'locks' / f'brands-{identity}.lock'
+
+
 def bring(address) -> dict:
+    # Get brands and Brands Save/Push share one stable lock, even before a clone exists.
+    if not isinstance(address, str) or not address.strip():
+        raise preferences.WorkspaceError('Give the brands repository first, then save settings.')
+    with ProcessRLock(lambda: lock_path(place(address.strip())), refusal=preferences.WorkspaceError):
+        return _bring(address)
+
+
+def _bring(address) -> dict:
     """Get the brands repository the setting names, or bring its copy up to date, and record it.
     {'folder', 'brands', 'action'}, the action being 'used', 'cloned' or 'updated'."""
     if not isinstance(address, str) or not address.strip():

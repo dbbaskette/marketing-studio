@@ -14,16 +14,26 @@ from studio_core import document_library
 from studio_core.document_library import adopt as library_adopt
 from studio_core.document_library import context as library_context
 
-from . import catalog, server, shared, state, validation, workspaces, work_overview
+from . import brand_job, brand_skill, brand_store, catalog, server, shared, state, validation, workspaces, work_overview
 from .errors import WorkspaceError
 from .network import VIA_HEADER
+
+
+# The Brands section's routes, each /api/brand-<name>.
+BRAND_ROUTES = ('list', 'start', 'work', 'source', 'keep', 'extract', 'interpret', 'stop', 'part',
+                'save', 'push', 'discard', 'file')
+REMOTE_BRANDS = ('Brands are made on the computer Marketing Studio runs on, where the sources, '
+                 'your assistant and Git are. Open Marketing Studio there.')
 
 
 class Home(server.Page):
     reads = ('/api/home', '/api/computer', '/api/models')
     writes = ('/api/shared', '/api/setup', '/api/open', '/api/connect', '/api/computer', '/api/paths', '/api/models', '/api/brands', '/api/brands-repository', '/api/research-site',
               *library_context.ROUTES, '/api/library-upload', '/api/library-download',
-              '/api/library-existing', '/api/library-adopt', '/api/library-hide')
+              '/api/library-existing', '/api/library-adopt', '/api/library-hide',
+              *(f'/api/brand-{name}' for name in BRAND_ROUTES))
+    BRAND_UPLOAD = '/api/brand-source'
+    BRAND_UPLOAD_LIMIT = 56_000_000
     UPLOAD = '/api/library-upload'
     EXISTING = ('/api/library-existing', '/api/library-adopt')
     HIDE = '/api/library-hide'
@@ -131,6 +141,8 @@ class Home(server.Page):
     def body_limit(self, target, headers):
         if target.partition('?')[0] == self.UPLOAD:
             return self.UPLOAD_LIMIT
+        if target.partition('?')[0] == self.BRAND_UPLOAD:
+            return self.BRAND_UPLOAD_LIMIT
         return super().body_limit(target, headers)
 
     def library(self, path, sent):
@@ -179,7 +191,88 @@ class Home(server.Page):
         except document_library.LibraryError as error:
             raise WorkspaceError(str(error)) from error
 
+    def brands(self, path, sent):
+        """The Brands section: a front for Harness Brand's pack commands and the person's
+        assistant, on working copies kept outside the brands folder until Save."""
+        if getattr(self.caller, 'remote', False):
+            raise WorkspaceError(REMOTE_BRANDS)
+        name = path.removeprefix('/api/brand-')
+        key = sent.get('key')
+        if name == 'work':
+            return server.as_json(200, brand_store.view(key))
+        if name == 'file':
+            media, data = brand_store.file(key, sent.get('path'))
+            return 200, media, data
+        if name == 'stop':
+            brand_store.stop(key)
+            return server.as_json(200, brand_store.view(key))
+        if name == 'discard':
+            brand_store.discard(key)
+            return server.as_json(200, {'discarded': key})
+        if name == 'source':
+            added = brand_store.add_source(key, sent.get('name'),
+                                           brand_store.decode(sent.get('content')))
+            return server.as_json(200, {**added, 'work': brand_store.view(key)})
+        if name == 'keep':
+            kept = brand_store.keep_source(key, sent.get('name'), sent.get('which'))
+            return server.as_json(200, {**kept, 'work': brand_store.view(key)})
+        if name == 'part':
+            if sent.get('action') == 'accept':
+                brand_store.accept(key, sent.get('part'))
+            elif sent.get('action') == 'edit':
+                brand_store.edit(key, sent.get('part'), sent.get('content'))
+            else:
+                raise WorkspaceError('Accept the part, or save your edit of it.')
+            return server.as_json(200, brand_store.view(key))
+        values, problem = shared.read()
+        if problem:
+            raise WorkspaceError(problem)
+        try:
+            place = brand_store.storage(values)
+        except WorkspaceError as failure:
+            if name == 'list':
+                return server.as_json(200, {'unavailable': str(failure), 'where': 'Shared settings, Brand'})
+            raise
+        if name == 'push':
+            if sent.get('confirm') is not True:
+                raise WorkspaceError('Say yes to the push first.')
+            return server.as_json(200, brand_store.push(place, sent.get('expected')))
+        brand = values.get('brand') if isinstance(values.get('brand'), dict) else {}
+        chosen = brand.get('skill') if isinstance(brand.get('skill'), str) and brand.get('skill') else None
+        try:
+            found = brand_skill.find(chosen, place.folder)
+        except WorkspaceError as failure:
+            if name == 'list':
+                return server.as_json(200, {'unavailable': str(failure), 'where': place.where})
+            raise
+        if name == 'list':
+            return server.as_json(200, brand_store.listing(found, place))
+        if name == 'start':
+            work = brand_store.start(place, sent.get('kind'), sent.get('id'), sent.get('name'),
+                                     sent.get('libraryKind'), sent.get('update') is True)
+            return server.as_json(200, brand_store.view(work['key']))
+        if name == 'extract':
+            work = brand_store.record(key)
+            if work['kind'] == 'library':
+                job = brand_store.extract_library(found, key)
+            else:
+                templates, icons = sent.get('templates') or [], sent.get('icons') or []
+                if not isinstance(templates, list) or not isinstance(icons, list):
+                    raise WorkspaceError('Choose the templates and icon libraries from this page.')
+                job = brand_store.extract_brand(found, key, sent.get('tokens'), templates, icons)
+            brand_store.begin(key, 'extract', job)
+            return server.as_json(200, brand_store.view(key))
+        if name == 'interpret':
+            job = brand_job.interpret(found, key, values, sent.get('part'), sent.get('note'))
+            brand_store.begin(key, 'interpret', job, sent.get('part'))
+            return server.as_json(200, brand_store.view(key))
+        if name == 'save':
+            return server.as_json(200, brand_store.save(found, place, key))
+        raise WorkspaceError('That is not something Brands does.')
+
     def write(self, path, sent):
+        if path.startswith('/api/brand-'):
+            return self.brands(path, sent)
         if path in library_context.ROUTES or path in (self.UPLOAD, self.HIDE, '/api/library-download',
                                                       *self.EXISTING):
             return server.as_json(200, self.library(path, sent))

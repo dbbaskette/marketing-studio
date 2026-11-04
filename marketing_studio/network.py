@@ -43,7 +43,7 @@ VIA_HEADER = 'X-Marketing-Studio-Via'
 SHARED_LIMIT = 64_000
 BLOG_LIMIT = 15 * 1024 * 1024
 BODY_LIMITS = {
-    'marketing': {'/api/library-upload': 12_000_000},
+    'marketing': {'/api/library-upload': 12_000_000, '/api/brand-source': 56_000_000},
     'presentation': {'/api/decide': 512_000, '/api/intake-draft': 32_000_000,
                      '/api/research-sources': 12_000_000, '/api/decks': 120_000_000,
                      '/api/desk-source': 12_000_000, '/api/picture': 28_000_000},
@@ -79,7 +79,7 @@ STATIC = frozenset(('/', '/index.html', '/app.js', '/style.css', '/home.css',
                     '/deck.css', '/infographic.css', '/favicon.ico',
                     '/onboarding/', '/onboarding/app.js', '/onboarding/style.css',
                     '/onboarding/home.css', '/deck-panels.js', '/deck-panels.css',
-                    '/lists.js', '/library.js', '/deck-desk.js', '/drafts.js', '/activity.js'))
+                    '/lists.js', '/library.js', '/deck-desk.js', '/drafts.js', '/activity.js', '/brands.js'))
 # GET addresses a studio's page opens in a frame, which cannot send the key: the studio
 # server checks the one-page ticket in its address instead. Every other check still holds.
 FRAMED = {'presentation': frozenset(('/api/deck-draft',)),

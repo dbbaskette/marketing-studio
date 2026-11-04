@@ -490,3 +490,32 @@ apply. A job hitting its own budget stops for explicit retry; it does not grant
 another job or discard completed peers. These are supplied assistant budgets,
 not a billing guarantee for providers that do not report or enforce dollar caps.
 Warnings use reported spending; unknown costs never become a made-up zero.
+
+## Brands
+
+Marketing Studio's **Brands** screen uses only **Brand → Brands repository**. A local
+folder is used where configured; a remote address uses the copy obtained by **Get
+brands**. Opening Brands never clones, pulls, installs a skill or starts an assistant.
+The team workspace repository is independent. Brands authoring runs on the computer;
+phone access does not expose its files or write actions.
+
+**New brand** or **Update** opens a local working copy. Add source files, up to 40 MB
+each, then **Extract** to read design tokens, measure PowerPoint templates and draw
+available previews. Libraries accept SVG, JSON or ZIP sources and show a contact
+sheet. Extraction uses Harness Brand. **Ask your assistant** is a separate explicit
+request to propose judgement files using the shared Writing model. Review each part,
+accept it or save your own edit; unchanged parts on an update remain visible. Pending
+edits and focus survive background status updates. **Stop** or **Discard** changes no
+saved brand.
+
+The list reads metadata and says **Checked when saved**. **Save** validates and seals
+the pack, then commits only the selected brand/library and, on a new repository, the
+standard text-handling attributes. Unrelated staged files stay staged. A stale brand,
+pre-existing uncommitted edits, symlinks or special files are refused. If the commit
+fails, the prior brand is restored and the working copy remains available to retry.
+
+Remote saves remain local until you press **Push N saved commits** beside the disclosed
+repository, branch and brand names. A changed commit, branch or destination requires
+a fresh preview and yes. Commits containing unrelated files or mixing brands are
+refused for review with Git. Push never forces. A non-fast-forward refusal preserves
+the local commit. Local-folder repositories have no automatic push action.
