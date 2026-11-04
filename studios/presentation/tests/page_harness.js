@@ -89,6 +89,8 @@ class FakeNode {
     this.parentNode = null;
   }
 
+  get isConnected() { return Boolean(document.body?.contains(this)); }
+
   get nextSibling() {
     if (!this.parentNode) return null;
     const held = this.parentNode.childNodes;
@@ -816,7 +818,7 @@ async function app(file) {
     // A plan with {narrow: true} is a phone: the page's width queries match.
     matchMedia: (query) => ({ matches: Boolean(plan.narrow) && /max-width/.test(query) }),
     setTimeout: (callback, delay) => {
-      if (callback.name === 'refresh') report.paces.push(delay);
+      if ((callback.name === 'refresh' || /refresh\(true\)/.test(String(callback)))) report.paces.push(delay);
       return timers.push(callback);
     },
     clearTimeout() {},
@@ -827,6 +829,22 @@ async function app(file) {
     fetch: async (address, options) => {
       const method = (options && options.method) || 'GET';
       const key = method + ' ' + address.split('?')[0];
+      // Authoritative scenarios stay live; polling scenarios can supply their own signal.
+      if (key === 'GET /api/updates' && !answers[key]) {
+        return {ok: true, status: 200,
+          json: async () => ({revision: 'scripted-active', complete: true, active: true})};
+      }
+      if (key.endsWith(' /api/slide-text-draft') && !answers[key]) {
+        const sent=options?.body?JSON.parse(options.body):{action:'read',path:new URLSearchParams(address.split('?')[1]||'').get('path')};
+        plan.reviewDrafts ||= {};const scope=sent.path||'';
+        let draft=plan.reviewDrafts[scope]||{revision:0,draft:null};
+        if(sent.action!=='read'){
+          if(sent.expected!==draft.revision)return {ok:false,status:409,json:async()=>({error:'Corrections changed in another tab.'})};
+          draft={revision:draft.revision+1,draft:sent.action==='discard'?null:{...(draft.draft||{}),...sent.patch}};
+          plan.reviewDrafts[scope]=draft;
+        }
+        return {ok:true,status:200,json:async()=>JSON.parse(JSON.stringify(draft))};
+      }
       report.requests.push({ method, address, headers: (options && options.headers) || {},
         body: options && options.body ? JSON.parse(options.body) : null });
       // An answer can be kept for one address, query and all, or for every query of it.
@@ -950,10 +968,10 @@ async function app(file) {
         held.selectionEnd = step.end;
         held.dispatch('select', { target: held });
       }
-      if (step.poll) await timers.filter((timer) => timer.name === 'refresh').pop()();
+      if (step.poll) await timers.filter((timer) => (timer.name === 'refresh' || /refresh\(true\)/.test(String(timer)))).pop()();
       if (step.timer) await timers.filter((timer) => timer.name === step.timer).pop()();
       if (step.polls) {
-        const refresh = timers.filter((timer) => timer.name === 'refresh').pop();
+        const refresh = timers.filter((timer) => (timer.name === 'refresh' || /refresh\(true\)/.test(String(timer)))).pop();
         await Promise.all(Array.from({ length: step.polls }, () => refresh()));
       }
       if (step.hidden !== undefined) {
