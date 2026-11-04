@@ -44,9 +44,11 @@ SHARED_LIMIT = 64_000
 BLOG_LIMIT = 15 * 1024 * 1024
 BODY_LIMITS = {
     'marketing': {'/api/library-upload': 12_000_000},
-    'presentation': {'/api/research-sources': 12_000_000, '/api/decks': 120_000_000,
+    'presentation': {'/api/intake-draft': 32_000_000,
+                     '/api/research-sources': 12_000_000, '/api/decks': 120_000_000,
                      '/api/desk-source': 12_000_000, '/api/picture': 28_000_000},
-    'training': {'/api/research-sources': 12_000_000, '/api/documents': 12_000_000,
+    'training': {'/api/intake-draft': 32_000_000,
+                 '/api/research-sources': 12_000_000, '/api/documents': 12_000_000,
                  '/api/asset': 12_000_000, '/api/drafts/source': 12_000_000,
                  '/api/drafts/save': 1_000_000},
     'infographic': {'/api/research-sources': 24_000_000, '/api/source-preview': 24_000_000,

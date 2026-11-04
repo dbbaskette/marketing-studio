@@ -31,18 +31,3 @@ At the person's explicit request to broaden or narrow work, read target `scope`,
 ## On the page
 
 The existing desk offers slide/whole-deck notes, checked word and speaker-note edits, History, outline changes, source intake and Finishing proposals. Notes redraw only their requested sections; unchanged sections are retained. Selected changes patches a copy and compares it against the original. Brand only and Polish preserve original words. Finishing proposes before Apply; Deliver remains the person's, showing brand blockers first. A change after delivery starts the next revision and retains prior delivery history.
-
-
-## Resumable creation and reading
-
-**New deck** has Source, Audience, then Research and review. Back and Next retain all
-answers, the captured source draft and Library revision pins. The last page states the
-next operation and keeps advanced limits disclosed. Only **Start** creates a deck.
-The unfinished intake saves privately on this computer for its workspace. Reload restores
-an open form; **Save and close** keeps it closed until New deck is opened again.
-**Discard draft** confirms before clearing only the form; captured sources remain.
-A conflict between tabs preserves the newer saved form and asks for a reload.
-
-On the desk, the selected slide comes first. The status disclosure shows blocker and
-warning counts and opens automatically for blockers. On a phone, secondary actions,
-including Download and Finishing, are under **More**. Closing Finishing returns focus there.

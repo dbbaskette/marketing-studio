@@ -282,3 +282,17 @@ reviewed bundle stays intact.
   On the desk, a word or speaker-notes edit is put into the section's drawing as its composer handed it in, and kept only when harness-slides compiles it and every approved word is there; otherwise nothing is saved, and the slide can be redrawn with the new words.
 - **Your original is never changed.** An existing deck is read, and you always get a new copy.
 - **Everything is recorded.** Each step, decision and request for changes is a commit in the workspace.
+
+## Resumable creation and reading
+
+**New deck** has Source, Audience, then Research and review. Back and Next retain all
+answers, the captured source draft and Library revision pins. The last page states the
+next operation and keeps advanced limits disclosed. Only **Start** creates a deck.
+The unfinished intake saves privately on this computer for its workspace. Reload restores
+an open form; **Save and close** keeps it closed until New deck is opened again.
+**Discard draft** confirms before clearing only the form; captured sources remain.
+A conflict between tabs preserves the newer saved form and asks for a reload.
+
+On the desk, the selected slide comes first. The status disclosure shows blocker and
+warning counts and opens automatically for blockers. On a phone, secondary actions,
+including Download and Finishing, are under **More**. Closing Finishing returns focus there.
