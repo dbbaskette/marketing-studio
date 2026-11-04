@@ -99,5 +99,3 @@ def checked(value, minimum=1):
             'objectives': lines(item['objectives'], 'Learning objectives', 6, 500, 1),
             'questions': lines(item['questions'], 'Research questions', 3, 400, 1)})
     return found
-
-
