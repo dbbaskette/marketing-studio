@@ -1993,7 +1993,9 @@ class ModelProfileTests(StudioCase):
         studios_config.update({'models': {'profiles': {'main': {'model': 'later'}}}})
         self.to_gate(root, 'gate:build')
         choices = self.record(root)['model_jobs']
-        self.assertTrue(any(c['profile'] == 'main' and c['model'] == 'main-model' for c in choices))
+        # Settings saved before the kinds of work: Writing and Checking take Main's model.
+        self.assertTrue(any(c['profile'] == 'writing' and c['model'] == 'main-model' for c in choices))
+        self.assertTrue(any(c['profile'] == 'checking' and c['model'] == 'main-model' for c in choices))
         self.assertTrue(all(c['model'] != 'later' for c in choices))
         for choice in choices:
             self.assertIsNone(choice['actual_model'])

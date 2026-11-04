@@ -7162,6 +7162,8 @@ class Engine(Reviewing):
             'controls': self._controls(record, found, state, mine),
             # Change settings (#296): offered while the run is not working, with why not.
             'settings': self._settings_offer(root, record, state, mine),
+            # Use the current model settings: offered on the same terms.
+            'current_models': self._models_offer(root, record, state, mine),
             'finished': ({'ready': bool(report['ready']),
                           'limitations': list(report['limitations']),
                           'blocking': list(report['blocking']), 'index': report['file'],
@@ -7173,6 +7175,13 @@ class Engine(Reviewing):
         from runner import settings_change
         why = settings_change.refusal(record, state, bool(mine),
                                       self._desk_change_busy(root, record))
+        return {'may': why is None, 'why': why}
+
+    def _models_offer(self, root: Path, record: dict, state: str, mine: bool) -> dict:
+        """Whether Use the current model settings is offered now, and why not."""
+        from runner import model_settings
+        why = model_settings.refusal(record, state, bool(mine),
+                                     self._desk_change_busy(root, record))
         return {'may': why is None, 'why': why}
 
     def settings_form(self, path) -> dict:

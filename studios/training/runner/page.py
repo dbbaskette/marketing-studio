@@ -157,6 +157,10 @@ What a caller needs to know
   runner does next, not what an assistant in a conversation would.
 - Reading never starts or wakes a run: `GET /api/run` can be asked for as often as the
   page likes.
+- Use the current model settings: `GET /api/training-models?path=` answers each kind of
+  work whose model or reasoning the current shared settings would change for a stopped
+  training, whether it may (`may`, `why`) and what a save is checked against (`expected`).
+  `POST /api/training-models` {path, expected} saves it (runner/model_settings.py).
 - Change settings (#296): `GET /api/training-settings?path=` answers the training's start
   form filled in with its saved values, what cannot be changed and why, and the `revision` a
   save is checked against. `POST /api/training-settings/sources` {path} answers a source draft
@@ -255,14 +259,15 @@ JOBS = tuple(f'{DRAFTS}/{action}' for action in ('note', 'revise', 'selection', 
 VERSIONS = f'{DRAFTS}/versions'
 SETTINGS = '/api/training-settings'   # Change settings (#296): the form, and its save
 SETTINGS_SOURCES = f'{SETTINGS}/sources'   # a source draft holding what research reads now
+MODELS = '/api/training-models'   # Use the current model settings: what changes, and its save
 CARD = f'{DRAFTS}/card'   # one card with its parts, as the shared kit reads it
 PART_LIMIT = 1_000_000   # bytes: one part of the largest size, as JSON
 READS = ('/api/capabilities', '/api/setup', '/api/agents', '/api/models', '/api/run',
-         '/api/activity', SETTINGS,
+         '/api/activity', SETTINGS, MODELS,
          '/api/download', '/api/slide', '/api/status', '/api/published', '/api/delete', '/api/deck-draft-ticket',
          DRAFTS, CARD, VERSIONS, f'{DRAFTS}/update-preview', f'{DRAFTS}/slide-versions', f'{DRAFTS}/source-price',
          f'{DRAFTS}/proofread', f'{DRAFTS}/migration-preview', f'{DRAFTS}/doc-preview')
-WRITES = ('/api/training-plan', '/api/research-sources', SETTINGS, SETTINGS_SOURCES, '/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/answer',
+WRITES = ('/api/training-plan', '/api/research-sources', SETTINGS, SETTINGS_SOURCES, MODELS, '/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/answer',
           '/api/documents', '/api/copies', '/api/share', '/api/outline', '/api/review', '/api/drive',
           '/api/publish', '/api/adopt', '/api/fetch', '/api/delete', '/api/companions',
           '/api/asset', '/api/upgrade', '/api/restart', '/api/versions', '/api/redesign',
@@ -405,6 +410,11 @@ class RunnerPage(desk.Page):
             training = self.driving(one('path'))
             return desk.as_json(HTTPStatus.OK, self.typed(
                 lambda: self.engine.settings_form(training)))
+        if path == MODELS:
+            from runner import model_settings
+            training = self.driving(one('path'))
+            return desk.as_json(HTTPStatus.OK, self.typed(
+                lambda: model_settings.preview(self.engine, training)))
         if path == '/api/activity':
             return desk.as_json(HTTPStatus.OK, self.engine.activity(
                 self.driving(one('path')), **activity_asked(one)))
@@ -892,6 +902,13 @@ class RunnerPage(desk.Page):
         self.engine.seen()
         if path in (SETTINGS, SETTINGS_SOURCES):
             return desk.as_json(HTTPStatus.OK, self.settings(path, sent))
+        if path == MODELS:
+            from runner import model_settings
+            training = self.driving(desk.text(sent, 'path'))
+            if not isinstance(sent.get('expected'), str):
+                raise desk.Refusal(HTTPStatus.BAD_REQUEST, 'Send what the preview showed.')
+            return desk.as_json(HTTPStatus.OK, self.typed(
+                lambda: model_settings.save(self.engine, training, sent)))
         if path == '/api/drive':
             return desk.as_json(HTTPStatus.OK, self.drive(sent))
         if path == '/api/publish':

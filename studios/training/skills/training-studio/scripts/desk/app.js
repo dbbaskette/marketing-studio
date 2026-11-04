@@ -1468,6 +1468,7 @@ function closeSheet() {
   view.sheet = '';
   view.after = null;
   view.changing = null;
+  view.usingModels = null;
   view.deciding = null;
   view.doomed = null;
   view.leaving = null;
@@ -1652,6 +1653,7 @@ function drawSheet() {
     || ['delete', 'bulk-delete', 'companions', 'upgrade', 'redesign', 'brand', 'copy-choice',
       'update-research', 'stop-run', 'desk-migration'].includes(view.sheet)
     || (view.sheet === 'change-settings' && view.changing)
+    || (view.sheet === 'use-models' && view.usingModels)
     || (DESK_SHEETS.includes(view.sheet) && view.run)
     || (view.sheet === 'approve-combined' && view.run && view.run.review)));
   holder.hidden = !shown;
@@ -1682,6 +1684,7 @@ function drawSheet() {
   else if (view.sheet === 'copy-choice') body = copyChoiceSheet();
   else if (view.sheet === 'update-research') body = updateResearchSheet();
   else if (view.sheet === 'change-settings') body = settingsSheet();
+  else if (view.sheet === 'use-models') body = modelsSheet();
   else if (view.sheet === 'stop-run') body = stopSheet();
   else if (view.sheet === 'approve-combined') body = combinedConfirm();
   else if (DESK_SHEETS.includes(view.sheet)) body = deskSheet(view.sheet);
@@ -3912,7 +3915,7 @@ function workspaceCard() {
     ['Shared', space.repository ? lower(SHARE_SAYS[space.share_when === 'when-asked' ? 1 : 0])
       : ''],
     ['Drafting is done by', (AGENT_NAMES[agent.default] || agent.default || 'no agent yet')
-      + (held.shared?.models?.mode === 'by_task' ? ', using Quick, Main, and Complex model profiles' : modelWords(agent.model, agent.effort, true))],
+      + (held.shared?.models?.mode === 'by_task' ? ', using the models chosen for each kind of work' : modelWords(agent.model, agent.effort, true))],
     ['Limits', limitsSays(held.limits || {})],
     ['Slide previews', held.previews ? previewsSays(held.previews) : '']]),
     sharingLine(), fetchLine(),
@@ -4200,7 +4203,7 @@ function draftModelWords(draft) {
   const held = view.setup?.agent || {};
   return view.setup?.shared?.models?.mode === 'by_task' && draft.agent === held.default
     && draft.model.trim() === (held.model || '') && draft.effort === (held.effort || '')
-    ? ', using Quick, Main, and Complex model profiles'
+    ? ', using the models chosen for each kind of work'
     : modelWords(draft.model.trim(), draft.effort, true);
 }
 
@@ -5523,8 +5526,10 @@ function problemPart(run, lead) {
     keptPart(found.kept),
     does ? make('p', 'quiet', does) : null,
     add(make('div', 'bar'), go, read, theirs ? null : alsoPart(found),
-      // Beside Try again: change what it was started with, then Continue (#296).
-      theirs ? null : settingsButton(run, 'problem-settings')), shown);
+      // Beside Try again: change what it was started with, then Continue (#296), or bring
+      // its models up to date with Settings.
+      theirs ? null : settingsButton(run, 'problem-settings'),
+      theirs ? null : modelsButton(run, 'problem-models')), shown);
 }
 
 // Beside a stop's one action: Try again once Status has been put right, and deleting a
@@ -5702,7 +5707,7 @@ function costCard(run) {
       : 'It stops and asks you at ' + money(limits.training_dollars) + '.');
   }
   return add(node, make('p', 'quiet', says.join(' ')),
-    make('p', 'quiet', 'Drafted by ' + agent + (run.model_mode === 'by_task' ? ', using Quick, Main, and Complex model profiles' : modelWords(run.model, run.effort)) + '.'));
+    make('p', 'quiet', 'Drafted by ' + agent + (run.model_mode === 'by_task' ? ', using the models chosen for each kind of work' : modelWords(run.model, run.effort)) + '.'));
 }
 
 // --- a run: your own documents ---------------------------------------------------------

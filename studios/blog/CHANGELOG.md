@@ -5,6 +5,14 @@ changes for authors first, then what changes for maintainers.
 
 ## Unreleased
 
+- **Choose a model and reasoning level for each kind of work.** Settings now offer six
+  kinds instead of Quick, Main and Complex: Quick, Research, Combining, Checking, Writing
+  and Fixing. Blog Studio's research rounds run on Research, combining them on Combining,
+  the draft review, fact check, feedback and GEO review on Checking, and returning a review
+  to its draft on Fixing. Settings saved before keep their choices; until you save the new
+  kinds, Research, Combining and Checking start from Main's model at medium reasoning, so
+  research and checks are faster. Blogs already started keep the models they began with.
+
 - **The Activity log can never change how a job ended, and the keyboard keeps its place
   (follow-up to #300).** A workspace that could not be read or locked while a job was
   being logged could turn a finished job into a failed one, or replace why a job failed,

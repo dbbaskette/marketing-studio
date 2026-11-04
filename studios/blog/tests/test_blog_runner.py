@@ -89,8 +89,11 @@ class RunnerCase(Fixture):
                         name: {'selection': 'explicit', 'model': name + '-model', 'effort': effort}
                         for name, effort in [
                             ('quick', 'low'),
-                            ('main', 'medium'),
-                            ('complex', 'high'),
+                            ('research', 'medium'),
+                            ('combining', 'medium'),
+                            ('checking', 'medium'),
+                            ('writing', 'medium'),
+                            ('fixing', 'high'),
                         ]
                     },
                 },
@@ -116,12 +119,14 @@ class BlogRunnerTests(RunnerCase):
         self.assertEqual(run['pipeline'], ['outline', 'draft', 'review', 'package'])
         self.assertEqual(record['stop_point'], 'package')
 
-    def test_profiles_are_saved_and_background_worker_gets_the_saved_main(self):
+    def test_profiles_are_saved_and_background_worker_gets_the_saved_kind(self):
         from studio_core import studios_config
 
         self.profiles()
         found = self.create(page=True)
-        studios_config.update({'models': {'profiles': {'main': {'model': 'later'}}}})
+        studios_config.update(
+            {'models': {'profiles': {kind: {'model': 'later'} for kind in ('research', 'writing')}}}
+        )
         calls = []
 
         def worker(*args, **kwargs):
@@ -132,13 +137,14 @@ class BlogRunnerTests(RunnerCase):
         self.addCleanup(engine.close)
         engine.keep_local(found['id'], {'enabled': True})
         engine.once(found['id'])
-        self.assertEqual(calls[0]['model_selection']['model'], 'main-model')
         _, _, run = runner.load(self.root, found['id'])
-        self.assertEqual(run['model_jobs'][0]['profile'], 'main')
+        kind = run['model_jobs'][0]['profile']
+        self.assertIn(kind, ('research', 'writing'))
+        self.assertEqual(calls[0]['model_selection']['model'], kind + '-model')
         self.assertIsNone(run['model_jobs'][0]['actual_model'])
         self.assertEqual(engine.describe(found['id'])['status'], 'waiting-for-approval')
 
-    def test_review_return_to_draft_uses_complex_without_routing_from_request_text(self):
+    def test_review_return_to_draft_uses_fixing_without_routing_from_request_text(self):
         self.profiles()
         found = self.create()
         for _ in range(2):
@@ -154,7 +160,7 @@ class BlogRunnerTests(RunnerCase):
             target='draft',
         )
         choice = runner.job(self.root, found['id'])[0]['model_selection']
-        self.assertEqual((choice['profile'], choice['model']), ('complex', 'complex-model'))
+        self.assertEqual((choice['profile'], choice['model']), ('fixing', 'fixing-model'))
         self.profiles('claude')
         # The existing Codex run still owns its saved profiles.
         self.assertEqual(runner.job(self.root, found['id'])[0]['model_selection'], choice)

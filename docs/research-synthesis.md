@@ -28,7 +28,8 @@ gave. Its dossier includes an authored brief, typed findings,
 supporting facts, counterfacts, conditions and gaps. The parent validates captured
 source identities and permissions, then asks the helper to save it. Another
 invocation independently checks the exact digest's evidence, findings, report and
-brief. Both use the saved Main model profile. Neither can approve a studio gate
+brief. The author runs on the saved Combining choice and the check on Checking; the
+investigators of parallel research run on Research (docs/shared-setup.md). Neither can approve a studio gate
 or publish content. A rejected review allows two bounded correction cycles;
 unresolved work stays a saved draft and blocks downstream authoring.
 

@@ -5,6 +5,14 @@ making decks first, then what changes for maintainers.
 
 ## Unreleased
 
+- **Choose a model and reasoning level for each kind of work.** Settings now offer six
+  kinds instead of Quick, Main and Complex: Quick, Research, Combining, Checking, Writing
+  and Fixing. Classifying, extracting and the outline stay on Quick, research runs on
+  Research and Combining, the deck review on Checking, slides and ordinary repairs on
+  Writing, and escalated repairs on Fixing. Settings saved before keep their choices; until
+  you save the new kinds, Research, Combining and Checking start from Main's model at
+  medium reasoning. Decks already started keep the models they began with.
+
 - **Research assistants get their evidence accepted sooner (#303).** Each research
   assistant is now told, up front, every field each source needs: the source's ID, file,
   exact origin and permission are filled in for it, and it is told what to add (who

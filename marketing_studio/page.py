@@ -100,6 +100,8 @@ class Home(server.Page):
             row['workspace'] = workspaces.connection(row['id'], values) if done and row['installed'] else None
         return {'studios': studios,
                 'shared': values, 'shared_problem': problem, 'setup': {**preferences, 'done': not problem and self.configured(values)},
+                # Each kind of work as the form fills it in, with the kinds not yet saved.
+                'models_shown': None if problem else shared_preferences.model_profiles.shown(values),
                 'computer': self.computer(False), 'efforts': validation.EFFORTS,
                 'assistant_default': runtime.assistant_default(state.data_root()),
                 # The private link is this computer's to show; the phone already holds it.

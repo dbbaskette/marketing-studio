@@ -2101,7 +2101,7 @@ function workspaceCard() {
     ['Shared', space.repository ? lower(SHARE_SAYS[space.share_when === 'when-asked' ? 1 : 0])
       : ''],
     ['Drafting is done by', (AGENT_NAMES[agent.default] || agent.default || 'no agent yet')
-      + (held.shared?.models?.mode === 'by_task' ? ', using Quick, Main, and Complex model profiles' : modelWords(agent.model, agent.effort, true))],
+      + (held.shared?.models?.mode === 'by_task' ? ', using the models chosen for each kind of work' : modelWords(agent.model, agent.effort, true))],
     ['Limits', limitsSays(held.limits || {})],
     ['Slide previews', held.previews ? previewsSays(held.previews) : '']]),
     sharingLine(), fetchLine(),
@@ -2392,7 +2392,7 @@ function draftModelWords(draft) {
   const held = view.setup?.agent || {};
   return view.setup?.shared?.models?.mode === 'by_task' && draft.agent === held.default
     && draft.model.trim() === (held.model || '') && draft.effort === (held.effort || '')
-    ? ', using Quick, Main, and Complex model profiles'
+    ? ', using the models chosen for each kind of work'
     : modelWords(draft.model.trim(), draft.effort, true);
 }
 
@@ -5543,7 +5543,7 @@ function costCard(run) {
       : 'It stops and asks you at ' + money(limits.deck_dollars) + '.');
   }
   return add(node, make('p', 'quiet', says.join(' ')),
-    make('p', 'quiet', (run.review_level ? ({balanced: 'Balanced', automatic: 'Automatic draft', step_by_step: 'Step by step'}[run.review_level] + ' review · ') : '') + 'Drafted by ' + agent + (run.model_mode === 'by_task' ? ', using Quick, Main, and Complex model profiles' : modelWords(run.model, run.effort)) + '.'));
+    make('p', 'quiet', (run.review_level ? ({balanced: 'Balanced', automatic: 'Automatic draft', step_by_step: 'Step by step'}[run.review_level] + ' review · ') : '') + 'Drafted by ' + agent + (run.model_mode === 'by_task' ? ', using the models chosen for each kind of work' : modelWords(run.model, run.effort)) + '.'));
 }
 
 // --- one deck: a stop reviewed item by item -------------------------------------------------
