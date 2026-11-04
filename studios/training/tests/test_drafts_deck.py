@@ -1512,6 +1512,9 @@ class ApprovedReviewFixTests(JudgedSlideNoteTests):
         result = card['selection']['result']
         self.assertIn('approval', result)
         self.assertEqual((root / pipeline.OUTLINE).read_bytes(), before)
+        # Recording a ready boundary while this decision is open changes no input.
+        from studio_core import activity_log
+        activity_log.checkpoint(root / 'work' / activity_log.FILE, 'ready', 'selection')
         self.approve(root, seen, result['approval'])
         self.assertEqual(json.loads((root / pipeline.OUTLINE).read_text())['slides'][4]['title'], 'Review')
 
