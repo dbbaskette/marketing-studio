@@ -132,8 +132,8 @@ def _check(changes) -> None:
                 key in WORDS and not (value is None or isinstance(value, str))) or (
                 not whole and not _plain(value)):
             raise WorkspaceError(f'"{key}" cannot be written to the studios config as it is.')
-    for group in ('team', 'brand'):
-        address = (changes.get(group) or {}).get('repository')
+    for group, name in (('team', 'repository'), ('brand', 'repository'), ('brand', 'brands')):
+        address = (changes.get(group) or {}).get(name)
         if isinstance(address, str) and ADDRESS_CHECK:
             ADDRESS_CHECK(address)
 
