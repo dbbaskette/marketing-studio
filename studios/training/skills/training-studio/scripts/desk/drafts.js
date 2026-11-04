@@ -298,6 +298,7 @@ function finishingTools() {
 // Finishing opens on the material in front of the person, with no second choice; All
 // materials is the way to another material of the level. `choose` asks which.
 function openFinishing(choose = false) {
+  for (const menu of document.querySelectorAll('.menu')) menu.open = false;
   const held = deskHeld(view.path);
   const choices = Object.values(held.materials).filter((material) =>
     (material.view.level || '') === held.level && !material.view.readonly
