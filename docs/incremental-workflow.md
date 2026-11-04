@@ -16,9 +16,10 @@ balance between responsiveness and depth for new training and presentations.
    completed section drafts when another section fails; retry the unfinished work.
    The assembled research still needs an independent whole-report check. Retained
    drafts are useful progress, not independently approved final evidence.
-4. **Build selected materials.** For training, agree the teaching blueprint before
-   producing the requested guides, briefs, slides or practice. For presentations,
-   approve slide text before design. Review and delivery remain separate decisions.
+4. **Build selected materials.** For training, the approved outline and checked
+   research feed teaching blueprints and the requested guides, briefs, slides or
+   practice. Review those materials on the desk. For presentations, approve slide
+   text before design. Review and delivery remain separate decisions.
 5. **Make small changes locally.** Wording and notes edits need no new evidence
    collection. When sources or scope change, use the affected-work preview, select
    the required sections, and refresh only their dependent work. Confirmation checks

@@ -12,6 +12,11 @@ handles evidence, and Harness Slides builds requested decks in your brand.
 
 [Install](#install) · [Your first training](#your-first-training) · [The desk](docs/the-desk.md)
 
+Completed research section drafts survive a failed peer; retry unfinished work.
+Source changes first show the affected scope, while wording and notes can stay
+local. Final independent checks and exact-revision approval remain necessary.
+See the [incremental workflow guide](../../docs/incremental-workflow.md).
+
 ## Choose your materials
 
 | Material | What it gives you |

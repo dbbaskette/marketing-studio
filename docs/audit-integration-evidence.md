@@ -41,7 +41,11 @@ tested commits and aggregate reruns rather than claiming one uninterrupted pass.
   installed-workspace build/review checks, merged and released before pinning.
 - Week 6: shared/native full-suite evidence plus affected-class compatibility
   corrections, actual-helper contracts, both browsers and installer/CLI acceptance.
-- Week 7 and Week 8 final outcomes are recorded below after their gates complete.
+- Week 8 browser matrix passed on commit `717bf2807734829be8a9d6742e883bffd3cfb5d1`
+  (tree `1bcebcf2f02ded1f7b84ea4795de789f4157c5e5`) on macOS 27.0.1,
+  Python 3.14.5 and Node 26.11.1. Four real browser journeys, 14 package/overview
+  contracts, both native package/context-budget checks and nine workflow diagrams
+  passed. The cohort plan records scope and evidence reuse.
 
 ## Appearance and accessibility coverage
 
