@@ -5,6 +5,7 @@ an installed headless executable and a new output folder. Production scene and
 export orchestration remain later milestones.
 """
 from __future__ import annotations
+from .contracts import Invalid
 
 import base64
 import html
@@ -172,7 +173,7 @@ RENDER_ERRORS = {
 }
 
 
-class RenderError(ValueError):
+class RenderError(Invalid):
     """A fixed, safe category, never a copy of subprocess diagnostics."""
     def __init__(self, category):
         self.category = category
