@@ -43,7 +43,7 @@ LISTED = [{'name': 'gpt-6-sol', 'label': 'GPT-6-Sol (gpt-6-sol)', 'family': None
            'levels': ['low', 'medium', 'high', 'xhigh']},
           {'name': 'gpt-6-luna', 'label': 'GPT-6-Luna (gpt-6-luna)', 'family': None,
            'about': None, 'default_level': None, 'levels': ['low', 'medium', 'high']}]
-GETS = ('/api/slide-text-draft', '/api/spending-policy', '/api/outline-flow', '/api/intake-draft', '/api/capabilities', '/api/setup', '/api/agents', '/api/models', '/api/run')
+GETS = ('/api/updates', '/api/slide-text-draft', '/api/spending-policy', '/api/outline-flow', '/api/intake-draft', '/api/capabilities', '/api/setup', '/api/agents', '/api/models', '/api/run')
 POSTS = ('/api/slide-text-draft', '/api/spending-policy', '/api/outline-flow', '/api/intake-draft', '/api/training-plan', '/api/research-sources', '/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/answer',
          '/api/documents', '/api/copies', '/api/share', '/api/companions', '/api/asset',
          '/api/upgrade', '/api/restart', '/api/versions', '/api/brand', '/api/brand/install', '/api/review',

@@ -9290,6 +9290,7 @@ function typing() {
 
 // A run that is working is read more often, while its own screen is open.
 function pace() {
+  if (view.pollFailures) return Math.min(60000, POLL_SHOWN * (2 ** Math.min(view.pollFailures, 4)));
   if (document.hidden) return POLL_HIDDEN;
   return view.screen === 'run' && view.run && view.run.state === 'working' ? POLL_RUN
     : POLL_SHOWN;
@@ -9297,21 +9298,23 @@ function pace() {
 
 function later() {
   window.clearTimeout(view.timer);
-  view.timer = window.setTimeout(refresh, pace());
+  view.timer = window.setTimeout(() => refresh(true), pace());
 }
 
 // One refresh at a time, so an older answer never lands after a newer one. One asked for
 // while another is in hand is done once that one is, and once however often it was asked.
-async function refresh() {
+async function refresh(compact = false) {
   window.clearTimeout(view.timer);
   if (view.refreshing) {
     view.again = true;
+    if (!compact) view.forceRefresh = true;
     return view.refreshing;
   }
   view.refreshing = (async () => {
     do {
       view.again = false;
-      await catchUp();
+      const onlySignal = compact && !view.forceRefresh;view.forceRefresh = false;
+      await catchUp(onlySignal);
     } while (view.again);
   })();
   try {
@@ -9325,11 +9328,20 @@ async function refresh() {
 
 // Read what has changed and draw it. A tab nobody is looking at reads only the list, for the
 // count in its title and what to tell; the rest is read when it is looked at again.
-async function catchUp() {
+async function catchUp(compact = false) {
   // While the runner opens its newer version, it is not there to be asked.
   if (view.restarting) return;
   try {
     if (view.runner === undefined) await discover();
+    if (view.runner && view.setup) {
+      const signal = await ask('updates');
+      const same = signal.revision === view.pollRevision;
+      view.pollRevision = signal.revision;
+      if (compact && !view.pollFailures && same && signal.complete && !signal.active && Date.now() - (view.fullReadAt || 0) < 60000) {
+        view.pollFailures = 0;notify('');return;
+      }
+    }
+
     if (document.hidden && view.listing) {
       // Set-up is read now and then too, for a newer version to be told of.
       const setup = Boolean(view.runner) && Date.now() - view.setupAt > SETUP_HIDDEN;
@@ -9338,7 +9350,7 @@ async function catchUp() {
       if (setup) tookSetup(found);
       took(listing);
       notify('');
-      setTitle();
+      setTitle();view.fullReadAt = Date.now();view.pollFailures = 0;
       return;
     }
     // Set-up is read where it is shown, and once to begin with.
@@ -9371,7 +9383,9 @@ async function catchUp() {
         && view.drawn !== signature()) {
       draw(!view.drawn);
     }
+    view.fullReadAt = Date.now();view.pollFailures = 0;
   } catch (failure) {
+    view.pollFailures = (view.pollFailures || 0) + 1;
     // Reading the list needs nothing but the key, so a refusal here is about the link.
     notify(failure.kind === 'refused' ? noticeOf('refused') : failure.message);
   }
@@ -9482,6 +9496,8 @@ function begin() {
     if (view.screen === 'run' && DESK.held[view.path] && pendingDeskEdits(view.path).length
         && !keepDeskRecovery(view.path)) { event.preventDefault(); event.returnValue = ''; }
   });
+  window.addEventListener('focus', () => refresh());
+  window.addEventListener('online', () => refresh());
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) refresh();
     else if (view.screen === 'run' && view.path && typeof shareDesk === 'function') shareDesk(view.path);

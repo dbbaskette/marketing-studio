@@ -158,7 +158,7 @@ from studio_core.document_library import context as library_context
 from studio_core.shared_runner import page as _shared
 modules.bind(globals(), _shared, _shared.NAMES)
 
-READS = ('/api/slide-text-draft', '/api/spending-policy', '/api/intake-draft', '/api/capabilities', '/api/setup', '/api/agents', '/api/models', '/api/decks',
+READS = ('/api/updates', '/api/slide-text-draft', '/api/spending-policy', '/api/intake-draft', '/api/capabilities', '/api/setup', '/api/agents', '/api/models', '/api/decks',
          '/api/run', '/api/activity', '/api/slide', '/api/download', '/api/status', '/api/published',
          '/api/delete', '/api/file', '/api/known-decks', '/api/storyboard',
          '/api/desk-outline-price', '/api/desk-versions', '/api/desk-migration-preview', '/api/desk-ready-context')
@@ -237,6 +237,10 @@ class RunnerPage(server.Page):
     # --- reads ---------------------------------------------------------------------------
 
     def read(self, path: str, one):
+        if path == '/api/updates':
+            from studio_core import polling
+            return server.as_json(HTTPStatus.OK, polling.snapshot(self.engine, home.data_root()))
+
         if path == '/api/slide-text-draft':
             try: level = one('level')
             except server.Refusal: level = None

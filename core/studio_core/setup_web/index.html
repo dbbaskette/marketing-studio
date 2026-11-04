@@ -76,6 +76,12 @@
               <div class="field"><label class="field-label" for="person-name">Your name</label><input id="person-name" class="input" name="person.name" autocomplete="name" maxlength="100"></div>
               <div class="field"><label class="field-label" for="assistant-agent">Assistant</label><select id="assistant-agent" class="input" name="assistant.agent" aria-describedby="assistant-agent-hint"><option value="claude">Claude Code</option><option value="codex">Codex</option></select><p id="assistant-agent-hint" class="field-hint quiet">Each studio checks sign-in when a task first uses it. Choosing here signs in to nothing.</p></div>
             </div>
+            <div id="quick-scan-choice" data-step="settings" class="paper">
+              <p class="field-label">Quick scan speed</p><p id="quick-effective" class="field-hint" role="status"></p>
+              <div class="bar"><label class="field" for="quick-effort"><span class="field-label">Quick scan reasoning</span><select aria-label="Quick scan reasoning" id="quick-effort" class="input"><option value="low">Low · provisional starting outline</option><option value="medium">Medium · more deliberation</option><option value="high">High · more deliberation</option></select></label><button type="button" id="apply-quick" class="button">Use this Quick choice</button><button type="button" id="review-quick" class="button button-quiet">Choose Quick model</button></div>
+              <p class="quiet field-hint">Quick uses supplied excerpts only. Workflow target: an editable outline within 60 seconds, measured separately from the 180-second/$0.25 caps. Provider timing is unverified; this is a target, not a completion promise. A usable incomplete outline lets you refine selected gaps before research. Final independent checks remain required.</p>
+              <p class="quiet field-hint">Using a Quick choice enables task routing. Review the other task choices below before Save settings. New work pins them; existing work changes only through its explicit model-settings action. Lower effort does not guarantee a faster provider.</p>
+            </div>
             <p id="models-pointer" class="field-hint quiet">Uses the assistant’s default model and reasoning. Change them under Advanced: Models and reasoning.</p>
           </section>
           <section id="workspace-part" class="card" data-step="1"><div class="part-head"><h3 class="card-title">Your workspace</h3><span class="tag">Shared</span></div><p class="quiet">Keep a Git history on this computer, or share work through a repository.</p>
