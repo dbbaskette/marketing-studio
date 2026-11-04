@@ -43,7 +43,7 @@ from pathlib import Path
 
 import runner  # noqa: F401  puts the core on the import path
 import home
-from studio_core import activity_log, model_profiles, research_contract, stops
+from studio_core import spending, activity_log, model_profiles, research_contract, stops
 from workspace import WorkspaceError
 
 from runner import agents, briefs, decks, settings, stages, worker_tools
@@ -360,6 +360,7 @@ class Jobs:
                 self._problem(root, None, 'stopped', shared, 'Everything made so far is kept.',
                               'resume')
                 return False
+            if spending.policy(record) == 'warn': return True
             left = self._left(record)
             if left > 0 and left >= stops.floor(self._limit(record)):
                 return True
@@ -374,6 +375,8 @@ class Jobs:
         """Stop because the deck spent what it may before it asks, or has too little left
         to start a job; `label` names a step stopped mid-way for it."""
         record = self._load(root)
+        if spending.policy(record) == 'warn':
+            return self._problem(root, 'research', 'failed', f'A research job reached its ${spending.JOB_DOLLARS:.2f} cap. Completed evidence is kept.', KEPT, 'retry')
         what, kept = stops.spent('deck', spent(record)[0], self._limit(record),
                                  self._left(record), label, go='Resume')
         self._problem(root, None, 'stopped', what, kept, 'resume', limit=True)
@@ -453,7 +456,7 @@ class Jobs:
         worker_tools.prepare(folder, **{**work.prepared, 'runtimes': runtimes})
         requested = limits
         limits = record.get('limits') or {}
-        ceiling = agents.Limits(int(limits.get('step_seconds') or settings.load().step_seconds), max(0.01, self._left(record)))
+        ceiling = agents.Limits(int(limits.get('step_seconds') or settings.load().step_seconds), spending.cap(record, self._left(record)))
         bounded = ceiling if requested is None else agents.Limits(min(ceiling.seconds, requested.seconds), min(ceiling.dollars, requested.dollars))
         job = agents.Job(work.guidance, work.task, folder, work.profile,
                          tuple(worker_tools.command(folder)),
@@ -569,6 +572,8 @@ class Jobs:
                          else f'a try at this step did not work: {label}')
         step = name.partition(':')[0]
         if budget:
+            if spending.policy(record) == 'warn':
+                return self._problem(root, step, 'failed', f'{label} reached its ${spending.JOB_DOLLARS:.2f} job cap.', KEPT, 'retry')
             self._spend_stop(root, label)
         elif stops.agent_stopped('', outcome, detail) is not None:
             self._problem(root, step, 'failed', stops.agent_stopped(

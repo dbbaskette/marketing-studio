@@ -50,7 +50,7 @@ class SectionResearchTests(StudioCase):
             return agents.Outcome(True, cost=0.01, seconds=1)
         return story_tests.SlideStoryTests.worker(self, tools, job)
 
-    def test_new_schema_and_section_transport_pass_complete_check(self):
+    def _complete_section_work(self):
         root = self.start(research=True)
         view = self.view(root)
         record = self.engine._load(root)
@@ -63,6 +63,19 @@ class SectionResearchTests(StudioCase):
         self.assertEqual(shown['research_progress']['phase'], 'complete')
         self.assertEqual(len(self.section_jobs), len(story['outline']['sections']) + 1)
         self.assertLessEqual(self.section_jobs[-1][1], 120)
+
+        return root
+
+    def test_new_schema_and_section_transport_pass_complete_check(self):
+        self._complete_section_work()
+
+    def test_warning_threshold_does_not_starve_approved_section_work(self):
+        from dataclasses import replace
+        from runner import settings
+        settings.save(replace(settings.load(), deck_dollars=0.01, spending_policy='warn'))
+        root=self._complete_section_work()
+        self.assertIsNotNone(self.view(root)['spending']['warning'])
+        self.assertTrue(all(0 < item[1].limits.dollars <= 5 for item in self.workers.jobs))
 
     def test_timeout_grants_only_the_failed_contribution_more_time(self):
         self.fail_one = True

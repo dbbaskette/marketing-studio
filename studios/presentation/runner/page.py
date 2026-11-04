@@ -158,7 +158,7 @@ from studio_core.document_library import context as library_context
 from studio_core.shared_runner import page as _shared
 modules.bind(globals(), _shared, _shared.NAMES)
 
-READS = ('/api/intake-draft', '/api/capabilities', '/api/setup', '/api/agents', '/api/models', '/api/decks',
+READS = ('/api/spending-policy', '/api/intake-draft', '/api/capabilities', '/api/setup', '/api/agents', '/api/models', '/api/decks',
          '/api/run', '/api/activity', '/api/slide', '/api/download', '/api/status', '/api/published',
          '/api/delete', '/api/file', '/api/known-decks', '/api/storyboard',
          '/api/desk-outline-price', '/api/desk-versions', '/api/desk-migration-preview', '/api/desk-ready-context')
@@ -195,7 +195,7 @@ SOURCE_LIMIT = 12_000_000     # bytes: a document of up to 8 MB, in base64, with
 # What a desk change takes as it is sent, not as text.
 RAW = ('slides', 'field', 'ids', 'again', 'picks')
 WHOLE = ('seen', 'start', 'end', 'index')   # whole numbers, from zero
-WRITES = ('/api/intake-draft', '/api/research-sources', '/api/setup/check', '/api/setup', '/api/decks', '/api/run', '/api/decide',
+WRITES = ('/api/spending-policy', '/api/intake-draft', '/api/research-sources', '/api/setup/check', '/api/setup', '/api/decks', '/api/run', '/api/decide',
           '/api/answer', '/api/share', '/api/fetch', '/api/drive', '/api/publish',
           '/api/delete', '/api/bring', '/api/companions', '/api/upgrade', '/api/restart',
           '/api/versions', '/api/brand', '/api/brand/install', '/api/shared',
@@ -237,6 +237,9 @@ class RunnerPage(server.Page):
     # --- reads ---------------------------------------------------------------------------
 
     def read(self, path: str, one):
+        if path == '/api/spending-policy':
+            from studio_core import spending
+            return server.as_json(HTTPStatus.OK, spending.get(self.engine, one('path'), 'presentation'))
         if path == '/api/intake-draft':
             from studio_core import intake_drafts
             try:
@@ -443,6 +446,11 @@ class RunnerPage(server.Page):
     # --- changes -------------------------------------------------------------------------
 
     def write(self, path: str, sent: dict):
+        if path == '/api/spending-policy':
+            from studio_core import spending
+            if not isinstance(sent, dict) or set(sent) != {'path', 'expected', 'policy'}:
+                raise WorkspaceError('Save only the displayed spending behavior.')
+            return server.as_json(HTTPStatus.OK, spending.change(self.engine, sent['path'], sent['expected'], sent['policy'], 'presentation'))
         if path == '/api/intake-draft':
             from studio_core import intake_drafts
             try:

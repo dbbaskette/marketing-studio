@@ -15,13 +15,18 @@ class Reservations:
     Actual charged cost remains the engine's record. Providers that do not report
     dollars retain their existing unknown-cost semantics, not a fictional hard cap.
     """
-    def __init__(self, remaining):
+    def __init__(self, remaining, fixed=None):
         self.remaining = remaining
+        self.fixed = fixed
         self.held = {}
         self.lock = threading.Lock()
 
     def take(self, phase, workers=1):
         with self.lock:
+            if self.fixed is not None:
+                token = secrets.token_hex(8)
+                self.held[token] = self.fixed
+                return token, self.fixed
             left = self.remaining() - sum(self.held.values())
             if left <= 0:
                 raise ValueError('The remaining research allowance is reserved or exhausted.')
@@ -98,7 +103,8 @@ def native(engine, root, run, task, sources, product='training'):
         with engine.files:
             return engine._left(engine._load(root))
 
-    budget = Reservations(remaining)
+    from studio_core import spending
+    budget = Reservations(remaining, fixed=spending.JOB_DOLLARS if spending.policy(record) == 'warn' else None)
 
     def progress(value):
         with engine.files:

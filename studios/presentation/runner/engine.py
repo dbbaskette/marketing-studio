@@ -115,7 +115,7 @@ What a caller needs to know
 """
 from __future__ import annotations
 
-from studio_core import activity_log, deck_content
+from studio_core import activity_log, deck_content, spending
 from studio_core import deck_flow, research_session, research_sources, research_contract, research_sites, research_view, review_policy, stops
 
 from studio_core import research_sections
@@ -484,6 +484,8 @@ class Engine(Jobs, Researching, DeskActions):
         return record
 
     def _store(self, root: Path, record: dict) -> None:
+        from studio_core import spending
+        spending.observe(root / 'work' / activity_log.FILE, record, spent(record)[0], self._limit(record))
         decks.write_run(root, record)
         from studio_core import work_summary
         work_summary.native('presentation', root, record)
@@ -881,6 +883,7 @@ class Engine(Jobs, Researching, DeskActions):
                 record = self._load(root)
                 record.update(agent=agent, model=model, level_of_effort=effort,
                               model_profiles=profiles, driver=team.claim(space),
+                              spending_policy=getattr(chosen, 'spending_policy', 'hard-stop'),
                               limits={'step_seconds': chosen.step_seconds,
                                       'dollars': chosen.deck_dollars})
                 if self.content_first and decks.on_desk(record):
@@ -3469,6 +3472,7 @@ class Engine(Jobs, Researching, DeskActions):
             'taken': None if mine else team.taken(root), 'last_shared': last,
             'kept': self._set_aside(root), 'clash': root.name in self._clash,
             'queue': self._queue(run) if mine else None,
+            **({'spending': spending.info(record, dollars, self._limit(record))} if 'spending_policy' in record else {}),
             'spent': {'dollars': dollars, 'tokens': tokens},
             'ahead': self._still_to_come(record),
             'agent': record.get('agent'), 'model': record.get('model'),

@@ -467,3 +467,26 @@ spending limits and blocking failures still apply. Publishing and sharing contro
 remain explicit. Existing runs and adopted work retain their earlier review flow;
 changing settings affects new work only. Conversations without a saved runner
 policy continue to use their existing guidance.
+
+
+## Spending defaults
+
+**Advanced → Spending** chooses Warn and continue (default) or Stop and ask for
+Training Studio and Presentation Studio independently. The choices are stored as
+`spending.training` and `spending.presentation` in the existing studios-config
+file, under its adjacent lock. Saving one choice preserves the other studio's
+concurrent edit. A conflicting outdated form is refused.
+
+Project amounts remain each native studio's existing Limits. New tasks pin their
+policy; saved tasks without a policy preserve hard stops. A saved desk's Spending
+behavior control makes a stale-safe explicit override without starting work,
+raising the amount or carrying approval forward. Stop a busy task before changing
+its policy. Continue never silently raises a hard limit; the existing Carry on
+operation remains explicit for old hard-stop tasks.
+
+Warning-mode workers receive $5 per job, independent of the amount left. Requested
+smaller budgets, Quick scan ($0.25 maximum) and time/round/concurrency limits still
+apply. A job hitting its own budget stops for explicit retry; it does not grant
+another job or discard completed peers. These are supplied assistant budgets,
+not a billing guarantee for providers that do not report or enforce dollar caps.
+Warnings use reported spending; unknown costs never become a made-up zero.

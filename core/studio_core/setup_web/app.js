@@ -375,7 +375,7 @@ function fill() {
   for (const input of form.querySelectorAll('input[name], select[name]')) {
     if (input.name === 'storage' || input.name === 'assistant.effort' || input.name.startsWith('models.')) continue;
     const keys = input.name.split('.'); let value = keys.length === 2 ? shared[keys[0]]?.[keys[1]] : shared[keys[0]];
-    value ??= ({'assistant.agent': 'claude', 'local.root': '~/Studios', 'team.branch': 'main', output: 'pptx', share: 'decision'})[input.name] || '';
+    value ??= ({'assistant.agent': 'claude', 'local.root': '~/Studios', 'team.branch': 'main', 'spending.training': 'warn', 'spending.presentation': 'warn', output: 'pptx', share: 'decision'})[input.name] || '';
     input.value = value;
   }
   form.elements.storage.value = shared.team?.repository ? 'remote' : 'local';
@@ -664,7 +664,7 @@ function renderWorkOverview(){
     const selected=rows.filter(row=>row.item.state===state).sort((a,b)=>b.item.observed_at.localeCompare(a.item.observed_at)).slice(0,6);
     if(!selected.length)continue;
     const group=element('section','','stack');group.append(element('h2',title,'section-title'));
-    for(const {studio,item} of selected){const row=element('article','','paper work-summary');const copy=element('div','','stack');copy.append(element('p',studio.name,'field-hint'),element('h3',item.title,'card-title'),element('p',state==='in-progress'?'Last saved work was in progress; open to check current activity.':item.action,'quiet'));const button=element('button',item.action,'button button-quiet');button.addEventListener('click',()=>resumeWork(studio,item,button));row.append(copy,button);group.append(row);}
+    for(const {studio,item} of selected){const row=element('article','','paper work-summary');const copy=element('div','','stack');copy.append(element('p',studio.name,'field-hint'),element('h3',item.title,'card-title'),element('p',state==='in-progress'?'Last saved work was in progress; open to check current activity.':item.action,'quiet'));const button=element('button',item.action,'button button-quiet');button.addEventListener('click',()=>resumeWork(studio,item,button));if(item.warning)copy.append(element('p',item.warning,'spending-warning'));row.append(copy,button);group.append(row);}
     host.append(group);
   }
   if(!rows.length&&Object.keys(snapshot.work_overview||{}).length)host.append(element('p','No readable saved work summaries are available yet. Open a studio to view its saved work.','quiet'));
@@ -800,7 +800,10 @@ function wantedValues() {
     }
   }
   // Research sites are kept in Shared settings, not in first-run setup.
-  if (!setup) wanted.research = {sites: [...researchSites]};
+  if (!setup) {
+    wanted.research = {sites: [...researchSites]};
+    wanted.spending = {training: value('spending.training') || 'warn', presentation: value('spending.presentation') || 'warn'};
+  }
   return wanted;
 }
 // The groups as the form was last filled, after setup: a group nobody changed sends nothing,
@@ -830,6 +833,10 @@ function changesForStep() {
     return result;
   }
   const diff = changed(wanted, snapshot.shared);
+  if (!setup && shownWanted && wanted.spending) {
+    const own = Object.fromEntries(Object.entries(wanted.spending).filter(([key, value]) => value !== shownWanted.spending?.[key]));
+    if (Object.keys(own).length) diff.spending = own;else delete diff.spending;
+  }
   return diff;
 }
 // The installation folders, when one was changed on this form: every studio's, as the

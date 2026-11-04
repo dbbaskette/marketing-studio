@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased — 4.13.0
+
+New work warns and continues at its project spending amount by default. Shared settings can choose Stop and ask; saved work has an explicit, stale-safe spending choice. Old tasks keep hard-stop behavior and Carry on. Warning mode supplies a $5 budget per job, keeps smaller Quick-scan budgets and time limits, records crossings once in Activity and shows them on the desk and home. Dollar enforcement and reporting depend on the assistant. Policy saves start no work or new research.
+
 ## Unreleased — 4.12.1
 
 Saved work publishes compact metadata for Marketing Studio’s Needs you, In progress and Recent work overview. Direct resume opens the saved editing/decision context. Metadata browsing starts no studio or provider work.

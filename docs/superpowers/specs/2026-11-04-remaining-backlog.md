@@ -34,7 +34,8 @@ unrelated values and stale-form conflict checks. New projects pin their choice;
 missing saved policy preserves old hard-stop semantics. An existing stopped task
 keeps Carry on and can explicitly choose warning in Change settings. Continue
 never silently lifts a hard cap. Unknown dollar usage stays unknown. Warn-mode
-jobs have documented finite caps independent of the remaining project allowance.
+jobs receive documented positive budgets independent of the remaining project
+allowance. Dollar reporting/enforcement depends on the assistant; time caps remain.
 
 Brands work runs in Marketing Studio's own scratch directories until Save. The
 configured brands repository is independent of shared team storage. Each save

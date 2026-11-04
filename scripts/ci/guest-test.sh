@@ -271,6 +271,21 @@ elif [[ "${1:-full}" == audit-week8 ]]; then
   (cd studios/presentation && "$python" skills/presentation-studio/scripts/validate_package.py)
   (cd studios/training && "$python" skills/training-studio/scripts/validate_package.py)
   PYTHONPATH=tests "$python" -m unittest test_suite test_work_overview -v 2>&1 | tee "$results_dir/package-tests.log"
+elif [[ "${1:-full}" == backlog-spending ]]; then
+  export INFOGRAPHIC_STUDIO_TEST_RENDERER="$("$python" scripts/ci/infographic-renderer.py --output "$work/recovery-graphics" --cache "$work/recovery-cache")"
+  mkdir -p "$work/recovery-browser"
+  cp studios/infographic/tests/ui/package*.json "$work/recovery-browser/"
+  touch "$work/recovery-user.conf" "$work/recovery-global.conf"
+  env HOME="$work/recovery-home" NPM_CONFIG_USERCONFIG="$work/recovery-user.conf" NPM_CONFIG_GLOBALCONFIG="$work/recovery-global.conf" npm ci --prefix "$work/recovery-browser" --ignore-scripts --no-audit --no-fund > "$results_dir/browser-tools.log" 2>&1
+  export NODE_PATH="$work/recovery-browser/node_modules" PYTHON="$python" INFOGRAPHIC_UI_RESULTS="$results_dir/recovery-ui" HOME_LAUNCHPAD_RESULTS="$results_dir/home-ui"
+  node tests/home_launchpad.cjs 2>&1 | tee "$results_dir/home-browser.log"
+  node studios/infographic/tests/ui/build-recovery.cjs 2>&1 | tee "$results_dir/recovery-browser.log"
+  export SPENDING_UI_RESULTS="$results_dir/spending-ui" TRAINING_OUTLINE_RESULTS="$results_dir/outline-ui" PRESENTATION_STORY_RESULTS="$results_dir/story-ui"
+  node tests/spending_browser.cjs 2>&1 | tee "$results_dir/spending-browser.log"
+  node studios/training/tests/ui/outline.cjs 2>&1 | tee "$results_dir/outline-browser.log"
+  node studios/presentation/tests/ui/story.cjs 2>&1 | tee "$results_dir/story-browser.log"
+  "$python" scripts/workflow_diagrams.py --check
+  bash scripts/ci/check.sh "$python" "$results_dir/checks" 2>&1 | tee "$results_dir/tests.log"
 elif [[ "${1:-full}" == audit-week7-browser || "${1:-full}" == audit-week7-full ]]; then
   export INFOGRAPHIC_STUDIO_TEST_RENDERER="$("$python" scripts/ci/infographic-renderer.py --output "$work/recovery-graphics" --cache "$work/recovery-cache")"
   mkdir -p "$work/recovery-browser"
