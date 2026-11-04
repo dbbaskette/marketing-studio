@@ -1,8 +1,32 @@
 # Audit integration evidence
 
-The audit scope is #297, #305 and #312–#325, tracked by #326. The implementation
+The original audit scope is #297, #305 and #312–#325, tracked by #326. The implementation
 landed in eight weekly cohorts, with one suite PR per cohort. Related spending
-policy #304 and Infographic Studio first-release acceptance #224 remain separate.
+policy #304 was subsequently completed separately. Infographic Studio first-release
+acceptance #224 remains a separate gate. The follow-up audit #336–#346, tracked by
+#347, is summarized below; the original cohort evidence follows it.
+
+## Follow-up audit completion
+
+All eleven follow-up findings are closed by merged changes. The table records
+implementation evidence from those PRs; it does not imply a new full-suite run
+after each merge or establish live provider latency.
+
+| Issues | Merged result | Verification and limits |
+| --- | --- | --- |
+| #336, #337, #344 | [PR #350](https://github.com/dbbaskette/marketing-studio/pull/350): refreshed Home summaries, pending-first selection, bounded saved-work index and actionable preview recovery | Shared suite 1,032 cases; Infographic Studio 262; corrected renderer-error handling passed its complete 30-case affected group. Protected Home/recovery journeys covered freshness, focus, connection failure and local-only retry. |
+| #338–#341 | [PR #351](https://github.com/dbbaskette/marketing-studio/pull/351): private resumable intake, durable corrections and compact slide review in both deck studios | Complete affected shared/native persistence, approval and request-boundary modules; protected six/thirty-slide and captured-source journeys covered reload, conflict, phone/desktop, appearance and zero generation on draft save. |
+| #342, #343 | [PR #352](https://github.com/dbbaskette/marketing-studio/pull/352): compact idle probes and explicit effective Quick choices | Six/thirty-slide fixtures transferred 115 bytes per idle probe versus 17–63 KB for full refreshes, with no content survey on five unchanged probes. External edits appeared in 0.18–0.27 seconds. Settings journeys covered preserved choices and save/reload. These are local synthetic results. |
+| #346 | [PR #352](https://github.com/dbbaskette/marketing-studio/pull/352): completed local rendering investigation | 63 samples across 6/30/100-slide decks: warm unchanged previews about 0.25–0.29 seconds; one-slide edits about 1.8/2.8/5.7 seconds. Native conversion remained about 1.1–1.3 seconds; evidence did not justify a second renderer. Three samples per scenario do not establish a production tail. |
+| #345 | [PR #353](https://github.com/dbbaskette/marketing-studio/pull/353): early saved-section reading and private queued concerns | Complete affected research/private-note/UI and native request-boundary modules, package validators and protected journeys covered failed siblings, earlier revisions, reload and replacement by checked output, with zero additional jobs. |
+
+The integrated implementation is commit
+`f2f9dc1e626e88f7344089a83f014db7e995bd9c`. Its unchanged application paths reuse
+the earlier native-suite, installer and launch evidence; affected modules and
+browser journeys supply the follow-up evidence above. Final independent research
+checks and exact-revision output approval remain necessary. Queued concerns do not
+change in-flight work. Live artwork acceptance, signed-in delivery, screen-reader
+acceptance and owner sign-off remain distinct from these offline results.
 
 ## Observable work saved
 

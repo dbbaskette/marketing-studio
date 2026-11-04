@@ -73,6 +73,11 @@ Shared settings also hold task model profiles, research sites, delivery defaults
 and installation locations. Existing projects keep their saved inputs and choices;
 changing defaults does not move a workspace. Setup starts no assistant work.
 
+Under **Assistant → Quick scan speed**, inspect the effective model and reasoning
+before choosing a lighter first pass. **Use this Quick choice** enables task routing;
+review the other task choices before **Save settings**. Existing projects keep their
+saved choices. [Quick scan settings](docs/shared-setup.md#quick-scan-speed)
+
 ### 3. Start a project
 
 - **Blog Studio:** start a new blog or choose **Edit or polish a draft**. Review
@@ -91,6 +96,12 @@ changing defaults does not move a workspace. Setup starts no assistant work.
 You can also ask your assistant to use a studio directly in chat. New conversation
 work uses the desk’s checked records without launching another assistant. A focused
 request stays focused; transferring execution to the runner is explicit.
+
+Home prioritizes saved work that **Needs you** and refreshes it while you work.
+In Presentation Studio and Training Studio, slide-text corrections save privately
+across reloads; design waits for approval. You can also read completed research
+section drafts while the final check is pending and keep a note for the next
+explicit research change. [Keep work moving](docs/incremental-workflow.md)
 
 ## Sources and the Document Library
 

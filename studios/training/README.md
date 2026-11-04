@@ -12,7 +12,9 @@ handles evidence, and Harness Slides builds requested decks in your brand.
 
 [Install](#install) · [Your first training](#your-first-training) · [The desk](docs/the-desk.md)
 
-Completed research section drafts survive a failed peer; retry unfinished work.
+Completed research section drafts can be read while the final check is pending and
+survive a failed peer; retry unfinished work. Save a private queued note to revisit
+in an explicit research change; it does not change an assistant's current work.
 Source changes first show the affected scope, while wording and notes can stay
 local. Final independent checks and exact-revision approval remain necessary.
 See the [incremental workflow guide](../../docs/incremental-workflow.md).
@@ -90,8 +92,11 @@ optional tools. Missing capabilities are explained rather than silently substitu
    starts research only for that scope. The checked evidence and approved outline
    makes the selected materials. There is no sample lesson to approve.
 4. **Review requested slide text.** If you selected a deck, **Review slide text**
-   opens the Deck tab with one slide at a time. Corrections, notes and selection save privately across reloads; the Guide, Brief and Plan tabs stay available. Ask for changes or choose **Approve text & design deck**
-   for that version before design starts.
+   opens the Deck tab with one slide at a time. Correct titles, points and notes
+   directly; corrections and review position save privately across reloads. The
+   Guide, Brief and Plan tabs stay available. **Save corrections** starts no
+   assistant or design work. Use **Ask for changes** for an assistant revision, or
+   **Approve text & design deck** to approve all slide text with your corrections.
 5. **Read, edit and mark ready.** Material tabs show the formatted guide, brief,
    slides and practice; level tabs keep the depth separate. Review results as they
    arrive. **Mark ready** is your approval of the material shown, not merely evidence
