@@ -3051,6 +3051,9 @@ async function deskIntakePersistence(){
   assert.match(t.f.run('sBlogIntake().problem'),/Changed in another tab/);
   assert.equal(t.requests.filter(item=>item.url==='/api/desk-create').length,0);
   await assert.rejects(()=>t.f.run('sDeskGo(studio.deskStart)'),/Changed in another tab/);
+  const edited=deskStartFixture();await edited.f.run('sDeskBegin()');await edited.f.run('sDeskKeep(studio.deskStart)');
+  edited.f.run("studio.deskStart.title='Later edit';studio.deskStart._dirty=true");await edited.f.run('sDeskConsumed(studio.deskStart,sBlogIntake().revision)');
+  assert.equal(edited.f.run('studio.deskStart.title'),'Later edit');
   const clean=deskStartFixture();await clean.f.run('sDeskBegin()');await clean.click('Discard draft');
   assert.equal(clean.f.run('studio.deskStart'),null);assert.equal(clean.f.run('sBlogIntake().saved'),null);
 }

@@ -122,6 +122,17 @@ function sDeskKeep(held,open=true){
   const saving=(held._saving||Promise.resolve()).then(run,run);held._saving=saving;
   saving.finally(()=>{if(held._saving===saving)held._saving=null;});return saving;
 }
+async function sDeskConsumed(held,revision){
+  const intake=sBlogIntake();
+  if(studio.deskStart!==held||intake.revision!==revision||held._dirty||held._saving)return;
+  clearTimeout(held._saveTimer);held._saveTimer=null;
+  try{
+    const cleared=await intake.request({action:'discard',expected:revision});
+    if(studio.deskStart===held&&!held._dirty&&!held._saving&&intake.revision===revision){
+      intake.revision=cleared.revision;intake.saved=null;intake.encoded={};studio.deskStart=null;
+    }
+  }catch(error){intake.problem=error.message;intake.status();}
+}
 function sDeskIntakeControls(held){
   const intake=sBlogIntake(),form=$('studio-page').querySelector('form');if(!form)return;
   const status=sNode('p','quiet field-hint');status.dataset.intakeStatus='true';status.setAttribute('role','status');
@@ -355,10 +366,11 @@ async function sDeskReadGoogle(held,{start=false}={}){
   if(found?.status==='already-linked'&&found.id){
     // The Doc is already a blog here: open it on the desk, or bring it there.
     if(!await sDeskKeep(held))throw Error(sBlogIntake().problem);
+    const intakeRevision=sBlogIntake().revision;
     let made=null,created=false;try{made=await api('desk?id='+encodeURIComponent(found.id));}catch(_){made=null;}
     // A Doc an older step-by-step run links stays with that run: the start offers it.
     if(!made){created=true;try{made=await api('desk-create',{intake_revision:sBlogIntake().revision,operation:held.operation,style:held.style,tone:held.tone,first_pass:held.first_pass,...sDeskPolishOptions(held),sources:sDeskUploads(held.files),library:sDeskLibraryPicks(held.files),...sDeskKept(held.files),article:found.id});}catch(error){if(!/step-by-step run/.test(error.message))throw error;if(turn!==studio.turn)return;held.problem=error.message;held.linkedRun=found.id;return sDeskStart();}}
-    if(turn!==studio.turn)return;clearTimeout(held._saveTimer);await sBlogIntake().discard();studio.deskStart=null;studio.desk={id:made.id,view:made,session:operationId()};if(!created&&held.first_pass==='copyedit'&&held.voiceOn)studio.desk.review={pendingVoice:{guide:held.voiceGuide,name:(held.polishVoices?.find(guide=>guide.id===held.voiceGuide)||{}).name||'Selected voice',humanize:held.humanizeOn?held.humanizeLevel:null}};return sRoute('desk',made.id,held.first_pass==='copyedit'&&(created||held.voiceOn)?'review':null);
+    await sDeskConsumed(held,intakeRevision);if(turn!==studio.turn)return;studio.desk={id:made.id,view:made,session:operationId()};if(!created&&held.first_pass==='copyedit'&&held.voiceOn)studio.desk.review={pendingVoice:{guide:held.voiceGuide,name:(held.polishVoices?.find(guide=>guide.id===held.voiceGuide)||{}).name||'Selected voice',humanize:held.humanizeOn?held.humanizeLevel:null}};return sRoute('desk',made.id,held.first_pass==='copyedit'&&(created||held.voiceOn)?'review':null);
   }
   held.preview=sGooglePreview(found);if(!held.title.trim())held.title=found.title;
   if(start){const made=await sDeskGo(held);if(made&&studio.screen==='desk'&&studio.id===made.id){const summary=held.preview.summary,notes=[];if(summary.selected_tab)notes.push('Opened only the tab “'+summary.selected_tab.title+'”.');if(summary.excluded_approval_blocks)notes.push('Leading approval fields stay in the original Google Doc.');if(notes.length)sToast(notes.join(' '));}return made;}
@@ -502,10 +514,7 @@ async function sDeskGo(held){
       made=await api('desk-create',{...writing,outline_source:uploaded.source.id});
     }
   }
-  if(studio.deskStart===held&&sBlogIntake().revision===common.intake_revision&&!held._dirty){
-    clearTimeout(held._saveTimer);held._saveTimer=null;
-    if(await sBlogIntake().discard())studio.deskStart=null;
-  }
+  await sDeskConsumed(held,common.intake_revision);
   if(turn!==studio.turn)return;
   if(made.first_pass_problem)sToast('The first pass did not start: '+made.first_pass_problem);
   if(made.keep_problem)sToast(made.keep_problem);
