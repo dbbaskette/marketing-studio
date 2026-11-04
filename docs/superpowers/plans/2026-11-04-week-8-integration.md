@@ -32,3 +32,9 @@ Package/overview contracts: 15 tests passed. Both native package/context-budget
 validators and all nine generated workflow diagrams passed. Selected phone,
 dark recovery and zoom-emulation captures received visual inspection. Subsequent
 documentation records reuse this unchanged application and browser-source evidence.
+
+The final subset documentation packaging contract passed all 15 tests on commit
+`67538e795e78c9bdb918657dd351376dcea11b5d` (tree
+`6d93b94b37f75e861702d9ed76ea6b5768d9f969`). Each subset contains the workflow
+guide and its referenced compatibility/evidence documents. This packaging-only
+change reuses the unchanged native application and browser results above.

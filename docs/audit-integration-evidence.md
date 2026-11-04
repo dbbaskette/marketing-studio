@@ -68,3 +68,9 @@ Both full shared and Infographic Studio VM suites have an explicit installed-PDF
 reader acceptance skip. That unchanged reader path passed separately with a real
 installed reader and synthetic PDF in Week 4. All disposable VMs are deleted and
 private diagnostic logs stay outside the public repository.
+
+The final subset documentation packaging contract passed all 15 tests on commit
+`67538e795e78c9bdb918657dd351376dcea11b5d` (tree
+`6d93b94b37f75e861702d9ed76ea6b5768d9f969`). Each subset contains the workflow
+guide and its referenced compatibility/evidence documents. This packaging-only
+change reuses the unchanged native application and browser results above.
