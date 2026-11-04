@@ -11287,7 +11287,11 @@ class LibraryScreenTests(ScriptedPage, PageCase):
         # Without the shared source editor (research.js), the start holds files itself and
         # sends the choice with each one.
         result = self.run_page(self.answers(), [
-            {'click': 'New training'}, {'snapshot': 'new'}])
+            {'click': 'New training'},
+            {'fill': 'A short title', 'value': 'Synthetic training'},
+            {'fill': 'What should it teach?', 'value': 'Explain safe restarts.'},
+            {'fill': 'Who is it for?', 'value': 'New engineers'},
+            {'intakePage': 1}, {'snapshot': 'new'}])
         self.assertIn('Keep in library', result['snapshots']['new']['pressed'])
 
 

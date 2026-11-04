@@ -195,6 +195,12 @@ elif [[ "${1:-full}" == marketing-home ]]; then
   node studios/infographic/tests/ui/home-readiness.cjs 2>&1 | tee "$results_dir/home-readiness-browser.log"
   "$python" -m unittest discover -s tests -v 2>&1 | tee "$results_dir/home-tests.log"
   bash scripts/ci/acceptance.sh "$python" "$results_dir/checks" 2>&1 | tee "$results_dir/home-acceptance.log"
+elif [[ "${1:-full}" == audit-week2-training-final ]]; then
+  # Every other complete suite and both native browser journeys passed. Only old
+  # Training Studio layout/body-cap assertions changed; repeat its whole suite
+  # before all disposable package/CLI acceptance on the final candidate.
+  (cd studios/training && bash scripts/ci/check.sh "$python") 2>&1 | tee "$results_dir/training-tests.log"
+  bash scripts/ci/acceptance.sh "$python" "$results_dir/checks" 2>&1 | tee "$results_dir/tests.log"
 elif [[ "${1:-full}" == audit-week2-final ]]; then
   # The shared (958), Infographic Studio (250), Blog Studio (1876) and browser
   # gates passed on the unchanged application tree. Only old Presentation Studio
