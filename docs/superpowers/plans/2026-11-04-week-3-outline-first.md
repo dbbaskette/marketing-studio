@@ -34,3 +34,5 @@ New runner-desk trainings pin an outline-first flow in record schema 7, which ol
 ## Verification and delivery
 
 Use scripted workers, bounded synthetic inputs, disposable settings/workspaces, and no provider/Google access. Verify the native UI by keyboard at 390 and 1280 pixels in light/dark, plus scan timeout/stop/reload, stale approval and old-flow compatibility. Run the complete relevant Training Studio suite, affected shared checks, package/workflow-diagram validators and installer/CLI acceptance on the final candidate. Publish a Week 3 PR closing #297, pass required gates, merge its exact verified head and record the result.
+
+Delivery: [Week 3 PR #329](https://github.com/dbbaskette/marketing-studio/pull/329). The PR retains the final test evidence and merge status.
