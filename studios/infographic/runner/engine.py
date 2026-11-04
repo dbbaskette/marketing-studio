@@ -305,6 +305,7 @@ class Engine:
         return self.preview(ident, expected_revision=current['revision'])
 
     def compose_asset(self, ident, asset_id, *, expected_revision):
+        recovery = build_recovery.read(self.store, ident)
         with self.store.locked():
             project = self.store.read(ident)
             self.store.expect(project, expected_revision)
@@ -329,7 +330,10 @@ class Engine:
                 planned['elements'] = [layer] + content
             for region in planned['art_regions']:
                 region['asset_id'] = asset_id
-            return self.store.change_locked(project, {'scene': planned})
+            changed = self.store.change_locked(project, {'scene': planned})
+        if recovery and recovery.get('state') == 'failed' and recovery['step'] == 'place-artwork' and recovery.get('next_values', {}).get('asset_id') == asset_id:
+            build_recovery.keep(self.store, ident, 'place-artwork', [*recovery['completed'], 'Placed artwork'], state='complete')
+        return changed
 
     def edit_text(self, ident, element_id, value, *, expected_revision):
         require(text(value, limit=10_000), 'Supply the replacement text for one named element.')

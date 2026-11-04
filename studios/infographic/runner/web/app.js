@@ -552,6 +552,8 @@ function renderProject() {
   if(p.scene&&needsArtwork){next=['Build page',compose];needs='Build page: this page still needs its artwork.';}
   if(selected&&!nativeReady&&(!p.scene||!p.scene.visual_version)){next=['Make this story visual',()=>reviseStorySheet(selected,true)];needs='Make this story visual: its labels are too long for diagrams, so your assistant suggests a visual plan first.';}
   else if(selected&&p.scene&&!p.scene.visual_version){next=['Rebuild visual layout',()=>action('visual-layout')];needs='Rebuild visual layout: this page uses an older layout. Rebuilding runs on this computer.';}
+  const failedStep=held.workflow_recovery;
+  if(failedStep?.current&&failedStep.state==='failed'&&failedStep.next_action){next=[failedStep.next_label,()=>action(failedStep.next_action,failedStep.next_values,failedStep.revision)];needs=failedStep.next_label+': '+failedStep.label+' could not finish. Completed work is kept.';}
   const recoverable=held.recovery.find(r=>r.local_artwork_available),uncertain=held.recovery.find(r=>!r.local_artwork_available);
   // New image work is refused while a request is uncertain, so cancelling it comes first.
   if(uncertain&&!recoverable){next=['Cancel uncertain request',()=>action('image-cancel',{request_id:uncertain.attempt_id})];needs='Cancel uncertain request: '+imageUncertain.charAt(0).toLowerCase()+imageUncertain.slice(1).replace(' Cancel it under Image work needs attention before starting new image work.',' New image work can start once it is cancelled.');}
@@ -938,7 +940,7 @@ function receiptSheet(delivery,receipts){
 }
 function recoveryContent(r) {
   const retry=r.current&&r.next_action?button(r.next_label,()=>action(r.next_action,r.next_values,r.revision),true):null;
-  return add(make('div','stack'),make('p','',r.label+' could not finish.'),make('p','quiet','Completed: '+(r.completed.join(', ')||'Earlier saved work')+'.'),make('p','quiet','Your saved page, artwork and image request identity are kept. This local retry does not generate artwork.'),r.diagnostic?make('p','field-hint','Diagnostic reference: '+r.diagnostic):null,retry);
+  return add(make('div','stack'),make('p','',r.label+' could not finish.'),make('p','quiet','Completed: '+(r.completed.join(', ')||'Earlier saved work')+'.'),make('p','quiet','Your saved page, artwork and image request identity are kept. '+(['preview','export','compose-image'].includes(r.next_action)?'This local retry does not generate artwork.':'Retry composition continues the saved build, including artwork when the page requires it.')),r.diagnostic?make('p','field-hint','Diagnostic reference: '+r.diagnostic):null,retry);
 }
 function recoverySheet(r){sheet('Continue from the saved step',recoveryContent(r),button('Back to the page',closeSheet));}
 async function compose(){
@@ -1035,7 +1037,7 @@ if (homeLink) {
   if (sameTab) $('go-suite').removeAttribute('target');
 }
 async function startDesk() {
-  const resumeId=new URLSearchParams(location.hash.replace(/^#/, '')).get('resume');
+  const resumeId=launch.get('resume');
   if(resumeId&&/^[A-Za-z0-9_-]{1,64}$/.test(resumeId)){await openProject(resumeId);return;}
   // Back from shared settings: reopen the same infographic and sheet. Connecting stays a choice.
   let back=null;try{back=JSON.parse(sessionStorage.getItem('infographic-studio-return')||'null');sessionStorage.removeItem('infographic-studio-return');}catch(f){}

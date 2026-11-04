@@ -35,6 +35,9 @@ class OverviewTests(unittest.TestCase):
         self.item('outline')
         link=work_overview.link('training','outline','http://127.0.0.1:8000/#token=synthetic&home=local')
         self.assertEqual(parse_qs(urlsplit(link).fragment),{'token':['synthetic'],'home':['local'],'resume':['outline']})
+        blog=work_overview.link('training','outline','http://127.0.0.1:8000/#opaque-blog-token&home=local')
+        self.assertTrue(urlsplit(blog).fragment.startswith('opaque-blog-token&'))
+        with self.assertRaises(ValueError):work_overview.check('unknown','outline')
         for ident in ['../escape','missing']:
             with self.assertRaises(ValueError):work_overview.check('training',ident)
 
@@ -56,3 +59,13 @@ class OverviewTests(unittest.TestCase):
             with mock.patch.object(work_overview.workspaces,'data_root',return_value=self.root):
                 (self.root/'workspace.json').write_text('{}')
                 self.assertEqual(work_overview.listing('presentation')['state'],'unavailable')
+
+    def test_old_pending_outline_is_projected_without_writes_or_content_walks(self):
+        root=self.root/'older';(root/'.training-studio').mkdir(parents=True)
+        record={'title':'Old synthetic training','outline_first':{'outline':{'sections':[]}},'training_plan':{'approved':None}}
+        (root/'.training-studio/run.json').write_text(json.dumps(record))
+        before=sorted(root.rglob('*'))
+        row=work_overview.listing('training')['items'][0]
+        self.assertEqual(row['action'],'Review the training outline')
+        self.assertEqual(sorted(root.rglob('*')),before)
+        self.assertFalse((root/work_summary.FILE).exists())

@@ -1,6 +1,7 @@
 """Compact native work metadata. Reading summaries never opens or initializes work."""
 from datetime import datetime, timezone
 import json
+import hashlib
 import os
 from pathlib import Path
 import re
@@ -43,10 +44,10 @@ def read(folder):
         if row.get('state') not in ('needs-you', 'in-progress', 'recent'): return None
         if any(not isinstance(row.get(key),str) or len(row[key])>bound for key,bound in [('title',200),('action',120),('observed_at',100)]): return None
         return {key: row[key] for key in ('id','title','state','action','observed_at')}
-    except (ValueError, OSError): return None
+    except (ValueError, OSError, RecursionError): return None
 
 
-def _native(product, root, record):
+def describe(product, root, record):
     """Conservative saved-state hints; never claims a worker is currently alive."""
     title = record.get('title') or (record.get('brief') or {}).get('topic') or Path(root).name
     state, action = 'recent', 'Open saved work'
@@ -65,10 +66,47 @@ def _native(product, root, record):
     if state == 'recent' and ((progress.get('agents') or {}).get('count') or any(
             job.get('status') in ('working','waiting','running') for job in (record.get('drafts') or {}).get('jobs') or [])):
         state, action = 'in-progress', 'Open saved progress'
-    try: save(root, title, state, action)
-    except OSError: pass  # Metadata cannot turn an otherwise successful native save into failure.
+    if product == 'blog':
+        stage = (record.get('editorial') or {}).get('stage') or record.get('stage')
+        state, action = ('recent', 'Open editorial work') if stage in ('ready', 'published') else ('needs-you', 'Continue the saved blog')
+    if product == 'infographic':
+        title = (record.get('brief') or {}).get('title') or title
+        state, action = ('recent', 'Open delivery') if record.get('approval') else ('needs-you', 'Review the saved infographic')
+    return {'title': str(title)[:200], 'state': state, 'action': action}
 
 
 def native(product, root, record):
-    try: _native(product, root, record)
-    except (OSError, ValueError, KeyError, TypeError, AttributeError): pass
+    try: save(root, **describe(product, root, record))
+    except (OSError, ValueError, KeyError, TypeError, AttributeError, RecursionError): pass
+
+
+def legacy(product, folder):
+    """Bounded current metadata only; never traverse content/history or write a sidecar."""
+    folder = Path(folder)
+    if folder.is_symlink() or not IDENT.fullmatch(folder.name): return None
+    relative = {'training': '.training-studio/run.json', 'presentation': 'run.json',
+        'blog': 'session.json', 'infographic': 'current.json'}[product]
+    def read_json(path, expected=None):
+        if path.is_symlink(): return None, None
+        descriptor = os.open(path, os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0))
+        with os.fdopen(descriptor, 'rb') as stream:
+            info = os.fstat(stream.fileno())
+            if not stat.S_ISREG(info.st_mode) or info.st_size > 128_000: return None, None
+            raw = stream.read(128_001)
+        if len(raw) > 128_000 or expected and hashlib.sha256(raw).hexdigest() != expected: return None, None
+        return json.loads(raw), info
+    try:
+        path=folder/relative
+        # Reject a redirected metadata directory, as well as the final file.
+        if path.parent.is_symlink(): return None
+        record, info=read_json(path)
+        if product == 'infographic':
+            if not isinstance(record,dict) or record.get('id') != folder.name or type(record.get('revision')) is not int or not re.fullmatch('[a-f0-9]{64}',str(record.get('sha256',''))):return None
+            expected=record['sha256']
+            path=folder/'versions'/f"{record['revision']}-{expected}.json"
+            if path.parent.is_symlink(): return None
+            record,info=read_json(path, expected)
+        if not isinstance(record,dict) or info is None:return None
+        row=describe(product,folder,record)
+        return {'id':folder.name,**row,'observed_at':datetime.fromtimestamp(info.st_mtime,timezone.utc).isoformat()}
+    except (OSError,ValueError,KeyError,TypeError,AttributeError,RecursionError):return None

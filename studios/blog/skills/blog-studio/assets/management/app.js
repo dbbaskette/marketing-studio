@@ -45,6 +45,7 @@ function suitePort(port, here) {
   return /^[1-9][0-9]{0,4}$/.test(String(port || ''))
     ? suiteHome('#home=' + encodeURIComponent(here.protocol + '//' + here.hostname + ':' + port), here) : '';
 }
+const resumeBlogId = new URLSearchParams(location.hash.slice(1)).get('resume');
 const token = location.hash.slice(1).split('&')[0] || sessionStorage.getItem('blog-studio-session') || '';
 // The port the server names belongs to the Marketing Studio that started it, so it is preferred
 // to one kept from an earlier session.
@@ -742,4 +743,4 @@ $('import-reload').addEventListener('click',async()=>{if(importBusy||!importStat
 
 $('upload-form').addEventListener('submit',e=>{e.preventDefault();saveUpload(e.target.querySelector('[type=submit]'));});
 $('memory-form').addEventListener('submit',e=>{e.preventDefault();saveMemory(e.target.querySelector('[type=submit]'));});
-applyCapabilities();loadCapabilities().then(async()=>{await load();const id=new URLSearchParams(location.hash.replace(/^#/, '')).get('resume');if(id&&/^[a-f0-9]{32}$/.test(id))await showBlog({id,location:'local'});}).catch(e=>notice(e.message,true));
+applyCapabilities();loadCapabilities().then(async()=>{await load();const id=resumeBlogId;if(id&&/^[a-f0-9]{32}$/.test(id))await showBlog({id,location:'local'});}).catch(e=>notice(e.message,true));

@@ -667,7 +667,7 @@ function renderWorkOverview(){
     for(const {studio,item} of selected){const row=element('article','','paper work-summary');const copy=element('div','','stack');copy.append(element('p',studio.name,'field-hint'),element('h3',item.title,'card-title'),element('p',state==='in-progress'?'Last saved work was in progress; open to check current activity.':item.action,'quiet'));const button=element('button',item.action,'button button-quiet');button.addEventListener('click',()=>resumeWork(studio,item,button));row.append(copy,button);group.append(row);}
     host.append(group);
   }
-  if(!rows.length&&Object.keys(snapshot.work_overview||{}).length)host.append(element('p','No saved work summaries are available yet. Opening existing work refreshes its metadata.','quiet'));
+  if(!rows.length&&Object.keys(snapshot.work_overview||{}).length)host.append(element('p','No readable saved work summaries are available yet. Open a studio to view its saved work.','quiet'));
   const limited=Object.values(snapshot.work_overview||{}).some(row=>row.limited);
   if(rows.length)host.append(element('p',limited?'Showing a bounded selection of saved metadata. Open a studio for all work.':'Saved status; opening work checks its current state.','quiet'));
   const unavailable=snapshot.studios.filter(studio=>snapshot.work_overview?.[studio.id]?.state==='unavailable');

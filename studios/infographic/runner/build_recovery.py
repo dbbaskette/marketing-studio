@@ -34,7 +34,7 @@ def read(store, ident):
         value['current'] = value.get('revision') == current['revision']
         if not value['current']: value.update(next_action=None, next_label='Earlier recovery; review the current page')
         return value
-    except (ValueError, OSError): return None
+    except (ValueError, OSError, TypeError, RecursionError): return None
 
 
 def keep(store, ident, step, completed=(), *, state='working', error=None, values=None):
