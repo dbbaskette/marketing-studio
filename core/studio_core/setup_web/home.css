@@ -276,3 +276,41 @@ body:has(#settings:not([hidden]) .save-bar) .toasts { bottom: calc(5.5rem + env(
 }
 
 .work-summary{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:20px}.work-summary>.stack{min-width:0;gap:4px}.work-summary .card-title{overflow-wrap:anywhere}@media(max-width:600px){.work-summary{align-items:stretch;flex-direction:column;gap:12px}.work-summary .button{width:100%}}
+  .studio-actions > .button { width: 100%; }
+}
+
+/* --- Brands: the packs and libraries, and one working copy's steps --------------------- */
+/* Every part is an opaque card or paper; colour swatches take the brand's own colours from
+   the page's data, and every other colour comes from a token. */
+.brand-rows, .brand-files, .brand-colours, .brand-layouts { margin: 0; padding: 0; list-style: none; }
+.brand-rows { display: grid; gap: 0.6rem; }
+.brand-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem 1rem; padding-top: 0.6rem; border-top: 1px solid var(--hair); }
+.brand-row:first-child { padding-top: 0; border-top: 0; }
+.brand-row-text, .brand-colour-text { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; overflow-wrap: anywhere; }
+.brand-files { display: grid; gap: 0.35rem; }
+.brand-file { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.25rem 1rem; overflow-wrap: anywhere; }
+.brand-colours { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: 0.6rem 1rem; }
+.brand-colour { display: flex; align-items: flex-start; gap: 0.6rem; min-width: 0; }
+.brand-pair { display: flex; flex: 0 0 auto; }
+.brand-swatch { display: inline-block; flex: 0 0 auto; width: 2rem; height: 2rem; border: 1px solid var(--hair); border-radius: 8px; }
+.brand-pair > .brand-swatch:first-child { border-radius: 8px 0 0 8px; }
+.brand-pair > .brand-swatch:last-child { border-radius: 0 8px 8px 0; border-left: 0; }
+.brand-swatch[data-missing] { background: repeating-linear-gradient(45deg, var(--well), var(--well) 4px, var(--paper) 4px, var(--paper) 8px); }
+.brand-layouts { display: grid; grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr)); gap: 0.9rem; }
+.brand-layout { display: flex; flex-direction: column; gap: 0.25rem; min-width: 0; overflow-wrap: anywhere; }
+.brand-preview { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: contain; border: 1px solid var(--hair); border-radius: 8px; background: var(--well); }
+.brand-preview-none { display: flex; align-items: center; justify-content: center; font-size: 0.85rem; }
+.brand-sheet { margin: 0; }
+.brand-sheet-image { display: block; max-width: 100%; height: auto; border: 1px solid var(--hair); border-radius: 8px; background: var(--paper); }
+.brand-lines > summary { min-height: 2.75rem; display: list-item; padding-top: 0.6rem; }
+.brand-lines ol, .brand-lines ul { margin: 0.4rem 0 0; padding-left: 1.2rem; }
+.brand-code { margin: 0.4rem 0 0; padding: 0.75rem; max-height: 24rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; border: 1px solid var(--hair); border-radius: 8px; background: var(--well); font-size: 0.82rem; }
+.brand-text { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85rem; line-height: 1.5; min-height: 10rem; }
+.brand-part > * + *, .brand-task > * + * { margin-top: 0.6rem; }
+
+.brand-table { max-width: 100%; overflow-x: auto; border-radius: var(--radius); }
+.brand-table:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+@media (max-width:52rem) {
+  .brand-colours { grid-template-columns: 1fr; }
+  body:has(#brands:not([hidden])) .toolbar-actions { flex-wrap: wrap; }
+}

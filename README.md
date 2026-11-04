@@ -24,6 +24,15 @@ Use any studio independently, or install the suite. Opening a studio starts no
 assistant job. The applications run locally; assistant requests and explicitly
 chosen research, Google or team operations use their respective services.
 
+## Brand packs
+
+Open **Brands** to create or update the packs and icon libraries used by the studios.
+It uses the repository saved under **Shared settings → Brand → Brands repository**.
+Sources, extraction and review stay in a working copy until **Save** checks, seals and
+commits that one brand. **Push** is a separate action with the exact destination and
+saved commits shown. Opening the list starts no assistant and fetches no repository.
+See [Brands](docs/shared-setup.md#brands).
+
 ## Get started
 
 ### 1. Install

@@ -279,6 +279,17 @@ elif [[ "${1:-full}" == backlog-spending-acceptance ]]; then
     (cd studios/presentation && PYTHONPATH=tests "$python" -m unittest test_runner_page.CapabilityTests test_runner_page.RuleTests -v)
     bash scripts/ci/acceptance.sh "$python" "$results_dir/checks"
   } 2>&1 | tee "$results_dir/tests.log"
+elif [[ "${1:-full}" == backlog-brands ]]; then
+  export INFOGRAPHIC_STUDIO_TEST_RENDERER="$("$python" scripts/ci/infographic-renderer.py --output "$work/graphics" --cache "$work/graphics-cache")"
+  mkdir -p "$work/browser"
+  cp studios/infographic/tests/ui/package*.json "$work/browser/"
+  touch "$work/npm-user.conf" "$work/npm-global.conf"
+  env HOME="$work/browser-home" NPM_CONFIG_USERCONFIG="$work/npm-user.conf" NPM_CONFIG_GLOBALCONFIG="$work/npm-global.conf" npm ci --prefix "$work/browser" --ignore-scripts --no-audit --no-fund > "$results_dir/browser-tools.log" 2>&1
+  export NODE_PATH="$work/browser/node_modules" PYTHON="$python" BRANDS_UI_RESULTS="$results_dir/brands-ui" HOME_LAUNCHPAD_RESULTS="$results_dir/home-ui" SPENDING_UI_RESULTS="$results_dir/spending-ui"
+  node tests/brands_browser.cjs 2>&1 | tee "$results_dir/brands-browser.log"
+  node tests/home_launchpad.cjs 2>&1 | tee "$results_dir/home-browser.log"
+  node tests/spending_browser.cjs 2>&1 | tee "$results_dir/spending-browser.log"
+  bash scripts/ci/check.sh "$python" "$results_dir/checks" 2>&1 | tee "$results_dir/tests.log"
 elif [[ "${1:-full}" == backlog-spending-final ]]; then
   # The complete shared, Infographic, Blog and Presentation suites completed.
   # Only the exhaustive API route lists changed; cover page auth/methods again,
