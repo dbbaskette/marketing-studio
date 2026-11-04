@@ -9,7 +9,8 @@ Authorized by the audit roadmap and the instruction to implement, push, PR and m
 3. Convert New deck and New training into three actual pages. Back/Next preserve all fields; validate the current page and return to the first invalid page at final confirmation. Keep advanced controls disclosed. The last page names the next operation, selected outputs and the applicable assistant/limits. Existing saved-run and direct deck routes retain their behavior.
 4. Align creation sheets and nested pickers through shared tokens: centered, dimmed and opaque forms, consistent width/edges/actions, a visible footer and one primary action. Preserve focus trapping, dismissal and nested-sheet return. Reading and form content remains opaque.
 5. Render Library upload rows immediately, update them per file, announce completed/total and current filename. Keep the existing serial uploads and stable operation IDs. Retain failed files for failed-only retry, with successful results preserved. State clearly that navigation waits while an upload is active.
-6. Put selected slide/material content early. Keep actionable blockers visible; disclose optional warnings, delivery explanation and repeated readiness instructions with visible counts. Preserve Training Studio's existing compact toolbar and tabs. Check useful reading content within the first 390×844 screen.
+6. Give the shared native server an explicit bounded listen backlog for simultaneous initial script requests. Python-version defaults must not drop an asset burst on a slower machine.
+7. Put selected slide/material content early. Keep actionable blockers visible; disclose optional warnings, delivery explanation and repeated readiness instructions with visible counts. Preserve Training Studio's existing compact toolbar and tabs. Check useful reading content within the first 390×844 screen.
 
 ## Transition matrix
 

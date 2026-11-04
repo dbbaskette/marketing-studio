@@ -159,6 +159,10 @@ def announce(desk, to_a_person: bool, opener=show) -> dict:
 
 class Server(ThreadingHTTPServer):
     daemon_threads = True
+    # Browsers request the shared kits together. Python 3.11–3.14 differ in their
+    # default listen backlog; five pending connections can reset an initial asset
+    # burst on a slower machine, leaving the page without its controls.
+    request_queue_size = 32
 
     def handle_error(self, request, client_address):
         """A reader that hangs up early gets no traceback: the command's output stays one line."""
