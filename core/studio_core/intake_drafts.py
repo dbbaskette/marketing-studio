@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import secrets
+from contextlib import contextmanager
 
 from .process_lock import ProcessRLock
 
@@ -101,3 +102,24 @@ def slide_review(data, scope, sent):
     except Conflict:
         raise Conflict('These corrections changed in another tab. Copy your unsaved text, then reload this review. No design work started.') from None
     return {'revision': held['revision']} if sent.get('action') == 'save' else held
+
+
+@contextmanager
+def slide_decision(data, scope, sent):
+    """Bind a decision to the acknowledged private corrections through its commit."""
+    file = path(data, {'kind': 'slide-text-review', 'work': scope})
+    file.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    if file.parent.is_symlink():
+        raise ValueError('The intake folder must be private to this studio.')
+    with ProcessRLock(lambda: file.with_suffix('.lock')):
+        held = read(file)
+        draft = held['draft']
+        expected = sent.get('draft_revision')
+        if (draft is not None or expected is not None) and (
+                type(expected) is not int or expected != held['revision']):
+            raise Conflict('These corrections changed in another tab. Reopen the review before deciding. No design work started.')
+        if draft is not None and (draft.get('basis') != sent.get('seen')
+                or draft.get('edits') != sent.get('edited')
+                or sent.get('decision') == 'revise' and (draft.get('note') or '').strip() != (sent.get('note') or '').strip()):
+            raise Conflict('Read and save the displayed corrections before deciding. No design work started.')
+        yield

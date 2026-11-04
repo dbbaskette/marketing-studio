@@ -553,7 +553,7 @@ function snapshot() {
       if (control.getAttribute('aria-hidden') === 'true') continue;
       const labelled = document.body.querySelectorAll('label')
         .some((label) => label.htmlFor && label.htmlFor === control.id && name(label))
-        || Boolean(control.tagName === 'INPUT' && name(control));
+        || Boolean(labelOf(control)?.textContent.trim());
       if (!labelled && !control.getAttribute('aria-label')) unnamed.push(control.tagName);
     } else if (!name(control)) {
       unnamed.push(control.tagName + '.' + control.className);
@@ -805,7 +805,7 @@ async function app(file) {
     // A plan with {narrow: true} is a phone: the page's width queries match.
     matchMedia: (query) => ({ matches: Boolean(plan.narrow) && /max-width/.test(query) }),
     setTimeout: (callback, delay) => {
-      if (callback.name === 'refresh') report.paces.push(delay);
+      if ((callback.name === 'refresh' || /refresh\(true\)/.test(String(callback)))) report.paces.push(delay);
       return timers.push(callback);
     },
     clearTimeout() {},
@@ -816,6 +816,12 @@ async function app(file) {
     fetch: async (address, options) => {
       const method = (options && options.method) || 'GET';
       const key = method + ' ' + address.split('?')[0];
+      // Older page scenarios describe authoritative responses, not idle probes.
+      // Keep those reads live; scenarios testing probes can supply their own signal.
+      if (key === 'GET /api/updates' && !answers[key]) {
+        return {ok: true, status: 200,
+          json: async () => ({revision: 'scripted-active', complete: true, active: true})};
+      }
       report.requests.push({ method, address, keepalive: !!options?.keepalive, headers: (options && options.headers) || {},
         body: options && options.body ? JSON.parse(options.body) : null });
       // An answer can be kept for one address, query and all, or for every query of it.
@@ -926,14 +932,14 @@ async function app(file) {
         held.dispatch('change', { target: held });
       }
       if (step.see !== undefined) see(step.see);
-      if (step.poll) await timers.filter((timer) => timer.name === 'refresh').pop()();
+      if (step.poll) await timers.filter((timer) => (timer.name === 'refresh' || /refresh\(true\)/.test(String(timer)))).pop()();
       if (step.timer) {
         const tick = timers.filter((timer) => timer && (timer.name === step.timer
           || step.timer === 'save' && /k.save\(held, part\)/.test(String(timer)))).pop()();
         if (!step.background) await tick;
       }
       if (step.polls) {
-        const refresh = timers.filter((timer) => timer.name === 'refresh').pop();
+        const refresh = timers.filter((timer) => (timer.name === 'refresh' || /refresh\(true\)/.test(String(timer)))).pop();
         await Promise.all(Array.from({ length: step.polls }, () => refresh()));
       }
       if (step.beforeunload) {

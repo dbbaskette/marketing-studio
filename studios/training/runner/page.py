@@ -1369,9 +1369,16 @@ class RunnerPage(desk.Page):
         if decision == 'revise' and not (note or '').strip():
             raise desk.Refusal(HTTPStatus.BAD_REQUEST, 'Say what should change.')
         self.run(path)
-        return self.engine.outline(path, level or None, decision, note,
-                                   desk.text(sent, 'seen', False),
-                                   desk.text(sent, 'design', False), sent.get('edited'))
+        from studio_core import intake_drafts
+        scope = {'workspace': gitstate.workspace_identity(self.engine.workspace),
+                 'project': str(self.engine.driven(path)), 'level': level or None}
+        try:
+            with intake_drafts.slide_decision(home.data_root(), scope, sent):
+                return self.engine.outline(path, level or None, decision, note,
+                                           desk.text(sent, 'seen', False),
+                                           desk.text(sent, 'design', False), sent.get('edited'))
+        except intake_drafts.Conflict as failure:
+            raise desk.Refusal(HTTPStatus.CONFLICT, str(failure)) from None
 
     def look(self, sent: dict) -> dict:
         """Record the look the person chose for a deck from the brand's samples, with their

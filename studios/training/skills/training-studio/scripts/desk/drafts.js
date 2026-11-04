@@ -1350,6 +1350,16 @@ async function drawDesk(fresh) {
     const found = await ask('drafts', { path });
     if (turn !== view.turn) return;
     held.view = found;
+    if (Object.hasOwn(held, 'reviewTextLevel')) {
+      const level = held.reviewTextLevel;
+      const deck = list(found.cards).find(one => one.kind === 'deck' && (one.level || '') === level);
+      if (deck) {
+        held.level = level;
+        held.sources = false;
+        held.material[level] = deck.name;
+      }
+      delete held.reviewTextLevel;
+    }
     await loadDeskMaterials(path, held, found);
     if (turn !== view.turn) return;
   } catch (failure) {
@@ -2748,6 +2758,7 @@ function slideTextReview(outline, held) {
     onDecision:async(decision,note,edited)=>{
       const result=await send('outline',{path,level:outline.level||null,
         decision:decision==='changes'?'revise':'approve',note,seen:outline.sha256,
+        draft_revision:state.draft.revision,
         ...(edited?{edited}:{})});
       if(view.turn!==turn)return;
       state.note='';state.edits=null;view.run=result;await drawDesk(true);

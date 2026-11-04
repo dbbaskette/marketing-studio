@@ -122,6 +122,23 @@ class ConcurrentLocalCorrections(DeckCase):
 
 
 class PrivateTextDrafts(PageCase):
+    def test_approval_cannot_bypass_saved_or_newer_corrections(self):
+        from copy import deepcopy
+        from runner import pipeline
+        self.engine.content_first = True
+        root = self.begin(flow='desk')
+        shown = self.view(root)['outline']
+        edited = deepcopy(shown['slides']); edited[0]['title'] = 'Acknowledged correction'
+        saved = self.post('slide-text-draft', {'path': str(root), 'action': 'save',
+            'expected': 0, 'patch': {'basis': shown['sha256'], 'edits': edited}})
+        decision = {'path': str(root), 'decision': 'approve', 'seen': shown['sha256']}
+        self.post('outline', decision, expect=409)
+        self.post('outline', {**decision, 'draft_revision': saved['revision']}, expect=409)
+        self.post('outline', {**decision, 'edited': edited, 'draft_revision': 0}, expect=409)
+        self.assertFalse(self.workers.of('section'))
+        self.post('outline', {**decision, 'edited': edited, 'draft_revision': saved['revision']})
+        self.assertEqual(pipeline.outline_of(root, None)['slides'][0]['title'], edited[0]['title'])
+
     def test_saved_corrections_are_private_revision_checked_and_start_no_pipeline_work(self):
         from copy import deepcopy
         from runner import pipeline

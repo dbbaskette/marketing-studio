@@ -7493,6 +7493,15 @@ function paintOutline(fresh) {
   drawSheet();
 }
 
+// Old links, Home actions and notifications all enter here. Modern text must use
+// the durable correction checkpoint, even when reached through an older route.
+function openSlideTextReview(run) {
+  if (run?.flow !== 'desk' || !run.outline?.content_first || !run.outline.waiting) return false;
+  deskHeld(view.path).reviewTextLevel = run.outline.level || '';
+  show('run', { path: view.path });
+  return true;
+}
+
 async function drawOutline(fresh) {
   const turn = view.turn;
   if (fresh) {
@@ -7502,6 +7511,7 @@ async function drawOutline(fresh) {
   try {
     const run = await ask('run', { path: view.path });
     if (turn !== view.turn) return;
+    if (openSlideTextReview(run)) return;
     const held = view.run && view.run.outline;
     if (fresh || !held) {
       view.run = run;
@@ -7540,6 +7550,7 @@ function nextNeed() {
 
 async function decideOutline(decision, note, problem, pressed) {
   if (view.busy) return;
+  if (openSlideTextReview(view.run)) return;
   if (view.newer) {
     // Nothing is decided about words that were not read. Refused here, before it is sent.
     say(problem, 'This changed while you had it open. Cancel, and read the new version '
