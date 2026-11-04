@@ -34,8 +34,8 @@ const StudioResearch = (() => {
       try { await held.loadNote();held.state={basis:row.preview.basis,note:entry.input.value};await held.keep(held.state); }
       finally { save.disabled=false;held.notify(); }
     },'research-queue-save-'+row.id);
-    entry.input.addEventListener('input',()=>{held.state.note=entry.input.value;status.textContent='Note is not queued until you save.';});
-    const show=()=>{status.textContent=held.problem||((held.writing||held.pending)?'Saving queued note…':held.saved?'Queued privately. Evidence and scope are unchanged.':'No queued note.');if(held.saved?.basis&&held.saved.basis!==row.preview.basis)status.textContent+=' This note belongs to an earlier section revision; review it before applying a change.';};
+    entry.input.addEventListener('input',()=>{held.state.note=entry.input.value;show();});
+    const show=()=>{const dirty=held.state.note!==(held.saved?.note||'')||(!!held.saved&&held.state.basis!==held.saved.basis);status.textContent=held.problem||((held.writing||held.pending)?'Saving queued note…':dirty?'Note is not queued until you save.':held.saved?'Queued privately. Evidence and scope are unchanged.':'No queued note.');if(held.saved?.basis&&held.saved.basis!==row.preview.basis)status.textContent+=' This note belongs to an earlier section revision; review it before applying a change.';};
     held.notify=show;
     const copy=button('Copy note for research refresh',async()=>{
       try { if(typeof navigator!=='undefined'&&navigator.clipboard){await navigator.clipboard.writeText(entry.input.value);status.textContent='Copied. Use the research refresh impact preview to apply an explicit change.';}else{entry.input.focus();entry.input.select?.();status.textContent='Copy the selected note, then use the research refresh impact preview.';} }
