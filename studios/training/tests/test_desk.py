@@ -4427,7 +4427,9 @@ class RunnerScreenTests(ScriptedPage, PageCase):
     def test_254_home_says_what_a_new_training_makes_by_itself(self):
         result = self.run_page(self.answers(), [{'snapshot': 'home'}, {'click': 'New training'},
                                                 {'snapshot': 'form'}])
-        self.assertIn('writes the blueprint and the learner guide on its own, with a brief, '
+        self.assertIn('proposes an outline with one Quick scan. Edit and approve it before '
+                      'detailed research starts.', result['snapshots']['home']['text'])
+        self.assertIn('writes the blueprint and the learner guide, with a brief, '
                       'practice scenarios or a deck when you choose them',
                       result['snapshots']['home']['text'])
         self.assertIn('Learner guide', result['snapshots']['form']['intakeTicked'])
@@ -4482,7 +4484,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         three = shots['three']
         self.assertEqual(three['filled'], ['Start'])
         self.assertNotIn('Back a step', three['buttons'])
-        for shown in ('Next: research, then a teaching plan for you to review.', 'Claude Code',
+        for shown in ('Next: one Quick scan, then your outline approval before detailed research and writing.', 'Claude Code',
                       'A step may take up to 15 minutes.',
                       'Claude Code, with the model it chooses itself.'):
             self.assertIn(shown, three['sheet'])

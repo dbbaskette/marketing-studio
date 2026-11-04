@@ -10,6 +10,7 @@ DESCRIPTION = re.compile(r'^description:\s*(.+)$', re.MULTILINE)
 BUDGET = {'description': 100, 'skill': 1000, 'reference': 1000, 'example': 1200}
 MODES = ('roleplay', 'pitch', 'tutor', 'questionnaire')
 STAGE_TEMPLATES = {
+    'scan': ('assets/examples/provisional-outline.json',),
     'research-plan': (),
     'research-handoff': (),
     'blueprint': ('assets/examples/blueprint.md',),
@@ -23,6 +24,7 @@ REQUIRED = (
     'VERSION',
     'agents/openai.yaml',
     'assets/profiles/yoodli.json',
+    'assets/examples/provisional-outline.json',
     'assets/examples/blueprint.md',
     'assets/examples/document.md',
     'assets/examples/competitive-brief.md',
@@ -101,7 +103,8 @@ def loading_sets() -> dict[str, tuple[list[str], int]]:
 def measured(skill: Path) -> dict[str, int]:
     """Estimated tokens for every guidance and example file that exists."""
     files = [skill / 'SKILL.md', *sorted((skill / 'references').rglob('*.md')),
-             *sorted((skill / 'assets' / 'examples').glob('*.md'))]
+             *sorted((skill / 'assets' / 'examples').glob('*.md')),
+             *sorted((skill / 'assets' / 'examples').glob('*.json'))]
     return {path.relative_to(skill).as_posix(): estimate(path.read_text(encoding='utf-8'))
             for path in files if path.is_file()}
 

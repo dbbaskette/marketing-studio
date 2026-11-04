@@ -359,3 +359,24 @@ schema 2, and Infographic Studio's private research request schema 1. None of
 these changes a saved serial run on resume. Source-backed Training Studio and
 Presentation Studio starts save a private receipt before dispatch, so retrying
 the same form after a lost reply reopens the existing item.
+
+
+## Training Studio outline-first scope
+
+New Training Studio runner desks pin an outline-first flow. One Quick scan uses at most
+48,000 characters of supplied excerpts, zero external searches, 180 seconds and $0.25
+within existing limits. Its structured output is provisional, never accepted evidence.
+Timeout/stop preserves an editable outline or an explicitly incomplete starting outline.
+
+The person saves or approves local section/objective/question edits against the exact
+intake and source basis. Only approval writes the research plan, with one item per retained
+section; additional typed questions stay visible and are included with the first retained
+section. Existing collection grouping caps concurrent areas at three and keeps the saved
+round limits. The task asks for a report organized by approved sections. Combining and
+independent review still check the complete dossier under the pinned 1.1.0 contract.
+Teaching-plan/material workers receive the approved scope with the checked research.
+
+Old records retain their flow. Explicit adoption is limited to supported stopped runner
+desks before any report or teaching plan; it preserves the private unfinished case as
+history and starts no work until Resume training. Presentation Studio's corresponding change and
+reusable independently checked sections are later work. No companion protocol is changed.

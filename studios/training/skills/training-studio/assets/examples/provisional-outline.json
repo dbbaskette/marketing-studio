@@ -1,0 +1,37 @@
+{
+  "schema": 1,
+  "overview": "A provisional overview of the selected topic; research must establish facts.",
+  "key_terms": [],
+  "coverage": [
+    {
+      "source": "Selected document name",
+      "covers": "Provisional coverage, including any missing excerpt."
+    }
+  ],
+  "gaps": [
+    "What still needs checked evidence."
+  ],
+  "sections": [
+    {
+      "id": "section-foundations",
+      "title": "Foundations",
+      "objectives": [
+        "Explain the core ideas."
+      ],
+      "questions": [
+        "Which concepts and prerequisites matter?"
+      ]
+    },
+    {
+      "id": "section-application",
+      "title": "Practical application",
+      "objectives": [
+        "Apply the ideas within their limits."
+      ],
+      "questions": [
+        "Which worked examples and limits support the learning goal?"
+      ]
+    }
+  ],
+  "personal_questions": []
+}

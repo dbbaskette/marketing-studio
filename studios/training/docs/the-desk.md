@@ -18,7 +18,34 @@ New training. **Discard draft** asks once, then removes only the unfinished form
 Captured sources, Library documents and existing trainings are kept. A save conflict
 between tabs asks you to preserve your unsaved answers and reload the saved version.
 
-## Check the topics, then build
+## Approve the outline, then research and build
+
+New runner trainings first run one bounded **Quick scan**, with no external searches.
+The scan gets short excerpts and proposes sections, objectives and research questions.
+It is provisional and supplies no teaching evidence. At **Review the training outline**,
+edit a title, put one objective or question per line, remove a section, or add your own.
+Questions typed on the form remain separately editable. **Save outline** keeps edits
+without a model job; reload restores the saved version. Unsaved edits are marked and
+protected by a browser navigation warning. Conflicting inputs never overwrite your edits.
+
+**Approve outline & research** approves that exact edited scope. Only retained sections
+become research items, with your additional questions included. Up to three areas run in
+parallel within the saved source, round and spending limits. Combining and an independent
+check still cover the whole dossier. The teaching plans and selected materials then use
+your approved scope and that checked research, with no second topics approval. Slide text
+approval and Mark ready keep their existing roles.
+
+A scan time cap leaves an editable incomplete outline, without escalation or an automatic
+second author. Stop keeps a completed or fallback outline; Resume training returns to its review.
+The Activity log records the scan and its model/effort separately from deeper work.
+
+Older saved trainings keep the following researched-topics flow. A stopped runner desk
+before a research report or teaching plan can choose **Plan before research**. Its preview
+shows what is kept and replaced. Explicit adoption preserves sources, spending, activity
+and the unfinished private research case as history; Resume training starts the scan. It makes no
+claim that unfinished evidence is independently checked. Past-research work stays as saved.
+
+## Older researched-topics flow
 
 New trainings first research and plan what to teach. **Here’s what this training will
 cover** lists the topics, order, depth and timing across all selected levels. Expand

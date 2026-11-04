@@ -1919,8 +1919,9 @@ function rows(title, trainings, build, className) {
 }
 
 // How a training is started, as the invitation and the Start a training card say it.
-const START_SAYS = 'Say what it is about and who it is for. Training Studio does the '
-  + 'research and writes the blueprint and the learner guide on its own, with a brief, '
+const START_SAYS = 'Say what it is about and who it is for. Training Studio proposes an '
+  + 'outline with one Quick scan. Edit and approve it before detailed research starts. '
+  + 'It then writes the blueprint and the learner guide, with a brief, '
   + 'practice scenarios or a deck when you choose them, and puts each on its desk for you to '
   + 'edit and mark ready.';
 const ASK_SAYS = 'Make a folder for your topic, start your assistant in that folder, and ask '
@@ -9459,6 +9460,7 @@ function begin() {
     if (view.screen === 'run' && view.path && typeof leaveDesk === 'function') leaveDesk(view.path);
   });
   window.addEventListener('beforeunload', (event) => {
+    if(view.screen === 'run' && DESK.held[view.path]?.outlineDirty){event.preventDefault();event.returnValue='';}
     if (view.screen === 'run' && DESK.held[view.path] && pendingDeskEdits(view.path).length
         && !keepDeskRecovery(view.path)) { event.preventDefault(); event.returnValue = ''; }
   });

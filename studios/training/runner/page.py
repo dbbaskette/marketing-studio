@@ -262,12 +262,12 @@ SETTINGS_SOURCES = f'{SETTINGS}/sources'   # a source draft holding what researc
 MODELS = '/api/training-models'   # Use the current model settings: what changes, and its save
 CARD = f'{DRAFTS}/card'   # one card with its parts, as the shared kit reads it
 PART_LIMIT = 1_000_000   # bytes: one part of the largest size, as JSON
-READS = ('/api/intake-draft', '/api/capabilities', '/api/setup', '/api/agents', '/api/models', '/api/run',
+READS = ('/api/outline-flow', '/api/intake-draft', '/api/capabilities', '/api/setup', '/api/agents', '/api/models', '/api/run',
          '/api/activity', SETTINGS, MODELS,
          '/api/download', '/api/slide', '/api/status', '/api/published', '/api/delete', '/api/deck-draft-ticket',
          DRAFTS, CARD, VERSIONS, f'{DRAFTS}/update-preview', f'{DRAFTS}/slide-versions', f'{DRAFTS}/source-price',
          f'{DRAFTS}/proofread', f'{DRAFTS}/migration-preview', f'{DRAFTS}/doc-preview')
-WRITES = ('/api/intake-draft', '/api/training-plan', '/api/research-sources', SETTINGS, SETTINGS_SOURCES, MODELS, '/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/answer',
+WRITES = ('/api/outline-flow', '/api/intake-draft', '/api/training-plan', '/api/research-sources', SETTINGS, SETTINGS_SOURCES, MODELS, '/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/answer',
           '/api/documents', '/api/copies', '/api/share', '/api/outline', '/api/review', '/api/drive',
           '/api/publish', '/api/adopt', '/api/fetch', '/api/delete', '/api/companions',
           '/api/asset', '/api/upgrade', '/api/restart', '/api/versions', '/api/redesign',
@@ -382,6 +382,9 @@ class RunnerPage(desk.Page):
             except ValueError as error:
                 raise desk.Refusal(HTTPStatus.BAD_REQUEST, str(error)) from None
         self.engine.seen()
+        if path == '/api/outline-flow':
+            from runner import outline_first
+            return desk.as_json(HTTPStatus.OK, outline_first.adoption(self.engine, one('path')))
         if path == '/api/download':
             def given(name):
                 try:
@@ -640,13 +643,13 @@ class RunnerPage(desk.Page):
         desk, by whoever holds the key. Anyone else's request there is held to the desk's
         limit, so it is refused unread."""
         address = target.partition('?')[0]
-        if address == '/api/intake-draft':
+        if address in ('/api/intake-draft','/api/training-plan'):
             try:
                 self.check_token(headers)
             except desk.Refusal:
                 return super().body_limit(target, headers)
             from studio_core.intake_drafts import LIMIT
-            return LIMIT
+            return 512_000 if address == '/api/training-plan' else LIMIT
         if address in ('/api/research-sources', DOCUMENTS, ASSET, f'{DRAFTS}/save', f'{DRAFTS}/source'):
             try:
                 self.check_token(headers)
@@ -1228,11 +1231,15 @@ class RunnerPage(desk.Page):
                 desk.text(sent, 'path'), desk.text(sent, 'expected'),
                 desk.text(sent, 'decision'), desk.text(sent, 'target', False),
                 desk.text(sent, 'note', False), self.requests(sent), looks))
+        if path == '/api/outline-flow':
+            from runner import outline_first
+            return desk.as_json(HTTPStatus.OK, outline_first.adoption(self.engine,
+                desk.text(sent, 'path'), desk.text(sent, 'expected')))
         if path == '/api/training-plan':
             from runner import training_plan
             return desk.as_json(HTTPStatus.OK, training_plan.decide(
                 self.engine, desk.text(sent, 'path'), desk.text(sent, 'expected'),
-                desk.text(sent, 'decision'), desk.text(sent, 'note', False), sent.get('levels')))
+                desk.text(sent, 'decision'), desk.text(sent, 'note', False), sent.get('levels'), sent.get('outline')))
         if path == '/api/outline':
             return desk.as_json(HTTPStatus.OK, self.outline(sent))
         if path == '/api/look':

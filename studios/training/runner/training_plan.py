@@ -1,9 +1,10 @@
 """One person decision on researched topics, then automatic material production.
 
-Uses existing checked blueprints; no sample lesson, new research format or extra
-author job. Only new schema-6 runner desks opt in. Older runs keep their gates.
+Schema-6 desks review researched topics. Schema-7 desks review a provisional outline
+before research. Each record keeps its chosen gate; there is no sample lesson.
 """
 import re
+from runner import outline_first
 
 import checks
 import workspace
@@ -16,11 +17,16 @@ STEP = 'review:training-plan'
 
 def enabled(record):
     value = record.get('training_plan')
-    if record.get('schema') != RECORD_SCHEMA or not isinstance(value, dict):
+    if record.get('schema') not in (RECORD_SCHEMA, outline_first.RECORD_SCHEMA) or not isinstance(value, dict):
+        return False
+    if ((record['schema'] == outline_first.RECORD_SCHEMA and not outline_first.enabled(record))
+            or (record['schema'] == RECORD_SCHEMA and 'outline_first' in record)):
         return False
     if type(value.get('schema')) is not int or value['schema'] != 1:
         return False
     revision, approval = value.get('revision', 0), value.get('approved')
+    if 'outline_first' in record and not outline_first.valid_pin(record['outline_first']):
+        return False
     return (type(revision) is int and revision >= 0 and (approval is None or
         isinstance(approval, dict) and isinstance(approval.get('signature'), str)
         and re.fullmatch(r'[0-9a-f]{64}', approval['signature']) is not None
@@ -50,6 +56,8 @@ def file(root, relative):
 
 
 def signature(root, session, record):
+    if outline_first.enabled(record):
+        return outline_first.signature(root, session, record)
     files = {'intake': workspace.sha256_file(file(root, 'intake.md'))}
     files.update({name: workspace.sha256_file(file(root, workspace.artifact(root, session, name)['file']))
                   for name in names(session)})
@@ -60,6 +68,16 @@ def signature(root, session, record):
 def group(root, session, record, listed, done):
     from runner import pipeline
     if not enabled(record):
+        return listed, done
+    if outline_first.enabled(record):
+        at = next((i for i, step in enumerate(listed) if step.id == 'research-plan'), 0)
+        scan = pipeline.Step('scan', 'agent', 'Quick scan for the teaching outline', 'Scanning the supplied scope', 'research-plan')
+        gate = pipeline.Step(STEP, 'review', 'Review the training outline', 'Waiting for outline approval before research', 'research-plan')
+        listed = (*listed[:at], scan, gate, *listed[at:])
+        if record['outline_first'].get('outline') is not None:
+            done = frozenset({*done, 'scan'})
+        if (record['training_plan'].get('approved') or {}).get('signature') == signature(root, session, record):
+            done = frozenset({*done, STEP})
         return listed, done
     positions = [i + 1 for i, step in enumerate(listed) if step.stage == 'blueprint']
     if not positions:
@@ -80,6 +98,8 @@ def clean(text):
 def view(root, found, record):
     if found.next.kind != 'review' or found.next.step.id != STEP:
         return None
+    if outline_first.enabled(record):
+        return outline_first.view(root, found, record)
     levels = []
     for name in names(found.session):
         text = file(root, workspace.artifact(root, found.session, name)['file']).read_text()
@@ -104,9 +124,11 @@ def view(root, found, record):
     return {'expected': signature(root, found.session, record), 'levels': levels}
 
 
-def decide(engine, path, expected, decision, note=None, levels=None):
+def decide(engine, path, expected, decision, note=None, levels=None, outline=None):
     import home
     root = engine._held(path)
+    if outline_first.enabled(engine._load(root)):
+        return outline_first.decide(engine, root, expected, decision, outline)
     if decision not in ('approve', 'changes'):
         raise WorkspaceError('Choose Build the training or Ask for changes.')
     note = (note or '').strip()
