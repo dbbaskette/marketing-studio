@@ -239,7 +239,7 @@ elif [[ "${1:-full}" == audit-week6-finish ]]; then
     (cd studios/training && bash scripts/ci/check.sh "$python")
     bash scripts/ci/acceptance.sh "$python" "$results_dir/checks"
   } 2>&1 | tee "$results_dir/tests.log"
-elif [[ "${1:-full}" == audit-week7-browser ]]; then
+elif [[ "${1:-full}" == audit-week7-browser || "${1:-full}" == audit-week7-full ]]; then
   export INFOGRAPHIC_STUDIO_TEST_RENDERER="$("$python" scripts/ci/infographic-renderer.py --output "$work/recovery-graphics" --cache "$work/recovery-cache")"
   mkdir -p "$work/recovery-browser"
   cp studios/infographic/tests/ui/package*.json "$work/recovery-browser/"
@@ -248,6 +248,10 @@ elif [[ "${1:-full}" == audit-week7-browser ]]; then
   export NODE_PATH="$work/recovery-browser/node_modules" PYTHON="$python" INFOGRAPHIC_UI_RESULTS="$results_dir/recovery-ui" HOME_LAUNCHPAD_RESULTS="$results_dir/home-ui"
   node tests/home_launchpad.cjs 2>&1 | tee "$results_dir/home-browser.log"
   node studios/infographic/tests/ui/build-recovery.cjs 2>&1 | tee "$results_dir/recovery-browser.log"
+  if [[ "${1:-full}" == audit-week7-full ]]; then
+    "$python" scripts/workflow_diagrams.py --check
+    bash scripts/ci/check.sh "$python" "$results_dir/checks" 2>&1 | tee "$results_dir/tests.log"
+  fi
 elif [[ "${1:-full}" == audit-week3-final ]]; then
   # The complete shared suite and final outline browser passed on unchanged
   # application flow. Repeat all native tests after the copy assertion and JSON

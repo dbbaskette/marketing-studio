@@ -4,6 +4,7 @@ import hashlib
 import json
 from pathlib import Path
 import secrets
+import time
 from studio_core import research_contract as rc, research_session as session, research_sections as sections
 
 
@@ -152,17 +153,40 @@ def native_sources(engine, root, record, product):
 
 def native(engine, root, record, product, supplied=None):
     if not sections.enabled(record): return None
-    sources = native_sources(engine, root, record, product)
+    case = session.case_for(root)
+    marker = case / '.harness-research/studio-inputs.json'
+    if not marker.is_file(): return None  # No capture reads before the approved scan/research.
+    run = engine._run(root)
+    if getattr(run, 'busy', False) or getattr(run, 'workers', None):
+        if supplied is not None: raise ValueError('Wait for the current work to finish before changing research.')
+        return None
     if product == 'training':
         from runner import pipeline
-        questions = json.loads((Path(root) / pipeline.PLAN).read_bytes()).get('items') or [] if (Path(root) / pipeline.PLAN).is_file() else []
         import workspace
+        plan = Path(root) / pipeline.PLAN
+        questions = json.loads(plan.read_bytes()).get('items') or [] if plan.is_file() else []
         outputs = [{'name': name, 'depends_on': [q['id'] for q in questions], 'scope': 'Dependent sections after changed findings are checked'} for name in workspace.artifact_names(Path(root), workspace.load(root))]
     else:
-        path = Path(root) / 'research/plan.json'
-        questions = json.loads(path.read_bytes()).get('items') or [] if path.is_file() else []
+        plan = Path(root) / 'research/plan.json'
+        questions = json.loads(plan.read_bytes()).get('items') or [] if plan.is_file() else []
         outputs = [{'name': 'Slide text and dependent slide sections', 'depends_on': [q['id'] for q in questions], 'scope': 'Changed content and adjacent inspection scope'}, {'name': 'Exact final deck consistency', 'depends_on': [q['id'] for q in questions], 'scope': 'Required for every new delivered revision'}]
-    return preview(root, record, sources, questions, outputs) if supplied is None else confirm(root, record, sources, questions, supplied, outputs)
+    from runner import documents
+    kept = getattr(engine, 'documents', None) or documents
+    key = sections.fingerprint([str(case), marker.stat().st_mtime_ns, global_identity(record),
+        record.get('documents'), record.get('research_inputs'), kept.listed(root), questions, outputs])
+    cache = getattr(engine, '_research_impact_cache', {})
+    found = cache.get(str(root))
+    if supplied is None and found and found['key'] == key and time.monotonic() < found['until']:
+        return copy.deepcopy(found['value'])
+    sources = native_sources(engine, root, record, product)
+    if supplied is not None:
+        cache.pop(str(root), None)  # Confirmation always hashes actual bytes again.
+        return confirm(root, record, sources, questions, supplied, outputs)
+    value = preview(root, record, sources, questions, outputs)
+    if len(cache) >= 16 and str(root) not in cache: cache.pop(next(iter(cache)))
+    cache[str(root)] = {'key': key, 'until': time.monotonic() + 30, 'value': copy.deepcopy(value)}
+    engine._research_impact_cache = cache
+    return value
 
 
 def context_current(root, task, intent):

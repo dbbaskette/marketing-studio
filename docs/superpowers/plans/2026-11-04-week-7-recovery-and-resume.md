@@ -29,3 +29,11 @@ Presentation Studio and Training Studio status reads now disable Git's optional
 index refresh. Write commands retain their required locks and saved environment.
 Targeted transport tests cover both cases; the full native gates cover existing
 repository ownership, sync and commit behavior.
+
+Impact previews read no selected capture bytes before an approved research case
+exists or while work runs. Resting views reuse a small 30-second cache keyed by
+current case, record/source metadata and questions. Explicit confirmation always
+rehashes actual source bytes and invalidates the cache before accepting a scope.
+Native tests verify two polls read once and confirmation reads again with zero
+assistant work. Unmanaged external edits can remain visually cached for at most
+30 seconds, but cannot pass confirmation with an outdated expected identity.
