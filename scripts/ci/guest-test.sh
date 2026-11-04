@@ -195,6 +195,16 @@ elif [[ "${1:-full}" == marketing-home ]]; then
   node studios/infographic/tests/ui/home-readiness.cjs 2>&1 | tee "$results_dir/home-readiness-browser.log"
   "$python" -m unittest discover -s tests -v 2>&1 | tee "$results_dir/home-tests.log"
   bash scripts/ci/acceptance.sh "$python" "$results_dir/checks" 2>&1 | tee "$results_dir/home-acceptance.log"
+elif [[ "${1:-full}" == audit-week2-final ]]; then
+  # The shared (958), Infographic Studio (250), Blog Studio (1876) and browser
+  # gates passed on the unchanged application tree. Only old Presentation Studio
+  # screen assertions changed after that run. Finish both complete native suites
+  # and every disposable installer/CLI journey on the final candidate.
+  {
+    (cd studios/presentation && "$python" scripts/ci/run_tests.py --jobs 4 && "$python" skills/presentation-studio/scripts/validate_package.py)
+    (cd studios/training && bash scripts/ci/check.sh "$python")
+    bash scripts/ci/acceptance.sh "$python" "$results_dir/checks"
+  } 2>&1 | tee "$results_dir/tests.log"
 elif [[ "${1:-full}" == audit-week2 || "${1:-full}" == audit-week2-browser ]]; then
   # The Document Library's screen, Add existing work and the Add from library sheet in a
   # real browser at phone width, light/dark and reduced effects, over synthetic data only.
