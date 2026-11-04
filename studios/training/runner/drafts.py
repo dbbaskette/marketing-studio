@@ -1,8 +1,9 @@
 """The training desk in the runner: what tells a desk run from a saved one, and the sentences
 both sides of that line refuse with.
 
-A training started on the desk has `flow: 'desk'` and no review level. New schema-6
-runs wait for a topics review before building the selected materials. New content-first
+A training started on the desk has `flow: 'desk'` and no review level. Schema-6
+runs wait for a researched topics review; schema-7 runs approve an outline before research.
+New content-first
 runs also wait for slide text approval before design. Saved runs keep their recorded
 workflow. The engine carries other gates with desk receipts. The person marks each
 material ready on the desk. A run without `flow` keeps the gates, review screens and
@@ -979,6 +980,8 @@ TEXT_WAITS = ('Needs your text approval: {it}. Read its slide text, then approve
               'for changes. Nothing is designed until you decide.')
 PLAN_WAITS = ('Needs your approval of the topics and teaching plan. Nothing more is built '
               'until you decide.')
+OUTLINE_WAITS = ('Needs your outline approval before detailed research starts. '
+                 'Edit the sections, objectives and questions, then approve the scope.')
 ATTENTION = '{It} needs attention before it can be marked ready.'
 DRAFTS_LEFT = '{drafts} to read and mark ready.'
 ALL_READY = 'Every material is marked ready.'
@@ -1081,6 +1084,10 @@ def standing(engine, root, record: dict | None = None, found=None,
         phase, now, words, said = 'decision', 'needs-you', 'Needs your plan approval', PLAN_WAITS
         nxt = {'kind': 'plan', 'label': 'Review the teaching plan', 'material': None,
                'level': '', 'slide': None}
+        from runner import outline_first
+        if outline_first.enabled(record):
+            words, said = 'Needs your outline approval', OUTLINE_WAITS
+            nxt['label'] = 'Review the training outline'
     elif deciding:
         phase, now, words = 'decision', 'needs-you', 'Needs your text approval'
         said = TEXT_WAITS.format(it=deciding['label'])

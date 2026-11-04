@@ -35,6 +35,10 @@ class OutlineTests(StudioCase):
         root = self.start(research_questions=['What are the failure limits?'])
         shown = self.view(root)
         self.assertEqual(shown['state'], 'waiting')
+        from runner import drafts
+        standing = drafts.standing(self.engine, root)
+        self.assertEqual(standing['sentence'], drafts.OUTLINE_WAITS)
+        self.assertEqual(standing['next']['label'], 'Review the training outline')
         self.assertEqual(len(self.workers.of('scan')), 1)
         self.assertEqual(len(self.workers.jobs), 1)
         self.assertFalse((root / pipeline.PLAN).exists())
