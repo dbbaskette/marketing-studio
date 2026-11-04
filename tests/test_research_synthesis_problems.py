@@ -118,7 +118,7 @@ class PinnedSynthesisTests(unittest.TestCase):
                      'block 1 refs name unknown ID(s): nowhere',
                      'Comparison 1: subjects must be at least two distinct, nonempty names'):
             self.assertIn(part, said)
-        self.assertEqual(problems[-1], rc.SYNTHESIS_TAIL)
+        self.assertTrue(problems[-1].endswith('.\n\n' + rc.SYNTHESIS_TAIL))
         self.assertEqual(said.count(rc.SYNTHESIS_TAIL), 1)
         bad = self.synthesis()
         finding = bad['findings'][0]

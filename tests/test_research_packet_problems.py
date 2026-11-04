@@ -91,7 +91,8 @@ class Case:
         self.assertIn("Source s2 (sources/two.txt): copy its origin exactly as 'https://example.invalid/two'", said)
         self.assertIn("Fact f1: the quote 'Words this source never said.' is not in source s1 exactly", said)
         self.assertEqual(said.count('resubmit within this job'), 1, 'the guidance is said once')
-        self.assertEqual(problems[-1], rc.TAIL)
+        self.assertTrue(problems[-1].endswith('.\n\n' + rc.TAIL), 'after the list, not one of its items')
+        self.assertNotIn(rc.TAIL, problems)
 
 
 class OutlineTests(Case, unittest.TestCase):
@@ -161,7 +162,7 @@ class OutlineTests(Case, unittest.TestCase):
         checked = helper.call_args.args[0]
         self.assertEqual([s['id'] for s in checked['sources']], ['s1'])
         self.assertEqual([f['id'] for f in checked['facts']], ['f1'], 'flawed facts are set aside')
-        self.assertIn('Harness Research refused: y', problems)
+        self.assertEqual(problems[-1], 'Harness Research refused: y\n\n' + rc.TAIL)
 
     def test_a_quote_differing_only_in_spacing_is_shown_as_the_capture_has_it(self):
         bad = self.outlined()
@@ -220,7 +221,39 @@ class OutlineTests(Case, unittest.TestCase):
         self.assertEqual(first['source_outline']['sources'][0]['id'], 's1')
         error = sent[1][0]['validation_error']
         self.assertTrue(error.startswith('- '))
-        self.assert_four([line[2:] for line in error.splitlines()])
+        self.assert_four(error[2:].split('\n- '))
+        self.assertTrue(error.endswith('\n\n' + rc.TAIL))
+
+    def test_a_null_context_is_said_to_be_missing(self):
+        bad = self.outlined()
+        bad['sources'][0]['context'] = None
+        with patch.object(rc, 'refused', return_value=[]):
+            problems = self.check(bad)[0]
+        self.assertIn('Source s1: context is missing: use one of full, partial.', problems[0])
+        self.assertNotIn('None', problems[0])
+
+    def test_bad_gaps_are_listed_beside_every_other_problem(self):
+        for gaps in (['  '], 'not a list', [3]):
+            with self.subTest(gaps=gaps):
+                bad = self.four()
+                bad['gaps'] = gaps
+                with patch.object(rc, 'refused', return_value=[]):
+                    problems = self.check(bad)[0]
+                self.assertEqual(problems[0], 'Return gaps as an array of nonempty strings.')
+                self.assert_four(problems[1:])
+        bad = self.four()
+        bad.update(gaps=[' '], notes='extra')
+        with patch.object(rc, 'refused', return_value=[]):
+            problems = self.check(bad)[0]
+        self.assertIn('Return sources, facts and gaps only', problems[0])
+        self.assertEqual(problems[1], 'Return gaps as an array of nonempty strings.')
+        self.assert_four(problems[2:])
+
+    def test_the_outline_says_which_sources_it_lists(self):
+        self.assertTrue(rc.source_outline(self.captures, self.runtime)['note'].startswith(rc.GIVEN))
+        kept = rc.source_outline(self.captures, self.runtime, rc.KEPT)['note']
+        self.assertTrue(kept.startswith('These are the sources your previous draft cited'))
+        self.assertNotIn('save_source', rc.OUTLINED, 'no tool every studio lacks is named')
 
 
 @unittest.skipUnless(RUNTIME and shutil.which('node'), 'Select the pinned disposable Harness Research runtime.')
@@ -321,7 +354,33 @@ class PinnedHelperTests(Case, unittest.TestCase):
         self.assertIn('Source s2: publisher is missing', problems[0])
         self.assertIn('Harness Research refused this evidence packet', problems[1])
         self.assertIn('gaps', problems[1])
-        self.assertEqual(problems[2:], [rc.TAIL])
+        self.assertEqual(len(problems), 2)
+        self.assertTrue(problems[1].endswith('\n\n' + rc.TAIL))
+
+    def test_a_gap_javascript_keeps_is_kept(self):
+        # U+0085 is space to Python's strip() but not to JavaScript's trim(): the helper keeps it.
+        kept = self.outlined()
+        kept['gaps'] = ['\x85']
+        self.assertEqual(self.check(kept)[0], [])
+        blank = self.outlined()
+        blank['gaps'] = ['\u2028 ']
+        self.assertEqual(self.check(blank)[0], ['Return gaps as an array of nonempty strings.\n\n' + rc.TAIL])
+
+    def test_the_hard_coded_bounds_were_checked_against_this_helper(self):
+        # The text bounds and JavaScript's blank characters are copied from the helper's code.
+        # On a re-pin, run these parity tests against the new helper, then update
+        # rc.LIMITS_VERIFIED_WITH.
+        version = json.loads((Path(RUNTIME) / 'package.json').read_text())['version']
+        self.assertEqual(version, rc.LIMITS_VERIFIED_WITH, 'Re-run the parity tests for this helper version')
+        storage = (Path(RUNTIME) / 'scripts/lib/run-storage.mjs').read_text()
+        model = (Path(RUNTIME) / 'scripts/lib/synthesis-model.mjs').read_text()
+        self.assertIn(f'export function text(value, label, max = {rc.TEXT_LIMIT})', storage)
+        self.assertIn('!value.trim()', storage)
+        self.assertIn(f"text(fact.statement, 'Fact statement', {rc.LIMITS['statement']})", model)
+        self.assertIn(f"text(citation.quote, 'Exact quote', {rc.LIMITS['quote']})", model)
+        self.assertIn(f"text(value.text, label, {rc.LIMITS['block']})", model)
+        self.assertIn(f"text(cell.text, 'Comparison cell', {rc.LIMITS['cell']})", model)
+        self.assertIn(f"text(item.note, 'Review explanation', {rc.LIMITS['note']})", model)
 
     def test_report_saves_list_their_problems_together_and_the_helper_decides_valid_ones(self):
         spec = {**self.spec, 'research_mode': None}

@@ -92,7 +92,8 @@ def preparation(value, spec):
         if not isinstance(value.get('sources'), list) or not isinstance(value.get('facts'), list):
             raise ValueError('Return sources and facts as arrays.')
         gaps = value.get('gaps', [])
-        if not isinstance(gaps, list) or any(not isinstance(g, str) or not g.strip() for g in gaps):
+        # Blank as Harness Research's text() reads it, with JavaScript's trim().
+        if not isinstance(gaps, list) or any(not isinstance(g, str) or rc.js_blank(g) for g in gaps):
             raise ValueError('Return gaps as an array of nonempty strings.')
         return {**{k: v for k, v in value.items() if k != 'gaps'}, **spec['task'], 'findings': [],
                 'sections': [{'id': 'collection', 'title': 'Evidence collection', 'blocks': [

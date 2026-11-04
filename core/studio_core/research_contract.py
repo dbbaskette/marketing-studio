@@ -448,7 +448,7 @@ class Workflow:
                 if refreshing:
                     payload['return'] += ' ' + REFRESHED
                 # Every source the author is given, with each field it must return (#303).
-                outline = source_outline(sources, self.runtime)
+                outline = source_outline(sources, self.runtime, GIVEN if rounds == 1 else KEPT)
                 if outline:
                     payload['source_outline'] = outline
                     payload['return'] += ' ' + OUTLINED
@@ -743,7 +743,12 @@ def took(seconds, dollars):
 
 
 # What the pinned helper bounds that its schema does not state: the length of each text it
-# reads, which Harness Research's text() caps at 4000 characters unless named here.
+# reads, which Harness Research's text() caps at 4000 characters unless named here, and what
+# JavaScript's trim() treats as blank (JS_SPACE). These come from the helper's code, not its
+# schema, and were checked against Harness Research LIMITS_VERIFIED_WITH. A re-pin to another
+# version fails tests/test_research_packet_problems.py until the gated parity tests
+# (STUDIO_TEST_RESEARCH_RUNTIME) are run against it and this is updated.
+LIMITS_VERIFIED_WITH = '1.1.0'
 TEXT_LIMIT = 4000
 LIMITS = {'statement': 10000, 'quote': 30000}
 # Fields the studio knows and checks against its own captures: an investigator copies them.
@@ -770,17 +775,20 @@ MEANING = {
 UNREADABLE = 'The pinned Harness Research source metadata contract could not be read.'
 UNFINISHED = ('The pinned Harness Research collection check could not finish. This submission was '
               'not accepted; do not treat report validation as collection approval.')
-# Said once, after everything a refused evidence packet needs corrected.
+# Said once, after everything a refused evidence packet needs corrected: a paragraph of its
+# own after the list (see tailed), not one of its items.
 TAIL = ('Correct all of these and resubmit within this job. Facts contain only id, statement, '
         'author and citations; citations contain source, quote and optional locator. Do not '
         'remove a kind label to turn an inference into a fact; retain unsupported or inferred '
         'material as a gap for synthesis. Captured evidence is unchanged.')
-OUTLINED = ('source_outline lists every source the studio gave you. Build each source you return '
-            'from its entry: copy id, file, origin and permission exactly, keep its title, and add '
-            'the fields source_outline.fill_in names; use no other fields. A source you save '
-            'during this job is built the same way from what saving it returned (its ID, Capture '
-            'file and Origin), with permission public. Copy every quote character for character '
-            'from the capture it cites.')
+OUTLINED = ('Build each source you return from its source_outline entry: copy id, file, origin '
+            'and permission exactly, keep its title, and add the fields source_outline.fill_in '
+            'names; use no other fields. Any source saved during this job is built the same way '
+            'from what its tool returned (its ID, Capture file and Origin), with permission '
+            'public. Copy every quote character for character from the capture it cites.')
+GIVEN = 'These are all the sources the studio gave you.'
+KEPT = ('These are the sources your previous draft cited, which this round is given: cite only '
+        'these, or a source saved during this job.')
 # What JavaScript's trim() removes: Harness Research refuses text that is only these.
 JS_SPACE = frozenset('\t\n\v\f\r\ufeff\u2028\u2029')
 
@@ -810,7 +818,18 @@ def permission_of(capture):
     return capture.get('permission') or ('selected' if capture.get('offered', True) else 'public')
 
 
-def source_outline(sources, runtime):
+def tailed(problems, tail):
+    """Problems with a closing paragraph of guidance after the last, said once: a list shows
+    it after its items, not as one of them."""
+    return problems[:-1] + [problems[-1] + '\n\n' + tail] if problems else problems
+
+
+def js_blank(value):
+    """Whether a text is empty once JavaScript's trim() has removed what it removes."""
+    return all(c in JS_SPACE or unicodedata.category(c) == 'Zs' for c in value)
+
+
+def source_outline(sources, runtime, given=GIVEN):
     """Every source a job is given, as the investigator should return it: the fields the studio
     knows, filled in, and the fields it must add, each said from the pinned schema so the list
     cannot drift from Harness Research. Sources are numbered s1, s2 … in the order given, as the
@@ -842,7 +861,7 @@ def source_outline(sources, runtime):
         if field in MEANING:
             said += ' ' + MEANING[field]
         fill[field] = said
-    note = OUTLINED + f' Each text field holds 1 to {TEXT_LIMIT:,} characters.'
+    note = given + ' ' + OUTLINED + f' Each text field holds 1 to {TEXT_LIMIT:,} characters.'
     if 'original_file' in rules:
         note += ' The studio sets original_file; leave it out.'
     return {'note': note, 'fields': fields, 'fill_in': fill, 'sources': entries}
@@ -857,7 +876,7 @@ def wrong_text(value, limit=TEXT_LIMIT):
     """Why Harness Research's text() would refuse a value, or None when it would accept it."""
     if not isinstance(value, str):
         return 'is missing' if value is None else 'must be text'
-    if all(c in JS_SPACE or unicodedata.category(c) == 'Zs' for c in value):
+    if js_blank(value):
         return 'is empty'
     if js_length(value) > limit:
         return f'is longer than {limit:,} characters'
@@ -942,8 +961,9 @@ def packet_problems(value, texts, runtime, worker=None, mode=None):
                                               for other, wanted in when.get(field, ()))
             if isinstance(rule.get('enum'), list):
                 if needed and source.get(field) not in rule['enum']:
-                    said.append(f'{field} must be one of ' + ', '.join(map(str, rule['enum']))
-                                + (f', not {clipped(source[field], 40)!r}' if present else ''))
+                    choices = ', '.join(map(str, rule['enum']))
+                    said.append(f'{field} must be one of {choices}, not {clipped(source[field], 40)!r}'
+                                if source.get(field) is not None else f'{field} is missing: use one of {choices}')
             elif rule.get('type') == 'string' and (needed or present and field in WHEN_PRESENT['source']):
                 wrong = 'is missing' if not present else wrong_text(source[field])
                 if wrong:
@@ -1500,9 +1520,16 @@ def check_json(text, spec):
                     problems.append(str(error))
                     if mode != 'evidence':
                         raise ValueError(' '.join(problems)) from None
-                    # Check the rest as well: the sources and facts, when they are arrays.
-                    value = preparation({key: value[key] for key in ('schema', 'sources', 'facts', 'gaps')
-                                         if key in value}, spec)
+                    # Check the rest as well: the sources and facts, when they are arrays, and the
+                    # gaps when they are not what was wrong.
+                    rest = {key: value[key] for key in ('schema', 'sources', 'facts', 'gaps') if key in value}
+                    try:
+                        value = preparation(rest, spec)
+                    except ValueError as again:
+                        if str(again) not in problems:
+                            problems.append(str(again))
+                        rest.pop('gaps', None)
+                        value = preparation(rest, spec)
                 kept = json.dumps(value)
             captures = spec.get('captures', [])
             problems += uncaptured(value['sources'], captures)
@@ -1528,9 +1555,9 @@ def check_json(text, spec):
                 elif mode == 'evidence':
                     problems += aside(value, spec, captures, flawed_sources, flawed_facts)
             if mode == 'evidence' and any(problem != UNFINISHED for problem in problems):
-                problems.append(TAIL)
+                problems = tailed(problems, TAIL)
             elif mode == 'compose' and problems:
-                problems.append(SYNTHESIS_TAIL)
+                problems = tailed(problems, SYNTHESIS_TAIL)
             if not problems and standardized and not mode:
                 warnings.append('Standardized source date metadata as source_date; dates and evidence are unchanged.')
             if not problems and matched and not mode:
