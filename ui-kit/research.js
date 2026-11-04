@@ -351,6 +351,28 @@ const StudioResearch = (() => {
     }
     return box;
   }
-  return {Editor, progress, summary};
+  function impact(plan, selected) {
+    if (!plan) return null;
+    const ids = selected || new Set(array(plan.sections).map(row => row.id));
+    const box = make('section', 'paper stack'); box.setAttribute('aria-label', 'Affected work preview');
+    add(box, make('h3', 'card-title', 'Review affected work'), make('p', 'quiet', plan.reuse_note));
+    const inputs = array(plan.changed_inputs);
+    box.append(make('p', '', inputs.length ? inputs.map(row => row.name + ' · ' + row.kind).join('; ') : 'Refreshing existing evidence may change every section.'));
+    for (const row of array(plan.sections)) {
+      if (row.required) ids.add(row.id);
+      const label = check(row.title + (row.required ? ' · Required' : ''), ids.has(row.id), on => on ? ids.add(row.id) : ids.delete(row.id), 'impact-' + row.id);
+      label.querySelector('input').disabled = !!row.required;
+      box.append(label);
+    }
+    box.append(make('p', 'quiet', 'Unselected evidence and drafts stay reusable. Only dependent material sections and slide drawings need changes; wording or notes edits do not collect evidence.'));
+    if (array(plan.outputs).length) {
+      const outputs = make('ul');
+      for (const row of plan.outputs) outputs.append(make('li', '', typeof row === 'string' ? row : row.name + ' · ' + row.scope));
+      box.append(outputs);
+    }
+    box.append(make('p', 'field-hint', plan.final_check));
+    return {node: box, selected: ids, value: () => ({expected: plan.expected, sections: [...ids]})};
+  }
+  return {Editor, progress, summary, impact};
 })();
 if (typeof module === 'object' && module.exports) module.exports = StudioResearch;

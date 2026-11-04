@@ -27,7 +27,7 @@ import home
 from workspace import WorkspaceError, write_atomic
 
 from runner import briefs, decks, desk, documents, gitstate, library_keep, marks, stages
-from studio_core import deck_content, document_library, research_sources, research_view
+from studio_core import research_impact, research_sections, deck_content, document_library, research_sources, research_view
 from studio_core.document_library import LibraryError
 from studio_core.document_library import context as library_context
 from studio_core.drafting import prompts
@@ -275,7 +275,8 @@ class DeskActions:
                     'leave_out_price': None}
         questions = [{'id': ident, 'question': text}
                      for ident, text in self._questions(root).items()]
-        return {'research': research_view.account(root / 'research', questions)
+        return {'change_impact': research_impact.native(self, root, record, 'presentation'),
+                'research': research_view.account(root / 'research', questions)
                 if record.get('research_contract') else None,
                 'research_items': self._findings_shown(root, record),
                 'research_price': self._research_price(root, record)['words'],
@@ -1511,7 +1512,7 @@ class DeskActions:
         library_keep.again(root, self._load(root))
         return self.view(root)
 
-    def desk_research_again(self, path, expected) -> dict:
+    def desk_research_again(self, path, expected, impact=None) -> dict:
         """Research again with the sources as they are now: gate:research is reopened as a
         request for changes would reopen it, bringing the evidence up to date, and the
         outline, the look samples and the deck are made again after it. Bound to the deck on
@@ -1525,6 +1526,9 @@ class DeskActions:
                 raise WorkspaceError(desk.CHANGED)
             if decks.delivered(root) is None and not desk.resting(record):
                 raise WorkspaceError(RESEARCH_BUSY)
+            if research_sections.enabled(record):
+                try: record['research_impact'] = research_impact.native(self, root, record, 'presentation', impact or {})
+                except ValueError as error: raise WorkspaceError(str(error)) from None
             record, also = self._desk_resting(root, record, space, 'Research again.')
             record, note, more = self._apply_marks(root, record, 'gate:research',
                                                    {'refresh': True}, None)

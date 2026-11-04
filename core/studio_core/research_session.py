@@ -323,7 +323,7 @@ class Workflow:
 
     def run(self, root, task, invoke, sources=(), *, limit=3, progress=lambda state: None,
             allowed=lambda: True, cancelled=lambda: False, readable=None, restart_stopped=False,
-            section_policy=None, section_context=None, **_):
+            section_policy=None, section_context=None, impact=None, input_snapshot=None, **_):
         if capability(self.runtime) is None:
             raise ValueError('This workflow needs the complete Harness Research 1.1 collection runtime.')
         if unresolved(root):
@@ -437,6 +437,12 @@ class Workflow:
             context_file = rc.inside(case, reuse_context)
             context_unchanged = context_file.exists() and json.loads(context_file.read_bytes()) == context
             rc.write(case, reuse_context, json.dumps(context))
+        if section_policy:
+            from studio_core import research_impact
+            research_impact.reuse(self, root, case, task, areas, impact, section_context, require)
+            if input_snapshot:
+                rc.write(case, '.harness-research/studio-inputs.json', json.dumps(input_snapshot))
+            rc.write(case, '.harness-research/studio-section-context.json', json.dumps(section_context))
         previous = case / '.harness-research/synthesis.json'
         prior = json.loads(bytes_of(previous)) if previous.exists() else {}
         if context_unchanged and (prior.get('review') or {}).get('accepted'):

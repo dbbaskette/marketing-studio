@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased — 4.12.0
+
+New section workflows preview affected research before refresh. Added sources can target selected sections; changed or removed inputs require wider invalidation. Retained investigator packets and drafts are revalidated, and assembled research still needs a fresh independent check. Wording, notes-only edits and existing section updates keep their direct routes.
+
 ## Unreleased — 4.11.0
 
 New outline-first work keeps section contributions across retries, combines at most three at once, and gives only a timed-out contribution more time. A short final author reads the contributions; the supported independent whole-report check still gates use. Existing saved flows retain their schemas and helper versions.

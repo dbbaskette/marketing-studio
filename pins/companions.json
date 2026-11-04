@@ -13,13 +13,13 @@
     },
     "harness-slides": {
       "repository": "https://github.com/dbbaskette/harness-slides-skill.git",
-      "version": "0.16.0",
-      "commit": "1aaab3a7c8a267e1f675b29e4acfb30ef98300d2",
-      "sha256": "46a27c69591b3105b28a72825037d39946de23fea30294c1e718d6df143967c0",
+      "version": "0.17.0",
+      "commit": "fecfe2b63de0620e6c5cbad841d11cf37ecf3d61",
+      "sha256": "493048a6f3dade84e5c762e7d47288c5bb487fa1c1f6e9f9b954afd597b681fc",
       "stub": "bootstrap/SKILL.md",
       "installer": "scripts/install.mjs",
-      "note": "Its installer also downloads, from npm, the packages its slide engine needs.",
-      "requirement": ">=0.16.0"
+      "note": "Verified draft inspection reuse with an explicit exact-final consistency gate. Existing saved tasks retain their helper runtime and revision-based contract.",
+      "requirement": ">=0.17.0"
     }
   },
   "brand_skill": {

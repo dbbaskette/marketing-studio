@@ -230,7 +230,7 @@ import computer
 import checks
 import home
 from studio_core import deck_content
-from studio_core import research_sections
+from studio_core import research_sections, research_impact
 from runner import training_plan, outline_first
 from studio_core import brand_guidance, critic, deck_direction, deck_flow, model_profiles, review_policy, research_contract, research_session as research_parallel, research_transport as research_parallel_native, research_timing, research_sources, research_view, research_sites, step_times, stops
 import hub
@@ -6224,7 +6224,7 @@ class Engine(Reviewing):
                 'expected': str(int(record.get('note_version') or 0))}
 
     def supply(self, path, action: str, name: str | None = None,
-               data: bytes | None = None) -> dict:
+               data: bytes | None = None, impact=None) -> dict:
         """Add one of the person's documents, remove one, take their word that they are
         all added, or update the research with those added since. `data` is the document as
         it was sent. Nothing is researched until they are all added. After that a document
@@ -6233,7 +6233,7 @@ class Engine(Reviewing):
         if action not in SUPPLYING:
             raise WorkspaceError('A document can be: ' + ', '.join(SUPPLYING) + '.')
         if action == 'update':
-            return self.update_research(path)
+            return self.update_research(path, impact=impact)
         with self.files:
             record = self._load(root)
             given = record.get('documents')
@@ -6334,11 +6334,14 @@ class Engine(Reviewing):
             record = self._load(root)
             titles = drafts.add_source(root, record, files, self.documents)
             self._store(root, record)
+            if research_sections.enabled(record):
+                self._commit(root, 'keep added sources for affected-work review')
+                return self.view(root)
             self._request_sources(root, record, titles=titles)
         self.carry_on(root)
         return self.view(root)
 
-    def update_research(self, path) -> dict:
+    def update_research(self, path, *, impact=None) -> dict:
         """Read the documents added since the research, as the person asks: a research
         request that brings the evidence up to date, as Bring the evidence up to date does,
         naming them. Its price is said on the page before it is asked for."""
@@ -6346,10 +6349,14 @@ class Engine(Reviewing):
         with self.files:
             record = self._load(root)
             given = record.get('documents') or {}
+            if research_sections.enabled(record):
+                try: record['research_impact'] = research_impact.native(self, root, record, 'training', impact or {})
+                except ValueError as error: raise WorkspaceError(str(error)) from None
             names = [entry.get('name') for entry in given.get('later') or ()
                      if isinstance(entry, dict)]
             if not names:
                 raise WorkspaceError(NO_LATER)
+            if record.get('research_impact'): self._store(root, record)
             if drafts.on_desk(record):
                 if self._desk_change_busy(root, record):
                     raise WorkspaceError(draft_jobs.BUSY)
@@ -7198,6 +7205,7 @@ class Engine(Reviewing):
             'documents': self._supplied(root, record, found),
             'research_from': self._research_view(record),
             'copies': self._copies(found, (record.get('copies') or {}).get('remote')),
+            'change_impact': research_impact.native(self, root, record, 'training') if research_sections.enabled(record) else None,
             'outline': outline,
             **({'outline_first': True} if outline_first.enabled(record) else {}),
             **({'training_plan': training_plan.view(root, found, record),

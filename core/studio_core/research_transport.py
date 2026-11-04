@@ -6,7 +6,7 @@ import secrets
 import shutil
 import threading
 
-from studio_core import research_contract as rc, research_session as parallel, research_sections, model_profiles
+from studio_core import research_contract as rc, research_session as parallel, research_sections, research_impact, model_profiles
 
 
 class Reservations:
@@ -76,10 +76,12 @@ def native(engine, root, run, task, sources, product='training'):
     sources = [{**s, **({'original': originals[s['file']],
                         'original_path': rc.inside(root, originals[s['file']])}
                        if s.get('file') in originals else {})} for s in sources]
+    if record.get('research_impact') and record['research_impact']['input'] != research_impact.snapshot(root, record, sources, task['planning_questions']):
+        raise WorkspaceError('Research inputs changed after the affected-work preview. Review the current preview again.')
     attempt = secrets.token_hex(16)
     driver = copy.deepcopy(record.get('driver'))
 
-    identity = copy.deepcopy({key: record.get(key) for key in ('form', 'brief', 'research_contract', 'research_inputs', 'research_from', 'outline_first', 'slide_story', 'section_synthesis')})
+    identity = copy.deepcopy({key: record.get(key) for key in ('form', 'brief', 'research_contract', 'research_inputs', 'research_from', 'outline_first', 'slide_story', 'section_synthesis', 'research_impact')})
 
     def owns(current):
         return current.get('driver') == driver \
@@ -205,8 +207,9 @@ def native(engine, root, run, task, sources, product='training'):
             root, task, invoke, sources,
             limit=min(3, engine.at_once, record['research_execution'].get('workers', 3)),
             progress=progress, allowed=lambda: not cancelled() and engine._may_go(root),
+            impact=record.get('research_impact'), input_snapshot=research_impact.snapshot(root, record, sources, task['planning_questions']),
             section_policy=record['section_synthesis'] if research_sections.enabled(record) else None,
-            section_context={'recipe': research_sections.PROTOCOL, 'helper': record['research_execution']['capability'],
+            section_context={'recipe': research_sections.PROTOCOL, 'draft_recipe': 2, 'scope_identity': research_impact.global_identity(record), 'helper': record['research_execution']['capability'],
                 'models': model_profiles.chosen_by_kind(record, 'level_of_effort' if product == 'presentation' else 'effort'),
                 'checking': model_profiles.chosen_by_kind(record, 'level_of_effort' if product == 'presentation' else 'effort')['checking']},
             cancelled=cancelled, restart_stopped=True, readable=lambda cause: rc.dry_read(engine, root, cause))
