@@ -7691,7 +7691,8 @@ async function catchUp(compact = false) {
       const signal = await ask('updates');
       const same = signal.revision === view.pollRevision;
       view.pollRevision = signal.revision;
-      if (compact && !view.pollFailures && same && signal.complete && !signal.active && Date.now() - (view.fullReadAt || 0) < 60000) {
+      // The server bounds cached scan age; active work and periodic full reads still win.
+      if (compact && !view.pollFailures && same && (signal.complete || signal.cached) && !signal.active && Date.now() - (view.fullReadAt || 0) < 60000) {
         view.pollFailures = 0;notify('');return;
       }
     }
