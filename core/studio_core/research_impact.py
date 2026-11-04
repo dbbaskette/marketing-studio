@@ -80,6 +80,7 @@ def reuse(workflow, root, case, task, areas, intent, context, require):
     if old.get('global') != current['global']: return
     old_inputs, new_inputs = ({row['name']: row for row in value['sources']} for value in (old, current))
     if any(new_inputs.get(name) != row for name, row in old_inputs.items()): return
+    context_current(root, task, intent)
     old_context = previous / '.harness-research/studio-section-context.json'
     if not old_context.is_file() or json.loads(old_context.read_bytes()) != context: return
     old_status = workflow.command(previous, 'collection', 'status')
@@ -162,3 +163,11 @@ def native(engine, root, record, product, supplied=None):
         questions = json.loads(path.read_bytes()).get('items') or [] if path.is_file() else []
         outputs = [{'name': 'Slide text and dependent slide sections', 'depends_on': [q['id'] for q in questions], 'scope': 'Changed content and adjacent inspection scope'}, {'name': 'Exact final deck consistency', 'depends_on': [q['id'] for q in questions], 'scope': 'Required for every new delivered revision'}]
     return preview(root, record, sources, questions, outputs) if supplied is None else confirm(root, record, sources, questions, supplied, outputs)
+
+
+def context_current(root, task, intent):
+    if not intent: return
+    previous = rc.inside(root, intent['from'])
+    task_context = previous / '.harness-research/studio-task-context.json'
+    if not task_context.is_file() or json.loads(task_context.read_bytes()) != {key: task[key] for key in rc.TASK_FIELDS if key != 'planning_questions'}:
+        raise ValueError('The research scope or audience changed after the preview. Review the broad affected scope before continuing.')

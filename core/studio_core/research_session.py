@@ -328,6 +328,9 @@ class Workflow:
             raise ValueError('This workflow needs the complete Harness Research 1.1 collection runtime.')
         if unresolved(root):
             raise ValueError('An earlier research invocation has no confirmed terminal observation. Confirm it ended before retrying; saved evidence is kept.')
+        if section_policy and impact:
+            from studio_core import research_impact
+            research_impact.context_current(root, task, impact)
         areas = section_streams(task) if section_policy else streams(task, limit)
         basis = digest([task, [[s.get('file'), s.get('origin'), s.get('permission'),
             hashlib.sha256(s['text'].encode()).hexdigest(),
@@ -442,6 +445,7 @@ class Workflow:
             research_impact.reuse(self, root, case, task, areas, impact, section_context, require)
             if input_snapshot:
                 rc.write(case, '.harness-research/studio-inputs.json', json.dumps(input_snapshot))
+                rc.write(case, '.harness-research/studio-task-context.json', json.dumps({key: task[key] for key in rc.TASK_FIELDS if key != 'planning_questions'}))
             rc.write(case, '.harness-research/studio-section-context.json', json.dumps(section_context))
         previous = case / '.harness-research/synthesis.json'
         prior = json.loads(bytes_of(previous)) if previous.exists() else {}

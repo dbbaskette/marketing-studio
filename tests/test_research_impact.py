@@ -68,3 +68,15 @@ class ScopedWorkflowTests(unittest.TestCase):
         plan = impact.preview(self.root, self.record, sources, self.task['planning_questions'])
         self.assertTrue(plan['broad_required'])
         self.assertEqual(plan['changed_inputs'][0]['kind'], 'changed')
+
+    def test_changed_actual_task_after_preview_starts_no_investigation(self):
+        sources = self.prepare()
+        plan = impact.preview(self.root, self.record, sources, self.task['planning_questions'])
+        intent = impact.confirm(self.root, self.record, sources, self.task['planning_questions'], {'expected': plan['expected'], 'sections': ['question-1']})
+        before = len(self.calls)
+        pointer = session.case_for(self.root)
+        task = {**self.task, 'audience': 'Changed after preview'}
+        with self.assertRaisesRegex(ValueError, 'scope or audience changed'):
+            self.run_scope(task, sources, intent)
+        self.assertEqual(len(self.calls), before)
+        self.assertEqual(session.case_for(self.root), pointer)
