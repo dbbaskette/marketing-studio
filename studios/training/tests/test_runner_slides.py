@@ -197,7 +197,7 @@ class FindingTheRuntimeTests(unittest.TestCase):
         pins = json.loads((Path(__file__).resolve().parents[1] / 'installer'
                            / 'companions.json').read_text(encoding='utf-8'))
         self.assertEqual(slides.RELEASE, pins['companions']['harness-slides']['version'])
-        self.assertEqual((slides.RELEASE, slides.MINIMUM), ('0.16.0', '0.16.0'))
+        self.assertEqual((slides.RELEASE, slides.MINIMUM), ('0.17.0', '0.16.0'))
 
     def test_every_capability_has_a_plain_name(self):
         listed = ('assets', 'assets-approved-candidates',
