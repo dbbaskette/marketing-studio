@@ -5212,6 +5212,11 @@ function fit(holder, parts, fresh) {
     if (fill) fill(node);
     nodes.push(node);
   }
+  // Replaced status panels must not force a retained editor to move in the DOM.
+  const wanted = new Set(nodes);
+  for (const node of Array.from(holder.children)) {
+    if (!wanted.has(node)) node.remove();
+  }
   let at = holder.firstChild;
   for (const node of nodes) {
     if (node === at) at = at.nextSibling;

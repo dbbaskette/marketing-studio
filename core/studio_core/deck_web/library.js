@@ -542,7 +542,7 @@
       add(dialog, add(make('header', 'dialog-header'), title, close),
       add(make('div', 'dialog-content'),
         make('p', 'quiet', 'Choose documents for this ' + noun + ' only. Adding them starts nothing, sends nothing to an assistant and changes no research settings. A new ' + noun + ' starts with none.'),
-        catalog.node, bar));
+        catalog.node), bar);
       dialog.addEventListener('cancel', (event) => { event.preventDefault(); dismiss(); });
       document.body.append(dialog);
       draw();

@@ -3,6 +3,7 @@ import json
 import tempfile
 import threading
 import unittest
+from datetime import datetime, timezone
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -118,6 +119,53 @@ class LogTests(unittest.TestCase):
         self.path.parent.mkdir(parents=True)
         self.path.write_text('not json\n{"outcome": "unknown"}\n', encoding='utf-8')
         self.assertEqual(activity_log.view(self.path)['empty'], 'No activity recorded yet.')
+
+    def test_first_saved_result_is_distinct_from_parallel_model_completion(self):
+        at = lambda seconds: f'2030-01-01T00:00:{seconds:02d}Z'
+        for event, seconds in [('accepted', 0), ('queued', 0), ('working', 2), ('output-saved', 5)]:
+            activity_log.checkpoint(self.path, event, 'section-a', at(seconds))
+        jobs = [{'started_at': at(2), 'ended_at': at(6)}]
+        running = [('b', {'started_at': at(3)})]
+        timing = activity_log.timing(self.path, jobs, running,
+                                    datetime(2030, 1, 1, 0, 0, 10, tzinfo=timezone.utc))
+        self.assertEqual(timing['first_result_seconds'], 5)
+        self.assertEqual(timing['model_seconds'], 8)
+        self.assertEqual(timing['assistant_seconds'], 11)
+        self.assertEqual(timing['queue_seconds'], 2)
+        self.assertIsNone(timing['waiting_seconds'])
+        self.assertEqual(timing['saved_units'], 1)
+        self.assertEqual(activity_log.read(self.path), [])
+
+    def test_observing_kept_results_is_idempotent_even_in_the_same_second(self):
+        attempt = {'outcome': 'kept', 'ended_at': '2030-01-01T00:00:05Z'}
+        record = {'started_at': '2030-01-01T00:00:00Z', 'steps': {
+            'intake': {'attempts': [attempt]}, 'section-a': {'attempts': [attempt]},
+            'section-b': {'attempts': [attempt]}}}
+        activity_log.observe(self.path, record)
+        activity_log.observe(self.path, record)
+        self.assertEqual(len(activity_log.checkpoints(self.path)), 3)
+        self.assertEqual(activity_log.view(self.path)['timing']['saved_units'], 2)
+        self.assertIsNone(activity_log.timing(self.path.with_name('missing')))
+
+    def test_trimming_keeps_first_result_and_accepted_boundary(self):
+        activity_log.checkpoint(self.path, 'accepted', at='2030-01-01T00:00:00Z')
+        activity_log.checkpoint(self.path, 'output-saved', 'first', '2030-01-01T00:00:05Z')
+        for number in range(500):
+            activity_log.checkpoint(self.path, 'working', str(number), '2030-01-01T00:00:10Z')
+            activity_log.append(self.path, activity_log.entry('Job', str(number), None,
+                                                            'finished', ['Line'] * 10))
+        timing = activity_log.timing(self.path)
+        self.assertEqual(timing['first_result_seconds'], 5)
+        self.assertEqual(len(activity_log.read(self.path)), activity_log.JOBS)
+
+    def test_known_check_and_person_wait_boundaries_are_separate(self):
+        for event, second in [('accepted', 0), ('checking', 2), ('ready', 5),
+                              ('working', 8), ('stopped', 10)]:
+            activity_log.checkpoint(self.path, event, at=f'2030-01-01T00:00:{second:02d}Z')
+        timing = activity_log.timing(self.path, clock=datetime(2030, 1, 1, 0, 0, 15,
+                                                             tzinfo=timezone.utc))
+        self.assertEqual(timing['check_seconds'], 3)
+        self.assertEqual(timing['waiting_seconds'], 3)
 
     def test_jobs_are_read_newest_first_with_their_outcome_and_lines(self):
         for number, ended in enumerate(('finished', 'failed', 'stopped', 'timeout', 'limit')):

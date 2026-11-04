@@ -167,7 +167,14 @@ const StudioResearch = (() => {
       if (this.pasting) {
         const name = field('Source name', this.name, 'research-text-name'); name.input.addEventListener('input', () => this.name = name.input.value);
         const text = field('Source text', this.text, 'research-text', true); text.input.rows = 6; text.input.addEventListener('input', () => this.text = text.input.value);
-        add(panel, name.wrap, text.wrap, button('Add text', async () => { if (await this.act('capture', {kind: 'text', name: this.name, text: this.text})) { this.text = ''; this.pasting = false; this.render(); } }, 'research-add-text'));
+        add(panel, name.wrap, text.wrap, button('Add text', async () => {
+          if (await this.act('capture', {kind: 'text', name: this.name, text: this.text})) {
+            this.text = ''; this.pasting = false; this.render();
+            // The submit was removed with the pasted-text fields. Return to a stable
+            // source action, rather than leaving keyboard focus on the page body.
+            Array.from(this.node.querySelectorAll('[data-key]')).find(n => n.dataset.key === 'research-paste')?.focus();
+          }
+        }, 'research-add-text'));
       }
       const list = make('ul', 'research-source-list'); for (const source of array(state && state.sources)) list.append(this.source(source));
       const extra = this.a.extra ? this.a.extra(this) : null;

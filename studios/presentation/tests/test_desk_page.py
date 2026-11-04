@@ -1579,6 +1579,18 @@ class WordsTests(DeskPageCase):
     def card(self, view: dict, number: int) -> dict:
         return next(card for card in cards_of(view['desk']) if card['number'] == number)
 
+    def test_first_dirty_status_and_autosave_preserve_notes_focus(self):
+        path = self.desk_deck()
+        view = self.run_of(path)
+        result = self.open_deck(path, view, [
+            to(1),
+            {'fill': 'Speaker notes for slide 1', 'value': 'One sentence at a time.', 'stay': True},
+            {'snapshot': 'typing'}, {'timer': 'flush'}, {'snapshot': 'saved'}],
+            **{'POST /api/desk-notes': [ok(view)]})
+        self.assertEqual(result['snapshots']['typing']['focus'], 'desk-notes-1')
+        self.assertEqual(result['snapshots']['saved']['focus'], 'desk-notes-1')
+        self.assertIn('One sentence at a time.', str(result['requests']))
+
     def test_typing_saves_a_second_after_the_last_key(self):
         path = self.desk_deck()
         view = self.run_of(path)

@@ -5,6 +5,10 @@ changes for authors first, then what changes for maintainers.
 
 ## Unreleased
 
+- **See time to a saved result.** The existing private Activity log records operation
+  boundaries and distinguishes saved intermediate results from final approval. Missing
+  timings stay unknown; reading progress starts no assistant work.
+
 - **Choose a model and reasoning level for each kind of work.** Settings now offer six
   kinds instead of Quick, Main and Complex: Quick, Research, Combining, Checking, Writing
   and Fixing. Blog Studio's research rounds run on Research, combining them on Combining,

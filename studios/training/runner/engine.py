@@ -766,6 +766,7 @@ class Engine(Reviewing):
 
     def _store(self, root: Path, record: dict) -> None:
         workspace.write_run(root, record)
+        activity_log.observe(root / ACTIVITY, record)
 
     def _wanted(self, root: Path, record: dict) -> list[dict]:
         """Every copy the training asks for, with why one could not be made."""
@@ -1734,6 +1735,8 @@ class Engine(Reviewing):
                 if drafts.on_desk(record) and pending and not self._resting(record):
                     if self.background and not held:
                         run.queued = True
+                        with self.files:
+                            activity_log.checkpoint(root / 'work' / activity_log.FILE, 'queued')
                         held = self._slots.take(lambda: self._closing or run.stop.is_set(), run)
                         run.queued = False
                         if not held:
@@ -1775,6 +1778,10 @@ class Engine(Reviewing):
                         self._policy_accept(root, step.step)
                     continue
                 if self._resting(record) or step.kind not in (*WORK, 'deck'):
+                    with self.files:
+                        activity_log.checkpoint(root / ACTIVITY,
+                            'stopped' if record.get('halt') or record.get('problem') else 'ready',
+                            getattr(step.step, 'id', '') if step.step else '')
                     if record.get('halt_after') is not None and not self._resting(record):
                         self._wait_arrived(root)  # a review or a gate: the wait asked for
                     return
@@ -1791,6 +1798,8 @@ class Engine(Reviewing):
                     return self._hand_on(root, found)
                 if self.background and not held:
                     run.queued = True
+                    with self.files:
+                        activity_log.checkpoint(root / 'work' / activity_log.FILE, 'queued')
                     held = self._slots.take(lambda: self._closing or run.stop.is_set(), run)
                     run.queued = False
                     if not held:
@@ -1961,6 +1970,7 @@ class Engine(Reviewing):
                                  question=f'Approve {it}?', level=self._level(step),
                                  next_step=f'Waiting for your review of {it}')
             self._commit(root, f'ask for a review of {it}')
+            activity_log.checkpoint(root / ACTIVITY, 'ready', step.id)
 
     # --- the code steps after the blueprint ----------------------------------------------
 
@@ -3881,6 +3891,9 @@ class Engine(Reviewing):
                          tuple(worker_tools.command(folder)), limits, record.get('model'),
                          record.get('effort'))
         lines, started_at, clock = activity_log.Lines(LINES), home.now(), time.monotonic()
+        with self.files:
+            activity_log.checkpoint(root / ACTIVITY, 'checking' if 'review' in work.prepared
+                                    or 'review' in step.id else 'working', step.id, started_at)
         stop, terminated = _WorkerStop(run.stop), threading.Event()
         with self.files:
             current = self._load(root)

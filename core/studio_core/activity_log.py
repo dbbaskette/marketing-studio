@@ -46,6 +46,7 @@ import threading
 from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
+from .research_timing import account, stamp
 
 FILE = 'activity-log.jsonl'
 LINES = 200             # lines kept for one job, live and in the log
@@ -63,6 +64,7 @@ ENDINGS = ('finished', 'failed', 'stopped', 'timeout', 'limit')
 WORDS = {'finished': 'Finished', 'failed': 'Failed', 'stopped': 'Stopped',
          'timeout': 'Out of time', 'limit': 'Reached a limit'}
 EMPTY = 'No activity recorded yet.'
+CHECKPOINTS = ('accepted', 'queued', 'working', 'output-saved', 'checking', 'ready', 'stopped')
 
 
 def now() -> str:
@@ -219,9 +221,27 @@ def append(path, found: dict, jobs: int = JOBS) -> None:
     if path.stat().st_size < SMALL:
         return
     data = path.read_bytes()
-    if data.count(b'\n') <= jobs + SLACK:
+    rows = [one for one in data.splitlines(keepends=True) if one.strip()]
+    def event(row):
+        try:
+            item = json.loads(row)
+            return item.get('checkpoint') if isinstance(item, dict) else None
+        except ValueError:
+            return None
+    milestones = any(event(row) in CHECKPOINTS for row in rows)
+    if len(rows) <= jobs * (2 if milestones else 1) + SLACK:
         return
-    kept = [one for one in data.splitlines(keepends=True) if one.strip()][-jobs:]
+    if milestones:
+        ordinary = [i for i, row in enumerate(rows) if event(row) not in CHECKPOINTS][-jobs:]
+        all_points = [i for i, row in enumerate(rows) if event(row) in CHECKPOINTS]
+        accepted = next((i for i in reversed(all_points) if event(rows[i]) == 'accepted'), None)
+        first_output = next((i for i in all_points if accepted is not None and i >= accepted
+                             and event(rows[i]) == 'output-saved'), None)
+        pins = {i for i in (accepted, first_output) if i is not None}
+        points = sorted(pins | set([i for i in all_points if i not in pins][-(jobs - len(pins)):]))
+        kept = [rows[i] for i in sorted(ordinary + points)]
+    else:
+        kept = rows[-jobs:]
     trimmed = path.with_name(f'.{path.name}.{secrets.token_hex(4)}')
     try:
         trimmed.write_bytes(b''.join(kept))
@@ -251,10 +271,127 @@ def read(path) -> list[dict]:
 def view(path, running=()) -> dict:
     """The log as a page shows it: finished jobs newest first, each without its lines but with
     how many it kept (`steps`), the jobs running now, and a sentence for a project with none."""
+    running = list(running)
     jobs = [{**{key: value for key, value in job.items() if key != 'lines'},
              'steps': len(job['lines'])} for job in read(path)]
     return {'jobs': jobs, 'running': live(running),
-            'empty': None if jobs else EMPTY, 'limit': JOBS, 'lines': LINES}
+            'empty': None if jobs else EMPTY, 'limit': JOBS, 'lines': LINES,
+            'timing': timing(path, jobs, running)}
+
+
+def checkpoints(path):
+    """Bounded, allowlisted milestones in the existing private activity journal."""
+    try:
+        lines = Path(path).read_text(encoding='utf-8').splitlines()
+    except (OSError, UnicodeError):
+        return []
+    found = []
+    for line in lines:
+        try:
+            item = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(item, dict) and item.get('checkpoint') in CHECKPOINTS and stamp(item.get('at')) is not None:
+            found.append(item)
+    accepted = next((i for i in reversed(range(len(found)))
+                     if found[i]['checkpoint'] == 'accepted'), None)
+    first = next((i for i in range(accepted or 0, len(found))
+                  if accepted is not None and found[i]['checkpoint'] == 'output-saved'), None)
+    pins = {i for i in (accepted, first) if i is not None}
+    kept = pins | set([i for i in range(len(found)) if i not in pins][-(JOBS - len(pins)):])
+    return [found[i] for i in sorted(kept)]
+
+
+def checkpoint(path, event, unit='', at=None):
+    """Record a real boundary, under the caller's existing files lock, best effort.
+
+    No raw model event, prompt, source or error belongs here. Browsing never calls this.
+    Saved intermediate output is distinct from completed verification or user approval.
+    """
+    if event not in CHECKPOINTS:
+        raise ValueError('Choose a supported activity checkpoint.')
+    try:
+        latest = checkpoints(path)
+        if at is None and latest and (latest[-1]['checkpoint'], latest[-1].get('unit')) == (event, clip(unit, LABEL_LENGTH)):
+            return
+        append(path, {'checkpoint': event, 'unit': clip(unit, LABEL_LENGTH), 'at': at or now()})
+    except Exception:
+        pass
+
+
+def observe(path, record):
+    """Observe a just-saved native run, reusing its accepted/kept timestamps.
+
+    Intake, gates and questions are not assistant output. Old records without the
+    required times stay unknown. A watermark prevents saves/polls counting results twice.
+    """
+    try:
+        held = checkpoints(path)
+        accepted = record.get('started_at') or record.get('created')
+        if not any(e['checkpoint'] == 'accepted' for e in held) and stamp(accepted) is not None:
+            checkpoint(path, 'accepted', at=accepted)
+        saved = {(e.get('unit'), e['at']) for e in held if e['checkpoint'] == 'output-saved'}
+        seen = max((stamp(at) for _, at in saved), default=-1)
+        outputs = []
+        for unit, step in (record.get('steps') or {}).items():
+            if unit == 'intake' or unit.startswith('gate:'):
+                continue
+            for attempt in step.get('attempts', step.get('tries', [])):
+                ended = stamp(attempt.get('ended_at'))
+                if attempt.get('outcome') == 'kept' and ended is not None and ended >= seen and (unit, attempt['ended_at']) not in saved:
+                    outputs.append((ended, unit, attempt['ended_at']))
+        for _, unit, at in sorted(outputs):
+            checkpoint(path, 'output-saved', unit, at)
+    except Exception:
+        pass  # Timing must never make a successful save fail.
+
+
+def timing(path, jobs=(), running=(), clock=None):
+    """Measured operation timing; unknown boundaries are null, never guessed ETAs."""
+    clock = clock or datetime.now(timezone.utc)
+    events = checkpoints(path)
+    accepted = next((e['at'] for e in reversed(events) if e['checkpoint'] == 'accepted'), None)
+    began = stamp(accepted)
+    if began is None:
+        return None
+    events = sorted((e for e in events if stamp(e['at']) >= began), key=lambda e: stamp(e['at']))
+    attempts = [{'started_at': j.get('started_at'), 'ended_at': j.get('ended_at'),
+                 'seconds': max(0, stamp(j['ended_at']) - stamp(j['started_at']))}
+                for j in jobs if stamp(j.get('started_at')) is not None
+                and stamp(j.get('ended_at')) is not None and stamp(j['started_at']) >= began]
+    active = account(accepted, attempts, [w for _, w in running], now=clock)
+    first = min((stamp(e['at']) for e in events if e['checkpoint'] == 'output-saved'), default=None)
+    starts = [stamp(j['started_at']) for j in jobs if stamp(j.get('started_at')) is not None and stamp(j['started_at']) >= began]
+    starts += [stamp(w['started_at']) for _, w in running if stamp(w.get('started_at')) is not None]
+    waiting, queued = 0.0, 0.0
+    for index, e in enumerate(events):
+        if e['checkpoint'] not in ('ready', 'queued'):
+            continue
+        end = next((stamp(n['at']) for n in events[index + 1:]
+                    if n['checkpoint'] in ('working', 'checking', 'stopped', 'ready', 'queued')), clock.timestamp())
+        span = max(0, end - stamp(e['at']))
+        if e['checkpoint'] == 'ready':
+            waiting += span
+        else:
+            queued += span
+    latest = events[-1] if events else {}
+    check_intervals = []
+    for i, e in enumerate(events):
+        if e['checkpoint'] == 'checking':
+            end = next((n['at'] for n in events[i + 1:] if n['checkpoint'] in
+                        ('working', 'ready', 'stopped', 'queued')), clock.isoformat())
+            check_intervals.append({'started_at': e['at'], 'ended_at': end})
+    check_time = account(accepted, check_intervals, now=clock)['active_seconds'] if check_intervals else None
+    return {'accepted_at': accepted, 'elapsed_seconds': active['elapsed_seconds'],
+            'model_seconds': active['active_seconds'], 'assistant_seconds': active['assistant_seconds'],
+            'check_seconds': check_time,
+            'first_model_seconds': round(min(starts) - began, 1) if starts else None,
+            'first_result_seconds': round(first - began, 1) if first is not None else None,
+            'waiting_seconds': round(waiting, 1) if any(e['checkpoint'] == 'ready' for e in events) else None,
+            'queue_seconds': round(queued, 1) if any(e['checkpoint'] == 'queued' for e in events) else None,
+            'saved_units': len({e.get('unit') for e in events if e['checkpoint'] == 'output-saved'}),
+            'phase': latest.get('checkpoint'), 'last_activity_at': latest.get('at'),
+            'incomplete': active['incomplete']}
 
 
 def entry_lines(path, ident: str) -> dict:

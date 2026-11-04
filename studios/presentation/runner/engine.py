@@ -476,6 +476,7 @@ class Engine(Jobs, Researching, DeskActions):
 
     def _store(self, root: Path, record: dict) -> None:
         decks.write_run(root, record)
+        activity_log.observe(root / 'work' / activity_log.FILE, record)
 
     def _commit(self, root: Path, what: str, also=()) -> None:
         """Commit one deck's folder, and the paths `also` names, saying what happened. Call
@@ -1126,6 +1127,9 @@ class Engine(Jobs, Researching, DeskActions):
                 if run.gone or not team.ours(self.workspace, record):
                     return
                 if self._resting(record):
+                    with self.files:
+                        activity_log.checkpoint(root / 'work' / activity_log.FILE,
+                            'stopped' if record.get('halted') else 'ready')
                     return
                 if not settled:
                     settled = True
@@ -1140,6 +1144,8 @@ class Engine(Jobs, Researching, DeskActions):
                     continue
                 step = first(record)
                 if step is None:
+                    with self.files:
+                        activity_log.checkpoint(root / 'work' / activity_log.FILE, 'ready')
                     return
                 if step.name in BUILT and step.name != 'build-start' and decks.on_desk(record) \
                         and not desk.selected(record) and not build.read_state(root).get('start'):
@@ -1162,6 +1168,8 @@ class Engine(Jobs, Researching, DeskActions):
                     return
                 if self.background and not held:
                     run.queued = True
+                    with self.files:
+                        activity_log.checkpoint(root / 'work' / activity_log.FILE, 'queued')
                     held = self._slots.take(lambda: self._closing or run.stop.is_set(), run)
                     run.queued = False
                     if not held:
@@ -1393,6 +1401,7 @@ class Engine(Jobs, Researching, DeskActions):
             record = self._load(root)
             if decks.in_conversation(record):
                 return
+            activity_log.checkpoint(root / 'work' / activity_log.FILE, 'ready', step.name)
             if step.name == 'gate:build':
                 build.gate_view(root, record)
                 build_progress.mark(root, (build.read_state(root).get('start') or {}).get('folder'),

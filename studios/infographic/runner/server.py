@@ -35,7 +35,8 @@ class Page(shared.Page):
         self.injected = engine is not None
         self.engine = engine or Engine(store)
         # Each operation an assistant worked in goes to its infographic's Activity log.
-        self.activity = activity.Activity(keep=store.keep_activity if store is not None else None)
+        self.activity = activity.Activity(keep=store.keep_activity if store is not None else None,
+                                          checkpoint=store.keep_activity if store is not None else None)
         from .research_jobs import Jobs
         self.research = Jobs(store) if store is not None else None
 
