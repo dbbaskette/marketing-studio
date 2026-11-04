@@ -16,7 +16,8 @@ class Node{
 }
 function all(n){return n.children.flatMap(c=>[c,...all(c)]);}
 document={createElement:t=>new Node(t),createTextNode:t=>Object.assign(new Node('#text'),{textContent:t}),body:new Node('body'),activeElement:null};document.activeElement=document.body;
-const context=vm.createContext({document,URL,URLSearchParams,JSON,Object,Array,String,Number,Math,Set,Promise,Error,module:{exports:{}},btoa:t=>Buffer.from(t,'binary').toString('base64')});
+const context=vm.createContext({document,URL,URLSearchParams,JSON,Object,Array,String,Number,Math,Set,Promise,Error,setTimeout,clearTimeout,module:{exports:{}},btoa:t=>Buffer.from(t,'binary').toString('base64')});
+vm.runInContext(fs.readFileSync(path.join(__dirname,'../ui-kit/drafting.js'),'utf8'),context);
 vm.runInContext(fs.readFileSync(path.join(__dirname,'../ui-kit/research.js'),'utf8'),context);
 const kit=context.module.exports;
 const settle=async()=>{for(let n=0;n<30;n++)await Promise.resolve();};
@@ -117,5 +118,26 @@ const key=(editor,k)=>all(editor.node).find(n=>n.dataset.key===k);
  const previewState={phase:'review',first_readable_seconds:2,combining:[{id:'area1',questions:['Saved question'],status:'kept',preview:{basis:'revision1',sections:[{title:'Saved heading',text:'Saved prose is visible without another author.'}],sources:[{title:'Selected source',permission:'selected'}]}}]};
  const draftNodes=all(kit.progress(previewState));assert.ok(draftNodes.some(n=>n.textContent==='Draft—independent check pending'));assert.ok(draftNodes.some(n=>n.textContent==='Saved prose is visible without another author.'));assert.ok(draftNodes.some(n=>n.textContent.includes('Not eligible for final delivery')));
  const completeNodes=all(kit.progress({...previewState,phase:'complete',checked_result_seconds:9}));assert.ok(completeNodes.some(n=>n.textContent==='Superseded by the checked research report.'));assert.ok(completeNodes.some(n=>n.textContent.includes('checked result at 9 seconds')));
+ let savedNote={revision:0,draft:null},failure='',releaseSave=null;
+ const notes=async(id,sent)=>{if(failure)throw Error(failure);if(sent.action==='save'){if(releaseSave)await new Promise(resolve=>releaseSave(resolve));savedNote={revision:savedNote.revision+1,draft:{...(savedNote.draft||{}),...JSON.parse(JSON.stringify(sent.patch))}};}return JSON.parse(JSON.stringify(savedNote));};
+ const hooks={notesScope:'synthetic-notes',notes};
+ const mount=async(state=previewState,using=hooks)=>{const box=kit.progress(state,using);await settle();return all(box);};
+ const noteInput=nodes=>nodes.find(n=>n.dataset.key==='research-queued-note-area1');
+ const noteSave=nodes=>nodes.find(n=>n.dataset.key==='research-queue-save-area1');
+ const noteStatus=nodes=>nodes.find(n=>n.role==='status');
+ let notesNodes=await mount();assert.equal(noteStatus(notesNodes).textContent,'No queued note.');
+ noteInput(notesNodes).value='A';noteInput(notesNodes).listeners.input();await noteSave(notesNodes).listeners.click();
+ assert.match(noteStatus(notesNodes).textContent,/Queued privately/);
+ noteInput(notesNodes).value='B';noteInput(notesNodes).listeners.input();notesNodes=await mount();
+ assert.equal(noteInput(notesNodes).value,'B');assert.match(noteStatus(notesNodes).textContent,/not queued until you save/);
+ const reloaded=await mount(previewState,{...hooks,notesScope:'synthetic-reload'});
+ assert.equal(noteInput(reloaded).value,'A');assert.match(noteStatus(reloaded).textContent,/Queued privately/);
+ failure='Changed in another tab';await noteSave(notesNodes).listeners.click();notesNodes=await mount();
+ assert.equal(noteInput(notesNodes).value,'B');assert.match(noteStatus(notesNodes).textContent,/Changed in another tab/);failure='';
+ let release;releaseSave=resolve=>{release=resolve;};const saving=noteSave(notesNodes).listeners.click();await settle();
+ noteInput(notesNodes).value='C';noteInput(notesNodes).listeners.input();release();await saving;releaseSave=null;
+ assert.equal(savedNote.draft.note,'B');assert.match(noteStatus(notesNodes).textContent,/not queued until you save/);
+ const older=await mount({...previewState,combining:[{...previewState.combining[0],preview:{...previewState.combining[0].preview,basis:'revision2'}}]});
+ assert.equal(noteInput(older).value,'C');assert.match(noteStatus(older).textContent,/earlier section revision/);
  console.log('PASS shared source editor: explicit scope, mixed links, validation, draft/focus preservation, progress, no provider actions');
 })().catch(error=>{console.error(error);process.exitCode=1;});
