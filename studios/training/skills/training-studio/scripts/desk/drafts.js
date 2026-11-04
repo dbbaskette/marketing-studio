@@ -12,8 +12,7 @@
 'use strict';
 
 const DESK_WORDS = {
-  lede: 'Each level’s materials, built from the shared research. Edit any part. Nothing is '
-    + 'ready until you mark it.',
+  lede: 'Read and edit a material. Mark it ready when it is right.',
   steps: ['Goal and audience', 'Materials and levels', 'Sources and settings'],
   // What each card is called, by the kind of material it holds.
   kinds: { blueprint: 'Plan', document: 'Guide', brief: 'Brief', deck: 'Deck',
@@ -646,12 +645,14 @@ function sourcesStep(draft, brand, looks) {
   researchLine(draft, looks);
   if (!draft.sourceEditor && typeof StudioResearch !== 'undefined') {
     // Training Studio offers Keep in library for each file the editor captures.
-    draft.sourceEditor = new StudioResearch.Editor({request: sent => send('research-sources', sent), keepChoice: true,
+    draft.sourceEditor = new StudioResearch.Editor({request: sent => send('research-sources', sent),
+      resume: draft.sourceDraft, entry: draft.sourceEntry, keepChoice: true,
       // Add from library: documents kept on this computer, pinned when the training starts.
       library: (editor) => pickStartLibrary(draft, editor),
       libraryFull: () => startPicks(draft).length >= START_PICKS,
       extra: () => startPickList(draft),
-      onChange: () => { if (draft.retell) draft.retell(); }});
+      onChange: () => { if (draft.retell) draft.retell();
+        if(view.sheet === 'new' && view.draft === draft && !draft.starting)intakeStore().keep(draft); }});
   }
   return [draft.sourceEditor ? draft.sourceEditor.node : documentsPart(draft, retell, true),
     ...(draft.sourceEditor ? [] : [researchFields(draft, retell, ['documents'])]), looks,
@@ -736,13 +737,8 @@ function deskStart() {
   status.id = 'new-status';
   status.setAttribute('role', 'status');
   status.hidden = true;
-  const go = submitButton('Start', 'continue');
   const form = make('form', 'create-flow');
   form.noValidate = true;
-  form.addEventListener('submit', (event) => {
-    event.preventDefault();
-    startTraining(go);
-  });
   const [title, topic, audience, purpose] = topicStep(draft);
   const brand = brandOption(draft);
   const looks = make('p', 'quiet research-line');
@@ -752,12 +748,39 @@ function deskStart() {
     if (brand) brand.hidden = DECKS[draft.deck][0] === null;
     researchLine(draft, looks);
   };
-  add(form,
-    createStep(1, DESK_WORDS.steps[0], title, topic, audience, timeField(draft), purpose),
-    createStep(2, DESK_WORDS.steps[1], ...shapeStep(draft)),
-    createStep(3, DESK_WORDS.steps[2], ...sourcesStep(draft, brand, looks)),
-    problem, status,
-    add(make('div', 'bar create-foot'), go, capsule('Cancel', 'quiet', closeSheet, 'cancel')));
+  const sources = sourcesStep(draft,brand,looks), advanced = sources.splice(-3);
+  const summary = make('p','quiet');
+  const retell = draft.retell;
+  draft.retell = () => {
+    retell();
+    summary.textContent = 'Next: research, then a teaching plan for you to review. Outputs: '
+      + [...draft.materials.map(id => MATERIALS.find(one => one[0] === id)?.[1] || id),
+        ...(DECKS[draft.deck][0] ? ['Slide deck'] : [])].join(', ') + '. '
+      + AGENT_NAMES[draft.agent] + draftModelWords(draft) + '. '
+      + (limitsSays(view.setup?.limits || {}) || 'No limits are set.');
+  };
+  draft.retell();
+  form.append(problem,status);
+  const steps = [createStep(1,'Goal and audience',title,topic,audience,timeField(draft),purpose),
+    createStep(2,'Sources and questions',...sources),
+    createStep(3,'Outputs and review',summary,...shapeStep(draft),...advanced)];
+  const validate = (index,final = false) => {
+    if(index === 0){
+      const missing = [['new-title',draft.title,'Give it a title first.'],['new-topic',draft.topic,'Say what it should teach first.'],['new-audience',draft.audience,'Say who it is for first.']]
+        .filter(([id,value,message]) => {refuse(id,value.trim() ? '' : message);return !value.trim();});
+      if(missing.length){focusKey(missing[0][0]);return false;}
+      return true;
+    }
+    if(index === 1){
+      const why = (final ? researchProblem(draft) : '') || questionsProblem(draft.researchQuestions);
+      say(problem,why);
+      if(why){focusKey(draft.sourceEditor ? 'research-urls' : 'research-web');return false;}
+      return true;
+    }
+    return startReady(draft);
+  };
+  intakeStore().pages(form,{draft,steps,names:['Goal','Sources','Review'],validate,start:startTraining,
+    close:closeSheet,discarded:() => {view.draft = null;}});
   return [add(make('div', 'sheet-heading'), sheetTitle('New training')), form];
 }
 
@@ -1292,6 +1315,7 @@ async function startOnDesk(pressed) {
   }
   // Research waits for the documents, so each is added before the desk opens on it.
   const added = files.length ? await addHeld(started.path, files, byId('new-status')) : true;
+  await intakeStore().discard();
   if (view.draft === draft) view.draft = null;
   view.sheet = '';
   if (turn !== view.turn) {
@@ -1396,16 +1420,17 @@ function levelStanding(found, level) {
     : ' need') + ' attention');
   if (counts.decision) parts.push(counts.decision + (counts.decision === 1 ? ' waits'
     : ' wait') + ' for your decision');
-  const whole = counts.ready === counts.materials
-    ? (level ? 'This level is complete.' : 'Every material is ready.')
-    : (level ? 'This level is complete' : 'The training is complete')
-      + ' once every material is ready. Ready is your approval of the version you read; a '
-      + 'material is still changed, checked or downloaded on its own, and Google Docs are '
-      + 'optional.';
   const node = make('p', 'quiet desk-level-standing', (level ? 'Level ' + level + ': ' : '')
-    + parts.join(' · ') + '. ' + whole);
+    + parts.join(' · ') + (counts.ready === counts.materials ? '. Complete.' : '.'));
   node.setAttribute('role', 'status');
   return node;
+}
+
+function readyExplanation() {
+  const node = make('details','desk-ready-explanation');node.dataset.key='desk-ready-explanation';
+  return add(node,make('summary','','About Ready and delivery'),make('p','quiet',
+    'Ready is your approval of the version you read. A level is complete once all its materials are ready. '
+    + 'Edit, check or download each material on its own. Google Docs and delivery remain separate choices.'));
 }
 
 function deskTabs(found, held) {
@@ -2925,6 +2950,7 @@ function paintDesk(fresh) {
     finished ? publishCard(run, published) : null,
     preparingPlan || waitingPlan ? null : materials,
     preparingPlan || waitingPlan ? null : layout,
+    preparingPlan || waitingPlan ? null : readyExplanation(),
     // What the assistant did in each job, while it works and after it finishes or stops.
     conversation ? null : activityLogCard(view.path),
   ], fresh);

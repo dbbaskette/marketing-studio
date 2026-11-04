@@ -290,6 +290,11 @@ class FakeElement extends FakeNode {
     return this.all().filter((node) => selector.split(',').some((one) => matches(node, one.trim())));
   }
 
+  closest(selector) {
+    for(let node=this;node;node=node.parentNode)if(node.nodeType === 1 && matches(node,selector))return node;
+    return null;
+  }
+
   querySelector(selector) {
     return this.querySelectorAll(selector)[0] || null;
   }
@@ -591,7 +596,7 @@ function snapshot() {
     focusKey: (document.activeElement && document.activeElement.dataset
       && document.activeElement.dataset.key) || '',
     notice: document.getElementById('notice').hidden ? '' : document.getElementById('notice').textContent,
-    current: document.body.querySelectorAll('[aria-current]').map(name),
+    current: document.body.querySelectorAll('[aria-current]').filter(node => node.getAttribute('aria-current') !== 'step').map(name),
     // Each dialog on the page that is not the sheet: whether it is modal, and what names it.
     dialogs: document.body.querySelectorAll('[role="dialog"]').filter(visible)
       .filter((node) => node.id !== 'sheet')
@@ -607,7 +612,13 @@ function snapshot() {
         target: node.target })),
     off: controls.filter((node) => visible(node) && node.disabled)
       .map((node) => name(node) || node.id),
-    posts: report.requests.filter((request) => request.method === 'POST').length,
+    posts: report.requests.filter(request => request.method === 'POST' && request.address !== '/api/intake-draft').length,
+    intakePosts: report.requests.filter(request => request.method === 'POST' && request.address === '/api/intake-draft').length,
+    deskSummary: document.body.querySelector('.desk-summary') ? words(document.body.querySelector('.desk-summary')) : '',
+    intakeText: document.body.querySelector('.intake-body')?.textContent || '',
+    intakePressed: document.body.querySelectorAll('.intake-body [aria-pressed="true"]').map(name),
+    intakeTicked: document.body.querySelectorAll('.intake-body input').filter(n => n.checked).map(name),
+    intakeValues: Object.fromEntries(document.body.querySelectorAll('.intake-body input, .intake-body textarea, .intake-body select').map(node => [node.id || node.dataset.key,node.value])),
     badge: badge.hidden ? '' : badge.textContent,
     fields: Object.fromEntries(boxes().map(([label, held]) => [label, held.value])),
     // How many characters each box takes, under the words of its label.
@@ -720,6 +731,34 @@ function build(shell) {
   }
 }
 
+// Existing field-focused journeys use the real Back/Next controls to reach an intake
+// field. No hidden control is edited and no validation or final Start is bypassed.
+async function reachIntake(step, strict) {
+  if(strict)return;
+  const kind=step.click ? 'click' : step.fill !== undefined || step.attach !== undefined
+    || step.enter !== undefined || step.select !== undefined ? 'box' : step.tick ? 'tick' : '';
+  let label=step.click || step.fill || step.attach || step.enter || step.select || step.tick;
+  if((!kind || !label) && step.intakePage === undefined)return;
+  const lookup=()=>kind === 'click' ? control(label) : kind === 'tick' ? checkbox(label) : box(label);
+  if(step.intakePage === undefined){try{lookup();return;}catch(_){}}
+  const body=document.body.querySelector('.intake-body');if(!body)return;
+  if(label === 'Cancel'){step.click='Save and close';return;}
+  const fieldName=node => node.getAttribute('aria-label') || labelOf(node)?.textContent?.trim() || name(node);
+  const candidate=body.all().find(n => ['BUTTON','SUMMARY','INPUT','TEXTAREA','SELECT'].includes(n.tagName)
+    && (fieldName(n) === label || fieldName(n).startsWith(label)));
+  const target=candidate?.closest('.create-step');
+  const destination=step.intakePage !== undefined ? step.intakePage : label === 'Start' ? body.children.length-1 : target ? body.children.indexOf(target) : -1;
+  if(destination < 0)return;
+  for(let tries=0;tries<4;tries++){
+    const index=body.children.findIndex(n => !n.hidden);
+    if(index === destination)return;
+    const direction=document.body.querySelector('[data-key="'+(destination < index ? 'intake-back' : 'continue')+'"]');
+    if(!direction || direction.disabled)return;
+    direction.click();await settle();
+    if(body.children.findIndex(n => !n.hidden) === index){if(label === 'Start')step.click='Next';return;}
+  }
+}
+
 async function app(file) {
   const plan = JSON.parse(fs.readFileSync(file, 'utf8'));
   const answers = plan.answers;
@@ -793,6 +832,13 @@ async function app(file) {
       // An answer can be kept for one address, query and all, or for every query of it.
       const held = answers[method + ' ' + address] || answers[key];
       if (!held && key === 'GET /api/storyboard') return {ok: true, status: 200, json: async () => ({html:'<h1>Fixture storyboard</h1>'})};
+      if (!held && address.split('?')[0] === '/api/intake-draft') {
+        plan.intake ||= {revision:0,draft:null};
+        const sent=options?.body ? JSON.parse(options.body) : {action:'read'};
+        if(sent.action !== 'read')plan.intake={revision:plan.intake.revision+1,
+          draft:sent.action === 'discard' ? null : {...(plan.intake.draft || {}),...sent.patch}};
+        return {ok:true,status:200,json:async () => JSON.parse(JSON.stringify(plan.intake))};
+      }
       if (!held) return { ok: false, status: 404, json: async () => ({ error: 'No answer for ' + key }) };
       const answer = held.length > 1 ? held.shift() : held[0];
       // {pending: true} is an answer that has not come yet, and never does here.
@@ -870,6 +916,8 @@ async function app(file) {
   const shots = {};
   for (const step of plan.steps) {
     try {
+      await reachIntake(step, plan.strictIntake);
+      if(step.disclose){const d=document.body.querySelector('[data-key="'+step.disclose+'"]');if(d && !d.open)d.querySelector('summary').click();}
       if (step.snapshot) shots[step.snapshot] = snapshot();
       if (step.click) control(step.click).click();
       if (step.type !== undefined) {

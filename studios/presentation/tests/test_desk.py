@@ -210,7 +210,9 @@ class ScriptedPage:
                              [], 'the rest of the toolbar is quiet')
 
     def posts(self, result: dict) -> list:
-        made = [request for request in result['requests'] if request['method'] == 'POST']
+        # Intake autosaves are private bookkeeping; retain them in the raw request log.
+        made = [request for request in result['requests'] if request['method'] == 'POST'
+                and request['address'] != '/api/intake-draft']
         for post in made:
             self.assertEqual(post['headers'], {server.TOKEN_HEADER: 'the-test-key',
                                                'Content-Type': 'application/json'})

@@ -2884,18 +2884,18 @@ class RunnerScreenTests(ScriptedPage, PageCase):
 
     def test_the_form_starts_with_the_learner_guide_chosen_and_the_levels_in_the_open(self):
         result = self.run_page(self.answers(), [
-            {'click': 'New training'},
+            {'click': 'New training'}, {'fill': 'A short title', 'value': 'Synthetic defaults'}, {'fill': 'What should it teach?', 'value': 'A synthetic topic.'}, {'fill': 'Who is it for?', 'value': 'Synthetic learners'}, {'intakePage': 2},
             {'fill': 'A short title', 'value': 'Restart practice'},
             {'fill': 'What should it teach?', 'value': 'Choose a safe restart strategy.'},
             {'fill': 'Who is it for?', 'value': 'New operators'},
-            {'snapshot': 'shape'}])
+            {'intakePage':2}, {'snapshot': 'shape'}])
         shape = result['snapshots']['shape']
         # The learner guide is chosen to start with, as Home says, so Start needs only the
         # three boxes filled; the rest are the person's to add.
         self.assertIn('Learner guide', shape['trainingChecked'])
         for material in ('Reference brief', 'Practice scenarios'):
             self.assertNotIn(material, shape['trainingChecked'])
-        self.assertEqual(shape['pressed'], ['Field enablement', 'No deck', 'Keep in library'],
+        self.assertEqual(shape['pressed'], ['No deck'],
                          'no deck until a brand is set')
         self.assertIn('201', shape['text'], 'the levels are chips in the open')
         self.assertIn('101', shape['trainingChecked'])
@@ -2904,13 +2904,13 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         setup = {**SET_UP, 'shared': {'brand': {'brand': 'example-co', 'variant': 'dark'},
                                       'output': 'pptx'}}
         result = self.run_page(self.answers(setup), [
-            {'click': 'New training'},
+            {'click': 'New training'}, {'fill': 'A short title', 'value': 'Synthetic defaults'}, {'fill': 'What should it teach?', 'value': 'A synthetic topic.'}, {'fill': 'Who is it for?', 'value': 'Synthetic learners'}, {'intakePage': 2},
             {'fill': 'A short title', 'value': 'Restart practice'},
             {'fill': 'What should it teach?', 'value': 'Choose a safe restart strategy.'},
             {'fill': 'Who is it for?', 'value': 'New operators'},
-            {'snapshot': 'shape'}])
+            {'intakePage':2}, {'snapshot': 'shape'}])
         self.assertEqual(result['snapshots']['shape']['pressed'],
-                         ['Field enablement', 'PowerPoint', 'Presented in a session', 'Keep in library'])
+                         ['PowerPoint', 'Presented in a session'])
 
     def test_a_working_run_says_what_it_does_now_and_for_how_long(self):
         import datetime
@@ -3036,9 +3036,9 @@ class RunnerScreenTests(ScriptedPage, PageCase):
 
     def test_turning_yoodli_off_keeps_its_visible_materials(self):
         result = self.run_page(self.answers(), [
-            {'click': 'New training'}, {'tick': 'Make scenarios for Yoodli'},
-            {'tick': 'Make scenarios for Yoodli'}, {'snapshot': 'off'},
-            {'tick': 'Practice scenarios'}, {'snapshot': 'removed'}])
+            {'click': 'New training'}, {'fill': 'A short title', 'value': 'Synthetic defaults'}, {'fill': 'What should it teach?', 'value': 'A synthetic topic.'}, {'fill': 'Who is it for?', 'value': 'Synthetic learners'}, {'intakePage': 2}, {'tick': 'Make scenarios for Yoodli'},
+            {'tick': 'Make scenarios for Yoodli'}, {'intakePage':2}, {'snapshot': 'off'},
+            {'tick': 'Practice scenarios'}, {'intakePage':2}, {'snapshot': 'removed'}])
         selected = result['snapshots']['off']['trainingChecked']
         self.assertNotIn('Make scenarios for Yoodli', selected)
         self.assertIn('Reference brief', selected)
@@ -3640,7 +3640,9 @@ class RunnerScreenTests(ScriptedPage, PageCase):
 
     def posts(self, result: dict) -> list:
         """Every change the page asked for, each sent as milestone 1 says a change is."""
-        made = [request for request in result['requests'] if request['method'] == 'POST']
+        # Intake autosaves are private bookkeeping; retain them in the raw request log.
+        made = [request for request in result['requests'] if request['method'] == 'POST'
+                and request['address'] != '/api/intake-draft']
         for post in made:
             self.assertEqual(post['headers'], {desk.TOKEN_HEADER: 'the-test-key',
                                                'Content-Type': 'application/json'})
@@ -4129,11 +4131,11 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         shared = {'brand': {'brand': 'example-co', 'variant': 'dark'}, 'output': 'pptx'}
         answers = self.answers({**SET_UP, 'shared': shared, 'shared_problem': None})
         result = self.run_page(answers, [
-            {'click': 'New training'},
+            {'click': 'New training'}, {'fill': 'A short title', 'value': 'Synthetic defaults'}, {'fill': 'What should it teach?', 'value': 'A synthetic topic.'}, {'fill': 'Who is it for?', 'value': 'Synthetic learners'}, {'intakePage': 2},
             {'fill': 'A short title', 'value': 'Rolling restarts'},
             {'fill': 'What should it teach?', 'value': 'How a rolling restart works.'},
             {'fill': 'Who is it for?', 'value': 'Platform engineers new to it.'},
-            {'snapshot': 'two'},
+            {'intakePage':2}, {'snapshot': 'two'},
             {'tick': 'Walk through each slide’s design before it is built'},
             {'click': 'Start'}])
         two = result['snapshots']['two']
@@ -4148,13 +4150,13 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         shared = {'brand': {'brand': 'example-co', 'variant': 'dark'}, 'output': 'pptx'}
         answers = self.answers({**SET_UP, 'shared': shared, 'shared_problem': None})
         result = self.run_page(answers, [
-            {'click': 'New training'},
+            {'click': 'New training'}, {'fill': 'A short title', 'value': 'Synthetic defaults'}, {'fill': 'What should it teach?', 'value': 'A synthetic topic.'}, {'fill': 'Who is it for?', 'value': 'Synthetic learners'}, {'intakePage': 2},
             {'fill': 'A short title', 'value': 'Rolling restarts'},
             {'fill': 'What should it teach?', 'value': 'How a rolling restart works.'},
             {'fill': 'Who is it for?', 'value': 'Platform engineers new to it.'},
-            {'snapshot': 'two'},
-            {'click': 'Read on its own'}, {'snapshot': 'reading'},
-            {'click': 'No deck'}, {'snapshot': 'none'}, {'click': 'PowerPoint'},
+            {'intakePage':2}, {'snapshot': 'two'},
+            {'click': 'Read on its own'}, {'intakePage':2}, {'snapshot': 'reading'},
+            {'click': 'No deck'}, {'intakePage':2}, {'snapshot': 'none'}, {'click': 'PowerPoint'},
             {'click': 'Start'}])
         two = result['snapshots']['two']
         self.assertIn('How is this deck used?', two['text'])
@@ -4170,14 +4172,13 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         shared = {'brand': {'brand': 'example-co', 'variant': 'dark'}, 'output': 'google'}
         answers = self.answers({**SET_UP, 'shared': shared, 'shared_problem': None})
         result = self.run_page(answers, [
-            {'click': 'New training'},
+            {'click': 'New training'}, {'fill': 'A short title', 'value': 'Synthetic defaults'}, {'fill': 'What should it teach?', 'value': 'A synthetic topic.'}, {'fill': 'Who is it for?', 'value': 'Synthetic learners'}, {'intakePage': 2},
             {'fill': 'A short title', 'value': 'Rolling restarts'},
             {'fill': 'What should it teach?', 'value': 'How a rolling restart works.'},
             {'fill': 'Who is it for?', 'value': 'Platform engineers new to it.'},
-            {'click': 'Deck brand'}, {'snapshot': 'two'}])
+            {'click': 'Deck brand'}, {'intakePage':2}, {'snapshot': 'two'}])
         two = result['snapshots']['two']
-        self.assertEqual(two['pressed'], ['Field enablement', 'Google Slides',
-                                          'Presented in a session', 'Keep in library'])
+        self.assertEqual(two['pressed'], ['Google Slides', 'Presented in a session'])
         self.assertEqual((two['fields']['The deck’s brand'], two['fields']['The brand’s variant'],
                           two['trainingChecked']), ('example-co', 'dark', ['101', 'Learner guide']))
         # A brand the brand skill here does not have is not offered: its first one is.
@@ -4188,10 +4189,9 @@ class RunnerScreenTests(ScriptedPage, PageCase):
             {'fill': 'A short title', 'value': 'Rolling restarts'},
             {'fill': 'What should it teach?', 'value': 'How a rolling restart works.'},
             {'fill': 'Who is it for?', 'value': 'Platform engineers new to it.'},
-            {'click': 'Deck brand'}, {'snapshot': 'two'}])
+            {'click': 'Deck brand'}, {'intakePage':2}, {'snapshot': 'two'}])
         two = result['snapshots']['two']
-        self.assertEqual(two['pressed'], ['Field enablement', 'PowerPoint',
-                                          'Presented in a session', 'Keep in library'])
+        self.assertEqual(two['pressed'], ['PowerPoint', 'Presented in a session'])
         self.assertEqual((two['fields']['The deck’s brand'], two['fields']['The brand’s variant']),
                          ('example-co', 'dark'))
 
@@ -4430,7 +4430,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         self.assertIn('writes the blueprint and the learner guide on its own, with a brief, '
                       'practice scenarios or a deck when you choose them',
                       result['snapshots']['home']['text'])
-        self.assertIn('Learner guide', result['snapshots']['form']['trainingChecked'])
+        self.assertIn('Learner guide', result['snapshots']['form']['intakeTicked'])
 
     def test_a_new_training_is_one_sheet_and_opens_on_its_desk(self):
         self.started('--levels', '101,301')
@@ -4468,7 +4468,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         # One sheet over Home, in numbered steps; its one filled button starts the training.
         one = shots['one']
         self.assertEqual((one['heading'], one['filled'], one['current']),
-                         ('Home', ['Start'], ['Home0 things need you']))
+                         ('Home', ['Next'], ['Home0 things need you']))
         self.assertIn('1. Goal and audience', one['sheet'])
         self.assertIn('Field enablement', one['pressed'])
         # Enter in a box starts it, as the filled button does, and is refused beside each box.
@@ -4482,27 +4482,26 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         three = shots['three']
         self.assertEqual(three['filled'], ['Start'])
         self.assertNotIn('Back a step', three['buttons'])
-        for shown in ('The public web: it searches for pages anyone can read', 'Claude Code',
-                      'Research from the public web.',
+        for shown in ('Next: research, then a teaching plan for you to review.', 'Claude Code',
                       'A step may take up to 15 minutes.',
-                      'It is drafted by Claude Code, with the model it chooses itself.'):
+                      'Claude Code, with the model it chooses itself.'):
             self.assertIn(shown, three['sheet'])
         for gone in ('decisions for research', 'A deck adds three stops', 'Step by step'):
             self.assertNotIn(gone, three['sheet'])
         self.assertNotIn('not offered yet', three['sheet'])
         self.assertEqual(three['posts'], 0)
-        for pressed in ('Technical upskilling', 'Google Slides', 'Presented in a session',
+        for pressed in ('Google Slides', 'Presented in a session',
                         'A comparison', 'Claude Code'):
             self.assertIn(pressed, three['pressed'])
         self.assertEqual(three['trainingChecked'], ['101', '301', 'Learner guide', 'Reference brief',
                                            'Practice scenarios', 'Google Docs'])
         # With no sites shared, research looks at the public web, as it always has.
-        self.assertEqual(research_ticks(three), ['The public web'])
-        self.assertIn('Your sites (0)', three['buttons'])
+        self.assertIn('The public web', three['intakeTicked'])
+        self.assertNotIn('Your sites (0)', three['buttons'])
         self.assertLessEqual({'How long it should take (optional)': '30 minutes',
                               'The deck’s brand': 'example-co',
                               'The brand’s variant': 'dark', 'Its model': '',
-                              'Its reasoning level': ''}.items(), three['fields'].items())
+                              'Its reasoning level': ''}.items(), {**three['fields'], 'How long it should take (optional)': three['intakeValues']['new-time']}.items())
         self.assertEqual(self.asked(result, 'agents'), ['/api/agents'])
         # The list of models is asked for once, however often the sheet is drawn.
         self.assertEqual(self.asked(result, 'models'), ['/api/models?agent=claude'])
@@ -4857,7 +4856,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         self.assertIn('Delete this training', shot['buttons'])
         # The new-training sheet opens over the stopped run.
         self.assertIn('1. Goal and audience', result['snapshots']['new']['sheet'])
-        self.assertEqual(result['snapshots']['new']['filled'], ['Start'])
+        self.assertEqual(result['snapshots']['new']['filled'], ['Next'])
 
     def test_runner_notices_name_training_studio(self):
         page = (Path(__file__).resolve().parents[1] / 'skills' / 'training-studio' / 'scripts'
@@ -5155,7 +5154,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         return [{'click': 'New training'},
                 {'fill': 'A short title', 'value': 'Rolling restarts'},
                 {'fill': 'What should it teach?', 'value': 'How a rolling restart works.'},
-                {'fill': 'Who is it for?', 'value': 'Platform engineers new to it.'}, *shape]
+                {'fill': 'Who is it for?', 'value': 'Platform engineers new to it.'}, *shape, {'intakePage': 1}]
 
     def test_each_sources_choice_says_what_it_means_and_is_what_is_sent(self):
         self.started()
@@ -5920,17 +5919,15 @@ class RunnerScreenTests(ScriptedPage, PageCase):
 
         result = self.run_page(answers(SET_UP), [
             *self.to_the_last_step(), {'click': 'PowerPoint'}, {'click': 'Deck brand'},
-            {'snapshot': 'two'},
-            {'fill': 'The deck’s brand', 'value': 'example-labs'}, {'snapshot': 'other'},
-            {'click': 'No deck'}, {'snapshot': 'none'},
-            {'click': 'PowerPoint'}, {'snapshot': 'three'},
+            {'intakePage':2}, {'snapshot': 'two'},
+            {'fill': 'The deck’s brand', 'value': 'example-labs'}, {'intakePage':2}, {'snapshot': 'other'},
+            {'click': 'No deck'}, {'intakePage':2}, {'snapshot': 'none'},
+            {'click': 'PowerPoint'}, {'intakePage':2}, {'snapshot': 'three'},
             {'click': 'Start'}])
         shots = result['snapshots']
         two = shots['two']
-        self.assertEqual(two['pressed'], ['Field enablement', 'PowerPoint',
-                                          'Presented in a session', 'Keep in library'])
-        self.assertLessEqual({'How long it should take (optional)': '',
-                              'The deck’s brand': 'example-co',
+        self.assertEqual(two['pressed'], ['PowerPoint', 'Presented in a session'])
+        self.assertLessEqual({'The deck’s brand': 'example-co',
                               'The brand’s variant': 'light'}.items(), two['fields'].items())
         self.assertIn('A deck is always made in a brand. These are what Example Brand Kit, the '
                       'brand skill on this computer, offers.', two['text'])
@@ -5942,7 +5939,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         self.assertIn('The brand’s variant\nplain', other['text'])
         # Without a deck there is no brand to choose.
         self.assertNotIn('The deck’s brand', shots['none']['fields'])
-        self.assertEqual(shots['none']['fields']['How long it should take (optional)'], '')
+        self.assertEqual(shots['none']['intakeValues']['new-time'], '')
         self.assertNotIn('The deck’s brand', shots['none']['text'])
         self.assertIn('The deck’s brand', shots['three']['fields'])
         (address, sent), = self.posts(result)
@@ -5952,13 +5949,13 @@ class RunnerScreenTests(ScriptedPage, PageCase):
 
         # No brand skill: a deck cannot be made here, the form says why, and none is sent.
         result = self.run_page(answers({**SET_UP, 'brand': NO_BRAND}), [
-            *self.to_the_last_step(), {'snapshot': 'two'},
-            {'click': 'PowerPoint'}, {'click': 'Google Slides'}, {'snapshot': 'still'},
-            {'snapshot': 'three'}, {'click': 'Start'}])
+            *self.to_the_last_step(), {'intakePage':2}, {'snapshot': 'two'},
+            {'click': 'PowerPoint'}, {'click': 'Google Slides'}, {'intakePage':2}, {'snapshot': 'still'},
+            {'intakePage':2}, {'snapshot': 'three'}, {'click': 'Start'}])
         shots = result['snapshots']
         for name in ('two', 'still'):
             with self.subTest(screen=name):
-                self.assertEqual(shots[name]['pressed'], ['Field enablement', 'No deck', 'Keep in library'])
+                self.assertEqual(shots[name]['pressed'], ['No deck'])
                 self.assertEqual(shots[name]['off'], ['PowerPoint', 'Google Slides'])
                 self.assertNotIn('The deck’s brand', shots[name]['fields'])
         self.assertIn('A deck needs a brand skill. You can make the other materials now',
@@ -6936,8 +6933,7 @@ CARD_FIELDS = {'name', 'level', 'kind', 'label', 'state', 'says', 'checks', 'see
                'actions', 'needs'}
 DESK_KINDS = (('blueprint', 'blueprint'), ('document', 'learner guide'), ('brief', 'brief'),
               ('deck', 'slide deck'), ('scenario:main', 'practice scenario'))
-DESK_LEDE = ('Each level’s materials, built from the shared research. Edit any part. '
-             'Nothing is ready until you mark it.')
+DESK_LEDE = 'Read and edit a material. Mark it ready when it is right.'
 NOTHING_NEEDED = 'Nothing needed from you. Each material opens here as it is ready.'
 A_DRAFT = 'A draft. Nothing is ready until you mark it.'
 # runner/drafts.py `standing` for two levels whose drafts are all written and whose level 101
@@ -7543,17 +7539,22 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
 
     def test_the_desk_start_has_three_numbered_steps_and_one_start(self):
         result = self.run_page(self.start_answers(), [
-            {'click': 'New training'}, {'snapshot': 'sheet'}])
-        sheet = result['snapshots']['sheet']
-        self.assertEqual([part for part in sheet['parts'] if part[:1].isdigit()],
-                         DESK_START_STEPS)
-        self.assertEqual(sheet['filled'], ['Start'])
-        buttons = sheet['buttons']
-        self.assertEqual(buttons[buttons.index('Start') + 1], 'Cancel')
-        self.assertNotIn('Where this training stops', sheet['text'])
-        self.assertNotIn('Review level', sheet['text'])
-        # Documents are added here, before Start.
-        self.assertIn('Add documents', sheet['fields'])
+            {'click':'New training'}, {'snapshot':'goal'},
+            {'fill':'A short title','value':'Synthetic training'},
+            {'fill':'What should it teach?','value':'Safe restarts'},
+            {'fill':'Who is it for?','value':'New operators'},
+            {'click':'Next'}, {'snapshot':'sources'}, {'click':'Next'}, {'snapshot':'review'}], strictIntake=True)
+        for key, title, primary in [('goal','1. Goal and audience','Next'),
+                                    ('sources','2. Sources and questions','Next'),
+                                    ('review','3. Outputs and review','Start')]:
+            shot=result['snapshots'][key]
+            self.assertEqual([part for part in shot['parts'] if part[:1].isdigit()],[title])
+            self.assertEqual(shot['filled'],[primary])
+            self.assertIn('Save and close',shot['buttons'])
+            self.assertIn('Discard draft',shot['buttons'])
+        self.assertIn('Add documents',result['snapshots']['sources']['fields'])
+        self.assertEqual(self.posts(result),[])
+
 
     def test_documents_are_added_before_research_starts(self):
         result = self.run_page(self.start_answers(ok({}), ok({}), ok({})), self.start_steps(

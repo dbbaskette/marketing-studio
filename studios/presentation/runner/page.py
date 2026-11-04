@@ -158,7 +158,7 @@ from studio_core.document_library import context as library_context
 from studio_core.shared_runner import page as _shared
 modules.bind(globals(), _shared, _shared.NAMES)
 
-READS = ('/api/capabilities', '/api/setup', '/api/agents', '/api/models', '/api/decks',
+READS = ('/api/intake-draft', '/api/capabilities', '/api/setup', '/api/agents', '/api/models', '/api/decks',
          '/api/run', '/api/activity', '/api/slide', '/api/download', '/api/status', '/api/published',
          '/api/delete', '/api/file', '/api/known-decks', '/api/storyboard',
          '/api/desk-outline-price', '/api/desk-versions', '/api/desk-migration-preview', '/api/desk-ready-context')
@@ -195,7 +195,7 @@ SOURCE_LIMIT = 12_000_000     # bytes: a document of up to 8 MB, in base64, with
 # What a desk change takes as it is sent, not as text.
 RAW = ('slides', 'field', 'ids', 'again', 'picks')
 WHOLE = ('seen', 'start', 'end', 'index')   # whole numbers, from zero
-WRITES = ('/api/research-sources', '/api/setup/check', '/api/setup', '/api/decks', '/api/run', '/api/decide',
+WRITES = ('/api/intake-draft', '/api/research-sources', '/api/setup/check', '/api/setup', '/api/decks', '/api/run', '/api/decide',
           '/api/answer', '/api/share', '/api/fetch', '/api/drive', '/api/publish',
           '/api/delete', '/api/bring', '/api/companions', '/api/upgrade', '/api/restart',
           '/api/versions', '/api/brand', '/api/brand/install', '/api/shared',
@@ -237,6 +237,13 @@ class RunnerPage(server.Page):
     # --- reads ---------------------------------------------------------------------------
 
     def read(self, path: str, one):
+        if path == '/api/intake-draft':
+            from studio_core import intake_drafts
+            try:
+                return server.as_json(HTTPStatus.OK, intake_drafts.dispatch(home.data_root(),
+                    gitstate.workspace_identity(self.engine.workspace), {'action':'read'}))
+            except ValueError as error:
+                raise server.Refusal(HTTPStatus.BAD_REQUEST, str(error)) from None
         if path in ('/api/desk-migration-preview', '/api/desk-ready-context'):
             from runner import desk_chat
             folder = self.deck(one('path'))
@@ -418,6 +425,13 @@ class RunnerPage(server.Page):
         the key. Anyone else's request there is held to the usual limit, so it is refused
         unread."""
         address = target.partition('?')[0]
+        if address == '/api/intake-draft':
+            try:
+                self.check_token(headers)
+            except server.Refusal:
+                return super().body_limit(target, headers)
+            from studio_core.intake_drafts import LIMIT
+            return LIMIT
         if address in (DECKS, PICTURE, SOURCE, '/api/research-sources'):
             try:
                 self.check_token(headers)
@@ -429,6 +443,16 @@ class RunnerPage(server.Page):
     # --- changes -------------------------------------------------------------------------
 
     def write(self, path: str, sent: dict):
+        if path == '/api/intake-draft':
+            from studio_core import intake_drafts
+            try:
+                value = intake_drafts.dispatch(home.data_root(),
+                    gitstate.workspace_identity(self.engine.workspace), sent)
+                return server.as_json(HTTPStatus.OK, value)
+            except intake_drafts.Conflict as error:
+                raise server.Refusal(HTTPStatus.CONFLICT, str(error)) from None
+            except ValueError as error:
+                raise server.Refusal(HTTPStatus.BAD_REQUEST, str(error)) from None
         if path in library_context.ROUTES:
             try:
                 return server.as_json(HTTPStatus.OK, library_context.answer(path, sent, 'presentation'))

@@ -169,5 +169,6 @@ All verification uses disposable state and scripted providers. Paid-provider wor
 - [x] Confirm #294–#296 are closed and #297/#305 plus #312–#325 remain open.
 - [x] Map every audit implementation issue to a cohort.
 - [x] User authorizes Weeks 1–3, each through PR publication and merge.
-- [ ] Record cohort PRs, tested tree, evidence and actual effort as work completes.
+- [x] Week 1 merged in [PR #327](https://github.com/dbbaskette/marketing-studio/pull/327), squash `c954191edb7f72bd8d9a6ff946360f58825c99f0`. Clean full shared/native suites, browser and package/CLI checks recorded on the PR.
+- [ ] Record Week 2 and Week 3 PRs and verification as each cohort completes.
 

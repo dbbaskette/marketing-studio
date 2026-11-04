@@ -20,6 +20,168 @@ const Drafting = (() => {
   function make(tag, cls, text) { const node = document.createElement(tag); if (text !== undefined) node.textContent = text; if (cls) node.className = cls; return node; }
   function add(parent, ...children) { parent.append(...children.filter(child => child !== null && child !== undefined)); return parent; }
 
+  // Unfinished creation forms belong to private local storage, never a project or a job.
+  // Coalesce changes behind one revision-checked write. Large upload bytes are sent only
+  // when that field changes, not again for every character typed into a title.
+  class Intake {
+    constructor(request) {
+      this.request = request; this.revision = 0; this.saved = null; this.encoded = {};
+      this.loading = null; this.ready = false; this.pending = null; this.writing = null;
+      this.timer = null; this.problem = ''; this.upload = null; this.uploadJSON = '';
+    }
+    async load() {
+      if (this.ready) return this.saved;
+      if (!this.loading) this.loading = (async () => {
+        try {
+          const held = await this.request({action:'read'});
+          this.revision = held.revision; this.saved = held.draft;
+          for (const [key,value] of Object.entries(held.draft || {})) this.encoded[key] = JSON.stringify(value);
+        } catch (error) { this.problem = error.message || 'The saved intake could not be read.'; }
+        this.ready = true;
+        return this.saved;
+      })();
+      return this.loading;
+    }
+    snapshot(draft, open = true) {
+      const found = {};
+      for (const [key,value] of Object.entries(draft)) {
+        if (['sourceEditor','retell','starting','reading','opened','files'].includes(key)
+            || key.startsWith('_') || typeof value === 'function' || value === undefined) continue;
+        found[key] = value;
+      }
+      if (draft.sourceEditor) {
+        found.sourceDraft = draft.sourceEditor.spec() || draft.sourceEditor.resume || draft.sourceDraft || null;
+        found.sourceEntry = Object.fromEntries(['urls','text','name','pasting','keep']
+          .map(key => [key,draft.sourceEditor[key] ?? null]));
+      }
+      found.intakeOpen = open;
+      return found;
+    }
+    status() {
+      for (const node of document.querySelectorAll('[data-intake-status]')) {
+        node.textContent = this.problem || (this.pending || this.writing ? 'Saving intake…' : 'Intake saved on this computer. No work has started.');
+        node.className = this.problem ? 'problem' : 'quiet field-hint';
+      }
+    }
+    queue(draft) {
+      this.pending = this.snapshot(draft);
+      clearTimeout(this.timer);
+      this.timer = setTimeout(() => {this.timer = null; this.drain();},250);
+      this.status();
+    }
+    keep(draft, open = true) {
+      clearTimeout(this.timer); this.timer = null;
+      this.pending = this.snapshot(draft, open);
+      this.status();
+      return this.drain();
+    }
+    drain() {
+      if (!this.writing) this.writing = this.write().then(result => {
+        this.writing = null;
+        if (this.pending) return this.drain();
+        this.status();
+        return result;
+      });
+      return this.writing;
+    }
+    async write() {
+      await this.load();
+      while (this.pending) {
+        const found = this.pending; this.pending = null;
+        const encoded = {}, patch = {};
+        for (const [key,value] of Object.entries(found)) {
+          if (key === 'upload' && value && value === this.upload) encoded[key] = this.uploadJSON;
+          else encoded[key] = JSON.stringify(value);
+          if (key === 'upload') {this.upload = value; this.uploadJSON = encoded[key];}
+          if (encoded[key] !== this.encoded[key]) patch[key] = value;
+        }
+        if (!Object.keys(patch).length) continue;
+        try {
+          const held = await this.request({action:'save', expected:this.revision, patch});
+          this.revision = held.revision; this.saved = held.draft;
+          this.encoded = {...this.encoded,...encoded}; this.problem = '';
+        } catch (error) {
+          this.problem = error.message || 'The intake could not be saved. Your answers are still here.';
+          this.pending = null;
+          return false;
+        }
+      }
+      return true;
+    }
+    async discard() {
+      clearTimeout(this.timer); this.timer = null;
+      if (this.pending || this.writing) if (!await this.drain()) return false;
+      await this.load();
+      try {
+        const held = await this.request({action:'discard', expected:this.revision});
+        this.revision = held.revision; this.saved = null; this.encoded = {}; this.problem = '';
+        return true;
+      } catch(error) {this.problem = error.message; this.status(); return false;}
+    }
+    // `validate` only marks local fields; only `start` can create a project or launch work.
+    pages(form, {draft, steps, names, validate, start, close, discarded, final = 'Start'}) {
+      const progress = make('ol','intake-progress'); progress.setAttribute('aria-label','Creation progress');
+      const body = add(make('div','intake-body'),...steps);
+      const status = make('p','quiet field-hint'); status.dataset.intakeStatus = 'true'; status.setAttribute('role','status');
+      const back = make('button','button button-quiet','Back'); back.type = 'button'; back.dataset.key = 'intake-back';
+      const go = make('button','button button-filled','Next'); go.type = 'submit'; go.dataset.key = 'continue';
+      const keep = make('button','button button-quiet','Save and close'); keep.type = 'button'; keep.dataset.key = 'cancel';
+      const discard = make('button','button button-quiet','Discard draft'); discard.type = 'button'; discard.dataset.key = 'intake-discard';
+      const confirmation = make('p','quiet','Discard only this unfinished form? Captured sources and existing projects are kept.'); confirmation.hidden = true;
+      let confirming = false;
+      const current = () => Math.min(steps.length - 1,Math.max(0,Number(draft.step) || 0));
+      const show = (index, focus = true) => {
+        draft.step = index;
+        steps.forEach((node,i) => {node.hidden = i !== index; node.dataset.intakeStep = String(i);});
+        progress.replaceChildren(...names.map((name,i) => {const n = make('li',i === index ? 'is-current' : '',(i + 1) + '. ' + name); if(i === index)n.setAttribute('aria-current','step'); return n;}));
+        back.hidden = index === 0; go.textContent = index === steps.length - 1 ? final : 'Next';
+        body.scrollTop = 0;
+        if (focus) {const heading = steps[index].querySelector('h3'); if(heading){heading.tabIndex=-1;heading.focus();}}
+        this.keep(draft);
+      };
+      back.addEventListener('click',() => show(current() - 1));
+      form.addEventListener('submit',async event => {
+        event.preventDefault();
+        const index = current();
+        if (!validate(index)) return;
+        if (index < steps.length - 1) {show(index + 1); return;}
+        for (let i=0;i<steps.length;i++) if(!validate(i,true)){show(i);validate(i,true);return;}
+        if(!await this.keep(draft))return;
+        start(go);
+      });
+      keep.addEventListener('click',async () => {if(await this.keep(draft,false))close();});
+      discard.addEventListener('click',async () => {
+        if(!confirming){confirming=true;confirmation.hidden=false;discard.textContent='Discard this draft';return;}
+        if(await this.discard()){discarded();close();}
+      });
+      for(const name of ['input','change']) form.addEventListener(name,() => {
+        if(!confirming && !draft.starting)this.queue(draft);
+      });
+      form.append(progress,body,status,confirmation,add(make('div','bar create-foot'),back,go,keep,discard));
+      for(const control of form.querySelectorAll('button, summary'))control.addEventListener('click',() => {
+        if(['cancel','continue','intake-discard'].includes(control.dataset.key))return;
+        if(!confirming && !draft.starting)this.keep(draft);
+      });
+      show(current(),false);
+      this.status();
+      return form;
+    }
+  }
+
+  function trapSheet(event,sheet) {
+    if(event.key !== 'Tab' || !sheet || sheet.hidden || document.querySelector('dialog[open]'))return;
+    const stops = Array.from(sheet.querySelectorAll('button, [href], input, select, textarea, summary, [tabindex]'))
+      .filter(n => !n.disabled && n.tabIndex >= 0 && !n.closest('[hidden]') && !n.closest('[inert]')
+        && (n.tagName === 'SUMMARY' || !n.closest('details:not([open])'))
+        && (typeof n.getClientRects !== 'function' || n.getClientRects().length)
+        && !(n.type === 'radio' && !n.checked && n.name && sheet.querySelector(
+          'input[type="radio"][name="' + n.name + '"]:checked')));
+    const active=document.activeElement, inside=sheet.contains(active) && active !== sheet;
+    if(!stops.length){event.preventDefault();sheet.focus();}
+    else if(event.shiftKey && (!inside || active === stops[0])){event.preventDefault();stops.at(-1).focus();}
+    else if(!event.shiftKey && (!inside || active === stops.at(-1))){event.preventDefault();stops[0].focus();}
+  }
+
   // Shared content-only approval. Rendering and design belong to the adapter after
   // the exact version shown here has been accepted by the person.
   //
@@ -704,6 +866,6 @@ const Drafting = (() => {
     return k;
   }
 
-  return { DIFF_LIMIT, SAVE_WAIT, POLL, SELECTION, make, add, words, diffWords, age, kit, slideContent };
+  return { DIFF_LIMIT, SAVE_WAIT, POLL, SELECTION, make, add, words, diffWords, age, kit, slideContent, Intake, trapSheet };
 })();
 if (typeof module === 'object' && module.exports) module.exports = Drafting;

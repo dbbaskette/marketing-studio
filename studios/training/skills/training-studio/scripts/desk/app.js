@@ -1472,6 +1472,14 @@ function openSheet(kind, opener) {
 }
 
 function closeSheet() {
+  if (view.sheet === 'new' && view.draft && !view.closingIntake) {
+    return intakeStore().keep(view.draft, false).then(saved => {
+      if (!saved) return;
+      view.closingIntake = true;
+      closeSheet();
+      view.closingIntake = false;
+    });
+  }
   const opener = view.opener;
   view.sheet = '';
   view.after = null;
@@ -3677,7 +3685,19 @@ function newButton(kind, key) {
 
 // The new-training sheet, over the screen it was asked from. What was filled in before is
 // still there: a draft is kept for the session until the training starts.
-function openNew(opener) {
+let privateIntake = null;
+function intakeStore() {
+  if (!privateIntake) privateIntake = new Drafting.Intake(sent => sent.action === 'read' ? ask('intake-draft') : send('intake-draft', sent));
+  return privateIntake;
+}
+async function restoreIntake() {
+  const saved = await intakeStore().load();
+  if (!view.draft && saved) view.draft = Object.assign(newDraft(), saved, {starting:false, reading:false});
+  return saved;
+}
+
+async function openNew(opener) {
+  await restoreIntake();
   if (!view.draft) view.draft = newDraft();
   openSheet('new', opener || 'new')();
   readAgents();
@@ -9489,7 +9509,15 @@ function begin() {
     return;
   }
   open(window.history.state || { screen: 'home' });
-  refresh();
+  refresh().then(async () => {
+    if (!view.runner || !view.setup) return;
+    const saved = await restoreIntake();
+    if (saved?.intakeOpen && view.screen === 'home' && !view.sheet) openNew();
+  });
+  window.addEventListener('beforeunload', event => {
+    if (privateIntake && (privateIntake.pending || privateIntake.writing || privateIntake.problem)
+        && view.draft) {event.preventDefault(); event.returnValue = '';}
+  });
 }
 
 begin();

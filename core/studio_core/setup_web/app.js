@@ -1282,42 +1282,58 @@ $('#library-add-open').addEventListener('click', () => {
   openLibrarySheet($('#library-add-sheet'), $('#library-add-open'), $('#library-files'));
 });
 for (const id of ['#library-add-close', '#library-add-cancel']) $(id).addEventListener('click', () => closeLibrarySheet($('#library-add-sheet')));
+const libraryBatch = new Map();
+let libraryRetryFiles = null;
+$('#library-files').addEventListener('change', () => { libraryRetryFiles = null; libraryBatch.clear(); });
 $('#library-add').addEventListener('click', async () => {
   const input = $('#library-files'), box = $('#library-add-results'), button = $('#library-add');
-  const files = [...input.files];
+  const files = libraryRetryFiles || [...input.files];
   if (librarySheets.busy) return;
   if (!files.length) {
-    const said = element('p', 'Choose one or more files first.', 'problem'); said.setAttribute('role', 'alert');
-    box.replaceChildren(said); input.focus(); return;
+    const said = element('p','Choose one or more files first.','problem');said.setAttribute('role','alert');
+    box.replaceChildren(said);input.focus();return;
   }
-  librarySheets.busy = true; button.disabled = true; button.textContent = 'Adding…';
-  const outcomes = [];
-  try { for (const file of files) outcomes.push({file, ...await uploadOne(file)}); }
-  finally { librarySheets.busy = false; button.disabled = false; button.textContent = 'Add to library'; }
-  const refused = outcomes.filter(one => one.state === 'refused');
+  for(const file of files){operationId(file);libraryBatch.set(fileKey(file),{file,state:'queued',detail:'Waiting to be added.'});}
+  const said = element('p','','');said.setAttribute('role','status');said.setAttribute('aria-live','polite');said.tabIndex=-1;
+  const notice = element('p','Keep this page open while files are being added. Completed files are kept immediately. Stop after this file leaves queued files ready to retry. Close is available when this batch finishes.','quiet field-hint');
+  const list = element('ul','','library-list');list.setAttribute('aria-label','Files');
+  let stopRemaining=false;
+  const stop=element('button','Stop after this file','button button-quiet');stop.type='button';
+  stop.addEventListener('click',()=>{stopRemaining=true;stop.disabled=true;stop.textContent='Finishing the current file…';});
+  box.replaceChildren(said,notice,stop,list);
+  const draw = () => list.replaceChildren(...[...libraryBatch.values()].map(one => existingRow(one.file.name,
+    [[one.detail,one.state === 'refused' ? 'problem' : 'quiet']],
+    ({queued:'Queued',reading:'Reading',added:'Added',already:'Already there',refused:'Not added'})[one.state])));
+  const closures = ['#library-add-close','#library-add-cancel'].map(id => $(id));
+  librarySheets.busy=true;button.disabled=true;input.disabled=true;button.textContent='Adding…';
+  for(const control of closures)control.disabled=true;
+  let completed=0;
   try {
-    const left = new DataTransfer();
-    for (const one of refused) left.items.add(one.file);
-    input.files = left.files;
-  } catch (error) { if (!refused.length) input.value = ''; }
-  const count = state => outcomes.filter(one => one.state === state).length;
-  const added = count('added'), already = count('already');
-  const said = element('p', [added && `${added} added`, already && `${already} already in the library`,
-    refused.length && `${refused.length} not added`].filter(Boolean).join(', ') + '.', '');
-  said.setAttribute('role', 'status'); said.tabIndex = -1;
-  const list = element('ul', '', 'library-list');
-  list.setAttribute('aria-label', 'Files');
-  for (const one of outcomes) {
-    list.append(existingRow(one.file.name, [[one.detail, one.state === 'refused' ? 'problem' : 'quiet']],
-      ({added: 'Added', already: 'Already there', refused: 'Not added'})[one.state]));
+    for(const file of files){
+      if(stopRemaining){libraryBatch.set(fileKey(file),{file,state:'refused',detail:'Not added: the batch was stopped before this file started.'});draw();continue;}
+      libraryBatch.set(fileKey(file),{file,state:'reading',detail:'Reading this file…'});
+      said.textContent=`${completed} of ${files.length} processed. Reading ${file.name}.`;draw();
+      const outcome = await uploadOne(file);
+      libraryBatch.set(fileKey(file),{file,...outcome});completed++;
+      said.textContent=`${completed} of ${files.length} processed.`;draw();
+    }
+  } finally {
+    librarySheets.busy=false;button.disabled=false;input.disabled=false;button.textContent='Add to library';
+    for(const control of closures)control.disabled=false;
+    stop.remove();
   }
-  const parts = [said, list];
-  if (refused.length) parts.push(element('p', 'The files not added are still chosen. Fix them, or choose others, then add again; what was added is not added twice.', 'field-hint quiet'));
-  box.replaceChildren(...parts);
-  if (added || already) $('#library-add-cancel').textContent = 'Done';
+  const outcomes=[...libraryBatch.values()],refused=outcomes.filter(one => one.state === 'refused');
+  libraryRetryFiles=refused.map(one => one.file);
+  try {const left=new DataTransfer();for(const one of refused)left.items.add(one.file);input.files=left.files;}
+  catch(_){if(!refused.length)input.value='';}
+  const count=state => outcomes.filter(one => one.state === state).length;
+  const added=count('added'),already=count('already');
+  said.textContent=[added && `${added} added`,already && `${already} already in the library`,refused.length && `${refused.length} not added`].filter(Boolean).join(', ')+'.';
+  notice.textContent=refused.length ? 'Only files not added will be retried with the same operation identity. Successful files stay in this list and in the library. Choose files to begin another batch.' : 'All files were processed. Added files are kept in the library. Choose files to begin another batch.';
+  if(added || already)$('#library-add-cancel').textContent='Done';
   said.focus();
-  if (added) inform(added === 1 ? 'Added 1 document to the library.' : `Added ${added} documents to the library.`);
-  if (libraryCatalog) void libraryCatalog.load();
+  if(added)inform(added === 1 ? 'Added 1 document to the library.' : `Added ${added} documents to the library.`);
+  if(libraryCatalog)void libraryCatalog.load();
 });
 modelPicker(form.elements['assistant.model'], 'Shared model');
 $('#refresh-models').addEventListener('click', () => loadModels(true));

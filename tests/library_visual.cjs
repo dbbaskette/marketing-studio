@@ -155,7 +155,11 @@ const path=require('node:path'),fs=require('node:fs'),os=require('node:os'),asse
    assert.equal(await page.evaluate(()=>document.activeElement?.closest('#library-add-results')!==null),true,'focus lands on the outcome');
    assert.deepEqual(await page.locator('#library-files').evaluate(n=>[...n.files].map(f=>f.name)),['beta.png'],'only the refused file stays chosen');
    await page.locator('#library h3').filter({hasText:/^36 documents$/}).waitFor();
-   const again=await page.locator('#library-add').click().then(()=>page.locator('#library-add-results').getByText('1 not added.',{exact:true}).waitFor()).then(()=>page.locator('#library-add-results').innerText());
+   await page.locator('#library-add').click();
+   await page.waitForFunction(()=>!document.querySelector('#library-add').disabled);
+   const again=await page.locator('#library-add-results').innerText();
+   assert.ok(again.includes('1 not added.'));
+   assert.ok(again.includes('alpha.md')&&again.includes('gamma.txt'),'successful rows survive retry');
    assert.ok(again.includes('beta.png'),'a retry tries only what was refused');
    await fit(`Add documents ${width}`);await tall('#library-add-sheet .button, #library-add-sheet input.input',`Add documents ${width}`);
    await opaque('#library-add-sheet .library-list',`Add documents ${width}`);await contained('#library-add-sheet',`Add documents ${width}`);
@@ -286,6 +290,32 @@ const path=require('node:path'),fs=require('node:fs'),os=require('node:os'),asse
   assert.ok(shownAgain.includes('Shown again as “alpha”'),'uploading a removed file shows it again: '+shownAgain);
   await page.locator('#library h3').filter({hasText:/^37 documents$/}).waitFor();
   await page.locator('#library-add-close').click();
+  // A delayed request proves completed results appear while later work is running.
+  // Stop waits for that request, preserves completed files, and skips only queued files.
+  await page.locator('#library-add-open').click();
+  const operations=[];let release;
+  const held=new Promise(resolve=>release=resolve);
+  await page.route('**/api/library-upload',async route=>{
+   const sent=route.request().postDataJSON();operations.push(sent);
+   if(sent.name==='slow.txt')await held;
+   await route.continue();
+  });
+  await page.locator('#library-files').setInputFiles(['fast.txt','slow.txt','queued.txt'].map(name=>({name,mimeType:'text/plain',buffer:Buffer.from('Synthetic '+name)})));
+  await page.locator('#library-add').click();
+  await page.locator('#library-add-results').getByText('Added as “fast”', {exact:false}).waitFor();
+  await page.locator('#library-add-results').getByText('slow.txt',{exact:true}).waitFor();
+  assert(await page.locator('#library-add').isDisabled(),'later upload remains active');
+  assert(await page.locator('#library-add-close').isDisabled(),'close cannot interrupt an uncertain request');
+  await page.getByRole('button',{name:'Stop after this file',exact:true}).click();release();
+  await page.waitForFunction(()=>!document.querySelector('#library-add').disabled);
+  assert.deepEqual(operations.map(one=>one.name),['fast.txt','slow.txt']);
+  assert.deepEqual(await page.locator('#library-files').evaluate(n=>[...n.files].map(f=>f.name)),['queued.txt']);
+  await page.locator('#library-add').click();
+  await page.waitForFunction(()=>!document.querySelector('#library-add').disabled);
+  assert.deepEqual(operations.map(one=>one.name),['fast.txt','slow.txt','queued.txt']);
+  assert.ok((await page.locator('#library-add-results').innerText()).includes('fast.txt'));
+  await page.unroute('**/api/library-upload');await page.locator('#library-add-close').click();
+
   assert.deepEqual(errors,[]);
   console.log('PASS Document Library in a browser: the Library screen list first with one filled action, phone Filters in the Library and the Add from library sheet, Add documents with a mixed and an oversize upload reported per file and retried without duplicates, preview beside its row with focus back, Add existing work to library, Remove from library and Restore, at 1280, 390 and 320px, light and dark, reduced motion and reduced transparency with more contrast; opaque lists, 44px controls, keyboard ticks, Escape and focus; no studio, assistant or provider started');
  }catch(e){console.error(e);throw e;}

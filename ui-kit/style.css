@@ -3264,33 +3264,33 @@ body[data-product="Training Studio"] .card > .training-options {
     max-width: none;
     white-space: nowrap;
   }
-  body[data-product="Training Studio"] .toolbar.toolbar-compact {
+  body:is([data-product="Training Studio"],[data-product="Presentation Studio"]) .toolbar.toolbar-compact {
     flex-wrap: nowrap;
     gap: 0.5rem;
     min-height: 0;
     padding-block: 0.4rem;
   }
-  body[data-product="Training Studio"] .toolbar-compact .toolbar-title {
+  body:is([data-product="Training Studio"],[data-product="Presentation Studio"]) .toolbar-compact .toolbar-title {
     flex: 1 1 0;
   }
-  body[data-product="Training Studio"] .toolbar-compact .above,
-  body[data-product="Training Studio"] .toolbar-compact .title {
+  body:is([data-product="Training Studio"],[data-product="Presentation Studio"]) .toolbar-compact .above,
+  body:is([data-product="Training Studio"],[data-product="Presentation Studio"]) .toolbar-compact .title {
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
   }
-  body[data-product="Training Studio"] .toolbar-compact .above {
+  body:is([data-product="Training Studio"],[data-product="Presentation Studio"]) .toolbar-compact .above {
     display: block;
   }
-  body[data-product="Training Studio"] .toolbar-compact .title {
+  body:is([data-product="Training Studio"],[data-product="Presentation Studio"]) .toolbar-compact .title {
     display: block;
     -webkit-line-clamp: 1;
     line-clamp: 1;
   }
-  body[data-product="Training Studio"] .toolbar-compact .toolbar-actions {
+  body:is([data-product="Training Studio"],[data-product="Presentation Studio"]) .toolbar-compact .toolbar-actions {
     flex-wrap: nowrap;
   }
-  body[data-product="Training Studio"] .toolbar-compact .toolbar-actions > .button {
+  body:is([data-product="Training Studio"],[data-product="Presentation Studio"]) .toolbar-compact .toolbar-actions > .button {
     padding-inline: 0.8rem;
     white-space: nowrap;
   }
@@ -3753,6 +3753,26 @@ body[data-pilot="liquid"] .ig-outline-value { fill: var(--studio-color); font: 2
 .library-sheet>.library-selection{flex:none;max-height:40vh;overflow:auto;margin:0;padding:.6rem 1.25rem;background:var(--paper);border-top:1px solid var(--hair)}
 .library-sheet>.library-selection .selection-bar{position:static;margin:0}
 .library-sheet>.library-selection .create-foot{margin:0}
+.dialog:has(>.create-foot)[open]{display:flex;flex-direction:column;overflow:hidden}
+.dialog:has(>.create-foot)>.dialog-content{min-height:0;overflow:auto}
+.dialog>.create-foot{flex:none;margin:0;padding:.8rem 1.3rem;border-top:1px solid var(--hair);background:var(--solid)}
+
+/* Creation is one centered decision surface. The scrim dims competing headlines;
+   the form itself is opaque. Side inspectors keep their existing placement. */
+.sheet:has(.create-flow){position:fixed;top:50%;left:50%;right:auto;bottom:auto;transform:translate(-50%,-50%);width:min(46rem,calc(100% - 1.5rem));max-height:calc(100dvh - 2rem);display:flex;flex-direction:column;overflow:hidden;border-radius:22px;background:var(--solid);backdrop-filter:none;box-shadow:0 0 0 100vmax var(--scrim),var(--lift);animation:none}
+.sheet:has(.create-flow)>.sheet-heading{flex:none;margin:0 0 .75rem;padding:0 0 .75rem;background:var(--solid)}
+.sheet>.create-flow:has(.intake-body){display:flex;flex-direction:column;min-height:0;overflow:hidden;gap:.65rem}
+.intake-progress{display:flex;flex:none;gap:.5rem;list-style:none;margin:0;padding:0;color:var(--quiet);font-size:.85rem}
+.intake-progress>li{flex:1;border-bottom:2px solid var(--hair);padding:.4rem 0;overflow-wrap:anywhere}
+.intake-progress>.is-current{color:var(--ink);border-color:var(--accent);font-weight:650}
+.intake-body{min-height:0;overflow:auto;overscroll-behavior:contain;padding:.2rem .1rem .65rem}
+.intake-body>.create-step{border:0;margin:0;padding:0}
+.intake-body>.create-step>*+*{margin-top:.6rem}
+.create-flow:has(.intake-body)>.create-foot{flex:none;margin:0;padding:.65rem 0 0;border-top:1px solid var(--hair);background:var(--solid)}
+.create-flow:has(.intake-body)>.create-foot .button{white-space:normal}
+.sheet .create-foot>.button:not(.button-filled):not(.button-danger),.dialog .create-foot>.button:not(.button-filled):not(.button-danger){background:var(--solid);border-color:var(--hair);box-shadow:none;border-radius:10px}
+body[data-pilot="liquid"] .dialog .button:not(.button-round){border-radius:10px}
+@media (max-width:37.5rem){.sheet:has(.create-flow){max-height:calc(100dvh - 5rem - env(safe-area-inset-bottom));top:calc((100dvh - 4rem - env(safe-area-inset-bottom))/2);padding:1rem}.intake-progress{font-size:.8rem}.create-flow:has(.intake-body)>.create-foot{gap:.4rem}.create-flow:has(.intake-body)>.create-foot .button{flex:1 1 auto;padding-inline:.7rem}}
 .library-list{list-style:none;margin:0;padding:0;background:var(--paper);border:1px solid var(--hair);border-radius:16px}
 .library-list>li{padding:.75rem 1rem;overflow-wrap:anywhere}
 .library-list>li+li{border-top:1px solid var(--hair)}
@@ -3823,3 +3843,6 @@ body[data-pilot="liquid"] .ig-outline-value { fill: var(--studio-color); font: 2
 .activity-problem{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem 1rem}
 .research-progress>.activity-live{padding-top:1rem;border-top:1px solid var(--hair)}
 @media (max-width:40rem){.activity-lines>li{grid-template-columns:minmax(0,1fr)}.activity-lines{max-height:20rem}}
+
+.desk-summary-toggle{min-height:2.75rem;padding:.55rem .75rem;cursor:pointer;font-weight:600;border-bottom:1px solid var(--hair);overflow-wrap:anywhere}
+.desk-summary-content{padding:.75rem}.desk-summary-content>*+*{margin-top:.6rem}

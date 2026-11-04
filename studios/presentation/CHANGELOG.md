@@ -5,6 +5,13 @@ making decks first, then what changes for maintainers.
 
 ## Unreleased
 
+- **New deck saves your place in three real pages.** Source, Audience, and Research and
+  review keep answers and source pins through Back, Next, reload and Save and close.
+  Only Start begins work. Explicit discard clears the private form and keeps captured
+  sources. Creation sheets have an opaque, centered form and a visible action footer.
+  The desk brings the selected slide forward, folds optional status details, and puts
+  secondary phone actions under More.
+
 - **Editing keeps your place.** Slide status refreshes and autosave preserve keyboard focus
   and the caret, and composition input finishes before a deferred refresh. Library choices
   keep their confirmation in reach on a phone. The Activity log distinguishes the first

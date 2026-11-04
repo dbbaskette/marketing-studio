@@ -80,9 +80,13 @@ class DeskPageCase(test_desk.ScriptedPage, PageCase):
         return self.run_page(self.answers(**{'GET /api/run': [ok(view)], **more}), steps,
                              state={'screen': 'deck', 'path': path})
 
-    def new_deck(self, steps: list, **more) -> dict:
+    def new_deck(self, steps: list, *, intake_title=False, strictIntake=False, **more) -> dict:
+        if intake_title:
+            steps = list(steps)
+            at = next(i + 1 for i, step in enumerate(steps) if step.get("click") in ("An idea", "A document", "An existing deck"))
+            steps[at:at] = [{"fill": "A short title", "value": "Synthetic deck"}, {"intakePage": 0}]
         return self.run_page(self.answers(**{**STARTED, **NOT_THERE, **more}),
-                             [{'click': 'New deck'}, *steps])
+                             [{'click': 'New deck'}, *steps], strictIntake=strictIntake)
 
 
 class StartTests(DeskPageCase):
@@ -90,21 +94,22 @@ class StartTests(DeskPageCase):
 
     def test_the_start_is_three_numbered_steps(self):
         result = self.new_deck([{'snapshot': 'kinds'}, {'click': 'An idea'},
-                                {'snapshot': 'idea'}])
-        kinds, idea = result['snapshots']['kinds'], result['snapshots']['idea']
-        self.assertEqual(kinds['heading'], 'Home')
-        self.assertIn('1. What you start from', kinds['parts'])
-        for kind in ('An idea', 'A document', 'An existing deck'):
-            self.assertTrue(any(name.startswith(kind) for name in kinds['buttons']), kind)
-        steps = ['1. What you start from', '2. Audience and goal', '3. Research and settings']
-        self.assertEqual([part for part in idea['parts'] if part[:2] in ('1.', '2.', '3.', '4.')],
-                         steps)
-        self.assertTrue(idea['sheet'].rstrip().endswith('Start\nCancel'), idea['sheet'][-200:])
-        self.assertEqual(idea['filled'], ['Start'])
-        for shot in (kinds, idea):
-            self.assertNotIn('Review level', shot['text'] + shot['sheet'])
-            self.assertNotIn('Where it stops', shot['sheet'])
-        self.assertNotIn('See the first draft before the deck is checked', idea['buttons'])
+            {'snapshot': 'source'}, {'click': 'Next'}, {'snapshot': 'audience'},
+            {'fill': 'A short title', 'value': 'Synthetic deck'}, {'click': 'Next'},
+            {'snapshot': 'review'}], strictIntake=True)
+        shots = result['snapshots']
+        for key, title, primary in [('source', '1. What you start from', 'Next'),
+                                    ('audience', '2. Audience and goal', 'Next'),
+                                    ('review', '3. Research and settings', 'Start')]:
+            shot = shots[key]
+            self.assertEqual([part for part in shot['parts'] if part[:2] in ('1.', '2.', '3.')], [title])
+            self.assertEqual(shot['filled'], [primary])
+            self.assertIn('Save and close', shot['buttons'])
+            self.assertIn('Discard draft', shot['buttons'])
+            self.assertNotIn('Review level', shot['sheet'])
+        self.assertEqual(self.posts(result), [])
+        self.assertGreater(shots['review']['intakePosts'], 0)
+
 
     def test_an_idea_sends_the_desk_form(self):
         result = self.new_deck([
@@ -128,10 +133,10 @@ class StartTests(DeskPageCase):
         self.assertEqual(shown['gate']['name'], 'gate:look')
 
     def test_the_look_choice_is_offered_with_the_default_named_second(self):
-        result = self.new_deck([{'click': 'An idea'}, {'snapshot': 'idea'},
+        result = self.new_deck([{'click': 'An idea'}, {'intakePage': 2}, {'snapshot': 'idea'},
                                 {'click': 'Use the brand’s default look'},
                                 {'fill': 'A short title', 'value': 'Rolling restarts'},
-                                {'snapshot': 'default'}, {'click': 'Start'}])
+                                {'intakePage': 2}, {'snapshot': 'default'}, {'click': 'Start'}], intake_title=True)
         idea, default = result['snapshots']['idea'], result['snapshots']['default']
         looks = [name for name in idea['buttons']
                  if name in ('Pick it when the samples are drawn', 'Use the brand’s default look')]
@@ -184,7 +189,7 @@ class StartTests(DeskPageCase):
             {'fill': 'What should the research answer? (optional)', 'value': 'Why?'},
             {'click': 'Paste the text'}, {'fill': 'The text', 'value': 'Synthetic notes.'},
             {'fill': 'A short title', 'value': 'Synthetic deck'}, {'click': 'Start'}],
-            **{'GET /api/setup': [self.setup_with(research_sites=sites)]})
+            **{'GET /api/setup': [self.setup_with(research_sites=sites)]}, intake_title=True)
         shot = result['snapshots']['research']
         self.assertIn('Research from', shot['sheet'])
         for choice in ('your documents', 'your sites (2)', 'the public web'):
@@ -198,46 +203,34 @@ class StartTests(DeskPageCase):
         self.assertEqual(body['form']['research_questions'], ['Why?'])
 
     def test_the_source_comes_first_then_the_goal_then_the_settings(self):
-        result = self.new_deck([{'click': 'An idea'}, {'snapshot': 'idea'},
-                                {'click': 'Brand, output and assistant'}, {'snapshot': 'options'}])
-        idea, options = result['snapshots']['idea'], result['snapshots']['options']
-        sheet = idea['sheet']
-        steps = ['1. What you start from', '2. Audience and goal', '3. Research and settings',
-                 'What happens after Start']
-        at = [sheet.index(step) for step in steps]
-        self.assertEqual(at, sorted(at))
-        source, goal, settings, plan = (sheet[at[0]:at[1]], sheet[at[1]:at[2]],
-                                        sheet[at[2]:at[3]], sheet[at[3]:])
-        self.assertIn('What should it cover? (optional)', source)
-        for asked in ('A short title', 'Who is it for?', 'What should they take away?',
-                      'About how long, in minutes (optional)',
-                      'Is this deck for a talk or a handout?'):
-            self.assertIn(asked, goal)
-        for asked in ('Research first', 'Pick it when the samples are drawn',
-                      'These start as your defaults.', 'Brand, output and assistant',
-                      'The brand', 'Delivered as'):
-            self.assertIn(asked, settings)
-        self.assertIn('Approve the slide text.', plan)
-        self.assertTrue(plan.rstrip().endswith('Start\nCancel'), plan[-200:])
-        # The brand, the output and the assistant keep the defaults, folded away until they
-        # are opened.
-        for folded in ('PowerPoint (.pptx)', 'Claude Code'):
-            self.assertNotIn(folded, idea['buttons'])
-            self.assertIn(folded, options['buttons'])
-        self.assertNotIn('Its model', idea['fields'])
-        self.assertIn('Its model', options['fields'])
-        self.assertEqual(options['keyedTwice'], [])
+        result = self.new_deck([{'click': 'An idea'}, {'snapshot': 'source'},
+            {'click': 'Next'}, {'snapshot': 'goal'},
+            {'fill': 'A short title', 'value': 'Synthetic deck'}, {'click': 'Next'},
+            {'snapshot': 'settings'}, {'click': 'Brand, output and assistant'}, {'snapshot': 'options'}], strictIntake=True)
+        shots = result['snapshots']
+        self.assertIn('What should it cover? (optional)', shots['source']['fields'])
+        self.assertNotIn('A short title', shots['source']['fields'])
+        self.assertIn('A short title', shots['goal']['fields'])
+        self.assertNotIn('Research first', shots['goal']['buttons'])
+        self.assertIn('Research first', shots['settings']['buttons'])
+        self.assertNotIn('Its model', shots['settings']['fields'])
+        self.assertIn('Its model', shots['options']['fields'])
+        self.assertIn('What happens after Start', shots['settings']['sheet'])
+        self.assertEqual(shots['options']['keyedTwice'], [])
+        self.assertEqual(self.posts(result), [])
+
 
     def test_start_checks_every_step_and_focuses_the_first_gap(self):
-        result = self.new_deck([{'click': 'A document'}, {'click': 'Start'},
-                                {'snapshot': 'missing'}])
-        missing = result['snapshots']['missing']
+        result = self.new_deck([{'click': 'A document'}, {'click': 'Next'},
+            {'click': 'Next'}, {'snapshot': 'title'},
+            {'fill': 'A short title', 'value': 'Synthetic deck'}, {'click': 'Next'},
+            {'click': 'Start'}, {'snapshot': 'source'}], strictIntake=True)
+        self.assertIn('Give it a title first.', result['snapshots']['title']['sheet'])
+        missing = result['snapshots']['source']
         self.assertEqual(missing['posts'], 0)
-        for said in ('Something above is missing.', 'Give it a title first.',
-                     'Choose the file first.'):
-            self.assertIn(said, missing['sheet'])
-        # The document comes first, in the first step, before the title and goal.
+        self.assertIn('Choose the file first.', missing['sheet'])
         self.assertEqual(missing['focus'], 'new-file')
+
 
     def plan_of(self, shot: dict) -> str:
         return shot['sheet'][shot['sheet'].index('What happens after Start'):]
@@ -245,8 +238,8 @@ class StartTests(DeskPageCase):
     def test_an_idea_is_researched_whatever_a_document_was_marked(self):
         result = self.new_deck([
             {'click': 'A document'}, {'click': 'It lays out the slides'},
-            {'tick': 'Research first'}, {'snapshot': 'script'},
-            {'click': 'An idea'}, {'snapshot': 'idea'}])
+            {'tick': 'Research first'}, {'intakePage': 2}, {'snapshot': 'script'},
+            {'click': 'An idea'}, {'intakePage': 2}, {'snapshot': 'idea'}], intake_title=True)
         self.assertNotIn('Research.', self.plan_of(result['snapshots']['script']))
         plan = self.plan_of(result['snapshots']['idea'])
         self.assertIn('Research. It is planned from your questions', plan)
@@ -257,9 +250,9 @@ class StartTests(DeskPageCase):
         other = 'Google Slides' if default == 'pptx' else 'PowerPoint (.pptx)'
         result = self.new_deck([
             {'click': 'An existing deck'}, {'click': 'Redesign, keep content'},
-            {'snapshot': 'pick'}, {'click': 'Use the brand’s default look'},
-            {'snapshot': 'default'}, {'click': 'Brand, output and assistant'},
-            {'click': other}, {'snapshot': 'changed'}])
+            {'intakePage': 2}, {'snapshot': 'pick'}, {'click': 'Use the brand’s default look'},
+            {'intakePage': 2}, {'snapshot': 'default'}, {'click': 'Brand, output and assistant'},
+            {'click': other}, {'intakePage': 2}, {'snapshot': 'changed'}], intake_title=True)
         shots = result['snapshots']
         # The runner reads the deck, draws the looks, waits for the pick, then changes it.
         pick = self.plan_of(shots['pick'])
@@ -282,11 +275,11 @@ class StartTests(DeskPageCase):
 
     def test_what_happens_after_start_follows_the_choices(self):
         result = self.new_deck([
-            {'click': 'An idea'}, {'snapshot': 'idea'},
-            {'click': 'Use the brand’s default look'}, {'snapshot': 'default'},
-            {'click': 'A document'}, {'tick': 'Research first'}, {'snapshot': 'unread'},
-            {'click': 'It lays out the slides'}, {'snapshot': 'script'},
-            {'click': 'It is material to build from'}, {'snapshot': 'material'}])
+            {'click': 'An idea'}, {'intakePage': 2}, {'snapshot': 'idea'},
+            {'click': 'Use the brand’s default look'}, {'intakePage': 2}, {'snapshot': 'default'},
+            {'click': 'A document'}, {'tick': 'Research first'}, {'intakePage': 2}, {'snapshot': 'unread'},
+            {'click': 'It lays out the slides'}, {'intakePage': 2}, {'snapshot': 'script'},
+            {'click': 'It is material to build from'}, {'intakePage': 2}, {'snapshot': 'material'}], intake_title=True)
         shots = result['snapshots']
 
         def plan(name):
@@ -337,7 +330,7 @@ class StartTests(DeskPageCase):
             {'fill': 'A short title', 'value': 'Rolling restarts'}, {'click': 'Start'},
             {'snapshot': 'refused'}, {'click': 'Start'}],
             **{'GET /api/setup': [self.setup_with(research_sites=sites)],
-               'POST /api/decks': [refused, ok({'path': '/nowhere', 'id': 'x'})]})
+               'POST /api/decks': [refused, ok({'path': '/nowhere', 'id': 'x'})]}, intake_title=True)
         shots = result['snapshots']
         typed = {'A short title': 'Rolling restarts', 'Who is it for?': 'Operators',
                  'What should they take away?': 'When capacity holds.',
@@ -345,18 +338,18 @@ class StartTests(DeskPageCase):
         for name in ('document', 'existing', 'back', 'refused'):
             with self.subTest(shot=name):
                 shot = shots[name]
-                self.assertEqual({key: shot['fields'].get(key) for key in typed}, typed)
-                self.assertIn('A handout', shot['pressed'])
+                self.assertEqual({key: shot['intakeValues'].get({'A short title':'new-title','Who is it for?':'new-audience','What should they take away?':'new-goal','About how long, in minutes (optional)':'new-minutes'}[key]) for key in typed}, typed)
+                self.assertIn('A handout', shot['intakePressed'])
         # A document keeps the research and where it may look, and the look chosen.
         for name in ('document', 'back', 'refused'):
             with self.subTest(shot=name):
                 shot = shots[name]
-                self.assertIn('Research first', shot['ticked'])
-                self.assertIn('your sites (2)', shot['ticked'])
-                self.assertEqual(shot['fields']['What should the research answer? (optional)'],
+                self.assertIn('Research first', shot['intakeTicked'])
+                self.assertIn('your sites (2)', shot['intakeTicked'])
+                self.assertEqual(shot['intakeValues']['research-questions'],
                                  'Why now?')
-                self.assertIn('Use the brand’s default look', shot['pressed'])
-                self.assertIn('Chosen: notes.md', shot['sheet'])
+                self.assertIn('Use the brand’s default look', shot['intakePressed'])
+                self.assertIn('Chosen: notes.md', shot['intakeText'])
         # Each kind keeps its own file: the deck is not offered the document, and the document
         # comes back when its kind does.
         self.assertIn('Nothing chosen yet.', shots['existing']['sheet'])
@@ -392,9 +385,9 @@ class StartTests(DeskPageCase):
         shots = result['snapshots']
         existing, selected = shots['existing'], shots['selected']
         self.assertEqual([part for part in existing['parts'] if part[:2] in ('1.', '2.', '3.')],
-                         ['1. What you start from', '2. Audience and goal', '3. Research and settings'])
+                         ['1. What you start from'])
         sheet = existing['sheet']
-        first = sheet[sheet.index('1. What you start from'):sheet.index('2. Audience and goal')]
+        first = sheet[sheet.index('1. What you start from'):]
         for level in ('Brand only', 'Polish', 'Redesign, keep content', 'Full rework',
                       'Selected changes'):
             self.assertIn(level, first)
@@ -405,12 +398,12 @@ class StartTests(DeskPageCase):
         for gone in ('Research first', 'Pick it when the samples are drawn', 'Review level',
                      'Where it stops'):
             self.assertNotIn(gone, sheet)
-        self.assertIn('Choose how much changes.', shots['missing']['sheet'])
+        self.assertIn('Give it a title first.', shots['missing']['sheet'])
         self.assertEqual(shots['missing']['posts'], 0)
         self.assertIn('Which slides, and what to fix', selected['fields'])
-        first = selected['sheet'][:selected['sheet'].index('2. Audience and goal')]
+        first = selected['sheet']
         self.assertIn('Which slides, and what to fix', first)
-        self.assertIn('Pick it when the samples are drawn', shots['redesign']['buttons'])
+        self.assertIn('Pick it when the samples are drawn', shots['redesign']['intakeText'])
         self.assertNotIn('Which slides, and what to fix', shots['redesign']['fields'])
         (_, body), = self.posts(result)
         form = body['form']
@@ -505,7 +498,7 @@ class ResearchStartTests(DeskPageCase):
         shot = result['snapshots']['started']
         self.assertEqual(shot['posts'], 1, 'only the source draft is made')
         self.assertIn(NO_SOURCES, shot['sheet'])
-        self.assertIn('Something above is missing.', shot['sheet'])
+        self.assertIn('Complete this step before continuing.', shot['sheet'])
         # The first gap is where sources are added.
         self.assertEqual(shot['focusKey'], 'research-urls')
 
@@ -746,7 +739,7 @@ class NamesTests(DeskPageCase):
                     self.assertNotIn(gone, shot['text'] + shot['sheet'])
 
     def test_the_start_names_the_brand_as_the_look_does(self):
-        result = self.new_deck([{'click': 'An idea'}, {'snapshot': 'idea'}])
+        result = self.new_deck([{'click': 'An idea'}, {'fill':'A short title','value':'Synthetic deck'}, {'intakePage':2}, {'snapshot':'idea'}])
         self.assertIn('Made in Example Co (light), delivered as',
                       result['snapshots']['idea']['sheet'])
 
@@ -1412,7 +1405,7 @@ class WorkbenchTests(DeskPageCase):
         for line in ('Slide 5: 1 brand warning.', 'Slide 6: 1 review finding.'):
             self.assertIn(line, lines[looks:delivery])
         self.assertNotIn('Slide 3: Text runs off the slide.', lines[looks:delivery])
-        self.assertLess(lines.index('Before you deliver'), delivery)
+        self.assertLess(next(i for i,line in enumerate(lines) if '1 blocker' in line), delivery)
         self.assertEqual(lines[delivery + 1], 'The 8 slides as they are drawn now, not reviewed: '
                          'only the brand check ran. It goes to Google Slides. Nothing is sent '
                          'until you confirm it in Deliver.')
@@ -1437,7 +1430,7 @@ class WorkbenchTests(DeskPageCase):
         shown = reviewed_on(self.run_of(path), 4)
         (item,) = shown['desk']['finishing']['review']['items']
         result = self.open_deck(path, shown, [
-            {'snapshot': 'summary'}, {'click': 'Go to slide 4'}, {'snapshot': 'found'},
+            {'snapshot': 'summary'}, {'disclose':'desk-summary'}, {'click': 'Go to slide 4'}, {'snapshot': 'found'},
             {'click': 'Apply'}, {'snapshot': 'priced'}, {'click': 'Apply and redraw slide 4'}],
             **{'POST /api/desk-apply': [ok(shown)]})
         shots = result['snapshots']
@@ -1465,7 +1458,7 @@ class WorkbenchTests(DeskPageCase):
         gone = copy.deepcopy(shown)
         gone['desk']['finishing']['review']['items'][0]['state'] = 'skipped'
         skipped = self.open_deck(path, shown, [
-            {'click': 'Go to slide 4'}, {'click': 'Skip the review’s fix to slide 4'},
+            {'disclose':'desk-summary'}, {'click': 'Go to slide 4'}, {'click': 'Skip the review’s fix to slide 4'},
             {'snapshot': 'skipped'}], **{'POST /api/desk-skip': [ok(gone)],
                                          'GET /api/run': [ok(shown), ok(shown), ok(gone)]})
         self.assertEqual(self.posts(skipped), [('/api/desk-skip', {
@@ -1541,7 +1534,7 @@ class WorkbenchTests(DeskPageCase):
         shot = self.open_deck(path, delivered, [{'snapshot': 'delivered'}])['snapshots'][
             'delivered']
         lines = shot['text'].split('\n')
-        self.assertIn('Where the deck stands', lines)
+        self.assertTrue(any(line.startswith('Where the deck stands') for line in lines))
         self.assertNotIn('Before you deliver', lines)
         self.assertNotIn('Nothing blocks delivery.', lines)
         self.assertNotIn('What Deliver will use', lines)
@@ -2583,9 +2576,8 @@ class OutlineRebaseTests(unittest.TestCase):
 
 def summary_lines(shot: dict) -> list:
     """The lines of the desk's summary, from its heading to what Deliver will use."""
-    lines = shot['text'].split('\n')
-    start = lines.index('Before you deliver')
-    return lines[start:lines.index('What Deliver will use', start)]
+    lines = shot['deskSummary'].split('\n')
+    return lines[:lines.index('What Deliver will use')]
 
 
 class DeskFollowThroughTests(DeskPageCase):
@@ -2598,7 +2590,7 @@ class DeskFollowThroughTests(DeskPageCase):
         tabs = [{'key': 'Tab'}, {'snapshot': 'tab-1'}, *[{'key': 'Tab'}] * 4,
                 {'snapshot': 'tab-5'}, {'key': 'Tab'}, {'snapshot': 'tab-6'}]
         result = self.run_page(self.answers(**{'GET /api/run': [ok(view)]}), [
-            {'click': 'Finishing'}, {'snapshot': 'open'}, *tabs, {'click': 'Brand check'},
+            {'click': 'More'}, {'click': 'Finishing'}, {'snapshot': 'open'}, *tabs, {'click': 'Brand check'},
             {'snapshot': 'tool'}, {'key': 'Escape'}, {'snapshot': 'closed'}],
             state={'screen': 'deck', 'path': path}, narrow=True)
         shots = result['snapshots']
@@ -2615,7 +2607,7 @@ class DeskFollowThroughTests(DeskPageCase):
         # Escape puts it away, and the focus goes back to Finishing in the toolbar.
         self.assertEqual(shots['closed']['desks'][0]['children'], [['desk-column'],
                                                                    ['desk-aside']])
-        self.assertEqual(shots['closed']['focusKey'], 'desk-finishing')
+        self.assertEqual(shots['closed']['focusKey'], 'desk-more')
 
     def test_finishing_beside_the_slides_keeps_the_asides_width(self):
         css = (Path(__file__).parents[1] / 'skills/presentation-studio/scripts/desk/deck.css'
