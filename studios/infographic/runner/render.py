@@ -161,6 +161,24 @@ pre{{display:none}}@media print{{svg{{width:{d['width_pt']}pt;height:{d['height_
 </head><body><div id="asset-checks" hidden>{staged}</div>{svg}<pre id="metrics"></pre><script>{script}</script></body></html>'''
 
 
+RENDER_ERRORS = {
+    'renderer-unusable': ('The local renderer is missing or cannot run.', 'Check the renderer in Settings; choose an installed executable.'),
+    'timeout': ('The local renderer timed out.', 'Retry preview. If it repeats, check the renderer and page size.'),
+    'missing-fonts': ('Required page fonts are unavailable.', 'Install the chosen brand fonts or correct the page font requirements, then retry preview.'),
+    'invalid-assets': ('An embedded image could not be decoded.', 'Replace the affected saved image, then retry preview.'),
+    'layout-overflow': ('Required page content does not fit.', 'Review the page layout and text size before retrying preview.'),
+    'invalid-output': ('The renderer returned incomplete or invalid output.', 'Check the renderer and retry preview; keep the saved composition.'),
+    'unknown': ('The local preview could not finish.', 'Check the renderer and fonts in Settings, then retry preview. The diagnostic reference identifies this attempt.'),
+}
+
+
+class RenderError(ValueError):
+    """A fixed, safe category, never a copy of subprocess diagnostics."""
+    def __init__(self, category):
+        self.category = category
+        super().__init__(RENDER_ERRORS[category][0])
+
+
 def _run(executable: Path, work: Path, arguments: list[str], timeout: int) -> str:
     args = [str(executable), '--headless', '--no-first-run', '--no-default-browser-check',
             '--disable-background-networking', '--disable-component-update', '--disable-sync',
@@ -170,51 +188,63 @@ def _run(executable: Path, work: Path, arguments: list[str], timeout: int) -> st
     env = {key: os.environ[key] for key in ('PATH', 'LANG', 'LC_ALL') if key in os.environ}
     env.update(HOME=str(work / 'home'), TMPDIR=str(work))
     (work / 'home').mkdir(exist_ok=True)
-    process = subprocess.Popen(args, cwd=work, env=env, stdout=subprocess.PIPE,
-                               stderr=subprocess.PIPE, start_new_session=True)
+    try:
+        process = subprocess.Popen(args, cwd=work, env=env, stdout=subprocess.PIPE,
+                                   stderr=subprocess.PIPE, start_new_session=True)
+    except OSError as failure:
+        raise RenderError('renderer-unusable') from failure
     try:
         output, _ = process.communicate(timeout=timeout)
     except subprocess.TimeoutExpired as failure:
         os.killpg(process.pid, signal.SIGKILL)
         process.communicate()
-        raise ValueError('The local renderer timed out.') from failure
+        raise RenderError('timeout') from failure
     if process.returncode != 0:
-        raise ValueError('The local renderer could not finish. Check its installed capability.')
+        raise RenderError('renderer-unusable')
     return output.decode('utf-8', errors='replace')
 
 
 def png_size(path: Path) -> tuple[int, int]:
-    with Path(path).open('rb') as stream:
-        header = stream.read(24)
+    try:
+        with Path(path).open('rb') as stream:
+            header = stream.read(24)
+    except OSError as failure:
+        raise RenderError('invalid-output') from failure
     if len(header) != 24 or header[:8] != b'\x89PNG\r\n\x1a\n' or header[12:16] != b'IHDR':
-        raise ValueError('The renderer did not return a PNG.')
+        raise RenderError('invalid-output')
     return struct.unpack('>II', header[16:24])
 
 
 def pdf_pages(path: Path) -> list[tuple[float, float]]:
     """Inspect the renderer's own ordinary PDF objects, not arbitrary input PDFs."""
-    data = Path(path).read_bytes()
+    try:
+        data = Path(path).read_bytes()
+    except OSError as failure:
+        raise RenderError('invalid-output') from failure
     if not data.startswith(b'%PDF-'):
-        raise ValueError('The renderer did not return a PDF.')
+        raise RenderError('invalid-output')
     pages = re.findall(rb'(?s)\b\d+\s+\d+\s+obj\b(.*?)\bendobj\b', data)
     sizes = []
     for page in pages:
         if re.search(rb'/Type\s*/Page\b', page):
             box = re.search(rb'/MediaBox\s*\[\s*0\s+0\s+([\d.]+)\s+([\d.]+)\s*\]', page)
             if box is None:
-                raise ValueError('The generated PDF page size could not be checked.')
+                raise RenderError('invalid-output')
             sizes.append(tuple(float(value) for value in box.groups()))
     if not sizes:
-        raise ValueError('The generated PDF page count could not be checked.')
+        raise RenderError('invalid-output')
     return sizes
 
 
 def render(svg: str, *, preset: str, fonts: list[str], executable: Path,
            destination: Path, timeout: int = 30) -> dict:
     """Render into a new folder, publishing no partial result on failure."""
-    executable = Path(executable).resolve(strict=True)
+    try:
+        executable = Path(executable).resolve(strict=True)
+    except OSError as failure:
+        raise RenderError('renderer-unusable') from failure
     if not executable.is_file() or not os.access(executable, os.X_OK):
-        raise ValueError('Supply an installed executable headless renderer.')
+        raise RenderError('renderer-unusable')
     destination = Path(destination)
     if destination.exists() or destination.is_symlink():
         raise ValueError('The rendering attempt needs a new output folder.')
@@ -228,20 +258,29 @@ def render(svg: str, *, preset: str, fonts: list[str], executable: Path,
         output = _run(executable, work, ['--virtual-time-budget=2000', '--dump-dom', uri], timeout)
         match = re.search(r'<pre id="metrics">([^<]*)</pre>', output)
         if match is None or not match[1].strip():
-            raise ValueError('The renderer returned no font or layout measurements.')
-        metrics = json.loads(html.unescape(match[1]))
-        if not metrics.get('complete') or metrics.get('missing_fonts') or metrics.get('invalid_assets') or metrics.get('overflow'):
-            raise ValueError('The page has missing fonts, invalid assets, overflow, or incomplete measurements.')
+            raise RenderError('invalid-output')
+        try:
+            metrics = json.loads(html.unescape(match[1]))
+        except ValueError as failure:
+            raise RenderError('invalid-output') from failure
+        if not isinstance(metrics, dict) or not metrics.get('complete'):
+            raise RenderError('invalid-output')
+        if metrics.get('missing_fonts'):
+            raise RenderError('missing-fonts')
+        if metrics.get('invalid_assets'):
+            raise RenderError('invalid-assets')
+        if metrics.get('overflow'):
+            raise RenderError('layout-overflow')
         png, pdf = work / 'page.png', work / 'page.pdf'
         _run(executable, work, [f"--window-size={d['width_px']},{d['height_px']}",
                                '--screenshot=' + str(png), uri], timeout)
         _run(executable, work, ['--no-pdf-header-footer', '--print-to-pdf=' + str(pdf), uri], timeout)
         if png_size(png) != (d['width_px'], d['height_px']):
-            raise ValueError('The PNG does not match the selected dimensions.')
+            raise RenderError('invalid-output')
         pages = pdf_pages(pdf)
         if len(pages) != 1 or any(abs(actual - expected) > 1 for actual, expected in
                                 zip(pages[0], (d['width_pt'], d['height_pt']))):
-            raise ValueError('The PDF is not one page at the selected dimensions.')
+            raise RenderError('invalid-output')
         ready = work / 'ready'
         ready.mkdir()
         for path in (png, pdf):

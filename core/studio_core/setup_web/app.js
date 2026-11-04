@@ -632,6 +632,9 @@ async function refreshHomeStatus(){
     if(setup||view!=='home'||document.hidden)return;
     const structural=JSON.stringify(snapshot.studios.map(s=>[s.id,s.installed,s.path]))!==JSON.stringify(found.studios.map(s=>[s.id,s.installed,s.path]));
     snapshot.studios=found.studios;
+    snapshot.work_overview=found.work_overview;
+    workOverviewStale=false;
+    renderWorkOverview();
     if('computer' in found)snapshot.computer=found.computer;
     if(structural){renderHome(false);return;}
     renderReadinessSummary();
@@ -644,6 +647,7 @@ async function refreshHomeStatus(){
       const button=card.querySelector('.studio-open');if(studio.installed&&button&&!button.disabled){button.textContent=studio.running?'Return':'Open';button.setAttribute('aria-label',studio.running?`Return to ${studio.name}`:`Open ${studio.name}`);}
     }
   }catch(failure){
+    workOverviewStale=true;renderWorkOverview();
     // Retain the last readable state while reconnecting, but never show stale green lights.
     for(const line of document.querySelectorAll('.studio-readiness')){const studio=snapshot.studios.find(s=>s.id===line.closest('[data-studio]')?.dataset.studio)||{installed:true};line.replaceWith(readinessBlock({...studio,readiness:{state:'review',label:'Not checked',detail:'Marketing Studio did not answer, so this was not checked. If it was restarted, open the new private link from its terminal.',action:null}}));}
   }finally{homeRefreshing=false;}
@@ -659,23 +663,53 @@ async function resumeWork(studio, item, button) {
     else{const link=element('a','Open saved work','button');link.href=withHome(result.link);link.target=`marketing-${studio.id}`;$('#message').replaceChildren(link);$('#message').hidden=false;link.focus();}
   }catch(error){if(tab)tab.close();problem(error);button.disabled=false;button.textContent=item.action;}
 }
+let workOverviewStale=false;
 function renderWorkOverview(){
-  const host=$('#work-overview');if(!host)return;host.replaceChildren();
+  const host=$('#work-overview');if(!host)return;
+  const active=document.activeElement, wasInside=host.contains(active), scroll=window.scrollY;
+  const old=new Map([...host.querySelectorAll('.work-summary')].map(row=>[row.dataset.workKey,row]));
+  const groups=new Map([...host.querySelectorAll('[data-work-group]')].map(group=>[group.dataset.workGroup,group]));
   const rows=[];
   for(const studio of snapshot.studios)for(const item of snapshot.work_overview?.[studio.id]?.items||[])rows.push({studio,item});
+  const usedGroups=[];
   for(const [state,title] of [['needs-you','Needs you'],['in-progress','In progress'],['recent','Recent work']]){
-    const selected=rows.filter(row=>row.item.state===state).sort((a,b)=>b.item.observed_at.localeCompare(a.item.observed_at)).slice(0,6);
-    if(!selected.length)continue;
-    const group=element('section','','stack');group.append(element('h2',title,'section-title'));
-    for(const {studio,item} of selected){const row=element('article','','paper work-summary');const copy=element('div','','stack');copy.append(element('p',studio.name,'field-hint'),element('h3',item.title,'card-title'),element('p',state==='in-progress'?'Last saved work was in progress; open to check current activity.':item.action,'quiet'));const button=element('button',item.action,'button button-quiet');button.addEventListener('click',()=>resumeWork(studio,item,button));if(item.warning)copy.append(element('p',item.warning,'spending-warning'));row.append(copy,button);group.append(row);}
-    host.append(group);
+    const all=rows.filter(row=>row.item.state===state).sort((a,b)=>b.item.observed_at.localeCompare(a.item.observed_at)||a.item.id.localeCompare(b.item.id));
+    const selected=all.slice(0,6);if(!selected.length)continue;
+    const group=groups.get(state)||element('section','','stack');group.dataset.workGroup=state;
+    let heading=group.querySelector('h2');if(!heading){heading=element('h2',title,'section-title');heading.tabIndex=-1;group.append(heading);}
+    const wanted=[];
+    for(const {studio,item} of selected){
+      const id=studio.id+':'+item.id;
+      const row=old.get(id)||element('article','','paper work-summary');row.dataset.workKey=id;row.resumeStudio=studio;row.resumeItem=item;
+      if(row.dataset.summary!==JSON.stringify(item)){
+        let copy=row.querySelector('.work-summary-copy'),button=row.querySelector('button');
+        if(!copy){copy=element('div','','stack work-summary-copy');button=element('button','','button button-quiet');button.addEventListener('click',()=>resumeWork(row.resumeStudio,row.resumeItem,button));row.append(copy,button);}
+        copy.replaceChildren(element('p',studio.name,'field-hint'),element('h3',item.title,'card-title'),element('p',state==='in-progress'?'Last saved work was in progress; open to check current activity.':item.action,'quiet'));
+        if(item.warning)copy.append(element('p',item.warning,'spending-warning'));
+        if(!button.disabled)button.textContent=item.action;
+        row.dataset.summary=JSON.stringify(item);
+      }
+      wanted.push(row);
+    }
+    for(const row of [...group.querySelectorAll('.work-summary')])if(!wanted.includes(row))row.remove();
+    wanted.forEach((row,index)=>{if(group.children[index+1]!==row)group.insertBefore(row,group.children[index+1]||null);});
+    let omitted=group.querySelector('.work-omitted');if(omitted)omitted.remove();
+    if(state==='needs-you'){
+      const known=all.length-selected.length+Object.values(snapshot.work_overview||{}).reduce((n,value)=>n+(value.pending_omitted||0),0);
+      const more=Object.values(snapshot.work_overview||{}).some(value=>value.pending_more_possible);
+      if(known||more){omitted=element('p',`${known?known+' more known pending '+(known===1?'decision':'decisions')+'. ':''}${more?'Additional pending decisions may be outside this bounded index. ':''}Open the studio below for all its work.`,'quiet work-omitted');group.append(omitted);}
+    }
+    usedGroups.push(group);
   }
-  if(!rows.length&&Object.keys(snapshot.work_overview||{}).length)host.append(element('p','No readable saved work summaries are available yet. Open a studio to view its saved work.','quiet'));
-  const limited=Object.values(snapshot.work_overview||{}).some(row=>row.limited);
-  if(rows.length)host.append(element('p',limited?'Showing a bounded selection of saved metadata. Open a studio for all work.':'Saved status; opening work checks its current state.','quiet'));
-  const unavailable=snapshot.studios.filter(studio=>snapshot.work_overview?.[studio.id]?.state==='unavailable');
-  if(unavailable.length)host.append(element('p','Saved work metadata is unavailable for '+unavailable.map(s=>s.name).join(', ')+'. Launch cards remain available.','quiet'));
+  for(const group of groups.values())if(!usedGroups.includes(group))group.remove();
+  usedGroups.forEach((group,index)=>{if(host.children[index]!==group)host.insertBefore(group,host.children[index]||null);});
+  let status=host.querySelector('.work-coverage');if(!status){status=element('p','','quiet work-coverage');status.setAttribute('role','status');host.append(status);}
+  const values=Object.values(snapshot.work_overview||{}),unavailable=snapshot.studios.filter(studio=>snapshot.work_overview?.[studio.id]?.state==='unavailable');
+  status.textContent=workOverviewStale?'Connection interrupted. Saved work shown may be out of date; reconnecting.':!rows.length&&values.length?'No readable saved work summaries are available yet. Open a studio to view its saved work.':values.some(row=>row.limited)?'Showing bounded saved metadata. Pending indexed work comes first; older work outside the scan may be omitted. Open a studio below for all its work.':'Saved status; opening work checks its current state.';
+  if(unavailable.length)status.textContent+=' Saved metadata is unavailable for '+unavailable.map(s=>s.name).join(', ')+'.';
+  if(wasInside){if(active.isConnected)active.focus({preventScroll:true});else (host.querySelector('h2')||$('#view-title')).focus({preventScroll:true});window.scrollTo(0,scroll);}
 }
+
 function renderHome(refreshPaths = true) {
   renderWorkOverview();
   const list = $('#studio-list'); list.replaceChildren();

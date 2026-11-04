@@ -24,6 +24,14 @@ Captured sources and located facts support the story. A build does not silently
 start public research, OCR or an image request. Assistant and image usage are
 identified before their respective actions.
 
+## Preview recovery
+
+A failed local preview keeps the saved composition and artwork. The recovery panel
+names a safe category and next step: renderer unavailable, timeout, missing fonts,
+invalid artwork/output, layout overflow or an unknown failure. Raw diagnostics stay
+private. Home says **Preview failed** until a successful local retry; retrying a
+preview starts no assistant or image request.
+
 ## Install
 
 Choose an available Infographic Studio or suite bundle from

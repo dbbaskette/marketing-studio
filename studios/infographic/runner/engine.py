@@ -45,7 +45,8 @@ class Engine:
         kept = library.status(self.store, ident)
         if kept and type(kept.get('revision')) is int and 'page_revision' not in kept:
             kept['page_revision'] = pages.of(kept['revision'])
-        return {'workflow_recovery': build_recovery.read(self.store, ident), 'project': project, 'history': listed, 'page_revision': pages.of(project['revision']),
+        recovery = build_recovery.read(self.store, ident, project=project)
+        return {'workflow_recovery': recovery, 'project': project, 'history': listed, 'page_revision': pages.of(project['revision']),
                 'approval_words': progress.approved_words(project['approval'], pages.of) if project['approval'] else None,
                 'planning_response': planning_responses.status(self.store, project),
                 'source_findings': evidence.findings(project['facts']),
@@ -56,7 +57,7 @@ class Engine:
                 'library': {'sources': library.marked(self.store, project),
                             'kept': kept,
                             'own': library.own(self.store, ident)},
-                'elements': labels.elements(project), 'readiness': progress.readiness(project),
+                'elements': labels.elements(project), 'readiness': progress.readiness(project, recovery),
                 'roadmap': progress.roadmap(project, deliveries, review=review, review_checked=review_checked,
                                             page=pages.of)}
 
@@ -358,11 +359,12 @@ class Engine:
 
     def preview(self, ident, *, expected_revision, draft=True):
         self.progress('Rendering and checking the page' if draft else 'Preparing the approved files')
-        require(self.executable is not None or self.renderer is not None,
-                'Configure an installed pinned renderer before preview or export. Nothing is downloaded automatically.')
         kwargs = {'renderer': self.renderer} if self.renderer else {}
         self.store.expect(self.store.read(ident), expected_revision)
         try:
+            if self.executable is None and self.renderer is None:
+                from .render import RenderError
+                raise RenderError('renderer-unusable')
             manifest = exports.build(self.store, ident, expected_revision=expected_revision,
                                      executable=self.executable, draft=draft, **kwargs)
         except Exception as failure:

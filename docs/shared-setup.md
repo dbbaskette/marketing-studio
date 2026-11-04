@@ -519,3 +519,12 @@ repository, branch and brand names. A changed commit, branch or destination requ
 a fresh preview and yes. Commits containing unrelated files or mixing brands are
 refused for review with Git. Push never forces. A non-fast-forward refusal preserves
 the local commit. Local-folder repositories have no automatic push action.
+
+Home refreshes saved-work summaries on its normal status poll and when you return to
+the tab. Unchanged resume controls retain focus. A connection failure keeps the last
+saved rows with an explicit stale-state notice. Pending decisions are selected before
+active and recent work. Native saves maintain a compact per-state metadata index in the private local cache;
+Home never creates or rebuilds it while reading. At most 100 candidates are read per
+studio. Older work without an index has bounded scan coverage; the page discloses
+omissions and directs you to the studio for all work. Known omitted pending decisions
+are counted separately from possible work outside the bounded scan.

@@ -11,10 +11,14 @@ const path=require('node:path'),fs=require('node:fs'),assert=require('node:asser
   browser=await chromium.launch({headless:true,executablePath:renderer});
   const page=await browser.newPage({viewport:{width:1440,height:1000},colorScheme:'light'}),errors=[];
   page.on('pageerror',e=>errors.push(e.message));let variant='ready';
+  let homeFailed=false;
   await page.route('**/api/home',async route=>{
+   if(homeFailed){await route.abort();return;}
    const response=await route.fetch(),data=await response.json();
    data.shared.local.root='~/Studios';
    data.work_overview={training:{state:'saved',items:[{id:'scope',title:'Synthetic outline',state:'needs-you',action:'Review the training outline',observed_at:'2026-11-04T12:00:00Z'}]},presentation:{state:'saved',items:[{id:'slides',title:'Synthetic deck',state:'in-progress',action:'Open saved progress',observed_at:'2026-11-04T11:00:00Z'}]},infographic:{state:'saved',items:[{id:'page',title:'Synthetic infographic',state:'recent',action:'Open saved work',observed_at:'2026-11-04T10:00:00Z'}]}};
+   if(variant==='updated')data.work_overview.training.items[0]={...data.work_overview.training.items[0],title:'Changed saved outline',action:'Answer the pending question'};
+   if(variant==='removed')data.work_overview.training.items=[];
    for(const studio of data.studios){
     studio.readiness={state:'done',label:'Can open',detail:'Synthetic local prerequisite check.',action:null};studio.running=true;
     studio.workspace=studio.id==='infographic'?{state:'local',summary:'Local workspace',detail:'Share selected files through Team library.'}:{state:'connected',summary:'Connected to https://example.invalid/team/a-long-reference-repository-for-layout-checking (main)',detail:null};
@@ -36,6 +40,19 @@ const path=require('node:path'),fs=require('node:fs'),assert=require('node:asser
   let cards=await page.locator('.studio-card').evaluateAll(nodes=>nodes.map(n=>{const r=n.getBoundingClientRect();return {x:r.x,y:r.y,height:r.height};}));
   assert.equal(cards[0].y,cards[1].y);assert.ok(cards[2].y>cards[0].y);
   assert.ok(cards.every(c=>c.height<270),'Desktop cards should be compact without a forced empty row');
+  const resume=page.locator('[data-work-key="training:scope"] button');await resume.focus();
+  await resume.evaluate(n=>window.originalResume=n);
+  await page.evaluate(()=>refreshHomeStatus());
+  assert(await resume.evaluate(n=>n===window.originalResume&&document.activeElement===n),'Unchanged poll preserves the resume button');
+  variant='updated';
+  await page.getByRole('heading',{name:'Changed saved outline',exact:true}).waitFor({timeout:8000});
+  assert(await resume.evaluate(n=>n===window.originalResume&&document.activeElement===n),'Changed summary preserves focused action');
+  assert.equal(await resume.textContent(),'Answer the pending question');
+  homeFailed=true;await page.evaluate(()=>refreshHomeStatus());
+  await page.getByText(/Saved work shown may be out of date/).waitFor();
+  homeFailed=false;variant='removed';await page.evaluate(()=>refreshHomeStatus());
+  await resume.waitFor({state:'detached'});
+  variant='ready';await page.evaluate(()=>refreshHomeStatus());
   const details=page.locator('.studio-repository').first(),summary=details.locator('summary');
   await summary.focus();await summary.press('Space');assert.equal(await details.evaluate(n=>n.open),true);
   await details.getByText(/a-long-reference-repository-for-layout-checking/).waitFor();await fit();
