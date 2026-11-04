@@ -13,6 +13,7 @@ from unittest import mock
 def main():
     parser=argparse.ArgumentParser();parser.add_argument('product',choices=('training','presentation'));parser.add_argument('--slides',type=int,choices=(6,30),default=6)
     parser.add_argument('--research-preview',action='store_true')
+    parser.add_argument('--poll-files',type=int,default=0)
     args=parser.parse_args();native=Path(__file__).resolve().parents[1]/'studios'/args.product
     sys.path.insert(0,str(native/'tests'));sys.path.insert(1,str(native))
     from runner import page
@@ -53,6 +54,10 @@ def main():
             preview={'basis':'synthetic-section-basis','digest':'synthetic-display-digest','sections':[{'title':'Saved section','text':'Synthetic section prose is available before final checking.'}],'sources':[{'title':'Selected fixture source','permission':'selected'}]}
             record['research_execution']={'progress':{'phase':'review','first_readable_seconds':2,'combining':[{'id':'area1','questions':['Synthetic question'],'status':'kept','preview':preview},{'id':'area2','questions':['Sibling question'],'status':'failed'}]}}
             case.engine._store(root,record)
+        if args.poll_files:
+            assets=case.space.root/'synthetic-other-project-assets';assets.mkdir()
+            for number in range(args.poll_files):
+                (assets/f'asset-{number:06d}.txt').write_text('Synthetic metadata benchmark')
         reads_count={}
         class Fixture(page.RunnerPage):
             reads=(*page.RunnerPage.reads,'/api/fixture-review-state','/api/fixture-research-stage')

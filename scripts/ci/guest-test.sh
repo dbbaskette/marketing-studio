@@ -153,6 +153,14 @@ if [[ "${1:-full}" == infographic-planning || "${1:-full}" == infographic-activi
   bundle="$(find dist -maxdepth 1 -name "$pattern" -print -quit)"
   [[ -n "$bundle" ]] || { echo 'A prepared Infographic Studio-only Apple Silicon package is required.' >&2; exit 1; }
   "$python" scripts/ci/infographic_bundle_acceptance.py "$bundle" 2>&1 | tee "$results_dir/infographic-bundle.log"
+elif [[ "${1:-full}" == native-polling-finish ]]; then
+  PYTHONPATH=core:tests "$python" -m unittest test_polling -v > "$results_dir/final-polling.log" 2>&1
+  (cd studios/presentation && "$python" scripts/ci/run_tests.py --jobs 4 test_desk.ScreenTests test_desk_page.DeskFollowThroughTests test_desk_page.FinishingPageTests test_desk_page.SecondReviewTests test_desk_page.SlideTextStopTests test_engine_process_lock.EngineProcessLockTests && "$python" skills/presentation-studio/scripts/validate_package.py) > "$results_dir/presentation-tests.log" 2>&1
+  (cd studios/training && bash scripts/ci/check.sh "$python") > "$results_dir/training-tests.log" 2>&1
+elif [[ "${1:-full}" == native-polling ]]; then
+  PYTHONPATH=core:tests "$python" -m unittest discover -s tests -v > "$results_dir/shared-tests.log" 2>&1
+  (cd studios/presentation && "$python" scripts/ci/run_tests.py --jobs 4 && "$python" skills/presentation-studio/scripts/validate_package.py) > "$results_dir/presentation-tests.log" 2>&1
+  (cd studios/training && bash scripts/ci/check.sh "$python") > "$results_dir/training-tests.log" 2>&1
 elif [[ "${1:-full}" == blog-intake ]]; then
   (cd studios/blog && BLOG_STUDIO_REQUIRE_LINT=1 BLOG_STUDIO_TEST_JOBS=4 bash scripts/ci/check.sh "$python" "$results_dir/blog-studio" && node scripts/ci/check-management.cjs > "$results_dir/blog-management.json") 2>&1 | tee "$results_dir/blog-checks.log"
 elif [[ "${1:-full}" == blog-google-tabs ]]; then

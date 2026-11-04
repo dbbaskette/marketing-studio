@@ -14,7 +14,8 @@ from studio_core.process_lock import ProcessRLock
 class EngineProcessLockCases:
     def test_two_engine_processes_preserve_updates_and_git_history(self):
         with tempfile.TemporaryDirectory() as temporary:
-            repo = Path(temporary).resolve()
+            repo = Path(temporary).resolve() / 'repository'
+            repo.mkdir()
             def git(*args):
                 return subprocess.run(['git', *args], cwd=repo, capture_output=True,
                                       text=True, check=True).stdout.strip()
@@ -51,7 +52,7 @@ for _ in range(8):
    engine._store(root, record)
    gitstate.commit(space, 'keep update', [root])
 """
-            env = {**os.environ, 'HOME': str(repo / 'home'),
+            env = {**os.environ, 'HOME': str(Path(temporary) / 'home'),
                    'PYTHONPATH': str(self.helpers.REPO / 'tests')}
             children = [subprocess.Popen([sys.executable, '-c', code, str(repo), str(root)],
                         env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)

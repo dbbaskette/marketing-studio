@@ -2379,7 +2379,8 @@ class SlideTextStopTests(DeskPageCase):
     def test_approve_with_a_typed_change_asks_before_it_drops_it(self):
         path, view = self.text_deck()
         typed = 'Make slide 4 title shorter.'
-        steps = [{'fill': 'Changes to slide text', 'value': typed},
+        steps = [{'click': 'Ask your assistant for slide-text changes'},
+                 {'fill': 'Changes to slide text', 'value': typed},
                  {'click': APPROVE_TEXT}, {'snapshot': 'asked'}]
         dropped = self.open_deck(path, view, [*steps, {'click': 'Approve without them'}],
                                  **{'POST /api/decide': [ok(view)]})
@@ -2417,6 +2418,7 @@ class SlideTextStopTests(DeskPageCase):
         slides = view['gate']['slides']
         fixed = slides[3]['title'] + ' now'
         result = self.open_deck(path, view, [
+            {'click': 'Next slide'}, {'click': 'Next slide'}, {'click': 'Next slide'},
             {'fill': 'Title of slide 4', 'value': fixed}, {'click': APPROVE_TEXT}],
             **{'POST /api/decide': [ok(view)]})
         ((address, sent),) = self.posts(result)
