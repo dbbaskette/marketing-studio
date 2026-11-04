@@ -7205,7 +7205,7 @@ class Engine(Reviewing):
             'documents': self._supplied(root, record, found),
             'research_from': self._research_view(record),
             'copies': self._copies(found, (record.get('copies') or {}).get('remote')),
-            'change_impact': research_impact.native(self, root, record, 'training') if research_sections.enabled(record) else None,
+            **({'change_impact': research_impact.native(self, root, record, 'training')} if research_sections.enabled(record) else {}),
             'outline': outline,
             **({'outline_first': True} if outline_first.enabled(record) else {}),
             **({'training_plan': training_plan.view(root, found, record),

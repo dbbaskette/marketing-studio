@@ -6077,7 +6077,7 @@ function updateResearchSheet() {
   return [sheetTitle('Update the research?'),
     make('p', '', 'The research reads ' + series(names) + ' with the documents it read '
       + 'before.'),
-    impact?.node,
+    ...(impact ? [impact.node] : []),
     held.update_price ? make('p', 'quiet', held.update_price.words) : null,
     problem, add(make('div', 'bar'), go, capsule('Cancel', 'quiet', closeSheet, 'cancel'))];
 }
