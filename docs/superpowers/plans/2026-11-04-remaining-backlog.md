@@ -36,3 +36,11 @@ Fifty isolated local repetitions passed, preserving wrong-start refusal, orphan
 survival and matching-identity termination. The complete targeted launcher/CLI
 checks passed apart from a corrected expected CLI error exit-code assertion; both
 new socket cases passed afterward. Full shared/CLI acceptance follows in Tart.
+
+Launcher verification completed: the full shared Tart run executed 977 cases
+(one explicit PDF-reader skip with prior passing evidence). Its only error was
+the retired never-reuse network mock. After correcting that fixture, all 35
+network/CLI cases and every setup/authenticated launch/reuse/cleanup, Hub 41-step
+and CLI 39-command acceptance passed on runtime `7d3970fb`. Native pipelines are
+unchanged and retain their complete Week 7 evidence. Fifty local owned-session
+repetitions passed. Owned VMs were deleted; no provider or real workspace was used.
