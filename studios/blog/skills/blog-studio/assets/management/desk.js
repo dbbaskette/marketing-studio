@@ -86,6 +86,64 @@ const DESK_HAVE=[['topic','A topic'],['outline','An outline or notes'],['draft',
 const DESK_OUTLINE_WAYS=[['outline','Write from my outline'],['shape','Shape an outline with me first']];
 const DESK_START_STEPS=['Idea and sources','Writing preferences'];
 const DESK_START_LEDES=['Bring your idea or outline and add any sources once.','Check the writing preferences, then start. Your choices and sources are kept.'];
+const DESK_INTAKE_FIELDS='step kind style researchOn have title audience point angles angle angleOp outline outlineFrom outlineWay source article manuscript url link collection preview first_pass humanizeOn humanizeLevel geoReview voiceOn voiceGuide files role keep from searchSites searchWeb length tone operation upload uploaded docKeep sourceDraft sourceEntry fileData outlineFileData'.split(' ');
+class BlogIntake extends Drafting.Intake {
+  snapshot(held,open=true){
+    const value=Object.fromEntries(DESK_INTAKE_FIELDS.filter(key=>held[key]!==undefined).map(key=>[key,held[key]]));
+    if(held.sourceEditor){value.sourceDraft=held.sourceEditor.spec()||held.sourceEditor.resume||held.sourceDraft||null;value.sourceEntry=Object.fromEntries(['urls','text','name','pasting','keep'].map(key=>[key,held.sourceEditor[key]??null]));}
+    return {...value,intakeOpen:open};
+  }
+}
+function sBlogIntake(){return studio.intake||(studio.intake=new BlogIntake(sent=>api('intake-draft',sent)));}
+async function sDeskFilesKeep(held){
+  for(const key of ['file','outlineFile']){
+    const file=held[key],cache='_'+key+'Cache',data=key+'Data';
+    if(!file){held[data]=null;continue;}
+    if(held[cache]?.file===file){held[data]=await held[cache].value;continue;}
+    if(file.size>10*1024*1024)throw Error('Choose a file up to 10 MiB. Your other answers are still here.');
+    const value=encodeImportFile(file).then(content=>({name:file.name,size:file.size,content}));
+    held[cache]={file,value};held[data]=await value;
+  }
+}
+function sDeskFilesRestore(held){
+  for(const key of ['file','outlineFile'])if(held[key+'Data']){
+    const data=held[key+'Data'];held[key]={name:data.name,size:data.size,arrayBuffer:async()=>Uint8Array.from(atob(data.content),c=>c.charCodeAt(0)).buffer};
+    held['_'+key+'Cache']={file:held[key],value:Promise.resolve(data)};
+  }
+}
+function sDeskKeep(held,open=true){
+  const intake=sBlogIntake();clearTimeout(held._saveTimer);held._saveTimer=null;
+  const run=async()=>{
+    for(const node of document.querySelectorAll('[data-intake-status]'))node.textContent='Saving intake…';
+    const edit=held._editRevision||0;
+    try{await sDeskFilesKeep(held);const ok=await intake.keep(held,open);if(ok&&edit===(held._editRevision||0))held._dirty=false;return ok;}
+    catch(error){intake.problem=error.message;intake.status();return false;}
+  };
+  const saving=(held._saving||Promise.resolve()).then(run,run);held._saving=saving;
+  saving.finally(()=>{if(held._saving===saving)held._saving=null;});return saving;
+}
+async function sDeskConsumed(held,revision){
+  const intake=sBlogIntake();
+  if(studio.deskStart!==held||intake.revision!==revision||held._dirty||held._saving)return;
+  clearTimeout(held._saveTimer);held._saveTimer=null;
+  try{
+    const cleared=await intake.request({action:'discard',expected:revision});
+    if(studio.deskStart===held&&!held._dirty&&!held._saving&&intake.revision===revision){
+      intake.revision=cleared.revision;intake.saved=null;intake.encoded={};studio.deskStart=null;
+    }
+  }catch(error){intake.problem=error.message;intake.status();}
+}
+function sDeskIntakeControls(held){
+  const intake=sBlogIntake(),form=$('studio-page').querySelector('form');if(!form)return;
+  const status=sNode('p','quiet field-hint');status.dataset.intakeStatus='true';status.setAttribute('role','status');
+  const save=sButton('Save and close',async()=>{if(await sDeskKeep(held,false))await sRoute('home');});
+  const discard=sButton('Discard draft',async()=>{if(!confirm('Discard this unfinished blog form? Captured sources and existing blogs are kept.'))return;clearTimeout(held._saveTimer);held._saveTimer=null;if(held._saving)await held._saving;if(await intake.discard()){studio.deskStart=null;await sRoute('home');}});
+  form.append(sAdd(sNode('div','form-foot'),status,sAdd(sNode('div','bar'),save,discard)));
+  const changed=()=>{held._editRevision=(held._editRevision||0)+1;held._dirty=true;clearTimeout(held._saveTimer);held._saveTimer=setTimeout(()=>{held._saveTimer=null;sDeskKeep(held);},250);status.textContent='Saving intake…';};
+  form.addEventListener('input',changed);form.addEventListener('change',changed);
+  form.addEventListener('click',event=>{if(event.target.closest('.segmented'))changed();});
+  sDeskKeep(held);
+}
 // Settings' research for new blogs is where the start's ticks begin: Search my sites when it
 // ticks your sites and the shared list has any, Search the web too when it ticks the public
 // web. Your documents are always read. The person can change both for this blog.
@@ -97,15 +155,28 @@ function sDeskHeld(){
 }
 // Home's tasks, New blog, the library's "Write a blog from these", an interview's outline and
 // a saved blog's details all start here.
-function sDeskBegin(preset={}){studio.deskStart=null;studio.deskPreset=preset;return sRoute('desk-start');}
+async function sDeskBegin(preset={}){
+  const intake=sBlogIntake();await intake.load();
+  if(Object.keys(preset).length&&(studio.deskStart||intake.saved)){
+    if(!confirm('Replace the unfinished blog form with this new starting point? Cancel resumes the saved form.'))return sRoute('desk-start');
+    const held=studio.deskStart;if(held){clearTimeout(held._saveTimer);held._saveTimer=null;if(held._saving)await held._saving;}
+    if(!await intake.discard())return notice(intake.problem,true);
+  }
+  if(Object.keys(preset).length||(!studio.deskStart&&!intake.saved)){studio.deskStart=null;studio.deskPreset=preset;}
+  return sRoute('desk-start');
+}
 async function sDeskStart(){
   if(!studio.options)studio.options=await api('run-options');
+  const intake=sBlogIntake();if(!intake.ready)await intake.load();
+  const restore=!studio.deskStart&&intake.saved;
   const held=sDeskHeld();
-  if(held.have==='draft')return sDeskPolish(held);
+  if(restore){Object.assign(held,intake.saved);sDeskFilesRestore(held);}
+  if(held.have==='draft'){sDeskPolish(held);sDeskIntakeControls(held);return;}
   sFrame('New blog',[],'New writing',()=>sRoute('home'));
   held.step=Math.min(held.step,1);
   const steps=sWorkflowSteps(DESK_START_STEPS,held.step,index=>{if(index){const problem=sDeskHaveProblem(held);if(problem)return notice(problem,true);}held.step=index;sTop();sDeskStart();});
   sPage(sNode('p','lede',DESK_START_LEDES[held.step]),steps,held.step===0?sDeskHave(held):sDeskSettings(held));
+  sDeskIntakeControls(held);
 }
 function sDeskStartAgain(held){if(studio.screen==='desk-start'&&studio.deskStart===held)sDeskStart();}
 function sDeskWriting(held){return held.have!=='draft';}
@@ -146,7 +217,7 @@ function sDeskResearchOptions(held){
   const saved=(held.sourceEditor?.value?.sources||[]).some(source=>source.status==='ready');if(saved)held.researchOn=true;
   const toggle=sCheck('desk-research-on','Research these sources before writing',held,'researchOn',saved?'Saved research is checked for this blog’s purpose. Remove it from Sources to write without that check.':'Research runs if either option is on. Leave both off to write directly from your sources.');if(saved)toggle.querySelector('input').disabled=true;box.append(toggle);
   if(typeof StudioResearch!=='undefined'){
-    if(!held.sourceEditor){held.sourceSignature='[]';held.sourceEditor=new StudioResearch.Editor({onChange:value=>{const signature=JSON.stringify(value?.sources||[]);if(signature!==held.sourceSignature){held.sourceSignature=signature;sDeskStartAgain(held);}},request:async sent=>{let value=await api('research-sources',sent);if(sent.action==='create'&&(held.searchSites||held.searchWeb))value=await api('research-sources',{action:'configure',id:value.id,expected:value.revision,external:true,restricted:!held.searchWeb});return value;},policyOnly:true});}
+    if(!held.sourceEditor){held.sourceSignature='[]';held.sourceEditor=new StudioResearch.Editor({resume:held.sourceDraft,onChange:value=>{const signature=JSON.stringify(value?.sources||[]);if(signature!==held.sourceSignature){held.sourceSignature=signature;sDeskStartAgain(held);}},request:async sent=>{let value=await api('research-sources',sent);if(sent.action==='create'&&(held.searchSites||held.searchWeb))value=await api('research-sources',{action:'configure',id:value.id,expected:value.revision,external:true,restricted:!held.searchWeb});return value;},policyOnly:true});if(held.sourceEntry)Object.assign(held.sourceEditor,held.sourceEntry);}
     box.append(held.sourceEditor.node);
   }else sAdd(box,sCheck('desk-sites','Search my sites',held,'searchSites',null,()=>sDeskStartAgain(held)),held.searchSites?sSitePicker(held.from,'desk-research',()=>{}):null,sCheck('desk-web','Search the web too',held,'searchWeb'));
   return box;
@@ -294,10 +365,12 @@ async function sDeskReadGoogle(held,{start=false}={}){
   const turn=studio.turn,found=await api('google-preview',{url:held.url.trim()});if(turn!==studio.turn)return;
   if(found?.status==='already-linked'&&found.id){
     // The Doc is already a blog here: open it on the desk, or bring it there.
+    if(!await sDeskKeep(held))throw Error(sBlogIntake().problem);
+    const intakeRevision=sBlogIntake().revision;
     let made=null,created=false;try{made=await api('desk?id='+encodeURIComponent(found.id));}catch(_){made=null;}
     // A Doc an older step-by-step run links stays with that run: the start offers it.
-    if(!made){created=true;try{made=await api('desk-create',{operation:held.operation,style:held.style,tone:held.tone,first_pass:held.first_pass,...sDeskPolishOptions(held),sources:sDeskUploads(held.files),library:sDeskLibraryPicks(held.files),...sDeskKept(held.files),article:found.id});}catch(error){if(!/step-by-step run/.test(error.message))throw error;if(turn!==studio.turn)return;held.problem=error.message;held.linkedRun=found.id;return sDeskStart();}}
-    if(turn!==studio.turn)return;studio.deskStart=null;studio.desk={id:made.id,view:made,session:operationId()};if(!created&&held.first_pass==='copyedit'&&held.voiceOn)studio.desk.review={pendingVoice:{guide:held.voiceGuide,name:(held.polishVoices?.find(guide=>guide.id===held.voiceGuide)||{}).name||'Selected voice',humanize:held.humanizeOn?held.humanizeLevel:null}};return sRoute('desk',made.id,held.first_pass==='copyedit'&&(created||held.voiceOn)?'review':null);
+    if(!made){created=true;try{made=await api('desk-create',{intake_revision:sBlogIntake().revision,operation:held.operation,style:held.style,tone:held.tone,first_pass:held.first_pass,...sDeskPolishOptions(held),sources:sDeskUploads(held.files),library:sDeskLibraryPicks(held.files),...sDeskKept(held.files),article:found.id});}catch(error){if(!/step-by-step run/.test(error.message))throw error;if(turn!==studio.turn)return;held.problem=error.message;held.linkedRun=found.id;return sDeskStart();}}
+    await sDeskConsumed(held,intakeRevision);if(turn!==studio.turn)return;studio.desk={id:made.id,view:made,session:operationId()};if(!created&&held.first_pass==='copyedit'&&held.voiceOn)studio.desk.review={pendingVoice:{guide:held.voiceGuide,name:(held.polishVoices?.find(guide=>guide.id===held.voiceGuide)||{}).name||'Selected voice',humanize:held.humanizeOn?held.humanizeLevel:null}};return sRoute('desk',made.id,held.first_pass==='copyedit'&&(created||held.voiceOn)?'review':null);
   }
   held.preview=sGooglePreview(found);if(!held.title.trim())held.title=found.title;
   if(start){const made=await sDeskGo(held);if(made&&studio.screen==='desk'&&studio.id===made.id){const summary=held.preview.summary,notes=[];if(summary.selected_tab)notes.push('Opened only the tab “'+summary.selected_tab.title+'”.');if(summary.excluded_approval_blocks)notes.push('Leading approval fields stay in the original Google Doc.');if(notes.length)sToast(notes.join(' '));}return made;}
@@ -401,8 +474,9 @@ async function sDeskReadCollection(held,{start=false}={}){
 function sDeskPolishOptions(held){return held.first_pass==='copyedit'?{humanize:held.humanizeOn?held.humanizeLevel:null,...(held.voiceOn?{voice_guide:held.voiceGuide}:{})}:{};}
 async function sDeskGo(held){
   const turn=studio.turn;
+  if(!await sDeskKeep(held))throw Error(sBlogIntake().problem||'Save this intake before starting.');
   // A draft takes a kind of post only to be reshaped to it (sDeskPolish keeps held.style so).
-  const common={operation:held.operation,style:held.have==='draft'?held.style:held.kind||'',tone:held.tone,sources:sDeskUploads(held.files),library:sDeskLibraryPicks(held.files),...sDeskKept(held.files),...(held.title.trim()?{title:held.title.trim()}:{}),...(held.geoReview?{geo_review:true}:{})};
+  const common={intake_revision:sBlogIntake().revision,operation:held.operation,style:held.have==='draft'?held.style:held.kind||'',tone:held.tone,sources:sDeskUploads(held.files),library:sDeskLibraryPicks(held.files),...sDeskKept(held.files),...(held.title.trim()?{title:held.title.trim()}:{}),...(held.geoReview?{geo_review:true}:{})};
   let made;
   if(held.have==='draft'){
     const settings={...common,first_pass:held.first_pass,...sDeskPolishOptions(held)};
@@ -440,7 +514,8 @@ async function sDeskGo(held){
       made=await api('desk-create',{...writing,outline_source:uploaded.source.id});
     }
   }
-  if(turn!==studio.turn)return;studio.deskStart=null;
+  await sDeskConsumed(held,common.intake_revision);
+  if(turn!==studio.turn)return;
   if(made.first_pass_problem)sToast('The first pass did not start: '+made.first_pass_problem);
   if(made.keep_problem)sToast(made.keep_problem);
   // Check spelling and grammar lands in Review mode; every other start on the full desk.

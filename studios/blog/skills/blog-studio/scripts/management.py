@@ -2351,7 +2351,59 @@ def report_google(root, data):
     return {**planned, 'desk': article, **({'team_sync': shared} if shared else {})}
 
 
+INTAKE_FIELDS = frozenset(
+    'step kind style researchOn have title audience point angles angle angleOp outline outlineFrom outlineWay source article manuscript url link collection preview first_pass humanizeOn humanizeLevel geoReview voiceOn voiceGuide files role keep from searchSites searchWeb length tone operation upload uploaded docKeep sourceDraft sourceEntry fileData outlineFileData intakeOpen'.split()
+)
+
+
+def intake_draft(root, data):
+    from studio_core import intake_drafts
+
+    patch = data.get('patch')
+    if patch is not None and (not isinstance(patch, dict) or set(patch) - INTAKE_FIELDS):
+        raise ValueError('Save only the unfinished blog form and its selected sources.')
+    private = Path(os.environ.get('BLOG_STUDIO_DATA', '~/.local/share/blog-studio')).expanduser()
+    return intake_drafts.dispatch(
+        private, {'kind': 'blog-intake', 'workspace': str(Path(root).resolve())}, data
+    )
+
+
 def dispatch(root, route, data):
+    if route == 'desk-create':
+        from studio_core import intake_drafts
+        from studio_core.process_lock import ProcessRLock
+
+        private = Path(
+            os.environ.get('BLOG_STUDIO_DATA', '~/.local/share/blog-studio')
+        ).expanduser()
+        file = intake_drafts.path(
+            private, {'kind': 'blog-intake', 'workspace': str(Path(root).resolve())}
+        )
+        file.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        if file.parent.is_symlink():
+            raise ValueError('The intake folder must be private to this studio.')
+        with ProcessRLock(lambda: file.with_suffix('.lock')):
+            held = intake_drafts.read(file)
+            expected = data.get('intake_revision')
+            if (held['draft'] is not None or expected is not None) and (
+                type(expected) is not int
+                or expected != held['revision']
+                or held['draft']
+                and held['draft'].get('operation') != data.get('operation')
+            ):
+                raise intake_drafts.Conflict(
+                    'This intake changed in another tab. Reopen the saved form before starting. No work has started.'
+                )
+            return dispatch_managed(
+                root, route, {key: value for key, value in data.items() if key != 'intake_revision'}
+            )
+    return dispatch_managed(root, route, data)
+
+
+def dispatch_managed(root, route, data):
+    if route == 'intake-draft':
+        # Authenticated local form storage; never check remote team write access.
+        return intake_draft(root, data)
     if route in shared_library.BROWSE:
         # The shared Document Library: browsing reads and selects nothing for a blog.
         return shared_library.browse(route, data)
@@ -2577,8 +2629,9 @@ def note_unexpected(exc):
 def failure(exc, writing=False):
     """(HTTP status, JSON body) for any exception. Authored messages pass through; internals never do."""
     from google_handoff import Conflict as HandoffConflict
+    from studio_core.intake_drafts import Conflict as IntakeConflict
 
-    if isinstance(exc, HandoffConflict):
+    if isinstance(exc, (HandoffConflict, IntakeConflict)):
         return 409, {'error': str(exc)[:500]}
     if isinstance(exc, CurationConflict):
         # A refused save is a conflict; a read of a reference that went away is an ordinary 400, as before.
@@ -2659,6 +2712,8 @@ def activity_view(root, query):
 def view(root, name, query):
     """Read-only desk views by name. Returns None for an unknown view."""
     arg = lambda key, default=None: query.get(key, [default])[0]
+    if name == 'intake-draft':
+        return intake_draft(root, {'action': 'read'})
     if name == 'desk-migration-preview':
         import desk_chat
 
@@ -3080,7 +3135,8 @@ def server(root, port=0, bind=True, shared_setup=False, keep_workspace=True):
                     size = int(self.headers.get('Content-Length', '0'))
                 except ValueError:
                     raise ValueError('Use a bounded JSON request.') from None
-                if not 0 < size <= MAX_BODY:
+                limit = 32_000_000 if self.path == '/api/intake-draft' else MAX_BODY
+                if not 0 < size <= limit:
                     raise ValueError('Request exceeds the management limit.')
                 if not self.path.startswith('/api/') and not (
                     controller and controller.accepts(self.path)

@@ -107,8 +107,9 @@ function sFocusHeld(root){const active=typeof document.activeElement==='object'?
 function sFocusAgain(held,root){if(!held||!root||typeof root.querySelectorAll!=='function')return;const keyed=Array.from(root.querySelectorAll('[data-key]'));for(const node of keyed)if(String(node.tagName).toUpperCase()==='DETAILS'&&held.open.has(node.dataset.key)&&node.open!==held.open.get(node.dataset.key))node.open=held.open.get(node.dataset.key);if(!held.key)return;const active=document.activeElement;if(active===held.node&&held.node.isConnected)return;if(active&&active!==document.body&&active.isConnected!==false)return;const again=keyed.find(node=>node.dataset.key===held.key);if(again&&typeof again.focus==='function')again.focus({preventScroll:true});}
 function sPage(...nodes){const page=$('studio-page'),held=sFocusHeld(page);page.replaceChildren(...nodes.filter(Boolean));sFocusAgain(held,page);}
 function sToast(message){const toast=sNode('p','toast glass',message);$('toasts').append(toast);setTimeout(()=>toast.remove(),5000);}
-function sRoute(screen,id=null,stage=null,replace=false){const query=new URLSearchParams({screen});if(id)query.set('id',id);if(stage)query.set('stage',stage);history[replace?'replaceState':'pushState'](null,'',location.pathname+'?'+query);return studioNavigate(screen,id,stage);}
-async function studioNavigate(screen,id=null,stage=null){
+async function sRoute(screen,id=null,stage=null,replace=false){if(studio.screen==='desk-start'&&screen!=='desk-start'&&studio.deskStart){if(!await sDeskKeep(studio.deskStart,false))return notice(sBlogIntake().problem,true);}const query=new URLSearchParams({screen});if(id)query.set('id',id);if(stage)query.set('stage',stage);history[replace?'replaceState':'pushState'](null,'',location.pathname+'?'+query);return studioNavigate(screen,id,stage,true);}
+async function studioNavigate(screen,id=null,stage=null,intakeSaved=false){
+  if(!intakeSaved&&studio.screen==='desk-start'&&screen!=='desk-start'&&studio.deskStart&&!await sDeskKeep(studio.deskStart,false))return notice(sBlogIntake().problem,true);
   if(studio.screen==='desk'&&(screen!=='desk'||id!==studio.id)&&typeof sDeskShare==='function')sDeskShare(studio.desk);
   if(screen==='voices'&&studio.screen!=='voices')studio.kindsFrom=studio.screen;  // Kinds of post goes Back to where it was opened.
   // The old new-blog wizard's address opens the desk start, as New blog does; the old Polish,
@@ -1343,4 +1344,4 @@ setInterval(sPoll,3000);
 (async()=>{await loadCapabilities();studio.settings=await api('run-settings');sVoiceSwitchShown();const query=new URLSearchParams(location.search);await studioNavigate(query.get('screen')||(studio.settings.configured?'home':'setup'),query.get('id'),query.get('stage'));})().catch(error=>notice(error.message,true));
 
 
-window.addEventListener('beforeunload',event=>{if(Object.values(studio.editorDrafts||{}).some(draft=>draft.content!==draft.baseContent)){event.preventDefault();event.returnValue='';}});
+window.addEventListener('beforeunload',event=>{if(studio.deskStart&&(studio.deskStart._dirty||studio.deskStart._saving||studio.intake?.pending||studio.intake?.writing)){event.preventDefault();event.returnValue='';}if(Object.values(studio.editorDrafts||{}).some(draft=>draft.content!==draft.baseContent)){event.preventDefault();event.returnValue='';}});
