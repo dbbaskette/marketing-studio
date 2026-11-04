@@ -3715,7 +3715,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
             {'fill': 'Its model', 'value': 'gpt-6-sol'},
             {'fill': 'Its reasoning level', 'value': 'xhigh'},
             {'fill': 'The longest a step may take', 'value': '10'},
-            {'fill': 'The most a training may spend', 'value': '15'},
+            {'fill': 'Project spending amount', 'value': '15'},
             {'fill': parallel, 'value': '0'},
             {'click': 'Save and go on'}, {'snapshot': 'limit'},
             {'fill': parallel, 'value': '1'},
@@ -3745,7 +3745,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
             address: '', 'The folder inside it': '', 'The branch': '',
             'A name for this workspace': '', 'Its model': '', 'Its reasoning level': '',
             'The longest a step may take, in minutes': '15',
-            'The most a training may spend, in dollars': '20', parallel: '2'})
+            'Project spending amount, in dollars': '20', parallel: '2'})
         self.assertEqual(self.asked(result, 'capabilities'), ['/api/capabilities'])
 
         # Nothing to save yet: refused beside the box, and nothing is sent.
@@ -3817,7 +3817,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
             {'click': 'Settings'}, {'snapshot': 'settings'},
             {'click': 'Share now'}, {'snapshot': 'shared'},
             {'click': 'Change the set-up'}, {'snapshot': 'set-up'},
-            {'fill': 'The most a training may spend', 'value': '30'},
+            {'fill': 'Project spending amount', 'value': '30'},
             {'click': 'Save'}, {'snapshot': 'saved'},
         ])
         shots = result['snapshots']
@@ -3831,7 +3831,8 @@ class RunnerScreenTests(ScriptedPage, PageCase):
                       'after each decision: your team sees the drafts', said,
                       'Claude Code, with the model it chooses itself',
                       'A step may take up to 15 minutes.',
-                      'A training stops and asks you once it has spent $20.00.',
+                      'The project spending amount is $20.00.',
+                      'New-work warning or stop behavior is in Shared settings, Spending.',
                       'Up to 2 trainings run at once.'):
             self.assertIn(shown, settings['text'])
         self.assertEqual(settings['heading'], 'Settings')
@@ -3865,7 +3866,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         saved = shots['saved']
         self.assertEqual((saved['heading'], saved['current']), ('Settings', ['Settings']))
         self.assertIn('The set-up is saved.', saved['toasts'])
-        self.assertIn('once it has spent $30.00', saved['text'])
+        self.assertIn('The project spending amount is $30.00.', saved['text'])
 
     def test_a_folder_on_this_computer_is_set_up_without_anyone_to_share_with(self):
         check = {'ok': True, 'found': {'name': 'try-out', 'folder': 'trainings',

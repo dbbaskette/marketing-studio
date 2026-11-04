@@ -1673,6 +1673,7 @@ class StudioCase(unittest.TestCase):
         record['research_questions'] = form.get('research_questions') or []
         if changes.get('review_level'):
             record['review_policy'] = {'schema': 1, 'level': changes['review_level']}
+        record.pop('spending_policy', None)  # Historic fixture predates saved spending choices.
         record['schema'] = 1 if review_policy.level(record) == 'step_by_step' else 2
         if saved_contract is not None:
             record['research_contract'] = dict(saved_contract)

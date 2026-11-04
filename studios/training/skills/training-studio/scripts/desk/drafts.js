@@ -2928,14 +2928,18 @@ function trainingPlanReview(plan, held) {
 }
 
 function paintDesk(fresh) {
+  syncSpending();
   const active = document.activeElement;
   const editing = !fresh && active && ['TEXTAREA', 'INPUT'].includes(active.tagName)
-    && main().contains(active) ? { key: active.dataset.key, start: active.selectionStart,
-      end: active.selectionEnd } : null;
+    && main().contains(active) ? { key: active.dataset.key, id: active.id, start: active.selectionStart,
+      end: active.selectionEnd, direction: active.selectionDirection } : null;
   const run = view.run;
   const held = deskHeld(view.path);
   const found = held.view;
   if (!run || !found) return;
+  // A budget/timing update does not replace an outline somebody is still typing.
+  if (editing && run.training_plan?.expected && held.typingOutlineBasis === run.training_plan.expected) return;
+  held.typingOutlineBasis = run.training_plan?.expected;
   const ours = deskOurs();
   const conversation = found.execution === 'conversation';
   // The level is settled first: what leads depends on what of it waits for Mark ready.
@@ -3061,9 +3065,13 @@ function paintDesk(fresh) {
     // What the assistant did in each job, while it works and after it finishes or stops.
     conversation ? null : activityLogCard(view.path),
   ], fresh);
-  if (editing?.key && focusKey(editing.key) && typeof editing.start === 'number') {
-    document.activeElement.selectionStart = editing.start;
-    document.activeElement.selectionEnd = editing.end;
+  if (editing) {
+    const restored = editing.key && focusKey(editing.key);
+    const node = restored ? document.activeElement : editing.id && byId(editing.id);
+    if (node && main().contains(node)) {
+      node.focus({preventScroll:true});
+      if (typeof editing.start === 'number') node.setSelectionRange(editing.start,editing.end,editing.direction || 'none');
+    }
   }
 }
 

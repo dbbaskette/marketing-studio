@@ -154,6 +154,20 @@ work keeps its compatible path.
 [Saved-work compatibility](../../docs/saved-work-compatibility.md) ·
 [Migration details](skills/presentation-studio/references/migration.md)
 
+## Spending behavior
+
+New work **warns and continues** when reported spending reaches its project amount.
+Choose the default for each studio under **Shared settings → Spending**. Saved work
+keeps its choice; open **Spending behavior** on its desk to explicitly change it.
+Saving that choice starts no assistant job. Older saved tasks retain Stop and ask
+and their existing Carry on action until you change the policy.
+
+Warning-mode jobs receive a **$5 budget each**, with their existing time cap and
+smaller Quick-scan budgets retained. A single job reaching its own budget still
+stops for an explicit retry; completed peer work stays saved. Dollar enforcement
+and reporting depend on the assistant. Unknown costs stay unknown. Hard-stop mode
+retains the existing project allowance and remaining-budget reservations.
+
 ## Help and development
 
 Use **Status → Check this computer** for missing tools or sign-in. A failed step

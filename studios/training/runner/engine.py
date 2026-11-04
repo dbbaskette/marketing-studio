@@ -229,7 +229,7 @@ import runner  # noqa: F401  puts the core on the import path
 import computer
 import checks
 import home
-from studio_core import deck_content
+from studio_core import deck_content, spending
 from studio_core import research_sections, research_impact
 from runner import training_plan, outline_first
 from studio_core import brand_guidance, critic, deck_direction, deck_flow, model_profiles, review_policy, research_contract, research_session as research_parallel, research_transport as research_parallel_native, research_timing, research_sources, research_view, research_sites, step_times, stops
@@ -484,7 +484,7 @@ def new_record(agent: str, model: str | None, chosen: settings.Settings,
     return {'schema': SCHEMA, 'agent': agent, 'model': model, 'effort': effort,
             'model_profiles': profiles, 'review_policy': review_policy.capture(),
             'review_layout': review_layout.LAYOUT,
-            'started_at': home.now(),
+            'started_at': home.now(), 'spending_policy': getattr(chosen, 'spending_policy', 'hard-stop'),
             'limits': {'step_seconds': chosen.step_seconds,
                        'training_dollars': chosen.training_dollars},
             'steps': {}, 'research': None, 'question': None, 'answers': {}, 'halt': None,
@@ -774,8 +774,10 @@ class Engine(Reviewing):
         return record
 
     def _store(self, root: Path, record: dict) -> None:
+        from studio_core import spending
+        spending.observe(root / ACTIVITY, record, spent(record)[0], (record.get('limits') or {}).get('training_dollars'))
         workspace.write_run(root, record)
-        from studio_core import work_summary
+        from studio_core import work_summary, spending
         if not getattr(self, '_summary_disabled', False):
             work_summary.native('training', root, record)
         activity_log.observe(root / ACTIVITY, record)
@@ -3833,6 +3835,8 @@ class Engine(Reviewing):
             record = self._load(root)
             if self._closing or self._resting(record) or drafts.in_conversation(record):
                 return False
+            from studio_core import spending
+            if spending.policy(record) == 'warn': return True
             left = self._left(record)
             if left > 0 and left >= stops.floor(record['limits']['training_dollars']):
                 return True
@@ -3913,7 +3917,7 @@ class Engine(Reviewing):
         worker_tools.prepare(folder, **{**work.prepared, 'runtimes': dict(
             self._look()['runtimes']) if step.stage == 'deck' else {}})
         ceiling = agents.Limits(record['limits']['step_seconds'],
-                                max(0.01, self._left(record)))
+                                spending.cap(record, self._left(record)))
         limits = ceiling if limits is None else agents.Limits(
             min(limits.seconds, ceiling.seconds), min(limits.dollars, ceiling.dollars))
         job = agents.Job(work.guidance, work.task, folder, work.profile,
@@ -4038,6 +4042,9 @@ class Engine(Reviewing):
             self._commit(root, f'a step spent what the training may: {step.label}' if budget
                          else f'a try at this step did not work: {step.label}')
         if budget:
+            from studio_core import spending
+            if spending.policy(record) == 'warn':
+                return self._problem(root, step.id, 'failed', f'{step.label} reached its ${spending.JOB_DOLLARS:.2f} job cap.', KEPT, 'retry')
             self._spend_stop(root, step.label)
         elif stops.agent_stopped('', outcome, detail) is not None:
             self._problem(root, 'research' if question else step.id, 'failed',
@@ -4247,6 +4254,9 @@ class Engine(Reviewing):
         not be used says where to look. Anything else stops with what went wrong."""
         outcome, record = refusal.outcome, self._load(root)
         if outcome.reason == 'limit' and outcome.budget:
+            from studio_core import spending
+            if spending.policy(record) == 'warn':
+                return self._problem(root, 'research', 'failed', f'A research job reached its ${spending.JOB_DOLLARS:.2f} cap. Completed evidence is kept.', KEPT, 'retry')
             return self._spend_stop(root, 'The research')
         if stops.agent_stopped('', outcome, outcome.detail) is not None:
             return self._problem(root, 'research', 'failed', stops.agent_stopped(
@@ -7177,6 +7187,7 @@ class Engine(Reviewing):
             'notice': self._notice(root), 'taken': None if mine else team.taken(root),
             'last_shared': last, 'kept': self._set_aside(root),
             'clash': root.name in self._clash,
+            **({'spending': spending.info(record, dollars, limit)} if 'spending_policy' in record else {}),
             'model': record.get('model'), 'effort': record.get('effort'),
             'model_mode': (record.get('model_profiles') or {}).get('mode', 'single'),
             # A desk run opens on the desk; a saved run keeps its own screens.

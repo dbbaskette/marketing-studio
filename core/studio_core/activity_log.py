@@ -64,7 +64,7 @@ ENDINGS = ('finished', 'failed', 'stopped', 'timeout', 'limit')
 WORDS = {'finished': 'Finished', 'failed': 'Failed', 'stopped': 'Stopped',
          'timeout': 'Out of time', 'limit': 'Reached a limit'}
 EMPTY = 'No activity recorded yet.'
-CHECKPOINTS = ('accepted', 'queued', 'working', 'output-saved', 'checking', 'ready', 'stopped')
+CHECKPOINTS = ('accepted', 'queued', 'working', 'output-saved', 'checking', 'ready', 'stopped', 'spending-warning')
 
 
 def now() -> str:
@@ -274,7 +274,8 @@ def view(path, running=()) -> dict:
     running = list(running)
     jobs = [{**{key: value for key, value in job.items() if key != 'lines'},
              'steps': len(job['lines'])} for job in read(path)]
-    return {'jobs': jobs, 'running': live(running),
+    warnings = [event['unit'] for event in checkpoints(path) if event['checkpoint'] == 'spending-warning']
+    return {**({'spending_warnings': warnings} if warnings else {}), 'jobs': jobs, 'running': live(running),
             'empty': None if jobs else EMPTY, 'limit': JOBS, 'lines': LINES,
             'timing': timing(path, jobs, running)}
 
@@ -349,7 +350,7 @@ def observe(path, record):
 def timing(path, jobs=(), running=(), clock=None):
     """Measured operation timing; unknown boundaries are null, never guessed ETAs."""
     clock = clock or datetime.now(timezone.utc)
-    events = checkpoints(path)
+    events = [event for event in checkpoints(path) if event['checkpoint'] != 'spending-warning']
     accepted = next((e['at'] for e in reversed(events) if e['checkpoint'] == 'accepted'), None)
     began = stamp(accepted)
     if began is None:

@@ -799,7 +799,7 @@ function nowLine(run) {
   // The run's own limit, raised by every Carry on; Settings' only where the run says none.
   const limits = (view.setup && view.setup.limits) || {};
   const stopsAt = given(spent.stops_at) ? spent.stops_at : limits.training_dollars;
-  if (given(stopsAt)) parts.push('stops at ' + money(stopsAt));
+  if (given(stopsAt)) parts.push((run.spending?.policy === 'warn' ? 'warns at ' : 'stops at ') + money(stopsAt));
   return parts.length ? make('p', 'now-line', parts.join(' · ')) : null;
 }
 
@@ -1423,6 +1423,7 @@ function around() {
 }
 
 function draw(fresh) {
+  syncSpending();
   if (view.screen === 'gate') return drawGate(fresh);
   if (view.screen === 'training') return drawTraining(fresh);
   if (view.screen === 'run') return drawRun(fresh);
@@ -3918,8 +3919,8 @@ function limitsSays(limits) {
   const says = [];
   if (limits.step_seconds) says.push('A step may take up to ' + lasted(limits.step_seconds) + '.');
   if (given(limits.training_dollars)) {
-    says.push('A training stops and asks you once it has spent '
-      + money(limits.training_dollars) + '.');
+    says.push('The project spending amount is ' + money(limits.training_dollars)
+      + '. New-work warning or stop behavior is in Shared settings, Spending.');
   }
   if (limits.parallel) {
     says.push(limits.parallel === 1 ? 'One training runs at a time.'
@@ -4508,11 +4509,11 @@ function shareCard(form) {
 
 function limitsCard(form) {
   const node = card('Limits');
-  return add(node, make('p', '', 'These keep a training from running away with your time or '
-    + 'your money. A training that reaches one stops and asks you.'),
+  return add(node, make('p', '', 'Each job keeps its time limit. The project amount warns by default for new work; '
+    + 'Shared settings, Spending can make it stop and ask instead.'),
   field('setup-minutes', 'The longest a step may take, in minutes', form, 'minutes',
     { short: true, mode: 'decimal' }),
-  field('setup-dollars', 'The most a training may spend, in dollars', form, 'dollars',
+  field('setup-dollars', 'Project spending amount, in dollars', form, 'dollars',
     { short: true, mode: 'decimal', hint: 'Counted where the agent says what it spends.' }),
   field('setup-parallel', 'How many trainings may run at once', form, 'parallel',
     { short: true, mode: 'numeric' }));
@@ -5258,6 +5259,20 @@ function fit(holder, parts, fresh) {
   }
 }
 
+function syncSpending() {
+  if (typeof StudioActivity === 'undefined' || !StudioActivity.spendingStatus) return;
+  const path = view.path, run = view.run;
+  const options = path && run && ['run', 'outline'].includes(view.screen) ? {
+    key:path, readOnly:run.mine === false, warning:run.spending?.warning?.message,
+    load: () => ask('spending-policy', {path}),
+    save: async (sent) => {
+      const updated = await send('spending-policy', {path, ...sent});
+      if (view.path === path && ['run', 'outline'].includes(view.screen)) { view.run = updated;draw(false); }
+    }
+  } : null;
+  StudioActivity.spendingStatus(main(),options);
+}
+
 function placeParts(spec, parts, fresh) {
   const holder = main();
   const active = document.activeElement;
@@ -5736,7 +5751,7 @@ function costCard(run) {
   else says.push('Nothing has been reported yet. An agent says what it used as each step ends.');
   if (given(spent.tokens)) says.push(Number(spent.tokens).toLocaleString() + ' tokens used.');
   if (given(limits.training_dollars)) {
-    says.push(silent ? 'So the limit of ' + money(limits.training_dollars)
+    says.push(run.spending?.policy === 'warn' ? 'Warns when reported spending reaches ' + money(run.spending.limit) + '; work continues with a $5 budget for each assistant job.' : silent ? 'So the limit of ' + money(limits.training_dollars)
       + ' cannot stop it: watch the steps instead.'
       : 'It stops and asks you at ' + money(limits.training_dollars) + '.');
   }
@@ -7134,6 +7149,7 @@ function combinedReview(run, leads) {
 }
 
 function paintRun(fresh) {
+  syncSpending();
   const run = view.run;
   // A training started on the desk is drawn by drafts.js. Every other run keeps this screen.
   if (onTheDesk(run)) {
