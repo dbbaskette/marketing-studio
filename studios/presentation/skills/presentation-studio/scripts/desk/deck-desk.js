@@ -601,6 +601,7 @@
       previews ? ['previews', [run.build_progress, read, run.mine],
         () => previewsCard(run)] : null,
       // What each assistant working now is doing, and the deck's Activity log.
+      run.research_progress && h.researchActivity ? ['research-progress',run.research_progress,()=>h.researchActivity(run)] : null,
       h.list(run.workers).length ? ['workers', run.workers, () => h.workersCard(run)] : null,
       ['activity-log', [h.view.path], () => h.activityLogCard(h.view.path)],
     ], fresh);
@@ -924,6 +925,7 @@
       pause ? ['look-pause', [run.gate, lead, h.brandsFound()], () => lookPause(run, lead === 'look')]
         : null,
       working ? ['working', [found.working, read], () => workingPart(run)] : null,
+      run.research_progress && h.researchActivity ? ['research-progress',run.research_progress,()=>h.researchActivity(run)] : null,
       h.list(run.workers).length ? ['workers', run.workers, () => h.workersCard(run)] : null,
       !found.drawn_here ? ['away', [found.no_drawing, found.draw_here_price, read, working],
         () => run.execution === 'conversation' ? h.add(h.card('Drawing'),

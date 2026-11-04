@@ -262,12 +262,12 @@ SETTINGS_SOURCES = f'{SETTINGS}/sources'   # a source draft holding what researc
 MODELS = '/api/training-models'   # Use the current model settings: what changes, and its save
 CARD = f'{DRAFTS}/card'   # one card with its parts, as the shared kit reads it
 PART_LIMIT = 1_000_000   # bytes: one part of the largest size, as JSON
-READS = ('/api/updates', '/api/slide-text-draft', '/api/spending-policy', '/api/outline-flow', '/api/intake-draft', '/api/capabilities', '/api/setup', '/api/agents', '/api/models', '/api/run',
+READS = ('/api/research-note', '/api/updates', '/api/slide-text-draft', '/api/spending-policy', '/api/outline-flow', '/api/intake-draft', '/api/capabilities', '/api/setup', '/api/agents', '/api/models', '/api/run',
          '/api/activity', SETTINGS, MODELS,
          '/api/download', '/api/slide', '/api/status', '/api/published', '/api/delete', '/api/deck-draft-ticket',
          DRAFTS, CARD, VERSIONS, f'{DRAFTS}/update-preview', f'{DRAFTS}/slide-versions', f'{DRAFTS}/source-price',
          f'{DRAFTS}/proofread', f'{DRAFTS}/migration-preview', f'{DRAFTS}/doc-preview')
-WRITES = ('/api/slide-text-draft', '/api/spending-policy', '/api/outline-flow', '/api/intake-draft', '/api/training-plan', '/api/research-sources', SETTINGS, SETTINGS_SOURCES, MODELS, '/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/answer',
+WRITES = ('/api/research-note', '/api/slide-text-draft', '/api/spending-policy', '/api/outline-flow', '/api/intake-draft', '/api/training-plan', '/api/research-sources', SETTINGS, SETTINGS_SOURCES, MODELS, '/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/answer',
           '/api/documents', '/api/copies', '/api/share', '/api/outline', '/api/review', '/api/drive',
           '/api/publish', '/api/adopt', '/api/fetch', '/api/delete', '/api/companions',
           '/api/asset', '/api/upgrade', '/api/restart', '/api/versions', '/api/redesign',
@@ -374,6 +374,9 @@ class RunnerPage(desk.Page):
     # --- reads ---------------------------------------------------------------------------
 
     def read(self, path: str, one):
+        if path == '/api/research-note':
+            return self.write(path, {'path':one('path'), 'id':one('id'), 'action':'read'})
+
         if path == '/api/updates':
             from studio_core import polling
             return desk.as_json(HTTPStatus.OK, polling.snapshot(self.engine, home.data_root()))
@@ -915,6 +918,19 @@ class RunnerPage(desk.Page):
     # --- writes --------------------------------------------------------------------------
 
     def write(self, path: str, sent: dict):
+        if path == '/api/research-note':
+            from studio_core import intake_drafts, research_notes
+            try:
+                if not isinstance(sent.get('path'), str): raise ValueError('Choose saved work for this note.')
+                root = self.engine.driven(sent['path'])
+                if root is None: raise ValueError('Choose saved work in this workspace.')
+                values = {key:value for key,value in sent.items() if key not in ('path','id')}
+                return desk.as_json(HTTPStatus.OK, research_notes.dispatch(home.data_root(), root, sent.get('id'), values))
+            except intake_drafts.Conflict as failure:
+                raise desk.Refusal(HTTPStatus.CONFLICT, 'This queued note changed in another tab. Copy your text before reloading. Evidence is unchanged.') from None
+            except ValueError as failure:
+                raise desk.Refusal(HTTPStatus.BAD_REQUEST, str(failure)) from None
+
         if path == '/api/slide-text-draft':
             from studio_core import intake_drafts
             try:

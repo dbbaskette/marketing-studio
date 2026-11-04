@@ -412,6 +412,7 @@ class Workflow:
                 if timing['incomplete']:
                     timing.update(active_seconds=None, assistant_seconds=None)
                 tracked['timing'] = timing
+                if phase == 'complete': tracked['checked_result_seconds'] = timing.get('elapsed_seconds')
                 progress(copy.deepcopy(tracked))
 
         original_hashes = [(s['original_path'], hashlib.sha256(bytes_of(s['original_path'])).hexdigest())
@@ -565,6 +566,8 @@ class Workflow:
                 def section_progress(values):
                     with state_lock:
                         tracked['combining'] = values
+                        if any(row.get('preview') for row in values) and 'first_readable_seconds' not in tracked:
+                            tracked['first_readable_seconds'] = research_timing.account(host['started'], host['attempts']).get('elapsed_seconds')
                     report('synthesize')
                 dossier, worker = research_sections.combine(case, task, areas, registry, base,
                     offered_final, invoke, round=number,

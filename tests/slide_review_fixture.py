@@ -12,6 +12,7 @@ from unittest import mock
 
 def main():
     parser=argparse.ArgumentParser();parser.add_argument('product',choices=('training','presentation'));parser.add_argument('--slides',type=int,choices=(6,30),default=6)
+    parser.add_argument('--research-preview',action='store_true')
     args=parser.parse_args();native=Path(__file__).resolve().parents[1]/'studios'/args.product
     sys.path.insert(0,str(native/'tests'));sys.path.insert(1,str(native))
     from runner import page
@@ -47,10 +48,21 @@ def main():
                     case.engine._store(root,record)
                 else:
                     record=case.engine._load(root);case.engine._edit_outline(root,record,value['slides']);case.engine._store(root,record)
+        if args.research_preview:
+            record=case.engine._load(root)
+            preview={'basis':'synthetic-section-basis','digest':'synthetic-display-digest','sections':[{'title':'Saved section','text':'Synthetic section prose is available before final checking.'}],'sources':[{'title':'Selected fixture source','permission':'selected'}]}
+            record['research_execution']={'progress':{'phase':'review','first_readable_seconds':2,'combining':[{'id':'area1','questions':['Synthetic question'],'status':'kept','preview':preview},{'id':'area2','questions':['Sibling question'],'status':'failed'}]}}
+            case.engine._store(root,record)
         reads_count={}
         class Fixture(page.RunnerPage):
-            reads=(*page.RunnerPage.reads,'/api/fixture-review-state')
+            reads=(*page.RunnerPage.reads,'/api/fixture-review-state','/api/fixture-research-stage')
             def read(self,address,one):
+                if address=='/api/fixture-research-stage':
+                    record=case.engine._load(root);progress=record['research_execution']['progress'];phase=one('phase')
+                    if phase=='complete':progress.update(phase='complete',checked_result_seconds=9)
+                    elif phase=='changed':progress['combining'][0]['preview']['basis']='changed-section-basis'
+                    case.engine._store(root,record)
+                    return protocol.as_json(200,{'ok':True})
                 if address=='/api/fixture-review-state':
                     return protocol.as_json(200,{'jobs':len(case.workers.jobs),'reads':dict(reads_count)})
                 reads_count[address]=reads_count.get(address,0)+1

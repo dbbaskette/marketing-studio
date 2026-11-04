@@ -3858,3 +3858,13 @@ body[data-pilot="liquid"] .dialog .button:not(.button-round){border-radius:10px}
 
 .desk-summary-toggle{min-height:2.75rem;padding:.55rem .75rem;cursor:pointer;font-weight:600;border-bottom:1px solid var(--hair);overflow-wrap:anywhere}
 .desk-summary-content{padding:.75rem}.desk-summary-content>*+*{margin-top:.6rem}
+
+/* Saved research is an opaque reading surface, with private notes kept separate. */
+.research-section-preview{margin-top:.6rem;padding:.85rem;min-width:0}
+.research-section-preview>summary{min-height:2.75rem;padding:.5rem 0;cursor:pointer;font-weight:600}
+.research-section-preview>*+*{margin-top:.7rem}
+.research-section-preview>p{max-width:75ch;overflow-wrap:anywhere}
+.research-section-preview>.row-title{font-size:1rem}
+.research-queued-note{padding:1rem;background:var(--paper)}
+.research-queued-note>*+*{margin-top:.75rem}
+.research-queued-note .bar{gap:.5rem;flex-wrap:wrap}

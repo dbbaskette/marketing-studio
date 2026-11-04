@@ -13,3 +13,10 @@ Submit through `studio desk submit --folder PATH --input FILE`:
 The Studio verifies the owned complete bundle, source captures and source scope before retaining it. It preserves the case and reviewed bundle; inputs changing before save cause refusal. Read the report, prioritized brief, evidence relationships, conditions, counterfacts and gaps in subsequent outline context. Never put private evidence identifiers into reader-facing words.
 
 For planning only, use text target `research-plan`; its payload is `{plan}` with purpose `planning`, pinned scope, topic and up to eight identified questions. No worker executes a saved plan automatically. Existing legacy research keeps its supported old helper commands and saved format; never convert its records by hand.
+
+On the native page, **Read saved section draft** shows read-only prose with its
+section revision and source limits while the independent check is pending. It is
+not checked evidence or a deliverable. **Save queued note** keeps a private concern;
+it changes no scope/evidence and starts no work. After pausing or finishing, use
+the existing research refresh impact preview to approve the actual change. Earlier
+notes retain their original basis; checked output supersedes draft previews.

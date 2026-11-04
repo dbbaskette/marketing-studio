@@ -191,9 +191,8 @@ Real Codex/Gemini generation, reference-guided editing, actual-image inspection 
 owner artwork/accessibility acceptance remain first-release gates.
 
 [Current release readiness](../../docs/infographic-first-release-readiness.md) ·
-[Codex acceptance #152](https://github.com/dbbaskette/marketing-studio/issues/152) ·
-[Visual acceptance #223](https://github.com/dbbaskette/marketing-studio/issues/223) ·
-[Delivery and sign-off #224](https://github.com/dbbaskette/marketing-studio/issues/224)
+[Live provider, visual/owner acceptance and sign-off #224](https://github.com/dbbaskette/marketing-studio/issues/224) ·
+[Concrete acceptance packet](../../docs/infographic-live-acceptance.md)
 
 ## Development
 

@@ -5577,6 +5577,14 @@ function jobLines(path) {
 
 // Whether the research panel shows the assistants working now: while research runs. Finished
 // research keeps its panel ("Research is ready"), and every later job shows in its own card.
+function researchNoteHooks(path) {
+  return {notesScope:path,notes:(id,sent)=>sent.action==='read'?ask('research-note',{path,id}):send('research-note',{path,id,...sent})};
+}
+
+function researchActivity(run) {
+  return run.research_progress && typeof StudioResearch !== 'undefined' ? StudioResearch.progress(run.research_progress, {...researchNoteHooks(view.path),workers:run.workers,lines:jobLines(view.path)}) : null;
+}
+
 function researching(run) {
   return Boolean(run.research_progress && run.research_progress.phase !== 'complete'
     && typeof StudioResearch !== 'undefined');
@@ -6193,7 +6201,7 @@ function paintDeck(fresh) {
       () => gatePanel(run)] : null,
     noting(run) ? ['note', [run.note, run.state, read], () => notePart(run)] : null,
     run.research_progress && typeof StudioResearch !== 'undefined' ? ['research-progress', [run.research_progress, researching(run) && run.workers],
-      () => StudioResearch.progress(run.research_progress, researching(run) ? { workers: run.workers, lines: jobLines(view.path) } : {})] : null,
+      () => StudioResearch.progress(run.research_progress, {...researchNoteHooks(view.path),...(researching(run) ? { workers: run.workers, lines: jobLines(view.path) } : {})})] : null,
     run.build_progress ? ['build-progress', run.build_progress,
       () => buildProgressCard(run.build_progress)] : null,
     // The research panel shows its own assistants; any other work shows them here.
@@ -7893,7 +7901,7 @@ function deskParts() {
     state, button, capsule, chip, field, refuse, choice, explained, segmented, pickCard, oneOf,
     moreMenu, submitButton, alertLine, problemLine, say, outLink, pageHead, focusKey, byId,
     send, ask, toast, dropToast, deckToast, notify, show, refresh, placeParts, fit, tidyPictures, pager, slideName,
-    workersCard, activityLogCard,
+    workersCard, activityLogCard, researchActivity,
     // A slide's picture, fetched with this page's key and held in memory: `image` is what the
     // server names it by, and `mark` changes when a newer one is drawn.
     picture: (image, alt, mark) => pictureAt(pictureOf(view.path, image), alt, mark),

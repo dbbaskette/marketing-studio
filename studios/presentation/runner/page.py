@@ -158,7 +158,7 @@ from studio_core.document_library import context as library_context
 from studio_core.shared_runner import page as _shared
 modules.bind(globals(), _shared, _shared.NAMES)
 
-READS = ('/api/updates', '/api/slide-text-draft', '/api/spending-policy', '/api/intake-draft', '/api/capabilities', '/api/setup', '/api/agents', '/api/models', '/api/decks',
+READS = ('/api/research-note', '/api/updates', '/api/slide-text-draft', '/api/spending-policy', '/api/intake-draft', '/api/capabilities', '/api/setup', '/api/agents', '/api/models', '/api/decks',
          '/api/run', '/api/activity', '/api/slide', '/api/download', '/api/status', '/api/published',
          '/api/delete', '/api/file', '/api/known-decks', '/api/storyboard',
          '/api/desk-outline-price', '/api/desk-versions', '/api/desk-migration-preview', '/api/desk-ready-context')
@@ -195,7 +195,7 @@ SOURCE_LIMIT = 12_000_000     # bytes: a document of up to 8 MB, in base64, with
 # What a desk change takes as it is sent, not as text.
 RAW = ('slides', 'field', 'ids', 'again', 'picks')
 WHOLE = ('seen', 'start', 'end', 'index')   # whole numbers, from zero
-WRITES = ('/api/slide-text-draft', '/api/spending-policy', '/api/intake-draft', '/api/research-sources', '/api/setup/check', '/api/setup', '/api/decks', '/api/run', '/api/decide',
+WRITES = ('/api/research-note', '/api/slide-text-draft', '/api/spending-policy', '/api/intake-draft', '/api/research-sources', '/api/setup/check', '/api/setup', '/api/decks', '/api/run', '/api/decide',
           '/api/answer', '/api/share', '/api/fetch', '/api/drive', '/api/publish',
           '/api/delete', '/api/bring', '/api/companions', '/api/upgrade', '/api/restart',
           '/api/versions', '/api/brand', '/api/brand/install', '/api/shared',
@@ -237,6 +237,9 @@ class RunnerPage(server.Page):
     # --- reads ---------------------------------------------------------------------------
 
     def read(self, path: str, one):
+        if path == '/api/research-note':
+            return self.write(path, {'path':one('path'), 'id':one('id'), 'action':'read'})
+
         if path == '/api/updates':
             from studio_core import polling
             return server.as_json(HTTPStatus.OK, polling.snapshot(self.engine, home.data_root()))
@@ -455,6 +458,19 @@ class RunnerPage(server.Page):
     # --- changes -------------------------------------------------------------------------
 
     def write(self, path: str, sent: dict):
+        if path == '/api/research-note':
+            from studio_core import intake_drafts, research_notes
+            try:
+                if not isinstance(sent.get('path'), str): raise ValueError('Choose saved work for this note.')
+                root = self.engine.driven(sent['path'])
+                if root is None: raise ValueError('Choose saved work in this workspace.')
+                values = {key:value for key,value in sent.items() if key not in ('path','id')}
+                return server.as_json(HTTPStatus.OK, research_notes.dispatch(home.data_root(), root, sent.get('id'), values))
+            except intake_drafts.Conflict as failure:
+                raise server.Refusal(HTTPStatus.CONFLICT, 'This queued note changed in another tab. Copy your text before reloading. Evidence is unchanged.') from None
+            except ValueError as failure:
+                raise server.Refusal(HTTPStatus.BAD_REQUEST, str(failure)) from None
+
         if path == '/api/slide-text-draft':
             from studio_core import intake_drafts
             try:
