@@ -271,6 +271,18 @@ elif [[ "${1:-full}" == audit-week8 ]]; then
   (cd studios/presentation && "$python" skills/presentation-studio/scripts/validate_package.py)
   (cd studios/training && "$python" skills/training-studio/scripts/validate_package.py)
   PYTHONPATH=tests "$python" -m unittest test_suite test_work_overview -v 2>&1 | tee "$results_dir/package-tests.log"
+elif [[ "${1:-full}" == backlog-spending-finish ]]; then
+  # Shared 984 cases and all browser journeys completed; only the old section-list
+  # expectation changed. Recheck that group, then complete every native suite.
+  export INFOGRAPHIC_STUDIO_TEST_RENDERER="$("$python" scripts/ci/infographic-renderer.py --output "$work/graphics" --cache "$work/graphics-cache")"
+  {
+    PYTHONPATH=tests "$python" -m unittest test_layout_pass -v
+    "$python" -m unittest discover -s studios/infographic/tests -v
+    (cd studios/blog && BLOG_STUDIO_REQUIRE_LINT=1 BLOG_STUDIO_TEST_JOBS=4 bash scripts/ci/check.sh "$python" "$results_dir/blog-studio")
+    (cd studios/presentation && "$python" scripts/ci/run_tests.py --jobs 4 && "$python" skills/presentation-studio/scripts/validate_package.py)
+    (cd studios/training && bash scripts/ci/check.sh "$python")
+    bash scripts/ci/acceptance.sh "$python" "$results_dir/checks"
+  } 2>&1 | tee "$results_dir/tests.log"
 elif [[ "${1:-full}" == backlog-spending ]]; then
   export INFOGRAPHIC_STUDIO_TEST_RENDERER="$("$python" scripts/ci/infographic-renderer.py --output "$work/recovery-graphics" --cache "$work/recovery-cache")"
   mkdir -p "$work/recovery-browser"
