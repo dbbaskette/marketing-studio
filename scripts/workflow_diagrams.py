@@ -110,12 +110,13 @@ def flow(steps, extra=(), edges=()):
 TRAINING_PLAN = flow(
     (('open', 'studio', 'Open Training Studio', 'Shared setup the first time'),
      ('new', 'you', 'New training', 'Goal, materials, sources'),
-     ('research', 'assistant', 'Research', 'Harness Research, independent check'),
-     ('plan', 'assistant', 'Teaching plan', 'Topics, order, depth, timing'),
-     ('check', 'you', 'Check the topics', 'What this training will cover'),
-     ('build', 'you', 'Build the training', 'Makes the selected materials')),
-    (('changes', 1, 4, 'you', 'Ask for changes', 'Research is kept'),),
-    (('check', 'changes', 'side', ''), ('changes', 'plan', 'back', '')))
+     ('scan', 'assistant', 'Quick scan', 'A few minutes; never research'),
+     ('check', 'you', 'Check the outline', 'Edit sections and questions',
+      'Approve and start research'),
+     ('research', 'assistant', 'Research each section', 'Harness Research, up to 3 at once'),
+     ('plan', 'assistant', 'Teaching plan', 'Follows the approved outline')),
+    (('settings', 1, 3, 'you', 'Change settings', 'Outline drafted again'),),
+    (('check', 'settings', 'side', ''), ('settings', 'scan', 'back', '')))
 
 TRAINING_BUILD = flow(
     (('make', 'assistant', 'Build the materials', 'Guide, brief, practice, Yoodli'),
