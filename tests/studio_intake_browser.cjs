@@ -18,14 +18,16 @@ async function fixture(product,args=[]){
    const test=await fixture(product,product==='training'?['--new','--library','--desk']:[]);
    try{
     const page=await browser.newPage({viewport:{width,height:844},colorScheme:'light'}),errors=[],jobs=[];
-    page.on('pageerror',e=>errors.push(e.message));
+    page.on('pageerror',e=>errors.push(e.stack||e.message));
+    page.on('requestfailed',r=>console.error('Failed resource '+r.url()+': '+JSON.stringify(r.failure())));
+    page.on('response',r=>{if(r.status()>=400)console.error('Resource '+r.status()+' '+r.url());});
     page.on('request',r=>{if(r.method()==='POST'&&['/api/trainings','/api/decks'].includes(new URL(r.url()).pathname))jobs.push(r);});
     await page.goto(test.url);
     await page.waitForFunction(()=>!view.refreshing && view.setup);
     const title=product==='training'?'New training':'New deck';
     await page.getByRole('button',{name:title,exact:true}).first().click();
     const dialog=page.getByRole('dialog',{name:title,exact:true});
-    try{await dialog.waitFor();}catch(error){console.error(product+' '+width+' initial UI: '+await page.locator('body').innerText());console.error(errors);throw error;}
+    try{await dialog.waitFor();}catch(error){console.error(product+' '+width+' initial UI: '+await page.locator('body').innerText());console.error(errors);console.error(await page.evaluate(()=>({lists:typeof window.StudioLists,scripts:[...document.scripts].map(n=>n.src)})));throw error;}
     if(product==='presentation'){await dialog.getByRole('button',{name:'An idea',exact:false}).click();await dialog.getByRole('button',{name:'Next',exact:true}).click();}
     await dialog.getByLabel('A short title',{exact:true}).fill('Synthetic resumable intake');
     await dialog.getByLabel(product==='training'?'What should it teach?':'What should they take away?',{exact:true}).fill('Explain safe rolling restarts.');
@@ -84,7 +86,9 @@ async function fixture(product,args=[]){
    const test=await fixture(product,['--desk']);
    try{
     const page=await browser.newPage({viewport:{width,height:844}}),errors=[];
-    page.on('pageerror',e=>errors.push(e.message));
+    page.on('pageerror',e=>errors.push(e.stack||e.message));
+    page.on('requestfailed',r=>console.error('Failed resource '+r.url()+': '+JSON.stringify(r.failure())));
+    page.on('response',r=>{if(r.status()>=400)console.error('Resource '+r.status()+' '+r.url());});
     await page.addInitScript(({root,screen})=>history.replaceState({screen,path:root},''),{root:test.path,screen:product==='training'?'run':'deck'});
     await page.goto(test.url);
     if(product==='training')await page.getByRole('tab',{name:/^Guide ·/}).first().click();
