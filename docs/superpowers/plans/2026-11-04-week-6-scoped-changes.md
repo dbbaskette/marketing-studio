@@ -22,3 +22,9 @@ pins it. Existing saved helper calls stay revision-based. One changed slide in
 30 rasterizes one page and invalidates changed/adjacent inspections; global
 context, order, fonts and review-question changes expand scope. Full PDF
 conversion still occurs; synthetic counts are not a provider-speed benchmark.
+
+Compatibility: the default exact lock advances to released Harness Slides 0.17.0;
+the supported installer minimum remains 0.16.0 because the studios' existing
+native inspection-reuse contract continues to work there. The new raw companion
+review flags are opt-in and capability-detected. Saved tasks do not silently
+adopt those flags, helper code, or final consistency receipts.

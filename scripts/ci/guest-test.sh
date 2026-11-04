@@ -219,6 +219,17 @@ elif [[ "${1:-full}" == audit-week3 || "${1:-full}" == audit-week4 ]]; then
     (cd studios/training && bash scripts/ci/check.sh "$python")
     bash scripts/ci/acceptance.sh "$python" "$results_dir/checks"
   } 2>&1 | tee "$results_dir/tests.log"
+elif [[ "${1:-full}" == audit-week6-finish ]]; then
+  # Root 968 checks and both browser journeys completed on the unchanged runtime;
+  # only the stale pin-version assertion required correction. Finish its targeted
+  # contract and every full affected native suite, package and CLI gate.
+  {
+    PYTHONPATH=tests "$python" -m unittest test_companion_versions.PinnedFloorTests -v
+    "$python" scripts/workflow_diagrams.py --check
+    (cd studios/presentation && "$python" scripts/ci/run_tests.py --jobs 4 && "$python" skills/presentation-studio/scripts/validate_package.py)
+    (cd studios/training && bash scripts/ci/check.sh "$python")
+    bash scripts/ci/acceptance.sh "$python" "$results_dir/checks"
+  } 2>&1 | tee "$results_dir/tests.log"
 elif [[ "${1:-full}" == audit-week3-final ]]; then
   # The complete shared suite and final outline browser passed on unchanged
   # application flow. Repeat all native tests after the copy assertion and JSON
