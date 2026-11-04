@@ -172,8 +172,9 @@ function show(next) {
   if (previousView === 'settings' && view !== 'settings' && unsaved()) inform('Your shared settings changes are not saved yet. They stay on the Shared settings page until you save or reload.');
   if (view === 'computer' && snapshot?.computer) renderComputer(snapshot.computer);
   if (view === 'library') void openLibrary();
-  for (const name of ['loading', 'home', 'settings', 'computer', 'library']) $(`#${name}`).hidden = name !== view;
-  $('#view-title').textContent = setup ? `Welcome to ${product}` : ({home: 'Studios', settings: 'Shared settings', computer: 'This computer', library: 'Library'})[view];
+  if (view === 'brands') void openBrands(); else window.StudioBrands?.leave();
+  for (const name of ['loading', 'home', 'settings', 'computer', 'library', 'brands']) $(`#${name}`).hidden = name !== view;
+  $('#view-title').textContent = setup ? `Welcome to ${product}` : ({home: 'Studios', settings: 'Shared settings', computer: 'This computer', library: 'Library', brands: 'Brands'})[view];
   document.querySelectorAll('[data-view]').forEach(button => {
     if (button.classList.contains('nav-item')) {
       if (button.dataset.view === view && !setup) button.setAttribute('aria-current', 'page');
@@ -195,6 +196,8 @@ function show(next) {
   $('#check').hidden = view !== 'computer';
   // The Library's one filled action is its toolbar's too: Add documents.
   $('#library-add-open').hidden = view !== 'library';
+  // Brands draws its own toolbar actions once it knows what it can offer.
+  if (view !== 'brands') for (const id of ['brands-new', 'brands-new-library', 'brands-back']) $(`#${id}`).hidden = true;
   $('#setup-progress').hidden = !setup;
   $('#setup-progress').querySelectorAll('li').forEach((node, index) => {
     if (index === step) node.setAttribute('aria-current', 'step'); else node.removeAttribute('aria-current');
@@ -703,6 +706,7 @@ function renderHome(refreshPaths = true) {
   $('#remote-note').hidden = !remote || standalone;
   if (!standalone && !remote && network?.url) void drawLinkCode(network.url);
   $('#where').textContent = remote ? 'On your local network' : 'On this computer';
+  $('#nav-brands').hidden = remote;
   const shared = snapshot.shared;
   const assistant = shared.assistant?.agent === 'codex' ? 'Codex' : 'Claude Code';
   const workspace = shared.team?.repository ? `Repository: ${shared.team.repository}` : `Local Git: ${shared.local?.root || '~/Studios'}`;
@@ -1047,6 +1051,34 @@ function openNative() {
   // Setup can be served at the native root. A fragment change alone keeps its DOM.
   if (samePage) location.reload();
 }
+// The Brands screen, from brands.js, which only Marketing Studio serves and loads when it is
+// opened: a front for Harness Brand's pack commands and the assistant. It is not offered over
+// the network: the sources, the assistant and the repository are on the computer.
+function brandsKit() {
+  if (window.StudioBrands) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = '/brands.js';
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error('The Brands page could not be loaded. Reload this page.'));
+    document.head.append(script);
+  });
+}
+async function brandFile(body) {
+  const response = await fetch('/api/brand-file', {method: 'POST', headers: {[tokenHeader]: token, 'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+  if (!response.ok) throw new Error((await response.json()).error || 'The picture could not be shown.');
+  return URL.createObjectURL(await response.blob());
+}
+async function openBrands() {
+  if (standalone) return;
+  try {
+    await brandsKit();
+    window.StudioBrands.open({api, element, stateLine, busy, isBusy, inform, problem, clearProblem,
+                              file: brandFile, here: () => view === 'brands',
+                              agent: () => runtimeName(snapshot?.shared?.assistant?.agent || snapshot?.assistant_default)});
+  } catch (error) { problem(error); }
+}
+const runtimeName = agent => ({codex: 'Codex', claude: 'Claude Code'})[agent] || 'your assistant';
 // The Document Library screen: the list first, Add documents as the toolbar's one filled
 // action, and Add existing work beside the lede. It selects nothing for a project; each
 // studio's Add from library does that for its own work.

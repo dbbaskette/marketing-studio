@@ -17,11 +17,12 @@
     <button type="button" data-view="home" class="nav-item"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg><span class="nav-label">Studios</span></button>
     <button type="button" data-view="library" class="nav-item"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4.5h4v15H5z"/><path d="M10.5 4.5h4v15h-4z"/><path d="M16 5.2l3.6-1 3.4 14.6-3.6.9z"/></svg><span class="nav-label">Library</span></button>
     <button type="button" data-view="settings" class="nav-item"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 7.5h7"/><path d="M16.5 7.5h3"/><path d="M14 5.5a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/><path d="M4.5 16.5h3"/><path d="M12.5 16.5h7"/><path d="M10 14.5a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/></svg><span class="nav-label">Shared settings</span></button>
+    <button type="button" data-view="brands" id="nav-brands" class="nav-item"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="7" cy="8" r="3"/><circle cx="16.5" cy="7" r="2.5"/><path d="M4 20c0-3.5 2.5-6 6-6h4c3.5 0 6 2.5 6 6"/></svg><span class="nav-label">Brands</span></button>
     <button type="button" data-view="computer" class="nav-item"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4.5h18v13H3z"/><path d="M8 21h8"/><path d="M12 17.5V21"/></svg><span class="nav-label">This computer</span></button>
     <p class="sidebar-foot">One place to get ready.<br>Four places to create.</p>
   </nav>
   <div class="content">
-    <div class="toolbar-wrap"><header class="toolbar glass"><div class="toolbar-title"><h1 id="view-title" class="title" tabindex="-1">Studios</h1></div><div class="toolbar-actions"><button type="button" id="back-to-studio" class="button button-quiet" hidden>Back</button><span id="where" class="tag">On this computer</span><button id="check" type="button" class="button button-filled" hidden>Check computer</button><button id="library-add-open" type="button" class="button button-filled" aria-haspopup="dialog" hidden>Add documents</button></div></header></div>
+    <div class="toolbar-wrap"><header class="toolbar glass"><div class="toolbar-title"><h1 id="view-title" class="title" tabindex="-1">Studios</h1></div><div class="toolbar-actions"><button type="button" id="back-to-studio" class="button button-quiet" hidden>Back</button><span id="where" class="tag">On this computer</span><button id="check" type="button" class="button button-filled" hidden>Check computer</button><button id="library-add-open" type="button" class="button button-filled" aria-haspopup="dialog" hidden>Add documents</button><button id="brands-back" type="button" class="button button-quiet" hidden>Back to Brands</button><button id="brands-new" type="button" class="button button-filled" aria-haspopup="dialog" hidden>New brand</button><button id="brands-new-library" type="button" class="button button-quiet" aria-haspopup="dialog" hidden>New icon library</button></div></header></div>
     <div id="problem" class="notice problem-notice" hidden><p id="problem-text" role="alert"></p><div class="problem-actions"><button type="button" id="problem-newer" class="button" hidden>Load newer settings</button><button type="button" id="problem-dismiss" class="button button-quiet">Dismiss</button></div></div>
     <main id="content" class="page" tabindex="-1">
       <p id="announce" class="offscreen" role="status" aria-live="polite"></p>
@@ -167,6 +168,24 @@
             <div class="bar"><button type="button" id="library-existing-preview" class="button">Preview existing work</button></div>
             <div id="library-existing-result" class="stack library-existing"></div>
           </div>
+        </dialog>
+      </section>
+      <section id="brands" class="stack" hidden>
+        <div id="brands-body" class="stack"><p class="quiet">Looking for your brand packs…</p></div>
+        <dialog id="brands-sheet" class="dialog" aria-labelledby="brands-sheet-title">
+          <header class="dialog-header"><h2 id="brands-sheet-title">New brand</h2><button type="button" id="brands-sheet-close" class="button button-quiet">Close</button></header>
+          <form id="brands-sheet-form" class="dialog-content create-flow" method="dialog">
+            <div class="create-step"><h3 class="sheet-part">1. Name it</h3>
+              <div class="field"><label class="field-label" for="brands-new-name">Name</label><input id="brands-new-name" class="input" name="name" maxlength="80" autocomplete="off" required aria-describedby="brands-new-name-hint"><p id="brands-new-name-hint" class="field-hint quiet">For people, such as Tanzu Division.</p></div>
+              <div class="field"><label class="field-label" for="brands-new-id">Id</label><input id="brands-new-id" class="input input-typed" name="id" maxlength="63" autocomplete="off" spellcheck="false" required pattern="[a-z0-9][a-z0-9-]*" aria-describedby="brands-new-id-hint"><p id="brands-new-id-hint" class="field-hint quiet">The folder name under brands/: lower-case letters, digits and hyphens, such as tanzu. It cannot be changed later.</p></div>
+            </div>
+            <fieldset id="brands-new-kind" class="create-step research-choices" hidden><legend class="sheet-part">2. Choose its kind</legend>
+              <label class="check"><input type="radio" name="kind" value="glyph" checked><span>Glyph: one-colour shapes the brand colours, placed in slides as native shapes</span></label>
+              <label class="check"><input type="radio" name="kind" value="picture"><span>Picture: artwork kept in its own colours, for blogs and infographics</span></label>
+            </fieldset>
+            <p class="field-hint quiet">Nothing is added to storage until you save. Sources come next.</p>
+            <div class="create-foot bar"><button type="submit" id="brands-sheet-start" class="button button-filled">Start</button><button type="button" id="brands-sheet-cancel" class="button button-quiet">Cancel</button></div>
+          </form>
         </dialog>
       </section>
       <section id="computer" class="stack" hidden>
