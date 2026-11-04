@@ -38,6 +38,11 @@ class ParallelNativeTests(StudioCase):
         if 'questions' in payload and getattr(self, 'supplied', False):
             self.phases.append('investigate')
             source = next(s for s in tools._index() if s.get('offered'))
+            # The outline names each offered source as the job's own tools do (#303).
+            self.assertEqual([(e['id'], e['file'], e['origin'], e['permission'])
+                              for e in payload['source_outline']['sources']],
+                             [(s['id'], s['file'], s['url'], s.get('permission') or 'selected')
+                              for s in tools._index() if s.get('offered')])
             value = dossier(payload['worker'], source['file'], source['url'], 'selected')
             value['sources'][0]['original_file'] = source['original']
             value = {k: value[k] for k in ('schema', 'sources', 'facts')}
@@ -75,7 +80,7 @@ class ParallelNativeTests(StudioCase):
             value['facts'][0]['kind'] = 'inference'
             refused = tools.submit_artifact('research-result', json.dumps(value))
             self.assertFalse(refused[0], 'Collection-only fact fields must be rejected before the job finishes')
-            self.assertIn('Unknown fact field: kind', refused[1])
+            self.assertIn('Fact fact-a: unknown field(s) kind', refused[1])
             self.assertIn('Do not remove a kind label to turn an inference into a fact', refused[1])
             # The scripted author rechecks this quoted assertion; production never
             # discards the classification on its behalf.

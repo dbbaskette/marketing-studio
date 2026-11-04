@@ -15,6 +15,7 @@ import shutil
 import subprocess
 import tempfile
 import time
+import unicodedata
 
 IDS_FOR_QUESTIONS = ('Planning questions have IDs. A finding that answers one has an ID '
                      "that begins with that question's ID and two hyphens, such as "
@@ -446,6 +447,11 @@ class Workflow:
                     payload['return'] += ' ' + IDS_FOR_QUESTIONS
                 if refreshing:
                     payload['return'] += ' ' + REFRESHED
+                # Every source the author is given, with each field it must return (#303).
+                outline = source_outline(sources, self.runtime)
+                if outline:
+                    payload['source_outline'] = outline
+                    payload['return'] += ' ' + OUTLINED
                 previous = case / '.harness-research/synthesis.json'
                 if previous.is_file():
                     state = json.loads(previous.read_text())
@@ -728,6 +734,286 @@ def took(seconds, dollars):
     return ' and '.join(said)
 
 
+# What the pinned helper bounds that its schema does not state: the length of each text it
+# reads, which Harness Research's text() caps at 4000 characters unless named here.
+TEXT_LIMIT = 4000
+LIMITS = {'statement': 10000, 'quote': 30000}
+# Fields the studio knows and checks against its own captures: an investigator copies them.
+HOST_FIELDS = ('id', 'file', 'origin', 'permission', 'original_file')
+# Optional fields Harness Research checks whenever they are present, and only then.
+WHEN_PRESENT = {'source': ('source_date', 'accessed_at', 'version'), 'citation': ('locator',)}
+# What a field an investigator fills in means, in the studio's words. A field the pinned
+# schema adds later is still listed, as required or optional, without them.
+MEANING = {
+    'title': "The source's own title. The outline gives one for each source the studio offered: "
+             'keep it unless the source names itself otherwise.',
+    'publisher': 'Who published the source, as the source itself shows it: an organisation, team '
+                 'or author.',
+    'context': 'full when the capture holds the whole source, or all of it that matters here; '
+               'partial when part of it is missing or cut short.',
+    'context_note': 'Say specifically what part of the source is missing.',
+    'source_date': "The source's own publication or revision date, copied as the source states "
+                   'it. Leave it out when the source states none: never guess a date.',
+    'accessed_at': 'When the source was read, only when a tool told you. Leave it out otherwise: '
+                   'never guess a date.',
+    'version': 'A version the source itself names, such as a release number. Leave it out when it '
+               'names none.',
+}
+UNREADABLE = 'The pinned Harness Research source metadata contract could not be read.'
+UNFINISHED = ('The pinned Harness Research collection check could not finish. This submission was '
+              'not accepted; do not treat report validation as collection approval.')
+# Said once, after everything a refused evidence packet needs corrected.
+TAIL = ('Correct all of these and resubmit within this job. Facts contain only id, statement, '
+        'author and citations; citations contain source, quote and optional locator. Do not '
+        'remove a kind label to turn an inference into a fact; retain unsupported or inferred '
+        'material as a gap for synthesis. Captured evidence is unchanged.')
+OUTLINED = ('source_outline lists every source the studio gave you. Build each source you return '
+            'from its entry: copy id, file, origin and permission exactly, keep its title, and add '
+            'the fields source_outline.fill_in names; use no other fields. A source you save '
+            'during this job is built the same way from what saving it returned (its ID, Capture '
+            'file and Origin), with permission public. Copy every quote character for character '
+            'from the capture it cites.')
+# What JavaScript's trim() removes: Harness Research refuses text that is only these.
+JS_SPACE = frozenset('\t\n\v\f\r﻿  ')
+
+
+def pinned(runtime):
+    """The definitions of the pinned Harness Research synthesis schema."""
+    return json.loads((Path(runtime) / 'references/synthesis.schema.json').read_text())['$defs']
+
+
+def conditions(definition):
+    """{field: [(other field, value), ...]}: what a schema definition requires only when another
+    field has a value, from its allOf if/then rules."""
+    found = {}
+    for rule in definition.get('allOf') or ():
+        if not isinstance(rule, dict):
+            continue
+        tests = (rule.get('if') or {}).get('properties') or {}
+        for field in (rule.get('then') or {}).get('required') or ():
+            for other, test in tests.items():
+                if isinstance(test, dict) and 'const' in test:
+                    found.setdefault(field, []).append((other, test['const']))
+    return found
+
+
+def permission_of(capture):
+    """A capture's permission, as the studio's checks read it."""
+    return capture.get('permission') or ('selected' if capture.get('offered', True) else 'public')
+
+
+def source_outline(sources, runtime):
+    """Every source a job is given, as the investigator should return it: the fields the studio
+    knows, filled in, and the fields it must add, each said from the pinned schema so the list
+    cannot drift from Harness Research. Sources are numbered s1, s2 … in the order given, as the
+    studio's tools number them. None when the pinned schema cannot be read."""
+    try:
+        definition = pinned(runtime)['source']
+        rules = definition['properties']
+        fields = list(rules)
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        return None
+    required, when = set(definition.get('required') or ()), conditions(definition)
+    entries = []
+    for number, source in enumerate(sources, start=1):
+        known = {'id': f's{number}', 'file': source.get('file'),
+                 'origin': source.get('origin', source.get('url')),
+                 'permission': permission_of(source), 'title': source.get('title')}
+        entries.append({key: known[key] for key in [*fields, *known]
+                        if key in known and known[key] and key in rules})
+    fill = {}
+    for field in fields:
+        if field in HOST_FIELDS:
+            continue
+        rule = rules[field] if isinstance(rules[field], dict) else {}
+        said = ('Required.' if field in required else
+                ' '.join(f'Required when {other} is {value}.' for other, value in when[field])
+                if field in when else 'Optional.')
+        if isinstance(rule.get('enum'), list):
+            said += ' One of ' + ', '.join(map(str, rule['enum'])) + '.'
+        if field in MEANING:
+            said += ' ' + MEANING[field]
+        fill[field] = said
+    note = OUTLINED + f' Each text field holds 1 to {TEXT_LIMIT:,} characters.'
+    if 'original_file' in rules:
+        note += ' The studio sets original_file; leave it out.'
+    return {'note': note, 'fields': fields, 'fill_in': fill, 'sources': entries}
+
+
+def js_length(value):
+    """A text's length as JavaScript counts it, in UTF-16 code units."""
+    return len(value.encode('utf-16-le', 'surrogatepass')) // 2
+
+
+def wrong_text(value, limit=TEXT_LIMIT):
+    """Why Harness Research's text() would refuse a value, or None when it would accept it."""
+    if not isinstance(value, str):
+        return 'is missing' if value is None else 'must be text'
+    if all(c in JS_SPACE or unicodedata.category(c) == 'Zs' for c in value):
+        return 'is empty'
+    if js_length(value) > limit:
+        return f'is longer than {limit:,} characters'
+    return None
+
+
+def identifier(value, rule):
+    """Whether a value matches the pattern a schema rule gives an ID, as the helper checks it."""
+    pattern = (rule or {}).get('pattern') if isinstance(rule, dict) else None
+    if not pattern:
+        return True
+    try:
+        return isinstance(value, str) and re.fullmatch(pattern.removeprefix('^').removesuffix('$'),
+                                                       value) is not None
+    except re.error:
+        return True
+
+
+def capture_texts(sources, captures, folder):
+    """{source ID: the capture text Harness Research will read for it}, for each source whose
+    file this job saved: the exact bytes the helper's case is given, decoded as it decodes them."""
+    saved = {entry['file']: entry for entry in captures if entry.get('file')}
+    texts = {}
+    for source in sources:
+        file = source.get('file') if isinstance(source, dict) else None
+        entry = saved.get(file) if isinstance(file, str) else None
+        if not entry or not folder or not entry.get('local') or not isinstance(source.get('id'), str):
+            continue
+        try:
+            text = (Path(folder) / entry['local']).read_bytes().decode('utf-8')
+        except (OSError, UnicodeDecodeError):
+            continue   # The helper says why it cannot read it.
+        texts.setdefault(source['id'], text.removeprefix('﻿'))
+    return texts
+
+
+def clipped(quote, limit=80):
+    line = ' '.join(str(quote).split())
+    return line if len(line) <= limit else line[:limit - 1].rstrip() + '…'
+
+
+def packet_problems(value, texts, runtime, worker=None, mode=None):
+    """What the pinned helper's common evidence rules would refuse, every one at once, as
+    (problems, flawed source indexes, flawed fact indexes).
+
+    These are the studio's equivalents of the rules Harness Research stops at the first of:
+    each source's required and conditional fields, its choices and its text bounds; each fact's
+    ID, statement, author and citations; and each quote, which must appear exactly in the
+    capture it cites. The fields, choices and conditions come from the pinned schema; a rule
+    the studio does not know here is still the helper's, which runs once these pass. Nothing
+    is refused here that the helper would accept. File, origin, permission and citation IDs are
+    checked against the job's own captures by uncaptured and citation_sources.
+    """
+    try:
+        definitions = pinned(runtime)
+        source_rule, fact_rule = definitions['source'], definitions['fact']
+        source_fields = source_rule['properties']
+        fact_fields = fact_rule['properties']
+    except (OSError, ValueError, KeyError, TypeError):
+        return [], set(), set()
+    citation_rule = (fact_fields.get('citations') or {}).get('items') or {}
+    citation_fields = citation_rule.get('properties') or {}
+    required, when = set(source_rule.get('required') or ()), conditions(source_rule)
+    problems, flawed_sources, flawed_facts = [], set(), set()
+    rows = value.get('sources') if isinstance(value.get('sources'), list) else []
+    ids = [row.get('id') for row in rows if isinstance(row, dict)]
+    for index, source in enumerate(rows):
+        if not isinstance(source, dict):
+            continue
+        name = source['id'] if isinstance(source.get('id'), str) and source['id'] else f'number {index + 1}'
+        said = []
+        if 'id' in source_fields and not identifier(source.get('id'), source_fields['id']):
+            said.append('id must be lowercase letters, digits and hyphens (at most 64), such as s1')
+        elif ids.count(source.get('id')) > 1:
+            said.append('another source has the same id')
+        for field, rule in source_fields.items():
+            rule = rule if isinstance(rule, dict) else {}
+            if field in HOST_FIELDS:
+                continue
+            present = field in source
+            needed = field in required or any(source.get(other) == wanted
+                                              for other, wanted in when.get(field, ()))
+            if isinstance(rule.get('enum'), list):
+                if needed and source.get(field) not in rule['enum']:
+                    said.append(f'{field} must be one of ' + ', '.join(map(str, rule['enum']))
+                                + (f', not {clipped(source[field], 40)!r}' if present else ''))
+            elif rule.get('type') == 'string' and (needed or present and field in WHEN_PRESENT['source']):
+                wrong = 'is missing' if not present else wrong_text(source[field])
+                if wrong:
+                    said.append(f'{field} {wrong}' + (
+                        ': leave it out when unknown, and never guess a date' if field in ('source_date', 'accessed_at')
+                        else ': give who published it, as the source itself shows it' if field == 'publisher'
+                        else ': say what part of the source is missing' if field == 'context_note' else ''))
+        if said:
+            flawed_sources.add(index)
+            problems.append(f'Source {name}: ' + '; '.join(said) + '.')
+    known = {row['id'] for row in rows if isinstance(row, dict) and isinstance(row.get('id'), str)}
+    facts = value.get('facts') if isinstance(value.get('facts'), list) else []
+    fact_ids = [fact.get('id') for fact in facts if isinstance(fact, dict)]
+    authored = False
+    for index, fact in enumerate(facts):
+        if not isinstance(fact, dict):
+            flawed_facts.add(index)
+            problems.append(f'Fact number {index + 1}: return each fact as an object.')
+            continue
+        name = fact['id'] if isinstance(fact.get('id'), str) and fact['id'] else f'number {index + 1}'
+        said = []
+        unknown = sorted(set(fact) - set(fact_fields)) if mode == 'evidence' else []
+        if unknown:
+            said.append('unknown field(s) ' + ', '.join(unknown))
+        if 'id' in fact_fields and not identifier(fact.get('id'), fact_fields['id']):
+            said.append('id must be lowercase letters, digits and hyphens (at most 64)')
+        elif fact_ids.count(fact.get('id')) > 1:
+            said.append('another fact has the same id')
+        elif isinstance(fact.get('id'), str) and fact['id'] in known:
+            said.append('its id is also a source id; give it its own')
+        if 'statement' in fact_fields:
+            wrong = wrong_text(fact.get('statement'), LIMITS['statement'])
+            if wrong:
+                said.append(f'statement {wrong}')
+        if worker and fact.get('author') != worker:
+            authored = True
+            flawed_facts.add(index)
+        citations = fact.get('citations')
+        if not isinstance(citations, list):
+            said.append('citations must be an array')
+            citations = []
+        elif not citations and 'citations' in fact_fields:
+            said.append('it needs at least one citation with an exact quote')
+        for number, citation in enumerate(citations, start=1):
+            if not isinstance(citation, dict):
+                said.append(f'citation {number} must be an object')
+                continue
+            unknown = sorted(set(citation) - set(citation_fields)) if mode == 'evidence' and citation_fields else []
+            if unknown:
+                said.append(f'citation {number} has unknown field(s) ' + ', '.join(unknown))
+            ref = citation.get('source')
+            if not isinstance(ref, str) or ref not in known:
+                flawed_facts.add(index)   # citation_sources says which IDs it may use
+                continue
+            quote = citation.get('quote')
+            wrong = wrong_text(quote, LIMITS['quote']) if 'quote' in citation_fields else None
+            if wrong:
+                said.append(f'citation {number} quote {wrong}')
+            for field in WHEN_PRESENT['citation']:
+                if field in citation and field in citation_fields and wrong_text(citation[field]):
+                    said.append(f'citation {number} {field} {wrong_text(citation[field])}: '
+                                'leave it out when there is none')
+            if not wrong and isinstance(quote, str) and ref in texts and quote not in texts[ref]:
+                from studio_core.shared_runner.worker_tools import place
+                found = place(texts[ref], quote)
+                said.append(f'the quote {clipped(quote)!r} is not in source {ref} exactly' + (
+                    f'; the capture has it as {found[1]!r}: copy that' if found and len(found[1]) <= 400
+                    else '; it differs from the capture in spacing or punctuation: copy it from '
+                         'the capture as it stands' if found else
+                    '; quote only words the capture holds, or cite another source'))
+        if said:
+            flawed_facts.add(index)
+            problems.append(f'Fact {name}: ' + '; '.join(said) + '.')
+    if authored:
+        problems.append(f'Set every fact author to {worker}.')
+    return problems, flawed_sources, flawed_facts
+
+
 def source_metadata(value, runtime):
     """Match source metadata to the pinned helper before the collection boundary.
 
@@ -738,11 +1024,10 @@ def source_metadata(value, runtime):
     """
     if not runtime:
         return value, []
-    schema = Path(runtime) / 'references/synthesis.schema.json'
     try:
-        allowed = set(json.loads(schema.read_text())['$defs']['source']['properties'])
+        allowed = set(pinned(runtime)['source']['properties'])
     except (OSError, ValueError, KeyError, TypeError):
-        return value, ['The pinned Harness Research source metadata contract could not be read.']
+        return value, [UNREADABLE]
     result, problems = copy.deepcopy(value), []
     for source in result.get('sources') or []:
         if not isinstance(source, dict):
@@ -765,52 +1050,99 @@ def source_metadata(value, runtime):
 
 
 def check_json(text, spec):
+    """Check a research hand-back and say everything wrong with it at once.
+
+    Every studio check runs, each listing all it finds, and then the studio's equivalents of
+    the pinned helper's common evidence rules (packet_problems). The helper itself then runs
+    as before when nothing was found, so it still decides; when something was found in an
+    evidence packet, it runs on the part with nothing found, the flawed sources and facts set
+    aside, so a problem only it knows is listed too. Returns (problems, checks, warnings, kept).
+    """
     problems = []
     warnings = []
     kept = text
     matched = 0
+    mode = spec.get('research_mode')
     try:
         value = json.loads(text)
-        if not isinstance(value, dict) or value.get('schema') != 2:
+        if not isinstance(value, dict):
             problems.append('Return a schema-2 JSON object.')
         elif isinstance(value.get('sources'), list) and any(not isinstance(source, dict) for source in value['sources']):
             problems.append('Return each source as an object.')
-        elif spec.get('research_mode'):
-            from studio_core.research_session import preparation
-
-            value = preparation(value, spec)
-            kept = json.dumps(value)
-            problems += uncaptured(value['sources'], spec.get('captures', []))
-            if not problems:
-                value, problems, matched = citation_sources(value, spec.get('captures', []))
-            if not problems:
-                value, problems = source_metadata(value, spec.get('runtime'))
+            if value.get('schema') != 2:
+                problems.insert(0, 'Return a schema-2 JSON object: set "schema": 2.')
+        elif mode or ('captures' in spec and isinstance(value.get('sources'), list)):
+            if value.get('schema') != 2:
+                problems.append('Return a schema-2 JSON object: set "schema": 2.')
+            if mode:
+                from studio_core.research_session import preparation
+                try:
+                    value = preparation(value, spec)
+                except ValueError as error:
+                    problems.append(str(error))
+                    if mode != 'evidence':
+                        raise ValueError(' '.join(problems)) from None
+                    # Check the rest as well: the sources and facts, when they are arrays.
+                    value = preparation({key: value[key] for key in ('schema', 'sources', 'facts', 'gaps')
+                                         if key in value}, spec)
                 kept = json.dumps(value)
-            if not problems and spec.get('runtime'):
+            captures = spec.get('captures', [])
+            problems += uncaptured(value['sources'], captures)
+            value, found, matched = citation_sources(value, captures)
+            problems += found
+            normalized, found = source_metadata(value, spec.get('runtime'))
+            problems += [] if problems and found == [UNREADABLE] else found
+            standardized = normalized != value
+            if mode or matched or standardized:
+                kept = json.dumps(normalized)
+            value = normalized
+            if spec.get('runtime') and mode != 'compose':
+                texts = capture_texts(value['sources'], captures, spec.get('folder'))
+                found, flawed_sources, flawed_facts = packet_problems(
+                    value, texts, spec['runtime'], spec.get('worker'), mode)
+                problems += found
+                if not problems:
+                    problems += refused(value, spec)
+                elif mode == 'evidence':
+                    problems += aside(value, spec, captures, flawed_sources, flawed_facts)
+            elif spec.get('runtime') and not problems:
                 problems += refused(value, spec)
-        elif 'captures' in spec and isinstance(value.get('sources'), list):
-            problems += uncaptured(value['sources'], spec['captures'])
-            if not problems:
-                value, problems, matched = citation_sources(value, spec['captures'])
-                if matched:
-                    kept = json.dumps(value)
-            if not problems:
-                normalized, problems = source_metadata(value, spec.get('runtime'))
-                if normalized != value:
-                    kept = json.dumps(normalized)
-                    warnings.append('Standardized source date metadata as source_date; dates and evidence are unchanged.')
-                value = normalized
-            if not problems and spec.get('runtime'):
-                problems += refused(value, spec)
-            if not problems and matched:
+            if mode == 'evidence' and any(problem != UNFINISHED for problem in problems):
+                problems.append(TAIL)
+            if not problems and standardized and not mode:
+                warnings.append('Standardized source date metadata as source_date; dates and evidence are unchanged.')
+            if not problems and matched and not mode:
                 warnings.append(f'Matched {matched} citation source handle(s) to the same '
                                 'captured source in the dossier. Claims and quotations are unchanged.')
+        elif value.get('schema') != 2:
+            problems.append('Return a schema-2 JSON object.')
     except (TypeError, json.JSONDecodeError):
         problems.append('Return valid JSON, without Markdown fences.')
     except ValueError as error:
-        problems.append(str(error))
+        problems = [str(error)] if not problems else problems
     return problems, [{'check': 'research.json', 'status': 'failed' if problems else 'passed',
                        'problems': problems}], warnings, kept
+
+
+def aside(value, spec, captures, flawed_sources, flawed_facts):
+    """What the pinned helper refuses in an evidence packet with what the studio already found
+    wrong set aside: each source with a problem, and each fact with one or citing such a
+    source. What it refuses in that part is wrong in the whole too. Nothing when no source is
+    left to check."""
+    rows = value['sources']
+    flawed = set(flawed_sources)
+    for index, source in enumerate(rows):
+        if uncaptured([source], captures) or source_metadata({'sources': [source]}, spec['runtime'])[1]:
+            flawed.add(index)
+    sources = [source for index, source in enumerate(rows) if index not in flawed]
+    if not sources:
+        return []
+    ids = {source.get('id') for source in sources if isinstance(source.get('id'), str)}
+    facts = [fact for index, fact in enumerate(value['facts'])
+             if index not in flawed_facts and isinstance(fact, dict)
+             and isinstance(fact.get('citations'), list)
+             and all(isinstance(c, dict) and c.get('source') in ids for c in fact['citations'])]
+    return refused({**value, 'sources': sources, 'facts': facts}, spec)
 
 
 def citation_sources(value, captures):
@@ -875,18 +1207,20 @@ def uncaptured(sources, captures):
     problems = []
     for source in sources:
         name = source.get('file') if isinstance(source, dict) else None
-        entry = saved.get(name)
+        entry = saved.get(name) if isinstance(name, str) else None
         if entry is None:
             problems.append(f'Source file {name!r} is not one this job saved. Save a page with '
                             'save_source first, then copy its "Capture file" exactly. Saved '
                             f'files: {listed}.')
             continue
         origin = entry.get('origin', entry.get('url'))
+        ident = source.get('id')
+        label = f'{ident} ({name})' if isinstance(ident, str) and ident and ident != name else name
         if source.get('origin') != origin:
-            problems.append(f'Source {name}: copy its origin exactly as {origin!r}.')
-        permission = entry.get('permission') or ('selected' if entry.get('offered', True) else 'public')
+            problems.append(f'Source {label}: copy its origin exactly as {origin!r}.')
+        permission = permission_of(entry)
         if source.get('permission') != permission:
-            problems.append(f'Source {name}: its permission is {permission!r}.')
+            problems.append(f'Source {label}: its permission is {permission!r}.')
     return problems
 
 
@@ -973,14 +1307,10 @@ def refused(value, spec):
             try:
                 collection_preflight(case, dossier, spec)
             except (OSError, subprocess.TimeoutExpired):
-                return ['The pinned Harness Research collection check could not finish. '
-                        'This submission was not accepted; do not treat report validation as collection approval.']
+                return [UNFINISHED]
             except (ValueError, KeyError) as error:
-                return [f'Harness Research refused this evidence packet: {error} '
-                        'Correct and resubmit within this job. Facts contain only id, statement, author '
-                        'and citations; citations contain source, quote and optional locator. '
-                        'Do not remove a kind label to turn an inference into a fact; retain unsupported '
-                        'or inferred material as a gap for synthesis. Captured evidence is unchanged.']
+                # check_json says how to correct it, once, after everything it found.
+                return [f'Harness Research refused this evidence packet: {error}']
             return []
         write(case, 'dossier.json', json.dumps(dossier))
         try:
@@ -1107,6 +1437,9 @@ def native(engine, root, run, task, sources, product):
         work = Work(guidance + '\n\nUse only the studio tools; the parent runs helper commands. '
                     'Read list_inputs and sources; return the requested JSON using submit_artifact '
                     'under the name research-result. Keep public queries generic and nonconfidential.'
+                    + (' Build each source you return from source_outline in the task. A refusal lists '
+                       'everything to correct at once: correct all of it before you hand it back.'
+                       if payload.get('source_outline') else '')
                     + told,
                     json.dumps(payload), 'research' if fetch else 'write',
                     {'inputs': {'research-task': json.dumps(payload)}, 'sources': offered,

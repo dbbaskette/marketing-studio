@@ -26,13 +26,15 @@ PROTOCOL = 'harness-collection-v1'
 RECORD_SCHEMA = 5  # Training Studio's new execution record; other adapters version their own.
 PENDING = 'Synthesis and independent review are pending.'
 EVIDENCE = ('Investigate only your assigned questions within the supplied task and source policy. '
-            'Return schema 2 JSON containing only sources, facts and gaps (an array of strings). '
+            'Return one JSON object holding only "schema": 2, sources, facts and gaps (an array of '
+            'strings). '
             'Each fact contains only id, statement, author and citations. Each citation contains '
             'source, quote and optional locator. kind belongs to synthesis prose, never a fact '
             'or citation. Put unsupported or inferred material in gaps; never upgrade it to a fact. '
             'Preserve counterevidence and limitations. Set every fact author to this worker ID. '
             'The host registers your actual invocation and capture receipts. You cannot register '
-            'permissions or approve your own evidence. ' + rc.CAPTURED + ' ' + rc.SOURCE_IDS)
+            'permissions or approve your own evidence. ' + rc.CAPTURED + ' ' + rc.SOURCE_IDS + ' '
+            + rc.OUTLINED)
 COMPOSE = ('Write connected findings, report sections and an authored brief from the immutable '
            'evidence. Return schema 2 JSON containing findings, sections, brief and optional '
            'comparisons only. The host includes the registered sources/facts unchanged. '
@@ -402,6 +404,8 @@ class Workflow:
                 report('complete')
                 return rc.read_bundle(rc.output_root(case))
         review, dossier = (prior.get('review') or {}), prior.get('dossier')
+        # Every source each investigator is given, with each field it must return (#303).
+        outline = rc.source_outline(offered, self.runtime)
         for number in range(1, rc.ROUNDS + 1):
             require()
             tracked['round'] = number
@@ -425,7 +429,8 @@ class Workflow:
                     {'workstream': area['id'], 'investigator': worker, 'invocation': invocation})
                 registration = registered['registration']
                 payload = {'task': task, 'worker': worker, 'questions': area['questions'],
-                    'return': EVIDENCE, 'previous_review': review, 'previous_dossier': dossier,
+                    'return': EVIDENCE, 'source_outline': outline,
+                    'previous_review': review, 'previous_dossier': dossier,
                     '_execution': {'phase': 'investigate', 'round': number, 'stream': area['id'],
                         'workers': len(pending), 'mode': 'evidence', 'invocation': invocation}}
                 terminal = {'workstream': area['id'], 'investigator': worker, 'attempt': registration['number']}

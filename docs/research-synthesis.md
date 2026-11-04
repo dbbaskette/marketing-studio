@@ -283,6 +283,42 @@ kept investigations are reused, and synthesis and review run again. Research who
 kept investigations already hold the untidied text, as earlier Blog Studio and
 Infographic Studio runs do, keeps that registration so its evidence stays valid.
 
+Each investigator, and each serial research author, is handed `source_outline`
+beside its task (#303): every source it is given, numbered s1, s2 … as the studios'
+tools number them, with the fields the studio knows filled in (`id`, `file`, the
+exact `origin`, `permission` and the offered `title`), the full field list, and
+`fill_in`, which says of every other field whether it is required, required only
+under a condition (`context_note` when `context` is partial) or optional, its
+allowed values, and what it means: `publisher` as the source shows it, `context`
+full or partial, and `source_date` only when the source states one, never guessed.
+`research_contract.source_outline` reads the fields, required list, choices and
+conditions from the pinned helper's `references/synthesis.schema.json`, so the
+outline follows the helper version a run is pinned to. The studio sets
+`original_file` itself. A source saved during the job is built the same way from
+what saving it returned.
+
+A refused hand-back lists everything to correct at once, as one short bulleted list
+with the correction guidance said once at its end. `check_json` runs every studio
+check (the job's captures, citation IDs, source metadata) and then
+`packet_problems`, the studio's equivalents of the helper's common evidence rules,
+which the helper itself stops at the first of: each source's required and
+conditional fields, its choices and the helper's text bounds (4,000 characters,
+counted as JavaScript counts them; 10,000 for a statement, 30,000 for a quote); fact
+and source IDs, repeats and collisions; each fact's statement, author and
+citations; unknown fact and citation fields in an evidence packet; and each quote,
+which must appear exactly in the capture text the helper will read. A quote that
+differs only in spacing or quotation-mark style is shown as the capture has it.
+These checks refuse nothing the helper accepts: the real pinned helper is checked
+against each rule in `tests/test_research_packet_problems.py`. When they find
+nothing, the helper runs on the whole submission as before and still decides; when
+they find something in an evidence packet, the helper runs on the part with nothing
+found (flawed sources and the facts that rely on them set aside), so a problem only
+it knows, such as an over-long gap, is listed too. A serial research author's
+dossier is saved by the helper only once the studio checks pass, because its
+findings and sections refer to the facts. Training Studio and Presentation Studio
+(worker tools) and Blog Studio and Infographic Studio (`research_text.Transport`)
+share these checks.
+
 Progress distinguishes elapsed time from observed active time and total assistant
 time. Overlapping assistants do not multiply wall time, and missing cost remains
 unknown. Native budgets reserve allowance across concurrent workers. The optional

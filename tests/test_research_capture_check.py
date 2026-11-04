@@ -229,7 +229,7 @@ class HelperCheckTests(unittest.TestCase):
         value['facts'][0]['citations'][0]['quote'] = 'Words this source never said.'
         checked = check_json(json.dumps(value), self.spec(RUNTIME))
         self.assertTrue(checked[0])
-        self.assertIn('Exact quote not found', checked[0][0])
+        self.assertIn('is not in source source-a exactly', checked[0][0])
         self.assertEqual(checked[2], [], 'a refused dossier is not described as repaired')
 
 
