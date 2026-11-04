@@ -751,7 +751,7 @@ def took(seconds, dollars):
 # schema, and were checked against Harness Research LIMITS_VERIFIED_WITH. A re-pin to another
 # version fails tests/test_research_packet_problems.py until the gated parity tests
 # (STUDIO_TEST_RESEARCH_RUNTIME) are run against it and this is updated.
-LIMITS_VERIFIED_WITH = '1.1.0'
+LIMITS_VERIFIED_WITH = '1.1.1'
 TEXT_LIMIT = 4000
 LIMITS = {'statement': 10000, 'quote': 30000}
 # Fields the studio knows and checks against its own captures: an investigator copies them.
