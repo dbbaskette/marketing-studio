@@ -8,7 +8,7 @@ import os
 from pathlib import Path
 import secrets
 
-from . import brand, checks, evidence, exports, history, image_brief, labels, planning_responses, progress, scene, sources, stories, visual_review
+from . import build_recovery, brand, checks, evidence, exports, history, image_brief, labels, planning_responses, progress, scene, sources, stories, visual_review
 from .contracts import Invalid, basis, canonical, digest
 from .assistant_failure import AssistantFailure
 from .validation import REQUIRED_CHECKS, records, require, text
@@ -45,7 +45,7 @@ class Engine:
         kept = library.status(self.store, ident)
         if kept and type(kept.get('revision')) is int and 'page_revision' not in kept:
             kept['page_revision'] = pages.of(kept['revision'])
-        return {'project': project, 'history': listed, 'page_revision': pages.of(project['revision']),
+        return {'workflow_recovery': build_recovery.read(self.store, ident), 'project': project, 'history': listed, 'page_revision': pages.of(project['revision']),
                 'approval_words': progress.approved_words(project['approval'], pages.of) if project['approval'] else None,
                 'planning_response': planning_responses.status(self.store, project),
                 'source_findings': evidence.findings(project['facts']),
@@ -152,10 +152,24 @@ class Engine:
 
     def build(self, ident, *, expected_revision, request_id):
         with file_lock(self.store._project(ident) / 'jobs/build.lock'):
-            return self._build(ident, expected_revision=expected_revision, request_id=request_id)
+            from .validation import identifier
+            require(identifier(request_id), 'Give this build an owned request identity.')
+            self.store.expect(self.store.read(ident), expected_revision)
+            checkpoint = {'step': 'composition', 'completed': [], 'asset': None}
+            build_recovery.keep(self.store, ident, checkpoint['step'])
+            try:
+                result = self._build(ident, expected_revision=expected_revision, request_id=request_id, checkpoint=checkpoint)
+                build_recovery.keep(self.store, ident, checkpoint['step'], checkpoint['completed'], state='complete')
+                return result
+            except Exception as failure:
+                values = {'asset_id': checkpoint['asset']} if checkpoint['step'] == 'place-artwork' else {}
+                if checkpoint['step'] == 'composition': values['request_id'] = request_id
+                build_recovery.keep(self.store, ident, checkpoint['step'], checkpoint['completed'], state='failed', error=failure, values=values)
+                raise
 
-    def _build(self, ident, *, expected_revision, request_id):
+    def _build(self, ident, *, expected_revision, request_id, checkpoint=None):
         """Explicit page build: plan, author art direction, generate if needed, compose, preview."""
+        checkpoint = checkpoint if checkpoint is not None else {'step': 'composition', 'completed': [], 'asset': None}
         from .image_jobs import Jobs
         from .validation import identifier
         require(identifier(request_id), 'Give this build an owned request identity.')
@@ -166,8 +180,12 @@ class Engine:
                 and os.access(self.executable, os.X_OK), 'Configure the installed renderer before starting a page build.')
         if project['scene'] is None:
             project = scene.adopt_best(self.store, ident, expected_revision=project['revision'])
+        checkpoint['completed'] = ['Page composition']
+        checkpoint['step'] = 'font-check'
         # Establish actual font/layout capability before spending image-provider usage.
         self.preview(ident, expected_revision=project['revision'])
+        checkpoint['completed'].append('Font and layout preflight')
+        checkpoint['step'] = 'artwork'
         if project['scene'].get('art_regions') and not any(e['kind'] == 'artwork' for e in project['scene']['elements']):
             active = Jobs(self.store, self.adapters).recovery(ident)
             require(not active, 'An earlier image request is pending or uncertain. Recover it explicitly; this build did not resubmit it.')
@@ -191,8 +209,14 @@ class Engine:
                     return answer
                 project = self.store.read(ident)
                 asset_id = next(a for a in project['attempts'] if a['id'] == request_id)['asset_ids'][0]
+            checkpoint['step'] = 'place-artwork'
+            checkpoint['asset'] = asset_id
+            checkpoint['completed'].append('Saved artwork')
             project = self.compose_asset(ident, asset_id, expected_revision=project['revision'])
+            checkpoint['step'] = 'preview'
+            checkpoint['completed'].append('Placed artwork')
             return self.preview(ident, expected_revision=project['revision'])
+        checkpoint['step'] = 'preview'
         return self.preview(ident, expected_revision=project['revision'])
 
     def image_direction(self, ident, direction, *, expected_revision, edit=None):
@@ -330,8 +354,17 @@ class Engine:
         require(self.executable is not None or self.renderer is not None,
                 'Configure an installed pinned renderer before preview or export. Nothing is downloaded automatically.')
         kwargs = {'renderer': self.renderer} if self.renderer else {}
-        manifest = exports.build(self.store, ident, expected_revision=expected_revision,
-                                 executable=self.executable, draft=draft, **kwargs)
+        self.store.expect(self.store.read(ident), expected_revision)
+        try:
+            manifest = exports.build(self.store, ident, expected_revision=expected_revision,
+                                     executable=self.executable, draft=draft, **kwargs)
+        except Exception as failure:
+            build_recovery.keep(self.store, ident, 'preview' if draft else 'export', ['Saved page and artwork'],
+                state='failed', error=failure, values={} if draft else {'draft': False})
+            raise
+        prior = build_recovery.read(self.store, ident)
+        if prior and prior.get('state') == 'failed' and prior['step'] in ('preview', 'font-check', 'export'):
+            build_recovery.keep(self.store, ident, prior['step'], prior['completed'], state='complete')
         if not draft:
             # Approved files are kept in the Document Library from the saved bytes alone;
             # whatever the library does, the approval and the files stand.

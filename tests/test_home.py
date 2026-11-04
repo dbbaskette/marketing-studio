@@ -20,7 +20,8 @@ class IsolatedHome(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         self.env = mock.patch.dict(os.environ, {'STUDIOS_CONFIG': str(self.root / 'shared.json'),
-                                               'MARKETING_STUDIO_DATA': str(self.root / 'data')})
+                                               'MARKETING_STUDIO_DATA': str(self.root / 'data'),
+                                               **{key: str(self.root / key.lower()) for key in ('BLOG_STUDIO_DATA','TRAINING_STUDIO_DATA','PRESENTATION_STUDIO_DATA','INFOGRAPHIC_STUDIO_DATA')}})
         self.env.start()
         self.addCleanup(self.env.stop)
         self.launcher = Launcher()

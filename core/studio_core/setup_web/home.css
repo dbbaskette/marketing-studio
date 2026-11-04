@@ -274,3 +274,5 @@ body:has(#settings:not([hidden]) .save-bar) .toasts { bottom: calc(5.5rem + env(
   .studio-actions { flex: 1; }
   .studio-actions > .button { width: 100%; }
 }
+
+.work-summary{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:20px}.work-summary>.stack{min-width:0;gap:4px}.work-summary .card-title{overflow-wrap:anywhere}@media(max-width:600px){.work-summary{align-items:stretch;flex-direction:column;gap:12px}.work-summary .button{width:100%}}

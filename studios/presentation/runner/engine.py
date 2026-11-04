@@ -485,6 +485,8 @@ class Engine(Jobs, Researching, DeskActions):
 
     def _store(self, root: Path, record: dict) -> None:
         decks.write_run(root, record)
+        from studio_core import work_summary
+        work_summary.native('presentation', root, record)
         activity_log.observe(root / 'work' / activity_log.FILE, record)
 
     def _commit(self, root: Path, what: str, also=()) -> None:

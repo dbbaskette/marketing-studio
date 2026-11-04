@@ -9513,6 +9513,8 @@ function begin() {
     return;
   }
   open(window.history.state || { screen: 'home' });
+  const resumeId = new URLSearchParams(location.hash.replace(/^#/, '')).get('resume');
+  if(resumeId && /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(resumeId)) refresh().then(()=>{const saved=view.listing.find(row=>row.path?.split('/').pop()===resumeId);if(saved)open({screen:'run',path:saved.path});else toast('This saved work is unavailable in the current workspace.');});
   refresh().then(async () => {
     if (!view.runner || !view.setup) return;
     const saved = await restoreIntake();

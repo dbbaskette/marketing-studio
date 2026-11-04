@@ -14,6 +14,7 @@ const path=require('node:path'),fs=require('node:fs'),assert=require('node:asser
   await page.route('**/api/home',async route=>{
    const response=await route.fetch(),data=await response.json();
    data.shared.local.root='~/Studios';
+   data.work_overview={training:{state:'saved',items:[{id:'scope',title:'Synthetic outline',state:'needs-you',action:'Review the training outline',observed_at:'2026-11-04T12:00:00Z'}]},presentation:{state:'saved',items:[{id:'slides',title:'Synthetic deck',state:'in-progress',action:'Open saved progress',observed_at:'2026-11-04T11:00:00Z'}]},infographic:{state:'saved',items:[{id:'page',title:'Synthetic infographic',state:'recent',action:'Open saved work',observed_at:'2026-11-04T10:00:00Z'}]}};
    for(const studio of data.studios){
     studio.readiness={state:'done',label:'Can open',detail:'Synthetic local prerequisite check.',action:null};studio.running=true;
     studio.workspace=studio.id==='infographic'?{state:'local',summary:'Local workspace',detail:'Share selected files through Team library.'}:{state:'connected',summary:'Connected to https://example.invalid/team/a-long-reference-repository-for-layout-checking (main)',detail:null};
@@ -25,6 +26,9 @@ const path=require('node:path'),fs=require('node:fs'),assert=require('node:asser
   async function fit(){assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Home overflow');}
   async function capture(name){if(process.env.HOME_LAUNCHPAD_RESULTS){fs.mkdirSync(process.env.HOME_LAUNCHPAD_RESULTS,{recursive:true});await page.evaluate(()=>{document.activeElement?.blur();scrollTo(0,0);});await page.screenshot({path:path.join(process.env.HOME_LAUNCHPAD_RESULTS,name+'.png')});}}
   await page.goto(url);await page.getByRole('button',{name:'Return to Infographic Studio',exact:true}).waitFor();
+  await page.getByRole('heading',{name:'Needs you',exact:true}).waitFor();
+  await page.getByRole('heading',{name:'In progress',exact:true}).waitFor();
+  await page.getByRole('heading',{name:'Recent work',exact:true}).waitFor();
   assert.equal(await page.locator('.studio-preview[aria-hidden="true"] svg').count(),4);
   // Readiness is explained in words on each card, not only in a tooltip (issue 215).
   assert.deepEqual(await page.locator('.studio-readiness-detail').allTextContents(),Array(4).fill('Synthetic local prerequisite check.'));
@@ -39,6 +43,7 @@ const path=require('node:path'),fs=require('node:fs'),assert=require('node:asser
   await capture('marketing-home-desktop');
   for(const width of [1920,1440,800,390,320])for(const colorScheme of ['light','dark']){
    await page.setViewportSize({width,height:1000});await page.emulateMedia({colorScheme,reducedMotion:'reduce'});await fit();
+   assert.deepEqual(await page.locator('.work-summary button').evaluateAll(nodes=>nodes.filter(n=>n.getBoundingClientRect().height<43.5).map(n=>n.textContent)),[]);
    const positions=await page.locator('.studio-card').evaluateAll(nodes=>nodes.map(n=>n.getBoundingClientRect().y));
    if(width===1920)assert.ok(positions.every(y=>y===positions[0]),'Wide home uses four peers');
    if(width<=800)assert.ok(positions[1]>positions[0],'Narrow home uses one column');

@@ -272,7 +272,7 @@ async function request(route, data) {
   const labels={'/api/remote-preview':'Reading the linked document','/api/source-preview':'Reading the uploaded file','/api/research-preview':'Reading the selected research'};
   const owner=!shownWork()&&data!==undefined&&labels[route]?beginWork(labels[route]):null;
   try{const response = await fetch(route, {method: data === undefined ? 'GET' : 'POST', headers: {'X-Infographic-Studio-Token': token, ...(data === undefined ? {} : {'Content-Type': 'application/json'})}, ...(data === undefined ? {} : {body: JSON.stringify(data)})});
-    const answer = await response.json(); if (!response.ok){const failure=Error(answer.error || 'This request could not be completed.');failure.status=response.status;throw failure;}return answer;
+    const answer = await response.json(); if (!response.ok){const failure=Error(answer.error || 'This request could not be completed.');failure.status=response.status;failure.recovery=answer.recovery;throw failure;}return answer;
   }finally{if(owner)endWork(owner);}
 }
 // Normalized image outcomes. Each says what happened and the next safe step; nothing is retried.
@@ -336,7 +336,7 @@ async function action(verb, values={}, revision=null, options={}) {
         if(!here(id))elsewhere(owner,['complete','outdated'].includes(result?.state)?'':(result?.problem||failure.message));
         else{await openProject(id);if(result)recoveredNotice(result);else error(failure.message);}
       }catch(f){if(here(id))error(f.message);else elsewhere(owner,f.message);}
-    }else if(here(id)||options.quiet){await openProject(id);error(failure.message);}
+    }else if(here(id)||options.quiet){await openProject(id);if(failure.recovery){closeSheet();recoverySheet(failure.recovery);}else error(failure.message);}
     else elsewhere(owner,failure.message);
   }
   finally { clearInterval(polling); endWork(owner);unlock(); }
@@ -561,6 +561,7 @@ function renderProject() {
   const delivery=held.deliveries.find(d=>d.current) || held.deliveries[0];
   const doing=make('section','card ig-doing');doing.id='ig-doing';doing.hidden=true;doing.setAttribute('aria-label','What the assistant is doing');
   const parts=[make('p','lede','Choose the explanation, review the actual page, then approve its exact revision.'),doing,standing(held.roadmap,p,delivery,needs)];
+  if(held.workflow_recovery?.state==='failed') parts.push(card('Work kept after a failed step',recoveryContent(held.workflow_recovery)));
   if(held.recovery.length) parts.push(card('Image work needs attention',...held.recovery.map(r=>add(make('div','stack'),make('p','',r.message),r.local_artwork_available?button('Recover saved artwork',()=>action('image-recover',{request_id:r.attempt_id})):button('Cancel uncertain request',()=>action('image-cancel',{request_id:r.attempt_id}))))));
   if(selected&&((p.scene&&!p.scene.visual_version)||!nativeReady)){
     parts.push(card('Make this a visual infographic',make('p','','Earlier versions and captured facts are kept. A visual plan uses concise labels, diagrams and comparisons rather than paragraph blocks.'),
@@ -935,6 +936,11 @@ function receiptSheet(delivery,receipts){
   sheet('Delivery receipt',make('p','','Approved revision '+pageOf(delivery)+'. Each format you chose is listed with what happened.'),...parts,
     partial?make('p','quiet','What succeeded is kept. Retrying the PDF is a download on this computer and sends nothing to Google.'):null,add(make('div','create-foot bar'),button('Done',closeSheet,true)));
 }
+function recoveryContent(r) {
+  const retry=r.current&&r.next_action?button(r.next_label,()=>action(r.next_action,r.next_values,r.revision),true):null;
+  return add(make('div','stack'),make('p','',r.label+' could not finish.'),make('p','quiet','Completed: '+(r.completed.join(', ')||'Earlier saved work')+'.'),make('p','quiet','Your saved page, artwork and image request identity are kept. This local retry does not generate artwork.'),r.diagnostic?make('p','field-hint','Diagnostic reference: '+r.diagnostic):null,retry);
+}
+function recoverySheet(r){sheet('Continue from the saved step',recoveryContent(r),button('Back to the page',closeSheet));}
 async function compose(){
   try {
     const capability=await request('/api/computer');
@@ -1029,6 +1035,8 @@ if (homeLink) {
   if (sameTab) $('go-suite').removeAttribute('target');
 }
 async function startDesk() {
+  const resumeId=new URLSearchParams(location.hash.replace(/^#/, '')).get('resume');
+  if(resumeId&&/^[A-Za-z0-9_-]{1,64}$/.test(resumeId)){await openProject(resumeId);return;}
   // Back from shared settings: reopen the same infographic and sheet. Connecting stays a choice.
   let back=null;try{back=JSON.parse(sessionStorage.getItem('infographic-studio-return')||'null');sessionStorage.removeItem('infographic-studio-return');}catch(f){}
   if(back&&typeof back==='object'&&!Array.isArray(back)){
