@@ -17,3 +17,5 @@ Reuse the shared strict provisional-scope validator and excerpt budget from Trai
 | Older runtime/record | Schema 5 refused by old runtime; older routes unchanged |
 
 Verify scripted native API and pinned-helper integration, real browser at phone/desktop widths and light/dark by keyboard, full affected suites/package/CLI gates in disposable state. Record exact tested trees, reuse unchanged evidence, publish and merge the verified Week 4 PR before Week 5.
+
+Delivery: [PR #330](https://github.com/dbbaskette/marketing-studio/pull/330); final verification and merge outcome are recorded on the PR.
