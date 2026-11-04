@@ -384,6 +384,9 @@ class Store:
                 and result['revision'] == previous['revision'] + 1,
                 'Internal state transitions need the exact next revision and owner.')
         self._publish(result)
+        if any(result.get(key) and result.get(key) != previous.get(key) for key in ('stories', 'scene')):
+            activity_log.checkpoint(self._project(result['id']) / activity_log.FILE,
+                                    'output-saved', 'revision-' + str(result['revision']))
         return result
 
     def write_blob(self, ident: str, relative: str, data: bytes):

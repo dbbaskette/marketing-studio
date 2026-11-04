@@ -1289,6 +1289,9 @@ function open(next) {
 
 // The toolbar: where you are, the way back, and the main thing to do here.
 function toolbar(spec) {
+  const opened = byId('title').textContent === spec.title && !view.sheet
+    ? Array.from(byId('actions').querySelectorAll('details[open][data-key]'))
+      .map((node) => node.dataset.key) : [];
   setTitle(spec.name === undefined ? spec.title : spec.name);
   byId('title').textContent = spec.title;
   // A title too long for two lines is cut there. Its whole text is a pointer away.
@@ -1304,6 +1307,11 @@ function toolbar(spec) {
     add(lead, add(node, icon('back')));
   }
   byId('actions').replaceChildren(...ordered(spec.actions));
+  // Polling refreshes the toolbar too. A menu the person opened stays open until
+  // they choose an action, move focus out, or navigate to another screen.
+  for (const node of byId('actions').querySelectorAll('details[data-key]')) {
+    if (opened.includes(node.dataset.key)) node.open = true;
+  }
   // A screen read on a phone keeps its toolbar to one row: the title, its one filled action
   // and More (`folded`), so the material fills the screen.
   if (spec.compact) byId('toolbar').classList.add('toolbar-compact');
@@ -5211,6 +5219,11 @@ function fit(holder, parts, fresh) {
     kept.delete(mark);
     if (fill) fill(node);
     nodes.push(node);
+  }
+  // Replaced status panels must not force a retained editor to move in the DOM.
+  const wanted = new Set(nodes);
+  for (const node of Array.from(holder.children)) {
+    if (!wanted.has(node)) node.remove();
   }
   let at = holder.firstChild;
   for (const node of nodes) {

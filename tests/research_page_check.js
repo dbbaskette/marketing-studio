@@ -39,6 +39,8 @@ const key=(editor,k)=>all(editor.node).find(n=>n.dataset.key===k);
  editor.problem='';editor.urls='draft link stays';editor.pasting=true;editor.text='Unsubmitted source text';editor.render();
  const external=key(editor,'research-external');external.focus();await editor.act('configure',{external:true});
  assert.equal(editor.urls,'draft link stays');assert.equal(editor.text,'Unsubmitted source text');assert.equal(editor.choice().web,true);assert.equal(document.activeElement.dataset.key,'research-external');
+ key(editor,'research-add-text').focus();await key(editor,'research-add-text').listeners.click();await settle();
+ assert.equal(document.activeElement.dataset.key,'research-paste','Successful capture returns to a stable source action');
  assert.ok(!requests.some(r=>['start','generate','publish','google-write'].includes(r.action)));
  state.sources[0].status='needs-attention';editor.value=state;assert.equal(editor.valid(),false);state.sources[0].status='excluded';assert.equal(editor.valid(),true);
  // A native inventory can own intake while this adapter retains shared policy.

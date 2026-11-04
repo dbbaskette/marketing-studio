@@ -166,6 +166,9 @@ const StudioActivity = (() => {
     const head = add(make('p', 'activity-job-head'), make('span', 'row-title', worker.label || 'An assistant job'));
     if (worker.started_at) add(head, make('span', 'quiet', 'Started ' + clock(worker.started_at, false)));
     item.append(head);
+    const started = stamp(worker.started_at);
+    if (started) item.append(make('p', 'quiet activity-duration', 'Elapsed ' + duration(Math.max(0, (Date.now() - started.getTime()) / 1000))
+      + (now?.at ? ' · Last activity ' + clock(now.at) : ' · No activity reported yet')));
     if (!now || !now.text) return add(item, make('p', 'quiet', 'Just starting.'));
     item.append(add(make('p', 'activity-now'), make('strong', '', 'Now: '), now.text));
     const count = Number.isInteger(worker.count) ? worker.count : given ? given.length : 0;
@@ -316,6 +319,7 @@ const StudioActivity = (() => {
       body.replaceChildren(...parts);
       return;
     }
+    if (view.timing) parts.push(timingSummary(view.timing));
     // A job still running is shown where the page shows its work, not again here.
     const running = array(view.running).length;
     parts.push(make('p', 'quiet', 'Each assistant job that ended, newest first, with what it did. '
@@ -343,6 +347,28 @@ const StudioActivity = (() => {
       const again = Array.from(body.querySelectorAll('[data-key]')).find((n) => n.dataset.key === focused);
       if (again) again.focus({preventScroll: true});
     }
+  }
+
+  function duration(seconds) {
+    if (typeof seconds !== 'number' || !Number.isFinite(seconds)) return 'not recorded';
+    const value = Math.max(0, Math.round(seconds));
+    return value < 60 ? value + 's' : Math.floor(value / 60) + 'm ' + (value % 60) + 's';
+  }
+
+  function timingSummary(timing) {
+    const box = make('section', 'activity-timing');
+    box.setAttribute('aria-label', 'Time and saved results');
+    add(box, make('p', 'row-title', 'Time and saved results'),
+      make('p', 'quiet', 'Elapsed ' + duration(timing.elapsed_seconds)
+        + ' · Assistant work ' + duration(timing.model_seconds)
+        + ' · Checks ' + duration(timing.check_seconds)
+        + ' · Queued ' + duration(timing.queue_seconds)
+        + ' · Waiting for you ' + duration(timing.waiting_seconds)),
+      make('p', '', timing.first_result_seconds === null
+        ? 'No saved result recorded yet.'
+        : 'First saved result after ' + duration(timing.first_result_seconds) + '.'),
+      make('p', 'quiet', timing.saved_units + ' saved results. Intermediate results can still need checks and your approval.'));
+    return box;
   }
 
   function paint(key) {

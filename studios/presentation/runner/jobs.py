@@ -451,6 +451,9 @@ class Jobs:
                          bounded,
                          record.get('model'), record.get('level_of_effort'))
         lines, started_at, clock = activity_log.Lines(LINES), home.now(), time.monotonic()
+        with self.files:
+            activity_log.checkpoint(root / ACTIVITY, 'checking' if 'review' in work.prepared
+                                    or 'review' in name else 'working', name, started_at)
         with self._lock:
             run.workers[name] = {'label': doing, 'started_at': started_at, 'lines': lines,
                                  'folder': folder}

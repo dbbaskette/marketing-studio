@@ -352,6 +352,10 @@ def once(engine):
             current.update(status='ready', result=result, finished_at=studio.now())
             write(root, current)
             shared = _ended(root, current)
+            running = getattr(engine, 'activity', None)
+            if running is not None:
+                running.checkpoint(subject, 'output-saved', saved['kind'])
+                running.checkpoint(subject, 'ready', saved['kind'])
         _share(root, shared)
     except Exception as error:
         shared = None

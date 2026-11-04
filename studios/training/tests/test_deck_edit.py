@@ -18,6 +18,16 @@ class PublicationTests(TrainingCase):
         self.write('a.txt', 'old a')
         self.write('b.txt', 'old b')
 
+    def test_activity_does_not_invalidate_or_get_replaced_by_a_prepared_edit(self):
+        self.write('work/activity-log.jsonl', 'before\n')
+        with deck_edit.PreparedEdit(self.root) as edit:
+            (edit.root / 'a.txt').write_text('new a')
+            (edit.root / 'work/activity-log.jsonl').write_text('prepared timing\n')
+            self.write('work/activity-log.jsonl', 'new live timing\n')
+            edit.publish()
+        self.assertEqual((self.root / 'a.txt').read_text(), 'new a')
+        self.assertEqual((self.root / 'work/activity-log.jsonl').read_text(), 'new live timing\n')
+
     def test_failed_write_restores_only_what_this_edit_wrote(self):
         write = deck_edit.write_atomic
         with deck_edit.PreparedEdit(self.root) as edit:

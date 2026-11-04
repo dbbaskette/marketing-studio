@@ -2638,6 +2638,8 @@ class Engine:
                 if run.get('editor_check'):
                     state['enabled'] = False
                 self.keep_local(ident, state)
+                self.activity.checkpoint(blog_activity.blog(ident), 'output-saved', found['next'])
+                self.activity.checkpoint(blog_activity.blog(ident), 'ready', found['next'])
         except Exception as exc:
             with studio.locked(self.root):
                 state = self.local(ident)

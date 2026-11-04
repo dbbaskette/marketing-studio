@@ -214,6 +214,15 @@ const path=require('node:path'),fs=require('node:fs'),os=require('node:os'),asse
   const tick=page.locator('dialog.library-sheet input[type=checkbox][data-key^="library-tick-"]:not([disabled])').first();
   await tick.focus();await page.keyboard.press('Space');
   await page.locator('dialog.library-sheet .selection-bar').getByText('1 selected').waitFor();
+  for(const width of [320,390,1280]){
+   await scheme(width,'light');
+   for(const end of [false,true]){
+    await page.locator('dialog.library-sheet > .dialog-content').evaluate((n,end)=>{n.scrollTop=end?n.scrollHeight:0;},end);
+    const rect=await page.locator('dialog.library-sheet [data-key="library-use"]').boundingBox();
+    assert(rect&&rect.y>=0&&rect.y+rect.height<=page.viewportSize().height,'Use selected stays visible at '+width+'px at both ends of the list');
+   }
+  }
+  await scheme(390,'light');
   assert.equal(await page.locator('dialog.library-sheet select[data-key^="library-role-"]').count(),1,'a ticked document takes a role');
   await fit('Sheet with a selection');await contained('dialog.library-sheet','Sheet with a selection');await capture('sheet-selected-390-light');
   assert.notEqual(await page.locator('dialog.library-sheet .selection-bar').evaluate(n=>getComputedStyle(n).backdropFilter),'none','the selection bar is material');

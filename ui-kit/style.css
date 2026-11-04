@@ -3746,7 +3746,13 @@ body[data-pilot="liquid"] .ig-outline-value { fill: var(--studio-color); font: 2
 
 /* Shared Document Library catalog and Add from library sheet (deck_web/library.js). Rows,
    previews and forms stay opaque; only the sheet and its selection bar are material. */
-.library-sheet{width:min(58rem,calc(100% - 1.5rem))}
+.library-sheet{width:min(58rem,calc(100% - 1.5rem));overflow:hidden;padding:0}
+.library-sheet[open]{display:flex;flex-direction:column}
+.library-sheet>.dialog-header{flex:none;margin:0;padding:1rem 1.25rem;border-bottom:1px solid var(--hair);background:var(--paper)}
+.library-sheet>.dialog-content{min-height:0;overflow:auto;padding:1rem 1.25rem}
+.library-sheet>.library-selection{flex:none;max-height:40vh;overflow:auto;margin:0;padding:.6rem 1.25rem;background:var(--paper);border-top:1px solid var(--hair)}
+.library-sheet>.library-selection .selection-bar{position:static;margin:0}
+.library-sheet>.library-selection .create-foot{margin:0}
 .library-list{list-style:none;margin:0;padding:0;background:var(--paper);border:1px solid var(--hair);border-radius:16px}
 .library-list>li{padding:.75rem 1rem;overflow-wrap:anywhere}
 .library-list>li+li{border-top:1px solid var(--hair)}

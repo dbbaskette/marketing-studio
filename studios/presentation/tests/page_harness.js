@@ -67,6 +67,8 @@ class FakeNode {
 
   remove() {
     if (!this.parentNode) return;
+    // Browsers drop focus when insertBefore moves a connected focused subtree too.
+    if (document.body?.contains(this) && this.contains(document.activeElement)) document.activeElement = document.body;
     const held = this.parentNode.childNodes;
     held.splice(held.indexOf(this), 1);
     this.parentNode = null;

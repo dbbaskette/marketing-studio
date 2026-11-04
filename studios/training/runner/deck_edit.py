@@ -45,6 +45,10 @@ class PreparedEdit:
         for path in root.rglob('*'):
             if path.is_symlink():
                 raise WorkspaceError('A linked file prevents changing this deck safely.')
+            # Local operational timing is not a deck input, and must never be
+            # published from the prepared copy over the live Activity log.
+            if path.relative_to(root) == Path('work/activity-log.jsonl'):
+                continue
             if path.is_file():
                 found[path.relative_to(root)] = hashlib.sha256(path.read_bytes()).digest()
         return found

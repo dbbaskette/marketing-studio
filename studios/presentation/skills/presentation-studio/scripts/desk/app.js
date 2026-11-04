@@ -532,11 +532,18 @@ function field(id, label, held, name, about) {
     input.maxLength = spec.limit || (spec.long ? 4000 : 400);
     input.autocomplete = 'off';
     input.spellcheck = Boolean(spec.long);
+    input.addEventListener('compositionstart', () => { input.dataset.composing = 'true'; });
+    input.addEventListener('compositionend', () => {
+      delete input.dataset.composing;
+      held[name] = input.value;
+      if (spec.typed) spec.typed();
+      if (view.paintAfterComposition) { view.paintAfterComposition = false; paintDeck(false); }
+    });
     input.addEventListener('input', () => {
       held[name] = input.value;
       // A box that is being put right no longer says it is wrong.
       if (input.getAttribute('aria-invalid')) refuse(id, '');
-      if (spec.typed) spec.typed();
+      if (spec.typed && input.dataset.composing !== 'true') spec.typed();
     });
   }
   if (spec.mode) input.inputMode = spec.mode;
@@ -1188,6 +1195,12 @@ function fit(holder, parts, fresh) {
     if (fill) fill(node);
     nodes.push(node);
   }
+  // Remove replaced parts before ordering the survivors. Moving a retained editor in
+  // front of an obsolete sibling detaches it, which drops focus on the first key typed.
+  const wanted = new Set(nodes);
+  for (const node of Array.from(holder.children)) {
+    if (!wanted.has(node)) node.remove();
+  }
   let at = holder.firstChild;
   for (const node of nodes) {
     if (node === at) at = at.nextSibling;
@@ -1204,6 +1217,8 @@ function placeParts(spec, parts, fresh) {
   const holder = main();
   const active = document.activeElement;
   const focused = !fresh && active && active.dataset ? active.dataset.key : '';
+  const caret = focused && typeof active.selectionStart === 'number'
+    ? [active.selectionStart, active.selectionEnd, active.selectionDirection] : null;
   const opened = fresh ? [] : Array.from(holder.querySelectorAll('details'))
     .filter((node) => node.open).map((node) => node.dataset.key);
   const bar = JSON.stringify(spec.mark);
@@ -1219,6 +1234,9 @@ function placeParts(spec, parts, fresh) {
     if (!view.sheet) byId('title').focus({ preventScroll: true });
   } else if (focused && !document.body.contains(active) && !focusKey(focused)) {
     byId(view.sheet ? 'sheet' : 'title').focus({ preventScroll: true });
+  }
+  if (caret && document.activeElement?.dataset.key === focused && document.activeElement !== active) {
+    document.activeElement.setSelectionRange?.(...caret);
   }
 }
 
@@ -6080,6 +6098,10 @@ function deckActions(run, lead) {
 }
 
 function paintDeck(fresh) {
+  if (!fresh && document.activeElement?.dataset.composing === 'true') {
+    view.paintAfterComposition = true;
+    return;
+  }
   const run = view.run;
   // A deck started on the desk is drawn by deck-desk.js: its progress until it reaches the
   // desk, and the desk from then on. Every other deck keeps the screen below.

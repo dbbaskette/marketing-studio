@@ -49,8 +49,12 @@ class ActivityLogTests(StudioCase):
         self.assertNotIn(seen['task'][:60], written)
         self.assertNotIn('"type"', written)
         for line in written.splitlines():
+            item = json.loads(line)
+            if 'checkpoint' in item:
+                self.assertEqual(set(item), {'checkpoint', 'unit', 'at'})
+                continue
             self.assertTrue(all(not one['text'].startswith(('{', '['))
-                                for one in json.loads(line)['lines']))
+                                for one in item['lines']))
         repo = self.space.repo
         tracked = subprocess.run(['git', 'ls-files'], cwd=repo, capture_output=True,
                                  text=True, check=True).stdout

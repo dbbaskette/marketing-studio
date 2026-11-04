@@ -187,3 +187,15 @@ the full relevant suite, browser journey and prepared source-independent native
 package acceptance. Read [the acceptance matrix](../studios/infographic/docs/acceptance.md)
 for the precise distinction between offline functionality, real rendering, live
 provider validation and owner illustration-quality acceptance.
+
+## Responsiveness regression coverage
+
+The Week 1 audit changes use the existing Activity log and its disposable tests.
+`test_activity_log` distinguishes a saved intermediate result from overlapping model
+calls, counts same-second results once, and leaves unknown timings unestimated.
+Presentation Studio’s `WordsTests` includes first-edit/autosave focus preservation;
+its DOM harness models focus loss when a connected subtree is moved. The Library
+visual journey checks that Use selected stays in view at both ends of the document
+list at 320, 390 and 1280 px. The shared source-editor journey verifies the focus
+destination after a successful pasted-source capture. See
+[the companion compatibility check](research-responsiveness-contracts.md).

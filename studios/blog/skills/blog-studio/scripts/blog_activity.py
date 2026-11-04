@@ -147,7 +147,22 @@ class Running:
         found = Job(subject, label, step, owner)
         with self._lock:
             self._jobs[found.id] = found
+        self.checkpoint(subject, 'working', step)
         return found
+
+    def checkpoint(self, subject, event, unit=''):
+        """Best-effort timing on the existing private log, under its ordinary lock."""
+        try:
+            target = path(self.root, subject)
+            if target.is_symlink():
+                return
+            if studio.lock_held():
+                activity_log.checkpoint(target, event, unit)
+            else:
+                with studio.locked(self.root):
+                    activity_log.checkpoint(target, event, unit)
+        except Exception:  # noqa: BLE001 - timing must not change a call's result
+            pass
 
     def end(self, found: Job, ended: str, detail: str | None = None) -> None:
         """Let the job go and add it to its log. Best effort, whatever goes wrong: it is called
@@ -191,6 +206,7 @@ class Running:
 def within(running, subject, label, step, owner=None):
     """Each assistant call inside is a job of `subject`, named `label`; `owner` is the piece
     of work it is for, such as a tool job's id, when a page shows only that work's jobs."""
+    running.checkpoint(subject, 'accepted', step)
     token = _CONTEXT.set((running, subject, label, step, owner))
     try:
         yield

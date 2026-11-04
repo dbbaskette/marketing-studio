@@ -5,6 +5,11 @@ making decks first, then what changes for maintainers.
 
 ## Unreleased
 
+- **Editing keeps your place.** Slide status refreshes and autosave preserve keyboard focus
+  and the caret, and composition input finishes before a deferred refresh. Library choices
+  keep their confirmation in reach on a phone. The Activity log distinguishes the first
+  saved result, recorded assistant/check time, queue time and time waiting for you.
+
 - **Choose a model and reasoning level for each kind of work.** Settings now offer six
   kinds instead of Quick, Main and Complex: Quick, Research, Combining, Checking, Writing
   and Fixing. Classifying, extracting and the outline stay on Quick, research runs on

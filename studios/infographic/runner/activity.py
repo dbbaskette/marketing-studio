@@ -44,11 +44,12 @@ def ending(item):
 
 
 class Activity:
-    def __init__(self, *, clock=time.monotonic, keep=None):
+    def __init__(self, *, clock=time.monotonic, keep=None, checkpoint=None):
         self.clock = clock
         self.lock = threading.RLock()
         self.items = {}
         self.keep = keep        # keep(ident, entry): an operation's Activity log entry
+        self.checkpoint = checkpoint
 
     @contextmanager
     def track(self, ident, action):
@@ -68,9 +69,20 @@ class Activity:
                     'started_at': activity_log.now(), 'lines': activity_log.Lines()}
             self.items[ident] = item
 
+        def checkpoint(event):
+            if self.checkpoint is not None:
+                try:
+                    self.checkpoint(ident, {'checkpoint': event, 'unit': action, 'at': activity_log.now()})
+                except Exception:
+                    pass
+        checkpoint('accepted')
+        checkpoint('working')
+
         def report(label):
             with self.lock:
                 item['label'] = label
+            if label == 'Running the local checks':
+                checkpoint('checking')
         # What the assistant is doing, line by line: give it to the author (author.watching).
         report.said = item['lines'].append
 
@@ -84,11 +96,13 @@ class Activity:
                     item.update(reason=failure.reason, problem=str(failure))
                     assisted = True
             self._kept(ident, item, assisted)
+            checkpoint('stopped')
             raise
         else:
             with self.lock:
                 item.update(state=item.pop('outcome', 'complete'), ended=self.clock())
             self._kept(ident, item, assisted)
+            checkpoint('ready' if item['state'] == 'complete' else 'stopped')
 
     def _kept(self, ident, item, assisted):
         """Give an operation in which an assistant worked to the Activity log. Best effort:
