@@ -51,6 +51,9 @@ const path=require('node:path'),fs=require('node:fs'),assert=require('node:asser
    if([1920,390].includes(width))await capture(`marketing-home-${width}-${colorScheme}`);
   }
   await page.setViewportSize({width:1280,height:950});await page.emulateMedia({colorScheme:'light'});
+  const zoom=await page.context().newCDPSession(page);
+  await zoom.send('Emulation.setDeviceMetricsOverride',{width:640,height:475,deviceScaleFactor:2,mobile:false});await fit();await capture('marketing-home-200-percent-equivalent');
+  await zoom.send('Emulation.clearDeviceMetricsOverride');await zoom.detach();await page.setViewportSize({width:1280,height:950});
   variant='attention';await page.reload();await page.getByRole('link',{name:'Install Blog Studio',exact:true}).waitFor();
   await page.getByRole('button',{name:'Connect Presentation Studio to the shared storage',exact:true}).waitFor();
   await page.locator('[data-studio="presentation"] .studio-warning').getByText('Shared settings changed',{exact:true}).waitFor();

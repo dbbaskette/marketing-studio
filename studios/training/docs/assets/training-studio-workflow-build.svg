@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="568" height="869" viewBox="0 0 568 869" role="img" aria-labelledby="title desc">
 <title id="title">Training Studio workflow, part 2 of 2: Build and finish</title>
-<desc id="desc">Steps in order: Build the materials (Guide, brief, practice, Yoodli); Review slide text (When a deck is chosen); Design the deck (Harness Slides, in your brand); Refine on the desk (Edit, notes, Finishing); Mark ready (Each material or a level); Index written (Once every material is ready); Share it, if you choose (Download, Google Doc, Publish). Approve text &amp; design deck leads from Review slide text to Design the deck. Review slide text can go to Ask for changes (Slide text rewritten) and come back. Refine on the desk can go to Needs updating (Update or Keep as it is) and come back. Mark ready can lead to Return to draft (After an edit or Undo). Return to draft (After an edit or Undo) returns to Refine on the desk. Colours: filled boxes are your decisions or input, tinted boxes are assistant work and grey boxes are studio steps.</desc>
+<desc id="desc">Steps in order: Build the materials (Guide, brief, practice, Yoodli); Review slide text (When a deck is chosen); Design the deck (Harness Slides, in your brand); Refine on the desk (Edit, notes, Finishing); Mark ready (Each material or a level); Index written (Once every material is ready); Share it, if you choose (Download, Google Doc, Publish). Approve text &amp; design deck leads from Review slide text to Design the deck. Review slide text can go to Ask for changes (Slide text rewritten) and come back. Refine on the desk can go to Review affected work (Update selected scope or keep) and come back. Mark ready can lead to Return to draft (After an edit or Undo). Return to draft (After an edit or Undo) returns to Refine on the desk. Colours: filled boxes are your decisions or input, tinted boxes are assistant work and grey boxes are studio steps.</desc>
 <style>svg{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Helvetica,Arial,sans-serif}.title{font-weight:600}.bold{font-weight:700}.page,.you,.assistant,.studio{stroke-width:0.5}.wire{stroke-width:1.1}.page{fill:#ffffff;stroke:#d9dee6}.ink{fill:#1c1d22}.quiet{fill:#565a69}.accent-text{fill:#7140b4}.you{fill:#7140b4;stroke:#7140b4}.you-text{fill:#ffffff}.assistant{fill:#f2eaff;stroke:#7140b4}.studio{fill:#eef1f5;stroke:#a9b1bf}.wire{fill:none;stroke:#6b7080}.tip{fill:#6b7080}@media (prefers-color-scheme:dark){.page{fill:#191f29;stroke:#39404d}.ink{fill:#f3f4f8}.quiet{fill:#abb0c0}.accent-text{fill:#d2b1ff}.you{fill:#d2b1ff;stroke:#d2b1ff}.you-text{fill:#151c29}.assistant{fill:#342947;stroke:#d2b1ff}.studio{fill:#262d39;stroke:#5d6576}.wire{fill:none;stroke:#9aa0b0}.tip{fill:#9aa0b0}}</style>
 <rect x="0.25" y="0.25" width="567.5" height="868.5" rx="16" class="page"/>
 <text x="20" y="34" font-size="13" class="accent-text title" text-anchor="start">Training Studio workflow · part 2 of 2</text>
@@ -63,10 +63,10 @@
 <text x="484" y="248" font-size="15" class="you-text bold" text-anchor="middle">changes</text>
 <text x="484" y="269" font-size="13" class="you-text" text-anchor="middle">Slide text rewritten</text>
 <rect x="416" y="423" width="136" height="96" rx="10" class="you"/>
-<text x="484" y="448" font-size="15" class="you-text bold" text-anchor="middle">Needs</text>
-<text x="484" y="467" font-size="15" class="you-text bold" text-anchor="middle">updating</text>
-<text x="484" y="488" font-size="13" class="you-text" text-anchor="middle">Update or</text>
-<text x="484" y="505" font-size="13" class="you-text" text-anchor="middle">Keep as it is</text>
+<text x="484" y="448" font-size="15" class="you-text bold" text-anchor="middle">Review</text>
+<text x="484" y="467" font-size="15" class="you-text bold" text-anchor="middle">affected work</text>
+<text x="484" y="488" font-size="13" class="you-text" text-anchor="middle">Update selected</text>
+<text x="484" y="505" font-size="13" class="you-text" text-anchor="middle">scope or keep</text>
 <rect x="16" y="559" width="136" height="77" rx="10" class="you"/>
 <text x="84" y="584" font-size="15" class="you-text bold" text-anchor="middle">Return to draft</text>
 <text x="84" y="605" font-size="13" class="you-text" text-anchor="middle">After an edit</text>

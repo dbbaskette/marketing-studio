@@ -113,7 +113,9 @@ TRAINING_PLAN = flow(
      ('scan', 'assistant', 'Quick scan', 'One bounded provisional outline'),
      ('check', 'you', 'Review the training outline', 'Edit sections and questions',
       'Approve outline & research'),
-     ('research', 'assistant', 'Research approved sections', 'Up to 3 areas; independent check'),
+     ('research', 'assistant', 'Research approved sections', 'Up to 3 active investigators'),
+     ('combine', 'assistant', 'Combine section drafts', 'Keep completed contributions'),
+     ('verify', 'assistant', 'Check the assembled research', 'Independent whole-report check'),
      ('plan', 'assistant', 'Teaching plans', 'Approved scope and checked evidence'),
      ('build', 'studio', 'Build selected materials', 'No second topics approval')),
     (('changes', 1, 3, 'you', 'Edit locally', 'No assistant job'),),
@@ -130,7 +132,7 @@ TRAINING_BUILD = flow(
      ('index', 'studio', 'Index written', 'Once every material is ready'),
      ('share', 'you', 'Share it, if you choose', 'Download, Google Doc, Publish')),
     (('rewrite', 1, 1, 'you', 'Ask for changes', 'Slide text rewritten'),
-     ('held', 1, 3, 'you', 'Needs updating', 'Update or Keep as it is'),
+     ('held', 1, 3, 'you', 'Review affected work', 'Update selected scope or keep'),
      ('draft', -1, 4, 'you', 'Return to draft', 'After an edit or Undo')),
     (('text', 'rewrite', 'both', ''), ('desk', 'held', 'both', ''),
      ('ready', 'draft', 'side', ''), ('draft', 'desk', 'back', '')))
@@ -174,11 +176,13 @@ PRESENTATION_TEXT = flow(
      ('new', 'you', 'New deck', 'Idea, document or existing deck'),
      ('scan', 'assistant', 'Quick scan', 'For researched ideas or material'),
      ('story', 'you', 'Review the slide story', 'Edit sections and research gaps', 'Approve story & research'),
-     ('research', 'assistant', 'Research approved sections', 'Independent checking follows'),
+     ('research', 'assistant', 'Research approved sections', 'Up to 3 active investigators'),
+     ('combine', 'assistant', 'Combine section drafts', 'Retry unfinished contributions'),
+     ('verify', 'assistant', 'Check the assembled research', 'Independent whole-report check'),
      ('draft', 'assistant', 'Draft the slide text', 'Titles, words, speaker notes'),
      ('text', 'you', 'Review slide text', 'Fix words where they are'),
      ('approve', 'you', 'Approve text & design deck', 'Design starts from this text')),
-    (('changes', 1, 6, 'you', 'Ask for changes', 'Slide text redrafted'),),
+    (('changes', 1, 8, 'you', 'Ask for changes', 'Slide text redrafted'),),
     (('text', 'changes', 'both', ''),))
 
 PRESENTATION_DECK = flow(
@@ -200,8 +204,9 @@ INFOGRAPHIC_STORY = flow(
      ('choose', 'you', 'Choose a story', 'Use this story'),
      ('build', 'assistant', 'Build page', 'Composed with your brand'),
      ('preview', 'studio', 'Create preview', 'Rendered on this computer')),
-    (('revise', 1, 3, 'you', 'Ask for a revision', 'A revised story to choose'),),
-    (('choose', 'revise', 'both', ''),))
+    (('revise', 1, 3, 'you', 'Ask for a revision', 'A revised story to choose'),
+     ('retry', 1, 5, 'you', 'Retry failed preview', 'Keep saved page and artwork')),
+    (('choose', 'revise', 'both', ''), ('preview', 'retry', 'both', '')))
 
 INFOGRAPHIC_APPROVE = flow(
     (('words', 'you', 'Edit words', 'New revision; Update preview'),

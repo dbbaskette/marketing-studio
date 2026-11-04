@@ -5,7 +5,7 @@ helper supports it. Blog Studio, Presentation Studio and Training Studio share
 `studio_core.research_contract`; they keep their own source permissions, worker
 confinement, model profiles, stop controls and review levels.
 
-The companion lock selects the stable **1.1.0** release at an exact commit and
+The companion lock selects the stable **1.1.1** release at an exact commit and
 checksum. Harness Research accepts newer stable releases through `>=1.0.0`;
 Harness Slides also retains stable `>=` selection. Prerelease tags are excluded,
 and each resolved release is locked to its commit and source checksum.
@@ -390,3 +390,53 @@ Old records retain their flow. Explicit adoption is limited to supported stopped
 desks before any report or teaching plan; it preserves the private unfinished case as
 history and starts no work until Resume training. Presentation Studio's corresponding change and
 reusable independently checked sections are later work. No companion protocol is changed.
+
+
+## Incremental native research and refresh
+
+New outline-first Training Studio schema 8 and Presentation Studio schema 6 keep
+one investigator workstream per approved section, with at most three active jobs.
+A bounded Quick scan is provisional and makes no external searches. Local outline
+editing and approval precede detailed work. Older saved schemas retain their
+original grouping, decisions and runtime pins; focused conversation contracts
+keep their existing paths.
+
+Section combining reads only the relevant registered evidence, deduplicating
+identical claims with the same quotation/source context. Distinct claims,
+qualifications and contradictory evidence remain distinct. Completed contributions
+are durable **drafts**, not per-section semantic-review receipts. A short final
+author uses completed contributions for the introduction, comparisons and brief;
+the supported independent whole-dossier review still gates use. A timeout keeps
+completed peers. More time changes only that contribution's allowance.
+
+Before a refresh, the native page previews added/changed source inputs, research
+sections, potentially dependent outputs and remaining final checks. Added sources
+can target the sections and cross-section dependencies the person selects.
+Changed/removed originals, permissions, audience/global context or an unmeasured
+public-source refresh require broader invalidation. Stale scope refuses before
+model work or moving the active pointer. Unchanged validated packets are imported
+through the supported collection protocol with their original authors, source
+hashes and provenance. Only changed evidence updates dependent materials; wording
+and notes edits retain their existing local paths.
+
+Resting preview polls reuse a small metadata-keyed cache for up to 30 seconds;
+confirmation always hashes actual bytes again. No capture bytes are read for this
+preview before a research case exists or while workers are active. The cache
+never carries approval or bypasses stale-input refusal.
+
+Harness Research 1.1.1 makes `synthesis save --reuse-unchanged --context FILE`
+explicitly idempotent only with matching dossier, evidence/original snapshots,
+scope, protocol, guidance/runtime and review-independence identities. Ordinary
+saves remain revision-based. Its internal state schema 3 is refused by older
+runtimes; the portable output remains schema 2. Installed helpers are never
+silently updated. A changed or missing immutable input cannot retain a review.
+
+Harness Slides 0.17.0 similarly offers opt-in `--review-context` draft inspection
+reuse. Changed slides and immediate neighbors need inspection; brand, fonts,
+layout, order, renderer and review-question changes expand invalidation. A
+separate `--finalize` consistency receipt binds the exact final whole-deck
+revision, with creative assessment where applicable. Presentation Studio's
+existing `reusable_review` already applies the corresponding native pixel,
+dependency and question checks and retains whole-deck inspection. Neither layer
+carries the person's approval. The supported helper minimum stays 0.16.0 for
+existing callers; new raw companion flags require the advertised capability.

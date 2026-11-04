@@ -17,8 +17,10 @@ There is no automatic second author or escalation.
 
 The person can edit, add or remove sections and questions and save locally without an
 assistant. Exact outline/intake/source approval starts research; no deep research precedes
-it. Retained sections become research items, grouped into at most three parallel areas
-under the saved round and source limits. Additional personal questions are included with
+it. New section flows keep one workstream per retained section, with at most three active
+investigators and combining authors under the saved round and source limits. Older saved
+flows keep their original grouping. Completed section contributions survive retries as
+drafts; a short final author uses them before the supported whole-report check. Additional personal questions are included with
 the first retained section. Supplied-only stays supplied-only. Harness Research combines
 the evidence and independently checks the complete dossier. Materials get the approved
 scope and checked research; this provisional scan is never evidence.

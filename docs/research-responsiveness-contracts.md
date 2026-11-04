@@ -1,5 +1,9 @@
 # Responsiveness contracts for the audit roadmap
 
+This records the Week 1 baseline. For implemented companion capabilities and
+current compatibility, see [research synthesis](research-synthesis.md) and the
+[final integration evidence](audit-integration-evidence.md).
+
 The Week 1 compatibility check reads the exact companion revisions in
 `pins/companions.json`; it changes no helper, installed skill or saved project.
 

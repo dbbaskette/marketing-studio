@@ -12,13 +12,13 @@ async function fixture(args=[]){
  let browser;
  try{
   browser=await chromium.launch({headless:true,executablePath:process.env.INFOGRAPHIC_STUDIO_TEST_RENDERER});
-  for(const width of [390,1280]){
+  for(const width of [320,390,1280]){
    const test=await fixture();
    try{
     const page=await browser.newPage({viewport:{width,height:844}}),errors=[];
     page.on('pageerror',e=>errors.push(e.stack||e.message));
-    await page.addInitScript(root=>history.replaceState({screen:'run',path:root},''),test.path);
-    await page.goto(test.url);await page.getByRole('heading',{name:'Review the training outline',exact:true}).waitFor();
+    if(width===1280)await page.addInitScript(root=>history.replaceState({screen:'run',path:root},''),test.path);
+    await page.goto(width===1280?test.url:test.url+'&resume='+encodeURIComponent(path.basename(test.path)));await page.getByRole('heading',{name:'Review the training outline',exact:true}).waitFor();
     const before=await page.evaluate(root=>ask('run',{path:root}),test.path);
     assert.equal(before.state,'waiting');assert.equal(before.steps.find(s=>s.id==='scan').attempts,1);
     assert(!before.steps.some(s=>s.id.startsWith('research:')),'no research before outline approval');
@@ -49,6 +49,12 @@ async function fixture(args=[]){
      assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
      const short=await page.locator('main input,main textarea,main button').evaluateAll(nodes=>nodes.filter(n=>n.offsetParent!==null&&n.getBoundingClientRect().height<43.5).map(n=>n.textContent));assert.deepEqual(short,[]);
      if(process.env.TRAINING_OUTLINE_RESULTS){fs.mkdirSync(process.env.TRAINING_OUTLINE_RESULTS,{recursive:true});await page.screenshot({path:path.join(process.env.TRAINING_OUTLINE_RESULTS,`outline-${width}-${colorScheme}.png`)});}
+    }
+    if(width===1280){
+     const zoom=await page.context().newCDPSession(page);
+     await zoom.send('Emulation.setDeviceMetricsOverride',{width:640,height:422,deviceScaleFactor:2,mobile:false});
+     assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'200% equivalent layout overflow');
+     await zoom.send('Emulation.clearDeviceMetricsOverride');await zoom.detach();await page.setViewportSize({width,height:844});
     }
     await page.getByLabel('Section 1 title',{exact:true}).focus();await page.keyboard.press('Tab');
     assert.equal(await page.evaluate(()=>document.activeElement?.getAttribute('id')),'outline-section-foundations-objectives');
@@ -86,6 +92,6 @@ async function fixture(args=[]){
     console.log('PASS '+mode+' reload');await page.close();
    }finally{await test.stop();}
   }
-  console.log('PASS Training Studio outline: local edit/add/remove, save/reload, zero deep work before approval, exact approved build, keyboard and 390/1280 light/dark, timeout fallback and explicit stopped-flow adoption');
+  console.log('PASS Training Studio outline: local edit/add/remove, save/reload, zero deep work before approval, exact approved build, keyboard and 320/390/1280 light/dark, direct resume and 200% equivalent layout, timeout fallback and explicit stopped-flow adoption');
  }finally{if(browser)await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

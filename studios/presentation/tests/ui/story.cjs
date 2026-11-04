@@ -12,13 +12,13 @@ async function fixture(args=[]){
  let browser;
  try{
   browser=await chromium.launch({headless:true,executablePath:process.env.INFOGRAPHIC_STUDIO_TEST_RENDERER});
-  for(const width of [390,1280]){
+  for(const width of [320,390,1280]){
    const test=await fixture();
    try{
     const page=await browser.newPage({viewport:{width,height:844}}),errors=[];
     page.on('pageerror',e=>errors.push(e.stack||e.message));
-    await page.addInitScript(root=>history.replaceState({screen:'deck',path:root},''),test.path);
-    await page.goto(test.url);await page.getByRole('heading',{name:'Review the slide story',exact:true}).waitFor();
+    if(width===1280)await page.addInitScript(root=>history.replaceState({screen:'deck',path:root},''),test.path);
+    await page.goto(width===1280?test.url:test.url+'&resume='+encodeURIComponent(path.basename(test.path)));await page.getByRole('heading',{name:'Review the slide story',exact:true}).waitFor();
     await page.getByText('From an idea · Slide story',{exact:true}).waitFor();
     const before=await page.evaluate(root=>ask('run',{path:root}),test.path);
     assert.equal(before.state,'waiting');assert.equal(before.timeline.find(s=>s.name==='scan').attempts,1);
@@ -49,6 +49,12 @@ async function fixture(args=[]){
      assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
      const short=await page.locator('main input,main textarea,main button').evaluateAll(nodes=>nodes.filter(n=>n.offsetParent!==null&&n.getBoundingClientRect().height<43.5).map(n=>n.textContent));assert.deepEqual(short,[]);
      if(process.env.PRESENTATION_STORY_RESULTS){fs.mkdirSync(process.env.PRESENTATION_STORY_RESULTS,{recursive:true});await page.screenshot({path:path.join(process.env.PRESENTATION_STORY_RESULTS,`outline-${width}-${colorScheme}.png`)});}
+    }
+    if(width===1280){
+     const zoom=await page.context().newCDPSession(page);
+     await zoom.send('Emulation.setDeviceMetricsOverride',{width:640,height:422,deviceScaleFactor:2,mobile:false});
+     assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'200% equivalent layout overflow');
+     await zoom.send('Emulation.clearDeviceMetricsOverride');await zoom.detach();await page.setViewportSize({width,height:844});
     }
     await page.getByLabel('Section 1 title',{exact:true}).focus();await page.keyboard.press('Tab');
     assert.equal(await page.evaluate(()=>document.activeElement?.getAttribute('id')),'story-section-context-messages');
@@ -84,6 +90,6 @@ async function fixture(args=[]){
     assert.deepEqual(errors,[]);console.log('PASS editable outline and affected-work/combining components '+width);await page.close();
    }finally{await test.stop();}
   }
-  console.log('PASS Presentation Studio story: local edit/remove/save/reload, zero deep work before approval, retained slide-text approval, keyboard and 390/1280 light/dark');
+  console.log('PASS Presentation Studio story: local edit/remove/save/reload, zero deep work before approval, retained slide-text approval, keyboard and 320/390/1280 light/dark, direct resume and 200% equivalent layout');
  }finally{if(browser)await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

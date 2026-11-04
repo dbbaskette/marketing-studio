@@ -13,6 +13,7 @@ const path=require('node:path'),fs=require('node:fs'),assert=require('node:asser
   await page.getByRole('dialog',{name:'Build this page',exact:true}).getByRole('button',{name:'Build page',exact:true}).click();
   const recovery=page.getByRole('dialog',{name:'Continue from the saved step',exact:true});await recovery.waitFor();
   await recovery.getByText('Completed: Page composition.',{exact:true}).waitFor();
+  await page.keyboard.press('Escape');await recovery.waitFor({state:'hidden'});
   await page.reload();
   await page.getByRole('heading',{name:'Work kept after a failed step',exact:true}).waitFor();
   for(const width of [320,390,1280])for(const colorScheme of ['light','dark']){
@@ -21,9 +22,13 @@ const path=require('node:path'),fs=require('node:fs'),assert=require('node:asser
    if(process.env.INFOGRAPHIC_UI_RESULTS){fs.mkdirSync(process.env.INFOGRAPHIC_UI_RESULTS,{recursive:true});await page.screenshot({path:path.join(process.env.INFOGRAPHIC_UI_RESULTS,`build-recovery-${width}-${colorScheme}.png`)});}
   }
   assert.equal(await page.locator('#actions').getByRole('button',{name:'Retry preview',exact:true}).count(),1);
-  await page.locator('#actions').getByRole('button',{name:'Retry preview',exact:true}).click();
+  const zoom=await page.context().newCDPSession(page);
+  await zoom.send('Emulation.setDeviceMetricsOverride',{width:640,height:450,deviceScaleFactor:2,mobile:false});
+  assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'200% equivalent layout overflow');
+  await zoom.send('Emulation.clearDeviceMetricsOverride');await zoom.detach();await page.setViewportSize({width:1280,height:900});
+  const retry=page.locator('#actions').getByRole('button',{name:'Retry preview',exact:true});await retry.focus();await retry.press('Enter');
   await page.getByRole('heading',{name:'Work kept after a failed step',exact:true}).waitFor({state:'detached'});
-  assert.deepEqual(errors,[]);console.log('PASS persisted preview recovery: correct dialog, reload, local-only retry, no assistant/image calls, 320/390/1280 light/dark and reduced motion');
+  assert.deepEqual(errors,[]);console.log('PASS persisted preview recovery: correct dialog, reload, local-only retry, no assistant/image calls, 320/390/1280 light/dark keyboard, 200% equivalent layout and reduced motion');
  }catch(error){console.error(error);if(page&&process.env.INFOGRAPHIC_UI_RESULTS){fs.mkdirSync(process.env.INFOGRAPHIC_UI_RESULTS,{recursive:true});await page.screenshot({path:path.join(process.env.INFOGRAPHIC_UI_RESULTS,'recovery-failure.png')});}throw error;}finally{
   if(browser)await browser.close();child.kill('SIGTERM');
   const code=await new Promise(resolve=>{if(child.exitCode!==null)return resolve(child.exitCode);child.once('exit',resolve);setTimeout(()=>{child.kill('SIGKILL');resolve(-1);},10000).unref();});

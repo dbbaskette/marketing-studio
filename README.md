@@ -9,6 +9,7 @@ You decide what is ready, what goes to Google, and what is shared.
 
 [Get started](#get-started) · [Downloads](https://github.com/dbbaskette/marketing-studio/releases)
 · [Installation](docs/installation.md) · [Shared settings](docs/shared-setup.md)
+· [Incremental workflow](docs/incremental-workflow.md)
 
 ## Choose your studio
 
