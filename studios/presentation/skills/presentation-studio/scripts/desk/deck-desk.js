@@ -540,6 +540,7 @@
     const found = run.desk || {};
     const gate = run.gate;
     if (found.delivered) return 'Delivered';
+    if (gate?.name === 'gate:story') return 'Slide story';
     if (gate && gate.content_first && gate.name === 'gate:outline') return 'Slide text';
     if (pausedAtLook(run) || (gate && gate.name === 'gate:look')) return 'Look';
     if (found.arrived) return 'On the desk';

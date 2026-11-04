@@ -19,6 +19,7 @@ async function fixture(args=[]){
     page.on('pageerror',e=>errors.push(e.stack||e.message));
     await page.addInitScript(root=>history.replaceState({screen:'deck',path:root},''),test.path);
     await page.goto(test.url);await page.getByRole('heading',{name:'Review the slide story',exact:true}).waitFor();
+    await page.getByText('From an idea · Slide story',{exact:true}).waitFor();
     const before=await page.evaluate(root=>ask('run',{path:root}),test.path);
     assert.equal(before.state,'waiting');assert.equal(before.timeline.find(s=>s.name==='scan').attempts,1);
     assert(!before.timeline.some(s=>s.name==='research'&&s.state==='done'),'no research before outline approval');
