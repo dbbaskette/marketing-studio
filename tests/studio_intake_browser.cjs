@@ -21,9 +21,11 @@ async function fixture(product,args=[]){
     page.on('pageerror',e=>errors.push(e.message));
     page.on('request',r=>{if(r.method()==='POST'&&['/api/trainings','/api/decks'].includes(new URL(r.url()).pathname))jobs.push(r);});
     await page.goto(test.url);
+    await page.waitForFunction(()=>!view.refreshing && view.setup);
     const title=product==='training'?'New training':'New deck';
     await page.getByRole('button',{name:title,exact:true}).first().click();
-    const dialog=page.getByRole('dialog',{name:title,exact:true});await dialog.waitFor();
+    const dialog=page.getByRole('dialog',{name:title,exact:true});
+    try{await dialog.waitFor();}catch(error){console.error(product+' '+width+' initial UI: '+await page.locator('body').innerText());console.error(errors);throw error;}
     if(product==='presentation'){await dialog.getByRole('button',{name:'An idea',exact:false}).click();await dialog.getByRole('button',{name:'Next',exact:true}).click();}
     await dialog.getByLabel('A short title',{exact:true}).fill('Synthetic resumable intake');
     await dialog.getByLabel(product==='training'?'What should it teach?':'What should they take away?',{exact:true}).fill('Explain safe rolling restarts.');
