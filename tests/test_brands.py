@@ -14,6 +14,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 import zipfile
@@ -416,6 +417,50 @@ class Interpret(BrandsCase):
         self.assertIn('full stop', parts['guide']['content'])
         self.assertEqual(parts['guide']['note'], 'Add the rule about full stops.')
         self.assertEqual(parts['audit']['state'], 'accepted')   # not asked again, still accepted
+
+    def test_job_cleanup_waits_for_a_record_reader(self):
+        key = self.new_brand()
+        self.extract(key)
+        found = brand_skill.find()
+        job = brand_job.interpret(found, key, shared.read()[0])
+        real_lock, real_remove = brand_store.LOCK, shutil.rmtree
+        boundary, cleaning = threading.Event(), threading.Event()
+        failures = []
+
+        class ObservedLock:
+            def __enter__(self):
+                boundary.set()
+                real_lock.acquire()
+                return self
+            def __exit__(self, *args):
+                real_lock.release()
+
+        def remove(path, *args, **kwargs):
+            if Path(path).name == 'job':
+                cleaning.set(); boundary.set()
+            return real_remove(path, *args, **kwargs)
+
+        def run():
+            try:
+                job(lambda _: None, threading.Event())
+            except brand_skill.Stopped:
+                pass
+            except BaseException as error:
+                failures.append(error)
+
+        with mock.patch.object(brand_store, 'LOCK', ObservedLock()), \
+             mock.patch.object(brand_job.shutil, 'rmtree', remove), \
+             mock.patch.object(brand_job, 'run_assistant', side_effect=brand_skill.Stopped()):
+            with real_lock:  # A record reader owns the tree while a new job starts.
+                thread = threading.Thread(target=run)
+                thread.start()
+                self.assertTrue(boundary.wait(5))
+                overlapping = cleaning.is_set()
+            thread.join(5)
+            self.assertFalse(thread.is_alive())
+            self.assertFalse(overlapping, 'Cleanup changed the tree while its reader held the lock.')
+            self.assertTrue(cleaning.is_set())
+            self.assertEqual(failures, [])
 
     def test_the_person_edits_a_part_and_it_counts_as_accepted(self):
         key = self.new_brand()
