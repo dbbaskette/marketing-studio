@@ -441,3 +441,22 @@ existing `reusable_review` already applies the corresponding native pixel,
 dependency and question checks and retains whole-deck inspection. Neither layer
 carries the person's approval. The supported helper minimum stays 0.16.0 for
 existing callers; new raw companion flags require the advertised capability.
+
+
+## Readable evidence before the investigator barrier
+
+Marketing Studio projects already accepted Harness Research packets into bounded,
+read-only progress. Statements, quotations, source permissions/context and limitations
+become readable while peers continue; no preview author or extra provider call is
+introduced. The UI explicitly calls this an unreviewed evidence draft. Scope/source
+basis, request digest, generation and attempt identify the view. A retried stream
+loses its old preview; cancellation, pause or invalidation removes current evidence.
+Restored accepted packets must match the current registration and immutable hash.
+
+This display does not feed approval or delivery. The registered collection still
+assembles through the helper, and the complete report still passes independent
+verification. First accepted finding, first saved section and checked final report
+have separate timing fields. The
+[scripted measurement](https://github.com/dbbaskette/marketing-studio/blob/main/docs/early-evidence-measurement.md)
+records 1.041 / 2.638 / 3.179 seconds and ten unchanged worker calls in one synthetic
+run; it is not a live-model latency estimate.
