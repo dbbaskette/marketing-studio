@@ -97,11 +97,17 @@ You can also ask your assistant to use a studio directly in chat. New conversati
 work uses the desk’s checked records without launching another assistant. A focused
 request stays focused; transferring execution to the runner is explicit.
 
-Home prioritizes saved work that **Needs you** and refreshes it while you work.
-In Presentation Studio and Training Studio, slide-text corrections save privately
-across reloads; design waits for approval. You can also read completed research
-section drafts while the final check is pending and keep a note for the next
-explicit research change. [Keep work moving](docs/incremental-workflow.md)
+Home shows **Unfinished drafts** alongside saved work that **Needs you**. Resume a
+private form, start fresh explicitly, or discard it without deleting a project.
+Blog Studio also preserves unfinished New blog and Polish forms across reloads.
+
+Presentation Studio and Training Studio retain slide corrections and recover
+cross-tab conflicts with a copy of all local edits and an explicit latest-version
+comparison. Design waits for approval of the saved corrections. Research exposes
+accepted findings and completed section drafts while later work continues; both
+remain unreviewed until the final independent check. Large workspaces retain
+bounded compact polling instead of fetching every document on every idle probe.
+[Keep work moving](docs/incremental-workflow.md) explains these controls and limits.
 
 ## Sources and the Document Library
 

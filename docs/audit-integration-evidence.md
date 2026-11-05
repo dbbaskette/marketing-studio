@@ -6,6 +6,53 @@ policy #304 was subsequently completed separately. Infographic Studio first-rele
 acceptance #224 remains a separate gate. The follow-up audit #336–#346, tracked by
 #347, is summarized below; the original cohort evidence follows it.
 
+## Second audit completion — #355–#363
+
+All nine findings tracked by #364 have dedicated merged PRs, each preceded by its
+own specification and plan. The integrated application/experiment state is commit
+`86aecbb0065afa14fcf22b6691843b3b90ebce5d`. Documentation follows separately.
+The renderer issue is a completed investigation with an explicit non-adoption
+decision; it is not a shipped provisional-preview feature.
+
+| Issue | Merged PR | Result and verification |
+| --- | --- | --- |
+| #355 | [#365](https://github.com/dbbaskette/marketing-studio/pull/365) | Training Studio routes all slide-text approval entries through saved corrections and exact private revision checks. Affected approval/page tests and a real correction→Home→approval journey passed. |
+| #356 | [#366](https://github.com/dbbaskette/marketing-studio/pull/366) | Blog Studio durable private New/Polish intake, stable start retry and revision-safe completion. Full Blog Studio suite: 1,878 tests; management checks, package checks and real save/reload/start journey passed. |
+| #357 | [#367](https://github.com/dbbaskette/marketing-studio/pull/367) | Research notes show unsaved state after typing, remount and delayed acknowledgements. Shared note/page tests and browser save/type/return/reload passed. |
+| #358 | [#368](https://github.com/dbbaskette/marketing-studio/pull/368) | Infographic Studio aligns create/update preview and obsolete-failure messages. Fifty affected checks plus a scripted-renderer native browser journey passed without assistant calls. |
+| #359 | [#369](https://github.com/dbbaskette/marketing-studio/pull/369) | Incremental metadata scans retain compact idle polling in large workspaces. Shared suite 1,039; full Presentation Studio 2,188-test run exposed old fixture failures, repaired with all 152 affected-class tests passing; full Training Studio 3,187 passed. Final core/native-policy checks and native browser polling passed. |
+| #360 | [#370](https://github.com/dbbaskette/marketing-studio/pull/370) | Whole-correction recovery copy, comparison and explicit load-latest; no repeated stale navigation writes. Nineteen shared and seven native approval checks passed. Browser verified retention/comparison; confirmation completion is covered by component tests. |
+| #361 | [#371](https://github.com/dbbaskette/marketing-studio/pull/371) | Accepted investigator findings become readable before peers finish, without extra calls. Full shared suite 1,045 passed with one optional PDF check skipped. Pinned-helper fast/failed/retried/cancelled tests and visible progressive-evidence browser passed. |
+| #362 | [#372](https://github.com/dbbaskette/marketing-studio/pull/372) | Private draft discovery across shared/native Home, explicit resume/new/discard and bounded summary reads. Shared groups 31 + 31, Presentation Studio 109, Training Studio 112, Infographic Studio 9, Blog Studio 2 and full Blog Studio management-page checks passed. |
+| #363 | [#373](https://github.com/dbbaskette/marketing-studio/pull/373) | Nine visible-display measurements with the existing renderer, three interruption probes, 13 preview and 11 integrity tests. Retain sealed production publication until a helper-owned dependency/attempt/revocation contract exists. |
+
+Full suites ran in disposable Tart macOS 27 / Python 3.13.15; focused checks also
+ran on host Python 3.14.5. No provider jobs, personal workspaces or Google operations
+were used. Passing suite evidence was reused for unchanged paths; no new full suite
+is implied after every merge. The one shared real-PDF skip is for missing `pdftotext`.
+Remote security checks passed on every merged implementation PR.
+
+The in-app browser's confirmation handling stalled during #360. That prevented the
+last confirmed-load browser step and #362's Save-close/resume browser journey;
+component/native-route tests cover those behaviors, and that browser gap remains
+explicit. A separate read-only viewer successfully acknowledged decoded renderer
+images for #363. These checks do not establish screen-reader/hardware-mobile,
+live-provider, signed-in delivery or owner acceptance; #224 remains separate.
+
+Measured benefits and tradeoffs:
+
+- [Large-workspace polling](https://github.com/dbbaskette/marketing-studio/blob/main/docs/incremental-polling-measurement.md):
+  modeled full reads across 30 probes fell from 30 to 4 at 6,000 files and to 7 at
+  20,000 files. External changes can wait for the scan/catch-up; metadata scanning
+  is not universally faster than the old aborted probe.
+- [Early evidence](https://github.com/dbbaskette/marketing-studio/blob/main/docs/early-evidence-measurement.md):
+  scripted first finding 1.041 s, first section 2.638 s, checked report 3.179 s,
+  unchanged ten worker calls.
+- [Provisional renderer spike](https://github.com/dbbaskette/marketing-studio/blob/main/docs/provisional-preview-spike.md):
+  a 100-slide cold preview displayed at 1.880 s provisionally versus 12.523 s after
+  sealing; a one-slide edit gained 3.540 s. Small edited decks gained only 0.135 s.
+  The prototype is deliberately not part of the production approval path.
+
 ## Follow-up audit completion
 
 All eleven follow-up findings are closed by merged changes. The table records
