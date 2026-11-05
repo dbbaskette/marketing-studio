@@ -48,3 +48,28 @@ Harness Research team-review contract (#378).
 
 The primary implementer owns integration and verification. Synthetic timings prove
 dispatch and early visibility only, not live provider latency or semantic quality.
+
+## Completion evidence
+
+- Application changes were verified at `a28c5216`; the final test-only correction
+  was verified at `791d3531`. Disposable Tart guests used macOS 27, Python 3.13.15
+  and Node 22.23.2. Test guests were deleted after each run.
+- The full shared suite ran 1,062 tests with one environment-related PDF-tool
+  skip. Its unrelated brand-directory race was fixed separately in PR #383;
+  all 45 brand tests passed in subsequent isolated runs. The unchanged shared
+  research checks passed in the full run.
+- The full Training Studio suite ran 3,191 tests. Three assertions still expected
+  the two-minute final-assembly limit removed by PR #380. After updating those
+  assertions to the saved five-minute allowance, all four tests in that affected
+  class passed. The other 3,188 tests passed in the full run; application code
+  did not change during this correction. Package validation also passed.
+- All three affected Presentation Studio parallel-research integration tests
+  passed. Focused quality, incomplete-check recovery, cached-placeholder repair
+  and native outline tests passed, including synthetic PostgreSQL-intro input
+  through checked research and guide output.
+- Browser journeys passed for Training Studio and Presentation Studio at phone
+  and desktop widths: early draft reading, actual Markdown download, reload,
+  preview versions, stopped-run behavior, and no additional provider dispatch.
+- No live provider test was run. Synthetic workers verify orchestration and
+  output availability, not real model quality or end-to-end provider timing.
+  Parallel independent review remains separate work in issue #378.
