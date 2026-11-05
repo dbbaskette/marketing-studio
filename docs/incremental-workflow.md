@@ -17,6 +17,11 @@ balance between responsiveness and depth for new training and presentations.
    Open **Read saved section draft** to read completed prose while the final check
    is pending. The assembled research still needs an independent whole-report
    check; these drafts cannot be delivered as checked evidence.
+   Section authors work concurrently, followed by a small final-brief assembly job.
+   That job uses the saved combining time allowance, rather than a separate shorter
+   timeout. If it times out, **Give it more time** applies to that job; completed
+   section contributions remain available for retry. This does not raise the
+   project spending limit or skip the independent check.
 4. **Build selected materials.** For training, the approved outline and checked
    research feed teaching blueprints and the requested guides, briefs, slides or
    practice. Review those materials on the desk. Both deck studios let you correct

@@ -22,6 +22,8 @@ class SectionWorkflowTests(unittest.TestCase):
         self.active = self.peak = 0
         self.lock = threading.Lock()
         self.combining_times = []
+        self.final_seconds = []
+        self.fail_final = False
 
     def invoke(self, phase, guidance, payload, offered, fetch):
         execution = payload['_execution']
@@ -54,14 +56,19 @@ class SectionWorkflowTests(unittest.TestCase):
         self.assertEqual(execution['mode'], 'compose-final')
         self.assertNotIn('evidence', payload, 'the final author reads contributions, not every fact')
         self.calls.append(('final', None))
+        self.final_seconds.append(execution['seconds'])
+        self.assertEqual(guidance, sections.FINAL_GUIDANCE)
+        if self.fail_final:
+            self.fail_final = False
+            raise ValueError('Synthetic final brief timeout')
         first = payload['completed_sections']['findings'][0]['id']
         value = {'schema': 2, 'sections': [], 'brief': [{'id': 'takeaway', 'title': 'Takeaway',
             'blocks': [{'text': 'More than one instance keeps capacity.', 'kind': 'summary', 'refs': [first]}]}]}
         return json.dumps(session.preparation(value, {**execution, 'research_mode': execution['mode']})), []
 
-    def run_sections(self):
+    def run_sections(self, policy=None):
         return self.workflow.run(self.root, self.task, self.invoke, progress=self.states.append,
-            section_policy=sections.pin(), section_context={'combining': 'synthetic-medium'})
+            section_policy=policy or sections.pin(), section_context={'combining': 'synthetic-medium'})
 
     def test_four_sections_combine_with_at_most_three_authors_then_verify_complete(self):
         facts, manifest = self.run_sections()
@@ -98,6 +105,27 @@ class SectionWorkflowTests(unittest.TestCase):
         self.assertTrue(facts['review']['accepted'])
         self.assertEqual(self.section_calls[len(prior):], ['question-2'])
         self.assertEqual([phase for phase, _ in self.calls].count('investigate'), 4)
+
+    def test_final_timeout_keeps_every_section_and_retry_honors_only_its_time_grant(self):
+        self.fail_final = True
+        policy = sections.pin()
+        with self.assertRaisesRegex(ValueError, 'Synthetic final brief timeout'):
+            self.run_sections(policy)
+        self.assertEqual(self.final_seconds, [policy['seconds']])
+        sections_before = list(self.section_calls)
+        investigations = [call for call in self.calls if call[0] == 'investigate']
+        policy['more_time']['final'] = 600
+        facts, _ = self.run_sections(policy)
+        self.assertTrue(facts['review']['accepted'])
+        self.assertEqual(self.final_seconds, [300, 600])
+        self.assertEqual(self.section_calls, sections_before)
+        self.assertEqual([call for call in self.calls if call[0] == 'investigate'], investigations)
+
+    def test_final_uses_the_saved_combining_allowance(self):
+        policy = sections.pin()
+        policy['seconds'] = 180
+        self.run_sections(policy)
+        self.assertEqual(self.final_seconds, [180])
 
 
 class SectionContractTests(unittest.TestCase):

@@ -17,6 +17,15 @@ from studio_core import research_contract as rc, stops
 PROTOCOL = 'studio-section-combining-v1'
 TRAINING_SCHEMA, PRESENTATION_SCHEMA = 8, 6
 SECONDS = 300
+FINAL_GUIDANCE = '''Assemble the final brief from completed section contributions.
+The section authors have already written the findings and report sections. Do not
+rewrite them, repeat their research, or perform the independent source check here.
+Use only completed_sections as the basis for a short connected brief, at most two
+introductory report sections, and comparisons only when they help answer the task.
+Preserve uncertainty, limitations and gaps. Reference the supplied finding IDs;
+do not introduce facts or unsupported conclusions. Return schema 2 with sections,
+brief and optional comparisons. Sources remain available for structural validation;
+independent reviewers check the exact evidence and prose in the next stage.'''
 
 
 def fingerprint(value):
@@ -66,7 +75,8 @@ def timeout(engine, root, error, product):
     current = engine._load(root)['section_synthesis']
     own = section in current['more_time']
     engine._problem(root, 'research', 'failed', stops.timed_out(
-        'Combining this section', seconds, 1, 'training' if product == 'training' else 'deck', own),
+        'Assembling the final brief' if section == 'final' else 'Combining this section',
+        seconds, 1, 'training' if product == 'training' else 'deck', own),
         'Completed research areas and section contributions are kept. Retry works only on unfinished contributions.',
         stops.MORE_TIME, detail={'seconds': seconds, 'section': section})
     return True
@@ -227,12 +237,12 @@ def combine(case, task, areas, registry, base, offered, invoke, *, round, guidan
         'completed_sections': copy.deepcopy(contributions),
         'return': 'Write a short introduction (up to two sections), cross-section comparisons if useful, and an authored brief from the completed contributions. Return schema 2, sections, brief and optional comparisons only. Do not repeat findings or invent facts. Cite the completed finding IDs.',
         '_execution': {'phase': 'synthesize', 'round': round, 'stream': 'final', 'mode': 'compose-final', 'section': 'final',
-            'evidence_base': base, 'contributions': contributions, 'seconds': policy['more_time'].get('final', min(120, policy['seconds']))}}
+            'evidence_base': base, 'contributions': contributions, 'seconds': policy['more_time'].get('final', policy['seconds'])}}
     if (saved.get('final') or {}).get('basis') == key and saved['final'].get('needs_revision'):
         prior = saved['final']['content']
         payload['previous_final'] = {name: prior.get(name) for name in ('brief', 'comparisons')}
         payload['previous_review'] = saved['final'].get('review')
-    text, _ = invoke('synthesize', guidance, payload, offered, False)
+    text, _ = invoke('synthesize', FINAL_GUIDANCE, payload, offered, False)
     require()
     value = json.loads(text)
     with lock:
