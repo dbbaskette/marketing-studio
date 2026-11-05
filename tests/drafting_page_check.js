@@ -138,6 +138,18 @@ function studio(answers = {}) {
 }
 
 const groups = {
+  async intakeDiscovery(){
+    let held={revision:1,draft:{title:'Private title',step:1}},resumed=0,fresh=0,discarded=0;
+    const store=new Drafting.Intake(async sent=>{if(sent.action==='read')return held;if(sent.expected!==held.revision)throw Error('Newer draft in another tab');held={revision:held.revision+1,draft:null};return held;});
+    await store.load();store.status=()=>{};
+    const card=store.resumeCard({resume:()=>resumed++,fresh:()=>fresh++,discarded:()=>discarded++});
+    const button=name=>all(card).find(n=>n.tagName==='button'&&n.textContent===name);
+    assert.match(card.textContent,/Private title/);assert.match(card.textContent,/Step 2/);
+    await button('Resume draft').fire('click');await button('Start new').fire('click');assert.equal(resumed,1);assert.equal(fresh,1);assert(held.draft);
+    await button('Discard draft').fire('click');assert(held.draft);assert(button('Confirm discard'));
+    held={...held,revision:2};await button('Confirm discard').fire('click');assert.match(card.textContent,/Newer draft/);assert.equal(discarded,0);assert(held.draft);
+    store.revision=2;await button('Confirm discard').fire('click');assert.equal(discarded,1);assert.equal(store.resumeCard({}),null);
+  },
   async correctionRecovery() {
     context.confirm=()=>true;
     const original=Array.from({length:30},(_,i)=>({title:'Slide '+(i+1),points:['Point'],notes:'Notes'}));

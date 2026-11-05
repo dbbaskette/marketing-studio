@@ -1501,8 +1501,9 @@ async function restoreIntake() {
   return saved;
 }
 
-async function openNew(route) {
+async function openNew(route, resume=false) {
   await restoreIntake();
+  if(!resume&&intakeStore().saved){if(!await intakeStore().startFresh())return;view.draft=null;}
   if (!['home', 'decks'].includes(view.screen)) {
     show('new');
     if (route) chooseRoute(route);
@@ -1651,6 +1652,7 @@ function drawHome(fresh) {
   // finished.
   const parts = [['greeting', [said], () => make('p', 'large-title', said)],
     ['head', [], () => pageHead(HOME_LEDE)]];
+  if(privateIntake?.saved)parts.push(['intake',[privateIntake.revision],()=>intakeStore().resumeCard({resume:()=>openNew(undefined,true),fresh:()=>openNew(),discarded:()=>{view.draft=null;drawHome(true);}})]);
   if (!every().length) {
     parts.push(['invite', [Boolean(view.sheet)], invitation],
       ['updates', [upkeepOf()], updatesCard]);
@@ -7884,7 +7886,8 @@ function begin() {
   refresh().then(async () => {
     if (!view.setup) return;
     const saved = await restoreIntake();
-    if (saved?.intakeOpen && view.screen === 'home' && !view.sheet) openNew();
+    if(new URLSearchParams(location.hash.slice(1)).get('resume-intake')==='1'){show('home');openNew(undefined,true);}
+    else if(view.screen==='home'&&!view.sheet){if(saved?.intakeOpen)openNew(undefined,true);else drawHome(true);}
   });
   window.addEventListener('beforeunload', event => {
     if (privateIntake && (privateIntake.pending || privateIntake.writing || privateIntake.problem)

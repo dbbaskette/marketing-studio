@@ -743,4 +743,4 @@ $('import-reload').addEventListener('click',async()=>{if(importBusy||!importStat
 
 $('upload-form').addEventListener('submit',e=>{e.preventDefault();saveUpload(e.target.querySelector('[type=submit]'));});
 $('memory-form').addEventListener('submit',e=>{e.preventDefault();saveMemory(e.target.querySelector('[type=submit]'));});
-applyCapabilities();loadCapabilities().then(async()=>{await load();const id=resumeBlogId;if(id&&/^[a-f0-9]{32}$/.test(id))await showBlog({id,location:'local'});}).catch(e=>notice(e.message,true));
+applyCapabilities();loadCapabilities().then(async()=>{await load();if(new URLSearchParams(location.hash.slice(1)).get('resume-intake')==='1'){await sRoute('desk-start');return;}const id=resumeBlogId;if(id&&/^[a-f0-9]{32}$/.test(id))await showBlog({id,location:'local'});}).catch(e=>notice(e.message,true));

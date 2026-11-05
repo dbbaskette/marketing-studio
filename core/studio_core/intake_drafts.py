@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import secrets
+from datetime import datetime, timezone
 from contextlib import contextmanager
 
 from .process_lock import ProcessRLock
@@ -38,6 +39,73 @@ def read(file):
         raise ValueError('The saved intake cannot be read. Its file has been kept.') from error
 
 
+def _workspace(scope):
+    if isinstance(scope, (tuple, list)) and len(scope) == 4:
+        return str(scope[1])
+    if isinstance(scope, dict) and (scope.get('kind') == 'blog-intake' or scope.get('product') == 'Infographic Studio'):
+        return str(scope.get('workspace', ''))
+    return None
+
+
+def _summary(file, scope, held):
+    try:
+        _write_summary(file, scope, held)
+    except (OSError, ValueError, TypeError):
+        pass  # Discovery cannot turn a successful private save into a failed edit.
+
+
+def _write_summary(file, scope, held):
+    workspace = _workspace(scope)
+    if not workspace:
+        return
+    target = file.with_suffix('.summary.json')
+    draft = held['draft']
+    step=(draft or {}).get('step',0)
+    step=min(20,max(0,step)) if type(step) is int else 0
+    current=file.stat()
+    value = {'stamp': [current.st_mtime_ns,current.st_size], 'workspace': hashlib.sha256(workspace.encode()).hexdigest(),
+             'revision': held['revision'], 'draft': bool(draft),
+             'title': str((draft or {}).get('title') or 'Unfinished draft')[:160],
+             'step': step,
+             'observed_at': datetime.now(timezone.utc).isoformat()}
+    pending = target.with_name('.' + target.name + '-' + secrets.token_hex(6))
+    try:
+        with os.fdopen(os.open(pending, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), 'w') as out:
+            json.dump(value, out)
+        os.replace(pending, target)
+    finally:
+        pending.unlink(missing_ok=True)
+
+
+def summaries(data, workspace):
+    """Read at most 100 tiny private sidecars; never read form or upload content."""
+    folder = Path(data) / 'intake-drafts'
+    if folder.is_symlink() or not folder.is_dir():
+        return []
+    key = hashlib.sha256(str(workspace).encode()).hexdigest()
+    result = []
+    with os.scandir(folder) as entries:
+        for index, entry in enumerate(entries):
+            if index >= 100: break
+            if not entry.name.endswith('.summary.json') or entry.is_symlink(): continue
+            try:
+                if entry.stat(follow_symlinks=False).st_size > 4096: continue
+                value = json.loads(Path(entry.path).read_text())
+                if not value.get('draft') or value.get('workspace') != key: continue
+                ident = entry.name.removesuffix('.summary.json')
+                if len(ident) != 64 or any(c not in '0123456789abcdef' for c in ident): continue
+                saved = folder / (ident + '.json')
+                if saved.is_symlink() or not saved.is_file(): continue
+                stat=saved.stat()
+                if value.get('stamp') != [stat.st_mtime_ns,stat.st_size]: continue
+                result.append({'id': 'intake-' + ident, 'kind': 'intake', 'state': 'draft',
+                    'title': str(value.get('title') or 'Unfinished draft')[:160],
+                    'step': min(20,max(0,int(value.get('step',0)))),
+                    'observed_at': str(value.get('observed_at',''))[:64], 'action': 'Resume draft'})
+            except (OSError, ValueError, TypeError, AttributeError): continue
+    return result[:4]
+
+
 def dispatch(data, scope, sent):
     if not isinstance(sent, dict):
         raise ValueError('Send one intake draft request.')
@@ -64,6 +132,7 @@ def dispatch(data, scope, sent):
             raise Conflict('This intake changed in another tab. Copy any unsaved answers, then reload the page to read the saved intake. No work has started.')
         draft = {**(held['draft'] or {}), **patch} if action == 'save' else None
         if draft == held['draft']:
+            _summary(file, scope, held)
             return held
         value = {'revision': held['revision'] + 1, 'draft': draft}
         encoded = (json.dumps(value, ensure_ascii=False) + '\n').encode()
@@ -74,6 +143,7 @@ def dispatch(data, scope, sent):
             with os.fdopen(os.open(pending, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), 'wb') as out:
                 out.write(encoded)
             os.replace(pending, file)
+            _summary(file, scope, value)
         finally:
             pending.unlink(missing_ok=True)
         return value

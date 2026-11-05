@@ -2709,6 +2709,21 @@ class RunnerScreenTests(ScriptedPage, PageCase):
     """What the runner adds to the page: set-up, a new training, a run, and running work in
     every list. Each screen is driven through its own controls."""
 
+    def test_home_discovers_private_intake_without_starting_work(self):
+        self.started()
+        result = self.run_page(self.answers(**{
+            'GET /api/intake-draft': [{'status': 200, 'body': {'revision': 1, 'draft': {'title': 'Unfinished synthetic form', 'step': 1, 'intakeOpen': False}}}],
+            'POST /api/intake-draft': [{'status': 200, 'body': {'revision': 2, 'draft': None}}]}),
+            [{'snapshot': 'home'}, {'click': 'Discard draft'}, {'snapshot': 'confirm'},
+             {'click': 'Confirm discard'}, {'snapshot': 'cleared'}])
+        home = result['snapshots']['home']
+        self.assertIn('Resume draft', home['buttons'])
+        self.assertIn('Start new', home['buttons'])
+        self.assertIn('Unfinished synthetic form', home['text'])
+        self.assertIn('Step 2', home['text'])
+        self.assertIn('Confirm discard', result['snapshots']['confirm']['buttons'])
+        self.assertNotIn('Resume draft', result['snapshots']['cleared']['buttons'])
+
     def test_yoodli_fields_copy_from_the_final_review_and_done(self):
         self.started()
         text = test_cli.example('yoodli.md')
