@@ -12,7 +12,7 @@ import secrets
 import threading
 from pathlib import Path
 
-from studio_core import research_contract as rc, stops
+from studio_core import research_contract as rc, research_quality, stops
 
 PROTOCOL = 'studio-section-combining-v1'
 TRAINING_SCHEMA, PRESENTATION_SCHEMA = 8, 6
@@ -96,6 +96,7 @@ def deduplicate(facts):
 
 def prepared(value, spec):
     mode = spec['research_mode']
+    research_quality.prose(value, spec.get('research_policy'))
     if mode == 'compose-section':
         if set(value) - {'schema', 'findings', 'sections'} or not isinstance(value.get('findings'), list) \
                 or not isinstance(value.get('sections'), list) or not value['sections']:
@@ -159,6 +160,7 @@ def combine(case, task, areas, registry, base, offered, invoke, *, round, guidan
                     row['preview'] = {'basis': receipt['basis'], 'digest': receipt['digest'],
                         'sections': excerpts, 'truncated': left <= 0,
                         'sources': [{'title': source.get('title', source.get('id', 'Source')),
+                                     'origin': source.get('origin', ''),
                                      'permission': source.get('permission', 'unknown')}
                                     for source in evidence(next(area for area in areas if area['id'] == row['id']))['sources'][:40]]}
                 else: row.pop('preview', None)
@@ -169,6 +171,10 @@ def combine(case, task, areas, registry, base, offered, invoke, *, round, guidan
         if not value or value.get('basis') != key: return False
         if value.get('digest') != fingerprint(value.get('content')):
             raise ValueError('A saved section contribution changed. Preserve and inspect the checkpoint.')
+        try:
+            research_quality.prose(value['content'])
+        except ValueError:
+            return False
         return not value.get('needs_revision')
     owners = {row['workstream']: set(row['facts'].values()) for row in registry['mappings']}
     def evidence(area):
@@ -188,7 +194,7 @@ def combine(case, task, areas, registry, base, offered, invoke, *, round, guidan
         identity = fingerprint([PROTOCOL, {key: (area['questions'] if key == 'planning_questions' else (context or {}).get('scope_identity', task[key]) if key == 'scope' else task[key]) for key in rc.TASK_FIELDS}, area,
             bound, [[source['file'], hashlib.sha256(rc.inside(case, source['file']).read_bytes()).hexdigest(),
                 hashlib.sha256(rc.inside(case, source['original']).read_bytes()).hexdigest() if source.get('original') else None]
-                for source in captures], context])
+                for source in captures], context, *([task['research_policy']] if task.get('research_policy') else [])])
         with lock:
             receipt = saved['sections'].get(area['id'])
             if kept(receipt, identity):
@@ -201,13 +207,21 @@ def combine(case, task, areas, registry, base, offered, invoke, *, round, guidan
             'return': 'Write only this approved section’s findings and report sections. Return schema 2 with findings and sections. No sources, facts, brief or comparisons. Use the approved question ID as the primary finding ID. Preserve qualifications; unsupported material is a gap.',
             '_execution': {'phase': 'synthesize', 'round': round, 'stream': area['id'], 'workers': min(3, len(areas)),
                 'mode': 'compose-section', 'evidence_base': selected,
+                'research_policy': task.get('research_policy'),
                 'seconds': policy['more_time'].get(area['id'], policy['seconds']), 'section': area['id']}}
+        if task.get('research_policy'):
+            payload['return'] += (' ' + research_quality.FOCUSED_GUIDANCE +
+                f' Write at most {task["research_policy"]["section_words"]} words of section prose. '
+                'Make it readable as a short learner explanation: define unfamiliar terms, '
+                'explain the practical choice, and include only essential caveats. '
+                'No long source-by-source literature review.')
         if receipt and receipt.get('basis') == identity and receipt.get('needs_revision'):
             payload.update(previous_contribution=receipt['content'], previous_review=receipt.get('review'))
         try:
             text, _ = invoke('synthesize', guidance, payload, captures, False)
             require()
             value = json.loads(text)
+            research_quality.prose(value, task.get('research_policy'))
             if any(value.get(key) != selected[key] for key in ('sources', 'facts')):
                 raise ValueError('A section changed registered evidence; accepted investigator work is kept.')
             content = canonical(value, area)
@@ -237,7 +251,10 @@ def combine(case, task, areas, registry, base, offered, invoke, *, round, guidan
         'completed_sections': copy.deepcopy(contributions),
         'return': 'Write a short introduction (up to two sections), cross-section comparisons if useful, and an authored brief from the completed contributions. Return schema 2, sections, brief and optional comparisons only. Do not repeat findings or invent facts. Cite the completed finding IDs.',
         '_execution': {'phase': 'synthesize', 'round': round, 'stream': 'final', 'mode': 'compose-final', 'section': 'final',
+            'research_policy': task.get('research_policy'),
             'evidence_base': base, 'contributions': contributions, 'seconds': policy['more_time'].get('final', policy['seconds'])}}
+    if task.get('research_policy'):
+        payload['return'] += f' Keep introduction and brief together within {task["research_policy"]["section_words"]} words.'
     if (saved.get('final') or {}).get('basis') == key and saved['final'].get('needs_revision'):
         prior = saved['final']['content']
         payload['previous_final'] = {name: prior.get(name) for name in ('brief', 'comparisons')}
@@ -245,6 +262,7 @@ def combine(case, task, areas, registry, base, offered, invoke, *, round, guidan
     text, _ = invoke('synthesize', FINAL_GUIDANCE, payload, offered, False)
     require()
     value = json.loads(text)
+    research_quality.prose(value)
     with lock:
         saved['final'] = {'basis': key, 'content': value, 'worker': worker, 'digest': fingerprint(value)}; store()
     return value, worker

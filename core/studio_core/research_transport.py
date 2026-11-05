@@ -44,6 +44,12 @@ class Reservations:
 
 def describe(progress):
     phase = progress.get('phase')
+    if phase == 'check-incomplete':
+        coverage = progress.get('review_coverage') or {}
+        return f'Independent check incomplete: {coverage.get("read", 0)} of {coverage.get("total", 0)} sources read. Evidence and drafts are kept.'
+    if any(agent.get('section') == 'final' or agent.get('stream') == 'final'
+           for agent in (progress.get('agents') or {}).get('active') or []):
+        return 'Assembling the final brief from saved section drafts.'
     streams = progress.get('streams') or []
     kept = sum(s.get('status') == 'kept' for s in streams)
     if phase == 'investigate':
@@ -139,6 +145,7 @@ def native(engine, root, run, task, sources, product='training'):
             result.update(runtime=str(tool.runtime), node=shutil.which('node'),
                           worker=sent['worker'], task={k: task[k] for k in rc.TASK_FIELDS},
                           research_mode=execution['mode'])
+            result['research_policy'] = execution.get('research_policy')
             if execution.get('evidence_base') is not None:
                 result['evidence_base'] = execution['evidence_base']
             if execution.get('contributions') is not None:
@@ -221,6 +228,10 @@ def native(engine, root, run, task, sources, product='training'):
             cancelled=cancelled, restart_stopped=True, readable=lambda cause: rc.dry_read(engine, root, cause))
     except (InterruptedError, companion.Stopped):
         raise companion.Stopped()
+    except parallel.research_quality.IncompleteCheck as refusal:
+        failure = WorkspaceError(str(refusal))
+        failure.check_incomplete = refusal.coverage
+        raise failure from refusal
     except (rc.ReviewRefused, rc.CheckCouldNotFinish) as refusal:
         failure = WorkspaceError(str(refusal))
         for key in ('objections', 'rounds', 'cause', 'groups'):

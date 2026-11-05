@@ -7,7 +7,7 @@ import time
 import unittest
 
 import marketing_studio  # noqa: F401
-from studio_core import research_sections as sections, research_session as session
+from studio_core import research_sections as sections, research_session as session, research_quality
 import test_research_session as cases
 from synthesis_fixture import dossier, review
 
@@ -126,6 +126,65 @@ class SectionWorkflowTests(unittest.TestCase):
         policy['seconds'] = 180
         self.run_sections(policy)
         self.assertEqual(self.final_seconds, [180])
+
+    def test_incomplete_check_keeps_all_authors_and_retries_only_review(self):
+        invoke = self.invoke
+        def incomplete(phase, guidance, payload, offered, fetch):
+            text, sources = invoke(phase, guidance, payload, offered, fetch)
+            if phase == 'review':
+                value = json.loads(text)
+                for original in value['originals']:
+                    original.update(read_original=False, access_error='Synthetic reviewer allowance exhausted before reading.')
+                for fact in value['facts']:
+                    fact.update(verdict='unsupported', note='Unverified: this source has not been read.')
+                value['assessment'].update(coverage='needs-revision', usefulness='needs-revision', note='Checking did not finish.')
+                text = json.dumps(value)
+            return text, sources
+        self.invoke = incomplete
+        with self.assertRaises(research_quality.IncompleteCheck):
+            self.run_sections()
+        self.assertEqual(self.states[-1]['phase'], 'check-incomplete')
+        self.assertGreater(self.states[-1]['review_coverage']['unread'], 0)
+        self.assertNotIn('correction', self.states[-1])
+        before = list(self.calls), list(self.section_calls)
+        self.invoke = invoke
+        result, _ = self.run_sections()
+        self.assertTrue(result['review']['accepted'])
+        self.assertEqual(self.section_calls, before[1])
+        self.assertEqual(self.calls[len(before[0]):], [('review', None)])
+
+    def test_focused_introductory_database_scope_reaches_checked_output(self):
+        self.task['topic'] = 'Minimal basics of PostgreSQL HA/DR, Helm and operators, and self-support responsibilities'
+        self.task['research_policy'] = dict(research_quality.FOCUSED)
+        result, _ = self.run_sections()
+        self.assertTrue(result['review']['accepted'])
+        self.assertEqual(len(self.section_calls), 4)
+        self.assertEqual([p for p, _ in self.calls].count('final'), 1)
+        first = next(s for s in self.states if s.get('first_readable_seconds') is not None)
+        self.assertNotEqual(first['phase'], 'complete')
+        self.assertLessEqual(len(result['facts']), 32)
+
+    def test_saved_placeholder_is_replaced_without_rewriting_good_sections(self):
+        invoke = self.invoke
+        def fail_review(phase, *args):
+            if phase == 'review':
+                raise ValueError('Synthetic check interruption')
+            return invoke(phase, *args)
+        self.invoke = fail_review
+        with self.assertRaisesRegex(ValueError, 'Synthetic check interruption'):
+            self.run_sections()
+        case = session.case_for(self.root)
+        path = case / '.harness-research/studio-combining.json'
+        saved = json.loads(path.read_text())
+        saved['final']['content']['brief'][0]['blocks'][0]['text'] = 'test'
+        saved['final']['digest'] = sections.fingerprint(saved['final']['content'])
+        path.write_text(json.dumps(saved))
+        before = list(self.section_calls)
+        self.invoke = invoke
+        result, _ = self.run_sections()
+        self.assertTrue(result['review']['accepted'])
+        self.assertEqual(self.section_calls, before)
+        self.assertEqual([p for p, _ in self.calls].count('final'), 2)
 
 
 class SectionContractTests(unittest.TestCase):

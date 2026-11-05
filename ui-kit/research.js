@@ -262,15 +262,38 @@ const StudioResearch = (() => {
     }
   }
 
+  function workingDraft(state) {
+    if (['stopped','stopping','paused','pausing','invalidated','complete','ready-for-review'].includes(state.phase)) return null;
+    const rows = array(state.combining).filter(row => row.status === 'kept' && row.preview);
+    if (!rows.length) return null;
+    const lines = ['# Working draft — independent check pending', '',
+      'Incomplete, unreviewed research prose. This is not a finished learner guide or approved material.', '',
+      rows.length + ' of ' + array(state.combining).length + ' section drafts available.', ''];
+    for (const row of array(state.combining)) {
+      if (row.status !== 'kept' || !row.preview) {
+        const question = array(row.questions)[0];
+        lines.push('## Section pending', '', typeof question === 'string' ? question : question?.question || question?.text || row.id, '', 'Status: ' + row.status, '');
+        continue;
+      }
+      lines.push('Revision: ' + row.preview.basis, '');
+      for (const section of array(row.preview.sections)) lines.push('## ' + section.title, '', section.text || '', '');
+      lines.push('Sources:', ...array(row.preview.sources).map(source => '- ' + source.title + ' (' + source.permission + ')' + (source.origin ? ': ' + source.origin : '')), '');
+      if (row.preview.truncated) lines.push('This preview is shortened; the complete contribution remains saved.', '');
+    }
+    return {rows, text: lines.join('\n')};
+  }
+
   function progress(state, hooks = {}) {
     if (!state) return null;
     const phase = state.phase || 'investigate';
+    const incomplete = phase === 'check-incomplete';
+    const assembling = array(state.agents?.active).some(agent => agent.section === 'final' || agent.stream === 'final');
     const titles = {investigate: 'Collecting evidence', 'investigating': 'Collecting evidence', synthesize: 'Combining findings', 'combining-findings': 'Combining findings', review: 'Independent check', 'independent-check': 'Independent check', complete: 'Research is ready', 'ready-for-review': 'Research is ready', 'needs-attention': 'Research needs attention', 'needs-revision': 'Research needs correction', 'stopping': 'Stopping research', 'pausing': 'Finishing active research before pausing', paused: 'Research paused', stopped: 'Research stopped'};
     const box = make('section', 'research-progress paper'); box.setAttribute('aria-label', 'Research progress');
-    const stage = {investigate:0, investigating:0, synthesize:1, 'combining-findings':1, review:2, 'independent-check':2, complete:3, 'ready-for-review':3}[phase];
+    const stage = {investigate:0, investigating:0, synthesize:1, 'combining-findings':1, review:2, 'independent-check':2, 'check-incomplete':2, complete:3, 'ready-for-review':3}[phase];
     const heading = add(make('div', 'research-progress-heading'),
       make('p', 'quiet research-stage-label', stage < 3 ? 'Research · Stage ' + (stage + 1) + ' of 3' : stage === 3 ? 'Research complete' : 'Research progress'),
-      make('h3', 'card-title', titles[phase] || 'Research'));
+      make('h3', 'card-title', phase === 'check-incomplete' ? 'Independent check incomplete' : assembling ? 'Assembling the final brief' : titles[phase] || 'Research'));
     const header = add(make('div', 'research-progress-header'), heading);
     const agents = state.agents;
     const count = Number.isInteger(agents?.count) && agents.count >= 0 ? agents.count : null;
@@ -282,27 +305,48 @@ const StudioResearch = (() => {
       robot.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect x="4" y="8" width="16" height="12" rx="3"/><path d="M2 12v4m20-4v4M9 13v2m6-2v2"/></svg>';
       faces.append(robot);
     }
-    const agentNote = count === null ? (agents?.unconfirmed ? 'Awaiting confirmation' : 'Count unavailable') : count === 0 ? (['complete','ready-for-review'].includes(phase) ? 'All agents finished' : ['paused','stopped'].includes(phase) ? 'Progress saved' : 'Preparing next step') : ['review','independent-check'].includes(phase) ? 'Independent review' : ['synthesize','combining-findings'].includes(phase) ? 'Combining findings' : 'Investigating sources';
+    const agentNote = count === null ? (agents?.unconfirmed ? 'Awaiting confirmation' : 'Count unavailable') : count === 0 ? (incomplete ? 'Check needs attention' : ['complete','ready-for-review'].includes(phase) ? 'All agents finished' : ['paused','stopped'].includes(phase) ? 'Progress saved' : 'Preparing next step') : ['review','independent-check'].includes(phase) ? 'Independent review' : ['synthesize','combining-findings'].includes(phase) ? 'Combining findings' : 'Investigating sources';
     add(toggle, faces, make('span', 'research-agent-count', count === null ? '—' : String(count)),
       add(make('span', 'research-agent-caption'), make('span', '', 'Agents assisting'), make('small', 'quiet', agentNote)));
     toggle.setAttribute('aria-label', 'Agents assisting: ' + (count === null ? agentNote : count + '. ' + agentNote) + '. Show roles');
     team.append(toggle);
     const roles = make('ul', 'research-agent-roles');
     const roleNames = {investigate:'Investigator', synthesize:'Synthesis', review:'Independent reviewer'};
-    for (const agent of array(agents?.active)) roles.append(make('li', '', (roleNames[agent.phase] || 'Research agent') + (agent.stream ? ' · ' + agent.stream : '') + (agent.status === 'termination-unconfirmed' ? ' · termination unconfirmed' : '')));
+    for (const agent of array(agents?.active)) roles.append(make('li', '', (agent.section === 'final' || agent.stream === 'final' ? 'Final brief author' : roleNames[agent.phase] || 'Research agent') + (agent.stream ? ' · ' + agent.stream : '') + (agent.status === 'termination-unconfirmed' ? ' · termination unconfirmed' : '')));
     if (!roles.childNodes.length) roles.append(make('li', '', count === null ? 'Live agent activity is not available for this saved run.' : 'No agents are currently working.'));
     team.append(roles); header.append(team);
     const actions = hooks.controls || make('div', 'bar');
     for (const [key, label] of [['pause', 'Pause research'], ['resume', 'Resume research'], ['stop', 'Stop research'], ['retry', 'Retry affected area'], ['report', 'Open report'], ['brief', 'Open brief'], ['use', 'Use research']]) if (hooks[key]) actions.append(button(label, hooks[key], 'research-' + key));
     if (actions.childNodes.length) header.append(actions);
     box.append(header);
+    const draft = workingDraft(state);
+    if (draft) {
+      const reader = make('details', 'research-correction-details'); reader.dataset.key = 'research-working-draft';
+      const toggle = make('summary', '', 'Read working draft · ' + draft.rows.length + (draft.rows.length === 1 ? ' section available' : ' sections available')); toggle.dataset.key = 'research-working-draft-toggle';
+      add(reader, toggle, make('p', 'quiet', 'Incomplete, unreviewed research prose. This is not a finished learner guide or approved material.'));
+      for (const row of draft.rows) for (const section of array(row.preview.sections)) {
+        reader.append(make('h4', 'row-title', section.title));
+        for (const text of String(section.text || '').split('\n\n')) reader.append(make('p', '', text));
+        if (row.preview.truncated) reader.append(make('p', 'quiet', 'Preview shortened; the complete contribution remains saved.'));
+      }
+      const download = button('Download working draft (.md)', () => {
+        const url = URL.createObjectURL(new Blob([draft.text], {type:'text/markdown;charset=utf-8'}));
+        const link = make('a'); link.href = url; link.download = 'working-research-draft.md';
+        document.body.append(link); link.click(); link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      }, 'research-working-draft-download');
+      box.append(add(make('div', 'bar'), download), reader);
+    }
+    if (state.review_coverage && phase === 'check-incomplete') {
+      box.append(make('p', 'research-progress-note', state.review_coverage.read + ' of ' + state.review_coverage.total + ' required sources checked. The check stopped before finishing; unread does not mean incorrect. Evidence and drafts are kept. Retry repeats the independent check, not research or writing.'));
+    }
     const steps = make('ol', 'research-stages'); steps.setAttribute('aria-label', 'Research stages');
     for (const [index, label] of ['Gather evidence', 'Combine findings', 'Check sources'].entries()) {
       const item = add(make('li'), make('span', 'research-stage-name', label),
-        make('small', 'research-stage-state', stage > index ? 'Complete' : stage === index ? 'Working now' : 'Still to do'));
+        make('small', 'research-stage-state', stage > index ? 'Complete' : stage === index ? (incomplete ? 'Incomplete' : 'Working now') : 'Still to do'));
       item.dataset.state = stage > index ? 'done' : stage === index ? 'current' : 'waiting';
       if (stage === index) item.setAttribute('aria-current', 'step');
-      item.setAttribute('aria-label', label + ': ' + (stage > index ? 'complete' : stage === index ? 'in progress' : 'not completed'));
+      item.setAttribute('aria-label', label + ': ' + (stage > index ? 'complete' : stage === index ? (incomplete ? 'incomplete' : 'in progress') : 'not completed'));
       steps.append(item);
     }
     box.append(steps);
@@ -371,8 +415,8 @@ const StudioResearch = (() => {
     const kept = areas.filter(a => ['kept', 'accepted'].includes(a.status)).length;
     const working = areas.filter(a => ['running', 'working'].includes(a.status)).length;
     const failed = areas.filter(a => ['failed', 'refused'].includes(a.status)).length;
-    const activity = stage === 0 ? (count > 0 ? count + (count === 1 ? ' investigator is' : ' investigators are') + ' reading sources and checking the research questions.' : 'Preparing the remaining investigations. Collected evidence is kept.') : stage === 1 ? 'Evidence collection is complete. The synthesis agent is turning it into one report and reference brief.' : stage === 2 ? 'The independent reviewer is checking the report and brief against the captured sources. Research is not finished until this check passes.' : stage === 3 ? 'The report and reference brief have passed the independent source check.' : phase === 'needs-revision' ? 'The independent check requested corrections. Collected evidence is kept while the affected work is revised.' : 'Collected evidence is kept. Continue when you are ready.';
-    const next = stage === 0 ? 'Still to do: combine the findings, then run an independent source check.' : stage === 1 ? 'Still to do: independently check the finished report and brief.' : stage === 2 ? 'Next: hand the checked research back to the studio. Any required corrections will be explained here.' : stage === 3 ? 'The studio can now use the checked research.' : 'Next: resume the remaining work from the saved evidence.';
+    const activity = incomplete ? 'The check did not finish reading its required sources. Evidence and draft prose are retained; no correction round was started.' : stage === 0 ? (count > 0 ? count + (count === 1 ? ' investigator is' : ' investigators are') + ' reading sources and checking the research questions.' : 'Preparing the remaining investigations. Collected evidence is kept.') : stage === 1 ? (assembling ? 'Section drafts are saved. One author is assembling the final brief; no new research is needed for this step.' : 'Evidence collection is complete. Section authors are writing the working draft; saved sections are readable now.') : stage === 2 ? 'The independent reviewer is checking the report and brief against the captured sources. Research is not finished until this check passes.' : stage === 3 ? 'The report and reference brief have passed the independent source check.' : phase === 'needs-revision' ? 'The independent check requested corrections. Collected evidence is kept while the affected work is revised.' : 'Collected evidence is kept. Continue when you are ready.';
+    const next = incomplete ? 'Next: resolve the checking limit or source-access problem, then retry the independent check.' : stage === 0 ? 'Still to do: combine the findings, then run an independent source check.' : stage === 1 ? 'Still to do: independently check the finished report and brief.' : stage === 2 ? 'Next: hand the checked research back to the studio. Any required corrections will be explained here.' : stage === 3 ? 'The studio can now use the checked research.' : 'Next: resume the remaining work from the saved evidence.';
     box.append(add(make('div', 'research-current-activity'), make('p', 'research-progress-note', activity), make('p', 'quiet research-next', next)));
     // What each assistant working now is doing: its latest line and Show activity (activity.js),
     // whose lines `hooks.lines(id, since)` reads while it is open.
@@ -443,6 +487,6 @@ const StudioResearch = (() => {
     box.append(make('p', 'field-hint', plan.final_check));
     return {node: box, selected: ids, value: () => ({expected: plan.expected, sections: [...ids]})};
   }
-  return {Editor, progress, summary, impact};
+  return {Editor, progress, summary, impact, workingDraft};
 })();
 if (typeof module === 'object' && module.exports) module.exports = StudioResearch;

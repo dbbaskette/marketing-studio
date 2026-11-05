@@ -4,6 +4,10 @@ Start with a small, editable plan. Research the gaps in that plan, then build th
 selected outputs. Keep useful results as they arrive. This usually gives the best
 balance between responsiveness and depth for new training and presentations.
 
+The [Create training flowcharts](design/create-training-task-flow.md) map the
+current workflow and a proposed split into individual tasks. Separate boxes show
+parallel work, dependencies and approval points; proposed changes are labeled.
+
 1. **Propose scope quickly.** Training Studio and Presentation Studio use a bounded
    Quick-model scan to suggest sections, objectives, a slide story and research
    questions. This is provisional planning, not checked research. A timed-out scan
@@ -94,6 +98,30 @@ preview** (an earlier one exists). A failure for an older page revision cannot
 pretend to be the current action.
 
 ## Read research before it is finished
+
+New outline-first Training Studio runs propose at most four essential sections;
+you can add scope explicitly during outline review. Research uses a focused first pass: at most eight
+essential facts and five cited sources per approved area, with section prose
+bounded to 500 words. The outline should preserve requests for minimal basics;
+advanced detail stays optional rather than becoming another required investigation.
+Within the same budget and permitted sources, investigators also look for a useful
+tutorial, lab or worked example. Teaching structure and examples are attributed;
+technical claims still need authoritative evidence. Saved runs keep their existing
+policy. These bounds control work size, not provider response time.
+
+**Read working draft** opens the saved research sections together as soon as one
+is available. **Download working draft (.md)** saves that same partial draft,
+including revision identifiers, sources and unfinished-section notices. It is
+unreviewed research prose, not a completed learner guide or a ready material.
+Final brief assembly is identified separately from section writing.
+
+If the independent check leaves required sources unread, it stops with the checked
+source count. Unread does not mean incorrect: the studio keeps the evidence and
+prose instead of automatically reinvestigating or rewriting them. **Retry independent
+check** reruns checking after its allowance, time or source-access issue is resolved.
+The current single-reviewer protocol does not reuse partial semantic attestations.
+Genuine content failures from a completed check still request affected corrections.
+Obvious placeholder prose is rejected before independent review.
 
 Choose **Read accepted findings — unreviewed** to see completed investigator
 statements while slower peers continue. Sources, context and limitations stay

@@ -26,6 +26,10 @@ tags use product-name namespaces. Commit maps and original tree hashes are in
 
 ## Shared infrastructure
 
+See the [Create training task flow](design/create-training-task-flow.md) for the
+current Training Studio execution order and proposed parallel task boundaries,
+including dependencies, ownership and links to the implementing modules.
+
 The settings implementation comes from Training Studio's compatible lossless
 writer, including its under-lock callable update API. Product facades supply the
 product name, exception type, and address validation. They retain independently

@@ -19,7 +19,7 @@ import threading
 from datetime import datetime, timezone
 from urllib.parse import urlsplit
 
-from studio_core import research_contract as rc, research_timing, research_sections, research_preview
+from studio_core import research_contract as rc, research_timing, research_sections, research_preview, research_quality
 from studio_core.shared_runner.worker_tools import tidy
 
 PROTOCOL = 'harness-collection-v1'
@@ -87,6 +87,7 @@ def enabled(record, task=None):
 
 def preparation(value, spec):
     if spec.get('research_mode') == 'evidence':
+        research_quality.evidence(value, spec.get('research_policy'))
         if set(value) - {'schema', 'sources', 'facts', 'gaps'}:
             raise ValueError('Return sources, facts and gaps only; synthesis writes the report.')
         if not isinstance(value.get('sources'), list) or not isinstance(value.get('facts'), list):
@@ -105,6 +106,7 @@ def preparation(value, spec):
         problems = compose_shape(value)
         if problems:
             raise ValueError(' '.join(problems))
+        research_quality.prose(value)
         return {**copy.deepcopy(spec['evidence_base']), **value}
     return value
 
@@ -326,6 +328,8 @@ class Workflow:
             section_policy=None, section_context=None, impact=None, input_snapshot=None, **_):
         if capability(self.runtime) is None:
             raise ValueError('This workflow needs the complete Harness Research 1.1 collection runtime.')
+        if task.get('research_policy') and not research_quality.valid_policy(task['research_policy']):
+            raise ValueError('Restore the saved focused research policy before continuing.')
         if unresolved(root):
             raise ValueError('An earlier research invocation has no confirmed terminal observation. Confirm it ended before retrying; saved evidence is kept.')
         if section_policy and impact:
@@ -349,7 +353,8 @@ class Workflow:
             payload.setdefault('_execution', {}).setdefault('invocation', 'research-invocation-' + secrets.token_hex(16))
             invocation = payload['_execution']['invocation']
             attempt = {'phase': phase, 'invocation': invocation, 'worker': payload['worker'],
-                       'stream': payload['_execution'].get('stream'), 'started_at': now(), 'status': 'working'}
+                       'stream': payload['_execution'].get('stream'),
+                       'section': payload['_execution'].get('section'), 'started_at': now(), 'status': 'working'}
             with host_lock:
                 host['attempts'].append(attempt)
                 rc.write(case, host_file, json.dumps(host))
@@ -406,6 +411,7 @@ class Workflow:
                 with host_lock:
                     timing = research_timing.account(host['started'], host['attempts'])
                     active = [{'id': a['worker'], 'phase': a['phase'], 'stream': a.get('stream'),
+                               'section': a.get('section'),
                                'status': a.get('status', 'working')}
                               for a in host['attempts'] if not a.get('ended_at')]
                 unconfirmed = sum(a['status'] == 'termination-unconfirmed' for a in active)
@@ -496,10 +502,14 @@ class Workflow:
                     {'workstream': area['id'], 'investigator': worker, 'invocation': invocation})
                 registration = registered['registration']
                 payload = {'task': task, 'worker': worker, 'questions': area['questions'],
-                    'return': EVIDENCE, 'source_outline': outline,
+                    'return': EVIDENCE + (' ' + research_quality.FOCUSED_GUIDANCE +
+                        f' Return at most {task["research_policy"]["facts_per_area"]} essential facts '
+                        f'and {task["research_policy"]["sources_per_area"]} cited sources for this area.'
+                        if task.get('research_policy') else ''), 'source_outline': outline,
                     'previous_review': review, 'previous_dossier': dossier,
                     '_execution': {'phase': 'investigate', 'round': number, 'stream': area['id'],
-                        'workers': len(pending), 'mode': 'evidence', 'invocation': invocation}}
+                        'workers': len(pending), 'mode': 'evidence', 'invocation': invocation,
+                        'research_policy': task.get('research_policy')}}
                 terminal = {'workstream': area['id'], 'investigator': worker, 'attempt': registration['number']}
                 try:
                     text, captures = invoke('investigate', (self.runtime / 'references/investigate.md').read_text(),
@@ -511,6 +521,7 @@ class Workflow:
                         self.command(case, 'collection', 'stop')
                         raise InterruptedError('Stopped research cannot adopt a late response.')
                     value = json.loads(text)
+                    research_quality.evidence(value, task.get('research_policy'))
                     if not isinstance(value.get('sources'), list) or not isinstance(value.get('facts'), list):
                         raise ValueError('Return captured sources and facts as arrays.')
                     value, problems = rc.source_metadata(value, self.runtime)
@@ -593,6 +604,13 @@ class Workflow:
                     policy={**section_policy, 'workers': limit}, require=require,
                     notify=section_progress, context=section_context)
                 require()
+            elif (number == 1 and not pending and context_unchanged
+                  and research_quality.coverage(review)['unread']
+                  and isinstance(dossier, dict) and prior.get('author')
+                  and not check_frozen(dossier, {'evidence_base': base})):
+                # Saved non-sectioned runs also resume an unfinished check without
+                # paying a synthesizer to rewrite the same validated dossier.
+                worker = prior['author']
             else:
                 worker = 'synthesizer-' + secrets.token_hex(12)
                 report('synthesize')
@@ -605,6 +623,7 @@ class Workflow:
                 dossier = json.loads(text)
             if check_frozen(dossier, {'evidence_base': base}):
                 raise ValueError('Synthesis changed registered evidence; investigator work is kept.')
+            research_quality.prose(dossier)
             dossier.update({k: task[k] for k in rc.TASK_FIELDS})
             rc.write(case, 'dossier.json', json.dumps(dossier))
             status = self.helper.command(case, 'save', 'dossier.json', worker, **(
@@ -637,6 +656,14 @@ class Workflow:
             said = (readable(cause) if readable else '') if cause else None
             if cause and said is not None:
                 raise rc.CheckCouldNotFinish(rc.objections(case), number - 1, cause, said or None)
+            coverage = research_quality.coverage(review)
+            if coverage['unread']:
+                # Unread evidence is not a failed claim. Preserve the exact dossier:
+                # the legacy single-reviewer contract cannot reuse partial attestations.
+                tracked['review_coverage'] = coverage
+                tracked.pop('correction', None)
+                report('check-incomplete')
+                raise research_quality.IncompleteCheck(coverage)
             affected = sorted(corrections(review, registry, sectioned=bool(section_policy)))
             if section_policy: research_sections.invalidate(case, review, affected)
             for stream in affected:

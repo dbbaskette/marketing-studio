@@ -11,6 +11,13 @@ from workspace import WorkspaceError
 
 
 class OutlineTests(StudioCase):
+    def test_focused_scan_cannot_expand_to_six_research_areas(self):
+        value = outline.seed('Synthetic introductory database training')
+        value['sections'] = [dict(value['sections'][0], id='section-' + str(i)) for i in range(6)]
+        problems, _, _, _ = outline.validate(json.dumps(value), {'max_sections': 4})
+        self.assertIn('at most 4', problems[0])
+        self.assertEqual(outline.validate(json.dumps(value), {})[0], [])
+
     def setUp(self):
         super().setUp()
         self.engine.plan_first = self.engine.outline_first = self.engine.parallel_research = True
@@ -25,6 +32,8 @@ class OutlineTests(StudioCase):
         self.assertLessEqual(job.limits.dollars, outline.DOLLARS)
         self.assertFalse(tools.job['fetch'])
         self.assertFalse(tools.job['ask'])
+        self.assertIn('minimal basics', job.guidance)
+        self.assertIn('not a checklist of topics to add', job.guidance)
         payload = json.loads(tools.read_input('source-excerpts')[1])
         self.assertLessEqual(sum(len(one['excerpt']) for one in payload), outline.INPUT_CHARS)
         result = outline.seed('Synthetic subject')
@@ -48,6 +57,7 @@ class OutlineTests(StudioCase):
         self.assertGreaterEqual(len(plan['outline']['sections']), 2)
         self.assertEqual(plan['outline']['personal_questions'], ['What are the failure limits?'])
         record = self.engine._load(root)
+        self.assertEqual(record['outline_first']['research_policy'], outline.research_quality.FOCUSED)
         self.assertEqual(model_profiles.route(record, 'Training Studio', 'scan')['profile'], 'quick')
         self.assertEqual(record['outline_first']['scan']['searches'], 0)
         self.engine.wake(root)

@@ -37,6 +37,27 @@ class SessionTests(unittest.TestCase):
         self.handed = None
         self.workflow = session.Workflow(RUNTIME)
 
+    def test_nonsectioned_retry_of_incomplete_check_keeps_the_dossier(self):
+        self.barrier = None
+        invoke = self.invoke
+        def incomplete(phase, *args):
+            text, sources = invoke(phase, *args)
+            if phase == 'review':
+                value = json.loads(text)
+                for item in value['originals']:
+                    item.update(read_original=False, access_error='Synthetic allowance exhausted.')
+                value['assessment'].update(coverage='needs-revision', note='Sources remain unread.')
+                text = json.dumps(value)
+            return text, sources
+        self.invoke = incomplete
+        with self.assertRaises(session.research_quality.IncompleteCheck):
+            self.run_session()
+        self.calls.clear()
+        self.invoke = invoke
+        result, _ = self.run_session()
+        self.assertTrue(result['review']['accepted'])
+        self.assertEqual(self.calls, [('review', None)])
+
     def invoke(self, phase, guidance, payload, offered, fetch):
         area = payload['_execution'].get('stream')
         self.calls.append((phase, area))
