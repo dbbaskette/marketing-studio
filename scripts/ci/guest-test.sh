@@ -154,7 +154,7 @@ if [[ "${1:-full}" == infographic-planning || "${1:-full}" == infographic-activi
   [[ -n "$bundle" ]] || { echo 'A prepared Infographic Studio-only Apple Silicon package is required.' >&2; exit 1; }
   "$python" scripts/ci/infographic_bundle_acceptance.py "$bundle" 2>&1 | tee "$results_dir/infographic-bundle.log"
 elif [[ "${1:-full}" == training-settings ]]; then
-  (cd studios/training && "$python" scripts/ci/run_tests.py test_desk test_settings_change && "$python" skills/training-studio/scripts/validate_package.py) > "$results_dir/training-tests.log" 2>&1
+  (cd studios/training && "$python" scripts/ci/run_tests.py test_desk test_settings_change test_layout && "$python" skills/training-studio/scripts/validate_package.py) > "$results_dir/training-tests.log" 2>&1
   PYTHONPATH=tests "$python" -m unittest test_ui_consistency test_layout_pass -v > "$results_dir/layout-tests.log" 2>&1
   export INFOGRAPHIC_STUDIO_TEST_RENDERER="$("$python" scripts/ci/infographic-renderer.py --output "$work/settings-graphics" --cache "$work/settings-cache")"
   mkdir -p "$work/settings-browser"
