@@ -164,6 +164,10 @@ elif [[ "${1:-full}" == training-settings ]]; then
     npm ci --prefix "$work/settings-browser" --ignore-scripts --no-audit --no-fund > "$results_dir/settings-browser-tools.log" 2>&1
   export NODE_PATH="$work/settings-browser/node_modules" PYTHON="$python" TRAINING_SETTINGS_UI_RESULTS="$results_dir/settings-ui"
   node studios/training/tests/ui/settings_sheet.cjs 2>&1 | tee "$results_dir/settings-browser.log"
+elif [[ "${1:-full}" == training-first-output ]]; then
+  PYTHONPATH=core:tests "$python" -m unittest discover -s tests -v > "$results_dir/shared-tests.log" 2>&1
+  (cd studios/training && bash scripts/ci/check.sh "$python") > "$results_dir/training-tests.log" 2>&1
+  (cd studios/presentation && "$python" scripts/ci/run_tests.py test_parallel_research) > "$results_dir/presentation-tests.log" 2>&1
 elif [[ "${1:-full}" == research-final-brief ]]; then
   PYTHONPATH=core:tests "$python" -m unittest discover -s tests -v > "$results_dir/shared-tests.log" 2>&1
   (cd studios/training && "$python" scripts/ci/run_tests.py test_parallel_research test_settings_change.StopTests) > "$results_dir/training-tests.log" 2>&1

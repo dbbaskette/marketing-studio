@@ -83,6 +83,12 @@ const key=(editor,k)=>all(editor.node).find(n=>n.dataset.key===k);
  key(keeping,'research-keep-1').listeners.click();await settle();assert.equal(key(keeping,'research-keep-1')['aria-pressed'],'true');
  await keeping.files([{name:'only.md',size:3,arrayBuffer:async()=>Buffer.from('# O')}]);
  assert.equal(kept.filter(r=>r.action==='capture').at(-1).keep,false);
+ const draftState={phase:'synthesize',combining:[{id:'one',status:'kept',preview:{basis:'revision-1',sections:[{title:'Basics',text:'A saved explanation.'}],sources:[{title:'Reference',permission:'public',origin:'https://example.invalid/ref'}],truncated:true}},{id:'two',status:'working',questions:['Remaining scope']}]};
+ const draft=kit.workingDraft(draftState);assert.match(draft.text,/independent check pending/);assert.match(draft.text,/A saved explanation/);assert.match(draft.text,/Section pending/);assert.match(draft.text,/shortened/);assert.match(draft.text,/https:\/\/example.invalid\/ref/);
+ for(const phase of ['stopped','stopping','invalidated','complete','paused'])assert.equal(kit.workingDraft({...draftState,phase}),null);
+ const workingDraftNodes=all(kit.progress(draftState));assert.ok(workingDraftNodes.some(n=>n.dataset.key==='research-working-draft-download'));assert.ok(workingDraftNodes.some(n=>n.dataset.key==='research-working-draft-toggle'));
+ const incompleteNodes=all(kit.progress({...draftState,phase:'check-incomplete',review_coverage:{read:1,total:3,unread:2}}));assert.ok(incompleteNodes.some(n=>n.textContent==='Independent check incomplete'));assert.ok(incompleteNodes.some(n=>n.textContent.includes('1 of 3 required sources checked')));
+ const finalNodes=all(kit.progress({phase:'synthesize',agents:{count:1,active:[{phase:'synthesize',section:'final'}]}}));assert.ok(finalNodes.some(n=>n.textContent==='Assembling the final brief'));
  const progress=kit.progress({phase:'review',streams:[{id:'area1',questions:['Synthetic area'],status:'kept'}]}, {stop:()=>{}});assert.ok(all(progress).some(n=>n.textContent==='Independent check'));assert.ok(all(progress).some(n=>n.dataset.key==='research-stop'));
  for(const [phase,current] of [['investigate',0],['synthesize',1],['review',2],['complete',-1],['paused',-1],['stopped',-1],['needs-attention',-1]]){
   const controls=new Node('div');controls.append(new Node('button'));

@@ -107,6 +107,17 @@ class ParallelNativeTests(StudioCase):
                             if contract.job_round(name) for a in entry['attempts']))
         self.assertIn('active_seconds', shown['timing'])
 
+    def test_incomplete_check_has_specific_retry_and_retained_work_message(self):
+        from unittest.mock import patch
+        from studio_core.research_quality import IncompleteCheck
+        with patch.object(parallel.Workflow, 'run', side_effect=IncompleteCheck({'read': 1, 'total': 3, 'unread': 2})):
+            root = self.start()
+        problem = self.view(root)['problem']
+        self.assertEqual(problem['label'], 'Retry independent check')
+        self.assertEqual(problem['action'], 'retry')
+        self.assertIn('does not repeat investigation', problem['kept'])
+        self.assertEqual(self.engine._load(root)['problem']['check_incomplete']['unread'], 2)
+
     def test_saved_serial_run_does_not_acquire_parallel_protocol(self):
         # Existing histories stay with their original transport even on the new engine.
         from test_synthesis_integration import SynthesisIntegrationTests

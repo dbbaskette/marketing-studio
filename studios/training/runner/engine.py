@@ -1507,7 +1507,8 @@ class Engine(Reviewing):
                     record.update(schema=training_plan.RECORD_SCHEMA, training_plan={'schema': 1, 'revision': 0})
                     if self.outline_first:
                         record.update(schema=outline_first.RECORD_SCHEMA,
-                                      outline_first={'schema': 1, 'outline': None})
+                                      outline_first={'schema': 1, 'outline': None,
+                                          'research_policy': dict(outline_first.research_quality.FOCUSED)})
                         if self.section_synthesis:
                             record.update(schema=8, section_synthesis=research_sections.pin(self.research().runtime))
                 if selected_sources:
@@ -4396,12 +4397,21 @@ class Engine(Reviewing):
             if outline_first.enabled(record):
                 task['teaching_outline'] = record['outline_first']['outline']
                 task['teaching_intake'] = intake
+                if record['outline_first'].get('research_policy'):
+                    task['research_policy'] = record['outline_first']['research_policy']
             try:
                 if research_parallel.enabled(record, task):
                     research_parallel_native.native(self, root, run, task, offered)
                 else:
                     research_contract.native(self, root, run, task, offered, 'training')
             except WorkspaceError as refusal:
+                if getattr(refusal, 'check_incomplete', None):
+                    self._problem(root, 'research', 'failed', str(refusal),
+                        'The current research and working draft are saved. Retry checks the same '
+                        'evidence again; it does not repeat investigation or section writing.',
+                        detail={'check_incomplete': refusal.check_incomplete,
+                                'label': 'Retry independent check'})
+                    return
                 if getattr(refusal, 'outcome', None) is not None:
                     return self._research_job_failed(root, refusal)
                 if getattr(refusal, 'objections', None) is None:

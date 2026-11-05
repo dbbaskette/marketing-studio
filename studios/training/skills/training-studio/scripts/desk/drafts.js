@@ -2794,6 +2794,7 @@ function outlinePlanReview(plan, held) {
   const allowed=plan.research_from||{};
   const scope=[allowed.documents?'your supplied documents':'',list(allowed.sites).length?'your selected sites':'',allowed.web?'the public web':''].filter(Boolean).join(', ');
   box.append(make('p','quiet','After approval: research uses '+scope+'. Up to '+Math.min(plan.workers,value.sections.length)+' areas run in parallel; combining and independent checking follow.'));
+  if(plan.research_policy)box.append(make('p','quiet','Focused first draft: up to '+plan.research_policy.facts_per_area+' essential facts and '+plan.research_policy.sources_per_area+' sources per area, including useful tutorials or labs. Optional depth stays in gaps. Read and download saved sections while checking continues.'));
   const overview=add(make('details','outline-notes'),make('summary','','Scan overview, coverage and limits'),
     make('p','quiet','Scan limits: '+Math.ceil(plan.limits.seconds/60)+' minutes and $'+plan.limits.dollars.toFixed(2)+', within the training limits. External searches: '+plan.limits.searches+'.'),
     make('p','',value.overview),bullets(value.key_terms,'outline-points'),

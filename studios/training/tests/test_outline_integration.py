@@ -128,6 +128,19 @@ class OutlineIntegrationTests(StudioCase):
         self.assertEqual(len(self.workers.of('blueprint')),1)
         self.assertEqual(len(self.workers.of('document')),1)
         self.assertEqual(len(self.scans),1)
+
+    def test_introductory_database_request_produces_a_guide_with_bounded_research(self):
+        root = self.begin_outline(topic='Minimal basics of PostgreSQL HA/DR, Helm and operators, and self-support responsibilities')
+        plan = self.view(root)['training_plan']
+        after = training_plan.decide(self.engine, root, plan['expected'], 'approve', outline=plan['outline'])
+        self.assertIsNone(after['problem'], after['problem'])
+        self.assertEqual(after['state'], 'done')
+        self.assertEqual(len(self.workers.of('document')), 1)
+        self.assertTrue(self.tasks)
+        for task in self.tasks:
+            self.assertEqual(task['task']['research_policy'], outline.research_quality.FOCUSED)
+            self.assertIn('tutorial', task['return'])
+            self.assertIn('at most 8 essential facts', task['return'])
         self.engine.wake(root)
         self.assertEqual(len(self.scans),1)
 

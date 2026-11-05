@@ -10,8 +10,13 @@ async function openPreview(page){const panel=page.getByRole('region',{name:'Rese
  for(const product of (process.env.RESEARCH_PREVIEW_PRODUCTS||'training,presentation').split(',')){
   const test=await fixture(product),page=await browser.newPage({viewport:{width:390,height:950}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
   try{
-   await page.goto(test.url+'&resume='+encodeURIComponent(path.basename(test.path)));let panel=await openPreview(page);
-   await panel.getByText('Draft—independent check pending',{exact:true}).waitFor();await panel.getByText('Synthetic section prose is available before final checking.',{exact:true}).waitFor();
+   await page.goto(test.url+'&resume='+encodeURIComponent(path.basename(test.path)));
+   await page.getByText('Read working draft · 1 section available',{exact:true}).click();
+   if(process.env.RESEARCH_PREVIEW_RESULTS){fs.mkdirSync(process.env.RESEARCH_PREVIEW_RESULTS,{recursive:true});for(const width of [390,1280]){await page.setViewportSize({width,height:950});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await page.screenshot({path:path.join(process.env.RESEARCH_PREVIEW_RESULTS,`${product}-working-draft-${width}.png`)});}}
+   const downloaded=page.waitForEvent('download');await page.getByRole('button',{name:'Download working draft (.md)',exact:true}).click();
+   const download=await downloaded;const text=fs.readFileSync(await download.path(),'utf8');assert.match(text,/independent check pending/);assert.match(text,/Synthetic section prose/);assert.match(text,/Section pending/);
+   await page.getByText('Read working draft · 1 section available',{exact:true}).click();let panel=await openPreview(page);
+   await panel.getByText('Draft—independent check pending',{exact:true}).waitFor();await panel.getByText('Synthetic section prose is available before final checking.',{exact:true}).last().waitFor();
    const before=await page.evaluate(()=>ask('fixture-review-state'));
    await panel.getByLabel('Note for the next research change',{exact:true}).fill('Retain this concern for the next explicit change.');await panel.getByRole('button',{name:'Save queued note',exact:true}).click();await panel.getByText('Queued privately. Evidence and scope are unchanged.',{exact:true}).waitFor();
    await page.reload();panel=await openPreview(page);await panel.getByLabel('Note for the next research change',{exact:true}).waitFor();await page.waitForFunction(()=>document.querySelector('[data-key="research-queued-note-area1"]')?.value==='Retain this concern for the next explicit change.');
