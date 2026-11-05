@@ -166,13 +166,14 @@ elif [[ "${1:-full}" == training-settings ]]; then
   node studios/training/tests/ui/settings_sheet.cjs 2>&1 | tee "$results_dir/settings-browser.log"
 elif [[ "${1:-full}" == training-first-output || "${1:-full}" == training-first-output-finish ]]; then
   if [[ "${1:-full}" == training-first-output-finish ]]; then
-    # Recheck the unrelated transient brand-job race seen in the completed shared
-    # run; reuse that run's evidence for the unchanged shared application tree.
+    # Finish the completed full runs: recheck the repaired brand race and final
+    # assembly assertions, then run the remaining package and presentation checks.
     PYTHONPATH=core:tests "$python" -m unittest test_brands -v > "$results_dir/brand-recheck.log" 2>&1
+    (cd studios/training && "$python" scripts/ci/run_tests.py test_section_research && "$python" skills/training-studio/scripts/validate_package.py) > "$results_dir/training-tests.log" 2>&1
   else
     PYTHONPATH=core:tests "$python" -m unittest discover -s tests -v > "$results_dir/shared-tests.log" 2>&1
+    (cd studios/training && bash scripts/ci/check.sh "$python") > "$results_dir/training-tests.log" 2>&1
   fi
-  (cd studios/training && bash scripts/ci/check.sh "$python") > "$results_dir/training-tests.log" 2>&1
   (cd studios/presentation && "$python" scripts/ci/run_tests.py test_parallel_research) > "$results_dir/presentation-tests.log" 2>&1
 elif [[ "${1:-full}" == research-final-brief ]]; then
   PYTHONPATH=core:tests "$python" -m unittest discover -s tests -v > "$results_dir/shared-tests.log" 2>&1
