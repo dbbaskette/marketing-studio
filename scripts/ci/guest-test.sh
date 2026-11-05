@@ -168,6 +168,8 @@ elif [[ "${1:-full}" == research-final-brief ]]; then
   PYTHONPATH=core:tests "$python" -m unittest discover -s tests -v > "$results_dir/shared-tests.log" 2>&1
   (cd studios/training && "$python" scripts/ci/run_tests.py test_parallel_research test_settings_change.StopTests) > "$results_dir/training-tests.log" 2>&1
   (cd studios/presentation && "$python" scripts/ci/run_tests.py test_parallel_research) > "$results_dir/presentation-tests.log" 2>&1
+elif [[ "${1:-full}" == brand-job-race ]]; then
+  PYTHONPATH=core:tests "$python" -m unittest test_brands -v > "$results_dir/brand-tests.log" 2>&1
 elif [[ "${1:-full}" == early-evidence ]]; then
   PYTHONPATH=core:tests "$python" -m unittest discover -s tests -v > "$results_dir/shared-tests.log" 2>&1
 elif [[ "${1:-full}" == native-polling-finish ]]; then

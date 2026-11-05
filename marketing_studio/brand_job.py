@@ -328,8 +328,11 @@ def interpret(found, key: str, shared, part=None, note=None):
 
     def job(line, stop):
         folder = brand_store.folder_of(key) / 'job'
-        shutil.rmtree(folder, ignore_errors=True)
-        folder.mkdir(parents=True)
+        # record() validates this tree under the same lock. Do not remove a
+        # directory between its enumeration and lstat while the page is reading.
+        with brand_store.LOCK:
+            shutil.rmtree(folder, ignore_errors=True)
+            folder.mkdir(parents=True)
         line(f'Asking {runtime.ASSISTANTS.get(agent, agent)} for ' + ', '.join(
             brand_store.PARTS[p][1].lower() for p in wanted))
         said = answer_of(run_assistant(agent, guidance, task, folder, model, effort, line, stop))
