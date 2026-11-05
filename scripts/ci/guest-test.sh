@@ -153,6 +153,17 @@ if [[ "${1:-full}" == infographic-planning || "${1:-full}" == infographic-activi
   bundle="$(find dist -maxdepth 1 -name "$pattern" -print -quit)"
   [[ -n "$bundle" ]] || { echo 'A prepared Infographic Studio-only Apple Silicon package is required.' >&2; exit 1; }
   "$python" scripts/ci/infographic_bundle_acceptance.py "$bundle" 2>&1 | tee "$results_dir/infographic-bundle.log"
+elif [[ "${1:-full}" == training-settings ]]; then
+  (cd studios/training && "$python" scripts/ci/run_tests.py test_desk test_settings_change && "$python" skills/training-studio/scripts/validate_package.py) > "$results_dir/training-tests.log" 2>&1
+  PYTHONPATH=tests "$python" -m unittest test_ui_consistency test_layout_pass -v > "$results_dir/layout-tests.log" 2>&1
+  export INFOGRAPHIC_STUDIO_TEST_RENDERER="$("$python" scripts/ci/infographic-renderer.py --output "$work/settings-graphics" --cache "$work/settings-cache")"
+  mkdir -p "$work/settings-browser"
+  cp studios/infographic/tests/ui/package*.json "$work/settings-browser/"
+  touch "$work/settings-npm-user.conf" "$work/settings-npm-global.conf"
+  env HOME="$work/settings-home" NPM_CONFIG_USERCONFIG="$work/settings-npm-user.conf" NPM_CONFIG_GLOBALCONFIG="$work/settings-npm-global.conf" \
+    npm ci --prefix "$work/settings-browser" --ignore-scripts --no-audit --no-fund > "$results_dir/settings-browser-tools.log" 2>&1
+  export NODE_PATH="$work/settings-browser/node_modules" PYTHON="$python" TRAINING_SETTINGS_UI_RESULTS="$results_dir/settings-ui"
+  node studios/training/tests/ui/settings_sheet.cjs 2>&1 | tee "$results_dir/settings-browser.log"
 elif [[ "${1:-full}" == early-evidence ]]; then
   PYTHONPATH=core:tests "$python" -m unittest discover -s tests -v > "$results_dir/shared-tests.log" 2>&1
 elif [[ "${1:-full}" == native-polling-finish ]]; then
