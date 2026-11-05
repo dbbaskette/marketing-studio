@@ -34,5 +34,9 @@ private source text, links, user project identities or machine records.
 
 - Investigation: confirmed concurrent collection/section authors and serial final
   assembly/review in current source; no active-run mutation.
-- #377: implementation in progress.
+- #377: implemented in PR #380. Source `07adbe0d` passed 1,050 shared tests
+  (one unrelated real-PDF-tool skip), 17 affected Training Studio tests and three
+  Presentation Studio native transport tests in disposable macOS 27 Tart. The
+  focused 11-test research check also passed. Final-only retries preserve all
+  successful sections and collection work; no user run was changed.
 - #378 and #379: planned; not implemented or claimed available.
