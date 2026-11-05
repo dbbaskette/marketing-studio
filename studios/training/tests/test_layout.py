@@ -432,11 +432,11 @@ class LayoutTests(test_desk.ScriptedPage, test_desk.PageCase):
                       result['snapshots']['no materials']['sheet'])
         self.assertEqual(self.posts(result), [])
 
-    def test_cancel_keeps_the_draft_for_the_session(self):
+    def test_cancel_keeps_the_draft_for_resume(self):
         result = self.run_page(self.begun(), [
             {'click': 'New training'}, *self.FILLED,
             {'tick': 'Reference brief'}, {'click': 'Cancel'}, {'snapshot': 'closed'},
-            {'click': 'New training'}, {'snapshot': 'again'}])
+            {'click': 'Resume draft'}, {'snapshot': 'again'}])
         shots = result['snapshots']
         self.assertEqual(shots['closed']['sheet'], '')
         self.assertEqual(shots['closed']['heading'], 'Home')

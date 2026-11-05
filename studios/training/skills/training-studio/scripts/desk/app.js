@@ -1683,6 +1683,7 @@ function drawSheet() {
   // And it is the only thing that can be reached: everything behind it is inert until it is
   // put away, by its own buttons or by Escape.
   for (const id of ['main', 'sidebar', 'toolbar']) byId(id).inert = Boolean(shown);
+  for (const node of document.querySelectorAll('.spending-status')) node.inert = Boolean(shown);
   // The skip link and a toast's button are outside those: the skip link is put away too, and
   // Tab goes round the sheet's own controls (`keepInSheet`).
   const skip = document.querySelector('.skip');
@@ -5277,6 +5278,8 @@ function syncSpending() {
     }
   } : null;
   StudioActivity.spendingStatus(main(),options);
+  // Spending controls are siblings of main, including when a poll recreates them.
+  for (const node of document.querySelectorAll('.spending-status')) node.inert = !byId('sheet').hidden;
 }
 
 function placeParts(spec, parts, fresh) {

@@ -1975,6 +1975,12 @@ p.fact > .bead {
   outline: none;
 }
 
+/* Inert controls still allow the document to scroll. Keep the page in place while
+   its sheet owns interaction; closing the sheet restores normal page scrolling. */
+body[data-product="Training Studio"]:has(#sheet:not([hidden])) {
+  overflow: hidden;
+}
+
 .sheet > * + *,
 .note > * + * {
   margin-top: 0.75rem;
@@ -3774,6 +3780,9 @@ body[data-pilot="liquid"] .ig-outline-value { fill: var(--studio-color); font: 2
 .sheet:has(.create-flow){position:fixed;top:50%;left:50%;right:auto;bottom:auto;transform:translate(-50%,-50%);width:min(46rem,calc(100% - 1.5rem));max-height:calc(100dvh - 2rem);display:flex;flex-direction:column;overflow:hidden;border-radius:22px;background:var(--solid);backdrop-filter:none;box-shadow:0 0 0 100vmax var(--scrim),var(--lift);animation:none}
 .sheet:has(.create-flow)>.sheet-heading{flex:none;margin:0 0 .75rem;padding:0 0 .75rem;background:var(--solid)}
 .sheet>.create-flow:has(.intake-body){display:flex;flex-direction:column;min-height:0;overflow:hidden;gap:.65rem}
+/* Change settings is a long form, not the stepped intake. It must own scrolling
+   when the centered sheet clips its outer frame. */
+body[data-product="Training Studio"] .sheet>.create-flow:not(:has(.intake-body)){min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:.2rem .3rem .65rem}
 .intake-progress{display:flex;flex:none;gap:.5rem;list-style:none;margin:0;padding:0;color:var(--quiet);font-size:.85rem}
 .intake-progress>li{flex:1;border-bottom:2px solid var(--hair);padding:.4rem 0;overflow-wrap:anywhere}
 .intake-progress>.is-current{color:var(--ink);border-color:var(--accent);font-weight:650}
