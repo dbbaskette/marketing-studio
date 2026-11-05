@@ -15,10 +15,37 @@ class OverviewTests(unittest.TestCase):
     def setUp(self):
         temp=tempfile.TemporaryDirectory();self.addCleanup(temp.cleanup)
         self.root=Path(temp.name)
+        data=mock.patch.object(work_overview.workspaces,'data_root',return_value=self.root/'.private')
+        data.start();self.addCleanup(data.stop)
         cache=mock.patch.dict(os.environ, {'XDG_CACHE_HOME': str(self.root/'.private-cache')})
         cache.start();self.addCleanup(cache.stop)
         patch=mock.patch.object(work_overview.workspaces,'remembered',return_value={'root':str(self.root)})
         patch.start();self.addCleanup(patch.stop)
+
+    def test_private_intake_summary_is_bounded_and_resumes_without_content_reads(self):
+        from studio_core import intake_drafts
+        scope={'kind':'blog-intake','workspace':str(self.root)}
+        data=self.root/'.private'
+        held=intake_drafts.dispatch(data,scope,{'action':'save','expected':0,'patch':{'title':'Unfinished title','step':1,'sourceEntry':{'text':'PRIVATE EXCERPT'},'upload':{'encoded':'x'*1_000_000}}})
+        self.item('existing')
+        with mock.patch.object(intake_drafts,'read',side_effect=AssertionError('No form content reads')):
+            found=work_overview.listing('training')
+            row=next(row for row in found['items'] if row.get('kind')=='intake')
+            self.assertEqual(row['step'],1)
+            self.assertNotIn('PRIVATE EXCERPT',json.dumps(found))
+            self.assertNotIn('encoded',json.dumps(found))
+            link=work_overview.link('training',row['id'],'http://localhost/#token=synthetic')
+            self.assertIn('resume-intake=1',link)
+        with self.assertRaises(intake_drafts.Conflict):
+            intake_drafts.dispatch(data,scope,{'action':'discard','expected':0})
+        self.assertEqual(len(intake_drafts.summaries(data,self.root)),1)
+        self.assertEqual(intake_drafts.summaries(data,self.root/'another'),[])
+        with mock.patch.object(intake_drafts,'_write_summary',side_effect=OSError('Read-only index')):
+            held=intake_drafts.dispatch(data,scope,{'action':'save','expected':held['revision'],'patch':{'title':'Changed title'}})
+        self.assertEqual(intake_drafts.summaries(data,self.root),[], 'stale sidecars cannot advertise an older form')
+        intake_drafts.dispatch(data,scope,{'action':'discard','expected':held['revision']})
+        self.assertFalse(intake_drafts.summaries(data,self.root))
+        with self.assertRaises(ValueError):work_overview.check('training',row['id'])
 
     def item(self, ident, state='needs-you'):
         root=self.root/ident;root.mkdir()

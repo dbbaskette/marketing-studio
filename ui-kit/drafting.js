@@ -119,6 +119,22 @@ const Drafting = (() => {
         return true;
       } catch(error) {this.problem = error.message; this.status(); return false;}
     }
+    resumeCard({resume, fresh, discarded}) {
+      if(!this.saved)return null;
+      const box=add(make('section','paper stack'),make('h2','section-title','Unfinished draft'),make('h3','row-title',this.saved.title||'Untitled draft'),make('p','quiet','Step '+((Number(this.saved.step)||0)+1)+'. Saved privately on this computer. No work has started.'));
+      const actions=make('div','bar'),status=make('p','quiet');status.setAttribute('role','status');
+      const resumeButton=make('button','button','Resume draft'),start=make('button','button','Start new'),discard=make('button','button button-quiet','Discard draft');
+      for(const button of [resumeButton,start,discard])button.type='button';
+      resumeButton.addEventListener('click',resume);start.addEventListener('click',fresh);
+      let confirming=false;
+      discard.addEventListener('click',async()=>{if(!confirming){confirming=true;status.textContent='Discard this unfinished form? Existing projects and captured sources are kept.';discard.textContent='Confirm discard';return;}discard.disabled=true;if(await this.discard())discarded();else{status.textContent=this.problem;discard.disabled=false;}});
+      return add(box,add(actions,resumeButton,start,discard),status);
+    }
+    async startFresh(){
+      await this.load();
+      if(this.saved&&!confirm('This studio keeps one unfinished form. Discard it and start new? Existing projects and captured sources are kept.'))return false;
+      return !this.saved||this.discard();
+    }
     // `validate` only marks local fields; only `start` can create a project or launch work.
     pages(form, {draft, steps, names, validate, start, close, discarded, final = 'Start'}) {
       const progress = make('ol','intake-progress'); progress.setAttribute('aria-label','Creation progress');

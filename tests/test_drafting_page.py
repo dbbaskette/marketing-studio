@@ -18,6 +18,9 @@ class DraftingPageTests(unittest.TestCase):
                               timeout=120)
         self.assertEqual(done.returncode, 0, done.stderr or done.stdout)
 
+    def test_unfinished_intake_discovery(self):
+        self.group('intakeDiscovery')
+
     def test_slide_correction_conflict_recovery(self):
         self.group('correctionRecovery')
 

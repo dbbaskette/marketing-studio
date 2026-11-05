@@ -380,7 +380,7 @@ function returnToPlace(id){
 let homeTimer=null;
 async function home() {
   resetPicture(); held = null; error(''); remember('home');
-  heading('Infographics', button('New infographic', () => newSheet(), true),button('Team repository',teamSheet));
+  heading('Infographics', button('New infographic', () => startNewIntake(), true),button('Team repository',teamSheet));
   delete $('main').dataset.home;
   await drawHome();
 }
@@ -391,9 +391,10 @@ async function drawHome() {
   if (screen !== 'home') return;
   try {
     const data = await request('/api/projects');
+    await privateIntake.load();
     if (screen !== 'home') return;
     // Redraw only when something a card says has changed, so focus and place stay put.
-    const said = JSON.stringify(data.projects.map(p => [p.id, p.title, p.problem, p.page_revision, p.readiness, p.activity?.state, p.activity?.label, running.has(p.id)]));
+    const said = privateIntake.revision+JSON.stringify(data.projects.map(p => [p.id, p.title, p.problem, p.page_revision, p.readiness, p.activity?.state, p.activity?.label, running.has(p.id)]));
     if ($('main').dataset.home === said) { if (data.projects.some(p => p.activity?.state === 'running' || running.has(p.id))) homeTimer = setTimeout(drawHome, 2000); return; }
     $('main').dataset.home = said;
     const cards = data.projects.map(p => {
@@ -404,13 +405,15 @@ async function drawHome() {
     });
     const intro=add(make('div','intro'),make('h2','large-title','Your infographics'),make('p','lede','Turn supplied information into one clear page.'));
     $('main').replaceChildren(intro, add(make('div','ig-project-list'),...cards));
-    if (!cards.length) $('main').append(card('Make your first infographic', make('p','','Add notes, choose what matters, and review the page before exporting.')));
+    const unfinished=privateIntake.resumeCard({resume:()=>newSheet(),fresh:()=>startNewIntake(),discarded:()=>{resetIntake();void home();}});if(unfinished)$('main').prepend(unfinished);
+    if (!cards.length&&!unfinished) $('main').append(card('Make your first infographic', make('p','','Add notes, choose what matters, and review the page before exporting.')));
     if (cards.some(node => node.dataset.working !== undefined)) homeTimer = setTimeout(drawHome, 2000);
   } catch (failure) { error(failure.message); }
 }
 async function bytes(file) { if (file.size > 16_000_000) throw Error('Choose a source no larger than 16 MB.'); return new Uint8Array(await file.arrayBuffer()); }
 function encoded(raw) { let binary=''; for (const v of raw) binary += String.fromCharCode(v); return btoa(binary); }
 function retain(input, key) { input.addEventListener('input', () => { draft[key] = input.value; }); }
+async function startNewIntake(){if(!await privateIntake.startFresh())return;resetIntake();intakeLoaded=true;await newSheet();}
 async function newSheet() {
   try{if(!intakeLoaded){const saved=await privateIntake.load();if(saved)Object.assign(draft,saved);intakeLoaded=true;}await keepIntake();}catch(failure){error(failure.message);return;}
   error('');
@@ -526,10 +529,10 @@ async function newSheet() {
   });
   const saved=make('p','quiet field-hint');saved.dataset.intakeStatus='true';saved.setAttribute('role','status');
   for(const event of ['input','change'])form.addEventListener(event,()=>privateIntake.queue(draft));
-  const discard=button('Discard draft',async()=>{if(!confirm('Discard this unfinished form? Captured sources and any saved infographic stay in place.'))return;if(await privateIntake.discard()){resetIntake();closeSheet();}else problem.textContent=privateIntake.problem;});
-  add(form,problem,saved,draft.created||draft.request_id?button('Open the saved draft',async()=>{await keepIntake(false);closeSheet();openProject(draft.created?.id||draft.request_id);}):null,
+  const discard=button('Discard draft',async()=>{if(!confirm('Discard this unfinished form? Captured sources and any saved infographic stay in place.'))return;if(await privateIntake.discard()){resetIntake();closeSheet();void home();}else problem.textContent=privateIntake.problem;});
+  add(form,problem,saved,draft.created||draft.request_id?button('Open the saved draft',async()=>{await keepIntake(false);closeSheet();void home();openProject(draft.created?.id||draft.request_id);}):null,
     foot(go,draft.step?button('Back',async()=>{draft.step--;await keepIntake();closeSheet();newSheet();}):null,
-      button('Save and close',async()=>{try{await keepIntake(false);closeSheet();}catch(failure){problem.textContent=failure.message;}}),discard));
+      button('Save and close',async()=>{try{await keepIntake(false);closeSheet();void home();}catch(failure){problem.textContent=failure.message;}}),discard));
   sheet('New infographic',form);privateIntake.status();
 
 }
@@ -1063,6 +1066,7 @@ if (homeLink) {
   if (sameTab) $('go-suite').removeAttribute('target');
 }
 async function startDesk() {
+  if(launch.get('resume-intake')==='1'){await home();await newSheet();return;}
   const resumeId=launch.get('resume');
   if(resumeId&&/^[A-Za-z0-9_-]{1,64}$/.test(resumeId)){await openProject(resumeId);return;}
   // Back from shared settings: reopen the same infographic and sheet. Connecting stays a choice.
@@ -1078,7 +1082,7 @@ async function startDesk() {
   if(where==='settings'){await showSettings();return;}
   if(id&&where!=='home'){await openProject(id);if(held?.project.id===id){returnToPlace(id);return;}error('');}
   await home();
-  const saved=await privateIntake.load();if(saved?.intakeOpen)await newSheet();
+  const saved=await privateIntake.load();if(saved?.intakeOpen||launch.get('resume-intake')==='1')await newSheet();
 }
 $('sheet').addEventListener('close',paintWork);
 if(!token)error('Open Infographic Studio using the private link printed in your terminal.');else void startDesk();

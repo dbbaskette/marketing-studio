@@ -3,7 +3,7 @@ import os
 from pathlib import Path
 import time
 from urllib.parse import quote, urlsplit, urlunsplit
-from studio_core import work_summary
+from studio_core import work_summary, intake_drafts
 from . import workspaces
 
 MAX_FOLDERS = 100
@@ -18,6 +18,7 @@ def listing(identifier):
         configured = (data / 'workspace.json').exists() or identifier == 'blog' and (data / 'page.json').exists()
         return {'state':'unavailable' if configured else 'empty','items':[],'note':'No readable saved workspace metadata.'}
     root = Path(remembered['root'])
+    drafts = intake_drafts.summaries(workspaces.data_root(identifier), root)
     folder = root / ('projects' if identifier == 'infographic' else 'articles' if identifier == 'blog' else '')
     if folder.is_symlink() or not folder.is_dir(): return {'state':'unavailable','items':[],'note':'The saved workspace is unavailable.'}
     candidates, indexed, index_limited = work_summary.indexed(folder, MAX_FOLDERS)
@@ -44,7 +45,7 @@ def listing(identifier):
     rows.sort(key=lambda row: row['observed_at'], reverse=True)
     rows.sort(key=lambda row: priority[row['state']])
     omitted = sum(row['state'] == 'needs-you' for row in rows[MAX_SHOWN:])
-    return {'state':'saved','items':rows[:MAX_SHOWN],'limited':limited or len(rows)>MAX_SHOWN,
+    return {'state':'saved','items':[*drafts,*rows[:MAX_SHOWN]],'limited':limited or len(rows)>MAX_SHOWN,
         'note':'Saved status; opening work checks its current state. Older work uses bounded current metadata; oversized or unreadable records are omitted.',
         'pending_omitted':omitted,'pending_more_possible':limited,
         'coverage':'indexed-and-bounded-legacy' if indexed else 'bounded-legacy',
@@ -62,6 +63,11 @@ def link(identifier, ident, base):
     remembered = workspaces.remembered(identifier)
     if not remembered: raise ValueError('The saved workspace is unavailable; no studio was started.')
     root=Path(remembered['root'])
+    if any(row['id']==ident for row in intake_drafts.summaries(workspaces.data_root(identifier),root)):
+        parsed=urlsplit(base)
+        fragment=[part for part in parsed.fragment.split('&') if part and part.partition('=')[0] not in ('resume','resume-intake')]
+        fragment.append('resume-intake=1')
+        return urlunsplit(parsed._replace(fragment='&'.join(fragment)))
     folder=root/('projects' if identifier=='infographic' else 'articles' if identifier=='blog' else '')/ident
     if not (work_summary.read(folder) or work_summary.legacy(identifier, folder)): raise ValueError('This saved work is unavailable; refresh the home page.')
     parsed=urlsplit(base)

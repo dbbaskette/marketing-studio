@@ -2012,6 +2012,7 @@ function drawHome(fresh) {
   const said = greeting();
   const parts = [['greeting', [said], () => make('p', 'large-title', said)],
     ['head', [], () => pageHead(HOME_LEDE)]];
+  if(privateIntake?.saved)parts.push(['intake',[privateIntake.revision],()=>intakeStore().resumeCard({resume:()=>openNew(undefined,true),fresh:()=>openNew(),discarded:()=>{view.draft=null;drawHome(true);}})]);
   const setup = [['updates', [upkeepOf()], updatesCard],
     ['studios', studiosMark(), studiosHomeCard]];
   if (!all.length) {
@@ -3702,8 +3703,9 @@ async function restoreIntake() {
   return saved;
 }
 
-async function openNew(opener) {
+async function openNew(opener, resume=false) {
   await restoreIntake();
+  if(!resume&&intakeStore().saved){if(!await intakeStore().startFresh())return;view.draft=null;}
   if (!view.draft) view.draft = newDraft();
   openSheet('new', opener || 'new')();
   readAgents();
@@ -9566,7 +9568,8 @@ function begin() {
   refresh().then(async () => {
     if (!view.runner || !view.setup) return;
     const saved = await restoreIntake();
-    if (saved?.intakeOpen && view.screen === 'home' && !view.sheet) openNew();
+    if(new URLSearchParams(location.hash.slice(1)).get('resume-intake')==='1'){show('home');openNew(undefined,true);}
+    else if(view.screen==='home'&&!view.sheet){if(saved?.intakeOpen)openNew(undefined,true);else drawHome(true);}
   });
   window.addEventListener('beforeunload', event => {
     if (privateIntake && (privateIntake.pending || privateIntake.writing || privateIntake.problem)

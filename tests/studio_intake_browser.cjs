@@ -74,7 +74,7 @@ async function fixture(product,args=[]){
     assert(await page.evaluate(()=>!!document.activeElement?.closest('#sheet')),'Tab stays in the sheet');
     await dialog.getByRole('button',{name:'Save and close',exact:true}).click();await dialog.waitFor({state:'hidden'});
     await page.reload();await page.getByRole('heading',{name:'Home',exact:true}).waitFor();assert.equal(await dialog.isVisible(),false);
-    await page.getByRole('button',{name:title,exact:true}).first().click();await dialog.waitFor();
+    await page.getByRole('button',{name:'Resume draft',exact:true}).click();await dialog.waitFor();
     await dialog.getByRole('button',{name:'Discard draft',exact:true}).click();await dialog.getByRole('button',{name:'Discard this draft',exact:true}).click();await dialog.waitFor({state:'hidden'});
     assert.equal((await page.evaluate(()=>ask('intake-draft'))).draft,null);
     const sources=await page.evaluate(id=>send('research-sources',{action:'read',id}),saved.draft.sourceDraft.id);
