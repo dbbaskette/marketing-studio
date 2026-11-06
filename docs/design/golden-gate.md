@@ -32,6 +32,11 @@ and pointer-following highlights. Keep material tokens separate from opaque
 content tokens. Preserve current brand identity and use the existing system font
 stack without distributing fonts.
 
+Secondary actions use opaque neutral control fills and visible boundaries, including
+on reading cards. Quiet means subordinate to the primary action, not transparent
+or indistinguishable from the background. Disabled controls retain their shape
+and reduced emphasis.
+
 Shared tokens define independent light and dark appearances. Existing contrast
 checks cover text, selected states, focus rings and semantic status colors.
 Reduced transparency and increased contrast use solid surfaces and stronger

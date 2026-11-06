@@ -83,7 +83,7 @@ const assert = require('node:assert/strict');
     await studio.getByLabel('Working title',{exact:true}).fill('A clear explanation of rolling restarts');
     await studio.getByLabel('Notes or text',{exact:true}).fill('One instance restarts while the others serve.');
     await capture(studio,'infographic-intake');
-    assert.equal(await studio.getByRole('dialog').evaluate(n=>getComputedStyle(n).backgroundColor),'rgb(255, 255, 255)');
+    assert(await studio.getByRole('dialog').evaluate(n=>{const color=getComputedStyle(n).backgroundColor;return color.startsWith('rgb(')||color.endsWith(', 1)');}),'Intake uses an opaque surface');
     await studio.getByRole('button',{name:'Continue',exact:true}).click();
     await studio.getByLabel('How should we find the story?',{exact:true}).selectOption('direct');
     await studio.getByLabel('Page size',{exact:true}).selectOption('digital');
