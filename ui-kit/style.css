@@ -3445,6 +3445,23 @@ input.desk-text {
 .desk-material > .desk-save-state:empty {
   display: none;
 }
+/* A healthy material's controls share one header; the document owns the paper. */
+.card.desk-card-compact { padding: .2rem 0 .6rem; border: 0; border-bottom: 1px solid var(--hair); border-radius: 0; background: transparent; box-shadow: none; }
+.desk-material-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .6rem 1rem; }
+.desk-material-title { min-width: 0; }
+.desk-material-title > .card-title { margin: 0 0 .3rem; font-size: 1.1rem; }
+.desk-material-title > .state { font-size: .88rem; }
+.desk-material-head > .bar { margin: 0; }
+.desk-checks > summary { min-height: 44px; padding-block: .6rem; cursor: pointer; font-size: .88rem; }
+.desk-checks > p { margin: .2rem 0 .5rem; font-size: .88rem; }
+.desk-reading-tools { display: flex; flex-wrap: wrap; align-items: end; gap: .6rem; }
+.desk-reading-tools > .field { flex: 1 1 16rem; min-width: 0; margin: 0; }
+.desk-reading-tools > .button { flex: 0 0 auto; }
+@media (max-width: 52rem) {
+  .desk-material-title { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .8rem; }
+  .desk-material-title > .card-title { margin: 0; }
+  .desk-reading-tools > .field { flex-basis: 8rem; }
+}
 .desk-selection {
   position: fixed;
   left: 50%;

@@ -52,6 +52,11 @@ const DESK_ROUTES = { view: 'drafts/card', save: 'drafts/save', versions: 'draft
 // on the desk it opens.
 const DESK = { held: {}, kitSheet: [] };
 
+// Refit the commands once at the phone breakpoint, without waiting for a data poll.
+globalThis.matchMedia?.('(max-width: 52rem)').addEventListener?.('change', () => {
+  if (view.screen === 'run' && onTheDesk(view.run) && !view.sheet && !view.busy) paintDesk(false);
+});
+
 function deskHeld(path) {
   if (!DESK.held[path]) {
     DESK.held[path] = { view: null, level: null, sources: false, material: {}, said: '', unsent: null,
@@ -1639,10 +1644,15 @@ function levelMaterialsAvailable(cards) {
 }
 
 // What was checked for you, from the checks that take milliseconds.
-function checkedPart(checks) {
+function checkedPart(checks, name, description = '') {
   const passed = Number(checks && checks.passed) || 0;
   const problems = list(checks && checks.problems);
   if (!passed && !problems.length) return null;
+  if (!problems.length) {
+    const details = make('details', 'desk-checks'); details.dataset.key = 'desk-checks ' + name;
+    return add(details, make('summary', 'quiet', 'Checked for you: ' + count(passed, 'check passed', 'checks passed') + '.'),
+      make('p', 'quiet', description || 'Automatic checks passed. Mark ready is still your review decision.'));
+  }
   const node = make('div', 'card-part');
   add(node, make('p', 'quiet', 'Checked for you: ' + count(passed, 'check passed', 'checks passed')
     + (problems.length ? '; ' + count(problems.length, 'check', 'checks') + ' did not.' : '.')));
@@ -1702,7 +1712,11 @@ function deskCard(found) {
     bar.append(press('Send to its copies', 'send', { name: found.name },
       'desk-send ' + found.name));
   }
-  if (actions.includes('download')) bar.append(downloadButton(found));
+  if (actions.includes('download')) {
+    const download = downloadButton(found);
+    if (narrow()) { download.setAttribute('aria-label', download.getAttribute('aria-label') || download.textContent); download.textContent = 'Download'; }
+    bar.append(download);
+  }
   // A deck waiting for its slide text to be approved: nothing is writing it, and the one
   // way on is the decision, which this takes the person straight to.
   const text = view.run && view.run.outline;
@@ -1723,12 +1737,24 @@ function deskCard(found) {
       return deskKit.job(material, again, 'drafts/write-whole', {});
     });
     again.disabled = !!material.view.working;
-    bar.append(add(menu, make('summary', 'button button-quiet', 'Guide actions'),
+    const summary = make('summary', 'button button-quiet', narrow() ? 'More' : 'Guide actions');
+    summary.setAttribute('aria-label', 'Guide actions');
+    bar.append(add(menu, summary,
       add(make('div', 'menu-list'), again)));
   }
   const editing = found.kind === 'deck' ? deckParts(found) : material ? materialParts(material, found) : deskMaterialLoading(found, held);
-  add(node, state(DESK_WORDS.beads[found.state] || 'none', found.says),
-    checkedPart(found.checks), bar.childNodes.length ? bar : null, deskLibraryKept(found));
+  const compact = found.seen && ['draft', 'ready'].includes(found.state)
+    && !list(found.needs).length && !list(found.checks?.problems).length;
+  if (compact) {
+    node.classList.add('desk-card-compact');
+    const status = found.checks?.passed ? DESK_WORDS.tabs[found.state]
+      + (found.state === 'draft' ? ' · Your review' : '') : found.says;
+    node.replaceChildren(add(make('div', 'desk-material-head'),
+      add(make('div', 'desk-material-title'), heading, state(DESK_WORDS.beads[found.state] || 'none', status)),
+      bar.childNodes.length ? bar : null));
+    add(node, checkedPart(found.checks, found.name, found.says), deskLibraryKept(found));
+  } else add(node, state(DESK_WORDS.beads[found.state] || 'none', found.says),
+    checkedPart(found.checks, found.name), bar.childNodes.length ? bar : null, deskLibraryKept(found));
   if (list(found.needs).length) add(node, add(make('details', 'card-part'),
     make('summary', '', 'Detailed review notes'), bullets(found.needs, 'reasons')));
   if (found.kind === 'blueprint') add(node, updateChainPart(found.level));
@@ -2282,15 +2308,16 @@ function editToggle(held, found, editing) {
         // A refused save says why, in Training Studio's words, before what that means here.
         desk.said = (held.refused && Object.keys(held.pending || {}).length
           ? held.refused + ' ' : '') + why;
-        paintDesk(true);
+        desk.drawn = ''; paintDesk(false);
         return;
       }
-      paintDesk(true);
+      desk.drawn = ''; paintDesk(false);
       focusKey('desk-edit ' + found.name);
       return;
     }
     desk.editing[found.name] = !editing;
-    paintDesk(true);
+    desk.drawn = '';
+    paintDesk(false);
     focusKey('desk-edit ' + found.name);
   }, 'desk-edit ' + found.name);
   return go;
@@ -2323,13 +2350,18 @@ function materialParts(held, found) {
   const area = make('div', 'desk-material stack');
   held.area = area;
   const editing = deskEditing(held, found);
+  const sections = [...(held.view.opening || held.view.whole ? [{id: 'opening', heading: held.view.whole ? 'Whole file' : 'Opening'}] : []),
+    ...list(held.view.sections)];
+  const fielded = found.kind === 'yoodli' && !editing && list(held.view.fields).length;
+  if (fielded) sections.splice(0, sections.length);
+  const usePicker = sections.length > 3;
   const status = make('p', 'quiet desk-save-state', held.refused
     && Object.keys(held.pending || {}).length ? held.refused + ' Your text is kept here.'
     : held.saved || '');
   status.setAttribute('role', 'status');
   held.status = status;
   const toggle = editToggle(held, found, editing);
-  add(area, toggle ? add(make('div', 'bar'), toggle) : null,
+  add(area, toggle && !usePicker ? add(make('div', 'bar'), toggle) : null,
     editing && found.state === 'ready' ? readyEditWarning(found) : null, status,
     editing ? deskKit.selectionBar(held) : null, held.view.readonly
       ? make('p', 'quiet', held.view.readonly) : null);
@@ -2373,14 +2405,18 @@ function materialParts(held, found) {
       make('p', 'desk-plain', edit.text), copyButton('Copy', 'Copied.', edit.text)));
     area.append(copies);
   }
-  const sections = [...(held.view.opening || held.view.whole ? [{id: 'opening', heading: held.view.whole ? 'Whole file' : 'Opening'}] : []),
-    ...list(held.view.sections)];
   if (!sections.some(section => section.id === held.section)) held.section = sections[0]?.id;
   const sectionKey = headingId(found.name) + '-sections';
   // A Yoodli layout is read as Yoodli takes it: its fields once, in order, each to copy.
-  const fielded = found.kind === 'yoodli' && !editing && list(held.view.fields).length;
-  if (fielded) sections.splice(0, sections.length);
-  if (sections.length > 1) area.append(workspaceTabs('Section of ' + cardTitle(found),
+  if (usePicker) {
+    const select = make('select', 'input'); select.setAttribute('aria-label', 'Section of ' + cardTitle(found));
+    select.dataset.key = sectionKey;
+    for (const section of sections) { const option = make('option', '', section.heading); option.value = section.id; select.append(option); }
+    select.value = held.section;
+    select.addEventListener('change', () => { held.section = select.value; deskHeld(view.path).drawn = ''; paintDesk(false); });
+    area.append(add(make('div', 'desk-reading-tools'),
+      add(make('label', 'field'), make('span', 'field-label', 'Section · ' + (sections.findIndex(section => section.id === held.section) + 1) + ' of ' + sections.length), select), toggle));
+  } else if (sections.length > 1) area.append(workspaceTabs('Section of ' + cardTitle(found),
     sections.map(section => ({id: section.id, label: section.heading})), held.section,
     id => { held.section = id; paintDesk(true); }, sectionKey));
   for (const section of sections.filter(section => section.id === held.section)) {
@@ -2391,7 +2427,10 @@ function materialParts(held, found) {
       part = add(make('section', 'card desk-part'), make('h2', 'card-title', section.heading),
         make('p', 'quiet', 'Kept from the findings cited.'), make('p', 'desk-plain', section.text));
     } else part = materialPart(held, section.id);
-    area.append(sections.length > 1 ? workspacePanel(sectionKey, sections.indexOf(section), part) : part);
+    if (usePicker) {
+      const panel = make('section', 'desk-section-panel'); panel.setAttribute('aria-label', sections.find(section => section.id === held.section).heading);
+      area.append(add(panel, part));
+    } else area.append(sections.length > 1 ? workspacePanel(sectionKey, sections.indexOf(section), part) : part);
   }
   if (fielded) area.append(...deskYoodliFields(held, found));
   const job = held.view.working || list(held.view.jobs).at(-1);
