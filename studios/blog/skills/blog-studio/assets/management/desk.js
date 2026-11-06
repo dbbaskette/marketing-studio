@@ -550,8 +550,10 @@ async function sDesk(ident){
   if(['read','edit','full'].includes(reading))held.reading=reading;
   if(query.get('part'))held.activePart=query.get('part');
   held.view=view;held.pending={};held.stale=false;held.outline=null;if(held.review)held.review.editing=null;
-  // Review mode is in the address (stage=review), so a reload or Back keeps it.
-  held.mode=studio.stage==='review'?'review':null;
+  // Explicit manuscript links win. A fresh visit to a saved review resumes that
+  // review; returning within a session keeps the view the author chose.
+  const resumeReview=held.mode==='review'||(!held.reading&&sDeskHasReview(view));
+  held.mode=studio.stage==='review'||(!['read','edit','full'].includes(reading)&&resumeReview)?'review':null;
   if(sDeskStarting(view))return sDeskProgress(held);
   if(!held.tab)held.tab=(view.start?.open==='outline'||view.conversation_scope==='outline')&&!sDeskHasText(view)?'outline':'draft';
   sDeskRender(held);
@@ -560,6 +562,7 @@ async function sDesk(ident){
 }
 function sDeskStarting(view){return DESK_KIT.starting(view);}
 function sDeskHasText(view){return !!view.opening||(view.sections||[]).some(section=>section.text);}
+function sDeskHasReview(view){return !!(view.review||view.finishing?.copyedit||view.jobs?.some(job=>job.kind==='finish-copyedit'));}
 
 // A start under way: nothing is needed from the person; the draft opens on its own.
 function sDeskElapsed(start){return DESK_KIT.elapsed(start);}
@@ -623,20 +626,19 @@ function sDeskShareActions(held){
   const publish=sButton(view.publication?'Published':'Mark as published',()=>sDeskPublish(held));publish.disabled=!editable;
   return [copy,download,...sDeskGoogleActions(held),publish];
 }
-// The Google Doc: made once; then Open, and for a Doc that takes suggestions a small menu
-// with Open, Check what would be sent and Bring accepted changes. On a phone the toolbar's
-// own menu lists the three, one row each.
+// Outgoing review is a visible action, including on phones. The Google Doc menu
+// holds opening the Doc and bringing incoming accepted text; neither sends edits.
 function sDeskGoogleActions(held){
   const view=held.view,editable=sDeskCan(held);
   if(!view.google?.url){const make=sButton('Make a Google Doc',()=>sDeskMakeDoc(held));make.disabled=!editable;return [make];}
   if(!view.google_suggestions){const open=link(view.google.url,'Google Doc ↗');open.className='button';return [open];}
   // A choice closes the menu it was made in.
   const menu=sNode('details','menu desk-google-menu'),shut=go=>()=>{menu.open=false;return go(held);};
-  const open=link(view.google.url,'Open the Google Doc ↗'),check=sButton('Check what would be sent',shut(sDeskGoogleSend)),bring=sButton('Bring accepted changes',shut(sDeskGoogleBring));
+  const open=link(view.google.url,'Open the Google Doc ↗'),check=sButton('Review changes to send',()=>sDeskGoogleSend(held),'filled'),bring=sButton('Bring accepted changes',shut(sDeskGoogleBring));
   check.disabled=bring.disabled=!editable;
-  if(sNarrow())return [open,check,bring];
-  for(const item of [open,check,bring])item.className='menu-item';
-  return [sAdd(menu,sNode('summary','button','Google Doc'),sAdd(sNode('div','menu-list'),open,check,bring))];
+  if(sNarrow())return [check,open,bring];
+  for(const item of [open,bring])item.className='menu-item';
+  return [check,sAdd(menu,sNode('summary','button','Google Doc'),sAdd(sNode('div','menu-list'),open,bring))];
 }
 // The Doc as the desk last knew it, said in the toolbar: what waits there, when the desk last
 // sent, and changes not sent yet. Read on this computer; Google is read only when asked.
@@ -692,7 +694,7 @@ async function sDeskGoogleBring(held){
 function sDeskToolbar(held){
   const view=held.view;
   const finishing=sButton('Finishing',()=>held.finish?sDeskFinishClose(held):sDeskFinishOpen(held));finishing.setAttribute('aria-pressed',String(!!held.finish));
-  const review=held.review?sButton('Review fixes',async()=>{await sDeskFlush(held);await sDeskOutlineFlush(held);sReviewEnter(held);sDeskRender(held);sDeskWatch(held);}):null;
+  const review=held.review||sDeskHasReview(view)?sButton('Review fixes',async()=>{await sDeskFlush(held);await sDeskOutlineFlush(held);sReviewEnter(held);sDeskRender(held);sDeskWatch(held);}):null;
   const stop=held.view.working?sButton('Stop',async button=>{await busy(button,'Stopping…',async()=>{const before=held.view;held.view=await api('desk-stop',{id:held.id,job:held.view.working.id});sDeskRefresh(held,before);});}):null;
   const team=sDeskTeam(view);
   sFrame(view.title,sFold([team,stop,review,...sDeskShareActions(held),finishing]),held.view.working?sDeskStatusWords(held):sDeskDriverWords(view)||sDeskDocWords(view)||'On the desk',()=>sRoute('blogs'));
@@ -1050,10 +1052,10 @@ function sDeskReturnFocus(held){const saved=held.returnFocus,input=saved&&held.c
 // Copy edit is reviewed in the text itself: it opens Review mode, where the check starts.
 async function sDeskCopyEdit(held){await sDeskFlush(held);await sDeskOutlineFlush(held);sReviewEnter(held);sDeskRender(held);sDeskWatch(held);}
 // Review mode, entered from the desk, remembers the view, the part, the tab and the scroll it
-// came from; Back returns there. Entered from its address (a reload, a start), Back opens Read.
+// came from; Back returns there. Reloads keep the manuscript view and part in the address.
 function sReviewEnter(held){if(held.mode!=='review')held.reviewFrom={reading:held.reading||'read',part:held.activePart||'opening',tab:held.tab||'draft',scroll:typeof window.scrollY==='number'?window.scrollY:0};held.finish=null;held.mode='review';}
 async function sReviewLeave(held,reading){
-  await sReviewFlush(held);const from=held.reviewFrom||{reading:'read',part:held.activePart||'opening',tab:'draft',scroll:0};
+  await sReviewFlush(held);const from=held.reviewFrom||{reading:held.reading||'read',part:held.activePart||'opening',tab:'draft',scroll:0};
   held.reviewFrom=null;held.reviewHuman=false;held.mode=null;held.reading=reading||from.reading;held.activePart=from.part;held.tab=reading?'draft':from.tab;
   sDeskModeUrl(held);sDeskViewUrl(held);sDeskRender(held);sDeskWatch(held);
   if(!reading&&typeof window.scrollTo==='function')window.scrollTo(0,from.scroll||0);
@@ -1453,7 +1455,7 @@ function sReviewFree(held){const job=held.view.working;return !job||job.part==='
 // Accept's request for one suggestion: the alternative picked, if one was.
 function sReviewPick(item){return {id:item.id,...(Number.isInteger(item.picked)?{alternative:item.picked}:{})};}
 // The desk's address says which view is shown, without a new history entry.
-function sDeskModeUrl(held){const review=held.mode==='review';if(studio.screen!=='desk'||(studio.stage==='review')===review)return;studio.stage=review?'review':null;history.replaceState(null,'',location.pathname+'?'+new URLSearchParams({screen:'desk',id:held.id,...(review?{stage:'review'}:{})}));}
+function sDeskModeUrl(held){const review=held.mode==='review';if(studio.screen!=='desk'||(studio.stage==='review')===review)return;studio.stage=review?'review':null;const query=new URLSearchParams(location.search);query.set('screen','desk');query.set('id',held.id);if(review)query.set('stage','review');else query.delete('stage');history.replaceState(null,'',location.pathname+'?'+query);}
 // Markdown as plain reading: bold, emphasis, code and link words shown, list marks as bullets,
 // image references left to their thumbnails. `lineStart` says whether the text starts a line.
 // Other people's suggestions pending in the blog's Google Doc: shown where they sit, never
@@ -1569,12 +1571,12 @@ function sReviewState(held){
 // Drawn again only when what it shows changes, so a poll never swaps a button being pressed.
 function sReviewToolbar(held,state,force=false){
   const ran=state.any||!!state.working||state.failed.length>0,view=held.view;
-  const key=JSON.stringify([view.title,state.working?.kind||null,!!view.working,sDeskCan(held),sNarrow(),ran,view.google?.url||'',!!view.google_suggestions,view.publication||'']);
+  const key=JSON.stringify([view.title,state.working?.kind||null,!!view.working,sDeskCan(held),sNarrow(),ran,view.google?.url||'',!!view.google_suggestions,sDeskDocWords(view),view.publication||'']);
   if(!force&&held.review?.toolbarKey===key&&studio.screen==='desk')return;if(held.review)held.review.toolbarKey=key;
   // Before any check there is one way to start it, in the page: no Check again.
   const again=ran?sButton('Check again',button=>sReviewCheck(held,button)):null;if(again)again.disabled=!sDeskCan(held)||!!view.working;
   const full=sButton('Open the full desk',()=>sReviewLeave(held,'full'));
-  sFrame(view.title,sFold([again,full,...sDeskShareActions(held)]),state.working?sReviewDoing(state):'Check spelling and grammar',()=>sReviewLeave(held));
+  sFrame(view.title,sFold([again,full,...sDeskShareActions(held)]),state.working?sReviewDoing(state):sDeskDocWords(view)||'Check spelling and grammar',()=>sReviewLeave(held));
 }
 // What the check under way is doing, said in the toolbar and above the draft.
 function sReviewDoing(state){return state.working?.kind==='finish-humanize'?REVIEW_HUMAN:REVIEW_CHECKING;}
@@ -1663,7 +1665,7 @@ function sReviewGoogle(held){
     out.push(sNode('p','',sDeskGoogleSaid(g.plan)),disclosure('What would be sent',changes),sAdd(sNode('div','bar'),send,sButton('Cancel',()=>{g.plan=null;sReviewHeadShow(held);})));
     return out;
   }
-  const plan=sButton('Review Google changes',async button=>{await busy(button,'Checking…',async()=>{try{await sReviewFlush(held);g.plan=await api('desk-google-plan',{id:held.id,mode:'auto'});g.problem='';}catch(error){g.plan=null;g.problem=error.message;}sReviewHeadShow(held);});},'filled');plan.disabled=!sDeskCan(held);
+  const plan=sButton('Review changes to send',async button=>{await busy(button,'Checking…',async()=>{try{await sReviewFlush(held);g.plan=await api('desk-google-plan',{id:held.id,mode:'auto'});g.problem='';}catch(error){g.plan=null;g.problem=error.message;}sReviewHeadShow(held);});},'filled');plan.disabled=!sDeskCan(held);
   out.push(sNode('p','quiet','Review the fixes you accepted and any edits you made before sending them to Google. Nothing is sent during this check; the next screen shows what will be sent and has the Send button. Rejected fixes are never sent.'),sAdd(sNode('div','bar'),plan));
   return out;
 }

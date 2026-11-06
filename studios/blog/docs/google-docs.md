@@ -7,8 +7,8 @@ Your normal writing workflow needs no Google account or extra CLI.
 On the page, choose **New blog → A draft → Google Doc** to read an existing
 manuscript onto the writing desk. For a Doc with multiple tabs, paste the address
 of the tab you want; only that tab is imported. Check the text before you start. The
-original Doc stays linked, and **Finishing → Before publishing → Send to Google Doc**
-sends every change back: words and paragraphs as suggestions, and what the Doc shows no
+original Doc stays linked. **Review changes to send**, visible in the toolbar,
+previews your edits before **Send to Google Doc** sends them back: words and paragraphs as suggestions, and what the Doc shows no
 words for as comments (see [below](#send-desk-changes-to-the-doc)). Reading sends no
 Google edits, comments or sharing changes and starts no assistant job. See
 [the page workflow](runner.md#start-from-a-google-doc).
@@ -259,9 +259,16 @@ freshness check.
 
 ## Send desk changes to the Doc
 
-A desk blog started from a Google Doc sends every change back from Review mode (**Send
-accepted changes to Google Doc**) or Finishing (**Send to Google Doc**), compared with the
-Doc as it was read:
+A desk blog started from a Google Doc offers **Review changes to send** in both the
+desk and Review mode, including on a phone. It previews local edits compared with
+the linked Doc; only the next **Send to Google Doc** confirmation sends them.
+Finishing also keeps its send tools. **Google Doc → Bring accepted changes** is
+the separate incoming action. Finding no incoming changes does not prevent sending
+your local edits.
+
+Reopening a saved copy-edit review resumes Review mode when the address does not
+request a specific manuscript view. Explicit Read, Edit section and Full desk links
+keep their view, and **Review fixes** remains available after a restart.
 
 | On the desk | In the Doc |
 | --- | --- |

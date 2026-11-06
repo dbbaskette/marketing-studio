@@ -76,6 +76,12 @@ add wording suggestions, while facts, quotations, code and structure remain
 protected. You can accept individual changes, edit them, reject them or use the
 available batch actions; a suggestion that needs your judgment stays for review.
 
+Returning to a saved copy-edit review opens Review mode. Explicit Read, Edit section
+and Full desk links keep that view, with **Review fixes** available after a restart.
+For a linked Google Doc, **Review changes to send** previews local edits before
+you choose **Send to Google Doc**. **Google Doc → Bring accepted changes** checks
+incoming text separately; no incoming updates does not prevent sending local edits.
+
 **Finishing** groups checks and proposals by purpose: Copy edit, Humanize, Quick
 check, fact checking, headline/opening, feedback, voice, retrieval readiness (GEO)
 and before-publishing tools. Quick check runs locally without an assistant.
