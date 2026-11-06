@@ -249,10 +249,14 @@ class PageLayoutTests(unittest.TestCase):
     def test_moved_setup_controls_are_reachable(self):
         shots = self.page([{'home': self.SHOWN}, {'show': 'settings'},
                            {'snapshot': 'settings', 'ids': ['delivery-part', 'installations', 'save']},
+                           {'run': "goToPart('delivery-part')"}, {'snapshot': 'delivery', 'ids': ['delivery-part']},
+                           {'run': "goToPart('installations')"}, {'snapshot': 'installations', 'ids': ['installations']},
                            {'show': 'computer'}, {'snapshot': 'computer', 'ids': ['check']}])
         settings = shots['settings']['hidden']
-        self.assertEqual(settings, {'delivery-part': False, 'installations': False,
+        self.assertEqual(settings, {'delivery-part': True, 'installations': True,
                                     'save': False})
+        self.assertFalse(shots['delivery']['hidden']['delivery-part'])
+        self.assertFalse(shots['installations']['hidden']['installations'])
         self.assertFalse(shots['computer']['hidden']['check'])
         self.assertEqual(shots['settings']['words']['save'], 'Save settings')
 
@@ -299,9 +303,9 @@ class SharedSetupJourneyTests(PageLayoutTests):
                          ('Override', 'Pinned to v1.4.0'))
         self.assertEqual(shown['words']['research-state'], '1 site')
         self.assertEqual(shown['words']['installations-owner'], 'Found automatically')
-        self.assertFalse(any(shown['hidden'][part] for part in (
-            'settings-nav', 'advanced-head', 'models-part', 'release-part', 'research-sites',
-            'installations', 'done-settings')))
+        self.assertFalse(any(shown['hidden'][part] for part in ('settings-nav', 'done-settings')))
+        self.assertTrue(all(shown['hidden'][part] for part in (
+            'advanced-head', 'models-part', 'release-part', 'research-sites', 'installations')))
         self.assertEqual(shots['typed']['words']['save-state'], 'Unsaved changes')
         # Only the leaf that was typed is sent; every override and unknown value is left alone.
         self.assertEqual(json.loads(shots['typed']['read']['#probe']['text']), {'person': {'name': 'Bea'}})

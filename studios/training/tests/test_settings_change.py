@@ -597,6 +597,7 @@ class SheetTests(ScriptedPage, DeskPageCase):
         result = self.open_desk(self.stopped(), [
             {'snapshot': 'stopped'},
             {'click': 'Change settings'}, {'snapshot': 'form'},
+            {'click': 'Materials'}, {'snapshot': 'materials'}, {'click': 'Research'}, {'snapshot': 'research'},
             {'fill': 'What should the research answer? (optional)', 'value': 'Why?\nHow?\nWhen?'},
             {'click': 'Review the change'}, {'snapshot': 'review'},
             {'click': 'Discard and save'}, {'snapshot': 'saved'}])
@@ -606,9 +607,10 @@ class SheetTests(ScriptedPage, DeskPageCase):
         form = shots['form']['text']
         # The shared source panel is checked in a real browser and by its own tests: the
         # harness names only controls labelled by id.
-        for said in ('1. What it teaches', '2. What is made', '3. Research',
-                     'A level with work in it stays: 101.', 'Research from your documents.'):
-            self.assertIn(said, form)
+        self.assertIn('1. What it teaches', form)
+        self.assertNotIn('2. What is made', form)
+        self.assertIn('A level with work in it stays: 101.', shots['materials']['text'])
+        self.assertIn('Research from your documents.', shots['research']['text'])
         self.assertIn('$4.47', shots['review']['text'])
         self.assertIn('cannot be undone', shots['review']['text'])
         posted = [body for address, body in self.posts(result) if address == '/api/training-settings']
@@ -625,12 +627,12 @@ class SheetTests(ScriptedPage, DeskPageCase):
     def test_sources_that_cannot_be_opened_leave_the_rest_of_the_form(self):
         answers = self.stopped(**{'POST /api/training-settings/sources': [
             {'status': 409, 'body': {'error': 'The sources this training reads could not be read.'}}]})
-        result = self.open_desk(answers, [{'click': 'Change settings'}, {'snapshot': 'form'},
+        result = self.open_desk(answers, [{'click': 'Change settings'}, {'click': 'Research'}, {'snapshot': 'form'},
                                           {'click': 'Review the change'}], research=True)
         form = result['snapshots']['form']['text']
         self.assertIn('The sources this training reads could not be read. What research reads '
                       'stays as it is.', form)
-        self.assertIn('1. What it teaches', form)
+        self.assertIn('3. Research', form)
         posted = [body for address, body in self.posts(result) if address == '/api/training-settings']
         self.assertNotIn('research_inputs', posted[0])
 
