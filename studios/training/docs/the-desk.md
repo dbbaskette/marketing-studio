@@ -27,13 +27,30 @@ edit a title, put one objective or question per line, remove a section, or add y
 Questions typed on the form remain separately editable. **Save outline** keeps edits
 without a model job; reload restores the saved version. Unsaved edits are marked and
 protected by a browser navigation warning. Conflicting inputs never overwrite your edits.
+**Research approach, scan and limits** expands the process detail while the source
+scope and approval consequence stay visible. Incomplete-scan warnings stay visible too.
 
 **Approve outline & research** approves that exact edited scope. Only retained sections
 become research items, with your additional questions included. Up to three areas run in
 parallel within the saved source, round and spending limits. Combining and an independent
-check still cover the whole dossier. The teaching plans and selected materials then use
-your approved scope and that checked research, with no second topics approval. Slide text
-approval and Mark ready keep their existing roles.
+check still cover the whole dossier. Unresolved flags become include/exclude choices;
+save your choices and explicitly continue. Included uncertainty stays marked, and
+excluded findings also omit dependent content. The teaching plans and selected materials
+then use your approved scope and accepted research, with no second topics approval.
+Slide text approval and Mark ready keep their existing roles.
+
+New trainings prioritize readable output: each level's plan, guide and brief, then
+practice and Yoodli across levels, then decks. Selected inputs still precede the
+materials that use them. This changes order, not the number of concurrent assistants.
+Saved runs keep their recorded order and scoped updates keep their existing holds.
+See the [flow and task map](../../../docs/design/create-training-task-flow.md).
+
+The working desk shows one current step, the number of available drafts and the next
+material. **Writing** means an observed worker is producing that material; **Queued**
+means it is waiting, with the reason shown when opened. A previous draft remains
+downloadable while its update waits, but it is not newly ready. Expand **Activity**
+and **Time so far** for details; the latest reported activity stays visible. Saved
+research choices are folded away with a visible reminder that uncertainty remains marked.
 
 A scan time cap leaves an editable incomplete outline, without escalation or an automatic
 second author. Stop keeps a completed or fallback outline; Resume training returns to its review.
@@ -47,7 +64,7 @@ claim that unfinished evidence is independently checked. Past-research work stay
 
 ## Older researched-topics flow
 
-New trainings first research and plan what to teach. **Here’s what this training will
+These saved trainings first research and plan what to teach. **Here’s what this training will
 cover** lists the topics, order, depth and timing across all selected levels. Expand
 Examples and exercises for more detail. **Ask for changes** revises the plans without
 repeating research; describe the emphasis, depth or practical work you want.
@@ -90,7 +107,7 @@ Use **Add a source** to add documents after research. The desk shows the price b
 
 **Change settings** changes what a training was started with without starting over. It sits beside **Try again** on the card that says the training has stopped, and in the desk's toolbar (the **More** menu on a phone), whenever the run is not working: stopped, failed, waiting for you, or paused with nothing in hand. It is never offered while an assistant is working; stop the training first. A finished training keeps its settings; start a new one to make it again with others.
 
-It opens the start form on the same sheet, in the same three steps, filled in with the saved values: what it teaches, who it is for, how long it should take and what it is for; the levels, the brief and the deck, its brand and how it is used; and what research reads, in the same source panel as the start, with **Search for additional external sources** and your approved sites, and the research questions. The title stays as it is. A part that cannot be changed safely says why instead: a deck that has been begun, a level with work in it, a training without levels, or research made with the earlier research workflow that still holds its unfinished draft. When the source panel cannot open what research reads, for example because its captures stay on the computer that started the training, what research reads is shown as it is and the rest of the form can still be changed.
+It opens one scrolling form filled with the saved settings, grouped into the teaching goal, outputs and research: what it teaches, who it is for, how long it should take and what it is for; the levels, the brief and the deck, its brand and how it is used; and what research reads, in the same source panel as the start, with **Search for additional external sources** and your approved sites, and the research questions. The title stays as it is. A part that cannot be changed safely says why instead: a deck that has been begun, a level with work in it, a training without levels, or research made with the earlier research workflow that still holds its unfinished draft. When the source panel cannot open what research reads, for example because its captures stay on the computer that started the training, what research reads is shown as it is and the rest of the form can still be changed.
 
 **Review the change** says what the change does before anything is saved:
 

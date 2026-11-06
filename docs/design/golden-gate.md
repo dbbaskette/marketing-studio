@@ -65,6 +65,14 @@ These rules put each screen in the order a person works. Every studio follows th
 | Phone | Toolbar actions wrap under the title; long labels wrap inside their button; every control is at least 44px tall; fixed bars sit above the tab bar and the page leaves room for them. |
 | Glass | Sidebar, toolbar, sheets, selection bars, Shared settings' save bar and toasts only. Forms, lists, documents and reviews stay opaque, and so does a `.dialog` that holds form fields. |
 
+Golden Gate v2 favors integrated workspace structure. Training Studio's working
+progress uses a shared separator instead of another content card. Current work,
+usable drafts and actions stay visible; activity/timing and research approach are
+disclosed separately. Creation keeps the next action, selected outputs and spending
+amount in its summary. Outline approval consequences and incomplete-scan warnings
+stay visible. Disclosures need stable focus across refreshes and 44px touch targets.
+Do not shrink text or hide meaningful uncertainty to achieve a shorter screen.
+
 ## Shared components and page stylesheets
 
 `ui-kit/style.css` holds every token, the shell and the controls used by Marketing Studio,
