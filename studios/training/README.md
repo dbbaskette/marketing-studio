@@ -118,6 +118,10 @@ the selected readable materials. Older saved trainings keep their recorded order
 The [flow and task map](../../docs/design/create-training-task-flow.md) separates
 the current sequence from proposed parallel work.
 
+New authoring uses US English unless you request another language or variety.
+Exact quotations, code, proper names and approved slide wording are preserved;
+existing saved materials are not automatically rewritten.
+
 While work runs, the desk names the current step, available drafts and next material.
 The **Training workflow** map shows Outline, Research, Materials and Your review;
 older runs show their saved sequence. Select a stage to see its detail. Materials
@@ -142,7 +146,14 @@ assistant work and grey boxes are Training Studio's own steps.
 
 Edit a part, add a note or select a passage for a focused change. History retains
 previous versions. A result cannot silently replace text you changed while it ran.
-The slide card supports words, speaker notes and section-scoped redraw requests.
+Repeated Practice and Yoodli materials share a counted category tab, with an item
+selector that names each scenario and its state. A single scenario keeps its own tab.
+
+Rendered slides have three tasks: **Preview**, **Text & notes**, and **Review &
+changes**. Selecting another slide keeps the review position and per-slide unsaved
+text. The selected task also survives background refreshes. **Deck actions**, below the slide,
+holds whole-deck changes and alternate looks. The slide card supports words, speaker
+notes and section-scoped redraw requests.
 Drawing-bound word edits retain Harness Slides’ explicit design-answer requirement.
 
 When an input changes, dependent material may be **held**. Choose **Update** to
@@ -153,7 +164,10 @@ research update; adding a document alone starts no research.
 **Change settings**, beside Try again when a training stops and in the desk's toolbar
 while nothing is working, opens the start form with the training's saved values: the
 topic, audience, levels, brief, deck, time limit, sources, external search and research
-questions. It says what the change does before saving. Research not yet accepted into a
+questions. **Teaching**, **Materials** and **Research** show one section at a time,
+keeping values as you move between them. The action footer stays outside the scrolling
+form, and a field that needs attention opens its section. Review says what the change
+does before saving. Research not yet accepted into a
 finished report is discarded and planned again, with the time and money it took said
 first; a finished report is kept unless you choose to research again. The training then
 waits for **Continue**.
