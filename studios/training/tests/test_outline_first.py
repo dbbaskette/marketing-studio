@@ -48,6 +48,9 @@ class OutlineTests(StudioCase):
         standing = drafts.standing(self.engine, root)
         self.assertEqual(standing['sentence'], drafts.OUTLINE_WAITS)
         self.assertEqual(standing['next']['label'], 'Review the training outline')
+        mapped = {stage['id']: stage for stage in drafts.view(self.engine, root)['progress']['map']['stages']}
+        self.assertEqual(mapped['outline']['state'], 'needs-you')
+        self.assertEqual(mapped['research']['state'], 'waiting')
         self.assertEqual(len(self.workers.of('scan')), 1)
         self.assertEqual(len(self.workers.jobs), 1)
         self.assertFalse((root / pipeline.PLAN).exists())

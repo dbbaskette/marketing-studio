@@ -17,6 +17,32 @@ const assert=require('node:assert/strict'), path=require('node:path'), fs=requir
   await page.getByRole('tab',{name:'Guide · Writing',exact:true}).waitFor().catch(async error=>{throw Error(error.message+'\n'+await page.locator('body').innerText()+'\n'+JSON.stringify(errors));});
   await page.getByText('Writing the level 101 learner guide.',{exact:true}).waitFor();
   await page.getByText(/Up next: the level 101 brief/).waitFor();
+  const map=page.getByRole('region',{name:'Training workflow',exact:true});
+  await map.waitFor();
+  const mapMaterials=map.locator('#desk-flow-materials');
+  assert.equal(await mapMaterials.getAttribute('data-state'),'working');
+  assert.equal(await map.locator('#desk-flow-research').getAttribute('data-state'),'complete');
+  await map.locator('#desk-flow-research').getByText('Accepted with flags',{exact:true}).waitFor();
+  const mapJobs=(await page.evaluate(()=>ask('fixture-progress-state'))).jobs;
+  await mapMaterials.focus();await page.keyboard.press('Enter');
+  await page.getByRole('heading',{name:/Plans, guides & briefs/}).waitFor();
+  await page.evaluate(()=>refresh());
+  assert.equal(await mapMaterials.getAttribute('aria-expanded'),'true');
+  assert.equal(await mapMaterials.evaluate(n=>n===document.activeElement),true);
+  if(process.env.TRAINING_PROGRESS_RESULTS){fs.mkdirSync(process.env.TRAINING_PROGRESS_RESULTS,{recursive:true});await page.screenshot({path:path.join(process.env.TRAINING_PROGRESS_RESULTS,'map-materials-390.png')});}
+  await page.locator('[data-key="desk-flow-open blueprint@101"]').click();
+  await page.locator('#desk-card-blueprint-101').waitFor();
+  assert.equal(await page.locator('#desk-card-blueprint-101').evaluate(n=>n===document.activeElement),true);
+  await mapMaterials.click();
+  await map.locator('#desk-flow-research').click();
+  await map.getByText(/not independently verified/).waitFor();
+  await page.getByRole('button',{name:'Open research & sources',exact:true}).click();
+  const sourcesTab=page.getByRole('tab',{name:'Research & sources',exact:true});
+  assert.equal(await sourcesTab.getAttribute('aria-selected'),'true');
+  assert.equal(await sourcesTab.evaluate(n=>n===document.activeElement),true);
+  assert((await page.locator('#desk-material-panel').boundingBox()).y<700,'Research opens in view');
+  await map.locator('#desk-flow-research').click();
+  assert.equal((await page.evaluate(()=>ask('fixture-progress-state'))).jobs,mapJobs,'Map navigation starts no work');
   const activity=page.locator('.desk-progress-activity');
   const toggle=activity.locator('summary').first();
   assert.equal(await activity.evaluate(n=>n.open),false,'Worker metadata starts folded');
@@ -60,10 +86,13 @@ const assert=require('node:assert/strict'), path=require('node:path'), fs=requir
   await page.getByRole('button',{name:'Stop training',exact:true}).click();
   await page.getByRole('button',{name:'Stop it',exact:true}).click();
   await page.getByRole('tab',{name:'Guide · Queued',exact:true}).waitFor();
+  assert.equal(await mapMaterials.getAttribute('data-state'),'stopped');
   await page.getByRole('tab',{name:'Guide · Queued',exact:true}).click();
   await page.getByText('Queued until you resume training.',{exact:true}).waitFor();
   await page.getByRole('button',{name:'Resume training',exact:true}).click();
   await page.getByRole('tab',{name:'Guide · Draft',exact:true}).waitFor();
+  await page.waitForFunction(()=>document.querySelector('#desk-flow-materials')?.dataset.state==='complete');
+  assert.equal(await map.locator('#desk-flow-review').getAttribute('data-state'),'needs-you');
   assert.deepEqual(errors,[]);
   console.log('PASS Training Studio: actual worker vs queue, creator-approved handoff, read-only reload, stop/resume, compact 320/390/1280 light/dark, keyboard disclosure/polling, forced colors and 200% text');
  } finally {

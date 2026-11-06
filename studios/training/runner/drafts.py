@@ -934,7 +934,7 @@ def view(engine, root) -> dict:
     import desk
 
     from runner import library as kept_library
-    from runner import pipeline
+    from runner import pipeline, progress_map
     root = Path(root)
     record = engine._load(root)
     found = engine._survey(root, record, engine._wanted(root, record))
@@ -986,6 +986,8 @@ def view(engine, root) -> dict:
         'index_written': (root / pipeline.INDEX).is_file(),
         'flow': FLOW, 'title': session['title'], 'levels': [level or '' for level in levels],
         'progress': {'running': running, 'doing': doing, 'next': _next_material(cards, found),
+                     'map': progress_map.project(record, found, cards, state, sentence,
+                        queued=engine._run(root).queued, mine=mine),
                      'started_at': record.get('started_at'), 'minutes': None,
                      # Said only while nothing on the desk needs the person.
                      'line': NOTHING_NEEDED

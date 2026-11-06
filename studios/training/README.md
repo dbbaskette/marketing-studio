@@ -113,6 +113,12 @@ The [flow and task map](../../docs/design/create-training-task-flow.md) separate
 the current sequence from proposed parallel work.
 
 While work runs, the desk names the current step, available drafts and next material.
+The **Training workflow** map shows Outline, Research, Materials and Your review;
+older runs show their saved sequence. Select a stage to see its detail. Materials
+groups the selected readable drafts, practice and slides, with an **Open** action
+for each saved draft. A slide approval stays on its own branch. Draft counts show
+what exists now; ready counts show what you personally approved. There is no guessed
+percentage or completion time.
 Only an active material says **Writing**; others say **Queued** and explain their wait.
 The latest activity stays visible. Expand **Activity** for individual jobs and
 **Show activity** for their reported steps, newest first, with times. **Time so far**
