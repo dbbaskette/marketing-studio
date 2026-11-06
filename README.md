@@ -87,9 +87,11 @@ saved choices. [Quick scan settings](docs/shared-setup.md#quick-scan-speed)
 - **Presentation Studio:** choose an idea, document or existing deck. Where a slide
   text review is required, choose **Approve text & design deck** before design starts.
   Refine the designed slides and choose **Deliver** yourself.
-- **Training Studio:** review **Here’s what this training will cover**, then choose
-  **Build the training**. Edit the selected materials and mark them ready yourself.
-  A requested deck has its own slide-text approval before design.
+- **Training Studio:** edit the provisional outline, then choose **Approve outline
+  & research**. New trainings prioritize each level's guide and brief, then practice,
+  before decks. Read drafts as they arrive and mark them ready yourself. A requested
+  deck has its own slide-text approval before design. See the
+  [training flow and task map](docs/design/create-training-task-flow.md).
 - **Infographic Studio:** choose a source-backed story, build and inspect the page,
   then approve the exact checked revision and prepare its files.
 
@@ -105,7 +107,9 @@ Presentation Studio and Training Studio retain slide corrections and recover
 cross-tab conflicts with a copy of all local edits and an explicit latest-version
 comparison. Design waits for approval of the saved corrections. Research exposes
 accepted findings and completed section drafts while later work continues; both
-remain unreviewed until the final independent check. Large workspaces retain
+remain unreviewed until the final independent check. Training Studio lets you
+explicitly include flagged claims with warnings or exclude them; those choices
+never turn uncertainty into independently checked evidence. Large workspaces retain
 bounded compact polling instead of fetching every document on every idle probe.
 [Keep work moving](docs/incremental-workflow.md) explains these controls and limits.
 

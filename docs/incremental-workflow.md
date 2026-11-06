@@ -26,11 +26,13 @@ parallel work, dependencies and approval points; proposed changes are labeled.
    timeout. If it times out, **Give it more time** applies to that job; completed
    section contributions remain available for retry. This does not raise the
    project spending limit or skip the independent check.
-4. **Build selected materials.** For training, the approved outline and checked
-   research feed teaching blueprints and the requested guides, briefs, slides or
-   practice. Review those materials on the desk. Both deck studios let you correct
-   slide text locally before approving it for design. Review and delivery remain
-   separate decisions.
+4. **Build selected materials.** For training, the approved outline and accepted
+   research feed the materials; creator-included uncertainty stays marked. New runs
+   write each level's plan, guide and brief, then practice and Yoodli, before decks.
+   Saved runs keep their recorded order. The desk distinguishes active **Writing**
+   from **Queued**, names the next material and opens drafts as they finish. Detailed
+   activity and timing are expandable. Both deck studios let you correct slide text
+   locally before approving it for design. Review and delivery remain separate decisions.
 5. **Make small changes locally.** Wording and notes edits need no new evidence
    collection. When sources or scope change, use the affected-work preview, select
    the required sections, and refresh only their dependent work. Confirmation checks

@@ -1,7 +1,8 @@
 # Create training: flow and task boundaries
 
-Design discussion, 2026-11-05, updated for issue #385's creator decisions.
-The recommended parallel scheduler below remains a proposal.
+Updated 2026-11-06 for creator decisions (#385), readable-first ordering (#387),
+truthful progress (#388), and the Golden Gate v2 UI audit (#391).
+The parallel scheduler and overall progress map (#392) below remain proposals.
 This describes new outline-first Training Studio desk runs; saved older runs keep
 their recorded workflow. Optional outputs are omitted when not selected.
 
@@ -35,10 +36,13 @@ flowchart TD
     I -->|Flags remain| J{Creator includes with warnings or excludes}
     J -->|Save choices, then Continue| K
     J -->|Explicit correction attempt| D
-    I -->|Yes| K[Draft level plans in order]
+    I -->|Yes| K[Draft next level plan]
     K --> L[Level: learner guide]
     L --> M[Level: reference brief]
-    M --> N[Level: slide text]
+    M --> S{More levels?}
+    S -->|Yes| K
+    S -->|No| R[All levels: practice scenarios, then Yoodli layouts]
+    R --> N[Next level: slide text]
     N --> O{Person approves slide text}
     O --> P1[Draw slide section 1]
     O --> P2[Draw slide section 2]
@@ -46,10 +50,9 @@ flowchart TD
     P1 --> Q[Assemble, render, review and repair deck]
     P2 --> Q
     PN --> Q
-    Q --> R[Level: practice scenarios, then Yoodli layouts]
-    R --> S{More levels?}
-    S -->|Yes| L
-    S -->|No| T[Person reviews materials and marks them ready]
+    Q --> V{More decks?}
+    V -->|Yes| N
+    V -->|No| T[Person reviews materials and marks them ready]
     T --> U[Requested copies and final index]
 ```
 
@@ -59,6 +62,12 @@ the person's final approval. A selected/default brand look can avoid a separate
 look decision. Deck preview capture is serialized even when section drawing is
 parallel. Requested copies can be produced earlier when the relevant material is
 ready or explicitly sent; the final index waits for all materials to be ready.
+
+New outline-first runs pin this readable-first order. Each level's guide and brief
+can arrive before later level planning, and selected practice precedes the first
+slide approval. Higher-level plans still receive earlier objectives. This is a
+priority change, not a concurrent material scheduler. Saved runs without that pin
+keep their original sequence; explicit updates retain their scoped ordering/holds.
 
 The research coordinator has phase barriers: section writing currently waits for
 all investigators, and independent checking waits for the assembled dossier.
@@ -102,11 +111,13 @@ flowchart TD
     G1 --> H[Small whole-report consistency and coverage check]
     G2 --> H
     GN --> H
-    H --> I{Checked research complete?}
-    I -->|No| J[Retry only failed or invalidated tasks]
-    J --> D
-    J --> E
-    J --> G
+    H --> I{Research accepted?}
+    I -->|Flags remain| J{Creator includes with warnings or excludes}
+    J -->|Save choices, then Continue| K
+    J -->|Explicit correction attempt| X[Retry only failed or invalidated tasks]
+    X --> D
+    X --> E
+    X --> G
     I -->|Yes| K[Level plans in order, preserving progression]
     K --> L[Learner guide task per level]
     K --> M[Reference brief task per level]
@@ -160,9 +171,9 @@ evidence arrives is a later optimization requiring stable evidence revisions.
 | Assemble research brief | Completed contributions | Brief, introduction and permitted comparisons | Keep one small coordination task; no section rewrite or new investigation. |
 | Check evidence and claims | Exact dossier revision, assigned originals and full claim dependencies | Independent review receipts for assigned IDs | Highest-priority new split: bounded source-local groups; avoid making each checker reread the whole library. |
 | Check global research coherence | Complete receipts and assembled research | Coverage, usefulness, contradictions and unresolved gaps | One independent final assessment; cannot invent missing source-read receipts. |
-| Draft a level plan | Checked research, intake and earlier levels' objectives | Objectives, modules, key points and practice plan | Preserve ordered progression initially. Once a plan exists, its materials need not wait for every later plan. |
-| Write learner guide | Its level plan, checked research and earlier objectives | One level's guide | Parallel with that level's reference brief and independent work in other levels. |
-| Write reference brief | Its level plan and checked research | One level's reference brief | Does not need the learner guide. Can unlock practice while slides proceed. |
+| Draft a level plan | Accepted research, intake and earlier levels' objectives | Objectives, modules, key points and practice plan | Preserve ordered progression initially. Once a plan exists, its materials need not wait for every later plan. |
+| Write learner guide | Its level plan, accepted research and earlier objectives | One level's guide | Parallel with that level's reference brief and independent work in other levels. |
+| Write reference brief | Its level plan and accepted research | One level's reference brief | Does not need the learner guide. Can unlock practice while slides proceed. |
 | Write slide text | Level plan, research, and selected learner guide | Slide outline for human approval | Separate from drawing; do not silently drop the selected guide dependency. |
 | Draft practice scenario | Level practice plan and selected reference brief | One scenario | Run scenarios independently, without waiting for the deck. |
 | Lay out Yoodli scenario | Its scenario, objectives, profile and brief | One Yoodli layout | Start after its own scenario, without waiting for all scenarios. Bind available upload-copy metadata honestly. |
@@ -200,8 +211,33 @@ within the existing project allowance, including room for required checking.
 
 The desk should show what is usable now: completed sections/materials, active
 tasks, queued tasks and their actual blockers. An approval waiting for slides
-should not prevent independent guide or practice work. Unchecked research remains
-clearly labeled and cannot be treated as accepted evidence by material authors.
+should not prevent independent guide or practice work. Unreviewed research remains
+clearly labeled. Research accepted through explicit creator choices keeps its
+uncertainty warnings and excluded dependencies; it is never called independently
+verified merely because the creator chose to include it.
+
+## Proposed overall progress map
+
+[Issue #392](https://github.com/dbbaskette/marketing-studio/issues/392) tracks this
+design; it is not yet implemented. Keep the existing live activity indicators and
+add a compact map of the whole training:
+
+**Outline ✓ → Research ✓ → Materials 2/6 → Your review**
+
+This is an illustrative state, not a percentage or timing estimate. Selecting a
+stage reveals finished work, active tasks and concrete waits, without starting a
+job. Materials expands into the selected Guide/Brief, Practice/Yoodli and Slides
+branches. A slide approval belongs to Slides; it must not obscure readable guides
+or make the entire training appear blocked. Review can begin as drafts arrive;
+generation completion and the creator's final readiness remain distinct.
+
+Show **Working**, **Needs you**, **Stopped**, **Waiting** or **Complete** in words.
+Prefer “2 drafts available — Open materials” to a synthetic overall percentage.
+Research can disclose real area/section counts and its assembly/check phases.
+Omit unselected branches and represent saved workflows honestly. Included research
+uncertainty stays marked. Keyboard selection/focus, polling stability and phone
+layout are acceptance requirements, along with cost stops, retries and partial
+output. This map does not depend on implementing the proposed concurrent scheduler.
 
 ## How to judge the result
 
@@ -212,11 +248,19 @@ duplicated source reads, cost, retry work and correctness. Report active work
 separately from time waiting for a person. No speedup factor is established by
 this diagram; increasing concurrency alone does not establish better performance.
 
+The readable-first regression compares four levels: the first guide no longer
+waits for three additional level-planning calls. A native two-level scripted run
+reached its first slide approval with both guides, briefs and practice available.
+This measures dispatch order and availability, not live provider latency or
+semantic output quality. The [implementation and verification record](../superpowers/plans/2026-11-06-training-flow-polish.md)
+contains the test evidence and UI audit results.
+
 ## Source map
 
 - [Provisional outline and research areas](../../studios/training/runner/outline_first.py): `work`, `research_items`, `decide`.
 - [Outline approval insertion](../../studios/training/runner/training_plan.py): `group`.
 - [Fixed pipeline and artifact inputs](../../studios/training/runner/pipeline.py): `TRAINING`, `steps`, `survey`, `blueprint_work`, `_earlier`, `document_work`, `brief_work`, `scenario_work`, `yoodli_work`, `outline_work`.
+- [Pinned readable-first material order](../../studios/training/runner/material_flow.py): new-run priority and saved-run compatibility.
 - [Desk readiness](../../studios/training/runner/drafts.py): desk receipts versus person readiness.
 - [Research phase barriers and correction loop](../../core/studio_core/research_session.py): `Workflow`.
 - [Section authors and final assembly](../../core/studio_core/research_sections.py): `combine`.

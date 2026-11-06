@@ -16,7 +16,9 @@ Completed research section drafts can be read while the final check is pending a
 survive a failed peer; retry unfinished work. Save a private queued note to revisit
 in an explicit research change; it does not change an assistant's current work.
 Source changes first show the affected scope, while wording and notes can stay
-local. Final independent checks and exact-revision approval remain necessary.
+local. After the independent check, unresolved flags become your include/exclude
+decisions; included uncertainty stays marked. Your exact-revision material approval
+remains necessary.
 See the [incremental workflow guide](../../docs/incremental-workflow.md).
 
 ## Choose your materials
@@ -89,8 +91,10 @@ optional tools. Missing capabilities are explained rather than silently substitu
    choose where research may look: documents, approved sites and/or the public web.
 3. **Review the training outline.** One bounded Quick scan proposes sections, objectives
    and research questions. Edit, add or remove them, then **Approve outline & research**
-   starts research only for that scope. The checked evidence and approved outline
-   makes the selected materials. There is no sample lesson to approve.
+   starts research only for that scope. Accepted research and your approved outline
+   guide the selected materials. Unresolved research flags become your decisions
+   before you continue; included uncertainty stays marked. There is no sample lesson
+   to approve.
 4. **Review requested slide text.** If you selected a deck, **Review slide text**
    opens the Deck tab with one slide at a time. Correct titles, points and notes
    directly; corrections and review position save privately across reloads. The
@@ -102,8 +106,17 @@ optional tools. Missing capabilities are explained rather than silently substitu
    arrive. **Mark ready** is your approval of the material shown, not merely evidence
    that the assistant finished writing it.
 
-While the assistant works, each job shows what it is doing now as **Now: …**, and
-**Show activity** lists everything it has done so far, newest first, with times. The
+New trainings write each level's plan, guide and brief before moving to the next
+level, then practice and Yoodli before decks. A slide approval therefore comes after
+the selected readable materials. Older saved trainings keep their recorded order.
+The [flow and task map](../../docs/design/create-training-task-flow.md) separates
+the current sequence from proposed parallel work.
+
+While work runs, the desk names the current step, available drafts and next material.
+Only an active material says **Writing**; others say **Queued** and explain their wait.
+The latest activity stays visible. Expand **Activity** for individual jobs and
+**Show activity** for their reported steps, newest first, with times. **Time so far**
+shows elapsed time, not an estimate of what remains. The
 **Activity log** at the foot of the training keeps every finished job, how it ended
 (finished, failed, stopped, out of time or a limit) and what it did. It stays on this
 computer and is never shared.
