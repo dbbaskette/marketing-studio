@@ -7183,7 +7183,7 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
             'GET /api/drafts/card': [ok(card_view)], 'POST /api/drafts/finish': [ok(checked)]}), [
             {'click': 'Finishing'}, {'click': 'Fit the learner’s time'}, {'snapshot': 'price'},
             {'click': 'Fit the time'}, {'snapshot': 'proposal'},
-            {'click': 'Edit slide text and speaker notes'}, {'fill': 'Slide 5 title', 'value': 'My unsaved words'}, {'click': 'Apply'},
+            {'click': 'Text & notes'}, {'fill': 'Slide 5 title', 'value': 'My unsaved words'}, {'click': 'Apply'},
             {'snapshot': 'kept'}])
         self.assertIn('Expect about 2 minutes.', result['snapshots']['price']['text'])
         self.assertEqual(result['snapshots']['proposal']['buttons'].count('Apply'), 1)
@@ -7320,17 +7320,21 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         return found
 
     def test_the_deck_card_has_a_card_per_slide(self):
-        result = self.open_desk(self.on_desk(a_desk(self.slide_card())), [{'snapshot': 'deck'}])
+        result = self.open_desk(self.on_desk(a_desk(self.slide_card())), [
+            {'snapshot': 'preview'}, {'click': 'Review & changes'},
+            {'click': 'Deck actions'}, {'snapshot': 'deck'}])
         shot = result['snapshots']['deck']
         for text in ('Check yourself', 'How should this slide change?', 'Redraws section 2'):
             self.assertIn(text, shot['text'])
-        for button in ('Redraw slide 5', 'Try another look', 'History'):
+        self.assertIn('History', result['snapshots']['preview']['buttons'])
+        self.assertNotIn('Redraw slide 5', result['snapshots']['preview']['buttons'])
+        for button in ('Redraw slide 5', 'Try another look'):
             self.assertIn(button, shot['buttons'])
         found = self.slide_card()
         found['local'] = False
         found['slides'][0]['picture'] = False
         answers = self.answers(**{'GET /api/run': [a_desk_run()], 'GET /api/drafts': [a_desk(found)]})
-        result = self.open_desk(answers, [{'snapshot': 'deck'}])
+        result = self.open_desk(answers, [{'click': 'Deck actions'}, {'snapshot': 'deck'}])
         self.assertIn('Draw it here', result['snapshots']['deck']['buttons'])
 
     def test_a_review_finding_waits_on_its_slide(self):
@@ -7340,7 +7344,7 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
              'reason': 'The labels are small.', 'price': 'Redraws section 2; last time $0.12.'}]}}
         result = self.open_desk(self.on_desk(a_desk(found), **{
             'POST /api/drafts/finding': [a_desk(self.slide_card())]}),
-            [{'snapshot': 'finding'}, {'click': 'Apply fix to this slide'}, {'snapshot': 'after'}])
+            [{'click': 'Review & changes (1)'}, {'snapshot': 'finding'}, {'click': 'Apply fix to this slide'}, {'snapshot': 'after'}])
         self.assertIn('The labels are small.', result['snapshots']['finding']['text'])
         self.assertIn('Dismiss suggestion', result['snapshots']['finding']['buttons'])
         self.assertEqual(self.posts(result)[0], ('/api/drafts/finding', {
@@ -7359,7 +7363,7 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
             'POST /api/drafts/slide-words': [a_desk(found, fits=None, approval=approval)],
             'POST /api/drafts/slide-words-decide': [a_desk(found, fits=True)]})
         result = self.open_desk(answers, [
-            {'click': 'Edit slide text and speaker notes'}, {'fill': 'Slide 5 title', 'value': 'Check the result'}, {'click': 'Save title'},
+            {'click': 'Text & notes'}, {'fill': 'Slide 5 title', 'value': 'Check the result'}, {'click': 'Save title'},
             {'snapshot': 'question'}, {'fill': 'Your response', 'value': 'Yes, use these words.'},
             {'click': 'Approve updated words'}, {'snapshot': 'done'}])
         shot = result['snapshots']['question']
@@ -7383,7 +7387,7 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
             'POST /api/drafts/slide-words-decide': [
                 {'status': 409, 'body': {'error': 'This training changed. Enter the words again.'}},
                 a_desk(found, cancelled=True)]}), [
-            {'click': 'Edit slide text and speaker notes'}, {'fill': 'Slide 5 title', 'value': 'New title'}, {'click': 'Save title'},
+            {'click': 'Text & notes'}, {'fill': 'Slide 5 title', 'value': 'New title'}, {'click': 'Save title'},
             {'snapshot': 'waiting'}, {'click': 'Approve updated words'}, {'snapshot': 'empty'},
             {'fill': 'Your response', 'value': 'I approve this wording.'},
             {'click': 'Approve updated words'}, {'snapshot': 'failed'}, {'click': 'Cancel'}])
@@ -7401,7 +7405,7 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         result = self.open_desk(self.on_desk(a_desk(found), **{
             'POST /api/drafts/look-samples': [a_desk(found, look=look)],
             'POST /api/drafts/look': [a_desk(found)]}), [
-            {'click': 'Try another look'}, {'snapshot': 'looks'}, {'click': 'Use this look'},
+            {'click': 'Deck actions'}, {'click': 'Try another look'}, {'snapshot': 'looks'}, {'click': 'Use this look'},
             {'snapshot': 'unpicked'}, {'click': 'Calm'}, {'click': 'Use this look'}])
         self.assertIn(found['look_price'], result['snapshots']['looks']['text'])
         self.assertIn('Choose a look first.', result['snapshots']['unpicked']['text'])
@@ -7428,7 +7432,7 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         result = self.open_desk(self.on_desk(a_desk(found), **{
             'POST /api/drafts/slide-words': [a_desk(found, fits=False,
                 said='These words do not fit.', price='Redraws section 2, $0.12.'), a_desk(found, fits=True)]}), [
-            {'click': 'Edit slide text and speaker notes'}, {'fill': 'Slide 5 title', 'value': 'Longer title'}, {'click': 'Save title'},
+            {'click': 'Text & notes'}, {'fill': 'Slide 5 title', 'value': 'Longer title'}, {'click': 'Save title'},
             {'snapshot': 'refused'}, {'click': 'Redraw with these words'}])
         self.assertIn('Redraws section 2, $0.12.', result['snapshots']['refused']['text'])
         self.assertIn('Discard', result['snapshots']['refused']['buttons'])
@@ -7440,11 +7444,11 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         found['outline'] = {'slides': [{'id': 'check-yourself', 'title': 'Check yourself', 'serves': ['O2']}]}
         result = self.open_desk(self.on_desk(a_desk(found), **{
             'POST /api/drafts/slide-selection': [a_desk(found)]}), [
-            {'click': 'Edit slide text and speaker notes'}, {'select': 'Slide 5 title', 'start': 0, 'end': 5}, {'snapshot': 'selection'},
-            {'click': 'Shorten'}, {'click': 'Review slide text'}, {'snapshot': 'outline'}])
+            {'click': 'Text & notes'}, {'select': 'Slide 5 title', 'start': 0, 'end': 5}, {'snapshot': 'selection'},
+            {'click': 'Shorten'}, {'click': 'Deck actions'}, {'click': 'Review slide text'}, {'snapshot': 'outline'}])
         for label in ('Rephrase', 'Shorten', 'Expand', 'Fix', 'Ask…'):
             self.assertIn(label, result['snapshots']['selection']['buttons'])
-        self.assertIn('Change the whole deck', result['snapshots']['selection']['buttons'])
+        self.assertIn('Deck actions', result['snapshots']['selection']['buttons'])
         self.assertIn('O2', result['snapshots']['outline']['text'])
         self.assertEqual(self.posts(result)[0][0], '/api/drafts/slide-selection')
 
@@ -7454,7 +7458,7 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         result = self.open_desk(self.on_desk(a_desk(found), **{
             'POST /api/drafts/deck-outline-price': [a_desk(found, price='Redraws one section, about $1.')],
             'POST /api/drafts/deck-outline': [{'status': 409, 'body': {'error': 'The deck changed.'}}]}), [
-            {'click': 'Review slide text'}, {'fill': 'Outline title of slide 1', 'value': 'Review your choice'},
+            {'click': 'Deck actions'}, {'click': 'Review slide text'}, {'fill': 'Outline title of slide 1', 'value': 'Review your choice'},
             {'snapshot': 'priced'}, {'click': 'Save outline'}, {'snapshot': 'failed'}])
         self.assertIn('Redraws one section, about $1.', result['snapshots']['priced']['text'])
         self.assertIn('The deck changed.', result['snapshots']['failed']['sheetAlerts'])
@@ -7465,7 +7469,7 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         result = self.open_desk(self.on_desk(a_desk(found), **{
             'POST /api/drafts/slide-words': [a_desk(found, fits=False, said='Too long.', price='About $1.'),
                 {'status': 409, 'body': {'error': 'Changed; enter these words again.'}}]}), [
-            {'click': 'Edit slide text and speaker notes'}, {'fill': 'Slide 5 title', 'value': 'Longer words'}, {'click': 'Save title'},
+            {'click': 'Text & notes'}, {'fill': 'Slide 5 title', 'value': 'Longer words'}, {'click': 'Save title'},
             {'click': 'Redraw with these words'}, {'snapshot': 'failed'}])
         self.assertIn('Changed; enter these words again.', result['snapshots']['failed']['sheetAlerts'])
 
@@ -7486,7 +7490,7 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         result = self.open_desk(self.on_desk(a_desk(found), **{
             'POST /api/drafts/deck-outline-price': [a_desk(found, price='Redraws section 2, about $1.')],
             'POST /api/drafts/deck-outline': [a_desk(found, fits=True)]}), [
-            {'click': 'Review slide text'}, {'fill': 'A new slide’s title', 'value': 'Practice again'},
+            {'click': 'Deck actions'}, {'click': 'Review slide text'}, {'fill': 'A new slide’s title', 'value': 'Practice again'},
             {'fill': 'Objectives for the new slide', 'value': 'O2'},
             {'fill': 'What the presenter says on it', 'value': 'Ask for another explanation.'},
             {'click': 'Add slide'}, {'snapshot': 'priced'}, {'click': 'Save outline'}])
@@ -7499,7 +7503,7 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
     def test_added_slide_long_titles_and_collisions_keep_valid_ids(self):
         found = self.slide_card()
         found['outline'] = {'slides': [{'id': 'check-yourself', 'kind': 'content', 'title': 'Check yourself', 'sources': ['O2']}]}
-        actions = [{'click': 'Review slide text'}]
+        actions = [{'click': 'Deck actions'}, {'click': 'Review slide text'}]
         for title in ('A' * 100, 'A' * 100, '1', '!'):
             actions += [{'fill': 'A new slide’s title', 'value': title},
                         {'fill': 'Objectives for the new slide', 'value': 'O2'},
@@ -7533,7 +7537,7 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
             'POST /api/drafts/look-samples': [a_desk(found, look={'failed': True,
                 'default_available': True, 'message': 'Rendering failed.', 'looks': []})],
             'POST /api/drafts/look': [a_desk(found)]}), [
-            {'click': 'Try another look'}, {'snapshot': 'failed'},
+            {'click': 'Deck actions'}, {'click': 'Try another look'}, {'snapshot': 'failed'},
             {'click': 'Carry on in the brand’s default look'}])
         self.assertIn('Try again', result['snapshots']['failed']['buttons'])
         self.assertEqual(self.posts(result)[-1][1]['choice'], 'default')
