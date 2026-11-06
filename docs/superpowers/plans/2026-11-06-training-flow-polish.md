@@ -51,3 +51,11 @@ incorrectly retained the new scheduling pin while constructing an older run; the
 other 3,201 tests passed. Removing that pin from the legacy fixture passed all 12
 outline tests on Python 3.13.5, and package validation passed. Application code
 was unchanged by that correction. The disposable VM was deleted.
+
+Progress evidence: commit `97462543` passed all 3,207 Training Studio tests and
+package validation on disposable macOS 27 / Python 3.13.15 / Node 22.23.2. The final
+worker-registry snapshot guard at `83333a09` passed all nine native standing tests
+and the actual native browser journey, including concurrent polling and Stop/Resume.
+The browser covered 390/1280px, light/dark, reduced motion, saved decision disclosure,
+and reload without new jobs. Fifteen shared research/UI checks passed. The test VM
+was deleted. No paid provider work or real training state was used.
