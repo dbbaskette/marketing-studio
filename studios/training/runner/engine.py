@@ -231,7 +231,7 @@ import checks
 import home
 from studio_core import deck_content, spending
 from studio_core import research_sections, research_impact
-from runner import training_plan, outline_first
+from runner import training_plan, outline_first, material_flow
 from studio_core import brand_guidance, critic, deck_direction, deck_flow, model_profiles, review_policy, research_contract, research_session as research_parallel, research_transport as research_parallel_native, research_timing, research_sources, research_view, research_sites, step_times, stops
 import hub
 import workspace
@@ -446,6 +446,8 @@ def read_record(root: Path) -> dict | None:
         raise WorkspaceError(f'The run record in {root.name} cannot be read, so the runner '
                              'will not drive this training.')
     schema = record['schema']
+    if 'material_flow' in record and not material_flow.enabled(record):
+        raise WorkspaceError('Restore this training’s saved material scheduling policy.')
     if schema == 8 and not research_sections.enabled(record):
         raise WorkspaceError('Restore this training’s saved section combining policy.')
     if schema == 2 and not record.get('review_policy'):
@@ -1507,6 +1509,7 @@ class Engine(Reviewing):
                     record.update(schema=training_plan.RECORD_SCHEMA, training_plan={'schema': 1, 'revision': 0})
                     if self.outline_first:
                         record.update(schema=outline_first.RECORD_SCHEMA,
+                                      material_flow=dict(material_flow.PIN),
                                       outline_first={'schema': 1, 'outline': None,
                                           'research_policy': dict(outline_first.research_quality.FOCUSED)})
                         if self.section_synthesis:

@@ -144,6 +144,66 @@ class OutlineIntegrationTests(StudioCase):
         self.engine.wake(root)
         self.assertEqual(len(self.scans),1)
 
+    def test_readable_materials_and_practice_arrive_before_slide_approval(self):
+        import workspace
+        from dataclasses import replace
+        from runner import drafts, material_flow, settings
+        from runner_support import BRIEF, SCENARIO, Slides, Brand, CHOSEN
+        self.slides, self.brand = Slides(), Brand()
+        settings.save(replace(settings.load(), previews='drive'))
+        self.engine.content_first = True
+        calls = []
+
+        def plan(tools, job):
+            level = tools.job['artifacts']['blueprint']['level']
+            calls.append('blueprint@' + level)
+            if level == '201':
+                self.assertIn('Level 101', self.read_all(tools, 'earlier levels'))
+            self.material(tools, 'blueprint', BLUEPRINT.replace('Time: 25 min', f'Time: 25 min\nLevel: {level}'))
+
+        def write(name, text):
+            def work(tools, job):
+                import re
+                calls.append(name)
+                value = re.sub(r'<!-- findings: .*? -->', '<!-- findings: section-foundations -->', text)
+                self.material(tools, name, value)
+            return work
+
+        self.workers.queued['blueprint'] = [plan, plan]
+        self.workers.queued['document'] = [write('document', DOCUMENT)] * 2
+        self.workers.queued['brief'] = [write('brief', BRIEF)] * 2
+        self.workers.queued['scenario'] = [write('scenario', SCENARIO)] * 2
+        root = self.start(levels=['101', '201'], materials=['document', 'brief', 'scenario'],
+                          deck_target='pptx', brand=CHOSEN)
+        self.assertTrue(material_flow.enabled(self.engine._load(root)))
+        plan_view = self.view(root)['training_plan']
+        after = training_plan.decide(self.engine, root, plan_view['expected'], 'approve', outline=plan_view['outline'])
+        self.assertIsNone(after['problem'], after['problem'])
+        self.assertIsNotNone(after['outline'], after.get('deck_left') or after.get('sentence'))
+        self.assertTrue(after['outline']['waiting'])
+        self.assertEqual(calls, ['blueprint@101', 'document', 'brief', 'blueprint@201', 'document', 'brief', 'scenario', 'scenario'])
+        cards = {card['name']: card for card in drafts.view(self.engine, root)['cards']}
+        for level in ('101', '201'):
+            for kind in ('document', 'brief', 'scenario:main'):
+                self.assertEqual(cards[f'{kind}@{level}']['state'], 'draft')
+                self.assertIn('download', cards[f'{kind}@{level}']['actions'])
+                self.assertNotEqual(workspace.person_statuses(root, workspace.load(root))[f'{kind}@{level}'], 'approved')
+
+    def test_invalid_material_policy_is_refused_and_an_absent_pin_keeps_legacy_order(self):
+        from runner import engine as engines
+        from workspace import WorkspaceError
+        root = self.begin_outline(levels=['101', '201'])
+        saved = self.engine._load(root)
+        saved.pop('material_flow')
+        self.engine._store(root, saved)
+        legacy = self.engine._survey(root, engines.read_record(root))
+        ids = [step.id for step in legacy.steps]
+        self.assertLess(ids.index('blueprint@201'), ids.index('document@101'))
+        saved['material_flow'] = {'schema': 2, 'order': 'readable-first'}
+        self.engine._store(root, saved)
+        with self.assertRaisesRegex(WorkspaceError, 'material scheduling policy'):
+            engines.read_record(root)
+
     def test_supplied_only_stays_selected_after_approval(self):
         self.supplied=True
         from runner_support import FORM

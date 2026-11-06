@@ -175,6 +175,8 @@ elif [[ "${1:-full}" == training-first-output || "${1:-full}" == training-first-
     (cd studios/training && bash scripts/ci/check.sh "$python") > "$results_dir/training-tests.log" 2>&1
   fi
   (cd studios/presentation && "$python" scripts/ci/run_tests.py test_parallel_research) > "$results_dir/presentation-tests.log" 2>&1
+elif [[ "${1:-full}" == training-flow ]]; then
+  (cd studios/training && bash scripts/ci/check.sh "$python") > "$results_dir/training-tests.log" 2>&1
 elif [[ "${1:-full}" == training-creator-review-finish ]]; then
   # Reuse the completed full shared run; verify its updated handoff expectation
   # and the subsequent recovery cases, then run the full native suite.
