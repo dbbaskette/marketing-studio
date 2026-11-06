@@ -1608,7 +1608,7 @@ def findings_text(root: Path) -> str:
     """The research as a worker reads it: each question's ID, verdict, summary and quotes."""
     record = workspace.research_record(root) or {'items': [], 'results': {}}
     if record.get('schema') == 2:
-        heading = '# Creator-approved research with unresolved verification\n\n' if record.get('creator_review') else '# Reviewed research handoff\n\n'
+        heading = '# Creator-approved research\n\n' if record.get('creator_review') else '# Reviewed research handoff\n\n'
         return (heading + research_contract.HANDOFF
                 + ' Keep its conditions, counterevidence and gaps. Facts, interpretations and '
                 'recommendations differ.\n\n'

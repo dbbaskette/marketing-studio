@@ -832,7 +832,7 @@ function researchActivity(run, controls = null) {
     const panel = StudioResearch.progress(research, {timing: run.timing, controls, workers: run.workers, lines: jobLines(view.path),...researchNoteHooks(view.path)});
     if (research.phase === 'creator-approved' && !run.problem) {
       const saved = make('details', 'card-part desk-research-saved'); saved.dataset.key = 'research-choices-saved';
-      const toggle = make('summary', '', 'Research choices saved · uncertainty remains marked');
+      const toggle = make('summary', '', 'Research choices saved');
       toggle.dataset.key = 'research-choices-toggle';
       return add(saved, toggle, panel);
     }
@@ -5555,7 +5555,7 @@ function researchDecisionPart(run) {
   heading.tabIndex = -1;
   const state = view.researchDecision;
   if (!state || state.path !== view.path) return box;
-  add(box, heading, make('p', '', 'Include keeps the wording with a visible uncertainty warning. Exclude omits the claim and passages that depend on it. These choices do not claim independent verification.'));
+  add(box, heading, make('p', '', 'Include keeps the content. Include with warning adds a visible note. Exclude omits the claim and dependent passages. The independent-check notes are kept with your choices.'));
   const report = make('details', 'card-part');
   add(report, make('summary', '', 'Read the complete draft'), window.StudioMarkdown.render(state.plan.report));
   box.append(report);
@@ -5570,7 +5570,7 @@ function researchDecisionPart(run) {
       } else line.append(document.createTextNode(source.origin));
       field.append(line);
     }
-    for (const [value, label] of [['include', 'Include with warning'], ['exclude', item.kind === 'assessment' ? 'Reject this draft' : 'Exclude']]) {
+    for (const [value, label] of [['include-plain', 'Include'], ['include', 'Include with warning'], ['exclude', item.kind === 'assessment' ? 'Reject this draft' : 'Exclude']]) {
       const choice = make('label', 'check');
       const input = make('input'); input.type = 'radio'; input.name = 'research-choice-' + item.id;
       input.value = value; input.checked = state.choices[item.id] === value;
@@ -5582,7 +5582,7 @@ function researchDecisionPart(run) {
   const problem = make('p', 'problem'); problem.setAttribute('role', 'status');
   const save = capsule('Save choices', 'filled', async () => {
     if (state.plan.items.some(item => !state.choices[item.id])) {
-      problem.textContent = 'Choose Include with warning or Exclude for every flag.'; return;
+      problem.textContent = 'Choose Include, Include with warning, or Exclude for every flag.'; return;
     }
     save.disabled = true; view.busy = true;
     try {

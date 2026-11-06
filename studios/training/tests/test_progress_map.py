@@ -70,8 +70,9 @@ class ProgressMapTests(unittest.TestCase):
         self.record['research_execution']['progress']['phase'] = 'creator-approved'
         self.found.done.add('research'); self.found.next.step = self.steps[4]
         research = self.by_id(self.shown())['research']
-        self.assertEqual(research['words'], 'Accepted with flags')
-        self.assertIn('not independently verified', research['warning'])
+        self.assertEqual(research['words'], 'Creator accepted')
+        self.assertNotIn('warning', research)
+        self.assertIn('independent-check notes', research['decision'])
 
     def test_only_selected_branches_appear_and_unknown_practice_scope_is_not_complete(self):
         stages = self.by_id(self.shown())

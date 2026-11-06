@@ -108,7 +108,7 @@ cross-tab conflicts with a copy of all local edits and an explicit latest-versio
 comparison. Design waits for approval of the saved corrections. Research exposes
 accepted findings and completed section drafts while later work continues; both
 remain unreviewed until the final independent check. Training Studio lets you
-explicitly include flagged claims with warnings or exclude them; those choices
+explicitly include flagged claims, optionally with warnings, or exclude them; those choices
 never turn uncertainty into independently checked evidence. Large workspaces retain
 bounded compact polling instead of fetching every document on every idle probe.
 [Keep work moving](docs/incremental-workflow.md) explains these controls and limits.

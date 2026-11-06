@@ -27,7 +27,7 @@ parallel work, dependencies and approval points; proposed changes are labeled.
    section contributions remain available for retry. This does not raise the
    project spending limit or skip the independent check.
 4. **Build selected materials.** For training, the approved outline and accepted
-   research feed the materials; creator-included uncertainty stays marked. New runs
+   research feed the materials; warnings appear only where requested. New runs
    write each level's plan, guide and brief, then practice and Yoodli, before decks.
    Saved runs keep their recorded order. The desk distinguishes active **Writing**
    from **Queued**, names the next material and opens drafts as they finish. Detailed

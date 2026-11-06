@@ -87,7 +87,7 @@ def _account(folder, questions):
         'evidence': (folder / 'evidence.md').read_text(encoding='utf-8'),
         'check': {'accepted': accepted, 'creator_approved': bool(facts.get('creator_review')),
                   'said': ('The creator chose which flagged material to include or exclude. '
-                           'Included uncertainty remains marked; the independent check did not accept every item.'
+                           'Warnings appear only where requested; the independent check and creator choices remain recorded.'
                            if facts.get('creator_review') else CHECKED if accepted else UNCHECKED),
                   'coverage': assessment.get('coverage'),
                   'usefulness': assessment.get('usefulness'),

@@ -33,8 +33,8 @@ scope and approval consequence stay visible. Incomplete-scan warnings stay visib
 **Approve outline & research** approves that exact edited scope. Only retained sections
 become research items, with your additional questions included. Up to three areas run in
 parallel within the saved source, round and spending limits. Combining and an independent
-check still cover the whole dossier. Unresolved flags become include/exclude choices;
-save your choices and explicitly continue. Included uncertainty stays marked, and
+check still cover the whole dossier. Unresolved flags become Include / Include with warning / Exclude choices;
+save your choices and explicitly continue. Warnings appear only where requested, and
 excluded findings also omit dependent content. The teaching plans and selected materials
 then use your approved scope and accepted research, with no second topics approval.
 Slide text approval and Mark ready keep their existing roles.
@@ -50,7 +50,7 @@ material. **Writing** means an observed worker is producing that material; **Que
 means it is waiting, with the reason shown when opened. A previous draft remains
 downloadable while its update waits, but it is not newly ready. Expand **Activity**
 and **Time so far** for details; the latest reported activity stays visible. Saved
-research choices are folded away with a visible reminder that uncertainty remains marked.
+research choices are folded away with a reminder that your choices and independent-check notes are saved.
 
 The overall workflow map stays above the desk, including at approval and after
 generation finishes. Select a stage to expand its detail. **Materials** groups
@@ -60,7 +60,7 @@ their own waits, so a slide decision cannot hide a guide already available.
 **Your review** distinguishes reviewable drafts from materials you marked ready.
 Counts cover the materials currently listed; practice items appear as level plans
 are saved. Research detail shows observed phase and available area/section counts.
-**Accepted with flags** keeps creator-included uncertainty explicit.
+**Creator accepted** records your decision. Choose **Include** for ordinary content, **Include with warning** for a visible note, or **Exclude**. Independent-check notes stay in the evidence; warnings appear only where requested.
 
 Stage selection, opening a draft and polling start no assistant work. Keyboard focus
 and the selected detail survive refreshes. Older runs show Research before Teaching

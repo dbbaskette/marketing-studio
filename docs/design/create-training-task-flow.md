@@ -34,7 +34,7 @@ flowchart TD
     FN --> G
     G --> H[Check all sources, claims and prose: 1 independent agent]
     H --> I{Research accepted?}
-    I -->|Flags remain| J{Creator includes with warnings or excludes}
+    I -->|Flags remain| J{Creator includes, warns or excludes}
     J -->|Save choices, then Continue| K
     J -->|Explicit correction attempt| D
     I -->|Yes| K[Draft next level plan]
@@ -113,7 +113,7 @@ flowchart TD
     G2 --> H
     GN --> H
     H --> I{Research accepted?}
-    I -->|Flags remain| J{Creator includes with warnings or excludes}
+    I -->|Flags remain| J{Creator includes, warns or excludes}
     J -->|Save choices, then Continue| K
     J -->|Explicit correction attempt| X[Retry only failed or invalidated tasks]
     X --> D
@@ -236,7 +236,7 @@ States say **Working**, **Needs you**, **Stopped**, **Waiting** or **Complete**;
 and **Open** actions identify usable work. Research discloses real area/section
 counts and its assembly/check phases. Unselected branches are omitted. Saved runs
 retain their phase order; conversation desks omit inferred execution history.
-Included research uncertainty says **Accepted with flags** and remains marked.
+Creator-approved research says **Creator accepted**. Its warnings follow your choices; independent-check notes remain in the evidence.
 Keyboard selection/focus and expanded detail survive polling. The projection
 reuses the existing survey and cards, with no extra file reads or provider calls.
 It does not depend on implementing the proposed concurrent scheduler. The

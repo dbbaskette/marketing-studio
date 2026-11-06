@@ -809,7 +809,7 @@ class HandoffAndPurposeTests(unittest.TestCase):
 
     def test_the_handoff_sentence(self):
         self.assertIn('Read the research brief first', contract.HANDOFF)
-        self.assertIn('preserve its warnings and qualifications', contract.HANDOFF)
+        self.assertIn('preserve its selected warnings and all source qualifications', contract.HANDOFF)
         self.assertIn('never present it as independently verified', contract.HANDOFF)
         self.assertIn('never reuse excluded claims', contract.HANDOFF)
         self.assertIn('never put one in the words a reader reads', contract.HANDOFF)

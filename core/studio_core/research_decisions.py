@@ -1,7 +1,7 @@
 """Explicit creator disposition, separate from Harness Research's independent verdict.
 
 The original helper bundle stays untouched. A deterministic consumer copy carries
-the creator's choices, dependency exclusions and visible uncertainty labels.
+the creator's choices, dependency exclusions and optional uncertainty labels.
 """
 import copy
 import hashlib
@@ -32,12 +32,12 @@ def prose_items(value):
                 yield f'comparison:{ci}:{ri}:{si}', cell
 
 
-def flags(value):
+def flags(value, *, legacy=False):
     review = value.get('review') or {}
     if not review and value.get('facts') and value.get('findings'):
         return [{'id': 'assessment:unreviewed', 'kind': 'assessment',
             'title': 'Independent check did not finish',
-            'text': 'The saved draft has cited evidence, but no completed independent verdict. Including it marks every claim as unverified.',
+            'text': ('The saved draft has cited evidence, but no completed independent verdict. Including it marks every claim as unverified.' if legacy else 'The saved draft has cited evidence, but no completed independent verdict. You can include it, add a warning, or reject it.'),
             'note': 'Include acknowledges this limitation for the whole draft; exclude rejects this draft.',
             'sources': [{'title': s['title'], 'origin': s['origin']} for s in value['sources']]}]
     if not review or review.get('accepted'):
@@ -89,40 +89,45 @@ class CreatorReview(ValueError):
     def __init__(self, count):
         self.count = count
         super().__init__(f'The research draft is ready for your decision on {count} '
-                         'flagged item(s). Choose what to include with a warning or exclude. '
+                         'flagged item(s). Choose what to include, include with a warning, or exclude. '
                          'No automatic correction loop was started.')
 
 
-def resolve(base, choices):
+def resolve(base, choices, *, legacy=False):
     """Conservative exclusion closure; an included parent never restores a rejected child."""
-    items = flags(base)
+    items = flags(base, legacy=legacy)
     if not items or not isinstance(choices, dict) or set(choices) != {row['id'] for row in items} \
-            or any(choice not in ('include', 'exclude') for choice in choices.values()):
-        raise ValueError('Choose Include with warning or Exclude for every current flag.')
+            or any(choice not in (('include', 'exclude') if legacy else ('include-plain', 'include', 'exclude')) for choice in choices.values()):
+        raise ValueError('Choose Include, Include with warning, or Exclude for every current flag.')
     if any(row['kind'] == 'assessment' and choices[row['id']] == 'exclude' for row in items):
         raise ValueError('This choice rejects the whole draft. Retry correction or change the scope instead.')
     value = copy.deepcopy(base)
     excluded = set()
-    uncertain = {s['id'] for s in value['sources']} if choices.get('assessment:unreviewed') == 'include' else set()
-    notes = {row['id']: row['note'] for row in items}
+    uncertain = {s['id'] for s in value['sources']} if choices.get('assessment:unreviewed') in ('include', 'include-plain') else set()
+    warned = set(uncertain) if choices.get('assessment:unreviewed') == 'include' else set()
+    notes = {row['id']: row['text'] if not legacy and row['kind'] == 'assessment' else row['note'] for row in items}
     def marked(text):
         return 'Creator included with warning — independent verification is unresolved. ' + text
     def decision(key, dependencies=()):
         if choices.get(key) == 'exclude' or excluded.intersection(dependencies):
             return 'exclude'
-        if choices.get(key) == 'include' or uncertain.intersection(dependencies):
+        if choices.get(key) == 'include' or warned.intersection(dependencies):
             return 'include'
+        if choices.get(key) == 'include-plain' or uncertain.intersection(dependencies):
+            return 'include-plain'
         return None
     for row in value['sources']:
         key = 'originals:' + row['id']
         if choices.get(key) == 'exclude': excluded.add(row['id'])
-        if choices.get(key) == 'include': uncertain.add(row['id'])
+        if choices.get(key) in ('include', 'include-plain'): uncertain.add(row['id'])
+        if choices.get(key) == 'include': warned.add(row['id'])
     kept = []
     for fact in value['facts']:
         action = decision('facts:' + fact['id'], [c['source'] for c in fact['citations']])
         if action == 'exclude': excluded.add(fact['id']); continue
+        if action in ('include', 'include-plain'): uncertain.add(fact['id'])
         if action == 'include':
-            uncertain.add(fact['id']); fact['statement'] = marked(fact['statement'])
+            warned.add(fact['id']); fact['statement'] = marked(fact['statement'])
         kept.append(fact)
     value['facts'] = kept
     kept = []
@@ -132,8 +137,9 @@ def resolve(base, choices):
         refs = finding['support'] + finding['counter'] + [r for b in blocks for r in b['refs']]
         action = decision('findings:' + finding['id'], refs)
         if action == 'exclude': excluded.add(finding['id']); continue
+        if action in ('include', 'include-plain'): uncertain.add(finding['id'])
         if action == 'include':
-            uncertain.add(finding['id']); finding['summary']['text'] = marked(finding['summary']['text'])
+            warned.add(finding['id']); finding['summary']['text'] = marked(finding['summary']['text'])
         kept.append(finding)
     value['findings'] = kept
     for ident, block in prose_items(value):
@@ -147,6 +153,8 @@ def resolve(base, choices):
     value.update(owner=OWNER, status=STATUS)
     value['creator_review'] = {'choices': copy.deepcopy(choices), 'notes': notes,
                                'excluded': sorted(excluded), 'uncertain': sorted(uncertain)}
+    if not legacy:
+        value['creator_review']['warned'] = sorted(warned)
     return value
 
 
@@ -155,7 +163,7 @@ def md(text):
     return re.sub(r'([\\`*_{}\[\]()#+!|~])', r'\\\1', text).replace('\n', ' ').replace('\r', ' ')
 
 
-def render(value):
+def render(value, *, legacy=False):
     def refs(ids):
         return ', '.join(f'[{md(ident)}](evidence.md#{ident})' for ident in ids)
     def block(item):
@@ -163,6 +171,13 @@ def render(value):
     banner = ('> Creator-approved research with flagged material. The independent check has '
               'not accepted every item. Preserve warnings and qualifications; do not use '
               'excluded claims.\n\n')
+    if not legacy:
+        banner = ('> Preserve the creator-selected warnings below and do not reuse excluded claims.\n\n'
+                  if 'include' in value['creator_review']['choices'].values() else '')
+    if not legacy:
+        for key, choice in value['creator_review']['choices'].items():
+            if key.startswith('assessment:') and choice == 'include':
+                banner += '> Creator included with warning: ' + md(value['creator_review']['notes'][key]) + '\n\n'
     heading = '# ' + md(value['topic']) + '\n\n' + banner
     report, brief, evidence = heading, heading, heading
     for key in ('sections', 'brief'):
@@ -200,16 +215,17 @@ def render(value):
                 evidence += '[' + ('Saved original' if key == 'original_snapshot' else 'Saved capture') + '](' + quote(path, safe='/') + ')\n\n'
     notes = '## Creator decisions and independent-check notes\n\n'
     for key, choice in value['creator_review']['choices'].items():
-        notes += '- ' + md(key) + ': **' + ('Included with warning' if choice == 'include' else 'Excluded') + '**. ' + md(value['creator_review']['notes'][key]) + '\n'
+        notes += '- ' + md(key) + ': **' + {'include-plain': 'Included', 'include': 'Included with warning', 'exclude': 'Excluded'}[choice] + '**. ' + md(value['creator_review']['notes'][key]) + '\n'
     notes += '\n'
-    return {'report.md': report + notes, 'brief.md': brief + notes, 'evidence.md': evidence + notes}
+    return {'report.md': report + (notes if legacy else ''),
+            'brief.md': brief + (notes if legacy else ''), 'evidence.md': evidence + notes}
 
 
-def build(base, choices, inputs):
-    value = resolve(base, choices)
-    value['digest'] = digest([base, choices, inputs])
-    receipt = {'schema': 1, 'base': base, 'choices': choices, 'inputs': inputs}
-    files = render(value)
+def build(base, choices, inputs, *, schema=2):
+    value = resolve(base, choices, legacy=schema == 1)
+    value['digest'] = digest([base, choices, inputs] if schema == 1 else [schema, base, choices, inputs])
+    receipt = {'schema': schema, 'base': base, 'choices': choices, 'inputs': inputs}
+    files = render(value, legacy=schema == 1)
     files.update({'facts.json': json.dumps(value, ensure_ascii=False), 'creator.json': json.dumps(receipt, ensure_ascii=False)})
     return value, files
 
@@ -238,9 +254,9 @@ def publish(source, destination, choices, inputs, expected=None):
 def validate(root, value, manifest):
     """Hashes alone cannot promote a rejected helper review into creator approval."""
     receipt = json.loads(rc.inside(root, 'creator.json').read_text())
-    if receipt.get('schema') != 1 or manifest.get('status') != STATUS:
+    if receipt.get('schema') not in (1, 2) or manifest.get('status') != STATUS:
         raise ValueError('Unrecognized creator decision record.')
-    expected, files = build(receipt['base'], receipt['choices'], receipt['inputs'])
+    expected, files = build(receipt['base'], receipt['choices'], receipt['inputs'], schema=receipt['schema'])
     if expected != value:
         raise ValueError('Creator decisions and research describe different revisions.')
     for name, text in files.items():
