@@ -504,8 +504,9 @@ stay in Google.
 
 ### What a send to the Google Doc makes
 
-**Review Google changes** (Review mode) checks and previews every desk change;
-it does not send anything. **Send N changes** is the single delivery decision.
+**Review changes to send**, in both toolbars and Review mode's completed-review
+summary, checks and previews every desk change; it does not send anything.
+**Send to Google Doc** (or **Send N changes** in the summary) is the delivery decision.
 In Finishing, **Check what would be sent** similarly previews changes before
 **Send to Google Doc**. The preview says "N suggestions and M comments go to the
 Google Doc" and lists each one.
@@ -533,9 +534,10 @@ A teammate's suggestion, or one the owner rejected, holds nothing. A note with n
 paragraph nearby goes with the next send.
 When Google cannot take suggestions, the plan says the changes go as comments.
 
-The desk's toolbar keeps the Doc in reach: **Google Doc** is a small menu with **Open the
-Google Doc**, **Check what would be sent** (then **Send to Google Doc**: two steps) and
-**Bring accepted changes**; on a phone they are rows in the toolbar's menu. The receipt says
+The desk's toolbar keeps **Review changes to send** visible, including on a phone.
+**Google Doc** is a small menu with **Open the Google Doc** and **Bring accepted changes**;
+on a phone those two are rows in the toolbar's menu. Bringing incoming text is separate
+from sending local edits: no incoming updates does not block the outgoing preview. The receipt says
 what went and when, such as "Sent 10 suggestions and 2 comments at 3:24 PM. When the owner
 has decided them, choose Bring accepted changes." The toolbar then says what waits, for
 example "Doc: 12 waiting · last sent 3:24 PM", and "Unsent desk changes" once the desk has
