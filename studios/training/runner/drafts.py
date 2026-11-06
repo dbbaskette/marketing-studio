@@ -792,10 +792,10 @@ def _text_waiting(found) -> str | None:
     return step.artifact
 
 
-def _active_materials(record, found, run):
+def _active_materials(record, found, worker_ids):
     """Observed workers only: a pending update or an occupied queue is not writing."""
     active = {step.artifact for step in found.steps if step.artifact and any(
-        ident == step.id or ident.startswith(step.id + ':') for ident in run.workers)}
+        ident == step.id or ident.startswith(step.id + ':') for ident in worker_ids)}
     active.update(job.get('name') for job in (record.get('drafts') or {}).get('jobs', ())
                   if job.get('status') == 'working')
     return active
@@ -840,7 +840,11 @@ def _cards(engine, root: Path, record: dict, found) -> list[dict]:
     deciding = _text_waiting(found)
     run = engine._run(root)
     state, sentence = engine._state(record, found, run)
-    active = _active_materials(record, found, run)
+    # Workers can finish while a page reads progress. Snapshot under their existing
+    # registry lock, then compute without holding it across file reads.
+    with engine._lock:
+        worker_ids = tuple(run.workers)
+    active = _active_materials(record, found, worker_ids)
     queued_says = _queue_says(record, found, run, state, sentence)
     copied_to = {entry['artifact'] for entry in found.copies}
     names = workspace.artifact_names(root, session)
