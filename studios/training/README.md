@@ -149,6 +149,12 @@ previous versions. A result cannot silently replace text you changed while it ra
 Repeated Practice and Yoodli materials share a counted category tab, with an item
 selector that names each scenario and its state. A single scenario keeps its own tab.
 
+The selected material opens first; other editors load when you choose them, with
+loading and retry feedback. Long documents use a **Section** picker beside **Edit**
+to keep the reading area close. Section selection retains focus and local edits.
+Healthy drafts have compact controls; expand **Checked for you** for automatic-check
+details. **Mark ready** remains your review decision, and problems stay visible.
+
 Rendered slides have three tasks: **Preview**, **Text & notes**, and **Review &
 changes**. Selecting another slide keeps the review position and per-slide unsaved
 text. The selected task also survives background refreshes. **Deck actions**, below the slide,

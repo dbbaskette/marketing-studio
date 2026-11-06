@@ -15,7 +15,7 @@ sidebar symbol, navigation, primary actions and selected controls through its
 `data-product` attribute and the linked shared stylesheet. Each identity has
 independent light and dark tokens.
 Status words and dots retain semantic colors, and studio identity never replaces
-the visible product name. Selection has both a stronger label and a bounded fill.
+the visible product name. Selection has a stronger label, bounded fill and accent edge.
 
 | Surface | Treatment |
 | --- | --- |
@@ -71,7 +71,13 @@ These rules put each screen in the order a person works. Every studio follows th
 | Phone | Toolbar actions wrap under the title; long labels wrap inside their button; every control is at least 44px tall; fixed bars sit above the tab bar and the page leaves room for them. |
 | Glass | Sidebar, toolbar, sheets, selection bars, Shared settings' save bar and toasts only. Forms, lists, documents and reviews stay opaque, and so does a `.dialog` that holds form fields. |
 
-Golden Gate v2 favors integrated workspace structure. Training Studio's working
+Golden Gate 2.1 favors integrated workspace structure and deliberate hierarchy.
+The launchpad leads with the creative task, uses opaque studio-tinted cards and
+filled launch actions, and keeps healthy setup explanations in Details. Needs you
+and In progress remain visible; completed Recent work is a stable disclosure.
+Empty, unavailable, limited and reconnecting saved-work states use different copy.
+
+Training Studio's working
 progress uses a shared separator instead of another content card. Current work,
 usable drafts and actions stay visible; activity/timing and research approach are
 disclosed separately. Creation keeps the next action, selected outputs and spending
@@ -79,8 +85,16 @@ amount in its summary. Outline approval consequences and incomplete-scan warning
 stay visible. Disclosures need stable focus across refreshes and 44px touch targets.
 Do not shrink text or hide meaningful uncertainty to achieve a shorter screen.
 
+Healthy material headers share their title, state and actions without an extra
+card around the document. Successful automatic checks are optional detail; problems
+stay visible and creator approval stays explicit. More than three document sections
+use a labeled native picker beside Edit, retaining focus, selection and local text.
+At the phone breakpoint, commands reflow immediately instead of waiting for a poll.
+
 The [November 2026 visibility review](2026-11-06-visibility-review.md) records the
 cross-studio findings, fixes and desktop/phone verification.
+The subsequent [Golden Gate 2.1 audit](2026-11-06-golden-gate-21-audit.md) records
+the launchpad, reading-flow and responsiveness improvements with measurements.
 
 ## Shared components and page stylesheets
 
@@ -118,8 +132,10 @@ styles bare controls or headings for the whole page, and takes every colour from
 `tests/test_ui_consistency.py` checks the stylesheets' selectors; a page class on a shared
 element is outside what it can see.
 
-The screenshots below show the live pages with synthetic data.
+The current launchpad and reading desk below use synthetic data. The remaining
+settings and Presentation Studio images illustrate their established surfaces.
 
-![Marketing Studio home](unified-settings-home.jpg)
+![Marketing Studio Golden Gate 2.1 home](golden-gate-21-home.png)
+![Training Studio compact reading desk on a phone](golden-gate-21-training-phone.png)
 ![Shared settings, models](unified-settings-models.jpg)
 ![Presentation Studio](golden-gate-presentation.jpg)
