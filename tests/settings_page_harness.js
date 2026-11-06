@@ -55,7 +55,13 @@ class El {
   getAttribute(name) { return this.attributes[name] ?? null; }
   removeAttribute(name) { delete this.attributes[name]; }
   add() {}
-  querySelector() { return new El(); }
+  querySelector(selector) {
+    if (selector === '.studio-readiness-detail') {
+      const descendants = node => (node.children || []).flatMap(child => [child, ...descendants(child)]);
+      return descendants(this).find(node => /\bstudio-readiness-detail\b/.test(node.className || '')) || null;
+    }
+    return new El();
+  }
   querySelectorAll(selector) {
     if (selector === '.site-row .button') return this.children.map(row => row.children[1].children[0]);
     return [];

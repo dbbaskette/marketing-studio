@@ -13,6 +13,13 @@
 
 /* --- studios: one card each; ui-kit gives each card its studio's colour ---------------- */
 
+.launch-intro { padding-block: 0.25rem; }
+.launch-intro > .launch-kicker { margin-bottom: 0.7rem; }
+.studio-repository .studio-readiness-detail { margin-block: 0.5rem; }
+.work-coverage { font-size: 0.9rem; }
+.work-recent-heading { display: flex; align-items: center; gap: 0.6rem; }
+.work-recent-heading > h2 { margin: 0; }
+
 .studio-list {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -276,8 +283,6 @@ body:has(#settings:not([hidden]) .save-bar) .toasts { bottom: calc(5.5rem + env(
 }
 
 .work-summary{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:20px}.work-summary>.stack{min-width:0;gap:4px}.work-summary .card-title{overflow-wrap:anywhere}@media(max-width:600px){.work-summary{align-items:stretch;flex-direction:column;gap:12px}.work-summary .button{width:100%}}
-  .studio-actions > .button { width: 100%; }
-}
 
 /* --- Brands: the packs and libraries, and one working copy's steps --------------------- */
 /* Every part is an opaque card or paper; colour swatches take the brand's own colours from

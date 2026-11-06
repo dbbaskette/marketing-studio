@@ -497,6 +497,7 @@ class SettingsPageJourneyTests(unittest.TestCase):
     def test_blog_studio_s_shared_settings_after_setup_keep_every_choice(self):
         shots = self.page([
             {'run': self.SHOWN + " setup = false; fill(); show('settings');"},
+            {'run': "selectSettingsPart('delivery-part');"},
             {'snapshot': 'later', 'read': ['#delivery-part']}],
             product='Blog Studio', standalone=True)
         read = shots['later']['read']
