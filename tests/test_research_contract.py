@@ -808,11 +808,12 @@ class HandoffAndPurposeTests(unittest.TestCase):
     """What every writer is told of the research, and the purpose every studio asks for."""
 
     def test_the_handoff_sentence(self):
-        self.assertEqual(contract.HANDOFF, (
-            'The research is reviewed. Read its brief first: it says what matters for this '
-            'piece. Use the facts and findings to check what you write. Their IDs, digests and '
-            'verdicts are for checking and for provenance, notes and source lines: never put '
-            'one in the words a reader reads.'))
+        self.assertIn('Read the research brief first', contract.HANDOFF)
+        self.assertIn('preserve its warnings and qualifications', contract.HANDOFF)
+        self.assertIn('never present it as independently verified', contract.HANDOFF)
+        self.assertIn('never reuse excluded claims', contract.HANDOFF)
+        self.assertIn('never put one in the words a reader reads', contract.HANDOFF)
+        self.assertNotIn('The research is reviewed.', contract.HANDOFF)
 
     def test_compares(self):
         for goal in ('Compare Redis and Valkey', 'Redis versus Valkey', 'Redis vs Valkey',

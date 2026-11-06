@@ -325,7 +325,8 @@ class Workflow:
 
     def run(self, root, task, invoke, sources=(), *, limit=3, progress=lambda state: None,
             allowed=lambda: True, cancelled=lambda: False, readable=None, restart_stopped=False,
-            section_policy=None, section_context=None, impact=None, input_snapshot=None, **_):
+            section_policy=None, section_context=None, impact=None, input_snapshot=None,
+            creator_review=False, **_):
         if capability(self.runtime) is None:
             raise ValueError('This workflow needs the complete Harness Research 1.1 collection runtime.')
         if task.get('research_policy') and not research_quality.valid_policy(task['research_policy']):
@@ -469,6 +470,16 @@ class Workflow:
                 report('complete')
                 return rc.read_bundle(rc.output_root(case))
         review, dossier = (prior.get('review') or {}), prior.get('dossier')
+        # A user-triggered retry repairs a previous rejected draft once. Merely
+        # opening the creator decision form never invalidates kept contributions.
+        if (creator_review and review and not review.get('accepted')
+                and not research_quality.coverage(review)['unread']
+                and all(row['status'] == 'accepted' for row in self.command(case, 'collection', 'status')['workstreams'])):
+            registry = self.command(case, 'collection', 'assemble')
+            affected = sorted(corrections(review, registry, sectioned=bool(section_policy)))
+            if section_policy: research_sections.invalidate(case, review, affected)
+            for stream in affected:
+                self.command(case, 'collection', 'retry', {'workstream': stream, 'reason': 'The creator explicitly requested another correction attempt.'})
         # Every source each investigator is given, with each field it must return (#303).
         outline = rc.source_outline(offered, self.runtime)
         # And the exact shape the synthesis and the review return.
@@ -652,6 +663,15 @@ class Workflow:
                     raise ValueError('The checked research changed before handoff.')
                 report('complete')
                 return rc.read_bundle(output)
+            if creator_review:
+                from studio_core import research_decisions
+                flags = research_decisions.flags(rc.read_bundle(output, complete=False)[0])
+                if flags:
+                    tracked['review_coverage'] = research_quality.coverage(review)
+                    tracked['review_flags'] = len(flags)
+                    tracked.pop('correction', None)
+                    report('creator-review')
+                    raise research_decisions.CreatorReview(len(flags))
             cause = rc.unreadable_originals(review, dossier)
             said = (readable(cause) if readable else '') if cause else None
             if cause and said is not None:

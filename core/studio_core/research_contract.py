@@ -22,7 +22,9 @@ IDS_FOR_QUESTIONS = ('Planning questions have IDs. A finding that answers one ha
                      'instance-min--capacity. Keep each ID within 64 characters.')
 
 # What every writer that receives research is told of it, once.
-HANDOFF = ('The research is reviewed. Read its brief first: it says what matters for this piece. '
+HANDOFF = ('Read the research brief first: it says what matters for this piece and how it was reviewed. '
+           'Creator-approved research may contain flagged material: preserve its warnings and '
+           'qualifications, never present it as independently verified, and never reuse excluded claims. '
            'Use the facts and findings to check what you write. Their IDs, digests and verdicts '
            'are for checking and for provenance, notes and source lines: never put one in the '
            'words a reader reads.')
@@ -256,7 +258,9 @@ def read_bundle(root, complete=True):
     """Read-only consumer boundary: identity, every hash, review and exact digest."""
     root = Path(root)
     manifest = json.loads(inside(root, 'output.json').read_text())
-    if manifest.get('owner') != OWNER or manifest.get('schema') != 2:
+    from studio_core import research_decisions
+    creator = manifest.get('owner') == research_decisions.OWNER
+    if manifest.get('owner') not in (OWNER, research_decisions.OWNER) or manifest.get('schema') != 2:
         raise ValueError('This research bundle uses a different owner or format.')
     entries = manifest.get('artifacts')
     if not isinstance(entries, list):
@@ -276,7 +280,11 @@ def read_bundle(root, complete=True):
     if any(facts.get(key) != manifest.get(key) for key in ('owner', 'schema', 'digest', 'status')):
         raise ValueError('The research manifest and findings describe different revisions.')
     review = facts.get('review')
-    if complete and (manifest.get('status') != 'complete' or not isinstance(review, dict)
+    if creator:
+        if 'creator.json' not in names:
+            raise ValueError('The creator decision receipt is missing.')
+        research_decisions.validate(root, facts, manifest)
+    if complete and not creator and (manifest.get('status') != 'complete' or not isinstance(review, dict)
                      or review.get('digest') != manifest.get('digest') or not review.get('accepted')):
         raise ValueError('Research is still a draft or needs independent review.')
     for source in facts.get('sources', []):

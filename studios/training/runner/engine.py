@@ -4412,6 +4412,12 @@ class Engine(Reviewing):
                         detail={'check_incomplete': refusal.check_incomplete,
                                 'label': 'Retry independent check'})
                     return
+                if getattr(refusal, 'creator_review', None):
+                    self._problem(root, 'research', 'waiting', str(refusal),
+                        'The draft, source citations and independent-check notes are saved. '
+                        'Decide on flagged content without starting another model job.',
+                        detail={'creator_review': True, 'label': 'Try one correction attempt'})
+                    return
                 if getattr(refusal, 'outcome', None) is not None:
                     return self._research_job_failed(root, refusal)
                 if getattr(refusal, 'objections', None) is None:
@@ -4422,6 +4428,7 @@ class Engine(Reviewing):
             with self.files:
                 record = self._load(root)
                 record['research']['reviewed'] = True
+                record['research'].pop('creator_decision', None)
                 record['research']['reviewed_request'] = (step.request or {}).get('at')
                 record['research'].pop('again', None)
                 self._store(root, record)
@@ -4495,6 +4502,14 @@ class Engine(Reviewing):
             record = self._load(root)
             if record.get('research_contract'):
                 tool = self.research()
+                from runner import research_decision
+                if research_decision.current(root, record):
+                    workspace.write_atomic(root / pipeline.REPORT, (root / 'research/report.md').read_bytes())
+                    workspace.save(root, 'research', built=True)
+                    self._tried(record, step.id, home.now(), time.monotonic() - clock, 'kept')
+                    self._store(root, record)
+                    self._commit(root, 'keep the creator-approved research bundle')
+                    return
                 # Verify with the helper version that did the research, while it is retained.
                 tool = research_contract.matching(tool, record['research_contract']) or tool
                 verified = tool._json('synthesis', 'verify', '--project', str(research_parallel.case_for(root)))
@@ -6203,7 +6218,7 @@ class Engine(Reviewing):
                 # Continue after Change settings carries twice the time for each step from a
                 # stop for time before it (#296). Only Carry on lifts the spending limit.
                 carried = problem.get('carried') if problem.get('settings') else None
-                if problem.get('action') == 'resume':  # it may spend as much again
+                if problem.get('action') == 'resume' and not problem.get('creator_saved'):  # explicit spending continuation
                     record['cleared'] = spent(record)[0] or 0.0
                 elif problem:
                     self._fresh(record, problem.get('step'))
@@ -6801,7 +6816,7 @@ class Engine(Reviewing):
         tried = research_contract.last_rounds({name: entry.get('attempts', [])
                                                for name, entry in record['steps'].items()})
         return {'research': {**(tried or {'rounds': 0, 'jobs': 0, 'seconds': 0, 'dollars': None}),
-                             'most': research_contract.ROUNDS, 'drafted': self._drafted(root),
+                             'most': 1 if research_parallel.protocol(record) else research_contract.ROUNDS, 'drafted': self._drafted(root),
                              **({'parallel': True} if research_parallel.protocol(record) else {})}}
 
     def _synthesis_doing(self, record: dict, run: _Run | None) -> str:
@@ -7254,6 +7269,11 @@ class Engine(Reviewing):
             'question': ({'id': asked['id'], 'text': asked['text'], 'from': asked['from']}
                          if asked else None),
             'problem': ({**{key: problem.get(key) for key in ('what', 'kept', 'action', 'label')},
+                         **({'creator_review': True} if problem.get('step') == 'research'
+                            and not problem.get('settings') and (problem.get('creator_review') or problem.get('objected')
+                                or problem.get('check_incomplete') or problem.get('unreadable')
+                                or ((record.get('research_execution') or {}).get('progress') or {}).get('phase') == 'review')
+                            and self._drafted(root) else {}),
                          **({'seconds': problem['seconds']} if problem.get('seconds') else {}),
                          # Waiting for Continue after Change settings: its words say so.
                          **({'settings': True} if problem.get('settings') else {}),

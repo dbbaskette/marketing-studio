@@ -856,7 +856,9 @@ def research(root: Path, session: dict, run: dict | None, request: dict | None) 
         handover = (run or {}).get('research') or {}
         handed = handover.get('plan') == workspace.sha256_file(root / PLAN)
         try:
-            facts, manifest = research_contract.read_bundle(research_contract.output_root(root / research_contract.CASE))
+            from runner import research_decision
+            creator = research_decision.current(root, run or {})
+            facts, manifest = research_contract.read_bundle(root / 'research' if creator else research_contract.output_root(root / research_contract.CASE))
             current = handed and handover.get('reviewed') and handover.get('reviewed_request') == (request or {}).get('at')
         except (OSError, ValueError):
             manifest, current = {}, False
@@ -1604,7 +1606,8 @@ def findings_text(root: Path) -> str:
     """The research as a worker reads it: each question's ID, verdict, summary and quotes."""
     record = workspace.research_record(root) or {'items': [], 'results': {}}
     if record.get('schema') == 2:
-        return ('# Reviewed research handoff\n\n' + research_contract.HANDOFF
+        heading = '# Creator-approved research with unresolved verification\n\n' if record.get('creator_review') else '# Reviewed research handoff\n\n'
+        return (heading + research_contract.HANDOFF
                 + ' Keep its conditions, counterevidence and gaps. Facts, interpretations and '
                 'recommendations differ.\n\n'
                 + (root / 'research/brief.md').read_text() + '\n\n'

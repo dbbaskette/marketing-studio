@@ -5394,10 +5394,12 @@ function failedStep(run, found) {
 // What the one action a problem offers does, and roughly what it costs, in the way a
 // deck's cost is said before it is drawn: from what the same work took before.
 function actionSays(run, found) {
+  if (found.settings) return '';
   if (found.waits === 'assets') {
     return 'The deck is drawn once its pictures are here. Without one, redesign the deck or '
       + 'leave it out.';
   }
+  if (found.creator_review) return 'Choose flagged content to finish without another model call, or explicitly try one correction and check.';
   if (found.action === 'resume') {
     return 'Carry on starts that step again; everything finished before it is kept.';
   }
@@ -5538,6 +5540,53 @@ function stepLabel(run, name) {
   return row ? row.label : base;
 }
 
+function researchDecisionPart(run) {
+  const box = make('section', 'card stack');
+  const heading = make('h3', 'card-title', 'Choose flagged research content');
+  heading.tabIndex = -1;
+  const state = view.researchDecision;
+  if (!state || state.path !== view.path) return box;
+  add(box, heading, make('p', '', 'Include keeps the wording with a visible uncertainty warning. Exclude omits the claim and passages that depend on it. These choices do not claim independent verification.'));
+  const report = make('details', 'card-part');
+  add(report, make('summary', '', 'Read the complete draft'), window.StudioMarkdown.render(state.plan.report));
+  box.append(report);
+  for (const item of state.plan.items) {
+    const field = make('fieldset', 'card-part');
+    add(field, make('legend', 'field-label', item.title), make('p', '', item.text), make('p', 'quiet', item.note));
+    for (const source of item.sources) {
+      const line = make('p', 'quiet', source.title + ': ');
+      if (/^https?:\/\//.test(source.origin)) {
+        const link = make('a', '', 'Open source'); link.href = source.origin;
+        link.target = '_blank'; link.rel = 'noopener noreferrer'; line.append(link);
+      } else line.append(document.createTextNode(source.origin));
+      field.append(line);
+    }
+    for (const [value, label] of [['include', 'Include with warning'], ['exclude', item.kind === 'assessment' ? 'Reject this draft' : 'Exclude']]) {
+      const choice = make('label', 'check');
+      const input = make('input'); input.type = 'radio'; input.name = 'research-choice-' + item.id;
+      input.value = value; input.checked = state.choices[item.id] === value;
+      input.addEventListener('change', () => { state.choices[item.id] = value; });
+      add(choice, input, document.createTextNode(label)); field.append(choice);
+    }
+    box.append(field);
+  }
+  const problem = make('p', 'problem'); problem.setAttribute('role', 'status');
+  const save = capsule('Save choices', 'filled', async () => {
+    if (state.plan.items.some(item => !state.choices[item.id])) {
+      problem.textContent = 'Choose Include with warning or Exclude for every flag.'; return;
+    }
+    save.disabled = true; view.busy = true;
+    try {
+      const found = await send('research-decision', {path: state.path, action: 'save', expected: state.plan.expected, choices: state.choices});
+      view.researchDecision = null; view.run = found; view.busy = false;
+      toast('Research choices saved. Continue when ready.'); paintRun(false); refresh();
+    } catch (failure) { problem.textContent = failure.message; save.disabled = false; view.busy = false; }
+  }, 'research-decisions-save');
+  const close = capsule('Close', 'quiet', () => { view.researchDecision = null; box.remove(); byId('research-decisions-open')?.focus(); }, 'research-decisions-close');
+  add(box, problem, add(make('div', 'bar'), save, close));
+  return box;
+}
+
 // What went wrong, what was kept, and the one thing to do about it.
 function problemPart(run, lead) {
   const found = run.problem;
@@ -5554,12 +5603,25 @@ function problemPart(run, lead) {
     if (at >= 0) openPicture(assets[at], at, 'problem-action');
   } : () => steer(found.action, go);
   const go = found.action && !theirs
-    ? capsule(label, lead ? 'filled' : '', goes, 'problem-action')
+    ? capsule(label, lead && !found.creator_review ? 'filled' : '', goes, 'problem-action')
     : capsule('See everything it made', '', () => show('training', { path: view.path }),
       'problem-open');
   const title = run.state === 'waiting' ? 'It is waiting for you'
     : theirs ? 'It has stopped' : 'It has stopped, and needs you';
   const does = theirs ? '' : actionSays(run, found);
+  const decisions = make('div');
+  const decide = found.creator_review && !theirs ? capsule('Choose flagged content', 'filled', async () => {
+    decide.disabled = true;
+    try {
+      const plan = await send('research-decision', {path: view.path, action: 'read'});
+      const old = view.researchDecision;
+      view.researchDecision = {path: view.path, plan, choices: old && old.path === view.path && old.plan.expected === plan.expected ? old.choices : {}};
+      decisions.replaceChildren(researchDecisionPart(run));
+      decisions.querySelector('h3').focus();
+    } catch (failure) { decisions.replaceChildren(make('p', 'problem', failure.message)); }
+    finally { decide.disabled = false; }
+  }, 'research-decisions-open') : null;
+  if (decide && view.researchDecision && view.researchDecision.path === view.path) decisions.append(researchDecisionPart(run));
   // The research check's objections, every one under its group, read where the stop is.
   let read = null;
   const shown = found.objections ? make('div', 'card-part') : null;
@@ -5579,15 +5641,15 @@ function problemPart(run, lead) {
     }, 'read-objections');
   }
   // Waiting for Continue after Change settings is no failure: it is the person's to go on.
-  return callout(found.settings ? 'yours' : 'late', make('h2', 'aside-title', title),
+  return callout(found.settings || found.creator_review ? 'yours' : 'late', make('h2', 'aside-title', title),
     add(make('p', ''), make('strong', '', 'What happened: '), found.what),
     keptPart(found.kept),
     does ? make('p', 'quiet', does) : null,
-    add(make('div', 'bar'), go, read, theirs ? null : alsoPart(found),
+    add(make('div', 'bar'), decide, go, read, theirs ? null : alsoPart(found),
       // Beside Try again: change what it was started with, then Continue (#296), or bring
       // its models up to date with Settings.
       theirs ? null : settingsButton(run, 'problem-settings'),
-      theirs ? null : modelsButton(run, 'problem-models')), shown);
+      theirs ? null : modelsButton(run, 'problem-models')), decisions, shown);
 }
 
 // Beside a stop's one action: Try again once Status has been put right, and deleting a

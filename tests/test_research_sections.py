@@ -91,6 +91,34 @@ class SectionWorkflowTests(unittest.TestCase):
         self.run_sections()
         self.assertEqual((len(self.calls), len(self.section_calls)), calls, 'complete unchanged research starts no new author/reviewer')
 
+    def test_creator_review_stops_after_one_check_and_explicit_retry_keeps_final_feedback(self):
+        from studio_core import research_decisions
+        invoke = self.invoke
+        def flagged(phase, guidance, payload, offered, fetch):
+            text, sources = invoke(phase, guidance, payload, offered, fetch)
+            if phase == 'review':
+                value = json.loads(text)
+                value['prose'][0].update(verdict='narrow', note='Narrow the section claim.')
+                value['prose'][-1].update(verdict='narrow', note='Keep the final qualification.')
+                text = json.dumps(value)
+            return text, sources
+        with self.assertRaises(research_decisions.CreatorReview):
+            self.workflow.run(self.root, self.task, flagged, section_policy=sections.pin(), creator_review=True)
+        self.assertEqual([p for p, _ in self.calls].count('review'), 1)
+        before = list(self.section_calls)
+        feedback = []
+        def corrected(phase, guidance, payload, offered, fetch):
+            if payload['_execution'].get('mode') == 'compose-final':
+                feedback.append(payload.get('previous_review'))
+                self.assertIn('sections', payload['previous_final'])
+            return invoke(phase, guidance, payload, offered, fetch)
+        result, _ = self.workflow.run(self.root, self.task, corrected,
+            section_policy=sections.pin(), creator_review=True)
+        self.assertTrue(result['review']['accepted'])
+        self.assertEqual(self.section_calls[len(before):], ['question-0'])
+        self.assertIn('Keep the final qualification.', json.dumps(feedback))
+        self.assertEqual([p for p, _ in self.calls].count('investigate'), 4)
+
     def test_timeout_keeps_three_contributions_and_retry_only_calls_the_unfinished_section(self):
         self.fail_section = 'question-2'
         with self.assertRaisesRegex(ValueError, 'Synthetic section timeout'): self.run_sections()
@@ -105,6 +133,25 @@ class SectionWorkflowTests(unittest.TestCase):
         self.assertTrue(facts['review']['accepted'])
         self.assertEqual(self.section_calls[len(prior):], ['question-2'])
         self.assertEqual([phase for phase, _ in self.calls].count('investigate'), 4)
+
+    def test_creator_retry_accepts_an_area_already_invalidated_by_an_older_run(self):
+        from studio_core import research_decisions
+        invoke = self.invoke
+        def flagged(phase, *args):
+            text, sources = invoke(phase, *args)
+            if phase == 'review':
+                value = json.loads(text)
+                value['facts'][0].update(verdict='narrow', note='Revisit this old rejected fact.')
+                text = json.dumps(value)
+            return text, sources
+        with self.assertRaises(research_decisions.CreatorReview):
+            self.workflow.run(self.root, self.task, flagged, section_policy=sections.pin(), creator_review=True)
+        case = session.case_for(self.root)
+        status = self.workflow.command(case, 'collection', 'status')
+        self.workflow.command(case, 'collection', 'retry', {'workstream': status['workstreams'][0]['id'], 'reason': 'Older correction loop already scheduled this area.'})
+        result, _ = self.workflow.run(self.root, self.task, invoke, section_policy=sections.pin(), creator_review=True)
+        self.assertTrue(result['review']['accepted'])
+        self.assertEqual([p for p, _ in self.calls].count('investigate'), 5)
 
     def test_final_timeout_keeps_every_section_and_retry_honors_only_its_time_grant(self):
         self.fail_final = True

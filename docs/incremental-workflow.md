@@ -115,13 +115,21 @@ including revision identifiers, sources and unfinished-section notices. It is
 unreviewed research prose, not a completed learner guide or a ready material.
 Final brief assembly is identified separately from section writing.
 
-If the independent check leaves required sources unread, it stops with the checked
-source count. Unread does not mean incorrect: the studio keeps the evidence and
-prose instead of automatically reinvestigating or rewriting them. **Retry independent
-check** reruns checking after its allowance, time or source-access issue is resolved.
-The current single-reviewer protocol does not reuse partial semantic attestations.
-Genuine content failures from a completed check still request affected corrections.
-Obvious placeholder prose is rejected before independent review.
+Training Studio performs one independent check per explicit attempt. If the check
+flags wording, unsupported claims, or unread sources, **Choose flagged content**
+opens the saved draft, source links and exact notes. Choose **Include with warning**
+or **Exclude** for each item. Nothing is preselected. Excluding a claim also omits
+dependent findings and passages. Including it preserves a visible qualification;
+creator approval never claims the independent check passed. Saving choices starts
+no model job. **Continue** moves the resulting report toward material authoring and
+the usual final review gates.
+
+An overall coverage/usefulness objection describes the whole draft: acknowledge it
+with Include, or reject that draft and request correction. An explicit correction
+attempt reuses saved evidence, repairs affected work and checks once more. It does
+not silently start another three-round loop. Unread sources remain distinct from
+incorrect claims. Other studios retain their existing check policy. Obvious
+placeholder prose and damaged source/output integrity remain hard failures.
 
 Choose **Read accepted findings — unreviewed** to see completed investigator
 statements while slower peers continue. Sources, context and limitations stay
