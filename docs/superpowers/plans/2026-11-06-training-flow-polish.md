@@ -1,7 +1,7 @@
 # Training Studio: readable output and truthful progress
 
 Authorized by the request to review the process and implement another round of
-improvements. Issue #387 covers scheduling; a second increment covers progress.
+improvements. Issue #387 covers scheduling; issue #388 covers progress.
 
 ## Findings and implementation order
 
@@ -12,6 +12,10 @@ improvements. Issue #387 covers scheduling; a second increment covers progress.
    to higher levels. Selected inputs and all approvals remain required.
 2. The desk marks every missing material as being written while any step runs.
    Show the active material separately from queued materials and explain the queue.
+   A creator-approved research phase also hid the new material activity. Treat it
+   as finished for scheduling/progress, keep its uncertainty notice, and collapse
+   the saved decision details once material work starts. Queued updates remain
+   downloadable and never unlock level readiness.
 3. Parallel source checking and a durable concurrent material scheduler remain
    larger follow-ups. This increment changes priority, not concurrency or spending.
 
@@ -27,6 +31,11 @@ improvements. Issue #387 covers scheduling; a second increment covers progress.
 | Saved run without pin | Load | Original order preserved | Compatibility test |
 | Explicit material update | Survey | Existing scoped update/hold order preserved | Update regression |
 | Invalid scheduling pin | Load | Refuse unknown policy | Record validation |
+| One material worker active | Read progress | Only its artifact says Writing; peers stay Queued | Native standing test |
+| Update queued or stopped | Read progress | Queued, with reason; saved draft remains downloadable | Native standing test |
+| Training waits for a slot or approval | Read progress | No inactive material says Writing; next queued material is named | Native and browser tests |
+| Creator research choices saved | Continue | Material progress and draft counts appear; uncertainty stays marked | Browser journey |
+| Queued update has an older saved draft | Read desk | Download remains available; level readiness stays unavailable | Native and page tests |
 
 ## Verification
 

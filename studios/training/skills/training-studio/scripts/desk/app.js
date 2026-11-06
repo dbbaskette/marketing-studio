@@ -821,14 +821,21 @@ function researchNoteHooks(path) {
 }
 
 function researching(run) {
-  return Boolean(run.research_progress && run.research_progress.phase !== 'complete'
+  return Boolean(run.research_progress && !['complete', 'ready-for-review', 'creator-approved'].includes(run.research_progress.phase)
     && typeof StudioResearch !== 'undefined');
 }
 
 function researchActivity(run, controls = null) {
   const research = run.research_progress;
   if (!research) return null;
-  if (typeof StudioResearch !== 'undefined') return StudioResearch.progress(research, {timing: run.timing, controls, workers: run.workers, lines: jobLines(view.path),...researchNoteHooks(view.path)});
+  if (typeof StudioResearch !== 'undefined') {
+    const panel = StudioResearch.progress(research, {timing: run.timing, controls, workers: run.workers, lines: jobLines(view.path),...researchNoteHooks(view.path)});
+    if (research.phase === 'creator-approved' && !run.problem) {
+      const saved = make('details', 'card-part'); saved.dataset.key = 'research-choices-saved';
+      return add(saved, make('summary', '', 'Research choices saved · uncertainty remains marked'), panel);
+    }
+    return panel;
+  }
   const names = { investigate: 'Investigating', synthesize: 'Combining findings', review: 'Independent check' };
   const node = add(card(names[research.phase] || 'Research'),
     make('p', 'quiet', 'Completed research areas are kept for retry.'));

@@ -792,6 +792,39 @@ def _text_waiting(found) -> str | None:
     return step.artifact
 
 
+def _active_materials(record, found, run):
+    """Observed workers only: a pending update or an occupied queue is not writing."""
+    active = {step.artifact for step in found.steps if step.artifact and any(
+        ident == step.id or ident.startswith(step.id + ':') for ident in run.workers)}
+    active.update(job.get('name') for job in (record.get('drafts') or {}).get('jobs', ())
+                  if job.get('status') == 'working')
+    return active
+
+
+def _queue_says(record, found, run, state, sentence):
+    if record.get('problem'):
+        return 'Queued until the current problem is resolved.'
+    if state in ('stopped', 'paused'):
+        return 'Queued until you resume training.'
+    if run.queued:
+        return 'Queued for an available assistant slot.'
+    if state == 'waiting':
+        return 'Queued. ' + sentence
+    if found.next.step:
+        return 'Queued. Current step: ' + found.next.step.label + '.'
+    return 'Queued for the next requested change.'
+
+
+def _next_material(cards, found):
+    """The next queued material in saved pipeline order, rather than tab order."""
+    queued = {card['name']: card for card in cards if card['state'] == 'queued'}
+    for step in found.steps:
+        if step.id not in found.done and step.artifact in queued:
+            card = queued[step.artifact]
+            return {key: card[key] for key in ('name', 'label', 'says')}
+    return None
+
+
 def _cards(engine, root: Path, record: dict, found) -> list[dict]:
     """Each material of a desk training in ORDER, level by level, with how it stands:
     {'name', 'level', 'kind', 'label', 'state', 'says', 'seen', 'held', 'actions', 'needs'}.
@@ -805,8 +838,10 @@ def _cards(engine, root: Path, record: dict, found) -> list[dict]:
     problem = record.get('problem') or {}
     failing, busy_now = _failing(found, problem), busy(record)
     deciding = _text_waiting(found)
-    # A draft not written yet is said to be written only while the run is working on it.
-    running = engine._state(record, found, engine._run(root))[0] == 'working' or busy_now
+    run = engine._run(root)
+    state, sentence = engine._state(record, found, run)
+    active = _active_materials(record, found, run)
+    queued_says = _queue_says(record, found, run, state, sentence)
     copied_to = {entry['artifact'] for entry in found.copies}
     names = workspace.artifact_names(root, session)
     cards = []
@@ -826,10 +861,11 @@ def _cards(engine, root: Path, record: dict, found) -> list[dict]:
                     if why is None:
                         continue
                     shown, says, card_actions = 'left-out', f'{LEFT_OUT} {why}'.strip(), []
-                elif name in asked:
-                    shown, says, card_actions = 'writing', UPDATING, []
                 elif name == failing and problem:
                     shown, says = 'needs', problem.get('what') or NEEDS
+                elif name in asked:
+                    shown, says = ('writing', UPDATING) if name in active else ('queued', queued_says)
+                    card_actions = ['download'] if seen else []
                 elif name == deciding:
                     # Nothing is being written: the deck waits for the person's decision.
                     shown, says = 'decide', TEXT_APPROVAL
@@ -838,9 +874,11 @@ def _cards(engine, root: Path, record: dict, found) -> list[dict]:
                 elif seen is None:
                     shown, says = (('needs', pipeline.deck_says(found))
                                    if kind == 'deck' and found.missing
-                                   else ('writing', WRITING) if running
-                                   else ('queued', QUEUED))
+                                   else ('writing', WRITING) if name in active
+                                   else ('queued', queued_says))
                     card_actions = []
+                elif name in active:
+                    shown, says, card_actions = 'writing', UPDATING, ['download']
                 elif name in holding:
                     shown = 'held'
                     says = hold_says(root, session, holding, name, plain, asked)
@@ -943,11 +981,12 @@ def view(engine, root) -> dict:
         # Whether the index is written, for the level's download, which includes it then.
         'index_written': (root / pipeline.INDEX).is_file(),
         'flow': FLOW, 'title': session['title'], 'levels': [level or '' for level in levels],
-        'progress': {'running': running, 'doing': doing,
+        'progress': {'running': running, 'doing': doing, 'next': _next_material(cards, found),
                      'started_at': record.get('started_at'), 'minutes': None,
                      # Said only while nothing on the desk needs the person.
                      'line': NOTHING_NEEDED
-                     if running and not needed and not (parallel and parallel.get('phase') != 'complete') else ''},
+                     if running and not needed and not (parallel and parallel.get('phase') not in
+                         ('complete', 'ready-for-review', 'creator-approved')) else ''},
         'needs': needed, 'cards': cards,
         'sources': {'account': research_view.account(root / 'research', questions),
                     'updates': update_view(root, record),

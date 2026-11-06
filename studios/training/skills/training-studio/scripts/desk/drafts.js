@@ -21,7 +21,7 @@ const DESK_WORDS = {
   beads: { writing: 'current', queued: 'none', decide: 'review', draft: 'none', ready: 'done',
     held: 'late', needs: 'late', 'left-out': 'out' },
   // A material tab's state, as the runner's one standing names it (runner/drafts.py).
-  tabs: { writing: 'Writing', queued: 'Not written yet', decide: 'Needs your text approval',
+  tabs: { writing: 'Writing', queued: 'Queued', decide: 'Needs your text approval',
     needs: 'Needs attention', held: 'Needs updating', ready: 'Ready', draft: 'Draft' },
   noResearch: 'The research is not written yet. It opens here when it is.',
   kept: 'Your documents stay on this computer and are never shared with your team. Passages '
@@ -1538,7 +1538,7 @@ function levelCanBeReviewed(cards) {
 
 function levelMaterialsAvailable(cards) {
   const selected = list(cards).filter(one => one.state !== 'left-out');
-  return selected.length > 0 && selected.every(one => one.seen && one.state !== 'writing');
+  return selected.length > 0 && selected.every(one => one.seen && !['writing', 'queued'].includes(one.state));
 }
 
 // What was checked for you, from the checks that take milliseconds.
@@ -2474,8 +2474,7 @@ function progressPart(found, held, lead) {
     }
   }
   if (!progress.running && !controls.childNodes.length) return null;
-  if (run.research_progress && run.research_progress.phase !== 'complete'
-      && typeof StudioResearch !== 'undefined') return researchActivity(run, controls);
+  if (researching(run)) return researchActivity(run, controls);
   // The line is blank while something on the desk needs the person.
   const line = progress.line ? make('p', '', progress.line) : null;
   if (line) line.setAttribute('role', 'status');
@@ -2486,12 +2485,13 @@ function progressPart(found, held, lead) {
     ? 'Next: review the topics and teaching plan before the materials are built.'
     : materials.length ? available + ' of ' + materials.length + ' drafts available. New drafts appear below as they finish.'
       : 'Preparing the first material. It will appear here when it is ready.') : null;
+  const next = progress.next ? make('p', 'quiet', 'Up next: ' + progress.next.label + '. ' + progress.next.says) : null;
   // What each assistant working now is doing, with Show activity (ui-kit/activity.js).
   const doing = progress.running && typeof StudioActivity !== 'undefined'
     ? StudioActivity.live(run.workers, { load: jobLines(view.path) }) : null;
-  return add(make('div'), callout('', building, line, status, doing, controls.childNodes.length ? controls : null,
+  return add(make('div'), callout('', building, line, status, next, doing, controls.childNodes.length ? controls : null,
     // Time is a detail, never an estimate of what is left: elapsed time keeps growing.
-    run.timing ? (!run.research_progress || run.research_progress.phase === 'complete'
+    run.timing ? (!researching(run)
       ? timeDetails(measuredTime(run)) : null) : progress.started_at
       ? timeDetails(make('p', 'quiet desk-clock', deskKit.clock(progress))) : null),
   researchActivity(run));
