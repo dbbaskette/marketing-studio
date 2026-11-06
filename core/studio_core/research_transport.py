@@ -6,7 +6,7 @@ import secrets
 import shutil
 import threading
 
-from studio_core import research_contract as rc, research_session as parallel, research_sections, research_impact, model_profiles
+from studio_core import research_contract as rc, research_session as parallel, research_sections, research_impact, model_profiles, research_decisions
 
 
 class Reservations:
@@ -44,6 +44,10 @@ class Reservations:
 
 def describe(progress):
     phase = progress.get('phase')
+    if phase == 'creator-review':
+        return 'The research draft is saved. Choose what to include with a warning or exclude.'
+    if phase == 'creator-approved':
+        return 'Your research choices are saved. Continue when ready to create materials.'
     if phase == 'check-incomplete':
         coverage = progress.get('review_coverage') or {}
         return f'Independent check incomplete: {coverage.get("read", 0)} of {coverage.get("total", 0)} sources read. Evidence and drafts are kept.'
@@ -225,12 +229,17 @@ def native(engine, root, run, task, sources, product='training'):
             section_context={'recipe': research_sections.PROTOCOL, 'draft_recipe': 2, 'scope_identity': research_impact.global_identity(record), 'helper': record['research_execution']['capability'],
                 'models': model_profiles.chosen_by_kind(record, 'level_of_effort' if product == 'presentation' else 'effort'),
                 'checking': model_profiles.chosen_by_kind(record, 'level_of_effort' if product == 'presentation' else 'effort')['checking']},
+            creator_review=product == 'training',
             cancelled=cancelled, restart_stopped=True, readable=lambda cause: rc.dry_read(engine, root, cause))
     except (InterruptedError, companion.Stopped):
         raise companion.Stopped()
     except parallel.research_quality.IncompleteCheck as refusal:
         failure = WorkspaceError(str(refusal))
         failure.check_incomplete = refusal.coverage
+        raise failure from refusal
+    except research_decisions.CreatorReview as refusal:
+        failure = WorkspaceError(str(refusal))
+        failure.creator_review = refusal.count
         raise failure from refusal
     except (rc.ReviewRefused, rc.CheckCouldNotFinish) as refusal:
         failure = WorkspaceError(str(refusal))

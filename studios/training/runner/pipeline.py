@@ -856,7 +856,9 @@ def research(root: Path, session: dict, run: dict | None, request: dict | None) 
         handover = (run or {}).get('research') or {}
         handed = handover.get('plan') == workspace.sha256_file(root / PLAN)
         try:
-            facts, manifest = research_contract.read_bundle(research_contract.output_root(root / research_contract.CASE))
+            from runner import research_decision
+            creator = research_decision.current(root, run or {})
+            facts, manifest = research_contract.read_bundle(root / 'research' if creator else research_contract.output_root(root / research_contract.CASE))
             current = handed and handover.get('reviewed') and handover.get('reviewed_request') == (request or {}).get('at')
         except (OSError, ValueError):
             manifest, current = {}, False

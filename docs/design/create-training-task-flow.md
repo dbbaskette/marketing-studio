@@ -1,7 +1,7 @@
 # Create training: flow and task boundaries
 
-Design discussion, 2026-11-05. Current behavior traced at Marketing Studio commit
-`bead38d49bae0b4676ee2f50ecb2be837d92ea71`. Proposed behavior below is not implemented.
+Design discussion, 2026-11-05, updated for issue #385's creator decisions.
+The recommended parallel scheduler below remains a proposal.
 This describes new outline-first Training Studio desk runs; saved older runs keep
 their recorded workflow. Optional outputs are omitted when not selected.
 
@@ -32,8 +32,9 @@ flowchart TD
     FN --> G
     G --> H[Check all sources, claims and prose: 1 independent agent]
     H --> I{Research accepted?}
-    I -->|Corrections| J[Invalidate affected evidence and sections]
-    J --> D
+    I -->|Flags remain| J{Creator includes with warnings or excludes}
+    J -->|Save choices, then Continue| K
+    J -->|Explicit correction attempt| D
     I -->|Yes| K[Draft level plans in order]
     K --> L[Level: learner guide]
     L --> M[Level: reference brief]
@@ -64,6 +65,11 @@ all investigators, and independent checking waits for the assembled dossier.
 Completed research areas and section contributions survive unrelated failures.
 The final research brief now has a narrow assembly role and uses the saved
 combining allowance (issue #377, merged in PR #380).
+Training Studio stops after one independent check per explicit attempt. Remaining
+flags become creator choices, with the original independent verdict retained.
+Exclusions also omit dependent content. An explicit retry can request one correction
+and another check; ordinary viewing or saving decisions starts no provider work.
+Final-author objections survive revisions to other sections.
 
 ## Recommended task graph
 

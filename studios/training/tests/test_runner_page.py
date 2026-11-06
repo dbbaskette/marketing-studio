@@ -44,7 +44,7 @@ LISTED = [{'name': 'gpt-6-sol', 'label': 'GPT-6-Sol (gpt-6-sol)', 'family': None
           {'name': 'gpt-6-luna', 'label': 'GPT-6-Luna (gpt-6-luna)', 'family': None,
            'about': None, 'default_level': None, 'levels': ['low', 'medium', 'high']}]
 GETS = ('/api/research-note', '/api/updates', '/api/slide-text-draft', '/api/spending-policy', '/api/outline-flow', '/api/intake-draft', '/api/capabilities', '/api/setup', '/api/agents', '/api/models', '/api/run')
-POSTS = ('/api/research-note', '/api/slide-text-draft', '/api/spending-policy', '/api/outline-flow', '/api/intake-draft', '/api/training-plan', '/api/research-sources', '/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/answer',
+POSTS = ('/api/research-decision', '/api/research-note', '/api/slide-text-draft', '/api/spending-policy', '/api/outline-flow', '/api/intake-draft', '/api/training-plan', '/api/research-sources', '/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/answer',
          '/api/documents', '/api/copies', '/api/share', '/api/companions', '/api/asset',
          '/api/upgrade', '/api/restart', '/api/versions', '/api/brand', '/api/brand/install', '/api/review',
          '/api/note', '/api/research-site')
@@ -226,7 +226,7 @@ class RuleTests(PageCase):
     def setUp(self):
         super().setUp()
         self.path = self.saved_started()
-        self.bodies = {'/api/research-note':{'path': self.path,'id':'section','action':'read'}, '/api/slide-text-draft': {'path': self.path, 'action':'read'}, '/api/spending-policy': {'path': self.path, 'expected': 'stale', 'policy': 'warn'}, '/api/outline-flow': {'path': 'nowhere', 'expected': 'old'}, '/api/intake-draft': {'action': 'read'}, '/api/training-plan': {'path':'nowhere', 'expected':'none', 'decision':'approve'}, '/api/research-sources': {'action':'create'}, '/api/setup/check': {'path': str(self.base / 'elsewhere')},
+        self.bodies = {'/api/research-decision':{'path': self.path, 'action':'read'}, '/api/research-note':{'path': self.path,'id':'section','action':'read'}, '/api/slide-text-draft': {'path': self.path, 'action':'read'}, '/api/spending-policy': {'path': self.path, 'expected': 'stale', 'policy': 'warn'}, '/api/outline-flow': {'path': 'nowhere', 'expected': 'old'}, '/api/intake-draft': {'action': 'read'}, '/api/training-plan': {'path':'nowhere', 'expected':'none', 'decision':'approve'}, '/api/research-sources': {'action':'create'}, '/api/setup/check': {'path': str(self.base / 'elsewhere')},
                        '/api/setup': {'limits': {'parallel': 4}},
                        '/api/trainings': {**FORM, 'title': 'Health checks'},
                        '/api/run': {'path': self.path, 'action': 'stop'},

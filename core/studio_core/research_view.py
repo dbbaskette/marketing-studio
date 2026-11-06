@@ -85,7 +85,10 @@ def _account(folder, questions):
         'brief': (folder / 'brief.md').read_text(encoding='utf-8'),
         'report': (folder / 'report.md').read_text(encoding='utf-8'),
         'evidence': (folder / 'evidence.md').read_text(encoding='utf-8'),
-        'check': {'accepted': accepted, 'said': CHECKED if accepted else UNCHECKED,
+        'check': {'accepted': accepted, 'creator_approved': bool(facts.get('creator_review')),
+                  'said': ('The creator chose which flagged material to include or exclude. '
+                           'Included uncertainty remains marked; the independent check did not accept every item.'
+                           if facts.get('creator_review') else CHECKED if accepted else UNCHECKED),
                   'coverage': assessment.get('coverage'),
                   'usefulness': assessment.get('usefulness'),
                   'note': _line(assessment.get('note')),

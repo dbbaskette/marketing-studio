@@ -228,7 +228,9 @@ def combine(case, task, areas, registry, base, offered, invoke, *, round, guidan
             with lock:
                 saved['sections'][area['id']] = {'basis': identity, 'worker': worker,
                     'content': content, 'digest': fingerprint(content)}
-                saved['final'] = None; store()
+                # A changed section invalidates the final's basis naturally. Keep
+                # its previous prose and objections for the next final author.
+                store()
             publish(area['id'], 'kept')
         except BaseException:
             publish(area['id'], 'failed'); raise
@@ -255,9 +257,11 @@ def combine(case, task, areas, registry, base, offered, invoke, *, round, guidan
             'evidence_base': base, 'contributions': contributions, 'seconds': policy['more_time'].get('final', policy['seconds'])}}
     if task.get('research_policy'):
         payload['return'] += f' Keep introduction and brief together within {task["research_policy"]["section_words"]} words.'
-    if (saved.get('final') or {}).get('basis') == key and saved['final'].get('needs_revision'):
+    if saved.get('final') and saved['final'].get('needs_revision'):
         prior = saved['final']['content']
+        section_ids = {section['id'] for section in contributions['sections']}
         payload['previous_final'] = {name: prior.get(name) for name in ('brief', 'comparisons')}
+        payload['previous_final']['sections'] = [s for s in prior.get('sections', []) if s['id'] not in section_ids]
         payload['previous_review'] = saved['final'].get('review')
     text, _ = invoke('synthesize', FINAL_GUIDANCE, payload, offered, False)
     require()

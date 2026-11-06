@@ -13,6 +13,37 @@ Installing/updating companions remains an explicit action. Merely opening a
 studio never downloads or replaces tools. New runs on an older installed helper
 retain the older adapter; existing runs never change research formats on resume.
 
+## Training Studio creator decisions
+
+Training Studio's collection workflow now runs one independent check per explicit
+attempt. A valid draft with semantic flags or unread sources can return to the
+creator instead of running three automatic corrections. **Choose flagged content**
+shows the actual passage, source links and the checker's note. Every flag requires
+**Include with warning** or **Exclude**. A whole-draft assessment can be acknowledged
+or rejected; rejecting it requires a correction or a narrower scope.
+
+Exclusion follows dependencies from sources to facts, findings and report/brief/
+comparison passages. Included uncertainty stays marked in the authoring handoff.
+Saving decisions starts no model job, and Continue retains the normal material
+review gates. Another correction/check is an explicit alternative. Final-author
+feedback survives another section being rewritten.
+
+The helper's independent verdict and original bundle remain unchanged. Training
+Studio publishes a separate deterministic consumer bundle with owner
+`training-studio-creator-research`, status `creator-approved`, and `creator.json`
+containing the base dossier, exact decisions and input identity. Consumer validation
+checks its file hashes and reproduces the decision-qualified output. This status
+is never represented as a successful independent review. Stale forms, active jobs,
+changed sources, invalid artifacts and ownership conflicts cannot be approved by
+this path. Existing independent-only import/migration paths may require a fully
+accepted helper bundle; this creator handoff is for the native Training Studio run.
+
+The diagram and state transitions are linked from
+[Create training](design/create-training-task-flow.md) and the
+[implementation plan](superpowers/plans/2026-11-05-training-creator-review.md).
+Other studios and older non-collection execution retain their existing correction
+policy described below.
+
 ## Handoff and execution
 
 New researched Presentation Studio desks first run one bounded Quick scan and wait for
