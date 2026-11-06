@@ -168,16 +168,54 @@ def escape_line_start(line):
     return re.sub(r'^(\s*)(-{3,}|={3,})(\s*)$', r'\1\\\2\3', line)
 
 
-def run_features(style):
+def link_target(link, context=None):
+    """Keep native internal links pointed at the source Doc, including another tab.
+
+    includeTabsContent returns heading/bookmark objects; older reads use their IDs.
+    Resolve destinations without fetching another tab or modifying native link styles.
+    """
+    problem = (
+        'This Google Doc contains an unsupported link. Blog Studio could not read its destination.'
+    )
+    if not isinstance(link, dict) or len(link) != 1:
+        raise GoogleError(problem)
+    kind, target = next(iter(link.items()))
+    if kind == 'url':
+        if (
+            not isinstance(target, str)
+            or not target.startswith(('https://', 'http://', 'mailto:'))
+            or any(c.isspace() or c in '<>' for c in target)
+        ):
+            raise GoogleError(problem)
+        return target
+    document_id, tab_id = context or (None, None)
+    if not isinstance(document_id, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,200}', document_id):
+        raise GoogleError(problem)
+    fragment = ''
+    if kind in ('heading', 'bookmark'):
+        if not isinstance(target, dict) or set(target) != {'id', 'tabId'}:
+            raise GoogleError(problem)
+        tab_id, target = target['tabId'], target['id']
+    elif kind in ('headingId', 'bookmarkId'):
+        kind = kind.removesuffix('Id')
+    elif kind == 'tabId':
+        tab_id = target
+    else:
+        raise GoogleError(problem)
+    if any(
+        not isinstance(value, str) or not re.fullmatch(r'[A-Za-z0-9_.-]{1,200}', value)
+        for value in (tab_id, target)
+    ):
+        raise GoogleError(problem)
+    if kind in ('heading', 'bookmark'):
+        fragment = '#' + kind + '=' + target
+    return 'https://docs.google.com/document/d/' + document_id + '/edit?tab=' + tab_id + fragment
+
+
+def run_features(style, context=None):
     """The parts of a text style that Markdown can say. Colour, size and font face stay in the DOCX."""
     link = style.get('link')
-    url = None
-    if link:
-        url = link.get('url', '') if isinstance(link, dict) else ''
-        if not url.startswith(('https://', 'http://', 'mailto:')) or any(
-            c.isspace() or c in '<>' for c in url
-        ):
-            raise GoogleError('Review pull needs inspection of an unsupported link.')
+    url = link_target(link, context) if link else None
     family = style.get('weightedFontFamily', {}).get('fontFamily', '').lower()
     script = {'SUPERSCRIPT': 'sup', 'SUBSCRIPT': 'sub'}.get(style.get('baselineOffset'))
     return (
@@ -225,9 +263,10 @@ class Objects:
     """What a lenient read of a Doc meets besides text: images numbered in document order with
     their data (keyed by object id, or a list by number), and footnotes in reference order."""
 
-    def __init__(self, native, images):
+    def __init__(self, native, images, context):
         self.native = native
         self.images = images
+        self.context = context
         self.number = 0
         self.definitions = []
         self.footnotes = []
@@ -282,12 +321,14 @@ def _unreadable(kind):
     )
 
 
-def render_paragraph(paragraph, objects=None):
+def render_paragraph(paragraph, objects=None, context=None):
     """One paragraph's inline Markdown, before any heading or list prefix. Without `objects`
     only text is read and anything else refuses; with them, images, chips, breaks and
     footnote markers are read as Google's own export writes them."""
     elements = paragraph.get('elements', [])
     lenient = objects is not None
+    if objects is not None:
+        context = objects.context
     if any('horizontalRule' in element for element in elements):
         rest = ''.join(
             e.get('textRun', {}).get('content', '') for e in elements if 'horizontalRule' not in e
@@ -316,7 +357,7 @@ def render_paragraph(paragraph, objects=None):
         kinds = set(element) - {'startIndex', 'endIndex'}
         if kinds == {'textRun'}:
             run = element['textRun']
-            add(run.get('content', ''), run_features(run.get('textStyle', {})))
+            add(run.get('content', ''), run_features(run.get('textStyle', {}), context))
             continue
         if not lenient:
             raise GoogleError(
@@ -409,7 +450,8 @@ def accepted_markdown(value, images=None, manuscript=False):
     if len(selected) != 1:
         raise GoogleError('Review snapshots require a single-tab document.')
     native = selected[0].get('documentTab', {})
-    objects = None if images is None else Objects(native, images)
+    context = (value.get('documentId'), selected[0].get('tabProperties', {}).get('tabId'))
+    objects = None if images is None else Objects(native, images, context)
     if objects is None and any(native.get(k) for k in ('headers', 'footers', 'footnotes')):
         raise GoogleError(
             'Review pull needs a scoped native conversion for headers, footers or footnotes.'
@@ -433,7 +475,7 @@ def accepted_markdown(value, images=None, manuscript=False):
                 'Review pull cannot project this structure. Use a scoped accepted-text conversion; preserve DOCX.'
             )
         paragraph = block['paragraph']
-        line, rule = render_paragraph(paragraph, objects)
+        line, rule = render_paragraph(paragraph, objects, context)
         named = paragraph.get('paragraphStyle', {}).get('namedStyleType', 'NORMAL_TEXT')
         level = {'TITLE': 1, 'SUBTITLE': 2}.get(named)
         if named.startswith('HEADING_') and named[-1:] in '123456':

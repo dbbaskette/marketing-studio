@@ -269,7 +269,36 @@ class GoogleIntakeTests(unittest.TestCase):
         self.assertEqual((folder / 'DRAFT.md').read_text(), 'Keep these local edits.')
         self.assertEqual(studio.item(self.root, 'articles', result['id'])[1]['google'], baseline)
 
+    def test_heading_links_preview_with_tab_and_sharing_urls_and_import_without_writes(self):
+        run = self.client.doc['tabs'][0]['documentTab']['body']['content'][1]['paragraph'][
+            'elements'
+        ][0]['textRun']
+        run['textStyle']['link'] = {'heading': {'id': 'h.section', 'tabId': 't.0'}}
+        original = copy.deepcopy(self.client.doc)
+        snapshots = []
+        for query in ('?tab=t.0', '?usp=sharing'):
+            preview = management.dispatch(
+                self.root,
+                'google-preview',
+                {'url': 'https://docs.google.com/document/d/fixture-doc/edit' + query},
+            )
+            snapshots.append((self.snapshot(preview) / 'document.md').read_text())
+        self.assertEqual(snapshots[0], snapshots[1])
+        self.assertIn(
+            'https://docs.google.com/document/d/fixture-doc/edit?tab=t.0#heading=h.section',
+            snapshots[0],
+        )
+        imported = self.start(preview)
+        folder, _ = studio.item(self.root, 'articles', imported['id'])
+        self.assertEqual((folder / 'DRAFT.md').read_text(), snapshots[0])
+        self.assertEqual(self.client.doc, original)
+        self.assertEqual(self.client.writes, 0)
+
     def test_pending_suggestions_are_excluded_and_never_applied(self):
+        run = self.client.doc['tabs'][0]['documentTab']['body']['content'][2]['paragraph'][
+            'elements'
+        ][0]['textRun']
+        run['textStyle']['link'] = {'heading': {'id': 'h.section', 'tabId': 't.0'}}
         edits = [
             {
                 'id': 'pending',
@@ -292,6 +321,7 @@ class GoogleIntakeTests(unittest.TestCase):
         folder, _ = studio.item(self.root, 'articles', result['id'])
         self.assertIn('delay', (folder / 'DRAFT.md').read_text())
         self.assertNotIn('wait', (folder / 'DRAFT.md').read_text())
+        self.assertIn('#heading=h.section', (folder / 'DRAFT.md').read_text())
         self.assertEqual(self.client.writes, writes)
 
     def test_validation_missing_confirmation_and_changed_preview_cannot_create_a_blog(self):
