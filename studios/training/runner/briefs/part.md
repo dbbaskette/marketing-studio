@@ -1,6 +1,6 @@
 # Change one part of a training material
 
-Read the section, its plan module, neighbours, earlier levels and numbered findings.
+Read the section, its plan module, neighbors, earlier levels and numbered findings.
 Follow the author’s note precisely. Preserve facts, conditions, qualifications and references.
 Cite only existing Sources numbers or the supported findings with the numbers supplied.
 Never write or change Sources. Training Studio appends the references you actually cite.

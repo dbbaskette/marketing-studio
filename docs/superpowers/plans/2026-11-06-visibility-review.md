@@ -91,3 +91,17 @@ return to AI choice and unchanged worker attempts/spending. The sheet's separate
 phone/desktop check passed scroll ownership, visible actions, focus trapping,
 Escape/return and zero changes on Cancel. Test DOM expectations were updated for
 section visibility; save/conflict assertions were retained.
+
+
+## US English authoring — #408
+
+The supplied slide contained “practise” because Training Studio's author-facing
+handoff and examples used it. Add a common US English default to authored guidance
+and the provisional outline; honor an explicit creator language/locale request.
+Correct the seeding examples and prompt text. Keep quotes, code, names, approved
+slide wording and existing saved materials intact. Verify assembled briefs and
+outline/deck handoffs with fake workers; this is prompt guidance, not a claim that
+every future model output is deterministically spell-checked.
+
+US English verification: all 38 brief/outline checks and 25 deck handoff/delivery
+rule checks passed. Existing files were not rewritten and no provider was called.

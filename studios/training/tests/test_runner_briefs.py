@@ -42,6 +42,16 @@ def own(text: str) -> str:
 
 
 class BriefTests(JobCase):
+    def test_author_guidance_defaults_to_us_english_without_rewriting_sources(self):
+        for job in briefs.JOBS:
+            with self.subTest(job=job):
+                text = briefs.guidance(job, **({'kind': 'product'} if job == 'brief' else {}))
+                self.assertIn('Use US English', text)
+                self.assertIn('unless the creator explicitly requests', text)
+                self.assertIn('Preserve exact source quotations, code, proper names', text)
+                self.assertIn('do not silently rewrite saved material', text)
+                self.assertNotIn('practise', text)
+
     def test_there_is_a_brief_for_each_job_and_no_other(self):
         self.assertEqual(briefs.JOBS, ('research-plan', 'research-plan-queue', 'research-question', 'blueprint',
                                        'document', 'brief', 'scenario', 'yoodli', 'part',

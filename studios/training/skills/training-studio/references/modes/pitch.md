@@ -7,7 +7,7 @@ The learner presents, then the AI asks questions as the audience. Use it when th
 - **Mode.** `pitch`.
 - **Situation.** The meeting: who called it, why, and how long the learner has.
 - **Learner role.** What they are presenting and what they want the room to decide or do.
-- **AI role.** The audience as one voice: who is listening, what they already know, what they need from the talk, and two or three behaviours such as "asks for the practical consequence of every claim".
+- **AI role.** The audience as one voice: who is listening, what they already know, what they need from the talk, and two or three behaviors such as "asks for the practical consequence of every claim".
 - **Opening.** How the audience invites the learner to begin.
 - **Questions.** Five to eight the audience would really ask, ordered from clarifying to hard, drawn from the research's objection and misconception findings.
 - **Success criteria.** That the presentation states the key points correctly, and that the learner answers what was asked, accurately and without bluffing. Saying "I don't know, I'll find out" to something outside the brief meets that criterion.

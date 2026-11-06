@@ -162,7 +162,7 @@ class RuleTests(JobCase):
         self.assertEqual(whole['direction'], deck.DIRECTION)
         self.assertEqual(whole['house'], [deck.CAVEAT, deck.WHOLE])
         rules = ' '.join(deck.DESIGNED_HOUSE)
-        for visual in ('peers', 'square corners', 'icon', 'colour', 'sentence case'):
+        for visual in ('peers', 'square corners', 'icon', 'color', 'sentence case'):
             self.assertNotIn(visual, rules.lower(), 'how a deck looks is the brand\'s')
         # With the look the person chose: its direction and its house style first.
         look = {'direction': {'focal': 'headingPrimary', 'neutral': 'canvasSecondary',
@@ -521,7 +521,7 @@ class RuleTests(JobCase):
                 'title': 'Practice next: probe-quiz, probe-design and manifest-review, in '
                          'that order, with a partner'}
         short = {'id': 'closing-practice', 'kind': 'closing', 'title': 'Thank you',
-                 'subtitle': 'Now practise'}
+                 'subtitle': 'Now practice'}
         told = deck.rules({'slides': [content, long]}, blueprint)
         self.assertTrue(any('closing slide is the brand' in problem and
                             'content slide before it' in problem for problem in told), told)
@@ -536,7 +536,7 @@ class RuleTests(JobCase):
             '## Research', '## Output', '## Teaching and assessment'])
         for told in ('- Describe what a rolling restart does (O1)', 'Duration: 25 min',
                      'no slide may depend on its speaker notes', 'M1, Rolling restarts',
-                     'says what to practise next: main, then a closing slide.',
+                     'says what to practice next: main, then a closing slide.',
                      'Work from the blueprint, the learner guide and the research findings.',
                      "Anything under the blueprint's open gaps stays out.",
                      'Google Slides, in the brand example-co (light).'):
@@ -2117,7 +2117,7 @@ class RepairTests(DeckCase):
         self.assertEqual(self.log()[-5].partition(': ')[2],
                          'keep section 1 of the slide deck, drawn again')
 
-    BLOCKER = {'code': 'OFF_PALETTE', 'slide': 2, 'says': 'A colour outside the palette.'}
+    BLOCKER = {'code': 'OFF_PALETTE', 'slide': 2, 'says': 'A color outside the palette.'}
 
     def test_a_brand_blocker_sends_its_section_back(self):
         self.workers.found = [[]]
@@ -2135,12 +2135,12 @@ class RepairTests(DeckCase):
         first = rounds[0]
         self.assertEqual(first['audit_findings'], [{
             'slide': 'what-it-does', 'number': 2, 'severity': 'critical', 'about': 'drawing',
-            'question': None, 'note': "The brand's check: A colour outside the palette.",
+            'question': None, 'note': "The brand's check: A color outside the palette.",
             'fix': None, 'source': 'brand'}])
         self.assertEqual(first['review']['by'], 'screen')
         self.assertEqual(len(rounds), 2, 'the section was drawn again, then reviewed')
         self.assertEqual(self.kinds().count('review'), 1)
-        self.assertTrue(told and "The brand's check: A colour outside the palette." in
+        self.assertTrue(told and "The brand's check: A color outside the palette." in
                         told[0][1], told)
 
     def test_brand_warnings_reach_the_reviewer(self):

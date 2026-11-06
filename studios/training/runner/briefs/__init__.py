@@ -68,6 +68,11 @@ JOBS = ('research-plan', 'research-plan-queue', 'research-question', 'blueprint'
         'finish-humanize', 'finish-level', 'deck-outline', 'deck-section', 'deck-review')
 NAMED = ('document', 'brief', 'scenario')   # the writers a brand's naming rules are given to
 HAND_BACK = '\n## Hand back\n'
+LANGUAGE = ('Use US English for text you author unless the creator explicitly requests another '
+            'language or variety. Use practice, color, behavior and organize. Preserve exact '
+            'source quotations, code, proper names and approved slide wording; do not silently '
+            'rewrite saved material to change its spelling.')
+
 DESIGNED = {'deck-outline': 'deck-design', 'deck-section': 'deck-section-design',
             'deck-review': 'deck-review-design'}
 EXAMPLES = Path('assets') / 'examples'
@@ -132,6 +137,8 @@ def guidance(job: str, level: str | None = None, kind: str | None = None,
                              'only a section drawn from that design of its assets, and '
                              'only one drawn again from it of what drawing cannot put right.')
     text = read(job)
+    title, _, body = text.partition('\n')
+    text = title + '\n\n' + LANGUAGE + '\n' + body
     for added in ((['naming'] if naming else []) + (['deck-repair'] if repair else [])
                   + (['deck-design'] if design and job == 'deck-outline' else [])
                   + (['deck-design-icons'] if icons else [])

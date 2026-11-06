@@ -1,12 +1,12 @@
 # Mode: roleplay
 
-The AI plays a person the learner has to deal with: a customer, a stakeholder, a sceptical colleague. The learner practises a live conversation. Use it for `handle` objectives. It is the default mode.
+The AI plays a person the learner has to deal with: a customer, a stakeholder, a skeptical colleague. The learner practices a live conversation. Use it for `handle` objectives. It is the default mode.
 
 ## Drafting the scenario
 
 - **Situation.** Something just happened that makes this conversation necessary. Say what, and say it is a hypothetical practice situation.
 - **Learner role.** Who they are and what they are trying to leave the conversation with.
-- **AI role.** One person, with a role, a demeanour the AI can act out ("sceptical, short on time") and not a mood label ("difficult"), a background that explains their position, and two or three observable behaviours: "interrupts vague answers", "asks how you know at least once".
+- **AI role.** One person, with a role, a demeanor the AI can act out ("skeptical, short on time") and not a mood label ("difficult"), a background that explains their position, and two or three observable behaviors: "interrupts vague answers", "asks how you know at least once".
 - **Opening.** The person's first line, in their own words.
 - **Concerns and pushback.** Three to five, in their words, drawn from the research's objection findings and the blueprint's misconceptions. Include one that rests on a misconception the training corrects.
 - **Success criteria.** What the learner should do, each observable in the conversation. For a `handle` objective include conduct: acknowledging the concern before correcting it, and leaving with a next step.

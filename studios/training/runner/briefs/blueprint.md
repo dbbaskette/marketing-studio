@@ -32,7 +32,7 @@ Propose the size the research supports and give the reason. Do not pad to reach 
 
 ## Objectives
 
-`### O<n> — <one observable behaviour> [<level>]`
+`### O<n> — <one observable behavior> [<level>]`
 
 | Level | The learner can |
 | --- | --- |
@@ -41,7 +41,7 @@ Propose the size the research supports and give the reason. Do not pad to reach 
 | `apply` | Use it on a new case |
 | `handle` | Hold a live conversation about it: answer an objection, run a discovery call |
 
-Write behaviours you could watch someone do. "Understand rolling restarts" is not one. "Explain when a rolling restart keeps capacity" is.
+Write behaviors you could watch someone do. "Understand rolling restarts" is not one. "Explain when a rolling restart keeps capacity" is.
 
 Choose the smallest useful set that fits the learner's time. Connect every objective to a realistic decision or task for this audience. More objectives and more scenarios do not make a better course.
 
@@ -59,7 +59,7 @@ Under each module heading, one item per line:
 
 One line per objective: `- O1: Check: <knowledge-check question> | Observe: <what a practice session should show>`
 
-The check goes into the learner guide; the observation guides the practice scenarios. Each must ask for the behaviour its objective names: explaining a procedure is not evidence of being able to perform it.
+The check goes into the learner guide; the observation guides the practice scenarios. Each must ask for the behavior its objective names: explaining a procedure is not evidence of being able to perform it.
 
 Use a fresh case to assess transfer, not only repetition of a worked example. Budget explanation, demonstration, learner practice and debrief inside the module time. For applied work, name the learner's output and the observable sign that it worked. Label invented practice situations as hypothetical; they cannot establish product facts or customer outcomes.
 
