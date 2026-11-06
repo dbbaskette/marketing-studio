@@ -19,3 +19,16 @@ retain per-slide unsaved text, and give the selector a stable focus key for poll
 
 Verify the affected Training Studio desk/layout modules and the rendered deck
 journey at 390/1280 px, light/dark. Reuse broader unchanged runtime evidence.
+
+## Visible secondary actions — #402
+
+Shared secondary buttons used transparent fills and decoration-strength borders.
+Use opaque neutral control fills and explicit boundary tokens in both themes,
+including the liquid pilot. Keep primary, selected and disabled states separate.
+
+Verification: all 47 shared UI/layout checks passed. Browser measurements passed
+3:1 inner/outer control boundaries and 4.5:1 label contrast on reading cards, 44px
+targets, focus and forced colors, at 390/1280 px in light/dark and standard/pilot.
+The actual Marketing Studio settings save/reload journey also passed. The slide
+position change passed 139 Training Studio desk/layout tests and its rendered
+slide browser journey before merging as #401.
