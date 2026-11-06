@@ -35,3 +35,10 @@ Compare dispatch positions with equivalent scope. This proves reduced scheduling
 delay; it does not predict provider latency or establish live output quality.
 Run the affected tests at the slice boundary and the full Training Studio suite
 once in the shared disposable Tart runner. No real training or provider job is used.
+
+Scheduling evidence: application commit `a66dd861` ran all 3,202 Training Studio
+tests on disposable macOS 27 / Python 3.13.15 / Node 22.23.2. One legacy fixture
+incorrectly retained the new scheduling pin while constructing an older run; the
+other 3,201 tests passed. Removing that pin from the legacy fixture passed all 12
+outline tests on Python 3.13.5, and package validation passed. Application code
+was unchanged by that correction. The disposable VM was deleted.
