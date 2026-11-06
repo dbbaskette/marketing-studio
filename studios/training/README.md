@@ -16,8 +16,8 @@ Completed research section drafts can be read while the final check is pending a
 survive a failed peer; retry unfinished work. Save a private queued note to revisit
 in an explicit research change; it does not change an assistant's current work.
 Source changes first show the affected scope, while wording and notes can stay
-local. After the independent check, unresolved flags become your include/exclude
-decisions; included uncertainty stays marked. Your exact-revision material approval
+local. After the independent check, unresolved flags become your Include / Include with warning / Exclude
+decisions; only requested warnings appear in the content. Your exact-revision material approval
 remains necessary.
 See the [incremental workflow guide](../../docs/incremental-workflow.md).
 
@@ -93,7 +93,7 @@ optional tools. Missing capabilities are explained rather than silently substitu
    and research questions. Edit, add or remove them, then **Approve outline & research**
    starts research only for that scope. Accepted research and your approved outline
    guide the selected materials. Unresolved research flags become your decisions
-   before you continue; included uncertainty stays marked. There is no sample lesson
+   before you continue; warnings appear only where requested. There is no sample lesson
    to approve.
 4. **Review requested slide text.** If you selected a deck, **Review slide text**
    opens the Deck tab with one slide at a time. Correct titles, points and notes
