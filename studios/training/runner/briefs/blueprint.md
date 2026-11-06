@@ -67,7 +67,7 @@ Use a fresh case to assess transfer, not only repetition of a worked example. Bu
 
 One line per practice scenario: `- <scenario-id>: <mode>. Objectives: O2, O3. <who the AI plays, in a phrase>`
 
-Modes are `roleplay`, `pitch`, `tutor` and `questionnaire`. Use `roleplay` or `pitch` for `handle` objectives. If the task says the person already has scenarios, list those and say which objectives each exercises. Leave the section out when the task says scenarios are not wanted.
+Modes are `roleplay`, `pitch`, `tutor` and `questionnaire`. Use `roleplay` or `pitch` for `handle` objectives. If the task says the person already has scenarios, list those and say which objectives each exercises. When creator descriptions are supplied, cover every requested ID once and expand each short description into the plan. AI chooses the details and mode. Leave the section out when the task says scenarios are not wanted.
 
 ## Open gaps
 

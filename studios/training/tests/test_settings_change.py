@@ -62,6 +62,24 @@ class SettingsCase(DeckCase):
 
 
 class DiscardTests(SettingsCase):
+    def test_scenario_only_edit_keeps_unfinished_research_and_its_stop(self):
+        from test_practice_intent import PLAN
+        root = self.supplied(materials=['document', 'brief', 'scenario'], yoodli=True)
+        before = self.engine._load(root)
+        jobs = len(self.workers.jobs)
+        shown = self.form(root)
+        sent = self.sent(shown, scenario_plan=PLAN)
+        preview = self.engine.change_settings(root, sent, preview=True)
+        self.assertEqual(preview['research'], 'continues')
+        self.assertFalse(preview['confirm'])
+        self.assertIsNone(preview['discards'])
+        self.engine.change_settings(root, sent)
+        after = self.engine._load(root)
+        self.assertEqual(after['research'], before['research'])
+        self.assertEqual(after.get('research_execution'), before.get('research_execution'))
+        self.assertEqual(after['problem']['action'], before['problem']['action'])
+        self.assertEqual(len(self.workers.jobs), jobs)
+
     def test_documents_only_becomes_documents_and_web_with_three_questions(self):
         root = self.supplied()
         drafts_before = set((self.space.root / '.research-sources').iterdir())
@@ -175,6 +193,35 @@ class DiscardTests(SettingsCase):
 
 
 class KeepTests(SettingsCase):
+    def test_scenario_descriptions_keep_research_and_hold_materials_without_starting_work(self):
+        from test_practice_intent import PLAN
+        self.workers.then('brief', fails(), fails(), fails())
+        root = self.start(flow='desk', materials=['document', 'brief', 'scenario'], yoodli=True)
+        self.to_end(root)
+        shown = self.form(root)
+        self.assertTrue(shown['practice'])
+        self.assertEqual(shown['values']['scenario_plan']['mode'], 'ai')
+        report = (root/pipeline.REPORT).read_bytes()
+        blueprint = (root/'blueprint.md').read_bytes()
+        jobs = len(self.workers.jobs)
+        sent = self.sent(shown, scenario_plan=PLAN)
+        preview = self.engine.change_settings(root, sent, preview=True)
+        self.assertEqual(preview['changed'], ['scenario_plan'])
+        self.assertEqual(preview['research'], 'kept')
+        self.assertFalse(preview['confirm'])
+        self.assertIn('Out of date afterwards', ' '.join(preview['words']))
+        self.engine.change_settings(root, sent)
+        self.assertEqual(len(self.workers.jobs), jobs)
+        self.assertEqual((root/pipeline.REPORT).read_bytes(), report)
+        self.assertEqual((root/'blueprint.md').read_bytes(), blueprint)
+        session = workspace.load(root)
+        self.assertEqual(session['settings']['scenario_plan'], PLAN)
+        self.assertEqual(workspace.statuses(root, session)['research'], 'approved')
+        self.assertEqual(workspace.statuses(root, session)['blueprint'], 'stale')
+        self.assertEqual(self.form(root)['values']['scenario_plan'], PLAN)
+        with self.assertRaisesRegex(WorkspaceError, 'changed since'):
+            self.engine.change_settings(root, sent)
+
     def finished(self, **changes) -> Path:
         """Research accepted, the plan and the guide made, and the brief stopped after its
         three tries: a stop well past research."""

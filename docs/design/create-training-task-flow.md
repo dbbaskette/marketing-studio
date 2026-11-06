@@ -271,3 +271,10 @@ contains the test evidence and UI audit results.
 - [Section authors and final assembly](../../core/studio_core/research_sections.py): `combine`.
 - [Slide section pool](../../studios/training/runner/engine.py): `_sections`.
 - [Parallel research checking design](../superpowers/specs/2026-11-05-parallel-research-checking.md).
+
+Practice planning defaults to AI selection. Creators can instead provide short
+scenario descriptions; each selected level receives those scenario IDs, adapted to
+its depth. The blueprint check requires each requested ID. Scenario authors and
+Yoodli layout jobs receive the same description, with the approved scenario taking
+precedence for Yoodli. Editing scenario intent preserves research and holds affected
+materials for an explicit update.

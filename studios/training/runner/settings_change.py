@@ -33,7 +33,7 @@ import workspace
 from workspace import WorkspaceError
 
 import runner  # noqa: F401  puts the core on the import path
-from runner import drafts, pipeline, training_plan
+from runner import drafts, pipeline, training_plan, practice_intent
 from studio_core import research_contract, research_session as research_parallel
 from studio_core import research_sites, research_sources, stops
 from studio_core.research_view import series
@@ -53,7 +53,7 @@ NAMES = {'topic': 'the topic', 'audience': 'the audience', 'purpose': 'what it i
          'research_questions': 'the research questions', 'sources': 'the sources',
          'search': 'where research may search', 'workers': 'the research workers',
          'deck_target': 'the slide deck', 'brand': 'the deck’s brand',
-         'delivery': 'how the deck is used', 'walkthrough': 'the slide walkthrough'}
+         'delivery': 'how the deck is used', 'walkthrough': 'the slide walkthrough', 'scenario_plan': 'the scenario choices'}
 DECK_FIELDS = ('deck_target', 'brand', 'delivery', 'walkthrough')
 OUTDATED = ('These settings changed since this form was opened. Close it and open Change '
             'settings again; nothing was changed.')
@@ -119,7 +119,8 @@ def values(root: Path, session: dict, record: dict) -> dict:
             'research_from': {key: looks[key] for key in ('documents', 'sites', 'web')},
             'deck_target': session['settings']['deck_target'], 'brand': _brand(session),
             'delivery': pipeline.delivery_of(session),
-            'walkthrough': pipeline.walkthrough_of(session)}
+            'walkthrough': pipeline.walkthrough_of(session),
+            'scenario_plan': practice_intent.of(session)}
 
 
 def _accepted(root: Path, session: dict) -> bool:
@@ -199,6 +200,7 @@ def form(engine, path) -> dict:
                 'locked': locked(root, session, record),
                 'made_levels': _made_levels(root, session),
                 'documents': _documents(engine, root),
+                'practice': 'scenario' in pipeline.wanted(session),
                 'research': {'accepted': accepted,
                              'discards': _discarded(record, 'again' if accepted else 'replanned')}}
 
@@ -394,6 +396,7 @@ def plan(engine, root: Path, session: dict, record: dict, sent: dict) -> dict:
            'purpose': checked['purpose'], 'time_limit': checked['time_limit'],
            'levels': checked['levels'], 'brief_kind': checked['brief_kind'],
            'research_questions': checked['research_questions'],
+           'scenario_plan': checked.get('scenario_plan', practice_intent.of(session)),
            'deck_target': checked['deck_target'], 'brand': checked['brand_value'],
            'delivery': checked['delivery'] if checked['deck_target'] else now['delivery'],
            'walkthrough': checked['walkthrough'] if checked['deck_target'] else now['walkthrough']}
@@ -496,6 +499,17 @@ def _words(root, session, record, changed, outcome, lost, researched, differs, n
             (outcome == 'kept' and researched):
         after = [name for name in workspace.downstream(root, session, 'intake')
                  if name not in ('research-plan', 'research') and _made(root, session, name)]
+    if 'scenario_plan' in changed:
+        after += [name for level in session['levels'] or [None]
+                  for name in [workspace.qualify('blueprint', level),
+                               *workspace.downstream(root, session, workspace.qualify('blueprint', level))]
+                  if _made(root, session, name)]
+        proposed = {**session, 'settings': {**session['settings'], 'scenario_plan': new['scenario_plan']}}
+        after += [name for name in workspace.artifact_names(root, session)
+                  if workspace.split(name)[0].startswith(('scenario:', 'yoodli:'))
+                  and _made(root, session, name)
+                  and workspace.inputs(root, session, name) != workspace.inputs(root, proposed, name)]
+        after = list(dict.fromkeys(after))
     if after:
         marked = [name for name in after if name in ready]
         said.append('Out of date afterwards: ' + series([workspace.label(name) for name in after])
@@ -649,6 +663,11 @@ def _apply(engine, root: Path, found: dict) -> dict:
                 session['settings']['brand'] = None
                 session['settings']['deck_target'] = None
                 workspace.store(root, session)
+    if 'scenario_plan' in changed:
+        with workspace.locked(root):
+            session = workspace.load(root)
+            session['settings']['scenario_plan'] = new['scenario_plan']
+            workspace.store(root, session)
     if 'walkthrough' in changed:
         with workspace.locked(root):
             session = workspace.load(root)
@@ -678,7 +697,7 @@ def _apply(engine, root: Path, found: dict) -> dict:
             record['documents'] = None
         record['research_from'] = chosen
     record['research_questions'] = new['research_questions']
-    if record.get('outline_first', {}).get('outline'):
+    if record.get('outline_first', {}).get('outline') and (found['differs'] or any(name in RESEARCHED for name in changed)):
         record['outline_first']['inputs_changed'] = True
         if 'research_questions' in changed:
             record['outline_first']['outline']['personal_questions'] = list(new['research_questions'])

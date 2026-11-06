@@ -4532,7 +4532,8 @@ class RunnerScreenTests(ScriptedPage, PageCase):
             'research_questions': [''], 'deck_target': 'google',
             'brand': {'brand': 'example-co', 'variant': 'dark'}, 'delivery': 'live',
             'walkthrough': False,
-            'copies': ['google'], 'yoodli': False, 'materials': ['document', 'brief', 'scenario'], 'agent': 'claude', 'model': None,
+            'copies': ['google'], 'yoodli': False, 'materials': ['document', 'brief', 'scenario'], 'scenario_plan': {'mode': 'ai', 'scenarios': []},
+            'agent': 'claude', 'model': None,
             'effort': None, 'flow': 'desk'})])
 
         # Started, it opens on its desk: nothing needs the person while the start works.

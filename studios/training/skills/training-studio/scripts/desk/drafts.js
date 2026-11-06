@@ -805,6 +805,7 @@ function deskBody(draft) {
       walkthrough: Boolean(draft.walkthrough) } : {}),
     copies: COPIES.map((kind) => kind[0]).filter((kind) => draft.copies.includes(kind)),
     yoodli: draft.yoodli, materials: draft.materials,
+    scenario_plan: draft.materials.includes('scenario') ? scenarioPlanBody(draft) : {mode: 'ai', scenarios: []},
     agent: draft.agent, model: draft.model.trim() || null, effort: draft.effort || null,
     flow: 'desk',
   };
@@ -947,6 +948,8 @@ async function openChangeSettings(opener) {
       variant: (values.brand && values.brand.variant) || '',
       delivery: Math.max(0, DELIVERIES.findIndex((kind) => kind[0] === values.delivery)),
       walkthrough: Boolean(values.walkthrough),
+      scenarioPlan: {mode: values.scenario_plan?.mode || 'ai',
+        scenarios: list(values.scenario_plan?.scenarios).map(row => ({...row}))},
       researchQuestions: list(values.research_questions).join('\n'), again: false },
   };
   if (sources) {
@@ -1003,6 +1006,7 @@ function settingsBody(changing) {
     purpose: purposes[draft.purpose], time_limit: draft.time.trim() || null,
     levels: LEVELS.filter((level) => draft.levels.includes(level)),
     brief_kind: draft.brief ? 'competitive' : 'product',
+    scenario_plan: scenarioPlanBody(draft),
     research_questions: draft.researchQuestions.split('\n'),
     deck_target: deck,
     brand: deck ? { brand: draft.brand, variant: draft.variant || null } : null,
@@ -1014,6 +1018,12 @@ function settingsBody(changing) {
 
 function settingsReady(changing) {
   const { draft } = changing;
+  const scenarioProblem = changing.shown.practice ? scenarioPlanProblem(draft) : '';
+  if (scenarioProblem) {
+    say(byId('change-problem'), scenarioProblem);
+    byId('change-scenario-options')?.querySelector('textarea')?.focus();
+    return false;
+  }
   const missing = [['change-topic', draft.topic, 'Say what it should teach first.'],
     ['change-audience', draft.audience, 'Say who it is for first.']]
     .filter(([id, value, text]) => byId(id) && refuse(id, value.trim() ? '' : text)
@@ -1207,7 +1217,8 @@ function settingsSheet() {
     make('p', 'quiet', 'These are the training’s saved settings. Nothing changes until you '
       + 'review the change and save it, and nothing starts until you press Continue.'),
     createStep(1, 'What it teaches', topic, audience, time, purpose),
-    createStep(2, 'What is made', levels, brief, ...decks),
+    createStep(2, 'What is made', levels, brief,
+      shown.practice ? scenarioPlanFields(draft, edited, 'change') : null, ...decks),
     createStep(3, 'Research', sources, line, questions, again),
     review, alertLine('change-problem'),
     add(make('div', 'bar create-foot'), go, back,

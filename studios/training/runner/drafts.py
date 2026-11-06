@@ -81,9 +81,10 @@ UPDATING_FIRST = 'Waiting for {what} to be updated.'
 PRACTICE = 'The plan for this practice changed.'
 # Each kind of material, and each other thing one is built from, as the desk names it.
 WHAT = {'blueprint': 'plan', 'document': 'guide', 'brief': 'brief', 'research': 'research',
-        'scenario': 'scenario', 'practice': 'practice plan', 'profile': 'Yoodli profile'}
+        'scenario': 'scenario', 'practice': 'practice plan', 'profile': 'Yoodli profile',
+        'scenario-intent': 'scenario description'}
 # What a material is built from that the desk names: its upstream materials, and these.
-NAMED = ('practice', 'profile')
+NAMED = ('practice', 'profile', 'scenario-intent')
 
 
 AFTERWARDS = ("Afterwards each level's plan and brief, and any deck without a guide, say what "

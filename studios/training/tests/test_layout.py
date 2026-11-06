@@ -416,7 +416,8 @@ class LayoutTests(test_desk.ScriptedPage, test_desk.PageCase):
             'research_questions': [''], 'deck_target': 'google',
             'brand': {'brand': 'example-co', 'variant': 'dark'}, 'delivery': 'live',
             'walkthrough': False, 'copies': ['google'], 'yoodli': False,
-            'materials': ['document', 'brief', 'scenario'], 'agent': 'claude', 'model': None,
+            'materials': ['document', 'brief', 'scenario'], 'scenario_plan': {'mode': 'ai', 'scenarios': []},
+            'agent': 'claude', 'model': None,
             'effort': None, 'flow': 'desk'})])
 
     def test_start_checks_every_step_and_focuses_the_first_gap(self):

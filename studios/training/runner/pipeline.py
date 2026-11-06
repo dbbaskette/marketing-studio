@@ -77,7 +77,7 @@ import sync_guidance
 import workspace
 from workspace import WorkspaceError
 
-from runner import briefs, deck, drafts, gitstate, settings
+from runner import briefs, deck, drafts, gitstate, settings, practice_intent
 from runner import slides as slides_tool
 
 ATTEMPTS = 3            # tries at one step: the first, and two more with the reason added
@@ -581,6 +581,8 @@ def check_form(sent: dict, brands=None, *, conversation=False) -> dict:
     form = {name: _words(sent, name, name in ('title', 'topic', 'audience', 'purpose'))
             for name in LIMITS}
     form['research_questions'] = research_questions(sent)
+    if 'scenario_plan' in sent:
+        form['scenario_plan'] = practice_intent.check(sent['scenario_plan'])
     form['levels'] = workspace.check_levels(_listed(sent, 'levels'))
     form['copies'] = workspace.check_copies(_listed(sent, 'copies'))
     form['brief_kind'] = sent.get('brief_kind') or 'product'
@@ -681,6 +683,11 @@ def create(space: gitstate.Workspace, form: dict) -> Path:
                        delivery=form.get('delivery') or 'live',
                        walkthrough=bool(form.get('walkthrough')),
                        approval='page', flow=form.get('flow'))
+        if 'scenario_plan' in form:
+            with workspace.locked(root):
+                session = workspace.load(root)
+                session['settings']['scenario_plan'] = form['scenario_plan']
+                workspace.store(root, session)
         sync_guidance.adopt(root)
         if form['deck_target'] is None:
             workspace.skip(root, 'deck', reason=NO_DECK, by='page')
@@ -1660,6 +1667,14 @@ def blueprint_work(root: Path, found: Survey, step: Step, request: dict | None,
         practice = 'Practice scenarios are wanted: plan them.'
     inputs = {'intake': _read(root / 'intake.md') or '',
               'research findings': findings_text(root)}
+    intent = practice_intent.descriptions(session) if 'scenario' in wanted(session) else None
+    scenario_ids = None
+    if intent:
+        inputs['creator scenario descriptions'] = intent
+        scenario_ids = sorted(set(own) | {row['id'] for row in practice_intent.of(session)['scenarios']})
+        practice += (' Use exactly these scenario IDs: ' + ', '.join(scenario_ids)
+                     + '. Cover every creator description once at this level; keep existing scenarios. '
+                       'Fill in the details yourself. Do not add unrelated scenarios.')
     earlier = _earlier(root, session, level)
     if earlier:
         inputs['earlier levels'] = earlier
@@ -1673,7 +1688,8 @@ def blueprint_work(root: Path, found: Survey, step: Step, request: dict | None,
                      'the blueprint', found.state.get(step.artifact) == 'stale'))
     prepared = {'inputs': inputs,
                 'artifacts': {name: {'kind': 'blueprint', 'level': level,
-                                     'findings': session.get('findings')}},
+                                     'findings': session.get('findings'),
+                                     **({'scenario_ids': scenario_ids} if scenario_ids is not None else {})}},
                 'ask': _can_ask(answered)}
     return Work(briefs.guidance('blueprint', level=level), task, 'write', prepared, name)
 
@@ -1809,6 +1825,9 @@ def scenario_work(root: Path, found: Survey, step: Step, request: dict | None,
              if 'brief' in wanted(session) else None)
     if brief:
         inputs['brief'] = brief
+    intent = practice_intent.descriptions(session, ident)
+    if intent and not own:
+        inputs['creator scenario description'] = intent
     inputs['mode reference'] = briefs.mode(mode)
     ruled = _named_by(inputs, naming)
     about = (f'{_about(root, session)}\n'
@@ -1925,6 +1944,9 @@ def yoodli_work(root: Path, found: Survey, step: Step, request: dict | None,
                                         .get(ident) or {}),
               'Yoodli field data': yoodli_facts(profile if isinstance(profile, dict) else {}),
               'mode reference': briefs.mode(mode)}
+    intent = practice_intent.descriptions(session, ident)
+    if intent:
+        inputs['creator scenario description'] = intent + '\nThe approved scenario is authoritative. Keep its scope and facts when laying out Yoodli fields.\n'
     copy, why = upload(found.copies, workspace.qualify('brief', level))
     if copy is None:
         ready = ('No copy of the brief is ready to upload'
