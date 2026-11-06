@@ -30,6 +30,8 @@ class CreatorDecisionTests(StudioCase):
         if 'review_template' not in payload:
             return native.ParallelNativeTests.worker(self, tools, job)
         self.phases.append('review')
+        if getattr(self, 'no_verdict', False):
+            return agents.Outcome(False, 'timeout', 'Synthetic check timed out before returning verdicts.', seconds=300)
         value = review(payload['review_template'])
         value['prose'][0].update(verdict='narrow', note='This source supports a narrower scope.')
         if self.unread:
@@ -56,10 +58,13 @@ class CreatorDecisionTests(StudioCase):
         self.assertFalse(facts['review']['accepted'])
         self.assertIn('Creator included with warning', (root/pipeline.REPORT).read_text())
         self.assertTrue(research_decision.current(root,self.engine._load(root)))
+        self.assertTrue(pipeline.findings_text(root).startswith('# Creator-approved research with unresolved verification'))
+        allowance = self.engine._load(root).get('cleared', 0.0)
         self.engine.act(root,'resume')
         shown=self.view(root)
         self.assertIsNone(shown['problem'],shown['problem'])
         self.assertEqual(self.phases.count('review'),1)
+        self.assertEqual(self.engine._load(root).get('cleared', 0.0), allowance)
         self.assertTrue(self.workers.of('blueprint'), 'Creator-qualified research reaches material authoring')
 
     def test_source_access_gap_also_offers_creator_choice(self):
@@ -69,6 +74,19 @@ class CreatorDecisionTests(StudioCase):
         self.assertTrue(any(row['kind']=='source' for row in shown['items']))
         self.decide(root)
         self.assertFalse(rc.read_bundle(root/'research')[0]['review']['originals'][0]['read_original'])
+
+    def test_checker_timeout_offers_whole_draft_as_explicitly_unverified(self):
+        self.no_verdict=True
+        root=self.start()
+        self.assertTrue(self.view(root)['problem']['creator_review'])
+        shown=research_decision.dispatch(self.engine,root,{'action':'read'})
+        self.assertEqual([row['id'] for row in shown['items']],['assessment:unreviewed'])
+        before=len(self.workers.jobs)
+        self.decide(root)
+        self.assertEqual(len(self.workers.jobs),before)
+        facts,_=rc.read_bundle(root/'research')
+        self.assertIsNone(facts['review'])
+        self.assertTrue(all('verification is unresolved' in fact['statement'] for fact in facts['facts']))
 
     def test_stale_or_active_form_is_refused_without_publishing(self):
         root=self.start()

@@ -134,6 +134,25 @@ class SectionWorkflowTests(unittest.TestCase):
         self.assertEqual(self.section_calls[len(prior):], ['question-2'])
         self.assertEqual([phase for phase, _ in self.calls].count('investigate'), 4)
 
+    def test_creator_retry_accepts_an_area_already_invalidated_by_an_older_run(self):
+        from studio_core import research_decisions
+        invoke = self.invoke
+        def flagged(phase, *args):
+            text, sources = invoke(phase, *args)
+            if phase == 'review':
+                value = json.loads(text)
+                value['facts'][0].update(verdict='narrow', note='Revisit this old rejected fact.')
+                text = json.dumps(value)
+            return text, sources
+        with self.assertRaises(research_decisions.CreatorReview):
+            self.workflow.run(self.root, self.task, flagged, section_policy=sections.pin(), creator_review=True)
+        case = session.case_for(self.root)
+        status = self.workflow.command(case, 'collection', 'status')
+        self.workflow.command(case, 'collection', 'retry', {'workstream': status['workstreams'][0]['id'], 'reason': 'Older correction loop already scheduled this area.'})
+        result, _ = self.workflow.run(self.root, self.task, invoke, section_policy=sections.pin(), creator_review=True)
+        self.assertTrue(result['review']['accepted'])
+        self.assertEqual([p for p, _ in self.calls].count('investigate'), 5)
+
     def test_final_timeout_keeps_every_section_and_retry_honors_only_its_time_grant(self):
         self.fail_final = True
         policy = sections.pin()

@@ -6218,7 +6218,7 @@ class Engine(Reviewing):
                 # Continue after Change settings carries twice the time for each step from a
                 # stop for time before it (#296). Only Carry on lifts the spending limit.
                 carried = problem.get('carried') if problem.get('settings') else None
-                if problem.get('action') == 'resume':  # it may spend as much again
+                if problem.get('action') == 'resume' and not problem.get('creator_saved'):  # explicit spending continuation
                     record['cleared'] = spent(record)[0] or 0.0
                 elif problem:
                     self._fresh(record, problem.get('step'))
@@ -7271,7 +7271,8 @@ class Engine(Reviewing):
             'problem': ({**{key: problem.get(key) for key in ('what', 'kept', 'action', 'label')},
                          **({'creator_review': True} if problem.get('step') == 'research'
                             and not problem.get('settings') and (problem.get('creator_review') or problem.get('objected')
-                                or problem.get('check_incomplete') or problem.get('unreadable'))
+                                or problem.get('check_incomplete') or problem.get('unreadable')
+                                or ((record.get('research_execution') or {}).get('progress') or {}).get('phase') == 'review')
                             and self._drafted(root) else {}),
                          **({'seconds': problem['seconds']} if problem.get('seconds') else {}),
                          # Waiting for Continue after Change settings: its words say so.

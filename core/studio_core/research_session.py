@@ -472,7 +472,9 @@ class Workflow:
         review, dossier = (prior.get('review') or {}), prior.get('dossier')
         # A user-triggered retry repairs a previous rejected draft once. Merely
         # opening the creator decision form never invalidates kept contributions.
-        if creator_review and review and not review.get('accepted') and not research_quality.coverage(review)['unread']:
+        if (creator_review and review and not review.get('accepted')
+                and not research_quality.coverage(review)['unread']
+                and all(row['status'] == 'accepted' for row in self.command(case, 'collection', 'status')['workstreams'])):
             registry = self.command(case, 'collection', 'assemble')
             affected = sorted(corrections(review, registry, sectioned=bool(section_policy)))
             if section_policy: research_sections.invalidate(case, review, affected)

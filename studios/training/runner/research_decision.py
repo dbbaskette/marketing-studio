@@ -49,7 +49,7 @@ def snapshot(engine, root, record):
     saved = rc.inside(case, '.harness-research/studio-inputs.json')
     if saved.exists() and json.loads(saved.read_text()) != now:
         raise WorkspaceError('Research inputs changed. Update the research before deciding on this draft.')
-    expected = decisions.digest([manifest, base['review'], now, identity(root, record), record.get('driver')])
+    expected = decisions.digest([manifest, base.get('review'), now, identity(root, record), record.get('driver')])
     return {'expected': expected, 'items': items, 'inputs': now,
             'bundle_expected': decisions.digest([base, manifest]),
             'report': (output / 'report.md').read_text(), 'source': output}
@@ -70,7 +70,7 @@ def dispatch(engine, path, sent):
             tool = rc.matching(engine.research(), record.get('research_contract'))
             if tool is None: raise WorkspaceError('Restore the saved research helper before continuing.')
             verified = tool._json('synthesis', 'verify', '--project', str(research_session.case_for(root)))
-            if verified.get('status') != 'needs-revision' or verified.get('artifact_integrity') == 'failed':
+            if verified.get('status') not in ('needs-revision', 'draft') or verified.get('artifact_integrity') == 'failed':
                 raise WorkspaceError('Research integrity or source state changed. Recheck the draft before deciding.')
             base, _ = rc.read_bundle(shown['source'], complete=False)
             decisions.resolve(base, sent.get('choices'))
@@ -85,7 +85,7 @@ def dispatch(engine, path, sent):
                 'The original independent verdicts are retained in the research bundle. '
                 'Creator approval does not claim independent verification.')
             record['problem'] = {'state': 'waiting', 'step': 'research', 'action': 'resume',
-                'label': 'Continue', 'settings': True,
+                'label': 'Continue', 'settings': True, 'creator_saved': True,
                 'what': 'Your research choices are saved. Continue to review the report and create materials.',
                 'kept': 'Included uncertainty is marked. Excluded claims and dependent passages are omitted.'}
             record['halt'] = 'paused'

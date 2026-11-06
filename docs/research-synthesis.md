@@ -25,7 +25,10 @@ or rejected; rejecting it requires a correction or a narrower scope.
 Exclusion follows dependencies from sources to facts, findings and report/brief/
 comparison passages. Included uncertainty stays marked in the authoring handoff.
 Saving decisions starts no model job, and Continue retains the normal material
-review gates. Another correction/check is an explicit alternative. Final-author
+review gates and existing spending allowance. If a checker times out before
+returning verdicts, the creator can explicitly include the whole draft as
+unverified; every claim and dependent passage retains that warning. Another
+correction/check is an explicit alternative. Final-author
 feedback survives another section being rewritten.
 
 The helper's independent verdict and original bundle remain unchanged. Training

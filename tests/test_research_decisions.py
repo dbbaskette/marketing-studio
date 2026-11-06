@@ -41,6 +41,13 @@ class DecisionsTests(unittest.TestCase):
         for choices in ({}, {'facts:fact-a':'accept'}, {'facts:fact-a':'include','unknown':'include'}):
             with self.assertRaises(ValueError): decisions.resolve(flagged(), choices)
 
+    def test_missing_verdict_is_explicitly_unreviewed_and_marks_all_claims(self):
+        base=flagged();base['review']=None
+        value=decisions.resolve(base,{'assessment:unreviewed':'include'})
+        self.assertTrue(all('warning' in fact['statement'] for fact in value['facts']))
+        self.assertTrue(all('warning' in finding['summary']['text'] for finding in value['findings']))
+        self.assertIsNone(value['review'])
+
     def test_unread_source_include_warns_every_dependent_claim(self):
         base = flagged(); base['review']['originals'][0].update(read_original=False,access_error='Not read before allowance ended.')
         choices = {row['id']:'include' for row in decisions.flags(base)}

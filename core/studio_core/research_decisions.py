@@ -34,6 +34,12 @@ def prose_items(value):
 
 def flags(value):
     review = value.get('review') or {}
+    if not review and value.get('facts') and value.get('findings'):
+        return [{'id': 'assessment:unreviewed', 'kind': 'assessment',
+            'title': 'Independent check did not finish',
+            'text': 'The saved draft has cited evidence, but no completed independent verdict. Including it marks every claim as unverified.',
+            'note': 'Include acknowledges this limitation for the whole draft; exclude rejects this draft.',
+            'sources': [{'title': s['title'], 'origin': s['origin']} for s in value['sources']]}]
     if not review or review.get('accepted'):
         return []
     result = []
@@ -96,7 +102,8 @@ def resolve(base, choices):
     if any(row['kind'] == 'assessment' and choices[row['id']] == 'exclude' for row in items):
         raise ValueError('This choice rejects the whole draft. Retry correction or change the scope instead.')
     value = copy.deepcopy(base)
-    excluded, uncertain = set(), set()
+    excluded = set()
+    uncertain = {s['id'] for s in value['sources']} if choices.get('assessment:unreviewed') == 'include' else set()
     notes = {row['id']: row['note'] for row in items}
     def marked(text):
         return 'Creator included with warning — independent verification is unresolved. ' + text

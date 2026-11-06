@@ -175,6 +175,12 @@ elif [[ "${1:-full}" == training-first-output || "${1:-full}" == training-first-
     (cd studios/training && bash scripts/ci/check.sh "$python") > "$results_dir/training-tests.log" 2>&1
   fi
   (cd studios/presentation && "$python" scripts/ci/run_tests.py test_parallel_research) > "$results_dir/presentation-tests.log" 2>&1
+elif [[ "${1:-full}" == training-creator-review-finish ]]; then
+  # Reuse the completed full shared run; verify its updated handoff expectation
+  # and the subsequent recovery cases, then run the full native suite.
+  PYTHONPATH=core:tests "$python" -m unittest test_research_contract test_research_decisions test_research_session test_research_sections test_research_view test_research_page -v > "$results_dir/shared-recheck.log" 2>&1
+  (cd studios/training && bash scripts/ci/check.sh "$python") > "$results_dir/training-tests.log" 2>&1
+  (cd studios/presentation && "$python" scripts/ci/run_tests.py test_parallel_research) > "$results_dir/presentation-tests.log" 2>&1
 elif [[ "${1:-full}" == research-final-brief ]]; then
   PYTHONPATH=core:tests "$python" -m unittest discover -s tests -v > "$results_dir/shared-tests.log" 2>&1
   (cd studios/training && "$python" scripts/ci/run_tests.py test_parallel_research test_settings_change.StopTests) > "$results_dir/training-tests.log" 2>&1
