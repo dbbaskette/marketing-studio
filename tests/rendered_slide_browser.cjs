@@ -35,7 +35,9 @@ const assert=require('node:assert/strict'),path=require('node:path'),fs=require(
    await select.selectOption(options[1]);
    await page.getByRole('tab',{name:'Text & notes',exact:true}).click();
    const title=page.getByLabel('Slide 2 title',{exact:true});await title.fill('Local unsaved slide title');
-   await select.evaluate(n=>{n.scrollIntoView({block:'center'});n.focus({preventScroll:true});});
+   // The compact material header can put this above the viewport midpoint.
+   // Position it below the toolbar so the regression still exercises scrolling.
+   await select.evaluate(n=>{n.scrollIntoView({block:'start'});scrollBy(0,-120);n.focus({preventScroll:true});});
    const before=await select.evaluate(n=>({y:n.getBoundingClientRect().y,scroll:scrollY}));
    assert(before.scroll>100,'Exercise a scrolled page');
    // Keep a node identity witness: an in-place selection must not redraw the page.

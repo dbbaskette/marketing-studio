@@ -66,10 +66,13 @@ async function opened(page,url){
     }
     for(const tab of [/^Guide · Draft$/,/^Plan · Draft$/]){
      await page.getByRole('tab',{name:tab}).click();
+     await page.locator('.desk-reading').waitFor();
      assert.equal(await firstLineShown(page),true,'After choosing '+tab);
      assert.equal(await page.getByRole('tab',{name:tab}).evaluate(n=>n===document.activeElement),true,'The chosen tab keeps the focus');
     }
-    await page.getByRole('tab',{name:'Sizing',exact:true}).click();
+    const sectionPicker=page.getByLabel('Section of Plan',{exact:true});
+    if(await sectionPicker.count())await sectionPicker.selectOption({label:'Sizing'});
+    else await page.getByRole('tab',{name:'Sizing',exact:true}).click();
     assert.equal(await firstLineShown(page),true,'After choosing a section');
     assert.deepEqual(await small(page),[]);
     assert.ok(await noSideScroll(page),'No sideways page scroll');

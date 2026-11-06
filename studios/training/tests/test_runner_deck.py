@@ -4272,7 +4272,9 @@ class BriefTests(JobCase):
     def test_a_composer_draws_the_approved_design_and_keeps_the_freedom_of_direct_text(self):
         plain, designed = briefs.guidance('deck-section'), briefs.guidance('deck-section',
                                                                             design=True)
-        self.assertEqual(plain, briefs.read('deck-section'), 'without a design, as before')
+        self.assertEqual(plain.count(briefs.LANGUAGE), 1)
+        self.assertEqual(plain.replace('\n' + briefs.LANGUAGE + '\n', '', 1),
+                         briefs.read('deck-section'), 'only the shared language guidance is added')
         for gone in ('whether an icon helps', 'Use an icon only where it names a recognisable '
                      'thing.'):
             self.assertIn(gone, plain)
