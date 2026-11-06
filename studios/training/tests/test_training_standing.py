@@ -6,6 +6,7 @@ of the deck tests; nothing real is started and nothing leaves this computer. Tes
 row_194 to row_196 cover those rows of the state-transition matrix in
 docs/superpowers/plans/2026-10-12-training-studio-core-pipeline.md."""
 import json  # noqa: I001  the path-setting imports must come before runner
+from unittest import mock
 
 import helpers  # noqa: F401
 import desk
@@ -20,6 +21,60 @@ COUNT_FIELDS = {'materials', 'to_write', 'updating', 'drafts', 'attention', 'dec
 
 
 class StandingTests(DeckCase):
+
+    def test_only_the_observed_material_worker_is_writing(self):
+        snapshots = []
+        def writing(tools, job):
+            root = self.engine.trainings()[0]
+            snapshots.append(drafts.view(self.engine, root))
+            return self.workers.document(tools, job)
+        self.workers.then('document', writing)
+        root = self.start(levels=['101', '201'], materials=['document', 'brief'])
+        during = snapshots[0]
+        cards = {card['name']: card for card in during['cards']}
+        self.assertEqual([card['name'] for card in during['cards'] if card['state'] == 'writing'], ['document@101'])
+        self.assertEqual(cards['document@201']['state'], 'queued')
+        self.assertEqual(cards['brief@101']['state'], 'queued')
+        self.assertIn('learner guide', cards['brief@101']['says'])
+        self.assertEqual(during['progress']['next']['name'], 'brief@101')
+        self.assertTrue(cards['blueprint@101']['seen'])
+        self.assertFalse(self.record(root)['problem'])
+
+    def test_queued_update_and_stopped_update_are_readable_but_not_writing(self):
+        from test_drafts import edit
+        root = self.start(levels=['101'], materials=['document', 'brief'])
+        edit(self, root, 'blueprint@101', lambda text: text.replace('three-instance', 'four-instance'))
+        before = len(self.workers.jobs)
+        with mock.patch.object(self.engine, 'wake'):
+            self.engine.update(root, 'document@101')
+        queued = drafts.view(self.engine, root)
+        card = next(card for card in queued['cards'] if card['name'] == 'document@101')
+        self.assertEqual(card['state'], 'queued')
+        self.assertIn('download', card['actions'])
+        self.assertNotIn('ready', card['actions'])
+        self.engine.act(root, 'stop')
+        stopped = drafts.view(self.engine, root)
+        card = next(card for card in stopped['cards'] if card['name'] == 'document@101')
+        self.assertEqual(card['state'], 'queued')
+        self.assertIn('resume training', card['says'])
+        self.assertEqual(len(self.workers.jobs), before)
+
+    def test_slot_wait_is_queued_and_an_observed_edit_affects_only_its_material(self):
+        with mock.patch.object(self.engine, 'wake'):
+            root = self.start(levels=['101'], materials=['document', 'brief'])
+        run = self.engine._run(root); run.queued = True
+        shown = drafts.view(self.engine, root)
+        self.assertNotIn('writing', {card['state'] for card in shown['cards']})
+        self.assertTrue(all('assistant slot' in card['says'] for card in shown['cards']))
+        run.queued = False
+        self.engine.wake(root)
+        record = self.record(root)
+        record['drafts']['jobs'] = [{'id': 'edit', 'name': 'document@101', 'status': 'working'}]
+        self.engine._store(root, record)
+        cards = drafts.view(self.engine, root)['cards']
+        self.assertEqual([card['name'] for card in cards if card['state'] == 'writing'], ['document@101'])
+        record['drafts']['jobs'][0]['status'] = 'stopped'
+        self.engine._store(root, record)
 
     def listed(self, root):
         """What Home and Trainings read of the training, as the runner's page lists it."""

@@ -319,7 +319,7 @@ const StudioResearch = (() => {
     for (const [key, label] of [['pause', 'Pause research'], ['resume', 'Resume research'], ['stop', 'Stop research'], ['retry', 'Retry affected area'], ['report', 'Open report'], ['brief', 'Open brief'], ['use', 'Use research']]) if (hooks[key]) actions.append(button(label, hooks[key], 'research-' + key));
     if (actions.childNodes.length) header.append(actions);
     box.append(header);
-    if (phase === 'creator-approved') return add(box, make('p', '', 'Your choices are saved in the research report. Included uncertainty remains marked. Continue when ready to create materials.'));
+    if (phase === 'creator-approved') return add(box, make('p', '', 'Your choices are saved in the research report. Included uncertainty remains marked.'));
     const draft = workingDraft(state);
     if (draft) {
       const reader = make('details', 'research-correction-details'); reader.dataset.key = 'research-working-draft';

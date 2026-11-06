@@ -7809,7 +7809,7 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
             {'click': 'Deck · Needs your text approval'}, {'snapshot': 'deck'},
             {'click': 'Review slide text'}, {'snapshot': 'review'}])
         shot = result['snapshots']['deck']
-        self.assertIn('Guide · Not written yet', shot['buttons'])
+        self.assertIn('Guide · Queued', shot['buttons'])
         self.assertNotIn('Writing', ' '.join(shot['buttons']))
         self.assertIn('Review slide text', shot['buttons'])
         self.assertNotIn('Mark this level ready', shot['buttons'])
@@ -8096,6 +8096,31 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         self.assertNotIn('Mark this level ready', shot['buttons'])
         self.assertNotIn('Mark ready', shot['buttons'])
         self.assertIn('Guide · Writing', shot['buttons'])
+
+    def test_creator_approved_research_shows_current_material_progress_and_queue(self):
+        plan = a_card('blueprint@101')
+        guide = a_card('document@101', state='writing', says='Being written.', seen=None, actions=[])
+        brief = a_card('brief@101', state='queued', says='Queued after the guide.', seen=None, actions=[])
+        found = a_desk(plan, guide, brief, levels=('101',))
+        found['body']['progress'].update(doing='Writing the level 101 learner guide.', next={
+            'name': 'brief@101', 'label': 'the level 101 reference brief', 'says': 'Queued after the guide.'})
+        run = a_desk_run()
+        run['body']['research_progress'] = {'phase': 'creator-approved', 'agents': {'count': 0, 'active': []}}
+        result = self.open_desk(self.on_desk(found, run), [{'snapshot': 'writing'}])
+        shot = result['snapshots']['writing']
+        for text in ('Writing the level 101 learner guide.', '1 of 3 drafts available.',
+                     'Up next: the level 101 reference brief.'):
+            self.assertIn(text, shot['text'])
+        self.assertIn('Brief · Queued', shot['buttons'])
+        self.assertNotIn('Continue when ready to create materials.', shot['text'])
+        self.assertEqual(self.posts(result), [])
+
+    def test_a_queued_update_does_not_offer_level_readiness(self):
+        plan = a_card('blueprint@101')
+        guide = a_card('document@101', state='queued', says='Queued until you resume training.', actions=['download'])
+        result = self.open_desk(self.on_desk(a_desk(plan, guide, levels=('101',))), [{'snapshot': 'queued'}])
+        self.assertNotIn('Mark this level ready', result['snapshots']['queued']['buttons'])
+        self.assertNotIn('Mark ready', result['snapshots']['queued']['buttons'])
 
     def editable(self, name='document@101', **extra):
         material = a_card(name.replace('yoodli:', 'scenario:'))
