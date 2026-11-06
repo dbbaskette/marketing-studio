@@ -314,3 +314,10 @@ body:has(#settings:not([hidden]) .save-bar) .toasts { bottom: calc(5.5rem + env(
   .brand-colours { grid-template-columns: 1fr; }
   body:has(#brands:not([hidden])) .toolbar-actions { flex-wrap: wrap; }
 }
+
+.field.settings-section-picker { display: none; }
+@media(max-width:52rem) {
+  .settings-nav { display: none; }
+  .field.settings-section-picker { display: block; }
+  #settings-title { display: none; }
+}

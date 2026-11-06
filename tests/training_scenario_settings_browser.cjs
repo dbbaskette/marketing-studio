@@ -20,8 +20,11 @@ async function fixture(){
     const before=await page.evaluate(root=>ask('run',{path:root}),test.path);
     await page.getByRole('button',{name:'Change settings',exact:true}).first().click();
     const sheet=page.getByRole('dialog',{name:'Change settings',exact:true});await sheet.waitFor();
+    await sheet.getByRole('button',{name:'Materials',exact:true}).click();
     await sheet.getByRole('button',{name:'Define scenarios',exact:true}).click();
+    await sheet.getByRole('button',{name:'Teaching',exact:true}).click();
     await sheet.getByRole('button',{name:'Review the change',exact:true}).click();
+    assert.equal(await sheet.getByRole('button',{name:'Materials',exact:true}).getAttribute('aria-pressed'),'true');
     await sheet.getByText('Add a short description for each scenario (up to 300 characters), or let AI choose.',{exact:true}).waitFor();
     await sheet.getByLabel('Scenario 1',{exact:true}).fill('Explain restart trade-offs to a skeptical platform lead.');
     for(const colorScheme of ['light','dark']){
@@ -38,6 +41,7 @@ async function fixture(){
     assert.deepEqual(after.spent,before.spent);
     assert.deepEqual(after.steps.map(s=>[s.id,s.attempts]),before.steps.map(s=>[s.id,s.attempts]));
     await page.reload();await page.getByRole('button',{name:'Change settings',exact:true}).first().click();await sheet.waitFor();
+    await sheet.getByRole('button',{name:'Materials',exact:true}).click();
     assert.equal(await sheet.getByLabel('Scenario 1',{exact:true}).inputValue(),'Explain restart trade-offs to a skeptical platform lead.');
     await sheet.getByRole('button',{name:'Let AI choose',exact:true}).click();
     await sheet.getByRole('button',{name:'Review the change',exact:true}).click();

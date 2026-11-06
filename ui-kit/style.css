@@ -3858,7 +3858,7 @@ body[data-product="Training Studio"] .sheet>.create-flow:not(:has(.intake-body))
 .intake-body>.create-step>*+*{margin-top:.6rem}
 .create-flow:has(.intake-body)>.create-foot{flex:none;margin:0;padding:.65rem 0 0;border-top:1px solid var(--hair);background:var(--solid)}
 .create-flow:has(.intake-body)>.create-foot .button{white-space:normal}
-.sheet .create-foot>.button:not(.button-filled):not(.button-danger),.dialog .create-foot>.button:not(.button-filled):not(.button-danger){background:var(--solid);border-color:var(--hair);box-shadow:none;border-radius:10px}
+.sheet .create-foot>.button:not(.button-filled):not(.button-danger),.dialog .create-foot>.button:not(.button-filled):not(.button-danger){background:var(--control-fill);border-color:var(--control-line);box-shadow:none;border-radius:10px}
 body[data-pilot="liquid"] .dialog .button:not(.button-round){border-radius:10px}
 @media (max-width:37.5rem){.sheet:has(.create-flow){max-height:calc(100dvh - 5rem - env(safe-area-inset-bottom));top:calc((100dvh - 4rem - env(safe-area-inset-bottom))/2);padding:1rem}.intake-progress{font-size:.8rem}.create-flow:has(.intake-body)>.create-foot{gap:.4rem}.create-flow:has(.intake-body)>.create-foot .button{flex:1 1 auto;padding-inline:.7rem}}
 .library-list{list-style:none;margin:0;padding:0;background:var(--paper);border:1px solid var(--hair);border-radius:16px}
@@ -3944,3 +3944,12 @@ body[data-pilot="liquid"] .dialog .button:not(.button-round){border-radius:10px}
 .research-queued-note{padding:1rem;background:var(--paper)}
 .research-queued-note>*+*{margin-top:.75rem}
 .research-queued-note .bar{gap:.5rem;flex-wrap:wrap}
+
+/* Settings are one task at a time; secondary choices remain visibly interactive. */
+.quick-scan-controls { align-items: flex-end; }
+.quick-scan-controls > .field { flex: 1 1 16rem; }
+.quick-scan details > summary { min-height: 44px; display: list-item; padding-block: .6rem; cursor: pointer; }
+.quick-scan details > p + p { margin-top: .55rem; }
+.settings-nav .button[aria-current="true"] { background: var(--selection); color: var(--link); border-color: var(--focus); }
+
+.owners > summary { min-height: 44px; padding-block: .6rem; cursor: pointer; }

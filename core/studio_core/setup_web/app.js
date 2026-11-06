@@ -40,6 +40,7 @@ function inThisTab(media) {
   return media('(pointer: coarse)') || media('(max-width: 52rem)');
 }
 let snapshot, setup = false, step = 0, view = 'home', profileAgent;
+let settingsPart = 'assistant-part';
 const labels = ['You and your assistant', 'Your workspace', 'Brand and delivery'];  // announced
 // Blog Studio's own setup: a blog on the writing desk has no stops and no slides.
 const blogAlone = () => setup && standalone && ['Blog Studio', 'Infographic Studio'].includes(product);
@@ -102,6 +103,7 @@ function markInvalid(input, message) {
   const described = (input.getAttribute('aria-describedby') || '').split(' ').filter(Boolean);
   if (!described.includes(id)) input.setAttribute('aria-describedby', [id, ...described].join(' '));
   input.addEventListener('input', () => clearInvalid(input), {once: true});
+  revealSetting(input);
   input.focus();
 }
 function clearInvalid(input) {
@@ -210,8 +212,11 @@ function show(next) {
   $('#installations').hidden = setup || standalone;
   // Setup asks the four everyday choices; section links, owners and Advanced come after it.
   $('#settings-nav').hidden = setup;
+  $('#settings-section-picker').hidden = setup;
+  $('#settings-section').querySelector('option[value="installations"]').disabled = standalone;
   $('#settings-owners').hidden = setup;
   $('#nav-installations').hidden = standalone;
+  if (!setup) selectSettingsPart(settingsPart);
   $('#done-settings').hidden = setup || standalone;
   // After setup, Save and its state stay in view: toolbar material, as a selection bar has.
   for (const name of ['save-bar', 'glass']) $('#save-bar').classList.toggle(name, !setup);
@@ -351,17 +356,37 @@ function describeAdvanced() {
   $('#installations-state').textContent = folders ? `${folders} ${folders === 1 ? 'folder' : 'folders'} set by you` : 'Every studio found automatically';
   owner('#installations-owner', Boolean(folders), 'Found automatically');
 }
-// Section links: a part is brought into view and focused; an Advanced part opens.
+// Sections keep their controls mounted: navigation never discards edits or saves.
+function selectSettingsPart(id) {
+  if (setup) return;
+  const buttons = [...document.querySelectorAll('[data-part]')];
+  if (!buttons.some(button => button.dataset.part === id) || (standalone && id === 'installations')) id = 'assistant-part';
+  settingsPart = id;
+  $('#settings-section').value = id;
+  for (const button of buttons) {
+    const selected = button.dataset.part === id;
+    button.setAttribute('aria-current', String(selected));
+    button.setAttribute('aria-controls', button.dataset.part);
+    const part = $('#' + button.dataset.part); if (part) part.hidden = !selected;
+  }
+  $('#advanced-head').hidden = true;
+  const details = $('#' + id)?.querySelector('details.advanced');
+  if (details) details.open = true;
+}
+function revealSetting(control) {
+  const part = control?.closest?.('section.card');
+  if (part && !setup) selectSettingsPart(part.id);
+  const details = control?.closest?.('details'); if (details) details.open = true;
+}
 function goToPart(id) {
-  const part = $(`#${id}`); if (!part) return;
-  const more = part.querySelector('details');
-  if (more) more.open = true;
-  part.scrollIntoView({block: 'start', behavior: calm() ? 'auto' : 'smooth'});
-  const target = more ? more.querySelector('summary') : part.querySelector('.card-title');
-  if (!more) target.setAttribute('tabindex', '-1');
-  target.focus({preventScroll: true});
+  const part = $('#' + id); if (!part) return;
+  selectSettingsPart(id);
+  const target = part.querySelector('summary') || part.querySelector('.card-title');
+  if (target) { target.setAttribute('tabindex', '-1'); target.focus({preventScroll: true}); }
 }
 document.querySelectorAll('[data-part]').forEach(button => button.addEventListener('click', () => goToPart(button.dataset.part)));
+$('#settings-section').addEventListener('change', event => goToPart(event.target.value));
+form.addEventListener('invalid', event => revealSetting(event.target), true);
 form.addEventListener('input', () => saveState());
 form.addEventListener('change', () => saveState());
 $('#models-more').addEventListener('toggle', () => { if ($('#models-more').open && snapshot) loadModels(); });
@@ -472,7 +497,7 @@ function describeQuick() {
   const choice = routed ? value('models.quick.selection') || 'inherit' : 'inherit';
   const model = choice === 'provider_default' ? 'assistant default' : choice === 'explicit' ? value('models.quick.model') : value('assistant.model') || 'assistant default';
   const effort = choice === 'provider_default' ? 'assistant default' : (routed && value('models.quick.effort')) || value('assistant.effort') || 'assistant default';
-  node.textContent = `Effective Quick: ${model}, ${effort} reasoning. ` + (!routed ? 'One model also applies its full reasoning to the first scan. ' : '') + (['high','xhigh','max','ultra'].includes(effort) ? 'This is a deliberative setting for a provisional scan. ' : '') + 'No work starts when you save these choices.';
+  node.textContent = `Current choice: ${model}, ${effort} reasoning.`;
   $('#apply-quick').disabled = value('models.quick.selection') === 'provider_default' || (profileAgent && profileAgent !== value('assistant.agent'));
 }
 $('#apply-quick').addEventListener('click', () => {
@@ -1065,7 +1090,9 @@ async function loadNewer() {
     for (const label of unseen) if (!names.includes(label)) names.push(label);
     if (names.length) {
       inform(`Newer settings loaded, and your other edits kept. Check ${names.join(' and ')}, then save.`);
-      (focusable(conflictNotes[0]?.control) || $('#save')).focus();
+      const first = focusable(conflictNotes[0]?.control);
+      revealSetting(first);
+      (first || $('#save')).focus();
     } else {
       inform(unsaved() ? 'Newer settings loaded, and your edits kept. Save when you are ready.' : 'Newer settings loaded.');
       $('#save').focus();

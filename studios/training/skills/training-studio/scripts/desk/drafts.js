@@ -962,11 +962,24 @@ async function openChangeSettings(opener) {
   settingsFocus();
 }
 
+// Change settings keeps all section inputs mounted while only one is visible.
+function showSettingsSection(index) {
+  if (!view.changing) return;
+  view.changing.section = index;
+  const body = byId('change-sections');
+  if (body) Array.from(body.children).forEach((node, at) => { node.hidden = at !== index; });
+  const choices = byId('change-section-nav')?.querySelector('.segmented');
+  if (choices) slide(choices, index);
+  if (body?.parentNode) body.parentNode.scrollTop = 0;
+}
+function revealChangedSetting(id) {
+  showSettingsSection(id === 'change-questions' ? 2 : id === 'change-scenario-options' ? 1 : 0);
+}
+
 // The first thing on the form that can be changed: the topic, unless it is locked.
 function settingsFocus() {
-  const first = byId('sheet').querySelector('form textarea:not([disabled]), '
-    + 'form input:not([disabled]), form .seg-option:not([disabled])');
-  if (first) first.focus({ preventScroll: true });
+  const visible = Array.from(byId('sheet').querySelectorAll('textarea, input, .seg-option')).find(node => !node.disabled && !node.closest('[hidden]'));
+  if (visible) visible.focus({ preventScroll: true });
 }
 
 // Where research looks, said again as the sources change; a change after the review asks
@@ -1021,6 +1034,7 @@ function settingsReady(changing) {
   const scenarioProblem = changing.shown.practice ? scenarioPlanProblem(draft) : '';
   if (scenarioProblem) {
     say(byId('change-problem'), scenarioProblem);
+    revealChangedSetting('change-scenario-options');
     byId('change-scenario-options')?.querySelector('textarea')?.focus();
     return false;
   }
@@ -1035,10 +1049,12 @@ function settingsReady(changing) {
   }
   if (missing.length) {
     say(byId('change-problem'), 'Something above needs you.');
+    revealChangedSetting(missing[0][0]);
     byId(missing[0][0]).focus();
     return false;
   }
   if (changing.editor && !changing.editor.valid(Number(changing.shown.documents) > 0)) {
+    showSettingsSection(2);
     say(byId('change-problem'), 'Add readable sources or allow additional external search first.');
     return false;
   }
@@ -1213,14 +1229,20 @@ function settingsSheet() {
     event.preventDefault();
     if (!preview) previewSettings(go);
   });
-  add(form,
-    make('p', 'quiet', 'These are the training’s saved settings. Nothing changes until you '
-      + 'review the change and save it, and nothing starts until you press Continue.'),
+  const sections = add(make('div', 'stack'),
     createStep(1, 'What it teaches', topic, audience, time, purpose),
     createStep(2, 'What is made', levels, brief,
       shown.practice ? scenarioPlanFields(draft, edited, 'change') : null, ...decks),
-    createStep(3, 'Research', sources, line, questions, again),
-    review, alertLine('change-problem'),
+    createStep(3, 'Research', sources, line, questions, again));
+  sections.id = 'change-sections';
+  Array.from(sections.children).forEach((node, index) => { node.hidden = index !== (changing.section || 0); });
+  const navigation = choice('Settings section', ['Teaching', 'Materials', 'Research'],
+    changing.section || 0, showSettingsSection, 'change-section');
+  navigation.id = 'change-section-nav'; navigation.hidden = Boolean(preview);
+  sections.hidden = Boolean(preview);
+  add(form,
+    make('p', 'quiet', 'Review and save your changes. Work stays paused until you press Continue.'),
+    navigation, add(make('div', 'intake-body'), sections, review), alertLine('change-problem'),
     add(make('div', 'bar create-foot'), go, back,
       capsule('Cancel', 'quiet', cancelSettings, 'cancel')));
   return [add(make('div', 'sheet-heading'), sheetTitle('Change settings'),

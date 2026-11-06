@@ -61,3 +61,33 @@ and pane/focus/caret through refresh, and no additional worker jobs, at 390/1280
 px in light/dark. Marketing Studio/Infographic Studio's broader visual journey
 also passed at 320/390/768/1440 px, including reduced effects, keyboard dialogs
 and enlarged text. It validates synthetic UI behavior, not live artwork quality.
+
+## Settings sections and Quick scan — #406
+
+Shared settings shows one named section, retaining all inputs and unsaved changes
+in the form. First-run setup keeps its existing three steps. Validation and stale
+form conflict handling reveal the affected section before focusing the control.
+Training Studio Change settings separates Teaching, Materials and Research; the
+review/save decision remains explicit with the existing revision check.
+
+Quick scan gets callout padding, bottom-aligned controls and a short effective
+model/reasoning line. Its main explanation describes the benefit and when the
+choice applies; implementation targets/caveats move out of the main form. Keep
+further behavior behind a disclosure. Save/review controls remain reachable.
+
+| State / action | Expected result | Regression |
+| --- | --- | --- |
+| Edit one section, visit another, return | Values unchanged, no save/job | settings browser |
+| Invalid hidden field | Open its section and focus the field | settings browser/native checks |
+| Review Training Studio changes | Review consequences alone, edit/back retains section | settings journey |
+| Save/reload or stale shared form | Existing persistence/conflict contract retained | shared settings suite |
+
+Settings verification: 65 shared UI/layout/settings checks and 72 Training Studio
+settings/layout checks passed. Real shared-settings phone/desktop journeys passed
+section switching with unsaved edits, one visible section, aligned/padded Quick
+controls, save/reload and revealing a hidden invalid repository field. The
+Training Studio journey passed hidden scenario validation, review/save/reload,
+return to AI choice and unchanged worker attempts/spending. The sheet's separate
+phone/desktop check passed scroll ownership, visible actions, focus trapping,
+Escape/return and zero changes on Cancel. Test DOM expectations were updated for
+section visibility; save/conflict assertions were retained.

@@ -94,11 +94,12 @@ const early = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
 let responses = early.responses || {};
 const deferred = new Map();
 const session = new Map(Object.entries(early.session || {}));
+const sectionButtons = [...html.matchAll(/<button[^>]*data-part="([^"]+)"[^>]*>([^<]+)/g)].map(([,id,label])=>{const node=new El('button');node.dataset.part=id;node.textContent=label;return node;});
 const document = {
   body: { dataset: { standalone: String(Boolean(early.standalone)),
     product: early.product || 'Marketing Studio', tokenHeader: 'X-Test' }, classList: { toggle() {} } },
   addEventListener() {},
-  querySelector: find, querySelectorAll: () => [], createElement: tag => new El(tag),
+  querySelector: find, querySelectorAll: selector => selector === '[data-part]' ? sectionButtons : [], createElement: tag => new El(tag),
   createElementNS: (space, tag) => new El(tag), createTextNode: text => ({ textContent: text }),
 };
 const context = {
