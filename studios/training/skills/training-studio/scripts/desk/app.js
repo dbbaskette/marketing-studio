@@ -4795,7 +4795,7 @@ function newDraft() {
     walkthrough: false,
     // The learner guide is ticked to start with, as Home says: Start works with only the
     // three boxes it needs filled.
-    yoodli: false, materials: ['document'], research: newResearch(),
+    yoodli: false, materials: ['document'], scenarioPlan: {mode: 'ai', scenarios: []}, research: newResearch(),
     agent: agent.default === 'codex' ? 'codex' : 'claude',
     model: agent.model || '', other: false, effort: agent.effort || '', starting: false });
 }
@@ -5041,6 +5041,8 @@ function yoodliNotice(draft, text) {
 }
 
 function syncMaterialChoices(draft) {
+  const scenarios = byId('new-scenario-options');
+  if (scenarios) scenarios.hidden = !draft.materials.includes('scenario');
   for (const control of byId('sheet').querySelectorAll('input')) {
     const key = control.dataset.key || '';
     if (key.startsWith('material ')) {
@@ -5063,9 +5065,60 @@ function materialChoices(draft) {
         if (wasOn) yoodliNotice(draft, 'Yoodli scenarios turned off because ' + MATERIALS.find(([key]) => key === id)[1] + ' was removed.');
         else yoodliNotice(draft, '');
       }
+      syncMaterialChoices(draft);
       say(byId('new-problem'), '');
       retell();
     }, 'material');
+}
+
+// Short scenario intent; the author supplies the details.
+function scenarioPlanBody(draft) {
+  const plan = draft.scenarioPlan || {mode: 'ai', scenarios: []};
+  return plan.mode === 'custom' ? {mode: 'custom', scenarios: plan.scenarios.map(row =>
+    ({id: row.id, description: row.description.trim()}))} : {mode: 'ai', scenarios: []};
+}
+
+function scenarioPlanProblem(draft) {
+  const plan = draft.scenarioPlan;
+  if (!plan || plan.mode !== 'custom') return '';
+  return !plan.scenarios.length || plan.scenarios.some(row => !row.description.trim() || row.description.trim().length > 300)
+    ? 'Add a short description for each scenario (up to 300 characters), or let AI choose.' : '';
+}
+
+function scenarioPlanFields(draft, changed = () => {}, prefix = 'new') {
+  const plan = draft.scenarioPlan ||= {mode: 'ai', scenarios: []};
+  const box = make('section', 'stack'); box.id = prefix + '-scenario-options';
+  const rows = make('div', 'stack');
+  const newRow = () => ({id: 'custom-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8), description: ''});
+  const drawRows = () => {
+    rows.replaceChildren();
+    for (const [index, row] of plan.scenarios.entries()) {
+      const id = prefix + '-scenario-' + row.id;
+      const entry = field(id, 'Scenario ' + (index + 1), row, 'description', {long: true, typed: changed});
+      const input = entry.querySelector('textarea'); input.rows = 2; input.maxLength = 300;
+      input.placeholder = 'A sentence or two about what to practice.';
+      entry.append(capsule('Remove scenario ' + (index + 1), 'quiet', () => {
+        plan.scenarios.splice(index, 1); drawRows(); changed();
+        const next = rows.querySelector('textarea'); (next || addRow).focus();
+      }, id + '-remove'));
+      rows.append(entry);
+    }
+  };
+  const addRow = capsule('Add scenario', 'quiet', () => {
+    plan.scenarios.push(newRow()); drawRows(); changed();
+    rows.querySelectorAll('textarea')[plan.scenarios.length - 1].focus();
+  }, prefix + '-scenario-add');
+  const custom = add(make('div', 'stack'), make('p', 'quiet field-hint',
+    'Keep it short. AI adds personas, dialogue, goals and evaluation criteria, adapted to each selected level.'), rows, addRow);
+  custom.hidden = plan.mode !== 'custom';
+  const mode = choice('Who chooses the practice scenarios?', ['Let AI choose', 'Define scenarios'],
+    plan.mode === 'custom' ? 1 : 0, index => {
+      plan.mode = index ? 'custom' : 'ai';
+      if (index && !plan.scenarios.length) plan.scenarios.push(newRow());
+      custom.hidden = !index; drawRows(); changed();
+    }, prefix + '-scenario-mode');
+  drawRows();
+  return add(box, mode, custom);
 }
 
 // The desk start's second step: what is made, at which levels. The deck's brand and the
@@ -5104,6 +5157,10 @@ function shapeStep(draft) {
   const yoodliNote = make('p', 'quiet field-hint', draft.yoodliNote || '');
   yoodliNote.id = 'new-yoodli-note'; yoodliNote.setAttribute('role', 'status');
   yoodliNote.hidden = !draft.yoodliNote;
+  const scenarios = scenarioPlanFields(draft, () => {
+    retell(); if (view.draft === draft) intakeStore().queue(draft);
+  });
+  scenarios.hidden = !draft.materials.includes('scenario');
   return [
     make('p', 'quiet', 'Choose only what you need. Research and a blueprint connect every selected material.'),
     checkChoices('Levels', LEVELS.map((level) => [level, level]),
@@ -5124,7 +5181,7 @@ function shapeStep(draft) {
         say(byId('new-problem'), '');
         retell();
       }, 'practice', 'Prepares scenarios and a reference brief for you to copy or upload to Yoodli.'),
-    yoodliNote,
+    yoodliNote, scenarios,
     deck,
     able ? null : make('p', 'quiet', 'A deck needs a brand skill. You can make the other '
       + 'materials now; Status explains what this computer needs for slides.'),
@@ -5206,6 +5263,12 @@ function questionsField(draft) {
 // What is missing before it can start: each box it needs is marked beside it, and the first
 // is focused. Returns true when nothing is missing.
 function startReady(draft) {
+  const scenarioProblem = draft.materials.includes('scenario') ? scenarioPlanProblem(draft) : '';
+  if (scenarioProblem) {
+    say(byId('new-problem'), scenarioProblem);
+    byId('new-scenario-options')?.querySelector('textarea')?.focus();
+    return false;
+  }
   const missing = [['new-title', draft.title, 'Give it a title first.'],
     ['new-topic', draft.topic, 'Say what it should teach first.'],
     ['new-audience', draft.audience, 'Say who it is for first.']]

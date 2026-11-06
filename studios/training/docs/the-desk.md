@@ -210,3 +210,16 @@ Returned to draft, by an edit, **Undo** or **Return to draft**, its card says th
 keeps that revision until it is marked ready again; nothing is removed from the library.
 A guide or brief that was Ready before the library kept anything offers **Keep in
 library**.
+
+### Choosing practice and Yoodli scenarios
+
+When Practice scenarios or Yoodli is selected, **Let AI choose** is the default.
+**Define scenarios** accepts one short description per scenario (up to 300
+characters). Add or remove descriptions; AI supplies roles, dialogue, goals and
+evaluation criteria, adapted to every selected level. The same intent follows the
+scenario into its Yoodli fields. Existing authored scenarios are kept.
+
+The private intake saves your descriptions across reloads and mode switches.
+After starting, use **Change settings** while stopped, review the change and save.
+Scenario-only changes keep collected research and mark affected materials out of
+date; saving launches no work. Update or keep existing drafts explicitly.

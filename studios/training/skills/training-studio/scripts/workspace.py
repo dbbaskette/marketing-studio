@@ -489,7 +489,7 @@ def artifact(root: Path, session: dict, name: str) -> dict:
 
     if base == 'blueprint':
         return {'file': f'{folder}blueprint.md', 'upstream': ('intake', 'research'),
-                'stage': 'blueprint', 'extras': ()}
+                'stage': 'blueprint', 'extras': ('setting:scenario_plan',) if 'scenario_plan' in settings else ()}
     if base == 'document':
         return {'file': f'{folder}document.md', 'upstream': (same('blueprint'),),
                 'stage': 'document', 'extras': ()}

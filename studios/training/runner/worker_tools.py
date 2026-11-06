@@ -211,6 +211,12 @@ def check_blueprint(text: str, spec: dict) -> tuple[list[str], list[dict], list[
     """A blueprint, against the core's own lint. A check that could not run is recorded
     for the gate, not held against the worker."""
     report = checks.lint_blueprint(text, spec.get('findings'), spec.get('level'))
+    if spec.get('scenario_ids') is not None:
+        actual = [row['id'] for row in checks.parse_blueprint(text)['practice']]
+        wanted = spec['scenario_ids']
+        problems = [] if sorted(actual) == sorted(wanted) else [
+            'The practice plan must cover exactly the requested scenario IDs: ' + ', '.join(wanted) + '.']
+        report['checks'].append(checks.result('blueprint.scenario-choices', problems))
     return held(report['checks']), report['checks'], report['warnings'], as_kept(text)
 
 

@@ -26,6 +26,10 @@ Existing trainings keep AI planning. Do not replace user-authored scenario files
 | Mixed warning/plain choices | Selected warnings propagate to dependent content; clean choices retain audit | shared dependency test |
 | Exclusion + included parent | Exclusion wins; dependent passages omitted | shared decisions |
 | Existing schema 1 receipt | Identical content and hashes; no reinterpretation | frozen legacy file hashes |
+| Missing scenario choice | Existing AI planning, no new state or work | form compatibility |
+| Define scenarios + short descriptions | Stable scenario IDs persist; every requested ID reaches blueprint, scenario and Yoodli inputs | practice intent + author contract |
+| Scenario-only settings edit | Keep research; hold old materials; no worker starts on save; stale forms refused | settings regression |
+| New intake saved/reloaded | Keep mode, descriptions and IDs, including after toggling AI | browser journey |
 | Stale or active decision form | Refuse without publication or new jobs | native decisions |
 
 ## Verification

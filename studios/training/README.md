@@ -23,6 +23,12 @@ See the [incremental workflow guide](../../docs/incremental-workflow.md).
 
 ## Choose your materials
 
+For practice and Yoodli, **Let AI choose** plans the scenarios for you. Choose
+**Define scenarios** to add a short description of each situation instead. A
+sentence or two is enough; AI fills in personas, dialogue, goals and evaluation
+criteria for each selected level. You can change these descriptions in
+**Change settings** while work is stopped. Existing materials wait for your update.
+
 | Material | What it gives you |
 | --- | --- |
 | Research and teaching plan | Sources, learning objectives, coverage and sequence |

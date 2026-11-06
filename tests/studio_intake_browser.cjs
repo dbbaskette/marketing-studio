@@ -46,7 +46,18 @@ async function fixture(product,args=[]){
     await picker.getByRole('button',{name:'Use selected',exact:true}).click();
     await picker.waitFor({state:'detached'});
     assert.equal(await page.evaluate(()=>document.activeElement?.dataset.key),'research-library');
-    if(product==='training')await dialog.getByRole('button',{name:'Next',exact:true}).click();
+    if(product==='training'){
+     await dialog.getByRole('button',{name:'Next',exact:true}).click();
+     await dialog.getByLabel('Make scenarios for Yoodli',{exact:true}).check();
+     await dialog.getByRole('button',{name:'Define scenarios',exact:true}).click();
+     await dialog.getByLabel('Scenario 1',{exact:true}).fill('Explain restart capacity to a skeptical customer.');
+     await dialog.getByRole('button',{name:'Add scenario',exact:true}).click();
+     await dialog.getByLabel('Scenario 2',{exact:true}).fill('Choose a safe next step after a failed health check.');
+     await dialog.getByRole('button',{name:'Let AI choose',exact:true}).click();
+     assert.equal(await dialog.getByLabel('Scenario 1',{exact:true}).isVisible(),false);
+     await dialog.getByRole('button',{name:'Define scenarios',exact:true}).click();
+     assert.equal(await dialog.getByLabel('Scenario 1',{exact:true}).inputValue(),'Explain restart capacity to a skeptical customer.');
+    }
     await dialog.getByRole('status').filter({hasText:'Intake saved on this computer.'}).waitFor();
     const saved=await page.evaluate(()=>ask('intake-draft'));
     assert.equal(saved.draft.step,2);assert.equal(saved.draft.library.length,1);assert.ok(saved.draft.sourceDraft.id);
@@ -55,6 +66,14 @@ async function fixture(product,args=[]){
     const resumed=await page.evaluate(()=>ask('intake-draft'));
     assert.equal(resumed.draft.title,saved.draft.title);assert.deepEqual(resumed.draft.library,saved.draft.library);
     assert.equal(resumed.draft.sourceDraft.id,saved.draft.sourceDraft.id);
+    if(product==='training'){
+     assert.deepEqual(resumed.draft.scenarioPlan,saved.draft.scenarioPlan);
+     assert.equal(saved.draft.scenarioPlan.scenarios.length,2);
+     assert.equal((await page.evaluate(()=>deskBody(view.draft))).scenario_plan.mode,'custom');
+     await dialog.getByRole('button',{name:'Remove scenario 2',exact:true}).click();
+     await dialog.getByRole('status').filter({hasText:'Intake saved on this computer.'}).waitFor();
+     assert.equal((await page.evaluate(()=>ask('intake-draft'))).draft.scenarioPlan.scenarios.length,1);
+    }
     await dialog.getByRole('button',{name:'Back',exact:true}).click();
     if(product==='training')await dialog.getByRole('button',{name:'Back',exact:true}).click();
     assert.equal(await dialog.getByLabel('A short title',{exact:true}).inputValue(),'Synthetic resumable intake');
