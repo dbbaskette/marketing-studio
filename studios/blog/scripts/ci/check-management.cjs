@@ -59,6 +59,7 @@ async function check(){
   await capabilityAndMemory();
   await articleDisclosure();
   await requestOrdering();
+  await searchRecoveryAndHiddenPolling();
   await curationConflict();
   await historicalImport();
   await diffOnlyForms();
@@ -511,7 +512,7 @@ async function requestOrdering(){
     const count=g.get('count').textContent, page=g.get('page-label').textContent;
     g.requests[0].resolve(empty(5));await old;
     assert.equal(g.get('count').textContent,count);assert.equal(g.get('page-label').textContent,page);
-    if(mode==='page')assert.equal(page,'21–40 of 40');
+    if(mode==='page')assert.equal(page,'No items on this page');
     if(mode==='search')assert.match(g.requests[1].url,/query=latest\+search/);
     if(mode==='stage')assert.match(g.requests[1].url,/stage=review/);
   }
@@ -529,6 +530,31 @@ async function requestOrdering(){
   h.run("view='memory'");const missing=h.run('load()');h.requests[2].reject(new Error('socket hang up'));
   await assert.rejects(missing,/Blog Studio’s page is not answering/);assert.equal(h.get('results').children[0],previous);
   assert.equal(h.get('next').disabled,true);
+}
+async function searchRecoveryAndHiddenPolling(){
+  for(const screen of ['board','library','inbox','memory']){
+    const requests=[],f=fixture((url)=>{requests.push(url);return {items:[],total:0};});
+    f.set('screen',screen);f.run('view=screen;offset=20');f.get('query').value='missing';
+    if(screen==='board')f.get('stage').value='review';
+    if(screen==='library')for(const id of ['library-status','library-collection','library-role','library-kind','library-author'])f.get(id).value='selected';
+    await f.run('load()');
+    assert.equal(f.get('results').children[0].children[0].textContent,'No matching items');
+    assert.equal(f.get('page-label').textContent,'No matches');
+    const clear=descendants(f.get('results')).find(n=>n.textContent==='Clear search and filters');
+    await clear.listeners.click();
+    const last=new URL(requests.filter(url=>url.startsWith('/api/'+screen+'?')).at(-1),'http://fixture');
+    assert.deepEqual([...last.searchParams], [['query',''],['limit','20'],['offset','0']]);
+    assert.equal(f.get('query').focused,true);
+    assert.notEqual(f.get('results').children[0].children[0].textContent,'No matching items');
+  }
+  const reads=[],f=fixture(url=>{reads.push(url);return {items:[],deleted:[]};});f.loadRunner();
+  f.run("studio.screen='home';studio.listing=[];studio.deleted=[];document.hidden=true");
+  for(let i=0;i<5;i++)await f.run('sPoll()');
+  assert.deepEqual(reads,[],'Hidden interval ticks perform no reads');
+  f.run('document.hidden=false');await f.run('sVisibilityChanged()');
+  assert.deepEqual(reads,['/api/runs'],'Returning to the tab catches up immediately');
+  f.run("studio.screen='desk';document.hidden=true;let shared=0;sDeskShare=()=>{shared++}");
+  await f.run('sVisibilityChanged()');assert.equal(f.run('shared'),1,'Hiding the desk still shares pending writes');
 }
 async function curationConflict(){
   let reads=0;const writes=[];

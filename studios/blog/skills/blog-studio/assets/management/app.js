@@ -274,7 +274,25 @@ function render(state, result) {
   $('results').replaceChildren();
   const unreadable=view==='board'||view==='inbox'?unreadableNote(result):null;
   if(unreadable)$('results').append(unreadable);
-  if(!result.items.length){const box=element('div',undefined,'empty');box.append(element('h3',{board:'Your next blog starts here',inbox:'Nothing in this saved inbox',library:'Build your reference shelf',memory:'Give your team useful context'}[view]),element('p',{board:'Choose New blog to write here, upload a draft, or start a blog in chat.',inbox:'Run a review in chat to collect findings. Google review status is not checked live here.',library:'Choose Add to library for files, links, a Google Doc, or a whole blog, site or feed.',memory:'Join a Team Hub, then save a note, context, or writing rule.'}[view]));$('results').append(box);return;}
+  if(!result.items.length){
+    const box=element('div',undefined,'empty');
+    const filtered=['query','stage','sourceStatus','collection','role','kind','author'].some(key=>String(state[key]||'').trim());
+    if(filtered||offset){
+      box.append(element('h3',filtered?'No matching items':'No items on this page'),
+        element('p',filtered?'Try a different search or clear your filters to see the saved items.':'The list changed. Return to the first page to see the saved items.'),
+        button(filtered?'Clear search and filters':'Back to first page',async()=>{
+          if(filtered){
+            $('query').value='';
+            for(const id of view==='board'?['stage']:view==='library'?['library-status','library-collection','library-role','library-kind','library-author']:[])$(id).value='';
+          }
+          // `offset` above belongs to the rendered snapshot, not the next request.
+          resetListPage();
+          try{await load();$('query').focus();}catch(error){notice(error.message,true);}
+        }));
+      $('page-label').textContent=filtered?'No matches':'No items on this page';
+    }else box.append(element('h3',{board:'Your next blog starts here',inbox:'Nothing in this saved inbox',library:'Build your reference shelf',memory:'Give your team useful context'}[view]),element('p',{board:'Choose New blog to write here, upload a draft, or start a blog in chat.',inbox:'Run a review in chat to collect findings. Google review status is not checked live here.',library:'Choose Add to library for files, links, a Google Doc, or a whole blog, site or feed.',memory:'Join a Team Hub, then save a note, context, or writing rule.'}[view]));
+    $('results').append(box);return;
+  }
   const table=element('table'),head=element('tr');table.setAttribute('role','table');head.setAttribute('role','row');table.className='table view-'+view;const headings={board:['Blog / author','Stage','Owner / due','Working copy'],inbox:['Blog','Finding','Status','Next action'],library:[...(access.actions.edit?['Selected']:[]),'Title','Author','Role','Status','Action'],memory:['Memory','Kind','Applies to','Actions']}[view];
   // On a phone each library row is a card: the title and the action need no label.
   const labels=view==='library'?headings.map(h=>['Selected','Title','Action'].includes(h)?'':h):headings;headings.forEach(h=>{const th=element('th',h);if(h==='Selected'){th.textContent='';th.setAttribute('aria-label','Selected');}th.setAttribute('scope','col');th.setAttribute('role','columnheader');head.append(th);});const thead=element('thead');thead.append(head);table.append(thead);const body=element('tbody');
@@ -296,6 +314,7 @@ function render(state, result) {
     body.append(row);
   }table.append(body);const wrap=element('div',undefined,'table-wrap');wrap.append(table);$('results').append(wrap);
 }
+function resetListPage(){offset=0;}
 // The selection bar shows while anything is ticked. A tick stays as you page and change the
 // filters, so the count can include rows not in view; Select all matching ticks what the
 // filters match at that moment, and later filters neither add to it nor take from it.
