@@ -7863,8 +7863,10 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         brief, brief_view = self.readable('brief@101', 'A brief.')
         desk = a_desk(guide, brief, levels=('101',), running=False)
         guide_view['desk'] = brief_view['desk'] = desk['body']
+        card = '/api/drafts/card?' + urlencode({'path': str(self.root), 'name': '{}'})
         result = self.open_desk(self.on_desk(desk, **{
-            'GET /api/drafts/card': [ok(guide_view), ok(brief_view), ok(guide_view)],
+            'GET ' + card.replace('%7B%7D', 'document%40101'): [ok(guide_view)],
+            'GET ' + card.replace('%7B%7D', 'brief%40101'): [ok(brief_view)],
             'POST /api/drafts/save': [{'pending': True}]}), [
             {'snapshot': 'read'}, {'click': 'Edit Guide'}, {'snapshot': 'edit'},
             {'fill': 'Text of When capacity holds', 'value': 'Typed, not saved yet.',
@@ -7886,6 +7888,42 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         self.assertIn('Done editing', edit['buttons'])
         back = result['snapshots']['back']
         self.assertEqual(back['fields']['Text of When capacity holds'], 'Typed, not saved yet.')
+
+    def test_selected_material_loads_lazily_and_finishing_can_open_an_unvisited_material(self):
+        guide, guide_view = self.readable()
+        brief, brief_view = self.readable('brief@101', 'A brief.')
+        desk = a_desk(guide, brief, levels=('101',), running=False)
+        guide_view['desk'] = brief_view['desk'] = desk['body']
+        card = '/api/drafts/card?' + urlencode({'path': str(self.root), 'name': '{}'})
+        answers = self.on_desk(desk, **{
+            'GET ' + card.replace('%7B%7D', 'document%40101'): [ok(guide_view)],
+            'GET ' + card.replace('%7B%7D', 'brief%40101'): [ok(brief_view)]})
+        first = self.open_desk(answers, [{'snapshot': 'guide'}])
+        initial = self.asked(first, 'drafts/card')
+        self.assertTrue(initial)
+        self.assertTrue(all('name=document%40101' in request for request in initial))
+        result = self.open_desk(answers, [
+            {'click': 'Finishing'}, {'click': 'Finishing: choose another material'},
+            {'snapshot': 'choices'}, {'click': 'Brief'}, {'snapshot': 'brief'},
+            {'click': 'Guide · Draft'}, {'snapshot': 'back'}])
+        self.assertIn('Brief', result['snapshots']['choices']['buttons'])
+        self.assertIn('A brief.', result['snapshots']['brief']['text'])
+        self.assertIn('Some bold text.', result['snapshots']['back']['text'])
+        self.assertEqual(len(self.asked(result, 'drafts/card')), len(initial) + 1)
+        self.assertEqual(self.posts(result), [])
+
+    def test_selected_material_load_failure_has_a_retry_without_starting_work(self):
+        guide, guide_view = self.readable()
+        desk = a_desk(guide, levels=('101',), running=False)
+        guide_view['desk'] = desk['body']
+        result = self.open_desk(self.on_desk(desk, **{
+            'GET /api/drafts/card': [{'status': 503, 'body': {'error': 'Try later.'}}] * 2 + [ok(guide_view)]}), [
+            {'snapshot': 'failed'}, {'click': 'Try opening again'}, {'snapshot': 'read'}])
+        self.assertIn('Could not open this material.', result['snapshots']['failed']['text'])
+        self.assertIn('Some bold text.', result['snapshots']['read']['text'])
+        self.assertNotIn('Try opening again', result['snapshots']['read']['buttons'])
+        self.assertEqual(len(self.asked(result, 'drafts/card')), 3)
+        self.assertEqual(self.posts(result), [])
 
     def test_finishing_opens_on_the_material_shown_with_all_materials_apart(self):
         guide, guide_view = self.readable()
