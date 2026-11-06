@@ -41,3 +41,27 @@ the desk. No provider jobs, user-state edits or app restart are part of verifica
 | All selected materials marked ready | Your review complete | Native standing regression |
 | Conversation-only retained work | Saved material/review map, no synthetic history | Projection test |
 | Stage/item clicked or poll arrives | No jobs started; focus/disclosure retained | Browser journey |
+
+## Verification
+
+Application commit `737f03ee` passed all **3,217 Training Studio tests** and package
+validation in the shared disposable Tart runner: macOS 27.0, Python 3.13.15,
+Node 22.23.2. The suite took 473 seconds. The VM was stopped and deleted; host logs
+were retained. The final navigation refinement at `e4345ac9` changes only the
+research tab's focus/scroll target and its browser regression; that native browser
+journey passed afterward. No native runtime or state projection changed after the
+full-suite snapshot.
+
+Before the full run, 31 projection/native standing/outline checks and 14 shared UI
+checks passed. Actual native browser journeys exercised the new outline-first flow
+through completed drafts, legacy material progress, stage/detail navigation,
+creator-flag warnings, opening saved plans and research, and Stop/Resume. Reads and
+navigation started no new jobs. The reading/Finishing journey also passed with the
+map present. Phone/desktop layouts covered 320/390/1280px in light/dark with reduced
+motion; progress covered forced colors and 200% text enlargement. Screenshots of
+the phone/desktop map, phone outline and expanded material list were inspected.
+Thirty-seven local documentation links resolved, and diff whitespace checks passed.
+
+All data, workers, settings and workspaces were disposable/scripted. These checks
+establish state and interaction behavior, not live provider latency, semantic
+training quality, Safari/VoiceOver behavior or OS accessibility integration.
