@@ -2,7 +2,8 @@
 
 Updated 2026-11-06 for creator decisions (#385), readable-first ordering (#387),
 truthful progress (#388), and the Golden Gate v2 UI audit (#391).
-The parallel scheduler and overall progress map (#392) below remain proposals.
+The overall progress map (#392) is implemented; the parallel scheduler below
+remains a proposal.
 This describes new outline-first Training Studio desk runs; saved older runs keep
 their recorded workflow. Optional outputs are omitted when not selected.
 
@@ -216,11 +217,10 @@ clearly labeled. Research accepted through explicit creator choices keeps its
 uncertainty warnings and excluded dependencies; it is never called independently
 verified merely because the creator chose to include it.
 
-## Proposed overall progress map
+## Overall progress map
 
-[Issue #392](https://github.com/dbbaskette/marketing-studio/issues/392) tracks this
-design; it is not yet implemented. Keep the existing live activity indicators and
-add a compact map of the whole training:
+[Issue #392](https://github.com/dbbaskette/marketing-studio/issues/392) adds a compact
+map above the existing live activity indicators:
 
 **Outline ✓ → Research ✓ → Materials 2/6 → Your review**
 
@@ -231,13 +231,17 @@ branches. A slide approval belongs to Slides; it must not obscure readable guide
 or make the entire training appear blocked. Review can begin as drafts arrive;
 generation completion and the creator's final readiness remain distinct.
 
-Show **Working**, **Needs you**, **Stopped**, **Waiting** or **Complete** in words.
-Prefer “2 drafts available — Open materials” to a synthetic overall percentage.
-Research can disclose real area/section counts and its assembly/check phases.
-Omit unselected branches and represent saved workflows honestly. Included research
-uncertainty stays marked. Keyboard selection/focus, polling stability and phone
-layout are acceptance requirements, along with cost stops, retries and partial
-output. This map does not depend on implementing the proposed concurrent scheduler.
+States say **Working**, **Needs you**, **Stopped**, **Waiting** or **Complete**;
+**Review drafts** means review can begin while generation continues. Draft counts
+and **Open** actions identify usable work. Research discloses real area/section
+counts and its assembly/check phases. Unselected branches are omitted. Saved runs
+retain their phase order; conversation desks omit inferred execution history.
+Included research uncertainty says **Accepted with flags** and remains marked.
+Keyboard selection/focus and expanded detail survive polling. The projection
+reuses the existing survey and cards, with no extra file reads or provider calls.
+It does not depend on implementing the proposed concurrent scheduler. The
+[implementation plan](../superpowers/plans/2026-11-06-training-progress-map.md)
+records the state matrix and verification.
 
 ## How to judge the result
 
@@ -262,6 +266,7 @@ contains the test evidence and UI audit results.
 - [Fixed pipeline and artifact inputs](../../studios/training/runner/pipeline.py): `TRAINING`, `steps`, `survey`, `blueprint_work`, `_earlier`, `document_work`, `brief_work`, `scenario_work`, `yoodli_work`, `outline_work`.
 - [Pinned readable-first material order](../../studios/training/runner/material_flow.py): new-run priority and saved-run compatibility.
 - [Desk readiness](../../studios/training/runner/drafts.py): desk receipts versus person readiness.
+- [Overall progress projection](../../studios/training/runner/progress_map.py): saved phases, material branches and creator readiness.
 - [Research phase barriers and correction loop](../../core/studio_core/research_session.py): `Workflow`.
 - [Section authors and final assembly](../../core/studio_core/research_sections.py): `combine`.
 - [Slide section pool](../../studios/training/runner/engine.py): `_sections`.

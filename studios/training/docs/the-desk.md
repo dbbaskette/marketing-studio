@@ -52,6 +52,21 @@ downloadable while its update waits, but it is not newly ready. Expand **Activit
 and **Time so far** for details; the latest reported activity stays visible. Saved
 research choices are folded away with a visible reminder that uncertainty remains marked.
 
+The overall workflow map stays above the desk, including at approval and after
+generation finishes. Select a stage to expand its detail. **Materials** groups
+Plans, guides & briefs, Practice & Yoodli, and Slides when selected. Each saved
+item has **Open**; queued updates still identify the previous draft. Branches report
+their own waits, so a slide decision cannot hide a guide already available.
+**Your review** distinguishes reviewable drafts from materials you marked ready.
+Counts cover the materials currently listed; practice items appear as level plans
+are saved. Research detail shows observed phase and available area/section counts.
+**Accepted with flags** keeps creator-included uncertainty explicit.
+
+Stage selection, opening a draft and polling start no assistant work. Keyboard focus
+and the selected detail survive refreshes. Older runs show Research before Teaching
+plan where applicable; conversation-only desks show retained Materials and Your review
+without invented execution history. Another computer's work is labeled saved progress.
+
 A scan time cap leaves an editable incomplete outline, without escalation or an automatic
 second author. Stop keeps a completed or fallback outline; Resume training returns to its review.
 The Activity log records the scan and its model/effort separately from deeper work.

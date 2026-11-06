@@ -2458,6 +2458,85 @@ function needsPart(found, held, run) {
   return node.childNodes.length ? node : null;
 }
 
+// An overall map reads the same survey/cards as the desk. Navigation starts no work.
+function progressMap(found, held, canOpenMaterials, hasPlanReview) {
+  const flow = found.progress?.map;
+  if (!flow?.stages?.length) return null;
+  const stages = flow.stages;
+  const selected = stages.find(stage => stage.id === held.mapStage);
+  const box = make('section', 'desk-flow'); box.setAttribute('aria-label', 'Training workflow');
+  const route = make('ol', 'desk-flow-stages');
+  const details = make('section', 'desk-flow-detail'); details.id = 'desk-flow-detail';
+  details.hidden = !selected;
+  const openMaterial = material => {
+    held.level = material.level || ''; held.sources = false;
+    held.material[held.level] = material.name;
+    deskGoTo(held, found.standing, material.name);
+    paintDesk(false);
+    const heading = byId(headingId(material.name));
+    if (heading) { heading.focus(); heading.scrollIntoView({block:'start'}); }
+  };
+  for (const [index, stage] of stages.entries()) {
+    const key = 'desk-flow-' + stage.id;
+    const button = capsule('', 'quiet desk-flow-step', () => {
+      held.mapStage = selected?.id === stage.id ? null : stage.id;
+      paintDesk(false); focusKey(key);
+    }, key);
+    button.id = key; button.dataset.state = stage.state;
+    button.setAttribute('aria-expanded', String(selected?.id === stage.id));
+    button.setAttribute('aria-controls', 'desk-flow-detail');
+    if (flow.current === stage.id) button.setAttribute('aria-current', 'step');
+    const mark = make('span', 'desk-flow-number', stage.warning ? '!' : stage.state === 'complete' ? '✓' : String(index + 1));
+    mark.setAttribute('aria-hidden', 'true');
+    const arrow = make('span', 'desk-flow-arrow', selected?.id === stage.id ? '▾' : '▸');
+    arrow.setAttribute('aria-hidden', 'true');
+    add(button, add(make('span', 'desk-flow-label'), mark, stage.label, arrow),
+      make('span', 'desk-flow-state', stage.words),
+      stage.total !== undefined ? make('span', 'quiet desk-flow-count', stage.id === 'review'
+        ? stage.ready + '/' + stage.total + ' ready' : stage.available + '/' + stage.total + ' drafts') : null);
+    route.append(add(make('li'), button));
+  }
+  box.append(route);
+  if (flow.note) box.append(make('p', 'quiet', flow.note));
+  if (selected) {
+    details.setAttribute('aria-labelledby', 'desk-flow-' + selected.id);
+    add(details, make('p', '', selected.detail), selected.warning ? make('p', 'desk-flow-warning', selected.warning) : null,
+      selected.phase ? make('p', 'row-title', selected.phase) : null,
+      ...list(selected.counts).map(count => make('p', 'quiet', count.done + ' of ' + count.total + ' ' + count.label + '.')));
+    const items = names => {
+      const rows = make('ul', 'desk-flow-items');
+      for (const name of names) {
+        const material = list(found.cards).find(card => card.name === name);
+        if (!material) continue;
+        const open = canOpenMaterials && (material.seen || material.state === 'decide')
+          ? capsule('Open', 'quiet', () => openMaterial(material), 'desk-flow-open ' + name) : null;
+        if (open) open.setAttribute('aria-label', 'Open ' + material.label);
+        rows.append(add(make('li'), add(make('div'), make('p', 'row-title', capital(material.label)),
+          make('p', 'quiet', material.state === 'ready' ? 'Marked ready' : material.state === 'draft' ? 'Draft available'
+            : material.says), material.seen && ['queued','writing','held'].includes(material.state)
+            ? make('p', 'quiet', 'Previous draft available.') : null), open));
+      }
+      return rows;
+    };
+    for (const branch of list(selected.branches)) {
+      const group = add(make('section', 'desk-flow-branch'),
+        make('h3', 'row-title', branch.label + ' · ' + branch.words),
+        make('p', 'quiet', branch.available + ' of ' + branch.total + ' drafts available.'),
+        branch.detail ? make('p', 'quiet', branch.detail) : null, items(branch.materials));
+      details.append(group);
+    }
+    if (selected.materials) details.append(items(selected.materials));
+    if (hasPlanReview && ['outline','plan'].includes(selected.id)) details.append(capsule('Review ' + (selected.id === 'outline' ? 'outline' : 'teaching plan'), 'quiet', () => {
+      const panel = byId('desk-plan-review'); if (panel) { panel.focus(); panel.scrollIntoView({block:'start'}); }
+    }, 'desk-flow-review-plan'));
+    if (selected.id === 'research' && canOpenMaterials) details.append(capsule('Open research & sources', 'quiet', () => {
+      held.sources = true; paintDesk(true);
+    }, 'desk-flow-research'));
+  }
+  box.append(details);
+  return box;
+}
+
 // The start's progress band, while it works: whether the person is needed, the step in
 // hand, and one clock for the whole start. Documents the start could not add come first.
 function progressPart(found, held, lead) {
@@ -2506,7 +2585,7 @@ function progressPart(found, held, lead) {
     ? timeDetails(make('p', 'quiet desk-clock', deskKit.clock(progress))) : null;
   const band = add(make('section', 'desk-progress'),
     add(make('div', 'desk-progress-head'), building, controls.childNodes.length ? controls : null),
-    line, status, next, latest,
+    line, found.progress?.map ? null : status, next, latest,
     activity || timing ? add(make('div', 'desk-progress-details'), activity, timing) : null);
   band.setAttribute('aria-label', 'Training progress');
   return add(make('div'), band, researchActivity(run));
@@ -2993,7 +3072,7 @@ function paintDesk(fresh) {
   const drawn = JSON.stringify([found, run.state, run.question, run.problem, run.documents,
     run.mine, run.driver, run.taken, run.notice, run.outline, run.training_plan, run.training_plan_pending,
     run.research_progress, run.timing, run.finished, view.issued, view.setup && view.setup.workspace,
-    held.level, held.sources, held.material, held.said,
+    held.level, held.sources, held.material, held.said, held.mapStage,
     held.unsent && list(held.unsent.files).map((file) => file.name), held.unsent
       && held.unsent.why, lead, narrow()]);
   if (!fresh && drawn === held.drawn) return;
@@ -3086,18 +3165,24 @@ function paintDesk(fresh) {
         column, finishing.panel));
   const layout = workspacePanel('desk-material', options.findIndex(one => one.id === selected),
     held.sources ? sourcesPart(found) : reading);
+  const planReview = waitingPlan ? trainingPlanReview(run.training_plan, held) : null;
+  if (planReview) {
+    planReview.id = 'desk-plan-review'; planReview.tabIndex = -1;
+    planReview.dataset.key = 'desk-plan-review';
+  }
   place({ title: found.title || 'Untitled', back: true, compact: narrow(),
     above: named.length ? [make('span', '', levelsText(named))] : [],
     actions: folded(actions) }, [
-    waitingPlan ? null : pageHead(preparingPlan ? (run.outline_first ? 'One Quick scan prepares an editable outline. Detailed research waits for your approval.' : 'I’ll prepare the topics and teaching plan for you to check, then build the training.') : conversation ? 'Read the retained materials. Make checked edits in conversation; only you mark a material ready.' : DESK_WORDS.lede),
+    waitingPlan || found.progress?.map ? null : pageHead(preparingPlan ? (run.outline_first ? 'One Quick scan prepares an editable outline. Detailed research waits for your approval.' : 'I’ll prepare the topics and teaching plan for you to check, then build the training.') : conversation ? 'Read the retained materials. Make checked edits in conversation; only you mark a material ready.' : DESK_WORDS.lede),
     notice,
     conversation ? add(card('Editing in conversation'), make('p', '', 'No work is scheduled. Checked edits to the listed existing material parts and explicit broader scope changes happen in conversation; Mark ready is your decision.')) : null,
     found.saved_status ? add(card('Saved runner history'), make('p', '', 'The earlier runner was ' + found.saved_status.halt + '. That status remains in the original saved records; no work was resumed.')) : null,
     !ours && run.mine === false ? theirsPart(run, !view.sheet && !run.driver) : null,
     ours && run.notice ? noticePart(run) : null,
     ours ? needsPart(found, held, run) : null,
+    progressMap(found, held, !preparingPlan && !waitingPlan, Boolean(planReview)),
     conversation || waitingPlan ? null : progressPart(found, held, lead),
-    waitingPlan ? trainingPlanReview(run.training_plan, held) : null,
+    planReview,
     ours && run.outline?.content_first && run.outline.waiting ? slideTextNotice(run.outline, held, shown) : null,
     run.question && ours ? questionPart(run, found.title) : null,
     run.problem ? problemPart(run, lead === 'problem') : null,

@@ -3246,6 +3246,37 @@ body[data-product="Training Studio"] .card > .training-options {
   min-width: 0;
 }
 /* Training progress belongs to the workspace, not another content card. */
+.desk-flow { min-width: 0; }
+.desk-flow-stages { list-style: none; display: flex; margin: 0; padding: 0; border-bottom: 1px solid var(--hair); }
+.desk-flow-stages > li { flex: 1 1 0; min-width: 0; }
+.desk-flow-stages .desk-flow-step {
+  display: flex; flex-direction: column; align-items: flex-start; justify-content: flex-start;
+  gap: .15rem; width: 100%; min-height: 5rem; padding: .5rem .4rem;
+  border: 0; border-bottom: 3px solid transparent; border-radius: .35rem .35rem 0 0;
+  text-align: left; white-space: normal; overflow-wrap: anywhere;
+}
+.desk-flow-step[aria-current="step"] { border-bottom-color: var(--accent); }
+.desk-flow-step[aria-expanded="true"] { background: var(--studio-wash); color: var(--accent); }
+.desk-flow-label { display: flex; gap: .35rem; font-weight: 600; }
+.desk-flow-number { color: var(--quiet); font-variant-numeric: tabular-nums; }
+.desk-flow-arrow { color: var(--quiet); font-size: .75rem; }
+.desk-flow-state, .desk-flow-count { font-size: .85rem; }
+.desk-flow-step[data-state="stopped"] .desk-flow-state,
+.desk-flow-step[data-state="needs-you"] .desk-flow-state { color: var(--late); }
+.desk-flow-step[data-state="complete"] .desk-flow-number { color: var(--done); }
+.desk-flow-detail { padding-block: .75rem; border-bottom: 1px solid var(--hair); }
+.desk-flow-detail > * + * { margin-top: .65rem; }
+.desk-flow-branch { padding-top: .65rem; border-top: 1px solid var(--hair); }
+.desk-flow-items { list-style: none; padding: 0; margin: .3rem 0 0; }
+.desk-flow-items > li { display: flex; align-items: center; gap: .5rem; padding-block: .4rem; }
+.desk-flow-items > li > div { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.desk-flow-warning { border-left: 3px solid var(--late); padding-left: .65rem; }
+#desk-plan-review { scroll-margin-top: 5rem; }
+@media (max-width: 40rem) {
+  .desk-flow-label { font-size: .875rem; gap: .2rem; }
+  .desk-flow-stages .desk-flow-step { padding-inline: .25rem; }
+  .desk-flow-number { display: none; }
+}
 .desk-progress {
   padding-block: .65rem;
   border-block: 1px solid var(--hair);

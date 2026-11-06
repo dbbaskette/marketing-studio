@@ -19,6 +19,13 @@ async function fixture(args=[]){
     page.on('pageerror',e=>errors.push(e.stack||e.message));
     if(width===1280)await page.addInitScript(root=>history.replaceState({screen:'run',path:root},''),test.path);
     await page.goto(width===1280?test.url:test.url+'&resume='+encodeURIComponent(path.basename(test.path)));await page.getByRole('heading',{name:'Review the training outline',exact:true}).waitFor();
+    const outlineStage=page.locator('#desk-flow-outline');
+    await outlineStage.waitFor();assert.equal(await outlineStage.getAttribute('data-state'),'needs-you');
+    assert.equal(await page.locator('#desk-flow-research').getAttribute('data-state'),'waiting');
+    await outlineStage.focus();await page.keyboard.press('Enter');
+    await page.getByRole('button',{name:'Review outline',exact:true}).click();
+    assert.equal(await page.locator('#desk-plan-review').evaluate(n=>n===document.activeElement),true);
+    await outlineStage.click();
     const first=page.getByLabel('Section 1 title',{exact:true});
     await first.waitFor();
     const firstBox=await first.boundingBox();assert(firstBox.y+firstBox.height<600,'First editable section is visible without scrolling');
@@ -79,6 +86,13 @@ await zoom.send('Emulation.setDeviceMetricsOverride',{width:640,height:422,devic
     }
     assert.equal(after.problem,null,JSON.stringify(after.problem));assert.equal(after.state,'done');
     assert.equal(after.training_plan_pending,false);assert.equal(after.steps.find(s=>s.id==='scan').attempts,1);
+    await page.waitForFunction(()=>document.querySelector('#desk-flow-materials')?.dataset.state==='complete');
+    assert.equal(await page.locator('#desk-flow-outline').getAttribute('data-state'),'complete');
+    assert.equal(await page.locator('#desk-flow-research').getAttribute('data-state'),'complete');
+    assert.equal(await page.locator('#desk-flow-review').getAttribute('data-state'),'needs-you');
+    await page.locator('#desk-flow-materials').click();
+    await page.locator('[data-key^="desk-flow-open document"]').first().click();
+    await page.getByRole('tab',{name:/^Guide · Draft$/}).waitFor();
     assert.deepEqual(errors,[]);console.log('PASS editable outline '+width);await page.close();
    }finally{await test.stop();}
   }

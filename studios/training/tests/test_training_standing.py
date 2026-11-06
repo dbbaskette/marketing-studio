@@ -38,6 +38,9 @@ class StandingTests(DeckCase):
         self.assertIn('learner guide', cards['brief@101']['says'])
         self.assertEqual(during['progress']['next']['name'], 'brief@101')
         self.assertTrue(cards['blueprint@101']['seen'])
+        mapped = {stage['id']: stage for stage in during['progress']['map']['stages']}
+        self.assertEqual(mapped['materials']['state'], 'working')
+        self.assertEqual([branch['id'] for branch in mapped['materials']['branches']], ['reading'])
         self.assertFalse(self.record(root)['problem'])
 
     def test_queued_update_and_stopped_update_are_readable_but_not_writing(self):
@@ -52,6 +55,9 @@ class StandingTests(DeckCase):
         self.assertEqual(card['state'], 'queued')
         self.assertIn('download', card['actions'])
         self.assertNotIn('ready', card['actions'])
+        mapped = {stage['id']: stage for stage in queued['progress']['map']['stages']}
+        self.assertGreater(mapped['materials']['available'], 0)
+        self.assertNotEqual(mapped['materials']['state'], 'complete')
         self.engine.act(root, 'stop')
         stopped = drafts.view(self.engine, root)
         card = next(card for card in stopped['cards'] if card['name'] == 'document@101')
@@ -162,6 +168,9 @@ class StandingTests(DeckCase):
         self.assertEqual(told['sentence'], f'{drafted} drafts to read and mark ready.')
         self.assertEqual(told['next']['material'], 'blueprint@101')
         self.assertNotEqual(item['state'], 'finished')
+        mapped = {stage['id']: stage for stage in drafts.view(self.engine, root)['progress']['map']['stages']}
+        self.assertEqual(mapped['materials']['state'], 'complete')
+        self.assertEqual(mapped['review']['state'], 'needs-you')
         session = workspace.load(root)
         seen = {name: self.seen(root, name) for name in drafts.level_ready(root, session, '101')}
         self.engine.mark_level_ready(root, '101', seen)
@@ -172,6 +181,8 @@ class StandingTests(DeckCase):
                          ('finished', 'ready', 'Ready'))
         self.assertIsNone(item['standing']['next'])
         self.assertTrue(item['ready'])
+        mapped = {stage['id']: stage for stage in drafts.view(self.engine, root)['progress']['map']['stages']}
+        self.assertEqual(mapped['review']['state'], 'complete')
         stages = {stage['stage']: stage['state'] for stage in item['stages']}
         self.assertEqual(stages['package'], 'done')
 
@@ -183,6 +194,11 @@ class StandingTests(DeckCase):
         self.assertEqual((cards['deck@101']['state'], cards['deck@101']['says']),
                          ('decide', drafts.TEXT_APPROVAL))
         self.assertEqual(cards['deck@101']['actions'], [])
+        mapped = {stage['id']: stage for stage in shown['progress']['map']['stages']}
+        self.assertEqual(mapped['materials']['state'], 'needs-you')
+        branches = {branch['id']: branch for branch in mapped['materials']['branches']}
+        self.assertEqual(branches['slides']['state'], 'needs-you')
+        self.assertGreater(branches['reading']['available'], 0)
         # The run waits for the person: what is not written yet is not said to be writing.
         unwritten = [card for card in shown['cards'] if not card['seen']]
         self.assertTrue(unwritten)
