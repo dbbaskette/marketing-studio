@@ -2530,7 +2530,9 @@ function progressMap(found, held, canOpenMaterials, hasPlanReview) {
       const panel = byId('desk-plan-review'); if (panel) { panel.focus(); panel.scrollIntoView({block:'start'}); }
     }, 'desk-flow-review-plan'));
     if (selected.id === 'research' && canOpenMaterials) details.append(capsule('Open research & sources', 'quiet', () => {
-      held.sources = true; paintDesk(true);
+      held.sources = true; paintDesk(false);
+      const tab = main().querySelector('[aria-controls="desk-material-panel"][aria-selected="true"]');
+      if (tab) { tab.focus({preventScroll:true}); revealTabs(tab); }
     }, 'desk-flow-research'));
   }
   box.append(details);

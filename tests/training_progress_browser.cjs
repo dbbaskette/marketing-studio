@@ -36,6 +36,11 @@ const assert=require('node:assert/strict'), path=require('node:path'), fs=requir
   await mapMaterials.click();
   await map.locator('#desk-flow-research').click();
   await map.getByText(/not independently verified/).waitFor();
+  await page.getByRole('button',{name:'Open research & sources',exact:true}).click();
+  const sourcesTab=page.getByRole('tab',{name:'Research & sources',exact:true});
+  assert.equal(await sourcesTab.getAttribute('aria-selected'),'true');
+  assert.equal(await sourcesTab.evaluate(n=>n===document.activeElement),true);
+  assert((await page.locator('#desk-material-panel').boundingBox()).y<700,'Research opens in view');
   await map.locator('#desk-flow-research').click();
   assert.equal((await page.evaluate(()=>ask('fixture-progress-state'))).jobs,mapJobs,'Map navigation starts no work');
   const activity=page.locator('.desk-progress-activity');
