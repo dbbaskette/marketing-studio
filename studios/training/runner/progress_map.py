@@ -125,9 +125,9 @@ def project(record, found, cards, state, sentence, *, queued=False, mine=True):
         if rows:
             research['counts'].append({'label': label, 'done': sum(row.get('status') in accepted for row in rows), 'total': len(rows)})
     if progress.get('phase') == 'creator-approved':
-        research['warning'] = 'Creator choices are saved. Included uncertainty remains marked; it is not independently verified.'
+        research['decision'] = 'Creator choices are saved; the independent-check notes are kept in the evidence.'
         if research['state'] == 'complete':
-            research['words'] = 'Accepted with flags'
+            research['words'] = 'Creator accepted'
 
     # Scope a stop to its actual branch; successful peers remain usable.
     if active is materials and active['state'] == 'stopped':

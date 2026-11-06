@@ -81,13 +81,13 @@ def dispatch(engine, path, sent):
             workspace.write_atomic(root / pipeline.REPORT, (root / 'research/report.md').read_bytes())
             workspace.save(root, 'research', built=True)
             workspace.append_review(root, 'research', 'Creator decisions on independent research flags',
-                'The creator explicitly included flagged material with warnings or excluded it. '
+                'The creator explicitly included flagged material, optionally with warnings, or excluded it. '
                 'The original independent verdicts are retained in the research bundle. '
                 'Creator approval does not claim independent verification.')
             record['problem'] = {'state': 'waiting', 'step': 'research', 'action': 'resume',
                 'label': 'Continue', 'settings': True, 'creator_saved': True,
                 'what': 'Your research choices are saved. Continue to review the report and create materials.',
-                'kept': 'Included uncertainty is marked. Excluded claims and dependent passages are omitted.'}
+                'kept': 'Your inclusion and warning choices are applied. Excluded claims and dependent passages are omitted. Independent-check notes are kept in the evidence.'}
             record['halt'] = 'paused'
             if record.get('research_execution', {}).get('progress'):
                 record['research_execution']['progress']['phase'] = 'creator-approved'

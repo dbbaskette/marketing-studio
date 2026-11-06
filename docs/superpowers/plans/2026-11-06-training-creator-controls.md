@@ -1,0 +1,34 @@
+# Training Studio creator controls
+
+Issues: #396 (optional research warnings), #397 (short practice descriptions).
+Implement, verify, and merge each issue before starting the next.
+
+## Research choices
+
+Offer Include, Include with warning, and Exclude with no preselection. Keep
+independent verdicts and creator decisions in the evidence and receipt. New
+receipts use schema 2; schema 1 reconstructs byte for byte, with its existing
+include value still meaning include with warning. Only selected warnings reach
+the report, reference brief and material author. Exclusions remove dependent claims.
+
+## Practice intent
+
+Default to Let AI choose scenarios. Define scenarios accepts short descriptions;
+AI expands the role, goals, dialogue and evaluation detail. Persist the choice in
+intake and settings and carry it through planning, practice and Yoodli output.
+Existing trainings keep AI planning. Do not replace user-authored scenario files.
+
+## State-transition matrix
+
+| Input / state | Result | Regression |
+| --- | --- | --- |
+| Flagged draft + Include | Original prose/citations, separate audit, paused until Continue | shared decisions + native save/continue |
+| Mixed warning/plain choices | Selected warnings propagate to dependent content; clean choices retain audit | shared dependency test |
+| Exclusion + included parent | Exclusion wins; dependent passages omitted | shared decisions |
+| Existing schema 1 receipt | Identical content and hashes; no reinterpretation | frozen legacy file hashes |
+| Stale or active decision form | Refuse without publication or new jobs | native decisions |
+
+## Verification
+
+Use disposable helper/workspace fixtures, native API/browser journeys and the full
+relevant local suite. No real trainings, provider calls or application restart.

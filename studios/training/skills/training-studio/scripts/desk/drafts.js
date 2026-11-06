@@ -2501,6 +2501,7 @@ function progressMap(found, held, canOpenMaterials, hasPlanReview) {
   if (selected) {
     details.setAttribute('aria-labelledby', 'desk-flow-' + selected.id);
     add(details, make('p', '', selected.detail), selected.warning ? make('p', 'desk-flow-warning', selected.warning) : null,
+      selected.decision ? make('p', 'quiet', selected.decision) : null,
       selected.phase ? make('p', 'row-title', selected.phase) : null,
       ...list(selected.counts).map(count => make('p', 'quiet', count.done + ' of ' + count.total + ' ' + count.label + '.')));
     const items = names => {

@@ -45,7 +45,7 @@ class Reservations:
 def describe(progress):
     phase = progress.get('phase')
     if phase == 'creator-review':
-        return 'The research draft is saved. Choose what to include with a warning or exclude.'
+        return 'The research draft is saved. Choose what to include, include with a warning, or exclude.'
     if phase == 'creator-approved':
         return 'Your research choices are saved. Continue when ready to create materials.'
     if phase == 'check-incomplete':

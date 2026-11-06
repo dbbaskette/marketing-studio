@@ -34,7 +34,7 @@ flowchart TD
     FN --> G
     G --> H[Check all sources, claims and prose: 1 independent agent]
     H --> I{Research accepted?}
-    I -->|Flags remain| J{Creator includes with warnings or excludes}
+    I -->|Flags remain| J{Creator includes, warns or excludes}
     J -->|Save choices, then Continue| K
     J -->|Explicit correction attempt| D
     I -->|Yes| K[Draft next level plan]
@@ -113,7 +113,7 @@ flowchart TD
     G2 --> H
     GN --> H
     H --> I{Research accepted?}
-    I -->|Flags remain| J{Creator includes with warnings or excludes}
+    I -->|Flags remain| J{Creator includes, warns or excludes}
     J -->|Save choices, then Continue| K
     J -->|Explicit correction attempt| X[Retry only failed or invalidated tasks]
     X --> D

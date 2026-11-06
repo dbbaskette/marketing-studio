@@ -13,9 +13,9 @@ const {chromium}=require('playwright'),{spawn}=require('node:child_process'),ass
   await page.getByRole('heading',{name:'Choose flagged research content',exact:true}).waitFor();
   assert.equal(await page.evaluate(()=>document.activeElement.textContent),'Choose flagged research content');
   await page.getByRole('button',{name:'Save choices',exact:true}).click();
-  await page.getByText('Choose Include with warning or Exclude for every flag.',{exact:true}).waitFor();
+  await page.getByText('Choose Include, Include with warning, or Exclude for every flag.',{exact:true}).waitFor();
   assert.equal(await page.locator('input[type=radio]:checked').count(),0);
-  await page.getByRole('radio',{name:'Include with warning',exact:true}).first().check();
+  await page.getByRole('radio',{name:'Include',exact:true}).first().check();
   await page.getByRole('group',{name:'Report passage',exact:true}).getByRole('radio',{name:'Exclude',exact:true}).check();
   for(const width of [390,1280])for(const colorScheme of ['light','dark']){
    await page.setViewportSize({width,height:950});await page.emulateMedia({colorScheme,reducedMotion:'reduce'});
@@ -25,7 +25,7 @@ const {chromium}=require('playwright'),{spawn}=require('node:child_process'),ass
   await page.getByRole('button',{name:'Save choices',exact:true}).click();
   await page.getByText(/What happened: Your research choices are saved/).waitFor().catch(async error=>{throw Error(error.message+'\nPAGE: '+(await page.locator('body').innerText()).slice(-9000)+'\nJS: '+JSON.stringify(failures));});
   const after=await page.evaluate(()=>ask('fixture-decision-state'));
-  assert.equal(after.jobs,before.jobs);assert.equal(after.creator,true);assert.match(after.report,/Omitted by the creator/);assert.match(after.report,/Creator-approved/);assert.deepEqual(failures,[]);
+  assert.equal(after.jobs,before.jobs);assert.equal(after.creator,true);assert.match(after.report,/Omitted by the creator/);assert.doesNotMatch(after.report,/Creator included with warning|Preserve.*warnings|independent-check notes/);assert.deepEqual(failures,[]);
   console.log('PASS Training Studio: no default inclusion; include/exclude save; phone/desktop light/dark; heading focus; zero provider dispatch.');
  } finally {
   if(browser)await browser.close();child.kill('SIGTERM');await new Promise(resolve=>child.exitCode!==null?resolve():child.once('exit',resolve));assert.equal(child.exitCode,0,errors);

@@ -33,7 +33,7 @@ scope and approval consequence stay visible. Incomplete-scan warnings stay visib
 **Approve outline & research** approves that exact edited scope. Only retained sections
 become research items, with your additional questions included. Up to three areas run in
 parallel within the saved source, round and spending limits. Combining and an independent
-check still cover the whole dossier. Unresolved flags become include/exclude choices;
+check still cover the whole dossier. Unresolved flags become Include / Include with warning / Exclude choices;
 save your choices and explicitly continue. Included uncertainty stays marked, and
 excluded findings also omit dependent content. The teaching plans and selected materials
 then use your approved scope and accepted research, with no second topics approval.
@@ -60,7 +60,7 @@ their own waits, so a slide decision cannot hide a guide already available.
 **Your review** distinguishes reviewable drafts from materials you marked ready.
 Counts cover the materials currently listed; practice items appear as level plans
 are saved. Research detail shows observed phase and available area/section counts.
-**Accepted with flags** keeps creator-included uncertainty explicit.
+**Creator accepted** records your decision. Choose **Include** for ordinary content, **Include with warning** for a visible note, or **Exclude**. Independent-check notes stay in the evidence; warnings appear only where requested.
 
 Stage selection, opening a draft and polling start no assistant work. Keyboard focus
 and the selected detail survive refreshes. Older runs show Research before Teaching

@@ -23,8 +23,8 @@ IDS_FOR_QUESTIONS = ('Planning questions have IDs. A finding that answers one ha
 
 # What every writer that receives research is told of it, once.
 HANDOFF = ('Read the research brief first: it says what matters for this piece and how it was reviewed. '
-           'Creator-approved research may contain flagged material: preserve its warnings and '
-           'qualifications, never present it as independently verified, and never reuse excluded claims. '
+           'Creator-approved research may contain flagged material: preserve its selected warnings and all source '
+           'qualifications, never present it as independently verified, and never reuse excluded claims. Do not add verification warnings to content the creator included without a warning. '
            'Use the facts and findings to check what you write. Their IDs, digests and verdicts '
            'are for checking and for provenance, notes and source lines: never put one in the '
            'words a reader reads.')

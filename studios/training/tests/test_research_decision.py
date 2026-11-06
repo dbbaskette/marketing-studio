@@ -58,7 +58,7 @@ class CreatorDecisionTests(StudioCase):
         self.assertFalse(facts['review']['accepted'])
         self.assertIn('Creator included with warning', (root/pipeline.REPORT).read_text())
         self.assertTrue(research_decision.current(root,self.engine._load(root)))
-        self.assertTrue(pipeline.findings_text(root).startswith('# Creator-approved research with unresolved verification'))
+        self.assertTrue(pipeline.findings_text(root).startswith('# Creator-approved research'))
         allowance = self.engine._load(root).get('cleared', 0.0)
         self.engine.act(root,'resume')
         shown=self.view(root)
@@ -74,6 +74,20 @@ class CreatorDecisionTests(StudioCase):
         self.assertTrue(any(row['kind']=='source' for row in shown['items']))
         self.decide(root)
         self.assertFalse(rc.read_bundle(root/'research')[0]['review']['originals'][0]['read_original'])
+
+    def test_plain_include_reaches_material_author_without_forced_warning(self):
+        root = self.start()
+        before = len(self.workers.jobs)
+        self.decide(root, 'include-plain')
+        self.assertEqual(len(self.workers.jobs), before)
+        facts, _ = rc.read_bundle(root/'research')
+        self.assertFalse(facts['review']['accepted'])
+        self.assertNotIn('Creator included with warning', pipeline.findings_text(root))
+        self.assertNotIn('independent-check notes', (root/'research/brief.md').read_text())
+        self.assertIn('**Included**', (root/'research/evidence.md').read_text())
+        self.engine.act(root, 'resume')
+        self.assertIsNone(self.view(root)['problem'])
+        self.assertTrue(self.workers.of('blueprint'))
 
     def test_checker_timeout_offers_whole_draft_as_explicitly_unverified(self):
         self.no_verdict=True
