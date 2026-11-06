@@ -191,6 +191,7 @@ const deskKit = Drafting.kit({
         const was = list(desk.view?.cards).find((one) => one.name === name);
         const now = list(held.view.desk.cards).find((one) => one.name === name);
         desk.view = held.view.desk;
+        held.loadedSeen = now?.seen;
         if (was?.state === 'ready' && now && now.state !== 'ready') {
           toast(backToDraftWords(now, held.view.desk));
           // Drawn again at once, the typing kept where it is, so the card says Draft.
@@ -299,20 +300,28 @@ function finishingTools() {
 function openFinishing(choose = false) {
   for (const menu of document.querySelectorAll('.menu')) menu.open = false;
   const held = deskHeld(view.path);
-  const choices = Object.values(held.materials).filter((material) =>
-    (material.view.level || '') === held.level && !material.view.readonly
-      && FINISHING_TOOLS.some((tool) => tool.kinds.includes(material.view.kind)));
-  const open = (material) => {
+  const choices = list(held.view?.cards).filter((one) => one.seen
+    && (one.level || '') === held.level && deskCanChange()
+    && FINISHING_TOOLS.some((tool) => tool.kinds.includes(one.kind)));
+  const open = async (one) => {
+    const path = view.path, turn = view.turn, level = held.level;
+    const selected = held.material[level], sheet = view.sheet;
+    await loadDeskMaterial(path, held, one);
+    if (view.path !== path || view.turn !== turn || held.level !== level
+        || held.material[level] !== selected || view.sheet !== sheet) return;
+    const material = held.materials[one.name];
+    if (!material || held.materialErrors?.[one.name] || material.view.readonly) {
+      held.said = held.materialErrors?.[one.name] || 'This material is not available for editing.';
+      closeSheet(); held.drawn = ''; paintDesk(false); return;
+    }
     for (const other of Object.values(held.materials)) other.finish = null;
     held.sources = false;
     held.material[held.level] = material.view.name;
     closeSheet(); deskKit.finishOpen(material);
     revealFinishing();
   };
-  const current = !held.sources && choices.find((material) =>
-    material.view.name === held.material[held.level]);
+  const current = !held.sources && choices.find((one) => one.name === held.material[held.level]);
   if (!choose && current) { open(current); return; }
-  if (choices.length === 1) { open(choices[0]); return; }
   // What is shown has no checks of its own (the plan, or the sources): said, with the
   // materials that do.
   const shown = list(held.view?.cards).find((one) => one.name === held.material[held.level]);
@@ -321,7 +330,7 @@ function openFinishing(choose = false) {
       + ' has no Finishing checks. ' : '';
   DESK.kitSheet = [sheetTitle('Finishing'), make('p', '', none + 'Choose the material to check.'),
     make('h3', 'sheet-part', '1. Choose a material'),
-    ...choices.map((material) => capsule(cardTitle(material.view), 'quiet', () => open(material))),
+    ...choices.map((one) => capsule(cardTitle(one), 'quiet', () => open(one))),
     choices.length ? null : make('p', '', 'A guide, brief, practice or Yoodli layout opens here once it is written.'),
     capsule('Cancel', 'quiet', () => closeSheet())].filter(Boolean);
   openSheet('desk-kit', '')();
@@ -1404,37 +1413,92 @@ async function drawDesk(fresh) {
   if (!view.busy && !view.sheet) paintDesk(fresh);
 }
 
-// Each editable material keeps its own revision and pending typing across redraws.
+function selectedDeskCard(found, held) {
+  const levels = list(found.levels).filter(Boolean);
+  if (!levels.includes(held.level)) held.level = levels[0] || '';
+  const cards = list(found.cards).filter(one => (one.level || '') === held.level && one.state !== 'left-out');
+  if (!cards.some(one => one.name === held.material[held.level])) {
+    held.material[held.level] = (cards.find(one => one.seen && ['needs', 'held'].includes(one.state)
+      || one.state === 'decide') || cards.find(one => one.seen) || cards[0])?.name;
+  }
+  return held.sources ? null : cards.find(one => one.name === held.material[held.level]);
+}
+
+function protectedDeskMaterial(material) {
+  return material && (material.saving || Object.keys(material.pending).length || material.stale);
+}
+
+// Fetch only the editor being read. In-flight reads are shared; pending local edits own
+// their revision. A late response cannot replace a newer metadata version or repaint
+// another screen. Cached editors retain their per-material state between selections.
+async function loadDeskMaterial(path, held, one, force = false) {
+  if (!one?.seen || protectedDeskMaterial(held.materials[one.name])) return;
+  held.materialLoads ||= {}; held.materialErrors ||= {};
+  if (held.materialLoads[one.name]) return held.materialLoads[one.name];
+  if (!force && held.materials[one.name]?.loadedSeen === one.seen) return;
+  if (held.materialErrors[one.name]) held.drawn = '';
+  delete held.materialErrors[one.name];
+  const loading = (async () => {
+    try {
+      const material = await ask('drafts/card', { path, name: one.name });
+      if (!Number.isInteger(material.revision)) throw new Error('This material is not ready to open yet.');
+      if (list(held.view?.cards).find(card => card.name === one.name)?.seen !== one.seen) return;
+      let current = held.materials[one.name];
+      if (protectedDeskMaterial(current)) return;
+      if (current) {
+        if (JSON.stringify(current.view) !== JSON.stringify(material) || current.loadedSeen !== one.seen) held.drawn = '';
+        current.view = material; current.loadedSeen = one.seen;
+      }
+      else {
+        held.drawn = '';
+        current = held.materials[one.name] = { id: JSON.stringify([path, one.name]), view: material,
+          loadedSeen: one.seen, pending: {}, notes: {}, session: String(Date.now()) + Math.random(), tab: 'draft' };
+        recoverDeskMaterial(path, current);
+      }
+    } catch (failure) { held.materialErrors[one.name] = failure.message; held.drawn = ''; }
+    finally { delete held.materialLoads[one.name]; }
+  })();
+  held.materialLoads[one.name] = loading;
+  return loading;
+}
+
 async function loadDeskMaterials(path, held, found) {
-  await Promise.all(list(found.cards).filter((one) =>
-    ['blueprint', 'document', 'brief', 'scenario', 'yoodli', 'deck'].includes(one.kind) && one.seen)
-    .map(async (one) => {
-      let heldMaterial = held.materials[one.name];
-      // A pending save owns its revision until it succeeds or explicitly reloads.
-      if (heldMaterial && (heldMaterial.saving || Object.keys(heldMaterial.pending).length
-          || heldMaterial.stale)) return;
-      try {
-        const material = await ask('drafts/card', { path, name: one.name });
-        if (!Number.isInteger(material.revision)) return;
-        heldMaterial = held.materials[one.name];
-        if (heldMaterial) {
-          // Typing may have started while this request was in flight.
-          if (heldMaterial.saving || Object.keys(heldMaterial.pending).length
-              || heldMaterial.stale) return;
-          if (JSON.stringify(heldMaterial.view) !== JSON.stringify(material)) held.drawn = '';
-          heldMaterial.view = material;
-        } else {
-          held.materials[one.name] = { id: JSON.stringify([path, one.name]), view: material,
-          pending: {}, notes: {}, session: String(Date.now()) + Math.random(), tab: 'draft' };
-          recoverDeskMaterial(path, held.materials[one.name]);
-        }
-      } catch (_) { /* A material still being written has no editor yet. */ }
-    }));
+  await loadDeskMaterial(path, held, selectedDeskCard(found, held), true);
+}
+
+function ensureDeskMaterial(held, one) {
+  if (!one?.seen || protectedDeskMaterial(held.materials[one.name])
+      || held.materials[one.name]?.loadedSeen === one.seen || held.materialLoads?.[one.name]
+      || held.materialErrors?.[one.name]) return;
+  const path = view.path, turn = view.turn;
+  void loadDeskMaterial(path, held, one).then(() => {
+    if (view.path === path && view.turn === turn && view.screen === 'run' && !view.busy && !view.sheet) paintDesk(false);
+  });
+}
+
+function deskMaterialLoading(found, held) {
+  if (!found.seen) return null;
+  const problem = held.materialErrors?.[found.name];
+  const box = make('div', 'card-part');
+  box.setAttribute('role', problem ? 'alert' : 'status');
+  add(box, make('p', '', problem ? 'Could not open this material. ' + problem : 'Opening ' + cardTitle(found).toLowerCase() + '…'));
+  if (problem) add(box, capsule('Try opening again', 'quiet', async () => {
+    const path = view.path, turn = view.turn;
+    const loading = loadDeskMaterial(path, held, found, true);
+    paintDesk(false);
+    await loading;
+    if (view.path === path && view.turn === turn && view.screen === 'run' && !view.sheet) paintDesk(false);
+  }, 'desk-load-retry ' + found.name));
+  return box;
 }
 
 function deskMaterialChanged(material) {
   const item = deskItem(material.id), held = deskHeld(item.path);
-  if (material.view.desk) held.view = material.view.desk;
+  if (material.view.desk) {
+    held.view = material.view.desk;
+    material.loadedSeen = list(held.view.cards).find(one => one.name === item.name)?.seen;
+    if (held.materialErrors) delete held.materialErrors[item.name];
+  }
   held.drawn = '';
   if (view.path === item.path && view.screen === 'run') paintDesk(false);
 }
@@ -1650,7 +1714,8 @@ function deskCard(found) {
       if (title) { title.tabIndex = -1; title.focus(); }
     }, 'desk-text ' + found.name));
   }
-  const material = deskHeld(view.path).materials[found.name];
+  const held = deskHeld(view.path), cached = held.materials[found.name];
+  const material = cached && (protectedDeskMaterial(cached) || cached.loadedSeen === found.seen) ? cached : null;
   if (material && found.kind === 'document' && deskCanChange() && !material.view.readonly) {
     const menu = make('details', 'menu'); menu.dataset.key = 'whole-menu ' + found.name;
     const again = capsule('Write the whole guide again', 'quiet', () => {
@@ -1661,7 +1726,7 @@ function deskCard(found) {
     bar.append(add(menu, make('summary', 'button button-quiet', 'Guide actions'),
       add(make('div', 'menu-list'), again)));
   }
-  const editing = found.kind === 'deck' ? deckParts(found) : material ? materialParts(material, found) : null;
+  const editing = found.kind === 'deck' ? deckParts(found) : material ? materialParts(material, found) : deskMaterialLoading(found, held);
   add(node, state(DESK_WORDS.beads[found.state] || 'none', found.says),
     checkedPart(found.checks), bar.childNodes.length ? bar : null, deskLibraryKept(found));
   if (list(found.needs).length) add(node, add(make('details', 'card-part'),
@@ -3141,6 +3206,8 @@ function paintDesk(fresh) {
   if(!fresh&&held.slideTextBasis===run.outline?.sha256&&run.outline?.content_first&&run.outline.waiting&&document.activeElement?.closest?.('#slide-text-review'))return;
   held.slideTextBasis=run.outline?.sha256;
   const tabs = deskTabs(found, held);
+  const selectedMaterial = selectedDeskCard(found, held);
+  ensureDeskMaterial(held, selectedMaterial);
   const lead = deskLead(run, held, ours);
   const drawn = JSON.stringify([found, run.state, run.question, run.problem, run.documents,
     run.mine, run.driver, run.taken, run.notice, run.outline, run.training_plan, run.training_plan_pending,
@@ -3200,16 +3267,13 @@ function paintDesk(fresh) {
   const notice = held.said ? make('p', 'notice', held.said) : null;
   if (notice) notice.setAttribute('role', 'alert');
   const available = shown.filter(one => one.state !== 'left-out');
-  if (!available.some(one => one.name === held.material[level])) {
-    held.material[level] = (available.find(one => (one.seen && ['needs', 'held'].includes(one.state))
-      || one.state === 'decide')
-      || available.find(one => one.seen) || available[0])?.name;
-  }
   const selected = held.sources ? 'sources' : held.material[level];
   // The version of each material shown here, for the Mark this level ready sheet.
   const opened = !held.sources && !preparingPlan && !waitingPlan
     && available.find((one) => one.name === selected);
-  if (opened && opened.seen) (held.opened ||= {})[opened.name] = opened.seen;
+  if (opened?.seen && (opened.kind === 'deck' || held.materials[opened.name]?.loadedSeen === opened.seen)) {
+    (held.opened ||= {})[opened.name] = opened.seen;
+  }
   const groups = {};
   for (const kind of ['scenario', 'yoodli']) {
     const items = available.filter(one => one.kind === kind);
