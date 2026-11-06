@@ -149,6 +149,31 @@ class GoogleTabScopeTests(unittest.TestCase):
         self.assertEqual(list((self.root / 'articles').iterdir()), [])
         self.assertEqual(self.client.export_calls, [])
 
+    def test_link_to_another_tab_preserves_destination_without_importing_that_tab(self):
+        run = self.client.doc['tabs'][1]['documentTab']['body']['content'][1]['paragraph'][
+            'elements'
+        ][0]['textRun']
+        run['textStyle']['link'] = {'bookmark': {'id': 'id.context', 'tabId': 't.other'}}
+        original = copy.deepcopy(self.client.doc)
+        found = self.preview()
+        text = (self.snapshot(found) / 'document.md').read_text()
+        self.assertIn(
+            'https://docs.google.com/document/d/fixture-doc/edit?tab=t.other#bookmark=id.context',
+            text,
+        )
+        self.assertNotIn('PRIVATE OTHER TAB', text)
+        imported = self.start(found)
+        folder, _ = studio.item(self.root, 'articles', imported['id'])
+        self.assertEqual((folder / 'DRAFT.md').read_text(), text)
+        reference = google_intake.material(
+            self.root, 'https://docs.google.com/document/d/fixture-doc/edit?tab=t.focus'
+        )
+        self.assertIn('#bookmark=id.context', reference['markdown'])
+        self.assertNotIn('PRIVATE OTHER TAB', reference['text'])
+        self.assertEqual(self.client.doc, original)
+        self.assertEqual(self.client.export_calls, [])
+        self.assertEqual(self.client.writes, 0)
+
     def test_nested_tab_is_isolated_without_parent_or_siblings(self):
         found = self.preview('t.child')
         native = studio.read_json(self.snapshot(found) / 'native.json')

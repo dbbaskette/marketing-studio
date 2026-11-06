@@ -858,7 +858,7 @@ class SuggestionsTests(unittest.TestCase):
             '\\# not a heading\n\n1\\. not a list\n\n\\- not a bullet\n\n\\> not a quote\n\n\\---\n',
         )
 
-    def test_renderer_numbers_ordered_lists_and_fails_closed_on_unsupported_links(self):
+    def test_renderer_numbers_ordered_lists_and_reads_horizontal_rules(self):
         lists = {
             'steps': {
                 'listProperties': {
@@ -898,11 +898,76 @@ class SuggestionsTests(unittest.TestCase):
             0, {'horizontalRule': {}}
         )
         self.assertEqual(gs.accepted_markdown(rule).decode(), 'Above\n\n---\n\nBelow\n')
-        internal = paragraph_doc(
-            ([('See heading', {'link': {'headingId': 'h.1'}}), ('\n', {})], {}, None)
+
+    def test_internal_links_keep_source_document_and_target_tab_in_each_projection(self):
+        cases = [
+            ({'heading': {'id': 'h.part', 'tabId': 't.other'}}, 't.other#heading=h.part'),
+            ({'bookmark': {'id': 'id.note', 'tabId': 't.other'}}, 't.other#bookmark=id.note'),
+            ({'tabId': 't.other'}, 't.other'),
+            ({'headingId': 'h.legacy'}, 't.0#heading=h.legacy'),
+            ({'bookmarkId': 'id.legacy'}, 't.0#bookmark=id.legacy'),
+        ]
+        for link, destination in cases:
+            for options in ({}, {'images': []}, {'images': [], 'manuscript': True}):
+                with self.subTest(link=link, options=options):
+                    doc = paragraph_doc(
+                        ([('See section', {'bold': True, 'link': link}), ('\n', {})], {}, None)
+                    )
+                    before = copy.deepcopy(doc)
+                    text = gs.accepted_markdown(doc, **options).decode()
+                    url = 'https://docs.google.com/document/d/fixture-doc/edit?tab=' + destination
+                    self.assertIn('[**See section**]', text)
+                    self.assertIn(url, text)
+                    self.assertEqual(doc, before, 'Native anchors and source styles stay unchanged')
+
+    def test_internal_links_in_tables_and_footnotes_keep_their_destinations(self):
+        link = {'heading': {'id': 'h.target', 'tabId': 't.other'}}
+        doc = paragraph_doc(([('Read more\n', {})], {}, None))
+        native = doc['tabs'][0]['documentTab']
+        linked = {
+            'paragraph': {
+                'elements': [
+                    {'textRun': {'content': 'Section link\n', 'textStyle': {'link': link}}}
+                ]
+            }
+        }
+        native['body']['content'].append(
+            {'table': {'tableRows': [{'tableCells': [{'content': [copy.deepcopy(linked)]}]}]}}
         )
+        native['body']['content'][1]['paragraph']['elements'].insert(
+            0, {'footnoteReference': {'footnoteId': 'fn1'}}
+        )
+        native['footnotes'] = {'fn1': {'content': [linked]}}
+        text = gs.accepted_markdown(doc, images=[], manuscript=True).decode()
+        self.assertEqual(
+            text.count(
+                'https://docs.google.com/document/d/fixture-doc/edit?tab=t.other#heading=h.target'
+            ),
+            2,
+        )
+        self.assertIn('[^1]: [Section link]', text)
+
+    def test_unknown_malformed_and_unsafe_link_destinations_still_refuse(self):
+        for link in (
+            {'url': 'javascript:alert(1)'},
+            {'url': 'https://example.invalid/a b'},
+            {'url': 7},
+            {'heading': {'id': 'h.target'}},
+            {'heading': {'id': 'h.target', 'tabId': 't.0#other'}},
+            {'headingId': '../other'},
+            {'bookmarkId': ''},
+            {'tabId': None},
+            {'unknown': 'destination'},
+            {'headingId': 'h.1', 'url': 'https://example.invalid'},
+        ):
+            with self.subTest(link=link):
+                doc = paragraph_doc(([('See section\n', {'link': link})], {}, None))
+                with self.assertRaisesRegex(gd.GoogleError, 'unsupported link'):
+                    gs.accepted_markdown(doc, images=[], manuscript=True)
+        doc = paragraph_doc(([('See section\n', {'link': {'headingId': 'h.1'}})], {}, None))
+        del doc['documentId']
         with self.assertRaisesRegex(gd.GoogleError, 'unsupported link'):
-            gs.accepted_markdown(internal)
+            gs.accepted_markdown(doc)
 
     def test_same_accepted_text_renders_identically_with_or_without_pending_review(self):
         plain = self.root / 'plain'

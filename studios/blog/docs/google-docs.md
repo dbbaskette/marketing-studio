@@ -5,7 +5,8 @@ workflows load only when you supply a Google Doc or request a Google operation.
 Your normal writing workflow needs no Google account or extra CLI.
 
 On the page, choose **New blog → A draft → Google Doc** to read an existing
-manuscript (every tab) onto the writing desk. Check the text before you start. The
+manuscript onto the writing desk. For a Doc with multiple tabs, paste the address
+of the tab you want; only that tab is imported. Check the text before you start. The
 original Doc stays linked, and **Finishing → Before publishing → Send to Google Doc**
 sends every change back: words and paragraphs as suggestions, and what the Doc shows no
 words for as comments (see [below](#send-desk-changes-to-the-doc)). Reading sends no
@@ -20,6 +21,12 @@ stay in Google for the Doc's owner to accept or reject; Blog Studio never accept
 or counts them as its own. An image Google does not send is kept as a visible placeholder.
 Anything else the reader cannot take, such as an equation, is named in a plain message;
 replace it in the Doc and read it again.
+
+Links to headings, bookmarks and other tabs remain links back to that location in
+the original Google Doc. A link to another tab does not import that tab's content.
+Both a sharing URL and a tab URL work for a single-tab Doc. An unsupported-link
+message concerns a destination inside the document; signing in again does not
+resolve a link conversion problem.
 
 A blog's shared files hold at most 1 MiB of text each, and its draft carries its images as
 text. So a Doc's images come in, in order, while their data fits about 600 KiB; an image too
