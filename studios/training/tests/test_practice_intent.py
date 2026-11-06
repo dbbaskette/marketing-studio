@@ -1,6 +1,6 @@
 """Short descriptions reach planning, practice and Yoodli without provider jobs."""
 from runner_support import StudioCase, FORM, BLUEPRINT, SCENARIO
-from runner import pipeline, practice_intent, worker_tools
+from runner import pipeline, practice_intent, worker_tools, drafts
 import workspace
 from workspace import WorkspaceError
 
@@ -11,6 +11,25 @@ PLAN = {'mode': 'custom', 'scenarios': [
 
 
 class PracticeIntentTests(StudioCase):
+    def test_description_edit_invalidates_its_scenario_even_when_the_plan_is_unchanged(self):
+        import copy
+        root = pipeline.create(self.space, pipeline.check_form({**FORM, 'scenario_plan': PLAN, 'yoodli': True}))
+        (root/'scenarios').mkdir()
+        for row in PLAN['scenarios']:
+            path = root/'scenarios'/(row['id'] + '.md')
+            path.write_text(SCENARIO)
+            workspace.save(root, 'scenario:' + row['id'], built=True)
+        session = workspace.load(root)
+        before = workspace.inputs(root, session, 'yoodli:custom-one')
+        session['settings']['scenario_plan'] = copy.deepcopy(PLAN)
+        session['settings']['scenario_plan']['scenarios'][0]['description'] = 'Explain restart capacity to a new operator.'
+        workspace.store(root, session)
+        self.assertEqual(workspace.statuses(root, session)['scenario:custom-one'], 'stale')
+        self.assertNotEqual(workspace.statuses(root, session)['scenario:custom-two'], 'stale')
+        self.assertEqual(drafts.input_of(root, session, 'scenario:custom-one'), ['scenario-intent'])
+        self.assertNotEqual(workspace.inputs(root, session, 'yoodli:custom-one'), before)
+        self.assertEqual((root/'scenarios/custom-one.md').read_text(), SCENARIO)
+
     def test_default_and_invalid_short_descriptions(self):
         self.assertEqual(practice_intent.check(), {'mode': 'ai', 'scenarios': []})
         for value in [[], {'mode': 'other'}, {'mode': 'custom', 'scenarios': []},

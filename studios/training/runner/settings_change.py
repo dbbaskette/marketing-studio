@@ -504,6 +504,11 @@ def _words(root, session, record, changed, outcome, lost, researched, differs, n
                   for name in [workspace.qualify('blueprint', level),
                                *workspace.downstream(root, session, workspace.qualify('blueprint', level))]
                   if _made(root, session, name)]
+        proposed = {**session, 'settings': {**session['settings'], 'scenario_plan': new['scenario_plan']}}
+        after += [name for name in workspace.artifact_names(root, session)
+                  if workspace.split(name)[0].startswith(('scenario:', 'yoodli:'))
+                  and _made(root, session, name)
+                  and workspace.inputs(root, session, name) != workspace.inputs(root, proposed, name)]
         after = list(dict.fromkeys(after))
     if after:
         marked = [name for name in after if name in ready]

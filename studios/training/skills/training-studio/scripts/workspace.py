@@ -507,11 +507,13 @@ def artifact(root: Path, session: dict, name: str) -> dict:
     if kind == 'scenario' and SCENARIO_ID.match(ident):
         return {'file': scenario_file(root, level, ident), 'upstream': (),
                 'stage': 'scenario',
-                'extras': ('practice',) if session.get('practice_inputs') else ()}
+                'extras': (('practice',) if session.get('practice_inputs') else ())
+                    + (('scenario-intent',) if 'scenario_plan' in settings else ())}
     if kind == 'yoodli' and SCENARIO_ID.match(ident):
         return {'file': f'{folder}yoodli/{ident}.md',
                 'upstream': (same('blueprint'), same('brief'), same(f'scenario:{ident}')),
-                'stage': 'yoodli', 'extras': ('profile',)}
+                'stage': 'yoodli', 'extras': ('profile',)
+                    + (('scenario-intent',) if 'scenario_plan' in settings else ())}
     raise WorkspaceError(f'Unknown artifact {name!r}.')
 
 
@@ -606,6 +608,11 @@ def inputs(root: Path, session: dict, name: str) -> dict:
     for extra in spec['extras']:
         if extra == 'profile':
             found[extra] = sha256_file(profile_for(root))
+        elif extra == 'scenario-intent':
+            ident = split(name)[0].partition(':')[2]
+            intent = session['settings'].get('scenario_plan') or {}
+            found[extra] = next((row['description'] for row in intent.get('scenarios', [])
+                                 if row['id'] == ident), None) if intent.get('mode') == 'custom' else None
         elif extra == 'practice':
             base, level = split(name)
             blueprint = root / artifact(root, session, qualify('blueprint', level))['file']
@@ -963,6 +970,8 @@ def input_label(key: str) -> str:
     """One of the things an artifact is built from, in plain words: "the blueprint"."""
     if key.startswith('setting:'):
         return f"the {key.partition(':')[2].replace('_', ' ')} setting"
+    if key == 'scenario-intent':
+        return 'the scenario description'
     if key == 'practice':
         return 'the practice plan'
     return 'the Yoodli profile' if key == 'profile' else label(key)
