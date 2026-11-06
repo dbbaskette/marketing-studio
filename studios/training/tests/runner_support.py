@@ -202,7 +202,7 @@ OUTLINE = {'version': 1, 'title': 'Rolling restarts', 'delivery': 'reading', 'mi
      'points': [{'label': 'Describe', 'text': 'What happens to the instances?'},
                 {'label': 'Explain', 'text': 'Why does one instance lose capacity?'}],
      'notes': '3 min. One question for each objective.', 'sources': ['O1', 'O2', 'O3']},
-    {'id': 'closing-practice', 'kind': 'closing', 'title': 'Next: practise the objection',
+    {'id': 'closing-practice', 'kind': 'closing', 'title': 'Next: practice the objection',
      'notes': '1 min. Point to the practice scenario.'}]}
 
 
@@ -456,7 +456,7 @@ class Workers:
         # Every count is written as 0, as the brief says: the real ones are put in.
         accepted = tools.submit_artifact('yoodli', re.sub(r'\b[\d,]+ of ', '0 of ', YOODLI))
         assert accepted[0], accepted[1]
-        tools.submit_review('Goal 3 carries criteria 3 and 4, which are one behaviour.')
+        tools.submit_review('Goal 3 carries criteria 3 and 4, which are one behavior.')
 
 
     def outline(self, tools, job):
@@ -512,7 +512,7 @@ class Slides:
                  'Is there exactly one emphasis?', 'Does every element support the title?',
                  'Is each label inside or right beside what it names?',
                  'Is the space balanced, with nothing stranded or crowded?',
-                 'Is the slide consistent with its neighbours in style, and different from '
+                 'Is the slide consistent with its neighbors in style, and different from '
                  'them in layout unless they are meant to be compared?',
                  'Does every image and icon explain something?')
     runtime = Path('/opt/slides-tool/versions/0.13.1')

@@ -23,7 +23,7 @@ Ask every question of every slide. Each "no" is one finding:
 - `note`: one sentence on what is wrong on that slide, exact enough to act on.
 - `fix`: what would put it right, when you can say. It may be left out.
 
-Judge only what is visible in the pictures. Do not propose a change to the colours of the brand. Be exact and unsparing: a slide that is merely acceptable still gets its findings, and a deck is not good because it is on brand. Look hardest for what no program reports: one of several equals set larger or in another colour; an emphasis the title does not single out; a line or an arrow through text; a label far from what it names; a slide so full that nothing leads.
+Judge only what is visible in the pictures. Do not propose a change to the colors of the brand. Be exact and unsparing: a slide that is merely acceptable still gets its findings, and a deck is not good because it is on brand. Look hardest for what no program reports: one of several equals set larger or in another color; an emphasis the title does not single out; a line or an arrow through text; a label far from what it names; a slide so full that nothing leads.
 
 When your input lists what an earlier review found, the slides were drawn again since. Look for each of those findings. Where one is not put right, record it again.
 

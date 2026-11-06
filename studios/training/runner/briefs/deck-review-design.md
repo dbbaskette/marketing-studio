@@ -27,7 +27,7 @@ Judge whether each visual teaches. Ask what the learner can see that they could 
 
 Where the review lists prose cards on a slide, answer `teaching-treatment` about them and cite at least one card: say what the learner cannot see, or why the cards teach it here.
 
-Judge only what is visible in the pictures. Do not propose a change to the colours of the brand. Be exact and unsparing: a slide that is merely acceptable still gets its findings, and a deck is not good because it is on brand.
+Judge only what is visible in the pictures. Do not propose a change to the colors of the brand. Be exact and unsparing: a slide that is merely acceptable still gets its findings, and a deck is not good because it is on brand.
 
 When your input lists what an earlier review found, the slides were drawn again since. Look for each of those findings. Where one is not put right, answer its criterion so again.
 

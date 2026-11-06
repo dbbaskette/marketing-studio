@@ -9,7 +9,7 @@ Follow the shape of the example document. A course is one document with a chapte
 1. Title, who it is for, time needed, and what the reader will be able to do. State the objectives in plain language, without their IDs.
 2. For each module:
    - an opening scenario that shows why the module matters,
-   - teaching sections organised around the key points,
+   - teaching sections organized around the key points,
    - the worked example from the blueprint,
    - one "Common mistake" callout per misconception,
    - a summary,

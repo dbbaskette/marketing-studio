@@ -22,7 +22,7 @@ Propose the size the research supports and give the reason. Do not pad to reach 
 
 ## Objectives
 
-`### O<n> — <one observable behaviour> [<level>]`
+`### O<n> — <one observable behavior> [<level>]`
 
 | Level | The learner can |
 | --- | --- |
@@ -31,7 +31,7 @@ Propose the size the research supports and give the reason. Do not pad to reach 
 | `apply` | Use it on a new case |
 | `handle` | Hold a live conversation about it: answer an objection, run a discovery call |
 
-Write behaviours you could watch someone do. "Understand rolling restarts" is not one. "Explain when a rolling restart keeps capacity" is.
+Write behaviors you could watch someone do. "Understand rolling restarts" is not one. "Explain when a rolling restart keeps capacity" is.
 
 ## Modules
 
@@ -47,7 +47,7 @@ Under each module heading, one item per line:
 
 One line per objective: `- O1: Check: <knowledge-check question> | Observe: <what a practice session should show>`
 
-The check goes into the document; the observation guides the scenarios. Each must ask for the behaviour its objective names: explaining a procedure is not evidence of being able to perform it.
+The check goes into the document; the observation guides the scenarios. Each must ask for the behavior its objective names: explaining a procedure is not evidence of being able to perform it.
 
 Assess transfer with a fresh case. Budget teaching, practice and debrief within module time. Name the learner's output and observable success; label hypothetical cases and invent no product facts.
 

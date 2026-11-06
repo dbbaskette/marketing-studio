@@ -151,7 +151,7 @@ def house(designed: bool = False, look: dict | None = None) -> tuple[str, ...]:
 
 
 LOOKS_UNFINISHED = (
-    'Does the slide look finished, or like a wireframe: outline boxes on white, no colour '
+    'Does the slide look finished, or like a wireframe: outline boxes on white, no color '
     "from the deck's direction where a product, an actor or a state is named, no icon where "
     'a recognisable thing is named?',
     "Is any approved point's sentence split across shapes, or does text sit on text?",
@@ -203,7 +203,7 @@ def handoff(title: str, level: str | None, blueprint: str, said: dict, target: s
     modules = '; '.join(f"{ident}, {module['title']}"
                         for ident, module in parsed['modules'].items())
     closing = ('A closing slide.' if scenarios is None else
-               'A last content slide that says what to practise next'
+               'A last content slide that says what to practice next'
                + (': ' + ', '.join(scenarios) if scenarios else '')
                + ', then a closing slide.')
     made = {'google': 'Google Slides', 'pptx': 'PowerPoint'}.get(target, 'not chosen')
@@ -461,7 +461,7 @@ def rules(outline, blueprint: str, budget: int | None = None, known=(),
                 problems.append(f'{ident}: a closing slide is the brand\'s own last slide: a '
                                 f'title and one subtitle line, {CLOSING_WORDS} words at most '
                                 'between them, and nothing drawn under it. Put anything the '
-                                'audience should read, such as what to practise next, on a '
+                                'audience should read, such as what to practice next, on a '
                                 'content slide before it.')
         for point in _points(slide):
             if 'parts' not in point:

@@ -2251,7 +2251,7 @@ def added_slide_design(slide):
             'sources': slide['sources'], 'objectives': slide['sources'],
             **({'notes': slide['notes']} if slide.get('notes') else {}),
             'composition': 'Show the requested title as a single native text block with generous space.',
-            'intent': {'takeaway': slide['title'], 'audienceQuestion': 'What should I practise next?',
+            'intent': {'takeaway': slide['title'], 'audienceQuestion': 'What should I practice next?',
                        'relationship': 'none', 'evidence': slide['sources'],
                        'rationale': 'This added slide states the person’s requested topic without adding claims.',
                        'alternative': {'treatment': 'An illustration',

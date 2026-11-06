@@ -103,7 +103,7 @@ def signature(root, session, record):
 
 
 def work(engine, root, found, record):
-    from runner import pipeline
+    from runner import pipeline, briefs
     offered = engine._sources(root, record)[1] if record.get('documents') else []
     names, pieces = scope_scan.excerpts(offered)
     intake = pipeline.answers(root)
@@ -131,7 +131,7 @@ def work(engine, root, found, record):
         + '\nKeep the person\'s typed questions separately in personal_questions, in their original words.')
     prepared = {'inputs': {'source-excerpts': json.dumps(pieces, ensure_ascii=False)},
                 'artifacts': {'scan': {'kind': 'provisional-outline', 'max_sections': section_limit}}, 'ask': False, 'fetch': False}
-    return pipeline.Work(guidance, task, 'write', prepared, 'scan'), initial
+    return pipeline.Work(guidance + '\n\n' + briefs.LANGUAGE, task, 'write', prepared, 'scan'), initial
 
 
 def scan(engine, root, run, found, step):

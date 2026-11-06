@@ -20,7 +20,7 @@ Follow the shape of the example at the end of this guidance. A course is one gui
 1. The title, who it is for, the time needed, and what the reader will be able to do. State the objectives in plain language, without their IDs.
 2. For each module:
    - an opening scenario that shows why the module matters,
-   - teaching sections organised around the key points,
+   - teaching sections organized around the key points,
    - the worked example from the blueprint,
    - one "Common mistake" callout for each misconception,
    - a summary,

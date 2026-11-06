@@ -6,7 +6,7 @@ Every stage ends at a gate. Nothing downstream starts until the user approves.
 
 1. Run `training.py check` and `training.py status`.
 2. Fix any failed check that is yours to fix, and check again.
-3. Review the content yourself: does the prose teach what its coverage comment claims, does each assessment ask for the behaviour its objective names, and does the research support every factual statement? Say what you found and label it as your judgment. A passing check does not answer these.
+3. Review the content yourself: does the prose teach what its coverage comment claims, does each assessment ask for the behavior its objective names, and does the research support every factual statement? Say what you found and label it as your judgment. A passing check does not answer these.
 4. `training.py checkpoint --gate <artifact> --question "<the question you will ask>" --next "Waiting for approval of <artifact>"`, so a resumed session asks again. It returns `review`, the file for step 5.
 5. Show the user, briefly, and append the same to `review`:
    - the file to open,
