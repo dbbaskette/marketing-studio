@@ -214,7 +214,8 @@ state and synthetic inputs, never personal content or live provider jobs.
 
 [Architecture](docs/architecture.md) · [Testing](docs/testing.md) ·
 [Packaging](docs/packaging.md) · [Provenance](docs/provenance.md) ·
-[UI visibility review](docs/design/2026-11-06-visibility-review.md)
+[UI visibility review](docs/design/2026-11-06-visibility-review.md) ·
+[Golden Gate 2.1 UX and performance audit](docs/design/2026-11-06-golden-gate-21-audit.md)
 
 Use `bash scripts/ci/check.sh` for repository checks and
 `bash scripts/ci/tart-macos.sh --dry-run` to inspect macOS runner availability.
