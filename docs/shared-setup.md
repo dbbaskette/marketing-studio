@@ -32,8 +32,9 @@ Default brand chooses a brand offered by the installed brand skill; default vari
 chooses one of that brand's variants. For example, `tanzu` and `light` offer Tanzu
 light branding when starting new work in each studio. These are starting choices,
 not a requirement for every project. Existing blogs, presentations and trainings
-keep their saved brand. The brand skill repository supplies templates and guidelines;
-saving its address does not install or update the skill. Installation remains an
+keep their saved brand. The brand skill repository supplies the runtime; a separate
+brands repository can supply its brand packs. Saving an address does not install or
+update the skill. Installation remains an
 explicit action in a studio's settings. **Where is your brand skill?** offers
 **Git repository** and **Installed skill folder** as separate, optional inputs.
 A repository address does not require an installed folder. Leave the folder
@@ -49,6 +50,30 @@ computer checks explain what is missing.
 Run `scripts/ci/shared_setup_acceptance.py` for fresh independent-launch journeys
 with disposable homes, synthetic Git identities and background provider/update
 actions disabled. It is included in the full suite's acceptance gate.
+
+### Harness Brand and the four brands
+
+The runtime and brand data are separate repositories. For the Broadcom family,
+use [Harness Brand](https://github.com/dbbaskette/harness-brand-skill) as the brand
+skill and [broadcom-brands](https://github.com/dbbaskette/broadcom-brands) as the
+**Brands repository**.
+
+In **Shared settings → Brand**, select the installed Harness Brand folder and set
+its **Git repository** to `https://github.com/dbbaskette/harness-brand-skill`.
+Set **Brands repository** to `https://github.com/dbbaskette/broadcom-brands`, save,
+then choose **Get brands** and **Find installed brands**. Installing or updating
+the runtime remains a separate explicit action if it is not already available.
+
+| Brand | ID | Variants |
+| --- | --- | --- |
+| Broadcom | `broadcom` | Light |
+| Tanzu | `tanzu` | Light |
+| TrueSource by Broadcom | `truesource` | Light |
+| VMware by Broadcom | `vmware` | Light, Dark |
+
+If TrueSource is missing, check the installed skill folder as well as the data
+repository. A folder still pointing to the older Tanzu Brand runtime can return
+its older catalog. Refreshing the catalog does not change a training's saved brand.
 
 ## What a studio card says before it opens
 
@@ -81,6 +106,8 @@ open **Choose Quick model** for the full model controls. The shortcut keeps the
 selected model ID and enables task routing. Review the other task choices before
 **Save settings**; saving starts no work. If Quick uses the assistant's default,
 choose an explicit or shared model before applying a reasoning override.
+The main panel keeps the current choice and controls together; **How this choice
+works** expands the explanation of routing and existing work.
 
 The editable-outline target is 60 seconds, separate from the scan's 180-second and
 $0.25 caps. These are workflow targets and limits, not measured provider promises.
@@ -396,10 +423,14 @@ they recorded. See [saved-work compatibility](saved-work-compatibility.md).
 ### Everyday choices, Advanced, and who owns a value
 
 First-run setup asks only the four everyday choices, in three steps: you and your
-assistant, your workspace, and brand and delivery. Shared settings shows the same four
-cards first, with section links (**Everyday**: Assistant, Workspace, Brand, Delivery;
-**Advanced**: Models, Brand release, Research sites, Installations). A new person can
-make the four choices, save, and return to Studios without opening an install control.
+assistant, your workspace, and brand and delivery. Shared settings shows one section
+at a time. Desktop section buttons group **Everyday** (Assistant, Workspace, Brand,
+Delivery) and **Advanced** (Models, Spending, Brand release, Research sites,
+Installations). On a phone, use the **Settings section** selector. Changing sections
+keeps unsaved values; an invalid field or conflicting edit opens its section before
+taking focus. **About shared and project settings** expands the ownership explanation.
+A new person can make the four everyday choices, save, and return to Studios without
+opening an install control.
 A studio can open one listed part directly with `view=settings&part=<part id>` in the
 link's fragment, as Infographic Studio's Team library does for `workspace-part`. Any
 other value is ignored, and first-run setup keeps its steps.
@@ -432,13 +463,10 @@ conflicting fields, as dotted paths such as `person.name`, under `conflict.field
 on the button, or moves to the results heading when the check was started from another
 screen.
 
-The Advanced parts are closed disclosures that say what they hold while closed:
-**Models and reasoning** (shared model, reasoning and routing by task), **Brand skill
-release**, **Research sites** and **Studio installations**. A value set in place of the
-automatic one is tagged **Override** (models by task or a chosen model, a pinned release,
-an installation folder you set), so an override is never hidden by the disclosure. Model
-lists are read only when Models and reasoning is opened, so opening the page asks no
-assistant anything.
+Selecting an Advanced section opens its controls. A value set in place of the
+automatic one is tagged **Override** (models by task or a chosen model, a pinned
+release, an installation folder you set). Model lists are read only when Models
+and reasoning is opened, so opening the page asks no assistant anything.
 
 Each part is tagged with who owns it. **Shared** values are saved once for every studio
 on this computer and new work starts with them. **Project** choices are made for one

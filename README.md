@@ -213,7 +213,8 @@ build. Research and slide production stay in companion tools. Tests use disposab
 state and synthetic inputs, never personal content or live provider jobs.
 
 [Architecture](docs/architecture.md) · [Testing](docs/testing.md) ·
-[Packaging](docs/packaging.md) · [Provenance](docs/provenance.md)
+[Packaging](docs/packaging.md) · [Provenance](docs/provenance.md) ·
+[UI visibility review](docs/design/2026-11-06-visibility-review.md)
 
 Use `bash scripts/ci/check.sh` for repository checks and
 `bash scripts/ci/tart-macos.sh --dry-run` to inspect macOS runner availability.

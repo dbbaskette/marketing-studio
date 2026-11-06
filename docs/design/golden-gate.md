@@ -67,6 +67,7 @@ These rules put each screen in the order a person works. Every studio follows th
 | Lists | Objects a person opens are opaque cards (`.card`, `.grid`); records compared by columns are a quiet `.table` with one action per row, which becomes a card per row on a phone with its title and action unlabelled. |
 | Sheets | Center creation sheets over a dimmed backdrop. Keep forms opaque with consistent rounded edges. Creation uses numbered pages with one current step, Back/Next, and a final Start. The footer stays outside the scrolling form body with one filled action, Save and close, and explicit confirmed discard. Nested sources return focus to their opener with choices kept. |
 | Spacing | Cards and sections `1.1rem` apart; a step or field group `0.6rem` inside; one heading level per card (`.card-title`), `.sheet-part` for a section inside a sheet. |
+| Long forms and editors | Use named sections or task tabs when a person works on one part at a time. Retain local edits, selection and focus across switches and refreshes. Reveal a hidden invalid field before focusing it. Keep status and the next action visible; put secondary explanations in disclosures. |
 | Phone | Toolbar actions wrap under the title; long labels wrap inside their button; every control is at least 44px tall; fixed bars sit above the tab bar and the page leaves room for them. |
 | Glass | Sidebar, toolbar, sheets, selection bars, Shared settings' save bar and toasts only. Forms, lists, documents and reviews stay opaque, and so does a `.dialog` that holds form fields. |
 
@@ -77,6 +78,9 @@ disclosed separately. Creation keeps the next action, selected outputs and spend
 amount in its summary. Outline approval consequences and incomplete-scan warnings
 stay visible. Disclosures need stable focus across refreshes and 44px touch targets.
 Do not shrink text or hide meaningful uncertainty to achieve a shorter screen.
+
+The [November 2026 visibility review](2026-11-06-visibility-review.md) records the
+cross-studio findings, fixes and desktop/phone verification.
 
 ## Shared components and page stylesheets
 

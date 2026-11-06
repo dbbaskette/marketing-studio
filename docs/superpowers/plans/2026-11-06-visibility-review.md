@@ -105,3 +105,26 @@ every future model output is deterministically spell-checked.
 
 US English verification: all 38 brief/outline checks and 25 deck handoff/delivery
 rule checks passed. Existing files were not rewritten and no provider was called.
+
+## Harness Brand catalog — #410
+
+The configured runtime was the older Tanzu Brand installation, so its catalog did
+not include TrueSource. Use the existing Harness Brand runtime with
+`https://github.com/dbbaskette/broadcom-brands` as its data repository. Save through
+the existing shared-settings lock and conflict checks, preserving the default
+brand/variant and unrelated choices. Document the runtime/data distinction and
+the recovery steps; do not install tools or edit saved training brands implicitly.
+
+Verification: the configured catalog returned Broadcom, Tanzu, TrueSource by
+Broadcom and VMware by Broadcom. A disposable TrueSource light slide contract
+export and contract check passed against the current local brand sources.
+The settings update preserved unrelated fields and the existing default.
+
+## Final audit and documentation
+
+The [visibility review](../../design/2026-11-06-visibility-review.md) records all six
+findings and their resolution. Blog Studio's responsive reading view also passed
+at 390/1280 px in light/dark after its layout settled, with no horizontal overflow
+or browser errors. Presentation Studio's existing one-slide desk and Infographic
+Studio's task views were retained after browser review. Final documentation reuses
+the successful checks for the unchanged source tree; it starts no provider jobs.
