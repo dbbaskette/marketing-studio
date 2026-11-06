@@ -1891,19 +1891,28 @@ function deckParts(found) {
   if (!slides.some(slide => slide.id === heldDeck.slide[found.name])) {
     heldDeck.slide[found.name] = slides.find(slide => issues.some(item => item.part === slide.id))?.id || slides[0]?.id;
   }
+  const preview = make('div', 'desk-slide-preview');
   if (slides.length) {
     const label = make('label', 'field'), select = make('select', 'input');
     select.setAttribute('aria-label', 'Slide to review');
+    select.dataset.key = found.name + ':slide-to-review';
     for (const slide of slides) {
       const option = make('option', '', slide.number + '. ' + slide.title
         + (issues.some(item => item.part === slide.id) ? ' · Review suggestion' : ''));
       option.value = slide.id; select.append(option);
     }
     select.value = heldDeck.slide[found.name];
-    select.addEventListener('change', () => { heldDeck.slide[found.name] = select.value; paintDesk(true); });
+    select.addEventListener('change', () => {
+      heldDeck.slide[found.name] = select.value;
+      // This is an in-place review choice, not navigation to another page.
+      // Keep the selector mounted, including its focus and viewport position.
+      selection.bar.hidden = true;
+      preview.replaceChildren(renderSlide());
+    });
     area.append(add(label, make('span', 'field-label', 'Slide to review'), select));
   }
-  for (const slide of slides.filter(slide => slide.id === heldDeck.slide[found.name])) {
+  function renderSlide() {
+    const slide = slides.find(slide => slide.id === heldDeck.slide[found.name]);
     const node = card(slide.number + '. ' + slide.title, 'desk-slide-card');
     if (slide.picture) node.append(slidePicture(found, slide.number));
     else node.append(make('p', 'quiet', 'Words only. The drawing is kept on the computer that made it.'));
@@ -1975,8 +1984,10 @@ function deckParts(found) {
       add(node, add(make('label', 'field'), make('span', 'field-label', 'How should this slide change?'), note),
         make('p', 'quiet', slide.price), go);
     }
-    area.append(node);
+    return node;
   }
+  if (slides.length) preview.append(renderSlide());
+  area.append(preview);
   return area;
 }
 

@@ -14,6 +14,7 @@ def main():
     parser=argparse.ArgumentParser();parser.add_argument('product',choices=('training','presentation'));parser.add_argument('--slides',type=int,choices=(6,30),default=6)
     parser.add_argument('--research-preview',action='store_true')
     parser.add_argument('--poll-files',type=int,default=0)
+    parser.add_argument('--rendered',action='store_true')
     args=parser.parse_args();native=Path(__file__).resolve().parents[1]/'studios'/args.product
     sys.path.insert(0,str(native/'tests'));sys.path.insert(1,str(native))
     from runner import page
@@ -28,11 +29,13 @@ def main():
     web=None
     try:
         with contextlib.redirect_stdout(sys.stderr):
-            case.setUp();case.engine.content_first=True
+            case.setUp();case.engine.content_first=not args.rendered
             from studio_core import preferences,studios_config
             studios_config.update({'local':{'root':str(case.space.root)}});preferences.finish(studios_config,lambda _:None)
             catalog=mock.patch('studio_core.model_catalog.Catalog.get',return_value={'agent':'codex','models':[],'problem':None});catalog.start();case.addCleanup(catalog.stop)
             root=case.begin(flow='desk') if args.product=='training' else case.start_desk(look='default')
+            if args.rendered:
+                case.to_end(root)
             if args.slides==30 or args.product=='presentation':
                 if args.product=='training':
                     from runner import pipeline
