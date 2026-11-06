@@ -1,7 +1,8 @@
 # Training Studio: readable output and truthful progress
 
 Authorized by the request to review the process and implement another round of
-improvements. Issue #387 covers scheduling; issue #388 covers progress.
+improvements. Issue #387 covers scheduling; issue #388 covers progress;
+issue #391 covers the final Golden Gate v2 UI audit.
 
 ## Findings and implementation order
 
@@ -18,6 +19,16 @@ improvements. Issue #387 covers scheduling; issue #388 covers progress.
    downloadable and never unlock level readiness.
 3. Parallel source checking and a durable concurrent material scheduler remain
    larger follow-ups. This increment changes priority, not concurrency or spending.
+4. The phone desk repeated the active step and expanded worker metadata in a large
+   progress card. Replace that frame with an integrated progress region, keep the
+   latest activity visible, and disclose detailed activity/timing separately.
+5. Outline review put several paragraphs of process detail before its first field.
+   Keep the approval consequence, source scope and incomplete-outline warnings
+   visible. Disclose the research approach, scan notes and limits together.
+6. Creation repeated model, timing and concurrency settings in its review summary
+   even though Assistant and limits already contains them. Keep the next action,
+   selected outputs and spending amount in the summary; use the existing disclosure
+   for the detailed settings.
 
 ## State-transition matrix
 
@@ -36,6 +47,8 @@ improvements. Issue #387 covers scheduling; issue #388 covers progress.
 | Training waits for a slot or approval | Read progress | No inactive material says Writing; next queued material is named | Native and browser tests |
 | Creator research choices saved | Continue | Material progress and draft counts appear; uncertainty stays marked | Browser journey |
 | Queued update has an older saved draft | Read desk | Download remains available; level readiness stays unavailable | Native and page tests |
+| Activity or research approach open | Poll | Disclosure and keyboard focus retained | Native browser journeys |
+| Incomplete starting outline | Review | Warning remains visible while process details are folded | Outline browser journey |
 
 ## Verification
 
@@ -59,3 +72,21 @@ and the actual native browser journey, including concurrent polling and Stop/Res
 The browser covered 390/1280px, light/dark, reduced motion, saved decision disclosure,
 and reload without new jobs. Fifteen shared research/UI checks passed. The test VM
 was deleted. No paid provider work or real training state was used.
+
+Golden Gate v2 evidence: 410 Training Studio page tests, 16 shared UI checks and
+package validation passed on host macOS / Python 3.13.5. Native browser journeys
+covered creation/source picking/save/reopen/discard without starting work;
+outline editing, approval and incomplete-scan recovery; reading and Finishing;
+settings scrolling/focus return; and progress Stop/Resume. Populated 320/390/1280px
+layouts were checked in light/dark and reduced motion. The progress journey also
+checked forced colors and 200% text enlargement. Final disclosure refinements
+passed the outline/progress journeys, including focus and open-state retention
+on polling and 44px disclosure targets. The 390px scripted progress region stays
+under 300px tall; the first outline title field is visible without scrolling.
+Screenshots were inspected for the phone desk, outline, creation, reading and
+settings, and the dark desktop desk. These are Chromium checks, not VoiceOver,
+Safari or OS-preference integration claims. No live provider latency was measured.
+
+An older standalone creation journey assumed the retired one-page form; the
+current intake journey was used instead. The unchanged native scheduling and
+research runtime reuse the full 3,207-test Tart evidence above.

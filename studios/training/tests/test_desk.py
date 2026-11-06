@@ -7097,16 +7097,19 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         answers = self.on_desk(a_desk(), run, **{'GET /api/activity': [
             ok({'lines': lines, 'count': 3, 'start': 0, 'running': True}), ok(logged)]})
         result = self.open_desk(answers, [
-            {'snapshot': 'working'}, {'click': 'Show activity (3 steps)'}, {'snapshot': 'shown'},
+            {'snapshot': 'working'}, {'click': 'Activity'},
+            {'snapshot': 'details'}, {'click': 'Show activity (3 steps)'}, {'snapshot': 'shown'},
             {'poll': True}, {'snapshot': 'again'},
             {'click': 'Activity logWhat the assistant did in each job, newest first'},
             {'snapshot': 'log'}])
         shown = result['snapshots']
         working = shown['working']['text']
-        for text in ('Investigating', 'Investigating research area 1',
+        for text in ('Investigating',
                      'Now: Searching the web: rolling restart capacity'):
             self.assertIn(text, working)
-        self.assertIn('Show activity (3 steps)', shown['working']['buttons'])
+        self.assertNotIn('Show activity (3 steps)', shown['working']['buttons'])
+        self.assertIn('Investigating research area 1', shown['details']['text'])
+        self.assertIn('Show activity (3 steps)', shown['details']['buttons'])
         # Opened, it lists every line newest first; a refresh keeps it open.
         for name in ('shown', 'again'):
             text = shown[name]['text']
