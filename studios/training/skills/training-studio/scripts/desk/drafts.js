@@ -1861,9 +1861,11 @@ function deckParts(found) {
   const area = make('div', 'stack desk-slide-cards');
   const ours = deskCanChange();
   const selection = slideSelectionBar(found);
+  const deckActions = add(make('details', 'card-part'), make('summary', '', 'Deck actions'));
+  deckActions.dataset.key = found.name + ':deck-actions';
   if (ours) area.append(selection.bar);
-  if (list(found.slides).length) area.append(capsule('Review slide text', 'quiet', () => deckOutline(found)));
-  if (ours && found.local && list(found.slides).length) area.append(add(make('details', 'card-part'),
+  if (list(found.slides).length) deckActions.append(capsule('Review slide text', 'quiet', () => deckOutline(found)));
+  if (ours && found.local && list(found.slides).length) deckActions.append(add(make('details', 'card-part'),
     make('summary', '', 'Change the whole deck'), wholeDeckNote(found)));
   if (found.selection) {
     const job = found.selection, result = job.result;
@@ -1883,10 +1885,11 @@ function deckParts(found) {
       const answer = await deskDecide('look-samples', { level: found.level }, again);
       if (answer) lookSheet(found, answer.look);
     });
-    add(area, add(make('div', 'bar'), again), make('p', 'quiet', found.look_price));
+    add(deckActions, add(make('div', 'bar'), again), make('p', 'quiet', found.look_price));
   }
   const slides = list(found.slides), heldDeck = deskHeld(view.path);
   heldDeck.slide ||= {};
+  heldDeck.slideTask ||= {};
   const issues = list(found.proposals?.review?.items).filter(item => item.state === 'open' && item.present !== false);
   if (!slides.some(slide => slide.id === heldDeck.slide[found.name])) {
     heldDeck.slide[found.name] = slides.find(slide => issues.some(item => item.part === slide.id))?.id || slides[0]?.id;
@@ -1914,13 +1917,15 @@ function deckParts(found) {
   function renderSlide() {
     const slide = slides.find(slide => slide.id === heldDeck.slide[found.name]);
     const node = card(slide.number + '. ' + slide.title, 'desk-slide-card');
-    if (slide.picture) node.append(slidePicture(found, slide.number));
-    else node.append(make('p', 'quiet', 'Words only. The drawing is kept on the computer that made it.'));
+    const picture = make('div', 'stack');
+    const changes = make('div', 'stack');
+    if (slide.picture) picture.append(slidePicture(found, slide.number));
+    else picture.append(make('p', 'quiet', 'Words only. The drawing is kept on the computer that made it.'));
     const history = capsule(slide.history ? 'History (' + slide.history + ')' : 'History',
       'quiet', () => slideHistory(found, slide));
     history.disabled = !slide.history;
-    node.append(history);
-    const words = add(make('details', 'card-part'), make('summary', '', 'Edit slide text and speaker notes'));
+    picture.append(history);
+    const words = make('div', 'stack');
     if (found.state === 'ready' && ours && found.local) words.append(readyEditWarning(found));
     const fields = [['title', 'Title'], ['subtitle', 'Subtitle']];
     list(slide.points).forEach((point, i) => fields.push(
@@ -1953,7 +1958,6 @@ function deckParts(found) {
       });
       add(words, add(make('label', 'field'), make('span', 'field-label', label), box), go);
     }
-    node.append(words);
     const proposals = found.proposals?.review;
     for (const proposal of list(proposals?.items).filter((item) => item.part === slide.id && item.state === 'open' && item.present !== false)) {
       const row = add(make('section', 'card-part'), make('p', 'sheet-part', 'Review suggestion'),
@@ -1965,7 +1969,7 @@ function deckParts(found) {
         row.append(add(make('div', 'bar'), capsule('Apply fix to this slide', 'quiet', () => decide('apply')),
           capsule('Dismiss suggestion', 'quiet', () => decide('skip'))));
       }
-      node.append(row);
+      changes.append(row);
     }
     if (ours && found.local && slide.redraw !== false && slide.price) {
       const note = make('textarea', 'input'); note.rows = 2; note.maxLength = 4000;
@@ -1981,13 +1985,35 @@ function deckParts(found) {
           note: note.value, seen: found.seen }, go);
         if (answer) delete held.slideNotes[noteKey];
       });
-      add(node, add(make('label', 'field'), make('span', 'field-label', 'How should this slide change?'), note),
+      add(changes, add(make('label', 'field'), make('span', 'field-label', 'How should this slide change?'), note),
         make('p', 'quiet', slide.price), go);
     }
-    return node;
+    const count = issues.filter(item => item.part === slide.id).length;
+    if (!changes.childNodes.length) changes.append(make('p', 'quiet', 'No review suggestions for this slide.'));
+    const tasks = [{id:'preview',label:'Preview'}, {id:'text',label:'Text & notes'},
+      {id:'review',label:'Review & changes' + (count ? ' (' + count + ')' : '')}];
+    const panes = [picture, words, changes];
+    const key = 'desk-slide-task';
+    const chosen = () => tasks.findIndex(task => task.id === (heldDeck.slideTask[found.name] || 'preview'));
+    const showTask = () => {
+      const index = chosen();
+      [...tabs.children].forEach((tab, i) => {
+        tab.setAttribute('aria-selected', String(i === index)); tab.tabIndex = i === index ? 0 : -1;
+        panes[i].hidden = i !== index;
+      });
+      panel.setAttribute('aria-labelledby', key + '-' + index);
+      selection.bar.hidden = true;
+    };
+    const tabs = workspaceTabs('Slide task', tasks, tasks[chosen()].id, id => {
+      heldDeck.slideTask[found.name] = id; showTask();
+    }, key);
+    const panel = workspacePanel(key, chosen(), add(make('div', 'stack'), ...panes));
+    showTask();
+    return add(node, tabs, panel);
   }
   if (slides.length) preview.append(renderSlide());
   area.append(preview);
+  if (deckActions.childNodes.length > 1) area.append(deckActions);
   return area;
 }
 
@@ -3162,15 +3188,43 @@ function paintDesk(fresh) {
   const opened = !held.sources && !preparingPlan && !waitingPlan
     && available.find((one) => one.name === selected);
   if (opened && opened.seen) (held.opened ||= {})[opened.name] = opened.seen;
-  const options = [...available.map(one => ({id: one.name, label: cardTitle(one) + ' · '
-    + (DESK_WORDS.tabs[one.state] || 'Draft')})),
-    {id: 'sources', label: 'Research & sources'}];
-  const materials = workspaceTabs('Training material', options, selected, id => {
+  const groups = {};
+  for (const kind of ['scenario', 'yoodli']) {
+    const items = available.filter(one => one.kind === kind);
+    if (items.length > 1) groups[kind] = items;
+  }
+  const groupId = one => groups[one.kind] ? 'group:' + one.kind : one.name;
+  const options = [];
+  for (const one of available) {
+    const id = groupId(one);
+    if (options.some(option => option.id === id)) continue;
+    options.push({id, label: groups[one.kind] ? DESK_WORDS.kinds[one.kind] + ' · ' + groups[one.kind].length
+      : cardTitle(one) + ' · ' + (DESK_WORDS.tabs[one.state] || 'Draft')});
+  }
+  options.push({id: 'sources', label: 'Research & sources'});
+  const selectedCard = available.find(one => one.name === selected);
+  const selectedTab = selectedCard ? groupId(selectedCard) : selected;
+  const materials = workspaceTabs('Training material', options, selectedTab, id => {
     held.sources = id === 'sources';
-    if (!held.sources) held.material[level] = id;
+    const items = groups[id.replace('group:', '')];
+    if (!held.sources) held.material[level] = items
+      ? (items.find(one => one.name === held.material[level])
+        || items.find(one => ['needs', 'held', 'decide'].includes(one.state)) || items[0]).name : id;
     paintDesk(true);
   }, 'desk-material');
   const column = add(make('div', 'desk-column'), ...shown.filter(one => one.name === selected).map(deskCard));
+  if (selectedCard && groups[selectedCard.kind]) {
+    const items = groups[selectedCard.kind], select = make('select', 'input');
+    const label = DESK_WORDS.kinds[selectedCard.kind] + ' to review';
+    select.setAttribute('aria-label', label); select.dataset.key = 'desk-material-item';
+    for (const one of items) {
+      const option = make('option', '', cardTitle(one) + ' · ' + (DESK_WORDS.tabs[one.state] || 'Draft'));
+      option.value = one.name; select.append(option);
+    }
+    select.value = selected;
+    select.addEventListener('change', () => { held.material[level] = select.value; paintDesk(false); });
+    column.prepend(add(make('label', 'field'), make('span', 'field-label', label), select));
+  }
   if(ours&&run.outline?.content_first&&run.outline.waiting&&shown.some(one=>one.name===selected&&one.kind==='deck'))column.prepend(slideTextReview(run.outline,held));
   if (!shown.length) column.append(make('p', 'quiet', 'Nothing is made at this level.'));
   const finishing = finishingMaterial();
@@ -3188,7 +3242,7 @@ function paintDesk(fresh) {
     : narrow() ? add(make('div', 'stack'), finishing.scope, finishing.panel, column)
       : add(make('div', 'stack'), finishing.scope, add(make('div', 'desk-layout desk-finishing'),
         column, finishing.panel));
-  const layout = workspacePanel('desk-material', options.findIndex(one => one.id === selected),
+  const layout = workspacePanel('desk-material', options.findIndex(one => one.id === selectedTab),
     held.sources ? sourcesPart(found) : reading);
   const planReview = waitingPlan ? trainingPlanReview(run.training_plan, held) : null;
   if (planReview) {

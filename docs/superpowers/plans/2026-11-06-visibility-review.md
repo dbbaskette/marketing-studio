@@ -32,3 +32,32 @@ targets, focus and forced colors, at 390/1280 px in light/dark and standard/pilo
 The actual Marketing Studio settings save/reload journey also passed. The slide
 position change passed 139 Training Studio desk/layout tests and its rendered
 slide browser journey before merging as #401.
+
+## Compact Training Studio review — #404
+
+Group repeated Practice and Yoodli items, with a category count and an item selector
+that names each item's state. Keep the existing individual tabs when there is one
+item. Keep all material identities and approval/opened-version accounting intact.
+
+Within a rendered slide, show Preview, Text & notes, or Review & changes. Keep
+one selected task across slide choices and polling. Show the suggestion count on
+the review tab; keep the material's overall blocked/ready state above the workspace.
+Move whole-deck changes and alternate looks after the slide, under Deck actions.
+All panes retain local edits; switching panes only changes visibility.
+
+| State / action | Expected result | Regression |
+| --- | --- | --- |
+| Five Practice + five Yoodli materials | Seven top-level material choices, one selected item | long-material browser fixture |
+| Choose item in category | Correct material/state, stable focus, no worker | same journey |
+| Change slide task / poll | Selected pane retained, edits not lost | rendered deck journey |
+| Select slide while editing | Same selector/task; per-slide unsaved edits retained | rendered deck journey |
+| Hidden editing/review panes | Available via named keyboard tabs; all existing actions preserved | desk/layout and browser checks |
+
+Compact review verification: all 139 affected desk/layout tests passed (98 desk
+journeys updated to use the new task controls, 41 unchanged layout tests). The
+real rendered-deck browser journey passed with five synthetic Practice and five
+Yoodli items: seven material tabs, correct selected items, retained unsaved text
+and pane/focus/caret through refresh, and no additional worker jobs, at 390/1280
+px in light/dark. Marketing Studio/Infographic Studio's broader visual journey
+also passed at 320/390/768/1440 px, including reduced effects, keyboard dialogs
+and enlarged text. It validates synthetic UI behavior, not live artwork quality.
