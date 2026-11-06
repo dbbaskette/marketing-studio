@@ -639,13 +639,21 @@ function studioReadiness(studio){
 function readinessBlock(studio) {
   const ready = studioReadiness(studio), block = element('div', '', 'studio-readiness');
   block.dataset.ready = JSON.stringify(ready);
-  block.append(stateLine(ready.state, ready.label), element('p', ready.detail, 'studio-readiness-detail quiet'));
+  block.append(stateLine(ready.state, ready.label));
+  if (ready.state !== 'done' || ready.action) block.append(element('p', ready.detail, 'studio-readiness-detail quiet'));
   if (ready.action) {
     const fix = element('button', ready.action.label, 'button button-quiet studio-recover'); fix.type = 'button';
     fix.addEventListener('click', () => recover(ready.action.view));
     block.append(fix);
   }
   return block;
+}
+function readinessDetails(details, ready) {
+  if (!details) return;
+  const old = details.querySelector('.studio-readiness-detail');
+  if (ready.state !== 'done' || ready.action) { if (old) old.remove(); return; }
+  if (old) old.textContent = ready.detail;
+  else details.append(element('p', ready.detail, 'studio-readiness-detail quiet'));
 }
 // The recovery actions: shared settings, or a look at this computer that changes nothing.
 function recover(where) {
@@ -689,13 +697,14 @@ async function refreshHomeStatus(){
       const line=card.querySelector('.studio-readiness');
       // Rebuilt only when it changed, so a focused recovery button keeps its focus.
       if(line&&line.dataset.ready!==JSON.stringify(studioReadiness(studio)))line.replaceWith(readinessBlock(studio));
+      readinessDetails(card.querySelector('.studio-repository'),studioReadiness(studio));
       const running=card.querySelector('.studio-running');if(running)running.textContent=`${studio.running?'Running · ':''}${studio.version||''}`;
       const button=card.querySelector('.studio-open');if(studio.installed&&button&&!button.disabled){button.textContent=studio.running?'Return':'Open';button.setAttribute('aria-label',studio.running?`Return to ${studio.name}`:`Open ${studio.name}`);}
     }
   }catch(failure){
     workOverviewStale=true;renderWorkOverview();
     // Retain the last readable state while reconnecting, but never show stale green lights.
-    for(const line of document.querySelectorAll('.studio-readiness')){const studio=snapshot.studios.find(s=>s.id===line.closest('[data-studio]')?.dataset.studio)||{installed:true};line.replaceWith(readinessBlock({...studio,readiness:{state:'review',label:'Not checked',detail:'Marketing Studio did not answer, so this was not checked. If it was restarted, open the new private link from its terminal.',action:null}}));}
+    for(const line of document.querySelectorAll('.studio-readiness')){const card=line.closest('[data-studio]'),studio=snapshot.studios.find(s=>s.id===card?.dataset.studio)||{installed:true};readinessDetails(card?.querySelector('.studio-repository'),{state:'review'});line.replaceWith(readinessBlock({...studio,readiness:{state:'review',label:'Not checked',detail:'Marketing Studio did not answer, so this was not checked. If it was restarted, open the new private link from its terminal.',action:null}}));}
   }finally{homeRefreshing=false;}
 }
 async function resumeWork(studio, item, button) {
@@ -721,8 +730,13 @@ function renderWorkOverview(){
   for(const [state,title] of [['draft','Unfinished drafts'],['needs-you','Needs you'],['in-progress','In progress'],['recent','Recent work']]){
     const all=rows.filter(row=>row.item.state===state).sort((a,b)=>b.item.observed_at.localeCompare(a.item.observed_at)||a.item.id.localeCompare(b.item.id));
     const selected=all.slice(0,6);if(!selected.length)continue;
-    const group=groups.get(state)||element('section','','stack');group.dataset.workGroup=state;
-    let heading=group.querySelector('h2');if(!heading){heading=element('h2',title,'section-title');heading.tabIndex=-1;group.append(heading);}
+    const group=groups.get(state)||element(state==='recent'?'details':'section','',state==='recent'?'stack work-recent':'stack');group.dataset.workGroup=state;
+    let heading=group.querySelector('h2');if(!heading){
+      heading=element('h2',title,'section-title');heading.tabIndex=-1;
+      if(state==='recent'){const summary=element('summary','','work-recent-heading');summary.append(heading,element('span','','quiet work-recent-count'));group.append(summary);}
+      else group.append(heading);
+    }
+    if(state==='recent')group.querySelector('.work-recent-count').textContent=String(all.length);
     const wanted=[];
     for(const {studio,item} of selected){
       const id=studio.id+':'+item.id;
@@ -730,7 +744,8 @@ function renderWorkOverview(){
       if(row.dataset.summary!==JSON.stringify(item)){
         let copy=row.querySelector('.work-summary-copy'),button=row.querySelector('button');
         if(!copy){copy=element('div','','stack work-summary-copy');button=element('button','','button button-quiet');button.addEventListener('click',()=>resumeWork(row.resumeStudio,row.resumeItem,button));row.append(copy,button);}
-        copy.replaceChildren(element('p',studio.name,'field-hint'),element('h3',item.title,'card-title'),element('p',state==='in-progress'?'Last saved work was in progress; open to check current activity.':item.action,'quiet'));
+        copy.replaceChildren(element('p',studio.name,'field-hint'),element('h3',item.title,'card-title'));
+        if(state==='in-progress')copy.append(element('p','Saved as in progress. Open to check current activity.','quiet'));
         if(item.kind==='intake')copy.append(element('p','Step '+(item.step+1)+' · Saved '+item.observed_at.slice(0,16).replace('T',' ')+' UTC','quiet'));
         if(item.warning)copy.append(element('p',item.warning,'spending-warning'));
         if(!button.disabled)button.textContent=item.action;
@@ -752,8 +767,13 @@ function renderWorkOverview(){
   usedGroups.forEach((group,index)=>{if(host.children[index]!==group)host.insertBefore(group,host.children[index]||null);});
   let status=host.querySelector('.work-coverage');if(!status){status=element('p','','quiet work-coverage');status.setAttribute('role','status');host.append(status);}
   const values=Object.values(snapshot.work_overview||{}),unavailable=snapshot.studios.filter(studio=>snapshot.work_overview?.[studio.id]?.state==='unavailable');
-  status.textContent=workOverviewStale?'Connection interrupted. Saved work shown may be out of date; reconnecting.':!rows.length&&values.length?'No readable saved work summaries are available yet. Open a studio to view its saved work.':values.some(row=>row.limited)?'Showing bounded saved metadata. Pending indexed work comes first; older work outside the scan may be omitted. Open a studio below for all its work.':'Saved status; opening work checks its current state.';
-  if(unavailable.length)status.textContent+=' Saved metadata is unavailable for '+unavailable.map(s=>s.name).join(', ')+'.';
+  status.textContent=workOverviewStale?'Connection interrupted. Saved work shown may be out of date; reconnecting.'
+    :!rows.length?(unavailable.length?'Some saved work could not be read. Open its studio to check.'
+      :values.some(row=>row.limited)?'No recent work found. Open a studio to see all saved work.'
+        :values.length?'No saved work yet. Choose a studio to get started.':'Open a studio to see your saved work.')
+      :values.some(row=>row.limited)?'Recent saved work. Open a studio to see everything.'
+        :'Saved work. Open an item to check its latest status.';
+  if(unavailable.length)status.textContent+=' Unavailable: '+unavailable.map(s=>s.name).join(', ')+'.';
   if(wasInside){if(active.isConnected)active.focus({preventScroll:true});else (host.querySelector('h2')||$('#view-title')).focus({preventScroll:true});window.scrollTo(0,scroll);}
 }
 
@@ -770,6 +790,7 @@ function renderHome(refreshPaths = true) {
     const details = element('details','','studio-repository');
     const summary = element('summary','Details'); summary.setAttribute('aria-label',`Details for ${studio.name}`);
     details.append(summary,element('p',`${studio.running?'Running · ':''}${studio.version||'Version not reported'}`,'quiet studio-running'));
+    readinessDetails(details, studioReadiness(studio));
     const link = studio.workspace;
     if (link) {
       // Where its work lives, read from the studio's own records.
@@ -783,7 +804,7 @@ function renderHome(refreshPaths = true) {
         const warning=stateLine('review',link.summary);warning.classList.add('studio-warning');card.append(warning);
       }
     }
-    if (link || studio.version) footer.append(details);
+    footer.append(details);
     footer.append(actions); card.append(footer);
     if (studio.installed && link?.connect) {
       const connect = element('button', 'Connect', 'button studio-connect button-filled'); connect.type = 'button';
