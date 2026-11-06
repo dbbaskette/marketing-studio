@@ -3,6 +3,7 @@ const {chromium}=require('playwright');
 const {spawn}=require('node:child_process');
 const path=require('node:path'),fs=require('node:fs'),assert=require('node:assert/strict');
 const root=path.join(__dirname,'..');
+const products=['training','presentation'].filter(name=>!process.env.STUDIO_AUDIT_PRODUCT||process.env.STUDIO_AUDIT_PRODUCT===name);
 async function fixture(product,args=[]){
  const script=product==='training'?'studios/training/tests/ui/training_plan_fixture.py':'studios/presentation/tests/ui/intake_fixture.py';
  const child=spawn(process.env.PYTHON||'python3',[path.join(root,script),...args],{stdio:['ignore','pipe','pipe']});
@@ -14,7 +15,7 @@ async function fixture(product,args=[]){
  let browser;
  try{
   browser=await chromium.launch({headless:true,executablePath:process.env.INFOGRAPHIC_STUDIO_TEST_RENDERER});
-  if(process.env.STUDIO_AUDIT_BROWSER_MODE!=='desks')for(const product of ['training','presentation'])for(const width of [390,1280]){
+  if(process.env.STUDIO_AUDIT_BROWSER_MODE!=='desks')for(const product of products)for(const width of [390,1280]){
    const test=await fixture(product,product==='training'?['--new','--library','--desk']:[]);
    try{
     const page=await browser.newPage({viewport:{width,height:844},colorScheme:'light'}),errors=[],jobs=[];
@@ -82,7 +83,7 @@ async function fixture(product,args=[]){
     assert.equal(jobs.length,0);assert.deepEqual(errors,[]);console.log('PASS '+product+' '+width);await page.close();
    }finally{await test.stop();}
   }
-  for(const product of ['training','presentation'])for(const width of [390,1280]){
+  for(const product of products)for(const width of [390,1280]){
    const test=await fixture(product,['--desk']);
    try{
     const page=await browser.newPage({viewport:{width,height:844}}),errors=[];
@@ -109,6 +110,6 @@ async function fixture(product,args=[]){
     assert.deepEqual(errors,[]);console.log('PASS '+product+' '+width);await page.close();
    }finally{await test.stop();}
   }
-  console.log('PASS native Training Studio and Presentation Studio intake: real steps, source pins, reload/reopen/discard, zero jobs, centered opaque sheets, keyboard and visible footer, 390/1280 light/dark');
+  console.log('PASS native '+products.join('/')+' intake: real steps, source pins, reload/reopen/discard, zero jobs, centered opaque sheets, keyboard and visible footer, 390/1280 light/dark');
  }finally{if(browser)await browser.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});

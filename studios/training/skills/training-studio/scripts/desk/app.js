@@ -831,8 +831,10 @@ function researchActivity(run, controls = null) {
   if (typeof StudioResearch !== 'undefined') {
     const panel = StudioResearch.progress(research, {timing: run.timing, controls, workers: run.workers, lines: jobLines(view.path),...researchNoteHooks(view.path)});
     if (research.phase === 'creator-approved' && !run.problem) {
-      const saved = make('details', 'card-part'); saved.dataset.key = 'research-choices-saved';
-      return add(saved, make('summary', '', 'Research choices saved · uncertainty remains marked'), panel);
+      const saved = make('details', 'card-part desk-research-saved'); saved.dataset.key = 'research-choices-saved';
+      const toggle = make('summary', '', 'Research choices saved · uncertainty remains marked');
+      toggle.dataset.key = 'research-choices-toggle';
+      return add(saved, toggle, panel);
     }
     return panel;
   }

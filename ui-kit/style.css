@@ -3245,6 +3245,38 @@ body[data-product="Training Studio"] .card > .training-options {
   gap: 1.1rem;
   min-width: 0;
 }
+/* Training progress belongs to the workspace, not another content card. */
+.desk-progress {
+  padding-block: .65rem;
+  border-block: 1px solid var(--hair);
+}
+.desk-progress-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: .25rem .8rem;
+}
+.desk-progress-head .card-title {
+  margin: 0;
+  flex: 1 1 16rem;
+  color: var(--ink);
+  font-size: 1rem;
+  overflow-wrap: anywhere;
+}
+.desk-progress > p { margin-top: .25rem; overflow-wrap: anywhere; }
+.desk-progress-details { display: flex; flex-wrap: wrap; gap: 0 1.2rem; }
+.desk-progress-details > details { min-width: 0; }
+.desk-progress-details > details[open] { flex-basis: 100%; }
+.desk-progress-details > details > summary,
+.desk-research-saved > summary,
+body[data-product="Training Studio"] .outline-notes > summary {
+  min-height: 2.75rem;
+  padding-block: .6rem;
+  color: var(--link);
+  cursor: pointer;
+}
+.desk-progress-details > details[open] > :not(summary) { margin-block: .4rem; }
 .desk-workspace-tabs {
   display: flex;
   flex-wrap: wrap;

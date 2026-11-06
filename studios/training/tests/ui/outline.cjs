@@ -19,6 +19,17 @@ async function fixture(args=[]){
     page.on('pageerror',e=>errors.push(e.stack||e.message));
     if(width===1280)await page.addInitScript(root=>history.replaceState({screen:'run',path:root},''),test.path);
     await page.goto(width===1280?test.url:test.url+'&resume='+encodeURIComponent(path.basename(test.path)));await page.getByRole('heading',{name:'Review the training outline',exact:true}).waitFor();
+    const first=page.getByLabel('Section 1 title',{exact:true});
+    await first.waitFor();
+    const firstBox=await first.boundingBox();assert(firstBox.y+firstBox.height<600,'First editable section is visible without scrolling');
+    const approach=page.locator('[data-key="outline-approach-toggle"]');
+    assert((await approach.boundingBox()).height>=44,'Outline disclosure touch target');
+    await approach.focus();await page.keyboard.press('Enter');
+    await page.getByText(/Focused first draft:/).waitFor();
+    await page.evaluate(()=>refresh());
+    assert.equal(await page.locator('[data-key="outline-approach"]').evaluate(n=>n.open),true);
+    assert.equal(await approach.evaluate(n=>n===document.activeElement),true);
+    await page.keyboard.press('Enter');
     const before=await page.evaluate(root=>ask('run',{path:root}),test.path);
     assert.equal(before.state,'waiting');assert.equal(before.steps.find(s=>s.id==='scan').attempts,1);
     assert(!before.steps.some(s=>s.id.startsWith('research:')),'no research before outline approval');

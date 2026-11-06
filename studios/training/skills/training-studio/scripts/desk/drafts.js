@@ -727,7 +727,7 @@ function startPickList(draft) {
 }
 
 // The new-training sheet: three numbered steps in the order they are filled in, then Start
-// and Cancel together. The runner prepares one topics review before building the
+// and a persistent footer. The runner prepares one outline review before building the
 // selected materials. Saved runs keep their original review behavior.
 function deskStart() {
   const draft = view.draft;
@@ -755,9 +755,9 @@ function deskStart() {
     retell();
     summary.textContent = 'Next: one Quick scan, then your outline approval before detailed research and writing. Outputs: '
       + [...draft.materials.map(id => MATERIALS.find(one => one[0] === id)?.[1] || id),
-        ...(DECKS[draft.deck][0] ? ['Slide deck'] : [])].join(', ') + '. '
-      + AGENT_NAMES[draft.agent] + draftModelWords(draft) + '. '
-      + (limitsSays(view.setup?.limits || {}) || 'No limits are set.');
+        ...(DECKS[draft.deck][0] ? ['Slide deck'] : [])].join(', ') + '.'
+      + (given(view.setup?.limits?.training_dollars)
+        ? ' Project spending amount: ' + money(view.setup.limits.training_dollars) + '.' : '');
   };
   draft.retell();
   form.append(problem,status);
@@ -2483,24 +2483,42 @@ function progressPart(found, held, lead) {
   const available = materials.filter(one => one.seen).length;
   const status = progress.running ? make('p', 'quiet', run.training_plan_pending
     ? 'Next: review the topics and teaching plan before the materials are built.'
-    : materials.length ? available + ' of ' + materials.length + ' drafts available. New drafts appear below as they finish.'
+    : materials.length ? available + ' of ' + materials.length + ' drafts available.'
       : 'Preparing the first material. It will appear here when it is ready.') : null;
-  const next = progress.next ? make('p', 'quiet', 'Up next: ' + progress.next.label + '. ' + progress.next.says) : null;
+  // The current step is already above; the selected queued material explains its wait.
+  const next = progress.next ? make('p', 'quiet', 'Up next: ' + progress.next.label + '.') : null;
   // What each assistant working now is doing, with Show activity (ui-kit/activity.js).
   const doing = progress.running && typeof StudioActivity !== 'undefined'
     ? StudioActivity.live(run.workers, { load: jobLines(view.path) }) : null;
-  return add(make('div'), callout('', building, line, status, next, doing, controls.childNodes.length ? controls : null,
-    // Time is a detail, never an estimate of what is left: elapsed time keeps growing.
-    run.timing ? (!researching(run)
-      ? timeDetails(measuredTime(run)) : null) : progress.started_at
-      ? timeDetails(make('p', 'quiet desk-clock', deskKit.clock(progress))) : null),
-  researchActivity(run));
+  const activity = doing ? add(make('details', 'desk-progress-activity'),
+    make('summary', '', list(run.workers).length > 1
+      ? 'Activity · ' + list(run.workers).length + ' assistants' : 'Activity'), doing) : null;
+  if (activity) {
+    activity.dataset.key = 'desk-progress-activity';
+    activity.querySelector('summary').dataset.key = 'desk-progress-activity-toggle';
+  }
+  // Keep the latest reported work visible without repeating the worker's heading/clock.
+  const workers = list(run.workers);
+  const now = progress.running && workers.length === 1 && workers[0].now?.text;
+  const latest = now ? add(make('p', 'activity-now'), make('strong', '', 'Now: '), now) : null;
+  // Time is a detail, never an estimate of what is left: elapsed time keeps growing.
+  const timing = run.timing ? timeDetails(measuredTime(run)) : progress.started_at
+    ? timeDetails(make('p', 'quiet desk-clock', deskKit.clock(progress))) : null;
+  const band = add(make('section', 'desk-progress'),
+    add(make('div', 'desk-progress-head'), building, controls.childNodes.length ? controls : null),
+    line, status, next, latest,
+    activity || timing ? add(make('div', 'desk-progress-details'), activity, timing) : null);
+  band.setAttribute('aria-label', 'Training progress');
+  return add(make('div'), band, researchActivity(run));
 }
 
 function timeDetails(line) {
   if (!line) return null;
-  return add(make('details', 'card-part desk-time'), make('summary', '', 'Time so far'), line,
+  const node = add(make('details', 'desk-time'), make('summary', '', 'Time so far'), line,
     make('p', 'quiet', 'Elapsed time includes waiting. It is not an estimate of what is left.'));
+  node.dataset.key = 'desk-time';
+  node.querySelector('summary').dataset.key = 'desk-time-toggle';
+  return node;
 }
 
 function unsentPart(held, lead) {
@@ -2787,18 +2805,21 @@ function outlinePlanReview(plan, held) {
   const value=held.outlineEdit;
   const saved=make('p','quiet',held.outlineDirty?'Unsaved outline edits. Save outline or approve this version.':'Outline saved. No detailed research has started.');saved.setAttribute('role','status');
   const box=add(make('section','paper slide-text-review'),
-    make('h2','doc-title','Review the training outline'),
-    make('p','quiet','Edit the sections, objectives and questions. Approval starts detailed research; the scan supplies no teaching evidence.'));
+    make('h2','doc-title','Review the training outline'));
   const status=plan.inputs_changed ? 'The inputs changed since this scan. Revise this starting outline for the current goal and source choices; no extra scan ran automatically.' : plan.scan.fallback ? 'The quick scan ended before a complete outline was accepted. This starting outline is incomplete and ready for your edits.' : 'One Quick scan prepared this provisional outline.';
-  box.append(make('p','quiet',status));
   const allowed=plan.research_from||{};
   const scope=[allowed.documents?'your supplied documents':'',list(allowed.sites).length?'your selected sites':'',allowed.web?'the public web':''].filter(Boolean).join(', ');
-  box.append(make('p','quiet','After approval: research uses '+scope+'. Up to '+Math.min(plan.workers,value.sections.length)+' areas run in parallel; combining and independent checking follow.'));
-  if(plan.research_policy)box.append(make('p','quiet','Focused first draft: up to '+plan.research_policy.facts_per_area+' essential facts and '+plan.research_policy.sources_per_area+' sources per area, including useful tutorials or labs. Optional depth stays in gaps. Read and download saved sections while checking continues.'));
-  const overview=add(make('details','outline-notes'),make('summary','','Scan overview, coverage and limits'),
+  box.append(make('p','quiet','Edit this provisional outline’s sections, objectives and questions. Approval starts detailed research from '+scope+'.'));
+  if(plan.inputs_changed||plan.scan.fallback)box.append(make('p','quiet',status));
+  const overview=add(make('details','outline-notes'),make('summary','','Research approach, scan and limits'),
+    make('p','quiet',(plan.inputs_changed||plan.scan.fallback?'':status+' ')+'The scan supplies no teaching evidence.'),
+    make('p','quiet','Up to '+Math.min(plan.workers,value.sections.length)+' areas run in parallel; combining and independent checking follow.'),
+    plan.research_policy?make('p','quiet','Focused first draft: up to '+plan.research_policy.facts_per_area+' essential facts and '+plan.research_policy.sources_per_area+' sources per area, including useful tutorials or labs. Optional depth stays in gaps. Read and download saved sections while checking continues.'):null,
     make('p','quiet','Scan limits: '+Math.ceil(plan.limits.seconds/60)+' minutes and $'+plan.limits.dollars.toFixed(2)+', within the training limits. External searches: '+plan.limits.searches+'.'),
     make('p','',value.overview),bullets(value.key_terms,'outline-points'),
     ...list(value.coverage).map(one=>make('p','',one.source+': '+one.covers)),bullets(value.gaps,'outline-points'));
+  overview.dataset.key='outline-approach';
+  overview.querySelector('summary').dataset.key='outline-approach-toggle';
   box.append(overview);
   const local=(label,initial,key,update,long=true)=>{
     const node=make(long?'textarea':'input','input');if(long)node.rows=3;else node.type='text';
