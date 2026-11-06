@@ -199,6 +199,7 @@ class OutlineTests(StudioCase):
             with mock.patch.object(workspace,'read_run',return_value=changed), self.assertRaises(WorkspaceError):
                 engines.read_record(root)
         old.pop('outline_first')
+        old.pop('material_flow')  # the saved pre-outline flow has neither new policy
         with mock.patch.object(workspace,'read_run',return_value=old):
             self.assertEqual(engines.read_record(root),old)
             self.assertFalse(outline.enabled(old))

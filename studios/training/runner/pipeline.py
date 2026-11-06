@@ -1276,6 +1276,8 @@ def survey(root: Path, run: dict | None = None, copies=(), supplied=(),
     listed = steps(session['levels'], wanted(session), named, kept, bool(given),
                    own - asked.keys(), own & asked.keys(), drawn,
                    bool(run.get('research_contract')))
+    from runner import material_flow
+    listed = material_flow.order(listed, session, run)
     # On the desk, what a change reaches is held, not remade: its steps, gates and copies are
     # left out until the person updates it or keeps it as it is. An update made closes here.
     if drafts.on_desk(run):
