@@ -372,7 +372,7 @@ class GoogleIntakeTests(unittest.TestCase):
                     provider = patch.object(self.client, 'metadata', wraps=self.client.metadata)
                 with provider, self.assertRaises(drive.GoogleError):
                     self.preview()
-                self.assertEqual(list(drive.staging_root(self.root).iterdir()), [])
+                self.assertEqual(list(drive.staging_root(self.root).glob('*')), [])
                 self.assertEqual(list(studio.inside(self.root, 'articles').iterdir()), [])
 
     def test_authenticated_http_routes_report_google_access_errors_and_refuse_unsigned_requests(

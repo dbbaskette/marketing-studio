@@ -309,7 +309,32 @@ class Client:
         return self.drive(
             'files/' + identifier(file_id),
             supportsAllDrives='true',
-            fields='id,name,mimeType,parents,webViewLink,modifiedTime,version,trashed,capabilities(canEdit,canAddChildren,canComment)',
+            fields='id,name,mimeType,parents,webViewLink,modifiedTime,version,trashed,capabilities(canEdit,canAddChildren,canComment,canCopy)',
+        )
+
+    def copy_document(self, file_id, title, parent, operation):
+        """One native copy, only after the caller has durably reserved its operation."""
+        return self.request(
+            DRIVE
+            + 'files/'
+            + identifier(file_id)
+            + '/copy?'
+            + urllib.parse.urlencode(
+                {'supportsAllDrives': 'true', 'copyComments': 'false', 'fields': 'id,mimeType'}
+            ),
+            method='POST',
+            body={
+                'name': title,
+                'parents': [identifier(parent)],
+                'appProperties': {'blogStudioOperation': operation},
+            },
+        )
+
+    def copy_details(self, file_id):
+        return self.drive(
+            'files/' + identifier(file_id),
+            supportsAllDrives='true',
+            fields='id,mimeType,parents,trashed,appProperties,capabilities(canEdit)',
         )
 
     def permissions(self, file_id):

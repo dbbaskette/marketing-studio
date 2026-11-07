@@ -183,6 +183,12 @@ A Google Doc is read through your computer’s existing Google sign-in; it need 
 be made public. Review the captured text before proceeding. Missing or unreadable
 images are not evidence that their content was read.
 
+For a view-only or comment-only Doc, the page names the signed-in Google account
+and offers **Create copy in My Drive**. Confirm to make an editable review copy,
+check its text, then start your chosen pass. Future suggestions go to that copy.
+The original and its sharing stay unchanged. If the owner forbids copying, the
+warning explains which access is needed.
+
 Imported text stays local until you explicitly choose a Google update, suggestions
 or comments. After a copy-edit review of an imported Doc, only accepted changes
 are sent as suggestions. Reconcile accepted Google edits through the supported

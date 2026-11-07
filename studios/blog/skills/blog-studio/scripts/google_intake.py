@@ -195,14 +195,20 @@ def preview(root, data):
     existing = linked(root, file_id, wanted)
     if existing:
         return existing
+    # Viewers can read accepted text but cannot request inline suggestions or an
+    # editor revision. Offer an explicit My Drive copy before entering that path.
+    import google_copy
+
+    client = drive.Client(drive.account_for(root))
+    offer = google_copy.offer(root, client, file_id, wanted, client.metadata(file_id))
+    if offer:
+        return offer
     token = uuid.uuid4().hex
     folder = studio.inside(drive.staging_root(root, create=True), 'desk-' + token)
     folder.mkdir(mode=0o700)
     snapshot = folder / 'snapshot'
     try:
-        result = roundtrip.capture(
-            drive.Client(drive.account_for(root)), file_id, wanted, snapshot, manuscript=True
-        )
+        result = roundtrip.capture(client, file_id, wanted, snapshot, manuscript=True)
         body = (snapshot / 'document.md').read_text()
         content = text_only(body)
         if not content.strip() or len(content) > 200_000:
