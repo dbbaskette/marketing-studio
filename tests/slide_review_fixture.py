@@ -15,6 +15,7 @@ def main():
     parser.add_argument('--research-preview',action='store_true')
     parser.add_argument('--poll-files',type=int,default=0)
     parser.add_argument('--rendered',action='store_true')
+    parser.add_argument('--review-fixes',action='store_true',help='Five synthetic suggestions on one Training Studio slide')
     args=parser.parse_args();native=Path(__file__).resolve().parents[1]/'studios'/args.product
     sys.path.insert(0,str(native/'tests'));sys.path.insert(1,str(native))
     from runner import page
@@ -30,6 +31,13 @@ def main():
     try:
         with contextlib.redirect_stdout(sys.stderr):
             case.setUp();case.engine.content_first=not args.rendered
+            if args.review_fixes:
+                if args.product!='training' or not args.rendered:
+                    parser.error('--review-fixes requires training --rendered')
+                from test_runner_deck import MAJOR
+                case.workers.found=[[{**MAJOR,'slide':'check-yourself',
+                    'note':f'Detail {number} needs attention.',
+                    'fix':f'Make detail {number} easier to read.'} for number in range(1,6)],[]]
             from studio_core import preferences,studios_config
             studios_config.update({'local':{'root':str(case.space.root)}});preferences.finish(studios_config,lambda _:None)
             catalog=mock.patch('studio_core.model_catalog.Catalog.get',return_value={'agent':'codex','models':[],'problem':None});catalog.start();case.addCleanup(catalog.stop)

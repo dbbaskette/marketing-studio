@@ -148,6 +148,74 @@ class SlideNoteTests(DeckCase):
         self.assertEqual(note['note'], item['after'])
         self.assertEqual(note['status'], 'done')
 
+    def review_batch(self):
+        self.workers.found = [[{**MAJOR, 'slide': 'check-yourself',
+                               'fix': f'Improve detail {number}.'} for number in range(5)], []]
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        shown = self.engine.deck_proposals(root, None)['review']
+        self.assertEqual(len(shown['items']), 5)
+        seen = self.engine._load(root)['deck']['']['saved']['sha256']
+        return root, shown, seen
+
+    def test_five_review_fixes_share_one_history_snapshot_and_redraw(self):
+        root, shown, seen = self.review_batch()
+        count, reviews = len(self.workers.of('section')), len(self.workers.of('review'))
+        ids = [item['id'] for item in shown['items']]
+        with mock.patch.object(self.engine, 'carry_on') as wake, \
+                mock.patch.object(drafts, 'keep_slide', wraps=drafts.keep_slide) as keep:
+            result = self.engine.deck_finding(root, None, seen, shown['job'], 'apply', ids)
+        self.assertEqual(result, {'applied': 5, 'left': []})
+        wake.assert_called_once_with(root)
+        keep.assert_called_once_with(self.engine, root, None, 'check-yourself', 'note')
+        notes = self.engine._load(root)['deck']['']['notes']
+        self.assertEqual([note['note'] for note in notes], [item['after'] for item in shown['items']])
+        self.assertEqual({note['status'] for note in notes}, {'waiting'})
+        # A repeated submission cannot queue the same fixes twice.
+        with self.assertRaisesRegex(Exception, 'already applied or skipped'):
+            self.engine.deck_finding(root, None, seen, shown['job'], 'apply', ids)
+        self.engine.carry_on(root)
+        self.to_end(root)
+        self.assertEqual(len(self.workers.of('section')), count + 1)
+        self.assertEqual(len(self.workers.of('review')), reviews + 1)
+        self.assertEqual({note['status'] for note in self.engine._load(root)['deck']['']['notes']}, {'done'})
+
+    def test_review_subset_and_dismissal_leave_other_choices_open(self):
+        root, shown, seen = self.review_batch()
+        ids = [item['id'] for item in shown['items']]
+        with mock.patch.object(self.engine, 'carry_on') as wake:
+            self.engine.deck_finding(root, None, seen, shown['job'], 'skip', ids[:2])
+            wake.assert_not_called()
+            self.assertFalse(self.engine._load(root)['deck'][''].get('notes'))
+            result = self.engine.deck_finding(root, None, seen, shown['job'], 'apply', ids[2:4])
+            wake.assert_called_once_with(root)
+        self.assertEqual(result['applied'], 2)
+        self.assertEqual([item['state'] for item in self.engine.deck_proposals(root, None)['review']['items']],
+                         ['skipped', 'skipped', 'applied', 'applied', 'open'])
+
+    def test_refused_batch_queues_nothing_and_keeps_suggestions_open(self):
+        root, shown, seen = self.review_batch()
+        ids = [item['id'] for item in shown['items']]
+        with mock.patch.object(self.engine, 'carry_on') as wake, \
+                mock.patch.object(drafts, 'keep_slide', wraps=drafts.keep_slide) as keep:
+            with self.assertRaisesRegex(Exception, 'changed since it was opened'):
+                self.engine.deck_finding(root, None, 'old', shown['job'], 'apply', ids)
+            self.engine._run(root).workers['deck-sections:2'] = {}
+            try:
+                with self.assertRaisesRegex(Exception, 'being redrawn now'):
+                    self.engine.deck_finding(root, None, seen, shown['job'], 'apply', ids)
+            finally:
+                self.engine._run(root).workers.clear()
+            # Validate the entire batch before recording its first note or snapshot.
+            with self.assertRaisesRegex(Exception, 'Choose a slide in a drawn section'):
+                self.engine.slide_notes(root, None, [
+                    {'slide': 'check-yourself', 'note': 'Valid change.'},
+                    {'slide': 'missing-slide', 'note': 'Invalid target.'}], seen)
+            wake.assert_not_called()
+            keep.assert_not_called()
+        self.assertFalse(self.engine._load(root)['deck'][''].get('notes'))
+        self.assertEqual({item['state'] for item in self.engine.deck_proposals(root, None)['review']['items']}, {'open'})
+
     def test_skipping_a_grave_finding_still_blocks_ready(self):
         self.workers.found = [[{**MAJOR, 'slide': 'check-yourself'}]]
         root = self.begin(flow='desk')

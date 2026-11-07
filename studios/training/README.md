@@ -162,6 +162,13 @@ holds whole-deck changes and alternate looks. The slide card supports words, spe
 notes and section-scoped redraw requests.
 Drawing-bound word edits retain Harness Slides’ explicit design-answer requirement.
 
+In **Review & changes**, select the suggestions you want or choose **Select all
+fixes**, then **Apply selected fixes**. The selected count and redraw scope appear
+before you start. The fixes are queued together for one section redraw and deck
+check; selecting suggestions starts no work. Choices survive slide navigation,
+refreshes and failed requests while the drawing is unchanged. **Dismiss selected**
+starts no redraw. A queued fix still needs the drawing and check to finish.
+
 When an input changes, dependent material may be **held**. Choose **Update** to
 remake it from the current input, or **Keep as it is**. The proposed update says
 what it reaches and its available price history. New sources wait for the explicit
