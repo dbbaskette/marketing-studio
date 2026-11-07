@@ -402,6 +402,9 @@ function sDeskGoogleCopyOffer(held,found){
     found.can_copy?sNode('p','quiet','Check the copied text before starting. Existing comments and suggestions stay in the original.'):null,
     problem,sAdd(sNode('div','bar'),create,sButton('Cancel',sCloseSheet)));
   const owner=studio.sheet;
+  // Reading temporarily disables the submit button, which can blur it before
+  // the sheet opens. Cancel still returns keyboard focus to that action.
+  owner.opener=$('studio-page').querySelector('[type=submit]')||owner.opener;
 }
 // A published post's preview: what was read, said in a line, then its text, read only.
 function sPublishedShape(found){

@@ -5238,7 +5238,9 @@ async function deskViewOnlyGoogleCopy(){
     assert.equal(t.requests.some(r=>r.url==='/api/desk-create'),false);
     if(mode==='cancel'||mode==='restricted'){
       if(mode==='restricted')assert.equal(t.sheet().some(n=>n.textContent==='Create copy in My Drive'),false);
-      await t.click('Cancel');assert.equal(t.byId('desk-google').value,original);assert.equal(attempts,0);continue;
+      const resume=t.nodes().find(n=>n.type==='submit');resume.isConnected=true;
+      await t.click('Cancel');assert.ok(resume.focused,'Cancel returns focus to the intake action');
+      assert.equal(t.byId('desk-google').value,original);assert.equal(attempts,0);continue;
     }
     await t.click('Create copy in My Drive');
     if(mode==='lost-reply'){
