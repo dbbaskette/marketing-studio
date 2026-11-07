@@ -81,6 +81,10 @@ production detail. Reading a document or expanding details approves nothing.
 | Saved plan-first training without a text checkpoint | Restart or topics approval | Keep its saved workflow; no silent new checkpoint | `PlanTests.test_saved_plan_first_run_without_text_marker_keeps_its_workflow` |
 | Material, section, slide or Sources navigation | Reading a draft | Show one pane; retain edits and selections; no work or approvals | `training_workspace.cjs` phone/desktop journey |
 | Deck review issues | Deck draft with blocking findings | Plain summary, details collapsed, affected slide and scoped repair control; Ready still refused | `ReadyTests.test_row_148_a_level_is_marked_ready_in_order`, workspace journey |
+| Select review suggestions, navigate or refresh | Open findings on the same drawing | Keep choices and count locally; start no work; reset choices for a new drawing or review | `TrainingDeskScreenTests.test_five_review_choices_start_no_work_until_one_batch_is_applied`, `test_review_selection_clears_for_a_changed_drawing` |
+| Apply five review suggestions on one slide | Explicit selection and current drawing | Validate all notes, save one History snapshot, queue all fixes, start one section redraw and deck check; say queued until finished | `SlideNoteTests.test_five_review_fixes_share_one_history_snapshot_and_redraw` |
+| Apply a stale or busy batch, or a batch with an invalid target | Open findings | Refuse before saving any notes or History; leave findings open and preserve UI choices for retry | `SlideNoteTests.test_refused_batch_queues_nothing_and_keeps_suggestions_open`, `TrainingDeskScreenTests.test_review_subset_survives_failed_request_and_can_be_dismissed` |
+| Dismiss selected suggestions | Open findings | Close only the selected suggestions; no redraw; unresolved grave findings still block Ready | `SlideNoteTests.test_review_subset_and_dismissal_leave_other_choices_open`, `SlideNoteTests.test_skipping_a_grave_finding_still_blocks_ready` |
 
 ## Yoodli extraction decision
 

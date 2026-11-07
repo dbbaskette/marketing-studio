@@ -5418,6 +5418,10 @@ class Engine(Reviewing):
 
     def slide_note(self, path, level, slide, note, seen, *, _defer=False) -> dict:
         """Ask to redraw the section containing one slide of a desk deck."""
+        return self.slide_notes(path, level, [{'slide': slide, 'note': note}], seen, _defer=_defer)
+
+    def slide_notes(self, path, level, notes, seen, *, _defer=False) -> dict:
+        """Admit all requested fixes before saving or waking any drawing worker."""
         level = level or None
         with self.files:
             root, record = self._on_desk(path, decided=True, deck_change=True)
@@ -5430,36 +5434,46 @@ class Engine(Reviewing):
             if (not seen or seen != (kept.get('saved') or {}).get('sha256')
                     or seen != workspace.sha256_file(file)):
                 raise WorkspaceError(CHANGED.format(it=workspace.sentence(workspace.label(name))))
-            if not isinstance(note, str) or not note.strip():
-                raise WorkspaceError('Say how the slide should change.')
-            if len(note) > 4000:
-                raise WorkspaceError('Keep a note to 4,000 characters.')
+            if not isinstance(notes, list) or not notes:
+                raise WorkspaceError('Choose at least one slide change.')
             rounds = built.get('rounds') or []
             slides = (rounds[-1].get('slides') or []) if rounds else []
-            shown = next((item for item in slides if item.get('id') == slide), None)
-            section = next((part['id'] for part in (built.get('start') or {}).get('sections') or ()
-                            if slide in part.get('slides', ())), None)
-            if not shown or not section:
-                raise WorkspaceError('Choose a slide in a drawn section.')
-            number = pipeline.numbered(section)
             working = self._run(root).workers
-            jobs = (workspace.qualify(kind, level) + f':{number}'
-                    for kind in ('deck-sections', 'deck-repair'))
-            if (any(job in working for job in jobs)
-                    or any(item.get('section') == section and item.get('status') == 'drawing'
-                           for item in kept.get('notes') or ())):
-                raise WorkspaceError(f"Slide {shown['number']} is being redrawn now. Your note "
-                                     'is kept here; send it when that ends.')
+            admitted = []
+            for request in notes:
+                if not isinstance(request, dict) or set(request) != {'slide', 'note'}:
+                    raise WorkspaceError('Give each change a slide and a note.')
+                slide, note = request['slide'], request['note']
+                if not isinstance(note, str) or not note.strip():
+                    raise WorkspaceError('Say how the slide should change.')
+                if len(note) > 4000:
+                    raise WorkspaceError('Keep a note to 4,000 characters.')
+                shown = next((item for item in slides if item.get('id') == slide), None)
+                section = next((part['id'] for part in (built.get('start') or {}).get('sections') or ()
+                                if slide in part.get('slides', ())), None)
+                if not shown or not section:
+                    raise WorkspaceError('Choose a slide in a drawn section.')
+                number = pipeline.numbered(section)
+                jobs = (workspace.qualify(kind, level) + f':{number}'
+                        for kind in ('deck-sections', 'deck-repair'))
+                if (any(job in working for job in jobs)
+                        or any(item.get('section') == section and item.get('status') == 'drawing'
+                               for item in kept.get('notes') or ())):
+                    raise WorkspaceError(f"Slide {shown['number']} is being redrawn now. Your note "
+                                         'is kept here; send it when that ends.')
+                admitted.append({'slide': slide, 'section': section, 'note': note.strip()})
+            # A later invalid/busy slide cannot leave earlier fixes partially queued.
+            # Multiple suggestions on one slide share a single History snapshot.
             self._settled(root, record, name)
-            drafts.keep_slide(self, root, level, slide, 'note')
+            for slide in dict.fromkeys(item['slide'] for item in admitted):
+                drafts.keep_slide(self, root, level, slide, 'note')
             workspace.accept_desk(root, name)
             self._ready_again(root)
             kept['redrawing'] = True
-            kept.setdefault('notes', []).append({'id': secrets.token_hex(6), 'slide': slide,
-                'section': section, 'note': note.strip(), 'at': home.now(), 'by': 'page',
-                'status': 'waiting'})
+            kept.setdefault('notes', []).extend({'id': secrets.token_hex(6), **item,
+                'at': home.now(), 'by': 'page', 'status': 'waiting'} for item in admitted)
             self._store(root, record)
-            self._commit(root, f"ask to redraw slide {shown['number']}")
+            self._commit(root, f'queue {len(admitted)} slide change(s) together')
         if not _defer:
             self.carry_on(root)
         return self.view(root)
@@ -5500,9 +5514,10 @@ class Engine(Reviewing):
             name = workspace.qualify('deck', level)
             if name not in workspace.artifact_names(root, workspace.load(root)):
                 raise WorkspaceError('Choose a level with a slide deck.')
+            notes = []
             proposals = drafts.deck_proposals(self, root, level,
-                note=lambda ident, item, words: self.slide_note(
-                    root, level, item['part'], words, seen, _defer=True))
+                note=lambda ident, item, words: notes.append({'slide': item['part'], 'note': words}),
+                noted=lambda ident, applied: self.slide_notes(root, level, notes, seen, _defer=True))
             try:
                 if action == 'apply':
                     result = proposals.apply(name, seen, job, [{'id': ident} for ident in ids])

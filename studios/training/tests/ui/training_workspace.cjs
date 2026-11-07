@@ -27,12 +27,12 @@ const path=require('node:path'),fs=require('node:fs'),assert=require('node:asser
     await page.getByRole('tab',{name:/^Deck · Needs attention$/}).click();
     await page.getByText('This deck has unresolved review issues. Review the affected slides below before marking it ready.',{exact:true}).waitFor();
     assert.equal(await page.locator('.desk-slide-card').count(),1,'One slide editor, not the whole deck');
-    assert.equal(await page.getByRole('button',{name:'Apply fix to this slide',exact:true}).count(),1);
+    assert.equal(await page.getByRole('button',{name:'Apply selected fixes',exact:true}).count(),1);
     assert.equal(await page.getByText('Major on what-it-does:',{exact:false}).isVisible(),false,'Raw identifiers stay in collapsed details');
     if(process.env.TRAINING_WORKSPACE_UI_RESULTS){fs.mkdirSync(process.env.TRAINING_WORKSPACE_UI_RESULTS,{recursive:true});await page.screenshot({path:path.join(process.env.TRAINING_WORKSPACE_UI_RESULTS,'training-slide-review-'+width+'.png'),fullPage:true});}
     await page.getByLabel('Slide to review',{exact:true}).selectOption('check-yourself');
     assert.equal(await page.locator('.desk-slide-card').count(),1);
-    assert.equal(await page.getByRole('button',{name:'Apply fix to this slide',exact:true}).count(),0);
+    assert.equal(await page.getByRole('button',{name:'Apply selected fixes',exact:true}).count(),0);
     const before=writes.length;
     await page.getByRole('tab',{name:/^Plan · Draft$/}).click();
     await page.getByRole('tab',{name:'Frame',exact:true}).click();

@@ -1999,7 +1999,7 @@ class DeckProposalDesk:
             raise ValueError('This deck has changed since it was opened. Read the new version before deciding.')
 
 
-def deck_proposals(engine, root, level, note=None):
+def deck_proposals(engine, root, level, note=None, noted=None):
     """The shared findings store, scoped to this training's deck."""
     from studio_core.drafting import findings
     store = TrainingStore(engine, root)
@@ -2007,7 +2007,7 @@ def deck_proposals(engine, root, level, note=None):
     return findings.Noted(store, desk, {'finish-review': 'review'}, note or (lambda *_: None),
                           owner='training', present=lambda draft, item:
                           (draft.get('drawn') or {}).get(item.get('part')) == item.get('drawn')
-                          and item.get('drawn') is not None)
+                          and item.get('drawn') is not None, noted=noted)
 
 
 def slide_words(outline: dict, slide: str, field: str, text: str) -> tuple[dict, str]:

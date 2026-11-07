@@ -2071,19 +2071,8 @@ function deckParts(found) {
       });
       add(words, add(make('label', 'field'), make('span', 'field-label', label), box), go);
     }
-    const proposals = found.proposals?.review;
-    for (const proposal of list(proposals?.items).filter((item) => item.part === slide.id && item.state === 'open' && item.present !== false)) {
-      const row = add(make('section', 'card-part'), make('p', 'sheet-part', 'Review suggestion'),
-        make('p', '', proposal.reason || proposal.says), make('p', '', proposal.after),
-        make('p', 'quiet', proposal.price));
-      if (ours) {
-        const decide = (action) => deskDecide('finding', { level: found.level, seen: found.seen,
-          job: proposals.job, ids: [proposal.id], action });
-        row.append(add(make('div', 'bar'), capsule('Apply fix to this slide', 'quiet', () => decide('apply')),
-          capsule('Dismiss suggestion', 'quiet', () => decide('skip'))));
-      }
-      changes.append(row);
-    }
+    const suggestions = slideReviewChoices(found, slide, ours);
+    if (suggestions) changes.append(suggestions);
     if (ours && found.local && slide.redraw !== false && slide.price) {
       const note = make('textarea', 'input'); note.rows = 2; note.maxLength = 4000;
       note.setAttribute('aria-label', 'How should slide ' + slide.number + ' change?');
@@ -2098,7 +2087,9 @@ function deckParts(found) {
           note: note.value, seen: found.seen }, go);
         if (answer) delete held.slideNotes[noteKey];
       });
-      add(changes, add(make('label', 'field'), make('span', 'field-label', 'How should this slide change?'), note),
+      const manual = suggestions ? add(make('details', 'card-part'), make('summary', '', 'Request a different change')) : changes;
+      if (suggestions) { manual.dataset.key = noteKey + ':manual-change'; changes.append(manual); }
+      add(manual, add(make('label', 'field'), make('span', 'field-label', 'How should this slide change?'), note),
         make('p', 'quiet', slide.price), go);
     }
     const count = issues.filter(item => item.part === slide.id).length;
@@ -2128,6 +2119,76 @@ function deckParts(found) {
   area.append(preview);
   if (deckActions.childNodes.length > 1) area.append(deckActions);
   return area;
+}
+
+// Review several fixes before starting one redraw. Selection is local UI state;
+// it survives polling and slide navigation, but never crosses a deck/review revision.
+function slideReviewChoices(found, slide, ours) {
+  const proposals = found.proposals?.review;
+  const all = list(proposals?.items).filter(item => item.part === slide.id && item.state === 'open');
+  const items = all.filter(item => item.present !== false), older = all.length - items.length;
+  if (!all.length) return null;
+  const box = add(make('section', 'stack'), make('p', 'sheet-part', 'Review suggestions'));
+  if (older) box.append(make('p', 'quiet', older + (older === 1 ? ' suggestion refers' : ' suggestions refer')
+    + ' to an earlier drawing. Check the updated slide before requesting more changes.'));
+  if (!items.length) return box;
+  box.append(make('p', '', 'Choose the fixes you want, then apply them together. Selecting a fix starts no work.'));
+  const held = deskHeld(view.path); held.reviewChoices ||= {};
+  const basis = proposals.job + ':' + found.seen;
+  let choices = held.reviewChoices[found.name];
+  if (!choices || choices.basis !== basis) choices = held.reviewChoices[found.name] = {basis, slides:{}};
+  const picked = choices.slides[slide.id] ||= new Set();
+  const allowed = new Set(items.map(item => item.id));
+  for (const id of picked) if (!allowed.has(id)) picked.delete(id);
+  const can = ours && found.local && slide.redraw !== false && found.state !== 'working';
+  const count = make('p', 'quiet'); count.setAttribute('role', 'status');
+  const inputs = [];
+  const selectAll = capsule('Select all fixes', 'quiet', () => {for (const item of items) picked.add(item.id); update();});
+  const clear = capsule('Clear selection', 'quiet', () => {picked.clear(); update();});
+  const apply = capsule('Apply selected fixes', found.state === 'needs' ? 'filled' : 'quiet', () => decide('apply', apply));
+  const dismiss = capsule('Dismiss selected', 'quiet', () => decide('skip', dismiss));
+  const update = () => {
+    count.textContent = picked.size + ' of ' + items.length + ' selected';
+    for (const [input, id] of inputs) {input.checked = picked.has(id); input.disabled = !ours || view.busy;}
+    selectAll.disabled = !ours || view.busy || picked.size === items.length;
+    clear.disabled = !ours || view.busy || !picked.size;
+    apply.disabled = !can || view.busy || !picked.size;
+    dismiss.disabled = !ours || view.busy || !picked.size;
+    if (!view.busy) apply.textContent = picked.size ? 'Apply ' + picked.size + (picked.size === 1 ? ' fix' : ' fixes') : 'Apply selected fixes';
+  };
+  async function decide(action, button) {
+    if (view.busy || !picked.size || (action === 'apply' && !can)) return;
+    const ids = items.filter(item => picked.has(item.id)).map(item => item.id);
+    button.textContent = action === 'apply' ? 'Queuing fixes…' : 'Dismissing…';
+    const promise = deskDecide('finding', {level: found.level, seen: found.seen, job: proposals.job, ids, action}, button);
+    update();
+    const answer = await promise;
+    if (!answer) return; // The normal error keeps the current selection for retry.
+    for (const id of ids) if (!list(answer.left).includes(id)) picked.delete(id);
+    if (action === 'apply') {
+      const total = answer.applied ?? ids.length;
+      toast(total ? total + (total === 1 ? ' fix queued' : ' fixes queued')
+        + ' together. The section redraw and deck check follow.' : 'No fixes were queued. Review the remaining suggestions.');
+    } else toast('Selected suggestions dismissed. No redraw started.');
+  }
+  if (ours) box.append(count, add(make('div', 'bar'), selectAll, clear));
+  items.forEach((item, index) => {
+    const label = 'Include suggestion ' + (index + 1);
+    const choice = trainingTick(label, picked.has(item.id), on => {
+      if (on) picked.add(item.id); else picked.delete(item.id); update();
+    }, found.name + ':' + slide.id + ':review:' + item.id);
+    inputs.push([choice.querySelector('input'), item.id]);
+    box.append(add(make('section', 'card-part'), ours ? choice : make('p', 'sheet-part', 'Suggestion ' + (index + 1)),
+      make('p', '', item.reason || item.says), make('p', 'desk-plain', item.after)));
+  });
+  if (ours) add(box, make('p', 'quiet', items[0].price || slide.price
+    || 'Selected fixes are sent together in one redraw, followed by a deck check.'),
+    !can ? make('p', 'quiet', !found.local ? 'Draw the deck here before applying fixes.'
+      : found.state === 'working' ? 'Wait for the current drawing to finish before applying fixes.'
+      : 'This fixed-layout slide cannot be redrawn here.') : null,
+    add(make('div', 'bar'), apply, dismiss));
+  update();
+  return box;
 }
 
 async function slideWordResult(found, slide, sent, answer, saved) {

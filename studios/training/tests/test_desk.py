@@ -7344,13 +7344,78 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
              'reason': 'The labels are small.', 'price': 'Redraws section 2; last time $0.12.'}]}}
         result = self.open_desk(self.on_desk(a_desk(found), **{
             'POST /api/drafts/finding': [a_desk(self.slide_card())]}),
-            [{'click': 'Review & changes (1)'}, {'snapshot': 'finding'}, {'click': 'Apply fix to this slide'}, {'snapshot': 'after'}])
+            [{'click': 'Review & changes (1)'}, {'snapshot': 'finding'},
+             {'tick': 'Include suggestion 1'}, {'click': 'Apply 1 fix'}, {'snapshot': 'after'}])
         self.assertIn('The labels are small.', result['snapshots']['finding']['text'])
-        self.assertIn('Dismiss suggestion', result['snapshots']['finding']['buttons'])
+        self.assertIn('Dismiss selected', result['snapshots']['finding']['buttons'])
         self.assertEqual(self.posts(result)[0], ('/api/drafts/finding', {
             'path': str(self.root), 'level': '101', 'seen': found['seen'],
             'job': 'proposal-set', 'ids': ['one'], 'action': 'apply'}))
-        self.assertNotIn('Apply fix to this slide', result['snapshots']['after']['buttons'])
+        self.assertNotIn('Apply selected fixes', result['snapshots']['after']['buttons'])
+
+    def review_card(self):
+        found = self.slide_card()
+        found['proposals'] = {'review': {'job': 'proposal-set', 'items': [
+            {'id': f'p{number}', 'part': 'check-yourself', 'state': 'open', 'present': True,
+             'after': f'Improve detail {number}.', 'reason': f'Detail {number} needs attention.',
+             'price': 'Redraws section 2; last time $0.12.'} for number in range(1, 6)]}}
+        return found
+
+    def test_five_review_choices_start_no_work_until_one_batch_is_applied(self):
+        found = self.review_card()
+        result = self.open_desk(self.on_desk(a_desk(found), **{
+            'POST /api/drafts/finding': [a_desk(self.slide_card(), applied=5, left=[])]}), [
+            {'click': 'Review & changes (5)'}, {'click': 'Select all fixes'}, {'snapshot': 'chosen'},
+            {'click': 'Preview'}, {'click': 'Review & changes (5)'}, {'polls': 1}, {'snapshot': 'kept'},
+            {'click': 'Apply 5 fixes'}, {'snapshot': 'queued'}], narrow=True)
+        for name in ('chosen', 'kept'):
+            self.assertIn('5 of 5 selected', result['snapshots'][name]['text'])
+            self.assertFalse(self.posts({'requests': result['requests'][:result['snapshots'][name]['asked']]}))
+        self.assertEqual(self.posts(result), [('/api/drafts/finding', {
+            'path': str(self.root), 'level': '101', 'seen': found['seen'],
+            'job': 'proposal-set', 'ids': ['p1', 'p2', 'p3', 'p4', 'p5'], 'action': 'apply'})])
+        self.assertIn('5 fixes queued together', result['snapshots']['queued']['text'])
+
+    def test_review_subset_survives_failed_request_and_can_be_dismissed(self):
+        found = self.review_card()
+        result = self.open_desk(self.on_desk(a_desk(found), **{
+            'POST /api/drafts/finding': [
+                {'status': 409, 'body': {'error': 'This section is busy. Try again when it finishes.'}},
+                a_desk(self.slide_card())]}), [
+            {'click': 'Review & changes (5)'}, {'tick': 'Include suggestion 2'},
+            {'tick': 'Include suggestion 4'}, {'click': 'Apply 2 fixes'}, {'snapshot': 'failed'},
+            {'click': 'Dismiss selected'}, {'snapshot': 'dismissed'}])
+        self.assertIn('2 of 5 selected', result['snapshots']['failed']['text'])
+        self.assertIn('This section is busy.', result['snapshots']['failed']['text'])
+        posts = self.posts(result)
+        self.assertEqual([body['ids'] for _, body in posts], [['p2', 'p4'], ['p2', 'p4']])
+        self.assertEqual([body['action'] for _, body in posts], ['apply', 'skip'])
+        self.assertIn('No redraw started.', result['snapshots']['dismissed']['text'])
+
+    def test_an_earlier_drawing_does_not_offer_its_fixes(self):
+        found = self.review_card()
+        for item in found['proposals']['review']['items']:
+            item['present'] = False
+        result = self.open_desk(self.on_desk(a_desk(found)), [
+            {'click': 'Review & changes'}, {'snapshot': 'stale'}])
+        self.assertIn('5 suggestions refer to an earlier drawing', result['snapshots']['stale']['text'])
+        self.assertNotIn('Apply selected fixes', result['snapshots']['stale']['buttons'])
+        self.assertFalse(self.posts(result))
+
+    def test_review_selection_clears_for_a_changed_drawing(self):
+        found = self.review_card()
+        changed = self.review_card()
+        changed['seen'] = 'new-drawing'
+        result = self.open_desk(self.on_desk(a_desk(found), **{
+            'GET /api/drafts': [a_desk(found), a_desk(found), a_desk(changed)]}), [
+            {'click': 'Review & changes (5)'}, {'click': 'Select all fixes'}, {'snapshot': 'chosen'},
+            {'click': 'Clear selection'}, {'snapshot': 'cleared'}, {'tick': 'Include suggestion 3'},
+            {'polls': 1}, {'snapshot': 'updated'}])
+        self.assertIn('5 of 5 selected', result['snapshots']['chosen']['text'])
+        for name in ('cleared', 'updated'):
+            self.assertIn('0 of 5 selected', result['snapshots'][name]['text'])
+            self.assertNotIn('Include suggestion 3', result['snapshots'][name]['ticked'])
+        self.assertFalse(self.posts(result))
 
     def test_bound_words_show_the_actual_question_and_wait_for_an_answer(self):
         found = self.slide_card()
