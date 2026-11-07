@@ -13,6 +13,28 @@ words for as comments (see [below](#send-desk-changes-to-the-doc)). Reading send
 Google edits, comments or sharing changes and starts no assistant job. See
 [the page workflow](runner.md#start-from-a-google-doc).
 
+### View-only Docs
+
+The page checks edit access before requesting a review snapshot. A **View-only
+Google Doc** or **Comment-only Google Doc** warning names the authenticated Google
+account. This is a document permission, not a reason to sign in again.
+
+Choose **Create copy in My Drive** to make a native review copy in that account's
+My Drive root. The original document and its sharing are unchanged. Google must
+allow copying; otherwise the warning asks for copying or edit access from the
+owner. Existing comments and suggestions are not requested for the copy. The
+entire Doc is copied, but only a selected tab is brought onto the desk.
+
+The new link is saved before its text is read. Check the copied text, then start
+the chosen pass. **Review changes to send → Send to Google Doc** subsequently
+sends suggestions to this copy. Creating it does not start an assistant job.
+After a timeout, **Check copy** looks for the same operation; retries and restarts
+do not create a second copy. If its existence cannot be confirmed, the operation
+stays pending instead of posting again. Copy receipts stay private on this
+computer, outside the shared workspace and the expiring preview cache.
+
+### Reading an editable Doc
+
 A Doc that already holds other people's pending suggestions reads as it is without them,
 as well as a Doc with none: its images (with their data, as Google's own export writes
 them), smart chips (their text or link), line breaks, footnotes and tables come in, and

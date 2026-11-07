@@ -236,7 +236,7 @@ function sDeskPolish(held){
   const again=()=>sDeskStartAgain(held);
   const googleAction={copyedit:'Read and polish',feedback:'Read and review',geo:'Read and review for AI search',reshape:'Read and reshape',leave:'Open Google Doc'}[held.first_pass];
   const linkAction=held.preview?'Start':'Read the page and start';
-  const go=sNode('button','button button-filled',held.source==='google'?googleAction:held.source==='link'?linkAction:'Start');go.type='submit';go.disabled=studio.busy||!access.actions.edit;
+  const go=sNode('button','button button-filled',held.source==='google'?(held.preview?'Start':googleAction):held.source==='link'?linkAction:'Start');go.type='submit';go.disabled=studio.busy||!access.actions.edit;
   const first=sCard('What should happen first',sChoice('When the desk opens',DESK_POLISH_FIRST,held,'first_pass',()=>again()),sNode('p','quiet field-hint',DESK_POLISH_SAYS[held.first_pass]));
   // Check spelling and grammar may also suggest more human-sounding wording, at a strength,
   // mixed in with the fixes. Ticking it shows the strength in place, so focus stays put.
@@ -356,13 +356,14 @@ function sDeskDraftIn(held){
     card.append(file,note);
   }else{
     card.append(sField('desk-google','Google Doc link or document ID',held,'url',{required:true,max:2000,hint:'Your chosen pass starts after the Doc is read locally. For a Doc with multiple tabs, paste the address of the tab you want. Only that tab is imported; the Doc is not changed.',changed:()=>{held.preview=null;}}));
-    if(held.preview){const paper=sNode('article','paper doc');paper.setAttribute('aria-label','Google Doc preview');paper.append(window.StudioMarkdown?window.StudioMarkdown.render(held.preview.content):sNode('p','',held.preview.content));const tab=held.preview.summary.selected_tab;card.append(sNode('p','',tab?'Only the tab “'+tab.title+'” is included. Other tabs are not imported. Check the text below, then start.':'Check the text below, then start.'));if(held.preview.summary.excluded_approval_blocks)card.append(sNode('p','quiet','Leading approval fields are left out of this editing copy. They stay in the Google Doc. Check that the blog below is complete.'));card.append(paper);}
+    if(held.preview){const paper=sNode('article','paper doc google-preview');paper.tabIndex=-1;paper.setAttribute('aria-label','Google Doc preview');paper.append(window.StudioMarkdown?window.StudioMarkdown.render(held.preview.content):sNode('p','',held.preview.content));const tab=held.preview.summary.selected_tab;card.append(sNode('p','',tab?'Only the tab “'+tab.title+'” is included. Other tabs are not imported. Check the text below, then start.':'Check the text below, then start.'));if(held.preview.summary.excluded_approval_blocks)card.append(sNode('p','quiet','Leading approval fields are left out of this editing copy. They stay in the Google Doc. Check that the blog below is complete.'));card.append(paper);}
   }
   card.append(sField('desk-title','Title (optional)',held,'title',{max:500,hint:'Blank uses the draft’s # heading or the Doc’s name.'}));
   return [card];
 }
 async function sDeskReadGoogle(held,{start=false}={}){
   const turn=studio.turn,found=await api('google-preview',{url:held.url.trim()});if(turn!==studio.turn)return;
+  if(found?.status==='view-only')return sDeskGoogleCopyOffer(held,found);
   if(found?.status==='already-linked'&&found.id){
     // The Doc is already a blog here: open it on the desk, or bring it there.
     if(!await sDeskKeep(held))throw Error(sBlogIntake().problem);
@@ -374,7 +375,36 @@ async function sDeskReadGoogle(held,{start=false}={}){
   }
   held.preview=sGooglePreview(found);if(!held.title.trim())held.title=found.title;
   if(start){const made=await sDeskGo(held);if(made&&studio.screen==='desk'&&studio.id===made.id){const summary=held.preview.summary,notes=[];if(summary.selected_tab)notes.push('Opened only the tab “'+summary.selected_tab.title+'”.');if(summary.excluded_approval_blocks)notes.push('Leading approval fields stay in the original Google Doc.');if(notes.length)sToast(notes.join(' '));}return made;}
-  sDeskStart();
+  await sDeskStart();const paper=$('studio-page').querySelector('.google-preview');if(paper&&typeof paper.focus==='function')paper.focus({preventScroll:false});
+}
+function sDeskGoogleCopyOffer(held,found){
+  const original=held.url,turn=studio.turn,problem=sNode('p','sheet-error');problem.setAttribute('role','alert');
+  const title=found.access==='comment-only'?'Comment-only Google Doc':'View-only Google Doc';
+  const explanation=found.access==='comment-only'?'You can comment on the original, but Blog Studio needs an editable copy for this review.':'You can read the original, but cannot send suggestions or comments to it.';
+  const create=found.can_copy?sButton(found.copy_pending?'Check copy':'Create copy in My Drive',async button=>{
+    await busy(button,found.copy_pending?'Checking copy…':'Creating copy…',async()=>{
+      let copied;
+      try{copied=await api('google-copy',{copy:found.copy,confirmed:true});}
+      catch(error){problem.textContent=error.message;found.copy_pending=true;return;}
+      if(studio.sheet!==owner||turn!==studio.turn||studio.deskStart!==held||held.url!==original)return;
+      // Keep the confirmed URL before reading it: a capture failure or restart
+      // must never send the author back through another copy operation.
+      held.url=copied.url;held.preview=null;sCloseSheet();
+      try{if(!await sDeskKeep(held))throw Error(sBlogIntake().problem);await sDeskReadGoogle(held);sToast('Review copy created in My Drive for '+copied.account+'. Check its text, then start.');}
+      catch(error){held.problem='Your review copy is in My Drive. Its link is kept below. '+error.message;sDeskStart();}
+    });
+    if(found.copy_pending)button.textContent='Check copy';
+  },'filled'):null;
+  if(create)create.disabled=!access.actions.edit;
+  sOpenSheet(title,sNode('p','',explanation),sNode('p','','Google account: '+found.account),
+    sNode('p','',found.can_copy?'Create a review copy in this account’s My Drive. Future Blog Studio suggestions go to the copy; the original stays unchanged.':'Google does not allow this account to copy the Doc. Ask its owner to allow copying or grant edit access.'),
+    found.selected_tab&&found.can_copy?sNode('p','quiet','The entire Doc is copied. Only your selected tab opens on the desk.'):null,
+    found.can_copy?sNode('p','quiet','Check the copied text before starting. Existing comments and suggestions stay in the original.'):null,
+    problem,sAdd(sNode('div','bar'),create,sButton('Cancel',sCloseSheet)));
+  const owner=studio.sheet;
+  // Reading temporarily disables the submit button, which can blur it before
+  // the sheet opens. Cancel still returns keyboard focus to that action.
+  owner.opener=$('studio-page').querySelector('[type=submit]')||owner.opener;
 }
 // A published post's preview: what was read, said in a line, then its text, read only.
 function sPublishedShape(found){

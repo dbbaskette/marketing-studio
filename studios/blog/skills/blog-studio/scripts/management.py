@@ -1962,6 +1962,10 @@ def _dispatch(root, route, data):
                     'This blog changed. Reload it before making its Google Doc.'
                 )
             return google_handoff.open_as_doc(root, data['id'], desk=True)
+        if route == 'google-copy':
+            import google_copy
+
+            return google_copy.copy(root, data)
         if route in ('google-preview', 'google-start'):
             import google_intake
 
@@ -2440,12 +2444,12 @@ def dispatch_managed(root, route, data):
     ):
         return _dispatch(root, route, data)
     if (
-        route == 'google-preview'
+        route in ('google-preview', 'google-copy')
         or route == 'tool-action'
         and data.get('action') == 'google-compare'
     ):
-        # A preview stages only the selected Doc on this computer; it does not
-        # publish unrelated pending team work or start a writing job.
+        # These operations stage a preview or explicitly copy a Doc in Google.
+        # Neither publishes unrelated pending Hub work or starts a writing job.
         return _dispatch(root, route, data)
     if route == 'published-preview':
         # A published post read by its link (the network read happens before the studio lock

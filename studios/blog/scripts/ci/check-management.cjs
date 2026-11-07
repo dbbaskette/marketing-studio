@@ -162,6 +162,7 @@ async function check(){
   await deskPublishKeeps();
   await deskGoogleDoc();
   await deskStartReopensALinkedDoc();
+  await deskViewOnlyGoogleCopy();
   await deskStartShowsTheSelectedGoogleTab();
   await deskGoogleStartIsOneActionAndRetrySafe();
   await deskStartReadsAGoogleDocAgainAfterAFailure();
@@ -5211,6 +5212,54 @@ async function deskStartReopensALinkedDoc(){
     assert.equal(t.f.run('studio.screen'),'desk','an already linked Doc reopens on the desk');assert.equal(t.f.run('studio.id'),'existing');
     assert.equal(t.requests.some(r=>r.url==='/api/desk-create'),false,'nothing is made again');
     assert.equal(t.requests.some(r=>['/api/google-start','/api/upload'].includes(r.url)),false,'nothing is imported again');
+  }
+}
+async function deskViewOnlyGoogleCopy(){
+  const original='https://docs.google.com/document/d/view-only/edit',copy='https://docs.google.com/document/d/review-copy/edit';
+  const offered={status:'view-only',access:'view-only',account:'author@example.invalid',can_copy:true,copy:'a'.repeat(64),copy_pending:false};
+  const preview={status:'preview',preview:'b'.repeat(32),expected:'v1',title:'Review copy',linked_document:copy,content:'Synthetic copied text.',summary:{structure:{paragraphs:1}}};
+  for(const mode of ['success','cancel','restricted','lost-reply','read-fails']){
+    let attempts=0;
+    const t=deskStartFixture((url,data)=>{
+      if(url==='/api/google-preview')return data.url===original?{...offered,can_copy:mode!=='restricted'}:mode==='read-fails'?{__http:400,error:'Synthetic capture failure'}:preview;
+      if(url==='/api/google-copy'){
+        attempts++;
+        if(mode==='lost-reply'&&attempts===1)return {__http:400,error:'Google has not confirmed the copy. Choose Check copy.'};
+        return {status:'copied',url:copy,account:offered.account};
+      }
+      if(url==='/api/google-start')return {id:'desk-blog'};
+      if(url==='/api/desk-create'||url.startsWith('/api/desk?'))return deskView({google:{url:copy}});
+      return null;
+    });
+    await t.f.run("sDeskBegin({have:'draft',source:'google'})");t.type('desk-google',original);await t.submit();
+    assert.ok(t.sheet().some(n=>n.textContent==='View-only Google Doc'));
+    assert.ok(t.sheet().some(n=>n.textContent==='Google account: author@example.invalid'));
+    assert.equal(attempts,0,'opening the warning creates nothing');
+    assert.equal(t.requests.some(r=>r.url==='/api/desk-create'),false);
+    if(mode==='cancel'||mode==='restricted'){
+      if(mode==='restricted')assert.equal(t.sheet().some(n=>n.textContent==='Create copy in My Drive'),false);
+      const resume=t.nodes().find(n=>n.type==='submit');resume.isConnected=true;
+      await t.click('Cancel');assert.ok(resume.focused,'Cancel returns focus to the intake action');
+      assert.equal(t.byId('desk-google').value,original);assert.equal(attempts,0);continue;
+    }
+    await t.click('Create copy in My Drive');
+    if(mode==='lost-reply'){
+      assert.ok(t.sheet().some(n=>/not confirmed/.test(n.textContent)));
+      await t.click('Check copy');
+    }
+    assert.equal(t.byId('desk-google').value,copy,'the confirmed link survives capture failure');
+    assert.equal(t.f.run('sBlogIntake().saved.url'),copy,'a restart keeps the copy link');
+    assert.equal(t.requests.some(r=>r.url==='/api/desk-create'),false,'copying never starts an assistant');
+    if(mode==='read-fails'){
+      assert.ok(t.nodes().some(n=>/review copy is in My Drive/.test(n.textContent)));continue;
+    }
+    assert.ok(t.nodes().some(n=>n.textContent===preview.content));
+    assert.ok(t.nodes().some(n=>n.className.includes('google-preview')&&n.focused),'the copied preview gets focus');
+    assert.ok(t.nodes().some(n=>n.tagName==='button'&&n.textContent==='Start'));
+    await t.submit();
+    assert.equal(t.requests.filter(r=>r.url==='/api/google-start').length,1);
+    assert.equal(t.requests.filter(r=>r.url==='/api/desk-create').length,1);
+    assert.deepEqual(t.requests.find(r=>r.url==='/api/google-copy').data,{copy:offered.copy,confirmed:true});
   }
 }
 async function deskStartShowsTheSelectedGoogleTab(){
