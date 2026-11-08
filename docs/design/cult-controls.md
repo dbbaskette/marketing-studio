@@ -9,7 +9,7 @@ Upstream: [nolly-studio/cult-ui](https://github.com/nolly-studio/cult-ui), pinne
 
 | Upstream component | Used in | Adaptation |
 | --- | --- | --- |
-| [Direction Aware Tabs](https://github.com/nolly-studio/cult-ui/blob/d71b1428b811c2779d46ea41b7ef8c9f9c9991c2/apps/www/registry/default/ui/direction-aware-tabs.tsx) | Training Studio slide tasks, Presentation Studio Slides/Outline, Blog Studio manuscript views | Shared moving selection pill; 400 ms transition. Training Studio content enters from the selected direction. Native controls and inputs stay mounted. |
+| [Direction Aware Tabs](https://github.com/nolly-studio/cult-ui/blob/d71b1428b811c2779d46ea41b7ef8c9f9c9991c2/apps/www/registry/default/ui/direction-aware-tabs.tsx) | Training Studio slide tasks, Presentation Studio Slides/Outline, Blog Studio manuscript views | Shared moving selection pill; 400 ms transition. Training Studio content enters from the selected direction and its inputs stay mounted. Other desks retain their existing save and repaint behavior. |
 | [Toolbar Expandable](https://github.com/nolly-studio/cult-ui/blob/d71b1428b811c2779d46ea41b7ef8c9f9c9991c2/apps/www/registry/default/ui/toolbar-expandable.tsx) | Training Studio workflow, Blog Studio phone tools, Infographic Studio brief/source/layout panels | Rounded shell, numbered stage rail and 250 ms native height transition. Uses native disclosure semantics and scrolling. |
 | [Minimal Card](https://github.com/nolly-studio/cult-ui/blob/d71b1428b811c2779d46ea41b7ef8c9f9c9991c2/apps/www/registry/default/ui/minimal-card.tsx) | Marketing Studio launcher | Layered card frame, rounded surfaces and hover/focus emphasis using existing studio colors. |
 
@@ -36,3 +36,8 @@ Use the affected studio UI module suites plus disposable phone/desktop browser j
 Check retained input, rapid selection, focus, no jobs from navigation, reduced motion,
 light/dark appearance and page overflow. Reuse the full Training Studio suite recorded in
 [the workflow plan](../superpowers/plans/2026-11-07-cult-ui-workflows.md) for unchanged runtime code.
+
+The existing Tart wrapper runs `scripts/ci/guest-cult-source-ui.sh` for all five
+surfaces. A focused rerun may set `CULT_UI_JOURNEYS` inside its disposable guest
+entry point to a comma-separated subset of `tabs,home,infographic,progress,slides`;
+retain the other journeys' passed evidence for unchanged source.

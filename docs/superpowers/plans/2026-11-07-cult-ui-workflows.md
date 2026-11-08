@@ -61,3 +61,14 @@ explicit work/delivery decisions; animate user interaction, not polling.
 [Source provenance and adaptations](../../design/cult-controls.md) record the pinned
 upstream, license and native replacements. Verify affected UI modules and the relevant
 cross-studio browser journeys; reuse full runtime evidence for unchanged pipelines.
+
+Implementation: [PR #436](https://github.com/dbbaskette/marketing-studio/pull/436).
+All five surfaces now use the pinned source adaptations. 196 affected module/UI
+checks passed. At `48c39cf7`, disposable macOS 27 / Python 3.13 / Node 22 browser
+journeys passed for the launcher, Blog Studio, Presentation Studio, and Training
+Studio. At `777ae942`, the focused Infographic Studio journey passed creation,
+source-backed story selection, rendering, all three expandable panels, keyboard,
+rapid toggles, focus return, reduced motion, phone/desktop, and light/dark checks.
+Navigation scheduled no assistant work. Earlier failed Infographic Studio attempts
+used an outdated broad journey and are not counted as passes; the focused current
+journey and explicit shell failure propagation now guard this profile.
