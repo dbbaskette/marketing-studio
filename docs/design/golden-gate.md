@@ -139,3 +139,7 @@ settings and Presentation Studio images illustrate their established surfaces.
 ![Training Studio compact reading desk on a phone](golden-gate-21-training-phone.png)
 ![Shared settings, models](unified-settings-models.jpg)
 ![Presentation Studio](golden-gate-presentation.jpg)
+
+The [Cult-inspired workflow implementation](../superpowers/plans/2026-11-07-cult-ui-workflows.md)
+records the Training Studio inspector, compact progress, guided steps and grouped
+delivery controls. These adapt interaction patterns within the shared vanilla UI kit.

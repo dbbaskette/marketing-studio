@@ -34,7 +34,7 @@ const DESK_WORDS = {
 };
 // The sheets the desk opens over itself: a level's downloads, its Google Docs, and one the
 // shared kit asks for.
-const DESK_SHEETS = ['desk-download', 'desk-copies', 'desk-kit'];
+const DESK_SHEETS = ['desk-delivery', 'desk-download', 'desk-copies', 'desk-kit'];
 // The files the runner reads as documents (runner/documents.py).
 const DESK_TYPES = ['.txt', '.md', '.html', '.htm', '.docx', '.pdf'];
 // The desk's routes, as the shared kit names them: `view` is one card with its parts (the
@@ -794,6 +794,13 @@ function deskStart() {
     return startReady(draft);
   };
   intakeStore().pages(form,{draft,steps,names:['Goal','Sources','Review'],validate,start:startTraining,
+    summaries:index => {
+      if (index === 0) return draft.title.trim() || 'Title and audience';
+      if (index === 1) return startPicks(draft).length + ' documents selected';
+      const outputs = draft.materials.length + (DECKS[draft.deck][0] ? 1 : 0);
+      return (draft.levels.length ? draft.levels.join(', ') : 'No levels') + ' · ' + outputs
+        + (outputs === 1 ? ' output' : ' outputs');
+    },
     close:closeSheet,discarded:() => {view.draft = null;}});
   return [add(make('div', 'sheet-heading'), sheetTitle('New training')), form];
 }
@@ -984,7 +991,15 @@ function showSettingsSection(index) {
   if (body) Array.from(body.children).forEach((node, at) => { node.hidden = at !== index; });
   const choices = byId('change-section-nav')?.querySelector('.segmented');
   if (choices) slide(choices, index);
+  const status = byId('change-section-status');
+  if (status) status.textContent = settingsSectionSummary(view.changing);
   if (body?.parentNode) body.parentNode.scrollTop = 0;
+}
+function settingsSectionSummary(changing) {
+  const index = changing.section || 0, draft = changing.draft;
+  return 'Section ' + (index + 1) + ' of 3 · ' + (index === 0
+    ? (draft.audience.trim() || 'Goal and audience') : index === 1
+      ? 'Levels ' + draft.levels.join(', ') : 'Sources and research questions');
 }
 function revealChangedSetting(id) {
   showSettingsSection(id === 'change-questions' ? 2 : id === 'change-scenario-options' ? 1 : 0);
@@ -1001,6 +1016,8 @@ function settingsFocus() {
 function settingsEdited() {
   const changing = view.changing;
   if (!changing) return;
+  const status = byId('change-section-status');
+  if (status) status.textContent = settingsSectionSummary(changing);
   const line = byId('change-research-line');
   if (line && changing.editor) {
     line.textContent = 'Research ' + researchSummary(changing.editor.choice(
@@ -1254,9 +1271,11 @@ function settingsSheet() {
     changing.section || 0, showSettingsSection, 'change-section');
   navigation.id = 'change-section-nav'; navigation.hidden = Boolean(preview);
   sections.hidden = Boolean(preview);
+  const sectionStatus = make('p','quiet field-hint',settingsSectionSummary(changing));
+  sectionStatus.id = 'change-section-status'; sectionStatus.hidden = Boolean(preview);
   add(form,
     make('p', 'quiet', 'Review and save your changes. Work stays paused until you press Continue.'),
-    navigation, add(make('div', 'intake-body'), sections, review), alertLine('change-problem'),
+    navigation, sectionStatus, add(make('div', 'intake-body'), sections, review), alertLine('change-problem'),
     add(make('div', 'bar create-foot'), go, back,
       capsule('Cancel', 'quiet', cancelSettings, 'cancel')));
   return [add(make('div', 'sheet-heading'), sheetTitle('Change settings'),
@@ -3372,11 +3391,9 @@ function paintDesk(fresh) {
     actions.push(mark);
   }
   // The toolbar's Download is the whole level's; each material's own is on its card.
-  if (!preparingPlan && !waitingPlan) actions.push(capsule(level ? 'Download level ' + level
-    : 'Download all', '', openSheet('desk-download', 'desk-download-all'), 'desk-download-all'));
+  if (!preparingPlan && !waitingPlan) actions.push(capsule('Export & share', '',
+    openSheet('desk-delivery', narrow() ? 'more' : 'desk-delivery'), 'desk-delivery'));
   if (ours && !conversation && !preparingPlan && !waitingPlan) {
-    actions.push(capsule('Google Doc', '', openSheet('desk-copies', 'desk-copies'),
-      'desk-copies'));
     actions.push(capsule('Finishing', '', () => openFinishing(), 'desk-finishing'));
   }
   // Change settings, while the run is not working (#296).
@@ -3691,6 +3708,17 @@ function deskSheet(kind) {
   const shown = list(found.cards).filter((one) => (one.level || '') === level);
   const where = level ? 'level ' + level : 'this training';
   const close = capsule('Close', 'quiet', closeSheet, 'cancel');
+  if (kind === 'desk-delivery') {
+    const download = add(make('div','delivery-option'),
+      capsule(level ? 'Download level ' + level : 'Download all', 'quiet',
+        openSheet('desk-download',narrow() ? 'more' : 'desk-delivery'), 'desk-download-all'),
+      make('p','quiet','Get saved drafts or ready materials as files.'));
+    const docs = deskOurs() && found.execution !== 'conversation' ? add(make('div','delivery-option'),
+      capsule('Google Doc','quiet',openSheet('desk-copies',narrow() ? 'more' : 'desk-delivery'),'desk-copies'),
+      make('p','quiet','Create or update a Google Doc after reviewing the changes.')) : null;
+    return [sheetTitle('Export & share'), make('p','quiet','For ' + where + '.'),
+      add(make('div','delivery-options'), download, docs), add(make('div','bar'),close)];
+  }
   if (kind === 'desk-download') {
     const ready = shown.filter((one) => list(one.actions).includes('download'));
     const items = make('ul', 'rows');

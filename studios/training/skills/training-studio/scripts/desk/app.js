@@ -1044,6 +1044,7 @@ function toast(text, action) {
   node.addEventListener('mouseleave', () => { over = false; });
   byId('toasts').append(node);
   const wait = () => window.setTimeout(function leaving() {
+    if (!node.parentNode || node.classList.contains('toast-leaving')) return;
     if (over || node.contains(document.activeElement)) wait();
     else leave();
   }, action ? 10000 : 4200);

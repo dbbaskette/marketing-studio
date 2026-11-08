@@ -83,6 +83,10 @@ optional tools. Missing capabilities are explained rather than silently substitu
 
 ## Your first training
 
+New training has clickable **Goal**, **Sources**, and **Review** steps with short
+summaries. Forward navigation checks required fields; going back retains input.
+Only **Start** begins work.
+
 1. **Open Training Studio.** Use `marketing-studio open training`, or its independent
    launcher:
 
@@ -144,6 +148,12 @@ assistant work and grey boxes are Training Studio's own steps.
 
 ## Refine the training on the desk
 
+Progress starts with the current stage and the actual number of drafts available.
+**Open draft** takes you straight to saved work; **Explore workflow** expands the
+stage map without starting a job. Availability does not mean creator approval.
+Notifications can be dismissed and stay while hovered or keyboard-focused. Queued
+slide fixes offer **View progress**; they are not reported as completed redraws.
+
 Edit a part, add a note or select a passage for a focused change. History retains
 previous versions. A result cannot silently replace text you changed while it ran.
 Repeated Practice and Yoodli materials share a counted category tab, with an item
@@ -203,6 +213,9 @@ Saved trainings begun before the desk keep their older flow, which is not drawn 
 
 ## Download, reuse and share
 
+**Export & share** groups downloads and Google Doc
+commands for the current level; each delivery still requires its own explicit action.
+
 Download one material or a ZIP of a level/all levels as currently saved. A download
 does not mark anything ready. Ready guides and briefs can be kept as Markdown in
 the shared local Document Library; a failure offers a local retry. Training deck
@@ -248,9 +261,3 @@ idle studios before an update. Never discard a workspace to fix a tool problem.
 
 [Runner and team workflow](docs/runner.md) · [Development](docs/development.md) ·
 [Acceptance and limits](docs/acceptance.md) · [MIT licence](LICENSE)
-
-Progress starts with the current stage and the actual number of drafts available.
-**Open draft** takes you straight to saved work; **Explore workflow** expands the
-stage map without starting a job. Availability does not mean creator approval.
-Notifications can be dismissed and stay while hovered or keyboard-focused. Queued
-slide fixes offer **View progress**; they are not reported as completed redraws.
