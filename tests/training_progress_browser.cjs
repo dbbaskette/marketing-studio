@@ -19,6 +19,7 @@ const assert=require('node:assert/strict'), path=require('node:path'), fs=requir
   await page.getByText(/Up next: the level 101 brief/).waitFor();
   const map=page.getByRole('region',{name:'Training workflow',exact:true});
   await map.waitFor();
+  await page.getByText('Explore workflow',{exact:true}).click();
   const mapMaterials=map.locator('#desk-flow-materials');
   assert.equal(await mapMaterials.getAttribute('data-state'),'working');
   assert.equal(await map.locator('#desk-flow-research').getAttribute('data-state'),'complete');

@@ -7765,6 +7765,22 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         self.assertEqual([body.get('action') for _, body in self.posts(result)[1:]],
                          ['add', 'done'])
 
+    def test_compact_progress_opens_a_draft_without_starting_work(self):
+        guide = a_card('document@101')
+        found = a_desk(guide, levels=('101',))
+        found['body']['progress']['map'] = {'current': 'materials', 'stages': [
+            {'id': 'materials', 'label': 'Materials', 'state': 'working', 'words': 'Working',
+             'detail': 'Writing the remaining materials.', 'available': 1, 'total': 2,
+             'materials': ['document@101']}]}
+        result = self.open_desk(self.on_desk(found), [
+            {'snapshot': 'compact'}, {'click': 'Open draft: the level 101 learner guide'},
+            {'click': 'Explore workflow'}, {'snapshot': 'expanded'}])
+        compact = result['snapshots']['compact']
+        self.assertIn('Materials · Working', compact['text'])
+        self.assertIn('1 of 2 drafts available.', compact['text'])
+        self.assertIn('1/2 drafts', result['snapshots']['expanded']['text'])
+        self.assertFalse(self.posts(result), 'Draft and map navigation start no jobs')
+
     def test_the_desk_opens_with_progress_and_cards(self):
         result = self.open_desk(self.on_desk(a_desk()), [
             {'snapshot': 'desk'}, {'click': '201'}, {'snapshot': 'other'}])

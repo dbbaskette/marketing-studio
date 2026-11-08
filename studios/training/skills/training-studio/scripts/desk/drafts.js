@@ -1673,6 +1673,7 @@ function deskCard(found) {
     ? ' card-needs' : ''));
   const heading = node.querySelector('.card-title');
   heading.id = headingId(found.name);
+  heading.dataset.key = heading.id;
   heading.tabIndex = -1;
   node.setAttribute('aria-labelledby', heading.id);
   const actions = list(found.actions);
@@ -2178,7 +2179,11 @@ function slideReviewChoices(found, slide, ours) {
     if (action === 'apply') {
       const total = answer.applied ?? ids.length;
       toast(total ? total + (total === 1 ? ' fix queued' : ' fixes queued')
-        + ' together. The section redraw and deck check follow.' : 'No fixes were queued. Review the remaining suggestions.');
+        + ' together. The section redraw and deck check follow.' : 'No fixes were queued. Review the remaining suggestions.',
+        total ? {label:'View progress', key:'desk-queued-progress', run:() => {
+          const target = byId('desk-flow-summary');
+          if (target) { target.focus(); target.scrollIntoView({block:'start'}); }
+        }} : null);
     } else toast('Selected suggestions dismissed. No redraw started.');
   }
   if (ours) box.append(count, add(make('div', 'bar'), selectAll, clear));
@@ -2741,8 +2746,26 @@ function progressMap(found, held, canOpenMaterials, hasPlanReview) {
         ? stage.ready + '/' + stage.total + ' ready' : stage.available + '/' + stage.total + ' drafts') : null);
     route.append(add(make('li'), button));
   }
-  box.append(route);
+  const current = stages.find(stage => stage.id === flow.current);
+  const materials = stages.find(stage => stage.id === 'materials');
+  const summary = make('div', 'desk-flow-summary'); summary.id = 'desk-flow-summary'; summary.dataset.key = summary.id; summary.tabIndex = -1;
+  const status = make('div', 'desk-flow-status');
+  add(status, make('p', 'row-title', current ? current.label + ' · ' + current.words : 'Training workflow'),
+    materials?.total ? make('p', 'quiet', materials.available + ' of ' + materials.total + ' drafts available.') : null,
+    current?.warning ? make('p', 'desk-flow-warning', current.warning) : null);
+  if (materials?.total) {
+    const meter = make('progress', 'desk-draft-meter');
+    meter.max = materials.total; meter.value = materials.available;
+    meter.setAttribute('aria-label', 'Drafts available'); status.append(meter);
+  }
+  const available = canOpenMaterials && list(found.cards).find(card => card.seen && card.state !== 'left-out');
+  const open = available ? capsule('Open draft', 'quiet', () => openMaterial(available), 'desk-open-draft') : null;
+  if (open) open.setAttribute('aria-label', 'Open draft: ' + available.label);
+  add(summary, status, open); box.append(summary);
   if (flow.note) box.append(make('p', 'quiet', flow.note));
+  const expanded = make('details', 'desk-flow-expanded'); expanded.dataset.key = 'desk-flow-expanded';
+  const toggle = make('summary', '', 'Explore workflow'); toggle.dataset.key = 'desk-flow-toggle';
+  expanded.append(toggle, route);
   if (selected) {
     details.setAttribute('aria-labelledby', 'desk-flow-' + selected.id);
     add(details, make('p', '', selected.detail), selected.warning ? make('p', 'desk-flow-warning', selected.warning) : null,
@@ -2781,7 +2804,7 @@ function progressMap(found, held, canOpenMaterials, hasPlanReview) {
       if (tab) { tab.focus({preventScroll:true}); revealTabs(tab); }
     }, 'desk-flow-research'));
   }
-  box.append(details);
+  expanded.append(details); box.append(expanded);
   return box;
 }
 

@@ -20,6 +20,7 @@ async function fixture(args=[]){
     if(width===1280)await page.addInitScript(root=>history.replaceState({screen:'run',path:root},''),test.path);
     await page.goto(width===1280?test.url:test.url+'&resume='+encodeURIComponent(path.basename(test.path)));await page.getByRole('heading',{name:'Review the training outline',exact:true}).waitFor();
     const outlineStage=page.locator('#desk-flow-outline');
+  await page.getByText('Explore workflow',{exact:true}).click();
     await outlineStage.waitFor();assert.equal(await outlineStage.getAttribute('data-state'),'needs-you');
     assert.equal(await page.locator('#desk-flow-research').getAttribute('data-state'),'waiting');
     await outlineStage.focus();await page.keyboard.press('Enter');

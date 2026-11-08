@@ -248,3 +248,9 @@ idle studios before an update. Never discard a workspace to fix a tool problem.
 
 [Runner and team workflow](docs/runner.md) · [Development](docs/development.md) ·
 [Acceptance and limits](docs/acceptance.md) · [MIT licence](LICENSE)
+
+Progress starts with the current stage and the actual number of drafts available.
+**Open draft** takes you straight to saved work; **Explore workflow** expands the
+stage map without starting a job. Availability does not mean creator approval.
+Notifications can be dismissed and stay while hovered or keyboard-focused. Queued
+slide fixes offer **View progress**; they are not reported as completed redraws.
