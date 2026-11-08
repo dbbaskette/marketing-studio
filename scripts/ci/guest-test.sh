@@ -188,9 +188,11 @@ elif [[ "${1:-full}" == training-flow || "${1:-full}" == training-cult-ui || "${
     env HOME="$work/ui-browser-home" NPM_CONFIG_USERCONFIG="$work/ui-npm-user.conf" NPM_CONFIG_GLOBALCONFIG="$work/ui-npm-global.conf" \
       npm ci --prefix "$work/ui-browser" --ignore-scripts --no-audit --no-fund > "$results_dir/ui-browser-tools.log" 2>&1
     export NODE_PATH="$work/ui-browser/node_modules" PYTHON="$python"
-    STUDIO_AUDIT_PRODUCT=training node tests/studio_intake_browser.cjs > "$results_dir/intake-browser.log" 2>&1
-    node tests/training_progress_browser.cjs > "$results_dir/progress-browser.log" 2>&1
-    node tests/rendered_slide_browser.cjs > "$results_dir/slides-browser.log" 2>&1
+    ui_failed=0
+    STUDIO_AUDIT_PRODUCT=training node tests/studio_intake_browser.cjs > "$results_dir/intake-browser.log" 2>&1 || ui_failed=1
+    node tests/training_progress_browser.cjs > "$results_dir/progress-browser.log" 2>&1 || ui_failed=1
+    node tests/rendered_slide_browser.cjs > "$results_dir/slides-browser.log" 2>&1 || ui_failed=1
+    [[ "$ui_failed" == 0 ]]
   fi
 elif [[ "${1:-full}" == training-creator-review-finish ]]; then
   # Reuse the completed full shared run; verify its updated handoff expectation

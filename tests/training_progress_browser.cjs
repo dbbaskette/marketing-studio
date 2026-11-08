@@ -73,7 +73,7 @@ const assert=require('node:assert/strict'), path=require('node:path'), fs=requir
    const band=await page.locator('.desk-progress').boundingBox();
    if(width===390)assert(band.height<=300,'Compact phone progress: '+band.height);
    assert.equal(await page.locator('.desk-progress').evaluate(n=>getComputedStyle(n).backdropFilter),'none');
-   assert((await researchToggle.boundingBox()).height>=44,'Research disclosure touch target');
+   await page.waitForFunction(()=>document.querySelector('[data-key="research-choices-toggle"]')?.getBoundingClientRect().height>=44); // Resolve after breakpoint repaint.
    if(process.env.TRAINING_PROGRESS_RESULTS){fs.mkdirSync(process.env.TRAINING_PROGRESS_RESULTS,{recursive:true});await page.evaluate(()=>window.scrollTo(0,0));await page.screenshot({path:path.join(process.env.TRAINING_PROGRESS_RESULTS,`queue-${width}-${colorScheme}.png`)});}
   }
   await page.emulateMedia({forcedColors:'active'});
