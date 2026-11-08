@@ -136,8 +136,10 @@ const Drafting = (() => {
       return !this.saved||this.discard();
     }
     // `validate` only marks local fields; only `start` can create a project or launch work.
-    pages(form, {draft, steps, names, validate, start, close, discarded, final = 'Start'}) {
+    pages(form, {draft, steps, names, validate, start, close, discarded, final = 'Start', summaries = null}) {
       const progress = make('ol','intake-progress'); progress.setAttribute('aria-label','Creation progress');
+      if (summaries) progress.classList.add('intake-guided');
+      const complete = new Set();
       const body = add(make('div','intake-body'),...steps);
       const status = make('p','quiet field-hint'); status.dataset.intakeStatus = 'true'; status.setAttribute('role','status');
       const back = make('button','button button-quiet','Back'); back.type = 'button'; back.dataset.key = 'intake-back';
@@ -150,7 +152,27 @@ const Drafting = (() => {
       const show = (index, focus = true) => {
         draft.step = index;
         steps.forEach((node,i) => {node.hidden = i !== index; node.dataset.intakeStep = String(i);});
-        progress.replaceChildren(...names.map((name,i) => {const n = make('li',i === index ? 'is-current' : '',(i + 1) + '. ' + name); if(i === index)n.setAttribute('aria-current','step'); return n;}));
+        progress.replaceChildren(...names.map((name,i) => {
+          const n = make('li',i === index ? 'is-current' : complete.has(i) ? 'is-complete' : '');
+          const label = (i + 1) + '. ' + name;
+          if (i === index) n.setAttribute('aria-current','step');
+          if (!summaries) { n.textContent = label; return n; }
+          const jump = make('button','intake-step',label); jump.type = 'button';
+          jump.dataset.key = 'intake-step-' + i;
+          jump.setAttribute('aria-label','Go to ' + name);
+          if (i === index) jump.setAttribute('aria-current','step');
+          const mark = make('span','intake-step-mark',complete.has(i) ? '✓' : '');
+          mark.setAttribute('aria-hidden','true'); jump.prepend(mark);
+          const detail = make('span','intake-step-summary',summaries(i)); jump.append(detail);
+          jump.addEventListener('click',() => {
+            if (i > current()) for (let at=0;at<i;at++) {
+              if (!validate(at)) { show(at); validate(at); return; }
+              complete.add(at);
+            }
+            show(i);
+          });
+          n.append(jump); return n;
+        }));
         back.hidden = index === 0; go.textContent = index === steps.length - 1 ? final : 'Next';
         body.scrollTop = 0;
         if (focus) {const heading = steps[index].querySelector('h3'); if(heading){heading.tabIndex=-1;heading.focus();}}
@@ -161,6 +183,7 @@ const Drafting = (() => {
         event.preventDefault();
         const index = current();
         if (!validate(index)) return;
+        complete.add(index);
         if (index < steps.length - 1) {show(index + 1); return;}
         for (let i=0;i<steps.length;i++) if(!validate(i,true)){show(i);validate(i,true);return;}
         if(!await this.keep(draft))return;
@@ -172,6 +195,14 @@ const Drafting = (() => {
         if(await this.discard()){discarded();close();}
       });
       for(const name of ['input','change']) form.addEventListener(name,() => {
+        if (summaries) {
+          for (const index of complete) if (index >= current()) complete.delete(index);
+          for (const [index,node] of Array.from(progress.children).entries()) {
+            node.classList.toggle('is-complete',complete.has(index) && index !== current());
+            node.querySelector('.intake-step-summary').textContent = summaries(index);
+            node.querySelector('.intake-step-mark').textContent = complete.has(index) ? '✓' : '';
+          }
+        }
         if(!confirming && !draft.starting)this.queue(draft);
       });
       form.append(progress,body,status,confirmation,add(make('div','bar create-foot'),back,go,keep,discard));

@@ -124,3 +124,6 @@ Sources checked 2026-10-20:
 - [Custom goals](https://support.yoodli.ai/en/articles/11556965-creating-custom-goals)
 
 | Compact progress → draft or expanded workflow | Navigation only; existing saved drafts and stop/approval controls remain available | `TrainingDeskScreenTests.test_compact_progress_opens_a_draft_without_starting_work` |
+
+| Creation step → another step | Validate required preceding fields; keep mounted inputs; only Start begins work | `RunnerScreenTests.test_guided_steps_validate_before_jump_and_retain_inputs` |
+| Desk → Export & share → delivery option | Opening options sends nothing; retain existing download/Doc confirmations and guards | `TrainingDeskScreenTests` delivery cases; disposable browser walkthrough |

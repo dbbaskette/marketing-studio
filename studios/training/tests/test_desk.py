@@ -4450,6 +4450,19 @@ class RunnerScreenTests(ScriptedPage, PageCase):
                       result['snapshots']['home']['text'])
         self.assertIn('Learner guide', result['snapshots']['form']['intakeTicked'])
 
+    def test_guided_steps_validate_before_jump_and_retain_inputs(self):
+        result = self.run_page(self.answers(), [
+            {'click': 'New training'}, {'click': 'Go to Review'}, {'snapshot': 'missing'},
+            {'fill': 'A short title', 'value': 'Short synthetic title'},
+            {'fill': 'What should it teach?', 'value': 'Explain safe rolling restarts.'},
+            {'fill': 'Who is it for?', 'value': 'New engineers'},
+            {'click': 'Go to Review'}, {'snapshot': 'review'},
+            {'click': 'Go to Goal'}, {'snapshot': 'back'}])
+        self.assertEqual(result['snapshots']['missing']['focus'], 'new-title')
+        self.assertIn('Start', result['snapshots']['review']['filled'])
+        self.assertEqual(result['snapshots']['back']['fields']['A short title'], 'Short synthetic title')
+        self.assertFalse(self.posts(result), 'Step navigation starts no training')
+
     def test_a_new_training_is_one_sheet_and_opens_on_its_desk(self):
         self.started('--levels', '101,301')
         sentence = 'Researching.'
@@ -7798,7 +7811,7 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         self.assertIn('Research & sources', shot['buttons'])
         self.assertEqual(shot['filled'], ['Mark this level ready'])
         self.assertEqual([control['name'] for control in shot['toolbar']],
-                         ['Mark this level ready', 'Download level 101', 'Google Doc', 'Finishing'])
+                         ['Mark this level ready', 'Export & share', 'Finishing'])
         self.assertIn('Back', shot['buttons'])
         self.assertEqual(shot['heading'], 'Rolling restarts')
         for name in ('blueprint@101', 'deck@201'):
@@ -8045,7 +8058,7 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         guide_view['desk'] = desk['body']
         result = self.open_desk(self.on_desk(desk, **{
             'GET /api/drafts/card': [ok(guide_view)]}), [
-            {'click': 'Download level 101'}, {'snapshot': 'sheet'}])
+            {'click': 'Export & share'}, {'click': 'Download level 101'}, {'snapshot': 'sheet'}])
         sheet = result['snapshots']['sheet']['sheet']
         self.assertIn('Download level 101', sheet)
         self.assertIn('exactly as it is saved now', sheet)
@@ -8113,7 +8126,7 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
             'GET /api/drafts/doc-preview': [ok(doc)],
             'POST /api/drafts/doc': [ok(after)]}), [
             # On a phone, Google Doc is behind More, beside the one filled action.
-            {'click': 'More'}, {'click': 'Google Doc'}, {'snapshot': 'sheet'},
+            {'click': 'More'}, {'click': 'Export & share'}, {'click': 'Google Doc'}, {'snapshot': 'sheet'},
             {'click': 'Make a Google Doc of the level 101 learner guide'},
             {'snapshot': 'confirm'}, {'click': 'Make the Doc'}, {'snapshot': 'done'}],
             narrow=True)
@@ -8147,7 +8160,7 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         guide_view['desk'] = desk['body']
         result = self.open_desk(self.on_desk(desk, **{
             'GET /api/drafts/card': [ok(guide_view)]}), [
-            {'click': 'Google Doc'}, {'snapshot': 'sheet'}])
+            {'click': 'Export & share'}, {'click': 'Google Doc'}, {'snapshot': 'sheet'}])
         shot = result['snapshots']['sheet']
         self.assertIn(problem, shot['sheet'])
         self.assertNotIn('Make a Google Doc of the level 101 learner guide', shot['buttons'])
@@ -8162,7 +8175,7 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
             'GET /api/drafts/card': [ok(guide_view)],
             'GET /api/drafts/doc-preview': [ok(doc)],
             'POST /api/drafts/doc': [{'status': 409, 'body': {'error': 'Not this time.'}}]}), [
-            {'click': 'Google Doc'},
+            {'click': 'Export & share'}, {'click': 'Google Doc'},
             {'click': 'Make a Google Doc of the level 101 learner guide'},
             {'snapshot': 'confirm'}, {'click': 'Make the Doc anyway'}, {'snapshot': 'refused'}])
         confirm = result['snapshots']['confirm']['sheet']
@@ -8182,7 +8195,7 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
             'GET /api/drafts/card': [ok(guide_view)],
             'GET /api/drafts/doc-preview': [ok(doc), ok({**doc, 'uncertain': True})],
             'POST /api/drafts/doc': [{'status': 409, 'body': {'error': unsure}}]}), [
-            {'click': 'Google Doc'},
+            {'click': 'Export & share'}, {'click': 'Google Doc'},
             {'click': 'Make a Google Doc of the level 101 learner guide'},
             {'click': 'Make the Doc'}, {'snapshot': 'after'}])
         after = result['snapshots']['after']
@@ -8207,10 +8220,10 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
             'GET /api/drafts/doc-preview': [ok(doc)],
             'POST /api/copies': [ok({'said': both}), ok({'said': 'Brought in.'})],
             'POST /api/drafts/doc': [ok({**desk['body'], 'doc': receipt})]}), [
-            {'click': 'Google Doc'}, {'snapshot': 'sheet'},
+            {'click': 'Export & share'}, {'click': 'Google Doc'}, {'snapshot': 'sheet'},
             {'click': 'Bring the Doc’s changes in of the level 101 learner guide'},
             {'snapshot': 'both'}, {'click': 'Use the Google Doc’s version'},
-            {'click': 'Close'}, {'click': 'Google Doc'},
+            {'click': 'Close'}, {'click': 'Export & share'}, {'click': 'Google Doc'},
             {'click': 'Make a new Google Doc of the level 101 learner guide'},
             {'snapshot': 'fresh'}, {'click': 'Make a new Doc'}])
         sheet = result['snapshots']['sheet']['sheet']
@@ -8585,11 +8598,11 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         self.assertEqual([(one['name'], one['filled']) for one in shot['toolbar']],
                          [('Mark level ready: 101', True), ('More', False)])
         self.assertEqual(phone['snapshots']['more']['toolbarButtons'],
-                         ['Mark level ready: 101', 'Download level 101', 'Google Doc',
+                         ['Mark level ready: 101', 'Export & share',
                           'Finishing'])
         # Elsewhere the toolbar is as it was.
         self.assertEqual([one['name'] for one in wide['snapshots']['wide']['toolbar']],
-                         ['Mark this level ready', 'Download level 101', 'Google Doc',
+                         ['Mark this level ready', 'Export & share',
                           'Finishing'])
         self.assertEqual(self.posts(phone) + self.posts(wide), [])
 
@@ -8674,7 +8687,7 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
                                 'Edit Plan', 'Edit Guide', 'Add a source', 'Return to draft'):
                 self.assertNotIn(runner_only, shot['buttons'])
             self.assertIn('Mark ready', shot['buttons'])
-            self.assertIn('Download level 101', shot['buttons'])
+            self.assertIn('Export & share', shot['buttons'])
             self.assertNotIn('Its work so far is lost', shot['text'])
         self.assertIn('Editing in conversation', result['snapshots']['plan']['parts'])
         self.assertEqual(self.posts(result), [])
@@ -8998,7 +9011,7 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
             self.assertNotIn(absent, shot['buttons'])
         self.assertEqual([label for label in shot['fields'] if 'note' in label.lower()], [])
         self.assertIn('Take it over', shot['buttons'])
-        self.assertIn('Download level 101', shot['buttons'])
+        self.assertIn('Export & share', shot['buttons'])
 
     def test_the_desk_on_a_phone(self):
         result = self.open_desk(self.on_desk(a_desk()), [

@@ -40,7 +40,7 @@ work as complete. Do not hide required validation or bypass existing revision gu
 
 ## Completion
 
-- #429: implemented; 146 affected UI/layout cases and 14 shared style checks pass.
+- #429: merged in [PR #432](https://github.com/dbbaskette/marketing-studio/pull/432); 146 affected UI/layout cases and 14 shared style checks pass.
   Desktop/phone walkthrough retains pending text and review choices without overflow.
-- #430: implemented; compact draft access, expandable workflow and dismissible action feedback.
-- #431: planned.
+- #430: merged in [PR #433](https://github.com/dbbaskette/marketing-studio/pull/433); compact draft access, expandable workflow and dismissible action feedback.
+- #431: implemented; guided creation steps, concise settings context and grouped export controls. Integrated verification pending.

@@ -175,8 +175,21 @@ elif [[ "${1:-full}" == training-first-output || "${1:-full}" == training-first-
     (cd studios/training && bash scripts/ci/check.sh "$python") > "$results_dir/training-tests.log" 2>&1
   fi
   (cd studios/presentation && "$python" scripts/ci/run_tests.py test_parallel_research) > "$results_dir/presentation-tests.log" 2>&1
-elif [[ "${1:-full}" == training-flow ]]; then
+elif [[ "${1:-full}" == training-flow || "${1:-full}" == training-cult-ui ]]; then
   (cd studios/training && bash scripts/ci/check.sh "$python") > "$results_dir/training-tests.log" 2>&1
+  if [[ "${1:-full}" == training-cult-ui ]]; then
+    PYTHONPATH=core:tests "$python" -m unittest test_intake_page test_ui_consistency -v > "$results_dir/shared-ui-tests.log" 2>&1
+    export INFOGRAPHIC_STUDIO_TEST_RENDERER="$("$python" scripts/ci/infographic-renderer.py --output "$work/ui-graphics" --cache "$work/ui-graphics-cache")"
+    mkdir -p "$work/ui-browser"
+    cp studios/infographic/tests/ui/package*.json "$work/ui-browser/"
+    touch "$work/ui-npm-user.conf" "$work/ui-npm-global.conf"
+    env HOME="$work/ui-browser-home" NPM_CONFIG_USERCONFIG="$work/ui-npm-user.conf" NPM_CONFIG_GLOBALCONFIG="$work/ui-npm-global.conf" \
+      npm ci --prefix "$work/ui-browser" --ignore-scripts --no-audit --no-fund > "$results_dir/ui-browser-tools.log" 2>&1
+    export NODE_PATH="$work/ui-browser/node_modules" PYTHON="$python"
+    STUDIO_AUDIT_PRODUCT=training node tests/studio_intake_browser.cjs > "$results_dir/intake-browser.log" 2>&1
+    node tests/training_progress_browser.cjs > "$results_dir/progress-browser.log" 2>&1
+    node tests/rendered_slide_browser.cjs > "$results_dir/slides-browser.log" 2>&1
+  fi
 elif [[ "${1:-full}" == training-creator-review-finish ]]; then
   # Reuse the completed full shared run; verify its updated handoff expectation
   # and the subsequent recovery cases, then run the full native suite.

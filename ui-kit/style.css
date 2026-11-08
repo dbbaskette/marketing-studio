@@ -4003,3 +4003,13 @@ body[data-pilot="liquid"] .dialog .button:not(.button-round){border-radius:10px}
 .settings-nav .button[aria-current="true"] { background: var(--selection); color: var(--link); border-color: var(--focus); }
 
 .owners > summary { min-height: 44px; padding-block: .6rem; cursor: pointer; }
+
+/* Guided creation stays compact while every input remains mounted. */
+.intake-guided > li { padding:0; min-width:0; }
+.intake-step { display:block; text-align:left; width:100%; min-height:3.4rem; border:0; border-radius:.5rem .5rem 0 0; padding:.5rem; background:transparent; color:inherit; font:inherit; cursor:pointer; }
+.intake-guided > .is-current .intake-step { background:var(--studio-wash); color:var(--accent); }
+.intake-step-summary { display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:.78rem; font-weight:400; color:var(--quiet); margin-top:.15rem; }
+.intake-step-mark:not(:empty) { margin-right:.25rem; color:var(--done); }
+.delivery-options { display:grid; gap:.75rem; }
+.delivery-option { padding:1rem; background:var(--paper); border:1px solid var(--hair); border-radius:12px; }
+.delivery-option > p { margin-top:.5rem; }

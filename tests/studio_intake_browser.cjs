@@ -30,9 +30,19 @@ async function fixture(product,args=[]){
     const dialog=page.getByRole('dialog',{name:title,exact:true});
     try{await dialog.waitFor();}catch(error){console.error(product+' '+width+' initial UI: '+await page.locator('body').innerText());console.error(errors);console.error(await page.evaluate(()=>({lists:typeof window.StudioLists,scripts:[...document.scripts].map(n=>n.src)})));throw error;}
     if(product==='presentation'){await dialog.getByRole('button',{name:'An idea',exact:false}).click();await dialog.getByRole('button',{name:'Next',exact:true}).click();}
+    if(product==='training'){
+     await dialog.getByRole('button',{name:'Go to Review',exact:true}).click();
+     assert.equal(await dialog.getByLabel('A short title',{exact:true}).getAttribute('aria-invalid'),'true');
+    }
     await dialog.getByLabel('A short title',{exact:true}).fill('Synthetic resumable intake');
     await dialog.getByLabel(product==='training'?'What should it teach?':'What should they take away?',{exact:true}).fill('Explain safe rolling restarts.');
     await dialog.getByLabel('Who is it for?',{exact:true}).fill('New platform engineers');
+    if(product==='training'){
+     await dialog.getByRole('button',{name:'Go to Review',exact:true}).click();
+     await dialog.getByRole('button',{name:'Start',exact:true}).waitFor();
+     await dialog.getByRole('button',{name:'Go to Goal',exact:true}).click();
+     assert.equal(await dialog.getByLabel('A short title',{exact:true}).inputValue(),'Synthetic resumable intake');
+    }
     await dialog.getByRole('button',{name:'Next',exact:true}).click();
     if(product==='presentation')await dialog.getByLabel('Research the approved story',{exact:true}).check();
     await dialog.getByRole('button',{name:'Paste text',exact:true}).click();

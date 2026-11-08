@@ -254,3 +254,8 @@ Progress starts with the current stage and the actual number of drafts available
 stage map without starting a job. Availability does not mean creator approval.
 Notifications can be dismissed and stay while hovered or keyboard-focused. Queued
 slide fixes offer **View progress**; they are not reported as completed redraws.
+
+New training has clickable **Goal**, **Sources**, and **Review** steps with short
+summaries. Forward navigation checks required fields; going back retains input.
+Only **Start** begins work. **Export & share** groups downloads and Google Doc
+commands for the current level; each delivery still requires its own explicit action.
