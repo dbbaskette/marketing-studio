@@ -82,6 +82,9 @@ production detail. Reading a document or expanding details approves nothing.
 | Material, section, slide or Sources navigation | Reading a draft | Show one pane; retain edits and selections; no work or approvals | `training_workspace.cjs` phone/desktop journey |
 | Deck review issues | Deck draft with blocking findings | Plain summary, details collapsed, affected slide and scoped repair control; Ready still refused | `ReadyTests.test_row_148_a_level_is_marked_ready_in_order`, workspace journey |
 | Open/close the slide inspector | Preview, with local edits or selected fixes | Wide view keeps preview beside the inspector; narrow view returns explicitly to Preview; pending edits and selections survive; no jobs | `TrainingDeskScreenTests.test_slide_inspector_retains_text_and_review_choices` and disposable browser journey |
+| Compact progress → draft or expanded workflow | Saved training | Navigation only; drafts and stop/approval controls remain available | `TrainingDeskScreenTests.test_compact_progress_opens_a_draft_without_starting_work` |
+| Creation step → another step | Unfinished form | Validate required preceding fields; retain inputs; only Start begins work | `RunnerScreenTests.test_guided_steps_validate_before_jump_and_retain_inputs` |
+| Desk → Export & share → delivery option | Saved materials | Opening options sends nothing; preserve delivery guards and phone focus return | `TrainingDeskScreenTests.test_delivery_options_return_focus_to_phone_toolbar_without_sending` and delivery cases |
 | Select review suggestions, navigate or refresh | Open findings on the same drawing | Keep choices and count locally; start no work; reset choices for a new drawing or review | `TrainingDeskScreenTests.test_five_review_choices_start_no_work_until_one_batch_is_applied`, `test_review_selection_clears_for_a_changed_drawing` |
 | Apply five review suggestions on one slide | Explicit selection and current drawing | Validate all notes, save one History snapshot, queue all fixes, start one section redraw and deck check; say queued until finished | `SlideNoteTests.test_five_review_fixes_share_one_history_snapshot_and_redraw` |
 | Apply a stale or busy batch, or a batch with an invalid target | Open findings | Refuse before saving any notes or History; leave findings open and preserve UI choices for retry | `SlideNoteTests.test_refused_batch_queues_nothing_and_keeps_suggestions_open`, `TrainingDeskScreenTests.test_review_subset_survives_failed_request_and_can_be_dismissed` |
@@ -122,8 +125,3 @@ Sources checked 2026-10-20:
 - [Roleplay Agent](https://support.yoodli.ai/en/articles/15960287-create-roleplays-with-roleplay-agent)
 - [AI Assets](https://support.yoodli.ai/en/articles/16054213-add-ai-assets-to-a-roleplay)
 - [Custom goals](https://support.yoodli.ai/en/articles/11556965-creating-custom-goals)
-
-| Compact progress → draft or expanded workflow | Navigation only; existing saved drafts and stop/approval controls remain available | `TrainingDeskScreenTests.test_compact_progress_opens_a_draft_without_starting_work` |
-
-| Creation step → another step | Validate required preceding fields; keep mounted inputs; only Start begins work | `RunnerScreenTests.test_guided_steps_validate_before_jump_and_retain_inputs` |
-| Desk → Export & share → delivery option | Opening options sends nothing; retain existing download/Doc confirmations and guards | `TrainingDeskScreenTests` delivery cases; disposable browser walkthrough |

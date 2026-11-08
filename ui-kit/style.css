@@ -3253,6 +3253,7 @@ body[data-product="Training Studio"] .card > .training-options {
 /* A slide remains the focal point while its inspector is open. Narrow layouts
    retain a single task surface and an explicit return to the preview. */
 .desk-slide-tools { display:flex; align-items:center; justify-content:space-between; gap:.6rem; flex-wrap:wrap; }
+.desk-slide-tools > .desk-workspace-tabs { flex:1 1 18rem; min-width:0; max-width:100%; }
 .desk-slide-workspace { min-width:0; }
 .desk-slide-canvas { min-width:0; }
 .desk-slide-inspector { min-width:0; padding-top:1rem; border-top:1px solid var(--hair); }
