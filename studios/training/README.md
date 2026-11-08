@@ -157,7 +157,9 @@ details. **Mark ready** remains your review decision, and problems stay visible.
 
 Rendered slides have three tasks: **Preview**, **Text & notes**, and **Review &
 changes**. Selecting another slide keeps the review position and per-slide unsaved
-text. The selected task also survives background refreshes. **Deck actions**, below the slide,
+text. On wide screens, the preview stays beside a focused inspector while editing
+or reviewing suggestions. Narrow screens show one task with **Back to preview**;
+History stays beside the task controls. The selected task also survives background refreshes. **Deck actions**, below the slide,
 holds whole-deck changes and alternate looks. The slide card supports words, speaker
 notes and section-scoped redraw requests.
 Drawing-bound word edits retain Harness Slides’ explicit design-answer requirement.
