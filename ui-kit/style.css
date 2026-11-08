@@ -3250,6 +3250,22 @@ body[data-product="Training Studio"] .card > .training-options {
   min-width: 0;
 }
 /* Training progress belongs to the workspace, not another content card. */
+/* A slide remains the focal point while its inspector is open. Narrow layouts
+   retain a single task surface and an explicit return to the preview. */
+.desk-slide-tools { display:flex; align-items:center; justify-content:space-between; gap:.6rem; flex-wrap:wrap; }
+.desk-slide-workspace { min-width:0; }
+.desk-slide-canvas { min-width:0; }
+.desk-slide-inspector { min-width:0; padding-top:1rem; border-top:1px solid var(--hair); }
+.desk-slide-inspector .bar { flex-wrap:wrap; }
+.desk-slide-inspector .input { width:100%; }
+.desk-slide-workspace:not([data-task="preview"]) .desk-slide-canvas { display:none; }
+@media (min-width:70rem) {
+  .desk-slide-workspace:not([data-task="preview"]) { display:grid; grid-template-columns:minmax(0,1.5fr) minmax(20rem,1fr); gap:1.25rem; align-items:start; }
+  .desk-slide-workspace:not([data-task="preview"]) .desk-slide-canvas { display:block; position:sticky; top:6rem; }
+  .desk-slide-workspace > .desk-slide-inspector { margin-top:0; border-top:0; border-left:1px solid var(--hair); padding:0 0 0 1.25rem; }
+  .desk-inspector-back { display:none; }
+}
+
 .desk-flow { min-width: 0; }
 .desk-flow-stages { list-style: none; display: flex; margin: 0; padding: 0; border-bottom: 1px solid var(--hair); }
 .desk-flow-stages > li { flex: 1 1 0; min-width: 0; }

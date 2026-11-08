@@ -7417,6 +7417,18 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
             self.assertNotIn('Include suggestion 3', result['snapshots'][name]['ticked'])
         self.assertFalse(self.posts(result))
 
+    def test_slide_inspector_retains_text_and_review_choices(self):
+        result = self.open_desk(self.on_desk(a_desk(self.review_card())), [
+            {'click': 'Text & notes'}, {'fill': 'Slide 5 title', 'value': 'My pending title'},
+            {'click': 'Back to preview'}, {'snapshot': 'preview'},
+            {'click': 'Review & changes (5)'}, {'tick': 'Include suggestion 2'},
+            {'click': 'Back to preview'}, {'click': 'Text & notes'}, {'snapshot': 'words'},
+            {'click': 'Review & changes (5)'}, {'snapshot': 'review'}], narrow=True)
+        self.assertIn('History', result['snapshots']['preview']['buttons'])
+        self.assertEqual(result['snapshots']['words']['fields']['Slide 5 title'], 'My pending title')
+        self.assertIn('Include suggestion 2', result['snapshots']['review']['ticked'])
+        self.assertFalse(self.posts(result))
+
     def test_bound_words_show_the_actual_question_and_wait_for_an_answer(self):
         found = self.slide_card()
         approval = {'token': 'private-token', 'revision': 'private-revision',

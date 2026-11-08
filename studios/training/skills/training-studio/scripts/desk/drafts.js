@@ -2030,14 +2030,14 @@ function deckParts(found) {
   function renderSlide() {
     const slide = slides.find(slide => slide.id === heldDeck.slide[found.name]);
     const node = card(slide.number + '. ' + slide.title, 'desk-slide-card');
-    const picture = make('div', 'stack');
+    const picture = make('div', 'stack desk-slide-canvas');
+    picture.setAttribute('aria-label', 'Slide preview');
     const changes = make('div', 'stack');
     if (slide.picture) picture.append(slidePicture(found, slide.number));
     else picture.append(make('p', 'quiet', 'Words only. The drawing is kept on the computer that made it.'));
     const history = capsule(slide.history ? 'History (' + slide.history + ')' : 'History',
       'quiet', () => slideHistory(found, slide));
     history.disabled = !slide.history;
-    picture.append(history);
     const words = make('div', 'stack');
     if (found.state === 'ready' && ours && found.local) words.append(readyEditWarning(found));
     const fields = [['title', 'Title'], ['subtitle', 'Subtitle']];
@@ -2096,24 +2096,34 @@ function deckParts(found) {
     if (!changes.childNodes.length) changes.append(make('p', 'quiet', 'No review suggestions for this slide.'));
     const tasks = [{id:'preview',label:'Preview'}, {id:'text',label:'Text & notes'},
       {id:'review',label:'Review & changes' + (count ? ' (' + count + ')' : '')}];
-    const panes = [picture, words, changes];
+    const inspector = add(make('section', 'desk-slide-inspector stack'), words, changes);
+    inspector.setAttribute('aria-label', 'Slide inspector');
     const key = 'desk-slide-task';
     const chosen = () => tasks.findIndex(task => task.id === (heldDeck.slideTask[found.name] || 'preview'));
     const showTask = () => {
       const index = chosen();
       [...tabs.children].forEach((tab, i) => {
         tab.setAttribute('aria-selected', String(i === index)); tab.tabIndex = i === index ? 0 : -1;
-        panes[i].hidden = i !== index;
       });
+      words.hidden = index !== 1; changes.hidden = index !== 2;
+      inspector.hidden = index === 0;
+      panel.dataset.task = tasks[index].id;
       panel.setAttribute('aria-labelledby', key + '-' + index);
       selection.bar.hidden = true;
     };
     const tabs = workspaceTabs('Slide task', tasks, tasks[chosen()].id, id => {
       heldDeck.slideTask[found.name] = id; showTask();
     }, key);
-    const panel = workspacePanel(key, chosen(), add(make('div', 'stack'), ...panes));
+    const back = capsule('Back to preview', 'quiet desk-inspector-back', () => {
+      heldDeck.slideTask[found.name] = 'preview'; showTask();
+      tabs.children[0].focus({preventScroll:true});
+    });
+    inspector.prepend(back);
+    const panel = workspacePanel(key, chosen(), picture);
+    panel.append(inspector);
+    panel.classList.add('desk-slide-workspace');
     showTask();
-    return add(node, tabs, panel);
+    return add(node, add(make('div', 'desk-slide-tools'), tabs, history), panel);
   }
   if (slides.length) preview.append(renderSlide());
   area.append(preview);
