@@ -197,7 +197,7 @@ elif [[ "${1:-full}" == training-flow || "${1:-full}" == training-cult-ui || "${
       if [[ "$cult_journeys" == *,tabs,* ]]; then node tests/cult_tabs_browser.cjs > "$results_dir/cult-tabs-browser.log" 2>&1 || ui_failed=1; fi
       if [[ "$cult_journeys" == *,home,* ]]; then node tests/home_launchpad.cjs > "$results_dir/home-browser.log" 2>&1 || ui_failed=1; fi
       if [[ "$cult_journeys" == *,infographic,* ]]; then
-        node studios/infographic/tests/ui/journey.cjs > "$results_dir/infographic-browser.log" 2>&1 || ui_failed=1
+        node tests/cult_infographic_browser.cjs > "$results_dir/infographic-browser.log" 2>&1 || ui_failed=1
         grep -q '^PASS' "$results_dir/infographic-browser.log" || ui_failed=1
       fi
     else
@@ -205,7 +205,7 @@ elif [[ "${1:-full}" == training-flow || "${1:-full}" == training-cult-ui || "${
     fi
     if [[ "${1:-full}" != cult-source-ui || "$cult_journeys" == *,progress,* ]]; then node tests/training_progress_browser.cjs > "$results_dir/progress-browser.log" 2>&1 || ui_failed=1; fi
     if [[ "${1:-full}" != cult-source-ui || "$cult_journeys" == *,slides,* ]]; then node tests/rendered_slide_browser.cjs > "$results_dir/slides-browser.log" 2>&1 || ui_failed=1; fi
-    [[ "$ui_failed" == 0 ]]
+    if [[ "$ui_failed" != 0 ]]; then exit 1; fi
   fi
 elif [[ "${1:-full}" == training-creator-review-finish ]]; then
   # Reuse the completed full shared run; verify its updated handoff expectation

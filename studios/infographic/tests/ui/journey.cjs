@@ -33,7 +33,6 @@ const assert = require('node:assert/strict');
     // Two steps, each a part of the sheet; the heading and the actions stay in reach while
     // the sheet scrolls on a phone; a missing title is said beside the field, once.
     const intake=page.getByRole('dialog',{name:'New infographic'});
-    await intake.waitFor();
     assert.deepEqual(await intake.locator('.sheet-part').allInnerTexts(),['1. Add information']);
     async function inReach(names){
       await intake.evaluate(n=>{n.scrollTop=n.scrollHeight;});
@@ -100,13 +99,6 @@ const assert = require('node:assert/strict');
     await page.locator('#actions').getByRole('button',{name:'Build page',exact:true}).click();
     await page.getByRole('dialog').getByRole('button',{name:'Build page',exact:true}).click();
     await page.locator('.ig-preview').waitFor();
-    for(const title of ['Brief and requirements','Sources and facts','Layout alternatives']){
-      const summary=page.locator('.cult-expandable > summary').filter({hasText:title});
-      await summary.press('Enter');
-      assert(await summary.evaluate(n=>n.parentElement.open),'Keyboard opens '+title);
-      await summary.press('Enter');
-      assert.equal(await summary.evaluate(n=>n.parentElement.open),false,'Keyboard closes '+title);
-    }
     await page.waitForFunction(()=>{const i=document.querySelector('.ig-preview');return i&&i.complete&&i.naturalWidth===1080;});
     // While an action runs and until the infographic has been read again, its controls stay
     // locked, so nothing can be sent against the revision the action replaced.
