@@ -33,6 +33,7 @@ const assert = require('node:assert/strict');
     // Two steps, each a part of the sheet; the heading and the actions stay in reach while
     // the sheet scrolls on a phone; a missing title is said beside the field, once.
     const intake=page.getByRole('dialog',{name:'New infographic'});
+    await intake.waitFor();
     assert.deepEqual(await intake.locator('.sheet-part').allInnerTexts(),['1. Add information']);
     async function inReach(names){
       await intake.evaluate(n=>{n.scrollTop=n.scrollHeight;});

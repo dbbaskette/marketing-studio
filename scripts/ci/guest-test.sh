@@ -189,18 +189,19 @@ elif [[ "${1:-full}" == training-flow || "${1:-full}" == training-cult-ui || "${
       npm ci --prefix "$work/ui-browser" --ignore-scripts --no-audit --no-fund > "$results_dir/ui-browser-tools.log" 2>&1
     export NODE_PATH="$work/ui-browser/node_modules" PYTHON="$python"
     ui_failed=0
+    cult_journeys=",${CULT_UI_JOURNEYS:-tabs,home,infographic,progress,slides},"
     if [[ "${1:-full}" == cult-source-ui ]]; then
       # Source ports change presentation only; reuse passed runtime/module checks.
       export CULT_RESULTS="$results_dir/cult-controls" HOME_LAUNCHPAD_RESULTS="$results_dir/home"
       export INFOGRAPHIC_UI_RESULTS="$results_dir/infographic" VISIBILITY_RESULTS="$results_dir/slides"
-      node tests/cult_tabs_browser.cjs > "$results_dir/cult-tabs-browser.log" 2>&1 || ui_failed=1
-      node tests/home_launchpad.cjs > "$results_dir/home-browser.log" 2>&1 || ui_failed=1
-      node studios/infographic/tests/ui/journey.cjs > "$results_dir/infographic-browser.log" 2>&1 || ui_failed=1
+      if [[ "$cult_journeys" == *,tabs,* ]]; then node tests/cult_tabs_browser.cjs > "$results_dir/cult-tabs-browser.log" 2>&1 || ui_failed=1; fi
+      if [[ "$cult_journeys" == *,home,* ]]; then node tests/home_launchpad.cjs > "$results_dir/home-browser.log" 2>&1 || ui_failed=1; fi
+      if [[ "$cult_journeys" == *,infographic,* ]]; then node studios/infographic/tests/ui/journey.cjs > "$results_dir/infographic-browser.log" 2>&1 || ui_failed=1; fi
     else
       STUDIO_AUDIT_PRODUCT=training node tests/studio_intake_browser.cjs > "$results_dir/intake-browser.log" 2>&1 || ui_failed=1
     fi
-    node tests/training_progress_browser.cjs > "$results_dir/progress-browser.log" 2>&1 || ui_failed=1
-    node tests/rendered_slide_browser.cjs > "$results_dir/slides-browser.log" 2>&1 || ui_failed=1
+    if [[ "${1:-full}" != cult-source-ui || "$cult_journeys" == *,progress,* ]]; then node tests/training_progress_browser.cjs > "$results_dir/progress-browser.log" 2>&1 || ui_failed=1; fi
+    if [[ "${1:-full}" != cult-source-ui || "$cult_journeys" == *,slides,* ]]; then node tests/rendered_slide_browser.cjs > "$results_dir/slides-browser.log" 2>&1 || ui_failed=1; fi
     [[ "$ui_failed" == 0 ]]
   fi
 elif [[ "${1:-full}" == training-creator-review-finish ]]; then
