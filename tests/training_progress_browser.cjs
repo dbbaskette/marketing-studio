@@ -19,11 +19,13 @@ const assert=require('node:assert/strict'), path=require('node:path'), fs=requir
   await page.getByText(/Up next: the level 101 brief/).waitFor();
   const map=page.getByRole('region',{name:'Training workflow',exact:true});
   await map.waitFor();
+  assert.equal(await map.locator('.desk-flow-expanded').evaluate(n=>n.open),false,'Detailed map starts folded');
+  assert((await map.locator('.desk-flow-summary').boundingBox()).height<150,'Compact phone workflow summary');
   await page.getByText('Explore workflow',{exact:true}).click();
   const mapMaterials=map.locator('#desk-flow-materials');
   assert.equal(await mapMaterials.getAttribute('data-state'),'working');
   assert.equal(await map.locator('#desk-flow-research').getAttribute('data-state'),'complete');
-  await map.locator('#desk-flow-research').getByText('Accepted with flags',{exact:true}).waitFor();
+  await map.locator('#desk-flow-research').getByText('Creator accepted',{exact:true}).waitFor();
   const mapJobs=(await page.evaluate(()=>ask('fixture-progress-state'))).jobs;
   await mapMaterials.focus();await page.keyboard.press('Enter');
   await page.getByRole('heading',{name:/Plans, guides & briefs/}).waitFor();
@@ -36,7 +38,7 @@ const assert=require('node:assert/strict'), path=require('node:path'), fs=requir
   assert.equal(await page.locator('#desk-card-blueprint-101').evaluate(n=>n===document.activeElement),true);
   await mapMaterials.click();
   await map.locator('#desk-flow-research').click();
-  await map.getByText(/not independently verified/).waitFor();
+  await map.getByText(/independent-check notes are kept/).waitFor();
   await page.getByRole('button',{name:'Open research & sources',exact:true}).click();
   const sourcesTab=page.getByRole('tab',{name:'Research & sources',exact:true});
   assert.equal(await sourcesTab.getAttribute('aria-selected'),'true');
@@ -57,7 +59,7 @@ const assert=require('node:assert/strict'), path=require('node:path'), fs=requir
   assert.equal(await page.locator('.desk-time').evaluate(n=>n.open),false,'Activity does not open timing');
   const researchToggle=page.locator('[data-key="research-choices-toggle"]');
   await researchToggle.focus();await page.keyboard.press('Enter');
-  await page.getByText(/Included uncertainty remains marked/).waitFor();
+  await page.getByText(/Warnings appear only where you requested them/).waitFor();
   await page.evaluate(()=>refresh());
   assert.equal(await researchToggle.evaluate(n=>n===document.activeElement),true,'Saved research disclosure retains focus');
   await page.keyboard.press('Enter');

@@ -3268,7 +3268,7 @@ body[data-product="Training Studio"] .card > .training-options {
 
 .desk-flow { min-width: 0; }
 .desk-flow-summary { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:.6rem 1rem; padding:.85rem 1rem; background:var(--sheet-fill); border:1px solid var(--hair); border-radius:1rem; }
-.desk-flow-status { flex:1 1 14rem; min-width:0; }
+.desk-flow-status { flex:1 1 10rem; min-width:0; }
 .desk-draft-meter { display:block; width:100%; max-width:22rem; height:.4rem; margin-top:.55rem; accent-color:var(--accent); }
 .desk-flow-expanded > summary { min-height:44px; display:flex; align-items:center; cursor:pointer; gap:.5rem; color:var(--quiet); }
 .desk-flow-expanded > summary::before { content:'▸'; }

@@ -7778,6 +7778,13 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         self.assertEqual([body.get('action') for _, body in self.posts(result)[1:]],
                          ['add', 'done'])
 
+    def test_delivery_options_return_focus_to_phone_toolbar_without_sending(self):
+        result = self.open_desk(self.on_desk(a_desk()), [
+            {'click': 'More'}, {'click': 'Export & share'},
+            {'click': 'Download level 101'}, {'click': 'Close'}, {'snapshot': 'closed'}], narrow=True)
+        self.assertEqual(result['snapshots']['closed']['focus'], 'More')
+        self.assertFalse(self.posts(result), 'Opening delivery options sends nothing')
+
     def test_compact_progress_opens_a_draft_without_starting_work(self):
         guide = a_card('document@101')
         found = a_desk(guide, levels=('101',))

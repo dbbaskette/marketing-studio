@@ -175,9 +175,11 @@ elif [[ "${1:-full}" == training-first-output || "${1:-full}" == training-first-
     (cd studios/training && bash scripts/ci/check.sh "$python") > "$results_dir/training-tests.log" 2>&1
   fi
   (cd studios/presentation && "$python" scripts/ci/run_tests.py test_parallel_research) > "$results_dir/presentation-tests.log" 2>&1
-elif [[ "${1:-full}" == training-flow || "${1:-full}" == training-cult-ui ]]; then
-  (cd studios/training && bash scripts/ci/check.sh "$python") > "$results_dir/training-tests.log" 2>&1
-  if [[ "${1:-full}" == training-cult-ui ]]; then
+elif [[ "${1:-full}" == training-flow || "${1:-full}" == training-cult-ui || "${1:-full}" == training-cult-ui-browser ]]; then
+  if [[ "${1:-full}" != training-cult-ui-browser ]]; then
+    (cd studios/training && bash scripts/ci/check.sh "$python") > "$results_dir/training-tests.log" 2>&1
+  fi
+  if [[ "${1:-full}" != training-flow ]]; then
     PYTHONPATH=core:tests "$python" -m unittest test_intake_page test_ui_consistency -v > "$results_dir/shared-ui-tests.log" 2>&1
     export INFOGRAPHIC_STUDIO_TEST_RENDERER="$("$python" scripts/ci/infographic-renderer.py --output "$work/ui-graphics" --cache "$work/ui-graphics-cache")"
     mkdir -p "$work/ui-browser"
