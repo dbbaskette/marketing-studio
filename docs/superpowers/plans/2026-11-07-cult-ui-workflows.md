@@ -43,4 +43,9 @@ work as complete. Do not hide required validation or bypass existing revision gu
 - #429: merged in [PR #432](https://github.com/dbbaskette/marketing-studio/pull/432); 146 affected UI/layout cases and 14 shared style checks pass.
   Desktop/phone walkthrough retains pending text and review choices without overflow.
 - #430: merged in [PR #433](https://github.com/dbbaskette/marketing-studio/pull/433); compact draft access, expandable workflow and dismissible action feedback.
-- #431: implemented; guided creation steps, concise settings context and grouped export controls. Integrated verification pending.
+- #431: [PR #434](https://github.com/dbbaskette/marketing-studio/pull/434) adds guided creation steps, concise settings context and grouped export controls.
+  260 affected UI/layout checks and 15 shared intake/style checks pass.
+  The full Training Studio suite passed 3,237 tests on macOS 27 / Python 3.13 / Node 22
+  at `9e274e64`; subsequent UI refinements passed affected checks.
+  Intake, progress and rendered-slide browser journeys passed at `d1db9299`, including
+  phone/desktop, light/dark, reduced motion, retained edits, focus and no new jobs.
