@@ -114,7 +114,11 @@ function invalid(f, message) {
   f.input.focus(); return false;
 }
 function card(title, ...parts) { return add(make('section', 'card stack'), make('h2', 'card-title', title), ...parts); }
-function detail(title, ...parts) { return add(make('details'), make('summary', '', title), ...parts); }
+function detail(title, ...parts) {
+  const node = add(make('details'), make('summary', '', title), ...parts);
+  return ['Brief and requirements','Sources and facts','Layout alternatives'].includes(title)
+    ? Drafting.cultExpandable(node) : node;
+}
 let fieldNumber = 0;
 function field(label, value='', kind='input') { const wrap = make('label', 'field'); const input = make(kind, 'input'); input.value = value; const caption=make('span','field-label',label);caption.id='field-caption-'+(++fieldNumber);input.id='field-'+fieldNumber;wrap.htmlFor=input.id;input.setAttribute('aria-labelledby',caption.id);add(wrap, caption, input); return {wrap, input}; }
 function stateLine(kind,words){const bead=make('span','bead');bead.dataset.state=kind;bead.setAttribute('aria-hidden','true');return add(make('p','state'),bead,document.createTextNode(words));}

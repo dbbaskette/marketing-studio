@@ -63,6 +63,15 @@ const assert=require('node:assert/strict'),path=require('node:path'),fs=require(
    assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
    if(process.env.VISIBILITY_RESULTS){fs.mkdirSync(process.env.VISIBILITY_RESULTS,{recursive:true});await select.evaluate(n=>n.scrollIntoView({block:'center'}));await page.screenshot({path:path.join(process.env.VISIBILITY_RESULTS,`rendered-${width}-${colorScheme}.png`)});}
   }
+  await page.emulateMedia({reducedMotion:'no-preference'});
+  const tasks=page.getByRole('tablist',{name:'Slide task',exact:true});
+  for(const name of ['Text & notes','Preview','Review & changes','Text & notes'])await tasks.getByRole('tab',{name:new RegExp('^'+name)}).click();
+  assert.equal(await tasks.getAttribute('data-cult-at'),'1','Rapid switching keeps the final selection');
+  assert.equal(await page.getByLabel('Slide 2 title',{exact:true}).inputValue(),'Local unsaved slide title','Animation retains edits');
+  await page.emulateMedia({reducedMotion:'reduce'});
+  await tasks.getByRole('tab',{name:'Preview',exact:true}).click();
+  assert.equal(await tasks.evaluate(n=>getComputedStyle(n,'::before').transitionDuration),'0s');
+  assert.equal(await page.locator('#desk-slide-task-panel').evaluate(n=>n.getAnimations({subtree:true}).length),0,'Reduced motion creates no content animation');
   assert.equal((await page.evaluate(()=>ask('fixture-review-state'))).jobs,jobs,'Selection/editing/polling schedules no workers');
   assert.deepEqual(errors,[]);
   console.log('PASS rendered slide review: stable scrolled selector/focus, retained unsaved edits/caret/selection, no jobs, 390/1280 light/dark');

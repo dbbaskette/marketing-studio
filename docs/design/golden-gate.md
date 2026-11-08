@@ -143,3 +143,6 @@ settings and Presentation Studio images illustrate their established surfaces.
 The [Cult-inspired workflow implementation](../superpowers/plans/2026-11-07-cult-ui-workflows.md)
 records the Training Studio inspector, compact progress, guided steps and grouped
 delivery controls. These adapt interaction patterns within the shared vanilla UI kit.
+
+[Actual Cult component ports and provenance](cult-controls.md) cover the shared animated
+controls and launcher card surfaces, including reduced-motion and fallback behavior.

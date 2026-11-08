@@ -175,8 +175,8 @@ elif [[ "${1:-full}" == training-first-output || "${1:-full}" == training-first-
     (cd studios/training && bash scripts/ci/check.sh "$python") > "$results_dir/training-tests.log" 2>&1
   fi
   (cd studios/presentation && "$python" scripts/ci/run_tests.py test_parallel_research) > "$results_dir/presentation-tests.log" 2>&1
-elif [[ "${1:-full}" == training-flow || "${1:-full}" == training-cult-ui || "${1:-full}" == training-cult-ui-browser ]]; then
-  if [[ "${1:-full}" != training-cult-ui-browser ]]; then
+elif [[ "${1:-full}" == training-flow || "${1:-full}" == training-cult-ui || "${1:-full}" == training-cult-ui-browser || "${1:-full}" == cult-source-ui ]]; then
+  if [[ "${1:-full}" != training-cult-ui-browser && "${1:-full}" != cult-source-ui ]]; then
     (cd studios/training && bash scripts/ci/check.sh "$python") > "$results_dir/training-tests.log" 2>&1
   fi
   if [[ "${1:-full}" != training-flow ]]; then
@@ -189,10 +189,23 @@ elif [[ "${1:-full}" == training-flow || "${1:-full}" == training-cult-ui || "${
       npm ci --prefix "$work/ui-browser" --ignore-scripts --no-audit --no-fund > "$results_dir/ui-browser-tools.log" 2>&1
     export NODE_PATH="$work/ui-browser/node_modules" PYTHON="$python"
     ui_failed=0
-    STUDIO_AUDIT_PRODUCT=training node tests/studio_intake_browser.cjs > "$results_dir/intake-browser.log" 2>&1 || ui_failed=1
-    node tests/training_progress_browser.cjs > "$results_dir/progress-browser.log" 2>&1 || ui_failed=1
-    node tests/rendered_slide_browser.cjs > "$results_dir/slides-browser.log" 2>&1 || ui_failed=1
-    [[ "$ui_failed" == 0 ]]
+    cult_journeys=",${CULT_UI_JOURNEYS:-tabs,home,infographic,progress,slides},"
+    if [[ "${1:-full}" == cult-source-ui ]]; then
+      # Source ports change presentation only; reuse passed runtime/module checks.
+      export CULT_RESULTS="$results_dir/cult-controls" HOME_LAUNCHPAD_RESULTS="$results_dir/home"
+      export INFOGRAPHIC_UI_RESULTS="$results_dir/infographic" VISIBILITY_RESULTS="$results_dir/slides"
+      if [[ "$cult_journeys" == *,tabs,* ]]; then node tests/cult_tabs_browser.cjs > "$results_dir/cult-tabs-browser.log" 2>&1 || ui_failed=1; fi
+      if [[ "$cult_journeys" == *,home,* ]]; then node tests/home_launchpad.cjs > "$results_dir/home-browser.log" 2>&1 || ui_failed=1; fi
+      if [[ "$cult_journeys" == *,infographic,* ]]; then
+        node tests/cult_infographic_browser.cjs > "$results_dir/infographic-browser.log" 2>&1 || ui_failed=1
+        grep -q '^PASS' "$results_dir/infographic-browser.log" || ui_failed=1
+      fi
+    else
+      STUDIO_AUDIT_PRODUCT=training node tests/studio_intake_browser.cjs > "$results_dir/intake-browser.log" 2>&1 || ui_failed=1
+    fi
+    if [[ "${1:-full}" != cult-source-ui || "$cult_journeys" == *,progress,* ]]; then node tests/training_progress_browser.cjs > "$results_dir/progress-browser.log" 2>&1 || ui_failed=1; fi
+    if [[ "${1:-full}" != cult-source-ui || "$cult_journeys" == *,slides,* ]]; then node tests/rendered_slide_browser.cjs > "$results_dir/slides-browser.log" 2>&1 || ui_failed=1; fi
+    if [[ "$ui_failed" != 0 ]]; then exit 1; fi
   fi
 elif [[ "${1:-full}" == training-creator-review-finish ]]; then
   # Reuse the completed full shared run; verify its updated handoff expectation

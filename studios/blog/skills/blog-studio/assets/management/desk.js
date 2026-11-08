@@ -746,13 +746,16 @@ async function sDeskChoose(held,reading,part=held.activePart){
 // fold into one bar beside Go to section, so the title and the first paragraph come first.
 function sDeskReadingControls(held,lede,status){
   const choices=sChoice('Manuscript view',[['read','Read'],['edit','Edit section'],['full','Full desk']],held,'reading',value=>sDeskChoose(held,value));
+  const selected=['read','edit','full'].indexOf(held.reading);
+  Drafting.cultTabs(choices.querySelector('.segmented'),selected,held.cultReading ?? selected);
+  held.cultReading=selected;
   const picker=sField('desk-part-picker','Go to section',held,'activePart',{options:[['title','Title'],['opening','Opening'],...held.view.sections.map(section=>[section.id,deskHeading(section.heading)])],changed:value=>sDeskChoose(held,held.reading,value)});
   const actions=sAdd(sNode('div','bar'),sButton('Polish',()=>sDeskFinishOpen(held,'copyedit'),'filled'),sButton('Sources',()=>sDeskSourcesSheet(held)),sButton('Outline',async()=>{await sDeskFlush(held);held.tab='outline';sDeskRender(held);}));
   if(!sNarrow())return sAdd(sNode('div','desk-reading-controls'),choices,picker,actions);
   const fold=sNode('details','desk-tools-fold');fold.open=!!held.toolsOpen;fold.addEventListener('toggle',()=>{held.toolsOpen=fold.open;});
   fold.append(sNode('summary','button','View and tools'),sAdd(sNode('div','desk-tools-list'),lede,choices,actions));
   // The save line stays in reach, empty until there is something to say.
-  return sAdd(sNode('div','desk-reading-controls desk-compact'),picker,fold,status);
+  return sAdd(sNode('div','desk-reading-controls desk-compact'),picker,Drafting.cultExpandable(fold),status);
 }
 function sDeskReviewQueue(held){
   // Humanize's located rewrites open Review mode, as Copy edit's fixes do: one place to accept or reject them.

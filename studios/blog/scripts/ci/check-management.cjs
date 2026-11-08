@@ -4,7 +4,10 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 class Element {
   constructor(tag='div'){this.tagName=tag;this.children=[];this.attributes={};this.listeners={};this.hidden=false;this.disabled=false;this.value='';this.textContent='';this.className='';this.dataset={};if(tag==='textarea')Object.defineProperty(this,'type',{get:()=> 'textarea'});}
-  append(...given){const children=given.map(child=>{if(typeof child!=='string')return child;const node=new Element('#text');node.textContent=child;return node;});this.children.push(...children);for(const child of children)child.parent=this;}
+  append(...given){const children=given.map(child=>{if(typeof child!=='string')return child;const node=new Element('#text');node.textContent=child;return node;});for(const child of children){if(child.parent)child.remove();this.children.push(child);child.parent=this;}}
+  get childNodes(){return this.children;}
+  get classList(){return {add:name=>{if(!this.className.split(' ').includes(name))this.className=(this.className+' '+name).trim();},contains:name=>this.className.split(' ').includes(name)};}
+  get style(){return {setProperty:(name,value)=>{this.styles||={};this.styles[name]=value;}};}
   get firstElementChild(){return this.children[0]||null;}
   get parentElement(){return this.parent||null;}
   prepend(...children){this.children.unshift(...children);for(const child of children)child.parent=this;}
