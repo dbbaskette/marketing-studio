@@ -42,5 +42,5 @@ work as complete. Do not hide required validation or bypass existing revision gu
 
 - #429: implemented; 146 affected UI/layout cases and 14 shared style checks pass.
   Desktop/phone walkthrough retains pending text and review choices without overflow.
-- #430: planned.
+- #430: implemented; compact draft access, expandable workflow and dismissible action feedback.
 - #431: planned.

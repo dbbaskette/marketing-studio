@@ -269,6 +269,7 @@ class FakeElement extends FakeNode {
     }
   }
 
+  scrollIntoView() {} // Geometry is verified in the real browser journey.
   focus() {
     document.activeElement = this;
   }

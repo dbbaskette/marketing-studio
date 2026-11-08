@@ -122,3 +122,5 @@ Sources checked 2026-10-20:
 - [Roleplay Agent](https://support.yoodli.ai/en/articles/15960287-create-roleplays-with-roleplay-agent)
 - [AI Assets](https://support.yoodli.ai/en/articles/16054213-add-ai-assets-to-a-roleplay)
 - [Custom goals](https://support.yoodli.ai/en/articles/11556965-creating-custom-goals)
+
+| Compact progress → draft or expanded workflow | Navigation only; existing saved drafts and stop/approval controls remain available | `TrainingDeskScreenTests.test_compact_progress_opens_a_draft_without_starting_work` |

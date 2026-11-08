@@ -1012,6 +1012,7 @@ function calm() {
 // holds the focus; pressing its button puts it away. Returns the toast's button, or null.
 function toast(text, action) {
   const node = make('p', 'toast glass' + (action ? ' toast-action' : ''), text);
+  node.classList.add('toast-dismissible');
   let go = null, over = false;
   const leave = () => {
     if (!node.parentNode) return;
@@ -1035,12 +1036,15 @@ function toast(text, action) {
       return action.run(go);
     }, action.key);
     node.append(' ', go);
-    node.addEventListener('mouseenter', () => { over = true; });
-    node.addEventListener('mouseleave', () => { over = false; });
   }
+  const dismiss = capsule('', 'quiet toast-close', leave);
+  dismiss.setAttribute('aria-label', 'Dismiss notification');
+  node.append(dismiss);
+  node.addEventListener('mouseenter', () => { over = true; });
+  node.addEventListener('mouseleave', () => { over = false; });
   byId('toasts').append(node);
   const wait = () => window.setTimeout(function leaving() {
-    if (action && (over || node.contains(document.activeElement))) wait();
+    if (over || node.contains(document.activeElement)) wait();
     else leave();
   }, action ? 10000 : 4200);
   wait();
