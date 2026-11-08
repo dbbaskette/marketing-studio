@@ -781,7 +781,7 @@ function renderHome(refreshPaths = true) {
   renderWorkOverview();
   const list = $('#studio-list'); list.replaceChildren();
   for (const studio of snapshot.studios) {
-    const card = element('article', '', 'card studio-card');
+    const card = element('article', '', 'card studio-card cult-launch-card');
     card.dataset.studio = studio.id;
     card.append(studioSymbol(studio.id), element('h3', studio.name, 'studio-name'),
       element('p', studioPurposes[studio.id] || studio.description, 'studio-says'), studioPreview(studio.id));

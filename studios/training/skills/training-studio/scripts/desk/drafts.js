@@ -2120,6 +2120,7 @@ function deckParts(found) {
     inspector.setAttribute('aria-label', 'Slide inspector');
     const key = 'desk-slide-task';
     const chosen = () => tasks.findIndex(task => task.id === (heldDeck.slideTask[found.name] || 'preview'));
+    let moveTask = null;
     const showTask = () => {
       const index = chosen();
       [...tabs.children].forEach((tab, i) => {
@@ -2128,6 +2129,7 @@ function deckParts(found) {
       words.hidden = index !== 1; changes.hidden = index !== 2;
       inspector.hidden = index === 0;
       panel.dataset.task = tasks[index].id;
+      moveTask?.(index, index === 1 ? words : index === 2 ? changes : picture);
       panel.setAttribute('aria-labelledby', key + '-' + index);
       selection.bar.hidden = true;
     };
@@ -2142,6 +2144,7 @@ function deckParts(found) {
     const panel = workspacePanel(key, chosen(), picture);
     panel.append(inspector);
     panel.classList.add('desk-slide-workspace');
+    moveTask = Drafting.cultTabs(tabs, chosen());
     showTask();
     return add(node, add(make('div', 'desk-slide-tools'), tabs, history), panel);
   }
@@ -2823,7 +2826,7 @@ function progressMap(found, held, canOpenMaterials, hasPlanReview) {
       if (tab) { tab.focus({preventScroll:true}); revealTabs(tab); }
     }, 'desk-flow-research'));
   }
-  expanded.append(details); box.append(expanded);
+  expanded.append(details); box.append(Drafting.cultExpandable(expanded));
   return box;
 }
 

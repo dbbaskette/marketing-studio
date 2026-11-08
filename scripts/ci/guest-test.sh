@@ -175,8 +175,8 @@ elif [[ "${1:-full}" == training-first-output || "${1:-full}" == training-first-
     (cd studios/training && bash scripts/ci/check.sh "$python") > "$results_dir/training-tests.log" 2>&1
   fi
   (cd studios/presentation && "$python" scripts/ci/run_tests.py test_parallel_research) > "$results_dir/presentation-tests.log" 2>&1
-elif [[ "${1:-full}" == training-flow || "${1:-full}" == training-cult-ui || "${1:-full}" == training-cult-ui-browser ]]; then
-  if [[ "${1:-full}" != training-cult-ui-browser ]]; then
+elif [[ "${1:-full}" == training-flow || "${1:-full}" == training-cult-ui || "${1:-full}" == training-cult-ui-browser || "${1:-full}" == cult-source-ui ]]; then
+  if [[ "${1:-full}" != training-cult-ui-browser && "${1:-full}" != cult-source-ui ]]; then
     (cd studios/training && bash scripts/ci/check.sh "$python") > "$results_dir/training-tests.log" 2>&1
   fi
   if [[ "${1:-full}" != training-flow ]]; then
@@ -189,7 +189,16 @@ elif [[ "${1:-full}" == training-flow || "${1:-full}" == training-cult-ui || "${
       npm ci --prefix "$work/ui-browser" --ignore-scripts --no-audit --no-fund > "$results_dir/ui-browser-tools.log" 2>&1
     export NODE_PATH="$work/ui-browser/node_modules" PYTHON="$python"
     ui_failed=0
-    STUDIO_AUDIT_PRODUCT=training node tests/studio_intake_browser.cjs > "$results_dir/intake-browser.log" 2>&1 || ui_failed=1
+    if [[ "${1:-full}" == cult-source-ui ]]; then
+      # Source ports change presentation only; reuse passed runtime/module checks.
+      export CULT_RESULTS="$results_dir/cult-controls" HOME_LAUNCHPAD_RESULTS="$results_dir/home"
+      export INFOGRAPHIC_UI_RESULTS="$results_dir/infographic" VISIBILITY_RESULTS="$results_dir/slides"
+      node tests/cult_tabs_browser.cjs > "$results_dir/cult-tabs-browser.log" 2>&1 || ui_failed=1
+      node tests/home_launchpad.cjs > "$results_dir/home-browser.log" 2>&1 || ui_failed=1
+      node studios/infographic/tests/ui/journey.cjs > "$results_dir/infographic-browser.log" 2>&1 || ui_failed=1
+    else
+      STUDIO_AUDIT_PRODUCT=training node tests/studio_intake_browser.cjs > "$results_dir/intake-browser.log" 2>&1 || ui_failed=1
+    fi
     node tests/training_progress_browser.cjs > "$results_dir/progress-browser.log" 2>&1 || ui_failed=1
     node tests/rendered_slide_browser.cjs > "$results_dir/slides-browser.log" 2>&1 || ui_failed=1
     [[ "$ui_failed" == 0 ]]

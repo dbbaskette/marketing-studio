@@ -33,6 +33,7 @@ const path=require('node:path'),fs=require('node:fs'),assert=require('node:asser
   async function capture(name){if(process.env.HOME_LAUNCHPAD_RESULTS){fs.mkdirSync(process.env.HOME_LAUNCHPAD_RESULTS,{recursive:true});await page.evaluate(()=>{document.activeElement?.blur();scrollTo(0,0);});await page.screenshot({path:path.join(process.env.HOME_LAUNCHPAD_RESULTS,name+'.png')});}}
   await page.goto(url);await page.getByRole('button',{name:'Return to Infographic Studio',exact:true}).waitFor();
   await page.getByRole('heading',{name:'Needs you',exact:true}).waitFor();
+  assert.equal(await page.locator('.studio-card.cult-launch-card').count(),4,'All launch cards use the source-adapted frame');
   await page.getByRole('heading',{name:'In progress',exact:true}).waitFor();
   await page.getByRole('heading',{name:'Recent work',exact:true}).waitFor();
   const recent=page.locator('.work-recent'),recentSummary=recent.locator('summary');

@@ -216,6 +216,61 @@ const Drafting = (() => {
     }
   }
 
+  /*
+MIT License
+
+Copyright (c) 2023 Jordan-Gilliam
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+  */
+  // Source adaptations of Cult UI Direction Aware Tabs and Toolbar Expandable.
+  // Pinned upstream and intentional differences: docs/design/cult-controls.md.
+  function cultTabs(rail, selected, previous = selected) {
+    const count = rail.querySelectorAll('button').length;
+    rail.classList.add('cult-tab-rail');
+    let index = previous, animation = null;
+    const mark = at => {
+      rail.dataset.cultAt = String(at);
+      rail.style.setProperty?.('--cult-count',String(count));
+      rail.style.setProperty?.('--cult-at',String(at));
+    };
+    mark(previous);
+    const move = (at, content = null) => {
+      const direction = Math.sign(at - index);
+      mark(at);
+      if (!direction) return;
+      animation?.cancel(); animation = null;
+      const reduced = typeof window === 'object' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+      if (!reduced && content?.animate) animation = content.animate([
+        {transform:'translateX(' + (24 * direction) + 'px)',opacity:.45},
+        {transform:'translateX(0)',opacity:1},
+      ], {duration:400,easing:'cubic-bezier(.2,.8,.2,1)'});
+      index = at;
+    };
+    if (previous !== selected && typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(() => {
+        if (!rail.isConnected) return;
+        rail.getBoundingClientRect(); // Establish the previous pill position once, after mounting.
+        move(selected);
+      });
+    } else { mark(selected); index = selected; }
+    return move;
+  }
+
+  function cultExpandable(node) {
+    if (node.classList.contains('cult-expandable')) return node;
+    node.classList.add('cult-expandable');
+    const summary = node.querySelector('summary');
+    const body = make('div','cult-expand-body');
+    for (const child of Array.from(node.childNodes)) if (child !== summary) body.append(child);
+    node.append(body);
+    return node;
+  }
+
   function trapSheet(event,sheet) {
     if(event.key !== 'Tab' || !sheet || sheet.hidden || document.querySelector('dialog[open]'))return;
     const stops = Array.from(sheet.querySelectorAll('button, [href], input, select, textarea, summary, [tabindex]'))
@@ -1020,6 +1075,6 @@ const Drafting = (() => {
     return k;
   }
 
-  return { DIFF_LIMIT, SAVE_WAIT, POLL, SELECTION, make, add, words, diffWords, age, kit, slideContent, ReviewDraft, Intake, trapSheet };
+  return { DIFF_LIMIT, SAVE_WAIT, POLL, SELECTION, make, add, words, diffWords, age, kit, slideContent, ReviewDraft, Intake, trapSheet, cultTabs, cultExpandable };
 })();
 if (typeof module === 'object' && module.exports) module.exports = Drafting;

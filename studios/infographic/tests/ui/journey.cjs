@@ -99,6 +99,13 @@ const assert = require('node:assert/strict');
     await page.locator('#actions').getByRole('button',{name:'Build page',exact:true}).click();
     await page.getByRole('dialog').getByRole('button',{name:'Build page',exact:true}).click();
     await page.locator('.ig-preview').waitFor();
+    for(const title of ['Brief and requirements','Sources and facts','Layout alternatives']){
+      const summary=page.locator('.cult-expandable > summary').filter({hasText:title});
+      await summary.press('Enter');
+      assert(await summary.evaluate(n=>n.parentElement.open),'Keyboard opens '+title);
+      await summary.press('Enter');
+      assert.equal(await summary.evaluate(n=>n.parentElement.open),false,'Keyboard closes '+title);
+    }
     await page.waitForFunction(()=>{const i=document.querySelector('.ig-preview');return i&&i.complete&&i.naturalWidth===1080;});
     // While an action runs and until the infographic has been read again, its controls stay
     // locked, so nothing can be sent against the revision the action replaced.

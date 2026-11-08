@@ -42,8 +42,10 @@ def main():
             studios_config.update({'local':{'root':str(case.space.root)}});preferences.finish(studios_config,lambda _:None)
             catalog=mock.patch('studio_core.model_catalog.Catalog.get',return_value={'agent':'codex','models':[],'problem':None});catalog.start();case.addCleanup(catalog.stop)
             root=case.begin(flow='desk') if args.product=='training' else case.start_desk(look='default')
-            if args.rendered:
+            if args.rendered and args.product=='training':
                 case.to_end(root)
+            elif args.rendered:
+                case.on_desk(root)
             if args.slides==30 or args.product=='presentation':
                 if args.product=='training':
                     from runner import pipeline

@@ -1196,6 +1196,10 @@
         h.paintDeck(false);
       }, 'desk-tab');
     tabs.classList.add('deck-desk-tabs');
+    held.cultTabs ||= {};
+    const selected = tab === 'outline' ? 1 : 0;
+    Drafting.cultTabs(tabs, selected, held.cultTabs[h.view.path] ?? selected);
+    held.cultTabs[h.view.path] = selected;
     return h.pageHead(tab !== 'outline' ? DESK_LEDE : editable ? OUTLINE_LEDE
       : OUTLINE_READ_LEDE, [tabs]);
   }

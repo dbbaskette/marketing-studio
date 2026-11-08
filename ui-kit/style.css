@@ -4014,3 +4014,70 @@ body[data-pilot="liquid"] .dialog .button:not(.button-round){border-radius:10px}
 .delivery-options { display:grid; gap:.75rem; }
 .delivery-option { padding:1rem; background:var(--paper); border:1px solid var(--hair); border-radius:12px; }
 .delivery-option > p { margin-top:.5rem; }
+
+/* Cult UI source adaptations; see docs/design/cult-controls.md.
+MIT License
+
+Copyright (c) 2023 Jordan-Gilliam
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+*/
+
+/* Shared selection bubble from Direction Aware Tabs, with native controls kept mounted. */
+.cult-tab-rail {
+  --cult-count:3; --cult-at:0;
+  position:relative; isolation:isolate; display:grid !important;
+  grid-template-columns:repeat(var(--cult-count),minmax(0,1fr)); gap:0 !important;
+  width:100%; min-width:0; padding:4px !important; margin:0 !important;
+  background:var(--control-fill); border:1px solid var(--hair); border-radius:16px;
+  overflow:visible !important; contain:none !important;
+  box-shadow:inset 0 1px 2px rgb(0 0 0 / .08);
+}
+.cult-tab-rail::before {
+  content:''; position:absolute; z-index:-1; pointer-events:none; inset:4px auto 4px 4px;
+  width:calc((100% - 8px) / var(--cult-count)); border:1px solid var(--accent); border-radius:12px;
+  background:var(--studio-wash); box-shadow:0 2px 5px rgb(0 0 0 / .1),inset 0 1px rgb(255 255 255 / .18);
+  transform:translateX(calc(var(--cult-at) * 100%));
+  transition:transform .4s cubic-bezier(.2,1.12,.3,1);
+}
+.cult-tab-rail > .seg-thumb { display:none; }
+.cult-tab-rail > button,
+body[data-product="Training Studio"] .cult-tab-rail > [role="tab"] {
+  position:relative; min-width:0; min-height:44px; width:100%; max-width:100%;
+  padding:.5rem .55rem; border:0; border-radius:12px; white-space:normal; text-align:center;
+  background:transparent; box-shadow:none; color:var(--quiet); font-weight:550;
+}
+.cult-tab-rail > :is([aria-selected="true"],[aria-pressed="true"]) { color:var(--accent) !important; font-weight:650; background:transparent; box-shadow:none; }
+.cult-tab-rail > button:hover { color:var(--ink); }
+/* Toolbar Expandable's rounded shell, numbered rail and measured height transition. */
+.cult-expandable { border:1px solid var(--hair); border-radius:16px; background:var(--solid); box-shadow:0 2px 2px rgb(0 0 0 / .04),0 8px 16px -4px rgb(0 0 0 / .06); }
+.cult-expandable > summary { list-style:none; display:flex; align-items:center; gap:.65rem; min-height:48px; padding:.65rem .9rem; cursor:pointer; color:var(--ink); font-weight:600; }
+.cult-expandable > summary::-webkit-details-marker { display:none; }
+.cult-expandable > summary::before { content:'+'; display:grid; place-items:center; width:1.5rem; height:1.5rem; flex:none; border-radius:7px; background:var(--studio-wash); color:var(--accent); font-size:1.1rem; transition:transform .25s ease; }
+.cult-expandable[open] > summary::before { transform:rotate(45deg); }
+.cult-expand-body { padding:0 .8rem .8rem; min-width:0; }
+.cult-expand-body > * + * { margin-top:.65rem; }
+.cult-expand-body .desk-flow-stages { border:0; background:var(--control-fill); border-radius:12px; padding:.25rem; gap:.2rem; }
+.cult-expand-body .desk-flow-step { border-radius:9px; border:0; }
+.cult-expand-body .desk-flow-step[aria-current="step"] { box-shadow:inset 0 -2px var(--accent); }
+.cult-expand-body .desk-flow-number { display:inline-grid; place-items:center; min-width:1.3rem; height:1.3rem; border-radius:5px; background:var(--solid); box-shadow:0 1px 2px rgb(0 0 0 / .12); }
+@supports (interpolate-size:allow-keywords) {
+  .cult-expandable { interpolate-size:allow-keywords; }
+  .cult-expandable::details-content { block-size:0; overflow:clip; transition:block-size .25s cubic-bezier(.2,.8,.2,1),content-visibility .25s allow-discrete; }
+  .cult-expandable[open]::details-content { block-size:auto; }
+}
+/* Minimal Card's layered frame adapted to the four launch surfaces. */
+.cult-launch-card { border-radius:24px; background:var(--solid); box-shadow:0 1px 1px rgb(0 0 0 / .05),inset 0 1px rgb(255 255 255 / .18),0 2px 4px rgb(17 24 28 / .06); transition:transform .2s ease,box-shadow .2s ease,border-color .2s ease; }
+.cult-launch-card:is(:hover,:focus-within) { transform:translateY(-2px); border-color:var(--studio-accent,var(--accent)); box-shadow:0 2px 4px rgb(0 0 0 / .08),0 8px 18px -4px rgb(0 0 0 / .12); }
+@media (prefers-reduced-motion:reduce) {
+  .cult-tab-rail::before,.cult-expandable::details-content,.cult-expandable > summary::before,.cult-launch-card { transition:none !important; }
+  .cult-launch-card:is(:hover,:focus-within) { transform:none; }
+}
+@media (forced-colors:active) {
+  .cult-tab-rail::before { border:2px solid Highlight; background:Canvas; }
+  .cult-expandable,.cult-launch-card { border-color:CanvasText; box-shadow:none; }
+}
