@@ -1072,10 +1072,9 @@ def command(root, args):
 def _command(root, args):
     if args.action == 'pull':
         import google_reconcile
-        import manuscript_editor
 
         if not args.accept:
-            current = manuscript_editor.read(root, args.id)
+            current = google_reconcile.read(root, args.id)
             return google_reconcile.preview(root, {'id': args.id, 'expected': current['expected']})
         return google_reconcile.accept(
             root,

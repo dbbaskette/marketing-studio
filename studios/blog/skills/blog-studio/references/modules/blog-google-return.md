@@ -14,6 +14,11 @@ baseline cannot be returned from a hand-built observation. Only a connector-only
 session without the gcloud helper builds an observation by hand, and only for a
 blog that has no formatted baseline yet.
 
+On the desk, preview with `google pull --id <article>`; accept with
+`google pull --id <article> --accept <preview> --expected <expected>
+--comparison <comparison> --confirmed --resolution-file <file>`.
+Pending suggestions block acceptance. Changed parts enter History.
+
 1. Resume the article's saved voice, guidance, source and shared-context pins.
    Take the document ID from the linked Doc's URL and capture it. A renamed Doc
    or tab keeps its ID and is not a change; a different ID/scope requires

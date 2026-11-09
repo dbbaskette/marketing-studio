@@ -1,5 +1,6 @@
 """Explicit read/compare/accept for the linked Google Doc; never writes to Google."""
 
+import json
 import re
 from types import SimpleNamespace
 import uuid
@@ -13,8 +14,52 @@ import manuscript_preview
 import studio
 
 
+def read(root, ident):
+    """The linked editing copy, including desk state in its optimistic guard."""
+    import desk
+    import desk_finish
+
+    directory, record = studio.item(root, 'articles', ident)
+    if not desk.on_desk(directory):
+        return manuscript_editor.read(root, ident)
+    draft = desk.read(root, ident)
+    body = (directory / 'DRAFT.md').read_text()
+    proposals = [
+        item
+        for found in desk_finish.summary(root, ident, draft).values()
+        for item in found['items']
+        if item['state'] == 'open' and item['present']
+    ]
+    base = (record.get('google') or {}).get('baselines', {}).get('draft') or {}
+    return {
+        'id': ident,
+        'content': body,
+        'expected': studio.digest(
+            json.dumps([record, body, draft, proposals], sort_keys=True).encode()
+        ),
+        'google': base.get('document'),
+        'proposals': proposals,
+    }
+
+
+def _guard(root, data):
+    import desk
+    import desk_jobs
+    from team_workspace import guard as team_guard
+
+    ident = data.get('id')
+    if not desk.on_desk(studio.item(root, 'articles', ident)[0]):
+        return manuscript_editor.guard(root, data)
+    team_guard(root, ident)
+    current = read(root, ident)
+    if not data.get('expected') or data['expected'] != current['expected']:
+        raise ValueError('The desk changed. Compare again; your local work is kept.')
+    desk_jobs._busy(root, ident)
+    return current
+
+
 def preview(root, data):
-    current = manuscript_editor.guard(root, data)
+    current = _guard(root, data)
     if not current['google']:
         raise ValueError('Import or link a Google Doc before comparing versions.')
     token = uuid.uuid4().hex
@@ -75,7 +120,7 @@ def preview(root, data):
 def accept(root, data):
     if data.get('confirmed') is not True:
         raise ValueError('Compare both versions and confirm the chosen local text first.')
-    current = manuscript_editor.guard(root, data)
+    current = _guard(root, data)
     if current['proposals']:
         raise ValueError(
             'Review or clear the saved wording suggestions before reconciling. They have been kept.'
