@@ -831,7 +831,7 @@ class ForgetAndReadAheadTests(RouteCase):
 class OtherWritersTests(RouteCase):
     """While a blog is on the desk, only the desk writes its DRAFT.md."""
 
-    def test_the_manuscript_editor_and_its_tools_are_refused(self):
+    def test_manuscript_tools_and_stale_google_accept_are_refused(self):
         isolation.voices_on(self.root)  # These exercise the older voice tools.
         made = self.start()
         expected = studio.digest(b'x')
@@ -839,7 +839,13 @@ class OtherWritersTests(RouteCase):
             ('editor-save', {'id': made['id'], 'expected': expected, 'content': 'Elsewhere.'}),
             ('tool-action', {'action': 'restore', 'id': made['id'], 'expected': expected}),
             ('tool-action', {'action': 'voice-apply', 'id': made['id'], 'expected': expected}),
-            (
+        ):
+            with self.subTest(route=route, action=data.get('action')):
+                with self.assertRaisesRegex(ValueError, 'on the desk. Edit it there'):
+                    self.post(route, data)
+        # Google reconciliation imports through the desk, with its own revision guard.
+        with self.assertRaisesRegex(ValueError, 'The desk changed. Compare again'):
+            self.post(
                 'tool-action',
                 {
                     'action': 'google-accept',
@@ -847,11 +853,7 @@ class OtherWritersTests(RouteCase):
                     'expected': expected,
                     'confirmed': True,
                 },
-            ),
-        ):
-            with self.subTest(route=route, action=data.get('action')):
-                with self.assertRaisesRegex(ValueError, 'on the desk. Edit it there'):
-                    self.post(route, data)
+            )
         self.assertNotIn('Elsewhere.', (self.folder(made['id']) / 'DRAFT.md').read_text())
 
     def test_a_drifted_DRAFT_md_is_kept_before_a_desk_save(self):
