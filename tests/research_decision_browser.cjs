@@ -9,9 +9,23 @@ const {chromium}=require('playwright'),{spawn}=require('node:child_process'),ass
   const page=await browser.newPage({viewport:{width:390,height:950}}),failures=[];page.on('pageerror',e=>failures.push(e.message));
   await page.goto(test.url+'&resume='+encodeURIComponent(path.basename(test.path)));
   const before=await page.evaluate(()=>ask('fixture-decision-state'));
-  await page.getByRole('button',{name:'Choose flagged content',exact:true}).click();
-  await page.getByRole('heading',{name:'Choose flagged research content',exact:true}).waitFor();
-  assert.equal(await page.evaluate(()=>document.activeElement.textContent),'Choose flagged research content');
+  const opener=page.getByRole('button',{name:'View flagged items',exact:true});
+  await opener.click();
+  await page.getByRole('heading',{name:'Flagged research items',exact:true}).waitFor();
+  assert.equal(await page.evaluate(()=>document.activeElement.textContent),'Flagged research items');
+  assert.equal(await opener.getAttribute('aria-expanded'),'true');
+  assert.equal(await page.getByText('Flagged content:',{exact:true}).count(),2);
+  assert.equal(await page.getByText('Why it was flagged:',{exact:true}).count(),2);
+  assert(await page.getByRole('link',{name:'Open source',exact:true}).first().isVisible());
+  await page.getByText('Read the complete draft',{exact:true}).click();
+  assert(await page.getByText('Read the complete draft',{exact:true}).evaluate(n=>n.parentElement.open));
+  await page.getByRole('button',{name:'Close review',exact:true}).click();
+  assert.equal(await opener.getAttribute('aria-expanded'),'false');
+  assert(await opener.evaluate(n=>n===document.activeElement),'Closing inspection returns focus');
+  const inspected=await page.evaluate(()=>ask('fixture-decision-state'));
+  assert.deepEqual(inspected,before,'Inspecting/closing makes no decisions, report changes, or jobs');
+  await opener.click();
+  await page.getByRole('heading',{name:'Flagged research items',exact:true}).waitFor();
   await page.getByRole('button',{name:'Save choices',exact:true}).click();
   await page.getByText('Choose Include, Include with warning, or Exclude for every flag.',{exact:true}).waitFor();
   assert.equal(await page.locator('input[type=radio]:checked').count(),0);
@@ -20,7 +34,7 @@ const {chromium}=require('playwright'),{spawn}=require('node:child_process'),ass
   for(const width of [390,1280])for(const colorScheme of ['light','dark']){
    await page.setViewportSize({width,height:950});await page.emulateMedia({colorScheme,reducedMotion:'reduce'});
    assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'horizontal overflow');
-   if(process.env.RESEARCH_DECISION_RESULTS){fs.mkdirSync(process.env.RESEARCH_DECISION_RESULTS,{recursive:true});await page.getByRole('heading',{name:'Choose flagged research content',exact:true}).scrollIntoViewIfNeeded();await page.screenshot({path:path.join(process.env.RESEARCH_DECISION_RESULTS,`creator-review-${width}-${colorScheme}.png`)});}
+   if(process.env.RESEARCH_DECISION_RESULTS){fs.mkdirSync(process.env.RESEARCH_DECISION_RESULTS,{recursive:true});await page.getByRole('heading',{name:'Flagged research items',exact:true}).scrollIntoViewIfNeeded();await page.screenshot({path:path.join(process.env.RESEARCH_DECISION_RESULTS,`creator-review-${width}-${colorScheme}.png`)});}
   }
   await page.getByRole('button',{name:'Save choices',exact:true}).click();
   await page.getByText(/What happened: Your research choices are saved/).waitFor().catch(async error=>{throw Error(error.message+'\nPAGE: '+(await page.locator('body').innerText()).slice(-9000)+'\nJS: '+JSON.stringify(failures));});

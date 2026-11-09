@@ -357,6 +357,10 @@ The design is in [the runner's specification](superpowers/specs/2026-10-13-studi
 Research reviews lead with the authored brief, the independent check's note, remaining
 gaps and source limitations. They map findings to the questions you asked and fold the
 full report and evidence below. Read every objection opens the saved independent check.
+When research waits for your decision, **View flagged items** opens each flagged
+passage or source, the reason it was flagged, its source links, and the complete draft.
+Opening or closing this review changes nothing and starts no assistant work. Choose
+Include, Include with warning, or Exclude, then explicitly press **Save choices**.
 Before sending a research change, the page says that the whole investigation may run up
 to three writing/checking rounds, what its last try took and which made materials follow it.
 
