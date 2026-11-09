@@ -189,6 +189,7 @@ elif [[ "${1:-full}" == training-flow || "${1:-full}" == training-cult-ui || "${
       npm ci --prefix "$work/ui-browser" --ignore-scripts --no-audit --no-fund > "$results_dir/ui-browser-tools.log" 2>&1
     export NODE_PATH="$work/ui-browser/node_modules" PYTHON="$python"
     if [[ "${1:-full}" == training-research-decisions-ui ]]; then
+      (cd studios/training && "$python" scripts/ci/run_tests.py test_research_decision) > "$results_dir/research-decision-tests.log" 2>&1
       export RESEARCH_DECISION_RESULTS="$results_dir/research-decisions"
       mkdir -p "$RESEARCH_DECISION_RESULTS"
       node tests/research_decision_browser.cjs > "$results_dir/research-decisions-browser.log" 2>&1 || exit 1
