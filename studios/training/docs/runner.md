@@ -11,7 +11,8 @@ The workflow meter counts drafts that have been written, not your approvals.
 written or queued, and lists your **marked ready** approvals separately. Choose a
 material, then its section, or use **Previous** and **Next** to read in order.
 Background progress updates preserve an unchanged reader, its open section menu,
-and your place in the document. Each material remembers its selected section
+and your place in the document. Restoring expanded panels during a refresh does
+not replay their animation or move the reading position. Each material remembers its selected section
 while you move between materials in the same page session.
 
 You can read and download saved drafts while other materials are being created.

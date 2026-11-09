@@ -59,6 +59,25 @@ const assert=require('node:assert/strict'), path=require('node:path'), fs=requir
   assert.equal(await mapMaterials.getAttribute('aria-expanded'),'true');
   assert.equal(await mapMaterials.evaluate(n=>n===document.activeElement),true);
   if(process.env.TRAINING_PROGRESS_RESULTS){fs.mkdirSync(process.env.TRAINING_PROGRESS_RESULTS,{recursive:true});await page.screenshot({path:path.join(process.env.TRAINING_PROGRESS_RESULTS,'map-materials-390.png')});}
+  // Check after the disclosure transition, not just in the refresh promise's frame.
+  // Restoring [open] after insertion used to add scroll drift on each background poll.
+  for(const width of [390,1280]) for(const reducedMotion of ['no-preference','reduce']){
+   await page.setViewportSize({width,height:950});await page.emulateMedia({reducedMotion});
+   await chapter.selectOption({label:'M1 — Rolling restarts (25 min)'});
+   await chapter.focus();
+   await page.waitForTimeout(350); // The disclosure's height transition is 250 ms.
+   await page.evaluate(()=>window.scrollTo(0,document.querySelector('.desk-reading').getBoundingClientRect().top+scrollY-250));
+   const beforeScroll=await page.evaluate(()=>({y:scrollY,top:document.querySelector('.desk-reading').getBoundingClientRect().top}));
+   for(let poll=0;poll<4;poll++){
+    await page.evaluate(()=>refresh());
+    await page.waitForTimeout(350);
+    const afterScroll=await page.evaluate(()=>({y:scrollY,top:document.querySelector('.desk-reading').getBoundingClientRect().top}));
+    assert(Math.abs(afterScroll.y-beforeScroll.y)<3,`Delayed scroll drift at ${width}/${reducedMotion}: ${JSON.stringify({beforeScroll,afterScroll})}`);
+    assert(Math.abs(afterScroll.top-beforeScroll.top)<3,'Reading position remains stable after animation frames');
+   }
+   assert.equal(await chapter.evaluate(n=>n===document.activeElement),true);
+  }
+  await page.setViewportSize({width:390,height:950});
   await page.locator('[data-key="desk-flow-open blueprint@101"]').click();
   await page.locator('#desk-card-blueprint-101').waitFor();
   assert.equal(await page.locator('#desk-card-blueprint-101').evaluate(n=>n===document.activeElement),true);
@@ -123,7 +142,7 @@ const assert=require('node:assert/strict'), path=require('node:path'), fs=requir
   await page.waitForFunction(()=>document.querySelector('#desk-flow-materials')?.dataset.state==='complete');
   assert.equal(await map.locator('#desk-flow-review').getAttribute('data-state'),'needs-you');
   assert.deepEqual(errors,[]);
-  console.log('PASS Training Studio: actual worker vs queue, creator-approved handoff, read-only reload, stop/resume, compact 320/390/1280 light/dark, keyboard disclosure/polling, forced colors and 200% text');
+  console.log('PASS Training Studio: actual worker vs queue, creator-approved handoff, read-only reload, stop/resume, compact 320/390/1280 light/dark, keyboard disclosure/polling, delayed scroll retention with expanded panels and normal/reduced motion, forced colors and 200% text');
  } finally {
   if(browser) await browser.close();
   child.kill('SIGTERM');await new Promise(resolve=>{if(child.exitCode!==null)return resolve();child.once('exit',resolve);});

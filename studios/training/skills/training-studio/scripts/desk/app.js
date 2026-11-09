@@ -1391,8 +1391,14 @@ function place(spec, nodes, fresh) {
   const focused = !fresh && active && active.dataset ? active.dataset.key : '';
   const opened = fresh ? [] : Array.from(holder.querySelectorAll('details'))
     .filter((node) => node.open).map((node) => node.dataset.key);
-  toolbar(spec);
   const children = nodes.filter(Boolean);
+  // Restore disclosures while new nodes are detached. Opening them after insertion
+  // replays their height transition on every poll, moving the browser's scroll anchor.
+  for (const child of children) {
+    const details = [...(child.tagName === 'DETAILS' ? [child] : []), ...child.querySelectorAll('details')];
+    for (const node of details) if (opened.includes(node.dataset.key)) node.open = true;
+  }
+  toolbar(spec);
   // Background progress can change without replacing the document somebody is reading.
   // Keep its subtree connected: detaching a native select closes its open menu.
   const keep = !fresh && spec.keep && spec.keep.parentNode === holder ? spec.keep : null;
@@ -1406,9 +1412,6 @@ function place(spec, nodes, fresh) {
     }
     window.scrollTo(x, y);
   } else holder.replaceChildren(...children);
-  for (const node of holder.querySelectorAll('details')) {
-    if (opened.includes(node.dataset.key)) node.open = true;
-  }
   if (fresh) {
     window.scrollTo(0, 0);
     // A sheet opened on this screen keeps the focus: it is the only thing that can be reached.
