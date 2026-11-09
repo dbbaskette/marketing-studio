@@ -175,7 +175,7 @@ elif [[ "${1:-full}" == training-first-output || "${1:-full}" == training-first-
     (cd studios/training && bash scripts/ci/check.sh "$python") > "$results_dir/training-tests.log" 2>&1
   fi
   (cd studios/presentation && "$python" scripts/ci/run_tests.py test_parallel_research) > "$results_dir/presentation-tests.log" 2>&1
-elif [[ "${1:-full}" == training-flow || "${1:-full}" == training-cult-ui || "${1:-full}" == training-cult-ui-browser || "${1:-full}" == cult-source-ui || "${1:-full}" == training-research-decisions-ui ]]; then
+elif [[ "${1:-full}" == training-flow || "${1:-full}" == training-cult-ui || "${1:-full}" == training-cult-ui-browser || "${1:-full}" == cult-source-ui || "${1:-full}" == training-research-decisions-ui || "${1:-full}" == training-reading-ui ]]; then
   if [[ "${1:-full}" == training-flow || "${1:-full}" == training-cult-ui ]]; then
     (cd studios/training && bash scripts/ci/check.sh "$python") > "$results_dir/training-tests.log" 2>&1
   fi
@@ -188,7 +188,11 @@ elif [[ "${1:-full}" == training-flow || "${1:-full}" == training-cult-ui || "${
     env HOME="$work/ui-browser-home" NPM_CONFIG_USERCONFIG="$work/ui-npm-user.conf" NPM_CONFIG_GLOBALCONFIG="$work/ui-npm-global.conf" \
       npm ci --prefix "$work/ui-browser" --ignore-scripts --no-audit --no-fund > "$results_dir/ui-browser-tools.log" 2>&1
     export NODE_PATH="$work/ui-browser/node_modules" PYTHON="$python"
-    if [[ "${1:-full}" == training-research-decisions-ui ]]; then
+    if [[ "${1:-full}" == training-reading-ui ]]; then
+      export TRAINING_PROGRESS_RESULTS="$results_dir/training-reading"
+      node tests/training_progress_browser.cjs > "$results_dir/training-reading-browser.log" 2>&1 || exit 1
+      grep -q '^PASS' "$results_dir/training-reading-browser.log" || exit 1
+    elif [[ "${1:-full}" == training-research-decisions-ui ]]; then
       (cd studios/training && "$python" scripts/ci/run_tests.py test_research_decision) > "$results_dir/research-decision-tests.log" 2>&1
       export RESEARCH_DECISION_RESULTS="$results_dir/research-decisions"
       mkdir -p "$RESEARCH_DECISION_RESULTS"

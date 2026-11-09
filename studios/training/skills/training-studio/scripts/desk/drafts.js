@@ -1434,7 +1434,7 @@ async function drawDesk(fresh) {
       { said: 'Nothing was changed. The training itself is as it was.' });
     if (!held.view) return;
   }
-  if (!view.busy && !view.sheet) paintDesk(fresh);
+  if (!view.busy && !view.sheet) paintDesk(fresh, true);
 }
 
 function selectedDeskCard(found, held) {
@@ -1543,17 +1543,21 @@ async function shareDesk(path) {
 function levelStanding(found, level) {
   const counts = found.standing && found.standing.levels && found.standing.levels[level || ''];
   if (!counts || !counts.materials) return null;
-  const parts = [counts.ready + ' of ' + count(counts.materials, 'material', 'materials')
-    + ' ready'];
-  if (counts.to_write) parts.push(counts.to_write + ' still to write');
-  if (counts.drafts) parts.push(count(counts.drafts, 'draft', 'drafts') + ' to mark ready');
-  if (counts.attention) parts.push(counts.attention + (counts.attention === 1 ? ' needs'
-    : ' need') + ' attention');
-  if (counts.decision) parts.push(counts.decision + (counts.decision === 1 ? ' waits'
-    : ' wait') + ' for your decision');
-  const node = make('p', 'quiet desk-level-standing', (level ? 'Level ' + level + ': ' : '')
-    + parts.join(' · ') + (counts.ready === counts.materials ? '. Complete.' : '.'));
-  node.setAttribute('role', 'status');
+  const cards = list(found.cards).filter(one => (one.level || '') === (level || '') && one.state !== 'left-out');
+  const available = cards.filter(one => one.seen).length;
+  const remaining = cards.filter(one => !one.seen);
+  const parts = [counts.ready + ' of ' + counts.materials + ' marked ready'];
+  if (counts.drafts) parts.push(count(counts.drafts, 'draft', 'drafts') + ' awaiting your review');
+  if (counts.attention) parts.push(counts.attention + (counts.attention === 1 ? ' needs' : ' need') + ' attention');
+  if (counts.decision) parts.push(counts.decision + (counts.decision === 1 ? ' needs' : ' need') + ' your decision');
+  const node = make('section', 'desk-level-standing');
+  node.setAttribute('aria-label', level ? 'Review level ' + level : 'Review materials');
+  add(node, make('h2', 'section-title', level ? 'Review materials · Level ' + level : 'Review materials'),
+    make('p', 'row-title', available + ' of ' + counts.materials + ' materials available to read'),
+    remaining.length ? make('p', 'quiet', 'Still to write: ' + remaining.map(one => cardTitle(one) + ' (' + (DESK_WORDS.tabs[one.state] || 'Queued').toLowerCase() + ')').join(', ') + '.') : null,
+    make('p', 'quiet', 'Your approval: ' + parts.join(' · ') + '.'),
+    remaining.length ? make('p', 'quiet', 'Read completed drafts now. Mark ready becomes available when every material in this level has a draft.') : null);
+
   return node;
 }
 
@@ -1768,7 +1772,7 @@ function deskCard(found) {
   if (compact) {
     node.classList.add('desk-card-compact');
     const status = found.checks?.passed ? DESK_WORDS.tabs[found.state]
-      + (found.state === 'draft' ? ' · Your review' : '') : found.says;
+      + (found.state === 'draft' ? ' · Available to read' : ' · Approved by you') : found.says;
     node.replaceChildren(add(make('div', 'desk-material-head'),
       add(make('div', 'desk-material-title'), heading, state(DESK_WORDS.beads[found.state] || 'none', status)),
       bar.childNodes.length ? bar : null));
@@ -2511,12 +2515,22 @@ function materialParts(held, found) {
     select.dataset.key = sectionKey;
     for (const section of sections) { const option = make('option', '', section.heading); option.value = section.id; select.append(option); }
     select.value = held.section;
-    select.addEventListener('change', () => { held.section = select.value; deskHeld(view.path).drawn = ''; paintDesk(false); });
+    const chooseSection = (id, key) => {
+      held.section = id; deskHeld(view.path).drawn = ''; paintDesk(false);
+      if (!focusKey(key)) focusKey(sectionKey);
+    };
+    select.addEventListener('change', () => chooseSection(select.value, sectionKey));
+    const index = sections.findIndex(section => section.id === held.section);
+    const previous = capsule('Previous', '', () => chooseSection(sections[index - 1].id, sectionKey + '-previous'), sectionKey + '-previous');
+    const next = capsule('Next', '', () => chooseSection(sections[index + 1].id, sectionKey + '-next'), sectionKey + '-next');
+    previous.setAttribute('aria-label', 'Previous section'); next.setAttribute('aria-label', 'Next section');
+    previous.disabled = index === 0; next.disabled = index === sections.length - 1;
     area.append(add(make('div', 'desk-reading-tools'),
-      add(make('label', 'field'), make('span', 'field-label', 'Section · ' + (sections.findIndex(section => section.id === held.section) + 1) + ' of ' + sections.length), select), toggle));
+      add(make('label', 'field'), make('span', 'field-label', 'Section · ' + (sections.findIndex(section => section.id === held.section) + 1) + ' of ' + sections.length), select),
+      add(make('div', 'bar desk-section-navigation'), previous, next), toggle));
   } else if (sections.length > 1) area.append(workspaceTabs('Section of ' + cardTitle(found),
     sections.map(section => ({id: section.id, label: section.heading})), held.section,
-    id => { held.section = id; paintDesk(true); }, sectionKey));
+    id => { held.section = id; deskHeld(view.path).drawn = ''; paintDesk(false); }, sectionKey));
   for (const section of sections.filter(section => section.id === held.section)) {
     let part;
     if (!editing) {
@@ -3342,7 +3356,7 @@ function trainingPlanReview(plan, held) {
   return add(box, label, levels.length > 1 ? scope : null, problem, add(make('div', 'bar'), change, build));
 }
 
-function paintDesk(fresh) {
+function paintDesk(fresh, fromPoll = false) {
   syncSpending();
   const active = document.activeElement;
   const editing = !fresh && active && ['TEXTAREA', 'INPUT'].includes(active.tagName)
@@ -3451,44 +3465,60 @@ function paintDesk(fresh) {
         || items.find(one => ['needs', 'held', 'decide'].includes(one.state)) || items[0]).name : id;
     paintDesk(true);
   }, 'desk-material');
-  const column = add(make('div', 'desk-column'), ...shown.filter(one => one.name === selected).map(deskCard));
-  if (selectedCard && groups[selectedCard.kind]) {
-    const items = groups[selectedCard.kind], select = make('select', 'input');
-    const label = DESK_WORDS.kinds[selectedCard.kind] + ' to review';
-    select.setAttribute('aria-label', label); select.dataset.key = 'desk-material-item';
-    for (const one of items) {
-      const option = make('option', '', cardTitle(one) + ' · ' + (DESK_WORDS.tabs[one.state] || 'Draft'));
-      option.value = one.name; select.append(option);
+  // Runtime timing and sibling jobs must not tear down an unchanged reading surface.
+  // Explicit navigation/editing always draws; a changed document or permissions does too.
+  const materialView = held.materials[selectedCard?.name]?.view;
+  const {desk: ignoredDesk, start: ignoredProgress, ...readerView} = materialView || {};
+  const readerStamp = JSON.stringify([selectedTab, options.map(one => one.id), selectedCard, readerView,
+    groups[selectedCard?.kind], levelMaterialsAvailable(shown), ours, found.execution,
+    found.library?.[selectedCard?.name], narrow()]);
+  const keepReader = fromPoll && !fresh && !held.sources && selectedCard?.kind !== 'deck'
+    && !finishingMaterial() && !preparingPlan && !waitingPlan && materialView
+    && !deskEditing(held.materials[selectedCard.name], selectedCard)
+    && held.reader?.stamp === readerStamp && held.reader.node.parentNode === main();
+  let layout;
+  if (keepReader) layout = held.reader.node;
+  else {
+    const column = add(make('div', 'desk-column'), ...shown.filter(one => one.name === selected).map(deskCard));
+    if (selectedCard && groups[selectedCard.kind]) {
+      const items = groups[selectedCard.kind], select = make('select', 'input');
+      const label = DESK_WORDS.kinds[selectedCard.kind] + ' to review';
+      select.setAttribute('aria-label', label); select.dataset.key = 'desk-material-item';
+      for (const one of items) {
+        const option = make('option', '', cardTitle(one) + ' · ' + (DESK_WORDS.tabs[one.state] || 'Draft'));
+        option.value = one.name; select.append(option);
+      }
+      select.value = selected;
+      select.addEventListener('change', () => { held.material[level] = select.value; paintDesk(false); });
+      column.prepend(add(make('label', 'field'), make('span', 'field-label', label), select));
     }
-    select.value = selected;
-    select.addEventListener('change', () => { held.material[level] = select.value; paintDesk(false); });
-    column.prepend(add(make('label', 'field'), make('span', 'field-label', label), select));
+    if(ours&&run.outline?.content_first&&run.outline.waiting&&shown.some(one=>one.name===selected&&one.kind==='deck'))column.prepend(slideTextReview(run.outline,held));
+    if (!shown.length) column.append(make('p', 'quiet', 'Nothing is made at this level.'));
+    const finishing = finishingMaterial();
+    if (finishing) {
+      finishing.panel = deskKit.panel(finishing); finishing.panelKey = deskKit.panelKey(finishing);
+      // Finishing is scoped to this material; All materials is the way to check another.
+      const others = capsule('All materials', 'quiet', () => openFinishing(true), 'desk-finishing-all');
+      others.setAttribute('aria-label', 'Finishing: choose another material of this level');
+      finishing.scope = add(make('p', 'quiet desk-finishing-scope'),
+        'Checking ' + cardTitle(finishing.view) + ' only. ', others);
+    }
+    // Finishing sits beside the material on a wide screen, and above it on a phone, so it
+    // opens where the person is looking.
+    const reading = !finishing ? add(make('div', 'stack'), column)
+      : narrow() ? add(make('div', 'stack'), finishing.scope, finishing.panel, column)
+        : add(make('div', 'stack'), finishing.scope, add(make('div', 'desk-layout desk-finishing'),
+          column, finishing.panel));
+    layout = workspacePanel('desk-material', options.findIndex(one => one.id === selectedTab),
+      held.sources ? sourcesPart(found) : reading);
   }
-  if(ours&&run.outline?.content_first&&run.outline.waiting&&shown.some(one=>one.name===selected&&one.kind==='deck'))column.prepend(slideTextReview(run.outline,held));
-  if (!shown.length) column.append(make('p', 'quiet', 'Nothing is made at this level.'));
-  const finishing = finishingMaterial();
-  if (finishing) {
-    finishing.panel = deskKit.panel(finishing); finishing.panelKey = deskKit.panelKey(finishing);
-    // Finishing is scoped to this material; All materials is the way to check another.
-    const others = capsule('All materials', 'quiet', () => openFinishing(true), 'desk-finishing-all');
-    others.setAttribute('aria-label', 'Finishing: choose another material of this level');
-    finishing.scope = add(make('p', 'quiet desk-finishing-scope'),
-      'Checking ' + cardTitle(finishing.view) + ' only. ', others);
-  }
-  // Finishing sits beside the material on a wide screen, and above it on a phone, so it
-  // opens where the person is looking.
-  const reading = !finishing ? add(make('div', 'stack'), column)
-    : narrow() ? add(make('div', 'stack'), finishing.scope, finishing.panel, column)
-      : add(make('div', 'stack'), finishing.scope, add(make('div', 'desk-layout desk-finishing'),
-        column, finishing.panel));
-  const layout = workspacePanel('desk-material', options.findIndex(one => one.id === selectedTab),
-    held.sources ? sourcesPart(found) : reading);
+  held.reader = {stamp: readerStamp, node: layout};
   const planReview = waitingPlan ? trainingPlanReview(run.training_plan, held) : null;
   if (planReview) {
     planReview.id = 'desk-plan-review'; planReview.tabIndex = -1;
     planReview.dataset.key = 'desk-plan-review';
   }
-  place({ title: found.title || 'Untitled', back: true, compact: narrow(),
+  place({ title: found.title || 'Untitled', back: true, compact: narrow(), keep: keepReader ? layout : null,
     above: named.length ? [make('span', '', levelsText(named))] : [],
     actions: folded(actions) }, [
     waitingPlan || found.progress?.map ? null : pageHead(preparingPlan ? (run.outline_first ? 'One Quick scan prepares an editable outline. Detailed research waits for your approval.' : 'I’ll prepare the topics and teaching plan for you to check, then build the training.') : conversation ? 'Read the retained materials. Make checked edits in conversation; only you mark a material ready.' : DESK_WORDS.lede),

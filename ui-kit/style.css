@@ -3484,6 +3484,9 @@ input.desk-text {
 .desk-reading-tools { display: flex; flex-wrap: wrap; align-items: end; gap: .6rem; }
 .desk-reading-tools > .field { flex: 1 1 16rem; min-width: 0; margin: 0; }
 .desk-reading-tools > .button { flex: 0 0 auto; }
+.desk-section-navigation { flex: 0 0 auto; margin: 0; }
+.desk-level-standing { border-top: 1px solid var(--hair); padding-block: 1rem .25rem; }
+.desk-level-standing > p { margin-block: .35rem 0; }
 @media (max-width: 52rem) {
   .desk-material-title { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .8rem; }
   .desk-material-title > .card-title { margin: 0; }

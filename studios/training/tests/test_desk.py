@@ -7884,7 +7884,8 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         self.assertIn('It needs you.', status_text)
         desk_shot = shots['desk']
         self.assertIn('Deck · Needs attention', desk_shot['buttons'])
-        self.assertIn('Level 101: 0 of 5 materials ready · 4 drafts to mark ready · 1 needs '
+        self.assertIn('5 of 5 materials available to read', desk_shot['text'])
+        self.assertIn('Your approval: 0 of 5 marked ready · 4 drafts awaiting your review · 1 needs '
                       'attention.', desk_shot['text'])
         self.assertIn(reviewing, desk_shot['text'])
         self.assertEqual(desk_shot['pressed'], ['101'])
@@ -7944,6 +7945,31 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
              'covers': ['O1', 'K1.1']},
             {'id': 'abcd5678', 'heading': 'Rolling a deploy', 'text': 'Second section.'}],
             'versions': {'abcd1234': 1}, 'working': None, 'jobs': []}
+
+    def test_chapter_picker_and_next_keep_the_section_across_active_polls(self):
+        guide, card_view = self.readable()
+        card_view['sections'] += [
+            {'id': 'abcd9012', 'heading': 'Check capacity', 'text': 'Third chapter.'},
+            {'id': 'abcd3456', 'heading': 'Practice it', 'text': 'Last chapter.'}]
+        queued = a_card('brief@101', state='queued', seen=None, actions=[])
+        desk = a_desk(guide, queued, levels=('101',))
+        card_view['desk'] = desk['body']
+        run = a_desk_run()
+        changed = a_desk_run()
+        changed['body']['timing'] = {'elapsed_seconds': 30, 'active_seconds': 20,
+                                    'assistant_seconds': 20, 'incomplete': False}
+        result = self.open_desk(self.on_desk(desk, run, **{
+            'GET /api/run': [run, changed], 'GET /api/drafts/card': [ok(card_view)]}), [
+            {'fill': 'Section of Guide', 'value': 'abcd5678'}, {'poll': True},
+            {'snapshot': 'polled'}, {'click': 'Next section'}, {'poll': True},
+            {'snapshot': 'next'}, {'click': 'Previous section'}, {'snapshot': 'previous'}])
+        for name in ('polled', 'previous'):
+            self.assertEqual(result['snapshots'][name]['fields']['Section of Guide'], 'abcd5678')
+            self.assertIn('Second section.', result['snapshots'][name]['text'])
+        self.assertEqual(result['snapshots']['polled']['focus'], 'Section of Guide')
+        self.assertEqual(result['snapshots']['next']['fields']['Section of Guide'], 'abcd9012')
+        self.assertIn('Third chapter.', result['snapshots']['next']['text'])
+        self.assertEqual(self.posts(result), [])
 
     def test_a_whole_material_note_from_finishing_opens_where_it_can_be_edited(self):
         guide, guide_view = self.readable()
@@ -8093,7 +8119,8 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         shot = result['snapshots']['open']
         # On a phone too: the decision, and the deck it is about, with no editor beside it.
         self.assertIn('Review slide text', shot['buttons'])
-        self.assertEqual(list(shot['fields']), ['Title of slide 1', 'Point 1 of slide 1'])
+        self.assertEqual(list(shot['fields']), ['Title of slide 1', 'Point 1 of slide 1',
+                                              'Slide to review'])
 
     def test_old_outline_entry_opens_the_matching_modern_deck_without_a_decision(self):
         deck = a_card('deck@201', state='decide', seen=None, actions=[],

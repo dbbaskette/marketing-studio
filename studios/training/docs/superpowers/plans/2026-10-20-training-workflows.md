@@ -71,6 +71,7 @@ production detail. Reading a document or expanding details approves nothing.
 | Grouped review | Waiting for direction or final review | One persistent toolbar approval with the displayed revision | Grouped approval/refusal regression |
 | Edit a grouped change request, then refresh or fail | Unsaved request text | Keep the text for that training, phase and material; show refusal beside the request | Grouped revision refresh regression |
 | Refresh a review while reading | Expanded and collapsed sections chosen by the reader | Preserve both disclosure states | Grouped disclosure regression and phone walkthrough |
+| Poll while reading a generated material | Other materials still writing; no approval change | Keep an unchanged reader mounted, retain its section, focus and scroll; label available drafts separately from marked-ready approvals | `TrainingDeskScreenTests.test_chapter_picker_and_next_keep_the_section_across_active_polls`, `training_progress_browser.cjs` |
 | Enter final grouped review | Finished materials and supporting records | Materials first, first material expanded; research and planning still available | Final-review ordering regression |
 | Open finished training, including a teammate's | Ready to use | Index action stays in the toolbar while reading | Finished and team page journeys |
 | New research start with multiple approved questions | Schema 5 parallel protocol: up to 3 investigators, synthesis and independent review | `ParallelNativeTests`, `ParallelWorkflowTests` |
