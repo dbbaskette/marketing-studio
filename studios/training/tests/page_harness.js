@@ -482,7 +482,7 @@ function boxes() {
     const box = label.htmlFor ? document.getElementById(label.htmlFor) : null;
     if (box && visible(box)) found.push([name(label), box]);
   }
-  for (const input of document.body.querySelectorAll('input, textarea').filter(visible)) {
+  for (const input of document.body.querySelectorAll('input, textarea, select').filter(visible)) {
     const label = input.getAttribute('aria-label');
     if (label && !found.some((entry) => entry[1] === input)) found.push([label, input]);
   }

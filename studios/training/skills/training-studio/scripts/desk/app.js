@@ -1392,7 +1392,20 @@ function place(spec, nodes, fresh) {
   const opened = fresh ? [] : Array.from(holder.querySelectorAll('details'))
     .filter((node) => node.open).map((node) => node.dataset.key);
   toolbar(spec);
-  holder.replaceChildren(...nodes.filter(Boolean));
+  const children = nodes.filter(Boolean);
+  // Background progress can change without replacing the document somebody is reading.
+  // Keep its subtree connected: detaching a native select closes its open menu.
+  const keep = !fresh && spec.keep && spec.keep.parentNode === holder ? spec.keep : null;
+  if (keep && children.includes(keep)) {
+    const x = window.scrollX, y = window.scrollY;
+    for (const node of Array.from(holder.childNodes)) if (node !== keep) node.remove();
+    let after = false;
+    for (const node of children) {
+      if (node === keep) { after = true; continue; }
+      if (after) holder.append(node); else holder.insertBefore(node, keep);
+    }
+    window.scrollTo(x, y);
+  } else holder.replaceChildren(...children);
   for (const node of holder.querySelectorAll('details')) {
     if (opened.includes(node.dataset.key)) node.open = true;
   }
@@ -1402,7 +1415,7 @@ function place(spec, nodes, fresh) {
     if (!view.sheet) byId('title').focus({ preventScroll: true });
     return;
   }
-  if (focused) focusKey(focused);
+  if (focused && document.activeElement !== active) focusKey(focused);
 }
 
 function focusKey(key) {

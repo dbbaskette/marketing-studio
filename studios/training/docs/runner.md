@@ -4,6 +4,22 @@ The runner takes a training from a short form to its materials. New trainings ap
 
 It is early. It makes the research, the blueprint, the learner guide, the brief, the slide deck, the practice scenarios and, if you want them, their layout for Yoodli. A deck needs more on your computer than the rest does. Where that is missing, the training is taken through everything else and the page says what the deck still needs.
 
+## Read materials while work continues
+
+The workflow meter counts drafts that have been written, not your approvals.
+**Review materials** shows what is available to read, names what is still being
+written or queued, and lists your **marked ready** approvals separately. Choose a
+material, then its section, or use **Previous** and **Next** to read in order.
+Background progress updates preserve an unchanged reader, its open section menu,
+and your place in the document. Each material remembers its selected section
+while you move between materials in the same page session.
+
+You can read and download saved drafts while other materials are being created.
+Editing is available when the current worker no longer needs that material.
+**Mark ready** becomes available once every material in the level has a draft;
+it remains your explicit approval. Reading a chapter never starts an AI job or
+approves its contents.
+
 ## What you need
 
 The [installer](installation.md) brings the runner, offers the two companion skills, and says which of these this computer still lacks.

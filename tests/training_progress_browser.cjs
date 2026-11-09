@@ -21,6 +21,32 @@ const assert=require('node:assert/strict'), path=require('node:path'), fs=requir
   await map.waitFor();
   assert.equal(await map.locator('.desk-flow-expanded').evaluate(n=>n.open),false,'Detailed map starts folded');
   assert((await map.locator('.desk-flow-summary').boundingBox()).height<150,'Compact phone workflow summary');
+  // Polling used to detach the reader every few seconds, dismissing its native menu.
+  const chapter=page.getByRole('combobox',{name:'Section of Plan',exact:true});
+  await chapter.selectOption({label:'Objectives'});
+  await chapter.focus();
+  await page.evaluate(()=>{window.readingNodes={panel:document.querySelector('#desk-material-panel'),picker:document.querySelector('[aria-label="Section of Plan"]')};});
+  const readingY=await page.evaluate(()=>window.scrollY);
+  for(let poll=0;poll<3;poll++)await page.evaluate(()=>refresh());
+  assert(await page.evaluate(()=>readingNodes.panel===document.querySelector('#desk-material-panel')&&readingNodes.picker===document.activeElement),'Unrelated active polls must keep the reader and focused picker mounted');
+  assert.equal(await chapter.locator('option:checked').innerText(),'Objectives');
+  assert(Math.abs(await page.evaluate(()=>window.scrollY)-readingY)<3,'Polling keeps reading scroll position');
+  await page.getByRole('button',{name:'Next section',exact:true}).click();
+  await page.getByRole('heading',{name:'M1 — Rolling restarts (25 min)',exact:true}).waitFor();
+  await page.getByRole('button',{name:'Previous section',exact:true}).click();
+  await page.getByRole('heading',{name:'Objectives',exact:true}).waitFor();
+  for(const width of [390,1280]){
+   await page.setViewportSize({width,height:950});
+   await chapter.waitFor();
+   await page.evaluate(()=>refresh());
+   assert.equal(await chapter.locator('option:checked').innerText(),'Objectives');
+   assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Reading controls fit');
+   if(process.env.TRAINING_PROGRESS_RESULTS){fs.mkdirSync(process.env.TRAINING_PROGRESS_RESULTS,{recursive:true});await chapter.scrollIntoViewIfNeeded();await page.screenshot({path:path.join(process.env.TRAINING_PROGRESS_RESULTS,`reader-${width}.png`)});}
+  }
+  await page.setViewportSize({width:390,height:950});
+  await page.getByRole('region',{name:'Review level 101'}).getByText('1 of 3 materials available to read',{exact:true}).waitFor();
+  await page.getByText(/Mark ready becomes available when every material/).waitFor();
+  assert.equal(await page.getByRole('button',{name:'Mark ready',exact:true}).count(),0);
   await page.getByText('Explore workflow',{exact:true}).click();
   const mapMaterials=map.locator('#desk-flow-materials');
   assert.equal(await mapMaterials.getAttribute('data-state'),'working');
