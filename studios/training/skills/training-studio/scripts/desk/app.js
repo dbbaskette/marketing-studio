@@ -5476,7 +5476,7 @@ function actionSays(run, found) {
     return 'The deck is drawn once its pictures are here. Without one, redesign the deck or '
       + 'leave it out.';
   }
-  if (found.creator_review) return 'Choose flagged content to finish without another model call, or explicitly try one correction and check.';
+  if (found.creator_review) return 'View flagged items to read the content, why it was flagged, and its sources. Opening the review changes nothing and starts no new work.';
   if (found.action === 'resume') {
     return 'Carry on starts that step again; everything finished before it is kept.';
   }
@@ -5619,17 +5619,21 @@ function stepLabel(run, name) {
 
 function researchDecisionPart(run) {
   const box = make('section', 'card stack');
-  const heading = make('h3', 'card-title', 'Choose flagged research content');
+  const heading = make('h3', 'card-title', 'Flagged research items');
   heading.tabIndex = -1;
   const state = view.researchDecision;
   if (!state || state.path !== view.path) return box;
-  add(box, heading, make('p', '', 'Include keeps the content. Include with warning adds a visible note. Exclude omits the claim and dependent passages. The independent-check notes are kept with your choices.'));
+  add(box, heading, make('p', '', state.plan.items.length + ' flagged ' + (state.plan.items.length === 1 ? 'item' : 'items') + '. Read the details below before deciding. Nothing changes until you press Save choices.'),
+    make('p', 'quiet', 'Include keeps the content. Include with warning adds a visible note. Exclude omits the claim and dependent passages. The independent-check notes are kept with your choices.'));
   const report = make('details', 'card-part');
   add(report, make('summary', '', 'Read the complete draft'), window.StudioMarkdown.render(state.plan.report));
   box.append(report);
   for (const item of state.plan.items) {
     const field = make('fieldset', 'card-part');
-    add(field, make('legend', 'field-label', item.title), make('p', '', item.text), make('p', 'quiet', item.note));
+    add(field, make('legend', 'field-label', item.title),
+      add(make('p', ''), make('strong', '', 'Flagged content: '), item.text),
+      add(make('p', ''), make('strong', '', 'Why it was flagged: '), item.note));
+    if (item.sources.length) field.append(make('p', 'field-label', 'Sources'));
     for (const source of item.sources) {
       const line = make('p', 'quiet', source.title + ': ');
       if (/^https?:\/\//.test(source.origin)) {
@@ -5659,7 +5663,11 @@ function researchDecisionPart(run) {
       toast('Research choices saved. Continue when ready.'); paintRun(false); refresh();
     } catch (failure) { problem.textContent = failure.message; save.disabled = false; view.busy = false; }
   }, 'research-decisions-save');
-  const close = capsule('Close', 'quiet', () => { view.researchDecision = null; box.remove(); byId('research-decisions-open')?.focus(); }, 'research-decisions-close');
+  const close = capsule('Close review', 'quiet', () => {
+    view.researchDecision = null; box.remove();
+    const opener = byId('research-decisions-open');
+    opener?.setAttribute('aria-expanded', 'false'); opener?.focus();
+  }, 'research-decisions-close');
   add(box, problem, add(make('div', 'bar'), save, close));
   return box;
 }
@@ -5687,17 +5695,24 @@ function problemPart(run, lead) {
     : theirs ? 'It has stopped' : 'It has stopped, and needs you';
   const does = theirs ? '' : actionSays(run, found);
   const decisions = make('div');
-  const decide = found.creator_review && !theirs ? capsule('Choose flagged content', 'filled', async () => {
+  decisions.id = 'research-flags';
+  const decide = found.creator_review && !theirs ? capsule('View flagged items', 'filled', async () => {
     decide.disabled = true;
     try {
       const plan = await send('research-decision', {path: view.path, action: 'read'});
       const old = view.researchDecision;
       view.researchDecision = {path: view.path, plan, choices: old && old.path === view.path && old.plan.expected === plan.expected ? old.choices : {}};
       decisions.replaceChildren(researchDecisionPart(run));
+      decide.setAttribute('aria-expanded', 'true');
       decisions.querySelector('h3').focus();
     } catch (failure) { decisions.replaceChildren(make('p', 'problem', failure.message)); }
     finally { decide.disabled = false; }
   }, 'research-decisions-open') : null;
+  if (decide) {
+    decide.id = 'research-decisions-open';
+    decide.setAttribute('aria-controls', decisions.id);
+    decide.setAttribute('aria-expanded', String(Boolean(view.researchDecision && view.researchDecision.path === view.path)));
+  }
   if (decide && view.researchDecision && view.researchDecision.path === view.path) decisions.append(researchDecisionPart(run));
   // The research check's objections, every one under its group, read where the stop is.
   let read = null;
