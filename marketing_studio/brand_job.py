@@ -38,7 +38,7 @@ from studio_core.agent_events import ClaudeEvents, CodexEvents
 from . import brand_skill, brand_store, state
 from .errors import WorkspaceError
 
-SECONDS = 1500
+SECONDS = 2250
 SOURCE_BUDGET = 400_000      # characters of source text in one prompt
 ONE_SOURCE = 120_000         # characters of one source file
 TEXT = ('.md', '.markdown', '.txt', '.json', '.css', '.csv', '.html', '.htm', '.xml', '.yaml', '.yml')

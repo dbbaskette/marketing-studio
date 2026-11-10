@@ -769,9 +769,7 @@ function deskStart() {
     retell();
     summary.textContent = 'Next: one Quick scan, then your outline approval before detailed research and writing. Outputs: '
       + [...draft.materials.map(id => MATERIALS.find(one => one[0] === id)?.[1] || id),
-        ...(DECKS[draft.deck][0] ? ['Slide deck'] : [])].join(', ') + '.'
-      + (given(view.setup?.limits?.training_dollars)
-        ? ' Project spending amount: ' + money(view.setup.limits.training_dollars) + '.' : '');
+        ...(DECKS[draft.deck][0] ? ['Slide deck'] : [])].join(', ') + '.';
   };
   draft.retell();
   form.append(problem,status);
@@ -3211,7 +3209,7 @@ function outlinePlanReview(plan, held) {
     make('p','quiet',(plan.inputs_changed||plan.scan.fallback?'':status+' ')+'The scan supplies no teaching evidence.'),
     make('p','quiet','Up to '+Math.min(plan.workers,value.sections.length)+' areas run in parallel; combining and independent checking follow.'),
     plan.research_policy?make('p','quiet','Focused first draft: up to '+plan.research_policy.facts_per_area+' essential facts and '+plan.research_policy.sources_per_area+' sources per area, including useful tutorials or labs. Optional depth stays in gaps. Read and download saved sections while checking continues.'):null,
-    make('p','quiet','Scan limits: '+Math.ceil(plan.limits.seconds/60)+' minutes and $'+plan.limits.dollars.toFixed(2)+', within the training limits. External searches: '+plan.limits.searches+'.'),
+    make('p','quiet','Scan limit: '+Math.ceil(plan.limits.seconds/60)+' minutes. External searches: '+plan.limits.searches+'.'),
     make('p','',value.overview),bullets(value.key_terms,'outline-points'),
     ...list(value.coverage).map(one=>make('p','',one.source+': '+one.covers)),bullets(value.gaps,'outline-points'));
   overview.dataset.key='outline-approach';
@@ -3460,7 +3458,6 @@ function workbenchMove(found, held, run) {
 }
 
 function paintDesk(fresh, fromPoll = false) {
-  syncSpending();
   const active = document.activeElement;
   const editing = !fresh && active && ['TEXTAREA', 'INPUT'].includes(active.tagName)
     && main().contains(active) ? { key: active.dataset.key, id: active.id, start: active.selectionStart,
@@ -3469,7 +3466,7 @@ function paintDesk(fresh, fromPoll = false) {
   const held = deskHeld(view.path);
   const found = held.view;
   if (!run || !found) return;
-  // A budget/timing update does not replace an outline somebody is still typing.
+  // A timing update does not replace an outline somebody is still typing.
   if (editing && run.training_plan?.expected && held.typingOutlineBasis === run.training_plan.expected) return;
   held.typingOutlineBasis = run.training_plan?.expected;
   const ours = deskOurs();

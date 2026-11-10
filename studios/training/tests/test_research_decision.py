@@ -59,12 +59,11 @@ class CreatorDecisionTests(StudioCase):
         self.assertIn('Creator included with warning', (root/pipeline.REPORT).read_text())
         self.assertTrue(research_decision.current(root,self.engine._load(root)))
         self.assertTrue(pipeline.findings_text(root).startswith('# Creator-approved research'))
-        allowance = self.engine._load(root).get('cleared', 0.0)
         self.engine.act(root,'resume')
         shown=self.view(root)
         self.assertIsNone(shown['problem'],shown['problem'])
         self.assertEqual(self.phases.count('review'),1)
-        self.assertEqual(self.engine._load(root).get('cleared', 0.0), allowance)
+        self.assertNotIn('cleared', self.engine._load(root))
         self.assertTrue(self.workers.of('blueprint'), 'Creator-qualified research reaches material authoring')
 
     def test_source_access_gap_also_offers_creator_choice(self):

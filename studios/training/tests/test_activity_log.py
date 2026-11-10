@@ -100,7 +100,7 @@ class ActivityLogTests(StudioCase):
         self.assertEqual((job['outcome'], job['words']), ('timeout', 'Out of time'))
 
     def test_a_job_that_reached_a_limit_is_logged_as_a_limit(self):
-        job = self.ending_of(fails('It stopped without finishing: its spending limit was '
+        job = self.ending_of(fails('It stopped without finishing: the usage limit was '
                                    'reached', reason='limit'))
         self.assertEqual(job['outcome'], 'limit')
 

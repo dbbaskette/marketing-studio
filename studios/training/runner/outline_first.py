@@ -11,7 +11,7 @@ from studio_core import research_contract, research_quality, review_policy, scop
 
 SCHEMA = 1
 RECORD_SCHEMA = 7
-SECONDS, DOLLARS, INPUT_CHARS = 180, 0.25, 48_000
+SECONDS, INPUT_CHARS = 270, 48_000
 
 
 def enabled(record):
@@ -139,7 +139,7 @@ def scan(engine, root, run, found, step):
     record = engine._load(root)
     job, initial = work(engine, root, found, record)
     outcome, handed, started, folder = engine._job(root, run, step.step, job,
-        limits=agents.Limits(SECONDS, DOLLARS))
+        limits=agents.Limits(SECONDS))
     accepted = handed.get('artifacts', {}).get('scan')
     value = checked(json.loads(accepted['text']), minimum=2) if accepted else initial
     # The assistant cannot silently remove or rewrite questions typed on the form.
@@ -160,7 +160,7 @@ def view(root, found, record):
             'research_policy': copy.deepcopy(record['outline_first'].get('research_policy')),
             'outline': copy.deepcopy(record['outline_first']['outline']),
             'scan': copy.deepcopy(record['outline_first'].get('scan') or {}),
-            'limits': {'seconds': SECONDS, 'dollars': DOLLARS, 'searches': 0},
+            'limits': {'seconds': SECONDS, 'searches': 0},
             'levels': found.session['levels'], 'research_from': record.get('research_from') or {},
             'workers': min(3,(record.get('research_execution') or {}).get('workers',1)),
             'inputs_changed': record['outline_first'].get('inputs_changed',False)}

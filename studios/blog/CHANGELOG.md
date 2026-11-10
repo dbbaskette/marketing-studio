@@ -1,5 +1,7 @@
 # Changelog
 
+Unreleased: the assistant has 50% more time before a step is stopped. A step's time limit for a new blog starts at 15 minutes, not 10, and **Ask Codex to find the post's text** and a library document's analysis have 4.5 minutes, not 3. A limit you already saved in Settings keeps its value.
+
 Unreleased: **Verify in the Doc again** reads the Google Doc once more for the last send and says whether it still holds what was sent, or how many suggestions are now pending, accepted and rejected. It is offered on the send's receipt and, as **Verify the last send**, in the toolbar's Google Doc menu, also after a reload. Nothing is sent and the record of the send does not change.
 
 Unreleased: a post's own GEO review now waits until the fixes in your text are accepted or rejected, and runs when the last one is decided, so it reads the post as you left it and proposes nothing those changes already made. **Run GEO review** still runs one at any time.

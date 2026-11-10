@@ -26,7 +26,7 @@ What a caller needs to know
 - The defaults are sent as `agent`, `model` and `effort`; `person`, the person's own name;
   `brand` and `variant`; `output`, `google` or `pptx`; `previews`, the renderer: LibreOffice
   on this computer (`local`) or Google Drive (`drive`); and `limits`, {step_seconds,
-  deck_dollars, parallel}. `describe` gives them back as `agent` {default, model, effort},
+  parallel}. `describe` gives them back as `agent` {default, model, effort},
   `person` {name}, `brand` {..., default: {brand, variant}}, `output`, `previews` {how,
   drive, local} with which of the two renderers this computer can use, and `limits`.
   `brand` is the brand skill that was found and the brands it has, with every brand skill
@@ -121,7 +121,7 @@ modules.bind(globals(), _shared, _shared.NAMES)
 
 PROBE = 'presentation-studio-write-check'   # a branch name that is asked about, never made
 NOBODY = ('-c', 'user.name=Presentation Studio', '-c', 'user.email=check@example.invalid')
-LIMITS = ('step_seconds', 'deck_dollars', 'parallel')
+LIMITS = ('step_seconds', 'parallel')
 
 
 def working(engine) -> bool:
@@ -404,7 +404,7 @@ def chosen(sent: dict) -> settings.Settings:
     kept = settings.load()
     limits = sent.get('limits')
     if limits is not None and not isinstance(limits, dict):
-        raise WorkspaceError('Give the limits as step_seconds, deck_dollars and parallel.')
+        raise WorkspaceError('Give the limits as step_seconds and parallel.')
     agent = sent.get('agent') or kept.agent
     same = agent == kept.agent
     model = sent['model'] if 'model' in sent else (kept.model if same else None)

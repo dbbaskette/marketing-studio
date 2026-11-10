@@ -1017,7 +1017,7 @@ class StudioCase(unittest.TestCase):
         record = decks.read_run(root)
         record.update(agent=agent, model=model, level_of_effort=effort,
             model_profiles=model_profiles.capture(agent, model, effort, settings.check_effort),
-            driver=team.claim(space), limits={'step_seconds': chosen.step_seconds, 'dollars': chosen.deck_dollars},
+            driver=team.claim(space), limits={'step_seconds': chosen.step_seconds},
             review_policy=({'schema': 1, 'level': changes['review_level']} if changes.get('review_level') else review_policy.capture()))
         record['schema'] = 1 if review_policy.level(record) == 'step_by_step' else 2
         if saved_contract is not None:

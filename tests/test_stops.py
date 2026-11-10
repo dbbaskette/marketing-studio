@@ -26,26 +26,6 @@ class StopWordsTests(unittest.TestCase):
         self.assertEqual(stops.lasted(5400), '1 hour 30 minutes')
         self.assertEqual(stops.lasted(45), '45 seconds')
 
-    def test_a_stop_for_money_says_how_to_carry_on_and_that_settings_is_the_other_way(self):
-        what, kept = stops.spent('training', 20.4, 20)
-        self.assertEqual(what, 'This training has spent $20.40. It stops and asks each time it '
-                               'has spent another $20.00.')
-        self.assertEqual(kept, 'Everything made so far is kept. Carry on lets it spend up to '
-                               'another $20.00. To let it spend more before it asks, raise the '
-                               'limit in Settings, under Limits, then carry on.')
-        what, _ = stops.spent('deck', 19.7, 20, left=0.3)
-        self.assertEqual(what, 'This deck has spent $19.70, and the $0.30 it may still spend is '
-                               'too little to start another step. It stops and asks each time '
-                               'it has spent another $20.00.')
-        what, kept = stops.spent('training', 20.0, 20, label='Write the learner guide')
-        self.assertEqual(what, 'Write the learner guide was stopped when this training reached '
-                               'what it may spend: it has spent $20.00. It stops and asks each '
-                               'time it has spent another $20.00.')
-        self.assertTrue(kept.startswith('Everything finished before this step is kept, and the '
-                                        'step starts again when you carry on. Carry on'))
-        # Each studio names the action as its page does.
-        self.assertTrue(stops.spent('deck', 1, 1, go='Resume')[1].endswith('then resume.'))
-
     def test_took_and_cost_say_dollars_only_when_every_job_reported(self):
         self.assertEqual(stops.took([{'seconds': 300, 'dollars': 0.5},
                                      {'seconds': 420, 'dollars': 0.9}]),
@@ -82,14 +62,14 @@ class StopWordsTests(unittest.TestCase):
             'Drawn again: the blueprint and what is written from it, 4 steps; this computer '
             'has no record of what they cost.'))
 
-    def test_no_job_starts_with_less_than_the_floor_left(self):
-        self.assertEqual((stops.floor(20), stops.floor(1), stops.floor(0)), (0.5, 0.25, 0.0))
+    def test_nothing_stops_a_run_for_what_it_cost(self):
+        self.assertFalse(hasattr(stops, 'spent') or hasattr(stops, 'floor') or hasattr(stops, 'FLOOR'))
 
     def test_an_agent_that_cannot_be_used_is_offered_open_status(self):
         unusable = SimpleNamespace(reason='unavailable', detail='It is not signed in.')
         self.assertEqual(stops.agent_action(unusable), 'status')
         self.assertEqual(stops.ACTION_LABELS['status'], 'Open Status')
-        for other in (SimpleNamespace(reason='limit', budget=False, detail='usage limit'),
+        for other in (SimpleNamespace(reason='limit', detail='usage limit'),
                       SimpleNamespace(reason='timeout', detail='')):
             self.assertEqual(stops.agent_action(other), 'retry')
 
@@ -97,27 +77,26 @@ class StopWordsTests(unittest.TestCase):
         self.assertEqual(stops.unusable('Claude Code', 'It is not signed in.'), (
             'Claude Code could not be used. It is not signed in. Check this computer, on the '
             'Status screen, says what it needs.'))
-        limited = SimpleNamespace(reason='limit', budget=False, detail="You've hit your usage limit.")
+        limited = SimpleNamespace(reason='limit', detail="You've hit your usage limit.")
         self.assertTrue(stops.account_limit(limited))
         # Where the agent reports it, the account's refusal is known without its words.
         self.assertTrue(stops.account_limit(SimpleNamespace(
-            reason='limit', budget=False, account=True, detail='It stopped without finishing.')))
-        for other in (SimpleNamespace(reason='limit', budget=True, detail='usage limit'),
-                      SimpleNamespace(reason='limit', budget=False, detail='Too many turns.'),
-                      SimpleNamespace(reason='failed', budget=False, detail='usage limit')):
+            reason='limit', account=True, detail='It stopped without finishing.')))
+        for other in (SimpleNamespace(reason='limit', detail='Too many turns.'),
+                      SimpleNamespace(reason='failed', detail='usage limit')):
             self.assertFalse(stops.account_limit(other))
 
     def test_an_account_at_its_limit_is_waited_out_not_checked(self):
         # Check this computer cannot show a usage limit, so the stop does not send anyone there.
-        limited = SimpleNamespace(reason='limit', budget=False, account=True, detail='429')
+        limited = SimpleNamespace(reason='limit', account=True, detail='429')
         self.assertEqual(stops.agent_stopped('Claude Code', limited, '429'), (
             "Claude Code's account reached a usage or rate limit. Wait until it resets, then "
             'Try again.'))
-        gone = SimpleNamespace(reason='unavailable', budget=False, detail='Not signed in.')
+        gone = SimpleNamespace(reason='unavailable', detail='Not signed in.')
         self.assertEqual(stops.agent_stopped('Codex', gone, 'Not signed in.'),
                          stops.unusable('Codex', 'Not signed in.'))
         self.assertIsNone(stops.agent_stopped('Codex', SimpleNamespace(
-            reason='timeout', budget=False, detail='slow'), 'slow'))
+            reason='timeout', detail='slow'), 'slow'))
 
 
 if __name__ == '__main__':

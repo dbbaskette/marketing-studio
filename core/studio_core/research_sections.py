@@ -16,7 +16,7 @@ from studio_core import research_contract as rc, research_quality, stops
 
 PROTOCOL = 'studio-section-combining-v1'
 TRAINING_SCHEMA, PRESENTATION_SCHEMA = 8, 6
-SECONDS = 300
+SECONDS = 450
 FINAL_GUIDANCE = '''Assemble the final brief from completed section contributions.
 The section authors have already written the findings and report sections. Do not
 rewrite them, repeat their research, or perform the independent source check here.

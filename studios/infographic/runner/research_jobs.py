@@ -131,8 +131,8 @@ class Jobs:
         def cancelled(): return stop.is_set() or not current()
         def call(phase, payload, guide):
             require(not cancelled(), 'Research stopped or its infographic changed. Saved work is kept.')
-            left = int(1800 - (time.monotonic() - started))
-            require(left > 0, 'Research reached its total 30-minute limit. Checked evidence is kept.')
+            left = int(2700 - (time.monotonic() - started))
+            require(left > 0, 'Research reached its total 45-minute limit. Checked evidence is kept.')
             # What this job does is shown while it runs, and kept in the Activity log after.
             lines, token = activity_log.Lines(), secrets.token_hex(6)
             label = self.DOING.get(phase, 'Researching')
@@ -141,7 +141,7 @@ class Jobs:
                 self.working.setdefault(ident, {})[token] = job
             ended, detail = 'failed', None
             try:
-                answer = author.research(phase, payload, guide, seconds=min(300, left), stop=stop,
+                answer = author.research(phase, payload, guide, seconds=min(450, left), stop=stop,
                                          web=phase == 'discovery', activity=lines.append)
                 ended = 'finished'
                 return answer

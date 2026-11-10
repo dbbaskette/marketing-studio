@@ -219,5 +219,17 @@ class LogTests(unittest.TestCase):
         self.assertNotIn('The task text', self.path.read_text())
 
 
+    def test_a_spending_warning_from_an_older_log_is_passed_over_and_never_written(self):
+        self.path.parent.mkdir(parents=True)
+        self.path.write_text(json.dumps({'checkpoint': 'spending-warning', 'unit': 'Reported spending reached the warning.',
+                                         'at': '2030-01-01T00:00:01Z'}) + '\n')
+        before = self.path.read_text()
+        self.assertEqual(activity_log.checkpoints(self.path), [])
+        self.assertNotIn('spending_warnings', activity_log.view(self.path))
+        with self.assertRaises(ValueError):
+            activity_log.checkpoint(self.path, 'spending-warning', 'again')
+        self.assertEqual(self.path.read_text(), before)
+
+
 if __name__ == '__main__':
     unittest.main()

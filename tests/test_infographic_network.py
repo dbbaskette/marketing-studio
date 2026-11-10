@@ -13,7 +13,7 @@ from marketing_studio.network import BridgeServer
 
 class InfographicNetworkTests(unittest.TestCase):
     def test_long_waits_are_limited_to_the_native_infographic_operations(self):
-        self.assertEqual(network.upstream_timeout('infographic', 'POST', '/api/action'), 1200)
+        self.assertEqual(network.upstream_timeout('infographic', 'POST', '/api/action'), 1350)
         self.assertEqual(network.upstream_timeout('infographic', 'POST', '/api/remote-preview'), 240)
         for studio, method, path in (
                 ('marketing', 'POST', '/api/action'), ('blog', 'POST', '/api/action'),

@@ -49,7 +49,7 @@ def https(model, credential, payload, seconds):
 
 
 class Gemini:
-    def __init__(self, folder, *, model, transport=https, key=lambda: os.environ.get('GEMINI_API_KEY'), seconds=180):
+    def __init__(self, folder, *, model, transport=https, key=lambda: os.environ.get('GEMINI_API_KEY'), seconds=270):
         require(isinstance(model, str) and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]{0,99}', model),
                 'Choose the explicit image-capable Gemini model ID.')
         require(type(seconds) is int and 1 <= seconds <= 600, 'Choose an image request timeout of 1–600 seconds.')

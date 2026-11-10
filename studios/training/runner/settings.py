@@ -4,7 +4,7 @@ are rendered, and where the brand skill is installed from.
 What a caller needs to know
 ---------------------------
     chosen = settings.load()                      # the defaults when nothing is saved
-    settings.save(replace(chosen, agent='codex', training_dollars=10))
+    settings.save(replace(chosen, agent='codex', step_seconds=1200))
 
 - Two places hold them. The values every studio on this computer shares are kept only in
   the studios config (`studios_config`), and read from it each time: the agent, its model
@@ -34,10 +34,9 @@ What a caller needs to know
   agent takes (EFFORTS): which of them a model takes is what the agent lists. Claude Code
   lists nothing, so its models and their levels are kept in `claude-code-models.json`
   in the shared core, and a level its model does not take is refused (`takes`).
-- `step_seconds` is how long one worker may run. `training_dollars` is the project spending amount,
-  where the agent reports dollars. New work uses the shared spending_policy choice
-  (warn by default); older saved work keeps its hard-stop behavior. `parallel` is how
-  many trainings work at once.
+- `step_seconds` is how long one worker may run. `parallel` is how many trainings work at
+  once. Nothing limits what a training costs: a `runner.json` saved while it did may still
+  hold `training_dollars` or `spending_policy`, which are not read.
 - `previews` is how a deck's slides are rendered to look at: `local`, with LibreOffice on
   this computer, or `drive`, through Google Drive. Shared as `render.previews`;
   after shared setup, an empty choice follows the delivery format.
@@ -75,7 +74,7 @@ from workspace import WorkspaceError
 
 from runner import studios_config
 
-from studio_core import modules, spending
+from studio_core import modules
 from studio_core.shared_runner import settings as _shared
 modules.bind(globals(), _shared, _shared.NAMES)
 
@@ -84,8 +83,7 @@ ADDRESS = 2000                  # characters in a repository's address
 SHARED = {'agent': ('assistant', 'agent'), 'model': ('assistant', 'model'),
           'effort': ('assistant', 'effort'), 'brand_repository': ('brand', 'repository'),
           'brand_release': ('brand', 'release'),
-          'previews': ('render', 'previews'), 'brand_skill': ('brand', 'skill'),
-          'spending_policy': ('spending', 'training')}
+          'previews': ('render', 'previews'), 'brand_skill': ('brand', 'skill')}
 
 
 @dataclass(frozen=True)
@@ -94,9 +92,7 @@ class Settings:
     agent: str = 'claude'
     model: str | None = None
     effort: str | None = None
-    step_seconds: int = 900
-    training_dollars: float = 20.0
-    spending_policy: str = 'warn'
+    step_seconds: int = 1350
     parallel: int = 2
     previews: str | None = None
     brand_skill: str | None = None
@@ -107,8 +103,7 @@ class Settings:
 
     @property
     def limits(self) -> dict:
-        return {'step_seconds': self.step_seconds, 'training_dollars': self.training_dollars,
-                'parallel': self.parallel}
+        return {'step_seconds': self.step_seconds, 'parallel': self.parallel}
 
 
 @functools.lru_cache(maxsize=None)
@@ -121,16 +116,11 @@ def check(chosen: Settings) -> Settings:
     """The same settings, once every one of them makes sense."""
     agent = check_agent(chosen.agent)
     repository = check_repository(chosen.brand_repository)
-    if chosen.spending_policy not in spending.POLICIES:
-        raise WorkspaceError('Choose Warn and continue or Stop and ask.')
     return Settings(
         agent=agent, model=check_model(chosen.model),
         effort=check_effort(chosen.effort, agent, chosen.model),
         step_seconds=number(chosen.step_seconds, 'The time for one step, in seconds,',
                             *SECONDS, True),
-        training_dollars=number(chosen.training_dollars,
-                                'What a training may spend, in dollars,', 0.01, DOLLARS, False),
-        spending_policy=chosen.spending_policy,
         parallel=number(chosen.parallel, 'How many trainings run at once', *PARALLEL, True),
         previews=check_previews(chosen.previews), brand_skill=check_place(chosen.brand_skill),
         notify=check_notify(chosen.notify),
@@ -161,7 +151,7 @@ def from_shared(found: dict) -> dict:
     release = brand.get('release')
     release = passes(check_release, release, repository) \
         if isinstance(release, str) and repository else None
-    return {'spending_policy': (_group(found, 'spending').get('training') if _group(found, 'spending').get('training') in spending.POLICIES else None), 'agent': agent, 'model': model, 'effort': effort,
+    return {'agent': agent, 'model': model, 'effort': effort,
             'brand_repository': repository, 'brand_release': release,
             'previews': passes(check_previews, _group(found, 'render').get('previews')),
             'brand_skill': (str(Path(brand['skill']).expanduser())
@@ -175,7 +165,7 @@ def shared_now(found: dict) -> dict:
     from studio_core.preferences import ready
     if shared['previews'] is None and ready(found):
         shared['previews'] = 'drive' if found.get('output') == 'google' else 'local'
-    return {**shared, 'spending_policy': spending.shared(found, 'training'), 'agent': shared['agent'] or Settings().agent}
+    return {**shared, 'agent': shared['agent'] or Settings().agent}
 
 
 def changes(before: Settings, after: Settings) -> dict:
@@ -190,7 +180,7 @@ def changes(before: Settings, after: Settings) -> dict:
 # The shared settings that belong to another, which they are written beside.
 OWNS = {'agent': ('model', 'effort'), 'brand_repository': ('brand_release',)}
 # Each shared setting as a sentence names it.
-NAMED = {'spending_policy': 'The spending behavior', 'agent': 'The agent', 'model': 'The model', 'effort': 'The reasoning level',
+NAMED = {'agent': 'The agent', 'model': 'The model', 'effort': 'The reasoning level',
          'brand_repository': "The brand skill's repository",
          'brand_release': "The brand skill's release",
          'previews': 'Slide previews', 'brand_skill': 'The installed brand skill'}

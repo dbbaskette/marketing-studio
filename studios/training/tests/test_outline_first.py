@@ -29,7 +29,7 @@ class OutlineTests(StudioCase):
     def scanner(self, tools, job):
         self.assertEqual(job.profile, 'write')
         self.assertLessEqual(job.limits.seconds, outline.SECONDS)
-        self.assertLessEqual(job.limits.dollars, outline.DOLLARS)
+        self.assertFalse(hasattr(job.limits, 'dollars'))
         self.assertFalse(tools.job['fetch'])
         self.assertFalse(tools.job['ask'])
         self.assertIn('minimal basics', job.guidance)

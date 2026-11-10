@@ -118,10 +118,10 @@ What a caller needs to know
   `engine.files`, so the folder matches its last commit whenever nothing is being written.
   Whoever else writes there in this process, such as the page recording a decision, holds
   it too, and lets go of it before calling `carry_on`, `act` or `answer`.
-- Limits: a worker's time, what a training may spend where its agent reports spending,
-  and three tries at a step. A training that has spent what it may, or has less than
-  `stops.floor` left, stops and asks; "carry on" lets it spend as much again. A job that
-  spent all the training had left is not a failed try: it stops the same way. A step whose
+- Limits: a worker's time and three tries at a step. Nothing stops, waits or warns for
+  what a training costs: what its agent reports is only shown. A record saved while it did
+  may still hold `spending_policy`, `cleared`, `spending_warning` and
+  `limits.training_dollars`; they are not read, and are left as they are. A step whose
   last try ran out of time offers "Give it more time and try again" (`more-time`), which
   doubles this training's step limit (`more_time` in the record, kept when its limits are
   read again). An agent that cannot be used, or whose account refused the job, stops the
@@ -229,7 +229,7 @@ import runner  # noqa: F401  puts the core on the import path
 import computer
 import checks
 import home
-from studio_core import deck_content, spending
+from studio_core import deck_content
 from studio_core import research_sections, research_impact
 from runner import training_plan, outline_first, material_flow
 from studio_core import brand_guidance, critic, deck_direction, deck_flow, model_profiles, review_policy, research_contract, research_session as research_parallel, research_transport as research_parallel_native, research_timing, research_sources, research_view, research_sites, step_times, stops
@@ -486,11 +486,10 @@ def new_record(agent: str, model: str | None, chosen: settings.Settings,
     return {'schema': SCHEMA, 'agent': agent, 'model': model, 'effort': effort,
             'model_profiles': profiles, 'review_policy': review_policy.capture(),
             'review_layout': review_layout.LAYOUT,
-            'started_at': home.now(), 'spending_policy': getattr(chosen, 'spending_policy', 'hard-stop'),
-            'limits': {'step_seconds': chosen.step_seconds,
-                       'training_dollars': chosen.training_dollars},
+            'started_at': home.now(),
+            'limits': {'step_seconds': chosen.step_seconds},
             'steps': {}, 'research': None, 'question': None, 'answers': {}, 'halt': None,
-            'problem': None, 'cleared': 0.0, 'documents': supplied, 'drafted': [],
+            'problem': None, 'documents': supplied, 'drafted': [],
             'copies': {'problems': {}, 'tried': {}}, 'deck': {}, 'driver': None,
             'research_from': research_from or pipeline.research_of({'documents': supplied})}
 
@@ -776,10 +775,8 @@ class Engine(Reviewing):
         return record
 
     def _store(self, root: Path, record: dict) -> None:
-        from studio_core import spending
-        spending.observe(root / ACTIVITY, record, spent(record)[0], (record.get('limits') or {}).get('training_dollars'))
         workspace.write_run(root, record)
-        from studio_core import work_summary, spending
+        from studio_core import work_summary
         if not getattr(self, '_summary_disabled', False):
             work_summary.native('training', root, record)
         activity_log.observe(root / ACTIVITY, record)
@@ -3845,27 +3842,13 @@ class Engine(Reviewing):
 
     # --- limits --------------------------------------------------------------------------
 
-    def _left(self, record: dict) -> float:
-        """What the training may still spend, in dollars. `cleared` is what it had spent
-        when the person last said to carry on."""
-        dollars = spent(record)[0] or 0.0
-        return round(record['limits']['training_dollars'] + record.get('cleared', 0.0)
-                     - dollars, 4)
-
     def _may_go(self, root: Path) -> bool:
-        """Whether a worker may start now. Stops the training, and asks, once it has spent
-        what it may."""
-        with self.files:  # so that several workers starting at once stop it only once
+        """Whether a worker may start now: not while the runner is closing, the training
+        is resting or it is being drafted in conversation. What it has cost never decides."""
+        with self.files:
             record = self._load(root)
-            if self._closing or self._resting(record) or drafts.in_conversation(record):
-                return False
-            from studio_core import spending
-            if spending.policy(record) == 'warn': return True
-            left = self._left(record)
-            if left > 0 and left >= stops.floor(record['limits']['training_dollars']):
-                return True
-            self._spend_stop(root)
-            return False
+            return not (self._closing or self._resting(record)
+                        or drafts.in_conversation(record))
 
     # --- one job for one worker ----------------------------------------------------------
 
@@ -3940,10 +3923,9 @@ class Engine(Reviewing):
         # A deck's worker is given the slides tool and the brand skill this engine uses.
         worker_tools.prepare(folder, **{**work.prepared, 'runtimes': dict(
             self._look()['runtimes']) if step.stage == 'deck' else {}})
-        ceiling = agents.Limits(record['limits']['step_seconds'],
-                                spending.cap(record, self._left(record)))
+        ceiling = agents.Limits(record['limits']['step_seconds'])
         limits = ceiling if limits is None else agents.Limits(
-            min(limits.seconds, ceiling.seconds), min(limits.dollars, ceiling.dollars))
+            min(limits.seconds, ceiling.seconds))
         job = agents.Job(work.guidance, work.task, folder, work.profile,
                          tuple(worker_tools.command(folder)), limits, record.get('model'),
                          record.get('effort'))
@@ -4054,23 +4036,15 @@ class Engine(Reviewing):
                 started_at: str, detail: str) -> None:
         """Note a try that did not work. After the last one a step may have, or when the
         agent cannot be used at all, the training stops and says so: a step whose last try
-        ran out of time offers more time. A job that spent all the training had left is not
-        a failed try: the training stops as it does for money, to carry on."""
+        ran out of time offers more time."""
         question = step.id.startswith('research:')
-        budget = outcome.reason == 'limit' and outcome.budget
         with self.files:
             record = self._load(root)
             entry = self._tried(record, step.id, started_at, outcome.seconds,
-                                'limit' if budget else 'failed', detail, **self._cost(outcome))
+                                'failed', detail, **self._cost(outcome))
             self._store(root, record)
-            self._commit(root, f'a step spent what the training may: {step.label}' if budget
-                         else f'a try at this step did not work: {step.label}')
-        if budget:
-            from studio_core import spending
-            if spending.policy(record) == 'warn':
-                return self._problem(root, step.id, 'failed', f'{step.label} reached its ${spending.JOB_DOLLARS:.2f} job cap.', KEPT, 'retry')
-            self._spend_stop(root, step.label)
-        elif stops.agent_stopped('', outcome, detail) is not None:
+            self._commit(root, f'a try at this step did not work: {step.label}')
+        if stops.agent_stopped('', outcome, detail) is not None:
             self._problem(root, 'research' if question else step.id, 'failed',
                           stops.agent_stopped(self._title(record['agent']), outcome, detail),
                           KEPT, action=stops.agent_action(outcome))
@@ -4090,14 +4064,6 @@ class Engine(Reviewing):
         self._problem(root, step, 'failed',
                       stops.timed_out(label, seconds, tries, 'training', own), KEPT,
                       stops.MORE_TIME, detail={'seconds': seconds})
-
-    def _spend_stop(self, root: Path, label: str | None = None) -> None:
-        """Stop because the training spent what it may before it asks, or has too little
-        left to start a step; `label` names a step stopped mid-way for it."""
-        record = self._load(root)
-        what, kept = stops.spent('training', spent(record)[0], record['limits']['training_dollars'],
-                                 self._left(record), label)
-        self._problem(root, None, 'stopped', what, kept, 'resume')
 
     def _title(self, name: str) -> str:
         """An agent's name as a person knows it."""
@@ -4274,14 +4240,8 @@ class Engine(Reviewing):
 
     def _research_job_failed(self, root: Path, refusal: WorkspaceError) -> None:
         """One job of the research did not finish. A job that ran out of time offers more
-        time; one that spent what the training may stops as money does; an agent that could
-        not be used says where to look. Anything else stops with what went wrong."""
+        time; an agent that could not be used says where to look. Anything else stops with what went wrong."""
         outcome, record = refusal.outcome, self._load(root)
-        if outcome.reason == 'limit' and outcome.budget:
-            from studio_core import spending
-            if spending.policy(record) == 'warn':
-                return self._problem(root, 'research', 'failed', f'A research job reached its ${spending.JOB_DOLLARS:.2f} cap. Completed evidence is kept.', KEPT, 'retry')
-            return self._spend_stop(root, 'The research')
         if stops.agent_stopped('', outcome, outcome.detail) is not None:
             return self._problem(root, 'research', 'failed', stops.agent_stopped(
                 self._title(record['agent']), outcome, outcome.detail), KEPT,
@@ -6218,11 +6178,12 @@ class Engine(Reviewing):
                 raise WorkspaceError(problem['what'])
             if action in ('resume', 'retry', stops.MORE_TIME):
                 # Continue after Change settings carries twice the time for each step from a
-                # stop for time before it (#296). Only Carry on lifts the spending limit.
+                # stop for time before it (#296).
                 carried = problem.get('carried') if problem.get('settings') else None
-                if problem.get('action') == 'resume' and not problem.get('creator_saved'):  # explicit spending continuation
-                    record['cleared'] = spent(record)[0] or 0.0
-                elif problem:
+                # A stop that only waits to be carried on leaves its step's tries as they
+                # are: a spending stop saved before those were removed is one.
+                if problem and (problem.get('action') != 'resume'
+                                or problem.get('creator_saved')):
                     self._fresh(record, problem.get('step'))
                 if (action == stops.MORE_TIME or carried == stops.MORE_TIME) and not research_sections.grant(record, problem):
                     # this run's steps may take twice as long
@@ -6231,9 +6192,9 @@ class Engine(Reviewing):
                 record['problem'] = record['halt'] = None
                 # the limits this computer has now, with the time this run was given
                 chosen = settings.load()
-                record['limits'] = {'step_seconds': max(chosen.step_seconds,
-                                                        record.get('more_time') or 0),
-                                    'training_dollars': chosen.training_dollars}
+                record['limits'] = {**(record.get('limits') or {}),
+                                    'step_seconds': max(chosen.step_seconds,
+                                                        record.get('more_time') or 0)}
             self._store(root, record)
             self._commit(root, {'pause': 'paused on the page', 'stop': 'stopped on the page',
                                 'resume': 'resumed on the page',
@@ -7221,9 +7182,6 @@ class Engine(Reviewing):
                        'label': 'New training' if fresh else None,
                        'kept': 'Everything in the training\'s folder is as it was.'}
         dollars, tokens = spent(record)
-        # The limit this run stops at: Settings' limit, raised by every Carry on.
-        limit = (record.get('limits') or {}).get('training_dollars')
-        stops_at = None if limit is None else round(limit + record.get('cleared', 0.0), 2)
         objections = workspace.review_file('research')
         drawing = self._drawing(found)
         level = self._level(drawing) if drawing else None
@@ -7250,7 +7208,6 @@ class Engine(Reviewing):
             'notice': self._notice(root), 'taken': None if mine else team.taken(root),
             'last_shared': last, 'kept': self._set_aside(root),
             'clash': root.name in self._clash,
-            **({'spending': spending.info(record, dollars, limit)} if 'spending_policy' in record else {}),
             'model': record.get('model'), 'effort': record.get('effort'),
             'model_mode': (record.get('model_profiles') or {}).get('mode', 'single'),
             # A desk run opens on the desk; a saved run keeps its own screens.
@@ -7265,7 +7222,7 @@ class Engine(Reviewing):
             'workers': workers,
             'research_progress': (record.get('research_execution') or {}).get('progress'),
             'timing': timing,
-            'spent': {'dollars': dollars, 'tokens': tokens, 'stops_at': stops_at},
+            'spent': {'dollars': dollars, 'tokens': tokens},
             'ahead': self._still_to_come(record, found),
             'note': self._note_view(record),
             'question': ({'id': asked['id'], 'text': asked['text'], 'from': asked['from']}

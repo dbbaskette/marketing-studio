@@ -291,7 +291,7 @@ class ScreenTests(ScriptedPage, PageCase):
         # What the form was shown goes with it, so that a value another studio changes
         # meanwhile is never written over.
         self.assertEqual(saved['shared_seen'], fresh['shared'])
-        self.assertIn('deck_dollars', saved['limits'])
+        self.assertEqual(sorted(saved['limits']), ['parallel', 'step_seconds'])
         self.assertEqual(result['snapshots']['saved']['heading'], 'Home')
 
     def test_home_puts_each_deck_where_it_stands_and_a_finished_one_with_its_link(self):
@@ -879,12 +879,15 @@ class ScreenTests(ScriptedPage, PageCase):
                      spent={'dollars': 0.42, 'tokens': 1200},
                      workers=[{'id': 'w1', 'label': 'Outline writer', 'started_at': started,
                                'lines': ['Reading the brief.']}])
+        # A dollar amount an older runner still sends is never said as a limit.
         limits = {**(self.get('setup')['limits'] or {}), 'deck_dollars': 5}
         result = self.deck_screen(path, [{'snapshot': 'working'}],
                                   **{'GET /api/run': [ok(shown)],
                                      'GET /api/setup': [self.setup_with(limits=limits)]})
         text = result['snapshots']['working']['text']
-        self.assertIn(current['label'] + ' · 3 minutes · $0.42 so far · stops at $5.00', text)
+        self.assertIn(current['label'] + ' · 3 minutes · $0.42 so far', text)
+        for never in ('stops at', 'warns at', '$5.00'):
+            self.assertNotIn(never, text)
         self.assertIn('Stop loses the step in hand; Pause lets it finish.', text)
 
     def test_jobs_after_finished_research_show_in_their_own_card(self):

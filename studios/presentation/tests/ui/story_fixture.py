@@ -25,20 +25,9 @@ def main():
             studios_config.update({'local': {'root': str(case.space.root)}})
             preferences.finish(studios_config, lambda _: None)
             if '--timeout' in sys.argv:
-                case.workers.queued['scan'] = [lambda tools, job: agents.Outcome(False, 'timeout', seconds=180)]
+                case.workers.queued['scan'] = [lambda tools, job: agents.Outcome(False, 'timeout', seconds=270)]
             root = case.start(research=True, research_questions=['Which failure modes remain?'])
-        class SpendingPage(page.RunnerPage):
-            writes = (*page.RunnerPage.writes, '/api/fixture-spend')
-            def write(self, path, sent):
-                if path == '/api/fixture-spend' and '--spending-test' in sys.argv:
-                    import home
-                    with case.engine.files:
-                        record=case.engine._load(root)
-                        case.engine._tried(record,'budget-fixture',home.now(),1,'kept',dollars=21)
-                        case.engine._store(root,record)
-                    return server.as_json(200,case.engine.view(root))
-                return super().write(path,sent)
-        web=server.Desk(page=lambda port:SpendingPage(port,case.engine));web.start()
+        web=server.Desk(page=lambda port:page.RunnerPage(port,case.engine));web.start()
         print(json.dumps({'url': web.url, 'path': str(root)}), flush=True)
         done = threading.Event()
         signal.signal(signal.SIGTERM, lambda *_: done.set()); signal.signal(signal.SIGINT, lambda *_: done.set())

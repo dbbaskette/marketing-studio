@@ -123,7 +123,7 @@ shared, for the latest 200 jobs. A deck with none says "No activity recorded yet
 - **Wait, then Try again**, when the assistant's account reached a usage or rate limit. The deck stops at once and says so; Check this computer cannot show such a limit, so the stop does not send you there.
 - **Answer a question**: an assistant that needs something only you know can ask, and the run waits.
 
-A deck that has spent what it may stops and asks before spending more, and so does one with too little left to start a step: no job is started with less than $0.50 to spend, or a quarter of a limit under $2.00. A step stopped mid-way because it spent what was left is not counted as a failed try: the deck stops in the same way, and the step starts again when you carry on. **Resume** lets it spend as much again; raising the limit in Settings, under Limits, is the other way on, and the stop says both. You can close the page while decks work: Home says what needs you, and with "Tell me when no page is open" in Settings, this computer's own notifications do too.
+Nothing stops, waits or warns for what a deck costs: where the assistant reports a cost it is shown as information only. You can close the page while decks work: Home says what needs you, and with "Tell me when no page is open" in Settings, this computer's own notifications do too.
 
 ## Keeping it current
 

@@ -188,7 +188,7 @@ Some blogs send an empty page and fetch the article with scripts, which Blog Stu
 runs, so the read says no article text was found. Wherever a published link is read (Link
 to a published post, the GEO report's start and Run again), that message offers **Ask Codex
 to find the post's text**, named for the assistant chosen under Settings → Writing
-preferences. It runs only on that press, as one job (at most 3 minutes for the assistant),
+preferences. It runs only on that press, as one job (at most 4.5 minutes for the assistant),
 shows its progress with **Stop**, and holds no lock on the workspace while it works.
 
 1. Blog Studio reads the page and up to 8 scripts it loads from the post's own host
@@ -221,7 +221,7 @@ shows its progress with **Stop**, and holds no lock on the workspace while it wo
    the site's content address and who found it.
 4. A page's scripts often build the address without naming the fields of its response, so
    the address can be right and the fields empty. Then, once per job and within what is
-   left of its 3 minutes, the assistant has a second look: it is given an outline of that
+   left of its 4.5 minutes, the assistant has a second look: it is given an outline of that
    response and nothing from the scripts, one line per field with its JSON pointer, its
    type, and a string's length and first 80 characters or a list's length (a list's first
    5 items and the fields its later items add, an object's first 60 keys, at most 12

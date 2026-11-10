@@ -26,8 +26,8 @@ class SlideStoryTests(StudioCase):
         self.workers.then('research-result', *([self.worker] * 12))
 
     def scanner(self, tools, job):
-        self.assertLessEqual(job.limits.seconds, 180)
-        self.assertLessEqual(job.limits.dollars, 0.25)
+        self.assertLessEqual(job.limits.seconds, 270)
+        self.assertFalse(hasattr(job.limits, 'dollars'))
         self.assertFalse(tools.job.get('fetch'))
         self.assertFalse(tools.job.get('ask'))
         value = slide_story.seed({'title': 'Synthetic story', 'form': {}})
@@ -69,7 +69,7 @@ class SlideStoryTests(StudioCase):
         self.assertIn('Approved context', self.questions[0]['question'])
 
     def test_timeout_keeps_fallback_and_resume_never_rescans(self):
-        self.workers.queued['scan'] = [lambda tools, job: agents.Outcome(False, 'timeout', seconds=180)]
+        self.workers.queued['scan'] = [lambda tools, job: agents.Outcome(False, 'timeout', seconds=270)]
         root = self.start(research=True)
         shown = self.view(root)
         self.assertTrue(shown['gate']['scan']['fallback'])
@@ -112,13 +112,29 @@ class SlideStoryTests(StudioCase):
         with mock.patch('runner.engine.decks.read_run', return_value=record), self.assertRaises(WorkspaceError):
             self.engine._load(root)
 
+    def test_a_story_saved_with_a_dollar_scan_limit_still_opens(self):
+        root = self.start(research=True)
+        with self.engine.files:
+            record = self.engine._load(root)
+            record['slide_story']['limits'] = {'seconds': 180, 'dollars': 0.25, 'input_chars': 48000}
+            self.engine._store(root, record)
+            self.engine._commit(root, 'as an older runner left it')
+        self.assertTrue(slide_story.valid(self.engine._load(root)))
+        shown = self.view(root)
+        self.assertIsNone(shown['problem'], shown['problem'])
+        self.assertEqual(shown['gate']['limits'], {'seconds': 180, 'input_chars': 48000, 'searches': 0})
+        self.assertEqual(self.engine._load(root)['slide_story']['limits']['dollars'], 0.25)
+
     def test_scan_budget_can_be_reduced_and_never_exceeds_the_hard_cap(self):
+        # A scan budget saved with a dollar amount is still read; the amount is ignored.
         self.engine.story_budget = slide_story.budget({'seconds': 10, 'dollars': 0.05, 'input_chars': 1000})
+        self.assertEqual(self.engine.story_budget, {'seconds': 10, 'input_chars': 1000})
         root = self.start(research=True)
         job = self.workers.of('scan')[0]
-        self.assertEqual((job.limits.seconds, job.limits.dollars), (10, 0.05))
+        self.assertEqual(job.limits, agents.Limits(seconds=10))
+        self.assertNotIn('dollars', self.view(root)['gate']['limits'])
         self.assertEqual(self.view(root)['gate']['limits']['input_chars'], 1000)
-        self.assertEqual(slide_story.budget({'seconds': 900})['seconds'], 180)
+        self.assertEqual(slide_story.budget({'seconds': 900})['seconds'], 270)
         with self.assertRaises(WorkspaceError): slide_story.budget(False)
         from studio_core import research_contract, scope_scan
         scope = scope_scan.research_scope('x' * 20_000,

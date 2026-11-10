@@ -406,7 +406,7 @@ function fill() {
   for (const input of form.querySelectorAll('input[name], select[name]')) {
     if (input.name === 'storage' || input.name === 'assistant.effort' || input.name.startsWith('models.')) continue;
     const keys = input.name.split('.'); let value = keys.length === 2 ? shared[keys[0]]?.[keys[1]] : shared[keys[0]];
-    value ??= ({'assistant.agent': 'claude', 'local.root': '~/Studios', 'team.branch': 'main', 'spending.training': 'warn', 'spending.presentation': 'warn', output: 'pptx', share: 'decision'})[input.name] || '';
+    value ??= ({'assistant.agent': 'claude', 'local.root': '~/Studios', 'team.branch': 'main', output: 'pptx', share: 'decision'})[input.name] || '';
     input.value = value;
   }
   form.elements.storage.value = shared.team?.repository ? 'remote' : 'local';
@@ -751,7 +751,6 @@ function renderWorkOverview(){
         copy.replaceChildren(state==='needs-you'?element('p','Your move · '+studio.name,'move-label'):element('p',studio.name,'field-hint'),element('h3',item.title,'card-title'));
         if(state==='in-progress')copy.append(element('p','Saved as in progress. Open to check current activity.','quiet'));
         if(item.kind==='intake')copy.append(element('p','Step '+(item.step+1)+' · Saved '+item.observed_at.slice(0,16).replace('T',' ')+' UTC','quiet'));
-        if(item.warning)copy.append(element('p',item.warning,'spending-warning'));
         if(!button.disabled)button.textContent=item.action;
         row.dataset.summary=JSON.stringify(item);
       }
@@ -912,7 +911,6 @@ function wantedValues() {
   // Research sites are kept in Shared settings, not in first-run setup.
   if (!setup) {
     wanted.research = {sites: [...researchSites]};
-    wanted.spending = {training: value('spending.training') || 'warn', presentation: value('spending.presentation') || 'warn'};
   }
   return wanted;
 }
@@ -943,10 +941,6 @@ function changesForStep() {
     return result;
   }
   const diff = changed(wanted, snapshot.shared);
-  if (!setup && shownWanted && wanted.spending) {
-    const own = Object.fromEntries(Object.entries(wanted.spending).filter(([key, value]) => value !== shownWanted.spending?.[key]));
-    if (Object.keys(own).length) diff.spending = own;else delete diff.spending;
-  }
   return diff;
 }
 // The installation folders, when one was changed on this form: every studio's, as the

@@ -97,7 +97,7 @@ GUIDES = {
 ENGINES = {}
 DEFAULTS = {
     'engine': 'codex',
-    'seconds': 600,
+    'seconds': 900,
     # Where research looks for a new blog: your documents, your sites (the shared list) and
     # the public web. None ticked is no research.
     'research': {'documents': True, 'sites': False, 'web': False},
@@ -1263,7 +1263,7 @@ def create(root, data, approval='conversation'):
     engine = data.get('engine', 'codex')
     if engine not in ('codex', 'claude'):
         raise ValueError('Choose Codex or Claude.')
-    seconds = data.get('seconds', 600)
+    seconds = data.get('seconds', 900)
     if type(seconds) is not int or not 30 <= seconds <= 3600:
         raise ValueError('Choose a step time limit between 30 and 3600 seconds.')
     research, chosen = chosen_research(data, mode)

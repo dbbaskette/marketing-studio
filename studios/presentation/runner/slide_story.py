@@ -101,7 +101,7 @@ def scan(engine, root, run, step):
         {'inputs': {'source-excerpts': json.dumps(pieces, ensure_ascii=False)},
          'artifacts': {'scan': {'kind': 'provisional-outline'}}, 'ask': False, 'fetch': False}, 'scan')
     outcome, handed, started, folder = engine._job(root, run, 'scan', step.doing, work, deck=False,
-        limits=agents.Limits(limits['seconds'], limits['dollars']))
+        limits=agents.Limits(limits['seconds']))
     accepted = handed.get('artifacts', {}).get('scan')
     value = checked(json.loads(accepted['text']), 2) if accepted else initial
     value['personal_questions'] = list((record.get('form') or {}).get('research_questions') or [])

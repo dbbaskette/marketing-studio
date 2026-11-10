@@ -1,6 +1,6 @@
 """Saved scheduling policy for readable output before optional deck work.
 
-This only orders existing steps. Their input checks, approvals, spending limits,
+This only orders existing steps. Their input checks, approvals, time limits,
 and the single material worker remain owned by the existing pipeline and engine.
 """
 from runner import drafts, outline_first

@@ -1925,10 +1925,7 @@ def native(engine, root, run, task, sources, product):
             if cost.get(key) is not None:
                 spent[key] = (spent[key] or 0) + cost[key]
         accepted = handed['artifacts'].get('research-result')
-        # A job that spent all it was given is not a failed try: the studio stops for money.
-        ended = ('kept' if accepted and outcome.reason != 'stopped' else
-                 'limit' if outcome.reason == 'limit' and getattr(outcome, 'budget', False)
-                 else 'failed')
+        ended = 'kept' if accepted and outcome.reason != 'stopped' else 'failed'
         with engine.files:
             record = engine._load(root)
             engine._tried(record, name, started, outcome.seconds, ended,

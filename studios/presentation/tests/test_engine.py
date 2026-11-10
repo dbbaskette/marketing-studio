@@ -636,23 +636,23 @@ class RetryTests(StudioCase):
 
     def test_a_step_that_runs_out_of_time_offers_more_time_for_this_deck(self):
         from dataclasses import replace
-        self.workers.then('outline', *[fails('It did not finish in 900 seconds, so it was stopped.', reason='timeout')] * 3)
+        self.workers.then('outline', *[fails('It did not finish in 1350 seconds, so it was stopped.', reason='timeout')] * 3)
         root = self.saved_start()
         view = self.view(root)
         self.assertEqual(view['problem'], {
-            'state': 'failed', 'action': 'more-time', 'seconds': 900,
+            'state': 'failed', 'action': 'more-time', 'seconds': 1350,
             'why': 'Draft the outline ran out of the time a step may take: its last try was '
-                   'stopped after 15 minutes, and it did not work in 3 tries. That limit, 15 '
+                   'stopped after 22.5 minutes, and it did not work in 3 tries. That limit, 22.5 '
                    'minutes a step, is in Settings, under Limits.',
             'kept': 'Everything kept before this step is still here. Nothing from the tries '
                     'that failed was kept.'})
         self.engine.act(root, 'more-time')
         self.assertEqual(self.waiting(root), 'gate:outline')
-        self.assertEqual(self.workers.of('outline')[-1].limits.seconds, 1800)
+        self.assertEqual(self.workers.of('outline')[-1].limits.seconds, 2700)
         self.assertEqual((self.record(root)['limits']['step_seconds'],
-                          self.record(root)['more_time']), (1800, 1800))
+                          self.record(root)['more_time']), (2700, 2700))
         # Settings keeps its own limit, for other decks, and a larger one there still counts.
-        self.assertEqual(self.settings.load().step_seconds, 900)
+        self.assertEqual(self.settings.load().step_seconds, 1350)
         self.settings.save(replace(self.settings.load(), step_seconds=3600))
         self.engine.act(root, 'stop')
         self.engine.act(root, 'resume')
@@ -870,61 +870,72 @@ class HaltTests(StudioCase):
         self.engine.act(root, 'resume')
         self.assertEqual(self.waiting(root), 'gate:outline')
 
-    def test_a_deck_that_spent_what_it_may_stops_and_asks(self):
-        from dataclasses import replace
-        self.settings.save(replace(self.settings.load(), deck_dollars=1.0))
-        self.workers.cost = 0.75
+    def test_a_deck_carries_on_whatever_its_jobs_report_they_cost(self):
+        self.workers.cost = 500.0
         self.workers.then('outline', asks('One thing first?'))
         root = self.saved_start()
-        self.assertEqual(self.record(root)['limits'], {'step_seconds': 900, 'dollars': 1.0})
+        self.assertEqual(self.record(root)['limits'], {'step_seconds': 1350})
+        self.assertNotIn('spending_policy', self.record(root))
         self.engine.answer(root, self.view(root)['question']['id'], 'Yes.')
         self.assertEqual(self.waiting(root), 'gate:outline')
         self.decide(root, 'gate:outline')
-        # The brand's sample is drawn by the runner, not an agent, so nothing is spent on it.
         self.assertEqual(self.waiting(root), 'gate:look')
         self.decide(root, 'gate:look')
-        view = self.view(root)
-        self.assertEqual(view['state'], 'stopped')
-        self.assertIn('This deck has spent $1.50', view['sentence'])
-        self.assertEqual(view['problem']['action'], 'resume')
-        self.assertEqual(self.workers.of('section'), [])
-        self.engine.act(root, 'resume')
         self.assertEqual(self.waiting(root), 'gate:build')
+        view = self.view(root)
+        self.assertIsNone(view['problem'])
+        self.assertTrue(self.workers.of('section'))
+        # What was reported is still said, as information only.
+        self.assertGreaterEqual(view['spent']['dollars'], 1000.0)
+        self.assertNotIn('spending', view)
+        self.assertNotIn('spending', (root / 'work' / 'activity-log.jsonl').read_text())
 
-    def test_a_step_that_spends_what_is_left_stops_for_money_not_as_a_failed_try(self):
-        from dataclasses import replace
+    def test_a_job_that_says_it_reached_a_spending_limit_is_an_ordinary_failed_try(self):
         from runner.agents import Outcome
-        self.settings.save(replace(self.settings.load(), deck_dollars=1.0))
         self.workers.then('outline', lambda tools, job: Outcome(
             False, 'limit', 'It stopped without finishing: its spending limit was reached',
-            cost=1.0, budget=True))
+            cost=1.0))
         root = self.saved_start()
+        # Nothing stopped for money: the step was tried again and worked.
+        self.assertEqual(self.waiting(root), 'gate:outline')
+        tried = self.record(root)['steps']['outline']['tries']
+        self.assertEqual([one['outcome'] for one in tried], ['failed', 'kept'])
+
+    def test_a_deck_saved_while_spending_was_limited_still_opens_and_resumes(self):
+        root = self.saved_start()
+        self.assertEqual(self.waiting(root), 'gate:outline')
+        with self.engine.files:
+            record = self.engine._load(root)
+            record.update(
+                spending_policy='hard-stop', cleared=1.5,
+                spending_warning={'at': '2026-10-01T10:00:00Z', 'dollars': 1.5, 'limit': 1.0},
+                limits={**record['limits'], 'dollars': 1.0},
+                halted={'state': 'stopped', 'step': None, 'action': 'resume', 'limit': True,
+                        'why': 'This deck has spent $1.50. It stops and asks each time it '
+                               'has spent another $1.00.',
+                        'kept': 'Everything made so far is kept.',
+                        'at': '2026-10-01T10:00:00Z'})
+            record['steps']['outline']['tries'].insert(0, {
+                'started_at': '2026-10-01T09:00:00Z', 'ended_at': '2026-10-01T09:01:00Z',
+                'seconds': 60.0, 'dollars': 1.5, 'tokens': None, 'outcome': 'limit',
+                'error': 'its spending limit was reached'})
+            self.engine._store(root, record)
+            self.engine._commit(root, 'as an older runner left it')
+        before = (root / 'run.json').read_bytes()
         view = self.view(root)
-        self.assertEqual((view['state'], len(self.workers.of('outline'))), ('stopped', 1))
-        self.assertEqual(view['problem']['why'], (
-            'Draft the outline was stopped when this deck reached what it may spend: it has '
-            'spent $1.00. It stops and asks each time it has spent another $1.00.'))
-        self.assertIn('Resume lets it spend up to another $1.00. To let it spend more before '
-                      'it asks, raise the limit in Settings, under Limits, then resume.',
-                      view['problem']['kept'])
-        self.assertEqual(view['problem']['action'], 'resume')
-        entry = self.record(root)['steps']['outline']
-        self.assertEqual((entry['failed'], entry['tries'][0]['outcome']), (0, 'limit'))
+        self.assertEqual((view['state'], view['problem']['action']), ('stopped', 'resume'))
+        self.assertIn('This deck has spent $1.50', view['sentence'])
+        self.assertNotIn('spending', view)
+        self.assertGreaterEqual(view['spent']['dollars'], 1.5)
+        self.assertTrue(self.engine.activity(root) is not None)
+        self.assertEqual((root / 'run.json').read_bytes(), before,
+                         'reading it rewrites nothing')
         self.engine.act(root, 'resume')
         self.assertEqual(self.waiting(root), 'gate:outline')
-
-    def test_no_job_starts_with_too_little_left_to_spend(self):
-        from dataclasses import replace
-        self.settings.save(replace(self.settings.load(), deck_dollars=20.0))
-        self.workers.cost = 19.7
-        root = self.saved_start()
         self.decide(root, 'gate:outline')
-        self.decide(root, 'gate:look')
-        view = self.view(root)
-        self.assertEqual(self.workers.of('section'), [])
-        self.assertEqual(view['sentence'], (
-            'This deck has spent $19.70, and the $0.30 it may still spend is too little to '
-            'start another step. It stops and asks each time it has spent another $20.00.'))
+        self.assertEqual(self.waiting(root), 'gate:look')
+        kept = self.record(root)
+        self.assertEqual((kept['spending_policy'], kept['cleared']), ('hard-stop', 1.5))
 
     def test_a_research_job_that_runs_out_of_time_offers_more_time(self):
         from runner import research_steps
@@ -934,13 +945,13 @@ class HaltTests(StudioCase):
         record['research_contract'] = {'schema': 2, 'version': '1.0.0', 'digest': 'abc'}
         self.engine._store(root, record)
         late = WorkspaceError('Research did not finish its author job in round 1 of 3.')
-        late.outcome = Outcome(False, 'timeout', 'It did not finish in 900 seconds, so it was stopped.')
+        late.outcome = Outcome(False, 'timeout', 'It did not finish in 1350 seconds, so it was stopped.')
         with mock.patch.object(research_steps.research_contract, 'native', side_effect=late):
             self.decide(root, 'gate:research-plan')
         problem = self.view(root)['problem']
-        self.assertEqual((problem['action'], problem['seconds']), ('more-time', 900))
+        self.assertEqual((problem['action'], problem['seconds']), ('more-time', 1350))
         self.assertTrue(problem['why'].startswith(
-            'The research ran out of the time a step may take: it was stopped after 15 minutes.'))
+            'The research ran out of the time a step may take: it was stopped after 22.5 minutes.'))
 
     def test_undo_takes_back_the_last_step(self):
         root = self.saved_start()

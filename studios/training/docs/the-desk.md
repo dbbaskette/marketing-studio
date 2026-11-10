@@ -32,7 +32,7 @@ scope and approval consequence stay visible. Incomplete-scan warnings stay visib
 
 **Approve outline & research** approves that exact edited scope. Only retained sections
 become research items, with your additional questions included. Up to three areas run in
-parallel within the saved source, round and spending limits. Combining and an independent
+parallel within the saved source, round and time limits. Combining and an independent
 check still cover the whole dossier. Unresolved flags become Include / Include with warning / Exclude choices;
 save your choices and explicitly continue. Warnings appear only where requested, and
 excluded findings also omit dependent content. The teaching plans and selected materials
@@ -126,7 +126,7 @@ It opens one scrolling form filled with the saved settings, grouped into the tea
 
 **Review the change** says what the change does before anything is saved:
 
-- **Research that has not been accepted into a finished report is discarded**, and the research is planned again with the new settings, when you change the topic, audience, purpose, research questions, sources, external search or sites. The review says how many research tries that discards and the time and money they took, from the run record, and that it cannot be undone; the button then reads **Discard and save**. Other changes keep the research plan. Research not yet accepted then starts again, because the research is given every setting on the form; research made with the earlier research workflow carries on from its draft instead, and a change of the deck's brand, delivery or walkthrough alone leaves research to carry on. A stop that is not about research keeps its own action, such as **Give it more time and try again**, and Continue after a stop for time gives each step twice the time, as that action would, and says so. Continue never lifts the spending limit: research that reaches it stops again with **Carry on**.
+- **Research that has not been accepted into a finished report is discarded**, and the research is planned again with the new settings, when you change the topic, audience, purpose, research questions, sources, external search or sites. The review says how many research tries that discards and the time and money they took, from the run record, and that it cannot be undone; the button then reads **Discard and save**. Other changes keep the research plan. Research not yet accepted then starts again, because the research is given every setting on the form; research made with the earlier research workflow carries on from its draft instead, and a change of the deck's brand, delivery or walkthrough alone leaves research to carry on. A stop that is not about research keeps its own action, such as **Give it more time and try again**, and Continue after a stop for time gives each step twice the time, as that action would, and says so.
 - **A finished research report is kept** unless you tick **Research again with the new settings**, which researches again only when research is given something new. If you approved the topics and teaching plan, a change of the answers or the levels asks you to check it again. What depends on a change is held on the desk for you to **Update** or **Keep as it is**, as with any other change of input; a material you marked ready is never changed without your say. An added level, or another kind of brief, leaves the blueprints as they are and makes only what is new.
 
 Scroll inside the Change settings form to reach Research and its review and cancel buttons. The page behind it stays still. Tab stays within the dialog; Escape closes it and returns focus to Change settings.
@@ -189,7 +189,6 @@ training's `work/activity-log.jsonl`, which is never committed or shared, for th
 Elapsed time includes waiting and stopped time. Active time counts overlapping
 workers once; total assistant time adds their durations. Incomplete older timing
 history is identified. Existing trainings continue with their saved workflow.
-The existing allowance is shared across workers; parallelism does not raise it.
 Providers that do not report dollar cost still cannot supply a precise dollar total.
 
 ## The Document Library

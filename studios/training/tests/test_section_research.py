@@ -74,20 +74,17 @@ class SectionResearchTests(StudioCase):
         self.assertTrue(facts['review']['accepted'])
         self.assertEqual(shown['research_progress']['phase'], 'complete')
         self.assertEqual(len(self.section_jobs), len(story['outline']['sections']) + 1)
-        self.assertEqual(self.section_jobs[-1], ('final', 300))
+        self.assertEqual(self.section_jobs[-1], ('final', research_sections.SECONDS))
 
         return root
 
     def test_new_schema_and_section_transport_pass_complete_check(self):
         self._complete_section_work()
 
-    def test_warning_threshold_does_not_starve_approved_section_work(self):
-        from dataclasses import replace
-        from runner import settings
-        settings.save(replace(settings.load(), training_dollars=0.01, spending_policy='warn'))
+    def test_no_section_job_is_given_a_spending_limit_and_nothing_warns(self):
         root=self._complete_section_work()
-        self.assertIsNotNone(self.view(root)['spending']['warning'])
-        self.assertTrue(all(0 < item[1].limits.dollars <= 5 for item in self.workers.jobs))
+        self.assertNotIn('spending', self.view(root))
+        self.assertFalse(any(hasattr(item[1].limits, 'dollars') for item in self.workers.jobs))
 
     def test_timeout_grants_only_the_failed_contribution_more_time(self):
         self.fail_one = True
@@ -104,9 +101,9 @@ class SectionResearchTests(StudioCase):
         self.engine.act(root, 'more-time')
         record = self.engine._load(root)
         self.assertEqual(record['limits']['step_seconds'], before)
-        self.assertEqual(record['section_synthesis']['more_time'][ident], 600)
+        self.assertEqual(record['section_synthesis']['more_time'][ident], 2 * research_sections.SECONDS)
         subsequent = self.section_jobs[len(previous):]
-        self.assertEqual(subsequent, [(ident, 600), ('final', 300)])
+        self.assertEqual(subsequent, [(ident, 2 * research_sections.SECONDS), ('final', research_sections.SECONDS)])
 
     def test_preview_polling_reuses_local_metadata_but_confirmation_rehashes_sources(self):
         from studio_core import research_impact

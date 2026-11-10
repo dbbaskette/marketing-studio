@@ -29,12 +29,11 @@ class ParallelNativeTests(StudioCase):
         self.web.page(URL, TEXT, 'text/plain')
         self.workers.then('research-result', *([self.worker] * 12))
         self.barrier = threading.Barrier(3)
-        self.phases, self.caps = [], []
+        self.phases = []
         self.reject_once = False
 
     def worker(self, tools, job):
         payload = json.loads(tools.read_input('research-task')[1])
-        self.caps.append(job.limits.dollars)
         if 'questions' in payload and getattr(self, 'supplied', False):
             self.phases.append('investigate')
             source = next(s for s in tools._index() if s.get('offered'))
@@ -101,8 +100,7 @@ class ParallelNativeTests(StudioCase):
         self.assertTrue(facts['review']['accepted'])
         self.assertEqual(len({f['author'] for f in facts['facts']}), 3)
         self.assertEqual(shown['research_progress']['phase'], 'complete')
-        self.assertEqual(record['spending_policy'], 'warn')
-        self.assertEqual(self.caps[:3], [5.0, 5.0, 5.0])
+        self.assertNotIn('spending_policy', record)
         self.assertTrue(all(a.get('research_attempt') for name, entry in record['steps'].items()
                             if contract.job_round(name) for a in entry['attempts']))
         self.assertIn('active_seconds', shown['timing'])

@@ -417,7 +417,7 @@ fact, figure, name, quotation, link or product detail from an example may appear
 writing unless it is also in the sources, the research or the brief."""
 
 
-def generate(engine, payload, guidance, seconds=600, web=False, stop=None, model_selection=None):
+def generate(engine, payload, guidance, seconds=900, web=False, stop=None, model_selection=None):
     """One process group, disposable working directory, bounded time and output.
 
     Workers have no shell, file tools or connected apps. Public research alone enables

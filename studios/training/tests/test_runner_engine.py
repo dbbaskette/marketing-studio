@@ -25,7 +25,7 @@ from runner.engine import ACTIONS
 from workspace import WorkspaceError
 
 AVOIDED = re.compile(r'\b(artifacts?|stale|lineage)\b', re.IGNORECASE)
-SLOW = 'It did not finish in 900 seconds, so it was stopped.'
+SLOW = 'It did not finish in 1350 seconds, so it was stopped.'
 STEPS = ['intake', 'research-plan', 'gate:research-plan', 'research-start', 'research',
          'research-report', 'gate:research', 'blueprint', 'gate:blueprint', 'document',
          'gate:document', 'brief', 'gate:brief', 'package']
@@ -578,7 +578,7 @@ class FormToGateThreeTests(StudioCase):
         self.assertEqual((record['agent'], record['model'], record['effort'],
                           record['limits']),
                          ('claude', 'a-model', 'high',
-                          {'step_seconds': 300, 'training_dollars': 20.0}))
+                          {'step_seconds': 300}))
         self.assertEqual({(job.model, job.effort) for _, job, _ in self.workers.jobs},
                          {('a-model', 'high')})
         attempt = record['steps']['research-plan']['attempts'][0]
@@ -591,7 +591,7 @@ class FormToGateThreeTests(StudioCase):
         self.assertEqual(json.loads(committed), record)
         view = self.view(root)
         self.assertEqual((view['spent'], view['model'], view['effort']),
-                         ({'dollars': 0.25, 'tokens': 1200, 'stops_at': 20.0}, 'a-model', 'high'))
+                         ({'dollars': 0.25, 'tokens': 1200}, 'a-model', 'high'))
         step = self.steps(root)['research-plan']
         self.assertEqual((step['attempts'], step['seconds'], step['dollars'], step['kind'],
                           step['label']), (1, 1.5, 0.25, 'agent', 'Draft the research plan'))
@@ -718,7 +718,7 @@ class WorkerTests(StudioCase):
             self.assertEqual(list(job.tools), worker_tools.command(job.folder))
             self.assertEqual(job.folder.parent, agents.staging())
             self.assertNotIn(self.space.repo, job.folder.parents)
-            self.assertEqual((job.limits.seconds, job.limits.dollars), (900, 20.0))
+            self.assertEqual(job.limits, agents.Limits(seconds=1350))
         for folder, held in seen:
             self.assertIn(held, (['inputs', 'job.json', 'sources'], ['job.json', 'sources']))
             self.assertFalse(folder.exists(), 'a job folder is removed once its work is kept')
@@ -1543,69 +1543,70 @@ class SynthesisWordsTests(StudioCase):
 
 
 class LimitTests(StudioCase):
-    def test_a_training_that_has_spent_what_it_may_stops_and_asks(self):
-        settings.save(replace(settings.load(), training_dollars=1.0))
-        self.workers.cost = 0.6
+    def test_a_training_carries_on_whatever_it_has_cost(self):
+        self.workers.cost = 500.0
         self.engine = self.make(at_once=1)
         root = self.saved_start()
-        self.assertEqual(self.workers.jobs[0][1].limits.dollars, 1.0)
         self.decide(root, 'research-plan')
         view = self.view(root)
-        self.assertEqual((view['state'], view['sentence'], view['spent']['dollars']), (
-            'stopped', 'This training has spent $1.20. It stops and asks each time it has '
-            'spent another $1.00.', 1.2))
-        self.assertEqual(view['problem'], {
-            'what': view['sentence'], 'action': 'resume', 'label': 'Carry on',
-            # Carry on is one way on; raising the limit in Settings is the other.
-            'kept': 'Everything made so far is kept. Carry on lets it spend up to another $1.00. To let it spend more before it asks, raise the limit in Settings, under Limits, then carry on.'})
-        self.assertEqual(([job.limits.dollars for job in self.workers.of('question')],
-                          self.steps(root)['research']['status']), ([0.4], 'to-do'))
-        self.assertEqual(workspace.status(root)['research']['findings'],
-                         {'supported': 1, 'pending': 3})
-
-        self.assertEqual(self.engine.act(root, 'resume')['state'], 'stopped')
-        self.assertEqual(self.view(root)['spent'], {'dollars': 2.4, 'tokens': 4800, 'stops_at': 2.2})
-        after = self.engine.act(root, 'resume')
-        self.assertEqual((after['state'], after['problem'], after['spent']['dollars']),
-                         ('waiting', None, 3.0))
+        self.assertEqual((view['state'], view['problem']), ('waiting', None))
         self.assertEqual(workspace.status(root)['gate'], 'research')
+        # What the agent reported is still shown, and nothing else is said of money.
+        self.assertGreaterEqual(view['spent']['dollars'], 1000.0)
+        self.assertEqual(set(view['spent']), {'dollars', 'tokens'})
+        self.assertNotIn('spending', view)
+        record = self.record(root)
+        self.assertEqual(record['limits'], {'step_seconds': 1350})
+        for gone in ('spending_policy', 'cleared', 'spending_warning'):
+            self.assertNotIn(gone, record)
+        self.assertEqual({job.limits for _, job, _ in self.workers.jobs},
+                         {agents.Limits(seconds=1350)})
 
-    def test_a_step_that_spends_what_is_left_stops_for_money_not_as_a_failed_try(self):
-        from runner.agents import Outcome
-        settings.save(replace(settings.load(), training_dollars=1.0))
-        self.workers.then('research-plan', lambda tools, job: Outcome(
-            False, 'limit', 'It stopped without finishing: its spending limit was reached',
-            cost=1.0, budget=True))
-        root = self.saved_start()
-        view = self.view(root)
-        self.assertEqual((view['state'], len(self.workers.jobs)), ('stopped', 1))
-        self.assertEqual(view['problem'], {
-            'what': 'Draft the research plan was stopped when this training reached what it '
-                    'may spend: it has spent $1.00. It stops and asks each time it has spent '
-                    'another $1.00.',
-            'kept': 'Everything finished before this step is kept, and the step starts again '
-                    'when you carry on. Carry on lets it spend up to another $1.00. To let it '
-                    'spend more before it asks, raise the limit in Settings, under Limits, then '
-                    'carry on.',
-            'action': 'resume', 'label': 'Carry on'})
-        entry = self.record(root)['steps']['research-plan']
-        self.assertEqual((entry['failed'], entry['attempts'][0]['outcome']), (0, 'limit'))
-        self.assertEqual(self.engine.act(root, 'resume')['state'], 'waiting')
-        self.assertEqual(len(self.workers.jobs), 2)
-
-    def test_no_job_starts_with_too_little_left_to_spend(self):
-        settings.save(replace(settings.load(), training_dollars=20.0))
-        self.workers.cost = 19.7
+    def test_work_saved_with_spending_limits_still_loads_and_carries_on(self):
+        import home
         self.engine = self.make(at_once=1)
         root = self.saved_start()
-        self.decide(root, 'research-plan')
+        # runner.json and a run record as they were saved while spending limits existed.
+        home.write_json(settings.path(), {
+            'schema': settings.SCHEMA, 'look_for_updates': True, 'notify': False,
+            'parallel': 2, 'step_seconds': 300, 'training_dollars': 1.0,
+            'spending_policy': 'hard-stop'})
+        kept = settings.path().read_bytes()
+        self.assertEqual((settings.load().step_seconds, settings.load().limits),
+                         (300, {'step_seconds': 300, 'parallel': 2}))
+        record = self.record(root)
+        record.update(spending_policy='hard-stop', cleared=1.0, spending_warning={
+            'message': 'Reported spending reached $1.00.', 'at': '2026-10-01T00:00:00Z'})
+        record['limits']['training_dollars'] = 1.0
+        record['steps']['research-plan']['attempts'].insert(0, {
+            'started_at': '2026-10-01T00:00:00Z', 'ended_at': '2026-10-01T00:01:00Z',
+            'seconds': 60.0, 'dollars': 1.0, 'tokens': 10, 'outcome': 'limit',
+            'error': 'It stopped without finishing: its spending limit was reached'})
+        record['problem'] = {
+            'state': 'stopped', 'step': None, 'action': 'resume', 'label': 'Carry on',
+            'what': 'This training has spent $1.20. It stops and asks each time it has '
+                    'spent another $1.00.',
+            'kept': 'Everything made so far is kept. Carry on lets it spend up to another '
+                    '$1.00.', 'at': '2026-10-01T00:02:00Z'}
+        self.engine._store(root, record)
         view = self.view(root)
-        self.assertEqual(self.workers.of('question'), [], 'no job starts with $0.30 left')
-        self.assertEqual((view['state'], view['sentence']), (
-            'stopped', 'This training has spent $19.70, and the $0.30 it may still spend is too '
-            'little to start another step. It stops and asks each time it has spent another '
-            '$20.00.'))
-        self.assertEqual(view['problem']['action'], 'resume')
+        self.assertEqual((view['state'], view['problem']['action'], view['problem']['label']),
+                         ('stopped', 'resume', 'Carry on'))
+        self.assertEqual(set(view['spent']), {'dollars', 'tokens'})
+        self.assertNotIn('spending', view)
+        self.assertEqual(self.steps(root)['research-plan']['attempts'], 2)
+        # The page's own action carries it on, and the old keys are left as they were.
+        after = self.engine.act(root, 'resume')
+        self.assertEqual((after['state'], after['problem']), ('waiting', None))
+        record = self.record(root)
+        self.assertEqual((record['spending_policy'], record['cleared'],
+                          record['limits']['training_dollars'],
+                          record['limits']['step_seconds']), ('hard-stop', 1.0, 1.0, 300))
+        self.assertIn('spending_warning', record)
+        self.decide(root, 'research-plan')
+        self.assertEqual((self.view(root)['problem'], workspace.status(root)['gate']),
+                         (None, 'research'))
+        self.assertEqual(settings.path().read_bytes(), kept, 'runner.json is not rewritten')
 
     def test_a_step_that_runs_out_of_time_offers_more_time_for_this_training(self):
         settings.save(replace(settings.load(), step_seconds=600))
@@ -1644,7 +1645,7 @@ class LimitTests(StudioCase):
             'for every training is in Settings, under Limits.'))
         self.assertEqual(self.view(root)['problem']['seconds'], 1200)
 
-    def test_a_research_job_that_runs_out_of_time_or_money_says_so(self):
+    def test_a_research_job_that_runs_out_of_time_says_so(self):
         from runner import engine as engine_module
         from runner.agents import Outcome
         root = self.saved_start()
@@ -1656,35 +1657,24 @@ class LimitTests(StudioCase):
         with mock.patch.object(engine_module.research_contract, 'native', side_effect=late):
             self.decide(root, 'research-plan')
         problem = self.view(root)['problem']
-        self.assertEqual((problem['action'], problem['seconds']), ('more-time', 900))
+        self.assertEqual((problem['action'], problem['seconds']), ('more-time', 1350))
         self.assertTrue(problem['what'].startswith('The research ran out of the time a step may '
-                                                   'take: it was stopped after 15 minutes.'))
-        spent = WorkspaceError('Research did not finish its review job in round 2 of 3.')
-        spent.outcome = Outcome(False, 'limit', 'its spending limit was reached', budget=True)
-        with mock.patch.object(engine_module.research_contract, 'native', side_effect=spent):
-            self.engine.act(root, 'more-time')
-        problem = self.view(root)['problem']
-        self.assertEqual(problem['action'], 'resume')
-        self.assertTrue(problem['what'].startswith('The research was stopped when this training '
-                                                   'reached what it may spend'))
+                                                   'take: it was stopped after 22.5 minutes.'))
 
-    def test_a_step_is_given_its_time_and_what_the_training_may_still_spend(self):
-        settings.save(replace(settings.load(), step_seconds=120, training_dollars=5.0))
+    def test_a_step_is_given_its_time_and_no_spending_limit(self):
+        settings.save(replace(settings.load(), step_seconds=120))
         self.workers.cost = 1.5
         root = self.saved_start()
         self.decide(root, 'research-plan')
-        limits = [(job.limits.seconds, job.limits.dollars) for _, job, _ in self.workers.jobs]
-        self.assertEqual(limits[0], (120, 5.0))
-        self.assertEqual({seconds for seconds, _ in limits}, {120})
-        self.assertLessEqual(max(dollars for _, dollars in limits[1:]), 3.5)
+        self.assertEqual({job.limits for _, job, _ in self.workers.jobs},
+                         {agents.Limits(seconds=120)})
 
     def test_carrying_on_or_trying_again_takes_up_the_limits_this_computer_has_now(self):
         self.workers.then('research-plan', fails(), fails(), fails())
         root = self.saved_start()
-        settings.save(replace(settings.load(), step_seconds=1200, training_dollars=50.0))
+        settings.save(replace(settings.load(), step_seconds=1200))
         self.engine.act(root, 'retry')
-        self.assertEqual(self.record(root)['limits'],
-                         {'step_seconds': 1200, 'training_dollars': 50.0})
+        self.assertEqual(self.record(root)['limits'], {'step_seconds': 1200})
         self.assertEqual(self.workers.jobs[-1][1].limits.seconds, 1200)
 
 

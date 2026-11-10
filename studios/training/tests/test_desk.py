@@ -2474,7 +2474,7 @@ def ok(body) -> dict:
 # milestone 3 and milestone 4 specifications ("What the page asks the runner"). Its server is
 # built apart from the page.
 RUNNER = ok({'runner': True, 'version': '0.12.0'})
-LIMITS = {'step_seconds': 900, 'training_dollars': 20, 'parallel': 2}
+LIMITS = {'step_seconds': 900, 'parallel': 2}
 # A computer with a brand skill and no way yet to make previews: what every screen but the
 # deck's own is tried on. The tests of previews say what their computer can do.
 NO_PREVIEWS = {'how': None, 'drive': False, 'local': False, 'left': []}
@@ -2754,7 +2754,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         self.assertIn('You approved the learner guide at', result['snapshots']['working']['text'])
         # A saved run's cost card: nothing reported yet is not an agent that never says.
         self.assertIn('Nothing has been reported yet.', result['snapshots']['working']['text'])
-        self.assertIn('It stops and asks you at $20.00.', result['snapshots']['working']['text'])
+        self.assertNotIn('It stops and asks you at', result['snapshots']['working']['text'])
 
     def test_grouped_build_controls_say_when_the_final_review_waits(self):
         self.started()
@@ -2941,8 +2941,10 @@ class RunnerScreenTests(ScriptedPage, PageCase):
                                   'GET /api/run': [working]})
         result = self.run_page(answers, [{'click': 'Open Rolling restarts'},
                                          {'snapshot': 'working'}])
-        self.assertIn('Draft the research questions · 3 minutes · $0.40 so far · stops at '
-                      '$20.00', result['snapshots']['working']['text'])
+        self.assertIn('Draft the research questions · 3 minutes · $0.40 so far',
+                      result['snapshots']['working']['text'])
+        for gone in ('stops at', 'warns at'):
+            self.assertNotIn(gone, result['snapshots']['working']['text'])
 
     def test_a_note_for_the_next_step_is_sent_from_the_run_and_replaced(self):
         self.started()
@@ -3193,8 +3195,8 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         confirm = result['snapshots']['confirm']
         self.assertIn('Approve the first drafts?', confirm['sheet'])
         # The learner guide was written before this stop: approving writes nothing more.
-        self.assertIn('Nothing more is written for the training. It spends from the same limit',
-                      confirm['sheet'])
+        self.assertIn('Nothing more is written for the training.', confirm['sheet'])
+        self.assertNotIn('It spends from the same limit', confirm['sheet'])
         self.assertNotIn('learner guide', confirm['sheet'])
         self.assertIn('Approve', confirm['filled'])
         self.assertEqual(confirm['posts'], 0)
@@ -3323,7 +3325,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
                  'Approving the first drafts writes the practice scenarios for each of the 2 '
                  'levels, and the deck is then drawn: estimated at about $7.20 and 40 minutes of '
                  "agent time for a deck of this size (a fixed estimate, not this computer's "
-                 'history). It spends from the same limit as the rest of the training.'),
+                 'history).'),
                 # Existing runs have no unwritten guide or brief at this stop.
                 ([],
                  'Nothing more is written for the levels: approving carries on to the deck.')):
@@ -3352,24 +3354,28 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         self.started()
         going = 'Drafting the research questions.'
         working = a_run('working', going, steps=steps('done', 'working'),
-                        spent={'dollars': 0, 'tokens': None, 'stops_at': 20.0})
+                        spent={'dollars': 0, 'tokens': None})
         answers = self.answers(**{'GET /api/trainings': [self.listed('working', going)],
                                   'GET /api/training': [self.detail('working', going)],
                                   'GET /api/run': [working]})
         result = self.run_page(answers, [{'click': 'Open Rolling restarts'}, {'snapshot': 'run'}])
         self.assertNotIn('$0.00', result['snapshots']['run']['text'])
 
-    def test_the_now_line_says_the_limit_the_run_stops_at(self):
+    def test_the_now_line_says_what_it_cost_and_no_limit_even_for_saved_work(self):
         self.started()
         going = 'Drafting the research questions.'
+        # As a runner from before spending limits were removed answered.
         working = a_run('working', going, steps=steps('done', 'working'),
                         spent={'dollars': 21.0, 'tokens': None, 'stops_at': 40.0})
         answers = self.answers(**{'GET /api/trainings': [self.listed('working', going)],
                                   'GET /api/training': [self.detail('working', going)],
                                   'GET /api/run': [working]})
         result = self.run_page(answers, [{'click': 'Open Rolling restarts'}, {'snapshot': 'run'}])
-        self.assertIn('stops at $40.00', result['snapshots']['run']['text'])
-        self.assertNotIn('stops at $20.00', result['snapshots']['run']['text'])
+        text = result['snapshots']['run']['text']
+        self.assertIn('$21.00 so far', text)
+        for gone in ('stops at', 'warns at', 'Spending behavior', 'Reported spending reached',
+                     'It stops and asks you at', 'Warns when reported spending'):
+            self.assertNotIn(gone, text)
 
     def test_the_research_request_sheet_says_what_it_runs(self):
         self.started(); self.at_the_questions_gate()
@@ -3713,7 +3719,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
                            'branch': 'trainings', 'existing': True}}
         saved = {'configured': True,
                  'agent': {'default': 'codex', 'model': 'gpt-6-sol', 'effort': 'xhigh'},
-                 'limits': {'step_seconds': 600, 'training_dollars': 15, 'parallel': 1},
+                 'limits': {'step_seconds': 600, 'parallel': 1},
                  'workspace': {**WORKSPACE, 'folder': 'tools/trainings', 'branch': 'trainings',
                                'share_when': 'when-asked', 'shared': False}}
         answers = self.answers(**{'GET /api/setup': [ok(NOT_SET_UP), ok(saved)],
@@ -3730,7 +3736,6 @@ class RunnerScreenTests(ScriptedPage, PageCase):
             {'fill': 'Its model', 'value': 'gpt-6-sol'},
             {'fill': 'Its reasoning level', 'value': 'xhigh'},
             {'fill': 'The longest a step may take', 'value': '10'},
-            {'fill': 'Project spending amount', 'value': '15'},
             {'fill': parallel, 'value': '0'},
             {'click': 'Save and go on'}, {'snapshot': 'limit'},
             {'fill': parallel, 'value': '1'},
@@ -3759,8 +3764,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         self.assertEqual(start['fields'], {
             address: '', 'The folder inside it': '', 'The branch': '',
             'A name for this workspace': '', 'Its model': '', 'Its reasoning level': '',
-            'The longest a step may take, in minutes': '15',
-            'Project spending amount, in dollars': '20', parallel: '2'})
+            'The longest a step may take, in minutes': '15', parallel: '2'})
         self.assertEqual(self.asked(result, 'capabilities'), ['/api/capabilities'])
 
         # Nothing to save yet: refused beside the box, and nothing is sent.
@@ -3806,8 +3810,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
                             'branch': 'trainings', 'name': 'Field enablement',
                             'share_when': 'when-asked', 'agent': 'codex',
                             'model': 'gpt-6-sol', 'effort': 'xhigh',
-                            'limits': {'step_seconds': 600, 'training_dollars': 15,
-                                       'parallel': 1}})])
+                            'limits': {'step_seconds': 600, 'parallel': 1}})])
 
         # Then "Start your first training", and the rest of the page is there.
         done = shots['saved']
@@ -3820,7 +3823,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
     def test_set_up_is_reached_from_settings_and_the_work_is_shared_when_asked(self):
         notice = 'The repository could not be reached when you last decided.'
         behind = {**SET_UP, 'workspace': {**WORKSPACE, 'shared': False, 'notice': notice}}
-        dearer = {**SET_UP, 'limits': {**LIMITS, 'training_dollars': 30}}
+        dearer = {**SET_UP, 'limits': {**LIMITS, 'step_seconds': 1200}}
         check = {'ok': True, 'found': {'name': 'Field enablement', 'folder': 'trainings',
                                        'branch': 'main', 'existing': True},
                  'checks': [{'what': 'The repository can be reached', 'ok': True, 'fix': None}]}
@@ -3832,7 +3835,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
             {'click': 'Settings'}, {'snapshot': 'settings'},
             {'click': 'Share now'}, {'snapshot': 'shared'},
             {'click': 'Change the set-up'}, {'snapshot': 'set-up'},
-            {'fill': 'Project spending amount', 'value': '30'},
+            {'fill': 'The longest a step may take', 'value': '20'},
             {'click': 'Save'}, {'snapshot': 'saved'},
         ])
         shots = result['snapshots']
@@ -3846,10 +3849,10 @@ class RunnerScreenTests(ScriptedPage, PageCase):
                       'after each decision: your team sees the drafts', said,
                       'Claude Code, with the model it chooses itself',
                       'A step may take up to 15 minutes.',
-                      'The project spending amount is $20.00.',
-                      'New-work warning or stop behavior is in Shared settings, Spending.',
                       'Up to 2 trainings run at once.'):
             self.assertIn(shown, settings['text'])
+        for gone in ('spending amount', 'Shared settings, Spending'):
+            self.assertNotIn(gone, settings['text'])
         self.assertEqual(settings['heading'], 'Settings')
 
         shared = shots['shared']
@@ -3876,12 +3879,11 @@ class RunnerScreenTests(ScriptedPage, PageCase):
                             'folder': 'trainings', 'branch': 'main',
                             'name': 'Field enablement', 'share_when': 'each-decision',
                             'agent': 'claude', 'model': None, 'effort': None,
-                            'limits': {'step_seconds': 900, 'training_dollars': 30,
-                                       'parallel': 2}})])
+                            'limits': {'step_seconds': 1200, 'parallel': 2}})])
         saved = shots['saved']
         self.assertEqual((saved['heading'], saved['current']), ('Settings', ['Settings']))
         self.assertIn('The set-up is saved.', saved['toasts'])
-        self.assertIn('The project spending amount is $30.00.', saved['text'])
+        self.assertIn('A step may take up to 20 minutes.', saved['text'])
 
     def test_a_folder_on_this_computer_is_set_up_without_anyone_to_share_with(self):
         check = {'ok': True, 'found': {'name': 'try-out', 'folder': 'trainings',
@@ -4509,7 +4511,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         self.assertEqual((missing['focus'], missing['posts']), ('new-title', 0))
         self.assertIn('Give it a title first.', missing['sheet'])
 
-        # Before it starts: every choice, and what it may spend. Nothing stops for the person.
+        # Before it starts: every choice. Nothing stops for the person.
         three = shots['three']
         self.assertEqual(three['filled'], ['Start'])
         self.assertNotIn('Back a step', three['buttons'])
@@ -4685,8 +4687,9 @@ class RunnerScreenTests(ScriptedPage, PageCase):
                       'All production steps', 'Your answers', 'Draft the research questions', 'Working',
                       'To do', 'Your decision', 'Working now', 'Drafting question 4',
                       'Made so far', 'What it has cost', '$0.40', 'So far.',
-                      'It stops and asks you at $20.00.', 'Drafted by Claude Code.'):
+                      'Drafted by Claude Code.'):
             self.assertIn(shown, run['text'])
+        self.assertNotIn('It stops and asks you at', run['text'])
         self.assertRegex(run['text'], r'18[,.  ]?200 tokens used\.')
         self.assertLess(run['text'].index('Made so far'),
                         run['text'].index('All production steps'))
@@ -4942,11 +4945,11 @@ class RunnerScreenTests(ScriptedPage, PageCase):
                       'finish first.', shots['resumed']['text'])
         self.assertIn('Stop', paused_shot['buttons'])
         self.assertNotIn('Pause', paused_shot['buttons'])
-        # An agent that counts tokens and not dollars: the money limit cannot stop it.
-        for shown in ('Codex says how many tokens it uses, not what they cost.',
-                      'So the limit of $20.00 cannot stop it: watch the steps instead.'):
-            self.assertIn(shown, paused_shot['text'])
-        self.assertNotIn('It stops and asks you at', paused_shot['text'])
+        # An agent that counts tokens and not dollars says so, and nothing is said of a limit.
+        self.assertIn('Codex says how many tokens it uses, not what they cost.',
+                      paused_shot['text'])
+        for gone in ('cannot stop it', 'It stops and asks you at'):
+            self.assertNotIn(gone, paused_shot['text'])
         self.assertIn('Carrying on.', shots['resumed']['toasts'])
         self.assertIn('Pause', shots['resumed']['buttons'])
         self.assertEqual(shots['resumed']['focus'], 'Pause')
@@ -6533,7 +6536,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         self.started()
         going = 'Drawing the slides, in three sections.'
         before = ('A deck of this size has cost about $2.40 and about 7 minutes of agent time '
-                  'before. It spends from the same limit as the rest of the training.')
+                  'before.')
         # As the runner gives them: each section's slides are numbered within that section,
         # which is the number its picture is asked for by, and each comes with its title.
         sections = [a_section('section-1', 'done', 2, ['Why restart in turn', 'In practice']),

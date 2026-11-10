@@ -1049,7 +1049,7 @@ class SecondLookTests(FindTextCase):
 
         self.refused(
             fake_site.Assistant(GUESSED, slow),
-            content_address.OUT_OF_TIME.replace('{limit}', '3 minutes'),
+            content_address.OUT_OF_TIME.replace('{limit}', '4.5 minutes'),
         )
         self.assertIn(
             '(3 minutes in all)',

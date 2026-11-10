@@ -43,12 +43,12 @@ LISTED = [{'name': 'gpt-6-sol', 'label': 'GPT-6-Sol (gpt-6-sol)', 'family': None
            'levels': ['low', 'medium', 'high', 'xhigh']},
           {'name': 'gpt-6-luna', 'label': 'GPT-6-Luna (gpt-6-luna)', 'family': None,
            'about': None, 'default_level': None, 'levels': ['low', 'medium', 'high']}]
-GETS = ('/api/research-note', '/api/updates', '/api/slide-text-draft', '/api/spending-policy', '/api/outline-flow', '/api/intake-draft', '/api/capabilities', '/api/setup', '/api/agents', '/api/models', '/api/run')
-POSTS = ('/api/research-decision', '/api/research-note', '/api/slide-text-draft', '/api/spending-policy', '/api/outline-flow', '/api/intake-draft', '/api/training-plan', '/api/research-sources', '/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/answer',
+GETS = ('/api/research-note', '/api/updates', '/api/slide-text-draft', '/api/outline-flow', '/api/intake-draft', '/api/capabilities', '/api/setup', '/api/agents', '/api/models', '/api/run')
+POSTS = ('/api/research-decision', '/api/research-note', '/api/slide-text-draft', '/api/outline-flow', '/api/intake-draft', '/api/training-plan', '/api/research-sources', '/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/answer',
          '/api/documents', '/api/copies', '/api/share', '/api/companions', '/api/asset',
          '/api/upgrade', '/api/restart', '/api/versions', '/api/brand', '/api/brand/install', '/api/review',
          '/api/note', '/api/research-site')
-BOTH = ('/api/research-note', '/api/slide-text-draft', '/api/spending-policy', '/api/outline-flow', '/api/intake-draft', '/api/setup', '/api/run', '/api/trainings')
+BOTH = ('/api/research-note', '/api/slide-text-draft', '/api/outline-flow', '/api/intake-draft', '/api/setup', '/api/run', '/api/trainings')
 RUN_KEYS = ['agent', 'ahead', 'can_migrate_desk', 'can_open_desk', 'clash', 'controls', 'copies', 'current_models', 'decided', 'deck', 'deck_left', 'documents', 'driver', 'effort',
             'finished', 'flow', 'kept', 'last_shared', 'look', 'mine', 'model', 'model_mode', 'note', 'notice', 'outline', 'problem',
             'question', 'queue', 'redesign', 'research_from', 'research_progress', 'review', 'review_level', 'sentence', 'settings', 'spent', 'state', 'steps', 'taken', 'timing',
@@ -226,7 +226,7 @@ class RuleTests(PageCase):
     def setUp(self):
         super().setUp()
         self.path = self.saved_started()
-        self.bodies = {'/api/research-decision':{'path': self.path, 'action':'read'}, '/api/research-note':{'path': self.path,'id':'section','action':'read'}, '/api/slide-text-draft': {'path': self.path, 'action':'read'}, '/api/spending-policy': {'path': self.path, 'expected': 'stale', 'policy': 'warn'}, '/api/outline-flow': {'path': 'nowhere', 'expected': 'old'}, '/api/intake-draft': {'action': 'read'}, '/api/training-plan': {'path':'nowhere', 'expected':'none', 'decision':'approve'}, '/api/research-sources': {'action':'create'}, '/api/setup/check': {'path': str(self.base / 'elsewhere')},
+        self.bodies = {'/api/research-decision':{'path': self.path, 'action':'read'}, '/api/research-note':{'path': self.path,'id':'section','action':'read'}, '/api/slide-text-draft': {'path': self.path, 'action':'read'}, '/api/outline-flow': {'path': 'nowhere', 'expected': 'old'}, '/api/intake-draft': {'action': 'read'}, '/api/training-plan': {'path':'nowhere', 'expected':'none', 'decision':'approve'}, '/api/research-sources': {'action':'create'}, '/api/setup/check': {'path': str(self.base / 'elsewhere')},
                        '/api/setup': {'limits': {'parallel': 4}},
                        '/api/trainings': {**FORM, 'title': 'Health checks'},
                        '/api/run': {'path': self.path, 'action': 'stop'},
@@ -330,7 +330,7 @@ class SetUpTests(FirstTimeCase):
             'workspace': None, 'shared': {}, 'shared_problem': None,
             'team_moved': None, 'shared_notice': None,
             'agent': {'default': 'claude', 'model': None, 'effort': None},
-            'limits': {'step_seconds': 900, 'training_dollars': 20.0, 'parallel': 2},
+            'limits': {'step_seconds': 1350, 'parallel': 2},
             'previews': {'how': None, 'pool': False, 'drive': False, 'local': False, 'left': []},
             'notify': {'on': False, 'can': True, 'problem': None},
             'updates': {'look': True}, 'upkeep': None,
@@ -347,6 +347,8 @@ class SetUpTests(FirstTimeCase):
             'path': str(folder), 'folder': 'courses', 'branch': 'main', 'name': 'my-work',
             'share_when': 'when-asked', 'agent': 'codex', 'model': 'a-model',
             'effort': 'ultra',
+            # A page loaded before spending limits were removed still sends an amount: it is
+            # neither kept nor refused.
             'limits': {'step_seconds': 600, 'training_dollars': 7.5, 'parallel': 3}})
         self.assertEqual(made, {
             'configured': True, 'review_level': 'step_by_step',
@@ -358,7 +360,7 @@ class SetUpTests(FirstTimeCase):
             'shared': {'assistant': {'agent': 'codex', 'model': 'a-model', 'effort': 'ultra'}},
             'shared_problem': None, 'team_moved': None, 'shared_notice': None,
             'agent': {'default': 'codex', 'model': 'a-model', 'effort': 'ultra'},
-            'limits': {'step_seconds': 600, 'training_dollars': 7.5, 'parallel': 3},
+            'limits': {'step_seconds': 600, 'parallel': 3},
             'previews': {'how': None, 'pool': False, 'drive': False, 'local': False, 'left': []},
             'notify': {'on': False, 'can': True, 'problem': None},
             'updates': {'look': True}, 'upkeep': None,
@@ -370,12 +372,12 @@ class SetUpTests(FirstTimeCase):
                          ('training-studio', 'my-work', 'courses', 'main'))
         self.assertEqual(settings.load(), settings.Settings(
             agent='codex', model='a-model', effort='ultra', step_seconds=600,
-            training_dollars=7.5, parallel=3))
+            parallel=3))
         # The agent is kept only in the file every studio shares; the limits only here.
         self.assertEqual(json.loads(Path(os.environ['STUDIOS_CONFIG']).read_text()), {
             'schema': 1, 'assistant': {'agent': 'codex', 'model': 'a-model', 'effort': 'ultra'}})
         self.assertEqual(sorted(json.loads(settings.path().read_text())), [
-            'look_for_updates', 'notify', 'parallel', 'schema', 'step_seconds', 'training_dollars'])
+            'look_for_updates', 'notify', 'parallel', 'schema', 'step_seconds'])
         path = self.started()
         self.assertEqual(Path(path), folder / 'courses' / 'rolling-restarts')
         self.assertEqual(self.get('run', path=path)['agent'], 'codex')
@@ -439,7 +441,7 @@ class SetUpTests(FirstTimeCase):
                           changed['agent'], changed['limits']),
                          (str(folder), 'each-decision',
                           {'default': 'claude', 'model': 'a-model', 'effort': 'max'},
-                          {'step_seconds': 900, 'training_dollars': 20.0, 'parallel': 4}))
+                          {'step_seconds': 1350, 'parallel': 4}))
         # The model and the level are kept while the agent is, and are the new agent's own
         # once it changes.
         self.assertEqual(self.post('setup', {'limits': {'parallel': 3}})['agent'],
@@ -470,8 +472,6 @@ class SetUpTests(FirstTimeCase):
                 ({'path': folder, 'limits': [900]}, 'Give the limits as'),
                 ({'path': folder, 'limits': {'step_seconds': 5}},
                  'The time for one step, in seconds, is a whole number from 60 to 7200.'),
-                ({'path': folder, 'limits': {'training_dollars': 0}},
-                 'What a training may spend, in dollars, is a number from 0.01 to 1000.'),
                 ({'path': folder, 'limits': {'parallel': 2.5}},
                  'How many trainings run at once is a whole number from 1 to 8.'),
                 ({'path': 7}, 'Give the path as text.')):
@@ -1679,7 +1679,7 @@ class RunTests(PageCase):
         self.assertEqual((run['state'], run['agent'], run['model'], run['effort'],
                           run['workers'], run['question'], run['problem']),
                          ('waiting', 'claude', None, None, [], None, None))
-        self.assertEqual(run['spent'], {'dollars': 0.5, 'tokens': 1200, 'stops_at': 20.0})
+        self.assertEqual(run['spent'], {'dollars': 0.5, 'tokens': 1200})
         self.assertIsInstance(run['sentence'], str)
         for step in run['steps']:
             self.assertEqual(sorted(step), STEP_KEYS)
@@ -2414,10 +2414,10 @@ class SettingsTests(StudioCase):
 
     def test_the_defaults_are_used_until_something_is_saved(self):
         self.assertEqual(settings.load(), settings.Settings(
-            agent='claude', step_seconds=900, training_dollars=20.0, parallel=2))
+            agent='claude', step_seconds=1350, parallel=2))
         kept = settings.save(replace(settings.load(), agent='codex', parallel=4))
         self.assertEqual((settings.load(), kept.limits), (kept, {
-            'step_seconds': 900, 'training_dollars': 20.0, 'parallel': 4}))
+            'step_seconds': 1350, 'parallel': 4}))
         self.assertEqual(settings.path().parent, home.data_root())
         self.assertNotIn(self.space.repo, settings.path().parents)
 

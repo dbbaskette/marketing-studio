@@ -164,7 +164,7 @@ class SectionWorkflowTests(unittest.TestCase):
         policy['more_time']['final'] = 600
         facts, _ = self.run_sections(policy)
         self.assertTrue(facts['review']['accepted'])
-        self.assertEqual(self.final_seconds, [300, 600])
+        self.assertEqual(self.final_seconds, [sections.SECONDS, 600])
         self.assertEqual(self.section_calls, sections_before)
         self.assertEqual([call for call in self.calls if call[0] == 'investigate'], investigations)
 
@@ -247,6 +247,6 @@ class SectionContractTests(unittest.TestCase):
         record = {'section_synthesis': sections.pin()}
         self.assertTrue(sections.grant(record, {'section': 'area-a', 'seconds': 300}))
         self.assertEqual(record['section_synthesis']['more_time'], {'area-a': 600})
-        self.assertEqual(record['section_synthesis']['seconds'], 300)
+        self.assertEqual(record['section_synthesis']['seconds'], sections.SECONDS)
         self.assertFalse(sections.grant(record, {'seconds': 900}))
 

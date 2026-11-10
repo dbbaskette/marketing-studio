@@ -192,7 +192,7 @@ def execute(command, prompt, folder, seconds, stop=None, watch=None):
 
 
 class Codex:
-    def __init__(self, folder, *, run=execute, seconds=300, model=None, effort=None, stop=None, output_root=None):
+    def __init__(self, folder, *, run=execute, seconds=450, model=None, effort=None, stop=None, output_root=None):
         require(type(seconds) is int and 1 <= seconds <= 600, 'Choose an image timeout of 1–600 seconds.')
         self.folder, self.run, self.seconds, self.model, self.effort, self.stop = Path(folder), run, seconds, model, effort, stop
         self.output_root = output_root

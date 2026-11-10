@@ -146,6 +146,21 @@ class SharedSetupTests(IsolatedHome):
                     preferences.save(shared, {'person': {'name': 'Conflict'}}, seen)
                 self.assertEqual(shared.read()[0]['review'], review)
 
+    def test_a_retired_spending_group_is_ignored_and_left_as_it_is(self):
+        for spending in ({'training': 'hard-stop', 'presentation': 'warn'}, {'training': 'unknown'}, ['malformed']):
+            with self.subTest(spending=spending):
+                shared.path().write_text(json.dumps({'spending': spending, 'person': {'name': 'Before'}}))
+                seen = preferences.visible(shared.read()[0])
+                self.assertNotIn('spending', seen)
+                preferences.save(shared, {'person': {'name': 'After'}}, seen)
+                self.assertIn('"spending": ' + json.dumps(spending), shared.path().read_text())
+                self.assertEqual(shared.read()[0]['person']['name'], 'After')
+                # No form offers a spending choice any more, so one is not taken.
+                with self.assertRaises(ValueError):
+                    preferences.save(shared, {'spending': {'training': 'warn'}},
+                                     preferences.visible(shared.read()[0]))
+                self.assertEqual(shared.read()[0]['spending'], spending)
+
     def test_same_leaf_conflicts_and_unrelated_content_survives(self):
         shared.path().write_text('{"unknown": {"keep": [1, 2]}, "render": {"previews": "local"}}')
         page = self.controller()

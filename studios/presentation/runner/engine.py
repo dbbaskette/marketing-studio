@@ -38,7 +38,7 @@ What a caller needs to know
   'more-time'|None, 'at'}, with `seconds` (the step limit that ran out) for 'more-time' and
   `unreadable` for a research check that could not read an original; `more_time`, the step
   limit "Give it more time and try again" gave this deck, kept when its limits are read
-  again; `cleared`, what had been spent when the person last said to carry on; which
+  again; which
   research run holds the approved plan (`research`); and what each worker said of its work
   (`said`). It is committed with everything else.
 - One try at an agent step, its limits and questions, and what the record holds of tries,
@@ -91,8 +91,9 @@ What a caller needs to know
   under the deck's never-shared sources/incoming/ until the intake-source step takes them.
 - Everything the engine writes in the workspace is written and committed while it holds
   `engine.files`, so the folder matches its last commit whenever nothing is being written.
-- Limits: a worker's time, and what a deck may spend where its agent reports spending. A
-  deck that has spent what it may stops and asks; "resume" lets it spend as much again.
+- Limits: a worker's time. Nothing stops, waits or warns for what a deck cost; a record
+  saved while it could (`spending_policy`, `cleared`, a dollar amount in `limits`, a stop
+  marked `limit`) is read as it is, and those are never looked at.
 - What a person may ask of a run depends on its state: pause while it is working; stop
   while it is working, waiting or paused; resume while it is paused or stopped; try again
   when a problem offers it; undo the last step while nothing is in hand and the last commit
@@ -115,7 +116,7 @@ What a caller needs to know
 """
 from __future__ import annotations
 
-from studio_core import activity_log, deck_content, spending
+from studio_core import activity_log, deck_content
 from studio_core import deck_flow, research_session, research_sources, research_contract, research_sites, research_view, review_policy, stops
 
 from studio_core import research_sections
@@ -478,14 +479,12 @@ class Engine(Jobs, Researching, DeskActions):
         if record.get('schema') in (3, 4, 5, 6) and (record.get('research_contract') or {}).get('schema') != 2:
             raise WorkspaceError('This run is missing its saved research contract. Restore its run record.')
         for key, value in (('gates', {}), ('answers', {}), ('said', {}), ('question', None),
-                           ('halted', None), ('cleared', 0.0), ('research', None),
+                           ('halted', None), ('research', None),
                            ('revisions', []), ('limits', {})):
             record.setdefault(key, value)
         return record
 
     def _store(self, root: Path, record: dict) -> None:
-        from studio_core import spending
-        spending.observe(root / 'work' / activity_log.FILE, record, spent(record)[0], self._limit(record))
         decks.write_run(root, record)
         from studio_core import work_summary
         work_summary.native('presentation', root, record)
@@ -883,9 +882,7 @@ class Engine(Jobs, Researching, DeskActions):
                 record = self._load(root)
                 record.update(agent=agent, model=model, level_of_effort=effort,
                               model_profiles=profiles, driver=team.claim(space),
-                              spending_policy=getattr(chosen, 'spending_policy', 'hard-stop'),
-                              limits={'step_seconds': chosen.step_seconds,
-                                      'dollars': chosen.deck_dollars})
+                              limits={'step_seconds': chosen.step_seconds})
                 if self.content_first and decks.on_desk(record):
                     record['deck_content'] = deck_content.PROTOCOL
                 if contract:
@@ -2672,8 +2669,6 @@ class Engine(Jobs, Researching, DeskActions):
                     # The check would stop the same way: say so again, and start nothing.
                     raise WorkspaceError(halted.get('why') or 'It has stopped.')
                 if action in ('resume', 'retry', stops.MORE_TIME):
-                    if halted.get('limit'):
-                        record['cleared'] = spent(record)[0] or 0.0
                     if action != 'resume':
                         self._fresh(record, halted.get('step'))
                     if action == stops.MORE_TIME and not research_sections.grant(record, halted):
@@ -2684,8 +2679,7 @@ class Engine(Jobs, Researching, DeskActions):
                     # The limits this computer has now, with the time this deck was given.
                     chosen = settings.load()
                     record['limits'] = {'step_seconds': max(chosen.step_seconds,
-                                                            record.get('more_time') or 0),
-                                        'dollars': chosen.deck_dollars}
+                                                            record.get('more_time') or 0)}
                 self._store(root, record)
                 self._commit(root, {'pause': 'paused on the page',
                                     'stop': 'stopped on the page',
@@ -3472,7 +3466,6 @@ class Engine(Jobs, Researching, DeskActions):
             'taken': None if mine else team.taken(root), 'last_shared': last,
             'kept': self._set_aside(root), 'clash': root.name in self._clash,
             'queue': self._queue(run) if mine else None,
-            **({'spending': spending.info(record, dollars, self._limit(record))} if 'spending_policy' in record else {}),
             'spent': {'dollars': dollars, 'tokens': tokens},
             'ahead': self._still_to_come(record),
             'agent': record.get('agent'), 'model': record.get('model'),
@@ -4084,8 +4077,7 @@ class Engine(Jobs, Researching, DeskActions):
                               question=None,
                               agent=record.get('agent') or chosen.agent,
                               model=record.get('model') or chosen.model,
-                              limits={'step_seconds': chosen.step_seconds,
-                                      'dollars': chosen.deck_dollars})
+                              limits={'step_seconds': chosen.step_seconds})
                 record.setdefault('schema', decks.SCHEMA)
                 record.setdefault('steps', {})
                 self._store(root, record)

@@ -1062,7 +1062,7 @@ class RunFailureTests(ResearchCase):
         shown = engine.describe(found['id'])
         self.assertEqual(shown['reason'], 'time-limit')
         self.assertEqual(
-            shown['error'], 'This step ran out of the time a step may take (10 minutes).'
+            shown['error'], 'This step ran out of the time a step may take (15 minutes).'
         )
         self.assertIsNone(shown['said'], 'nothing kept when nothing was said')
 
@@ -1082,7 +1082,7 @@ class RunFailureTests(ResearchCase):
         shown = engine.describe(found['id'])
         self.assertEqual(shown['reason'], 'time-limit')
         self.assertTrue(
-            shown['error'].startswith('Research ran out of the time a step may take (10 minutes).'),
+            shown['error'].startswith('Research ran out of the time a step may take (15 minutes).'),
             shown['error'],
         )
         self.assertIn('kept on this computer', shown['error'])

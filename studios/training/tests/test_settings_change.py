@@ -380,7 +380,7 @@ class RefusalTests(SettingsCase):
 
 
 class StopTests(SettingsCase):
-    """What the stop before a change asked for is kept: more time, the spending limit, and
+    """What the stop before a change asked for is kept: more time, and
     originals a check could not read."""
 
     def stopped_as(self, root: Path, **problem) -> None:
@@ -411,12 +411,12 @@ class StopTests(SettingsCase):
             self.engine.act(root, 'retry')
         self.assertEqual(self.record(root)['more_time'], 1800)
 
-    def test_continue_after_a_change_never_lifts_the_spending_limit(self):
-        import dataclasses
-        from runner import engine as engines
+    def test_continue_after_a_change_carries_on_whatever_the_training_has_cost(self):
         root = self.supplied()
         record = self.record(root)
-        record['spending_policy'] = 'hard-stop'
+        # A stop saved while spending limits existed, with what such a record held.
+        record.update(spending_policy='hard-stop', cleared=0.0)
+        record['limits']['training_dollars'] = 1.0
         self.engine._store(root, record)
         self.stopped_as(root, action='resume', label='Carry on', step=None)
         self.engine.change_settings(root, self.sent(self.form(root), research_questions=QUESTIONS,
@@ -424,14 +424,9 @@ class StopTests(SettingsCase):
         problem = self.record(root)['problem']
         self.assertNotIn('carried', problem)
         self.assertNotIn('twice the time', problem['what'])
-        # The limit is under what was spent: Continue runs into it and stops with Carry on.
-        tight = dataclasses.replace(engines.settings.load(), training_dollars=1.0)
-        with mock.patch.object(engines.settings, 'load', return_value=tight):
+        with mock.patch.object(self.engine, 'wake'):
             self.engine.act(root, 'retry')
-        record = self.record(root)
-        self.assertEqual(record['cleared'], 0.0, 'Only Carry on lifts the spending limit')
-        self.assertEqual((record['problem']['action'], record['problem']['label']),
-                         ('resume', 'Carry on'))
+        self.assertIsNone(self.record(root)['problem'])
 
     def test_a_carried_stop_for_time_says_so_and_survives_a_second_change(self):
         root = self.supplied()
@@ -663,7 +658,7 @@ class ParallelChangeTests(SettingsCase):
         self.engine.parallel_research = True
         self.research = research.Research(Path(RUNTIME))
         self.web.page(URL, TEXT, 'text/plain')
-        self.barrier, self.supplied_only, self.phases, self.caps = None, True, [], []
+        self.barrier, self.supplied_only, self.phases = None, True, []
         self.fetched = []
         self.workers.queued['research-result'] = [fails(cost=1.0), *([self.investigate] * 12)]
 

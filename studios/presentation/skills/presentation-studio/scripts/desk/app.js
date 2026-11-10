@@ -1217,20 +1217,6 @@ function fit(holder, parts, fresh) {
   }
 }
 
-function syncSpending() {
-  if (typeof StudioActivity === 'undefined' || !StudioActivity.spendingStatus) return;
-  const path = view.path, run = view.run;
-  const options = path && run && ['deck'].includes(view.screen) ? {
-    key:path, readOnly:run.mine === false, warning:run.spending?.warning?.message,
-    load: () => ask('spending-policy', {path}),
-    save: async (sent) => {
-      const updated = await send('spending-policy', {path, ...sent});
-      if (view.path === path && ['deck'].includes(view.screen)) { view.run = updated;draw(false); }
-    }
-  } : null;
-  StudioActivity.spendingStatus(main(),options);
-}
-
 function placeParts(spec, parts, fresh) {
   const holder = main();
   const active = document.activeElement;
@@ -1259,7 +1245,6 @@ function placeParts(spec, parts, fresh) {
 }
 
 function draw(fresh) {
-  syncSpending();
   if (view.screen === 'deck') return drawDeck(fresh);
   if (view.screen === 'published') return drawPublished(fresh);
   if (view.screen === 'setup' && view.setup) return drawSetup(fresh);
@@ -2134,10 +2119,6 @@ function about(pairs) {
 function limitsSays(limits) {
   const says = [];
   if (limits.step_seconds) says.push('A step may take up to ' + lasted(limits.step_seconds) + '.');
-  if (given(limits.deck_dollars)) {
-    says.push('The project spending amount is ' + money(limits.deck_dollars)
-      + '. New-work warning or stop behavior is in Shared settings, Spending.');
-  }
   if (limits.parallel) {
     says.push(limits.parallel === 1 ? 'One deck runs at a time.'
       : 'Up to ' + limits.parallel + ' decks run at once.');
@@ -2268,7 +2249,6 @@ function setupForm() {
     brand: brand.brand || '', variant: brand.variant || '',
     output: held.output === 'pptx' ? 1 : 0,
     minutes: seconds ? String(Math.round(seconds / 6) / 10) : '', seconds,
-    dollars: given(limits.deck_dollars) ? String(limits.deck_dollars) : '',
     parallel: given(limits.parallel) ? String(limits.parallel) : '',
     previews: previewsNow(held.previews || {}),
     brandSkill: (brandSkills().find((skill) => skill.chosen) || brandSkills()[0] || {}).path
@@ -2688,12 +2668,9 @@ function shareCard(form) {
 
 function limitsCard(form) {
   const node = card('Limits');
-  return add(node, make('p', '', 'Each job keeps its time limit. The project amount warns by default for new work; '
-    + 'Shared settings, Spending can make it stop and ask instead.'),
+  return add(node, make('p', '', 'Each step keeps its time limit. Nothing stops for what a deck costs.'),
   field('setup-minutes', 'The longest a step may take, in minutes', form, 'minutes',
     { short: true, mode: 'decimal' }),
-  field('setup-dollars', 'Project spending amount, in dollars', form, 'dollars',
-    { short: true, mode: 'decimal', hint: 'Counted where the agent says what it spends.' }),
   field('setup-parallel', 'How many decks may run at once', form, 'parallel',
     { short: true, mode: 'numeric' }));
 }
@@ -2891,10 +2868,8 @@ async function saveSetup(pressed) {
   need(where, asked.repository || asked.path, form.where ? 'Say which folder first.'
     : 'Give the repository’s address first.');
   const minutes = limit('setup-minutes', form.minutes, false);
-  const dollars = limit('setup-dollars', form.dollars, false);
   const parallel = limit('setup-parallel', form.parallel, true);
-  for (const [id, value] of [['setup-minutes', minutes], ['setup-dollars', dollars],
-    ['setup-parallel', parallel]]) {
+  for (const [id, value] of [['setup-minutes', minutes], ['setup-parallel', parallel]]) {
     if (value === null) missing.push(id);
   }
   if (missing.length) {
@@ -2941,7 +2916,7 @@ async function saveSetup(pressed) {
     agent: form.agent, model: form.model.trim() || null, effort: form.effort || null,
     person: form.person.trim() || null, output: OUTPUTS[form.output][0],
     limits: { step_seconds: kept ? form.seconds : Math.max(1, Math.round(minutes * 60)),
-      deck_dollars: dollars, parallel } };
+      parallel } };
   if (form.where) body.path = asked.path;
   else body.repository = asked.repository;
   if (form.brand) {
@@ -3676,8 +3651,8 @@ function deckStanding(run) {
   return runWords(run);
 }
 
-// What it is doing now, in one line: the step, its part, how long it has taken, what it
-// has spent and the limit it stops at. Each is left out where it is not known.
+// What it is doing now, in one line: the step, its part, how long it has taken and what it
+// has cost. Each is left out where it is not known.
 function nowLine(run) {
   if (run.state !== 'working' || theirs(run) || queued(run)) return null;
   const parts = [];
@@ -3692,8 +3667,6 @@ function nowLine(run) {
   if (given(spent.dollars) && Number(spent.dollars) >= 0.005) {
     parts.push(money(spent.dollars) + ' so far');
   }
-  const limits = (view.setup && view.setup.limits) || {};
-  if (given(limits.deck_dollars)) parts.push((run.spending?.policy === 'warn' ? 'warns at ' : 'stops at ') + money(run.spending?.limit ?? limits.deck_dollars));
   return parts.length ? make('p', 'now-line', parts.join(' · ')) : null;
 }
 
@@ -5597,7 +5570,6 @@ function researching(run) {
 function costCard(run) {
   const node = card('What it has cost');
   const spent = run.spent || {};
-  const limits = (view.setup && view.setup.limits) || {};
   const agent = AGENT_NAMES[run.agent] || run.agent || 'an agent';
   // A cost of nothing is not reported money: it is never said as $0.00.
   const reported = given(spent.dollars) && Number(spent.dollars) > 0;
@@ -5609,11 +5581,6 @@ function costCard(run) {
   else if (silent) says.push(agent + ' says how many tokens it uses, not what they cost.');
   else says.push('Nothing has been reported yet. An agent says what it used as each step ends.');
   if (given(spent.tokens)) says.push(Number(spent.tokens).toLocaleString() + ' tokens used.');
-  if (given(limits.deck_dollars)) {
-    says.push(run.spending?.policy === 'warn' ? 'Warns when reported spending reaches ' + money(run.spending.limit) + '; work continues with a $5 budget for each assistant job.' : silent ? 'So the limit of ' + money(limits.deck_dollars)
-      + ' cannot stop it: watch the steps instead.'
-      : 'It stops and asks you at ' + money(limits.deck_dollars) + '.');
-  }
   return add(node, make('p', 'quiet', says.join(' ')),
     make('p', 'quiet', (run.review_level ? ({balanced: 'Balanced', automatic: 'Automatic draft', step_by_step: 'Step by step'}[run.review_level] + ' review · ') : '') + 'Drafted by ' + agent + (run.model_mode === 'by_task' ? ', using the models chosen for each kind of work' : modelWords(run.model, run.effort)) + '.'));
 }
@@ -6152,7 +6119,6 @@ function deckActions(run, lead) {
 }
 
 function paintDeck(fresh) {
-  syncSpending();
   if (!fresh && document.activeElement?.dataset.composing === 'true') {
     view.paintAfterComposition = true;
     return;

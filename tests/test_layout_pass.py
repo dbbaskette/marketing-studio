@@ -129,7 +129,7 @@ class StaticLayoutTests(unittest.TestCase):
         self.assertEqual(cards, [
             ('0', 'You and your assistant'), ('1', 'Your workspace'), ('2', 'Brand'),
             ('2', 'Delivery and previews'), ('settings', 'Models and reasoning'),
-            ('settings', 'Brand skill release'), ('settings', 'Spending limits'), ('settings', 'Research sites'),
+            ('settings', 'Brand skill release'), ('settings', 'Research sites'),
             ('settings', 'Studio installations')])
         order = [node.attrs.get('id') for node in form.children if node.attrs.get('id')]
         self.assertLess(order.index('delivery-part'), order.index('advanced-head'))
