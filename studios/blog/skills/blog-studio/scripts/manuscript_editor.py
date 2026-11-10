@@ -429,6 +429,40 @@ def google_send(client, root, ident, data, expected):
     return suggestions.apply(client, root, saved)
 
 
+VERIFIED = ('verified-pending', 'verified-comments')
+NOT_KEPT = (
+    'This send can no longer be verified from here. Review changes to send compares the desk '
+    'with the Doc.'
+)
+
+
+def google_check(client, root, ident, data):
+    """Read the Doc again for a plan that was sent and verified, and say what it holds now.
+
+    Reading only: nothing is sent and no record of the send changes. A plan that was never
+    verified is refused, since settling it is Check delivery's work, never this one's."""
+    import google_drive as drive
+    import google_suggestions as suggestions
+
+    token = data.get('plan', '')
+    if not isinstance(token, str) or not re.fullmatch('[a-f0-9]{32}', token):
+        raise ValueError('Choose a send to verify.')
+    path = studio.inside(drive.staging_root(root), 'editor-' + token + '.json')
+    if not path.is_file():
+        raise ValueError(NOT_KEPT)
+    saved = studio.read_json(path)
+    if saved['article'] != ident:
+        raise ValueError('This plan belongs to another manuscript.')
+    receipt = suggestions.ledger(root) / (suggestions.operation_key(saved) + '.json')
+    try:
+        recorded = json.loads(receipt.read_text()) if receipt.is_file() else {}
+    except (ValueError, OSError):
+        recorded = {}
+    if (recorded.get('verification') or {}).get('status') not in VERIFIED:
+        raise ValueError('This send is not verified yet. Choose Check delivery first.')
+    return suggestions.verify(client, root, saved, record=False)
+
+
 def validate_review(result, manuscript):
     """Validate generated feedback without changing the manuscript or review records."""
     prefix = 'The editing review did not return valid, located findings: '

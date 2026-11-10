@@ -4180,7 +4180,13 @@ def google_send(root, ident, data):
         n, m = meta.get('suggestions', 0), meta.get('comments', 0)
         if result['status'] == 'verified-comments':
             n, m = 0, n + m
-        record['last'] = {'at': studio.now(), 'suggestions': n, 'comments': m}
+        # The plan that went is kept by name, so the send can be verified again later.
+        record['last'] = {
+            'at': studio.now(),
+            'suggestions': n,
+            'comments': m,
+            'plan': data.get('plan'),
+        }
         record['waiting'] = (record['waiting'] or 0) + n
         if result['status'] == 'verified-comments':
             # Every change went as a comment: none is a suggestion that waits or is decided.
@@ -4201,6 +4207,25 @@ def google_send(root, ident, data):
         record['carried'] = record['carried'][-2000:]
         studio.write_json(_sent_path(root, ident), record)
     return result
+
+
+def google_check(root, ident, data):
+    """Verify again: read the blog's Doc for a plan this desk sent, and say whether it still
+    holds what was sent. Google is only read, the desk is not changed, and the record of the
+    send stays as it was: a Doc whose owner has since decided the suggestions differs from
+    what was sent, and that is said, never recorded as a send that needs attention."""
+    import google_drive as drive
+
+    import manuscript_editor
+
+    _google_base(root, ident)  # A blog with no Doc that takes suggestions is refused here.
+    client = drive.Client(drive.account_for(root))
+    result = manuscript_editor.google_check(client, root, ident, data)
+    return {
+        **result,
+        'checked_at': result.get('checked_at') or studio.now(),
+        'as_sent': result.get('status') in manuscript_editor.VERIFIED,
+    }
 
 
 def google_state(root, ident, directory, record):

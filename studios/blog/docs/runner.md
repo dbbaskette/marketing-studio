@@ -543,7 +543,12 @@ The desk's toolbar keeps **Review changes to send** visible, including on a phon
 on a phone those two are rows in the toolbar's menu. Bringing incoming text is separate
 from sending local edits: no incoming updates does not block the outgoing preview. The receipt says
 what went and when, such as "Sent 10 suggestions and 2 comments at 3:24 PM. When the owner
-has decided them, choose Bring accepted changes." The toolbar then says what waits, for
+has decided them, choose Bring accepted changes." Under it, a line says what reading the
+Doc back found, such as "Verified by reading the Doc back at 3:24 PM: 10 suggestions are
+pending in it, and 2 of 2 comments were found in it." **Verify in the Doc again**, on the
+receipt, and **Verify the last send**, in the Google Doc menu, read the Doc once more and
+say whether it still holds what was sent or how many suggestions are now pending, accepted
+and rejected; nothing is sent and the record of the send does not change. The toolbar then says what waits, for
 example "Doc: 12 waiting · last sent 3:24 PM", and "Unsent desk changes" once the desk has
 changes the Doc has not been sent. Home and Blogs show the same in each blog's one status
 line, with when it was last edited, and Home counts a desk blog with suggestions open, Doc

@@ -697,10 +697,12 @@ function sDeskGoogleActions(held){
   // A choice closes the menu it was made in.
   const menu=sNode('details','menu desk-google-menu'),shut=go=>()=>{menu.open=false;return go(held);};
   const open=link(view.google.url,'Open the Google Doc ↗'),check=sButton('Review changes to send',()=>sDeskGoogleSend(held),'filled'),bring=sButton('Bring accepted changes',shut(sDeskGoogleBring));
+  // Verify the last send: offered once something has gone, and a reading only.
+  const last=view.google_state?.last?.plan,verify=last?sButton('Verify the last send',shut(()=>sDeskGoogleVerifyAgain(held,last))):null;
   check.disabled=bring.disabled=!editable;
-  if(sNarrow())return [check,open,bring];
-  for(const item of [open,bring])item.className='menu-item';
-  return [check,sAdd(menu,sNode('summary','button','Google Doc'),sAdd(sNode('div','menu-list'),open,bring))];
+  if(sNarrow())return [check,open,bring,verify].filter(Boolean);
+  for(const item of [open,bring,verify])if(item)item.className='menu-item';
+  return [check,sAdd(menu,sNode('summary','button','Google Doc'),sAdd(sNode('div','menu-list'),...[open,bring,verify].filter(Boolean)))];
 }
 // The Doc as the desk last knew it, said in the toolbar: what waits there, when the desk last
 // sent, and changes not sent yet. Read on this computer; Google is read only when asked.
@@ -725,6 +727,32 @@ function sDeskVerifiedWords(result){
   if(notes.length)parts.push(found+' of '+notes.length+(notes.length===1?' comment was':' comments were')+' found in it');
   return 'Verified by reading the Doc back'+(when?' at '+when:'')+(parts.length?': '+parts.join(', and ')+'.':': it holds what was sent.');
 }
+// Verify again: the Doc read once more for the plan that went last. Nothing is sent, nothing
+// on the desk changes and the record of the send stays as it was. A Doc whose owner has since
+// accepted, rejected or edited no longer reads back as sent, and that is said as what it is.
+function sDeskCheckedWords(result){
+  const when=sDeskWhen(result.checked_at),at=when?' at '+when:'',state=result.review_state,notes=Array.isArray(result.comments)?result.comments:[],found=notes.filter(row=>row&&row.verified).length;
+  const parts=[];
+  if(result.as_sent){
+    if(Number.isInteger(state?.pending)&&state.pending>0)parts.push(state.pending+(state.pending===1?' suggestion is':' suggestions are')+' pending in it');
+    if(notes.length)parts.push(found+' of '+notes.length+(notes.length===1?' comment was':' comments were')+' found in it');
+    return 'Read again'+at+': the Doc still holds what was sent'+(parts.length?'. '+parts.join(', and ').replace(/^./,c=>c.toUpperCase())+'.':'.');
+  }
+  if(state&&[state.pending,state.accepted,state.rejected].every(Number.isInteger))parts.push('It now holds '+state.pending+' pending, '+state.accepted+' accepted and '+state.rejected+' rejected '+(state.pending+state.accepted+state.rejected===1?'suggestion':'suggestions')+'.');
+  if(notes.length)parts.push(found+' of '+notes.length+(notes.length===1?' comment is':' comments are')+' still there.');
+  return 'Read again'+at+': the Doc no longer matches what was sent, as happens once its owner accepts, rejects or edits. '+parts.join(' ')+(parts.length?' ':'')+'Nothing was sent again. Bring accepted changes brings the accepted text to the desk.';
+}
+async function sDeskGoogleVerifyAgain(held,token){
+  const problem=sNode('p','sheet-error'),kept=studio.sheet?.opener||null;problem.setAttribute('role','alert');
+  sOpenSheet('Verify the last send',sNode('p','','Reading the Google Doc. Nothing is sent, and nothing on the desk changes.'),problem,sAdd(sNode('div','bar'),sButton('Cancel',sCloseSheet)));
+  const owner=studio.sheet;if(kept)owner.opener=kept;const opener=owner.opener;let result;
+  try{result=await api('desk-google-check',{id:held.id,plan:token});}catch(error){if(studio.sheet===owner)problem.textContent=sDeskSlow(error,'Reading the Google Doc took too long. Try again; nothing was sent.');return;}
+  if(studio.sheet!==owner)return;
+  const doc=held.view.google?.url?sAdd(sNode('p',''),link(held.view.google.url,'Open the Google Doc ↗')):null;
+  sOpenSheet(result.as_sent?'Still in the Google Doc':'The Doc has changed since',sStatus(result.as_sent?'done':'current',sDeskCheckedWords(result)),doc,sAdd(sNode('div','bar'),sButton('Close',sCloseSheet)));studio.sheet.opener=opener;
+}
+// The button for it, wherever the last send is shown, while the desk knows which plan went.
+function sDeskVerifyAgain(held){const token=held.view.google_state?.last?.plan;return token?sButton('Verify in the Doc again',()=>sDeskGoogleVerifyAgain(held,token)):null;}
 function sDeskVerifiedLine(words){if(!words)return null;const line=sNode('p','quiet google-verified',words);line.setAttribute('role','status');return line;}
 // The desk read again after Google work, so its toolbar says what the Doc holds now.
 async function sDeskReread(held){if(!sDeskCurrent(held))return;const before=held.view;held.view=await api('desk?id='+encodeURIComponent(held.id));sDeskRefresh(held,before);}
@@ -740,7 +768,7 @@ async function sDeskGoogleSend(held){
   const deliver=async button=>{await busy(button,'Sending…',async()=>{try{
     const result=await api('desk-google-send',{id:held.id,plan:plan.plan,confirmed:true}),done=['verified-pending','verified-comments'].includes(result.status);
     const again=done?null:sButton('Check delivery',deliver,'filled');
-    sOpenSheet(done?'Sent to the Google Doc':'Check delivery',sStatus(done?'done':'late',sDeskSentWords(plan,result)),sDeskVerifiedLine(sDeskVerifiedWords(result)),sAdd(sNode('div','bar'),again,sButton('Close',sCloseSheet)));studio.sheet.opener=opener;
+    sOpenSheet(done?'Sent to the Google Doc':'Check delivery',sStatus(done?'done':'late',sDeskSentWords(plan,result)),sDeskVerifiedLine(sDeskVerifiedWords(result)),sAdd(sNode('div','bar'),again,done?sButton('Verify in the Doc again',()=>sDeskGoogleVerifyAgain(held,plan.plan)):null,sButton('Close',sCloseSheet)));studio.sheet.opener=opener;
     if(done)await sDeskReread(held);
   }catch(error){problem.textContent=error.message;}});};
   const send=sButton('Send to Google Doc',deliver,'filled');send.disabled=!sDeskCan(held);
@@ -1546,7 +1574,7 @@ function sDeskGoogleCard(held,p){
   if(view.google?.url){const doc=link(view.google.url,'Open the Google Doc ↗');card.append(sAdd(sNode('p',''),doc));}
   if(p.googleProblem)card.append(sNode('p','problem',p.googleProblem));
   const check=sButton(p.plan?'Check again':'Check what would be sent',async button=>{await busy(button,'Checking…',async()=>{try{await sDeskFlush(held);p.plan=await api('desk-google-plan',{id:held.id,mode:p.google.mode});p.sent=null;p.googleProblem='';}catch(error){p.plan=null;p.googleProblem=error.message;}sDeskPanelShow(held);});},p.plan?'quiet':'filled');check.disabled=!sDeskCan(held);
-  if(p.sent){card.append(sStatus(['verified-pending','verified-comments'].includes(p.sent.status)?'done':'late',p.sent.message));const verified=sDeskVerifiedLine(p.sent.verified);if(verified)card.append(verified);}
+  if(p.sent){card.append(sStatus(['verified-pending','verified-comments'].includes(p.sent.status)?'done':'late',p.sent.message));const verified=sDeskVerifiedLine(p.sent.verified);if(verified)card.append(verified,...[sDeskVerifyAgain(held)].filter(Boolean));}
   if(p.plan&&!p.sent){
     const changes=sNode('ul','look');for(const item of p.plan.proposals||[])changes.append(sNode('li','',sDeskGoogleItem(item)));
     const send=sButton('Send to Google Doc',async button=>{await busy(button,'Sending…',async()=>{try{const result=await api('desk-google-send',{id:held.id,plan:p.plan.plan,confirmed:true});p.sent={status:result.status,message:sDeskSentWords(p.plan,result),verified:sDeskVerifiedWords(result)};p.googleProblem='';await sDeskReread(held);}catch(error){p.googleProblem=error.message;if(/changed/.test(error.message))p.plan=null;}sDeskPanelShow(held);});},'filled');send.disabled=!sDeskCan(held);
@@ -1794,7 +1822,7 @@ function sReviewDone(held,state){
 function sReviewGoogle(held){
   const g=held.review.google||(held.review.google={plan:null,sent:null,problem:''}),out=[];
   if(g.problem)out.push(sNode('p','problem',g.problem));
-  if(g.sent){out.push(sStatus(['verified-pending','verified-comments'].includes(g.sent.status)?'done':'late',g.sent.message));const verified=sDeskVerifiedLine(g.sent.verified);if(verified)out.push(verified);if(held.view.google?.url)out.push(sAdd(sNode('p',''),link(held.view.google.url,'Open the Google Doc ↗')));return out;}
+  if(g.sent){out.push(sStatus(['verified-pending','verified-comments'].includes(g.sent.status)?'done':'late',g.sent.message));const verified=sDeskVerifiedLine(g.sent.verified);if(verified)out.push(verified,...[sDeskVerifyAgain(held)].filter(Boolean));if(held.view.google?.url)out.push(sAdd(sNode('p',''),link(held.view.google.url,'Open the Google Doc ↗')));return out;}
   if(g.plan){
     const changes=sNode('ul','look');for(const item of g.plan.proposals||[])changes.append(sNode('li','',sDeskGoogleItem(item)));
     const count=g.plan.count;

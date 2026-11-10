@@ -2923,6 +2923,35 @@ class DeskGoogleTests(unittest.TestCase):
         self.act('google-send', plan=plan['plan'], confirmed=True)
         self.assertEqual(self.client.writes, writes)
 
+    def test_the_last_send_is_verified_again_without_sending_or_recording(self):
+        text = self.made['sections'][0]['text']
+        desk.save(self.root, self.ident, 1, self.part, text.replace('slow', 'late'))
+        plan = self.act('google-plan', mode='auto')
+        with self.assertRaisesRegex(ValueError, 'not verified yet'):
+            self.act('google-check', plan=plan['plan'])
+        self.act('google-send', plan=plan['plan'], confirmed=True)
+        writes = self.client.writes
+        # The desk says which plan went last, so it can be verified again after a reload.
+        state = desk_jobs.view(self.root, self.ident)['google_state']
+        self.assertEqual(state['last']['plan'], plan['plan'])
+        import google_suggestions
+
+        ledger = sorted(google_suggestions.ledger(self.root).glob('*.json'))
+        kept = [path.read_bytes() for path in ledger]
+        again = self.act('google-check', plan=state['last']['plan'])
+        self.assertTrue(again['as_sent'])
+        self.assertEqual(again['status'], 'verified-pending')
+        self.assertTrue(again['checked_at'])
+        self.assertGreaterEqual(again['review_state']['pending'], 1)
+        # The desk moving on does not stop the Doc being read against what was sent.
+        desk.save(self.root, self.ident, 2, self.part, text.replace('slow', 'later'))
+        self.assertTrue(self.act('google-check', plan=plan['plan'])['as_sent'])
+        self.assertEqual(self.client.writes, writes, 'nothing is sent')
+        self.assertEqual([path.read_bytes() for path in ledger], kept, 'nothing is recorded')
+        self.assertEqual(
+            desk_jobs.view(self.root, self.ident)['google_state']['last'], state['last']
+        )
+
     def test_a_send_after_the_desk_changed_is_refused(self):
         text = self.made['sections'][0]['text']
         desk.save(self.root, self.ident, 1, self.part, text.replace('slow', 'late'))

@@ -583,6 +583,45 @@ class GoogleDeliveryTests(unittest.TestCase):
         result = self.action('google-send', plan=preview['plan'], confirmed=True)
         self.assertEqual(self.client.writes, writes)
 
+    def test_a_sent_plan_is_verified_again_by_reading_only(self):
+        self.action(
+            'proposals',
+            proposals=[
+                {
+                    'id': 'plain',
+                    'kind': 'edit',
+                    'before': 'delay',
+                    'after': 'wait',
+                    'reason': 'Use a plainer word.',
+                }
+            ],
+        )
+        preview = self.action('google-plan', mode='auto')
+        check = lambda token: editor.google_check(  # noqa: E731
+            self.client, self.root, self.ident, {'plan': token}
+        )
+        # Not sent yet: settling a send is Check delivery's work, never this reading's.
+        with self.assertRaisesRegex(ValueError, 'not verified yet'):
+            check(preview['plan'])
+        self.assertEqual(self.client.writes, 0)
+        sent = self.action('google-send', plan=preview['plan'], confirmed=True)
+        self.assertEqual(sent['status'], 'verified-pending')
+        writes = self.client.writes
+        ledger = sorted(google_suggestions.ledger(self.root).glob('*.json'))
+        kept = [path.read_bytes() for path in ledger]
+        again = check(preview['plan'])
+        self.assertEqual(again['status'], 'verified-pending')
+        self.assertEqual(again['review_state']['pending'], sent['review_state']['pending'])
+        self.assertEqual(self.client.writes, writes, 'nothing is sent')
+        self.assertEqual([path.read_bytes() for path in ledger], kept, 'nothing is recorded')
+        # The desk changing afterwards does not stop the Doc being read against what was sent.
+        self.action('proposals', proposals=[])
+        self.assertEqual(check(preview['plan'])['status'], 'verified-pending')
+        with self.assertRaisesRegex(ValueError, 'no longer be verified'):
+            check('a' * 32)
+        with self.assertRaisesRegex(ValueError, 'Choose a send'):
+            check('not a plan')
+
     def test_a_replacement_sharing_its_last_word_is_verified_as_sent(self):
         # The words kept at the end are deleted and inserted again: text inserted inside the
         # quote would change what the comment quotes, and the send would never verify.
