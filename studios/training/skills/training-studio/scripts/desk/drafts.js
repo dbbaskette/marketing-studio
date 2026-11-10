@@ -1552,11 +1552,18 @@ function levelStanding(found, level) {
   if (counts.decision) parts.push(counts.decision + (counts.decision === 1 ? ' needs' : ' need') + ' your decision');
   const node = make('section', 'desk-level-standing');
   node.setAttribute('aria-label', level ? 'Review level ' + level : 'Review materials');
+  // One line says where the level stands; what is still being written is a detail under it.
+  const left = remaining.length ? add(make('details', 'desk-level-left'),
+    make('summary', '', 'What is left'),
+    make('p', 'quiet', 'Still to write: ' + remaining.map(one => cardTitle(one) + ' (' + (DESK_WORDS.tabs[one.state] || 'Queued').toLowerCase() + ')').join(', ') + '.'),
+    make('p', 'quiet', 'Read completed drafts now. Mark ready becomes available when every material in this level has a draft.')) : null;
+  if (left) {
+    left.dataset.key = 'desk-level-left ' + (level || '');
+    left.querySelector('summary').dataset.key = 'desk-level-left-toggle ' + (level || '');
+  }
   add(node, make('h2', 'section-title', level ? 'Review materials · Level ' + level : 'Review materials'),
-    make('p', 'row-title', available + ' of ' + counts.materials + ' materials available to read'),
-    remaining.length ? make('p', 'quiet', 'Still to write: ' + remaining.map(one => cardTitle(one) + ' (' + (DESK_WORDS.tabs[one.state] || 'Queued').toLowerCase() + ')').join(', ') + '.') : null,
-    make('p', 'quiet', 'Your approval: ' + parts.join(' · ') + '.'),
-    remaining.length ? make('p', 'quiet', 'Read completed drafts now. Mark ready becomes available when every material in this level has a draft.') : null);
+    make('p', 'row-title', available + ' of ' + counts.materials + ' ready to read · ' + parts.join(' · ') + '.'),
+    left);
 
   return node;
 }

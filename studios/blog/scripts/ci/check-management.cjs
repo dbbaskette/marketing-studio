@@ -3121,7 +3121,7 @@ async function deskTopicStart(){
   await t.submit();assert.equal(t.f.run('studio.deskStart.step'),1);
   t.type('desk-kind','how-to');t.type('desk-length','deep');t.type('desk-tone','Warm');
   assert.equal(t.byId('files-input'),undefined,'preferences never ask for sources again');
-  await t.click('1. Idea and sources');
+  await t.nodes().find(n=>n.attributes['aria-label']==='Go to Idea and sources').listeners.click();
   assert.equal(t.f.run('studio.deskStart.step'),0);
   await t.click('Suggest three angles');
   const asked=t.requests.find(r=>r.url==='/api/desk-angles').data;
@@ -3466,7 +3466,7 @@ async function deskPolishStart(){
   const first=()=>t.nodes().find(n=>n.attributes?.['aria-label']==='When the desk opens');
   const pressed=()=>first().children.filter(n=>n.tagName==='button'&&n.attributes['aria-pressed']==='true').map(n=>n.textContent);
   const fold=label=>t.nodes().find(n=>n.tagName==='details'&&n.children[0].tagName==='summary'&&n.children[0].children[0].textContent===label);
-  const single=()=>{assert.ok(!t.nodes().some(n=>n.className==='workflow-steps'),'no step tabs');assert.ok(!t.nodes().some(n=>n.className==='pick-card'),'no kind cards');assert.ok(!t.nodes().some(n=>n.textContent==='What are you writing?'));};
+  const single=()=>{assert.ok(!t.nodes().some(n=>/intake-progress|workflow-steps/.test(n.className||'')),'no step tabs');assert.ok(!t.nodes().some(n=>n.className==='pick-card'),'no kind cards');assert.ok(!t.nodes().some(n=>n.textContent==='What are you writing?'));};
   // Home says it plainly, and Edit or polish a draft lands on the one screen.
   await t.f.run("sRoute('home')");
   assert.ok(t.nodes().some(n=>n.className==='pick-says'&&n.textContent==='Paste, upload or bring a Google Doc. Check spelling and grammar, or get feedback. No kind of post needed.'));
@@ -3577,7 +3577,7 @@ async function deskPolishStart(){
   // And back: something new returns to the steps, with the kind already chosen.
   await t.f.run("sDeskBegin({have:'draft'})");
   await t.click('Writing something new? Start from a topic or an outline');
-  assert.ok(t.nodes().some(n=>n.className==='workflow-steps'));assert.equal(t.f.run('studio.deskStart.have'),'topic');
+  assert.ok(t.nodes().some(n=>n.className==='intake-progress intake-guided'));assert.equal(t.f.run('studio.deskStart.have'),'topic');
   // A kind picked to reshape, then let go, is the kind for the new writing.
   await t.f.run("sDeskBegin({have:'draft'})");await t.click('Reshape to fit a kind of post');t.type('desk-kind','how-to');await t.click('Leave it as it is');
   assert.equal(t.f.run('studio.deskStart.style'),'');
@@ -5430,8 +5430,9 @@ async function deskPasteAndUpload(){
 async function deskStartOrder(){
   const t=deskStartFixture(url=>url==='/api/desk-create'||url.startsWith('/api/desk?')?startView():null);
   await t.f.run('sDeskBegin()');
-  const steps=()=>t.nodes().find(n=>n.className==='workflow-steps').children.map(n=>n.textContent);
-  assert.deepEqual(steps(),['1. Idea and sources','2. Writing preferences']);
+  // The same guided step row as the other studios' starts: a button for each step.
+  const steps=()=>t.nodes().find(n=>n.className==='intake-progress intake-guided').children.map(n=>n.children[0].attributes['aria-label']);
+  assert.deepEqual(steps(),['Go to Idea and sources','Go to Writing preferences']);
   assert.ok(t.byId('files-input'));assert.equal(t.byId('desk-kind'),undefined);
   await t.submit();assert.equal(t.f.run('studio.deskStart.step'),0);
   assert.ok(t.nodes().some(n=>n.textContent==='Add a working title and the point to make, or pick an angle.'));

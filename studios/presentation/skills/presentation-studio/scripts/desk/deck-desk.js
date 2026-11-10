@@ -184,7 +184,7 @@
     const steps = [h.createStep(1,'What you start from',kindCards(draft),
       ...(draft.route ? sourceStep(draft) : [])),
       h.createStep(2,'Audience and goal',...goalStep(draft)),
-      h.createStep(3,'Research and settings',...settingsStep(draft,told,retell),
+      h.createStep(3,'Review research and settings',...settingsStep(draft,told,retell),
         make('p','quiet','Next: ' + (roadmap(draft)?.steps[0]?.[0] || 'Choose what you start from.')),
         plan,h.add(make('p','quiet'),drafted,' ',h.limitsSays(h.view.setup?.limits || {}) || 'No limits are set.'))];
     const validate = (index,final = false) => {
@@ -198,7 +198,14 @@
       if (missing.length) {h.say(h.byId('new-problem'),'Complete this step before continuing.');h.focusKey(missing[0]);return false;}
       h.say(h.byId('new-problem'),'');return true;
     };
-    h.intakeStore().pages(form,{draft,steps,names:['Source','Audience','Review'],validate,
+    // Each step says what was chosen in it, and opens when pressed.
+    const summaries = index => {
+      if (index === 0) return (KINDS_OF_DECK.find(([route]) => route === draft.route) || [])[1] || 'Choose a start';
+      if (index === 1) return (draft.title || '').trim() || 'Title and audience';
+      return (draft.research && draft.route !== 'existing' ? 'With research' : 'No research')
+        + ' · ' + (draft.look === 'pick' ? 'pick the look' : 'brand’s look');
+    };
+    h.intakeStore().pages(form,{draft,steps,names:['Source','Audience','Review'],validate,summaries,
       start:go => h.startDeck(go,{ready,form:formFor}),close:h.closeSheet,
       discarded:() => {h.view.draft = null;}});
     return [h.add(make('div', 'sheet-heading'), h.sheetTitle('New deck')), form];

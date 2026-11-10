@@ -44,7 +44,7 @@ const assert=require('node:assert/strict'), path=require('node:path'), fs=requir
    if(process.env.TRAINING_PROGRESS_RESULTS){fs.mkdirSync(process.env.TRAINING_PROGRESS_RESULTS,{recursive:true});await chapter.scrollIntoViewIfNeeded();await page.screenshot({path:path.join(process.env.TRAINING_PROGRESS_RESULTS,`reader-${width}.png`)});}
   }
   await page.setViewportSize({width:390,height:950});
-  await page.getByRole('region',{name:'Review level 101'}).getByText('1 of 3 materials available to read',{exact:true}).waitFor();
+  await page.getByRole('region',{name:'Review level 101'}).getByText('1 of 3 ready to read · 0 of 3 marked ready · 1 draft awaiting your review.',{exact:true}).waitFor();
   await page.getByText(/Mark ready becomes available when every material/).waitFor();
   assert.equal(await page.getByRole('button',{name:'Mark ready',exact:true}).count(),0);
   await page.getByText('Explore workflow',{exact:true}).click();

@@ -426,7 +426,19 @@ async function newSheet() {
   if (draft.step > 1) draft.step = 1;
   const form = make('form', 'create-flow'); form.noValidate = true;
   const names = ['1. Add information', '2. Set the direction and page'];
-  add(form, make('h3','sheet-part',names[draft.step]));
+  // The same guided step row as the other studios' starts: what each step holds so far, and a
+  // press that opens it. Going on to the second step is checked as Continue checks it.
+  const says=index=>index===0?(draft.title.trim()||'Title and information')
+    :({a4:'A4 portrait',letter:'US Letter portrait',digital:'Digital portrait'}[draft.preset]||'Page')+(draft.audience.trim()?' · '+draft.audience.trim():'');
+  const stepRow=make('ol','intake-progress intake-guided');stepRow.setAttribute('aria-label','Creation progress');
+  stepRow.append(...Drafting.Intake.steps(['Information','Direction and page'],draft.step,new Set(draft.step?[0]:[]),says,async index=>{
+    if(index===draft.step)return;
+    if(index>draft.step){form.requestSubmit();return;}
+    try{draft.step=index;await keepIntake();closeSheet();await newSheet();}catch(failure){problem.textContent=failure.message;}
+  }));
+  const retell=()=>stepRow.querySelectorAll('.intake-step-summary').forEach((node,index)=>{node.textContent=says(index);});
+  form.addEventListener('input',retell);form.addEventListener('change',retell);
+  add(form, stepRow, make('h3','sheet-part',names[draft.step]));
   const problem = make('p', 'problem'); problem.setAttribute('role','alert');
   let title = null;
   if (draft.step === 0) {

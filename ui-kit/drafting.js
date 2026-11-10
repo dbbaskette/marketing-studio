@@ -135,6 +135,25 @@ const Drafting = (() => {
       if(this.saved&&!confirm('This studio keeps one unfinished form. Discard it and start new? Existing projects and captured sources are kept.'))return false;
       return !this.saved||this.discard();
     }
+    // The guided step row of every studio's start, as the items of an `ol.intake-progress
+    // .intake-guided`: each step's name, a tick once it is complete, what was chosen in it
+    // (`summaries(i)`), and a press that asks `jump(i)` to open it. A start that draws its own
+    // page, as Blog Studio's does, shows the same row with these.
+    static steps(names, index, complete, summaries, jump) {
+      return names.map((name,i) => {
+        const n = make('li',i === index ? 'is-current' : complete.has(i) ? 'is-complete' : '');
+        if (i === index) n.setAttribute('aria-current','step');
+        const button = make('button','intake-step',(i + 1) + '. ' + name); button.type = 'button';
+        button.dataset.key = 'intake-step-' + i;
+        button.setAttribute('aria-label','Go to ' + name);
+        if (i === index) button.setAttribute('aria-current','step');
+        const mark = make('span','intake-step-mark',complete.has(i) ? '✓' : '');
+        mark.setAttribute('aria-hidden','true'); button.prepend(mark);
+        button.append(make('span','intake-step-summary',summaries(i)));
+        button.addEventListener('click',() => jump(i));
+        n.append(button); return n;
+      });
+    }
     // `validate` only marks local fields; only `start` can create a project or launch work.
     pages(form, {draft, steps, names, validate, start, close, discarded, final = 'Start', summaries = null}) {
       const progress = make('ol','intake-progress'); progress.setAttribute('aria-label','Creation progress');
@@ -152,27 +171,17 @@ const Drafting = (() => {
       const show = (index, focus = true) => {
         draft.step = index;
         steps.forEach((node,i) => {node.hidden = i !== index; node.dataset.intakeStep = String(i);});
-        progress.replaceChildren(...names.map((name,i) => {
+        progress.replaceChildren(...(summaries ? Intake.steps(names,index,complete,summaries,i => {
+          if (i > current()) for (let at=0;at<i;at++) {
+            if (!validate(at)) { show(at); validate(at); return; }
+            complete.add(at);
+          }
+          show(i);
+        }) : names.map((name,i) => {
           const n = make('li',i === index ? 'is-current' : complete.has(i) ? 'is-complete' : '');
-          const label = (i + 1) + '. ' + name;
           if (i === index) n.setAttribute('aria-current','step');
-          if (!summaries) { n.textContent = label; return n; }
-          const jump = make('button','intake-step',label); jump.type = 'button';
-          jump.dataset.key = 'intake-step-' + i;
-          jump.setAttribute('aria-label','Go to ' + name);
-          if (i === index) jump.setAttribute('aria-current','step');
-          const mark = make('span','intake-step-mark',complete.has(i) ? '✓' : '');
-          mark.setAttribute('aria-hidden','true'); jump.prepend(mark);
-          const detail = make('span','intake-step-summary',summaries(i)); jump.append(detail);
-          jump.addEventListener('click',() => {
-            if (i > current()) for (let at=0;at<i;at++) {
-              if (!validate(at)) { show(at); validate(at); return; }
-              complete.add(at);
-            }
-            show(i);
-          });
-          n.append(jump); return n;
-        }));
+          n.textContent = (i + 1) + '. ' + name; return n;
+        })));
         back.hidden = index === 0; go.textContent = index === steps.length - 1 ? final : 'Next';
         body.scrollTop = 0;
         if (focus) {const heading = steps[index].querySelector('h3'); if(heading){heading.tabIndex=-1;heading.focus();}}

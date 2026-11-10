@@ -100,7 +100,7 @@ class StartTests(DeskPageCase):
         shots = result['snapshots']
         for key, title, primary in [('source', '1. What you start from', 'Next'),
                                     ('audience', '2. Audience and goal', 'Next'),
-                                    ('review', '3. Research and settings', 'Start')]:
+                                    ('review', '3. Review research and settings', 'Start')]:
             shot = shots[key]
             self.assertEqual([part for part in shot['parts'] if part[:2] in ('1.', '2.', '3.')], [title])
             self.assertEqual(shot['filled'], [primary])
