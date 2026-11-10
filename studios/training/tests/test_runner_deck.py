@@ -845,8 +845,8 @@ class SectionToolTests(ToolCase):
             'Nothing to put right.'))
         self.assertEqual(self.slides.calls[-1][-2:], (str(project), 'section=True'))
         sent = json.loads(Path(self.slides.calls[-1][1]).read_text())
-        self.assertEqual(list(sent['slides'][0]['intent']), list(plan['slides'][1]['intent']),
-                         'the tool is sent the intent as it was approved')
+        self.assertEqual(list(sent['slides'][0]['intent']), sorted(plan['slides'][1]['intent']),
+                         'the tool is sent the intent as it was written')
         self.ok(tools.preview_section(json.dumps(good)))
         self.assertIn(('preview_design', self.slides.calls[-1][1], str(project), 'section=True'),
                       self.slides.calls)
@@ -1244,7 +1244,8 @@ class JudgingToolTests(ToolCase):
         self.assertEqual({key: assessed[key] for key in ('schema', 'sceneDigest',
                                                          'qualityRevision', 'artifactDigest')},
                          self.made['assessmentBinding'])
-        self.assertEqual(assessed['slides'][1]['checks'][0]['sources'], ['O1'])
+        self.assertNotIn('sources', assessed['slides'][1]['checks'][0],
+                         'the tool takes each slide its own')
         kept = worker_tools.collect(self.job)['assessment']
         self.assertEqual(kept['findings'], [{
             'slide': 'what-it-does', 'number': 2, 'criterion': 'visual-relationship',
@@ -2312,7 +2313,7 @@ class WalkthroughTests(DeckCase):
         job, spec = [(job, spec) for kind, job, spec in self.workers.jobs
                      if kind == 'outline'][-1]
         self.assertTrue(spec['artifacts']['outline']['design'])
-        self.assertEqual(job.guidance, briefs.guidance('deck-outline', design=True))
+        self.assertEqual(job.guidance, briefs.guidance('deck-outline', design=True, icons=True))
         self.assertIn('design_propose', [call[0] for call in self.slides.calls])
 
     def test_a_tool_without_the_design_session_holds_only_a_walkthrough(self):
@@ -2343,7 +2344,7 @@ class DesignTests(DeckCase):
         root = self.saved_begin()
         view = self.to_outline(root)
         job, spec = [(job, spec) for kind, job, spec in self.workers.jobs if kind == 'outline'][-1]
-        self.assertEqual(job.guidance, briefs.guidance('deck-outline', design=True))
+        self.assertEqual(job.guidance, briefs.guidance('deck-outline', design=True, icons=True))
         self.assertIn('design guidance', [entry['name'] for entry in spec['inputs']])
         self.assertIn('Hand the outline in with its design, together', job.task)
         self.assertTrue(spec['artifacts']['outline']['design'])
@@ -2668,8 +2669,8 @@ class JudgedTests(DeckCase):
         self.assertEqual([call[-1] for call in self.called('preview_design')],
                          ['section=True', 'section=True'])
         self.assertEqual(len(self.called('review_prepare')), 1)
-        self.assertEqual(len(self.called('review_slide')), len(OUTLINE['slides']) + 1,
-                         'each slide for its packet, and the receipts before it is kept')
+        self.assertEqual((len(self.called('review_packets')), len(self.called('review_slide'))),
+                         (1, 1), 'every packet in one call, and the receipts before it is kept')
         self.assertEqual(self.called('critique'), [], 'no second scorer')
         review = self.review_folder(root, made)
         record = json.loads((review / 'review.json').read_text())
@@ -2876,16 +2877,6 @@ class JudgedTests(DeckCase):
                          (1, 2))
         self.assertEqual(workspace.status(root)['gate'], 'deck')
 
-    def test_without_libreoffice_the_review_stops_and_says_what_to_install(self):
-        self.slides.have['local'] = False
-        root = self.saved_begin()
-        view = self.drawn(root)
-        self.assertEqual(view['state'], 'stopped')
-        self.assertIn('The slides tool reviews a deck against its approved design by rendering '
-                      'it on this computer, and it cannot: soffice is not installed.',
-                      view['problem']['what'])
-        self.assertEqual(self.kinds().count('review'), 0)
-
     def test_a_deck_started_for_this_review_stops_where_the_tool_can_no_longer_review(self):
         self.workers.then('section', *[fails()] * 6)
         root = self.saved_begin()
@@ -3090,21 +3081,16 @@ class AdoptionTests(DeckCase):
         return [call for call in self.slides.calls if call[0] == name]
 
     def test_what_an_approved_design_still_wants_is_said_by_the_tool_that_reads_it(self):
-        said = {}
-        for title, older in (('Rolling restarts', False), ('Rolling restarts again', True)):
-            if older:
-                self.without('assets-approved-candidates')
-            self.workers.design_said = with_assets(runner_support.designed(OUTLINE))
-            root = self.saved_begin(title=title)
-            view = self.drawn(root)
-            self.assertEqual(view['state'], 'waiting')
-            project = str(root / pipeline.DESIGNS)
-            checks = [call for call in self.called('asset_check') if call[1] == project]
-            self.assertEqual(checks[-1][2:], () if older else (f'design={project}',))
-            said[older] = view['problem']['what']
-        self.assertEqual(said[True], said[False], 'the same words either way')
+        self.workers.design_said = with_assets(runner_support.designed(OUTLINE))
+        root = self.saved_begin()
+        view = self.drawn(root)
+        self.assertEqual(view['state'], 'waiting')
+        project = str(root / pipeline.DESIGNS)
+        checks = [call for call in self.called('asset_check') if call[1] == project]
+        self.assertEqual(checks[-1][2:], (f'design={project}',))
         self.assertIn('Slide `what-it-does` needs the screenshot "The restart in the console" '
-                      '(Instances replaced in turn). Supply it on this page.', said[True])
+                      '(Instances replaced in turn). Supply it on this page.',
+                      view['problem']['what'])
 
     def test_an_icon_is_named_by_its_library_id_where_the_tool_takes_one(self):
         design = runner_support.designed(OUTLINE)
@@ -3125,17 +3111,6 @@ class AdoptionTests(DeckCase):
         self.assertTrue(proposed and all(call[-1].startswith('brand=') for call in proposed))
         self.assertEqual(pipeline.recorded(root, None)['icon_instance']['ref'], 'icon-server')
         self.assertEqual(searched, [], 'an icon named by its ID is not searched for')
-        # The tool before it takes no library ID, so neither the writer nor the tool is told.
-        self.without('design-icon-ids')
-        self.workers.design_said = runner_support.designed(OUTLINE)
-        root = self.saved_begin(title='Rolling restarts again')
-        self.drawn(root)
-        job, spec = [(job, spec) for kind, job, spec in self.workers.jobs
-                     if kind == 'outline'][-1]
-        self.assertEqual(job.guidance, briefs.guidance('deck-outline', design=True))
-        self.assertNotIn('icons', spec['artifacts']['outline'])
-        self.assertFalse(self.called('design_propose')[-1][-1].startswith('brand='))
-        self.assertEqual(searched, ['server'], 'a free name is found in the library')
 
     def test_a_recorded_icon_is_placed_by_its_asset_id_where_the_tool_can(self):
         self.workers.placing = {'what-it-does': [
@@ -3169,37 +3144,26 @@ class AdoptionTests(DeckCase):
         self.assertNotIn('"asset": "<asset ID>"}`. `search', brief)
 
     def test_every_slides_packet_comes_in_one_call_where_the_tool_gives_them(self):
-        prompts = {}
-        for title, older in (('Rolling restarts', False), ('Rolling restarts again', True)):
-            if older:
-                self.without('review-packets')
-            self.slides.calls.clear()
-            root = self.saved_begin(title=title)
-            self.drawn(root)
-            self.assertEqual(workspace.status(root)['gate'], 'deck')
-            made = self.built(root)['rounds'][-1]
-            folder = root / 'work' / 'deck' / made['folder']
-            prompts[older] = [packet['slide'] for packet
-                              in json.loads((folder / 'packets.json').read_text())]
-            self.assertEqual((len(self.called('review_packets')),
-                              len(self.called('review_slide'))),
-                             (0, len(OUTLINE['slides']) + 1) if older else (1, 1),
-                             'the one left is the check of the receipts before it is kept')
-            self.assertEqual(made['deck'], workspace.sha256_file(folder / 'review' /
-                                                                 'deck.pptx'))
-            self.assertEqual(made['file'], (folder / 'review' / 'deck.pptx').relative_to(
-                root / 'work' / 'deck').as_posix())
-        self.assertEqual(prompts[True], prompts[False], 'the reviewer is told the same')
+        self.slides.calls.clear()
+        root = self.saved_begin()
+        self.drawn(root)
+        self.assertEqual(workspace.status(root)['gate'], 'deck')
+        made = self.built(root)['rounds'][-1]
+        folder = root / 'work' / 'deck' / made['folder']
+        packets = json.loads((folder / 'packets.json').read_text())
+        self.assertEqual(len(packets), len(OUTLINE['slides']))
+        self.assertEqual((len(self.called('review_packets')),
+                          len(self.called('review_slide'))), (1, 1),
+                         'the one left is the check of the receipts before it is kept')
+        self.assertEqual(made['deck'], workspace.sha256_file(folder / 'review' /
+                                                             'deck.pptx'))
+        self.assertEqual(made['file'], (folder / 'review' / 'deck.pptx').relative_to(
+            root / 'work' / 'deck').as_posix())
 
     def test_a_review_is_rendered_through_drive_where_previews_go_and_the_tool_can(self):
         self.slides.have['local'] = False   # no LibreOffice: previews go through Drive
-        self.without('review-google-renderer')
         root = self.saved_begin()
         view = self.drawn(root)
-        self.assertEqual(view['state'], 'stopped')
-        self.assertIn('rendering it on this computer, and it cannot', view['problem']['what'])
-        self.slides.listed.add('review-google-renderer')
-        view = self.engine.act(root, 'retry')
         self.assertEqual((view['state'], workspace.status(root)['gate']), ('waiting', 'deck'),
                          view.get('problem'))
         [prepared] = [call for call in self.called('review_prepare')
@@ -3217,11 +3181,6 @@ class AdoptionTests(DeckCase):
                              / 'review.json').read_text())
         self.assertEqual(record['creativeAssessment']['slides'][1]['checks'][0]['sources'],
                          ['O1'], 'the tool took the slide its own')
-        self.without('review-sources-from-slide')
-        root = self.saved_begin(title='Rolling restarts again')
-        self.drawn(root)
-        self.assertEqual({'sources' in check for slide in self.slides.assessed[-1]['slides']
-                          for check in slide['checks']}, {True})
 
     def test_a_deck_is_put_to_the_person_with_its_findings_and_their_approval_sent(self):
         reason = 'The second label wraps onto three lines.'
@@ -3271,19 +3230,14 @@ class AdoptionTests(DeckCase):
             assert tools.preview_section(made)[0]
             assert tools.submit_section(made, 'Nothing.', 'The second slide.')[0]
 
-        orders = {}
-        for title, older in (('Rolling restarts', False), ('Rolling restarts again', True)):
-            if older:
-                self.without('canonical-digests')
-            self.workers.section = section
-            root = self.saved_begin(title=title)
-            self.drawn(root)
-            self.assertEqual(workspace.status(root)['gate'], 'deck')
-            kept = json.loads((root / 'work' / 'deck' / self.built(root)['sections'][
-                'section-1']['file']).read_text())
-            orders[older] = list(kept['slides'][0]['intent'])
+        self.workers.section = section
+        root = self.saved_begin()
+        self.drawn(root)
+        self.assertEqual(workspace.status(root)['gate'], 'deck')
+        kept = json.loads((root / 'work' / 'deck' / self.built(root)['sections'][
+            'section-1']['file']).read_text())
         approved = approved_plan()['slides'][1]['intent']
-        self.assertEqual((orders[False], orders[True]), (sorted(approved), list(approved)))
+        self.assertEqual(list(kept['slides'][0]['intent']), sorted(approved))
 
 
 class CompatibleTests(DeckCase):
@@ -3444,7 +3398,7 @@ class CompatibleTests(DeckCase):
         self.assertEqual((root / history['folder'] / 'outline.json').read_text(), said)
         self.assertEqual((root / 'deck.pptx').read_bytes(), saved, 'readable until replaced')
         job = [job for kind, job, _ in self.workers.jobs if kind == 'outline'][-1]
-        self.assertEqual(job.guidance, briefs.guidance('deck-outline', design=True))
+        self.assertEqual(job.guidance, briefs.guidance('deck-outline', design=True, icons=True))
         self.assertIn(pipeline.REDESIGNED, job.task)
         self.assertIn('The earlier draft:\n\n' + said.rstrip('\n'), job.task)
         self.assertEqual({name: state for name, state
@@ -3597,19 +3551,19 @@ class TroubleTests(DeckCase):
         with mock.patch.object(Slides, 'VERSION', '0.15.1'):
             missing = self.engine.deck_needs(fresh=True)['missing']
         self.assertIn('The slides tool on this computer is version 0.15.1, and a deck needs '
-                      "0.16.0 or newer. Acme Brand's own installer brings 0.15.1. Update Harness Slides.",
+                      "0.17.0 or newer. Acme Brand's own installer brings 0.15.1. Update Harness Slides.",
                       missing)
-        self.acme_brand('0.16.0')
+        self.acme_brand('0.17.0')
         with mock.patch.object(Slides, 'VERSION', '0.15.1'):
             missing = self.engine.deck_needs(fresh=True)['missing']
         self.assertIn('The slides tool on this computer is version 0.15.1, and a deck needs '
-                      '0.16.0 or newer. Update Harness Slides.', missing)
+                      '0.17.0 or newer. Update Harness Slides.', missing)
         self.acme_brand('0.15.1')
         refusal = slides_tool.TooOld('0.15.1')
         with mock.patch.object(self.engine, 'slides',
                                mock.Mock(side_effect=refusal)):
             missing = self.engine.deck_needs(fresh=True)['missing']
-        self.assertIn('harness-slides 0.15.1 is installed, and a deck needs 0.16.0 or newer. '
+        self.assertIn('harness-slides 0.15.1 is installed, and a deck needs 0.17.0 or newer. '
                       "Acme Brand's own installer brings 0.15.1. Update Harness Slides, then try again.",
                       missing)
 
@@ -3624,7 +3578,7 @@ class TroubleTests(DeckCase):
             view = self.view(root)
         self.assertEqual(view['state'], 'done')
         self.assertEqual(view['deck_left']['says'], left(
-            pipeline.DECK_LEFT, 'harness-slides 0.15.1 is installed, and a deck needs 0.16.0 '
+            pipeline.DECK_LEFT, 'harness-slides 0.15.1 is installed, and a deck needs 0.17.0 '
             'or newer. Update Harness Slides, then try again.'))
         after = sorted(str(path.relative_to(root)) for path in root.rglob('*'))
         self.assertLessEqual(set(before), set(after), 'nothing it had is lost')

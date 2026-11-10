@@ -79,8 +79,8 @@ checked here before anything is kept. Each job has a folder that only the runner
   `deck.kept` and with the slides tool's compiler. What is handed in must be the version
   last previewed; a hand-in that is not costs nothing and is sent back. A deck drawn from
   its approved design adds 'design', the design project, and 'section': its sections are
-  then compiled and previewed against that design, each intent written as it was approved
-  unless the tool compares intents whatever the order of their keys (`canonical-digests`).
+  then compiled and previewed against that design, each intent taken as written, since the
+  tool compares intents whatever the order of their keys.
   One whose tool keeps the deck's assets adds 'assets': {'project', 'generated', 'icons'?},
   the design project and each generated candidate of its own generated-art slides, by asset
   ID, with its slide, and 'icons' 'asset' where a recorded icon is placed by its asset ID.
@@ -503,12 +503,8 @@ def check_section(text: str, spec: dict, slides,
     except Refusal as refusal:
         return [str(refusal)], [], [], text
     ours, found = deck.kept(section, spec), []
-    # Checked against the approved design, as one section of it. A tool that compares an
-    # intent whatever the order of its keys takes it as written; an older one, in the order
-    # it was approved in.
-    if spec.get('design') and not slides.has('canonical-digests'):
-        section = deck.as_approved(section, spec)
-        kept = json.dumps(section, indent=2, ensure_ascii=False) + '\n'
+    # Checked against the approved design, as one section of it, taken as written: the tool
+    # compares an intent whatever the order of its keys.
     if isinstance(section, dict):
         try:
             slides.compile(_draft(scratch, 'section', kept), spec['brand'], **against(spec),
@@ -642,7 +638,7 @@ def reviewed(slides, compiled: Path, output: Path, design: Path, how: dict) -> d
     previews go through Google Drive and the tool can render a review there, it does, into
     the deck's one file in Drive; otherwise with LibreOffice. Returns what the tool did."""
     with one_at_a_time(Path(how['lock'])):
-        if how.get('renderer') != 'drive' or not slides.has('review-google-renderer'):
+        if how.get('renderer') != 'drive':
             return slides.review_prepare(compiled, output, design)
         return _in_drive(how, lambda known: slides.review_prepare(
             compiled, output, design, renderer='drive', file_id=known))
@@ -1287,8 +1283,7 @@ class WorkerTools:
                                       [slide['number'] for slide in all_slides],
                                       deck.MARKED)
             made = self.slides().review_assess(output, revision, deck.assessment(
-                kept, packets, judged['binding'],
-                sources=not self.slides().has('review-sources-from-slide')))
+                kept, packets, judged['binding'], sources=False))
         except WorkspaceError as refusal:
             return [self._plainly(line) for line in said_no(refusal)]
         numbers = {slide['id']: slide['number'] for slide in review['slides']}

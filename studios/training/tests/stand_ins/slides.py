@@ -133,6 +133,11 @@ REVIEW = ('compiled', 'output', 'design-project', 'refresh', 'mark', 'revision',
           'status', 'assessment', 'slide', 'json')
 CAPABILITIES = ['assets', 'canonical-digests', 'compose-review', 'compose-section',
                 'design-batch', 'design-schema-2', 'json-refusals', 'relative-records']
+# What every Harness Slides the runner takes (slides.MINIMUM and newer) has. The runner
+# uses these without asking, so the stand-in has them however little its `version` lists.
+FLOOR = ('assets-approved-candidates', 'canonical-digests', 'compose-split-point',
+         'design-icon-ids', 'review-google-renderer', 'review-packets',
+         'review-sources-from-slide')
 # What 0.14.1 lists, as its `version` prints it.
 CURRENT = ['assets', 'assets-approved-candidates', 'canonical-digests', 'compose-icon-assets',
            'compose-review', 'compose-section', 'design-batch', 'design-icon-ids',
@@ -1343,8 +1348,9 @@ class StandIn:
         return GUIDANCE.get(relative.name) if relative.parent == REFERENCES else None
 
     def has(self, name: str) -> bool:
-        """Whether `version` lists this capability."""
-        return name in (self.listed or ())
+        """Whether the tool has this capability: one of FLOOR, which every tool from
+        slides.MINIMUM has and the runner no longer asks about, or one `version` lists."""
+        return name in FLOOR or name in (self.listed or ())
 
     def _act(self, args: list[str]):
         if args == ['--version']:
@@ -1368,7 +1374,8 @@ class StandIn:
         if name not in known:
             raise _Said('Unknown command/action; run --help')
         allowed = known[name] + (LATER.get(name, ()) if self.design else ()) \
-            + (ASSETS.get(name, ()) if self.assets else ()) + newest.get(name, ())
+            + (ASSETS.get(name, ()) if self.assets else ()) + newest.get(name, ()) \
+            + (('outline',) if name == 'compose compile' else ())
         options, rest = {}, args[2:]
         if name in SUBJECT and rest and not rest[0].startswith('--'):
             options['subject'] = rest.pop(0)
@@ -2109,7 +2116,7 @@ class StandIn:
         review = reviewing.Review(output or '.', deck=self._deck,
                                   picture=lambda slide, scene: _png(*_drawn(slide, scene)),
                                   screens=_screened, local=self.local,
-                                  has=self.listed or (), google=self._google)
+                                  has=(*FLOOR, *(self.listed or ())), google=self._google)
         try:
             later = [key for key in ('mark', 'assessment', 'slide', 'packets')
                      if options.get(key)]
@@ -2177,7 +2184,7 @@ class StandIn:
     def _design(self, action: str, options: dict):
         """design propose, status, check, respond or present. With --json a refusal is a JSON
         object on standard output; without it, the same sentence on standard error."""
-        session = designs.Session(options.get('project') or '.', self.listed or ())
+        session = designs.Session(options.get('project') or '.', (*FLOOR, *(self.listed or ())))
         try:
             if not options.get('project'):
                 raise designs.Refusal('Provide --project DIR', {'code': 'input-invalid'})

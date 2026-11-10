@@ -79,16 +79,16 @@ What a caller needs to know
   it began, whatever tool comes. `redesign` draws such a deck again from a design, when the
   person asks and never otherwise: what it was is kept as its history, and only that deck
   is made again.
-- slides.MINIMUM is 0.16.0, the Harness Slides the installer pins: an older tool is
-  refused before any deck call. What the tool lists beyond NEEDED is used where it lists
-  it: the tool's own check of what an approved design still wants, icons named by their
-  library IDs and placed by their asset IDs, a review's packets in one call, its render
-  through Drive, sources taken from the slide, intents compared whatever their key order,
-  and a reviewed deck put to the person in the tool's own design session, whose rendered
-  question the person's approval at gate 6 answers through `deck_decided`, which only the
-  page calls. The way before each, for a tool that does not list it (Harness Slides 0.13.1
-  and 0.14.1 did not), is below that floor; the branches stay, unused by any saved deck,
-  until piece 7 of the cleanup removes them.
+- slides.MINIMUM is 0.17.0, the Harness Slides the installer pins: an older tool is
+  refused before any deck call. Every tool from that floor has these, so they are used
+  without asking: the tool's own check of what an approved design still wants, icons named
+  by their library IDs, a review's packets in one call, its render through Drive, sources
+  taken from the slide, intents compared whatever their key order, and the approved outline
+  given to a compile. Still asked of the tool, because the other way is a flow of its own
+  that saved decks may be on: its Google preview pool (a deck's one preview file in Drive
+  otherwise), icons placed by their asset IDs, a reviewed deck put to the person in the
+  tool's own design session, whose rendered question the person's approval at gate 6
+  answers through `deck_decided`, which only the page calls, and what `deck.KNOWS` names.
 - After the blueprints it goes one level at a time: the guide, the brief, each practice
   scenario, each Yoodli scenario, with the copies the training asked for made after each
   approval. A copy that cannot be made is noted with the reason and never holds it up.
@@ -2748,9 +2748,8 @@ class Engine(Reviewing):
         having said for what, asset by asset, and what to do."""
         tool, project = self.slides(), pipeline.design_project(root, level)
         wanted, said = deck.candidates(plan), []
-        # A tool that reads every candidate of the approved plan says itself what is not
-        # recorded; with an older one, the plan is held to what is recorded here.
-        every = tool.has('assets-approved-candidates')
+        # The tool reads every candidate of the approved plan and says itself what is not
+        # recorded.
         try:
             recorded = {entry['assetId']: entry
                         for entry in tool.asset_status(project).get('assets') or ()}
@@ -2760,10 +2759,10 @@ class Engine(Reviewing):
                             for entry in tool.asset_status(project).get('assets') or ()}
             by_id, provider = {candidate['asset']: candidate for candidate in wanted}, {}
             try:
-                tool.asset_check(project, contract, project if every else None)
+                tool.asset_check(project, contract, project)
             except slides_tool.Refused as refusal:
                 for problem in refusal.found:
-                    candidate = by_id.get(problem.get('asset')) if every else None
+                    candidate = by_id.get(problem.get('asset'))
                     if candidate is None or problem.get('code') not in CANDIDATE:
                         said.append(_assets_said(problem, recorded))
                         continue
@@ -2774,8 +2773,6 @@ class Engine(Reviewing):
                         continue
                     said += self._wanting(candidate, recorded, find, provider)
                 said += [] if refusal.found else refusal.problems
-            for candidate in [] if every else wanted:
-                said += self._wanting(candidate, recorded, find, provider)
         except WorkspaceError as refusal:
             said.append(f'The slides tool could not say what is recorded. {refusal}')
         if said:
@@ -2866,8 +2863,7 @@ class Engine(Reviewing):
             if refusal.codes != ['design-missing']:
                 raise
             expected = None
-        status = tool.design_propose(project, file, expected,
-                                     contract if tool.has('design-icon-ids') else None)
+        status = tool.design_propose(project, file, expected, contract)
         question = status.get('question') or None
         return {'sha256': workspace.sha256_file(file), 'revision': status['revision'],
                 **({'project': project.relative_to(pipeline.place(root, level, '')).as_posix()}
@@ -3289,28 +3285,16 @@ class Engine(Reviewing):
         made = worker_tools.reviewed(tool, folder / 'compiled', review, design, how)
         judged = {'revision': made['revision'], 'binding': made['assessmentBinding'],
                   'quality': made['qualityRevision']}
-        if tool.has('review-packets'):
-            found = tool.review_packets(review)
-            packets = [{'slide': slide['packet'], 'findings': slide.get('findings') or []}
-                       for slide in found['slides']]
-            home.write_json(folder / 'packets.json', packets)
-            # The deck the review renders is REVIEW/deck.pptx; its revision is that file's hash.
-            return {'deck': str(review / 'deck.pptx'), 'deckSha256': found['revision'],
-                    'slides': [{'number': slide['number'], 'id': slide['planId'],
-                                'title': slide['packet'].get('title') or slide.get('title'),
-                                'image': str(slide['image']), 'findings': []}
-                               for slide in found['slides']], 'judged': judged}
-        record = home.read_json(review / 'review.json', {})
-        ids = [entry['planId'] for entry in record['designBinding']]
-        packets = [tool.review_slide(review, ident) for ident in ids]
+        found = tool.review_packets(review)
+        packets = [{'slide': slide['packet'], 'findings': slide.get('findings') or []}
+                   for slide in found['slides']]
         home.write_json(folder / 'packets.json', packets)
-        return {'deck': str(review / record['source']['file']),
-                'deckSha256': record['source']['sha256'],
-                'slides': [{'number': page['number'], 'id': ident,
-                            'title': packet['slide'].get('title') or page.get('title'),
-                            'image': str(review / page['image']), 'findings': []}
-                           for page, ident, packet in zip(record['slides'], ids, packets)],
-                'judged': judged}
+        # The deck the review renders is REVIEW/deck.pptx; its revision is that file's hash.
+        return {'deck': str(review / 'deck.pptx'), 'deckSha256': found['revision'],
+                'slides': [{'number': slide['number'], 'id': slide['planId'],
+                            'title': slide['packet'].get('title') or slide.get('title'),
+                            'image': str(slide['image']), 'findings': []}
+                           for slide in found['slides']], 'judged': judged}
 
     def _review(self, root: Path, run: _Run, found: pipeline.Survey,
                 step: pipeline.Next) -> None:
@@ -5039,7 +5023,7 @@ class Engine(Reviewing):
             worker_tools._write(proposal, json.dumps(plan, indent=2, ensure_ascii=False) + '\n')
             mine = self._survey(root, self._load(root)).decks[level]
             status = tool.design_propose(folder / 'project', proposal, checked['revision'],
-                                         pipeline.contract(root, mine) if tool.has('design-icon-ids') else None)
+                                         pipeline.contract(root, mine))
             question = status.get('question')
             if not isinstance(question, dict) or question.get('phase') != 'design':
                 raise WorkspaceError('The slides tool did not provide a design question for these words.')

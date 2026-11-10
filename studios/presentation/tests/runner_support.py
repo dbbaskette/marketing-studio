@@ -284,7 +284,7 @@ class Slides:
     file does, and a real PNG for each slide. `refuse` maps a call to the lines it says
     no with. It takes no turn of its own at previewing, so `most` says how many previews
     were ever under way at once."""
-    VERSION = '0.16.0'   # the floor, slides.MINIMUM
+    VERSION = '0.17.0'   # the floor, slides.MINIMUM
     # What a whole preview's critic.json asks of every slide, as the slides tool writes it.
     QUESTIONS = ('After three seconds, is the main point clear, and is it the claim in the title?',
                  'Does the eye land first on the element that carries the point?',

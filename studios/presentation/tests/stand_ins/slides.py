@@ -1506,8 +1506,7 @@ class StandIn:
             raise _Said('Unknown command/action; run --help')
         allowed = known[name] + (LATER.get(name, ()) if self.design else ()) \
             + (ASSETS.get(name, ()) if self.assets else ()) \
-            + (('outline',) if name == 'compose compile'
-               and 'compose-split-point' in self.extra else ())
+            + (('outline',) if name == 'compose compile' else ())
         options, rest = {}, args[2:]
         if name in SUBJECT and rest and not rest[0].startswith('--'):
             options['subject'] = rest.pop(0)

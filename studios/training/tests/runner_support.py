@@ -505,7 +505,7 @@ class Slides:
     file does, and a real PNG for each slide. `refuse` maps a call to the lines it says
     no with. It takes no turn of its own at previewing, so `most` says how many previews
     were ever under way at once."""
-    VERSION = '0.16.0'   # the floor, slides.MINIMUM
+    VERSION = '0.17.0'   # the floor, slides.MINIMUM
     # What a whole preview's critic.json asks of every slide, as the slides tool writes it.
     QUESTIONS = ('After three seconds, is the main point clear, and is it the claim in the title?',
                  'Does the eye land first on the element that carries the point?',
@@ -574,8 +574,15 @@ class Slides:
     def capabilities(self):
         return frozenset(self.listed) if self.listed else None
 
+    @property
+    def all_has(self) -> tuple:
+        """What this tool has: what every supported Harness Slides has (the stand-in's FLOOR,
+        which the runner uses without asking) and whatever a test lists besides."""
+        from stand_ins.slides import FLOOR
+        return (*FLOOR, *self.listed)
+
     def has(self, name: str) -> bool:
-        return name in self.listed
+        return name in self.all_has
 
     def knows(self) -> frozenset:
         from runner import deck
@@ -716,8 +723,10 @@ class Slides:
         from runner import slides
         self._asked('compile', composition, brand, folder,
                     *([design, f'section={section}'] if design else []),
+                    # Written into the call only for a test that lists it, so the calls read
+                    # the same wherever the outline is not what is being looked at.
                     *([f'outline={Path(outline).name}'] if outline
-                      and self.has('compose-split-point') else []))
+                      and 'compose-split-point' in self.listed else []))
         made = self._read(composition)
         text = json.dumps(made)
         problems = [f"{slide.get('id')}: nothing is drawn." for slide in made.get('slides', [])
@@ -891,7 +900,7 @@ class Slides:
         from runner import slides
         from stand_ins import design as designs
         self._asked(name, project, *given)
-        session = designs.Session(project, self.listed)
+        session = designs.Session(project, self.all_has)
         try:
             return act(session)
         except (designs.Refusal, ValueError) as refused:
@@ -1032,7 +1041,7 @@ class Slides:
 
         review = reviewing.Review(output, deck=written, picture=picture,
                                   screens=lambda scene, structure: [],
-                                  local=self.have['local'], has=self.listed, google=google)
+                                  local=self.have['local'], has=self.all_has, google=google)
         try:
             return act(review)
         except (designs.Refusal, ValueError) as refused:

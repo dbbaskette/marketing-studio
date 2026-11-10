@@ -178,7 +178,7 @@ class FindingTheRuntimeTests(unittest.TestCase):
 
     def test_a_tool_that_is_too_old_is_refused_when_it_is_found(self):
         os.environ[slides.VARIABLE] = str(installed(self.home / 'runtime'))
-        for version in (slides.MINIMUM, '0.16.1-beta.2', '1.0.0'):
+        for version in (slides.MINIMUM, '0.17.1-beta.2', '1.0.0'):
             self.assertEqual(slides.Slides(run=says(version)).version(), version)
         for version in ('0.12.9', '0.9.0'):
             with self.assertRaisesRegex(WorkspaceError, f'harness-slides {version} is '
@@ -212,7 +212,7 @@ class FindingTheRuntimeTests(unittest.TestCase):
         with self.assertRaises(WorkspaceError) as refused:
             slides.Slides(run=says('0.15.1'))
         self.assertEqual(str(refused.exception), 'harness-slides 0.15.1 is installed, and a '
-                         'deck needs 0.16.0 or newer. Update Harness Slides, then try again.')
+                         'deck needs 0.17.0 or newer. Update Harness Slides, then try again.')
         self.assertEqual(refused.exception.version, '0.15.1')
 
 

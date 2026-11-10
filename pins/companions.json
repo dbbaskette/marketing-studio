@@ -19,7 +19,7 @@
       "stub": "bootstrap/SKILL.md",
       "installer": "scripts/install.mjs",
       "note": "Verified draft inspection reuse with an explicit exact-final consistency gate. Existing saved tasks retain their helper runtime and revision-based contract.",
-      "requirement": ">=0.16.0"
+      "requirement": ">=0.17.0"
     }
   },
   "brand_skill": {

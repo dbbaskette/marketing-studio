@@ -20,7 +20,7 @@ from pathlib import Path
 
 
 VARIABLE = 'HARNESS_SLIDES_RUNTIME'
-MINIMUM = '0.16.0'      # the oldest runtime taken: the one the installer pins
+MINIMUM = '0.17.0'      # the oldest runtime taken: the one the installer pins
 RENDERERS = ('drive', 'local')
 SCRIPT = Path('scripts') / 'harness-slides.mjs'
 TIMEOUT = 300    # a local preview may wait two minutes for LibreOffice, then draw each slide

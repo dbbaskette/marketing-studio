@@ -989,14 +989,14 @@ class OlderSlidesToolTests(StudioCase):
         self.brand_bringing('0.15.1')
         with self.too_old():
             missing = self.engine.deck_needs(fresh=True)['missing']
-        self.assertIn('harness-slides 0.15.1 is installed, and a deck needs 0.16.0 or newer. '
+        self.assertIn('harness-slides 0.15.1 is installed, and a deck needs 0.17.0 or newer. '
                       "Acme Brand's own installer brings 0.15.1. Update Harness Slides, then try again.",
                       missing)
         self.assertEqual(self.engine.brought_by('0.15.1'), 'Acme Brand')
-        self.brand_bringing('0.16.0')
+        self.brand_bringing('0.17.0')
         with self.too_old():
             missing = self.engine.deck_needs(fresh=True)['missing']
-        self.assertIn('harness-slides 0.15.1 is installed, and a deck needs 0.16.0 or newer. '
+        self.assertIn('harness-slides 0.15.1 is installed, and a deck needs 0.17.0 or newer. '
                       'Update Harness Slides, then try again.', missing)
         self.assertIsNone(self.engine.brought_by('0.15.1'))
 
@@ -1039,7 +1039,7 @@ class OlderSlidesToolTests(StudioCase):
             self.decide(root, 'gate:outline')
             view = self.view(root)
         self.assertIn(view['state'], ('stopped', 'failed'))
-        self.assertIn('harness-slides 0.15.1 is installed, and a deck needs 0.16.0 or newer. '
+        self.assertIn('harness-slides 0.15.1 is installed, and a deck needs 0.17.0 or newer. '
                       'Update Harness Slides, then try again.', json.dumps(view))
         after = sorted(str(path.relative_to(root)) for path in root.rglob('*'))
         self.assertLessEqual(set(before), set(after), 'nothing it had is lost')
