@@ -153,12 +153,34 @@ class SharedTests(SettingsCase):
                          THEIRS.replace('"variant": "dark"', '"variant": "light"'))
 
     def test_per_studio_settings_stay_in_runner_json(self):
-        settings.save(replace(settings.load(), deck_dollars=7.5, notify=True,
+        settings.save(replace(settings.load(), step_seconds=1200, notify=True,
                               look_for_updates=False))
         self.assertFalse(self.config.exists(), 'nothing shared changed, so nothing is written')
         loaded = settings.load()
-        self.assertEqual((loaded.deck_dollars, loaded.notify, loaded.look_for_updates,
-                          loaded.brand_skill), (7.5, True, False, None))
+        self.assertEqual((loaded.step_seconds, loaded.notify, loaded.look_for_updates,
+                          loaded.brand_skill), (1200, True, False, None))
+
+    def test_settings_saved_with_a_spending_amount_and_choice_still_load(self):
+        settings.path().parent.mkdir(parents=True, exist_ok=True)
+        settings.path().write_text(json.dumps({
+            'schema': 1, 'deck_dollars': 7.5, 'spending_policy': 'hard-stop',
+            'step_seconds': 600, 'parallel': 3}), encoding='utf-8')
+        config = THEIRS.replace('"output": "pptx",',
+                                '"output": "pptx",\n  "spending": {"presentation": "hard-stop"},')
+        self.write_config(config)
+        before = settings.path().read_bytes()
+        loaded = settings.load()
+        self.assertEqual((loaded.step_seconds, loaded.parallel, loaded.agent),
+                         (600, 3, 'codex'))
+        self.assertEqual(loaded.limits, {'step_seconds': 600, 'parallel': 3})
+        for gone in ('deck_dollars', 'spending_policy'):
+            self.assertFalse(hasattr(loaded, gone))
+        self.assertEqual(settings.path().read_bytes(), before, 'reading it rewrites nothing')
+        self.assertEqual(self.config.read_text(), config)
+        # A save of something else leaves the shared spending group as it was.
+        settings.save(replace(loaded, variant='light'))
+        self.assertEqual(json.loads(self.config.read_text())['spending'],
+                         {'presentation': 'hard-stop'})
 
     def test_a_value_in_the_file_that_cannot_be_used_is_the_default_and_never_written_over(self):
         text = THEIRS.replace('"codex"', '"gemini"').replace('"pptx"', '"keynote"')
@@ -236,7 +258,7 @@ class SavedFileTests(SettingsCase):
     def test_runner_json_is_written_as_before(self):
         settings.save(settings.Settings())
         self.assertEqual(settings.path().read_bytes(),
-                         b'{\n  "deck_dollars": 20.0,\n  "look_for_updates": true,\n'
+                         b'{\n  "look_for_updates": true,\n'
                          b'  "notify": false,\n  "parallel": 2,\n  "schema": 1,\n'
                          b'  "step_seconds": 900\n}\n')
         self.assertFalse(self.config.exists(), 'the defaults write nothing every studio shares')

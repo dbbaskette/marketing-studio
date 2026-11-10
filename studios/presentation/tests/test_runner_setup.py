@@ -28,7 +28,7 @@ THEIRS = """{
 """
 DEFAULTS = {'agent': {'default': 'claude', 'model': None, 'effort': None},
             'person': {'name': None}, 'output': 'google',
-            'limits': {'step_seconds': 900, 'deck_dollars': 20.0, 'parallel': 2}}
+            'limits': {'step_seconds': 900, 'parallel': 2}}
 
 
 class FirstTimeCase(Asking, StudioCase):
@@ -100,6 +100,7 @@ class SetUpTests(FirstTimeCase):
             'share_when': 'when-asked', 'agent': 'codex', 'model': 'a-model',
             'effort': 'ultra', 'person': 'Alex Example', 'brand': 'example',
             'variant': 'dark', 'output': 'pptx', 'previews': 'local',
+            # An amount an older form still sends is ignored.
             'limits': {'step_seconds': 600, 'deck_dollars': 7.5, 'parallel': 3}})
         # A folder on this computer has nowhere to share to, so when to share is not set.
         self.assertEqual(made['workspace'], {
@@ -109,7 +110,7 @@ class SetUpTests(FirstTimeCase):
         self.assertEqual(self.defaults(made), {
             'agent': {'default': 'codex', 'model': 'a-model', 'effort': 'ultra'},
             'person': {'name': 'Alex Example'}, 'output': 'pptx',
-            'limits': {'step_seconds': 600, 'deck_dollars': 7.5, 'parallel': 3}})
+            'limits': {'step_seconds': 600, 'parallel': 3}})
         self.assertEqual((made['brand']['default'], made['previews']['how']),
                          ({'brand': 'example', 'variant': 'dark'}, 'local'))
         self.assertEqual(self.get('setup'), made)
@@ -177,8 +178,6 @@ class SetUpTests(FirstTimeCase):
                 ({'path': folder, 'limits': [900]}, 'Give the limits as'),
                 ({'path': folder, 'limits': {'step_seconds': 5}},
                  'The time for one step, in seconds, is a whole number from 60 to 7200.'),
-                ({'path': folder, 'limits': {'deck_dollars': 0}},
-                 'What a deck may spend, in dollars, is a number from 0.01 to 1000.'),
                 ({'path': folder, 'limits': {'parallel': 2.5}},
                  'How many decks run at once is a whole number from 1 to 8.'),
                 ({'path': 7}, 'Give the path as text.')):

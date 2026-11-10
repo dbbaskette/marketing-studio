@@ -363,13 +363,13 @@ def chosen(sent: dict) -> settings.Settings:
     kept = settings.load()
     limits = sent.get('limits')
     if limits is not None and not isinstance(limits, dict):
-        raise WorkspaceError('Give the limits as step_seconds, training_dollars and parallel.')
+        raise WorkspaceError('Give the limits as step_seconds and parallel.')
     agent = sent.get('agent') or kept.agent
     same = agent == kept.agent
     model = sent['model'] if 'model' in sent else (kept.model if same else None)
     effort = sent['effort'] if 'effort' in sent else (kept.effort if same else None)
     wanted = {name: (limits or {}).get(name, getattr(kept, name))
-              for name in ('step_seconds', 'training_dollars', 'parallel')}
+              for name in ('step_seconds', 'parallel')}
     previews = sent['previews'] if sent.get('previews') is not None else kept.previews
     skill = sent['brand_skill'] if sent.get('brand_skill') is not None else kept.brand_skill
     notify = sent['notify'] if sent.get('notify') is not None else kept.notify

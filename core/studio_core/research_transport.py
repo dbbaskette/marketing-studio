@@ -9,39 +9,6 @@ import threading
 from studio_core import research_contract as rc, research_session as parallel, research_sections, research_impact, model_profiles, research_decisions
 
 
-class Reservations:
-    """Concurrent jobs reserve caps from one remaining allowance, never duplicate it.
-
-    Actual charged cost remains the engine's record. Providers that do not report
-    dollars retain their existing unknown-cost semantics, not a fictional hard cap.
-    """
-    def __init__(self, remaining, fixed=None):
-        self.remaining = remaining
-        self.fixed = fixed
-        self.held = {}
-        self.lock = threading.Lock()
-
-    def take(self, phase, workers=1):
-        with self.lock:
-            if self.fixed is not None:
-                token = secrets.token_hex(8)
-                self.held[token] = self.fixed
-                return token, self.fixed
-            left = self.remaining() - sum(self.held.values())
-            if left <= 0:
-                raise ValueError('The remaining research allowance is reserved or exhausted.')
-            # Preserve allowance for combining the evidence and checking it.
-            fraction = .5 / max(1, workers) if phase == 'investigate' else .45 / max(1, workers) if phase == 'synthesize' else 1
-            cap = left * fraction
-            token = secrets.token_hex(8)
-            self.held[token] = cap
-            return token, cap
-
-    def release(self, token):
-        with self.lock:
-            self.held.pop(token, None)
-
-
 def describe(progress):
     phase = progress.get('phase')
     if phase == 'creator-review':
@@ -109,13 +76,6 @@ def native(engine, root, run, task, sources, product='training'):
             return run.stop.is_set() or run.gone or not owns(current)
     folders, lock = [], threading.RLock()
 
-    def remaining():
-        with engine.files:
-            return engine._left(engine._load(root))
-
-    from studio_core import spending
-    budget = Reservations(remaining, fixed=spending.JOB_DOLLARS if spending.policy(record) == 'warn' else None)
-
     def progress(value):
         with engine.files:
             current = engine._load(root)
@@ -169,7 +129,6 @@ def native(engine, root, run, task, sources, product='training'):
                     json.dumps(sent), 'research' if fetch else 'write',
                     {'inputs': {'research-task': json.dumps(sent)}, 'sources': offered,
                      'fetch': fetch, 'ask': False, 'artifacts': {'research-result': result}}, 'research-result')
-        reservation, cap = budget.take(phase, execution.get('workers', 1))
         step = name if product == 'presentation' else Step(name, 'agent', doing, doing, 'research')
         with engine.files:
             current = engine._load(root)
@@ -177,45 +136,41 @@ def native(engine, root, run, task, sources, product='training'):
             if execution.get('section'):
                 grant = current['section_synthesis']['more_time'].get(execution['section'], 0)
                 seconds = min(execution['seconds'], max(seconds, grant))
-        try:
-            if product == 'presentation':
-                outcome, handed, started, folder = engine._job(root, run, name, doing, work, deck=False,
-                    limits=agents.Limits(seconds=seconds, dollars=cap), **(
-                        {'section': execution['section']} if execution.get('section') else {}))
-            else:
-                outcome, handed, started, folder = engine._job(root, run, step, work,
-                    limits=agents.Limits(seconds=seconds, dollars=cap), **(
-                        {'section': execution['section']} if execution.get('section') else {}))
-            with lock:
-                folders.append(folder)
-            if outcome.reason == 'stopped' or run.stop.is_set():
-                engine._stopped(root, step, outcome, started)
-                raise companion.Stopped()
-            accepted = handed['artifacts'].get('research-result')
-            cost = engine._cost(outcome)
-            ended = ('kept' if accepted else 'limit' if outcome.reason == 'limit'
-                     and getattr(outcome, 'budget', False) else 'failed')
-            with engine.files:
-                current = engine._load(root)
-                tried = engine._tried(current, name, started, outcome.seconds, ended,
-                                      None if accepted else outcome.detail or None, **cost)
-                tried['tries' if product == 'presentation' else 'attempts'][-1].update(
-                    research_attempt=attempt, invocation=execution.get('invocation'))
-                engine._store(root, current)
-                engine._commit(root, 'record research job: ' + phase)
-            if not accepted:
-                problems = [p for found in handed.get('problems', {}).values() for p in found]
-                said = ' '.join(problems[:3]) or outcome.detail or 'It handed back no checked result.'
-                failure = WorkspaceError(doing + ' could not finish: ' + said
-                                         + ' Completed research areas are kept for retry.')
-                failure.outcome = outcome
-                if outcome.reason == 'timeout' and execution.get('section'):
-                    failure.section = execution['section']
-                    failure.section_seconds = seconds
-                raise failure
-            return accepted['text'], handed['sources']
-        finally:
-            budget.release(reservation)
+        if product == 'presentation':
+            outcome, handed, started, folder = engine._job(root, run, name, doing, work, deck=False,
+                limits=agents.Limits(seconds=seconds), **(
+                    {'section': execution['section']} if execution.get('section') else {}))
+        else:
+            outcome, handed, started, folder = engine._job(root, run, step, work,
+                limits=agents.Limits(seconds=seconds), **(
+                    {'section': execution['section']} if execution.get('section') else {}))
+        with lock:
+            folders.append(folder)
+        if outcome.reason == 'stopped' or run.stop.is_set():
+            engine._stopped(root, step, outcome, started)
+            raise companion.Stopped()
+        accepted = handed['artifacts'].get('research-result')
+        cost = engine._cost(outcome)
+        ended = 'kept' if accepted else 'failed'
+        with engine.files:
+            current = engine._load(root)
+            tried = engine._tried(current, name, started, outcome.seconds, ended,
+                                  None if accepted else outcome.detail or None, **cost)
+            tried['tries' if product == 'presentation' else 'attempts'][-1].update(
+                research_attempt=attempt, invocation=execution.get('invocation'))
+            engine._store(root, current)
+            engine._commit(root, 'record research job: ' + phase)
+        if not accepted:
+            problems = [p for found in handed.get('problems', {}).values() for p in found]
+            said = ' '.join(problems[:3]) or outcome.detail or 'It handed back no checked result.'
+            failure = WorkspaceError(doing + ' could not finish: ' + said
+                                     + ' Completed research areas are kept for retry.')
+            failure.outcome = outcome
+            if outcome.reason == 'timeout' and execution.get('section'):
+                failure.section = execution['section']
+                failure.section_seconds = seconds
+            raise failure
+        return accepted['text'], handed['sources']
 
     try:
         if parallel.capability(tool.runtime) != record['research_execution']['capability']:

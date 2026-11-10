@@ -94,7 +94,7 @@ class ProgressMapTests(unittest.TestCase):
         stages = self.by_id(self.shown('waiting'))
         self.assertEqual(stages['materials']['branches'][0]['state'], 'complete')
         self.assertEqual(stages['materials']['branches'][1]['state'], 'needs-you')
-        self.record['problem'] = {'step': 'outline:101:section-1', 'what': 'Spending amount reached.'}
+        self.record['problem'] = {'step': 'outline:101:section-1', 'what': 'This step did not work in 3 tries.'}
         stages = self.by_id(self.shown('failed'))
         self.assertEqual(stages['materials']['state'], 'stopped')
         self.assertEqual(stages['materials']['branches'][0]['available'], 1)

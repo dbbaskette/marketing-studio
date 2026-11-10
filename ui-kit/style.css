@@ -533,18 +533,6 @@ summary {
   font-weight: 550;
 }
 
-/* Advisory spending does not use the error/stop surface. */
-.spending-warning {
-  margin: 0;
-  padding: 0.8rem 1rem;
-  background: var(--paper);
-  color: var(--ink);
-  border: 1px solid var(--paper-line);
-  border-inline-start: 4px solid var(--yours);
-  border-radius: 12px;
-  font-weight: 500;
-}
-
 .page {
   max-width: 76rem;
   margin: 0 auto;

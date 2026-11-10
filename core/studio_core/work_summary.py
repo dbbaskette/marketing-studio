@@ -13,7 +13,7 @@ LIMIT = 12_000
 IDENT = re.compile(r'[A-Za-z0-9][A-Za-z0-9_-]{0,127}')
 
 
-def save(root, title, state='needs-you', action='Open saved work', warning=None):
+def save(root, title, state='needs-you', action='Open saved work'):
     root = Path(root)
     if state not in STATES: return
     if root.is_symlink() or not root.is_dir() or not IDENT.fullmatch(root.name): return
@@ -22,7 +22,6 @@ def save(root, title, state='needs-you', action='Open saved work', warning=None)
     local = root / 'work'
     if local.is_symlink() or local.exists() and not local.is_dir(): return
     local.mkdir(exist_ok=True)
-    if warning: value['warning'] = str(warning)[:300]
     target = root / FILE
     if target.is_symlink() or target.exists() and not target.is_file(): return
     pending = local / ('.summary-' + secrets.token_hex(8))
@@ -112,8 +111,8 @@ def read(folder):
         if not isinstance(row, dict) or row.get('schema') != 1 or row.get('id') != folder.name or not IDENT.fullmatch(folder.name): return None
         if row.get('state') not in ('needs-you', 'in-progress', 'recent'): return None
         if any(not isinstance(row.get(key),str) or len(row[key])>bound for key,bound in [('title',200),('action',120),('observed_at',100)]): return None
-        if 'warning' in row and (not isinstance(row['warning'], str) or len(row['warning']) > 300): return None
-        return {key: row[key] for key in ('id','title','state','action','observed_at')} | ({'warning': row['warning']} if row.get('warning') else {})
+        # A summary saved before spending limits were removed may carry `warning`; it is ignored.
+        return {key: row[key] for key in ('id','title','state','action','observed_at')}
     except (ValueError, OSError, RecursionError): return None
 
 
@@ -142,7 +141,7 @@ def describe(product, root, record):
     if product == 'infographic':
         title = (record.get('brief') or {}).get('title') or title
         state, action = ('recent', 'Open delivery') if record.get('approval') else ('needs-you', 'Review the saved infographic')
-    return {'title': str(title)[:200], 'state': state, 'action': action} | ({'warning': record['spending_warning']['message'][:300]} if record.get('execution') != 'conversation' and record.get('spending_policy') == 'warn' and isinstance(record.get('spending_warning'), dict) and isinstance(record['spending_warning'].get('message'), str) else {})
+    return {'title': str(title)[:200], 'state': state, 'action': action}
 
 
 def native(product, root, record):

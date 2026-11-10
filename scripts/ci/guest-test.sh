@@ -259,14 +259,6 @@ elif [[ "${1:-full}" == audit-week8 ]]; then
   (cd studios/presentation && "$python" skills/presentation-studio/scripts/validate_package.py)
   (cd studios/training && "$python" skills/training-studio/scripts/validate_package.py)
   PYTHONPATH=tests "$python" -m unittest test_suite test_work_overview -v 2>&1 | tee "$results_dir/package-tests.log"
-elif [[ "${1:-full}" == backlog-spending-acceptance ]]; then
-  # Full Training Studio completed on unchanged application code; old hard-stop
-  # fixture assumptions and the exhaustive route request bodies are corrected.
-  {
-    (cd studios/training && "$python" scripts/ci/run_tests.py --jobs 4 test_desk.RunnerScreenTests test_settings_change.StopTests test_parallel_research.ParallelNativeTests test_runner_page.RuleTests)
-    (cd studios/presentation && PYTHONPATH=tests "$python" -m unittest test_runner_page.CapabilityTests test_runner_page.RuleTests -v)
-    bash scripts/ci/acceptance.sh "$python" "$results_dir/checks"
-  } 2>&1 | tee "$results_dir/tests.log"
 elif [[ "${1:-full}" == followup-home-recovery ]]; then
   export INFOGRAPHIC_STUDIO_TEST_RENDERER="$("$python" scripts/ci/infographic-renderer.py --output "$work/graphics" --cache "$work/graphics-cache")"
   # Focused UI/metadata/renderer changes: reuse the unchanged native pipeline,
@@ -277,31 +269,6 @@ elif [[ "${1:-full}" == followup-home-recovery ]]; then
   } 2>&1 | tee "$results_dir/tests.log"
 elif [[ "${1:-full}" == backlog-brands ]]; then
   export INFOGRAPHIC_STUDIO_TEST_RENDERER="$("$python" scripts/ci/infographic-renderer.py --output "$work/graphics" --cache "$work/graphics-cache")"
-  bash scripts/ci/check.sh "$python" "$results_dir/checks" 2>&1 | tee "$results_dir/tests.log"
-elif [[ "${1:-full}" == backlog-spending-final ]]; then
-  # The complete shared, Infographic, Blog and Presentation suites completed.
-  # Only the exhaustive API route lists changed; cover page auth/methods again,
-  # then finish Training Studio and installer/CLI acceptance.
-  {
-    (cd studios/presentation && PYTHONPATH=tests "$python" -m unittest test_runner_page -v)
-    (cd studios/training && bash scripts/ci/check.sh "$python")
-    bash scripts/ci/acceptance.sh "$python" "$results_dir/checks"
-  } 2>&1 | tee "$results_dir/tests.log"
-elif [[ "${1:-full}" == backlog-spending-finish ]]; then
-  # Shared 984 cases and all browser journeys completed; only the old section-list
-  # expectation changed. Recheck that group, then complete every native suite.
-  export INFOGRAPHIC_STUDIO_TEST_RENDERER="$("$python" scripts/ci/infographic-renderer.py --output "$work/graphics" --cache "$work/graphics-cache")"
-  {
-    PYTHONPATH=tests "$python" -m unittest test_layout_pass -v
-    "$python" -m unittest discover -s studios/infographic/tests -v
-    (cd studios/blog && BLOG_STUDIO_REQUIRE_LINT=1 BLOG_STUDIO_TEST_JOBS=4 bash scripts/ci/check.sh "$python" "$results_dir/blog-studio")
-    (cd studios/presentation && "$python" scripts/ci/run_tests.py --jobs 4 && "$python" skills/presentation-studio/scripts/validate_package.py)
-    (cd studios/training && bash scripts/ci/check.sh "$python")
-    bash scripts/ci/acceptance.sh "$python" "$results_dir/checks"
-  } 2>&1 | tee "$results_dir/tests.log"
-elif [[ "${1:-full}" == backlog-spending ]]; then
-  export INFOGRAPHIC_STUDIO_TEST_RENDERER="$("$python" scripts/ci/infographic-renderer.py --output "$work/recovery-graphics" --cache "$work/recovery-cache")"
-  "$python" scripts/workflow_diagrams.py --check
   bash scripts/ci/check.sh "$python" "$results_dir/checks" 2>&1 | tee "$results_dir/tests.log"
 elif [[ "${1:-full}" == audit-week7-full ]]; then
   export INFOGRAPHIC_STUDIO_TEST_RENDERER="$("$python" scripts/ci/infographic-renderer.py --output "$work/recovery-graphics" --cache "$work/recovery-cache")"

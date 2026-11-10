@@ -1,5 +1,7 @@
 # Changelog
 
+Unreleased: spending limits are removed. The project spending amount in Settings, under Limits, and the **Spending behavior** choice are gone, and work no longer stops or warns for what it cost. What the assistant reports is still shown as information, and saved decks open and carry on as before.
+
 Unreleased: on the slide desk **Slides** and **Outline** sit at the start of their row, next to the slides; **Previous** and **Next** share one row above the navigator; and the Sources panel is wide enough for its file field.
 
 Unreleased: a deck's page leads with the Brief, Plan, Make, Ship arc and **Your move**. Slide text is reviewed in the middle of the screen with the assistant's rail beside it; the slide desk keeps its side panel and shows the arc in a band above.

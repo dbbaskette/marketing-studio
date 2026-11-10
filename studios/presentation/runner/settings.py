@@ -5,7 +5,7 @@ from.
 What a caller needs to know
 ---------------------------
     chosen = settings.load()                      # the defaults when nothing is saved
-    settings.save(replace(chosen, agent='codex', deck_dollars=10))
+    settings.save(replace(chosen, agent='codex', step_seconds=1200))
 
 - Two places hold them. The values every studio on this computer shares are kept only in
   the studios config (`studios_config`), and read from it each time: the agent, its model
@@ -30,10 +30,9 @@ What a caller needs to know
   agent takes (EFFORTS): which of them a model takes is what the agent lists. Claude Code
   lists nothing, so its models and their levels are kept in `claude-code-models.json`
   in the shared core, and a level its model does not take is refused (`takes`).
-- `step_seconds` is how long one worker may run. `deck_dollars` is the project spending amount,
-  where the agent reports dollars. New work uses the shared spending_policy choice
-  (warn by default); older saved work keeps its hard-stop behavior. `parallel` is how
-  many decks work at once.
+- `step_seconds` is how long one worker may run. `parallel` is how many decks work at
+  once. Nothing limits what a deck costs: a `runner.json` that still holds a spending
+  amount or a spending choice from before is read as if it did not, and left as it is.
 - `previews` is how a deck's slides are rendered to look at: `local`, with LibreOffice on
   this computer, or `drive`, through Google Drive. Shared as `render.previews`;
   after shared setup, an empty choice follows the delivery format.
@@ -77,7 +76,7 @@ import hub  # noqa: F401  read by the shared parts
 import studios_config
 from workspace import WorkspaceError
 
-from studio_core import modules, spending
+from studio_core import modules
 from studio_core.shared_runner import settings as _shared
 modules.bind(globals(), _shared, _shared.NAMES)
 
@@ -92,8 +91,7 @@ SHARED = {'agent': ('assistant', 'agent'), 'model': ('assistant', 'model'),
           'brand': ('brand', 'brand'), 'variant': ('brand', 'variant'),
           'output': (None, 'output'), 'brand_repository': ('brand', 'repository'),
           'brand_release': ('brand', 'release'),
-          'previews': ('render', 'previews'), 'brand_skill': ('brand', 'skill'),
-          'spending_policy': ('spending', 'presentation')}
+          'previews': ('render', 'previews'), 'brand_skill': ('brand', 'skill')}
 
 
 @dataclass(frozen=True)
@@ -103,8 +101,6 @@ class Settings:
     model: str | None = None
     effort: str | None = None
     step_seconds: int = 900
-    deck_dollars: float = 20.0
-    spending_policy: str = 'warn'
     parallel: int = 2
     previews: str | None = None
     brand_skill: str | None = None
@@ -119,8 +115,7 @@ class Settings:
 
     @property
     def limits(self) -> dict:
-        return {'step_seconds': self.step_seconds, 'deck_dollars': self.deck_dollars,
-                'parallel': self.parallel}
+        return {'step_seconds': self.step_seconds, 'parallel': self.parallel}
 
 
 @functools.lru_cache(maxsize=None)
@@ -168,16 +163,11 @@ def check(chosen: Settings) -> Settings:
     """The same settings, once every one of them makes sense."""
     agent = check_agent(chosen.agent)
     repository = check_repository(chosen.brand_repository)
-    if chosen.spending_policy not in spending.POLICIES:
-        raise WorkspaceError('Choose Warn and continue or Stop and ask.')
     return Settings(
         agent=agent, model=check_model(chosen.model),
         effort=check_effort(chosen.effort, agent, chosen.model),
         step_seconds=number(chosen.step_seconds, 'The time for one step, in seconds,',
                             *SECONDS, True),
-        deck_dollars=number(chosen.deck_dollars,
-                            'What a deck may spend, in dollars,', 0.01, DOLLARS, False),
-        spending_policy=chosen.spending_policy,
         parallel=number(chosen.parallel, 'How many decks run at once', *PARALLEL, True),
         previews=check_previews(chosen.previews), brand_skill=check_place(chosen.brand_skill),
         notify=check_notify(chosen.notify),
@@ -210,7 +200,7 @@ def from_shared(found: dict) -> dict:
     release = brand.get('release')
     release = passes(check_release, release, repository) \
         if isinstance(release, str) and repository else None
-    return {'spending_policy': (_group(found, 'spending').get('presentation') if _group(found, 'spending').get('presentation') in spending.POLICIES else None), 'agent': agent, 'model': model, 'effort': effort,
+    return {'agent': agent, 'model': model, 'effort': effort,
             'name': passes(check_name, person.get('name')),
             'brand': passes(check_word, brand.get('brand'), 'brand'),
             'variant': passes(check_word, brand.get('variant'), 'variant'),
@@ -228,7 +218,7 @@ def shared_now(found: dict) -> dict:
     from studio_core.preferences import ready
     if shared['previews'] is None and ready(found):
         shared['previews'] = 'drive' if found.get('output') == 'google' else 'local'
-    return {**shared, 'spending_policy': spending.shared(found, 'presentation'), 'agent': shared['agent'] or Settings().agent,
+    return {**shared, 'agent': shared['agent'] or Settings().agent,
             'output': shared['output'] or Settings().output}
 
 
@@ -250,7 +240,7 @@ def changes(before: Settings, after: Settings) -> dict:
 
 
 # Each shared setting as a sentence names it.
-NAMED = {'spending_policy': 'The spending behavior', 'agent': 'The agent', 'model': 'The model', 'effort': 'The reasoning level',
+NAMED = {'agent': 'The agent', 'model': 'The model', 'effort': 'The reasoning level',
          'name': 'Your name', 'brand': 'The brand', 'variant': 'The variant',
          'output': 'The output', 'brand_repository': "The brand skill's repository",
          'brand_release': "The brand skill's release",

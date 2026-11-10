@@ -320,7 +320,6 @@ const StudioActivity = (() => {
       return;
     }
     if (view.timing) parts.push(timingSummary(view.timing));
-    for (const warning of array(view.spending_warnings)) parts.push(make('p', 'spending-warning', warning));
     // A job still running is shown where the page shows its work, not again here.
     const running = array(view.running).length;
     parts.push(make('p', 'quiet', 'Each assistant job that ended, newest first, with what it did. '
@@ -416,54 +415,6 @@ const StudioActivity = (() => {
     return node;
   }
 
-  function spending({load, save}) {
-    const node = make('details', 'card advanced'), title = make('summary', 'advanced-summary', 'Spending behavior');
-    node.dataset.key = 'spending-policy';node.append(title);
-    const body = make('div', 'stack');node.append(body);
-    let generation = 0;
-    node.addEventListener('toggle', async () => {
-      if (!node.open) { generation++;return; }
-      const own = ++generation;body.replaceChildren(make('p', 'quiet', 'Reading the saved spending choice…'));
-      try {
-        const info = await load();if (!node.open || own !== generation) return;
-        if (info.available === false) { body.replaceChildren(make('p','quiet','This work is edited in conversation. Its runner spending choice does not control those assistant requests.'));return; }
-        const label = make('label', 'field-label', 'At the project spending amount');label.htmlFor = 'project-spending-policy';
-        const choice = make('select', 'input');choice.id = label.htmlFor;choice.dataset.key = 'spending-policy-choice';
-        choice.append(new Option('Warn and continue', 'warn'), new Option('Stop and ask', 'hard-stop'));choice.value = info.policy;
-        const note = make('p', 'field-hint quiet', 'Warning mode gives each assistant job a $5 budget and keeps its time cap. Dollar enforcement depends on the assistant. Stop and ask keeps the project allowance. Saving starts no work.');
-        const error = make('p', 'problem');error.setAttribute('role', 'alert');error.hidden = true;
-        const button = make('button', 'button', 'Save spending behavior');button.type = 'button';button.dataset.key = 'spending-policy-save';
-        button.disabled = true;choice.addEventListener('change', () => { button.disabled = choice.value === info.policy; });
-        button.addEventListener('click', async () => {
-          button.disabled = true;error.hidden = true;
-          try { await save({expected:info.expected, policy:choice.value});node.open = false;title.focus(); }
-          catch (e) { error.textContent = e.message || 'The choice could not be saved.';error.hidden = false;button.disabled = false; }
-        });
-        body.replaceChildren(label, choice, note, button, error);
-      } catch (e) { if (own === generation) body.replaceChildren(make('p', 'problem', e.message || 'The choice could not be read.')); }
-    });
-    return node;
-  }
-
-  const spendingHosts = new WeakMap();
-  function spendingStatus(host, options) {
-    if (!host?.parentNode || typeof host.insertAdjacentElement !== 'function') return;
-    let kept = spendingHosts.get(host);
-    if (!options || kept && (kept.key !== options.key || kept.readOnly !== Boolean(options.readOnly))) {
-      if (kept) { kept.notice.remove();kept.controls.remove();spendingHosts.delete(host); }
-      kept = null;if (!options) return;
-    }
-    if (!kept) {
-      const notice = make('div', 'page spending-status');notice.hidden = true;
-      const text = make('p', 'spending-warning');text.setAttribute('role','status');notice.append(text);
-      const controls = make('div', 'page stack spending-status');
-      if (!options.readOnly) controls.append(spending(options));else controls.hidden = true;
-      host.insertAdjacentElement('beforebegin',notice);host.insertAdjacentElement('afterend',controls);
-      kept = {key:options.key,readOnly:Boolean(options.readOnly),notice,controls,text};spendingHosts.set(host,kept);
-    }
-    kept.text.textContent = options.warning || '';kept.notice.hidden = !options.warning;
-  }
-
-  return {live, update, logCard, lineList, spending, spendingStatus};
+  return {live, update, logCard, lineList};
 })();
 if (typeof module === 'object' && module.exports) module.exports = StudioActivity;

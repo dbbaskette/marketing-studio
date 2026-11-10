@@ -6,19 +6,20 @@ from functools import lru_cache
 from pathlib import Path
 
 SCHEMA = 1
-SECONDS, DOLLARS, INPUT_CHARS = 180, 0.25, 48_000
+SECONDS, INPUT_CHARS = 180, 48_000
 
 
 def budget(value=None):
     value = {} if value is None else value
+    # Scans saved before spending limits were removed carry `dollars`; it is ignored.
     if not isinstance(value, dict) or set(value) - {'seconds', 'dollars', 'input_chars'}:
-        raise ValueError('Use seconds, dollars and input_chars for the scan budget.')
+        raise ValueError('Use seconds and input_chars for the scan budget.')
     result = {}
-    for key, default in (('seconds', SECONDS), ('dollars', DOLLARS), ('input_chars', INPUT_CHARS)):
+    for key, default in (('seconds', SECONDS), ('input_chars', INPUT_CHARS)):
         number = value.get(key, default)
         if type(number) not in (int, float) or not math.isfinite(number) or number <= 0:
             raise ValueError('Scan budgets need finite positive numbers.')
-        if key != 'dollars' and (type(number) is not int):
+        if type(number) is not int:
             raise ValueError('Scan seconds and input characters need whole numbers.')
         result[key] = min(default, number)
     return result

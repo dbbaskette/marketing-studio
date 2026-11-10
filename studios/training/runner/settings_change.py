@@ -738,7 +738,7 @@ def _apply(engine, root: Path, found: dict) -> dict:
     record.setdefault('settings_changes', []).append(summary)
     if previous and not previous.get('settings') and outcome in ('continues', 'kept'):
         # The change does not address what stopped: the stop stays, with its own action
-        # (Try again, Give it more time, Carry on after the spending limit) and what that
+        # (Try again, Give it more time, Carry on) and what that
         # action needs, and says the settings changed. Its own words are kept apart, so a
         # second change says so once.
         stopped = previous.get('stopped_what') or previous.get('what', '')
@@ -752,8 +752,7 @@ def _apply(engine, root: Path, found: dict) -> dict:
         if previous.get('settings') and outcome in ('continues', 'kept'):
             outcome = previous.get('outcome') or outcome
         # A stop for time is carried into Continue, so research planned or started again is
-        # given the same room Give it more time would give, and says so. The spending limit
-        # is never lifted here: only Carry on, which names it, lifts it.
+        # given the same room Give it more time would give, and says so.
         more = (previous.get('carried') or previous.get('action')) == stops.MORE_TIME
         carried = {key: previous[key] for key in ('seconds',) if previous.get(key)}
         if more:

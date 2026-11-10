@@ -6,7 +6,7 @@ What a caller needs to know
     worker_tools.prepare(folder, inputs={...}, artifacts={...})
     job = Job(guidance='How to do the job...', task='...', folder=folder,
               profile='write', tools=worker_tools.command(folder),
-              limits=Limits(seconds=600, dollars=2.0))
+              limits=Limits(seconds=600))
     outcome = Claude().run(job, activity=print)
     handed_back = worker_tools.collect(folder)
 
@@ -23,8 +23,8 @@ What a caller needs to know
   agent's own sandbox lets it write there: use `staging()`.
 - `run` never raises for something the agent did. It returns an Outcome whose `reason` is
   `timeout`, `limit`, `failed`, `unavailable` or `stopped`, with a sentence in `detail`. A
-  `limit` because the job spent all it was given has `budget` set, and one the agent's
-  account refused (a usage or rate limit) has `account`. It raises WorkspaceError
+  `limit` the agent's account refused (a usage or rate limit) has `account`. No job is
+  given a spending limit. It raises WorkspaceError
   only for a job that is wrong before it starts.
 - `stop` is a threading.Event. Setting it ends the worker and everything it started within
   a moment, and the outcome's reason is `stopped`. The time limit ends everything too, and
@@ -94,9 +94,8 @@ CODEX_OFF = ('apps', 'plugins', 'remote_plugin', 'plugin_sharing', 'browser_use'
              'shell_tool', 'unified_exec')
 @dataclass(frozen=True)
 class Limits:
-    """How long a job may run, and how much it may spend where the agent can be told."""
+    """How long a job may run."""
     seconds: int = 600
-    dollars: float | None = None
 
 
 @dataclass(frozen=True)
@@ -123,7 +122,6 @@ class Outcome:
     tokens: dict | None = None  # {'input', 'cached', 'output'}, where reported
     seconds: float = 0.0
     events: Path | None = None  # where the raw event stream was saved
-    budget: bool = False        # a `limit` because the job spent all it was given
     account: bool = False       # a `limit` because the agent's account refused the job
 
 
@@ -284,8 +282,7 @@ class _Agent:
         reason, detail = self.verdict(job, reader, code, tail(folder / 'stderr.txt'))
         return Outcome(reason is None, reason, detail, self.last(job, reader), reader.cost,
                        reader.tokens, seconds, events,
-                       budget=reason == 'limit' and getattr(reader, 'budget', False),
-                       account=reason == 'limit' and not getattr(reader, 'budget', False)
+                       account=reason == 'limit'
                        and (getattr(reader, 'account', False)
                             or any(mark in detail.lower() for mark in LIMITED)))
 
@@ -344,8 +341,6 @@ class Claude(_Agent):
                    '--tools', CLAUDE_SEARCH if research else '',
                    '--allowedTools', ','.join(allowed), '--no-session-persistence',
                    '--append-system-prompt', job.guidance]
-        if job.limits.dollars is not None:
-            command += ['--max-budget-usd', f'{job.limits.dollars:g}']
         if job.model:
             command += ['--model', job.model]
         if job.effort and job.effort in settings.takes(self.name, job.model):
@@ -388,7 +383,7 @@ class Codex(_Agent):
     reader = CodexEvents
 
     def command(self, job: Job) -> list[str]:
-        """The exact command. Codex has no spending limit to set; only time bounds it."""
+        """The exact command. Only time bounds it."""
         folder = Path(job.folder).resolve()
         command = [self.program, 'exec', '--json', '--cd', str(folder / 'stand'),
                    '--sandbox', 'workspace-write', '--ignore-user-config', '--ignore-rules',

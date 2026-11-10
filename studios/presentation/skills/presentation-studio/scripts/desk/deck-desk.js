@@ -519,7 +519,7 @@
   }
 
   // What comes before everything else: a teammate's hold, a question, a step that stopped
-  // (with Try again, Give it more time, or Resume at the spend limit) and a team notice.
+  // (with Try again, Give it more time, or Resume) and a team notice.
   // --- the workbench ------------------------------------------------------------------------
   // On a wide screen a deck's page is a workbench: the slides in the middle and one rail for
   // everything about the assistant. Each part says which zone it belongs to, and the shared
@@ -715,7 +715,7 @@
     const scope=plan.source_policy||{};
     box.append(make('p','quiet','After approval: '+[scope.documents?'your supplied documents':'',scope.sites?.length?'your selected sites':'',scope.web?'the public web':''].filter(Boolean).join(', ')+'.'));
     box.append(h.add(make('details','outline-notes'),make('summary','','Scan overview, coverage and limits'),
-      make('p','quiet','Scan limits: '+Math.ceil(plan.limits.seconds/60)+' minutes, $'+plan.limits.dollars.toFixed(2)+' within the deck limits; external searches: 0.'),
+      make('p','quiet','Scan limits: '+Math.ceil(plan.limits.seconds/60)+' minutes; external searches: 0.'),
       make('p','',value.overview),...value.coverage.map(one=>make('p','',one.source+': '+one.covers)),...value.gaps.map(one=>make('p','quiet',one))));
     const status=make('p','quiet',kept.dirty?'Unsaved story edits.':'Story saved. No detailed research has started.');status.setAttribute('role','status');
     const problem=make('p','problem');problem.setAttribute('role','alert');

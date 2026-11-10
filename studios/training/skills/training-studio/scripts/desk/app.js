@@ -790,8 +790,8 @@ function narrow() {
   return Boolean(window.matchMedia && window.matchMedia('(max-width: 52rem)').matches);
 }
 
-// What it is doing now, in one line: the step, how long it has taken, what it has spent and
-// the limit it stops at. Each is left out where it is not known.
+// What it is doing now, in one line: the step, how long it has taken and what it has cost
+// so far. Each is left out where it is not known.
 // While nothing else changes, the time in the now line still moves.
 function tickNow(run) {
   const shown = main().querySelector('.now-line');
@@ -813,10 +813,6 @@ function nowLine(run) {
   if (given(spent.dollars) && Number(spent.dollars) >= 0.005) {
     parts.push(money(spent.dollars) + ' so far');
   }
-  // The run's own limit, raised by every Carry on; Settings' only where the run says none.
-  const limits = (view.setup && view.setup.limits) || {};
-  const stopsAt = given(spent.stops_at) ? spent.stops_at : limits.training_dollars;
-  if (given(stopsAt)) parts.push((run.spending?.policy === 'warn' ? 'warns at ' : 'stops at ') + money(stopsAt));
   return parts.length ? make('p', 'now-line', parts.join(' · ')) : null;
 }
 
@@ -1474,7 +1470,6 @@ function around() {
 }
 
 function draw(fresh) {
-  syncSpending();
   if (view.screen === 'gate') return drawGate(fresh);
   if (view.screen === 'training') return drawTraining(fresh);
   if (view.screen === 'run') return drawRun(fresh);
@@ -1730,7 +1725,6 @@ function drawSheet() {
   // And it is the only thing that can be reached: everything behind it is inert until it is
   // put away, by its own buttons or by Escape.
   for (const id of ['main', 'sidebar', 'toolbar']) byId(id).inert = Boolean(shown);
-  for (const node of document.querySelectorAll('.spending-status')) node.inert = Boolean(shown);
   // The skip link and a toast's button are outside those: the skip link is put away too, and
   // Tab goes round the sheet's own controls (`keepInSheet`).
   const skip = document.querySelector('.skip');
@@ -3972,10 +3966,6 @@ function about(pairs) {
 function limitsSays(limits) {
   const says = [];
   if (limits.step_seconds) says.push('A step may take up to ' + lasted(limits.step_seconds) + '.');
-  if (given(limits.training_dollars)) {
-    says.push('The project spending amount is ' + money(limits.training_dollars)
-      + '. New-work warning or stop behavior is in Shared settings, Spending.');
-  }
   if (limits.parallel) {
     says.push(limits.parallel === 1 ? 'One training runs at a time.'
       : 'Up to ' + limits.parallel + ' trainings run at once.');
@@ -4094,7 +4084,6 @@ function setupForm() {
     agent: agent.default === 'codex' ? 'codex' : 'claude',
     model: agent.model || '', other: false, effort: agent.effort || '',
     minutes: seconds ? String(Math.round(seconds / 6) / 10) : '', seconds,
-    dollars: given(limits.training_dollars) ? String(limits.training_dollars) : '',
     parallel: given(limits.parallel) ? String(limits.parallel) : '',
     previews: previewsNow(held.previews || {}),
     brandSkill: (brandSkills().find((skill) => skill.chosen) || brandSkills()[0] || {}).path
@@ -4563,12 +4552,9 @@ function shareCard(form) {
 
 function limitsCard(form) {
   const node = card('Limits');
-  return add(node, make('p', '', 'Each job keeps its time limit. The project amount warns by default for new work; '
-    + 'Shared settings, Spending can make it stop and ask instead.'),
+  return add(node, make('p', '', 'Each step keeps its time limit. Nothing stops or warns for what the work costs.'),
   field('setup-minutes', 'The longest a step may take, in minutes', form, 'minutes',
     { short: true, mode: 'decimal' }),
-  field('setup-dollars', 'Project spending amount, in dollars', form, 'dollars',
-    { short: true, mode: 'decimal', hint: 'Counted where the agent says what it spends.' }),
   field('setup-parallel', 'How many trainings may run at once', form, 'parallel',
     { short: true, mode: 'numeric' }));
 }
@@ -4688,10 +4674,8 @@ async function saveSetup(pressed) {
   need(where, asked.repository || asked.path, form.where ? 'Say which folder first.'
     : 'Give the repository’s address first.');
   const minutes = limit('setup-minutes', form.minutes, false);
-  const dollars = limit('setup-dollars', form.dollars, false);
   const parallel = limit('setup-parallel', form.parallel, true);
-  for (const [id, value] of [['setup-minutes', minutes], ['setup-dollars', dollars],
-    ['setup-parallel', parallel]]) {
+  for (const [id, value] of [['setup-minutes', minutes], ['setup-parallel', parallel]]) {
     if (value === null) missing.push(id);
   }
   if (missing.length) {
@@ -4737,7 +4721,7 @@ async function saveSetup(pressed) {
     name: form.name.trim(), share_when: form.where ? SHARE[1] : SHARE[form.share],
     agent: form.agent, model: form.model.trim() || null, effort: form.effort || null,
     limits: { step_seconds: kept ? form.seconds : Math.max(1, Math.round(minutes * 60)),
-      training_dollars: dollars, parallel } };
+      parallel } };
   if (form.where) body.path = asked.path;
   else body.repository = asked.repository;
   // Where this computer can make previews in neither way, there is no choice to send.
@@ -5376,22 +5360,6 @@ function fit(holder, parts, fresh) {
   }
 }
 
-function syncSpending() {
-  if (typeof StudioActivity === 'undefined' || !StudioActivity.spendingStatus) return;
-  const path = view.path, run = view.run;
-  const options = path && run && ['run', 'outline'].includes(view.screen) ? {
-    key:path, readOnly:run.mine === false, warning:run.spending?.warning?.message,
-    load: () => ask('spending-policy', {path}),
-    save: async (sent) => {
-      const updated = await send('spending-policy', {path, ...sent});
-      if (view.path === path && ['run', 'outline'].includes(view.screen)) { view.run = updated;draw(false); }
-    }
-  } : null;
-  StudioActivity.spendingStatus(main(),options);
-  // Spending controls are siblings of main, including when a poll recreates them.
-  for (const node of document.querySelectorAll('.spending-status')) node.inert = !byId('sheet').hidden;
-}
-
 function placeParts(spec, parts, fresh) {
   const holder = main();
   const active = document.activeElement;
@@ -5934,7 +5902,6 @@ function madeCard(training, theirs) {
 function costCard(run) {
   const node = card('What it has cost');
   const spent = run.spent || {};
-  const limits = (view.setup && view.setup.limits) || {};
   const agent = AGENT_NAMES[run.agent] || run.agent || 'an agent';
   // A cost of nothing is not reported money: it is never said as $0.00.
   const reported = given(spent.dollars) && Number(spent.dollars) > 0;
@@ -5946,11 +5913,6 @@ function costCard(run) {
   else if (silent) says.push(agent + ' says how many tokens it uses, not what they cost.');
   else says.push('Nothing has been reported yet. An agent says what it used as each step ends.');
   if (given(spent.tokens)) says.push(Number(spent.tokens).toLocaleString() + ' tokens used.');
-  if (given(limits.training_dollars)) {
-    says.push(run.spending?.policy === 'warn' ? 'Warns when reported spending reaches ' + money(run.spending.limit) + '; work continues with a $5 budget for each assistant job.' : silent ? 'So the limit of ' + money(limits.training_dollars)
-      + ' cannot stop it: watch the steps instead.'
-      : 'It stops and asks you at ' + money(limits.training_dollars) + '.');
-  }
   return add(node, make('p', 'quiet', says.join(' ')),
     make('p', 'quiet', 'Drafted by ' + agent + (run.model_mode === 'by_task' ? ', using the models chosen for each kind of work' : modelWords(run.model, run.effort)) + '.'));
 }
@@ -6817,8 +6779,7 @@ function costBefore(before) {
   if (given(before.minutes)) {
     parts.push('about ' + lasted(Number(before.minutes) * 60) + ' of agent time');
   }
-  return parts.length ? 'A deck of this size has cost ' + parts.join(' and ') + ' before. '
-    + 'It spends from the same limit as the rest of the training.' : '';
+  return parts.length ? 'A deck of this size has cost ' + parts.join(' and ') + ' before.' : '';
 }
 
 // One section of a deck while it is drawn: where it stands, how many previews it has used,
@@ -7056,7 +7017,7 @@ function commitsSays(review) {
       + 'the deck.' + (estimate ? ' The deck is estimated at ' + estimate + '.' : '')
       : 'Nothing more is written for ' + what + '.';
   }
-  return said + ' It spends from the same limit as the rest of the training.';
+  return said;
 }
 
 // The sheet that confirms a combined approval: the same one a file's approval gets, saying
@@ -7345,7 +7306,6 @@ function combinedReview(run, leads) {
 }
 
 function paintRun(fresh) {
-  syncSpending();
   const run = view.run;
   // A training started on the desk is drawn by drafts.js. Every other run keeps this screen.
   if (onTheDesk(run)) {
@@ -7372,7 +7332,6 @@ function paintRun(fresh) {
       : supplying ? 'documents' : run.review ? 'combined' : waiting ? 'review' : outline ? 'outline'
         : looking ? 'look' : run.finished ? 'finished' : ['paused', 'stopped'].includes(run.state) ? 'resume'
           : run.state === 'failed' && !run.problem ? 'retry' : '';
-  const limits = (view.setup && view.setup.limits) || {};
   const runs = !theirs ? 'Runs on this page' : driver ? 'Run by ' + nameOf(driver)
     : run.finished ? 'Finished' : 'Nobody is running it';
   const above = [make('span', '', [levelsText(training.levels), runs, ({balanced: 'Balanced review', automatic: 'Automatic draft review', step_by_step: 'Step by step review'})[run.review_level]]
@@ -7438,7 +7397,7 @@ function paintRun(fresh) {
     // Once that is all of them, what was added is kept on the screen, with nothing to press.
     run.documents && !supplying && !theirs ? ['documents', [run.documents, ''],
       () => documentsCard(run, false)] : null,
-    ['cost', [run.spent, run.agent, run.model, run.effort, limits.training_dollars],
+    ['cost', [run.spent, run.agent, run.model, run.effort],
       () => costCard(run)],
     ['activity-log', [view.path], () => activityLogCard(view.path)],
     // Then what is finished.

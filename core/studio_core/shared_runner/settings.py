@@ -23,9 +23,6 @@ AGENTS = ('claude', 'codex')
 SECONDS = (60, 7200)        # the shortest and longest time one worker may be given
 
 
-DOLLARS = 1000              # the most one item may be allowed to spend
-
-
 PARALLEL = (1, 8)           # the fewest and most items that work at once
 
 
@@ -257,7 +254,7 @@ def forget_own() -> None:
                                  if name not in SHARED})
 
 
-NAMES = ('SCHEMA', 'AGENTS', 'SECONDS', 'DOLLARS', 'PARALLEL', 'MODEL', 'LEVELS', 'EFFORTS',
+NAMES = ('SCHEMA', 'AGENTS', 'SECONDS', 'PARALLEL', 'MODEL', 'LEVELS', 'EFFORTS',
          'CLAUDE_MODELS', 'PREVIEWS', 'RELEASE', 'path', 'check_agent', 'check_model',
          'check_effort', 'takes', 'read_models', 'check_previews', 'check_place', 'check_notify',
          'check_look', 'check_repository', 'check_release', 'number', 'passes', '_kept', 'load',

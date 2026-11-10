@@ -80,8 +80,8 @@ Empty, unavailable, limited and reconnecting saved-work states use different cop
 Training Studio's working
 progress uses a shared separator instead of another content card. Current work,
 usable drafts and actions stay visible; activity/timing and research approach are
-disclosed separately. Creation keeps the next action, selected outputs and spending
-amount in its summary. Outline approval consequences and incomplete-scan warnings
+disclosed separately. Creation keeps the next action and selected outputs
+in its summary. Outline approval consequences and incomplete-scan warnings
 stay visible. Disclosures need stable focus across refreshes and 44px touch targets.
 Do not shrink text or hide meaningful uncertainty to achieve a shorter screen.
 

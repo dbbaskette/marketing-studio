@@ -199,7 +199,7 @@ class JobTests(JobCase):
 
     def test_the_two_real_agents_are_known_by_name(self):
         self.assertEqual(agents.AGENTS, {'claude': Claude, 'codex': Codex})
-        self.assertEqual(Limits(), Limits(seconds=600, dollars=None))
+        self.assertEqual(Limits(), Limits(seconds=600))
 
 
 class ClaudeCommandTests(AgentCase):
@@ -221,11 +221,12 @@ class ClaudeCommandTests(AgentCase):
                       '--dangerously-skip-permissions', '--add-dir', '--settings'):
             self.assertNotIn(never, ' '.join(command))
 
-    def test_the_spending_limit_and_the_model_are_passed_when_given(self):
-        job = self.make(limits=Limits(seconds=300, dollars=2.5), model='sonnet')
+    def test_the_model_is_passed_when_given_and_never_a_spending_limit(self):
+        job = self.make(limits=Limits(seconds=300), model='sonnet')
         command = Claude('/opt/bin/claude').command(job)
         self.assertEqual(command[0], '/opt/bin/claude')
-        self.assertEqual(command[-4:], ['--max-budget-usd', '2.5', '--model', 'sonnet'])
+        self.assertEqual(command[-2:], ['--model', 'sonnet'])
+        self.assertNotIn('--max-budget-usd', command)
 
     def test_the_reasoning_level_is_passed_when_given(self):
         command = Claude().command(self.make(model='opus', effort='xhigh'))
@@ -550,12 +551,12 @@ class RunTests(AgentCase):
         stream = [CLAUDE_STREAM[0], {'type': 'result', 'subtype': 'error_max_budget_usd',
                                      'is_error': True, 'total_cost_usd': 1.02}]
         program = self.program('cat > /dev/null\ncat "$FAKE_OUT/events"\nexit 1\n', stream)
-        outcome = Claude(program).run(self.make(limits=Limits(dollars=1.0)))
+        outcome = Claude(program).run(self.make())
         self.assertEqual((outcome.finished, outcome.reason, outcome.cost), (False, 'limit', 1.02))
         self.assertEqual(outcome.detail, 'It stopped without finishing: its spending limit '
                          'was reached')
-        # The job spent all it was given: the studio stops for money, not for a failure.
-        self.assertTrue(outcome.budget)
+        # No job is given a spending limit, so this is not an account's refusal either.
+        self.assertFalse(hasattr(outcome, 'budget'))
         self.assertFalse(outcome.account)
 
     def test_a_claude_run_its_account_refused_says_so_by_its_status(self):
@@ -564,7 +565,7 @@ class RunTests(AgentCase):
                                      'result': 'API Error: 429'}]
         program = self.program('cat > /dev/null\ncat "$FAKE_OUT/events"\nexit 1\n', stream)
         outcome = Claude(program).run(self.make())
-        self.assertEqual((outcome.reason, outcome.account, outcome.budget), ('limit', True, False))
+        self.assertEqual((outcome.reason, outcome.account), ('limit', True))
 
     def test_a_codex_run_that_cannot_reach_its_service_is_unavailable(self):
         stream = [{'type': 'thread.started', 'thread_id': 't'}, {'type': 'turn.started'},

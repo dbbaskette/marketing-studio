@@ -41,7 +41,7 @@ A repository address does not require an installed folder. Leave the folder
 blank for automatic discovery, or use it to select an existing installation.
 The optional release tag is under **Advanced → Brand skill release**.
 
-Optional studio controls retain built-in defaults: writing tone, time/spending
+Optional studio controls retain built-in defaults: writing tone, time
 limits, parallel work, notifications and update checks. Research scope, author
 voice, deck audience, training levels and similar content choices are selected
 when starting work. Provider sign-in and installation remain explicit actions;
@@ -425,7 +425,7 @@ they recorded. See [saved-work compatibility](saved-work-compatibility.md).
 First-run setup asks only the four everyday choices, in three steps: you and your
 assistant, your workspace, and brand and delivery. Shared settings shows one section
 at a time. Desktop section buttons group **Everyday** (Assistant, Workspace, Brand,
-Delivery) and **Advanced** (Models, Spending, Brand release, Research sites,
+Delivery) and **Advanced** (Models, Brand release, Research sites,
 Installations). On a phone, use the **Settings section** selector. Changing sections
 keeps unsaved values; an invalid field or conflicting edit opens its section before
 taking focus. **About shared and project settings** expands the ownership explanation.
@@ -510,7 +510,7 @@ time they ran, or that this computer has no record of what they cost.
 
 Automatic continuation is recorded as policy acceptance, never as your personal
 approval. Source scope, validation, visual review, bounded repairs, questions,
-spending limits and blocking failures still apply. Publishing and sharing controls
+time limits and blocking failures still apply. Publishing and sharing controls
 remain explicit. Existing runs and adopted work retain their earlier review flow;
 changing settings affects new work only. Conversations without a saved runner
 policy continue to use their existing guidance.
@@ -524,27 +524,19 @@ one studio is how the others open; Auto follows this computer. Search and jump (
 Ctrl+K) offers the same three. Where a page cannot save it, the choice holds for that
 page and the line under the switch says so.
 
-## Spending defaults
+## Cost is reported, never limited
 
-**Advanced → Spending** chooses Warn and continue (default) or Stop and ask for
-Training Studio and Presentation Studio independently. The choices are stored as
-`spending.training` and `spending.presentation` in the existing studios-config
-file, under its adjacent lock. Saving one choice preserves the other studio's
-concurrent edit. A conflicting outdated form is refused.
+No studio stops, pauses or warns because of what work cost. Spending limits, project
+spending amounts and the **Spending behavior** choice were removed: the studios run on
+assistant subscriptions, where a dollar cap only caused stops nobody needed. Where an
+assistant reports a cost, Status and the run line still show it as information, and an
+unreported cost stays unknown, never a made-up zero. Time limits, the number of tries and
+how many pieces of work run at once still apply, and an assistant account that reaches its
+own usage or rate limit still stops the step until it resets.
 
-Project amounts remain each native studio's existing Limits. New tasks pin their
-policy; saved tasks without a policy preserve hard stops. A saved desk's Spending
-behavior control makes a stale-safe explicit override without starting work,
-raising the amount or carrying approval forward. Stop a busy task before changing
-its policy. Continue never silently raises a hard limit; the existing Carry on
-operation remains explicit for old hard-stop tasks.
-
-Warning-mode workers receive $5 per job, independent of the amount left. Requested
-smaller budgets, Quick scan ($0.25 maximum) and time/round/concurrency limits still
-apply. A job hitting its own budget stops for explicit retry; it does not grant
-another job or discard completed peers. These are supplied assistant budgets,
-not a billing guarantee for providers that do not report or enforce dollar caps.
-Warnings use reported spending; unknown costs never become a made-up zero.
+An older studios-config file may still hold a `spending` group, and older saved work may
+still record a spending choice or amount. They are ignored when read and left as they are;
+nothing rewrites a file to remove them.
 
 ## Brands
 

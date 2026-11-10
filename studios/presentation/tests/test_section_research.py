@@ -62,20 +62,19 @@ class SectionResearchTests(StudioCase):
         self.assertIsNone(shown['problem'], shown['problem'])
         self.assertEqual(shown['research_progress']['phase'], 'complete')
         self.assertEqual(len(self.section_jobs), len(story['outline']['sections']) + 1)
-        self.assertLessEqual(self.section_jobs[-1][1], 120)
+        self.assertLessEqual(self.section_jobs[-1][1], research_sections.SECONDS)
 
         return root
 
     def test_new_schema_and_section_transport_pass_complete_check(self):
         self._complete_section_work()
 
-    def test_warning_threshold_does_not_starve_approved_section_work(self):
-        from dataclasses import replace
-        from runner import settings
-        settings.save(replace(settings.load(), deck_dollars=0.01, spending_policy='warn'))
+    def test_section_work_is_given_time_limits_and_no_spending_limit(self):
         root=self._complete_section_work()
-        self.assertIsNotNone(self.view(root)['spending']['warning'])
-        self.assertTrue(all(0 < item[1].limits.dollars <= 5 for item in self.workers.jobs))
+        self.assertNotIn('spending', self.view(root))
+        self.assertTrue(self.workers.jobs)
+        self.assertTrue(all(not hasattr(item[1].limits, 'dollars') and item[1].limits.seconds > 0
+                            for item in self.workers.jobs))
 
     def test_timeout_grants_only_the_failed_contribution_more_time(self):
         self.fail_one = True
@@ -94,7 +93,7 @@ class SectionResearchTests(StudioCase):
         self.assertEqual(record['limits']['step_seconds'], before)
         self.assertEqual(record['section_synthesis']['more_time'][ident], 600)
         subsequent = self.section_jobs[len(previous):]
-        self.assertEqual(subsequent, [(ident, 600), ('final', 120)])
+        self.assertEqual(subsequent, [(ident, 600), ('final', research_sections.SECONDS)])
 
     def test_preview_polling_reuses_local_metadata_but_confirmation_rehashes_sources(self):
         from studio_core import research_impact

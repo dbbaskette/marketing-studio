@@ -109,7 +109,6 @@ class ClaudeEvents:
         self.calls: dict[str, str] = {}
         self.text, self.cost, self.tokens = '', None, None
         self.ended, self.reason, self.detail = False, None, ''
-        self.budget = False     # it ended because it spent all it was given
         self.account = False    # its account refused it: Claude Code's status 429
 
     def feed(self, event: dict) -> list[str]:
@@ -166,7 +165,6 @@ class ClaudeEvents:
         if subtype == 'success' and not event.get('is_error'):
             return
         said = clip(self.text or CLAUDE_ENDINGS.get(subtype, subtype), 300)
-        self.budget = subtype == 'error_max_budget_usd'
         self.account = status == 429
         if subtype in ('error_max_budget_usd', 'error_max_turns') or status == 429:
             self.reason = 'limit'

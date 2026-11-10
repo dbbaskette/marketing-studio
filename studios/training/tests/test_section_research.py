@@ -81,13 +81,10 @@ class SectionResearchTests(StudioCase):
     def test_new_schema_and_section_transport_pass_complete_check(self):
         self._complete_section_work()
 
-    def test_warning_threshold_does_not_starve_approved_section_work(self):
-        from dataclasses import replace
-        from runner import settings
-        settings.save(replace(settings.load(), training_dollars=0.01, spending_policy='warn'))
+    def test_no_section_job_is_given_a_spending_limit_and_nothing_warns(self):
         root=self._complete_section_work()
-        self.assertIsNotNone(self.view(root)['spending']['warning'])
-        self.assertTrue(all(0 < item[1].limits.dollars <= 5 for item in self.workers.jobs))
+        self.assertNotIn('spending', self.view(root))
+        self.assertFalse(any(hasattr(item[1].limits, 'dollars') for item in self.workers.jobs))
 
     def test_timeout_grants_only_the_failed_contribution_more_time(self):
         self.fail_one = True

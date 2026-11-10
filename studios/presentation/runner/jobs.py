@@ -19,9 +19,8 @@ What a caller needs to know
   job, stops it at once and points at the Status screen. A worker's question stops the run
   until the person answers; the answers go into the task of the next try, and after
   QUESTIONS answers the worker may ask no more.
-- A deck that has spent what it may stops and asks before the next worker starts, and so
-  does one with less than `stops.floor` left. A job that spent all the deck had left is not
-  a failed try: the deck stops in the same way, to carry on.
+- Nothing stops, waits or warns for what a deck cost. What each try cost, where its agent
+  said, is kept with the try and shown as it is.
 - While a worker runs, the page is shown its latest line and its lines so far, each with its
   time. Each job that ends, however it ends, is added to the deck's Activity log,
   `work/activity-log.jsonl`, never shared: its label and step, its times, how it ended and
@@ -43,7 +42,7 @@ from pathlib import Path
 
 import runner  # noqa: F401  puts the core on the import path
 import home
-from studio_core import spending, activity_log, model_profiles, research_contract, stops
+from studio_core import activity_log, model_profiles, research_contract, stops
 from workspace import WorkspaceError
 
 from runner import agents, briefs, decks, settings, stages, worker_tools
@@ -220,9 +219,10 @@ class Jobs:
     def _problem(self, root: Path, step: str | None, state: str, what: str, kept: str,
                  action: str | None = 'retry', limit: bool = False,
                  detail: dict | None = None) -> None:
-        """Stop a deck in a state that says what went wrong and offers one action. `limit`
-        says it stopped because it spent what it may; `detail` is kept with the halt for
-        what its action needs to know."""
+        """Stop a deck in a state that says what went wrong and offers one action. `detail`
+        is kept with the halt for what its action needs to know. `limit` is no longer
+        given: a stop saved with it, from when a deck stopped for what it had spent, is
+        carried on by the same action."""
         with self.files:
             record = self._load(root)
             record['halted'] = {'state': state, 'step': step, 'why': what, 'kept': kept,
@@ -341,16 +341,8 @@ class Jobs:
     def _text(handed: dict, name: str) -> str:
         return handed['artifacts'][name]['text']
 
-    def _left(self, record: dict) -> float:
-        dollars = spent(record)[0] or 0.0
-        limit = (record.get('limits') or {}).get('dollars')
-        if limit is None:
-            limit = settings.load().deck_dollars
-        return round(limit + record.get('cleared', 0.0) - dollars, 4)
-
     def _may_go(self, root: Path) -> bool:
-        """Whether a worker may start now. Stops the deck, and asks, once it has spent what
-        it may, or has too little left to start a job."""
+        """Whether a worker may start now. Never refused for what the deck has cost."""
         with self.files:
             record = self._load(root)
             if self._closing or self._resting(record):
@@ -360,26 +352,7 @@ class Jobs:
                 self._problem(root, None, 'stopped', shared, 'Everything made so far is kept.',
                               'resume')
                 return False
-            if spending.policy(record) == 'warn': return True
-            left = self._left(record)
-            if left > 0 and left >= stops.floor(self._limit(record)):
-                return True
-            self._spend_stop(root)
-            return False
-
-    def _limit(self, record: dict) -> float:
-        """What a deck may spend before it asks."""
-        return (record.get('limits') or {}).get('dollars') or settings.load().deck_dollars
-
-    def _spend_stop(self, root: Path, label: str | None = None) -> None:
-        """Stop because the deck spent what it may before it asks, or has too little left
-        to start a job; `label` names a step stopped mid-way for it."""
-        record = self._load(root)
-        if spending.policy(record) == 'warn':
-            return self._problem(root, 'research', 'failed', f'A research job reached its ${spending.JOB_DOLLARS:.2f} cap. Completed evidence is kept.', KEPT, 'retry')
-        what, kept = stops.spent('deck', spent(record)[0], self._limit(record),
-                                 self._left(record), label, go='Resume')
-        self._problem(root, None, 'stopped', what, kept, 'resume', limit=True)
+            return True
 
     def _out_of_time(self, root: Path, step: str, label: str, record: dict,
                      tries: int) -> None:
@@ -456,8 +429,8 @@ class Jobs:
         worker_tools.prepare(folder, **{**work.prepared, 'runtimes': runtimes})
         requested = limits
         limits = record.get('limits') or {}
-        ceiling = agents.Limits(int(limits.get('step_seconds') or settings.load().step_seconds), spending.cap(record, self._left(record)))
-        bounded = ceiling if requested is None else agents.Limits(min(ceiling.seconds, requested.seconds), min(ceiling.dollars, requested.dollars))
+        ceiling = agents.Limits(int(limits.get('step_seconds') or settings.load().step_seconds))
+        bounded = ceiling if requested is None else agents.Limits(min(ceiling.seconds, requested.seconds))
         job = agents.Job(work.guidance, work.task, folder, work.profile,
                          tuple(worker_tools.command(folder)),
                          bounded,
@@ -558,24 +531,17 @@ class Jobs:
                 started_at: str, detail: str, question: bool = False, guard=None) -> None:
         """Note a try that did not work. After the last one a step may have, or when the
         agent cannot be used at all, the deck stops and says so: a step whose last try ran
-        out of time offers more time. A job that spent all the deck had left is not a failed
-        try: the deck stops as it does for money, to carry on."""
-        budget = outcome.reason == 'limit' and outcome.budget
+        out of time offers more time."""
         with self.files:
             record = self._load(root)
             if self._superseded(root, record, guard, name, started_at, outcome):
                 return
             entry = self._tried(record, name, started_at, outcome.seconds,
-                                'limit' if budget else 'failed', detail, **self._cost(outcome))
+                                'failed', detail, **self._cost(outcome))
             self._store(root, record)
-            self._commit(root, f'a step spent what the deck may: {label}' if budget
-                         else f'a try at this step did not work: {label}')
+            self._commit(root, f'a try at this step did not work: {label}')
         step = name.partition(':')[0]
-        if budget:
-            if spending.policy(record) == 'warn':
-                return self._problem(root, step, 'failed', f'{label} reached its ${spending.JOB_DOLLARS:.2f} job cap.', KEPT, 'retry')
-            self._spend_stop(root, label)
-        elif stops.agent_stopped('', outcome, detail) is not None:
+        if stops.agent_stopped('', outcome, detail) is not None:
             self._problem(root, step, 'failed', stops.agent_stopped(
                 self._title(record.get('agent')), outcome, detail), KEPT,
                 action=stops.agent_action(outcome))

@@ -65,12 +65,11 @@
             <li><button type="button" class="button button-quiet" data-part="delivery-part">Delivery</button></li></ul></div>
           <div class="settings-nav-group"><p class="field-label" id="nav-advanced">Advanced</p><ul class="settings-nav-list" aria-labelledby="nav-advanced">
             <li><button type="button" class="button button-quiet" data-part="models-part">Models</button></li>
-            <li><button type="button" class="button button-quiet" data-part="spending-part">Spending</button></li>
             <li><button type="button" class="button button-quiet" data-part="release-part">Brand release</button></li>
             <li><button type="button" class="button button-quiet" data-part="research-sites">Research sites</button></li>
             <li id="nav-installations"><button type="button" class="button button-quiet" data-part="installations">Installations</button></li></ul></div>
         </nav>
-        <label id="settings-section-picker" class="field settings-section-picker" for="settings-section"><span class="field-label">Settings section</span><select id="settings-section" class="input" aria-label="Settings section"><optgroup label="Everyday"><option value="assistant-part">Assistant</option><option value="workspace-part">Workspace</option><option value="brand-part">Brand</option><option value="delivery-part">Delivery</option></optgroup><optgroup label="Advanced"><option value="models-part">Models</option><option value="spending-part">Spending</option><option value="release-part">Brand release</option><option value="research-sites">Research sites</option><option value="installations">Installations</option></optgroup></select></label>
+        <label id="settings-section-picker" class="field settings-section-picker" for="settings-section"><span class="field-label">Settings section</span><select id="settings-section" class="input" aria-label="Settings section"><optgroup label="Everyday"><option value="assistant-part">Assistant</option><option value="workspace-part">Workspace</option><option value="brand-part">Brand</option><option value="delivery-part">Delivery</option></optgroup><optgroup label="Advanced"><option value="models-part">Models</option><option value="release-part">Brand release</option><option value="research-sites">Research sites</option><option value="installations">Installations</option></optgroup></select></label>
         <details id="settings-owners" class="field-hint quiet owners"><summary>About shared and project settings</summary><p><strong>Shared</strong> choices apply to new work in every studio. An <strong>Override</strong> replaces an automatic choice. A <strong>Project</strong> keeps its own saved settings.</p></details>
         <form id="settings-form" class="setup-form stack">
           <section id="assistant-part" class="card" data-step="0"><div class="part-head"><h3 class="card-title">You and your assistant</h3><span class="tag">Shared</span></div><p class="quiet">Use your signed-in assistant for research, writing, and slide work.</p>
@@ -145,14 +144,6 @@
               <div class="field"><label class="field-label" for="brand-release">Brand skill release <span class="quiet">(optional)</span></label><input id="brand-release" class="input" name="brand.release" placeholder="Newest release" aria-describedby="brand-release-hint"><p id="brand-release-hint" class="field-hint quiet">Pin a release tag from the brand repository, such as v1.4.0, or leave blank for the newest release. A studio installs or updates the brand skill only when you ask it to, from its own settings.</p></div>
             </div></details>
           </section>
-          <section id="spending-part" class="card advanced-part" data-step="settings" aria-labelledby="spending-heading"><details class="advanced"><summary class="advanced-summary"><h3 id="spending-heading" class="card-title">Spending limits</h3><span class="tag">Shared</span></summary>
-            <p class="quiet">New work warns and continues at its project amount. In warning mode, each assistant job keeps its time limit and receives a $5 budget; the Quick scan keeps its smaller cap. Dollar enforcement depends on the assistant; unknown usage stays unknown. Existing saved work keeps its choice.</p>
-            <div class="fields">
-              <div class="field"><label class="field-label" for="spending-training">Training Studio</label><select id="spending-training" class="input" name="spending.training"><option value="warn">Warn and continue</option><option value="hard-stop">Stop and ask</option></select></div>
-              <div class="field"><label class="field-label" for="spending-presentation">Presentation Studio</label><select id="spending-presentation" class="input" name="spending.presentation"><option value="warn">Warn and continue</option><option value="hard-stop">Stop and ask</option></select></div>
-            </div>
-            <p class="field-hint quiet">Project amounts remain in each studio’s Limits. You can explicitly change spending behavior for saved work from its desk.</p>
-          </details></section>
           <section id="research-sites" class="card advanced-part" data-step="settings" aria-labelledby="research-sites-heading"><details id="research-more" class="advanced"><summary class="advanced-summary"><h3 id="research-sites-heading" class="card-title">Research sites</h3><span class="tag">Shared</span><span id="research-state" class="advanced-state quiet"></span></summary>
             <div class="advanced-body">
             <p class="quiet">Research in every studio can look in your documents, these sites and the public web. Each blog, presentation or training chooses, starting from this list, and can add a site of its own.</p>

@@ -4,10 +4,8 @@ in the same words in Training Studio and Presentation Studio.
 What a caller needs to know
 ---------------------------
     stops.MORE_TIME                       # the action that gives a run more time, and its label
-    stops.floor(limit)                    # the least a job is started with, in dollars
     stops.timed_out(label, seconds, tries)            # a step that ran out of time
     stops.more_time(seconds)              # the step limit it gives: twice the one that ran out
-    stops.spent(thing, dollars, limit, left, label, go)   # (what, kept) of a stop for money
     stops.account_limit(outcome)          # an agent's account refused: usage or rate limit
     stops.unusable(title, detail)         # an agent that could not be used, and where to look
     stops.agent_stopped(title, outcome, detail)   # either of those, or None
@@ -19,11 +17,10 @@ What a caller needs to know
 - `thing` is what the studio makes, as a person calls it: 'training' or 'deck'.
 - A step limit is the run's own: the one Settings gave it when it started or was last
   carried on, made larger by "more time". Settings keeps the limit for new runs.
-- A job is never started with less than FLOOR dollars left to spend, or a quarter of a
-  limit smaller than four times that, so that no job starts only to run out at once.
+- Nothing stops for what a run cost. `took`, `cost` and `redone` only say what the
+  assistant reported.
 - Nothing here reads or writes anything.
 """
-FLOOR = 0.50
 MORE_TIME = 'more-time'
 MORE_TIME_LABEL = 'Give it more time and try again'
 STATUS = 'status'   # an agent that could not be used: its stop opens Status, which says why
@@ -83,11 +80,6 @@ def redone(first: str, steps: int, seconds, dollars, after: str = 'every step af
     return said + f'. Last time {"they" if many else "it"} took {cost(seconds, dollars)}.'
 
 
-def floor(limit) -> float:
-    """The least a job is started with: FLOOR, or a quarter of a small limit."""
-    return min(FLOOR, max(0.0, float(limit or 0)) / 4)
-
-
 def timed_out(label: str, seconds, tries: int, thing: str = 'run', own: bool = False) -> str:
     """What a stop says of a step whose last try ran out of the time a step may take.
     `own` says the limit was the run's own, given by more time, not the one in Settings."""
@@ -107,36 +99,11 @@ def more_time(seconds) -> int:
     return int(seconds) * 2
 
 
-def spent(thing: str, dollars, limit, left=None, label: str | None = None,
-          go: str = 'Carry on') -> tuple[str, str]:
-    """(what, kept) of a stop because the run spent what it may before it asks. `left` is
-    what it may still spend, when a job was not started for want of it; `label` names the
-    step that was stopped mid-way because it spent what was left; `go` is how the page names
-    the action that carries on."""
-    dollars, limit = float(dollars or 0), float(limit or 0)
-    asks = f'It stops and asks each time it has spent another ${limit:,.2f}.'
-    if label:
-        what = (f'{label} was stopped when this {thing} reached what it may spend: it has '
-                f'spent ${dollars:,.2f}. {asks}')
-        kept = ('Everything finished before this step is kept, and the step starts again '
-                f'when you {go.lower()}.')
-    elif left is not None and left > 0:
-        what = (f'This {thing} has spent ${dollars:,.2f}, and the ${left:,.2f} it may still '
-                f'spend is too little to start another step. {asks}')
-        kept = 'Everything made so far is kept.'
-    else:
-        what = f'This {thing} has spent ${dollars:,.2f}. {asks}'
-        kept = 'Everything made so far is kept.'
-    return what, (f'{kept} {go} lets it spend up to another ${limit:,.2f}. To let it '
-                  f'spend more before it asks, raise the limit in {SETTINGS}, then '
-                  f'{go.lower()}.')
-
-
 def account_limit(outcome) -> bool:
     """True for a `limit` an agent's account set: a usage or rate limit, not the job's.
     Known from the agent's own report (`account`, as Claude Code's status 429), or else
     from its words."""
-    return (getattr(outcome, 'reason', None) == 'limit' and not getattr(outcome, 'budget', False)
+    return (getattr(outcome, 'reason', None) == 'limit'
             and (bool(getattr(outcome, 'account', False))
                  or any(mark in str(getattr(outcome, 'detail', '')).lower() for mark in ACCOUNT)))
 

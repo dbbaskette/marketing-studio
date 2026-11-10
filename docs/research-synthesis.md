@@ -25,7 +25,7 @@ or rejected; rejecting it requires a correction or a narrower scope.
 Exclusion follows dependencies from sources to facts, findings and report/brief/
 comparison passages. Included uncertainty stays marked in the authoring handoff.
 Saving decisions starts no model job, and Continue retains the normal material
-review gates and existing spending allowance. If a checker times out before
+review gates. If a checker times out before
 returning verdicts, the creator can explicitly include the whole draft as
 unverified; every claim and dependent passage retains that warning. Another
 correction/check is an explicit alternative. Final-author
@@ -385,7 +385,7 @@ real pinned helper, in both directions.
 
 Progress distinguishes elapsed time from observed active time and total assistant
 time. Overlapping assistants do not multiply wall time, and missing cost remains
-unknown. Native budgets reserve allowance across concurrent workers. The optional
+unknown. No worker is given a spending cap. The optional
 Infographic Studio text research adapter keeps its existing 300-second per-call
 limit and a 30-minute whole-request ceiling; it never invokes image tools.
 

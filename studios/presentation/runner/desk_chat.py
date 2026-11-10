@@ -63,7 +63,7 @@ def _start(engine, form, uploads, scope):
             record.update(execution='conversation', conversation_scope=scope,
                           driver=team.claim(space), agent=chosen.agent, model=chosen.model,
                           level_of_effort=chosen.effort,
-                          limits={'step_seconds': chosen.step_seconds, 'dollars': chosen.deck_dollars})
+                          limits={'step_seconds': chosen.step_seconds})
             engine._store(root, record)
             engine._commit(root, 'start requested work in conversation')
             home.remember(root, checked['title'])

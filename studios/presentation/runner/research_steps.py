@@ -309,11 +309,8 @@ class Researching:
                 outcome = getattr(refusal, 'outcome', None)
                 if outcome is not None:
                     # One job of the research did not finish: more time for a job that ran
-                    # out of it, the money stop for one that spent what the deck may, and
-                    # where to look for an agent that could not be used.
-                    if outcome.reason == 'limit' and outcome.budget:
-                        self._spend_stop(root, 'The research')
-                    elif stops.agent_stopped('', outcome, outcome.detail) is not None:
+                    # out of it, and where to look for an agent that could not be used.
+                    if stops.agent_stopped('', outcome, outcome.detail) is not None:
                         self._problem(root, 'research', 'failed', stops.agent_stopped(
                             self._title(record.get('agent')), outcome, outcome.detail), KEPT,
                             action=stops.agent_action(outcome))

@@ -24,8 +24,8 @@ parallel work, dependencies and approval points; proposed changes are labeled.
    Section authors work concurrently, followed by a small final-brief assembly job.
    That job uses the saved combining time allowance, rather than a separate shorter
    timeout. If it times out, **Give it more time** applies to that job; completed
-   section contributions remain available for retry. This does not raise the
-   project spending limit or skip the independent check.
+   section contributions remain available for retry. This does not skip
+   the independent check.
 4. **Build selected materials.** For training, the approved outline and accepted
    research feed the materials; warnings appear only where requested. New runs
    write each level's plan, guide and brief, then practice and Yoodli, before decks.

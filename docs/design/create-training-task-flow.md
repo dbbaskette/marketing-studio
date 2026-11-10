@@ -205,10 +205,9 @@ then measure whether unusually large units need another subdivision.
    without replacing it risks repeated or missing teaching content.
 
 Each task needs a stable ID, exact input revision, assigned output, observed
-worker ID, status, elapsed time, spending reservation and saved result. One task
+worker ID, status, elapsed time and saved result. One task
 owns each output; deterministic assembly owns shared files. Stop prevents new
-dispatch and cancels active work. Retries retain successful peers. Spending stays
-within the existing project allowance, including room for required checking.
+dispatch and cancels active work. Retries retain successful peers.
 
 The desk should show what is usable now: completed sections/materials, active
 tasks, queued tasks and their actual blockers. An approval waiting for slides

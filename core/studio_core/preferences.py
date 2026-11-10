@@ -11,7 +11,6 @@ EFFORTS = {'claude': ('low', 'medium', 'high', 'xhigh', 'max'),
            'codex': ('none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra')}
 FIELDS = {'person': {'name'}, 'assistant': {'agent', 'model', 'effort'},
           'team': {'repository', 'branch'}, 'local': {'root'}, 'render': {'previews'},
-          'spending': {'training', 'presentation'},
           'brand': {'repository', 'release', 'brand', 'variant', 'skill', 'brands'}}
 
 
@@ -77,8 +76,6 @@ def check(changes, current):
         address = (merged.get(group) or {}).get(key)
         if address:
             repository(address)
-    from studio_core import spending
-    for value in (merged.get('spending') or {}).values(): spending.check(value)
     assistant = merged.get('assistant') or {}
     agent = assistant.get('agent') or runtime.assistant_default()
     if agent not in EFFORTS:

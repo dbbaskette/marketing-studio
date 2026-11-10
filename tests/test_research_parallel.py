@@ -5,13 +5,11 @@ import json
 import os
 from pathlib import Path
 import tempfile
-import threading
 import time
 import unittest
 
 import marketing_studio  # noqa: F401
 from studio_core import research_contract as rc, research_session as parallel, research_timing
-from studio_core.research_transport import Reservations
 from synthesis_fixture import TEXT, dossier, review
 
 RUNTIME = os.environ.get('STUDIO_TEST_RESEARCH_RUNTIME')
@@ -33,28 +31,7 @@ class TimingTests(unittest.TestCase):
         self.assertEqual(got['assistant_seconds'], 20)
 
 
-class BudgetAndProtocolTests(unittest.TestCase):
-    def test_concurrent_reservations_do_not_duplicate_the_remaining_budget(self):
-        budget = Reservations(lambda: 12)
-        barrier = threading.Barrier(3)
-        held = []
-        def reserve():
-            token, cap = budget.take('investigate', 3)
-            held.append((token, cap))
-            barrier.wait(3)
-        threads = [threading.Thread(target=reserve) for _ in range(3)]
-        for t in threads: t.start()
-        for t in threads: t.join(4)
-        self.assertEqual(len(held), 3)
-        self.assertLessEqual(sum(cap for _, cap in held), 6)
-        token, cap = budget.take('review')
-        self.assertAlmostEqual(sum(budget.held.values()), 12)
-        with self.assertRaisesRegex(ValueError, 'reserved or exhausted'):
-            budget.take('review')
-        budget.release(token)
-        for token, _ in held: budget.release(token)
-        self.assertEqual(budget.held, {})
-
+class ProtocolTests(unittest.TestCase):
     def test_new_protocol_is_explicit_and_old_runs_stay_serial(self):
         self.assertFalse(parallel.enabled({}))
         held = {'schema': 1, 'protocol': parallel.PROTOCOL, 'workers': 3,
