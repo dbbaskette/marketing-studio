@@ -165,6 +165,12 @@ async function sDeskBegin(preset={}){
   if(Object.keys(preset).length||(!studio.deskStart&&!intake.saved)){studio.deskStart=null;studio.deskPreset=preset;}
   return sRoute('desk-start');
 }
+// What a step of New blog holds so far, for its place in the step row.
+function sDeskStepSays(held,index){
+  if(index===0)return (held.title||'').trim()||(DESK_HAVE.find(([value])=>value===held.have)||[])[1]||'Your idea';
+  const kind=(studio.options?.styles||[]).find(found=>found.id===held.kind);
+  return (kind?kind.name:'Any kind of post')+((held.tone||'').trim()?' · '+held.tone.trim():'');
+}
 async function sDeskStart(){
   if(!studio.options)studio.options=await api('run-options');
   const intake=sBlogIntake();if(!intake.ready)await intake.load();
@@ -174,8 +180,15 @@ async function sDeskStart(){
   if(held.have==='draft'){sDeskPolish(held);sDeskIntakeControls(held);return;}
   sFrame('New blog',[],'New writing',()=>sRoute('home'));
   held.step=Math.min(held.step,1);
-  const steps=sWorkflowSteps(DESK_START_STEPS,held.step,index=>{if(index){const problem=sDeskHaveProblem(held);if(problem)return notice(problem,true);}held.step=index;sTop();sDeskStart();});
-  sPage(sNode('p','lede',DESK_START_LEDES[held.step]),steps,held.step===0?sDeskHave(held):sDeskSettings(held));
+  // The same guided step row the other studios' starts show: what was chosen in each step,
+  // a tick once the first is complete, and a press that opens a step.
+  const says=index=>sDeskStepSays(held,index);
+  const steps=sNode('ol','intake-progress intake-guided');steps.setAttribute('aria-label','Creation progress');
+  steps.append(...Drafting.Intake.steps(DESK_START_STEPS,held.step,new Set(held.step?[0]:[]),says,index=>{if(index){const problem=sDeskHaveProblem(held);if(problem)return notice(problem,true);}held.step=index;sTop();sDeskStart();}));
+  const form=held.step===0?sDeskHave(held):sDeskSettings(held);
+  const retell=()=>steps.querySelectorAll('.intake-step-summary').forEach((node,index)=>{node.textContent=says(index);});
+  form.addEventListener('input',retell);form.addEventListener('change',retell);
+  sPage(sNode('p','lede',DESK_START_LEDES[held.step]),steps,form);
   sDeskIntakeControls(held);
 }
 function sDeskStartAgain(held){if(studio.screen==='desk-start'&&studio.deskStart===held)sDeskStart();}
@@ -187,7 +200,7 @@ function sDeskHave(held){
   const parts=[sCard('What do you have?',sChoice('What you bring',DESK_HAVE,held,'have',()=>sDeskStart()))];
   const content=held.have==='topic'?sDeskTopic(held):[sDeskOutlineIn(held)],research=sDeskResearchOptions(held);
   parts.push(content[0],sFilesCard(held,problem,()=>sDeskStartAgain(held),()=>{}),...content.slice(1),research);
-  const go=sNode('button','button button-filled','Continue');go.type='submit';go.disabled=!access.actions.edit;
+  const go=sNode('button','button button-filled','Next');go.type='submit';go.disabled=!access.actions.edit;
   form.append(...parts,sAdd(sNode('div','form-foot'),problem,sAdd(sNode('div','bar'),go)),sGeoInstead());
   form.addEventListener('submit',event=>{event.preventDefault();if(studio.busy)return;const said=sDeskHaveProblem(held);if(said){problem.textContent=said;return;}held.step=1;sTop();sDeskStart();});
   return form;
@@ -202,7 +215,8 @@ function sDeskSettings(held){
   form.append(sCard('Kind of post (optional)',sField('desk-kind','Kind of post',held,'kind',{options:[['','Follow my idea and sources'],...kinds.map(kind=>[kind.id,kind.name])],changed:()=>{held.style=held.kind;sStyleSamples(held);}}),sNode('p','quiet','A saved kind supplies a usual shape and length. Leave it open for this blog.')));
   form.append(sCard(sDeskWriting(held)?'Length and tone':'Tone',sDeskWriting(held)?sLengthSelect(held,'desk-length'):null,sField('desk-tone','Tone',held,'tone',{max:2000,hint:'Such as clear and conversational.'})));
   form.append(sDeskGeoStart(held));
-  form.append(sAdd(sNode('div','form-foot'),problem,sAdd(sNode('div','bar'),go)));
+  const back=sButton('Back',()=>{held.step=0;sTop();sDeskStart();});
+  form.append(sAdd(sNode('div','form-foot'),problem,sAdd(sNode('div','bar'),back,go)));
   form.addEventListener('submit',async event=>{
     event.preventDefault();if(!access.actions.edit||studio.busy)return;
     if(sDeskWriting(held)&&!held.sourceEditor&&held.searchSites&&!sChosenSites(held.from).length){problem.textContent=sResearchWord('no_sites')||'Choose at least one of your sites, or untick Search my sites.';return;}

@@ -175,7 +175,7 @@ class FindingTheRuntimeTests(unittest.TestCase):
 
     def test_a_tool_that_is_too_old_is_refused_when_it_is_found(self):
         os.environ[slides.VARIABLE] = str(installed(self.home / 'runtime'))
-        for version in (slides.MINIMUM, '0.16.1-beta.2', '1.0.0'):
+        for version in (slides.MINIMUM, '0.17.1-beta.2', '1.0.0'):
             self.assertEqual(slides.Slides(run=says(version)).version(), version)
         for version in ('0.12.9', '0.9.0'):
             with self.assertRaisesRegex(WorkspaceError, f'harness-slides {version} is '
@@ -190,14 +190,14 @@ class FindingTheRuntimeTests(unittest.TestCase):
         with self.assertRaises(WorkspaceError) as refused:
             slides.Slides(run=says('0.15.1'))
         self.assertEqual(str(refused.exception), 'harness-slides 0.15.1 is installed, and a '
-                         'deck needs 0.16.0 or newer. Update Harness Slides, then try again.')
+                         'deck needs 0.17.0 or newer. Update Harness Slides, then try again.')
         self.assertEqual(refused.exception.version, '0.15.1')
 
     def test_release_is_the_pinned_version(self):
         pins = json.loads((Path(__file__).resolve().parents[1] / 'installer'
                            / 'companions.json').read_text(encoding='utf-8'))
         self.assertEqual(slides.RELEASE, pins['companions']['harness-slides']['version'])
-        self.assertEqual((slides.RELEASE, slides.MINIMUM), ('0.17.0', '0.16.0'))
+        self.assertEqual((slides.RELEASE, slides.MINIMUM), ('0.17.0', '0.17.0'))
 
     def test_every_capability_has_a_plain_name(self):
         listed = ('assets', 'assets-approved-candidates',
@@ -1712,15 +1712,6 @@ class DesignTests(unittest.TestCase):
             refused = self.refused(self.slides.compile, section, self.brand, None, project, True)
             self.assertEqual((refused.codes, refused.found[0]['slide']),
                              (['design-mismatch'], named))
-        # The intent is compared as the tool writes it: the same keys in another order differ.
-        shuffled = json.loads(json.dumps(loop, sort_keys=True))
-        self.assertEqual(shuffled, loop)
-        refused = self.refused(self.slides.compile,
-                               self.section('reconcile_loop', reconcile_loop=shuffled),
-                               self.brand, None, project, True)
-        self.assertEqual((refused.codes, refused.problems), (['design-mismatch'], [
-            'reconcile_loop: its intent differs from the approved design; revise the proposal '
-            'before construction']))
         # The build is checked again when it is previewed: here the design has moved on.
         plan = json.loads((CONTRACT / 'proposal.json').read_text())
         plan['slides'][1]['composition'] = 'Three boxes in a column.'
@@ -2046,16 +2037,6 @@ class AssetTests(Deck):
         self.assertEqual(self.refused(self.slides.generate_image, self.project, 'hero_art',
                                       'Another brief.', 'assets/generated/hero_art.png',
                                       'operator_architecture').codes, ['input-invalid'])
-
-    def test_once_a_design_is_approved_the_tool_sorts_none_of_its_candidates(self):
-        # As Harness Slides does on main: candidates are read from the question waiting now,
-        # so an approved design has none to sort, and one not recorded passes the check.
-        self.proposed()
-        code, out, _ = self.tool(['node', 'script', 'assets', 'check', '--project',
-                                  str(self.project), '--design-project', str(self.project),
-                                  '--json'])
-        self.assertEqual((code, json.loads(out)['candidates']),
-                         (0, {'resolved': [], 'pending': []}))
 
     def test_each_asset_call_is_run_as_the_command_line_takes_it(self):
         self.proposed()
@@ -2431,13 +2412,6 @@ class CurrentTests(unittest.TestCase):
         self.assertEqual([(item['assetId'], item.get('ref')) for item
                           in status['candidates']['resolved']],
                          [('icon_kubernetes', 'ex-cloud')])
-        # Before 0.14.1 a library ID is not taken, and an approved design has no candidates.
-        self.without('design-icon-ids')
-        self.assertEqual(self.refused(self.slides.design_propose, self.project(),
-                                      self.file(plan)).codes, ['invalid-proposal'])
-        self.without('assets-approved-candidates')
-        self.assertEqual(self.slides.asset_check(project, design=project)['candidates'],
-                         {'resolved': [], 'pending': []})
 
     def test_a_recorded_icon_is_placed_by_its_asset_id(self):
         project = self.approved()
@@ -2474,14 +2448,6 @@ class CurrentTests(unittest.TestCase):
         record = json.loads((output / 'review.json').read_text(encoding='utf-8'))
         self.assertEqual(record['creativeAssessment']['slides'][0]['checks'][0]['sources'],
                          self.plan['slides'][0]['sources'], 'taken from the slide')
-        self.without('review-sources-from-slide')
-        with self.assertRaises(slides.Refused) as refused:
-            self.reviewed(project)
-        self.assertEqual(refused.exception.codes, ['input-invalid'])
-        self.assertIn('retained sources', refused.exception.problems[0])
-        self.without('review-packets')
-        self.assertEqual(self.refused(self.slides.review_packets, output).problems,
-                         ['--packets is not valid for this command'])
 
     def test_a_review_is_rendered_through_drive_into_one_file(self):
         project = self.approved()
@@ -2496,10 +2462,6 @@ class CurrentTests(unittest.TestCase):
         self.assertEqual((again['fileId'], list(self.tool.files)),
                          (made['fileId'], [made['fileId']]), 'the same file, written again')
         self.assertEqual(self.tool.files[made['fileId']]['uploads'], 2)
-        self.without('review-google-renderer')
-        wrong = self.refused(self.slides.review_prepare, self.built(project),
-                             self.root / 'local', project, renderer='drive')
-        self.assertEqual(wrong.problems, ['--renderer is not valid for this command'])
 
     def test_a_reviewed_deck_is_put_to_the_person_with_its_findings(self):
         project = self.approved()
@@ -2541,10 +2503,6 @@ class CurrentTests(unittest.TestCase):
         self.assertNotEqual(list(made['slides'][0]['intent']),
                             list(self.plan['slides'][0]['intent']))
         self.slides.compile(self.file(made), self.brand, design=project)
-        self.without('canonical-digests')
-        wrong = self.refused(self.slides.compile, self.file(made), self.brand, design=project)
-        self.assertEqual([(problem['code'], problem['slide']) for problem in wrong.found],
-                         [('design-mismatch', 'operator_architecture')])
 
 
 if __name__ == '__main__':

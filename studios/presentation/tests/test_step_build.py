@@ -504,7 +504,6 @@ class ToolOutlineTests(Deck):
         for section_id in build.to_draw(self.root):
             self.draw(section_id)
         build.whole(self.root, self.run_, self.slides, 'local')
-        self.assertEqual(self.slides.run.outlined, [], 'an older tool is never given --outline')
 
 
 class PreviewRepairTests(Deck):

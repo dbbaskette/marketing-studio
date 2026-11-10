@@ -1,5 +1,7 @@
 # Changelog
 
+Unreleased: the desk says where a level stands in one line (ready to read, marked ready, awaiting your review) with **What is left** under it, and the progress line offers finished drafts instead of saying nothing is needed while they wait. A deck now needs Harness Slides 0.17.0 or newer.
+
 ## Unreleased — 4.14.0
 
 Completed research sections expose saved read-only prose before final checking. Previews name their revision and assigned sources and remain ineligible for delivery. Queued concerns save privately across reloads without changing evidence or starting work; apply actual changes through the existing explicit refresh/impact flow. Timing separates the first readable section from the checked result.

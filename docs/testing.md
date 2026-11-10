@@ -1,4 +1,7 @@
-# Verification
+# Testing
+
+The record of the first implementation's checks is in
+[Initial implementation verification](verification.md); this guide is the current one.
 
 Infographic Studio has its own disposable native suite, also included in the root
 check and the four-studio setup/launch/distribution matrix. From the repository root:

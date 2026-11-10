@@ -7884,9 +7884,9 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         self.assertIn('It needs you.', status_text)
         desk_shot = shots['desk']
         self.assertIn('Deck · Needs attention', desk_shot['buttons'])
-        self.assertIn('5 of 5 materials available to read', desk_shot['text'])
-        self.assertIn('Your approval: 0 of 5 marked ready · 4 drafts awaiting your review · 1 needs '
-                      'attention.', desk_shot['text'])
+        self.assertIn('5 of 5 ready to read · 0 of 5 marked ready · 4 drafts awaiting your '
+                      'review · 1 needs attention.', desk_shot['text'])
+        self.assertNotIn('What is left', desk_shot['text'])   # every draft is written
         self.assertIn(reviewing, desk_shot['text'])
         self.assertEqual(desk_shot['pressed'], ['101'])
         # Opening a screen asked for nothing to be made.

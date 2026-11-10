@@ -83,10 +83,10 @@ Undo it with `sh installer/install.sh uninstall`. Without installing, the runner
 
 `main` is live: an installed copy fetches its guidance from it. Guidance that needs a script change raises `minimum_runtime` in `guidance/manifest.json` and the `VERSION` files together. A release is a `vX.Y.Z` tag on `main`; the runner offers it as an upgrade.
 
-To move a companion to a newer revision of its own repository, here harness-slides to the 0.16.0 that `pins/companions.json` holds now:
+To move a companion to a newer revision of its own repository, here harness-slides to the 0.17.0 that `pins/companions.json` holds now:
 
 ```bash
-sh installer/install.sh pin harness-slides --revision v0.16.0
+sh installer/install.sh pin harness-slides --revision v0.17.0
 ```
 
 That fetches the revision, reads its version and writes its commit and the digest of every file into `installer/companions.json`, which is a link to the suite's `pins/companions.json`: the one pin file every studio installs from. Read what changed between the two revisions before you commit it.

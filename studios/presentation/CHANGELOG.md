@@ -1,5 +1,7 @@
 # Changelog
 
+Unreleased: New deck's three steps each say what was chosen and open when pressed, as Training Studio's do, and the third step's heading matches its name. A deck now needs Harness Slides 0.17.0 or newer.
+
 ## Unreleased — 4.15.0
 
 Completed research sections expose saved read-only prose before final checking. Previews name their revision and assigned sources and remain ineligible for delivery. Queued concerns save privately across reloads without changing evidence or starting work; apply actual changes through the existing explicit refresh/impact flow. Timing separates the first readable section from the checked result.

@@ -1,7 +1,7 @@
 # Golden Gate-inspired studio UIs
 
-Marketing Studio, shared setup, Blog Studio, Presentation Studio and Training
-Studio and Infographic Studio use one restrained visual language through `ui-kit/style.css`. Use the
+Marketing Studio, shared setup, Blog Studio, Presentation Studio, Training Studio
+and Infographic Studio use one restrained visual language through `ui-kit/style.css`. Use the
 `macos-golden-gate-design` skill when available and keep the existing web stack.
 This is a CSS approximation, not native system material or physical refraction.
 Navigation and toolbar material use diffuse blur, a soft light edge and a subtle
@@ -9,7 +9,7 @@ cool tint. These highlights belong to the shell; the canvas stays neutral.
 
 Marketing Studio uses blue for selected navigation and the system accent, when
 available, for shared actions. Blog Studio uses
-blue, Presentation Studio uses warm orange Training Studio uses violet and Infographic Studio uses teal on
+blue, Presentation Studio uses warm orange, Training Studio uses violet and Infographic Studio uses teal on
 launch icons and buttons. The same identity follows into each native studio's
 sidebar symbol, navigation, primary actions and selected controls through its
 `data-product` attribute and the linked shared stylesheet. Each identity has
@@ -99,7 +99,7 @@ the launchpad, reading-flow and responsiveness improvements with measurements.
 ## Shared components and page stylesheets
 
 `ui-kit/style.css` holds every token, the shell and the controls used by Marketing Studio,
-shared setup, Blog Studio, Presentation Studio and Training Studio:
+shared setup, Blog Studio, Presentation Studio, Training Studio and Infographic Studio:
 
 | Need | Component |
 | --- | --- |
@@ -120,6 +120,7 @@ shared setup, Blog Studio, Presentation Studio and Training Studio:
 | Way back | `.suite-link`, the "Marketing Studio" sidebar item a studio shows when Marketing Studio opened it |
 | Filters | `.filter-bar` (a `.search` field first), `.more-filters`, `.filters-toggle` |
 | Selection | `.panel-heading` with `.select-page`, and `.selection-bar.glass` with `.selection-count` and `.selection-actions` |
+| Step row | `ol.intake-progress.intake-guided` from `Drafting.Intake.steps` in `drafting.js`: each step of a start as a button with its name, a tick once complete and what was chosen in it. Every studio's start shows it, whether the shared `pages` draws the sheet or the studio draws its own page |
 | Sheet steps | `.create-flow`, `.create-step` (each headed by a `.sheet-part`), `.create-foot`, and the sticky `.sheet-heading`, opaque and reaching the sheet's edges so nothing shows behind it |
 | Page | `.stack` (its parts `1.1rem` apart), `.page-head` (the `.lede` and a `.bar` beside it) |
 | Ticks | `label.check` with its checkbox; `.research-choices` and `.site-choices` for Research from |

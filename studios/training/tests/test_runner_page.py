@@ -3057,8 +3057,9 @@ class DeskPageTests(PageCase):
         self.desk(levels=['101'], materials=['document', 'brief'])
         progress = seen[0]['progress']
         self.assertTrue(progress['running'])
-        self.assertEqual(progress['line'], 'Nothing needed from you. Each material opens '
-                         'here as it is ready.')
+        # The blueprint is already a draft, so the line offers it and never says nothing is here.
+        self.assertEqual(progress['line'], 'Nothing is waiting on you. 1 draft is ready to read '
+                         'while the rest are written.')
         self.assertIsNone(progress['minutes'], 'Live progress must not manufacture a countdown')
         self.assertEqual(progress['started_at'], self.record(root)['started_at'])
         self.assertTrue(progress['doing'])

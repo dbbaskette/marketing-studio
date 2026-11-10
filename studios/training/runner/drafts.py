@@ -736,6 +736,9 @@ STATES = ('writing', 'queued', 'decide', 'draft', 'ready', 'held', 'needs', 'lef
 TEXT_APPROVAL = ('Needs your text approval. Read its slide text, then approve it or ask for '
                  'changes. Nothing is designed until you decide.')
 NOTHING_NEEDED = 'Nothing needed from you. Each material opens here as it is ready.'
+# Said instead once a finished draft is on the desk: reading it is open, and nothing waits on it.
+DRAFTS_TO_READ = ('Nothing is waiting on you. {drafts} to read while the rest {verb} '
+                  'written.')
 WRITING = 'Being written. It opens here when it is ready.'
 QUEUED = 'Not written yet. Nothing is writing it while the training waits for you or is paused.'
 UPDATING = 'Being made again from what it is built from now.'
@@ -991,7 +994,12 @@ def view(engine, root) -> dict:
                         queued=engine._run(root).queued, mine=mine),
                      'started_at': record.get('started_at'), 'minutes': None,
                      # Said only while nothing on the desk needs the person.
-                     'line': NOTHING_NEEDED
+                     'line': (DRAFTS_TO_READ.format(
+                                  drafts=_things(_tally(cards)['drafts'], 'draft is ready',
+                                                 'drafts are ready'),
+                                  verb='is' if _tally(cards)['to_write'] == 1 else 'are')
+                              if _tally(cards)['drafts'] and _tally(cards)['to_write']
+                              else NOTHING_NEEDED)
                      if running and not needed and not (parallel and parallel.get('phase') not in
                          ('complete', 'ready-for-review', 'creator-approved')) else ''},
         'needs': needed, 'cards': cards,

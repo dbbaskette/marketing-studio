@@ -3331,6 +3331,7 @@ body[data-product="Training Studio"] .card > .training-options {
 .desk-progress-details > details { min-width: 0; }
 .desk-progress-details > details[open] { flex-basis: 100%; }
 .desk-progress-details > details > summary,
+.desk-level-left > summary,
 .desk-research-saved > summary,
 body[data-product="Training Studio"] .outline-notes > summary {
   min-height: 2.75rem;

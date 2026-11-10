@@ -369,9 +369,13 @@ class JudgedDeckTests(WholeCase):
         reviewed = [call for call in self.tool.calls if call[:1] == ['review']]
         self.assertEqual(reviewed[0], ['review', '--compiled', str(review.parent / 'compiled'),
                                        '--output', str(review), '--design-project', project,
-                                       '--json'])
-        self.assertEqual([call[4] for call in reviewed if '--slide' in call][:7],
-                         [slide['id'] for slide in PARTED['slides']])
+                                       '--renderer', 'google', '--file-id',
+                                       'stand-in-preview-1', '--json'],
+                         "rendered through Drive, where this deck's previews go")
+        # Every slide's packet comes in one call; the one slide asked for is the receipts' check.
+        self.assertEqual(sum('--packets' in call for call in reviewed), 1)
+        self.assertEqual([call[4] for call in reviewed if '--slide' in call],
+                         [PARTED['slides'][0]['id']])
         self.assertEqual(sum('--mark' in call for call in reviewed), 1)
         self.assertEqual(sum('--assessment' in call for call in reviewed), 1)
         # The whole deck is rendered by the review alone: no preview of it, and no critique.

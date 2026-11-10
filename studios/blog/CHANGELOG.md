@@ -9,6 +9,8 @@ changes for authors first, then what changes for maintainers.
 
 ## Unreleased
 
+- **New blog shows the same steps as the other studios.** The two steps sit in the shared step row: each says what you chose in it, the first shows a tick once it is complete, and pressing a step opens it. The first step's button is **Next**, and the second has **Back** beside **Start**.
+- **For maintainers: the page runs on the shared loopback server.** Blog Studio's page is now served by `studio_core.server`'s server and handler, as the other studios' pages are. Its request checks, Content-Security-Policy, body limits, timeouts, one-at-a-time workspace access, routes and error messages are unchanged; nothing changes for authors.
 - **See time to a saved result.** The existing private Activity log records operation
   boundaries and distinguishes saved intermediate results from final approval. Missing
   timings stay unknown; reading progress starts no assistant work.

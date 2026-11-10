@@ -279,8 +279,7 @@ class Slides:
         args = ['compose', 'compile', '--file', str(composition), '--brand', str(brand),
                 *_bound(design, section),
                 *(['--asset-project', str(assets)] if assets else []),
-                *(['--outline', str(outline)] if outline and self.has('compose-split-point')
-                  else [])]
+                *(['--outline', str(outline)] if outline else [])]
         if folder is None:
             return self._json(*args)
         with _new(folder):

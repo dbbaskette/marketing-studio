@@ -103,7 +103,7 @@ class LayoutTests(test_desk.ScriptedPage, test_runner_page.PageCase):
         # Home's way in opens the desk's start at that kind, with the document asked for
         # first.
         self.assertEqual(shot['parts'][0], '1. What you start from')
-        self.assertNotIn('3. Research and settings', shot['parts'])
+        self.assertNotIn('3. Review research and settings', shot['parts'])
         self.assertIn('Next', shot['buttons'])
         self.assertIn('Paste the text', shot['buttons'])
         self.assertEqual(shot['heading'], 'Home')
@@ -332,7 +332,7 @@ class LayoutTests(test_desk.ScriptedPage, test_runner_page.PageCase):
             {'click': 'Next'}, {'snapshot': 'review'}], strictIntake=True)
         shots = result['snapshots']
         self.assertEqual(shots['routes']['heading'], 'Home')
-        steps = ['1. What you start from', '2. Audience and goal', '3. Research and settings']
+        steps = ['1. What you start from', '2. Audience and goal', '3. Review research and settings']
         for index, name in enumerate(['source', 'audience', 'review']):
             shot = shots[name]
             self.assertIn(steps[index], shot['sheet'])
@@ -352,7 +352,7 @@ class LayoutTests(test_desk.ScriptedPage, test_runner_page.PageCase):
         source = result['snapshots']['source']['sheet']
         self.assertIn('What should it cover? (optional)', source)
         self.assertNotIn('Where the document is', source)
-        for name, heading in [('source', '1. What you start from'), ('audience', '2. Audience and goal'), ('review', '3. Research and settings')]:
+        for name, heading in [('source', '1. What you start from'), ('audience', '2. Audience and goal'), ('review', '3. Review research and settings')]:
             self.assertIn(heading, result['snapshots'][name]['sheet'])
             self.assertEqual(result['snapshots'][name]['posts'], 0)
 

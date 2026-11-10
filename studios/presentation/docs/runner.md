@@ -235,7 +235,7 @@ reviewed bundle stays intact.
 
 ## The companions, as the runner uses them
 
-- **Versions.** A deck needs Harness Slides 0.16.0 or newer, the version the installer pins,
+- **Versions.** A deck needs Harness Slides 0.17.0 or newer, the version the installer pins,
   and a brand skill of 0.14.0 or newer, for its look samples and talk-or-handout export. An
   older Harness Slides is refused when a deck needs it, in the same words on Status and at
   the step; when the brand skill's own installer brings that very version, Status says so.
