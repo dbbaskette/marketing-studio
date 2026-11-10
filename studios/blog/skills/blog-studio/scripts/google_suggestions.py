@@ -1719,8 +1719,12 @@ def quote_matches(actual, expected):
     return actual == expected or (bool(trimmed) and actual == trimmed)
 
 
-def verify(client, root, saved):
-    """Read-only check of a native submission; also settles an attempt whose response never arrived."""
+def verify(client, root, saved, record=True):
+    """Read-only check of a native submission; also settles an attempt whose response never arrived.
+
+    With `record` off nothing is settled, released or written: the receipt stays as it was,
+    so a send that was verified can be read again later without that reading being taken
+    for the outcome of the send (the Doc's owner may have decided its suggestions since)."""
     path = contained(ledger(root), operation_key(saved) + '.json')
     if not path.is_file():
         raise GoogleError('No recorded attempt exists for this plan.')
@@ -1728,7 +1732,7 @@ def verify(client, root, saved):
     if receipt.get('backend'):
         from google_review_comments import verify as comments_verify
 
-        return comments_verify(client, root, saved)
+        return comments_verify(client, root, saved, record=record)
     document_id = saved['document_id']
     inline = review_read(client, document_id)
     before = document(client, document_id)
@@ -1774,7 +1778,13 @@ def verify(client, root, saved):
         'revision_id': inline['revisionId'],
         'checked_at': studio.now(),
     }
-    if unanswered and not good and unchanged and nothing_landed(saved, inline, after, threads):
+    if (
+        record
+        and unanswered
+        and not good
+        and unchanged
+        and nothing_landed(saved, inline, after, threads)
+    ):
         with locked(ledger(root)):
             release(root, saved)
         return {
@@ -1797,7 +1807,8 @@ def verify(client, root, saved):
         'review_state': summary(inline),
         'next_step': step,
     }
-    write_json(path, {**receipt, 'verification': result})
+    if record:
+        write_json(path, {**receipt, 'verification': result})
     return result
 
 

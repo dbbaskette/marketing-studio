@@ -1481,13 +1481,23 @@ ROUTES = {
     'meta': {'id', 'job', 'content'},
     'google-plan': {'id', 'mode'},
     'google-send': {'id', 'plan', 'confirmed'},
+    # Verify again: the Doc read for a plan already sent. Nothing is sent or recorded.
+    'google-check': {'id', 'plan'},
     # Bring the Doc's accepted text back: checked first (nothing changes), then taken.
     'google-compare': {'id'},
     'google-take': {'id', 'preview', 'confirmed'},
 }
 SESSION = re.compile(r'[a-f0-9]{16,64}')
 # Routes the page's dispatch does not record as a decision on this blog (management.py).
-UNSHARED = ('skip', 'unskip', 'google-plan', 'google-send', 'google-compare', 'repurpose')
+UNSHARED = (
+    'skip',
+    'unskip',
+    'google-plan',
+    'google-send',
+    'google-check',
+    'google-compare',
+    'repurpose',
+)
 
 
 # First passes that are a Finishing tool: they propose, and the draft is left as it is.
@@ -1654,6 +1664,10 @@ def dispatch(root, action, data):
         if action == 'google-plan':
             return desk_finish.google_plan(root, ident, data.get('mode', 'auto'))
         return desk_finish.google_send(root, ident, data)
+    elif action == 'google-check':
+        import desk_finish
+
+        return desk_finish.google_check(root, ident, data)
     elif action == 'google-compare':
         import desk_finish
 
@@ -1707,5 +1721,9 @@ def dispatch(root, action, data):
             done = desk_finish.skip(root, ident, data.get('job'), data.get('items'))
         # The last fix decided: the post's own GEO review, which waited for that, may run now.
         queued = desk_jobs.geo_due(root, ident)
-        return {**desk_jobs.view(root, ident), 'finished': done, **({'geo_queued': True} if queued else {})}
+        return {
+            **desk_jobs.view(root, ident),
+            'finished': done,
+            **({'geo_queued': True} if queued else {}),
+        }
     return desk_jobs.view(root, ident)

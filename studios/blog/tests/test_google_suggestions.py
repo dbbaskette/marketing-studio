@@ -353,6 +353,45 @@ class SuggestionsTests(unittest.TestCase):
             gs.apply(self.client, self.root, saved)
         self.assertEqual(self.client.writes, 1)
 
+    def test_a_verified_send_is_read_again_without_changing_its_record(self):
+        saved = self.plan()
+        self.assertEqual(gs.apply(self.client, self.root, saved)['status'], 'verified-pending')
+        receipt = gs.ledger(self.root) / (gs.operation_key(saved) + '.json')
+        kept = receipt.read_bytes()
+        again = gs.verify(self.client, self.root, saved, record=False)
+        self.assertEqual(again['status'], 'verified-pending')
+        self.assertEqual(len(again['comments']), 3)
+        # The Doc's owner decides a suggestion: the Doc no longer reads back as sent. Reading
+        # it again says so, and the send stays recorded as the verified send it was.
+        for block in self.client.doc['tabs'][0]['documentTab']['body']['content']:
+            if 'paragraph' in block:
+                block['paragraph']['elements'] = [
+                    e
+                    for e in block['paragraph']['elements']
+                    if not e['textRun'].get('suggestedInsertionIds')
+                ]
+        reindex(self.client.doc['tabs'][0]['documentTab']['body']['content'])
+        later = gs.verify(self.client, self.root, saved, record=False)
+        self.assertEqual(later['status'], 'needs-reconciliation')
+        self.assertEqual(receipt.read_bytes(), kept)
+        self.assertEqual(json.loads(kept)['verification']['status'], 'verified-pending')
+        self.assertEqual(self.client.writes, 1)
+
+    def test_an_unanswered_send_is_never_released_by_a_reading_that_records_nothing(self):
+        saved = self.plan([self.findings()[0]])
+        self.client.native_review_update = Mock(side_effect=gd.GoogleError('timeout'))
+        with self.assertRaises(gd.GoogleError):
+            gs.apply(self.client, self.root, saved)
+        receipt = gs.ledger(self.root) / (gs.operation_key(saved) + '.json')
+        kept = receipt.read_bytes()
+        self.assertEqual(
+            gs.verify(self.client, self.root, saved, record=False)['status'],
+            'needs-reconciliation',
+        )
+        self.assertEqual(receipt.read_bytes(), kept)
+        # Check delivery, which does record, still settles it.
+        self.assertEqual(gs.verify(self.client, self.root, saved)['status'], 'not-submitted')
+
     def test_changed_google_or_local_and_tampered_requests_block_writes(self):
         saved = self.plan()
         self.client.doc['revisionId'] = 'new'

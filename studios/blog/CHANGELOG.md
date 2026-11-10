@@ -1,5 +1,7 @@
 # Changelog
 
+Unreleased: **Verify in the Doc again** reads the Google Doc once more for the last send and says whether it still holds what was sent, or how many suggestions are now pending, accepted and rejected. It is offered on the send's receipt and, as **Verify the last send**, in the toolbar's Google Doc menu, also after a reload. Nothing is sent and the record of the send does not change.
+
 Unreleased: a post's own GEO review now waits until the fixes in your text are accepted or rejected, and runs when the last one is decided, so it reads the post as you left it and proposes nothing those changes already made. **Run GEO review** still runs one at any time.
 
 Unreleased: the desk and Review mode say where the GEO review stands, under the arc, and **Show GEO proposals** opens them in Finishing from either. **Open Finishing** now works from Review mode, and Review mode's move is the fixes still to decide.

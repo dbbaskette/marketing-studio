@@ -573,7 +573,8 @@ def post_drive(batch, existing, sleep):
     mark_submitted(batch)
 
 
-def verify(client, root, saved):
+def verify(client, root, saved, record=True):
+    """Read the comments back. With `record` off the receipt is left as it was."""
     receipt_path = path(root, saved)
     receipt = json.loads(receipt_path.read_text())
     backend = receipt['backend']
@@ -633,8 +634,9 @@ def verify(client, root, saved):
         'message': message,
         'next_step': where + next_action,
     }
-    receipt['verification'] = result
-    write_json(receipt_path, receipt)
+    if record:
+        receipt['verification'] = result
+        write_json(receipt_path, receipt)
     return result
 
 

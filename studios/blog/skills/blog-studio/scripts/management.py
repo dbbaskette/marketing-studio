@@ -2445,6 +2445,7 @@ def dispatch_managed(root, route, data):
         'editor-google-send',
         'desk-google-plan',
         'desk-google-send',
+        'desk-google-check',
         'desk-google-compare',
         'geo-report-google-send',
     ):
@@ -2590,7 +2591,8 @@ def dispatch_managed(root, route, data):
     elif space(root) and (
         route not in ('run-settings', 'desk-angles', 'desk-skip', 'desk-unskip')
         # A Reject that decided the last fix queued the post's GEO review: its record changed.
-        or route in ('desk-skip', 'desk-unskip') and result.get('geo_queued')
+        or route in ('desk-skip', 'desk-unskip')
+        and result.get('geo_queued')
     ):
         if route == 'tool-action':
             # A tool result may be a job or a profile, whose IDs are not blogs: the blog
