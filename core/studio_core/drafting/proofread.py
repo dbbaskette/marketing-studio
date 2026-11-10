@@ -20,7 +20,7 @@ SENTENCE_MAX = 2000  # a passage Fix rewrites; a longer run is cut to its line
 LIST_LINE = re.compile(r'[ \t]*(?:[-*+]|\d{1,3}[.)])[ \t]')
 LIMITATIONS = (
     'Mechanical matches and repetition hints only; read for meaning. Code, '
-    'links and quotations are left out.'
+    'tables, links and quotations are left out.'
 )
 
 
@@ -138,8 +138,47 @@ def mask_indented(text):
     return '\n'.join(out)
 
 
+TABLE_RULE = re.compile(r'[ \t]*\|?[ \t]*:?-+:?[ \t]*(?:\|[ \t]*:?-+:?[ \t]*)*\|?[ \t]*')
+HTML_TABLE = re.compile(r'<table\b[\s\S]*?</table\s*>', re.IGNORECASE)
+
+
+def _blank(text):
+    return ''.join('\n' if char == '\n' else ' ' for char in text)
+
+
+def mask_tables(text):
+    """Tables as spaces of the same length, so findings keep their places and a table's
+    structure is never read as prose: its rule of hyphens is not a double hyphen, and its
+    cells repeat words and openings by design. A Markdown table is a run of lines with a
+    pipe in them that holds a rule line (`| --- | --- |`); an HTML table is masked whole."""
+    text = HTML_TABLE.sub(lambda found: _blank(found.group()), text)
+    lines = text.split('\n')
+    piped = ['|' in line for line in lines]
+    at = 0
+    while at < len(lines):
+        if not piped[at]:
+            at += 1
+            continue
+        end = at
+        while end < len(lines) and piped[end]:
+            end += 1
+        if any('-' in line and TABLE_RULE.fullmatch(line) for line in lines[at:end]):
+            for row in range(at, end):
+                lines[row] = ' ' * len(lines[row])
+        at = end
+    return '\n'.join(lines)
+
+
+RULE_LINE = re.compile(r'(?m)^[ \t]*([-*_])(?:[ \t]*\1){2,}[ \t]*$')
+
+
+def mask_structure(text):
+    """Indented code, tables and horizontal rules masked: what is left is prose."""
+    return RULE_LINE.sub(lambda found: _blank(found.group()), mask_tables(mask_indented(text)))
+
+
 def clean(text):
-    return text_checks.mask_protected(mask_indented(text))
+    return text_checks.mask_protected(mask_structure(text))
 
 
 def units(paragraph):
@@ -207,7 +246,7 @@ def check(draft, rules, starters, ident, join=None, lint=None):
     lint = lint or text_checks.lint
     places = offsets(draft)
     findings = []
-    for hit in lint(mask_indented(join(draft)), rules)['findings']:
+    for hit in lint(mask_structure(join(draft)), rules)['findings']:
         if 'start' not in hit:
             continue
         for part, offset, text in places:

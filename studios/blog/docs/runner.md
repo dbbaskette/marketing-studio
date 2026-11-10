@@ -308,7 +308,9 @@ deciding on each fix, with the full desk one click away.
   fits and what is left for you.
 - **With human-sounding wording on, Quick check's findings** (dashes, words that often
   read as machine-written, repetition) are a short folded list at the top, labelled
-  **Sounds human (quick check)** and read from the latest text with no assistant. **Fix**
+  **Quick check** and marked optional. It is a second pass, apart from the **Sounds human**
+  rewrites the assistant marks in the text, and is read from the latest text with no
+  assistant. Tables, horizontal rules, code, links and quotations are left out. **Fix**
   rewrites only the sentence a finding is in, keeping a version; **Dismiss** hides it in
   this view, even when an edit earlier in the part moves it. The list is read again a
   moment after the text changes, or when you open it.

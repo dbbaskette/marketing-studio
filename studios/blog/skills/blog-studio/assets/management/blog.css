@@ -262,3 +262,6 @@
 .geo-report-badge{margin-right:.35rem}
 .geo-report-after{max-width:46rem}
 @media print{.geo-report-after{display:none}}
+/* The sheet shown while a Google Doc or a page is read: what is happening, then the steps. */
+.reading-now{margin:0;font-weight:650}
+.reading-steps{margin:.2rem 0 .4rem}

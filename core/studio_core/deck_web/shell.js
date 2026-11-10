@@ -337,8 +337,21 @@ const StudioShell = (() => {
 
   // The one thing waiting for the person: {title, text, action: {label, run}}. With `calm`
   // it says that nothing is, in the same place, so the rail never leaves that in doubt.
+  // With `working` it says what the assistant is doing instead, and that nothing is asked.
   let lastMove = '';
-  function move({ title, text = '', action = null, calm = false } = {}) {
+  function move({ title, text = '', action = null, calm = false, working = false } = {}) {
+    // The assistant's turn: what it is doing, in the studio's colour, with a moving mark.
+    if (working) {
+      const busy = make('section', 'move-card move-card-working');
+      busy.dataset.zone = 'rail'; busy.dataset.key = 'workbench-move';
+      busy.setAttribute('aria-label', 'Working');
+      const mark = make('span', 'move-working-mark'); mark.setAttribute('aria-hidden', 'true');
+      const label = make('p', 'move-label'); label.append(mark, 'Working');
+      busy.append(label, make('h2', 'move-title', title || 'Working on it'));
+      if (text) busy.append(make('p', 'quiet', text));
+      lastMove = '';
+      return busy;
+    }
     const card = make('section', 'move-card' + (calm ? ' move-card-calm' : ''));
     card.dataset.zone = 'rail'; card.dataset.key = 'workbench-move';
     // A desk draws its move again whenever anything changes. It arrives only when it is a
