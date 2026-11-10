@@ -80,8 +80,10 @@ desk. A topic or an outline takes two steps; a draft takes one screen (below):
 Both ways of starting, and the polishing screen, offer **GEO review (optional): Include a
 GEO review**, off by default. When it is ticked, one GEO review runs as part of the post's
 work once its full draft is written (after a first pass or Review mode's check, when there
-is one), and its proposals wait in Finishing for you to preview, then apply or skip. It
-never runs again by itself. The choice is kept in the post's own record and can be changed
+is one) and every fix that check marked in the text is accepted or rejected, so it reads
+the post as you left it. Its proposals wait in Finishing for you to preview, then apply or
+skip; the desk and Review mode both say where it stands and open them with **Show GEO
+proposals**. It never runs again by itself. The choice is kept in the post's own record and can be changed
 on its desk, under Finishing's Reader aids and AI search tools; turned on for a written draft, its
 one review runs then. Posts made before the choice existed have it off.
 

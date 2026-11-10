@@ -265,3 +265,8 @@
 /* The sheet shown while a Google Doc or a page is read: what is happening, then the steps. */
 .reading-now{margin:0;font-weight:650}
 .reading-steps{margin:.2rem 0 .4rem}
+/* Where the GEO review stands, under the arc: its proposals wait in Finishing, not in the text. */
+.geo-pointer{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.5rem 1rem;padding:.6rem .9rem;border:1px solid var(--hair);border-radius:.8rem;background:var(--card)}
+.geo-pointer-says{margin:0;min-width:0}
+.geo-pointer-waits{border-color:var(--yours-fill);background:var(--yours-wash)}
+.geo-pointer-waits>.geo-pointer-says{font-weight:650}

@@ -1525,7 +1525,7 @@ def _geo_due_state(root, ident, draft, record, finishing=None):
     """What this post's own GEO review does next: 'ran' (queued once, or a current review
     stands for it), 'conversation' (the conversation drives the post, so it never runs by
     itself here), 'draft' (it waits for the full draft), 'busy' (it waits for the change under
-    way) or 'now'."""
+    way), 'review' (it waits for the fixes in the text to be accepted or rejected) or 'now'."""
     if geo_queued(record) or _geo_current(root, ident, draft, finishing):
         return 'ran'
     if any(job['kind'] == 'finish-geo' and busy(job) for job in jobs(root, ident)):
@@ -1536,7 +1536,26 @@ def _geo_due_state(root, ident, draft, record, finishing=None):
         return 'draft'
     if any(busy(job) for job in jobs(root, ident)):
         return 'busy'
+    if _fixes_open(root, ident, draft, finishing):
+        return 'review'
     return 'now'
+
+
+REVIEW_SETS = ('copyedit', 'humanize')  # What Review mode offers to accept or reject.
+
+
+def _fixes_open(root, ident, draft, finishing=None):
+    """Whether Review mode still holds a fix or a rewrite to decide: one that is open and
+    still fits the text. The post's GEO review waits for them, so it reads the post as the
+    person left it and proposes nothing those changes already made."""
+    import desk_finish
+
+    found = finishing if finishing is not None else desk_finish.summary(root, ident, draft)
+    return any(
+        item.get('state') == 'open' and item.get('present', True)
+        for tool in REVIEW_SETS
+        for item in (found.get(tool) or {}).get('items', [])
+    )
 
 
 def _geo_mark(root, ident, job):
@@ -1614,7 +1633,7 @@ def geo_view(root, ident, draft, record, finishing, rows):
         status = 'working'
     elif found:
         status = 'stale' if found.get('basis') not in (None, desk_finish.basis(draft)) else 'done'
-    elif included and due in ('draft', 'busy'):
+    elif included and due in ('draft', 'busy', 'review'):
         status = 'waiting'
     elif included and due != 'ran':
         status = 'not-run'  # It would have run: say why it did not, with Run GEO review.

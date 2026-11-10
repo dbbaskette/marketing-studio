@@ -715,6 +715,17 @@ function sDeskSentWords(plan,result){
   if(n)parts.push(n+(n===1?' suggestion':' suggestions'));if(m)parts.push(m+(m===1?' comment':' comments'));
   return 'Sent '+(parts.join(' and ')||'the changes')+' at '+sDeskWhen(new Date().toISOString())+'.'+(n?' When the owner has decided them, choose Bring accepted changes.':' The Doc’s owner makes each change by hand.');
 }
+// A send ends with the Doc read back, and only then counts as sent. What that readback
+// found is said in words beside the receipt, so "sent" is never taken on trust: when the Doc
+// was read, how many suggestions are pending in it and how many of the comments were found.
+function sDeskVerifiedWords(result){
+  if(!['verified-pending','verified-comments'].includes(result?.status))return '';
+  const when=sDeskWhen(result.checked_at),pending=result.review_state?.pending,notes=Array.isArray(result.comments)?result.comments:[],found=notes.filter(row=>row&&row.verified).length,parts=[];
+  if(Number.isInteger(pending)&&pending>0)parts.push(pending+(pending===1?' suggestion is':' suggestions are')+' pending in it');
+  if(notes.length)parts.push(found+' of '+notes.length+(notes.length===1?' comment was':' comments were')+' found in it');
+  return 'Verified by reading the Doc back'+(when?' at '+when:'')+(parts.length?': '+parts.join(', and ')+'.':': it holds what was sent.');
+}
+function sDeskVerifiedLine(words){if(!words)return null;const line=sNode('p','quiet google-verified',words);line.setAttribute('role','status');return line;}
 // The desk read again after Google work, so its toolbar says what the Doc holds now.
 async function sDeskReread(held){if(!sDeskCurrent(held))return;const before=held.view;held.view=await api('desk?id='+encodeURIComponent(held.id));sDeskRefresh(held,before);}
 // Check what would be sent, then Send: two steps from the toolbar, on a sheet, nothing sent
@@ -729,7 +740,7 @@ async function sDeskGoogleSend(held){
   const deliver=async button=>{await busy(button,'Sending…',async()=>{try{
     const result=await api('desk-google-send',{id:held.id,plan:plan.plan,confirmed:true}),done=['verified-pending','verified-comments'].includes(result.status);
     const again=done?null:sButton('Check delivery',deliver,'filled');
-    sOpenSheet(done?'Sent to the Google Doc':'Check delivery',sStatus(done?'done':'late',sDeskSentWords(plan,result)),sAdd(sNode('div','bar'),again,sButton('Close',sCloseSheet)));studio.sheet.opener=opener;
+    sOpenSheet(done?'Sent to the Google Doc':'Check delivery',sStatus(done?'done':'late',sDeskSentWords(plan,result)),sDeskVerifiedLine(sDeskVerifiedWords(result)),sAdd(sNode('div','bar'),again,sButton('Close',sCloseSheet)));studio.sheet.opener=opener;
     if(done)await sDeskReread(held);
   }catch(error){problem.textContent=error.message;}});};
   const send=sButton('Send to Google Doc',deliver,'filled');send.disabled=!sDeskCan(held);
@@ -813,6 +824,32 @@ function sDeskReadPart(held,part){
 }
 // The head of a blog's workbench: a line of light, the one arc every studio shares, and the
 // one thing that waits for the person. The draft and its side panel are the workbench itself.
+// Finishing sits beside the draft on the desk, never in Review mode: opened from there, it
+// leaves Review first. With no tool named it opens the list, or stays as it is when open.
+async function sDeskFinishFrom(held,tool=null){
+  if(held.mode==='review')await sReviewLeave(held);
+  if(held.stale||!sDeskCurrent(held))return;
+  if(held.finish)return tool?sDeskFinishTool(held,tool):undefined;
+  return sDeskFinishOpen(held,tool);
+}
+// The GEO review runs apart from the fixes in the text and its proposals wait in Finishing,
+// so the desk and Review mode both say where it stands and open it from here.
+function sDeskGeoPointer(held){
+  const geo=held.view.geo_review;if(!geo||!geo.status||geo.status==='none')return null;
+  const n=geo.open||0,waits=geo.status==='done'&&n>0;
+  const said={working:'GEO review: reading the post now. Its proposals will wait in Finishing.',
+    done:n?'GEO review: '+n+(n===1?' proposal waits':' proposals wait')+' for you in Finishing, apart from the fixes in your text.':'GEO review: done, with nothing left to review.',
+    stale:'GEO review: out of date, because the post changed since it ran.',
+    waiting:geo.waiting==='draft'?'GEO review: it runs once the full draft is written.':geo.waiting==='review'?'GEO review: it runs once you have accepted or rejected the fixes in your text.':'GEO review: it runs when the change under way ends.',
+    'not-run':'GEO review: asked for, and not run yet.'}[geo.status];
+  if(!said)return null;
+  const line=sNode('p','geo-pointer-says',said);line.setAttribute('role','status');
+  const row=sAdd(sNode('div','geo-pointer'+(waits?' geo-pointer-waits':'')),line);
+  if(waits)row.append(sButton('Show GEO proposals',()=>sDeskFinishFrom(held,'geo')));
+  else if(geo.status==='stale'||geo.status==='not-run')row.append(sButton('Go to GEO review',()=>sDeskFinishFrom(held,'publish')));
+  if(geo.problem)row.append(sNode('p','problem','The last GEO review did not finish: '+geo.problem));
+  return row;
+}
 function sDeskBench(held){
   if(typeof StudioShell==='undefined')return null;
   const view=held.view,start=view.start&&!sDeskHasText(view)?view.start:null,working=!!(view.working||start&&!start.problem);
@@ -820,10 +857,13 @@ function sDeskBench(held){
   // Reading and polishing the draft is still Make; Ship is Finishing and what follows it.
   const at=start?(start.open==='outline'?1:2):!hasText?1:finished||held.finish?3:2;
   const stopped=!!(start&&start.problem);
+  // In Review mode the move is the fixes still to decide, counted as the page counts them.
+  const fixes=held.mode==='review'&&held.review&&!view.working?sReviewState(held).pending.length:0;
   const move=stopped?{title:'It stopped and needs you',text:'See what happened below, then choose how to go on.'}
     :working||finished?null
     :!hasText?{title:'Write the draft from your outline',text:'Shape the outline, then write the draft or one section at a time.'}
-    :sDeskCan(held)?{title:'Review your draft',text:'Finishing checks it before you publish. Nothing changes until you accept.',action:{label:'Open Finishing',run:()=>{if(!held.finish)sDeskFinishOpen(held);}}}:null;
+    :fixes?{title:fixes===1?'1 fix to review in your text':fixes+' fixes to review in your text',text:'Accept or reject each one where it is marked. Nothing changes until you do.'}
+    :sDeskCan(held)?{title:'Review your draft',text:'Finishing checks it before you publish. Nothing changes until you accept.',action:{label:'Open Finishing',run:()=>sDeskFinishFrom(held)}}:null;
   const head=sNode('div','workbench-head');head.dataset.key='workbench-head';
   // What is under way, in the words its own screen uses: a check in review mode, or the job.
   const check=held.mode==='review'&&['finish-copyedit','finish-humanize'].includes(view.working?.kind);
@@ -831,7 +871,7 @@ function sDeskBench(held){
   const busyCard=working?{working:true,title:doing||'Working on it',text:'Nothing for you to do. '+(check?'Each fix is marked in the text when the check finishes. Read or edit meanwhile.':hasText?'Read or edit meanwhile.':'It opens here as it is written.')}:null;
   head.append(StudioShell.arc({at,yours:!!move,finished,note:working?(doing?doing+'…':''):''},'Where this blog is'),
     move?StudioShell.move(move):busyCard?StudioShell.move(busyCard):StudioShell.move({calm:true,title:finished?'Published':'Nothing is yours right now'}));
-  const bench=sNode('div','workbench-top');bench.append(StudioShell.pulse(move?'yours':working?'working':'still'),head);
+  const bench=sNode('div','workbench-top');bench.append(...[StudioShell.pulse(move?'yours':working?'working':'still'),head,sDeskGeoPointer(held)].filter(Boolean));
   return bench;
 }
 function sDeskRender(held){
@@ -1258,7 +1298,7 @@ function sDeskPublishView(held){
 // out-of-date review offers to run again; it never reruns by itself.
 function sDeskGeoCard(held){
   const geo=held.view.geo_review||{status:'none'},working=held.view.working;
-  const said={working:'Under way: the GEO review is reading the post.',done:geo.open?'Done: '+geo.open+(geo.open===1?' proposal waits':' proposals wait')+' in GEO: retrieval readiness.':'Done: nothing left to review.',stale:'Out of date: the post changed since the GEO review ran. Run it again for the latest.',waiting:geo.waiting==='draft'?'Waiting: it runs once the full draft is written.':'Waiting: it runs when the change under way ends.','not-run':geo.why==='conversation'?'Not run yet: this post’s work belongs to the conversation, so its GEO review does not run by itself here. Run GEO review to run it now.':'Not run yet. Run GEO review to run it now.',none:geo.include&&geo.due==='ran'?'No GEO review on this computer yet. This post’s one review already ran, so it does not run again by itself.':'No GEO review for this post yet.'}[geo.status]||'';
+  const said={working:'Under way: the GEO review is reading the post.',done:geo.open?'Done: '+geo.open+(geo.open===1?' proposal waits':' proposals wait')+' in GEO: retrieval readiness.':'Done: nothing left to review.',stale:'Out of date: the post changed since the GEO review ran. Run it again for the latest.',waiting:geo.waiting==='draft'?'Waiting: it runs once the full draft is written.':geo.waiting==='review'?'Waiting: it runs once you have accepted or rejected the fixes in your text, so it reads the post as you left it.':'Waiting: it runs when the change under way ends.','not-run':geo.why==='conversation'?'Not run yet: this post’s work belongs to the conversation, so its GEO review does not run by itself here. Run GEO review to run it now.':'Not run yet. Run GEO review to run it now.',none:geo.include&&geo.due==='ran'?'No GEO review on this computer yet. This post’s one review already ran, so it does not run again by itself.':'No GEO review for this post yet.'}[geo.status]||'';
   const line=sNode('p',geo.status==='stale'?'decision-notice':'quiet',said);line.setAttribute('role','status');
   const again=geo.status==='done'||geo.status==='stale';
   const run=sButton(again?'Run GEO review again':'Run GEO review',button=>sDeskRunGeo(held,button),geo.status==='done'?'':'filled');run.disabled=!sDeskCan(held)||!!working;
@@ -1271,7 +1311,7 @@ function sDeskGeoCard(held){
 // Run GEO review: one explicit job, then the GEO review opens to follow it.
 async function sDeskRunGeo(held,button){await sDeskJob(held,button,'desk-finish',{tool:'geo'});if(held.finish&&held.view.working?.kind==='finish-geo')sDeskFinishTool(held,'geo');}
 // Include a GEO review, the post's own choice, shown after the Reader aids and AI search tools.
-const DESK_GEO_SAYS='Once the full draft is written, one GEO review runs as part of this post’s work, and its proposals wait in Finishing for you to preview, then apply or skip. Off, nothing GEO runs by itself. You can run one at any time.';
+const DESK_GEO_SAYS='Once the full draft is written and the fixes in your text are accepted or rejected, one GEO review runs as part of this post’s work, and its proposals wait in Finishing for you to preview, then apply or skip. Off, nothing GEO runs by itself. You can run one at any time.';
 function sDeskGeoChoice(held){
   const state={on:!!held.view.geo_review?.include};
   const box=sCheck('desk-geo-include','Include a GEO review',state,'on',DESK_GEO_SAYS+' '+deskGeoDue(held.view.geo_review),async on=>{
@@ -1291,6 +1331,7 @@ function deskGeoDue(geo){
   if(due==='conversation')return 'This post’s work belongs to the conversation, so its GEO review does not run by itself here.';
   if(due==='draft')return on?'It runs once the full draft is written.':'Turned on, it runs once the full draft is written.';
   if(due==='busy')return on?'It runs when the change under way ends.':'Turned on, it runs when the change under way ends.';
+  if(due==='review')return on?'It runs once you have accepted or rejected the fixes in your text.':'Turned on, it runs once you have accepted or rejected the fixes in your text.';
   return on?'It runs now.':'Turned on, it runs now.';
 }
 function deskSummarySaid(set,said){const summary=(set.summary||'').trim().replace(/\.+$/,'');if(summary)said.push(summary);}
@@ -1505,14 +1546,14 @@ function sDeskGoogleCard(held,p){
   if(view.google?.url){const doc=link(view.google.url,'Open the Google Doc ↗');card.append(sAdd(sNode('p',''),doc));}
   if(p.googleProblem)card.append(sNode('p','problem',p.googleProblem));
   const check=sButton(p.plan?'Check again':'Check what would be sent',async button=>{await busy(button,'Checking…',async()=>{try{await sDeskFlush(held);p.plan=await api('desk-google-plan',{id:held.id,mode:p.google.mode});p.sent=null;p.googleProblem='';}catch(error){p.plan=null;p.googleProblem=error.message;}sDeskPanelShow(held);});},p.plan?'quiet':'filled');check.disabled=!sDeskCan(held);
-  if(p.sent){card.append(sStatus(['verified-pending','verified-comments'].includes(p.sent.status)?'done':'late',p.sent.message));}
+  if(p.sent){card.append(sStatus(['verified-pending','verified-comments'].includes(p.sent.status)?'done':'late',p.sent.message));const verified=sDeskVerifiedLine(p.sent.verified);if(verified)card.append(verified);}
   if(p.plan&&!p.sent){
     const changes=sNode('ul','look');for(const item of p.plan.proposals||[])changes.append(sNode('li','',sDeskGoogleItem(item)));
-    const send=sButton('Send to Google Doc',async button=>{await busy(button,'Sending…',async()=>{try{const result=await api('desk-google-send',{id:held.id,plan:p.plan.plan,confirmed:true});p.sent={status:result.status,message:sDeskSentWords(p.plan,result)};p.googleProblem='';await sDeskReread(held);}catch(error){p.googleProblem=error.message;if(/changed/.test(error.message))p.plan=null;}sDeskPanelShow(held);});},'filled');send.disabled=!sDeskCan(held);
+    const send=sButton('Send to Google Doc',async button=>{await busy(button,'Sending…',async()=>{try{const result=await api('desk-google-send',{id:held.id,plan:p.plan.plan,confirmed:true});p.sent={status:result.status,message:sDeskSentWords(p.plan,result),verified:sDeskVerifiedWords(result)};p.googleProblem='';await sDeskReread(held);}catch(error){p.googleProblem=error.message;if(/changed/.test(error.message))p.plan=null;}sDeskPanelShow(held);});},'filled');send.disabled=!sDeskCan(held);
     card.append(sNode('p','',sDeskGoogleSaid(p.plan)),disclosure('What would be sent',changes),sAdd(sNode('div','bar'),send,check));
     return card;
   }
-  if(p.sent&&!['verified-pending','verified-comments'].includes(p.sent.status)&&p.plan){card.append(sAdd(sNode('div','bar'),sButton('Check delivery',async button=>{await busy(button,'Checking…',async()=>{try{const result=await api('desk-google-send',{id:held.id,plan:p.plan.plan,confirmed:true});p.sent={status:result.status,message:sDeskSentWords(p.plan,result)};}catch(error){p.googleProblem=error.message;}sDeskPanelShow(held);});},'filled')));return card;}
+  if(p.sent&&!['verified-pending','verified-comments'].includes(p.sent.status)&&p.plan){card.append(sAdd(sNode('div','bar'),sButton('Check delivery',async button=>{await busy(button,'Checking…',async()=>{try{const result=await api('desk-google-send',{id:held.id,plan:p.plan.plan,confirmed:true});p.sent={status:result.status,message:sDeskSentWords(p.plan,result),verified:sDeskVerifiedWords(result)};}catch(error){p.googleProblem=error.message;}sDeskPanelShow(held);});},'filled')));return card;}
   const bring=sButton('Bring accepted changes',()=>sDeskGoogleBring(held));bring.disabled=!sDeskCan(held);
   card.append(sField('desk-google-mode','Send as',p.google,'mode',{options:[['auto','Suggestions, with comments fallback'],['native','Suggestions only'],['comments','Comments only']]}),sAdd(sNode('div','bar'),check,bring));
   return card;
@@ -1753,11 +1794,11 @@ function sReviewDone(held,state){
 function sReviewGoogle(held){
   const g=held.review.google||(held.review.google={plan:null,sent:null,problem:''}),out=[];
   if(g.problem)out.push(sNode('p','problem',g.problem));
-  if(g.sent){out.push(sStatus(['verified-pending','verified-comments'].includes(g.sent.status)?'done':'late',g.sent.message));if(held.view.google?.url)out.push(sAdd(sNode('p',''),link(held.view.google.url,'Open the Google Doc ↗')));return out;}
+  if(g.sent){out.push(sStatus(['verified-pending','verified-comments'].includes(g.sent.status)?'done':'late',g.sent.message));const verified=sDeskVerifiedLine(g.sent.verified);if(verified)out.push(verified);if(held.view.google?.url)out.push(sAdd(sNode('p',''),link(held.view.google.url,'Open the Google Doc ↗')));return out;}
   if(g.plan){
     const changes=sNode('ul','look');for(const item of g.plan.proposals||[])changes.append(sNode('li','',sDeskGoogleItem(item)));
     const count=g.plan.count;
-    const send=sButton('Send '+count+(count===1?' change':' changes'),async button=>{await busy(button,'Sending…',async()=>{try{const result=await api('desk-google-send',{id:held.id,plan:g.plan.plan,confirmed:true});g.sent={status:result.status,message:['verified-pending','verified-comments'].includes(result.status)?sDeskSentWords(g.plan,result):'The result is not yet verified. Check delivery in Finishing, under Edit everything, before trying anything else.'};g.problem='';await sDeskReread(held);}catch(error){g.problem=error.message;if(/changed/.test(error.message))g.plan=null;}sReviewHeadShow(held);});},'filled');send.disabled=!sDeskCan(held);
+    const send=sButton('Send '+count+(count===1?' change':' changes'),async button=>{await busy(button,'Sending…',async()=>{try{const result=await api('desk-google-send',{id:held.id,plan:g.plan.plan,confirmed:true});g.sent={status:result.status,verified:sDeskVerifiedWords(result),message:['verified-pending','verified-comments'].includes(result.status)?sDeskSentWords(g.plan,result):'The result is not yet verified. Check delivery in Finishing, under Edit everything, before trying anything else.'};g.problem='';await sDeskReread(held);}catch(error){g.problem=error.message;if(/changed/.test(error.message))g.plan=null;}sReviewHeadShow(held);});},'filled');send.disabled=!sDeskCan(held);
     out.push(sNode('p','',sDeskGoogleSaid(g.plan)),disclosure('What would be sent',changes),sAdd(sNode('div','bar'),send,sButton('Cancel',()=>{g.plan=null;sReviewHeadShow(held);})));
     return out;
   }
