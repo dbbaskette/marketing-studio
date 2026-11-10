@@ -98,7 +98,7 @@ A studio launched after setup adopts the shared workspace choice only if it has
 none. Standalone setup prepares the current studio; later launches prepare the
 others. Every shared write holds the adjacent config lock and preserves unrelated
 values. Finishing refuses a conflicting change made while workspace preparation
-was in progress. Model and reasoning choices reach all three studio workers.
+was in progress. Model and reasoning choices reach every studio's workers.
 `render.previews` and `brand.skill` are also shared; absent previews follow the
 delivery format after setup (local for PowerPoint, Google Drive for Google output).
 Existing private preview and brand-path choices migrate without replacing shared
@@ -213,8 +213,9 @@ Network mode is HTTP on a trusted LAN; see [the access boundary](local-network.m
 
 ## Shared research contract
 
-All three studios explicitly integrate the purpose-led, independently reviewed
-Harness Research schema-2 bundle. See [the handoff and compatibility contract](research-synthesis.md).
+Blog Studio, Presentation Studio and Training Studio explicitly integrate the
+purpose-led, independently reviewed Harness Research schema-2 bundle. Infographic
+Studio imports a finished bundle and never starts research. See [the handoff and compatibility contract](research-synthesis.md).
 
 ## Infographic Studio
 
