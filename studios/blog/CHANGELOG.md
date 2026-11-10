@@ -1,5 +1,7 @@
 # Changelog
 
+Unreleased: the desk's view switch, **Go to section** and **Polish**, **Sources** and **Outline** share one row, with what the chosen view is for under it, so the draft starts higher. The arc stays on Make while the draft is read and polished and reaches Ship in Finishing, and **Your move** no longer fades in each time the desk is drawn again.
+
 ## Unreleased — 4.10.1
 
 Saved work publishes compact metadata for Marketing Studio’s Needs you, In progress and Recent work overview. Direct resume opens the saved editing/decision context. Metadata browsing starts no studio or provider work.

@@ -191,7 +191,9 @@
 /* The manuscript stays opaque; navigation and contextual tools share a quiet row. */
 .desk-reading-controls{display:flex;flex-wrap:wrap;align-items:end;gap:.75rem;margin-bottom:1.1rem}
 .desk-reading-controls>.field{flex:1 1 16rem;min-width:0;margin:0}
-.desk-reading-controls>.bar{flex-basis:100%}
+.desk-reading-controls>.bar{flex:0 0 auto}
+.desk-view-foot{flex-basis:100%;display:flex;flex-wrap:wrap;justify-content:space-between;gap:.25rem 1rem;margin-top:-.25rem}
+.desk-view-foot>p{margin:0}
 .desk-reading-part{padding:1.2rem;scroll-margin-top:10rem;overflow-wrap:anywhere}
 /* A phone: Go to section and one View and tools fold, so the title and the text come first. */
 .desk-compact{gap:.6rem;margin-bottom:.6rem}

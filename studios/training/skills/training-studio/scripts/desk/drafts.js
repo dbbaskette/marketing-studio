@@ -1547,7 +1547,9 @@ function levelStanding(found, level) {
   const available = cards.filter(one => one.seen).length;
   const remaining = cards.filter(one => !one.seen);
   const parts = [counts.ready + ' of ' + counts.materials + ' marked ready'];
-  if (counts.drafts) parts.push(count(counts.drafts, 'draft', 'drafts') + ' awaiting your review');
+  // While the rest is still being written, a finished draft is only ready to read: the line
+  // above already counts it, and nothing here should say the training waits on the person.
+  if (counts.drafts && found.standing.state === 'needs-you') parts.push(count(counts.drafts, 'draft', 'drafts') + ' awaiting your review');
   if (counts.attention) parts.push(counts.attention + (counts.attention === 1 ? ' needs' : ' need') + ' attention');
   if (counts.decision) parts.push(counts.decision + (counts.decision === 1 ? ' needs' : ' need') + ' your decision');
   const node = make('section', 'desk-level-standing');
@@ -3374,12 +3376,25 @@ function zoned(zone, node) {
   return node;
 }
 
+// Several parts that share a zone, kept together as one: the rail is then as tall as its
+// own parts and no taller, whatever the work beside it needs.
+function gathered(zone, nodes) {
+  const inside = nodes.filter(Boolean);
+  if (!inside.length) return null;
+  const box = add(make('div', 'workbench-' + zone), ...inside);
+  box.dataset.zone = zone;
+  return box;
+}
+
 // Where the training is in the one arc every studio shares: Brief, Plan, Make, Ship.
 function workbenchPhase(found, run, { preparingPlan, waitingPlan }) {
   const counts = found.standing?.counts || {};
   const yours = found.standing?.state === 'needs-you';
+  // Reading and marking drafts ready is still Make: Ship begins once nothing is left to
+  // write, read or decide, and the training only has to be sent.
   const at = preparingPlan || waitingPlan ? 1
-    : counts.to_write || researching(run) || !counts.materials ? 2 : 3;
+    : counts.to_write || researching(run) || !counts.materials
+      || counts.drafts || counts.attention || counts.decision ? 2 : 3;
   const finished = Boolean(run.finished) && !counts.drafts && !counts.attention && !counts.decision;
   return { at, yours: yours || Boolean(waitingPlan), finished };
 }
@@ -3387,8 +3402,8 @@ function workbenchPhase(found, run, { preparingPlan, waitingPlan }) {
 function workbenchArc(found, run, flags) {
   if (typeof StudioShell === 'undefined') return null;
   const { at, yours, finished } = workbenchPhase(found, run, flags);
-  const notes = ['', yours && at === 1 ? 'yours to approve' : '', yours && at === 2 ? 'needs you' : '',
-    yours && at === 3 ? 'yours to review' : ''];
+  const notes = ['', yours && at === 1 ? 'yours to approve' : '', yours && at === 2 ? 'yours to review' : '',
+    'ready to send'];
   const line = StudioShell.track(['Brief', 'Plan', 'Make', 'Ship'].map((label, index) => ({ label,
     state: finished || index < at ? 'done' : index > at ? 'todo' : yours ? 'yours' : 'current',
     note: index === at && !finished ? notes[index] : '' })), 'Where this training is');
@@ -3430,10 +3445,14 @@ function workbenchMove(found, held, run) {
       : byId({ plan: 'desk-plan-review' }[next.kind] || '') || main().querySelector('.move-target');
     if (target) { target.scrollIntoView({ block: 'start' }); target.focus({ preventScroll: true }); }
   }, 'workbench-move-go');
+  // The move counts the whole training; the standing below it counts the level in view.
+  const levels = Object.keys(standing.levels || {}).filter(Boolean);
+  const across = levels.length > 1 ? ' That is across levels '
+    + levels.slice(0, -1).join(', ') + ' and ' + levels.at(-1) + '.' : '';
   const card = add(make('section', 'move-card'),
     make('p', 'move-label', 'Your move'),
     make('h2', 'move-title', standing.words),
-    standing.sentence ? make('p', '', standing.sentence) : null,
+    standing.sentence ? make('p', '', standing.sentence + across) : null,
     add(make('div', 'bar'), go));
   card.dataset.key = 'workbench-move';
   card.setAttribute('aria-label', 'Your move');
@@ -3606,31 +3625,34 @@ function paintDesk(fresh, fromPoll = false) {
     above: named.length ? [make('span', '', levelsText(named))] : [],
     actions: folded(actions) }, [
     zoned('top', workbenchPulse(found, run)),
-    zoned('rail', workbenchArc(found, run, { preparingPlan, waitingPlan })),
-    zoned('rail', ours ? workbenchMove(found, held, run) : null),
-    waitingPlan || found.progress?.map ? null : pageHead(preparingPlan ? (run.outline_first ? 'One Quick scan prepares an editable outline. Detailed research waits for your approval.' : 'I’ll prepare the topics and teaching plan for you to check, then build the training.') : conversation ? 'Read the retained materials. Make checked edits in conversation; only you mark a material ready.' : DESK_WORDS.lede),
-    zoned('rail', notice),
-    conversation ? add(card('Editing in conversation'), make('p', '', 'No work is scheduled. Checked edits to the listed existing material parts and explicit broader scope changes happen in conversation; Mark ready is your decision.')) : null,
-    found.saved_status ? add(card('Saved runner history'), make('p', '', 'The earlier runner was ' + found.saved_status.halt + '. That status remains in the original saved records; no work was resumed.')) : null,
-    zoned('rail', !ours && run.mine === false ? theirsPart(run, !view.sheet && !run.driver) : null),
-    zoned('rail', ours && run.notice ? noticePart(run) : null),
-    zoned('rail', ours ? needsPart(found, held, run) : null),
-    zoned('rail', conversation || waitingPlan ? null : progressPart(found, held, lead)),
+    // Everything about whose turn it is, in one rail beside the work.
+    gathered('rail', [
+      workbenchArc(found, run, { preparingPlan, waitingPlan }),
+      ours ? workbenchMove(found, held, run) : null,
+      waitingPlan || found.progress?.map ? null : pageHead(preparingPlan ? (run.outline_first ? 'One Quick scan prepares an editable outline. Detailed research waits for your approval.' : 'I’ll prepare the topics and teaching plan for you to check, then build the training.') : conversation ? 'Read the retained materials. Make checked edits in conversation; only you mark a material ready.' : DESK_WORDS.lede),
+      notice,
+      conversation ? add(card('Editing in conversation'), make('p', '', 'No work is scheduled. Checked edits to the listed existing material parts and explicit broader scope changes happen in conversation; Mark ready is your decision.')) : null,
+      found.saved_status ? add(card('Saved runner history'), make('p', '', 'The earlier runner was ' + found.saved_status.halt + '. That status remains in the original saved records; no work was resumed.')) : null,
+      !ours && run.mine === false ? theirsPart(run, !view.sheet && !run.driver) : null,
+      ours && run.notice ? noticePart(run) : null,
+      ours ? needsPart(found, held, run) : null,
+      conversation || waitingPlan ? null : progressPart(found, held, lead),
+      ours && run.outline?.content_first && run.outline.waiting ? slideTextNotice(run.outline, held, shown) : null,
+      run.question && ours ? questionPart(run, found.title) : null,
+      run.problem ? problemPart(run, lead === 'problem') : null,
+      adding(run) && ours && !held.unsent ? documentsCard(run, lead === 'documents') : null,
+      preparingPlan || waitingPlan ? null : levelStanding(found, level),
+      finished ? publishCard(run, published) : null,
+    ]),
+    gathered('parts', [preparingPlan || waitingPlan ? null : tabs,
+      preparingPlan || waitingPlan ? null : materials]),
     zoned('work', planReview),
-    zoned('rail', ours && run.outline?.content_first && run.outline.waiting ? slideTextNotice(run.outline, held, shown) : null),
-    zoned('rail', run.question && ours ? questionPart(run, found.title) : null),
-    zoned('rail', run.problem ? problemPart(run, lead === 'problem') : null),
-    zoned('rail', adding(run) && ours && !held.unsent ? documentsCard(run, lead === 'documents') : null),
-    zoned('parts', preparingPlan || waitingPlan ? null : tabs),
-    zoned('parts', preparingPlan || waitingPlan ? null : materials),
-    zoned('rail', preparingPlan || waitingPlan ? null : levelStanding(found, level)),
-    zoned('rail', finished ? publishCard(run, published) : null),
     zoned('work', preparingPlan || waitingPlan ? null : layout),
-    // The steps behind the four phases, one press down, for when something needs a closer look.
-    zoned('rail', progressMap(found, held, !preparingPlan && !waitingPlan, Boolean(planReview))),
-    zoned('rail', preparingPlan || waitingPlan ? null : readyExplanation()),
-    // What the assistant did in each job, while it works and after it finishes or stops.
-    zoned('rail', conversation ? null : activityLogCard(view.path)),
+    // Under the work: the steps behind the four phases, what Ready means, and what the
+    // assistant did in each job. None of it is about whose turn it is.
+    zoned('foot', progressMap(found, held, !preparingPlan && !waitingPlan, Boolean(planReview))),
+    zoned('foot', preparingPlan || waitingPlan ? null : readyExplanation()),
+    zoned('foot', conversation ? null : activityLogCard(view.path)),
   ], fresh);
   if (editing) {
     const restored = editing.key && focusKey(editing.key);

@@ -1,5 +1,7 @@
 # Changelog
 
+Unreleased: the desk's status lines agree. A training that is still being written says its finished drafts are ready to read, on Home and on the desk, and asks for them only once it waits on you; the arc stays on Make while drafts are read and reaches Ship when every material is ready. The rail is as tall as its own parts, and the workflow, **About Ready and delivery** and the activity log sit under the material.
+
 Unreleased: a training's desk is a workbench. Its materials are listed on the left, the material you are reading fills the middle, and one rail on the right holds the Brief, Plan, Make, Ship arc, **Your move**, and what the assistant is doing. Press **F** to read the material alone.
 
 Unreleased: a training's stages are one drawn line, the progress track, with the stage waiting for you in amber; **Search and jump** (Cmd or Ctrl+K) and a Light, Dark or Auto appearance sit at the foot of the sidebar.

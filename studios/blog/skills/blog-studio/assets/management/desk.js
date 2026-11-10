@@ -764,10 +764,12 @@ function sDeskReadingControls(held,lede,status){
   Drafting.cultTabs(choices.querySelector('.segmented'),selected,held.cultReading ?? selected);
   held.cultReading=selected;
   // What the chosen view is for, said under the switch, so its three names need no guessing.
-  choices.append(sNode('p','quiet field-hint',{read:'Read: the whole post as your reader sees it.',edit:'Edit section: one section at a time, in an editor.',full:'Edit everything: every section on one page, each with a box to ask your assistant for a rewrite.'}[held.reading]||''));
+  const hint=sNode('p','quiet field-hint',{read:'Read: the whole post as your reader sees it.',edit:'Edit section: one section at a time, in an editor.',full:'Edit everything: every section on one page, each with a box to ask your assistant for a rewrite.'}[held.reading]||'');
   const picker=sField('desk-part-picker','Go to section',held,'activePart',{options:[['title','Title'],['opening','Opening'],...held.view.sections.map(section=>[section.id,deskHeading(section.heading)])],changed:value=>sDeskChoose(held,held.reading,value)});
-  const actions=sAdd(sNode('div','bar'),sButton('Polish',()=>sDeskFinishOpen(held,'copyedit'),'filled'),sButton('Sources',()=>sDeskSourcesSheet(held)),sButton('Outline',async()=>{await sDeskFlush(held);held.tab='outline';sDeskRender(held);}));
-  if(!sNarrow())return sAdd(sNode('div','desk-reading-controls'),choices,picker,actions);
+  const actions=sAdd(sNode('div','bar'),sButton('Polish',()=>sDeskFinishOpen(held,'copyedit')),sButton('Sources',()=>sDeskSourcesSheet(held)),sButton('Outline',async()=>{await sDeskFlush(held);held.tab='outline';sDeskRender(held);}));
+  // One row of controls, with what the chosen view is for and the save line under it.
+  if(!sNarrow())return sAdd(sNode('div','desk-reading-controls'),choices,picker,actions,sAdd(sNode('div','desk-view-foot'),hint,status));
+  choices.append(hint);
   const fold=sNode('details','desk-tools-fold');fold.open=!!held.toolsOpen;fold.addEventListener('toggle',()=>{held.toolsOpen=fold.open;});
   fold.append(sNode('summary','button','View and tools'),sAdd(sNode('div','desk-tools-list'),lede,choices,actions));
   // The save line stays in reach, empty until there is something to say.
@@ -797,7 +799,8 @@ function sDeskBench(held){
   if(typeof StudioShell==='undefined')return null;
   const view=held.view,start=view.start&&!sDeskHasText(view)?view.start:null,working=!!(view.working||start&&!start.problem);
   const hasText=sDeskHasText(view),finished=!!view.finished;
-  const at=start?(start.open==='outline'?1:2):!hasText?1:view.working?2:3;
+  // Reading and polishing the draft is still Make; Ship is Finishing and what follows it.
+  const at=start?(start.open==='outline'?1:2):!hasText?1:finished||held.finish?3:2;
   const stopped=!!(start&&start.problem);
   const move=stopped?{title:'It stopped and needs you',text:'See what happened below, then choose how to go on.'}
     :working||finished?null
@@ -837,7 +840,7 @@ function sDeskRender(held){
   const lede=held.tab==='outline'?'Rename, reorder, add and remove sections and say what each must do. Write the draft from the outline, or one section at a time.':'Read your manuscript, or choose a section to edit. Polish and checks offer suggestions; nothing changes until you accept.';
   const said=sNode('p','lede',narrow?lede+' Changes save as you type.':lede);
   held.bench=sDeskBench(held);
-  sPage(held.bench,narrow?null:said,sDeskElsewhere(view),narrow?null:status,held.tab==='outline'?sDeskTabs(held):null,held.tab==='outline'?null:sDeskReadingControls(held,said,status),sAdd(sNode('div','desk-layout'+(finishing&&!sheet?' desk-finishing':'')),column,finishing&&!sheet?held.panel:held.aside),sheet?held.panel:null,held.bar);
+  sPage(held.bench,narrow||held.bench&&held.tab!=='outline'?null:said,sDeskElsewhere(view),narrow||held.tab!=='outline'?null:status,held.tab==='outline'?sDeskTabs(held):null,held.tab==='outline'?null:sDeskReadingControls(held,said,status),sAdd(sNode('div','desk-layout'+(finishing&&!sheet?' desk-finishing':'')),column,finishing&&!sheet?held.panel:held.aside),sheet?held.panel:null,held.bar);
   sDeskImagesLoad(held);
 }
 // After a job starts, moves on or ends: redraw only the cards it changed, so the part the

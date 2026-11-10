@@ -1,5 +1,7 @@
 # Changelog
 
+Unreleased: on the slide desk **Slides** and **Outline** sit at the start of their row, next to the slides; **Previous** and **Next** share one row above the navigator; and the Sources panel is wide enough for its file field.
+
 Unreleased: a deck's page leads with the Brief, Plan, Make, Ship arc and **Your move**. Slide text is reviewed in the middle of the screen with the assistant's rail beside it; the slide desk keeps its side panel and shows the arc in a band above.
 
 Unreleased: **Search and jump** (Cmd or Ctrl+K) and a Light, Dark or Auto appearance sit at the foot of the sidebar.
