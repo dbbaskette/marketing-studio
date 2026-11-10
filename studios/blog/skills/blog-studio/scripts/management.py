@@ -2587,7 +2587,11 @@ def dispatch_managed(root, route, data):
         from team_workspace import kept_locally
 
         result['team_sync'] = kept_locally(root, result['id'], data.get('session'))
-    elif space(root) and route not in ('run-settings', 'desk-angles', 'desk-skip', 'desk-unskip'):
+    elif space(root) and (
+        route not in ('run-settings', 'desk-angles', 'desk-skip', 'desk-unskip')
+        # A Reject that decided the last fix queued the post's GEO review: its record changed.
+        or route in ('desk-skip', 'desk-unskip') and result.get('geo_queued')
+    ):
         if route == 'tool-action':
             # A tool result may be a job or a profile, whose IDs are not blogs: the blog
             # a tool worked on is the one the request named.

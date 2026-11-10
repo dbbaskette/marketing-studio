@@ -1,5 +1,11 @@
 # Changelog
 
+Unreleased: a post's own GEO review now waits until the fixes in your text are accepted or rejected, and runs when the last one is decided, so it reads the post as you left it and proposes nothing those changes already made. **Run GEO review** still runs one at any time.
+
+Unreleased: the desk and Review mode say where the GEO review stands, under the arc, and **Show GEO proposals** opens them in Finishing from either. **Open Finishing** now works from Review mode, and Review mode's move is the fixes still to decide.
+
+Unreleased: after a send to the Google Doc, the receipt says what reading the Doc back found: when it was read, how many suggestions are pending in it and how many comments were found.
+
 Unreleased: bringing in a Google Doc or a published page says so at once, in a sheet that names the steps (read it, open it on the desk, then the first pass) and puts itself away when the desk opens. While a check runs, the desk's card says what is being checked and that nothing is asked of you, in the studio's colour; work under way is no longer shown in the amber that means your move.
 
 Unreleased: accepting or rejecting a fix in review keeps the page where it is. Focus moves to the next fix without scrolling, the page moves only when that fix is off the screen, and it never jumps back to the count at the top.

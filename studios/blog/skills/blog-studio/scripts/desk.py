@@ -1705,5 +1705,7 @@ def dispatch(root, action, data):
             )
         else:
             done = desk_finish.skip(root, ident, data.get('job'), data.get('items'))
-        return {**desk_jobs.view(root, ident), 'finished': done}
+        # The last fix decided: the post's own GEO review, which waited for that, may run now.
+        queued = desk_jobs.geo_due(root, ident)
+        return {**desk_jobs.view(root, ident), 'finished': done, **({'geo_queued': True} if queued else {})}
     return desk_jobs.view(root, ident)

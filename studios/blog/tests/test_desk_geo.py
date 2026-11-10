@@ -718,6 +718,49 @@ class GEOChoiceTests(StartCase):
         self.settle(feedback, json.dumps({'summary': 'Fine.', 'comments': []}))
         self.assertEqual(len(self.geo_jobs(made['id'])), 1, 'queued once the first pass settles')
 
+    def fixes(self, **create):
+        """A brought draft whose spelling and grammar check found one fix, still to decide."""
+        made = self.create(manuscript=DRAFT, first_pass='copyedit', geo_review=True, **create)
+        check = made['working']
+        found = {
+            'suggestions': [
+                {'part': 'opening', 'before': 'An opening paragraph.', 'after': 'An opening.'}
+            ]
+        }
+        self.settle(check, json.dumps(found))
+        shown = desk_jobs.view(self.root, made['id'])
+        return made['id'], check['id'], shown
+
+    def test_with_fixes_to_decide_the_review_waits_for_the_last_of_them(self):
+        ident, check, shown = self.fixes()
+        self.assertEqual(self.geo_jobs(ident), [], 'not while a fix waits to be decided')
+        self.assertEqual(shown['geo_review']['status'], 'waiting')
+        self.assertEqual(shown['geo_review']['waiting'], 'review')
+        [item] = shown['finishing']['copyedit']['items']
+        done = desk.dispatch(self.root, 'skip', {'id': ident, 'job': check, 'items': [item['id']]})
+        self.assertTrue(done['geo_queued'], 'rejecting the last fix queues it')
+        self.assertEqual(len(self.geo_jobs(ident)), 1)
+        self.assertEqual(done['geo_review']['status'], 'working')
+        # Bringing the fix back never queues a second review.
+        back = desk.dispatch(
+            self.root, 'unskip', {'id': ident, 'job': check, 'items': [item['id']]}
+        )
+        self.assertNotIn('geo_queued', back)
+        self.assertEqual(len(self.geo_jobs(ident)), 1)
+
+    def test_accepting_the_last_fix_queues_the_review_on_the_changed_text(self):
+        ident, check, shown = self.fixes()
+        [item] = shown['finishing']['copyedit']['items']
+        done = desk.dispatch(
+            self.root,
+            'apply',
+            {'id': ident, 'seen': shown['revision'], 'job': check, 'items': [{'id': item['id']}]},
+        )
+        self.assertTrue(done['geo_queued'])
+        [job] = self.geo_jobs(ident)
+        self.assertEqual(desk.read(self.root, ident)['opening'], 'An opening.')
+        self.assertEqual(job['metadata']['desk']['seen'], desk.read(self.root, ident)['revision'])
+
     def test_a_start_runs_it_once_the_full_draft_is_written(self):
         made = self.create(way='topic', point='Retries save work.', geo_review=True)
         ident = made['id']
