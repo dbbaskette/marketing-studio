@@ -16,10 +16,10 @@ and their acceptance criteria are fulfilled.
 | Jobs and recovery | `tests/test_image_jobs.py` | Durable intent, duplicate IDs, cancellation, restart, changed-basis rejection, uncertain requests surviving content invalidation |
 | Settings and readiness | `tests/test_settings.py` | Shared authority, no mutation of existing work, stale/concurrent native form conflicts, explicit model/renderer readiness, no credential disclosure or generation |
 | Desk/approval/history | `tests/test_desk_engine.py` | Source-to-export workflow, scoped story/text/art edits, actual-pixel review contract, shared repair budget, exact user approval, newer-review invalidation including concurrent final export, immutable retryable delivery and restore |
-| Visual editor and history | `tests/test_workbench.py`, `tests/ui/journey.cjs` | Human element names, places and page bounds; two edits in sequence keeping selection and focus; history action, content and time with exact identity; edits/restore never inherit approval; earlier approved files unchanged; home readiness |
-| Review to delivery | `tests/test_delivery_flow.py`, `tests/ui/journey.cjs` | Roadmap stage and complete/needs/downloads at each state; review then checks in one action; stale revision, refused checks, missing renderer and failed render keep approval honest; approved files never shown as drafts; uncertain Google delivery keeps the local PDF and never resends; receipts for each chosen format |
+| Visual editor and history | `tests/test_workbench.py` | Human element names, places and page bounds; two edits in sequence keeping selection and focus; history action, content and time with exact identity; edits/restore never inherit approval; earlier approved files unchanged; home readiness |
+| Review to delivery | `tests/test_delivery_flow.py` | Roadmap stage and complete/needs/downloads at each state; review then checks in one action; stale revision, refused checks, missing renderer and failed render keep approval honest; approved files never shown as drafts; uncertain Google delivery keeps the local PDF and never resends; receipts for each chosen format |
 | Native HTTP/CLI/install | `tests/test_server.py`, `test_cli.py`, `test_installer.py` | Real loopback auth/Host/Origin limits, idempotent creation, CSV validation before creation, source-independent commands, rollback, active-work refusal and preservation |
-| Browser | `tests/ui/journey.cjs` | Real native page and renderer, injected assistant; intake to approved download, focused edit, actual-pixel zoom, comparison, 320/390/1280 widths, light/dark, reduced motion/transparency, keyboard dialog return and 44 px controls |
+| Browser | No scripted journey. `tests/ui/fixture_server.py` serves the real native page and renderer with an injected assistant, for a person to look at | Not a regression check: widths, light/dark, reduced motion, keyboard return and control sizes are looked at by hand when a screen changes |
 | Marketing Studio integration | Root `tests/test_infographic_release.py` and existing suites | Catalog, CLI flags, lifecycle, shared setup, fixed LAN bridge, deterministic subset inventory and minimal dependencies |
 | Clean platform install | `scripts/ci/infographic_bundle_acceptance.py` | Prepared private runtime and renderer, real native export, extracted download removed, Marketing Studio removed, no system Python/Node or provider/provisioning calls |
 
@@ -49,8 +49,7 @@ actual source tree and guest environment in those logs.
 | Linux ARM64 / Windows | No supported renderer pin | Refused before preparing an Infographic Studio platform bundle; existing studio subsets retain their own support |
 
 Application runtime is Python 3.11+. Prepared runtime versions are fixed in
-`pins/runtimes.json`, rendering in `pins/infographic-renderer.json`, browser-test-only
-tooling in `tests/ui/package-lock.json`. Exact fonts and the selected brand's own
+`pins/runtimes.json`, rendering in `pins/infographic-renderer.json`. Exact fonts and the selected brand's own
 local prerequisites remain explicit. Fonts are not silently substituted or shipped.
 
 ## Current source and evidence

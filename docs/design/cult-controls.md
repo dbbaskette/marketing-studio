@@ -32,12 +32,10 @@ live in `ui-kit/style.css`. Both retain the upstream copyright and MIT permissio
 
 ## Verification
 
-Use the affected studio UI module suites plus disposable phone/desktop browser journeys.
-Check retained input, rapid selection, focus, no jobs from navigation, reduced motion,
+Use the affected studio UI module suites, and look at the changed screens at phone and
+desktop width over a disposable fixture. Check retained input, rapid selection, focus, no jobs from navigation, reduced motion,
 light/dark appearance and page overflow. Reuse the full Training Studio suite recorded in
 [the workflow plan](../superpowers/plans/2026-11-07-cult-ui-workflows.md) for unchanged runtime code.
 
-The existing Tart wrapper runs `scripts/ci/guest-cult-source-ui.sh` for all five
-surfaces. A focused rerun may set `CULT_UI_JOURNEYS` inside its disposable guest
-entry point to a comma-separated subset of `tabs,home,infographic,progress,slides`;
-retain the other journeys' passed evidence for unchanged source.
+The Tart wrapper `scripts/ci/guest-cult-source-ui.sh` runs the shared intake and
+consistency suites. It no longer drives the five surfaces in a browser.

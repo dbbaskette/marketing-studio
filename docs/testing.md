@@ -57,21 +57,33 @@ assistant job, signed-in provider, private team repository, or real user setting
 are needed. Signed-in provider and multi-user acceptance remain separate from
 these offline checks.
 
-The Document Library's browser check, `tests/library_visual.cjs`, drives the real
-Marketing Studio home served by `tests/library_visual_server.py` over synthetic
-settings, a synthetic library and a synthetic Blog Studio workspace in a temporary
-folder. It covers the Library screen, Add existing work to library and the Add from
-library sheet at 1280, 390 and 320px, in light and dark, with reduced motion and with
-reduced transparency and more contrast. It checks that the screen leads with its list
-and one filled action, that **Filters** opens every filter on a phone in the Library
-and in the sheet, that a mixed upload (`alpha.md`, `beta.png`, `gamma.txt`) and an
-oversize file are reported per file and retried without duplicates, that Close
-preview returns to its row by keyboard, and Remove from library with Restore.
-codex, claude and gemini are refusing
-stand-ins and `BROWSER` is false. Run it with the library tests in the shared runner:
-`bash scripts/ci/tart-macos.sh --guest scripts/ci/guest-library-visual.sh`. Run it from
-a plain clone: the guest clones its source with Git, which cannot read a linked
-worktree's `.git` file.
+## Looking at a screen in a browser
+
+There are no scripted browser journeys. Page behaviour is covered by the module suites,
+which drive each page's real script over a disposable DOM stand-in, and a change to how a
+screen looks or reads is checked by opening that screen in a browser.
+
+Each of these serves a real page over synthetic settings, a synthetic workspace and
+stand-in assistants, in a temporary folder, and prints its private address. None starts a
+provider job or reads this computer's studio settings:
+
+| Screen | Start it with |
+| --- | --- |
+| Marketing Studio home and the Document Library | `python3 tests/library_visual_server.py` |
+| Brands | `python3 tests/brands_fixture.py` |
+| Training Studio, a training being written | `python3 tests/training_progress_fixture.py` |
+| Training Studio, drafts to review | `python3 studios/training/tests/ui/training_plan_fixture.py --desk` |
+| A deck's slides, in either deck studio | `python3 tests/slide_review_fixture.py training --rendered` or `presentation` |
+| Presentation Studio, an empty workspace | `python3 studios/presentation/tests/ui/intake_fixture.py` |
+| Blog Studio, a draft on the desk | `python3 tests/blog_browsing_fixture.py` |
+| Infographic Studio | `python3 studios/infographic/tests/ui/fixture_server.py --renderer <headless renderer>` |
+
+`studios/training/tests/ui/outline_fixture.py` and
+`studios/presentation/tests/ui/story_fixture.py` also need `STUDIO_TEST_RESEARCH_RUNTIME`.
+The home fixture stops when the process that started it ends, so run it in the foreground.
+Look at each changed screen at desktop and phone width, in light and dark. This is one
+person's look, not a regression check: it does not repeat itself, so a rule that must keep
+holding belongs in a module suite.
 
 For a setup-only repair after a full native suite run, use
 `bash scripts/ci/tart-macos.sh --guest scripts/ci/guest-shared-setup.sh`.
@@ -183,11 +195,8 @@ and all CLI acceptance journeys.
 The shared full check includes its native offline suite. Set
 `INFOGRAPHIC_STUDIO_TEST_RENDERER` to an explicitly installed headless renderer to
 include actual font/decode/geometry and all six-form/three-preset export checks.
-`studios/infographic/tests/ui/journey.cjs` uses the locked Playwright test runtime,
-a real protected loopback desk and injected assistants; it never uses personal
-state or starts providers. The dedicated `guest-infographic.sh` Tart entry executes
-the full relevant suite, browser journey and prepared source-independent native
-package acceptance. Read [the acceptance matrix](../studios/infographic/docs/acceptance.md)
+The dedicated `guest-infographic.sh` Tart entry executes the full relevant suite and
+prepared source-independent native package acceptance. Read [the acceptance matrix](../studios/infographic/docs/acceptance.md)
 for the precise distinction between offline functionality, real rendering, live
 provider validation and owner illustration-quality acceptance.
 
@@ -197,8 +206,5 @@ The Week 1 audit changes use the existing Activity log and its disposable tests.
 `test_activity_log` distinguishes a saved intermediate result from overlapping model
 calls, counts same-second results once, and leaves unknown timings unestimated.
 Presentation Studio’s `WordsTests` includes first-edit/autosave focus preservation;
-its DOM harness models focus loss when a connected subtree is moved. The Library
-visual journey checks that Use selected stays in view at both ends of the document
-list at 320, 390 and 1280 px. The shared source-editor journey verifies the focus
-destination after a successful pasted-source capture. See
+its DOM harness models focus loss when a connected subtree is moved. See
 [the companion compatibility check](research-responsiveness-contracts.md).
