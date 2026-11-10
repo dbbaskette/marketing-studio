@@ -28,7 +28,7 @@ import shared_library
 import source_curator
 from google_drive import GoogleError
 from studio_core import server as shared_server
-from studio_core.server import suite_port, with_suite_port
+from studio_core.server import suite_port, with_appearance, with_suite_port
 from hub_store import HubError, TransportError, AuthenticationError, encoded, sha
 
 ASSETS = Path(__file__).resolve().parents[1] / 'assets' / 'management'
@@ -46,6 +46,11 @@ STATIC = {
     # The shared Document Library's sheet, from the core every studio shares.
     '/library.js': (
         str(Path(__file__).resolve().parent / 'studio_core' / 'deck_web' / 'library.js'),
+        'text/javascript; charset=utf-8',
+    ),
+    # The shell kit every studio page shows: appearance, command palette, progress track.
+    '/shell.js': (
+        str(Path(__file__).resolve().parent / 'studio_core' / 'deck_web' / 'shell.js'),
         'text/javascript; charset=utf-8',
     ),
 }
@@ -3120,7 +3125,7 @@ def server(root, port=0, bind=True, shared_setup=False, keep_workspace=True):
                 body = (ASSETS / name).read_bytes()
                 if media.startswith('text/html'):
                     # Only when Marketing Studio started this desk does its page link back.
-                    body = with_suite_port(body, suite_port())
+                    body = with_appearance(with_suite_port(body, suite_port()))
                 return made(200, body, media)
             result = None
             if parsed.path.startswith('/api/'):

@@ -8,6 +8,8 @@
 
 const EDITED_LOOKS = 'You edited the outline, so the looks will be drawn again from it. You pick from the new ones before the deck is built.';
 const TOKEN_HEADER = 'X-Presentation-Studio-Token';
+// The shell kit saves the appearance through this page's own key.
+if (typeof StudioShell !== 'undefined') StudioShell.connect({ header: TOKEN_HEADER, token: () => view.token });
 const POLL_SHOWN = 5000;
 const POLL_HIDDEN = 20000;
 const POLL_RUN = 1000; // show new slide previews while a deck is working

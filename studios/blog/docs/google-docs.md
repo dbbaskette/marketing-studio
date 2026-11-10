@@ -289,7 +289,7 @@ the separate incoming action. Finding no incoming changes does not prevent sendi
 your local edits.
 
 Reopening a saved copy-edit review resumes Review mode when the address does not
-request a specific manuscript view. Explicit Read, Edit section and Full desk links
+request a specific manuscript view. Explicit Read, Edit section and Edit everything links
 keep their view, and **Review fixes** remains available after a restart.
 
 | On the desk | In the Doc |

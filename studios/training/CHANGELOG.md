@@ -1,5 +1,9 @@
 # Changelog
 
+Unreleased: a training's desk is a workbench. Its materials are listed on the left, the material you are reading fills the middle, and one rail on the right holds the Brief, Plan, Make, Ship arc, **Your move**, and what the assistant is doing. Press **F** to read the material alone.
+
+Unreleased: a training's stages are one drawn line, the progress track, with the stage waiting for you in amber; **Search and jump** (Cmd or Ctrl+K) and a Light, Dark or Auto appearance sit at the foot of the sidebar.
+
 Unreleased: the desk says where a level stands in one line (ready to read, marked ready, awaiting your review) with **What is left** under it, and the progress line offers finished drafts instead of saying nothing is needed while they wait. A deck now needs Harness Slides 0.17.0 or newer.
 
 ## Unreleased — 4.14.0

@@ -620,7 +620,7 @@ function sDeskProgress(held){
   sFrame(view.title,[sDeskTeam(view),p.stop],sDeskDriverWords(view)||p.above,()=>sRoute('blogs'));
   // What the assistant is doing: in the research panel while research runs, else on its own.
   const of={id:held.id},researching=start.research_progress&&typeof StudioResearch!=='undefined';
-  sPage(p.lede,sDeskElsewhere(view),p.stopped,...(researching?[StudioResearch.progress(start.research_progress,{workers:view.activity||[],lines:sActivityLoad(of)})]:[sActivityNow(view.activity,of)]),p.card,sActivityLog(of));
+  sPage(sDeskBench(held),p.lede,sDeskElsewhere(view),p.stopped,...(researching?[StudioResearch.progress(start.research_progress,{workers:view.activity||[],lines:sActivityLoad(of)})]:[sActivityNow(view.activity,of)]),p.card,sActivityLog(of));
   if(!start.problem)sDeskFollowStart(held);
 }
 // A stopped start: the ways on a run has. More time for a step out of time, no research for
@@ -759,10 +759,12 @@ async function sDeskChoose(held,reading,part=held.activePart){
 // accepted or rejected in the text. On a phone the view, the buttons and the page's sentence
 // fold into one bar beside Go to section, so the title and the first paragraph come first.
 function sDeskReadingControls(held,lede,status){
-  const choices=sChoice('Manuscript view',[['read','Read'],['edit','Edit section'],['full','Full desk']],held,'reading',value=>sDeskChoose(held,value));
+  const choices=sChoice('Manuscript view',[['read','Read'],['edit','Edit section'],['full','Edit everything']],held,'reading',value=>sDeskChoose(held,value));
   const selected=['read','edit','full'].indexOf(held.reading);
   Drafting.cultTabs(choices.querySelector('.segmented'),selected,held.cultReading ?? selected);
   held.cultReading=selected;
+  // What the chosen view is for, said under the switch, so its three names need no guessing.
+  choices.append(sNode('p','quiet field-hint',{read:'Read: the whole post as your reader sees it.',edit:'Edit section: one section at a time, in an editor.',full:'Edit everything: every section on one page, each with a box to ask your assistant for a rewrite.'}[held.reading]||''));
   const picker=sField('desk-part-picker','Go to section',held,'activePart',{options:[['title','Title'],['opening','Opening'],...held.view.sections.map(section=>[section.id,deskHeading(section.heading)])],changed:value=>sDeskChoose(held,held.reading,value)});
   const actions=sAdd(sNode('div','bar'),sButton('Polish',()=>sDeskFinishOpen(held,'copyedit'),'filled'),sButton('Sources',()=>sDeskSourcesSheet(held)),sButton('Outline',async()=>{await sDeskFlush(held);held.tab='outline';sDeskRender(held);}));
   if(!sNarrow())return sAdd(sNode('div','desk-reading-controls'),choices,picker,actions);
@@ -788,6 +790,24 @@ function sDeskReadPart(held,part){
   const comments=sDeskComments(held,part);if(comments)card.append(comments);
   if(sDeskWorking(held,part))card.append(sNode('p','quiet','Working on this part…'));
   return card;
+}
+// The head of a blog's workbench: a line of light, the one arc every studio shares, and the
+// one thing that waits for the person. The draft and its side panel are the workbench itself.
+function sDeskBench(held){
+  if(typeof StudioShell==='undefined')return null;
+  const view=held.view,start=view.start&&!sDeskHasText(view)?view.start:null,working=!!(view.working||start&&!start.problem);
+  const hasText=sDeskHasText(view),finished=!!view.finished;
+  const at=start?(start.open==='outline'?1:2):!hasText?1:view.working?2:3;
+  const stopped=!!(start&&start.problem);
+  const move=stopped?{title:'It stopped and needs you',text:'See what happened below, then choose how to go on.'}
+    :working||finished?null
+    :!hasText?{title:'Write the draft from your outline',text:'Shape the outline, then write the draft or one section at a time.'}
+    :sDeskCan(held)?{title:'Review your draft',text:'Finishing checks it before you publish. Nothing changes until you accept.',action:{label:'Open Finishing',run:()=>{if(!held.finish)sDeskFinishOpen(held);}}}:null;
+  const head=sNode('div','workbench-head');head.dataset.key='workbench-head';
+  head.append(StudioShell.arc({at,yours:!!move,finished,note:working?(sDeskStatusWords(held)||''):''},'Where this blog is'),
+    move?StudioShell.move(move):StudioShell.move({calm:true,title:finished?'Published':'Nothing is yours right now',text:finished?'':working?'It opens here as it is written.':''}));
+  const bench=sNode('div','workbench-top');bench.append(StudioShell.pulse(move?'yours':working?'working':'still'),head);
+  return bench;
 }
 function sDeskRender(held){
   if(held.mode==='review')return sDeskReview(held);
@@ -816,7 +836,8 @@ function sDeskRender(held){
   held.panel=finishing?sDeskPanel(held):null;held.panelKey=finishing?sDeskPanelKey(held):null;
   const lede=held.tab==='outline'?'Rename, reorder, add and remove sections and say what each must do. Write the draft from the outline, or one section at a time.':'Read your manuscript, or choose a section to edit. Polish and checks offer suggestions; nothing changes until you accept.';
   const said=sNode('p','lede',narrow?lede+' Changes save as you type.':lede);
-  sPage(narrow?null:said,sDeskElsewhere(view),narrow?null:status,held.tab==='outline'?sDeskTabs(held):null,held.tab==='outline'?null:sDeskReadingControls(held,said,status),sAdd(sNode('div','desk-layout'+(finishing&&!sheet?' desk-finishing':'')),column,finishing&&!sheet?held.panel:held.aside),sheet?held.panel:null,held.bar);
+  held.bench=sDeskBench(held);
+  sPage(held.bench,narrow?null:said,sDeskElsewhere(view),narrow?null:status,held.tab==='outline'?sDeskTabs(held):null,held.tab==='outline'?null:sDeskReadingControls(held,said,status),sAdd(sNode('div','desk-layout'+(finishing&&!sheet?' desk-finishing':'')),column,finishing&&!sheet?held.panel:held.aside),sheet?held.panel:null,held.bar);
   sDeskImagesLoad(held);
 }
 // After a job starts, moves on or ends: redraw only the cards it changed, so the part the
@@ -828,6 +849,8 @@ function sDeskTyping(node){const focused=sDeskFocused();return !!(node&&focused&
 function sDeskRefresh(held,before){
   // What the assistant is doing, drawn again in place whatever else is drawn again.
   sActivityUpdate($('studio-page'),held.view.activity,{id:held.id});
+  // The arc and the move follow every change, whatever else is drawn again.
+  if(held.bench&&held.bench.parentNode){const bench=sDeskBench(held);if(bench){held.bench.replaceWith(bench);held.bench=bench;}}
   if(held.mode==='review')return sDeskReviewRefresh(held,before);
   const view=held.view,order=found=>(found?.sections||[]).map(section=>section.id).join(',');
   if(held.tab==='outline'||held.shownTab!==held.tab){if((held.outlineTimer||held.tab==='outline'&&sDeskTyping(held.column))&&sDeskCurrent(held)){if(!held.outlineTimer)held.outlineStale=true;sDeskToolbar(held);const focus=sFocusHeld(held.aside),aside=sDeskAside(held);held.aside.replaceWith(aside);held.aside=aside;sFocusAgain(focus,aside);sDeskPanelSync(held);return;}held.outline=null;return sDeskRender(held);}
@@ -1622,7 +1645,7 @@ function sReviewToolbar(held,state,force=false){
   if(!force&&held.review?.toolbarKey===key&&studio.screen==='desk')return;if(held.review)held.review.toolbarKey=key;
   // Before any check there is one way to start it, in the page: no Check again.
   const again=ran?sButton('Check again',button=>sReviewCheck(held,button)):null;if(again)again.disabled=!sDeskCan(held)||!!view.working;
-  const full=sButton('Open the full desk',()=>sReviewLeave(held,'full'));
+  const full=sButton('Edit everything',()=>sReviewLeave(held,'full'));
   sFrame(view.title,sFold([again,full,...sDeskShareActions(held)]),state.working?sReviewDoing(state):sDeskDocWords(view)||'Check spelling and grammar',()=>sReviewLeave(held));
 }
 // What the check under way is doing, said in the toolbar and above the draft.
@@ -1633,7 +1656,8 @@ function sDeskReview(held){
   if(held.stale)sDeskStale(held);else status.textContent=held.saved||'';
   held.review.head=sReviewHead(held,state);held.review.headKey=sReviewHeadKey(held,state);held.review.paper=sReviewPaper(held,state);
   held.review.lede=sNode('p','lede',sReviewLede(state));
-  sPage(held.review.lede,status,sActivityNow(held.view.activity,{id:held.id}),held.review.head,held.review.paper,sActivityLog({id:held.id}));
+  held.bench=sDeskBench(held);
+  sPage(held.bench,held.review.lede,status,sActivityNow(held.view.activity,{id:held.id}),held.review.head,held.review.paper,sActivityLog({id:held.id}));
   sDeskImagesLoad(held);sReviewProof(held);sReviewFocusAfter(held);
 }
 // What needs the person first: the check under way, a problem, the count with Accept all and
@@ -1708,7 +1732,7 @@ function sReviewGoogle(held){
   if(g.plan){
     const changes=sNode('ul','look');for(const item of g.plan.proposals||[])changes.append(sNode('li','',sDeskGoogleItem(item)));
     const count=g.plan.count;
-    const send=sButton('Send '+count+(count===1?' change':' changes'),async button=>{await busy(button,'Sending…',async()=>{try{const result=await api('desk-google-send',{id:held.id,plan:g.plan.plan,confirmed:true});g.sent={status:result.status,message:['verified-pending','verified-comments'].includes(result.status)?sDeskSentWords(g.plan,result):'The result is not yet verified. Check delivery in the full desk’s Finishing before trying anything else.'};g.problem='';await sDeskReread(held);}catch(error){g.problem=error.message;if(/changed/.test(error.message))g.plan=null;}sReviewHeadShow(held);});},'filled');send.disabled=!sDeskCan(held);
+    const send=sButton('Send '+count+(count===1?' change':' changes'),async button=>{await busy(button,'Sending…',async()=>{try{const result=await api('desk-google-send',{id:held.id,plan:g.plan.plan,confirmed:true});g.sent={status:result.status,message:['verified-pending','verified-comments'].includes(result.status)?sDeskSentWords(g.plan,result):'The result is not yet verified. Check delivery in Finishing, under Edit everything, before trying anything else.'};g.problem='';await sDeskReread(held);}catch(error){g.problem=error.message;if(/changed/.test(error.message))g.plan=null;}sReviewHeadShow(held);});},'filled');send.disabled=!sDeskCan(held);
     out.push(sNode('p','',sDeskGoogleSaid(g.plan)),disclosure('What would be sent',changes),sAdd(sNode('div','bar'),send,sButton('Cancel',()=>{g.plan=null;sReviewHeadShow(held);})));
     return out;
   }

@@ -47,6 +47,8 @@ function suitePort(port, here) {
 }
 const resumeBlogId = new URLSearchParams(location.hash.slice(1)).get('resume');
 const token = location.hash.slice(1).split('&')[0] || sessionStorage.getItem('blog-studio-session') || '';
+// The shell kit saves the appearance through this page's own key.
+if(typeof StudioShell!=='undefined')StudioShell.connect({header:'X-Blog-Studio-Token',token});
 // The port the server names belongs to the Marketing Studio that started it, so it is preferred
 // to one kept from an earlier session.
 const suite = suiteHome(location.hash, location) || rememberedSuiteHome(location) || suitePort(document.body?.dataset?.suitePort, location)
