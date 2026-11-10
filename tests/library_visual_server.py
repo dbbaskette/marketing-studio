@@ -1,4 +1,4 @@
-"""A disposable Marketing Studio home for tests/library_visual.cjs: synthetic settings, a
+"""A disposable Marketing Studio home for a look in a browser: synthetic settings, a
 synthetic Document Library and one synthetic Blog Studio workspace, all in a temporary
 folder. Prints the page's private address and serves until it is stopped.
 

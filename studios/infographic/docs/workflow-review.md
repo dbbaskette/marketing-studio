@@ -48,13 +48,9 @@ Its synthetic image adapter and renderer exercise the contracts without claiming
 image quality or calling a provider. Malformed references and scoped revisions
 must produce ordinary validation failures and preserve the page.
 
-`tests/ui/workflow-matrix.cjs` drives representative responses through the actual
-phone UI and pinned renderer, including Google Doc intake and Google Doc/PDF
-delivery adapters, focused editing, inspection, checks, approval and downloads.
-It checks process assertions before any editing, zero rendering, measurement
-precision, calculation delivery, saved-response refresh and request counts.
-The normal journeys cover 320/390/1280 widths, light/dark, reduced motion,
-control sizes, horizontal overflow, browser runtime errors and stale approval.
+No scripted browser journey drives these responses through the page. The page is
+looked at by hand over `tests/ui/fixture_server.py`, whose `--scenario` option serves
+each representative response with the pinned renderer.
 The existing activity, remote-source, private-return-link, team, image-adapter
 and standalone installer checks remain part of the clean-machine suite.
 

@@ -140,14 +140,14 @@ records stay in the existing private, ignored case directory.
 
 | Transition | Screen behavior | Regression coverage |
 | --- | --- | --- |
-| Investigation starts/ends | Live robot count follows observed invocations; current stage has accent fill and `aria-current` | `SessionTests.test_live_agents_follow_actual_invocations_in_every_phase`, shared component and browser checks |
-| Evidence collected → synthesis → independent review | Kept evidence remains visible; each active writer/reviewer counts as one | Shared session tests and Training Studio browser journey |
-| Review requests evidence corrections | Next correction round identifies affected areas and exposes reviewer reasons; unaffected packets remain kept | `SessionTests.test_fact_correction_recollects_only_affected_area` and browser correction state |
+| Investigation starts/ends | Live robot count follows observed invocations; current stage has accent fill and `aria-current` | `SessionTests.test_live_agents_follow_actual_invocations_in_every_phase`, shared component checks |
+| Evidence collected → synthesis → independent review | Kept evidence remains visible; each active writer/reviewer counts as one | Shared session tests |
+| Review requests evidence corrections | Next correction round identifies affected areas and exposes reviewer reasons; unaffected packets remain kept | `SessionTests.test_fact_correction_recollects_only_affected_area` |
 | Review requests prose corrections only | Recombine and recheck; never show a new investigation | `SessionTests.test_prose_correction_does_not_recollect_evidence` |
 | Terminal observation unavailable | Show an unknown count and confirmation wording; keep capacity occupied | `SessionTests.test_unconfirmed_terminal_invocation_blocks_generation_restart` |
 | Stop requested → termination confirmed | Retain the final activity callback for the same run; show stopping until the count reaches zero, without adopting incomplete research | `ParallelNativeTests.test_stop_keeps_terminal_agent_observation_without_accepting_research` |
-| Research completes | Count is zero; Training Studio hands off to its next view, Infographic Studio offers the checked research | Session tests and both browser journeys |
-| Training Studio starts building materials | Current work is the heading; next plan approval or available draft count replaces a moving ETA | Training Studio desk/page tests and building-status browser state |
+| Research completes | Count is zero; Training Studio hands off to its next view, Infographic Studio offers the checked research | Session tests |
+| Training Studio starts building materials | Current work is the heading; next plan approval or available draft count replaces a moving ETA | Training Studio desk/page tests |
 
 Correction rounds retain the existing three-round bound, independent review and
 source policy. A “Why another round?” disclosure shows the saved review reasons

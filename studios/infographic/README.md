@@ -203,6 +203,6 @@ python3 -m unittest discover -s tests -v
 ```
 
 The tests do not download a renderer or start live providers. Real rendering checks
-need an explicitly available renderer. Browser journeys use the separate test
-runtime; see [acceptance](docs/acceptance.md). A test pass is not live-provider or
+need an explicitly available renderer. There are no scripted browser journeys; see
+[acceptance](docs/acceptance.md). A test pass is not live-provider or
 owner artwork sign-off. [MIT licence](LICENSE)
