@@ -4,6 +4,8 @@ const {make, add} = Drafting;
 const launch = new URLSearchParams(location.hash.slice(1));
 let token = launch.get('token') || '';
 try { if(token)sessionStorage.setItem('infographic-studio-token',token); else token=sessionStorage.getItem('infographic-studio-token')||''; }catch(f){}
+// The shell kit saves the appearance through this page's own key.
+if(typeof StudioShell!=='undefined')StudioShell.connect({header:'X-Infographic-Studio-Token',token:()=>token});
 function requestId(){return Array.from(crypto.getRandomValues(new Uint8Array(16)),v=>v.toString(16).padStart(2,'0')).join('');}
 window.addEventListener('hashchange',()=>{const next=new URLSearchParams(location.hash.slice(1)).get('token');if(next&&next!==token)location.reload();});
 function suiteHome(hash, here) {
@@ -624,7 +626,7 @@ function renderProject() {
   }
   if(selected && !p.scene)parts.push(card('Make the page',make('p','',p.brand?'Using pinned '+p.brand.identity.name+'.':'Compose with your configured brand. Brand settings are pinned when you choose this action.'),button('Build page',compose)));
   // With a page built, the page comes first and the chosen story waits below it.
-  if(delivery||p.scene)parts.push(workbench(p,delivery));
+  if(delivery||p.scene){const page=workbench(p,delivery);if(page&&page.dataset)page.dataset.zone='work';parts.push(page);}
   parts.push(chosenStory);
   if(p.scene) {
     parts.push(detail('Layout alternatives',button('Visual infographic',()=>nativeReady?action('visual-layout'):reviseStorySheet(selected,true)),button('Stacked blocks',()=>action('layout',{arrangement:'stack'})),button('Two columns',()=>action('layout',{arrangement:'columns'}))));
@@ -646,6 +648,17 @@ function renderProject() {
   if(typeof StudioActivity!=='undefined')parts.push(StudioActivity.logCard({key:'activity-log '+p.id,load:()=>request('/api/activity-log?id='+encodeURIComponent(p.id)),
     entry:entry=>request('/api/activity-log?'+new URLSearchParams({id:p.id,entry}))}));
   parts.push(detail('History',make('p','quiet','Each saved revision is kept. Restoring makes new work and never brings back an approval.'),add(make('div','desk-versions'),...historyGroups(held.history).map((g,i)=>historyGroup(g,i===0))),held.history.length>=100&&held.history.at(-1).revision>0?button('Older revisions',olderHistory):null));
+  // The workbench every studio shares: a line of light, the one arc, and the one move, with
+  // the page itself in the middle and everything else in the rail beside it.
+  if(typeof StudioShell!=='undefined'){
+    const at=!stage||stage==='story'||stage==='choose'?1:stage==='build'||stage==='preview'?2:3;
+    const working=Boolean(running.get(p.id)),finished=stage==='deliver'&&Boolean(approvedFiles)&&(held.google_deliveries||[]).some(sent=>sent.current&&sent.url);
+    parts.unshift(StudioShell.pulse(working?'working':finished?'still':'yours'),
+      StudioShell.arc({at,yours:!working&&!finished,finished,note:working?'working':''},'Where this infographic is'),
+      working?StudioShell.move({calm:true,text:'The page opens here when it is ready.'})
+        :finished?StudioShell.move({calm:true,title:'Delivered',text:'Every approved revision keeps its files.'})
+        :StudioShell.move({title:next[0],text:needs.replace(next[0]+': ','').replace(/^./,c=>c.toUpperCase()),action:{label:next[0],run:next[1]}}));
+  }
   $('main').replaceChildren(...parts.filter(Boolean));
   paintWork();     // this infographic's running work, and its locked controls
   restoreBench();

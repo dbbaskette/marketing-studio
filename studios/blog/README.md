@@ -67,7 +67,7 @@ workspaces, settings and unrelated skills are preserved.
 The start, drawn. Filled boxes are your decisions or input, tinted boxes are
 assistant work and grey boxes are Blog Studio's own steps.
 
-![Blog Studio start and write workflow: open Blog Studio, with shared setup the first time. New blog takes the idea and sources, then Writing preferences sets length, tone and an optional GEO review. The assistant researches only if you ticked research, then outlines and drafts with nothing needed from you, runs the GEO review only if you included it, and the draft opens on the desk for reading, Edit section or Full desk. Alternatively, Edit or polish a draft takes pasted text, an upload, a Google Doc or a link; What should happen first chooses the first pass, the assistant runs it (spelling, feedback, GEO or a reshape), then the GEO review if you included it, and the draft opens on the same desk.](docs/assets/blog-studio-workflow-write.svg)
+![Blog Studio start and write workflow: open Blog Studio, with shared setup the first time. New blog takes the idea and sources, then Writing preferences sets length, tone and an optional GEO review. The assistant researches only if you ticked research, then outlines and drafts with nothing needed from you, runs the GEO review only if you included it, and the draft opens on the desk for reading, Edit section or Edit everything. Alternatively, Edit or polish a draft takes pasted text, an upload, a Google Doc or a link; What should happen first chooses the first pass, the assistant runs it (spelling, feedback, GEO or a reshape), then the GEO review if you included it, and the draft opens on the same desk.](docs/assets/blog-studio-workflow-write.svg)
 
 ## Finish without losing your voice
 
@@ -77,7 +77,7 @@ protected. You can accept individual changes, edit them, reject them or use the
 available batch actions; a suggestion that needs your judgment stays for review.
 
 Returning to a saved copy-edit review opens Review mode. Explicit Read, Edit section
-and Full desk links keep that view, with **Review fixes** available after a restart.
+and Edit everything links keep that view, with **Review fixes** available after a restart.
 For a linked Google Doc, **Review changes to send** previews local edits before
 you choose **Send to Google Doc**. **Google Doc → Bring accepted changes** checks
 incoming text separately; no incoming updates does not prevent sending local edits.
@@ -102,7 +102,7 @@ While the assistant works, each job shows what it is doing now as **Now: …**, 
 blog's **Activity log**, on the desk and on a run, keeps every finished job, how it ended
 and what it did. It stays on this computer and is never shared.
 
-[Full desk and tool guide](docs/runner.md) · [Voice walkthrough](docs/new-user-guide.md)
+[Edit everything and tool guide](docs/runner.md) · [Voice walkthrough](docs/new-user-guide.md)
 
 ## Make posts clear for AI search (GEO)
 

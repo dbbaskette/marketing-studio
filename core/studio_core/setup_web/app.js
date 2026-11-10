@@ -22,6 +22,8 @@ function linkKey(hash, bare) {
 const tokenInLink = linkKey(location.hash, standalone);
 if (tokenInLink) { sessionStorage.setItem(sessionKey, tokenInLink); history.replaceState(null, '', location.pathname); }
 const token = tokenInLink || sessionStorage.getItem(sessionKey) || '';
+// The shell kit saves the appearance through this page's own key.
+if (typeof StudioShell !== 'undefined') StudioShell.connect({ header: tokenHeader, token, home: standalone ? '/onboarding/api/' : '/api/' });
 // A new link opened in a tab that already shows this page changes only the fragment, which
 // does not reload it: after a restart the page would keep the old key. Start again with the new one.
 window.addEventListener('hashchange', () => {
@@ -744,7 +746,9 @@ function renderWorkOverview(){
       if(row.dataset.summary!==JSON.stringify(item)){
         let copy=row.querySelector('.work-summary-copy'),button=row.querySelector('button');
         if(!copy){copy=element('div','','stack work-summary-copy');button=element('button','','button button-quiet');button.addEventListener('click',()=>resumeWork(row.resumeStudio,row.resumeItem,button));row.append(copy,button);}
-        copy.replaceChildren(element('p',studio.name,'field-hint'),element('h3',item.title,'card-title'));
+        // In its studio's colour, and amber where it is the person's move, as on every desk.
+        row.dataset.studio=studio.id;row.dataset.state=state;
+        copy.replaceChildren(state==='needs-you'?element('p','Your move · '+studio.name,'move-label'):element('p',studio.name,'field-hint'),element('h3',item.title,'card-title'));
         if(state==='in-progress')copy.append(element('p','Saved as in progress. Open to check current activity.','quiet'));
         if(item.kind==='intake')copy.append(element('p','Step '+(item.step+1)+' · Saved '+item.observed_at.slice(0,16).replace('T',' ')+' UTC','quiet'));
         if(item.warning)copy.append(element('p',item.warning,'spending-warning'));

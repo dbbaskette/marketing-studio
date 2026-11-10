@@ -1,5 +1,9 @@
 # Changelog
 
+Unreleased: a deck's page leads with the Brief, Plan, Make, Ship arc and **Your move**. Slide text is reviewed in the middle of the screen with the assistant's rail beside it; the slide desk keeps its side panel and shows the arc in a band above.
+
+Unreleased: **Search and jump** (Cmd or Ctrl+K) and a Light, Dark or Auto appearance sit at the foot of the sidebar.
+
 Unreleased: New deck's three steps each say what was chosen and open when pressed, as Training Studio's do, and the third step's heading matches its name. A deck now needs Harness Slides 0.17.0 or newer.
 
 ## Unreleased — 4.15.0

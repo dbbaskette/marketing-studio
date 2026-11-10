@@ -4085,3 +4085,318 @@ body[data-product="Training Studio"] .cult-tab-rail > [role="tab"] {
   .cult-tab-rail::before { border:2px solid Highlight; background:Canvas; }
   .cult-expandable,.cult-launch-card { border-color:CanvasText; box-shadow:none; }
 }
+
+/* The shell kit (studio_core/deck_web/shell.js), which the desk's styles above come before.
+   Golden Gate 3: one signature, the progress track, in the studio's own colour. The
+   palette and the finish card are transient, so they take the sheet material; the track
+   is content and stays flat. */
+
+/* The headline of a Home screen speaks in the system serif; nothing else in the shell does. */
+.large-title {
+  font-family: ui-serif, "New York", "Iowan Old Style", Georgia, serif;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+/* A project's stages as one line: filled where done, larger where it is now, amber and
+   breathing where it waits for the person. */
+.track {
+  display: flex;
+  margin: 0.7rem 0 0.2rem;
+  padding: 0;
+  list-style: none;
+  --track-color: var(--studio-color, var(--accent));
+}
+.track-stage {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  padding-top: 1.35rem;
+  font-size: 0.78rem;
+  line-height: 1.25;
+  color: var(--quiet);
+  overflow-wrap: anywhere;
+}
+.track-stage:last-child { flex: 0 1 auto; }
+.track-stage::before {
+  content: "";
+  position: absolute;
+  top: 0.44rem;
+  left: 0.5rem;
+  right: 0;
+  height: 2px;
+  background: var(--hair);
+}
+.track-stage:last-child::before { display: none; }
+.track-stage[data-state="done"]::before { background: var(--track-color); }
+.track-mark {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: grid;
+  place-items: center;
+  width: 1rem;
+  height: 1rem;
+  border: 2px solid var(--control-line);
+  border-radius: 50%;
+  background: var(--card);
+  color: var(--on-studio, var(--on-accent));
+  font-size: 0.62rem;
+  font-weight: 800;
+  line-height: 1;
+}
+.track-stage[data-state="done"] .track-mark { border-color: var(--track-color); background: var(--track-color); }
+.track-stage[data-state="current"] .track-mark {
+  top: -0.12rem; left: -0.12rem; width: 1.24rem; height: 1.24rem;
+  border-color: var(--track-color); border-width: 3px;
+}
+.track-stage[data-state="yours"] .track-mark {
+  top: -0.12rem; left: -0.12rem; width: 1.24rem; height: 1.24rem;
+  border-color: var(--yours-fill); background: var(--yours-fill);
+  animation: track-waits 2.4s ease-in-out infinite;
+}
+.track-stage[data-state="skipped"] .track-mark { border-style: dashed; }
+.track-stage[data-state="current"] .track-label { color: var(--ink); font-weight: 650; }
+.track-stage[data-state="yours"] .track-label { color: var(--yours); font-weight: 700; }
+.track-stage[data-state="skipped"] .track-label { text-decoration: line-through; }
+.track-label, .track-note { display: block; padding-right: 0.5rem; }
+.track-note { color: var(--quiet); font-weight: 400; }
+@keyframes track-waits {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--yours-fill) 55%, transparent); }
+  50% { box-shadow: 0 0 0 0.4rem transparent; }
+}
+/* In a list, and on a phone, the line keeps its marks and names only where the work is. */
+.track-compact .track-stage:not([aria-current]) .track-label,
+.track-compact .track-stage:not([aria-current]) .track-note {
+  position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%);
+}
+.track-compact { max-width: 30rem; }
+.track-compact .track-stage[aria-current] { flex: 4 1 0; }
+.track-compact .track-stage[aria-current] .track-label { white-space: nowrap; }
+@media (max-width: 37.5rem) {
+  .track-stage:not([aria-current]) .track-label, .track-stage:not([aria-current]) .track-note {
+    position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%);
+  }
+  .track-stage[aria-current] { flex: 3 1 0; }
+}
+
+/* Search and jump, and the appearance, at the foot of the sidebar. */
+.shell-foot {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: auto;
+  padding-top: 0.75rem;
+}
+.shell-search {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  min-height: 2.75rem;
+  padding: 0.4rem 0.7rem;
+  border: 1px solid var(--control-line);
+  border-radius: 0.7rem;
+  background: var(--control-fill);
+  color: var(--quiet);
+  font: inherit;
+  font-size: 0.86rem;
+  text-align: left;
+  cursor: pointer;
+}
+.shell-search:hover { color: var(--ink); }
+.shell-search kbd, .shell-keys dt {
+  padding: 0.1rem 0.4rem;
+  border: 1px solid var(--control-line);
+  border-radius: 0.4rem;
+  font: inherit;
+  font-size: 0.74rem;
+  white-space: nowrap;
+}
+.appearance-switch { display: grid; width: 100%; }
+.appearance-switch > .seg-option { padding-inline: 0.2rem; font-size: 0.82rem; }
+.appearance-switch > .seg-option[aria-pressed="true"] { color: var(--ink); }
+.shell-note { min-height: 1em; font-size: 0.74rem; }
+.shell-note:empty { display: none; }
+@media (max-width: 52rem) {
+  .shell-foot { display: none; }
+}
+
+/* The command palette: one field and what it found, high on the page. */
+.shell-palette {
+  width: min(38rem, calc(100% - 1.5rem));
+  margin-top: 12vh;
+  overflow: hidden;
+  background: var(--solid);
+}
+.shell-palette-input {
+  width: 100%;
+  min-height: 3.4rem;
+  padding: 0 1.2rem;
+  border: 0;
+  border-bottom: 1px solid var(--hair);
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 1.1rem;
+  outline-offset: -3px;
+}
+.shell-palette-list {
+  max-height: min(24rem, 50vh);
+  margin: 0;
+  padding: 0.4rem;
+  overflow-y: auto;
+  list-style: none;
+}
+.shell-palette-row {
+  display: grid;
+  grid-template-columns: 7.5rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 2.75rem;
+  padding: 0.3rem 0.8rem;
+  border-radius: 0.6rem;
+  cursor: pointer;
+}
+.shell-palette-row[aria-selected="true"] { background: var(--selection); box-shadow: inset 3px 0 0 var(--studio-color, var(--accent)); }
+.shell-palette-group, .shell-palette-hint { color: var(--quiet); font-size: 0.8rem; }
+.shell-palette-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.shell-palette-none, .shell-palette-foot { margin: 0; padding: 0.7rem 1.2rem; }
+.shell-palette-foot { border-top: 1px solid var(--hair); font-size: 0.78rem; }
+@media (max-width: 37.5rem) {
+  .shell-palette-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .shell-palette-group { display: none; }
+}
+.shell-shortcuts { width: min(26rem, calc(100% - 1.5rem)); padding: 1.3rem; }
+.shell-keys { display: grid; grid-template-columns: auto 1fr; gap: 0.6rem 1rem; margin: 1rem 0 1.2rem; align-items: center; }
+.shell-keys dt { justify-self: start; }
+.shell-keys dd { margin: 0; }
+
+/* Shown once when work is finished: what was made and what comes next. */
+.finish-card {
+  position: fixed;
+  right: 1.25rem;
+  bottom: 1.25rem;
+  z-index: 40;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.4rem 0.9rem;
+  width: min(26rem, calc(100% - 2.5rem));
+  padding: 1.1rem 1.2rem;
+  border: 1px solid var(--glass-line);
+  border-radius: 1.1rem;
+  box-shadow: var(--edge), var(--lift);
+  animation: finish-rises 0.36s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.finish-seal {
+  display: grid;
+  place-items: center;
+  width: 2.2rem;
+  height: 2.2rem;
+  border-radius: 50%;
+  background: var(--done-fill);
+  color: var(--on-accent);
+  font-weight: 800;
+  animation: finish-seals 0.5s 0.12s cubic-bezier(0.3, 1.6, 0.5, 1) backwards;
+}
+.finish-title { font-size: 1.08rem; font-weight: 700; line-height: 1.3; }
+.finish-card > .bar { grid-column: 2; margin-top: 0.4rem; }
+@keyframes finish-rises { from { opacity: 0; transform: translateY(1rem); } }
+@keyframes finish-seals { from { transform: scale(0.3); opacity: 0; } }
+@media (max-width: 52rem) {
+  .finish-card { bottom: calc(5.5rem + env(safe-area-inset-bottom)); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .track-stage[data-state="yours"] .track-mark, .finish-card, .finish-seal { animation: none; }
+}
+
+/* The workbench: any studio's desk whose parts name their zone. On a wide screen the
+   work's parts are on the left, the work itself in the middle, and everything about the
+   assistant in one rail on the right. The middle spans every row and a last flexible row
+   takes what is over, so the rail and the parts stack without gaps. Narrower, the parts
+   follow one another as they are written. */
+.workbench-pulse { height: 3px; border-radius: 2px; background: var(--hair); overflow: hidden; }
+.workbench-pulse[data-state="working"] {
+  background: linear-gradient(90deg, transparent, var(--studio-color, var(--accent)) 35%,
+    color-mix(in srgb, var(--studio-color, var(--accent)) 35%, transparent) 60%, transparent) 0 0 / 50% 100% no-repeat, var(--hair);
+  animation: pulse-travels 2.8s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+.workbench-pulse[data-state="yours"] {
+  background: var(--yours-fill);
+  animation: pulse-waits 2.4s ease-in-out infinite;
+}
+@keyframes pulse-travels { from { background-position: -60% 0, 0 0; } to { background-position: 220% 0, 0 0; } }
+@keyframes pulse-waits { 50% { opacity: 0.45; } }
+
+/* Where a desk already pairs its work with a side panel, the arc and the move sit in one
+   band above it instead of in a rail. */
+.workbench-top { display: grid; gap: 0.8rem; }
+.workbench-head { display: grid; grid-template-columns: minmax(0, 1fr) minmax(15rem, 24rem); gap: 1rem 2rem; align-items: center; }
+@media (max-width: 52rem) { .workbench-head { grid-template-columns: minmax(0, 1fr); } }
+.track-arc { margin: 0.2rem 0 0.4rem; }
+.track-arc .track-stage { font-size: 0.86rem; }
+.track-arc .track-label { font-weight: 650; }
+.track-arc .track-stage::before { height: 3px; top: 0.4rem; transition: background-color 0.6s ease; }
+
+.move-card {
+  display: grid;
+  gap: 0.5rem;
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--yours-fill);
+  border-radius: 1rem;
+  background: var(--yours-wash);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--yours-fill) 40%, transparent);
+  animation: move-arrives 0.5s cubic-bezier(0.2, 1.3, 0.4, 1);
+}
+.move-card-calm { border-color: var(--hair); background: var(--card); animation: none; }
+.move-label { color: var(--yours); font-size: 0.78rem; font-weight: 700; }
+/* The move's own action is amber, not filled: a screen keeps its one filled button. */
+.move-card > .bar > .button { background: var(--yours-fill); border-color: transparent; color: #241a05; font-weight: 700; }
+.move-title { font-size: 1.1rem; font-weight: 700; line-height: 1.25; text-wrap: balance; }
+@keyframes move-arrives {
+  from { opacity: 0; transform: translateY(0.6rem) scale(0.98); box-shadow: 0 0 0 0.9rem transparent; }
+}
+
+@media (min-width: 72rem) {
+  :is(.page, .stack):has(> [data-zone="work"]) {
+    display: grid;
+    grid-template-columns: [parts] 13rem [work] minmax(0, 1fr) [rail] 20rem;
+    grid-template-rows: repeat(18, min-content) 1fr;
+    grid-auto-flow: dense;
+    gap: 0.9rem 1.4rem;
+    align-items: start;
+    max-width: 104rem;
+  }
+  :is(.page, .stack):has(> [data-zone="work"]) > * { margin-top: 0; min-width: 0; }
+  /* A desk with no parts of its own gives their column to the work. */
+  :is(.page, .stack):has(> [data-zone="work"]):not(:has(> [data-zone="parts"])) { grid-template-columns: [parts work] minmax(0, 1fr) [rail] 20rem; }
+  :is(.page, .stack):has(> [data-zone="work"]) > :not([data-zone]) { grid-column: rail; }
+  :is(.page, .stack) > [data-zone="top"] { grid-column: 1 / -1; }
+  :is(.page, .stack) > [data-zone="parts"] { grid-column: parts; grid-row: 2; }
+  /* One small part may sit above the work, such as its tabs or a selection bar. */
+  :is(.page, .stack) > [data-zone="work-top"] { grid-column: work; grid-row: 2; }
+  :is(.page, .stack):has(> [data-zone="work-top"]) > [data-zone="work"] { grid-row: 3 / -1; }
+  /* The list of parts runs to the foot of the page, so its height never opens a gap in the rail. */
+  :is(.page, .stack) > [data-zone="parts"][role="tablist"] { grid-row: 3 / -1; }
+  :is(.page, .stack) > [data-zone="rail"] { grid-column: rail; }
+  :is(.page, .stack) > [data-zone="work"] { grid-column: work; grid-row: 2 / -1; }
+  /* The work's parts read down the left, the one being made shimmering in the studio's colour. */
+  :is(.page, .stack) > [data-zone="parts"].desk-workspace-tabs,
+  :is(.page, .stack) > [data-zone="parts"] .desk-workspace-tabs { flex-direction: column; flex-wrap: nowrap; align-items: stretch; }
+  :is(.page, .stack) > [data-zone="parts"] [role="tab"] { justify-content: flex-start; width: 100%; }
+  :is(.page, .stack) > [data-zone="rail"].desk-level-standing .section-title { font-size: 1rem; }
+}
+.desk-workspace-tabs [role="tab"][data-making="true"] {
+  background-image: linear-gradient(100deg, transparent 30%, color-mix(in srgb, var(--studio-color, var(--accent)) 26%, transparent) 50%, transparent 70%);
+  background-size: 220% 100%;
+  animation: part-is-made 2.2s linear infinite;
+}
+@keyframes part-is-made { from { background-position: 120% 0; } to { background-position: -120% 0; } }
+/* Reading alone: the parts and the rail step aside until Escape or the button is pressed again. */
+@media (min-width: 72rem) {
+  body[data-focus="reading"] :is(.page, .stack):has(> [data-zone="work"]) { grid-template-columns: [parts work rail] minmax(0, 52rem); justify-content: center; }
+  body[data-focus="reading"] :is(.page, .stack) > [data-zone="parts"],
+  body[data-focus="reading"] :is(.page, .stack) > [data-zone="rail"] { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .workbench-pulse, .move-card, .desk-workspace-tabs [role="tab"][data-making="true"] { animation: none; }
+}

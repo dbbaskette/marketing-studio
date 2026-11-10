@@ -516,6 +516,14 @@ changing settings affects new work only. Conversations without a saved runner
 policy continue to use their existing guidance.
 
 
+## Appearance
+
+**Light**, **Dark** or **Auto** at the foot of every sidebar sets how every studio page
+looks. It is one shared setting (`appearance` in the studios config), so a choice made in
+one studio is how the others open; Auto follows this computer. Search and jump (Cmd or
+Ctrl+K) offers the same three. Where a page cannot save it, the choice holds for that
+page and the line under the switch says so.
+
 ## Spending defaults
 
 **Advanced → Spending** chooses Warn and continue (default) or Stop and ask for

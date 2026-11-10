@@ -96,6 +96,37 @@ cross-studio findings, fixes and desktop/phone verification.
 The subsequent [Golden Gate 2.1 audit](2026-11-06-golden-gate-21-audit.md) records
 the launchpad, reading-flow and responsiveness improvements with measurements.
 
+## Golden Gate 3: the shell kit
+
+One signature, kept to one place: the **progress track**, a project's stages as a single
+line in its studio's colour, filled where done, larger where the work is now, and amber
+where it waits for the person. Around it the shell stays quiet. `StudioShell`
+(`studio_core/deck_web/shell.js`) gives every page the track, Search and jump (Cmd or
+Ctrl+K), the Light, Dark and Auto appearance (one shared setting), and the finish card.
+The Home headline is the one place the shell uses the system serif. See the
+[design](../superpowers/specs/2026-11-10-golden-gate-3-design.md).
+
+| Need | Component |
+| --- | --- |
+| A project's stages | `.track`, `.track-stage[data-state]` (`done`, `current`, `yours`, `todo`, `skipped`), `.track-compact` in a list |
+| Search and jump | `.shell-palette`, opened by `StudioShell.palette()`; a page adds commands with `StudioShell.commands` |
+| Appearance | `.appearance-switch` in `.shell-foot`; never a second copy of a token |
+| Work finished | `.finish-card`, from `StudioShell.finish` |
+| A desk as a workbench | A page part says its zone in `data-zone`: `top`, `parts`, `work-top`, `work` or `rail`. From 72rem the page is three columns, the work in the middle, and a part with no zone joins the rail. Narrower, parts follow one another |
+| The one arc | `StudioShell.arc({at, yours, finished})`: Brief, Plan, Make, Ship, the same four in every studio |
+| A line of light | `.workbench-pulse`, from `StudioShell.pulse('working' \| 'yours' \| 'still')` |
+| The one move | `.move-card`, from `StudioShell.move`: the question, what it sets going, one amber action; `calm` where nothing waits |
+| A band instead of a rail | `.workbench-top` holding `.workbench-head`, where a desk already pairs its work with a side panel (Blog Studio, a deck's slides) |
+
+### One arc, one workbench, one move
+
+Every studio makes its work the same way, so every desk says it the same way. The arc has
+four phases, **Brief, Plan, Make, Ship**; a studio's own steps sit one press below it. The
+work itself is the middle of the screen from the first moment. Everything about the
+assistant, and the one thing it may need from the person, is in the rail (or the band).
+A screen still has one filled button: the move's own action is amber. **F** on a desk reads
+the work alone.
+
 ## Shared components and page stylesheets
 
 `ui-kit/style.css` holds every token, the shell and the controls used by Marketing Studio,

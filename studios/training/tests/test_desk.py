@@ -1523,7 +1523,7 @@ class PageFileTests(unittest.TestCase):
         self.assertEqual(sorted(re.findall(r'(?:src|href)="([^"]*)"', page)),
                          ['#main', 'activity.js', 'app.js', 'deck-panels.css', 'deck-panels.js',
                           'drafting.js', 'drafts.js', 'library.js', 'lists.js', 'markdown.js', 'research.js',
-                          'style.css'])
+                          'shell.js', 'style.css'])
         # The list kit is the shared core's, loaded after the deck panels and before app.js,
         # and so is the Document Library's sheet.
         scripts = re.findall(r'<script src="([^"]+)"', page)
@@ -1582,7 +1582,7 @@ class PageFileTests(unittest.TestCase):
         self.assertNotRegex(page, r'\son[a-z]+\s*=')
         self.assertNotRegex(page, r'<svg\b')
         self.assertEqual(re.findall(r'<script\b[^>]*>(.*?)</script>', page, re.DOTALL),
-                         ['', '', '', '', '', '', '', '', ''])
+                         ['', '', '', '', '', '', '', '', '', ''])
 
     def test_the_scripts_never_treat_a_value_as_markup(self):
         for name in ('app.js', 'markdown.js', 'drafts.js', 'drafting.js'):

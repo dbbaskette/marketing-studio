@@ -326,3 +326,8 @@ body:has(#settings:not([hidden]) .save-bar) .toasts { bottom: calc(5.5rem + env(
   .field.settings-section-picker { display: block; }
   #settings-title { display: none; }
 }
+
+/* Saved work reads as it does on a desk: amber where it is the person's move, and the
+   studio's own colour while it is in progress. */
+.work-summary[data-state="needs-you"] { border-left: 4px solid var(--yours-fill); background: var(--yours-wash); }
+.work-summary[data-state="in-progress"] { border-left: 4px solid var(--studio-color); }

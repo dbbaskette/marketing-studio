@@ -8,6 +8,8 @@
 'use strict';
 
 const TOKEN_HEADER = 'X-Training-Studio-Token';
+// The shell kit saves the appearance through this page's own key.
+if (typeof StudioShell !== 'undefined') StudioShell.connect({ header: TOKEN_HEADER, token: () => view.token });
 const POLL_SHOWN = 5000;
 const POLL_HIDDEN = 20000;
 const POLL_RUN = 2000; // while a run is working and its own screen is open
@@ -593,7 +595,17 @@ function bullets(items, className) {
 }
 
 // The row of stages, the same everywhere: beads on a thread, filling as the training goes.
+// Where the shell kit is loaded they are its progress track: one line, the stage in hand
+// larger, the one waiting for the person in amber. In a list only that stage is named.
+const TRACK_STATES = { done: 'done', review: 'yours', late: 'yours', current: 'current',
+  'not-started': 'todo', 'left-out': 'skipped', unavailable: 'skipped' };
 function beads(stages, small) {
+  if (typeof StudioShell !== 'undefined') {
+    return StudioShell.track(list(stages).map(stage => ({ label: stage.name,
+      state: TRACK_STATES[stage.state] || 'todo',
+      note: ['review', 'late', 'current'].includes(stage.state) ? stage.words : '' })),
+    'Stages', small);
+  }
   const row = make('ol', 'beads' + (small ? ' beads-small' : ''));
   let told = null;
   for (const stage of list(stages)) {

@@ -74,6 +74,22 @@ def with_suite_port(page: bytes, port: int | None) -> bytes:
     return page[:start + 5] + b' data-suite-port="%d"' % port + page[start + 5:]
 
 
+def with_appearance(page: bytes) -> bytes:
+    """The HTML page with the appearance every studio shares on its body, when one is saved:
+    light or dark, whatever this computer's own is. Read as the page is served, so a page
+    opens already looking as chosen. An unreadable or silent config changes nothing."""
+    from studio_core import studios_config
+    try:
+        chosen = studios_config.read()[0].get('appearance')
+    except Exception:  # the look is never a reason not to serve the page
+        return page
+    start = page.find(b'<body')
+    if chosen not in ('light', 'dark') or start < 0 \
+            or page[start + 5:start + 6] not in (b' ', b'>', b'\n', b'\t'):
+        return page
+    return page[:start + 5] + b' data-appearance="%s"' % chosen.encode() + page[start + 5:]
+
+
 class Refusal(Exception):
     """A request the page will not answer, with the HTTP status to refuse it with."""
 
@@ -331,7 +347,7 @@ class Page:
             except OSError:
                 raise Refusal(HTTPStatus.NOT_FOUND, 'Nothing is served here.')
             if kind.startswith('text/html'):
-                body = with_suite_port(body, suite_port())
+                body = with_appearance(with_suite_port(body, suite_port()))
             return HTTPStatus.OK, kind, body
         if url.path == '/favicon.ico':
             return HTTPStatus.NO_CONTENT, None, b''
@@ -482,7 +498,9 @@ DECK_PAGES = {'/deck-panels.js': (str(DECK_WEB / 'deck-panels.js'),
                                   'text/javascript; charset=utf-8'),
               '/deck-panels.css': (str(DECK_WEB / 'deck-panels.css'), 'text/css; charset=utf-8'),
               '/lists.js': (str(DECK_WEB / 'lists.js'), 'text/javascript; charset=utf-8'),
-              '/library.js': (str(DECK_WEB / 'library.js'), 'text/javascript; charset=utf-8')}
+              '/library.js': (str(DECK_WEB / 'library.js'), 'text/javascript; charset=utf-8'),
+              # The shell kit: the appearance switch, the command palette, the progress track.
+              '/shell.js': (str(DECK_WEB / 'shell.js'), 'text/javascript; charset=utf-8')}
 
 
 def for_product(name, product, token_header, page_dir, pages, computer, error,

@@ -520,6 +520,79 @@
 
   // What comes before everything else: a teammate's hold, a question, a step that stopped
   // (with Try again, Give it more time, or Resume at the spend limit) and a team notice.
+  // --- the workbench ------------------------------------------------------------------------
+  // On a wide screen a deck's page is a workbench: the slides in the middle and one rail for
+  // everything about the assistant. Each part says which zone it belongs to, and the shared
+  // stylesheet lays them out; narrower, the parts follow one another as before.
+  function zoned(zone, part) {
+    if (!part) return part;
+    const [name, from, build, fill] = part;
+    // Set each time it is placed, so a part kept from the last drawing moves with its zone.
+    return [name, from, build, (node) => {
+      if (node.dataset) node.dataset.zone = zone;
+      if (fill) fill(node);
+    }];
+  }
+
+  // Where the deck is in the one arc every studio shares, and what waits for the person.
+  const MOVES = {
+    answer: ['A question is waiting for you', 'Answer it and the deck goes on.'],
+    problem: ['It stopped and needs you', 'See what happened, then choose how to go on.'],
+    look: ['Pick the look', 'A slide is drawn in each of the brand’s looks.'],
+    text: ['Approve the slide text', 'Design and rendering start only after you approve it.'],
+    story: ['Approve the slide story', 'The outline is written from the story you approve.'],
+    deliver: ['Review the slides, then deliver', 'Nothing is delivered until you press Deliver.'],
+    ready: ['Mark the deck ready', 'Your approval is recorded; nothing is delivered.'],
+    resume: ['It is paused', 'Resume it when you want it to go on.'],
+  };
+  function standing(run, lead) {
+    const found = run.desk || {}, gate = run.gate, read = h.theirs(run);
+    const waiting = gate && !read && run.state !== 'working';
+    const text = waiting && gate.content_first && gate.name === 'gate:outline';
+    const story = waiting && gate.name === 'gate:story';
+    const making = pausedAtLook(run) || gate?.name === 'gate:look' || Boolean(run.build_progress)
+      || Boolean(found.working);
+    const at = found.delivered || (found.arrived && !found.working) ? 3 : making ? 2 : 1;
+    const move = read ? '' : lead === 'answer' || lead === 'problem' || lead === 'look'
+      || lead === 'deliver' || lead === 'ready' || lead === 'resume' ? lead
+      : text ? 'text' : story ? 'story' : '';
+    return { at, move, finished: Boolean(found.delivered),
+      working: run.state === 'working' || Boolean(found.working) };
+  }
+  // The slide desk already pairs the slides with a side panel, so there the arc and the move
+  // sit in one band above them instead of in a rail.
+  function workbenchBand(run, lead) {
+    if (typeof StudioShell === 'undefined') return null;
+    const { at, move, finished, working } = standing(run, lead);
+    const said = MOVES[move];
+    return ['workbench-band', [at, move, finished, working], () => {
+      const head = make('div', 'workbench-head');
+      head.append(StudioShell.arc({ at, yours: Boolean(move) && move !== 'resume', finished,
+        note: finished ? '' : stageOf(run).toLowerCase() }, 'Where this deck is'),
+      said ? StudioShell.move({ title: said[0], text: said[1] })
+        : StudioShell.move({ calm: true, title: finished ? 'Delivered' : 'Nothing is yours right now',
+          text: finished ? 'Every revision keeps its receipt below.' : working ? 'A change is being drawn.' : '' }));
+      return h.add(make('div', 'workbench-top'),
+        StudioShell.pulse(move ? 'yours' : working ? 'working' : 'still'), head);
+    }];
+  }
+
+  function workbench(run, lead) {
+    if (typeof StudioShell === 'undefined') return [];
+    const { at, move, finished, working } = standing(run, lead);
+    const said = MOVES[move];
+    return [
+      ['workbench-pulse', [move, working], () => StudioShell.pulse(move ? 'yours' : working ? 'working' : 'still')],
+      ['workbench-arc', [at, Boolean(move), finished], () => StudioShell.arc({ at, yours: Boolean(move) && move !== 'resume',
+        finished, note: finished ? '' : stageOf(run).toLowerCase() }, 'Where this deck is')],
+      ['workbench-move', [move, finished, working, run.sentence], () => said
+        ? StudioShell.move({ title: said[0], text: said[1] })
+        : StudioShell.move({ calm: true, title: finished ? 'Delivered' : 'Nothing is yours right now',
+          text: finished ? 'Every revision keeps its receipt below.'
+            : working ? (run.sentence || 'The deck opens here when it is ready.') : '' })],
+    ];
+  }
+
   function interruptions(run, lead, title) {
     const read = h.theirs(run);
     return [
@@ -531,7 +604,7 @@
         () => h.problemPart(run, lead === 'problem')] : null,
       !read && run.notice ? ['notice', [run.notice, run.clash, run.kept],
         () => h.noticePart(run)] : null,
-    ];
+    ].map((part) => zoned('rail', part));
   }
 
   function above(run) {
@@ -596,17 +669,19 @@
     h.placeParts({ title, above: above(run), back: true, actions: progressActions(run, lead),
       mark: ['progress', title, run.state, lead, read, run.driver, Boolean(run.question),
         run.problem, gate] }, [
+      ...workbench(run, lead),
       ...interruptions(run, lead, title),
       // Folded above the text, so it is reached without going past every slide.
-      text && !read ? ['slide-text-research', [desk.research_items, desk.research],
-        () => researchFound(run)] : null,
-      text ? ['slide-text', [gate, read], () => slideTextReview(run, read)] : null,
-      gate?.name === 'gate:story' ? ['slide-story', [gate, read], () => storyReview(run, read)] : null,
-      pause ? ['look-pause', [gate, lead, h.brandsFound()], () => lookPause(run, lead === 'look')]
-        : ['progress', [run.state, run.sentence, desk.progress, Boolean(run.question),
-          run.problem], () => progressPart(run)],
-      previews ? ['previews', [run.build_progress, read, run.mine],
-        () => previewsCard(run)] : null,
+      zoned('rail', text && !read ? ['slide-text-research', [desk.research_items, desk.research],
+        () => researchFound(run)] : null),
+      zoned('work', text ? ['slide-text', [gate, read], () => slideTextReview(run, read)] : null),
+      zoned('work', !text && gate?.name === 'gate:story' ? ['slide-story', [gate, read], () => storyReview(run, read)] : null),
+      pause ? zoned(text || gate?.name === 'gate:story' ? 'rail' : 'work',
+        ['look-pause', [gate, lead, h.brandsFound()], () => lookPause(run, lead === 'look')])
+        : zoned('rail', ['progress', [run.state, run.sentence, desk.progress, Boolean(run.question),
+          run.problem], () => progressPart(run)]),
+      zoned(text || pause || gate?.name === 'gate:story' ? 'rail' : 'work', previews ? ['previews', [run.build_progress, read, run.mine],
+        () => previewsCard(run)] : null),
       // What each assistant working now is doing, and the deck's Activity log.
       run.research_progress && h.researchActivity ? ['research-progress',run.research_progress,()=>h.researchActivity(run)] : null,
       h.list(run.workers).length ? ['workers', run.workers, () => h.workersCard(run)] : null,
@@ -928,6 +1003,7 @@
     h.placeParts({ title, above: above(run), back: true, compact: h.narrow(), actions: deskActions(run, lead),
       mark: ['desk', title, run.state, lead, read, run.driver, working, found.drawn_here,
         Boolean(found.delivered), found.expected, h.view.downloading, finish] }, [
+      workbenchBand(run, lead),
       ...interruptions(run, lead, title),
       pause ? ['look-pause', [run.gate, lead, h.brandsFound()], () => lookPause(run, lead === 'look')]
         : null,
