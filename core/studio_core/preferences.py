@@ -43,7 +43,7 @@ def branch(value):
 
 
 def check(changes, current):
-    if not isinstance(changes, dict) or set(changes) - {*FIELDS, 'output', 'share', 'models', 'research'}:
+    if not isinstance(changes, dict) or set(changes) - {*FIELDS, 'output', 'share', 'appearance', 'models', 'research'}:
         raise WorkspaceError('Choose only the shared settings shown on this page.')
     if any(key in current and not isinstance(current[key], dict) for key in (*FIELDS, 'research')):
         raise WorkspaceError('A shared settings section is not an object. Restore a valid settings file.')
@@ -94,6 +94,8 @@ def check(changes, current):
         raise WorkspaceError('Choose Google or PowerPoint and Word files.')
     if merged.get('share') not in (None, 'decision', 'asked'):
         raise WorkspaceError('Choose when you want to share changes.')
+    if merged.get('appearance') not in (None, *APPEARANCES):
+        raise WorkspaceError('Choose a light or dark appearance, or match this computer.')
     if (merged.get('render') or {}).get('previews') not in (None, 'local', 'drive'):
         raise WorkspaceError('Choose local or Google Drive slide previews.')
     skill = (merged.get('brand') or {}).get('skill')
@@ -119,6 +121,8 @@ def check(changes, current):
 
 
 SETUP_VERSION = 1
+# How every studio page looks; none saved follows this computer's own appearance.
+APPEARANCES = ('light', 'dark')
 
 
 def ready(values):
@@ -145,7 +149,7 @@ def visible(values):
     """The leaves a shared setup form owns; unknown settings remain untouched."""
     return {**{group: {name: (values.get(group) or {}).get(name) for name in names}
                for group, names in FIELDS.items()},
-            **{name: values.get(name) for name in ('output', 'share')},
+            **{name: values.get(name) for name in ('output', 'share', 'appearance')},
             'models': model_profiles.visible(values),
             'research': {'sites': list((values.get('research') or {}).get('sites') or [])}}
 
@@ -194,6 +198,7 @@ LABELS = {('person', 'name'): 'Your name', ('assistant', 'agent'): 'Assistant',
           ('brand', 'repository'): 'Brand Git repository', ('brand', 'skill'): 'Installed skill folder',
           ('brand', 'brand'): 'Default brand', ('brand', 'variant'): 'Default variant',
           ('brand', 'release'): 'Brand skill release', ('output',): 'Deliver as',
+          ('appearance',): 'Appearance',
           ('render', 'previews'): 'Slide previews', ('research', 'sites'): 'Research sites',
           ('models', 'mode'): 'Model routing', ('models', 'agent'): 'Model profiles'}
 

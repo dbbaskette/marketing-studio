@@ -21,7 +21,7 @@ SCHEMA = 1
 PATH = Path.home() / '.config' / 'studios-config.json'
 GROUPS = ('team', 'person', 'assistant', 'brand', 'local', 'render', 'models', 'review',
           'research')   # keys whose value is an object
-WORDS = ('output', 'share')                         # keys whose value is a word
+WORDS = ('output', 'share', 'appearance')                       # keys whose value is a word
 SECRET = ('That address carries a password or token. Give the address without it; git '
           'signs in with your own credentials.')
 SPACE = decoder.WHITESPACE
