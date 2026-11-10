@@ -3,7 +3,7 @@
 | Area | Shared source | Remaining studio-specific behavior |
 | --- | --- | --- |
 | Settings storage | `core/studio_core/studios_config.py` | Product validation, errors, and Blog Studio migration |
-| HTTP protocol/server | `core/studio_core/server.py` | Domain routes; Blog Studio's specialized server |
+| HTTP protocol/server | `core/studio_core/server.py` | Domain routes; Blog Studio's own page rules (request checks, CSP, limits, serialized access) on the shared server |
 | Companion installation | `core/studio_core/companions.py` | Native installation records, product prerequisites, and reporting |
 | Shared stylesheet and Markdown renderer | `ui-kit/` | Product controllers and layout additions |
 | Dependency pins | `pins/companions.json` | Each studio uses its applicable companions |

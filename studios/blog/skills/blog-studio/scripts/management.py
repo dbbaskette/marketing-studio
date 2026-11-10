@@ -3,7 +3,7 @@
 import argparse
 import base64
 from contextlib import contextmanager
-from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
+from http.server import ThreadingHTTPServer  # noqa: F401  the shared server's base, named by callers
 import json
 import os
 import signal
@@ -27,7 +27,8 @@ import blog_library
 import shared_library
 import source_curator
 from google_drive import GoogleError
-from studio_core.server import Server as LoopbackServer, suite_port, with_suite_port
+from studio_core import server as shared_server
+from studio_core.server import suite_port, with_suite_port
 from hub_store import HubError, TransportError, AuthenticationError, encoded, sha
 
 ASSETS = Path(__file__).resolve().parents[1] / 'assets' / 'management'
@@ -3019,193 +3020,218 @@ def server(root, port=0, bind=True, shared_setup=False, keep_workspace=True):
             finally:
                 pending.unlink(missing_ok=True)
 
-    class Handler(BaseHTTPRequestHandler):
+    HEADERS = {
+        'Cache-Control': 'no-store',
+        'X-Content-Type-Options': 'nosniff',
+        'Referrer-Policy': 'no-referrer',
+        'Cross-Origin-Resource-Policy': 'same-origin',
+        'Content-Security-Policy': "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
+    }
+
+    def made(status, value, media='application/json'):
+        """One reply as the shared server sends it, under Blog Studio's own headers."""
+        body = encoded(value) if media == 'application/json' else value
+        return status, media, body, dict(HEADERS)
+
+    def check(method, target, headers, api=False):
+        expected = '127.0.0.1:' + str(httpd.server_port)
+        if headers.get('Host') != expected:
+            raise ValueError('Invalid local host.')
+        origin = headers.get('Origin')
+        if origin and origin != 'http://' + expected:
+            raise ValueError('Cross-origin access is unavailable.')
+        site = (headers.get('Sec-Fetch-Site') or '').lower()
+        if (
+            site
+            and site not in ('same-origin', 'none')
+            and not opening_page(method, target, headers)
+        ):
+            raise ValueError('Cross-site access is unavailable.')
+        if api and not secrets.compare_digest(headers.get('X-Blog-Studio-Token', ''), token):
+            raise ValueError('Reopen this page’s link to reconnect.')
+
+    def opening_page(method, target, headers):
+        """A person following the desk link from another page: a top-level visit to the page shell.
+
+        The shell holds no workspace data and cannot be framed, so this one cross-site
+        request stays allowed; scripts, styles and every API call from another site do not.
+        """
+        return (
+            method == 'GET'
+            and urlsplit(target).path == '/'
+            and headers.get('Sec-Fetch-Mode') == 'navigate'
+            and headers.get('Sec-Fetch-Dest') == 'document'
+        )
+
+    def limit_of(target):
+        return 32_000_000 if target == '/api/intake-draft' else MAX_BODY
+
+    def admit(method, target, headers):
+        """Every rule a request must pass before its body is read; returns a POST's stated size."""
+        check(method, target, headers, method == 'POST' or target.startswith('/api/'))
+        if method != 'POST':
+            return 0
+        if headers.get('Transfer-Encoding') or headers.get('Content-Type') != 'application/json':
+            raise ValueError('Use a bounded JSON request.')
+        try:
+            size = int(headers.get('Content-Length', '0'))
+        except ValueError:
+            raise ValueError('Use a bounded JSON request.') from None
+        if not 0 < size <= limit_of(target):
+            raise ValueError('Request exceeds the management limit.')
+        if not target.startswith('/api/') and not (controller and controller.accepts(target)):
+            raise ValueError('Unknown management action.')
+        return size
+
+    class DeskPage(shared_server.Page):
+        """Blog Studio's own rules and routes, answered through the shared loopback server.
+
+        The shared server owns the socket, the threads and the reply; this page keeps Blog
+        Studio's stricter request checks, its larger bodies, its one-at-a-time workspace
+        access and its error sentences, so nothing a caller sees has changed.
+        """
+
+        def body_limit(self, target, headers):
+            return limit_of(target)
+
+        def allowed(self, target):
+            return 'GET, POST'
+
+        def answer(self, target, headers, method='GET', body=None):
+            """Every failure ends in one JSON reply; the connection is never simply dropped."""
+            try:
+                if method == 'POST':
+                    return self.change_desk(target, headers, body)
+                return self.read_desk(target, headers)
+            except Exception as exc:
+                status, value = failure(exc, method == 'POST')
+                if status == 500:
+                    note_unexpected(exc)
+                return made(status, value)
+
+        def read_desk(self, target, headers):
+            admit('GET', target, headers)
+            parsed = urlsplit(target)
+            if controller and controller.accepts(target):
+                status, media, body = controller.answer(target, headers)
+                return made(status, body, media)
+            if parsed.path in STATIC:
+                name, media = STATIC[parsed.path]
+                body = (ASSETS / name).read_bytes()
+                if media.startswith('text/html'):
+                    # Only when Marketing Studio started this desk does its page link back.
+                    body = with_suite_port(body, suite_port())
+                return made(200, body, media)
+            result = None
+            if parsed.path.startswith('/api/'):
+                with serialized():
+                    result = view(root, parsed.path[5:], parse_qs(parsed.query))
+            if result is None:
+                return made(404, {'error': 'Unknown view.'})
+            return made(200, result)
+
+        def change_desk(self, target, headers, content):
+            nonlocal root
+            size = admit('POST', target, headers)
+            if content is None:
+                raise ValueError('Use a bounded JSON request.')
+            if len(content) != size:
+                raise ValueError('Incomplete request.')
+            if controller and controller.accepts(target):
+                with serialized():
+                    status, media, body = controller.answer(
+                        target, headers, 'POST', content if size <= 64000 else None
+                    )
+                return made(status, body, media)
+            try:
+                data = json.loads(content)
+            except ValueError:
+                raise ValueError('Supply a JSON object.') from None
+            if not isinstance(data, dict):
+                raise ValueError('Supply a JSON object.')
+            with serialized():
+                result = dispatch(root, target[5:], data)
+                if result.get('switch_workspace') and Path(result['switch_workspace']) != root:
+                    import blog_runner
+
+                    target_root = Path(result['switch_workspace'])
+                    from hub_store import acquire_lock, release_lock
+
+                    lease = acquire_lock(target_root / '.blog-runner.lock', wait=0)
+                    if lease is None:
+                        raise ValueError(
+                            'A page is already running for that team workspace. Use that page.'
+                        )
+                    blog_runner.engine(root).close()
+                    if getattr(httpd, 'team_runner_lock', None) is not None:
+                        release_lock(httpd.team_runner_lock)
+                    httpd.team_runner_lock = lease
+                    root = target_root
+                    httpd.active_root = root
+                    blog_runner.ENGINES.pop(str(root), None)
+                    blog_runner.engine(root).start()
+            return made(200, result)
+
+    class Handler(shared_server.Handler):
         timeout = HEADER_TIMEOUT  # Applied to each new connection until its headers are read.
         server_version = 'BlogStudio'
         sys_version = ''
-        responded = False
 
         def version_string(self):
             return 'Blog Studio desk'  # No Python or http.server version.
 
-        def log_message(self, *args):
-            pass  # Do not log content, document links, or session tokens.
-
-        def reply(self, status, value, media='application/json', allow=None):
-            body = encoded(value) if media == 'application/json' else value
-            self.responded = True
-            self.send_response(status)
-            self.send_header('Content-Type', media)
-            self.send_header('Content-Length', str(len(body)))
-            self.send_header('Cache-Control', 'no-store')
-            self.send_header('X-Content-Type-Options', 'nosniff')
-            self.send_header('Referrer-Policy', 'no-referrer')
-            self.send_header('Cross-Origin-Resource-Policy', 'same-origin')
-            self.send_header(
-                'Content-Security-Policy',
-                "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
-            )
-            if allow:
-                self.send_header('Allow', allow)
-            self.end_headers()
-            if self.command != 'HEAD':
-                self.wfile.write(body)
-
-        def fail(self, exc, writing=False):
-            """Every failure ends in one JSON reply; the connection is never simply dropped."""
-            status, body = failure(exc, writing)
-            if status == 500:
-                note_unexpected(exc)
-            if self.responded:
-                return  # A reply was already started; a second one would corrupt it.
+        def recognized(self):
+            """Whether the request passed every rule that comes before its body. One that did
+            is given longer for each read and write; one that did not is answered unread."""
             try:
-                self.reply(status, body)
+                admit(self.command, self.path, self.headers)
+            except Exception:
+                return False
+            self.connection.settimeout(BODY_TIMEOUT)
+            return True
+
+        def do_GET(self):
+            self.recognized()
+            self.respond()
+
+        def do_POST(self):
+            if not self.recognized():
+                self.close_connection = True
+                return self.respond(None)  # The page refuses it again, with the reason.
+            try:
+                shared_server.Handler.do_POST(self)
             except OSError:
-                pass  # The browser went away.
+                try:
+                    self.respond(b'')  # Answered as an incomplete request.
+                except OSError:
+                    pass  # The browser went away.
 
         def send_error(self, code, message=None, explain=None):
             """Malformed or unsupported requests get the same JSON reply and headers as the rest."""
             self.close_connection = True
             try:
-                self.reply(
+                status, media, body, extra = made(
                     code, {'error': PROTOCOL_ERRORS.get(code, 'This request could not be handled.')}
                 )
+                self.reply(status, media, body, extra=extra)
             except OSError:
                 pass
 
-        def check(self, api=False):
-            expected = '127.0.0.1:' + str(self.server.server_port)
-            if self.headers.get('Host') != expected:
-                raise ValueError('Invalid local host.')
-            origin = self.headers.get('Origin')
-            if origin and origin != 'http://' + expected:
-                raise ValueError('Cross-origin access is unavailable.')
-            site = (self.headers.get('Sec-Fetch-Site') or '').lower()
-            if site and site not in ('same-origin', 'none') and not self.opening_page():
-                raise ValueError('Cross-site access is unavailable.')
-            if api and not secrets.compare_digest(
-                self.headers.get('X-Blog-Studio-Token', ''), token
-            ):
-                raise ValueError('Reopen this page’s link to reconnect.')
-
-        def opening_page(self):
-            """A person following the desk link from another page: a top-level visit to the page shell.
-
-            The shell holds no workspace data and cannot be framed, so this one cross-site
-            request stays allowed; scripts, styles and every API call from another site do not.
-            """
-            return (
-                self.command == 'GET'
-                and urlsplit(self.path).path == '/'
-                and self.headers.get('Sec-Fetch-Mode') == 'navigate'
-                and self.headers.get('Sec-Fetch-Dest') == 'document'
-            )
-
-        def do_GET(self):
-            try:
-                self.check(self.path.startswith('/api/'))
-                self.connection.settimeout(BODY_TIMEOUT)
-                parsed = urlsplit(self.path)
-                if controller and controller.accepts(self.path):
-                    status, media, body = controller.answer(self.path, self.headers)
-                    return self.reply(status, body, media)
-                if parsed.path in STATIC:
-                    name, media = STATIC[parsed.path]
-                    body = (ASSETS / name).read_bytes()
-                    if media.startswith('text/html'):
-                        # Only when Marketing Studio started this desk does its page link back.
-                        body = with_suite_port(body, suite_port())
-                    return self.reply(200, body, media)
-                result = None
-                if parsed.path.startswith('/api/'):
-                    with serialized():
-                        result = view(root, parsed.path[5:], parse_qs(parsed.query))
-                if result is None:
-                    return self.reply(404, {'error': 'Unknown view.'})
-                self.reply(200, result)
-            except Exception as exc:
-                self.fail(exc)
-
-        def do_POST(self):
-            nonlocal root
-            try:
-                self.check(True)
-                if (
-                    self.headers.get('Transfer-Encoding')
-                    or self.headers.get('Content-Type') != 'application/json'
-                ):
-                    raise ValueError('Use a bounded JSON request.')
-                try:
-                    size = int(self.headers.get('Content-Length', '0'))
-                except ValueError:
-                    raise ValueError('Use a bounded JSON request.') from None
-                limit = 32_000_000 if self.path == '/api/intake-draft' else MAX_BODY
-                if not 0 < size <= limit:
-                    raise ValueError('Request exceeds the management limit.')
-                if not self.path.startswith('/api/') and not (
-                    controller and controller.accepts(self.path)
-                ):
-                    raise ValueError('Unknown management action.')
-                self.connection.settimeout(BODY_TIMEOUT)
-                try:
-                    content = self.rfile.read(size)
-                except OSError:
-                    raise ValueError('Incomplete request.') from None
-                if len(content) != size:
-                    raise ValueError('Incomplete request.')
-                if controller and controller.accepts(self.path):
-                    with serialized():
-                        status, media, body = controller.answer(
-                            self.path, self.headers, 'POST', content if size <= 64000 else None
-                        )
-                    return self.reply(status, body, media)
-                try:
-                    data = json.loads(content)
-                except ValueError:
-                    raise ValueError('Supply a JSON object.') from None
-                if not isinstance(data, dict):
-                    raise ValueError('Supply a JSON object.')
-                with serialized():
-                    result = dispatch(root, self.path[5:], data)
-                    if result.get('switch_workspace') and Path(result['switch_workspace']) != root:
-                        import blog_runner
-
-                        target = Path(result['switch_workspace'])
-                        from hub_store import acquire_lock, release_lock
-
-                        lease = acquire_lock(target / '.blog-runner.lock', wait=0)
-                        if lease is None:
-                            raise ValueError(
-                                'A page is already running for that team workspace. Use that page.'
-                            )
-                        blog_runner.engine(root).close()
-                        if getattr(self.server, 'team_runner_lock', None) is not None:
-                            release_lock(self.server.team_runner_lock)
-                        self.server.team_runner_lock = lease
-                        root = target
-                        self.server.active_root = root
-                        blog_runner.ENGINES.pop(str(root), None)
-                        blog_runner.engine(root).start()
-                self.reply(200, result)
-            except Exception as exc:
-                self.fail(exc, writing=True)
-
         def unsupported(self):
-            self.reply(405, {'error': PROTOCOL_ERRORS[405]}, allow='GET, POST')
+            status, media, body, extra = made(405, {'error': PROTOCOL_ERRORS[405]})
+            self.reply(status, media, body, allow='GET, POST', extra=extra)
 
         do_HEAD = do_PUT = do_PATCH = do_DELETE = do_OPTIONS = do_TRACE = do_CONNECT = unsupported
 
-    class LocalServer(ThreadingHTTPServer):
-        server_bind = LoopbackServer.server_bind
-        daemon_threads = True  # A stuck connection never keeps the helper alive.
-        request_queue_size = 32
-
+    class LocalServer(shared_server.Server):
         def handle_error(self, request, client_address):
             note_unexpected(sys.exc_info()[1])  # Never a traceback with content.
 
     httpd = LocalServer(('127.0.0.1', port), Handler, bind_and_activate=bind)
     if not bind:
         httpd.server_port = port
+    desk_page = DeskPage(httpd.server_port)
+    httpd.desk = SimpleNamespace(answer=desk_page.answer, page=desk_page)
     if shared_setup:
 
         def configured():
