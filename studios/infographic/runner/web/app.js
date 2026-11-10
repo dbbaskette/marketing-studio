@@ -159,9 +159,14 @@ workLabels['visual-layout']='Building the visual diagram layout';
 workLabels['approve']='Approving and preparing your files';
 workLabels['review']='Recording your review and running checks';
 const WAITING='This can take a few minutes. You can stop waiting and come back: the work keeps running on this computer, and your saved work is kept.';
+// What the line of light shows when nothing is working: `yours` or, once delivered, `still`.
+let benchRest='yours';
 function paintWork() {
   const work=shownWork();
   $('main').setAttribute('aria-busy',String(!!work));
+  const light=$('ig-pulse'),busyHere=Boolean(held&&running.has(held.project.id));
+  if(light){light.dataset.state=busyHere?'working':benchRest;
+    const status=document.querySelector('.ig-standing');if(status)status.dataset.move=!busyHere&&benchRest==='yours'?'yours':'';}
   for(const surface of document.querySelectorAll('[data-work-status]')) {
     const inSheet=$('sheet').contains(surface),show=!!work&&(!$('sheet').open||inSheet);
     surface.hidden=!show;if(!show)continue;
@@ -620,7 +625,7 @@ function renderProject() {
   if(held.planning_response?.problem)parts.push(card('Saved planning response needs attention',make('p','problem',held.planning_response.problem)));
   let chosenStory=null;
   if(p.stories.length){
-    const stories=p.stories.map(s=>card(s.headline,storyThumbnail(s),make('p','',s.takeaway),make('p','quiet',s.rationale),list(s.blocks.map(b=>b.title+': '+b.text)),...(s.qualifications.length?[list(s.qualifications)]:[]),s.omissions.length?make('p','problem','Required omissions: '+s.omissions.join(', ')):null,add(make('div','bar'),button('Ask for a revision',()=>reviseStorySheet(s)),button(s.id===p.selected_story?'Selected':'Use this story',()=>action('select',{story_id:s.id}),true))));
+    const stories=p.stories.map(s=>card(s.headline,storyThumbnail(s),make('p','',s.takeaway),make('p','quiet',s.rationale),list(s.blocks.map(b=>b.title+': '+b.text)),...(s.qualifications.length?[list(s.qualifications)]:[]),s.omissions.length?make('p','problem','Required omissions: '+s.omissions.join(', ')):null,add(make('div','bar'),button('Ask for a revision',()=>reviseStorySheet(s)),s.id===p.selected_story?chosenMark():button('Use this story',()=>action('select',{story_id:s.id}),true))));
     const choices=add(make('section','stack'),make('h2','card-title','Choose the story'),add(make('div','ig-story-grid'),...stories));
     choices.id='story-choice';if(!p.scene)parts.push(choices);else chosenStory=detail('Story: '+selected.headline,choices);
   }
@@ -648,16 +653,14 @@ function renderProject() {
   if(typeof StudioActivity!=='undefined')parts.push(StudioActivity.logCard({key:'activity-log '+p.id,load:()=>request('/api/activity-log?id='+encodeURIComponent(p.id)),
     entry:entry=>request('/api/activity-log?'+new URLSearchParams({id:p.id,entry}))}));
   parts.push(detail('History',make('p','quiet','Each saved revision is kept. Restoring makes new work and never brings back an approval.'),add(make('div','desk-versions'),...historyGroups(held.history).map((g,i)=>historyGroup(g,i===0))),held.history.length>=100&&held.history.at(-1).revision>0?button('Older revisions',olderHistory):null));
-  // The workbench every studio shares: a line of light, the one arc, and the one move, with
-  // the page itself in the middle and everything else in the rail beside it.
+  // Where this stands is this studio's one status surface: the route, Needs you, the
+  // revisions and the downloads. The shell adds only the line of light above it; the page
+  // itself takes the middle and everything else the rail beside it. paintWork keeps the
+  // light and the card's amber edge true as work starts and ends, without drawing again.
   if(typeof StudioShell!=='undefined'){
-    const at=!stage||stage==='story'||stage==='choose'?1:stage==='build'||stage==='preview'?2:3;
-    const working=Boolean(running.get(p.id)),finished=stage==='deliver'&&Boolean(approvedFiles)&&(held.google_deliveries||[]).some(sent=>sent.current&&sent.url);
-    parts.unshift(StudioShell.pulse(working?'working':finished?'still':'yours'),
-      StudioShell.arc({at,yours:!working&&!finished,finished,note:working?'working':''},'Where this infographic is'),
-      working?StudioShell.move({calm:true,text:'The page opens here when it is ready.'})
-        :finished?StudioShell.move({calm:true,title:'Delivered',text:'Every approved revision keeps its files.'})
-        :StudioShell.move({title:next[0],text:needs.replace(next[0]+': ','').replace(/^./,c=>c.toUpperCase()),action:{label:next[0],run:next[1]}}));
+    const finished=stage==='deliver'&&Boolean(approvedFiles)&&(held.google_deliveries||[]).some(sent=>sent.current&&sent.url);
+    benchRest=finished?'still':'yours';
+    const light=StudioShell.pulse(benchRest);light.id='ig-pulse';parts.unshift(light);
   }
   $('main').replaceChildren(...parts.filter(Boolean));
   paintWork();     // this infographic's running work, and its locked controls
@@ -808,6 +811,8 @@ function historyGroup(group,current){
 }
 // Where this stands: the one status surface. The route, the one next step (named as the
 // toolbar names it), the three revisions that matter, and what can be downloaded.
+// The story in use says so in words; it is not a button, and not a second filled one.
+function chosenMark(){const mark=make('span','tag','Selected');mark.dataset.state='done';return mark;}
 function standing(map,p,delivery,needs){
   if(!map)return null;
   const steps=add(make('ol','workflow-steps ig-roadmap'),...map.steps.map(step=>{

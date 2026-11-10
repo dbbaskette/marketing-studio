@@ -3244,6 +3244,12 @@ body[data-product="Training Studio"] .card > .training-options {
     top: 5rem;
   }
 }
+/* On a wide screen the side panel is wide enough for its two-way choices and its file
+   field to stay on one line. */
+@media (min-width: 1280px) {
+  .desk-layout { grid-template-columns: minmax(0,1fr) 20rem; }
+}
+.desk-aside .segmented .seg-option { padding-inline: 0.5rem; }
 .desk-column {
   display: grid;
   gap: 1.1rem;
@@ -4217,8 +4223,11 @@ body[data-product="Training Studio"] .cult-tab-rail > [role="tab"] {
 .appearance-switch > .seg-option[aria-pressed="true"] { color: var(--ink); }
 .shell-note { min-height: 1em; font-size: 0.74rem; }
 .shell-note:empty { display: none; }
+.shell-foot-page { display: none; }
 @media (max-width: 52rem) {
   .shell-foot { display: none; }
+  .shell-foot-page { display: grid; margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--hair); }
+  .shell-foot-page > .shell-search { justify-content: center; }
 }
 
 /* The command palette: one field and what it found, high on the page. */
@@ -4345,9 +4354,11 @@ body[data-product="Training Studio"] .cult-tab-rail > [role="tab"] {
   border-radius: 1rem;
   background: var(--yours-wash);
   box-shadow: 0 0 0 0 color-mix(in srgb, var(--yours-fill) 40%, transparent);
-  animation: move-arrives 0.5s cubic-bezier(0.2, 1.3, 0.4, 1);
 }
-.move-card-calm { border-color: var(--hair); background: var(--card); animation: none; }
+.move-card-new { animation: move-arrives 0.5s cubic-bezier(0.2, 1.3, 0.4, 1); }
+/* In a band above the work the move is one compact block, so the work starts higher. */
+.workbench-head > .move-card { padding: 0.7rem 1rem; gap: 0.3rem; }
+.move-card-calm { border-color: var(--hair); background: var(--card); }
 .move-label { color: var(--yours); font-size: 0.78rem; font-weight: 700; }
 /* The move's own action is amber, not filled: a screen keeps its one filled button. */
 .move-card > .bar > .button { background: var(--yours-fill); border-color: transparent; color: #241a05; font-weight: 700; }
@@ -4356,17 +4367,21 @@ body[data-product="Training Studio"] .cult-tab-rail > [role="tab"] {
   from { opacity: 0; transform: translateY(0.6rem) scale(0.98); box-shadow: 0 0 0 0.9rem transparent; }
 }
 
+/* Parts gathered into one keep their own spacing at every width. */
+.workbench-rail, .workbench-parts { display: grid; gap: 0.9rem; align-content: start; min-width: 0; }
+.workbench-rail > *, .workbench-parts > * { margin: 0; min-width: 0; }
 @media (min-width: 72rem) {
   :is(.page, .stack):has(> [data-zone="work"]) {
     display: grid;
     grid-template-columns: [parts] 13rem [work] minmax(0, 1fr) [rail] 20rem;
     grid-template-rows: repeat(18, min-content) 1fr;
     grid-auto-flow: dense;
-    gap: 0.9rem 1.4rem;
+    /* Rows that hold nothing take no room: the space between parts is each part's own. */
+    gap: 0 1.4rem;
     align-items: start;
     max-width: 104rem;
   }
-  :is(.page, .stack):has(> [data-zone="work"]) > * { margin-top: 0; min-width: 0; }
+  :is(.page, .stack):has(> [data-zone="work"]) > * { margin-top: 0; margin-bottom: 0.9rem; min-width: 0; }
   /* A desk with no parts of its own gives their column to the work. */
   :is(.page, .stack):has(> [data-zone="work"]):not(:has(> [data-zone="parts"])) { grid-template-columns: [parts work] minmax(0, 1fr) [rail] 20rem; }
   :is(.page, .stack):has(> [data-zone="work"]) > :not([data-zone]) { grid-column: rail; }
@@ -4375,15 +4390,27 @@ body[data-product="Training Studio"] .cult-tab-rail > [role="tab"] {
   /* One small part may sit above the work, such as its tabs or a selection bar. */
   :is(.page, .stack) > [data-zone="work-top"] { grid-column: work; grid-row: 2; }
   :is(.page, .stack):has(> [data-zone="work-top"]) > [data-zone="work"] { grid-row: 3 / -1; }
-  /* The list of parts runs to the foot of the page, so its height never opens a gap in the rail. */
-  :is(.page, .stack) > [data-zone="parts"][role="tablist"] { grid-row: 3 / -1; }
+  /* The list of parts runs to the foot of the work, so its height never opens a gap in the
+     rail. It starts under the level switch when there is one, and at the top otherwise. */
+  :is(.page, .stack) > [data-zone="parts"][role="tablist"] { grid-row: 2 / -1; }
+  :is(.page, .stack) > [data-zone="parts"] ~ [data-zone="parts"][role="tablist"] { grid-row: 3 / -1; }
   :is(.page, .stack) > [data-zone="rail"] { grid-column: rail; }
   :is(.page, .stack) > [data-zone="work"] { grid-column: work; grid-row: 2 / -1; }
+  /* A desk that gathers its rail into one part: the work and its parts share one row, what
+     is neither the work nor about whose turn it is follows under them, and the rail runs
+     beside all of it. The last row takes up any height the rail has left over, so a long
+     rail never opens a gap between the work and what follows it. */
+  :is(.page, .stack):has(> .workbench-rail):has(> [data-zone="work"]) { grid-template-rows: repeat(5, min-content) 1fr; grid-auto-flow: row; }
+  :is(.page, .stack):has(> .workbench-rail) > .workbench-rail { grid-column: rail; grid-row: 2 / -1; }
+  :is(.page, .stack):has(> .workbench-rail) > .workbench-parts { grid-column: parts; grid-row: 2; }
+  :is(.page, .stack):has(> .workbench-rail) > [data-zone="work"] { grid-column: work; grid-row: 2; }
+  :is(.page, .stack):has(> .workbench-rail) > [data-zone="foot"] { grid-column: parts / rail; }
   /* The work's parts read down the left, the one being made shimmering in the studio's colour. */
   :is(.page, .stack) > [data-zone="parts"].desk-workspace-tabs,
   :is(.page, .stack) > [data-zone="parts"] .desk-workspace-tabs { flex-direction: column; flex-wrap: nowrap; align-items: stretch; }
   :is(.page, .stack) > [data-zone="parts"] [role="tab"] { justify-content: flex-start; width: 100%; }
-  :is(.page, .stack) > [data-zone="rail"].desk-level-standing .section-title { font-size: 1rem; }
+  :is(.page, .stack) > [data-zone="rail"].desk-level-standing .section-title,
+  .workbench-rail .desk-level-standing .section-title { font-size: 1rem; }
 }
 .desk-workspace-tabs [role="tab"][data-making="true"] {
   background-image: linear-gradient(100deg, transparent 30%, color-mix(in srgb, var(--studio-color, var(--accent)) 26%, transparent) 50%, transparent 70%);
@@ -4398,5 +4425,5 @@ body[data-product="Training Studio"] .cult-tab-rail > [role="tab"] {
   body[data-focus="reading"] :is(.page, .stack) > [data-zone="rail"] { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .workbench-pulse, .move-card, .desk-workspace-tabs [role="tab"][data-making="true"] { animation: none; }
+  .workbench-pulse, .move-card-new, .desk-workspace-tabs [role="tab"][data-making="true"] { animation: none; }
 }

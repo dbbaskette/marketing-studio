@@ -599,12 +599,17 @@ function bullets(items, className) {
 // larger, the one waiting for the person in amber. In a list only that stage is named.
 const TRACK_STATES = { done: 'done', review: 'yours', late: 'yours', current: 'current',
   'not-started': 'todo', 'left-out': 'skipped', unavailable: 'skipped' };
-function beads(stages, small) {
+// With `calm` (a training that is working and waits on nobody) a stage that can already be
+// read is shown as ready to read, not as the person's move.
+function beads(stages, small, calm = false) {
   if (typeof StudioShell !== 'undefined') {
-    return StudioShell.track(list(stages).map(stage => ({ label: stage.name,
-      state: TRACK_STATES[stage.state] || 'todo',
-      note: ['review', 'late', 'current'].includes(stage.state) ? stage.words : '' })),
-    'Stages', small);
+    return StudioShell.track(list(stages).map(stage => {
+      const readable = calm && stage.state === 'review';
+      return { label: stage.name,
+        state: readable ? 'current' : TRACK_STATES[stage.state] || 'todo',
+        note: readable ? 'ready to read'
+          : ['review', 'late', 'current'].includes(stage.state) ? stage.words : '' };
+    }), 'Stages', small);
   }
   const row = make('ol', 'beads' + (small ? ' beads-small' : ''));
   let told = null;
@@ -1930,7 +1935,7 @@ function needsRow(training, index) {
 function quietRow(training, kind) {
   const text = add(make('div', 'row-text'),
     make('p', 'row-title', training.title || 'Untitled'));
-  if (kind === 'in-progress') add(text, beads(training.stages, true));
+  if (kind === 'in-progress') add(text, beads(training.stages, true, true));
   // A run that is not working says so: paused, stopped, or finished as far as it goes here.
   // A desk training says its own standing instead: a finished writing job is not Ready.
   if (training.standing && kind === 'in-progress') {

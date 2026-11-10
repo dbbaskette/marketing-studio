@@ -1283,7 +1283,10 @@
     const selected = tab === 'outline' ? 1 : 0;
     Drafting.cultTabs(tabs, selected, held.cultTabs[h.view.path] ?? selected);
     held.cultTabs[h.view.path] = selected;
-    return h.pageHead(tab !== 'outline' ? DESK_LEDE : editable ? OUTLINE_LEDE
+    // Under the band, the move already says what the Slides tab is for: the tabs sit alone,
+    // at the start of the row and next to the slides they change.
+    const banded = typeof StudioShell !== 'undefined';
+    return h.pageHead(tab !== 'outline' ? (banded ? null : DESK_LEDE) : editable ? OUTLINE_LEDE
       : OUTLINE_READ_LEDE, [tabs]);
   }
 

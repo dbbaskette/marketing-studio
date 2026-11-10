@@ -207,6 +207,13 @@
     flex-basis: 100%;
   }
 
+  /* Previous and Next share the navigator's one narrow row. */
+  .desk-navigator > .slide-moves > .button {
+    flex: 1 1 0;
+    min-width: 0;
+    padding-inline: 0.4rem;
+  }
+
   .desk-nav-list {
     flex-direction: column;
     overflow-x: visible;

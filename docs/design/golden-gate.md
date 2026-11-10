@@ -112,10 +112,11 @@ The Home headline is the one place the shell uses the system serif. See the
 | Search and jump | `.shell-palette`, opened by `StudioShell.palette()`; a page adds commands with `StudioShell.commands` |
 | Appearance | `.appearance-switch` in `.shell-foot`; never a second copy of a token |
 | Work finished | `.finish-card`, from `StudioShell.finish` |
-| A desk as a workbench | A page part says its zone in `data-zone`: `top`, `parts`, `work-top`, `work` or `rail`. From 72rem the page is three columns, the work in the middle, and a part with no zone joins the rail. Narrower, parts follow one another |
+| A desk as a workbench | A page part says its zone in `data-zone`: `top`, `parts`, `work-top`, `work`, `rail` or `foot`. From 72rem the page is three columns, the work in the middle, and a part with no zone joins the rail. Narrower, parts follow one another |
+| A rail as tall as its own parts | `.workbench-rail` and `.workbench-parts` gather a zone's parts into one. The work and its parts then share a row, `foot` parts follow directly under them, and the rail runs beside all of it (Training Studio) |
 | The one arc | `StudioShell.arc({at, yours, finished})`: Brief, Plan, Make, Ship, the same four in every studio |
 | A line of light | `.workbench-pulse`, from `StudioShell.pulse('working' \| 'yours' \| 'still')` |
-| The one move | `.move-card`, from `StudioShell.move`: the question, what it sets going, one amber action; `calm` where nothing waits |
+| The one move | `.move-card`, from `StudioShell.move`: the question, what it sets going, one amber action; `calm` where nothing waits. It animates (`.move-card-new`) only when it is a different move, never when it is drawn again |
 | A band instead of a rail | `.workbench-top` holding `.workbench-head`, where a desk already pairs its work with a side panel (Blog Studio, a deck's slides) |
 
 ### One arc, one workbench, one move
@@ -126,6 +127,18 @@ work itself is the middle of the screen from the first moment. Everything about 
 assistant, and the one thing it may need from the person, is in the rail (or the band).
 A screen still has one filled button: the move's own action is amber. **F** on a desk reads
 the work alone.
+
+- **Make lasts until nothing is left to read or decide.** Reviewing drafts is Make, with the
+  note "yours to review". Ship is sending finished work: Training Studio once every material
+  is ready, Blog Studio in Finishing.
+- **A studio with one status surface keeps it.** Infographic Studio's **Where this stands**
+  already holds its route, **Needs you** and its revisions, and no control there shows more
+  than twice. It takes the line of light and an amber edge on that card, not a second arc or
+  move.
+- **A state is not a filled button.** The story in use is a "Selected" tag, and Polish on
+  Blog Studio's desk is a plain button beside the move.
+- **On a phone** the sidebar is the bar of screens, so **Search and jump** and the
+  appearance close each page under its content (`.shell-foot-page`).
 
 ## Shared components and page stylesheets
 

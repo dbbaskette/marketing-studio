@@ -337,9 +337,15 @@ const StudioShell = (() => {
 
   // The one thing waiting for the person: {title, text, action: {label, run}}. With `calm`
   // it says that nothing is, in the same place, so the rail never leaves that in doubt.
+  let lastMove = '';
   function move({ title, text = '', action = null, calm = false } = {}) {
     const card = make('section', 'move-card' + (calm ? ' move-card-calm' : ''));
     card.dataset.zone = 'rail'; card.dataset.key = 'workbench-move';
+    // A desk draws its move again whenever anything changes. It arrives only when it is a
+    // different move, so one that is drawn again under the person stays still.
+    const said = calm ? '' : (title || '') + '\n' + text;
+    if (said && said !== lastMove) card.classList.add('move-card-new');
+    lastMove = said;
     if (!calm) { card.setAttribute('aria-label', 'Your move'); card.append(make('p', 'move-label', 'Your move')); }
     card.append(make('h2', 'move-title', title || (calm ? 'Nothing is yours right now' : 'Your move')));
     if (text) card.append(make('p', calm ? 'quiet' : '', text));
@@ -388,6 +394,17 @@ const StudioShell = (() => {
     const note = make('p', 'quiet shell-note'); note.setAttribute('aria-hidden', 'true');
     foot.append(search, appearanceSwitch(), note);
     sidebar.append(foot);
+    // On a phone the sidebar is the bar of screens along the bottom, with no room for these.
+    // There they close every page instead, under its content.
+    const content = document.querySelector('.content');
+    if (content) {
+      const under = make('div', 'shell-foot shell-foot-page');
+      const find = make('button', 'shell-search', 'Search and jump'); find.type = 'button';
+      find.addEventListener('click', palette);
+      const said = make('p', 'quiet shell-note'); said.setAttribute('aria-hidden', 'true');
+      under.append(find, appearanceSwitch(), said);
+      content.append(under);
+    }
   }
 
   paint();
