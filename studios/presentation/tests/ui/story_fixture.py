@@ -25,7 +25,7 @@ def main():
             studios_config.update({'local': {'root': str(case.space.root)}})
             preferences.finish(studios_config, lambda _: None)
             if '--timeout' in sys.argv:
-                case.workers.queued['scan'] = [lambda tools, job: agents.Outcome(False, 'timeout', seconds=180)]
+                case.workers.queued['scan'] = [lambda tools, job: agents.Outcome(False, 'timeout', seconds=270)]
             root = case.start(research=True, research_questions=['Which failure modes remain?'])
         web=server.Desk(page=lambda port:page.RunnerPage(port,case.engine));web.start()
         print(json.dumps({'url': web.url, 'path': str(root)}), flush=True)

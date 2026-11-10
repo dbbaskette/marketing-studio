@@ -386,8 +386,8 @@ real pinned helper, in both directions.
 Progress distinguishes elapsed time from observed active time and total assistant
 time. Overlapping assistants do not multiply wall time, and missing cost remains
 unknown. No worker is given a spending cap. The optional
-Infographic Studio text research adapter keeps its existing 300-second per-call
-limit and a 30-minute whole-request ceiling; it never invokes image tools.
+Infographic Studio text research adapter has a 450-second per-call
+limit and a 45-minute whole-request ceiling; it never invokes image tools.
 
 Blog Studio proofreading and direct manuscript editing, existing presentation
 editing, and supplied-only infographic planning remain outside research. Choosing

@@ -281,7 +281,7 @@ def analyze(engine, payload):
                 stdout=subprocess.PIPE,
                 stderr=subprocess.DEVNULL,
                 cwd=scratch,
-                timeout=180,
+                timeout=270,
             )
         except (OSError, subprocess.TimeoutExpired) as exc:
             raise ValueError(

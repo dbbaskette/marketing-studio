@@ -31,7 +31,7 @@ from urllib.parse import quote, urlencode, urljoin, urlsplit, urlunsplit
 import studio
 
 KIND = 'find-text'
-SECONDS = 180  # The assistant's time for one look, below a writing step's.
+SECONDS = 270  # The assistant's time for one look, below a writing step's.
 FETCH_SECONDS = 30  # The page and its scripts, together; the content address on its own.
 SCRIPTS = 8  # same-host scripts read
 SCRIPT_BYTES = 8 * 1024 * 1024  # one script's size limit; a page is read within 2 MB

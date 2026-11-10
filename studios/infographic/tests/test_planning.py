@@ -33,7 +33,7 @@ class PlanningTests(Isolated):
 
         def run(command, prompt, folder, timeout):
             calls.append(command)
-            self.assertEqual(timeout, 300)
+            self.assertEqual(timeout, 450)
             self.assertIn('omit start/end', prompt)
             self.assertIn('at most 12 facts', prompt)
             path = Path(command[command.index('--output-schema') + 1])

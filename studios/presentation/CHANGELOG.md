@@ -1,5 +1,7 @@
 # Changelog
 
+Unreleased: the assistant has 50% more time before a step is stopped. A step may take up to 22.5 minutes, not 15, the Quick scan 4.5 minutes, not 3, and the final brief of sectioned research 7.5 minutes, not 5. A limit you already saved in Settings, under Limits, keeps its value.
+
 Unreleased: spending limits are removed. The project spending amount in Settings, under Limits, and the **Spending behavior** choice are gone, and work no longer stops or warns for what it cost. What the assistant reports is still shown as information, and saved decks open and carry on as before.
 
 Unreleased: on the slide desk **Slides** and **Outline** sit at the start of their row, next to the slides; **Previous** and **Next** share one row above the navigator; and the Sources panel is wide enough for its file field.

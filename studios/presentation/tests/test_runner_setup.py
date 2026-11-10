@@ -28,7 +28,7 @@ THEIRS = """{
 """
 DEFAULTS = {'agent': {'default': 'claude', 'model': None, 'effort': None},
             'person': {'name': None}, 'output': 'google',
-            'limits': {'step_seconds': 900, 'parallel': 2}}
+            'limits': {'step_seconds': 1350, 'parallel': 2}}
 
 
 class FirstTimeCase(Asking, StudioCase):

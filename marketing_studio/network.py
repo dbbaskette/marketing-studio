@@ -23,9 +23,9 @@ TOKEN_HEADERS = {identifier: 'X-' + name + '-Studio-Token' for identifier, name 
                  (('marketing', 'Marketing'), ('blog', 'Blog'),
                   ('presentation', 'Presentation'), ('training', 'Training'), ('infographic', 'Infographic'))}
 UPSTREAM_TIMEOUT = 100
-# Native infographic actions can include two renders, a five-minute author call
-# and a ten-minute image call. Keep the bridge alive across those bounded stages.
-INFOGRAPHIC_ACTION_TIMEOUT = 1200
+# Native infographic actions can include two renders, a seven-and-a-half-minute author
+# call and a ten-minute image call. Keep the bridge alive across those bounded stages.
+INFOGRAPHIC_ACTION_TIMEOUT = 1350
 # Google previews may perform account/token lookup and several fixed API reads.
 INFOGRAPHIC_REMOTE_TIMEOUT = 240
 # Blog Studio's Google sends make several Google calls of up to a minute each, and a library

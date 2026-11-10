@@ -199,7 +199,7 @@ class JobTests(JobCase):
 
     def test_the_two_real_agents_are_known_by_name(self):
         self.assertEqual(agents.AGENTS, {'claude': Claude, 'codex': Codex})
-        self.assertEqual(Limits(), Limits(seconds=600))
+        self.assertEqual(Limits(), Limits(seconds=900))
 
 
 class ClaudeCommandTests(AgentCase):

@@ -76,7 +76,7 @@ class ParallelNativeTests(StudioCase):
         self.assertTrue(facts['review']['accepted'])
         self.assertEqual(len({f['author'] for f in facts['facts']}), 2)
         self.assertEqual(shown['research_progress']['phase'], 'complete')
-        self.assertEqual(record['limits'], {'step_seconds': 900})
+        self.assertEqual(record['limits'], {'step_seconds': 1350})
         self.assertTrue(all(a.get('research_attempt') for name, entry in record['steps'].items()
                             if contract.job_round(name) for a in entry['tries']))
 

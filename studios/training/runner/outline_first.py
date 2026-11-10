@@ -11,7 +11,7 @@ from studio_core import research_contract, research_quality, review_policy, scop
 
 SCHEMA = 1
 RECORD_SCHEMA = 7
-SECONDS, INPUT_CHARS = 180, 48_000
+SECONDS, INPUT_CHARS = 270, 48_000
 
 
 def enabled(record):

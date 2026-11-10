@@ -260,7 +260,7 @@ class SavedFileTests(SettingsCase):
         self.assertEqual(settings.path().read_bytes(),
                          b'{\n  "look_for_updates": true,\n'
                          b'  "notify": false,\n  "parallel": 2,\n  "schema": 1,\n'
-                         b'  "step_seconds": 900\n}\n')
+                         b'  "step_seconds": 1350\n}\n')
         self.assertFalse(self.config.exists(), 'the defaults write nothing every studio shares')
 
 

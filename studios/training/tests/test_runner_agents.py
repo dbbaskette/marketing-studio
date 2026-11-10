@@ -211,7 +211,7 @@ class JobTests(JobCase):
 
     def test_the_two_real_agents_are_known_by_name(self):
         self.assertEqual(agents.AGENTS, {'claude': Claude, 'codex': Codex})
-        self.assertEqual(Limits(), Limits(seconds=600))
+        self.assertEqual(Limits(), Limits(seconds=900))
 
 
 class ClaudeCommandTests(AgentCase):
@@ -1085,7 +1085,7 @@ class SavedSettingsTests(unittest.TestCase):
             settings.save(settings.Settings())
             self.assertEqual(settings.path().read_bytes(),
                              b'{\n  "look_for_updates": true,\n  "notify": false,\n'
-                             b'  "parallel": 2,\n  "schema": 1,\n  "step_seconds": 900\n}\n')
+                             b'  "parallel": 2,\n  "schema": 1,\n  "step_seconds": 1350\n}\n')
             self.assertFalse((base / 'studios-config.json').exists())
 
 

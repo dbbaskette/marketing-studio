@@ -636,23 +636,23 @@ class RetryTests(StudioCase):
 
     def test_a_step_that_runs_out_of_time_offers_more_time_for_this_deck(self):
         from dataclasses import replace
-        self.workers.then('outline', *[fails('It did not finish in 900 seconds, so it was stopped.', reason='timeout')] * 3)
+        self.workers.then('outline', *[fails('It did not finish in 1350 seconds, so it was stopped.', reason='timeout')] * 3)
         root = self.saved_start()
         view = self.view(root)
         self.assertEqual(view['problem'], {
-            'state': 'failed', 'action': 'more-time', 'seconds': 900,
+            'state': 'failed', 'action': 'more-time', 'seconds': 1350,
             'why': 'Draft the outline ran out of the time a step may take: its last try was '
-                   'stopped after 15 minutes, and it did not work in 3 tries. That limit, 15 '
+                   'stopped after 22.5 minutes, and it did not work in 3 tries. That limit, 22.5 '
                    'minutes a step, is in Settings, under Limits.',
             'kept': 'Everything kept before this step is still here. Nothing from the tries '
                     'that failed was kept.'})
         self.engine.act(root, 'more-time')
         self.assertEqual(self.waiting(root), 'gate:outline')
-        self.assertEqual(self.workers.of('outline')[-1].limits.seconds, 1800)
+        self.assertEqual(self.workers.of('outline')[-1].limits.seconds, 2700)
         self.assertEqual((self.record(root)['limits']['step_seconds'],
-                          self.record(root)['more_time']), (1800, 1800))
+                          self.record(root)['more_time']), (2700, 2700))
         # Settings keeps its own limit, for other decks, and a larger one there still counts.
-        self.assertEqual(self.settings.load().step_seconds, 900)
+        self.assertEqual(self.settings.load().step_seconds, 1350)
         self.settings.save(replace(self.settings.load(), step_seconds=3600))
         self.engine.act(root, 'stop')
         self.engine.act(root, 'resume')
@@ -874,7 +874,7 @@ class HaltTests(StudioCase):
         self.workers.cost = 500.0
         self.workers.then('outline', asks('One thing first?'))
         root = self.saved_start()
-        self.assertEqual(self.record(root)['limits'], {'step_seconds': 900})
+        self.assertEqual(self.record(root)['limits'], {'step_seconds': 1350})
         self.assertNotIn('spending_policy', self.record(root))
         self.engine.answer(root, self.view(root)['question']['id'], 'Yes.')
         self.assertEqual(self.waiting(root), 'gate:outline')
@@ -945,13 +945,13 @@ class HaltTests(StudioCase):
         record['research_contract'] = {'schema': 2, 'version': '1.0.0', 'digest': 'abc'}
         self.engine._store(root, record)
         late = WorkspaceError('Research did not finish its author job in round 1 of 3.')
-        late.outcome = Outcome(False, 'timeout', 'It did not finish in 900 seconds, so it was stopped.')
+        late.outcome = Outcome(False, 'timeout', 'It did not finish in 1350 seconds, so it was stopped.')
         with mock.patch.object(research_steps.research_contract, 'native', side_effect=late):
             self.decide(root, 'gate:research-plan')
         problem = self.view(root)['problem']
-        self.assertEqual((problem['action'], problem['seconds']), ('more-time', 900))
+        self.assertEqual((problem['action'], problem['seconds']), ('more-time', 1350))
         self.assertTrue(problem['why'].startswith(
-            'The research ran out of the time a step may take: it was stopped after 15 minutes.'))
+            'The research ran out of the time a step may take: it was stopped after 22.5 minutes.'))
 
     def test_undo_takes_back_the_last_step(self):
         root = self.saved_start()

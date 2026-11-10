@@ -25,7 +25,7 @@ from runner.engine import ACTIONS
 from workspace import WorkspaceError
 
 AVOIDED = re.compile(r'\b(artifacts?|stale|lineage)\b', re.IGNORECASE)
-SLOW = 'It did not finish in 900 seconds, so it was stopped.'
+SLOW = 'It did not finish in 1350 seconds, so it was stopped.'
 STEPS = ['intake', 'research-plan', 'gate:research-plan', 'research-start', 'research',
          'research-report', 'gate:research', 'blueprint', 'gate:blueprint', 'document',
          'gate:document', 'brief', 'gate:brief', 'package']
@@ -718,7 +718,7 @@ class WorkerTests(StudioCase):
             self.assertEqual(list(job.tools), worker_tools.command(job.folder))
             self.assertEqual(job.folder.parent, agents.staging())
             self.assertNotIn(self.space.repo, job.folder.parents)
-            self.assertEqual(job.limits, agents.Limits(seconds=900))
+            self.assertEqual(job.limits, agents.Limits(seconds=1350))
         for folder, held in seen:
             self.assertIn(held, (['inputs', 'job.json', 'sources'], ['job.json', 'sources']))
             self.assertFalse(folder.exists(), 'a job folder is removed once its work is kept')
@@ -1556,11 +1556,11 @@ class LimitTests(StudioCase):
         self.assertEqual(set(view['spent']), {'dollars', 'tokens'})
         self.assertNotIn('spending', view)
         record = self.record(root)
-        self.assertEqual(record['limits'], {'step_seconds': 900})
+        self.assertEqual(record['limits'], {'step_seconds': 1350})
         for gone in ('spending_policy', 'cleared', 'spending_warning'):
             self.assertNotIn(gone, record)
         self.assertEqual({job.limits for _, job, _ in self.workers.jobs},
-                         {agents.Limits(seconds=900)})
+                         {agents.Limits(seconds=1350)})
 
     def test_work_saved_with_spending_limits_still_loads_and_carries_on(self):
         import home
@@ -1657,9 +1657,9 @@ class LimitTests(StudioCase):
         with mock.patch.object(engine_module.research_contract, 'native', side_effect=late):
             self.decide(root, 'research-plan')
         problem = self.view(root)['problem']
-        self.assertEqual((problem['action'], problem['seconds']), ('more-time', 900))
+        self.assertEqual((problem['action'], problem['seconds']), ('more-time', 1350))
         self.assertTrue(problem['what'].startswith('The research ran out of the time a step may '
-                                                   'take: it was stopped after 15 minutes.'))
+                                                   'take: it was stopped after 22.5 minutes.'))
 
     def test_a_step_is_given_its_time_and_no_spending_limit(self):
         settings.save(replace(settings.load(), step_seconds=120))

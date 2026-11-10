@@ -33,10 +33,12 @@ ACCOUNT = ('usage limit', 'rate limit', 'quota')
 
 
 def lasted(seconds) -> str:
-    """A length of time as a person says it: 45 seconds, 15 minutes, 1 hour 30 minutes."""
+    """A length of time as a person says it: 45 seconds, 15 minutes, 22.5 minutes, 1 hour 30 minutes."""
     whole = round(seconds or 0)
     if whole < 60:
         return f"{whole} second{'' if whole == 1 else 's'}"
+    if whole < 3600 and whole % 60 == 30:
+        return f'{whole / 60:g} minutes'
     minutes = round(whole / 60)
     if minutes < 60:
         return f"{minutes} minute{'' if minutes == 1 else 's'}"

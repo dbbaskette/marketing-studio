@@ -6,7 +6,7 @@ from functools import lru_cache
 from pathlib import Path
 
 SCHEMA = 1
-SECONDS, INPUT_CHARS = 180, 48_000
+SECONDS, INPUT_CHARS = 270, 48_000
 
 
 def budget(value=None):

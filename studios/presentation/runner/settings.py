@@ -100,7 +100,7 @@ class Settings:
     agent: str = 'claude'
     model: str | None = None
     effort: str | None = None
-    step_seconds: int = 900
+    step_seconds: int = 1350
     parallel: int = 2
     previews: str | None = None
     brand_skill: str | None = None

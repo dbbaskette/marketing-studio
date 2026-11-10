@@ -26,7 +26,7 @@ class SlideStoryTests(StudioCase):
         self.workers.then('research-result', *([self.worker] * 12))
 
     def scanner(self, tools, job):
-        self.assertLessEqual(job.limits.seconds, 180)
+        self.assertLessEqual(job.limits.seconds, 270)
         self.assertFalse(hasattr(job.limits, 'dollars'))
         self.assertFalse(tools.job.get('fetch'))
         self.assertFalse(tools.job.get('ask'))
@@ -69,7 +69,7 @@ class SlideStoryTests(StudioCase):
         self.assertIn('Approved context', self.questions[0]['question'])
 
     def test_timeout_keeps_fallback_and_resume_never_rescans(self):
-        self.workers.queued['scan'] = [lambda tools, job: agents.Outcome(False, 'timeout', seconds=180)]
+        self.workers.queued['scan'] = [lambda tools, job: agents.Outcome(False, 'timeout', seconds=270)]
         root = self.start(research=True)
         shown = self.view(root)
         self.assertTrue(shown['gate']['scan']['fallback'])
@@ -134,7 +134,7 @@ class SlideStoryTests(StudioCase):
         self.assertEqual(job.limits, agents.Limits(seconds=10))
         self.assertNotIn('dollars', self.view(root)['gate']['limits'])
         self.assertEqual(self.view(root)['gate']['limits']['input_chars'], 1000)
-        self.assertEqual(slide_story.budget({'seconds': 900})['seconds'], 180)
+        self.assertEqual(slide_story.budget({'seconds': 900})['seconds'], 270)
         with self.assertRaises(WorkspaceError): slide_story.budget(False)
         from studio_core import research_contract, scope_scan
         scope = scope_scan.research_scope('x' * 20_000,

@@ -95,7 +95,7 @@ CODEX_OFF = ('apps', 'plugins', 'remote_plugin', 'plugin_sharing', 'browser_use'
 @dataclass(frozen=True)
 class Limits:
     """How long a job may run."""
-    seconds: int = 600
+    seconds: int = 900
 
 
 @dataclass(frozen=True)

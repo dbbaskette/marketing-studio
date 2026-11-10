@@ -88,22 +88,22 @@ class SynthesisIntegrationTests(StudioCase):
 
     def test_a_research_job_that_runs_out_of_time_offers_more_time(self):
         from runner.agents import Outcome
-        slow = 'It did not finish in 900 seconds, so it was stopped.'
+        slow = 'It did not finish in 1350 seconds, so it was stopped.'
         self.workers.queued['research-result'] = [
             lambda tools, job: Outcome(False, 'timeout', slow), self.author, self.checker]
         with mock.patch.object(review_policy, 'capture', return_value={'schema': 1, 'level': 'automatic'}):
             root = self.start(research=True)
         problem = self.view(root)['problem']
-        self.assertEqual((problem['action'], problem['seconds']), ('more-time', 900))
+        self.assertEqual((problem['action'], problem['seconds']), ('more-time', 1350))
         self.assertTrue(problem['why'].startswith('The research ran out of the time a step may '
-                                                  'take: it was stopped after 15 minutes.'))
+                                                  'take: it was stopped after 22.5 minutes.'))
         entry = self.engine._load(root)['steps']['research:author-1']
         self.assertEqual((entry['tries'][0]['outcome'], entry['tries'][0]['error']),
                          ('failed', slow))
         self.engine.act(root, 'more-time')
         self.assertIsNone(self.view(root)['problem'], self.view(root))
         self.assertEqual([job.limits.seconds for job in self.workers.of('research-result')],
-                         [900, 1800, 1800])
+                         [1350, 2700, 2700])
 
     def test_a_research_job_that_hands_back_nothing_acceptable_says_why(self):
         def wrong(tools, job):

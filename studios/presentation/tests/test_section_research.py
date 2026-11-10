@@ -91,9 +91,9 @@ class SectionResearchTests(StudioCase):
         self.engine.act(root, 'more-time')
         record = self.engine._load(root)
         self.assertEqual(record['limits']['step_seconds'], before)
-        self.assertEqual(record['section_synthesis']['more_time'][ident], 600)
+        self.assertEqual(record['section_synthesis']['more_time'][ident], 2 * research_sections.SECONDS)
         subsequent = self.section_jobs[len(previous):]
-        self.assertEqual(subsequent, [(ident, 600), ('final', research_sections.SECONDS)])
+        self.assertEqual(subsequent, [(ident, 2 * research_sections.SECONDS), ('final', research_sections.SECONDS)])
 
     def test_preview_polling_reuses_local_metadata_but_confirmation_rehashes_sources(self):
         from studio_core import research_impact

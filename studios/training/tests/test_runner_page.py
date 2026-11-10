@@ -330,7 +330,7 @@ class SetUpTests(FirstTimeCase):
             'workspace': None, 'shared': {}, 'shared_problem': None,
             'team_moved': None, 'shared_notice': None,
             'agent': {'default': 'claude', 'model': None, 'effort': None},
-            'limits': {'step_seconds': 900, 'parallel': 2},
+            'limits': {'step_seconds': 1350, 'parallel': 2},
             'previews': {'how': None, 'pool': False, 'drive': False, 'local': False, 'left': []},
             'notify': {'on': False, 'can': True, 'problem': None},
             'updates': {'look': True}, 'upkeep': None,
@@ -441,7 +441,7 @@ class SetUpTests(FirstTimeCase):
                           changed['agent'], changed['limits']),
                          (str(folder), 'each-decision',
                           {'default': 'claude', 'model': 'a-model', 'effort': 'max'},
-                          {'step_seconds': 900, 'parallel': 4}))
+                          {'step_seconds': 1350, 'parallel': 4}))
         # The model and the level are kept while the agent is, and are the new agent's own
         # once it changes.
         self.assertEqual(self.post('setup', {'limits': {'parallel': 3}})['agent'],
@@ -2414,10 +2414,10 @@ class SettingsTests(StudioCase):
 
     def test_the_defaults_are_used_until_something_is_saved(self):
         self.assertEqual(settings.load(), settings.Settings(
-            agent='claude', step_seconds=900, parallel=2))
+            agent='claude', step_seconds=1350, parallel=2))
         kept = settings.save(replace(settings.load(), agent='codex', parallel=4))
         self.assertEqual((settings.load(), kept.limits), (kept, {
-            'step_seconds': 900, 'parallel': 4}))
+            'step_seconds': 1350, 'parallel': 4}))
         self.assertEqual(settings.path().parent, home.data_root())
         self.assertNotIn(self.space.repo, settings.path().parents)
 
