@@ -266,9 +266,10 @@ function sDeskPolish(held){
     event.preventDefault();if(!access.actions.edit||studio.busy||held.starting)return;const said=sDeskHaveProblem(held);if(said){problem.textContent=said;return;}
     // A read that fails again says so as a new answer, so pressing the button visibly reads.
     const failed=problem.textContent,needsRead=['google','link','collection'].includes(held.source)&&!held.preview;problem.textContent='';
-    held.starting=true;const unlock=sFreezeControls(form);
-    try{await busy(go,needsRead?'Reading and starting…':'Starting…',async()=>{try{if(needsRead&&held.source==='google')await sDeskReadGoogle(held,{start:true});else if(needsRead)await sDeskReadPublished(held,{start:true});else await sDeskGo(held);}catch(error){const readFailed=needsRead&&!held.preview;if(readFailed&&held.find){await sDeskFindShown(held);return;}problem.textContent=(readFailed&&failed?'Read again, and still: ':'')+error.message+(readFailed?(held.source==='google'?' Your link is kept here; change the Doc or try again.':' Your link is kept here; change it or try again.'):' Your choices and captured draft are kept here.');}});}
-    finally{held.starting=false;unlock();}
+    held.starting=true;const reading=needsRead?sDeskReadingSheet(held):null,unlock=sFreezeControls(form);
+    try{await busy(go,needsRead?'Reading and starting…':'Starting…',async()=>{try{if(needsRead&&held.source==='google')await sDeskReadGoogle(held,{start:true,read:reading.read});else if(needsRead)await sDeskReadPublished(held,{start:true,read:reading.read});else await sDeskGo(held);}catch(error){if(reading)reading.close();const readFailed=needsRead&&!held.preview;if(readFailed&&held.find){await sDeskFindShown(held);return;}problem.textContent=(readFailed&&failed?'Read again, and still: ':'')+error.message+(readFailed?(held.source==='google'?' Your link is kept here; change the Doc or try again.':' Your link is kept here; change it or try again.'):' Your choices and captured draft are kept here.');}});}
+    // A read that was refused leaves the reason on the form and the focus on its button.
+    finally{if(reading)reading.close();held.starting=false;unlock();if(reading&&problem.textContent&&go.isConnected&&typeof go.focus==='function')go.focus();}
   });
   sPage(sNode('p','lede','Bring your draft and choose what happens first. No kind of post needed.'),form);
 }
@@ -375,7 +376,24 @@ function sDeskDraftIn(held){
   card.append(sField('desk-title','Title (optional)',held,'title',{max:500,hint:'Blank uses the draft’s # heading or the Doc’s name.'}));
   return [card];
 }
-async function sDeskReadGoogle(held,{start=false}={}){
+// A read that takes a while says so the moment it is asked for, in a sheet: what is being
+// read, what follows, and that nothing is asked of the person. It moves on when the text is
+// in hand and puts itself away when the desk opens, or when the read is refused.
+const DESK_READ_THEN={copyedit:'Check spelling and grammar',feedback:'Review it',geo:'Review it for AI search',reshape:'Reshape it'};
+function sDeskReadingSheet(held){
+  const google=held.source==='google',then=DESK_READ_THEN[held.first_pass];
+  const names=[google?'Read the Doc':'Read the page','Open it on the desk',...(then?[then]:[])];
+  const line=sNode('p','reading-now'),steps=sNode('div','reading-steps');line.setAttribute('role','status');
+  const show=at=>{
+    line.textContent=at?'Opening it on the desk…':google?'Reading your Google Doc…':'Reading the page…';
+    steps.replaceChildren(...(typeof StudioShell==='undefined'?[]:[StudioShell.track(names.map((label,index)=>({label,state:index<at?'done':index===at?'current':'todo'})),'What happens now')]));
+  };
+  show(0);
+  sOpenSheet(google?'Bringing in your Google Doc':'Bringing in the page',line,steps,sNode('p','quiet','Nothing for you to do. '+(google?'Only the tab you linked is read, and the Doc is not changed. ':'')+'This can take up to a minute, and the desk opens by itself.'));
+  const owner=studio.sheet;
+  return {read:()=>{if(studio.sheet===owner)show(1);},close:()=>{if(studio.sheet===owner)sCloseSheet();}};
+}
+async function sDeskReadGoogle(held,{start=false,read=null}={}){
   const turn=studio.turn,found=await api('google-preview',{url:held.url.trim()});if(turn!==studio.turn)return;
   if(found?.status==='view-only')return sDeskGoogleCopyOffer(held,found);
   if(found?.status==='already-linked'&&found.id){
@@ -388,7 +406,7 @@ async function sDeskReadGoogle(held,{start=false}={}){
     await sDeskConsumed(held,intakeRevision);if(turn!==studio.turn)return;studio.desk={id:made.id,view:made,session:operationId()};if(!created&&held.first_pass==='copyedit'&&held.voiceOn)studio.desk.review={pendingVoice:{guide:held.voiceGuide,name:(held.polishVoices?.find(guide=>guide.id===held.voiceGuide)||{}).name||'Selected voice',humanize:held.humanizeOn?held.humanizeLevel:null}};return sRoute('desk',made.id,held.first_pass==='copyedit'&&(created||held.voiceOn)?'review':null);
   }
   held.preview=sGooglePreview(found);if(!held.title.trim())held.title=found.title;
-  if(start){const made=await sDeskGo(held);if(made&&studio.screen==='desk'&&studio.id===made.id){const summary=held.preview.summary,notes=[];if(summary.selected_tab)notes.push('Opened only the tab “'+summary.selected_tab.title+'”.');if(summary.excluded_approval_blocks)notes.push('Leading approval fields stay in the original Google Doc.');if(notes.length)sToast(notes.join(' '));}return made;}
+  if(start){if(read)read();const made=await sDeskGo(held);if(made&&studio.screen==='desk'&&studio.id===made.id){const summary=held.preview.summary,notes=[];if(summary.selected_tab)notes.push('Opened only the tab “'+summary.selected_tab.title+'”.');if(summary.excluded_approval_blocks)notes.push('Leading approval fields stay in the original Google Doc.');if(notes.length)sToast(notes.join(' '));}return made;}
   await sDeskStart();const paper=$('studio-page').querySelector('.google-preview');if(paper&&typeof paper.focus==='function')paper.focus({preventScroll:false});
 }
 function sDeskGoogleCopyOffer(held,found){
@@ -488,14 +506,14 @@ function sFindTextWatch(find){
 }
 // Read a published post by its link: one fetch on this press, shown before anything starts.
 // A page with no text offers to ask the assistant where it gets its text (sFindText).
-async function sDeskReadPublished(held,{start=false}={}){
-  if(held.source==='collection')return sDeskReadCollection(held,{start});
+async function sDeskReadPublished(held,{start=false,read=null}={}){
+  if(held.source==='collection')return sDeskReadCollection(held,{start,read});
   const turn=studio.turn;let found;
   try{found=sPublishedFound(await api('published-preview',{url:held.link.trim()}));}
   catch(error){if(turn===studio.turn)held.find=sFindTextFrom(error,held.link.trim());throw error;}
   if(turn!==studio.turn)return;
   held.preview=found;held.find=null;
-  if(start)return sDeskGo(held);
+  if(start){if(read)read();return sDeskGo(held);}
   await sDeskStart();sPublishedFocus();
 }
 // Read the page on its own button (or once its text was found): a refusal is said on the form.
@@ -505,13 +523,13 @@ async function sDeskFindShown(held){if(studio.screen==='desk-start'&&studio.desk
 function sFindTextFocus(){const box=$('studio-page').querySelector('.find-text'),button=box&&box.querySelector('button');if(button&&typeof button.focus==='function')button.focus();}
 // The link changed: an offer to find the old link's text goes.
 function sFindTextGone(held){if(held.find?.node)held.find.node.hidden=true;held.find=null;}
-async function sDeskReadCollection(held,{start=false}={}){
+async function sDeskReadCollection(held,{start=false,read=null}={}){
   if(held.collectionReading)return;held.collectionReading=true;
   const turn=studio.turn;
   try{const found=sPublishedFound(await api('published-preview',{item:held.collection.id,location:held.collection.location||'local'}));if(turn!==studio.turn)return;held.preview=found;held.collectionProblem='';}
   catch(error){held.collectionProblem=error.message;if(start)throw error;}
   finally{held.collectionReading=false;}
-  if(start&&held.preview)return sDeskGo(held);
+  if(start&&held.preview){if(read)read();return sDeskGo(held);}
   sDeskStartAgain(held);
 }
 // Check spelling and grammar's strength of human-sounding suggestions, or null for none.
@@ -807,8 +825,12 @@ function sDeskBench(held){
     :!hasText?{title:'Write the draft from your outline',text:'Shape the outline, then write the draft or one section at a time.'}
     :sDeskCan(held)?{title:'Review your draft',text:'Finishing checks it before you publish. Nothing changes until you accept.',action:{label:'Open Finishing',run:()=>{if(!held.finish)sDeskFinishOpen(held);}}}:null;
   const head=sNode('div','workbench-head');head.dataset.key='workbench-head';
-  head.append(StudioShell.arc({at,yours:!!move,finished,note:working?(sDeskStatusWords(held)||''):''},'Where this blog is'),
-    move?StudioShell.move(move):StudioShell.move({calm:true,title:finished?'Published':'Nothing is yours right now',text:finished?'':working?'It opens here as it is written.':''}));
+  // What is under way, in the words its own screen uses: a check in review mode, or the job.
+  const check=held.mode==='review'&&['finish-copyedit','finish-humanize'].includes(view.working?.kind);
+  const doing=(check?(view.working.kind==='finish-humanize'?REVIEW_HUMAN:REVIEW_CHECKING):sDeskStatusWords(held)||'').replace(/…$/,'');
+  const busyCard=working?{working:true,title:doing||'Working on it',text:'Nothing for you to do. '+(check?'Each fix is marked in the text when the check finishes. Read or edit meanwhile.':hasText?'Read or edit meanwhile.':'It opens here as it is written.')}:null;
+  head.append(StudioShell.arc({at,yours:!!move,finished,note:working?(doing?doing+'…':''):''},'Where this blog is'),
+    move?StudioShell.move(move):busyCard?StudioShell.move(busyCard):StudioShell.move({calm:true,title:finished?'Published':'Nothing is yours right now'}));
   const bench=sNode('div','workbench-top');bench.append(StudioShell.pulse(move?'yours':working?'working':'still'),head);
   return bench;
 }
@@ -1653,7 +1675,7 @@ function sReviewToolbar(held,state,force=false){
 }
 // What the check under way is doing, said in the toolbar and above the draft.
 function sReviewDoing(state){return state.working?.kind==='finish-humanize'?REVIEW_HUMAN:REVIEW_CHECKING;}
-function sDeskReview(held){
+function sDeskReview(held,keep=null){
   sReviewOn(held);const state=sReviewState(held);sReviewToolbar(held,state,true);held.layout=sDeskLayout();held.cards=null;held.wholeCard=null;held.wholeGo=null;
   const status=sNode('p','quiet desk-save-state');status.setAttribute('role','status');status.setAttribute('aria-live','polite');held.status=status;
   if(held.stale)sDeskStale(held);else status.textContent=held.saved||'';
@@ -1661,7 +1683,7 @@ function sDeskReview(held){
   held.review.lede=sNode('p','lede',sReviewLede(state));
   held.bench=sDeskBench(held);
   sPage(held.bench,held.review.lede,status,sActivityNow(held.view.activity,{id:held.id}),held.review.head,held.review.paper,sActivityLog({id:held.id}));
-  sDeskImagesLoad(held);sReviewProof(held);sReviewFocusAfter(held);
+  sDeskImagesLoad(held);sReviewProof(held);sReviewFocusAfter(held,keep);
 }
 // What needs the person first: the check under way, a problem, the count with Accept all and
 // Reject all, or, once nothing is left, where the draft goes next.
@@ -1770,10 +1792,27 @@ function sReviewFocusNext(held,state,item){
   const at=item?state.pending.findIndex(row=>row.key===item.key):-1,next=at<0?null:state.pending[at+1]||state.pending[at-1];
   held.review.focusAfter=next?'accept:'+next.key:'count';
 }
-function sReviewFocusAfter(held){
-  const r=held.review,key=r?.focusAfter;if(!key||!sDeskCurrent(held))return;r.focusAfter=null;
+// The page keeps its place through it. Focus never scrolls: the next suggestion is brought
+// into view only when it is off the screen, and with none left the page stays where the
+// last one was. `keep` is where the page was before it was drawn again, put back if drawing
+// moved it. While the request is still out (`deciding`) a poll leaves all of this alone.
+function sReviewFocusAfter(held,keep=null){
+  const r=held.review;if(!r||r.deciding)return;
+  const stay=()=>{if(keep!==null&&typeof window.scrollTo==='function'&&typeof window.scrollY==='number'&&Math.abs(window.scrollY-keep)>240)window.scrollTo({top:keep,behavior:'instant'});};
+  const key=r.focusAfter;if(!key||!sDeskCurrent(held)){stay();return;}r.focusAfter=null;
   const find=name=>{for(const scope of [r.head,r.paper]){const node=sReviewFind(scope,name);if(node&&!node.disabled&&!node.hidden)return node;}return null;};
-  const node=find(key)||find('count')||find('done')||sReviewFirst(r.head);if(node&&typeof node.focus==='function')node.focus();
+  const next=find(key),node=next||find('count')||find('done')||sReviewFirst(r.head);
+  if(node&&typeof node.focus==='function')node.focus({preventScroll:true});
+  stay();
+  if(next)sReviewInView(next);
+}
+// Bring a suggestion into view if it is not: once now, and again shortly after while it
+// still has the focus, because pictures in the paper arrive late and move what is under them.
+function sReviewInView(node){
+  if(typeof node.getBoundingClientRect!=='function'||typeof window.innerHeight!=='number')return;
+  const check=smooth=>{if(!node.isConnected)return;const box=node.getBoundingClientRect();if(box.top<96||box.bottom>window.innerHeight-32)node.scrollIntoView({block:'center',behavior:smooth?'smooth':'instant'});};
+  check(true);
+  if(typeof setTimeout==='function')for(const wait of [400,1200])setTimeout(()=>{if(sDeskFocused()===node)check(false);},wait);
 }
 function sReviewFirst(node){for(const child of node?.children||[]){if(child.hidden)continue;if(['button','input','select','textarea','summary'].includes(String(child.tagName).toLowerCase())&&!child.disabled)return child;const found=sReviewFirst(child);if(found)return found;}return null;}
 function sReviewFind(node,key){if(!node)return null;if(node.dataset?.focus===key)return node;for(const child of node.children||[]){const found=sReviewFind(child,key);if(found)return found;}return null;}
@@ -1877,6 +1916,8 @@ function sReviewChoices(held,item){
 // A poll, a save or a job landing redraws only what changed, never a paragraph being edited.
 function sDeskReviewRefresh(held,before){
   if(!sDeskCurrent(held)||!held.review?.paper)return;
+  // Where the page is now: drawing it again, in part or whole, must not move it.
+  const keep=typeof window.scrollY==='number'?window.scrollY:null;
   const state=sReviewState(held);sReviewToolbar(held,state);
   // Like the toolbar, drawn again only when what it shows changes: a poll never swaps Stop
   // or Accept all under a click.
@@ -1887,7 +1928,7 @@ function sDeskReviewRefresh(held,before){
   // unless a paragraph is being edited, when it waits for the editor to close.
   // The order drawn, kept as drawn: the parts object lists all-digit ids first.
   const drawn=(held.review.order||[]).join(','),wanted=state.parts.filter(part=>held.review.parts[part]||part!=='opening'||deskTextOf(held.view,part).trim()).join(',');
-  if(drawn!==wanted){if(!held.review.editing)sDeskReview(held);return;}
+  if(drawn!==wanted){if(!held.review.editing)sDeskReview(held,keep);return;}
   // A part with the paragraph being edited, or a choice with focus, is kept as it is: a
   // second job landing never takes the caret or the words.
   for(const part of state.parts){
@@ -1897,7 +1938,7 @@ function sDeskReviewRefresh(held,before){
     const box=sReviewPart(held,part,state);if(!box)continue;
     old.replaceWith(box);held.review.parts[part]=box;
   }
-  sDeskImagesLoad(held);sReviewProof(held);sReviewFocusAfter(held);
+  sDeskImagesLoad(held);sReviewProof(held);sReviewFocusAfter(held,keep);
 }
 function sReviewEditor(held,editing){
   const title=editing.part==='title',box=sNode(title?'input':'textarea','input review-editor');
@@ -1954,8 +1995,8 @@ async function sReviewCheck(held,button,humanize,voiceGuide){
 async function sReviewAccept(held,item,button){
   await busy(button,'Accepting…',async()=>{try{
     await sReviewFlush(held);if(held.stale)return;
-    sReviewFocusNext(held,sReviewState(held),item);
-    const before=held.view;held.view=await api('desk-apply',{id:held.id,seen:held.view.revision,job:item.job,items:[sReviewPick(item)]});
+    sReviewFocusNext(held,sReviewState(held),item);if(held.review)held.review.deciding=true;
+    const before=held.view;try{held.view=await api('desk-apply',{id:held.id,seen:held.view.revision,job:item.job,items:[sReviewPick(item)]});}finally{if(held.review)held.review.deciding=false;}
     if(held.review){held.review.google=null;delete held.review.picks[item.key];}
     sToast('Accepted. The earlier text is in History.'+deskFinishedSaid(held.view.finished));
     sDeskRefresh(held,before);
@@ -1985,8 +2026,8 @@ async function sReviewAcceptAll(held,keys,button){
 }
 async function sReviewReject(held,job,ids,button,item){
   await busy(button,'Rejecting…',async()=>{try{
-    await sReviewFlush(held);if(item)sReviewFocusNext(held,sReviewState(held),item);
-    const before=held.view;held.view=await api('desk-skip',{id:held.id,job,items:ids});
+    await sReviewFlush(held);if(item)sReviewFocusNext(held,sReviewState(held),item);if(held.review)held.review.deciding=true;
+    const before=held.view;try{held.view=await api('desk-skip',{id:held.id,job,items:ids});}finally{if(held.review)held.review.deciding=false;}
     sReviewUndoToast(held,ids.length===1?'Rejected; the text is unchanged.':'Rejected '+ids.length+'; the text is unchanged.',[{job,ids}],item);
     sDeskRefresh(held,before);
   }catch(error){if(held.review)held.review.focusAfter=null;notice(error.message,true);}});
@@ -2009,6 +2050,8 @@ async function sReviewRejectAll(held,open,button){
     if(held.view!==before)sDeskRefresh(held,before);
   });
 }
+// One name for each thing: Sounds human is the assistant's rewrites, marked in the text;
+// Quick check is this list, and says it is a second, optional pass.
 // With human-sounding wording on, Quick check's mechanical findings (dashes, words that often
 // read as machine-written, repetition) are listed at the top, read from the latest text with
 // no assistant: a short list, not marks, so they never crowd the suggestions in the text. Fix
@@ -2038,26 +2081,29 @@ function sReviewFindings(held,state){
   // Keyed by what was found and the sentence around it, never by where: an edit earlier in
   // the part moves a finding without bringing a dismissed one back.
   // Where it sits within its sentence tells apart two findings of one word in one sentence.
-  const findings=proof.findings.map(found=>({...found,key:[found.part,found.rule,found.target,found.sentence,found.at-found.start].join('\u0001')})).filter(found=>!dismissed[found.key]);
+  // A dismissed finding also stays dismissed when its own sentence changes elsewhere, as it
+  // does when a fix is accepted in it: it is known again by the words right around it.
+  const near=found=>{const at=found.at-found.start;return ['near',found.part,found.rule,found.target,found.sentence.slice(Math.max(0,at-24),at+found.target.length+24)].join('\u0001');};
+  const findings=proof.findings.map(found=>({...found,key:[found.part,found.rule,found.target,found.sentence,found.at-found.start].join('\u0001'),near:near(found)})).filter(found=>!dismissed[found.key]&&!dismissed[found.near]);
   return {revision:proof.revision,findings,more:proof.more||0};
 }
 function sReviewQuick(held,state){
   const found=sReviewFindings(held,state);if(!found||!found.findings.length)return null;
   const r=held.review,box=sNode('details','card review-quick'),count=found.findings.length;box.open=!!r.quickOpen;box.addEventListener('toggle',()=>{r.quickOpen=box.open;if(box.open)sReviewProof(held,true);});
-  box.append(sAdd(sReviewMark(sNode('summary',''),'quick'),sNode('span','card-title','Sounds human (quick check)'),sNode('span','quiet review-quick-count',count+(count===1?' thing to look at':' things to look at'))));
-  box.append(sNode('p','quiet','Dashes, words that often read as machine-written, and repetition, found with no assistant. Fix rewrites only the sentence a finding is in and keeps the earlier text in History; Dismiss hides it here.'));
+  box.append(sAdd(sReviewMark(sNode('summary',''),'quick'),sNode('span','card-title','Quick check'),sNode('span','quiet review-quick-count',count+(count===1?' pattern found':' patterns found')+' · optional')));
+  box.append(sNode('p','quiet','A second, optional pass, apart from the suggestions marked in your text: dashes, repeated words and words that often read as machine-written, found by pattern with no assistant. Fix rewrites only the sentence a finding is in and keeps the earlier text in History; Dismiss hides it here.'));
   if(found.revision!==held.view.revision)box.append(sNode('p','quiet','The text changed since this check; it is read again in a moment.'));
   const list=sNode('ol','review-fixes review-quick-list');list.setAttribute('aria-label','Quick check findings');
   found.findings.forEach((finding,index)=>{
     const row=sNode('li','review-fix review-human');row.dataset.finding=finding.key;
-    row.append(sAdd(sNode('div','review-why'),sNode('span','tag review-kind review-kind-human','Sounds human (quick check)'),sNode('span','',finding.label)));
+    row.append(sAdd(sNode('div','review-why'),sNode('span','tag review-kind review-kind-human','Quick check'),sNode('span','',finding.label)));
     const said=sNode('p','desk-plain desk-quote'),at=finding.at-finding.start;
     if(at>=0&&finding.sentence.slice(at,at+finding.target.length)===finding.target)said.append(document.createTextNode(finding.sentence.slice(0,at)),sNode('mark','',finding.target),document.createTextNode(finding.sentence.slice(at+finding.target.length)));
     else said.textContent=finding.sentence;
     const still=deskTextOf(held.view,finding.part).slice(finding.start,finding.start+finding.sentence.length)===finding.sentence;
     const fix=sButton('Fix',button=>sDeskJob(held,button,'desk-selection',{part:finding.part,text:finding.sentence,start:finding.start,action:'fix',instruction:finding.fix}));fix.disabled=!sDeskCan(held)||!!held.view.working||!still;fix.setAttribute('aria-label','Fix: '+finding.label);sReviewMark(fix,'fix:'+finding.key);
     // Dismissed, it goes; focus moves to the next finding, or back to the list's summary.
-    const dismiss=sButton('Dismiss',()=>{const next=found.findings[index+1]||found.findings[index-1];r.dismissed[finding.key]=true;r.focusNext=next?'dismiss:'+next.key:'quick';sReviewHeadShow(held);});dismiss.setAttribute('aria-label','Dismiss: '+finding.label);sReviewMark(dismiss,'dismiss:'+finding.key);
+    const dismiss=sButton('Dismiss',()=>{const next=found.findings[index+1]||found.findings[index-1];r.dismissed[finding.key]=true;r.dismissed[finding.near]=true;r.focusNext=next?'dismiss:'+next.key:'quick';sReviewHeadShow(held);});dismiss.setAttribute('aria-label','Dismiss: '+finding.label);sReviewMark(dismiss,'dismiss:'+finding.key);
     row.append(said,sAdd(sNode('div','bar'),fix,dismiss));if(!still)row.append(sNode('p','quiet','This sentence changed since the check.'));
     list.append(row);
   });

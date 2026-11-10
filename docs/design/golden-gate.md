@@ -135,6 +135,12 @@ the work alone.
   already holds its route, **Needs you** and its revisions, and no control there shows more
   than twice. It takes the line of light and an amber edge on that card, not a second arc or
   move.
+- **Work under way is never amber.** Amber means the person's move. While the assistant
+  works, the card in the move's place is `StudioShell.move({working: true, ...})`: the
+  studio's colour, what is being done, and that nothing is asked. `.desk-working-note` is
+  the studio's colour too.
+- **A slow read says so at once.** Bringing in a Google Doc or a page opens a sheet naming
+  the steps before the request is sent, and closes itself when the desk opens.
 - **A state is not a filled button.** The story in use is a "Selected" tag, and Polish on
   Blog Studio's desk is a plain button beside the move.
 - **On a phone** the sidebar is the bar of screens, so **Search and jump** and the

@@ -36,6 +36,36 @@ class ProofreadTests(unittest.TestCase):
         self.assertEqual(proofread.check(draft(text), {'no_em_dashes': True}, [], 'x')['findings'],
                          [])
 
+    def test_a_table_s_structure_is_never_read_as_prose(self):
+        table = ('| Control | Build time | Runtime |\n| --- | :--: | ---: |\n'
+                 '| Provenance | Provenance signed -- once | Provenance enforced |\n'
+                 '| Provenance | Provenance — kept | Provenance checked |')
+        text = 'Before the table.\n\n' + table + '\n\nAfter the table.'
+        masked = proofread.mask_tables(text)
+        self.assertEqual(len(masked), len(text))
+        self.assertEqual(masked.count('\n'), text.count('\n'))
+        for kept in ('Before the table.', 'After the table.'):
+            self.assertIn(kept, masked)
+        for gone in ('|', '--', '—', 'Provenance'):
+            self.assertNotIn(gone, masked)
+        rules = {'no_em_dashes': True, 'no_ascii_double_hyphen': True}
+        self.assertEqual(proofread.check(draft(text), rules, [], 'x')['findings'], [])
+        self.assertEqual(proofread.repetition('p', text, []), [])
+
+    def test_prose_beside_a_table_is_still_checked(self):
+        text = ('A dash here -- in prose.\n\n| A | B |\n| - | - |\n| one -- two | three |\n\n'
+                'A pipe | in a sentence -- is not a table.')
+        rules = {'no_ascii_double_hyphen': True}
+        found = proofread.check(draft(text), rules, [], 'x')['findings']
+        self.assertEqual([hit['sentence'] for hit in found],
+                         ['A dash here -- in prose.', 'A pipe | in a sentence -- is not a table.'])
+
+    def test_an_html_table_and_a_horizontal_rule_are_left_out(self):
+        text = 'Above.\n\n---\n\n<table>\n<tr><td>cell -- one</td></tr>\n</table>\n\nBelow.'
+        self.assertEqual(len(proofread.mask_structure(text)), len(text))
+        rules = {'no_ascii_double_hyphen': True}
+        self.assertEqual(proofread.check(draft(text), rules, [], 'x')['findings'], [])
+
     def test_a_listed_opener_and_a_repeated_start_are_found(self):
         found = proofread.repetition('p', 'Moreover, it works. It runs. It stops.', ['Moreover'])
         self.assertEqual({hit['rule'] for hit in found}, {'ai-starter', 'repeated-start'})

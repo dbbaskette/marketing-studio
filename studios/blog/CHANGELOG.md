@@ -1,5 +1,13 @@
 # Changelog
 
+Unreleased: bringing in a Google Doc or a published page says so at once, in a sheet that names the steps (read it, open it on the desk, then the first pass) and puts itself away when the desk opens. While a check runs, the desk's card says what is being checked and that nothing is asked of you, in the studio's colour; work under way is no longer shown in the amber that means your move.
+
+Unreleased: accepting or rejecting a fix in review keeps the page where it is. Focus moves to the next fix without scrolling, the page moves only when that fix is off the screen, and it never jumps back to the count at the top.
+
+Unreleased: in review, the folded list of pattern findings is named **Quick check** and says it is a second, optional pass. **Sounds human** now names only the assistant's rewrites marked in the text.
+
+Unreleased: Quick check leaves tables and horizontal rules out, so a table's rule of hyphens, its pipes and its repeated cell words are no longer flagged. A finding you dismissed stays dismissed when a fix changes the rest of its sentence.
+
 Unreleased: the desk's view switch, **Go to section** and **Polish**, **Sources** and **Outline** share one row, with what the chosen view is for under it, so the draft starts higher. The arc stays on Make while the draft is read and polished and reaches Ship in Finishing, and **Your move** no longer fades in each time the desk is drawn again.
 
 ## Unreleased — 4.10.1

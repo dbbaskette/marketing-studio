@@ -4522,7 +4522,7 @@ async function deskReviewHumanize(){
   const quick=nodes().find(n=>/review-quick( |$)/.test(n.className)&&n.tagName==='details');
   assert.ok(quick,'the mechanical findings at the top');assert.ok(requests.some(r=>r.url==='/api/desk-proofread?id=review-blog'));
   const findings=()=>descendants(nodes().find(n=>/review-quick-list/.test(n.className))).filter(n=>n.dataset?.finding);
-  assert.equal(findings().length,2);assert.ok(words(findings()[0]).includes('Sounds human (quick check)'));
+  assert.equal(findings().length,2);assert.ok(words(findings()[0]).includes('Quick check'));
   assert.ok(descendants(findings()[0]).some(n=>n.tagName==='mark'&&n.textContent==='delve'));
   await press(findings()[1],'Dismiss');assert.equal(findings().length,1,'dismissed here');
   await press(findings()[0],'Fix');
