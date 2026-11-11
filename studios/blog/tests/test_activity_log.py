@@ -417,7 +417,11 @@ class EngineTests(Case):
     def test_a_failed_turn_whose_error_is_not_an_object_still_says_why(self):
         failing = [CODEX_EVENTS[0], {'type': 'turn.failed', 'error': 'Synthetic: turn failed.'}]
         self.agent(codex=failing, code=1, last=None)
-        with self.assertRaises(blog_worker.WorkerFailure) as caught:
+        # The stand-in has no sign-in to ask about.
+        with (
+            patch.object(blog_worker, 'signed_in', return_value=None),
+            self.assertRaises(blog_worker.WorkerFailure) as caught,
+        ):
             self.generate('codex', seconds=10)
         self.assertIn('The selected CLI failed', str(caught.exception))
         self.assertIn('ERROR: Synthetic: turn failed.', caught.exception.said)

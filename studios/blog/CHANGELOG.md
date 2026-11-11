@@ -1,5 +1,7 @@
 # Changelog
 
+Unreleased: Blog Studio checks whether Claude Code is signed in. **Status → Check this computer** now says **signed in** or **not signed in** for Claude Code, as it does for Codex, with `claude auth login` as the fix. A step that fails asks the assistant the same question: a signed-out assistant is named as the cause with the command that signs it in, and a signed-in one says so and points at its usage or rate limit.
+
 Unreleased: the assistant has 50% more time before a step is stopped. A step's time limit for a new blog starts at 15 minutes, not 10, and **Ask Codex to find the post's text** and a library document's analysis have 4.5 minutes, not 3. A limit you already saved in Settings keeps its value.
 
 Unreleased: **Verify in the Doc again** reads the Google Doc once more for the last send and says whether it still holds what was sent, or how many suggestions are now pending, accepted and rejected. It is offered on the send's receipt and, as **Verify the last send**, in the toolbar's Google Doc menu, also after a reload. Nothing is sent and the record of the send does not change.

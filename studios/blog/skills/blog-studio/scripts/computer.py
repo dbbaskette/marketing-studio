@@ -1,6 +1,7 @@
 """Read-only computer checks shared by setup, the start command and the page."""
 
 from concurrent.futures import ThreadPoolExecutor
+import json
 import os
 from pathlib import Path
 import re
@@ -83,6 +84,29 @@ def probe(command, cwd=None):
         return None
 
 
+def claude_signed_in(binary, seconds=4):
+    """Whether Claude Code says it is signed in: True, False, or None when it could not be
+    asked. It is asked as a writing step starts it, without another Claude session's
+    environment, and it starts no job and sends no request of its own."""
+    env = {k: v for k, v in os.environ.items() if not k.startswith(('CLAUDE', 'ANTHROPIC'))}
+    try:
+        done = subprocess.run(
+            [binary, 'auth', 'status', '--json'],
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            timeout=seconds,
+            env=env,
+        )
+    except (OSError, subprocess.SubprocessError, UnicodeError):
+        return None
+    try:
+        found = json.loads(done.stdout).get('loggedIn')
+    except (ValueError, AttributeError):
+        found = None
+    return found if isinstance(found, bool) else done.returncode == 0
+
+
 def git_path():
     path = shutil.which('git')
     if path == '/usr/bin/git' and sys.platform == 'darwin':
@@ -116,6 +140,7 @@ def report(home=None, sign_in=True, network=False):
             )
         )
     signed = values.get('codex-login')
+    claude_signed = claude_signed_in(claude) if claude and sign_in else None
     codex_signed = (
         bool(signed and signed[0] == 0 and 'not logged in' not in signed[1].lower())
         if codex and sign_in
@@ -206,9 +231,17 @@ def report(home=None, sign_in=True, network=False):
         add(
             'claude',
             'Claude Code',
-            'manual',
-            'CLI found. Its sign-in is checked when a writing step runs.',
-            'Run claude once and sign in if asked.',
+            'ready' if claude_signed else 'manual' if claude_signed is None else 'action',
+            'CLI found; signed in.'
+            if claude_signed
+            else 'CLI found; sign-in was not checked.'
+            if claude_signed is None
+            else 'CLI found, but it is not signed in.',
+            ''
+            if claude_signed
+            else 'Run claude auth login in a terminal, then check again.'
+            if claude_signed is False
+            else 'Run claude once and sign in if asked.',
         )
     if not git or not gh:
         add(
@@ -307,7 +340,7 @@ def report(home=None, sign_in=True, network=False):
             },
             'claude': {
                 'installed': bool(claude),
-                'signed_in': None,
+                'signed_in': claude_signed,
                 'reachable': None if 'claude' not in hosts else not cut_off['claude'],
             },
         },

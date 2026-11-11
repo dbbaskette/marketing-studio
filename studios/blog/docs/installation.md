@@ -122,10 +122,11 @@ computer** on the page, or from Terminal:
 sh ~/.local/share/blog-studio/studio check
 ```
 
-It reports the Python in use, available Codex and Claude Code CLIs, Codex sign-in,
+It reports the Python in use, available Codex and Claude Code CLIs, each one's sign-in,
 and optional Git/GitHub CLI tools and Git identity for a Team Hub. Missing items
-include what to do next. Claude sign-in is confirmed when a writing step runs;
-the report asks you to open `claude` once if needed. It never claims a model job
+include what to do next. Each assistant is asked whether it is signed in (`codex login
+status`, `claude auth status`); a signed-out one names the command that signs it in. A
+step that fails asks again and says whether sign-in was the cause. It never claims a model job
 has succeeded just because a CLI was found.
 
 These checks do not start models, sign in, install software, or change Git

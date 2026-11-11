@@ -430,6 +430,10 @@ class ResearchRoundTests(ResearchCase):
 
 class MeteredWorkerTests(unittest.TestCase):
     def setUp(self):
+        # A stand-in CLI has no sign-in to ask about: SignInAtFailureTests asks for real.
+        self.unasked = patch.object(blog_worker, 'signed_in', return_value=None)
+        self.unasked.start()
+        self.addCleanup(patch.stopall)
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.binary = Path(self.temp.name) / 'fixture-agent'
@@ -1484,3 +1488,52 @@ class MinorReviewTests(ResearchCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class SignInAtFailureTests(UnreachableServiceTests):
+    """A step that failed asks its assistant whether it is signed in, and says what it found."""
+
+    def setUp(self):
+        super().setUp()
+        self.unasked.stop()
+
+    def claude_signed(self, logged_in, result='Synthetic failure.'):
+        self.executable(
+            'args=sys.argv[1:]\n'
+            "if args[:2]==['auth','status']:\n"
+            f" print(json.dumps({{'loggedIn':{logged_in!r},'email':'synthetic@example.invalid'}}))\n"
+            f' sys.exit({0 if logged_in else 1})\n'
+            f"print(json.dumps({{'type':'result','subtype':'success','is_error':True,"
+            f"'result':{result!r}}}))\n"
+            'sys.exit(1)\n'
+        )
+
+    def test_a_signed_out_claude_code_is_named_as_the_cause_with_its_command(self):
+        self.claude_signed(False, 'Invalid API key · Please run /login')
+        said = str(self.failure('claude'))
+        self.assertEqual(
+            said,
+            'Claude Code is not signed in on this computer, so this step could not run. Run '
+            'claude auth login in a terminal, then try again. Saved work is kept.',
+        )
+        self.assertNotIn('synthetic@example.invalid', said)
+
+    def test_a_signed_in_claude_code_says_so_and_points_at_usage(self):
+        self.claude_signed(True)
+        said = str(self.failure('claude'))
+        self.assertIn('Claude Code is signed in, so check its usage or rate limit under', said)
+        self.assertNotIn('Check its sign-in', said)
+
+    def test_a_signed_out_codex_is_named_as_the_cause_with_its_command(self):
+        self.codex('ERROR: synthetic failure', login='Not logged in')
+        self.assertIn('Codex is not signed in on this computer', str(self.failure('codex')))
+        self.assertIn('Run codex login in a terminal', str(self.failure('codex')))
+
+    def test_an_assistant_that_cannot_be_asked_keeps_the_general_message(self):
+        self.claude('Synthetic failure.')  # answers the question with no sign-in at all
+        with patch.object(blog_worker, 'signed_in', return_value=None):
+            self.assertIn('Check its sign-in and usage under', str(self.failure('claude')))
+
+
+for _name in [name for name in dir(UnreachableServiceTests) if name.startswith('test_')]:
+    setattr(SignInAtFailureTests, _name, None)  # only its own tests run here

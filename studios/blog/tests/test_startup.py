@@ -48,6 +48,30 @@ class ComputerTests(unittest.TestCase):
         self.assertIn('Local writing needs neither', computer.describe(found))
         self.assertIn('Nothing needs changing', computer.describe(found))
 
+    def test_claude_code_is_asked_whether_it_is_signed_in(self):
+        for signed, status, detail, step in (
+            (True, 'ready', 'CLI found; signed in.', ''),
+            (
+                False,
+                'action',
+                'CLI found, but it is not signed in.',
+                'Run claude auth login in a terminal, then check again.',
+            ),
+            (
+                None,
+                'manual',
+                'CLI found; sign-in was not checked.',
+                'Run claude once and sign in if asked.',
+            ),
+        ):
+            with patch.object(computer, 'claude_signed_in', return_value=signed):
+                found = self.check(('claude',))
+            row = next(x for x in found['checks'] if x['key'] == 'claude')
+            self.assertEqual(
+                (row['status'], row['detail'], row['next_step']), (status, detail, step)
+            )
+            self.assertIs(found['agents']['claude']['signed_in'], signed)
+
     def test_sign_in_is_bounded_and_reports_no_account_details(self):
         found = self.check(
             ('codex', 'claude'),
