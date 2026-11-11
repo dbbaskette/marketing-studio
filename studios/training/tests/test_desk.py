@@ -8277,14 +8277,19 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
                                  'seen': seen_of('document@101'), 'again': False,
                                  'fresh': True})])
 
-    def test_readiness_is_not_offered_while_a_level_material_is_being_written(self):
+    def test_a_finished_draft_can_be_marked_ready_while_the_next_is_being_written(self):
         plan = a_card('blueprint@101')
         guide = a_card('document@101', state='writing', says='Being written.', seen=None, actions=[])
-        result = self.open_desk(self.on_desk(a_desk(plan, guide, levels=('101',))), [{'snapshot':'building'}])
+        result = self.open_desk(self.on_desk(a_desk(plan, guide, levels=('101',)),
+                                             **{'POST /api/drafts/ready': [a_desk(plan, guide, levels=('101',))]}),
+                                [{'snapshot': 'building'}, {'click': 'Mark ready'}])
         shot = result['snapshots']['building']
+        # The whole level waits for its drafts; the finished one does not.
         self.assertNotIn('Mark this level ready', shot['buttons'])
-        self.assertNotIn('Mark ready', shot['buttons'])
+        self.assertEqual(shot['buttons'].count('Mark ready'), 1)
         self.assertIn('Guide · Writing', shot['buttons'])
+        self.assertEqual(self.posts(result), [('/api/drafts/ready', {
+            'path': str(self.root), 'name': 'blueprint@101', 'seen': seen_of('blueprint@101')})])
 
     def test_creator_approved_research_shows_current_material_progress_and_queue(self):
         plan = a_card('blueprint@101')
@@ -8309,7 +8314,8 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         guide = a_card('document@101', state='queued', says='Queued until you resume training.', actions=['download'])
         result = self.open_desk(self.on_desk(a_desk(plan, guide, levels=('101',))), [{'snapshot': 'queued'}])
         self.assertNotIn('Mark this level ready', result['snapshots']['queued']['buttons'])
-        self.assertNotIn('Mark ready', result['snapshots']['queued']['buttons'])
+        # The plan is finished and can be marked; the queued guide, with no such action, cannot.
+        self.assertEqual(result['snapshots']['queued']['buttons'].count('Mark ready'), 1)
 
     def editable(self, name='document@101', **extra):
         material = a_card(name.replace('yoodli:', 'scenario:'))
