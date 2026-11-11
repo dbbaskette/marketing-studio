@@ -1,11 +1,22 @@
 """New desk text approvals keep all slide production behind the person's decision."""
 from test_runner_deck import DeckCase
 from workspace import WorkspaceError
+from runner_support import CHOSEN
 
 class ContentFirstTests(DeckCase):
-    def test_text_review_then_design_with_exact_approval_and_no_early_render(self):
+    def test_a_deck_is_drawn_from_its_words_without_a_stop_unless_the_form_asks(self):
         self.engine.content_first = True
         root = self.begin(flow='desk')
+        self.assertNotIn('deck_content', self.engine._load(root))
+        self.assertFalse((self.view(root)['outline'] or {}).get('waiting'))
+        self.assertTrue(self.workers.of('section'))
+        with self.assertRaises(WorkspaceError):
+            self.start(title='Another', deck_target='pptx', brand=CHOSEN, flow='desk',
+                       slide_text_review='yes')
+
+    def test_text_review_then_design_with_exact_approval_and_no_early_render(self):
+        self.engine.content_first = True
+        root = self.begin(flow='desk', slide_text_review=True)
         shown = self.view(root)['outline']
         self.assertTrue(shown['waiting'])
         self.assertTrue(shown['content_first'])
@@ -28,7 +39,7 @@ from test_runner_deck import PageCase
 class ContentPageTests(PageCase):
     def test_authenticated_desk_text_approval_route_preserves_other_desk_refusals(self):
         self.engine.content_first = True
-        root = self.begin(flow='desk')
+        root = self.begin(flow='desk', slide_text_review=True)
         shown = self.view(root)['outline']
         body = {'path': str(root), 'level': None, 'decision': 'approve', 'seen': shown['sha256']}
         self.assertEqual(self.ask('POST', '/api/outline', body, token=False)[0], 403)
@@ -53,7 +64,7 @@ class CurrentCriticRepairTests(DeckCase):
             return made
         self.slides.preview = current
         self.workers.found = [[MAJOR], []]
-        root = self.begin(flow='desk')
+        root = self.begin(flow='desk', slide_text_review=True)
         self.to_end(root)
         seen = self.engine._load(root)['deck']['']['saved']['sha256']
         self.assertTrue(self.built(root)['rounds'][-1]['review']['findings'])
@@ -69,7 +80,7 @@ class LocalTextCorrections(DeckCase):
         from copy import deepcopy
         from runner import pipeline
         self.engine.content_first=True
-        root=self.begin(flow='desk')
+        root=self.begin(flow='desk', slide_text_review=True)
         shown=self.view(root)['outline']
         edited=deepcopy(shown['slides'])
         edited[0]['title']='Rolling restarts, corrected locally'
@@ -88,7 +99,7 @@ class LocalTextCorrections(DeckCase):
         from copy import deepcopy
         from runner import pipeline
         self.engine.content_first=True
-        root=self.begin(flow='desk')
+        root=self.begin(flow='desk', slide_text_review=True)
         shown=self.view(root)['outline'];before=pipeline.place(root,None,pipeline.OUTLINE).read_bytes()
         edited=deepcopy(shown['slides']);edited[0]['id']='another-slide'
         with self.assertRaises(WorkspaceError):self.engine.outline(root,None,'approve',seen=shown['sha256'],edited=edited)
@@ -105,7 +116,7 @@ class ConcurrentLocalCorrections(DeckCase):
         from runner import pipeline,worker_tools
         import workspace
         self.engine.content_first=True
-        root=self.begin(flow='desk');shown=self.view(root)['outline']
+        root=self.begin(flow='desk', slide_text_review=True);shown=self.view(root)['outline']
         before=pipeline.place(root,None,pipeline.OUTLINE).read_bytes()
         edited=deepcopy(shown['slides']);edited[0]['title']='Local correction'
         original=worker_tools.check_outline
@@ -126,7 +137,7 @@ class PrivateTextDrafts(PageCase):
         from copy import deepcopy
         from runner import pipeline
         self.engine.content_first = True
-        root = self.begin(flow='desk')
+        root = self.begin(flow='desk', slide_text_review=True)
         shown = self.view(root)['outline']
         edited = deepcopy(shown['slides']); edited[0]['title'] = 'Acknowledged correction'
         saved = self.post('slide-text-draft', {'path': str(root), 'action': 'save',
@@ -143,7 +154,7 @@ class PrivateTextDrafts(PageCase):
         from copy import deepcopy
         from runner import pipeline
         self.engine.content_first=True
-        root=self.begin(flow='desk');shown=self.view(root)['outline']
+        root=self.begin(flow='desk', slide_text_review=True);shown=self.view(root)['outline']
         before=pipeline.place(root,None,pipeline.OUTLINE).read_bytes();jobs=len(self.workers.jobs)
         held=self.post('slide-text-draft',{'path':str(root),'action':'read'})
         edited=deepcopy(shown['slides']);edited[0]['title']='Private pending correction'

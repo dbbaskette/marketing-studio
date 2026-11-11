@@ -177,7 +177,8 @@ def supervise(command: list[str], cwd: Path | None, env: dict | None, stdin: str
               ) -> tuple[int, bool]:
     """Run a command to its end or to its time limit, passing each line it prints to
     `each` as bytes. Returns its exit code and whether it was stopped for taking too long.
-    `errors` is a file, or the path of one, that standard error is written to.
+    `errors` is a file, or the path of one, that standard error is written to. With
+    `seconds` None there is no time limit: the command runs until it ends or is stopped.
 
     The whole process group is killed once the command ends, when time runs out, when
     `stop` is set or when the caller fails; see the module docstring.
@@ -228,12 +229,12 @@ def supervise(command: list[str], cwd: Path | None, env: dict | None, stdin: str
     reader = threading.Thread(target=read, daemon=True)
     writer.start()
     reader.start()
-    limit, late = time.monotonic() + seconds, False
+    limit, late = (None if seconds is None else time.monotonic() + seconds), False
     try:
         while process.poll() is None and not failed:
             if stop is not None and stop.is_set():
                 break
-            if time.monotonic() >= limit:
+            if limit is not None and time.monotonic() >= limit:
                 late = True
                 break
             if reader.is_alive():

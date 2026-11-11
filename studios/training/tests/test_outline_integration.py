@@ -174,7 +174,7 @@ class OutlineIntegrationTests(StudioCase):
         self.workers.queued['brief'] = [write('brief', BRIEF)] * 2
         self.workers.queued['scenario'] = [write('scenario', SCENARIO)] * 2
         root = self.start(levels=['101', '201'], materials=['document', 'brief', 'scenario'],
-                          deck_target='pptx', brand=CHOSEN)
+                          deck_target='pptx', brand=CHOSEN, slide_text_review=True)
         self.assertTrue(material_flow.enabled(self.engine._load(root)))
         plan_view = self.view(root)['training_plan']
         after = training_plan.decide(self.engine, root, plan_view['expected'], 'approve', outline=plan_view['outline'])

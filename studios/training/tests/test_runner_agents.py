@@ -682,6 +682,19 @@ class SuperviseTests(JobCase):
                                  lambda line: None, threading.Event())
         self.assertEqual(found, (0, False))
 
+    def test_with_no_time_limit_a_command_runs_to_its_end_and_still_stops_when_asked(self):
+        found = agents.supervise([sys.executable, '-c', 'print("done")'], self.base,
+                                 dict(os.environ), '', None, self.base / 'errors.txt',
+                                 lambda line: None)
+        self.assertEqual(found, (0, False))
+        stop = threading.Event()
+        code, late = agents.supervise(
+            [sys.executable, '-c', 'import time\nprint("started", flush=True)\ntime.sleep(30)'],
+            self.base, dict(os.environ), '', None, self.base / 'errors.txt',
+            lambda line: stop.set(), stop)
+        self.assertFalse(late)
+        self.assertLess(code, 0)
+
     def test_a_caller_that_fails_does_not_leave_the_command_running(self):
         def broken(line):
             raise RuntimeError('the caller broke')
@@ -818,10 +831,11 @@ def claude_model(name, label, family, levels):
             'default_level': None, 'levels': levels}
 
 
-# Claude Code's models as Anthropic's model reference gave them on 2026-10-06: each family's
+# Claude Code's models as Anthropic's model reference gave them on 2026-11-11: each family's
 # alias first, then its versions, newest first.
 CLAUDE_LISTED = [
-    claude_model('fable', 'Fable, always the newest (now Fable 5.1)', 'Fable', FIVE),
+    claude_model('fable', 'Fable, always the newest (now Fable 5.2)', 'Fable', FIVE),
+    claude_model('claude-fable-5-2', 'Fable 5.2 (claude-fable-5-2)', 'Fable', FIVE),
     claude_model('claude-fable-5-1', 'Fable 5.1 (claude-fable-5-1)', 'Fable', FIVE),
     claude_model('claude-fable-5', 'Fable 5 (claude-fable-5)', 'Fable', FIVE),
     claude_model('opus', 'Opus, always the newest (now Opus 5.5)', 'Opus', FIVE),
@@ -846,7 +860,7 @@ class ModelListTests(JobCase):
         # A model that is not listed may be given any level Claude Code takes.
         self.assertEqual(Claude().models(), {
             'models': CLAUDE_LISTED, 'levels': FIVE,
-            'source': 'Anthropic model reference, cached 2026-10-06'})
+            'source': 'Anthropic model reference, cached 2026-11-11'})
 
     def test_the_list_of_claude_models_is_kept_as_data_with_its_source(self):
         import studio_core
@@ -854,7 +868,7 @@ class ModelListTests(JobCase):
         self.assertEqual(settings.CLAUDE_MODELS, listed)
         kept = json.loads(listed.read_text())
         self.assertEqual((kept['source'], kept['date']),
-                         ('Anthropic model reference, cached 2026-10-06', '2026-10-06'))
+                         ('Anthropic model reference, cached 2026-11-11', '2026-11-11'))
         self.assertEqual(settings.claude_models()['models'], CLAUDE_LISTED)
         # Claude Mythos is not offered: only some accounts can use it.
         self.assertNotIn('mythos', json.dumps(kept).lower())

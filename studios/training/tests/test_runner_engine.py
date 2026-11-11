@@ -718,7 +718,7 @@ class WorkerTests(StudioCase):
             self.assertEqual(list(job.tools), worker_tools.command(job.folder))
             self.assertEqual(job.folder.parent, agents.staging())
             self.assertNotIn(self.space.repo, job.folder.parents)
-            self.assertEqual(job.limits, agents.Limits(seconds=1350))
+            self.assertEqual(job.limits, agents.Limits(seconds=None))
         for folder, held in seen:
             self.assertIn(held, (['inputs', 'job.json', 'sources'], ['job.json', 'sources']))
             self.assertFalse(folder.exists(), 'a job folder is removed once its work is kept')
@@ -1560,7 +1560,7 @@ class LimitTests(StudioCase):
         for gone in ('spending_policy', 'cleared', 'spending_warning'):
             self.assertNotIn(gone, record)
         self.assertEqual({job.limits for _, job, _ in self.workers.jobs},
-                         {agents.Limits(seconds=1350)})
+                         {agents.Limits(seconds=None)})
 
     def test_work_saved_with_spending_limits_still_loads_and_carries_on(self):
         import home
@@ -1620,18 +1620,19 @@ class LimitTests(StudioCase):
             'kept': 'Everything kept before this step is still here. Nothing from the tries '
                     'that failed was kept.',
             'action': 'more-time', 'label': 'Give it more time and try again', 'seconds': 600})
+        # The stop is one a saved training may hold: no job is given a time limit now.
         self.assertEqual([job.limits.seconds for job in self.workers.of('research-plan')],
-                         [600] * 3)
+                         [None] * 3)
         with self.assertRaisesRegex(WorkspaceError, 'nothing to resume'):
             self.engine.act(root, 'resume')
         self.assertEqual(self.engine.act(root, 'more-time')['state'], 'waiting')
-        self.assertEqual(self.workers.of('research-plan')[-1].limits.seconds, 1200)
+        self.assertIsNone(self.workers.of('research-plan')[-1].limits.seconds)
         # The run keeps its time when its limits are read again; Settings keeps its own.
         self.assertEqual((self.record(root)['limits']['step_seconds'],
                           self.record(root)['more_time'], settings.load().step_seconds),
                          (1200, 1200, 600))
         self.decide(root, 'research-plan')
-        self.assertEqual({job.limits.seconds for job in self.workers.of('question')}, {1200})
+        self.assertEqual({job.limits.seconds for job in self.workers.of('question')}, {None})
 
     def test_running_out_of_the_time_more_time_gave_names_the_run_s_own_limit(self):
         settings.save(replace(settings.load(), step_seconds=600))
@@ -1661,13 +1662,13 @@ class LimitTests(StudioCase):
         self.assertTrue(problem['what'].startswith('The research ran out of the time a step may '
                                                    'take: it was stopped after 22.5 minutes.'))
 
-    def test_a_step_is_given_its_time_and_no_spending_limit(self):
+    def test_a_step_is_given_no_time_limit_and_no_spending_limit(self):
         settings.save(replace(settings.load(), step_seconds=120))
         self.workers.cost = 1.5
         root = self.saved_start()
         self.decide(root, 'research-plan')
         self.assertEqual({job.limits for _, job, _ in self.workers.jobs},
-                         {agents.Limits(seconds=120)})
+                         {agents.Limits(seconds=None)})
 
     def test_carrying_on_or_trying_again_takes_up_the_limits_this_computer_has_now(self):
         self.workers.then('research-plan', fails(), fails(), fails())
@@ -1675,7 +1676,7 @@ class LimitTests(StudioCase):
         settings.save(replace(settings.load(), step_seconds=1200))
         self.engine.act(root, 'retry')
         self.assertEqual(self.record(root)['limits'], {'step_seconds': 1200})
-        self.assertEqual(self.workers.jobs[-1][1].limits.seconds, 1200)
+        self.assertIsNone(self.workers.jobs[-1][1].limits.seconds)
 
 
 class HaltTests(StudioCase):

@@ -1,5 +1,11 @@
 # Changelog
 
+Unreleased: assistant work is never stopped for how long it takes, because ending it discards what it had done. **The longest a step may take** is gone from Settings, a time saved there is kept in the file and ignored, and a step runs until it finishes or you press **Stop**. Only the Quick scan keeps its 4.5 minutes, since it has an outline to fall back on. A training saved while stopped for time carries on with **Give it more time and try again**, now with no limit.
+
+Unreleased: a deck is drawn straight from its words. The stop to approve slide text is now asked for: tick **Approve the slide text before the deck is drawn** on the form. Trainings already started keep the approval they began with.
+
+Unreleased: Fable 5.2 is in the Claude Code model list, and **Fable, always the newest** now means it.
+
 Unreleased: the assistant has 50% more time before a step is stopped. A step may take up to 22.5 minutes, not 15, the Quick scan 4.5 minutes, not 3, and the final brief of sectioned research 7.5 minutes, not 5. A limit you already saved in Settings, under Limits, keeps its value.
 
 Unreleased: spending limits are removed. The project spending amount in Settings, the **Spending behavior** choice and the spending warning are gone, and work no longer stops or warns for what it costs. Time limits, tries and an account's own usage limit still apply, and the desk still shows what the assistant reported. Saved work that stopped at a spending limit carries on with **Carry on**.

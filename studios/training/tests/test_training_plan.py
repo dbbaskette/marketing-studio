@@ -8,7 +8,7 @@ class PlanTests(DeckCase):
     def start_plan(self, **changes):
         self.engine.plan_first = True
         self.engine.content_first = True
-        return self.begin(flow='desk', **changes)
+        return self.begin(flow='desk', **{'slide_text_review': True, **changes})
 
     def test_topics_review_does_not_approve_slide_text_or_start_design(self):
         root = self.start_plan()

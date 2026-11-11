@@ -188,7 +188,7 @@ class StandingTests(DeckCase):
 
     def test_row_196_a_deck_waiting_for_its_slide_text_says_so_and_nothing_writes(self):
         self.engine.content_first = True
-        root = self.begin(levels=['101', '201'])
+        root = self.begin(levels=['101', '201'], slide_text_review=True)
         shown = drafts.view(self.engine, root)
         cards = {card['name']: card for card in shown['cards']}
         self.assertEqual((cards['deck@101']['state'], cards['deck@101']['says']),

@@ -94,8 +94,8 @@ CODEX_OFF = ('apps', 'plugins', 'remote_plugin', 'plugin_sharing', 'browser_use'
              'shell_tool', 'unified_exec')
 @dataclass(frozen=True)
 class Limits:
-    """How long a job may run."""
-    seconds: int = 900
+    """How long a job may run. None is no limit: it runs until it ends or is stopped."""
+    seconds: int | None = 900
 
 
 @dataclass(frozen=True)

@@ -417,7 +417,7 @@ has none, so a deck added here and delivered again later is one library document
 
 The shared **Where new work stops** setting was retired in Marketing Studio 4.6.0. New
 work starts on the desk, with no stop level to choose; a studio's own decisions remain,
-such as approving a deck's slide text before design. Saved runs keep the review level
+such as approving a deck's slide text before design where a training asks for that. Saved runs keep the review level
 they recorded. See [saved-work compatibility](saved-work-compatibility.md).
 
 ### Everyday choices, Advanced, and who owns a value
