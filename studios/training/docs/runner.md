@@ -17,8 +17,9 @@ while you move between materials in the same page session.
 
 You can read and download saved drafts while other materials are being created.
 Editing is available when the current worker no longer needs that material.
-**Mark ready** becomes available once every material in the level has a draft;
-it remains your explicit approval. Reading a chapter never starts an AI job or
+**Mark ready** is on each material as soon as its draft is finished, so you can
+approve one while the next is written from it; marking a whole level at once comes
+when every material in the level has a draft. Either remains your explicit approval. Reading a chapter never starts an AI job or
 approves its contents.
 
 ## What you need

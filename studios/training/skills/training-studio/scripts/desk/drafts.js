@@ -1556,7 +1556,7 @@ function levelStanding(found, level) {
   const left = remaining.length ? add(make('details', 'desk-level-left'),
     make('summary', '', 'What is left'),
     make('p', 'quiet', 'Still to write: ' + remaining.map(one => cardTitle(one) + ' (' + (DESK_WORDS.tabs[one.state] || 'Queued').toLowerCase() + ')').join(', ') + '.'),
-    make('p', 'quiet', 'Read completed drafts now. Mark ready becomes available when every material in this level has a draft.')) : null;
+    make('p', 'quiet', 'Read each finished draft and mark it ready now. Marking the whole level at once comes when every material in it has a draft.')) : null;
   if (left) {
     left.dataset.key = 'desk-level-left ' + (level || '');
     left.querySelector('summary').dataset.key = 'desk-level-left-toggle ' + (level || '');
@@ -1669,11 +1669,6 @@ function levelCanBeReviewed(cards) {
   return selected.length > 0 && selected.every(one => one.seen && ['draft', 'ready'].includes(one.state));
 }
 
-function levelMaterialsAvailable(cards) {
-  const selected = list(cards).filter(one => one.state !== 'left-out');
-  return selected.length > 0 && selected.every(one => one.seen && !['writing', 'queued'].includes(one.state));
-}
-
 // What was checked for you, from the checks that take milliseconds.
 function checkedPart(checks, name, description = '') {
   const passed = Number(checks && checks.passed) || 0;
@@ -1713,9 +1708,9 @@ function deskCard(found) {
     return control;
   };
   const bar = make('div', 'bar');
-  const levelCards = list(deskHeld(view.path).view?.cards).filter(one => (one.level || '') === (found.level || ''));
-  if (actions.includes('ready') && (deskHeld(view.path).view?.execution === 'conversation'
-    || levelMaterialsAvailable(levelCards))) {
+  // Each finished draft is the person's to mark as soon as it is written: what comes after
+  // is built from it. Only marking the whole level at once waits for the level's drafts.
+  if (actions.includes('ready')) {
     bar.append(press('Mark ready', 'ready', { name: found.name, seen: found.seen },
       'desk-ready ' + found.name));
   }
@@ -3570,7 +3565,7 @@ function paintDesk(fresh, fromPoll = false) {
   const materialView = held.materials[selectedCard?.name]?.view;
   const {desk: ignoredDesk, start: ignoredProgress, ...readerView} = materialView || {};
   const readerStamp = JSON.stringify([selectedTab, options.map(one => one.id), selectedCard, readerView,
-    groups[selectedCard?.kind], levelMaterialsAvailable(shown), ours, found.execution,
+    groups[selectedCard?.kind], ours, found.execution,
     found.library?.[selectedCard?.name], narrow()]);
   const keepReader = fromPoll && !fresh && !held.sources && selectedCard?.kind !== 'deck'
     && !finishingMaterial() && !preparingPlan && !waitingPlan && materialView
