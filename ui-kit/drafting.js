@@ -548,7 +548,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   //   hooks     render(held), refresh(held, before), reload(held), beforeJob(held); and, when
   //             the studio has them: beforeFlush(held), saved(held, part, text),
   //             versionNote(version), extra(held, part), left(held, part, card),
-  //             started(held, view), landed(held, job), groupAfter(held, group) (a node
+  //             started(held, view), landed(held, job), listLead(held) (a node shown
+  //             above the tools), groupAfter(held, group) (a node
   //             shown after a Finishing group's tools, such as a choice about that group)
   //   parts     title(view, part), textOf(view, part), nameOf(view, part), single(part),
   //             noted(view, part)
@@ -881,7 +882,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         for(const tool of tools)list.append(a.ui.pickCard(tool.name, k.toolSays(held, tool.key) || tool.says, () => k.finishTool(held, tool.key)));
         const after=group?hook('groupAfter', held, group):null;if(after)list.append(after);
       }
-      return [make('p', 'quiet', 'Each tool proposes changes. Preview each one, then apply, edit or skip it. Nothing changes until you apply, and the earlier text stays in History.'), list];
+      const lead = hook('listLead', held);
+      return [...(lead ? [lead] : []), make('p', 'quiet', 'Each tool proposes changes. Preview each one, then apply, edit or skip it. Nothing changes until you apply, and the earlier text stays in History.'), list];
     };
     k.toolSays = (held, key) => {
       const job = held.view.working; if (job && job.kind === 'finish-' + key) return 'Working on it…';

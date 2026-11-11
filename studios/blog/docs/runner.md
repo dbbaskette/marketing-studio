@@ -745,7 +745,8 @@ Research in a run reads **your documents** (its selected sources), **your sites*
 in Marketing Studio's Shared settings, or a site added for that blog only) and/or **the
 public web**. Your sites are searched with the assistant's web search, and only pages under
 them are saved. That check is Harness Research's, so without it (see Status) your sites
-alone are refused. The runner uses your CLI account, with a time limit for each step. It
+alone are refused. The runner uses your CLI account. No writing, research or finishing step is ended for
+how long it takes: it runs until it finishes or you press **Stop**. It
 does not hold an API key and has no spending limit; your account's usage charges or limits
 still apply.
 
@@ -844,9 +845,13 @@ A stopped run says what to do next beside the error:
   assistant lost its connection and to try again in a moment. Sign-in, usage, model and request errors keep their own advice. **Status →
   Check this computer** makes the same look and names an assistant that is signed in but
   cannot be used from this network; setup's checks never use the network.
-- **A step out of time** says it ran out of the time a step may take, with this
-  blog's minutes. The limit is in **Settings → Step time limit** for new blogs;
-  **Try again with more time** doubles it for this one.
+- **A step is never out of time.** Writing, research and finishing steps run until they
+  finish or you stop them, since ending one discards its work. A blog saved while it had
+  stopped for time still offers **Try again with more time**, which now runs it with no
+  limit. Finding a published post's text keeps its own short limit.
+- **A failed step says whether sign-in was the cause.** The assistant is asked whether it
+  is signed in: signed out, the message names the command that signs it in; signed in, it
+  says so and points at its usage or rate limit.
 - **Research** says its round while it works ("Round 2 of 3, the independent
   check"); each job's seconds are kept with the run on this computer, and its tokens and cost where
   the CLI reports them (Claude Code does; Codex, as Blog Studio runs it, does not).

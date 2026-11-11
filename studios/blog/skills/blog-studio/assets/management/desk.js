@@ -686,11 +686,25 @@ function sDeskShareActions(held){
   const copy=sButton('Copy',async()=>{if(typeof navigator==='undefined'||!navigator.clipboard?.writeText)throw new Error('Download the draft and copy it from there.');if(held.mode==='review')await sReviewFlush(held);const found=await sDeskMarkdown(held);await navigator.clipboard.writeText(found.markdown);sToast(deskWithout('Markdown copied',found.missing));});
   const download=sButton('Download',async()=>{if(held.mode==='review')await sReviewFlush(held);const found=await sDeskMarkdown(held);await sDownload({content:found.markdown,name:'DRAFT.md'});if(found.missing.length)sToast(deskWithout('Downloaded',found.missing));});
   const publish=sButton(view.publication?'Published':'Mark as published',()=>sDeskPublish(held));publish.disabled=!editable;
-  return [copy,download,...sDeskGoogleActions(held),publish];
+  return [copy,download,...sDeskGoogleActions(held,true),publish];
+}
+// Share: every way the draft leaves the desk, behind one button, so the toolbar keeps a
+// single filled action. On a phone the toolbar folds itself, so the items go in as they are.
+function sDeskShareMenu(held){
+  const items=sDeskShareActions(held);
+  if(sNarrow())return items;
+  // Sending changes to a linked Google Doc stays a visible action, outside the menu.
+  const send=items.find(item=>item.textContent==='Review changes to send'),rest=items.filter(item=>item!==send);
+  if(send)send.className='button';
+  const menu=sNode('details','menu desk-share-menu');
+  for(const item of rest)item.className='menu-item';
+  // A choice closes the menu it was made in.
+  const list=sAdd(sNode('div','menu-list'),...rest);list.addEventListener('click',()=>{menu.open=false;});
+  return [send,sAdd(menu,sNode('summary','button','Share'),list)].filter(Boolean);
 }
 // Outgoing review is a visible action, including on phones. The Google Doc menu
 // holds opening the Doc and bringing incoming accepted text; neither sends edits.
-function sDeskGoogleActions(held){
+function sDeskGoogleActions(held,flat=false){
   const view=held.view,editable=sDeskCan(held);
   if(!view.google?.url){const make=sButton('Make a Google Doc',()=>sDeskMakeDoc(held));make.disabled=!editable;return [make];}
   if(!view.google_suggestions){const open=link(view.google.url,'Google Doc ↗');open.className='button';return [open];}
@@ -700,7 +714,7 @@ function sDeskGoogleActions(held){
   // Verify the last send: offered once something has gone, and a reading only.
   const last=view.google_state?.last?.plan,verify=last?sButton('Verify the last send',shut(()=>sDeskGoogleVerifyAgain(held,last))):null;
   check.disabled=bring.disabled=!editable;
-  if(sNarrow())return [check,open,bring,verify].filter(Boolean);
+  if(flat||sNarrow())return [check,open,bring,verify].filter(Boolean);
   for(const item of [open,bring,verify])if(item)item.className='menu-item';
   return [check,sAdd(menu,sNode('summary','button','Google Doc'),sAdd(sNode('div','menu-list'),...[open,bring,verify].filter(Boolean)))];
 }
@@ -794,11 +808,11 @@ async function sDeskGoogleBring(held){
 }
 function sDeskToolbar(held){
   const view=held.view;
-  const finishing=sButton('Finishing',()=>held.finish?sDeskFinishClose(held):sDeskFinishOpen(held));finishing.setAttribute('aria-pressed',String(!!held.finish));
+  const finishing=sButton('Finishing',()=>held.finish?sDeskFinishClose(held):sDeskFinishOpen(held),'filled');finishing.setAttribute('aria-pressed',String(!!held.finish));
   const review=held.review||sDeskHasReview(view)?sButton('Review fixes',async()=>{await sDeskFlush(held);await sDeskOutlineFlush(held);sReviewEnter(held);sDeskRender(held);sDeskWatch(held);}):null;
   const stop=held.view.working?sButton('Stop',async button=>{await busy(button,'Stopping…',async()=>{const before=held.view;held.view=await api('desk-stop',{id:held.id,job:held.view.working.id});sDeskRefresh(held,before);});}):null;
   const team=sDeskTeam(view);
-  sFrame(view.title,sFold([team,stop,review,...sDeskShareActions(held),finishing]),held.view.working?sDeskStatusWords(held):sDeskDriverWords(view)||sDeskDocWords(view)||'On the desk',()=>sRoute('blogs'));
+  sFrame(view.title,sFold([team,stop,review,...sDeskShareMenu(held),finishing]),held.view.working?sDeskStatusWords(held):sDeskDriverWords(view)||sDeskDocWords(view)||'On the desk',()=>sRoute('blogs'));
 }
 // Reading is the default; editing mounts only the selected part. The full desk remains
 // available for experienced authors. URL choices contain navigation only, never text.
@@ -823,7 +837,7 @@ function sDeskReadingControls(held,lede,status){
   // What the chosen view is for, said under the switch, so its three names need no guessing.
   const hint=sNode('p','quiet field-hint',{read:'Read: the whole post as your reader sees it.',edit:'Edit section: one section at a time, in an editor.',full:'Edit everything: every section on one page, each with a box to ask your assistant for a rewrite.'}[held.reading]||'');
   const picker=sField('desk-part-picker','Go to section',held,'activePart',{options:[['title','Title'],['opening','Opening'],...held.view.sections.map(section=>[section.id,deskHeading(section.heading)])],changed:value=>sDeskChoose(held,held.reading,value)});
-  const actions=sAdd(sNode('div','bar'),sButton('Polish',()=>sDeskFinishOpen(held,'copyedit')),sButton('Sources',()=>sDeskSourcesSheet(held)),sButton('Outline',async()=>{await sDeskFlush(held);held.tab='outline';sDeskRender(held);}));
+  const actions=sAdd(sNode('div','bar'),sButton('Sources',()=>sDeskSourcesSheet(held)),sButton('Outline',async()=>{await sDeskFlush(held);held.tab='outline';sDeskRender(held);}));
   // One row of controls, with what the chosen view is for and the save line under it.
   if(!sNarrow())return sAdd(sNode('div','desk-reading-controls'),choices,picker,actions,sAdd(sNode('div','desk-view-foot'),hint,status));
   choices.append(hint);
@@ -899,7 +913,10 @@ function sDeskBench(held){
   const busyCard=working?{working:true,title:doing||'Working on it',text:'Nothing for you to do. '+(check?'Each fix is marked in the text when the check finishes. Read or edit meanwhile.':hasText?'Read or edit meanwhile.':'It opens here as it is written.')}:null;
   head.append(StudioShell.arc({at,yours:!!move,finished,note:working?(doing?doing+'…':''):''},'Where this blog is'),
     move?StudioShell.move(move):busyCard?StudioShell.move(busyCard):StudioShell.move({calm:true,title:finished?'Published':'Nothing is yours right now'}));
-  const bench=sNode('div','workbench-top');bench.append(...[StudioShell.pulse(move?'yours':working?'working':'still'),head,sDeskGeoPointer(held)].filter(Boolean));
+  // With a draft to read and nothing but the standing next step, the band is one quiet row
+  // and the writing starts higher.
+  const quiet=hasText&&!stopped&&!working&&!fixes;
+  const bench=sNode('div','workbench-top'+(quiet?' workbench-quiet':''));bench.append(...[StudioShell.pulse(move?'yours':working?'working':'still'),head,sDeskGeoPointer(held)].filter(Boolean));
   return bench;
 }
 function sDeskRender(held){
@@ -1211,6 +1228,17 @@ const DESK_FORMATS=[['linkedin','LinkedIn feed copy'],['newsletter','Newsletter 
 const DESK_META_LIMIT=155;
 function sDeskFinishOpen(held,tool=null){const input=held.cards?.[held.activePart]?.deskInput;held.returnFocus=input?{part:held.activePart,start:input.selectionStart,end:input.selectionEnd}:null;held.returnScroll=typeof window.scrollY==='number'?window.scrollY:0;const open=()=>held.stale?undefined:DESK_KIT.finishOpen(held,tool);if(Object.keys(held.pending||{}).length||held.outlineTimer||held.review?.editing?.dirty)return sDeskFlush(held).then(()=>sDeskOutlineFlush(held)).then(()=>Object.keys(held.pending||{}).length?undefined:open());return open();}
 function sDeskFinishClose(held){return DESK_KIT.finishClose(held);}
+// The finishing pass: one start for what a post is usually finished with. Copy edit, then
+// more human-sounding wording at the strength kept for this blog (medium the first time),
+// land as one review in the text beside the Quick check; Check facts against sources runs
+// last, and its findings wait under Check claims. Each tool below still runs on its own.
+function sDeskFinishPass(held){
+  const view=held.view,level=view.review?.humanize||'medium',voice=view.review?.voice_guide?.id;
+  const run=sButton('Finish this post',async button=>{await sDeskFlush(held);await sDeskOutlineFlush(held);if(held.stale)return;sReviewEnter(held);sDeskRender(held);await sReviewCheck(held,button,level,voice||undefined,true);},'filled');
+  run.disabled=!sDeskCan(held)||!!view.working;
+  const card=sCard('One pass',sNode('p','','Copy edit and more human-sounding wording, marked in your text as one review beside the Quick check, then a check of your claims against your sources. Nothing changes until you accept it.'),sAdd(sNode('div','bar'),run));
+  card.classList.add('desk-finish-pass');return card;
+}
 function sDeskReturnFocus(held){const saved=held.returnFocus,input=saved&&held.cards?.[saved.part]?.deskInput;if(input){input.focus();input.setSelectionRange?.(saved.start,saved.end);}if(typeof window.scrollTo==='function')window.scrollTo(0,held.returnScroll||0);}
 // Copy edit is reviewed in the text itself: it opens Review mode, where the check starts.
 async function sDeskCopyEdit(held){await sDeskFlush(held);await sDeskOutlineFlush(held);sReviewEnter(held);sDeskRender(held);sDeskWatch(held);}
@@ -2052,11 +2080,11 @@ async function sReviewSave(held){
 function sReviewSaid(held,editing,words){editing.said=words;if(editing.note)editing.note.textContent=words;if(held.status&&!held.stale)held.status.textContent=words;}
 async function sReviewClose(held){const editing=held.review?.editing;if(!editing)return;await sReviewSave(held);if(held.review.editing!==editing||editing.dirty)return;held.review.editing=null;if(held.status&&!held.stale&&editing.said)held.status.textContent=/^Saved/.test(editing.said)?'Saved.':editing.said;if(sDeskCurrent(held)&&held.mode==='review')sDeskReviewRefresh(held,held.view);}
 async function sReviewFlush(held){if(held.review?.editing)await sReviewClose(held);}
-async function sReviewCheck(held,button,humanize,voiceGuide){
+async function sReviewCheck(held,button,humanize,voiceGuide,claims=false){
   await busy(button,'Starting…',async()=>{try{
     await sReviewFlush(held);await sDeskFlush(held);if(held.stale)return;
     // Check again sends no strength: the server reuses the one pinned for this blog.
-    const before=held.view;held.view=await api('desk-review',{id:held.id,seen:held.view.revision,...(humanize===undefined?{}:{humanize}),...(voiceGuide===undefined?{}:{voice_guide:voiceGuide})});
+    const before=held.view;held.view=await api('desk-review',{id:held.id,seen:held.view.revision,...(humanize===undefined?{}:{humanize}),...(voiceGuide===undefined?{}:{voice_guide:voiceGuide}),...(claims?{claims:true}:{})});
     if(held.review){held.review.google=null;held.review.picks={};held.review.ask=null;held.review.pendingVoice=null;}
     sDeskRefresh(held,before);sDeskWatch(held);
   }catch(error){if(/changed since/.test(error.message)){held.stale=true;sDeskStale(held);}else notice(error.message,true);}});
@@ -2208,6 +2236,7 @@ const DESK_KIT=Drafting.kit({
     beforeFlush:held=>held.review?.editing?.dirty?sReviewSave(held):undefined,
     finishClosed:held=>sDeskReturnFocus(held),
     // Include a GEO review, the post's own choice, after the Reader aids and AI search tools.
+    listLead:held=>sDeskFinishPass(held),
     groupAfter:(held,group)=>group==='Reader aids and AI search'?sDeskGeoChoice(held):null,
     noteTarget:(held,item)=>{if(held.reading==='full')return false;const section=held.view.sections.find(row=>row.id===item.part);held.reading=section?'edit':'full';if(section)held.activePart=section.id;sDeskViewUrl(held);return true;},
     saved:(held,part,text)=>sDeskSaved(held,part,text),

@@ -2530,17 +2530,17 @@ class Engine:
                     run,
                     payload,
                     self.worker,
-                    seconds=found['seconds'],
+                    seconds=None,  # never ended for time; Stop is the person's
                     stop=self.stop,
                     progress=lambda event: self.note_research(ident, event),
                 )
             else:
-                started = time.monotonic()
+                time.monotonic()
                 result = self.worker(
                     found['engine'],
                     payload,
                     guidance,
-                    seconds=found['seconds'],
+                    seconds=None,  # never ended for time; Stop is the person's
                     web=found['next'] == 'research' and searches_web(payload),
                     stop=self.stop,
                     model_selection=found.get('model_selection'),
@@ -2548,8 +2548,7 @@ class Engine:
             if found['next'] == 'claims-map':
                 said = claims_map.problems(result['content'], payload['sources'])
                 if said:
-                    remaining = found['seconds'] - (time.monotonic() - started)
-                    if self.stop.is_set() or self.closed.is_set() or remaining <= 0:
+                    if self.stop.is_set() or self.closed.is_set():
                         raise ValueError(
                             'The claims map quoted passages that are not in your material: '
                             + said[0]
@@ -2564,7 +2563,7 @@ class Engine:
                             },
                             guidance
                             + '\nCorrect the previous output once. Quote each passage exactly from its named source; do not judge the claims.',
-                            seconds=max(1, int(remaining)),
+                            seconds=None,
                             web=False,
                             stop=self.stop,
                             model_selection=found.get('model_selection'),
@@ -2582,8 +2581,7 @@ class Engine:
                     validate_review(result, review_source)
                 except ValueError as error:
                     review_attempts.append({'response': result, 'error': str(error)})
-                    remaining = found['seconds'] - (time.monotonic() - started)
-                    if self.stop.is_set() or self.closed.is_set() or remaining <= 0:
+                    if self.stop.is_set() or self.closed.is_set():
                         raise error
                     with blog_activity.labelled('Correcting the review'):
                         result = self.worker(
@@ -2599,7 +2597,7 @@ class Engine:
                             'Use kind edit/comment, verdict editorial for writing advice, and a short evidence explanation. '
                             'Use IDs containing only letters, digits, underscores or hyphens. '
                             'Do not remove legitimate findings to evade validation.',
-                            seconds=max(1, int(remaining)),
+                            seconds=None,
                             web=False,
                             stop=self.stop,
                             model_selection=found.get('model_selection'),

@@ -42,6 +42,55 @@ CHOOSE_ASSISTANT = 'Settings → Writing preferences'
 CHECK_SECONDS = 4  # How long each look at the network, or at Codex's sign-in, may take.
 
 
+def signed_in(engine, binary, env=None):
+    """Whether the assistant says it is signed in: True, False, or None when it could not
+    be asked. Asked as the step was started; it starts no job and never raises."""
+    command = (
+        [binary, 'login', 'status'] if engine == 'codex' else [binary, 'auth', 'status', '--json']
+    )
+    try:
+        done = subprocess.run(
+            command,
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            timeout=CHECK_SECONDS,
+            env=env,
+        )
+    except (OSError, subprocess.SubprocessError, UnicodeError):
+        return None
+    if engine == 'codex':
+        return done.returncode == 0 and 'not logged in' not in (done.stdout + done.stderr).lower()
+    try:
+        found = json.loads(done.stdout).get('loggedIn')
+    except (ValueError, AttributeError):
+        found = None
+    return found if isinstance(found, bool) else done.returncode == 0
+
+
+SIGN_IN = {'codex': 'codex login', 'claude': 'claude auth login'}
+
+
+def with_sign_in(message, engine, binary, env=None):
+    """A failed step's message, once the assistant has been asked whether it is signed in:
+    a signed-out assistant is named as the cause with the command that signs it in, and a
+    signed-in one says so, leaving its usage to look at. Unknown leaves the message as it is."""
+    found = signed_in(engine, binary, env)
+    if found is False:
+        return (
+            NAMES[engine]
+            + ' is not signed in on this computer, so this step could not run. Run '
+            + SIGN_IN[engine]
+            + ' in a terminal, then try again. Saved work is kept.'
+        )
+    if found:
+        return message.replace(
+            'Check its sign-in and usage',
+            NAMES[engine] + ' is signed in, so check its usage or rate limit',
+        )
+    return message
+
+
 def unreachable(engine, binary, env=None, kind='network'):
     """What a run that failed because its assistant could not connect to its service says:
     the assistant, its service, and what to try. `kind` is what its error lines said
@@ -417,7 +466,7 @@ fact, figure, name, quotation, link or product detail from an example may appear
 writing unless it is also in the sources, the research or the brief."""
 
 
-def generate(engine, payload, guidance, seconds=900, web=False, stop=None, model_selection=None):
+def generate(engine, payload, guidance, seconds=None, web=False, stop=None, model_selection=None):
     """One process group, disposable working directory, bounded time and output.
 
     Workers have no shell, file tools or connected apps. Public research alone enables
@@ -527,6 +576,8 @@ def _generate(engine, payload, guidance, seconds, web, stop, model_selection, wa
                 )
                 if kind:
                     message = unreachable(engine, binary, env, kind)
+                else:
+                    message = with_sign_in(message, engine, binary, env)
             return WorkerFailure(message, reason, kept)
 
         with (
@@ -552,7 +603,8 @@ def _generate(engine, payload, guidance, seconds, web, stop, model_selection, wa
                 )
             except OSError as error:
                 raise cannot_start(engine) from error
-            deadline = time.monotonic() + seconds
+            # No `seconds` is no time limit: the step runs until it ends or is stopped.
+            deadline = None if seconds is None else time.monotonic() + seconds
             spent = (None, None)  # What the CLI reported it used, where it says.
             try:
                 while process.poll() is None:
@@ -561,7 +613,7 @@ def _generate(engine, payload, guidance, seconds, web, stop, model_selection, wa
                     if stop is None:
                         time.sleep(0.1)
                     events.follow()
-                    if time.monotonic() >= deadline:
+                    if deadline is not None and time.monotonic() >= deadline:
                         raise failed(
                             'This step ran out of the time a step may take ('
                             + minutes(seconds)

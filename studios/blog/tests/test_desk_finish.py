@@ -943,6 +943,49 @@ class MixedReviewTests(ToolCase):
     def jobs(self):
         return [(job['kind'], job['status']) for job in desk_jobs.jobs(self.root, self.ident)]
 
+    def sourced(self):
+        fact = self.source('The parser reads 12 files in 3 seconds.')
+        desk.add_sources(self.root, self.ident, {'sources': [fact]})
+        self.seen = desk.read(self.root, self.ident)['revision']
+
+    def test_the_finishing_pass_ends_with_one_claims_check(self):
+        self.sourced()
+        first = self.check(humanize='medium', claims=True)
+        self.assertEqual(first['metadata']['desk']['after'], 'facts')
+        self.ready(first, {'suggestions': []})
+        second = desk_jobs.jobs(self.root, self.ident)[-1]
+        self.assertEqual(second['kind'], 'finish-humanize')
+        self.ready(second, {'suggestions': []})
+        self.assertEqual(self.jobs()[-1][0], 'finish-facts', self.jobs())
+        third = desk_jobs.jobs(self.root, self.ident)[-1]
+        record = desk_jobs.review_record(self.root, self.ident)
+        self.assertEqual(record['claims'], third['id'])
+        # Settling either earlier job again queues nothing more.
+        desk_jobs._review_next(self.root, tool_jobs.read(self.root, second['id']))
+        desk_jobs._review_next(self.root, tool_jobs.read(self.root, first['id']))
+        self.assertEqual(len(self.jobs()), 3)
+
+    def test_the_pass_without_wording_goes_straight_to_claims_and_a_plain_check_has_none(self):
+        # With no sources there is nothing to check claims against: noted, and nothing stops.
+        bare = self.check(humanize=None, claims=True)
+        self.ready(bare, {'suggestions': []})
+        self.assertEqual(self.jobs(), [('finish-copyedit', 'ready')])
+        record = desk_jobs.review_record(self.root, self.ident)
+        self.assertIn('Add a source first', record['claims_problem'])
+        self.assertEqual(record['problem'], '')
+        self.sourced()
+        first = self.check(humanize=None, claims=True)
+        self.assertNotIn('then', first['metadata']['desk'])
+        self.ready(first, {'suggestions': []})
+        self.assertEqual(self.jobs()[-1][0], 'finish-facts')
+        desk_jobs.stop(self.root, self.ident, desk_jobs.jobs(self.root, self.ident)[-1]['id'])
+        before = len(self.jobs())
+        plain = self.check(humanize=None)
+        self.assertNotIn('after', plain['metadata']['desk'])
+        self.ready(plain, {'suggestions': []})
+        self.assertEqual(self.jobs()[-1], ('finish-copyedit', 'ready'))
+        self.assertEqual(len(self.jobs()), before + 1)
+
     def test_humanize_is_queued_when_copy_edit_settles_and_check_again_reuses_it(self):
         first = self.check(humanize='strong')
         self.assertEqual(first['kind'], 'finish-copyedit')

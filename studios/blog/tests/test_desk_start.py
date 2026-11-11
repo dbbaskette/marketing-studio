@@ -936,15 +936,13 @@ class ReviewFixTests(ChainCase):
         self.post('desk-angles', {'operation': '5' * 32, 'point': 'P.'})
         self.assertEqual(tool_jobs.listing(self.root), [])
 
-    def test_research_saves_its_plan_and_shares_one_time_limit(self):
-        import time
+    def test_research_saves_its_plan_and_is_given_no_time_limit(self):
 
         limits = []
 
         def worker(engine, payload, guidance, **options):
             limits.append(options['seconds'])
             if 'research questions' in guidance:
-                time.sleep(1.2)
                 return {'content': '1. What stops jobs?', 'notes': ''}
             return {'content': '# Findings\n\nTimeouts.', 'notes': ''}
 
@@ -952,8 +950,7 @@ class ReviewFixTests(ChainCase):
         tool_jobs.once(blog_runner.Engine(self.root, worker=worker))
         plan = self.folder(made['id']) / 'derived' / 'blog-research-plan.md'
         self.assertEqual(plan.read_text(), '1. What stops jobs?')
-        self.assertGreaterEqual(limits[0], 598)
-        self.assertLess(limits[1], limits[0])
+        self.assertEqual(limits[:2], [None, None])  # Neither is ended for time.
 
     def test_research_writes_into_the_blog_only_when_it_settles(self):
         # A start's research takes minutes: the blog's folder stays as it was meanwhile, so a
