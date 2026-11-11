@@ -410,18 +410,31 @@ class Slides:
 
 
     def review_prepare(self, compiled: Path, output: Path, design: Path,
-                       renderer: str | None = None, file_id: str | None = None) -> dict:
+                       renderer: str | None = None, file_id: str | None = None,
+                       own: bool = False) -> dict:
         """Render a whole deck compiled against the design approved in `design` into
         `output/deck.pptx`, picture each slide, and prepare its creative review. An unchanged
         build keeps its deck and its receipts. Renders are taken one at a time. With
         `renderer` 'drive' it is rendered through Google Drive, writing again the file
-        `file_id` names when one is given; otherwise with LibreOffice."""
+        `file_id` names when one is given; otherwise with LibreOffice. With `own`, where the
+        tool has a preview pool, the render is kept in a Drive file of this deck's own, named
+        after it, as `preview` keeps one. A render Google changed while it was read back is
+        taken again, as `preview` takes it."""
         args = ['review', '--compiled', str(compiled), '--output', str(output),
                 '--design-project', str(design)]
         if renderer == 'drive':
-            args += ['--renderer', 'google', *(['--file-id', file_id] if file_id else [])]
+            own = own and self.has('google-preview-pool')
+            args += ['--renderer', 'google', *(['--file-id', file_id] if file_id else []),
+                     *(['--new-preview-file'] if own else [])]
         with PREVIEWING:   # a review renders into the deck's one remembered file
-            made = self._json(*args, '--json')
+            for left in range(PREVIEW_TRIES - 1, -1, -1):
+                try:
+                    made = self._json(*args, '--json')
+                    break
+                except Refused as refusal:
+                    if not left or not any(CHANGED in line for line in refusal.problems):
+                        raise
+                    time.sleep(PREVIEW_PAUSE)
         return {**made, 'fileId': made.get('fileId'), 'url': made.get('url')}
 
     def review_packets(self, output: Path) -> dict:

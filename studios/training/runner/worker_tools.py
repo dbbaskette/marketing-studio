@@ -644,8 +644,9 @@ def reviewed(slides, compiled: Path, output: Path, design: Path, how: dict) -> d
     with one_at_a_time(Path(how['lock'])):
         if how.get('renderer') != 'drive':
             return slides.review_prepare(compiled, output, design)
-        return _in_drive(how, lambda known: slides.review_prepare(
-            compiled, output, design, renderer='drive', file_id=known))
+        # The deck under review is the one a person may open: a Drive file of its own.
+        return _in_drive({**how, 'own': True}, lambda known: slides.review_prepare(
+            compiled, output, design, renderer='drive', file_id=known, own=True))
 
 
 # --- a job's folder --------------------------------------------------------------------

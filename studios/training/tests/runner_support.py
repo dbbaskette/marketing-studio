@@ -1048,7 +1048,8 @@ class Slides:
             found = designs.refusal(refused, None)
             raise slides.Refused([problem['detail'] for problem in found['problems']], found)
 
-    def review_prepare(self, compiled, output, design, renderer=None, file_id=None) -> dict:
+    def review_prepare(self, compiled, output, design, renderer=None, file_id=None,
+                       own=False) -> dict:
         through = 'google' if renderer == 'drive' else 'local'
         made = self._reviewing('review_prepare', output, lambda review: review.prepare(
             compiled, design, renderer=through, file_id=file_id), compiled,

@@ -1,5 +1,7 @@
 # Changelog
 
+Unreleased: a deck drawn from an approved design no longer stops at "The preview deck changed while it was being read". The render the review is made from is now taken again, up to three times, and kept in a Drive file of that deck's own, named after it, as the ordinary whole-deck preview already was. The earlier fix had missed this path.
+
 Unreleased: what a deck says comes to you as text before any slide is drawn, again. **Approve the slide text before the deck is drawn** is ticked to start with on the form; untick it to have the deck drawn straight from its words. Trainings already started keep what they began with.
 
 Unreleased: a deck's Google preview is steadier and easier to find. A preview Google changed while it was read back is taken again, up to three times, before the training stops for it. The whole deck's preview is kept in a Drive file of that deck's own, named after it, not in one of the slides tool's shared "Harness Slides preview" files; a section's working previews still use those.
