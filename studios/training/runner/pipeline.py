@@ -597,6 +597,10 @@ def check_form(sent: dict, brands=None, *, conversation=False) -> dict:
     if form['walkthrough'] not in (True, False):
         raise WorkspaceError('Say whether to walk through each slide\'s design with true or '
                              'false.')
+    form['slide_text_review'] = sent.get('slide_text_review', False)
+    if form['slide_text_review'] not in (True, False):
+        raise WorkspaceError('Say whether to approve the slide text before the deck is drawn '
+                             'with true or false.')
     form['research_from'] = research_from(sent)
     form['source_scope'] = scope_of(form['research_from'])
     if not isinstance(sent.get('yoodli', False), bool):

@@ -74,7 +74,7 @@ class SectionResearchTests(StudioCase):
         self.assertTrue(facts['review']['accepted'])
         self.assertEqual(shown['research_progress']['phase'], 'complete')
         self.assertEqual(len(self.section_jobs), len(story['outline']['sections']) + 1)
-        self.assertEqual(self.section_jobs[-1], ('final', research_sections.SECONDS))
+        self.assertEqual(self.section_jobs[-1], ('final', None))
 
         return root
 
@@ -103,7 +103,7 @@ class SectionResearchTests(StudioCase):
         self.assertEqual(record['limits']['step_seconds'], before)
         self.assertEqual(record['section_synthesis']['more_time'][ident], 2 * research_sections.SECONDS)
         subsequent = self.section_jobs[len(previous):]
-        self.assertEqual(subsequent, [(ident, 2 * research_sections.SECONDS), ('final', research_sections.SECONDS)])
+        self.assertEqual(subsequent, [(ident, None), ('final', None)])
 
     def test_preview_polling_reuses_local_metadata_but_confirmation_rehashes_sources(self):
         from studio_core import research_impact

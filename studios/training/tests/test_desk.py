@@ -2475,6 +2475,7 @@ def ok(body) -> dict:
 # built apart from the page.
 RUNNER = ok({'runner': True, 'version': '0.12.0'})
 LIMITS = {'step_seconds': 900, 'parallel': 2}
+SENT_LIMITS = {'parallel': 2}   # what set-up sends: no step is given a time limit
 # A computer with a brand skill and no way yet to make previews: what every screen but the
 # deck's own is tried on. The tests of previews say what their computer can do.
 NO_PREVIEWS = {'how': None, 'drive': False, 'local': False, 'left': []}
@@ -3719,7 +3720,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
                            'branch': 'trainings', 'existing': True}}
         saved = {'configured': True,
                  'agent': {'default': 'codex', 'model': 'gpt-6-sol', 'effort': 'xhigh'},
-                 'limits': {'step_seconds': 600, 'parallel': 1},
+                 'limits': {'parallel': 1},
                  'workspace': {**WORKSPACE, 'folder': 'tools/trainings', 'branch': 'trainings',
                                'share_when': 'when-asked', 'shared': False}}
         answers = self.answers(**{'GET /api/setup': [ok(NOT_SET_UP), ok(saved)],
@@ -3735,7 +3736,6 @@ class RunnerScreenTests(ScriptedPage, PageCase):
             {'click': 'Only when I ask'}, {'click': 'Codex'},
             {'fill': 'Its model', 'value': 'gpt-6-sol'},
             {'fill': 'Its reasoning level', 'value': 'xhigh'},
-            {'fill': 'The longest a step may take', 'value': '10'},
             {'fill': parallel, 'value': '0'},
             {'click': 'Save and go on'}, {'snapshot': 'limit'},
             {'fill': parallel, 'value': '1'},
@@ -3763,8 +3763,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
                                             'Claude Code'])
         self.assertEqual(start['fields'], {
             address: '', 'The folder inside it': '', 'The branch': '',
-            'A name for this workspace': '', 'Its model': '', 'Its reasoning level': '',
-            'The longest a step may take, in minutes': '15', parallel: '2'})
+            'A name for this workspace': '', 'Its model': '', 'Its reasoning level': '', parallel: '2'})
         self.assertEqual(self.asked(result, 'capabilities'), ['/api/capabilities'])
 
         # Nothing to save yet: refused beside the box, and nothing is sent.
@@ -3810,7 +3809,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
                             'branch': 'trainings', 'name': 'Field enablement',
                             'share_when': 'when-asked', 'agent': 'codex',
                             'model': 'gpt-6-sol', 'effort': 'xhigh',
-                            'limits': {'step_seconds': 600, 'parallel': 1}})])
+                            'limits': {'parallel': 1}})])
 
         # Then "Start your first training", and the rest of the page is there.
         done = shots['saved']
@@ -3835,7 +3834,6 @@ class RunnerScreenTests(ScriptedPage, PageCase):
             {'click': 'Settings'}, {'snapshot': 'settings'},
             {'click': 'Share now'}, {'snapshot': 'shared'},
             {'click': 'Change the set-up'}, {'snapshot': 'set-up'},
-            {'fill': 'The longest a step may take', 'value': '20'},
             {'click': 'Save'}, {'snapshot': 'saved'},
         ])
         shots = result['snapshots']
@@ -3848,7 +3846,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
                       '/Users/pat/Library/Training Studio/workspace', 'trainings', 'main',
                       'after each decision: your team sees the drafts', said,
                       'Claude Code, with the model it chooses itself',
-                      'A step may take up to 15 minutes.',
+                      'Assistant work is never stopped for how long it takes.',
                       'Up to 2 trainings run at once.'):
             self.assertIn(shown, settings['text'])
         for gone in ('spending amount', 'Shared settings, Spending'):
@@ -3879,11 +3877,11 @@ class RunnerScreenTests(ScriptedPage, PageCase):
                             'folder': 'trainings', 'branch': 'main',
                             'name': 'Field enablement', 'share_when': 'each-decision',
                             'agent': 'claude', 'model': None, 'effort': None,
-                            'limits': {'step_seconds': 1200, 'parallel': 2}})])
+                            'limits': {'parallel': 2}})])
         saved = shots['saved']
         self.assertEqual((saved['heading'], saved['current']), ('Settings', ['Settings']))
         self.assertIn('The set-up is saved.', saved['toasts'])
-        self.assertIn('A step may take up to 20 minutes.', saved['text'])
+        self.assertIn('Assistant work is never stopped for how long it takes.', saved['text'])
 
     def test_a_folder_on_this_computer_is_set_up_without_anyone_to_share_with(self):
         check = {'ok': True, 'found': {'name': 'try-out', 'folder': 'trainings',
@@ -3913,7 +3911,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
             ('/api/setup/check', {**place, 'folder': 'courses'}),
             ('/api/setup', {'path': '/Users/pat/try-out', 'folder': 'courses', 'branch': 'main',
                             'name': 'try-out', 'share_when': 'when-asked', 'agent': 'claude',
-                            'model': None, 'effort': None, 'limits': LIMITS})])
+                            'model': None, 'effort': None, 'limits': SENT_LIMITS})])
         self.assertIn('Your trainings are kept in a folder on this computer, and are not '
                       'shared with anyone.', shots['saved']['text'])
         self.assertNotIn('Share now', shots['saved']['buttons'])
@@ -3963,7 +3961,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
                                   'branch': None}),
             ('/api/setup', {'repository': address, 'folder': 'trainings', 'branch': 'trunk',
                             'name': 'studios', 'share_when': 'when-asked', 'agent': 'codex',
-                            'model': 'gpt-7-preview', 'effort': 'medium', 'limits': LIMITS,
+                            'model': 'gpt-7-preview', 'effort': 'medium', 'limits': SENT_LIMITS,
                             # What the form was shown, so that a value another studio
                             # changes meanwhile is never written over.
                             'shared_seen': shared})])
@@ -4032,7 +4030,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         # Saved again, the person's choice goes with what the form has been shown since.
         sent = {'repository': WORKSPACE['repository'], 'folder': 'trainings',
                 'branch': 'main', 'name': 'Field enablement', 'agent': 'claude',
-                'model': 'opus', 'effort': 'high', 'limits': LIMITS}
+                'model': 'opus', 'effort': 'high', 'limits': SENT_LIMITS}
         self.assertEqual(self.posts(result)[-2:], [
             ('/api/setup', {**sent, 'share_when': 'each-decision', 'shared_seen': shared}),
             ('/api/setup', {**sent, 'share_when': 'when-asked',
@@ -4124,7 +4122,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         self.assertEqual(self.posts(result)[-1], ('/api/setup', {
             'repository': address, 'folder': 'trainings', 'branch': 'trunk', 'name': 'studios',
             'share_when': 'each-decision', 'agent': 'claude', 'model': None, 'effort': None,
-            'limits': LIMITS, 'shared_seen': shared}))
+            'limits': SENT_LIMITS, 'shared_seen': shared}))
         self.assertNotIn('Join it', shots['saved']['buttons'])
 
     def test_what_moving_to_the_studios_file_left_as_it_was_is_told_until_read(self):
@@ -4310,7 +4308,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         self.assertEqual(self.posts(result)[-1], ('/api/setup', {
             'repository': 'git@example.com:team/tools.git', 'folder': 'trainings',
             'branch': 'main', 'name': 'Field enablement', 'share_when': 'each-decision',
-            'agent': 'codex', 'model': 'gpt-7-preview', 'effort': 'high', 'limits': LIMITS}))
+            'agent': 'codex', 'model': 'gpt-7-preview', 'effort': 'high', 'limits': SENT_LIMITS}))
         self.assertIn('Codex, with the model gpt-7-preview and reasoning set to high',
                       shots['saved']['text'])
         # Each agent's list is asked for once, apart from the page's refresh.
@@ -4516,7 +4514,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         self.assertEqual(three['filled'], ['Start'])
         self.assertNotIn('Back a step', three['buttons'])
         for shown in ('Next: one Quick scan, then your outline approval before detailed research and writing.', 'Claude Code',
-                      'A step may take up to 15 minutes.',
+                      'Assistant work is never stopped for how long it takes.',
                       'Claude Code, with the model it chooses itself.'):
             self.assertIn(shown, three['sheet'])
         for gone in ('decisions for research', 'A deck adds three stops', 'Step by step'):
@@ -6040,7 +6038,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
                  'url': 'javascript:alert(1)'}]
         saved = {'repository': 'git@example.com:team/tools.git', 'folder': 'trainings',
                  'branch': 'main', 'name': 'Field enablement', 'share_when': 'each-decision',
-                 'agent': 'claude', 'model': None, 'effort': None, 'limits': LIMITS}
+                 'agent': 'claude', 'model': None, 'effort': None, 'limits': SENT_LIMITS}
 
         def run(before: dict, after: dict, *choose: dict) -> dict:
             answers = self.answers({**SET_UP, 'previews': before}, **{
@@ -6115,7 +6113,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
                  'checks': [{'what': 'The repository can be reached', 'ok': True, 'fix': None}]}
         saved = {'repository': 'git@example.com:team/tools.git', 'folder': 'trainings',
                  'branch': 'main', 'name': 'Field enablement', 'share_when': 'each-decision',
-                 'agent': 'claude', 'model': None, 'effort': None, 'limits': LIMITS}
+                 'agent': 'claude', 'model': None, 'effort': None, 'limits': SENT_LIMITS}
         kit = {'name': 'Example Brand Kit', 'path': '/skills/example-brand', 'chosen': True}
         labs = {'name': 'Example Labs Kit', 'path': '/skills/example-labs', 'chosen': False}
 

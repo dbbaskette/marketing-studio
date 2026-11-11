@@ -91,8 +91,9 @@ Only **Start** begins work.
    guide the selected materials. Unresolved research flags become your decisions
    before you continue; warnings appear only where requested. There is no sample lesson
    to approve.
-4. **Review requested slide text.** If you selected a deck, **Review slide text**
-   opens the Deck tab with one slide at a time. Correct titles, points and notes
+4. **Review slide text, if you asked to.** A deck is drawn straight from its words.
+   Tick **Approve the slide text before the deck is drawn** on the form and **Review slide text**
+   opens the Deck tab with one slide at a time first. Correct titles, points and notes
    directly; corrections and review position save privately across reloads. The
    Guide, Brief and Plan tabs stay available. **Save corrections** starts no
    assistant or design work. Use **Ask for changes** for an assistant revision, or

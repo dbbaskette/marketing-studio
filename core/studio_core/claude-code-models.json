@@ -1,9 +1,11 @@
 {
   "schema": 1,
-  "source": "Anthropic model reference, cached 2026-10-06",
-  "date": "2026-10-06",
+  "source": "Anthropic model reference, cached 2026-11-11",
+  "date": "2026-11-11",
   "models": [
-    {"id": "fable", "family": "Fable", "alias": "claude-fable-5-1"},
+    {"id": "fable", "family": "Fable", "alias": "claude-fable-5-2"},
+    {"id": "claude-fable-5-2", "label": "Fable 5.2", "family": "Fable",
+     "levels": ["low", "medium", "high", "xhigh", "max"]},
     {"id": "claude-fable-5-1", "label": "Fable 5.1", "family": "Fable",
      "levels": ["low", "medium", "high", "xhigh", "max"]},
     {"id": "claude-fable-5", "label": "Fable 5", "family": "Fable",

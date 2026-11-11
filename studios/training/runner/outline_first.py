@@ -139,7 +139,7 @@ def scan(engine, root, run, found, step):
     record = engine._load(root)
     job, initial = work(engine, root, found, record)
     outcome, handed, started, folder = engine._job(root, run, step.step, job,
-        limits=agents.Limits(SECONDS))
+        limits=agents.Limits(SECONDS), quick=True)
     accepted = handed.get('artifacts', {}).get('scan')
     value = checked(json.loads(accepted['text']), minimum=2) if accepted else initial
     # The assistant cannot silently remove or rewrite questions typed on the form.

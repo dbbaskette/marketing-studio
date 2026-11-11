@@ -32,12 +32,14 @@ scope and approval consequence stay visible. Incomplete-scan warnings stay visib
 
 **Approve outline & research** approves that exact edited scope. Only retained sections
 become research items, with your additional questions included. Up to three areas run in
-parallel within the saved source, round and time limits. Combining and an independent
+parallel within the saved source and round limits. Combining and an independent
 check still cover the whole dossier. Unresolved flags become Include / Include with warning / Exclude choices;
 save your choices and explicitly continue. Warnings appear only where requested, and
 excluded findings also omit dependent content. The teaching plans and selected materials
 then use your approved scope and accepted research, with no second topics approval.
-Slide text approval and Mark ready keep their existing roles.
+A deck is drawn straight from its words, with no stop: change either on the desk.
+Tick **Approve the slide text before the deck is drawn** on the form to keep that
+approval for one training. Mark ready keeps its existing role.
 
 New trainings prioritize readable output: each level's plan, guide and brief, then
 practice and Yoodli across levels, then decks. Selected inputs still precede the

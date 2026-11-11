@@ -3965,7 +3965,7 @@ function about(pairs) {
 
 function limitsSays(limits) {
   const says = [];
-  if (limits.step_seconds) says.push('A step may take up to ' + lasted(limits.step_seconds) + '.');
+  says.push('Assistant work is never stopped for how long it takes.');
   if (limits.parallel) {
     says.push(limits.parallel === 1 ? 'One training runs at a time.'
       : 'Up to ' + limits.parallel + ' trainings run at once.');
@@ -4065,7 +4065,6 @@ function setupForm() {
   // file. The team repository fills in only where this computer keeps none.
   const agent = held.agent || {};
   const local = !joining && Boolean(held.workspace) && !space.repository;
-  const seconds = Number(limits.step_seconds) || 0;
   const share = space.share_when || (shared.share === 'asked' ? SHARE[1] : SHARE[0]);
   return {
     where: local ? 1 : 0,
@@ -4083,7 +4082,6 @@ function setupForm() {
     seen: 'shared' in held ? shared : null,
     agent: agent.default === 'codex' ? 'codex' : 'claude',
     model: agent.model || '', other: false, effort: agent.effort || '',
-    minutes: seconds ? String(Math.round(seconds / 6) / 10) : '', seconds,
     parallel: given(limits.parallel) ? String(limits.parallel) : '',
     previews: previewsNow(held.previews || {}),
     brandSkill: (brandSkills().find((skill) => skill.chosen) || brandSkills()[0] || {}).path
@@ -4552,9 +4550,7 @@ function shareCard(form) {
 
 function limitsCard(form) {
   const node = card('Limits');
-  return add(node, make('p', '', 'Each step keeps its time limit. Nothing stops or warns for what the work costs.'),
-  field('setup-minutes', 'The longest a step may take, in minutes', form, 'minutes',
-    { short: true, mode: 'decimal' }),
+  return add(node, make('p', '', 'Assistant work is never stopped for how long it takes or what it costs. Stop it yourself from the training whenever you want.'),
   field('setup-parallel', 'How many trainings may run at once', form, 'parallel',
     { short: true, mode: 'numeric' }));
 }
@@ -4673,11 +4669,8 @@ async function saveSetup(pressed) {
   };
   need(where, asked.repository || asked.path, form.where ? 'Say which folder first.'
     : 'Give the repository’s address first.');
-  const minutes = limit('setup-minutes', form.minutes, false);
   const parallel = limit('setup-parallel', form.parallel, true);
-  for (const [id, value] of [['setup-minutes', minutes], ['setup-parallel', parallel]]) {
-    if (value === null) missing.push(id);
-  }
+  if (parallel === null) missing.push('setup-parallel');
   if (missing.length) {
     say(problem, 'Something above is missing. Nothing was saved.');
     byId(missing[0]).focus();
@@ -4715,13 +4708,10 @@ async function saveSetup(pressed) {
     byId(missing[0]).focus();
     return;
   }
-  // Minutes are shown to the nearest tenth. A time nobody changed is saved as it was.
-  const kept = form.seconds && minutes === Math.round(form.seconds / 6) / 10;
   const body = { folder: form.folder.trim(), branch: form.branch.trim(),
     name: form.name.trim(), share_when: form.where ? SHARE[1] : SHARE[form.share],
     agent: form.agent, model: form.model.trim() || null, effort: form.effort || null,
-    limits: { step_seconds: kept ? form.seconds : Math.max(1, Math.round(minutes * 60)),
-      parallel } };
+    limits: { parallel } };
   if (form.where) body.path = asked.path;
   else body.repository = asked.repository;
   // Where this computer can make previews in neither way, there is no choice to send.
@@ -5166,10 +5156,16 @@ function shapeStep(draft) {
       (on) => { draft.walkthrough = on; }, 'walkthrough'),
     make('p', 'quiet field-hint', 'Optional. Review how each slide will be drawn before the deck is built.'));
   walk.hidden = used.hidden;
+  // The deck is drawn as soon as its words are written. A stop to approve them is asked for.
+  const words = add(make('div', 'field'),
+    trainingTick('Approve the slide text before the deck is drawn', draft.slideTextReview,
+      (on) => { draft.slideTextReview = on; }, 'slide-text-review'),
+    make('p', 'quiet field-hint', 'Optional. Without it the deck is drawn straight from its words, and you change either on the desk.'));
+  words.hidden = used.hidden;
   const deck = choice('The slide deck', DECKS.map((kind) => kind[1]), draft.deck, (index) => {
     draft.deck = index;
     used.hidden = !able || DECKS[index][0] === null;
-    walk.hidden = used.hidden;
+    walk.hidden = words.hidden = used.hidden;
     retell();
   }, 'deck');
   for (const option of able ? [] : deck.querySelectorAll('.seg-option[aria-pressed="false"]')) {
@@ -5207,7 +5203,7 @@ function shapeStep(draft) {
     deck,
     able ? null : make('p', 'quiet', 'A deck needs a brand skill. You can make the other '
       + 'materials now; Status explains what this computer needs for slides.'),
-    used, walk,
+    used, walk, words,
     trainingOptions('About the reference brief', 'training-depth',
       choice('What the brief is about', ['One product or technology', 'A comparison'],
         draft.brief, (index) => { draft.brief = index; }, 'brief'))].filter(Boolean);

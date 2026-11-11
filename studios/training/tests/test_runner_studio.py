@@ -483,9 +483,9 @@ class ProcessTests(StudioCase):
                 {'name': 'gpt-6-sol', 'label': 'GPT-6-Sol (gpt-6-sol)', 'family': None,
                  'about': None, 'default_level': 'medium', 'levels': ['low', 'medium']}]})
         claude = models('claude')
-        self.assertEqual(claude['source'], 'Anthropic model reference, cached 2026-10-06')
+        self.assertEqual(claude['source'], 'Anthropic model reference, cached 2026-11-11')
         self.assertEqual([model['name'] for model in claude['models']][:4],
-                         ['fable', 'claude-fable-5-1', 'claude-fable-5', 'opus'])
+                         ['fable', 'claude-fable-5-2', 'claude-fable-5-1', 'claude-fable-5'])
         self.assertEqual(claude['models'][-1]['levels'], [])
         process.send_signal(signal.SIGTERM)
         process.communicate(timeout=30)

@@ -1494,7 +1494,10 @@ class Engine(Reviewing):
                 if contract:
                     record['research_contract'] = contract
                     record['schema'] = 3
-                if desk and self.content_first and not form.get('walkthrough'):
+                # The deck is drawn from what it says without a stop, unless the form asked
+                # to approve the slide text first.
+                if desk and self.content_first and form.get('slide_text_review') \
+                        and not form.get('walkthrough'):
                     record['deck_content'] = deck_content.PROTOCOL
                 if desk:
                     record.update(schema=drafts.SCHEMA, flow=drafts.FLOW, drafts={
@@ -3897,7 +3900,7 @@ class Engine(Reviewing):
         return replace(work, task=work.task + '\n\n' + FROM_AUTHOR.format(
             text='\n\n'.join(quoted(text) for text in carried)))
 
-    def _job(self, root: Path, run: _Run, step: pipeline.Step, work: pipeline.Work, *, limits=None, section=None):
+    def _job(self, root: Path, run: _Run, step: pipeline.Step, work: pipeline.Work, *, limits=None, section=None, quick=False):
         """Run one worker on one job. Returns how the agent ended, what the worker tools
         accepted from it, when it started and the job's folder. A note the person left for
         the next step goes with it, once."""
@@ -3923,9 +3926,10 @@ class Engine(Reviewing):
         # A deck's worker is given the slides tool and the brand skill this engine uses.
         worker_tools.prepare(folder, **{**work.prepared, 'runtimes': dict(
             self._look()['runtimes']) if step.stage == 'deck' else {}})
-        ceiling = agents.Limits(record['limits']['step_seconds'])
-        limits = ceiling if limits is None else agents.Limits(
-            min(limits.seconds, ceiling.seconds))
+        # Assistant work is never ended for how long it takes: ending it discards what it
+        # had done, and a second try starts from nothing. Only the Quick scan, which has
+        # an outline to fall back on, keeps its own short limit. Stop is the person's.
+        limits = limits if quick and limits is not None else agents.Limits(None)
         job = agents.Job(work.guidance, work.task, folder, work.profile,
                          tuple(worker_tools.command(folder)), limits, record.get('model'),
                          record.get('effort'))
