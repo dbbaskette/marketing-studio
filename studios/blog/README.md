@@ -61,8 +61,8 @@ workspaces, settings and unrelated skills are preserved.
    separate action. The Outline manages sections, and History compares and restores.
 5. **Review changes, then send.** Suggestions are marked in the text with a reason
    and Accept/Reject. Accepting a suggestion preserves earlier text in History.
-   Copy, download or choose a Google action yourself. Marking a blog as published
-   records your decision; it does not publish to a website.
+   **Share** holds Copy, Download, the Google Doc actions and Mark as published.
+   Marking a blog as published records your decision; it does not publish to a website.
 
 The start, drawn. Filled boxes are your decisions or input, tinted boxes are
 assistant work and grey boxes are Blog Studio's own steps.
@@ -71,25 +71,31 @@ assistant work and grey boxes are Blog Studio's own steps.
 
 ## Finish without losing your voice
 
-**Finishing**, the one filled button on the desk, opens every finishing tool.
-**Finish this post** at its top runs the usual pass in one go: copy edit and more
-human-sounding wording marked in your text as one review beside the Quick check, then a
-check of your claims against your sources. Copy, Download, Google Doc actions and Mark as
-published are under **Share**. A voice guide and Humanize can
-add wording suggestions, while facts, quotations, code and structure remain
-protected. You can accept individual changes, edit them, reject them or use the
-available batch actions; a suggestion that needs your judgment stays for review.
+**Finishing**, the one filled button in the desk's toolbar, opens every finishing
+tool. **Finish this post**, at the top of that panel, runs the usual pass in one go:
+
+1. Copy edit, then more human-sounding wording, marked in your text as one review
+   beside the Quick check. The wording uses the strength you last chose for this
+   blog, medium the first time.
+2. A check of your claims against your sources. Its findings wait under **Check
+   claims** in Finishing. A draft with no sources skips this step.
+
+The review opens in Review mode. A voice guide can add wording suggestions too, while
+facts, quotations, code and structure remain protected. You can accept individual
+changes, edit them, reject them or use the available batch actions; a suggestion that
+needs your judgment stays for review. Nothing changes until you accept it.
 
 Returning to a saved copy-edit review opens Review mode. Explicit Read, Edit section
 and Edit everything links keep that view, with **Review fixes** available after a restart.
 For a linked Google Doc, **Review changes to send** previews local edits before
-you choose **Send to Google Doc**. **Google Doc → Bring accepted changes** checks
+you choose **Send to Google Doc**. **Share → Bring accepted changes** checks
 incoming text separately; no incoming updates does not prevent sending local edits.
 
 **Finishing** groups checks and proposals by purpose: Copy edit, Humanize, Quick
 check, fact checking, headline/opening, feedback, voice, retrieval readiness (GEO)
-and before-publishing tools. Quick check runs locally without an assistant.
-Assistant-backed tools start only when requested; proposals wait for your decision.
+and before-publishing tools. Each one also runs on its own. Quick check runs locally
+without an assistant. Assistant-backed tools start only when requested; proposals wait
+for your decision.
 
 **Voice guides** describe how writing should sound. Write one yourself or learn
 one from samples, then apply it deliberately. Older author-profile tools remain
@@ -99,7 +105,8 @@ Finishing and sending, drawn the same way:
 
 ![Blog Studio finish and send workflow: on the desk you edit, add notes or select a passage, and Revise the draft rewrites a section or the whole draft and returns. Finishing tools propose copy edits, fact checks and reader aids, and each proposal waits for Apply, Edit or Skip. The pre-publish check reports headings, links and evidence without an assistant, and Run GEO review says when the review is out of date. Send to Google Doc sends the changes as suggestions, after Make a Google Doc if the blog has none, or you copy or download the post; Bring accepted changes brings the owner's accepted text back onto the desk. Mark as published records where it went.](docs/assets/blog-studio-workflow-finish.svg)
 
-Blogs started before the desk keep their older step-by-step run, which is not drawn here.
+The drawing shows each finishing tool on its own; **Finish this post** starts the copy
+edit, the wording and the claims check together. Blogs started before the desk keep their older step-by-step run, which is not drawn here.
 
 While the assistant works, each job shows what it is doing now as **Now: …**, and
 **Show activity** lists everything it has done so far, newest first, with times. Each
@@ -236,14 +243,17 @@ Deleted blogs remain recoverable under **Recently deleted** for the stated reten
 
 ## Updates, help and development
 
-Use **Status → Check this computer** for tools and assistant sign-in problems, or:
+**Status → Check this computer** asks Codex and Claude Code whether each is signed in
+and names the command that signs one in. From a terminal:
 
 ```sh
 sh ~/.local/share/blog-studio/studio check
 ```
 
-Failed steps explain retry and time-limit options while keeping saved work. Keep
-private page links private. For an update, close idle studios and follow the
+A failed step keeps saved work and says why: a signed-out assistant is named as the
+cause, and a signed-in one points you at its usage or rate limit. No writing, research
+or finishing step is ended for how long it takes; press **Stop** to end one yourself.
+Keep private page links private. For an update, close idle studios and follow the
 [installation guide](../../docs/installation.md); a source checkout can pull with
 `git pull --ff-only` and reinstall its selected studio.
 
