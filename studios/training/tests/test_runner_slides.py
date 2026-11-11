@@ -431,6 +431,24 @@ class CommandTests(unittest.TestCase):
         self.assertEqual(refused.exception.left,
                          {'fileId': 'file-7', 'url': 'https://docs.example.com/d/file-7/edit'})
 
+    def test_a_review_render_is_taken_again_and_keeps_a_named_file_of_the_decks_own(self):
+        made = {'revision': 'r1', 'fileId': 'file-3', 'url': 'https://docs.example.com/d/3'}
+        changed = (1, '', 'The preview deck changed while it was being read; preview again.\n')
+        self.slides._capabilities = frozenset({'google-preview-pool'})
+        self.slides._asked_capabilities = True
+        self.answers = [changed, (0, json.dumps(made), '')]
+        with mock.patch.object(slides, 'PREVIEW_PAUSE', 0):
+            found = self.slides.review_prepare('/d/compiled', '/d/review', '/d/project',
+                                               'drive', file_id='file-3', own=True)
+            self.assertEqual(found['fileId'], 'file-3')
+            wanted = ['review', '--compiled', '/d/compiled', '--output', '/d/review',
+                      '--design-project', '/d/project', '--renderer', 'google', '--file-id',
+                      'file-3', '--new-preview-file', '--json']
+            self.assertEqual([command[2:] for command in self.ran][-2:], [wanted, wanted])
+            self.answers = [changed] * 3
+            with self.assertRaisesRegex(slides.Refused, 'changed while it was being read'):
+                self.slides.review_prepare('/d/compiled', '/d/review', '/d/project', 'drive')
+
     def test_an_answer_that_is_not_json_is_not_trusted(self):
         for answer in ('Usage: node scripts/harness-slides.mjs ...', '[1, 2]', ''):
             self.answers = [(0, answer, '')]
