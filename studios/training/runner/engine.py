@@ -532,6 +532,14 @@ def older(version: str, needed: str) -> bool:
     return parts(version) < parts(needed)
 
 
+def plainly(refusal) -> str:
+    """A slides tool's refusal as a person reads it: without the command-line advice it
+    gives another program, such as "retry with --file-id …", and without a raw address."""
+    said = re.sub(r';?\s*retry with --[^.]*\.?', '.', str(refusal))
+    said = re.sub(r'\s*\((https?://[^)\s]+)\)', '', said)
+    return re.sub(r'\.{2,}', '.', said).strip()
+
+
 def folder_name(step: str) -> str:
     """A step's name as part of a folder's. A research question can never be mistaken for
     another step, whatever its ID."""
@@ -1494,8 +1502,8 @@ class Engine(Reviewing):
                 if contract:
                     record['research_contract'] = contract
                     record['schema'] = 3
-                # The deck is drawn from what it says without a stop, unless the form asked
-                # to approve the slide text first.
+                # What the deck says is approved before anything is drawn, unless the form
+                # turned that off.
                 if desk and self.content_first and form.get('slide_text_review') \
                         and not form.get('walkthrough'):
                     record['deck_content'] = deck_content.PROTOCOL
@@ -3191,8 +3199,11 @@ class Engine(Reviewing):
             if judged:   # the slides tool renders the deck it reviews, and that is the deck
                 shown = self._rendered(folder, bound['design'], self._how(root, found, level))
             else:
+                # The whole deck is the preview a person may open: it is kept in a Drive
+                # file of this deck's own, named after it, not in the tool's shared pool.
                 shown = worker_tools.render(tool, folder / 'compiled', folder / 'preview',
-                                            {**self._how(root, found, level), **bound})
+                                            {**self._how(root, found, level), **bound,
+                                             'own': True})
             file = Path(str(shown['deck'])).resolve()
             if (folder / seen).resolve() not in file.parents \
                     or file.read_bytes()[:4] != workspace.PPTX_SIGNATURE:
@@ -3216,8 +3227,8 @@ class Engine(Reviewing):
                 return self._problem(root, it.id, 'stopped', NO_REVIEWER.format(
                     said=' '.join(refusal.problems)), DECK_KEPT)
             return self._problem(root, it.id, 'failed', (
-                f'The slides could not be put together and rendered. {refusal} Nothing of '
-                'that try was kept.'), DECK_KEPT)
+                f'The slides could not be put together and rendered. {plainly(refusal)} '
+                'Nothing of that try was kept.'), DECK_KEPT)
         with self.files:
             rounds = [made for made in pipeline.read_built(root, level).get('rounds') or ()
                       if made.get('start') == mine.start['folder']]

@@ -4,14 +4,16 @@ from workspace import WorkspaceError
 from runner_support import CHOSEN
 
 class ContentFirstTests(DeckCase):
-    def test_a_deck_is_drawn_from_its_words_without_a_stop_unless_the_form_asks(self):
+    def test_slide_text_is_approved_first_unless_the_form_turns_that_off(self):
         self.engine.content_first = True
-        root = self.begin(flow='desk')
+        # The slide text comes first unless the form turns that off.
+        self.assertIn('deck_content', self.engine._load(self.begin(flow='desk')))
+        root = self.begin(title='Another deck', flow='desk', slide_text_review=False)
         self.assertNotIn('deck_content', self.engine._load(root))
         self.assertFalse((self.view(root)['outline'] or {}).get('waiting'))
         self.assertTrue(self.workers.of('section'))
         with self.assertRaises(WorkspaceError):
-            self.start(title='Another', deck_target='pptx', brand=CHOSEN, flow='desk',
+            self.start(title='A third', deck_target='pptx', brand=CHOSEN, flow='desk',
                        slide_text_review='yes')
 
     def test_text_review_then_design_with_exact_approval_and_no_early_render(self):

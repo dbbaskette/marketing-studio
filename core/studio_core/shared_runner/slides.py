@@ -16,6 +16,7 @@ import re
 import shutil
 import tempfile
 import threading
+import time
 from pathlib import Path
 
 
@@ -38,6 +39,10 @@ GALLERY = REFERENCES / 'gallery'    # one drawn slide for each relation, as JSON
 READ_MOST = 60_000      # characters of one guidance file that are handed on
 RELATIONS = ('order', 'dependency', 'hierarchy', 'membership', 'contrast', 'parallel',
              'overlap', 'quantity', 'none')   # what a slide can show, as the tool names them
+# A Google preview read back while its file changed is refused with these words, and
+# previewed again this many times in all, this long apart.
+CHANGED = 'changed while it was being read'
+PREVIEW_TRIES, PREVIEW_PAUSE = 3, 2.0
 POOL = 4   # the Google preview decks Harness Slides keeps, unless HARNESS_PREVIEW_POOL_SIZE says
 _POOLS: dict = {}
 _POOLS_HELD = threading.Lock()
@@ -276,28 +281,52 @@ class Slides:
 
     def preview(self, compiled: Path, folder: Path, renderer: str,
                 file_id: str | None = None, slide: str | None = None,
-                design: Path | None = None, section: bool = False) -> dict:
+                design: Path | None = None, section: bool = False,
+                own: bool = False) -> dict:
         """Render what was compiled and return each slide as a picture, in a new folder.
         `slide` names one slide to draw; the whole deck is still rendered. With `design`,
         the build is checked first against the design approved there now, as `compile`
-        checks it."""
+        checks it. With `own`, a Google preview is kept in a file of this deck's own,
+        named after the deck, where the tool has a pool it would otherwise reuse: the
+        deck a person may open says whose it is, and no other preview writes to it.
+
+        Google can change a preview file while it is read back, when it is open in a
+        browser say. The tool refuses that read and says to preview again, so it is
+        previewed again here, a few times, before the refusal is passed on."""
         if renderer not in RENDERERS:
             raise WorkspaceError(f'A preview is rendered through {RENDERERS[0]} or '
                                  f'{RENDERERS[1]}, not {renderer}.')
         args = ['compose', 'preview', '--file', str(compiled), '--output', str(folder),
                 '--renderer', 'google' if renderer == 'drive' else 'local']
         # A tool with a preview pool reuses its own few preview decks: no file is named.
-        named = bool(file_id) and renderer == 'drive' and not self.has('google-preview-pool')
-        rest = [*(['--slide', slide] if slide else []), *_bound(design, section)]
-        with self.turn(renderer), _new(folder):
+        pooled = renderer == 'drive' and self.has('google-preview-pool')
+        own = own and pooled
+        named = bool(file_id) and renderer == 'drive' and (own or not pooled)
+        rest = [*(['--new-preview-file'] if own else []),
+                *(['--slide', slide] if slide else []), *_bound(design, section)]
+
+        def once() -> dict:
             try:
-                shown = self._json(*args, *(['--file-id', file_id] if named else []), *rest)
+                return self._json(*args, *(['--file-id', file_id] if named else []), *rest)
             except Refused as refusal:
                 # The file named was taken over by a newer preview: preview again, unnamed.
                 if not named or not ('preview-replaced' in refusal.codes or any(
                         'replaced by a newer one' in line for line in refusal.problems)):
                     raise
-                shown = self._json(*args, *rest)
+                return self._json(*args, *rest)
+
+        existed = Path(folder).exists()
+        with self.turn(renderer), _new(folder):
+            for left in range(PREVIEW_TRIES - 1, -1, -1):
+                try:
+                    shown = once()
+                    break
+                except Refused as refusal:
+                    if not left or not any(CHANGED in line for line in refusal.problems):
+                        raise
+                    if not existed:   # the tool writes into a new folder each time
+                        shutil.rmtree(folder, ignore_errors=True)
+                    time.sleep(PREVIEW_PAUSE)
             if not shown.get('deck') or not isinstance(shown.get('slides'), list):
                 raise WorkspaceError('The slides tool rendered a preview and did not say '
                                      'where its slides are. Check that it is installed '
@@ -494,7 +523,7 @@ class Slides:
         return self._json('drive', 'import', '--file', str(deck), '--name', name)
 
 
-NAMES = ('VARIABLE', 'MINIMUM', 'RENDERERS', 'SCRIPT', 'TIMEOUT', 'LEAD', 'PROGRAMS', 'COUNTED',
+NAMES = ('VARIABLE', 'MINIMUM', 'RENDERERS', 'CHANGED', 'PREVIEW_TRIES', 'PREVIEW_PAUSE', 'SCRIPT', 'TIMEOUT', 'LEAD', 'PROGRAMS', 'COUNTED',
          'NOISE', 'PREVIEWING', 'GUIDES', 'REFERENCES', 'GALLERY', 'READ_MOST', 'RELATIONS',
          'POOL', '_POOLS', '_POOLS_HELD', 'pool_size', '_pooled', 'locations', 'find_runtime',
          'run_command', '_numbers', '_blocked', '_bound', 'example', 'read_guidance', 'ready')

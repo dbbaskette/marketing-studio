@@ -599,7 +599,8 @@ def render(slides, compiled: Path, folder: Path, how: dict) -> dict:
     all the same. Returns what the slides tool returned."""
     with turn(turn_file(how, slides), slots(how, slides)):
         return _in_drive(how, lambda known: slides.preview(
-            compiled, folder, how['renderer'], file_id=known, **against(how)))
+            compiled, folder, how['renderer'], file_id=known, **against(how),
+            **({'own': True} if how.get('own') else {})))
 
 
 def _in_drive(how: dict, made) -> dict:
@@ -617,7 +618,8 @@ def _in_drive(how: dict, made) -> dict:
                                    **({'pool': receipt} if receipt else {})})
 
     try:
-        found = made(known.get('id'))
+        # A deck's own file is never one of the tool's pool, which other previews reuse.
+        found = made(None if how.get('own') and known.get('pool') else known.get('id'))
     except WorkspaceError as refusal:  # a render that failed may have made its file
         left = getattr(refusal, 'left', None) or {}
         remember(left.get('fileId'), left.get('url'))

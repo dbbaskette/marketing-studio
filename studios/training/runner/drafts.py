@@ -1119,7 +1119,8 @@ def standing(engine, root, record: dict | None = None, found=None,
     if problem:
         phase, now = 'stopped', 'needs-you'
         words = 'Stopped: something went wrong'
-        said = problem.get('what') or sentence
+        # The card says it in one line; what happened, in full, is in the stop below it.
+        said = (problem.get('what') or sentence).split('. ')[0].rstrip('.') + '.'
         nxt = {'kind': 'problem', 'label': 'See what went wrong', 'material': None,
                'level': '', 'slide': None}
     elif state in ('paused', 'stopped'):

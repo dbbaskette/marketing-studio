@@ -316,6 +316,33 @@ class CommandTests(unittest.TestCase):
         self.assertEqual(self.ran[-1][2:], ['compose', 'preview', '--file', '/d/c', '--output',
                                             '/d/p', '--renderer', 'google'])
 
+    def test_a_preview_read_while_its_file_changed_is_previewed_again(self):
+        shown = {'deck': '/d/p/deck.pptx', 'deckSha256': 'abc', 'slides': []}
+        changed = (1, '', 'The preview deck changed while it was being read; preview again.\n')
+        self.slides._asked_capabilities = True
+        with mock.patch.object(slides, 'PREVIEW_PAUSE', 0):
+            self.answers = [changed, changed, (0, json.dumps(shown), '')]
+            self.assertEqual(self.slides.preview('/d/c', '/d/p', 'drive')['deck'], shown['deck'])
+            self.assertEqual(len(self.ran), 3)
+            # It is tried three times in all, then the refusal is passed on.
+            self.answers = [changed, changed, changed, (0, json.dumps(shown), '')]
+            with self.assertRaisesRegex(slides.Refused, 'changed while it was being read'):
+                self.slides.preview('/d/c', '/d/p', 'drive')
+            self.assertEqual(len(self.ran), 6)
+
+    def test_a_deck_keeps_a_named_preview_file_of_its_own_where_the_tool_has_a_pool(self):
+        shown = {'deck': '/d/p/deck.pptx', 'deckSha256': 'abc', 'slides': []}
+        self.slides._capabilities = frozenset({'google-preview-pool'})
+        self.slides._asked_capabilities = True
+        self.answers = [(0, json.dumps(shown), ''), (0, json.dumps(shown), '')]
+        self.slides.preview('/d/c', '/d/p', 'drive', own=True)
+        self.slides.preview('/d/c', '/d/p', 'drive', file_id='file-9', own=True)
+        self.assertEqual([command[2:] for command in self.ran][-2:], [
+            ['compose', 'preview', '--file', '/d/c', '--output', '/d/p', '--renderer',
+             'google', '--new-preview-file'],
+            ['compose', 'preview', '--file', '/d/c', '--output', '/d/p', '--renderer',
+             'google', '--file-id', 'file-9', '--new-preview-file']])
+
     def test_a_preview_file_a_newer_preview_replaced_is_previewed_again_unnamed(self):
         shown = {'deck': '/d/p/deck.pptx', 'deckSha256': 'abc', 'slides': []}
         self.answers = [(1, '', 'That preview has been replaced by a newer one; preview '

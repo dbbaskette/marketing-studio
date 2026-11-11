@@ -178,6 +178,7 @@ import re
 import shutil
 import tempfile  # noqa: F401  read by the shared parts
 import threading  # noqa: F401  read by the shared parts
+import time  # noqa: F401  read by the shared parts
 from pathlib import Path
 
 import runner  # noqa: F401  puts the core on the import path

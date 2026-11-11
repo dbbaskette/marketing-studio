@@ -5156,11 +5156,12 @@ function shapeStep(draft) {
       (on) => { draft.walkthrough = on; }, 'walkthrough'),
     make('p', 'quiet field-hint', 'Optional. Review how each slide will be drawn before the deck is built.'));
   walk.hidden = used.hidden;
-  // The deck is drawn as soon as its words are written. A stop to approve them is asked for.
+  // What the deck says comes to the person as text before any slide is drawn, unless they
+  // turn that off here.
   const words = add(make('div', 'field'),
-    trainingTick('Approve the slide text before the deck is drawn', draft.slideTextReview,
+    trainingTick('Approve the slide text before the deck is drawn', draft.slideTextReview !== false,
       (on) => { draft.slideTextReview = on; }, 'slide-text-review'),
-    make('p', 'quiet field-hint', 'Optional. Without it the deck is drawn straight from its words, and you change either on the desk.'));
+    make('p', 'quiet field-hint', 'On to start with: you read and approve every slide’s words and notes as text, and only then is the deck drawn. Turn it off to have the deck drawn straight from its words.'));
   words.hidden = used.hidden;
   const deck = choice('The slide deck', DECKS.map((kind) => kind[1]), draft.deck, (index) => {
     draft.deck = index;

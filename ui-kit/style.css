@@ -4344,6 +4344,7 @@ body[data-product="Training Studio"] .cult-tab-rail > [role="tab"] {
   background: var(--yours-wash);
   box-shadow: 0 0 0 0 color-mix(in srgb, var(--yours-fill) 40%, transparent);
 }
+.move-card > *, .desk-problem > * { min-width: 0; overflow-wrap: anywhere; }
 .move-card-new { animation: move-arrives 0.5s cubic-bezier(0.2, 1.3, 0.4, 1); }
 /* In a band above the work the move is one compact block, so the work starts higher. */
 .workbench-head > .move-card { padding: 0.7rem 1rem; gap: 0.3rem; }
