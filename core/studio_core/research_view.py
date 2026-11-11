@@ -86,7 +86,11 @@ def _account(folder, questions):
         'report': (folder / 'report.md').read_text(encoding='utf-8'),
         'evidence': (folder / 'evidence.md').read_text(encoding='utf-8'),
         'check': {'accepted': accepted, 'creator_approved': bool(facts.get('creator_review')),
-                  'said': ('The creator chose which flagged material to include or exclude. '
+                  'said': ('An assistant decided which flagged material to include or exclude; the creator '
+                           'has not reviewed those choices. The independent check and each choice, with its '
+                           'reason, remain recorded in the evidence.'
+                           if (facts.get('creator_review') or {}).get('by') == 'assistant' else
+                           'The creator chose which flagged material to include or exclude. '
                            'Warnings appear only where requested; the independent check and creator choices remain recorded.'
                            if facts.get('creator_review') else CHECKED if accepted else UNCHECKED),
                   'coverage': assessment.get('coverage'),

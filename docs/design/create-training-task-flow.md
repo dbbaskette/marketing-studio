@@ -75,8 +75,10 @@ all investigators, and independent checking waits for the assembled dossier.
 Completed research areas and section contributions survive unrelated failures.
 The final research brief now has a narrow assembly role and uses the saved
 combining allowance (issue #377, merged in PR #380).
-Training Studio stops after one independent check per explicit attempt. Remaining
-flags become creator choices, with the original independent verdict retained.
+Training Studio runs one independent check per explicit attempt. In a new training an
+assistant decides the remaining flags and the run carries on (recorded as automatic,
+never as the creator's); where the form asked, or in a saved training, remaining
+flags become creator choices. The original independent verdict is retained either way.
 Exclusions also omit dependent content. An explicit retry can request one correction
 and another check; ordinary viewing or saving decisions starts no provider work.
 Final-author objections survive revisions to other sections.

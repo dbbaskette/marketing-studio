@@ -1499,6 +1499,10 @@ class Engine(Reviewing):
                 if desk and self.content_first and form.get('slide_text_review') \
                         and not form.get('walkthrough'):
                     record['deck_content'] = deck_content.PROTOCOL
+                if desk and not form.get('flags_review'):
+                    # Flags the independent check leaves are decided by an assistant, so
+                    # the training carries on; the form can ask to decide them yourself.
+                    record['research_flags'] = 'assistant'
                 if desk:
                     record.update(schema=drafts.SCHEMA, flow=drafts.FLOW, drafts={
                         'jobs': [], 'updates': {}, 'findings_before': None})
@@ -4364,6 +4368,12 @@ class Engine(Reviewing):
                                 'label': 'Retry independent check'})
                     return
                 if getattr(refusal, 'creator_review', None):
+                    from runner import research_decision
+                    # A training started to decide flags itself has an assistant choose,
+                    # and carries on; where it cannot, the creator's stop below stands.
+                    if research_decision.enabled(self._load(root)) \
+                            and research_decision.automatic(self, root, run):
+                        return
                     self._problem(root, 'research', 'waiting', str(refusal),
                         'The draft, source citations and independent-check notes are saved. '
                         'Decide on flagged content without starting another model job.',

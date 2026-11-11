@@ -124,6 +124,11 @@ def project(record, found, cards, state, sentence, *, queued=False, mine=True):
         rows = progress.get(key) or (progress.get('workstreams') if key == 'streams' else []) or []
         if rows:
             research['counts'].append({'label': label, 'done': sum(row.get('status') in accepted for row in rows), 'total': len(rows)})
+    if progress.get('phase') == 'assistant-decided':
+        research['decision'] = ('An assistant decided the flagged items; its choices and the '
+                                'independent-check notes are kept in the evidence.')
+        if research['state'] == 'complete':
+            research['words'] = 'Flags decided automatically'
     if progress.get('phase') == 'creator-approved':
         research['decision'] = 'Creator choices are saved; the independent-check notes are kept in the evidence.'
         if research['state'] == 'complete':

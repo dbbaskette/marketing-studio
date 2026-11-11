@@ -33,9 +33,16 @@ scope and approval consequence stay visible. Incomplete-scan warnings stay visib
 **Approve outline & research** approves that exact edited scope. Only retained sections
 become research items, with your additional questions included. Up to three areas run in
 parallel within the saved source and round limits. Combining and an independent
-check still cover the whole dossier. Unresolved flags become Include / Include with warning / Exclude choices;
-save your choices and explicitly continue. Warnings appear only where requested, and
-excluded findings also omit dependent content. The teaching plans and selected materials
+check still cover the whole dossier. An assistant then decides what the check flags, and the training carries on: it keeps a
+minor point as written, adds a warning where the doubt is real, and leaves out only a
+claim that a source directly contradicts and that is very important to what is taught.
+When sources disagree, the newer document usually wins. Each choice and its reason is in
+the evidence under **Automatic decisions and independent-check notes**, which says the
+creator has not reviewed them; it is never recorded as your decision. If the assistant
+hands nothing back, every flagged item is included with a warning. Tick **Decide flagged
+research myself** on the form and unresolved flags become your Include / Include with
+warning / Exclude choices instead; save them and explicitly continue. Trainings already
+started keep your decision. Excluded findings also omit dependent content. The teaching plans and selected materials
 then use your approved scope and accepted research, with no second topics approval.
 A deck is drawn straight from its words, with no stop: change either on the desk.
 Tick **Approve the slide text before the deck is drawn** on the form to keep that

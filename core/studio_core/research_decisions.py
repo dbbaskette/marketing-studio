@@ -1,7 +1,9 @@
-"""Explicit creator disposition, separate from Harness Research's independent verdict.
+"""A disposition of flagged research, separate from Harness Research's independent verdict.
 
 The original helper bundle stays untouched. A deterministic consumer copy carries
-the creator's choices, dependency exclusions and optional uncertainty labels.
+the choices, dependency exclusions and optional uncertainty labels. The choices are the
+creator's own, or, with `by='assistant'`, an assistant's automatic ones: the copy says
+which in its words and its receipt, and never calls an automatic choice the creator's.
 """
 import copy
 import hashlib
@@ -13,6 +15,8 @@ from studio_core import research_contract as rc
 
 OWNER = 'training-studio-creator-research'
 STATUS = 'creator-approved'
+ASSISTANT = 'assistant'
+WHO = 'Training Studio’s automatic review'
 
 
 def digest(value):
@@ -93,7 +97,7 @@ class CreatorReview(ValueError):
                          'No automatic correction loop was started.')
 
 
-def resolve(base, choices, *, legacy=False):
+def resolve(base, choices, *, legacy=False, by=None, reasons=None):
     """Conservative exclusion closure; an included parent never restores a rejected child."""
     items = flags(base, legacy=legacy)
     if not items or not isinstance(choices, dict) or set(choices) != {row['id'] for row in items} \
@@ -107,6 +111,8 @@ def resolve(base, choices, *, legacy=False):
     warned = set(uncertain) if choices.get('assessment:unreviewed') == 'include' else set()
     notes = {row['id']: row['text'] if not legacy and row['kind'] == 'assessment' else row['note'] for row in items}
     def marked(text):
+        if by == ASSISTANT:
+            return WHO + ' included this with a warning — independent verification is unresolved. ' + text
         return 'Creator included with warning — independent verification is unresolved. ' + text
     def decision(key, dependencies=()):
         if choices.get(key) == 'exclude' or excluded.intersection(dependencies):
@@ -145,7 +151,7 @@ def resolve(base, choices, *, legacy=False):
     for ident, block in prose_items(value):
         action = decision('prose:' + ident, block.get('refs', []))
         if action == 'exclude':
-            block.update(text='Omitted by the creator because this passage or its supporting claim was excluded.', refs=[], kind='gap')
+            block.update(text='Omitted by ' + (WHO if by == ASSISTANT else 'the creator') + ' because this passage or its supporting claim was excluded.', refs=[], kind='gap')
         elif action == 'include':
             block['text'] = marked(block['text'])
     if not value['facts'] or not value['findings']:
@@ -155,6 +161,9 @@ def resolve(base, choices, *, legacy=False):
                                'excluded': sorted(excluded), 'uncertain': sorted(uncertain)}
     if not legacy:
         value['creator_review']['warned'] = sorted(warned)
+    if by == ASSISTANT:
+        value['creator_review'].update(by=ASSISTANT, reasons={
+            key: str((reasons or {}).get(key) or '') for key in choices})
     return value
 
 
@@ -164,6 +173,7 @@ def md(text):
 
 
 def render(value, *, legacy=False):
+    automatic = value['creator_review'].get('by') == ASSISTANT
     def refs(ids):
         return ', '.join(f'[{md(ident)}](evidence.md#{ident})' for ident in ids)
     def block(item):
@@ -172,12 +182,14 @@ def render(value, *, legacy=False):
               'not accepted every item. Preserve warnings and qualifications; do not use '
               'excluded claims.\n\n')
     if not legacy:
-        banner = ('> Preserve the creator-selected warnings below and do not reuse excluded claims.\n\n'
+        banner = ('> Preserve the ' + ('automatic' if automatic else 'creator-selected')
+                  + ' warnings below and do not reuse excluded claims.\n\n'
                   if 'include' in value['creator_review']['choices'].values() else '')
     if not legacy:
         for key, choice in value['creator_review']['choices'].items():
             if key.startswith('assessment:') and choice == 'include':
-                banner += '> Creator included with warning: ' + md(value['creator_review']['notes'][key]) + '\n\n'
+                banner += ('> ' + WHO + ' included with warning: ' if automatic
+                           else '> Creator included with warning: ') + md(value['creator_review']['notes'][key]) + '\n\n'
     heading = '# ' + md(value['topic']) + '\n\n' + banner
     report, brief, evidence = heading, heading, heading
     for key in ('sections', 'brief'):
@@ -213,28 +225,34 @@ def render(value, *, legacy=False):
             if source.get(key):
                 path = source[key].removeprefix('research/')
                 evidence += '[' + ('Saved original' if key == 'original_snapshot' else 'Saved capture') + '](' + quote(path, safe='/') + ')\n\n'
-    notes = '## Creator decisions and independent-check notes\n\n'
+    notes = ('## Automatic decisions and independent-check notes\n\nAn assistant made these '
+             'choices for Training Studio. The creator has not reviewed them.\n\n' if automatic
+             else '## Creator decisions and independent-check notes\n\n')
     for key, choice in value['creator_review']['choices'].items():
-        notes += '- ' + md(key) + ': **' + {'include-plain': 'Included', 'include': 'Included with warning', 'exclude': 'Excluded'}[choice] + '**. ' + md(value['creator_review']['notes'][key]) + '\n'
+        notes += '- ' + md(key) + ': **' + {'include-plain': 'Included', 'include': 'Included with warning', 'exclude': 'Excluded'}[choice] + '**. ' + md(value['creator_review']['notes'][key]) + (
+            ' Why: ' + md(value['creator_review']['reasons'][key])
+            if automatic and value['creator_review']['reasons'].get(key) else '') + '\n'
     notes += '\n'
     return {'report.md': report + (notes if legacy else ''),
             'brief.md': brief + (notes if legacy else ''), 'evidence.md': evidence + notes}
 
 
-def build(base, choices, inputs, *, schema=2):
-    value = resolve(base, choices, legacy=schema == 1)
+def build(base, choices, inputs, *, schema=2, by=None, reasons=None):
+    value = resolve(base, choices, legacy=schema == 1, by=by, reasons=reasons)
     value['digest'] = digest([base, choices, inputs] if schema == 1 else [schema, base, choices, inputs])
     receipt = {'schema': schema, 'base': base, 'choices': choices, 'inputs': inputs}
+    if by == ASSISTANT:
+        receipt.update(by=ASSISTANT, reasons=value['creator_review']['reasons'])
     files = render(value, legacy=schema == 1)
     files.update({'facts.json': json.dumps(value, ensure_ascii=False), 'creator.json': json.dumps(receipt, ensure_ascii=False)})
     return value, files
 
 
-def publish(source, destination, choices, inputs, expected=None):
+def publish(source, destination, choices, inputs, expected=None, by=None, reasons=None):
     base, original = rc.read_bundle(source, complete=False)
     if expected is not None and expected != digest([base, original]):
         raise ValueError('The reviewed draft changed before saving. Reopen its flags.')
-    value, files = build(base, choices, inputs)
+    value, files = build(base, choices, inputs, by=by, reasons=reasons)
     if rc.inside(destination, 'output.json').exists(): rc.read_bundle(destination, complete=False)
     elif any(rc.inside(destination, name).exists() for name in rc.ARTIFACTS):
         raise ValueError('Existing research output has no owned manifest; preserve it.')
@@ -256,7 +274,8 @@ def validate(root, value, manifest):
     receipt = json.loads(rc.inside(root, 'creator.json').read_text())
     if receipt.get('schema') not in (1, 2) or manifest.get('status') != STATUS:
         raise ValueError('Unrecognized creator decision record.')
-    expected, files = build(receipt['base'], receipt['choices'], receipt['inputs'], schema=receipt['schema'])
+    expected, files = build(receipt['base'], receipt['choices'], receipt['inputs'], schema=receipt['schema'],
+                            by=receipt.get('by'), reasons=receipt.get('reasons'))
     if expected != value:
         raise ValueError('Creator decisions and research describe different revisions.')
     for name, text in files.items():
