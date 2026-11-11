@@ -71,7 +71,11 @@ assistant work and grey boxes are Blog Studio's own steps.
 
 ## Finish without losing your voice
 
-**Polish** opens Review mode for marked copy edits. A voice guide and Humanize can
+**Finishing**, the one filled button on the desk, opens every finishing tool.
+**Finish this post** at its top runs the usual pass in one go: copy edit and more
+human-sounding wording marked in your text as one review beside the Quick check, then a
+check of your claims against your sources. Copy, Download, Google Doc actions and Mark as
+published are under **Share**. A voice guide and Humanize can
 add wording suggestions, while facts, quotations, code and structure remain
 protected. You can accept individual changes, edit them, reject them or use the
 available batch actions; a suggestion that needs your judgment stays for review.

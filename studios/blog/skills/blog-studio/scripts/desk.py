@@ -1470,7 +1470,7 @@ ROUTES = {
     # Include a GEO review: this post's own choice, kept in its record (desk_jobs.geo_due).
     'geo-option': {'id', 'include'},
     # Review mode's check: Copy edit, then Humanize when it is on (desk_jobs.review).
-    'review': {'id', 'seen', 'humanize', 'voice_guide'},
+    'review': {'id', 'seen', 'humanize', 'voice_guide', 'claims'},
     'apply': {'id', 'seen', 'job', 'items', 'all'},
     'skip': {'id', 'job', 'items'},
     # Review mode's Undo after Reject: suggestions set aside here are open again.
@@ -1707,6 +1707,7 @@ def dispatch(root, action, data):
             seen,
             data['humanize'] if 'humanize' in data else desk_jobs.PINNED,
             data['voice_guide'] if 'voice_guide' in data else desk_jobs.PINNED,
+            claims=data.get('claims') is True,
         )
     elif action in ('apply', 'skip', 'unskip'):
         import desk_finish

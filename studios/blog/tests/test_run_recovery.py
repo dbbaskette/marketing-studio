@@ -1091,21 +1091,30 @@ class RunFailureTests(ResearchCase):
         )
         self.assertIn('kept on this computer', shown['error'])
 
-    def test_research_itself_stops_at_the_steps_limit(self):
+    def test_research_is_never_ended_for_how_long_it_takes(self):
         found = self.research_run()
         directory, _, run = runner.load(self.root, found['id'])
         _, payload, _ = runner.job(self.root, found['id'])
+        limits = []
+        answering = research_worker()
+
+        def worker(*args, **options):
+            limits.append(options.get('seconds'))
+            return answering(*args, **options)
+
         with (
             patch.object(research_contract, 'Workflow', FakeWorkflow),
             patch.object(research_contract, 'runtime_for', lambda saved, runtime=None: '/x'),
             tempfile.TemporaryDirectory() as temp,
-            self.assertRaises(blog_worker.WorkerFailure) as caught,
         ):
-            synthesis_research.generate(
-                Path(temp), run, payload, research_worker(), seconds=0, stop=threading.Event()
-            )
-        self.assertEqual(caught.exception.reason, 'time-limit')
-        self.assertIn('ran out of the time a step may take', str(caught.exception))
+            # A limit of no time at all is passed, and nothing stops for it: the research
+            # runs on to its scripted end, the check's refusal.
+            with self.assertRaises(research_contract.ReviewRefused):
+                synthesis_research.generate(
+                    Path(temp), run, payload, worker, seconds=0, stop=threading.Event()
+                )
+        self.assertTrue(limits)
+        self.assertEqual(set(limits), {None})
 
 
 class MissingAssistantTests(MeteredWorkerTests):

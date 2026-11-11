@@ -1052,23 +1052,14 @@ def research_run(engine, job):
     (`_land_research`), under the lock, as one team decision."""
     from studio_core import model_profiles, research_contract
 
-    import time
-
     import blog_activity
-    import blog_worker
 
     root, stop = engine.root, engine.stop
-    deadline = time.monotonic() + job['seconds']  # One limit for the plan and the research.
     ident = job['metadata']['article']
     studio.item(root, 'articles', ident)
 
     def left():
-        remaining = int(deadline - time.monotonic())
-        if remaining <= 0:
-            raise blog_worker.WorkerFailure(
-                'Research ran out of the time a step may take.', 'time-limit'
-            )
-        return remaining
+        return None  # Research is never ended for how long it takes; Stop is the person's.
 
     def ask(data, guidance, step, web=False):
         if stop.is_set():
@@ -1690,9 +1681,10 @@ def humanize_level(value):
     return value
 
 
-def review(root, ident, seen, humanize=PINNED, voice_guide=PINNED):
+def review(root, ident, seen, humanize=PINNED, voice_guide=PINNED, claims=False):
     """Queue Check spelling and grammar: Copy edit, then Humanize at the pinned strength.
-    One job runs at a time per blog; the second is queued when the first settles."""
+    One job runs at a time per blog; the second is queued when the first settles. With
+    `claims` (the finishing pass), Check facts against sources follows as the last step."""
     record = review_record(root, ident)
     level = record.get('humanize') if humanize is PINNED else humanize_level(humanize)
     if level not in HUMANIZE_LEVELS:
@@ -1712,7 +1704,11 @@ def review(root, ident, seen, humanize=PINNED, voice_guide=PINNED):
         seen,
         'copyedit',
         guide=voice,
-        chain={'review': chain, **({'then': level} if level else {})},
+        chain={
+            'review': chain,
+            **({'then': level} if level else {}),
+            **({'after': 'facts'} if claims else {}),
+        },
     )
     record.update(chain=chain, copyedit=job['id'], next=None, ended=not level, problem='')
     if voice:
@@ -1729,8 +1725,11 @@ def _review_next(root, job):
 
     meta, ident = job['metadata']['desk'], job['metadata']['article']
     record = review_record(root, ident)
-    if record.get('chain') != meta.get('review') or record.get('ended'):
+    if record.get('chain') != meta.get('review'):
         return None
+    if not (meta.get('then') and not record.get('ended')):
+        # The finishing pass: the claims check is its last step, after the wording.
+        return _review_claims(root, job, record) if meta.get('after') else None
     record['ended'] = True  # Whatever happens next, this step is taken once.
     try:
         if any(busy(other) for other in jobs(root, ident) if other['id'] != job['id']):
@@ -1757,6 +1756,7 @@ def _review_next(root, job):
                 **extra,
                 'review': meta['review'],
                 'seen': draft['revision'],
+                **({'after': meta['after']} if meta.get('after') else {}),
             },
         )
         record['next'] = made['id']
@@ -1766,11 +1766,47 @@ def _review_next(root, job):
     return record.get('next')
 
 
+def _review_claims(root, job, record):
+    """The finishing pass's last step, once: Check facts against sources, as Finishing runs
+    it. A draft it cannot check, one with no sources say, is noted and nothing else stops."""
+    import desk_finish
+
+    meta, ident = job['metadata']['desk'], job['metadata']['article']
+    if record.get('claims'):
+        return None
+    record['claims'] = 'taken'
+    try:
+        if any(busy(other) for other in jobs(root, ident) if other['id'] != job['id']):
+            raise ValueError('Another desk job started first, so the claims check did not.')
+        draft = desk.read(root, ident)
+        kind, payload, guidance, extra = desk_finish.request(root, ident, draft, 'facts')
+        made = _create(
+            root,
+            ident,
+            kind,
+            payload,
+            guidance,
+            {
+                'part': 'finishing',
+                'action': 'facts',
+                **extra,
+                'review': meta['review'],
+                'seen': draft['revision'],
+            },
+        )
+        record['claims'] = made['id']
+    except Exception as error:  # noqa: BLE001 - noted, never a stop for the fixes.
+        record['claims_problem'] = (str(error) or type(error).__name__)[:1000]
+    studio.write_json(_review_path(root, ident), record)
+    return record['claims'] if record['claims'] != 'taken' else None
+
+
 def interrupted(root, job):
     """A desk job Blog Studio found working when it started again (tool_jobs.recover), now
     failed: a check's Copy edit still lets its Humanize go ahead, once. Nothing else
     continues by itself."""
-    if not (job.get('metadata', {}).get('desk') or {}).get('then'):
+    meta = job.get('metadata', {}).get('desk') or {}
+    if not (meta.get('then') or meta.get('after')):
         return
     try:
         _guard(root, job['metadata']['article'])
@@ -2008,8 +2044,9 @@ def _settle(root, job):
     if (job['metadata'].get('desk') or {}).get('start'):
         _advance(root, job)
     if job['kind'] in FINISH:
-        if (job['metadata'].get('desk') or {}).get('then'):
-            _review_next(root, job)  # Review mode's Humanize, after its Copy edit.
+        chained = job['metadata'].get('desk') or {}
+        if chained.get('then') or chained.get('after'):
+            _review_next(root, job)  # Review mode's Humanize, then the pass's claims check.
         # Its proposals wait on this computer: nothing for the team to record, unless the
         # post's own GEO review was queued and its record says so.
         return ident if geo_due(root, ident) else None
@@ -2039,7 +2076,8 @@ def _ended(root, job):
         except ValueError:
             return None
         return job['metadata']['article']  # Shared, so nothing it touched is left behind.
-    if job.get('status') == 'failed' and (job['metadata'].get('desk') or {}).get('then'):
+    chained = job['metadata'].get('desk') or {}
+    if job.get('status') == 'failed' and (chained.get('then') or chained.get('after')):
         try:
             _guard(root, job['metadata']['article'])
         except ValueError:

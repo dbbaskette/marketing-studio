@@ -162,7 +162,7 @@ def generate(
     from performance import extract
 
     forward_usage = blog_worker.forwarded_meter()
-    started = time.monotonic()
+    time.monotonic()
     rounds = [0]  # Author rounds so far; the shared contract allows ROUNDS of them.
 
     def tell(event):
@@ -172,9 +172,6 @@ def generate(
     def call(phase, data, guidance, web=False):
         if stop.is_set() or not owned():
             raise ValueError('Research stopped. Saved work is kept.')
-        remaining = seconds - (time.monotonic() - started)
-        if remaining <= 0:
-            raise blog_worker.WorkerFailure(OUT_OF_TIME, 'time-limit')
         selection = model_profiles.route(
             run,
             'Blog Studio',
@@ -193,7 +190,7 @@ def generate(
                     run['engine'],
                     data,
                     guidance,
-                    seconds=max(1, int(remaining)),
+                    seconds=None,  # never ended for time; `seconds` is kept for callers
                     web=web,
                     stop=stop,
                     model_selection=selection,
@@ -321,12 +318,8 @@ def generate(
             for url in dict.fromkeys(urls):
                 if stop.is_set():
                     raise ValueError('Research stopped. Saved work is kept.')
-                if time.monotonic() - started >= seconds:
-                    raise blog_worker.WorkerFailure(OUT_OF_TIME, 'time-limit')
                 try:
-                    content, origin, kind = blog_library.fetch(
-                        url, scope, deadline=started + seconds
-                    )
+                    content, origin, kind = blog_library.fetch(url, scope)
                     suffix = (
                         '.html' if 'html' in kind else '.txt' if kind.startswith('text/') else ''
                     )

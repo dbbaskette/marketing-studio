@@ -3897,11 +3897,12 @@ async function deskOrderAndOnePath(){
   assert.deepEqual(order(),['title','opening','00000001','aaaaaaaa','12345678'],'after a reorder, the new order');
   await f.run("sDeskChoose(studio.desk,'read','12345678')");
   assert.deepEqual(order(),['title','opening','00000001','aaaaaaaa','12345678']);
-  // Polish from Read, at a section and a scroll, then Back: the same view, section and scroll.
+  // Copy edit from Read, at a section and a scroll, then Back: the same view, section and scroll.
   f.run("window.scrollY=640;window.scrollTo=(x,y)=>{window.scrolledTo=y;}");
   const pressIn=async(nodes,label)=>{const found=nodes.find(n=>n.textContent===label&&n.listeners.click);assert.ok(found,'no '+label);await found.listeners.click();};
   assert.ok(!page().some(n=>n.textContent==='Review and share'),'one way to Finishing: the toolbar’s');
-  await pressIn(page(),'Polish');
+  assert.ok(!page().some(n=>n.textContent==='Polish'),'one door to Finishing: no second button beside the view');
+  await f.run("sDeskFinishOpen(studio.desk,'copyedit')");
   assert.equal(f.run('studio.desk.mode'),'review');
   // A first check: one action, no "again", and words for a check that has not run.
   assert.ok(!descendants(f.get('actions')).some(n=>n.textContent==='Check again'),'no Check again before any check');
@@ -3956,7 +3957,8 @@ async function deskOrderAndOnePath(){
   assert.deepEqual(bar.children.map(n=>n.tagName),['div','details','p'],'Go to section, then View and tools, then the save line');
   assert.equal(bar.children[2].textContent,'','the save line is empty until there is something to say');
   assert.equal(bar.children[2].attributes['aria-live'],'polite');
-  assert.ok(descendants(bar.children[1]).some(n=>n.textContent==='Polish'),'Polish is in the fold');
+  assert.ok(descendants(bar.children[1]).some(n=>n.textContent==='Sources'),'Sources is in the fold');
+  assert.ok(!descendants(bar.children[1]).some(n=>n.textContent==='Polish'),'Finishing opens from the toolbar only');
   f.run('delete window.matchMedia');
 }
 function focusFixtureWith(current,answer){
@@ -4008,13 +4010,13 @@ async function deskGoogleRoundTrip(){
   await press(sheet(),'Close');
   // Bring accepted changes: refused while the desk and the Doc both changed a part, and said.
   compare={preview:'p'.repeat(32),changes:[],refused:['Second part'],waiting:0,ready:false,said:'The Doc and the desk both changed “Second part” since they last agreed. Nothing is brought back, so no desk change is lost.'};
-  await press(descendants(actions().find(n=>/desk-google-menu/.test(n.className||''))),'Bring accepted changes');
+  await press(descendants(actions().find(n=>/desk-share-menu/.test(n.className||''))),'Bring accepted changes');
   assert.ok(sheet().some(n=>n.textContent===compare.said),'the refusal is said');
   assert.ok(!sheet().some(n=>/^Bring \d/.test(n.textContent||'')),'with nothing to bring');
   await press(sheet(),'Close');
   // Ready: each part listed with its comparison, then brought, the earlier text in History.
   compare={preview:'p'.repeat(32),changes:[{kind:'changed',part:'bbbbbbbb',name:'Second part',before:'Second text.',after:'Second text, as accepted.'}],refused:[],waiting:0,ready:true,said:null};
-  await press(descendants(actions().find(n=>/desk-google-menu/.test(n.className||''))),'Bring accepted changes');
+  await press(descendants(actions().find(n=>/desk-share-menu/.test(n.className||''))),'Bring accepted changes');
   assert.ok(sheet().some(n=>n.textContent==='Second part')&&sheet().some(n=>n.textContent==='Changed in the Doc'));
   await press(sheet(),'Bring 1 part to the desk');
   assert.deepEqual(took,{id:'desk-blog',preview:'p'.repeat(32),confirmed:true});
@@ -5171,9 +5173,10 @@ async function deskGoogleDoc(){
   await t.sheet().find(n=>n.textContent==='Make the Doc').listeners.click();
   assert.deepEqual(t.requests.find(r=>r.url==='/api/desk-google-open').data,{id:'desk-blog',expected:'session-v1',confirmed:true});
   assert.equal(t.f.get('sheet').hidden,true);
-  // Outgoing review is visible; the linked Doc menu holds opening and incoming text.
-  const menu=actions().find(n=>n.tagName==='details'&&/desk-google-menu/.test(n.className));assert.ok(menu,'the linked Doc opens from the toolbar');
-  assert.deepEqual(descendants(menu).filter(n=>/menu-item/.test(n.className)).map(n=>n.textContent),['Open the Google Doc ↗','Bring accepted changes']);
+  // Outgoing review is visible; Share holds every other way out, the linked Doc among them.
+  const menu=actions().find(n=>n.tagName==='details'&&/desk-share-menu/.test(n.className));assert.ok(menu,'the linked Doc opens from Share in the toolbar');
+  assert.deepEqual(descendants(menu).filter(n=>/menu-item/.test(n.className)).map(n=>n.textContent),['Copy','Download','Open the Google Doc ↗','Bring accepted changes','Mark as published']);
+  assert.deepEqual(actions().filter(n=>/\bbutton-filled\b/.test(n.className)).map(n=>n.textContent),['Finishing'],'one filled action in the toolbar');
   assert.ok(actions().some(n=>n.textContent==='Review changes to send'));
   assert.equal(descendants(menu).find(n=>n.textContent==='Open the Google Doc ↗').href,'https://docs.google.com/document/d/made/edit');
   assert.ok(!actions().some(n=>n.textContent==='Make a Google Doc'));

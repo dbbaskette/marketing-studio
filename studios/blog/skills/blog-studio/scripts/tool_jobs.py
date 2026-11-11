@@ -321,7 +321,7 @@ def once(engine):
                 saved['engine'],
                 saved['payload'],
                 saved['guidance'],
-                seconds=saved['seconds'],
+                seconds=None,  # a writing or finishing job is never ended for time
                 web=False,
                 stop=engine.stop,
                 model_selection=choice,

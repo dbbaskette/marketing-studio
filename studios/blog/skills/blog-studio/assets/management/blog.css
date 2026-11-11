@@ -270,3 +270,10 @@
 .geo-pointer-says{margin:0;min-width:0}
 .geo-pointer-waits{border-color:var(--yours-fill);background:var(--yours-wash)}
 .geo-pointer-waits>.geo-pointer-says{font-weight:650}
+
+/* A draft to read and no pressing move: the band is one quiet row, so the writing starts higher. */
+.workbench-quiet .workbench-head{grid-template-columns:minmax(0,1fr) auto;gap:.4rem 1.2rem}
+.workbench-quiet .workbench-head>.move-card{display:flex;flex-wrap:wrap;align-items:center;gap:.3rem .8rem;padding:.4rem .8rem}
+.workbench-quiet .move-card>p:not(.move-label){display:none}
+.workbench-quiet .move-card .move-title{font-size:1rem;margin:0}
+.workbench-quiet .move-card .bar{margin:0}

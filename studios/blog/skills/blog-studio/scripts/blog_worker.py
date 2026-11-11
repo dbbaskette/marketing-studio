@@ -466,7 +466,7 @@ fact, figure, name, quotation, link or product detail from an example may appear
 writing unless it is also in the sources, the research or the brief."""
 
 
-def generate(engine, payload, guidance, seconds=900, web=False, stop=None, model_selection=None):
+def generate(engine, payload, guidance, seconds=None, web=False, stop=None, model_selection=None):
     """One process group, disposable working directory, bounded time and output.
 
     Workers have no shell, file tools or connected apps. Public research alone enables
@@ -603,7 +603,8 @@ def _generate(engine, payload, guidance, seconds, web, stop, model_selection, wa
                 )
             except OSError as error:
                 raise cannot_start(engine) from error
-            deadline = time.monotonic() + seconds
+            # No `seconds` is no time limit: the step runs until it ends or is stopped.
+            deadline = None if seconds is None else time.monotonic() + seconds
             spent = (None, None)  # What the CLI reported it used, where it says.
             try:
                 while process.poll() is None:
@@ -612,7 +613,7 @@ def _generate(engine, payload, guidance, seconds, web, stop, model_selection, wa
                     if stop is None:
                         time.sleep(0.1)
                     events.follow()
-                    if time.monotonic() >= deadline:
+                    if deadline is not None and time.monotonic() >= deadline:
                         raise failed(
                             'This step ran out of the time a step may take ('
                             + minutes(seconds)
