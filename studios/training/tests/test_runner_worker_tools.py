@@ -1488,6 +1488,24 @@ class PreviewPoolTests(unittest.TestCase):
                 'remoteReplaced': True})
             self.assertFalse(kept.exists(), 'a link to slides that are no longer these')
 
+    def test_a_decks_own_file_is_never_a_pool_file_or_a_pool_receipt(self):
+        import tempfile
+        from pathlib import Path
+        shown = {'fileId': '1AbCdEfGhIjKlMnOp', 'url': 'https://docs.example.com/own'}
+        for remembered, given in (
+                ({'id': 'pool-2-of-the-tools', 'pool': 'pool-2:7'}, None),   # a pool file
+                ({'id': '1R57W3-NkI6wO-ZNfAS3pb:39'}, None),   # a receipt a failed render left
+                ({'id': '1AbCdEfGhIjKlMnOp'}, '1AbCdEfGhIjKlMnOp'),   # its own, written again
+                ({}, None)):
+            with tempfile.TemporaryDirectory() as folder:
+                kept, asked = Path(folder) / 'deck.json', []
+                if remembered:
+                    kept.write_text(json.dumps(remembered))
+                worker_tools._in_drive({'kept': str(kept), 'own': True},
+                                       lambda known: asked.append(known) or shown)
+                self.assertEqual(asked, [given], remembered)
+                self.assertEqual(json.loads(kept.read_text())['id'], shown['fileId'])
+
 
 class SynthesisPlanLimitTests(unittest.TestCase):
     def test_a_synthesis_plan_holds_at_most_eight_questions(self):
