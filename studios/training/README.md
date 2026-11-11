@@ -91,9 +91,9 @@ Only **Start** begins work.
    guide the selected materials. An assistant decides what the independent check flags, so the
    training carries on; tick **Decide flagged research myself** to make those choices yourself. There is no sample lesson
    to approve.
-4. **Review slide text, if you asked to.** A deck is drawn straight from its words.
-   Tick **Approve the slide text before the deck is drawn** on the form and **Review slide text**
-   opens the Deck tab with one slide at a time first. Correct titles, points and notes
+4. **Review slide text.** Before any slide is drawn, **Review slide text**
+   opens the Deck tab with one slide at a time. Untick **Approve the slide text before the
+   deck is drawn** on the form to have the deck drawn straight from its words. Correct titles, points and notes
    directly; corrections and review position save privately across reloads. The
    Guide, Brief and Plan tabs stay available. **Save corrections** starts no
    assistant or design work. Use **Ask for changes** for an assistant revision, or

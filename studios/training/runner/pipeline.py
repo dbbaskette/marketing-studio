@@ -597,7 +597,7 @@ def check_form(sent: dict, brands=None, *, conversation=False) -> dict:
     if form['walkthrough'] not in (True, False):
         raise WorkspaceError('Say whether to walk through each slide\'s design with true or '
                              'false.')
-    form['slide_text_review'] = sent.get('slide_text_review', False)
+    form['slide_text_review'] = sent.get('slide_text_review', True)
     if form['slide_text_review'] not in (True, False):
         raise WorkspaceError('Say whether to approve the slide text before the deck is drawn '
                              'with true or false.')

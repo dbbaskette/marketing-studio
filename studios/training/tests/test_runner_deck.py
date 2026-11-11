@@ -3477,7 +3477,7 @@ class TroubleTests(DeckCase):
         root = self.saved_begin()
         self.to_outline(root)
 
-        def broken(compiled, folder, renderer, file_id=None, slide=None):
+        def broken(compiled, folder, renderer, file_id=None, slide=None, own=False):
             Path(folder).mkdir(parents=True)
             (Path(folder) / 'deck.pptx').write_bytes(b'PK\x03\x04 cut short')
             raise slides_tool.Refused(['unbound prefix: line 1, column 786'])

@@ -1,5 +1,7 @@
 # Changelog
 
+Unreleased: while a check runs, one status box says what you are waiting on. It names the check, which step it is in (the copy edit, then the wording check), what the assistant is doing this moment with **Show activity**, and **Stop**. The sentence above the draft, the separate activity lines and the long text in the band at the top give way to it, so the same status is no longer said in several places.
+
 Unreleased: **Finish this post**, at the top of Finishing, runs the usual pass in one go. Copy edit and more human-sounding wording (at the strength kept for the blog, medium the first time) are marked in your text as one review beside the Quick check, and a check of your claims against your sources follows; a draft with no sources skips that last step. Every tool still runs on its own.
 
 Unreleased: the desk puts the writing first. With a draft to read and nothing pressing, the progress band is one quiet row. The toolbar has one filled action, **Finishing**, the only door to the finishing tools: **Polish** beside the view switch is gone. Copy, Download, the Google Doc actions and Mark as published are under **Share**; **Review changes to send** stays visible for a linked Doc.

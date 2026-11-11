@@ -171,7 +171,7 @@ class FormTests(StudioCase):
             'research_from': {'documents': False, 'sites': [], 'web': True},
             'yoodli': False, 'materials': ['document', 'brief', 'scenario'],
             'agent': None, 'model': None, 'effort': None, 'research_questions': [],
-            'delivery': 'live', 'walkthrough': False, 'slide_text_review': False,
+            'delivery': 'live', 'walkthrough': False, 'slide_text_review': True,
             'flags_review': False})
 
     def test_selected_materials_use_existing_skip_decisions_and_manual_gate_counts(self):

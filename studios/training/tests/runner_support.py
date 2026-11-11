@@ -810,7 +810,7 @@ class Slides:
         return {'output': str(composition), 'slides': len(slides)}
 
     def preview(self, compiled, folder, renderer, file_id=None, slide=None, design=None,
-                section=False) -> dict:
+                section=False, own=False) -> dict:
         if design is not None:
             self._asked('preview_design', compiled, design, f'section={section}')
             self._bound(self._read(Path(compiled) / 'scene.json')['slides'], design, section)

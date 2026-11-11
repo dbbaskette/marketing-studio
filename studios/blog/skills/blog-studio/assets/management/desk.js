@@ -915,7 +915,7 @@ function sDeskBench(held){
     move?StudioShell.move(move):busyCard?StudioShell.move(busyCard):StudioShell.move({calm:true,title:finished?'Published':'Nothing is yours right now'}));
   // With a draft to read and nothing but the standing next step, the band is one quiet row
   // and the writing starts higher.
-  const quiet=hasText&&!stopped&&!working&&!fixes;
+  const quiet=(hasText&&!stopped&&!working&&!fixes)||check;  // a check has its own status box
   const bench=sNode('div','workbench-top'+(quiet?' workbench-quiet':''));bench.append(...[StudioShell.pulse(move?'yours':working?'working':'still'),head,sDeskGeoPointer(held)].filter(Boolean));
   return bench;
 }
@@ -1789,9 +1789,14 @@ function sReviewHead(held,state){
   const voice=held.view.review?.voice_guide;if(voice)head.append(sNode('p','quiet','Voice guide: '+voice.name+' · revision '+voice.revision+'. Wording changes are suggestions; nothing is applied automatically.'));
   if(held.review?.pendingVoice){const selected=held.review.pendingVoice;head.append(sCard('Use your selected voice',sNode('p','quiet',selected.name+'. This Doc was already on the desk. Start a new check to use the voice you selected; the existing review is kept until then.'),sButton('Polish with the selected voice',button=>sReviewCheck(held,button,selected.humanize,selected.guide),'filled')));}
   if(state.working){
-    const line=sNode('p','desk-working-note',sReviewDoing(state));line.setAttribute('role','status');
+    // One status box for what the person is waiting on: what is being done, in which step,
+    // what it is doing this moment, and Stop. The page's own lede and activity lines give
+    // way to it while it shows (blog.css), so nothing says the same thing twice.
+    const human=state.working.kind==='finish-humanize',steps=state.human?(human?'Step 2 of 2: the wording check. The copy edit is done and its fixes are in your text.':'Step 1 of 2: the copy edit. The wording check follows by itself.'):'';
+    const line=sNode('h2','desk-working-note',sReviewDoing(state));line.setAttribute('role','status');
     const stop=sButton('Stop',async button=>{await busy(button,'Stopping…',async()=>{try{const before=held.view;held.view=await api('desk-stop',{id:held.id,job:state.working.id});sDeskRefresh(held,before);}catch(error){notice(error.message,true);}});});stop.disabled=!sDeskCan(held);sReviewMark(stop,'stop');
-    head.append(sAdd(sNode('div','card review-checking'),line,sAdd(sNode('div','bar'),stop)));
+    const label=sNode('p','move-label','Working now · nothing for you to do');
+    head.append(sAdd(sNode('div','card review-checking review-status'),label,line,steps?sNode('p','review-status-step',steps):null,sNode('p','quiet',sReviewLede(state)),sActivityNow(held.view.activity,{id:held.id}),sAdd(sNode('div','bar'),stop)));
   }else if(held.view.working){const line=sNode('p','desk-working-note',sDeskStatusWords(held));line.setAttribute('role','status');head.append(line);}  // A Quick check Fix, say.
   state.failed.forEach(([tool,error],index)=>{
     const said=sAdd(sNode('div','decision-notice desk-problem'),sNode('p','',(tool==='humanize'?'The check for machine-like wording did not finish: ':'The check did not finish: ')+error));

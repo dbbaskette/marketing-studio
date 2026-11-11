@@ -44,9 +44,9 @@ research myself** on the form and unresolved flags become your Include / Include
 warning / Exclude choices instead; save them and explicitly continue. Trainings already
 started keep your decision. Excluded findings also omit dependent content. The teaching plans and selected materials
 then use your approved scope and accepted research, with no second topics approval.
-A deck is drawn straight from its words, with no stop: change either on the desk.
-Tick **Approve the slide text before the deck is drawn** on the form to keep that
-approval for one training. Mark ready keeps its existing role.
+What a deck says comes to you as text before any slide is drawn: read each slide's
+words and notes, then approve them or ask for changes. Untick **Approve the slide text
+before the deck is drawn** on the form to have a deck drawn straight from its words. Mark ready keeps its existing role.
 
 New trainings prioritize readable output: each level's plan, guide and brief, then
 practice and Yoodli across levels, then decks. Selected inputs still precede the
