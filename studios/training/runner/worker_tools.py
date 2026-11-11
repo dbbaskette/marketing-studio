@@ -537,6 +537,8 @@ VALIDATORS = {'finishing': check_finishing, 'research-plan': check_plan, 'bluepr
 VALIDATORS['research-json'] = check_research_json
 from runner.outline_first import validate as check_provisional_outline
 VALIDATORS['provisional-outline'] = check_provisional_outline
+from runner.research_decision import validate as check_flag_decisions
+VALIDATORS['flag-decisions'] = check_flag_decisions
 
 
 # --- pictures, and the renderer ----------------------------------------------------------

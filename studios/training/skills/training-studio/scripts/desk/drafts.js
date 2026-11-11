@@ -670,7 +670,14 @@ function sourcesStep(draft, brand, looks) {
   }
   return [draft.sourceEditor ? draft.sourceEditor.node : documentsPart(draft, retell, true),
     ...(draft.sourceEditor ? [] : [researchFields(draft, retell, ['documents'])]), looks,
-    questionsField(draft), brand, copiesOption(draft),
+    questionsField(draft),
+    // What the independent check flags is decided by an assistant so the training carries
+    // on; a person can ask to decide those items themself.
+    add(make('div', 'field'),
+      trainingTick('Decide flagged research myself', draft.flagsReview,
+        (on) => { draft.flagsReview = on; }, 'flags-review'),
+      make('p', 'quiet field-hint', 'Optional. Without it an assistant decides what the independent check flags: it keeps minor points, warns on real doubt, and leaves out only an important claim a source directly contradicts, with newer documents usually winning. Each choice and its reason is kept in the evidence.')),
+    brand, copiesOption(draft),
     trainingOptions('Assistant and limits', 'training-assistant',
       ...agentFields(draft, 'new', 'For this training', told), drafted,
       make('p', 'quiet', limitsSays(limits) || 'No limits are set for this computer.'),
@@ -818,6 +825,7 @@ function deskBody(draft) {
     ...(draft.sourceEditor && startPicks(draft).length ? { library: startPicks(draft)
       .map(({ id, revision }) => ({ id, revision })) } : {}),
     research_questions: (draft.researchQuestions || '').split('\n'),
+    ...(draft.flagsReview ? { flags_review: true } : {}),
     deck_target: deck,
     brand: deck ? { brand: draft.brand, variant: draft.variant || null } : null,
     ...(deck ? { delivery: DELIVERIES[draft.delivery || 0][0],

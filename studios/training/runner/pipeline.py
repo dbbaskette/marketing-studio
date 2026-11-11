@@ -601,6 +601,9 @@ def check_form(sent: dict, brands=None, *, conversation=False) -> dict:
     if form['slide_text_review'] not in (True, False):
         raise WorkspaceError('Say whether to approve the slide text before the deck is drawn '
                              'with true or false.')
+    form['flags_review'] = sent.get('flags_review', False)
+    if form['flags_review'] not in (True, False):
+        raise WorkspaceError('Say whether to decide flagged research yourself with true or false.')
     form['research_from'] = research_from(sent)
     form['source_scope'] = scope_of(form['research_from'])
     if not isinstance(sent.get('yoodli', False), bool):
@@ -1619,7 +1622,10 @@ def findings_text(root: Path) -> str:
     """The research as a worker reads it: each question's ID, verdict, summary and quotes."""
     record = workspace.research_record(root) or {'items': [], 'results': {}}
     if record.get('schema') == 2:
-        heading = '# Creator-approved research\n\n' if record.get('creator_review') else '# Reviewed research handoff\n\n'
+        heading = ('# Research with flags decided by an assistant\n\n'
+                   if (record.get('creator_review') or {}).get('by') == 'assistant' else
+                   '# Creator-approved research\n\n' if record.get('creator_review')
+                   else '# Reviewed research handoff\n\n')
         return (heading + research_contract.HANDOFF
                 + ' Keep its conditions, counterevidence and gaps. Facts, interpretations and '
                 'recommendations differ.\n\n'

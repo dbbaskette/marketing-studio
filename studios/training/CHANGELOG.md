@@ -1,5 +1,7 @@
 # Changelog
 
+Unreleased: a new training no longer stops when the independent check flags research. An assistant decides each flagged item: it keeps minor points, warns where the doubt is real, and leaves out only a very important claim that a source directly contradicts, with newer documents usually winning. Each choice and its reason is kept in the evidence as automatic, never as your decision. Tick **Decide flagged research myself** on the form to keep the choices; trainings already started keep them.
+
 Unreleased: assistant work is never stopped for how long it takes, because ending it discards what it had done. **The longest a step may take** is gone from Settings, a time saved there is kept in the file and ignored, and a step runs until it finishes or you press **Stop**. Only the Quick scan keeps its 4.5 minutes, since it has an outline to fall back on. A training saved while stopped for time carries on with **Give it more time and try again**, now with no limit.
 
 Unreleased: a deck is drawn straight from its words. The stop to approve slide text is now asked for: tick **Approve the slide text before the deck is drawn** on the form. Trainings already started keep the approval they began with.

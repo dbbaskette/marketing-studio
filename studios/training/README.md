@@ -88,8 +88,8 @@ Only **Start** begins work.
 3. **Review the training outline.** One bounded Quick scan proposes sections, objectives
    and research questions. Edit, add or remove them, then **Approve outline & research**
    starts research only for that scope. Accepted research and your approved outline
-   guide the selected materials. Unresolved research flags become your decisions
-   before you continue; warnings appear only where requested. There is no sample lesson
+   guide the selected materials. An assistant decides what the independent check flags, so the
+   training carries on; tick **Decide flagged research myself** to make those choices yourself. There is no sample lesson
    to approve.
 4. **Review slide text, if you asked to.** A deck is drawn straight from its words.
    Tick **Approve the slide text before the deck is drawn** on the form and **Review slide text**
