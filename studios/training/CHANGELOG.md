@@ -1,5 +1,7 @@
 # Changelog
 
+Unreleased: a deck no longer stops at "Presentation ID must be a Google Drive ID". A render that failed in the slides tool's shared preview files left a receipt, not a Drive file, as the deck's remembered preview; the deck's own named file is now made new when that is all there is.
+
 Unreleased: a deck drawn from an approved design no longer stops at "The preview deck changed while it was being read". The render the review is made from is now taken again, up to three times, and kept in a Drive file of that deck's own, named after it, as the ordinary whole-deck preview already was. The earlier fix had missed this path.
 
 Unreleased: what a deck says comes to you as text before any slide is drawn, again. **Approve the slide text before the deck is drawn** is ticked to start with on the form; untick it to have the deck drawn straight from its words. Trainings already started keep what they began with.

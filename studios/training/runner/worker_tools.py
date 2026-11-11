@@ -603,6 +603,17 @@ def render(slides, compiled: Path, folder: Path, how: dict) -> dict:
             **({'own': True} if how.get('own') else {})))
 
 
+def _own_id(known: dict) -> str | None:
+    """The Drive file a deck's own preview is written to again, from what was remembered:
+    never one of the tool's pool, which other previews reuse, and never a pool receipt
+    ("ID:generation"), which a failed pool render leaves and which is not a Drive ID."""
+    ident = known.get('id')
+    if known.get('pool') or not isinstance(ident, str) \
+            or not re.fullmatch(r'[A-Za-z0-9_-]+', ident):
+        return None
+    return ident
+
+
 def _in_drive(how: dict, made) -> dict:
     """What `made(file_id)` renders, with the deck's one file in Google Drive remembered:
     the one it was given, written again, or the one it made. A render that failed after it
@@ -618,8 +629,7 @@ def _in_drive(how: dict, made) -> dict:
                                    **({'pool': receipt} if receipt else {})})
 
     try:
-        # A deck's own file is never one of the tool's pool, which other previews reuse.
-        found = made(None if how.get('own') and known.get('pool') else known.get('id'))
+        found = made(_own_id(known) if how.get('own') else known.get('id'))
     except WorkspaceError as refusal:  # a render that failed may have made its file
         left = getattr(refusal, 'left', None) or {}
         remember(left.get('fileId'), left.get('url'))
