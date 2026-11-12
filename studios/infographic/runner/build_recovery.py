@@ -35,8 +35,18 @@ def read(store, ident, project=None):
         if not value['current']: value.update(next_action=None, next_label='Earlier recovery; review the current page')
         category = value.get('error_category')
         from .render import RENDER_ERRORS
+        over = value.pop('over', None)
+        value.pop('fix', None)
         if category in RENDER_ERRORS:
             value['message'], value['help'] = RENDER_ERRORS[category]
+        elif category == 'too-dense' and value['step'] == 'composition':
+            far = type(over) is int and 1 <= over <= 999
+            value['message'] = 'This story is too long to fit one page at a readable size' + (
+                f': about {over}% too long.' if far else '.')
+            value['help'] = ('Shorten the story, then choose it and build the page again. Building again '
+                             'without shortening it will stop here. Nothing was shrunk or left out.')
+            value['fix'] = 'shorten'
+            if far: value['over'] = over
         else:
             value.pop('message', None)
             value.pop('help', None)
@@ -60,6 +70,11 @@ def keep(store, ident, step, completed=(), *, state='working', error=None, value
         if step in ('font-check', 'preview', 'export'):
             data['error_category'] = category
             data['message'], data['help'] = RENDER_ERRORS[category]
+        from .contracts import TooDense
+        if step == 'composition' and isinstance(error, TooDense):
+            # A story too long for the page is the person's to shorten: a retry cannot help.
+            data['error_category'] = 'too-dense'
+            if type(error.over) is int: data['over'] = error.over
         reference = secrets.token_hex(8)
         data['diagnostic'] = reference
         # No exception values, prompts, credentials or absolute paths enter the receipt.

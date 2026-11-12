@@ -186,6 +186,28 @@ class SafeRendererFailures(Isolated):
         self.assertIn('Settings', NO_RENDERER)
         self.assertEqual(build_recovery.read(self.store, self.ident), before)
 
+    def test_a_story_too_long_for_its_page_says_so_and_asks_for_a_shorter_story(self):
+        from runner.contracts import TooDense
+        revision = self.store.read(self.ident)['revision']
+        with mock.patch('runner.scene.adopt_best', side_effect=TooDense('private words /machine/path', 30)), \
+                mock.patch.object(self.engine.store, 'read', wraps=self.engine.store.read) as read:
+            read.side_effect = lambda ident: {**self.store.__class__.read(self.store, ident), 'scene': None}
+            with self.assertRaises(TooDense):
+                self.engine.build(self.ident, expected_revision=revision, request_id='request-long')
+        shown = build_recovery.read(self.store, self.ident)
+        self.assertEqual((shown['fix'], shown['over'], shown['state']), ('shorten', 30, 'failed'))
+        self.assertIn('about 30% too long', shown['message'])
+        self.assertIn('Shorten the story', shown['help'])
+        self.assertNotIn('private words', json.dumps(shown))
+        # A record that claims the fix for another step, or an absurd figure, is not believed.
+        path = self.store._project(self.ident) / build_recovery.FILE
+        value = json.loads(path.read_text())
+        value.update(over='<b>', fix='shorten')
+        path.write_text(json.dumps(value))
+        shown = build_recovery.read(self.store, self.ident)
+        self.assertNotIn('over', shown)
+        self.assertNotIn('%', shown['message'])
+
     def test_missing_renderer_also_has_a_persisted_recovery(self):
         from runner.render import RenderError
         engine = fixtures.Engine(self.store)

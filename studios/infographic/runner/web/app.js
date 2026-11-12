@@ -606,6 +606,8 @@ function renderProject() {
   else if(selected&&p.scene&&!p.scene.visual_version){next=['Rebuild visual layout',()=>action('visual-layout')];needs='Rebuild visual layout: this page uses an older layout. Rebuilding runs on this computer.';}
   const failedStep=held.workflow_recovery;
   if(failedStep?.current&&failedStep.state==='failed'&&failedStep.next_action){next=[failedStep.next_label,()=>action(failedStep.next_action,failedStep.next_values,failedStep.revision)];needs=failedStep.next_label+': '+failedStep.label+' could not finish. Completed work is kept.';}
+  const longStory=failedStep?.current&&failedStep.fix==='shorten'&&p.stories.find(s=>s.id===p.selected_story);
+  if(longStory){next=['Shorten the story',()=>reviseStorySheet(longStory,false,shortenInstruction(failedStep))];needs='Shorten the story: '+failedStep.message.charAt(0).toLowerCase()+failedStep.message.slice(1);}
   const recoverable=held.recovery.find(r=>r.local_artwork_available),uncertain=held.recovery.find(r=>!r.local_artwork_available);
   // New image work is refused while a request is uncertain, so cancelling it comes first.
   if(uncertain&&!recoverable){next=['Cancel uncertain request',()=>action('image-cancel',{request_id:uncertain.attempt_id})];needs='Cancel uncertain request: '+imageUncertain.charAt(0).toLowerCase()+imageUncertain.slice(1).replace(' Cancel it under Image work needs attention before starting new image work.',' New image work can start once it is cancelled.');}
@@ -1001,8 +1003,17 @@ function receiptSheet(delivery,receipts){
   sheet('Delivery receipt',make('p','','Approved revision '+pageOf(delivery)+'. Each format you chose is listed with what happened.'),...parts,
     partial?make('p','quiet','What succeeded is kept. Retrying the PDF is a download on this computer and sends nothing to Google.'):null,add(make('div','create-foot bar'),button('Done',closeSheet,true)));
 }
+// What to ask the assistant when a story is too long for its page: how far over, and the ways
+// that make room without changing what it says.
+function shortenInstruction(r){
+  return 'Shorten this story so it fits one page at a readable size'+(r.over?': it is about '+r.over+'% too long':'')+'. Either combine it into two sections, or keep three sections and leave the item captions empty or at three words at most. Use at most three items in a section and keep each section summary to one short sentence. Keep the meaning and the required wording.';
+}
 function recoveryContent(r) {
   if(!r.current)return add(make('div','stack'),make('p','','An earlier step failed: '+r.label+'. Your page has changed since then.'),make('p','quiet','This failure does not describe the current page. Use the current page action above to continue; nothing was retried automatically.'),r.diagnostic?make('p','field-hint','Earlier diagnostic reference: '+r.diagnostic):null);
+  const story=held?.project?.stories?.find(s=>s.id===held.project.selected_story);
+  if(r.current&&r.fix==='shorten')return add(make('div','stack'),make('p','',r.message),make('p','quiet',r.help),
+    story?button('Shorten the story',()=>{closeSheet();reviseStorySheet(story,false,shortenInstruction(r));},true):make('p','quiet','Choose a story on the page to shorten it.'),
+    r.diagnostic?make('p','field-hint','Diagnostic reference: '+r.diagnostic):null);
   const retry=r.current&&r.next_action?button(r.next_label,async()=>{if(['build','preview','export'].includes(r.next_action)&&!(await rendererReady()))return;return action(r.next_action,r.next_values,r.revision);},true):null;
   return add(make('div','stack'),make('p','',r.message||r.label+' could not finish.'),r.help?make('p','quiet',r.help):null,make('p','quiet','Completed: '+(r.completed.join(', ')||'Earlier saved work')+'.'),make('p','quiet','Your saved page, artwork and image request identity are kept. '+(['preview','export','compose-image'].includes(r.next_action)?'This local retry does not generate artwork.':'Retry composition continues the saved build, including artwork when the page requires it.')),r.diagnostic?make('p','field-hint','Diagnostic reference: '+r.diagnostic):null,retry);
 }
@@ -1225,7 +1236,7 @@ async function sourceTextSheet(source,start=0){
   }catch(failure){error(failure.message);}
 }
 
-function reviseStorySheet(story,visual=false){const scope=field('Scope','','select'),instruction=field('What should change?',visual?'Make this an infographic with concise labels, diagrams, component maps and visual comparisons. Keep the meaning and required wording. Use charts only for supplied numbers.':'','textarea');const all=make('option','','Whole story');all.value='';scope.input.append(all);for(const block of story.blocks){const option=make('option','',block.title);option.value=block.id;scope.input.append(option);}scope.wrap.hidden=visual;sheet(visual?'Make this story visual':'Refine this story',make('p','',visual?'Uses your configured assistant to revise the saved facts into a visual plan. No new research or image generation. Review and choose the result before rebuilding.':'Your selected assistant revises the supplied explanation. A named block preserves all other content. Review and choose the revised story before rebuilding.'),scope.wrap,instruction.wrap,add(make('div','bar'),button(visual?'Suggest visual plan':'Suggest revision',()=>action('revise-story',{story_id:story.id,block_id:scope.input.value||null,instruction:instruction.input.value}),true),button('Cancel',closeSheet)));}
+function reviseStorySheet(story,visual=false,asked=''){const scope=field('Scope','','select'),instruction=field('What should change?',asked?asked:visual?'Make this an infographic with concise labels, diagrams, component maps and visual comparisons. Keep the meaning and required wording. Use charts only for supplied numbers.':'','textarea');const all=make('option','','Whole story');all.value='';scope.input.append(all);for(const block of story.blocks){const option=make('option','',block.title);option.value=block.id;scope.input.append(option);}scope.wrap.hidden=visual;sheet(visual?'Make this story visual':'Refine this story',make('p','',visual?'Uses your configured assistant to revise the saved facts into a visual plan. No new research or image generation. Review and choose the result before rebuilding.':'Your selected assistant revises the supplied explanation. A named block preserves all other content. Review and choose the revised story before rebuilding.'),scope.wrap,instruction.wrap,add(make('div','bar'),button(visual?'Suggest visual plan':'Suggest revision',()=>action('revise-story',{story_id:story.id,block_id:scope.input.value||null,instruction:instruction.input.value}),true),button('Cancel',closeSheet)));}
 function repairSheet(){sheet('Repair current findings',make('p','','Apply the recorded artwork correction, or try the other layout. Artwork correction uses your selected provider and the original as a reference. Layout and image repairs share a two-attempt budget; nothing is approved automatically.'),add(make('div','bar'),button('Apply bounded repair',()=>action('repair',{request_id:requestId()}),true),button('Cancel',closeSheet)));}
 
 function storyThumbnail(story){
