@@ -374,3 +374,21 @@
 .desk-receipts > li + li {
   margin-top: 0.6rem;
 }
+
+/* What the review left after its one pass of fixes: notes, folded away. */
+.desk-review-notes > summary {
+  cursor: pointer;
+  padding: 6px 0;
+  color: var(--quiet);
+}
+
+.desk-review-notes[open] > summary {
+  margin-bottom: 8px;
+}
+
+/* Why Deliver cannot be pressed now, beside it. */
+.desk-deliver-why {
+  align-self: center;
+  max-width: 26ch;
+  font-size: 0.85em;
+}

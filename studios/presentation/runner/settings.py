@@ -30,8 +30,8 @@ What a caller needs to know
   agent takes (EFFORTS): which of them a model takes is what the agent lists. Claude Code
   lists nothing, so its models and their levels are kept in `claude-code-models.json`
   in the shared core, and a level its model does not take is refused (`takes`).
-- `step_seconds` is how long one worker may run. `parallel` is how many decks work at
-  once. Nothing limits what a deck costs: a `runner.json` that still holds a spending
+- `step_seconds` is kept as it was saved and read by nothing: no job is ended for how long
+  it takes. `parallel` is how many decks work at once. Nothing limits what a deck costs: a `runner.json` that still holds a spending
   amount or a spending choice from before is read as if it did not, and left as it is.
 - `previews` is how a deck's slides are rendered to look at: `local`, with LibreOffice on
   this computer, or `drive`, through Google Drive. Shared as `render.previews`;

@@ -1,5 +1,13 @@
 # Changelog
 
+Unreleased: a deck checks itself, and asks you only what is yours to decide.
+- **The slide text checks itself.** After the assistant drafts the slide text, a second assistant checks it against your brief and sources and corrects it, once, before you read it. You are shown only the corrected text, with no list of findings. A rewrite after **Ask for changes** is checked once more; text already checked is never checked again, and a check that does not finish shows the text as it was written.
+- **One review, one pass of fixes.** Once every slide is drawn, the deck is reviewed for text and layout by itself, before it reaches the desk, and what the review finds is put right in one pass without asking: slides with a drawing finding, of any severity, are drawn again, and wording the assistant can correct or look up (a typo, too many words, a mismatch with the brief or the sources) is corrected and its slide drawn again. The reviewer then looks at what it flagged. There is no second pass. **Review the deck** in Finishing asks again after a change, and works the same way.
+- **What is left is notes.** Whatever the pass did not settle is kept under **Review the deck** as review notes, folded away, each still with **Apply** and **Skip**. Notes are **Worth a look**, never **Waiting for you**, and never keep a deck from **Deliver**.
+- **Questions are for what is yours.** The assistant that corrects the wording may ask about intent, a fact that is in no source, or a choice between valid options, as one numbered question. It does not ask about anything it can look up or fix. Only an open question makes the deck wait.
+- **No time limit on assistant work.** A step is no longer ended for how long it takes: ending it discarded what it had done. The step time is gone from set-up and Settings; a saved value is kept and ignored. Only the Quick scan keeps its own limit, because it falls back on an outline. **Stop** is yours, on the deck.
+- **The page says what is happening.** "Checking the slide text.", "Fixing what the review found: drawing 2 sections again.", "Checking the fixes." **Your move** has the button for the move it names, **Deliver** says why when it cannot be pressed, the start uses the brand's default look unless you choose to pick one, and a working deck is read every 2.5 seconds, not every second.
+
 Unreleased: Fable 5.2 is in the Claude Code model list, and **Fable, always the newest** now means it.
 
 Unreleased: the assistant has 50% more time before a step is stopped. A step may take up to 22.5 minutes, not 15, the Quick scan 4.5 minutes, not 3, and the final brief of sectioned research 7.5 minutes, not 5. A limit you already saved in Settings, under Limits, keeps its value.

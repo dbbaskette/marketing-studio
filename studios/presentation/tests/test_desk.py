@@ -699,7 +699,11 @@ class ScreenTests(ScriptedPage, PageCase):
                 'GET /api/run': [{'status': 404, 'body': {'error': 'There is no deck there.'}}]})
             result = self.run_page(answers, [
                 {'click': 'New deck'}, {'click': 'An existing deck'}, {'snapshot': 'unset'},
-                {'click': titles[form['level']]}, {'fill': 'A short title', 'value': 'Synthetic deck'}, {'intakePage': 2}, {'snapshot': 'level'}])
+                {'click': titles[form['level']]}, {'fill': 'A short title', 'value': 'Synthetic deck'}, {'intakePage': 2},
+                # The start uses the brand's default look unless the person chooses to pick.
+                *([{'click': 'Pick it when the samples are drawn'}, {'intakePage': 2}]
+                  if 'gate:look' in route_stops.STOPS[form['stops']]['step_by_step'] else []),
+                {'snapshot': 'level'}])
             with self.subTest(case=case):
                 self.assertEqual(result['errors'], [])
                 shot = result['snapshots']['level']
@@ -763,6 +767,7 @@ class ScreenTests(ScriptedPage, PageCase):
                 {'click': 'New deck'}, {'click': 'An idea'},
                 {'fill': 'A short title', 'value': 'Rolling restarts'},
                 {'tick': 'Research the approved story'}, {'snapshot': 'about'},
+                {'click': 'Pick it when the samples are drawn'},
                 {'snapshot': 'last'}, {'click': 'Use the brand’s default look'},
                 {'snapshot': 'default'}])
             with self.subTest(level=level):

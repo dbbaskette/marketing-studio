@@ -12,7 +12,7 @@ const TOKEN_HEADER = 'X-Presentation-Studio-Token';
 if (typeof StudioShell !== 'undefined') StudioShell.connect({ header: TOKEN_HEADER, token: () => view.token });
 const POLL_SHOWN = 5000;
 const POLL_HIDDEN = 20000;
-const POLL_RUN = 1000; // show new slide previews while a deck is working
+const POLL_RUN = 2500; // show new slide previews while a deck is working, without asking every second
 // Where set-up is read each time. It carries what was found of the skills, for home and status.
 const SET_UP_SHOWN = ['home', 'status', 'settings', 'setup', 'new'];
 const DRAWING = 'http://www.w3.org/2000/svg'; // the name of the SVG language; nothing is fetched
@@ -2118,7 +2118,6 @@ function about(pairs) {
 
 function limitsSays(limits) {
   const says = [];
-  if (limits.step_seconds) says.push('A step may take up to ' + lasted(limits.step_seconds) + '.');
   if (limits.parallel) {
     says.push(limits.parallel === 1 ? 'One deck runs at a time.'
       : 'Up to ' + limits.parallel + ' decks run at once.');
@@ -2668,9 +2667,8 @@ function shareCard(form) {
 
 function limitsCard(form) {
   const node = card('Limits');
-  return add(node, make('p', '', 'Each step keeps its time limit. Nothing stops for what a deck costs.'),
-  field('setup-minutes', 'The longest a step may take, in minutes', form, 'minutes',
-    { short: true, mode: 'decimal' }),
+  return add(node, make('p', '', 'No step is ended for how long it takes, and nothing stops for '
+    + 'what a deck costs. Stop is yours, on the deck.'),
   field('setup-parallel', 'How many decks may run at once', form, 'parallel',
     { short: true, mode: 'numeric' }));
 }
@@ -2867,11 +2865,8 @@ async function saveSetup(pressed) {
   };
   need(where, asked.repository || asked.path, form.where ? 'Say which folder first.'
     : 'Give the repository’s address first.');
-  const minutes = limit('setup-minutes', form.minutes, false);
   const parallel = limit('setup-parallel', form.parallel, true);
-  for (const [id, value] of [['setup-minutes', minutes], ['setup-parallel', parallel]]) {
-    if (value === null) missing.push(id);
-  }
+  if (parallel === null) missing.push('setup-parallel');
   if (missing.length) {
     say(problem, 'Something above is missing. Nothing was saved.');
     byId(missing[0]).focus();
@@ -2909,14 +2904,12 @@ async function saveSetup(pressed) {
     byId(missing[0]).focus();
     return;
   }
-  // Minutes are shown to the nearest tenth. A time nobody changed is saved as it was.
-  const kept = form.seconds && minutes === Math.round(form.seconds / 6) / 10;
+  // No step is ended for its time: the saved step time is sent back as it was, unread.
   const body = { folder: form.folder.trim(), branch: form.branch.trim(),
     name: form.name.trim(), share_when: form.where ? SHARE[1] : SHARE[form.share],
     agent: form.agent, model: form.model.trim() || null, effort: form.effort || null,
     person: form.person.trim() || null, output: OUTPUTS[form.output][0],
-    limits: { step_seconds: kept ? form.seconds : Math.max(1, Math.round(minutes * 60)),
-      parallel } };
+    limits: { step_seconds: form.seconds || 1350, parallel } };
   if (form.where) body.path = asked.path;
   else body.repository = asked.repository;
   if (form.brand) {
