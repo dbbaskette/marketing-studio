@@ -1,9 +1,10 @@
 """Editable visual explanations with explicit information-bearing diagrams."""
 
 from copy import deepcopy
+import math
 
 from . import brand, evidence, visuals
-from .contracts import PRESETS, Invalid, digest
+from .contracts import PRESETS, Invalid, TooDense, digest
 from .scene import wrapped
 from .validation import require, validate_project
 
@@ -284,7 +285,7 @@ def plan(project, *, body_size=None):
         meta["minimum"] = body * 1.5 + heading_h + caption_h + visual_h + gap * 2
         return meta
 
-    candidates = []
+    candidates, over = [], None
     sequential = all(b["kind"] in ("process", "timeline") for b in blocks)
     for cols in [2, 1] if len(blocks) >= 3 and not sequential else [1, 2]:
         if cols == 2 and len(blocks) < 2:
@@ -311,13 +312,18 @@ def plan(project, *, body_size=None):
             ]
         except Invalid:
             continue
-        if sum(rows) + gap * (len(rows) - 1) <= bottom - y:
+        needed = sum(rows) + gap * (len(rows) - 1)
+        if needed <= bottom - y:
             candidates.append((cols, bw, metrics, rows))
             break
-    require(
-        bool(candidates),
-        "The visual story is too dense for a readable infographic. Shorten captions or combine ideas; text was not shrunk or discarded.",
-    )
+        if bottom - y > 0:
+            over = min(over or 999, max(1, min(999, math.ceil((needed / (bottom - y) - 1) * 100))))
+    if not candidates:
+        # How far over, at this type size, so the person and their assistant know how much to cut.
+        raise TooDense(
+            "The visual story is too dense for a readable infographic. Shorten captions or combine ideas; text was not shrunk or discarded.",
+            over,
+        )
     cols, column_width, metrics, rows = candidates[0]
     extra = (bottom - y - sum(rows) - gap * (len(rows) - 1)) / len(rows)
     row_tops = []

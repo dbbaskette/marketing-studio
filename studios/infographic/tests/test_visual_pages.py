@@ -127,6 +127,17 @@ class VisualPageTests(Isolated):
         self.assertEqual(ids, [e["id"] for e in second["elements"]])
         self.assertTrue(set(first["reading_order"]) <= set(ids))
 
+    def test_a_story_too_long_for_its_page_says_how_far_over_it_is(self):
+        from runner.contracts import TooDense
+        p = project(self.store, "parts")
+        block = p["stories"][0]["blocks"][0]
+        p["stories"][0]["blocks"] = [dict(block, id="b" + str(n)) for n in range(1, 5)]
+        with self.assertRaises(TooDense) as refused:
+            scene.plan(p, arrangement="infographic")
+        self.assertIs(type(refused.exception.over), int)
+        self.assertGreater(refused.exception.over, 0)
+        self.assertIsNone(p["scene"])
+
     def test_qualitative_forms_have_real_graphics_and_editable_evidence_linked_labels(
         self,
     ):

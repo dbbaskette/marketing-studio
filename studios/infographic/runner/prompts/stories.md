@@ -9,7 +9,12 @@ out. It is [] when brief.must_show is empty. Optional details left out of the
 source belong as readable notes in qualifications, never as invented omissions
 or required_ids. Block required_ids likewise name only brief.must_show IDs.
 Design an infographic, not a page of paragraphs. Prefer two or three concise blocks
-and about 100–160 total visible words, including all node labels and captions. Leave room
+and count every visible word, including all node labels and captions. The page is
+measured, never shrunk: a story that does not fit is refused. On the a4 and letter
+presets about 70–100 total visible words fit; on the digital preset about 50–60
+(brief.preset names the page). Two blocks leave room for node captions of up to
+eight words. Three blocks fit only with node captions left empty or kept to three
+words, so put the detail in the label. Leave room
 for source notes, qualifications, labels and explanatory artwork. Do not request
 an illustration for every block. Process step numbers are added by the compositor;
 do not add extra numbering to titles or prose unless it is required source content.

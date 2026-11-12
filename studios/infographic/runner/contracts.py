@@ -40,6 +40,14 @@ class Invalid(ValueError):
     """An invalid or incompatible Infographic Studio record."""
 
 
+class TooDense(Invalid):
+    """The chosen story does not fit one page at readable sizes. `over` is how far, in percent."""
+
+    def __init__(self, message, over=None):
+        super().__init__(message)
+        self.over = over
+
+
 def canonical(value) -> bytes:
     try:
         return json.dumps(value, sort_keys=True, separators=(',', ':'), ensure_ascii=False,
