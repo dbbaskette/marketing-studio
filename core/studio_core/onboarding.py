@@ -97,7 +97,9 @@ class Controller:
         if urlsplit(target).path in ('/', '/index.html'):
             target = '/onboarding/'
         try:
-            status, kind, data = self.page.answer(target, headers, method, body)
+            # A script or a style sheet comes back with its caching headers as a fourth part.
+            reply = self.page.answer(target, headers, method, body)
+            status, kind, data = reply[:3]
             if kind == 'text/html; charset=utf-8':
                 html = data.decode().replace('Marketing Studio', self.product)
                 html = html.replace('X-Marketing-Studio-Token', self.protocol.TOKEN_HEADER)
@@ -105,7 +107,7 @@ class Controller:
                 for name in ('app.js', 'home.css', 'style.css'):
                     html = html.replace('"/' + name + '"', '"/onboarding/' + name + '"')
                 data = html.encode()
-            return status, kind, data
+            return (status, kind, data, *reply[3:])
         except self.protocol.Refusal as failure:
             return self.protocol.as_json(failure.status, {'error': str(failure)})
         except preferences.Conflict as failure:

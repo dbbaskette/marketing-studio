@@ -426,3 +426,57 @@ class ReadyJourneyTests(RunnerAnswers, ReadyCase):
         """The runner's answer to one change, as the page would be given it."""
         return self.captured('POST', f'/api/{endpoint}', sent)
 
+
+
+class ReadyTogetherTests(PageCase):
+    """Every practice scenario marked ready together, and nothing else of the level."""
+
+    def test_marking_every_scenario_leaves_the_other_materials_as_drafts(self):
+        root = self.start(materials=['document', 'scenario'])
+        self.assertEqual(self.to_end(root), [])
+        cards = {card['name']: card for card in self.get('drafts', path=str(root))['cards']}
+        scenarios = [name for name, card in cards.items() if card['kind'] == 'scenario']
+        self.assertTrue(scenarios)
+        marked = self.post('drafts/level-ready', {
+            'path': str(root), 'level': '', 'kind': 'scenario',
+            'seen': {name: cards[name]['seen'] for name in scenarios}})
+        self.assertEqual(sorted(marked['marked']), sorted(scenarios))
+        self.assertIsNone(marked['stopped'])
+        self.assertEqual({card['state'] for card in marked['cards'] if card['kind'] == 'scenario'},
+                         {'ready'})
+        self.assertEqual({card['state'] for card in marked['cards'] if card['kind'] != 'scenario'},
+                         {'draft'})
+        self.assertIn('Rolling restarts: mark every practice scenario ready', self.log())
+
+
+class ReadyTogetherJourneyTests(RunnerAnswers, PageCase):
+    """The page's own button for it, over a desk doctored to hold a second scenario."""
+
+    def test_two_scenarios_are_marked_together_after_one_confirmation(self):
+        root = self.root = self.start(materials=['document', 'scenario'])
+        self.assertEqual(self.to_end(root), [])
+        path = str(root)
+        desk = self.read('drafts', path=path)
+        first = next(card for card in desk['body']['cards'] if card['kind'] == 'scenario')
+        second = {**copy.deepcopy(first), 'name': 'scenario:second'}
+        desk['body']['cards'].append(second)
+        answers = {'GET /api/run': [self.read('run', path=path)], 'GET /api/drafts': [desk]}
+        for card in desk['body']['cards']:
+            address = '/api/drafts/card?' + urlencode({'path': path, 'name': card['name']})
+            answers['GET ' + address] = [self.read('drafts/card', path=path, name=(
+                first['name'] if card is second else card['name']))]
+        after = copy.deepcopy(desk)
+        for card in after['body']['cards']:
+            if card['kind'] == 'scenario':
+                card['state'] = 'ready'
+        after['body'].update(marked=[first['name'], second['name']], stopped=None)
+        answers['POST /api/drafts/level-ready'] = [after]
+        result = self.run_page(self.screens(**answers), [
+            {'click': 'Practice · 2'}, {'click': 'Mark all 2 Practice drafts ready'}, {'snapshot': 'sheet'},
+            {'click': 'Mark 2 materials ready'}], state={'screen': 'run', 'path': path})
+        self.assertIn('Mark every practice scenario ready?', result['snapshots']['sheet']['sheet'])
+        self.assertEqual([(request['address'], request['body']) for request in result['requests']
+                          if request['method'] == 'POST'],
+                         [('/api/drafts/level-ready', {
+                             'path': path, 'level': '', 'kind': 'scenario',
+                             'seen': {first['name']: first['seen'], second['name']: first['seen']}})])
