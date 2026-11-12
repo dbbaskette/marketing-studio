@@ -15,7 +15,7 @@ const StudioResearch = (() => {
   // Every web link in a file a person chose: a plain list, a spreadsheet export, notes or a
   // saved page. Order kept, each link once; http is asked for as https, and a link carrying a
   // sign-in is left out. `left` counts what was found and not kept.
-  const LINK_FILE_BYTES = 256 * 1024, MOST_SOURCES = 40;
+  const LINK_FILE_BYTES = 256 * 1024;
   function linksIn(text) {
     const links = [], seen = new Set(); let left = 0;
     for (const found of String(text || '').match(/https?:\/\/[^\s<>"'`|\\^{}]+/gi) || []) {
@@ -117,15 +117,12 @@ const StudioResearch = (() => {
         let parsed; try { parsed = new URL(url); } catch (_) { this.problem = 'Check this link: ' + url; this.render(); return; }
         if (parsed.protocol !== 'https:' || parsed.username || parsed.password) { this.problem = 'Use HTTPS links without embedded credentials.'; this.render(); return; }
       }
-      // One request takes a fixed number of sources. What does not fit stays in the box.
-      const room = Math.max(0, MOST_SOURCES - array(this.value && this.value.sources).length), taken = links.slice(0, room);
       let added = 0;
-      for (const url of taken) {
-        if (!await this.act('capture', {kind: 'url', url}, taken.length > 1 ? 'Reading link ' + (added + 1) + ' of ' + taken.length + '…' : '')) break;
+      for (const url of links) {
+        if (!await this.act('capture', {kind: 'url', url}, links.length > 1 ? 'Reading link ' + (added + 1) + ' of ' + links.length + '…' : '')) break;
         added += 1;
         this.urls = this.urls.split(/\s+/).filter(v => v && v !== url).join('\n');
       }
-      if (!this.problem && links.length > room) this.problem = (added ? 'Added ' + added + '. ' : '') + 'One request takes ' + MOST_SOURCES + ' sources at most. The ' + (links.length - room === 1 ? 'link left in the box was' : (links.length - room) + ' links left in the box were') + ' not added: remove a source to make room.';
       this.render();
       return added;
     }

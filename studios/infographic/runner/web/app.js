@@ -1295,7 +1295,6 @@ function briefSheet(typed=null){
 }
 
 function googleLink(url,label){const link=make('a','button',label);link.href=url;link.target='_blank';link.rel='noopener noreferrer';return link;}
-const LINKS_AT_ONCE=12;
 // `many`, where the caller can take several previews at once: a file of links, each read and
 // previewed like a pasted one. A link that cannot be read does not stop the others.
 async function remoteSheet(done,many){
@@ -1311,19 +1310,18 @@ async function remoteSheet(done,many){
   let fromFile=null;
   if(many&&typeof StudioResearch!=='undefined'){
     const picked=field('Or add every link in a file');picked.input.type='file';picked.input.accept='.txt,.md,.markdown,.csv,.html,.htm,text/plain,text/csv';
-    picked.wrap.append(make('span','field-hint','A text, Markdown, CSV or saved web page file. Each https link in it is read and previewed, up to '+LINKS_AT_ONCE+' at a time.'));
+    picked.wrap.append(make('span','field-hint','A text, Markdown, CSV or saved web page file. Each https link in it is read and previewed.'));
     picked.input.addEventListener('change',async()=>{
       const chosen=(picked.input.files||[])[0];if(!chosen)return;
       let found;try{found=await StudioResearch.linksInFile(chosen);}catch(f){found={links:[],left:0,problem:'This file could not be read as text.'};}
       if(found.problem){problem.textContent=found.problem;return;}
-      const taken=found.links.slice(0,LINKS_AT_ONCE),previews=[],failed=[];
+      const taken=found.links,previews=[],failed=[];
       go.disabled=true;picked.input.disabled=true;
       try{for(const link of taken){problem.textContent='Reading link '+(previews.length+failed.length+1)+' of '+taken.length+'…';
         try{previews.push(await request('/api/remote-preview',{kind:new URL(link).hostname==='docs.google.com'?'google-doc':'url',url:link}));}catch(f){failed.push(link+' ('+f.message+')');}}}
       finally{go.disabled=false;picked.input.disabled=false;}
       const said=[];
       if(failed.length)said.push((failed.length===1?'1 link was':failed.length+' links were')+' not read: '+failed.slice(0,3).join('; ')+(failed.length>3?'; and '+(failed.length-3)+' more':'')+'.');
-      if(found.links.length>taken.length)said.push((found.links.length-taken.length)+' more were left out: a file adds '+LINKS_AT_ONCE+' links at a time.');
       if(found.left)said.push(found.left+(found.left===1?' was':' were')+' not usable and left out.');
       if(!previews.length){problem.textContent=said.join(' ');return;}
       many(previews);

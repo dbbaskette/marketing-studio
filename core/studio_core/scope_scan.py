@@ -77,8 +77,8 @@ def checked(value, minimum=1):
              'gaps': lines(value['gaps'], 'Gaps', 20, 600),
              'personal_questions': lines(value['personal_questions'], 'Your questions', 8, 300)}
     coverage = value['coverage']
-    if not isinstance(coverage, list) or len(coverage) > 40:
-        raise ValueError('Describe at most 40 source coverage entries.')
+    if not isinstance(coverage, list) or len(coverage) > 1000:
+        raise ValueError('Describe at most 1,000 source coverage entries.')
     found['coverage'] = []
     for item in coverage:
         if not isinstance(item, dict) or set(item) != {'source', 'covers'}:

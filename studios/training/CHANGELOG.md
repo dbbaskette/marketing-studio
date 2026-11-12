@@ -1,6 +1,6 @@
 # Changelog
 
-Unreleased: links can be added from a file. Where a new training's sources are chosen, and in **What research reads**, **Add links from a file** takes a text, Markdown, CSV or saved web page file and adds every https link in it as a source, each once. The page says how many were added, which were already there and which could not be read. One request still takes 40 sources at most; links that do not fit stay in the box.
+Unreleased: links can be added from a file. Where a new training's sources are chosen, and in **What research reads**, **Add links from a file** takes a text, Markdown, CSV or saved web page file and adds every https link in it as a source, each once. The page says how many were added, which were already there and which could not be read. Links are not counted against the 40 files and pasted texts a request takes, so a file adds as many as it holds.
 
 Unreleased: a training can start as practice only. The New training form begins with **What to make**: **A full training**, as before, or **Practice only, from my documents**. Practice only sets the outputs to the reference brief, practice scenarios and Yoodli layouts, with no learner guide and no slide deck, and has research read only the documents you add, with web search off. Each of those can still be changed in the steps that follow. It still makes one Quick scan and a plan for you to approve first.
 

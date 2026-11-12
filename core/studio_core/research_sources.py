@@ -16,6 +16,7 @@ from studio_core import research_contract as rc
 
 LIMIT = 8_000_000
 MOST = 40
+LINKS = ('url', 'google-doc', 'google-slides')
 TYPES = {'.txt': 'text', '.md': 'text', '.markdown': 'text', '.pdf': 'pdf', '.docx': 'docx', '.html': 'html', '.htm': 'html'}
 
 
@@ -133,7 +134,11 @@ class Sources:
             with self.lock:
                 current = self.check(ident, expected)
                 old = next((s for s in current['sources'] if s['id'] == data.get('source')), None)
-                require(len(current['sources']) < MOST or old is not None, 'Use at most 40 sources in one request.')
+                # Links are not counted: a file of links adds as many as it holds. The ceiling
+                # is for uploaded files and pasted text, which are kept whole in the draft.
+                held = sum(s.get('kind') not in LINKS for s in current['sources'])
+                require(old is not None or (operation == 'capture' and data.get('kind') == 'url') or held < MOST,
+                        'Use at most 40 files and pasted texts in one request. Links are not counted.')
                 if operation == 'capture' and data.get('source') and data.get('kind') != 'saved':
                     require(old is not None and old.get('requested_url'), 'Choose a saved URL to retry.')
                     data = {'kind': 'url', 'url': old['requested_url']}

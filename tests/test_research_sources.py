@@ -30,6 +30,16 @@ class SourceTests(unittest.TestCase):
         self.assertTrue(all(s['permission'] == 'selected' for s in ready['sources']))
         self.assertEqual(self.network, ['https://example.invalid/reference'])
         self.assertEqual(ready['workers'], 3)
+    def test_links_are_not_counted_and_files_and_pasted_text_still_are(self):
+        for n in range(40):
+            self.act('capture', kind='text', name=f'Notes {n}', text=f'Synthetic supplied notes {n}.')
+        with self.assertRaisesRegex(ValueError, 'Links are not counted'):
+            self.act('capture', kind='text', name='One more', text='Synthetic supplied notes.')
+        for n in range(45):
+            self.act('capture', kind='url', url=f'https://example.invalid/reference-{n}')
+        self.assertEqual(len(self.value['sources']), 85)
+        self.assertEqual(len(self.sources.prepared(self.value['id'], self.value['revision'])['sources']), 85)
+
     def test_a_draft_made_from_saved_inputs_holds_them_and_changes_none(self):
         # Change settings (#296): the source panel opens on what an item's research reads.
         from studio_core.research_sources import install

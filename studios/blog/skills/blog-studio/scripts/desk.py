@@ -234,11 +234,11 @@ def _attach(root, data, record):
     import blog_runner
 
     sources = data.get('sources', [])
-    if not isinstance(sources, list) or len(sources) > 50 or len(set(sources)) != len(sources):
-        raise ValueError('Select at most 50 different sources.')
+    if not isinstance(sources, list) or len(sources) > blog_runner.MOST_SOURCES or len(set(sources)) != len(sources):
+        raise ValueError('Select at most %d different sources.' % blog_runner.MOST_SOURCES)
     for source in sources:
         if not isinstance(source, str):
-            raise ValueError('Select at most 50 different sources.')
+            raise ValueError('Select at most %d different sources.' % blog_runner.MOST_SOURCES)
         studio.item(root, 'sources', source)
     picked = blog_runner.library_picks(root, data.get('library', []), sources)
     for source in sources + list(picked):
@@ -1302,8 +1302,9 @@ def add_sources(root, ident, data):
     directory, record = studio.item(root, 'articles', ident)
     draft = read(root, ident)
     _attach(root, {'sources': chosen, 'library': library}, record)
-    if len(record['sources']) > 50:
-        raise ValueError('A blog reads at most 50 sources.')
+    import blog_runner
+    if len(record['sources']) > blog_runner.MOST_SOURCES:
+        raise ValueError('A blog reads at most %d sources.' % blog_runner.MOST_SOURCES)
     studio.persist(directory, 'articles', record)
     draft['sources'] = _citable(record['sources'])
     written = _write(root, ident, draft, ['sources'])
