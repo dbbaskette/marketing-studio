@@ -4165,6 +4165,35 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         started = [body for address, body in self.posts(result) if address == '/api/trainings']
         self.assertIs(started[0]['walkthrough'], True)
 
+    def test_practice_only_sets_the_outputs_and_a_full_training_puts_them_back(self):
+        shared = {'brand': {'brand': 'example-co', 'variant': 'dark'}, 'output': 'pptx'}
+        answers = self.answers({**SET_UP, 'shared': shared, 'shared_problem': None})
+        result = self.run_page(answers, [
+            {'click': 'New training'}, {'snapshot': 'full'},
+            {'click': 'Practice only, from my documents'}, {'snapshot': 'chosen'},
+            {'fill': 'A short title', 'value': 'Rolling restarts'},
+            {'fill': 'What should it teach?', 'value': 'How a rolling restart works.'},
+            {'fill': 'Who is it for?', 'value': 'Platform engineers new to it.'},
+            {'intakePage': 2}, {'snapshot': 'practice'},
+            {'intakePage': 0}, {'click': 'A full training'},
+            {'intakePage': 2}, {'snapshot': 'back'}, {'click': 'Start'}])
+        shots = result['snapshots']
+        self.assertIn('A full training', shots['full']['pressed'])
+        self.assertIn('Practice only, from my documents', shots['chosen']['pressed'])
+        self.assertIn('No learner guide, no slide deck and no web search.', shots['chosen']['text'])
+        practice = shots['practice']
+        self.assertIn('No deck', practice['pressed'])
+        for label in ('Reference brief', 'Practice scenarios', 'Make scenarios for Yoodli'):
+            self.assertIn(label, practice['trainingChecked'])
+        self.assertNotIn('Learner guide', practice['trainingChecked'])
+        back = shots['back']
+        self.assertIn('PowerPoint', back['pressed'])
+        self.assertIn('Learner guide', back['trainingChecked'])
+        self.assertNotIn('Make scenarios for Yoodli', back['trainingChecked'])
+        started = [body for address, body in self.posts(result) if address == '/api/trainings']
+        self.assertEqual((started[0]['materials'], started[0]['yoodli'], started[0]['deck_target']),
+                         (['document'], False, 'pptx'))
+
     def test_the_deck_step_asks_once_how_the_deck_is_used(self):
         shared = {'brand': {'brand': 'example-co', 'variant': 'dark'}, 'output': 'pptx'}
         answers = self.answers({**SET_UP, 'shared': shared, 'shared_problem': None})

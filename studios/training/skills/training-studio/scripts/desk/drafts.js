@@ -747,6 +747,31 @@ function startPickList(draft) {
   }));
 }
 
+// The ways a training can start, as the form names them, each with what it makes.
+const START_KINDS = [
+  ['A full training', 'Research, a plan, then the materials you choose in step 3: a learner '
+    + 'guide, a reference brief, practice scenarios or a slide deck.'],
+  ['Practice only, from my documents', 'Practice scenarios laid out for Yoodli, with the '
+    + 'reference brief they are built on, made only from the documents you add in step 2. '
+    + 'No learner guide, no slide deck and no web search. You can change any of this in '
+    + 'steps 2 and 3.']];
+
+// Set a draft up for one way of starting. Practice only: a brief, scenarios and Yoodli
+// layouts, no deck, and research that reads the person's documents and nothing else.
+function startKind(draft, practiceOnly) {
+  draft.practiceOnly = practiceOnly;
+  const brand = sharedOf().brand || {};
+  draft.materials = practiceOnly ? ['brief', 'scenario'] : ['document'];
+  draft.yoodli = practiceOnly;
+  draft.deck = practiceOnly || !brand.brand ? DECKS.length - 1
+    : sharedOf().output === 'google' ? 1 : 0;
+  settleDeck(draft);
+  draft.research.web = !practiceOnly;
+  if (practiceOnly) draft.research.sites = false;
+  // The source editor keeps its own choice of external search, saved with its draft.
+  if (draft.sourceEditor) draft.sourceEditor.act('configure', { external: !practiceOnly });
+}
+
 // The new-training sheet: three numbered steps in the order they are filled in, then Start
 // and a persistent footer. The runner prepares one outline review before building the
 // selected materials. Saved runs keep their original review behavior.
@@ -780,7 +805,13 @@ function deskStart() {
   };
   draft.retell();
   form.append(problem,status);
-  const steps = [createStep(1,'Goal and audience',title,topic,audience,timeField(draft),purpose),
+  // What to make: the whole training, or only practice for Yoodli from the person's own
+  // documents. Practice only is a starting point, not a lock: every choice it sets can
+  // still be changed in the steps that follow.
+  const kinds = choice('What to make', START_KINDS.map((kind) => kind[0]), draft.practiceOnly ? 1 : 0,
+    (index) => { startKind(draft, index === 1); drawSheet(); focusKey('start-kind ' + index); },
+    'start-kind', START_KINDS[draft.practiceOnly ? 1 : 0][1]);
+  const steps = [createStep(1,'Goal and audience',kinds,title,topic,audience,timeField(draft),purpose),
     createStep(2,'Sources and questions',...sources),
     createStep(3,'Outputs and review',summary,...shapeStep(draft),...advanced)];
   const validate = (index,final = false) => {

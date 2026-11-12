@@ -3521,3 +3521,21 @@ class DeskTeamTests(TeamCase):
             saved = json.loads(self.git('show', f'{kept[-1]}:{prefix}/.training-studio/session.json'))
             self.assertEqual(saved['events'], events)
             self.assertEqual(self.git('status', '--porcelain'), '')
+
+
+class PracticeOnlyFormTests(unittest.TestCase):
+    """What the start form's Practice only choice sends is a form the runner takes."""
+
+    def test_a_brief_scenarios_and_yoodli_from_documents_alone_is_accepted(self):
+        from runner import pipeline
+        form = pipeline.check_form({
+            'title': 'Rolling restarts', 'topic': 'How a rolling restart works.',
+            'audience': 'Platform engineers new to it.', 'purpose': pipeline.PURPOSES[0]
+            if hasattr(pipeline, 'PURPOSES') else 'Teach a skill', 'levels': ['101'],
+            'materials': ['brief', 'scenario'], 'yoodli': True, 'deck_target': None,
+            'research_from': {'documents': True, 'web': False, 'sites': []}, 'flow': 'desk'})
+        self.assertEqual(form['materials'], ['brief', 'scenario'])
+        self.assertIs(form['yoodli'], True)
+        self.assertIsNone(form['deck_target'])
+        self.assertEqual((form['research_from']['documents'], form['research_from']['web']),
+                         (True, False))
