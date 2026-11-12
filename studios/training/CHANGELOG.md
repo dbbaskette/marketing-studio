@@ -1,5 +1,7 @@
 # Changelog
 
+Unreleased: a deck can change brand after it is made, without being made again. **Change brand**, under **Deck actions** beside **Try another look**, hands the deck as it is to a rebranding skill on this computer (such as `true-source-brand`, `tanzu-brand` or `broadcom-brand`) and gets back a new Google Slides copy in that brand: the same words, slide order, notes, charts and pictures. Nothing is drawn again and no assistant is asked, so it takes minutes. The deck and the training stay as they are; the copy's link is shown on the deck. A deck kept as a PowerPoint file is put in Google Slides first. The same sheet can still draw the whole deck again in another of the brand skill's brands, which keeps what the deck says and takes as long as the first drawing.
+
 Unreleased: easier to move through a deck and to mark practice ready. A deck on the desk has **Back** and **Next** beside its slide list, with the slide's place in the deck. Where a training has several practice scenarios or Yoodli layouts, **Mark all ready** marks every one that waits, after one confirmation that names them; the other materials stay as they are.
 
 Unreleased: a studio's own shared settings page shows its design again. Its script and styles were being refused after page scripts became cacheable.

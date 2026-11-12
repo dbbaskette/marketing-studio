@@ -20,7 +20,7 @@ STRICT_GROUPS = globals().get("STRICT_GROUPS", False)
 SCHEMA = 1
 PATH = Path.home() / '.config' / 'studios-config.json'
 GROUPS = ('team', 'person', 'assistant', 'brand', 'local', 'render', 'models', 'review',
-          'research')   # keys whose value is an object
+          'research', 'graphics')   # keys whose value is an object
 WORDS = ('output', 'share', 'appearance')                       # keys whose value is a word
 SECRET = ('That address carries a password or token. Give the address without it; git '
           'signs in with your own credentials.')

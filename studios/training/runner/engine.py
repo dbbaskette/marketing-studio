@@ -5028,6 +5028,116 @@ class Engine(Reviewing):
         self.carry_on(root)
         return drafts.view(self, root)
 
+    def deck_rebrand(self, path, level, brand, seen):
+        """Draw the training's decks again in another of the brand skill's brands, as the
+        person asked on a drawn deck. The brand is the training's, so every level's deck
+        follows it. What each deck says stays as approved: the brand is exported afresh, the
+        look is that brand's, and every slide is drawn and reviewed again. Each slide as it
+        was is kept among its versions."""
+        level = level or None
+        with self.files:
+            root, record, name, kept = self._deck_change(path, level, seen)
+            session = workspace.load(root)
+            chosen = pipeline._brand({'brand': brand}, self.brands(), True)
+            if not chosen:
+                raise WorkspaceError('Choose a brand for the deck.')
+            if pipeline.brand_of({'settings': {'brand': chosen}}) == pipeline.brand_of(session):
+                raise WorkspaceError('The deck is already drawn in that brand.')
+            workspace.checkpoint(root, by='page', deck_target=session['settings']['deck_target'],
+                                 brand=chosen)
+            names = workspace.artifact_names(root, session)
+            for each in session['levels'] or [None]:
+                deck = workspace.qualify('deck', each)
+                # A deck not drawn yet takes the new brand through its own steps.
+                if deck not in names or not pipeline.read_built(root, each).get('start'):
+                    continue
+                for slide in home.read_json(pipeline.place(root, each, pipeline.OUTLINE), {}).get('slides', []):
+                    drafts.keep_slide(self, root, each, slide['id'], 'redraw')
+                mine = self._decided(record, each)
+                mine.pop('look_pending', None)
+                mine['redrawing'] = mine['draw_all'] = True
+                # The deck is out of date by the person's own choice: its update is asked
+                # for here, so the desk does not hold it for a second decision.
+                record.setdefault('drafts', {}).setdefault('updates', {})[deck] = {
+                    'at': home.now(), 'by': 'page', 'scope': None}
+            self._ready_again(root)
+            self._store(root, record)
+            self._commit(root, 'change the brand of ' + workspace.label(name))
+        self.carry_on(root)
+        return drafts.view(self, root)
+
+    def deck_rebrand_copy(self, path, level, skill, seen, wait=False):
+        """Make a copy of a drawn deck in another brand with a rebranding skill on this
+        computer, as the person asked on the deck. The deck itself, what it says and the
+        training's brand stay as they are: the copy is a new Google Slides file, and its
+        address is kept on the deck. No slide is drawn again and no assistant is asked. A
+        deck kept as a PowerPoint file is put in Google Slides first, which the skill
+        reads. It runs aside from the training's own work; `wait` is for a test."""
+        from runner import rebrand
+        level = level or None
+        with self.files:
+            root, record, name, kept = self._deck_change(path, level, seen)
+            chosen = next((one for one in self.rebrand_skills() if one['id'] == skill), None)
+            if chosen is None:
+                raise WorkspaceError(rebrand.NO_SKILL if not self.rebrand_skills()
+                                     else 'Choose one of the rebranding skills on this computer.')
+            going = kept.get('rebrand') or {}
+            # One that was cut off, by a restart say, no longer holds the next one back.
+            if going.get('state') == 'working' and not self._rebrand_stale(going):
+                raise WorkspaceError('A rebranded copy of this deck is already being made.')
+            session = workspace.load(root)
+            file = root / workspace.artifact(root, session, name)['file']
+            if not file.is_file():
+                raise WorkspaceError('Draw the deck first: there is nothing to rebrand yet.')
+            title = f"{session['title']}{f' {level}' if level else ''} ({chosen['name']})"
+            kept['rebrand'] = {'state': 'working', 'skill': chosen['id'], 'name': chosen['name'],
+                               'at': home.now(), 'seen': seen}
+            self._store(root, record)
+
+        def work():
+            try:
+                source = rebrand.source_id(file.read_text(encoding='utf-8')) \
+                    if file.suffix == '.md' else None
+                if source is None:
+                    source = self.slides().drive_import(file, title + ' source').get('id')
+                if not source:
+                    raise WorkspaceError('The deck could not be put in Google Slides to rebrand.')
+                made = rebrand.says(chosen, self.rebrand_run(
+                    chosen, source, title, Path(tempfile.mkdtemp(prefix='rebrand-')) / 'run'))
+            except (WorkspaceError, OSError, ValueError) as refusal:
+                made = {'state': 'failed', 'url': None, 'said': str(refusal)[:600]}
+            with self.files:
+                now = self._load(root)
+                self._decided(now, level)['rebrand'] = {
+                    **made, 'skill': chosen['id'], 'name': chosen['name'], 'at': home.now()}
+                self._store(root, now)
+        if wait:
+            work()
+        else:
+            threading.Thread(target=work, daemon=True, name='rebrand-copy').start()
+        return drafts.view(self, root)
+
+    @staticmethod
+    def _rebrand_stale(going: dict) -> bool:
+        from datetime import datetime, timedelta, timezone
+        from runner import rebrand
+        try:
+            began = datetime.fromisoformat(str(going.get('at')).replace('Z', '+00:00'))
+        except ValueError:
+            return True
+        if began.tzinfo is None:
+            began = began.replace(tzinfo=timezone.utc)
+        return datetime.now(timezone.utc) - began > timedelta(minutes=rebrand.MINUTES + 5)
+
+    def rebrand_skills(self) -> list[dict]:
+        """The rebranding skills on this computer; a test names its own."""
+        from runner import rebrand
+        return rebrand.skills()
+
+    def rebrand_run(self, skill, source, name, run_dir) -> dict:
+        from runner import rebrand
+        return rebrand.run(skill, source, name, run_dir)
+
     def draw_here(self, path, level, seen):
         level = level or None
         with self.files:

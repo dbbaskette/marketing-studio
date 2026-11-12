@@ -70,6 +70,13 @@ commits that one brand. **Push** is a separate action that shows the exact desti
 and the saved commits first. Opening the list starts no assistant and fetches no
 repository. See [Brands](docs/shared-setup.md#brands).
 
+## Document graphics
+
+Pictures a document needs, such as an infographic's artwork, are drawn by Gemini or by
+Codex. Choose which under **Shared settings**, **Document graphics**. Gemini needs an API
+key: paste it there once, list the picture models your key can use, and pick one. The key
+stays in a private file on your computer and is never shared with your team.
+
 ## Get started
 
 ### 1. Install

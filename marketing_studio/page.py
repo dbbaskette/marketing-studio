@@ -8,7 +8,7 @@ import shutil
 from pathlib import Path
 
 from studio_core import preferences as shared_preferences
-from studio_core import brand_catalog, brand_data, research_sites, runtime
+from studio_core import brand_catalog, brand_data, graphics, research_sites, runtime
 from studio_core.model_catalog import Catalog
 from studio_core import document_library
 from studio_core.document_library import adopt as library_adopt
@@ -28,7 +28,7 @@ REMOTE_BRANDS = ('Brands are made on the computer Marketing Studio runs on, wher
 
 class Home(server.Page):
     reads = ('/api/home', '/api/computer', '/api/models')
-    writes = ('/api/shared', '/api/setup', '/api/open', '/api/connect', '/api/computer', '/api/paths', '/api/models', '/api/brands', '/api/brands-repository', '/api/research-site',
+    writes = ('/api/shared', '/api/setup', '/api/open', '/api/connect', '/api/computer', '/api/paths', '/api/models', '/api/graphics', '/api/brands', '/api/brands-repository', '/api/research-site',
               *library_context.ROUTES, '/api/library-upload', '/api/library-download',
               '/api/library-existing', '/api/library-adopt', '/api/library-hide',
               *(f'/api/brand-{name}' for name in BRAND_ROUTES))
@@ -113,6 +113,8 @@ class Home(server.Page):
                 # Each kind of work as the form fills it in, with the kinds not yet saved.
                 'models_shown': None if problem else shared_preferences.model_profiles.shown(values),
                 'computer': self.computer(False), 'efforts': validation.EFFORTS,
+                # Whether a Gemini key is here and where from; never the key.
+                'graphics': graphics.snapshot(values, runtime.assistant_default(state.data_root())),
                 'assistant_default': runtime.assistant_default(state.data_root()),
                 # The private link is this computer's to show; the phone already holds it.
                 'network': self.launcher.network.snapshot(private=not getattr(self.caller, 'remote', False))
@@ -297,6 +299,12 @@ class Home(server.Page):
                                      or not Path(skill).expanduser().is_absolute()):
                 raise WorkspaceError('Choose an absolute installed brand skill folder, or leave it blank.')
             return server.as_json(200, brand_catalog.choices(skill))
+        if path == '/api/graphics':
+            try:
+                return server.as_json(200, graphics.act(
+                    sent, remote=getattr(self.caller, 'remote', False)))
+            except ValueError as error:
+                raise WorkspaceError(str(error)) from error
         if path == '/api/models':
             try:
                 return server.as_json(200, self.models.get(sent.get('agent'), refresh=True))

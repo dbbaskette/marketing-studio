@@ -411,9 +411,61 @@ function fill() {
   }
   form.elements.storage.value = shared.team?.repository ? 'remote' : 'local';
   researchSites = [...(shared.research?.sites || [])]; renderSites();
-  efforts(shared.assistant?.effort); storage(); fillProfiles();
+  efforts(shared.assistant?.effort); storage(); fillProfiles(); renderGraphics();
   for (const picker of modelPickers.values()) renderModelPicker(picker);
 }
+// Document graphics: who draws pictures, the Gemini model, and whether a key is here. The
+// key itself never comes back to this page: only whether one is set, and where from.
+function graphicsProvider() {
+  return form.elements['graphics.provider'].value || snapshot?.graphics?.chosen?.provider
+    || (form.elements['assistant.agent'].value === 'codex' ? 'codex' : 'gemini');
+}
+function renderGraphics(said = '') {
+  if (!snapshot) return;
+  const chosen = form.elements['graphics.provider'].value, provider = graphicsProvider();
+  const key = snapshot.graphics?.key || {set: false, source: null}, gemini = provider === 'gemini';
+  $('#graphics-provider-hint').textContent = chosen ? (gemini
+    ? 'Gemini draws the pictures, billed to your Gemini API key.'
+    : 'Codex draws with its built-in image tool, under your Codex sign-in. There is no model to choose and no key to enter.')
+    : `Following your assistant: ${gemini ? 'Gemini draws for Claude Code, and needs an API key' : 'Codex draws with its own image tool'}.`;
+  $('#graphics-model-field').hidden = !gemini; $('#graphics-key-block').hidden = !gemini;
+  $('#graphics-key-state').textContent = key.source === 'environment'
+    ? 'A key from this computer’s launch environment (GEMINI_API_KEY) is in use. A saved key is used only when that one is absent.'
+    : key.set ? 'A key is saved on this computer.' : 'No key yet. Gemini cannot draw until you save one.';
+  $('#graphics-key-clear').hidden = key.source !== 'saved';
+  if (said) $('#graphics-model-hint').textContent = said;
+  else if (!$('#graphics-model-hint').textContent) $('#graphics-model-hint').textContent = key.set
+    ? 'List models from Gemini to choose one your key can use.' : 'Save a key to list the models it can use, or enter a model ID.';
+}
+async function listGraphicsModels() {
+  const button = $('#graphics-models-refresh'), hint = $('#graphics-model-hint');
+  button.disabled = true; hint.textContent = 'Asking Gemini for its picture models…';
+  try {
+    const found = await api('graphics', {models: 'gemini'});
+    snapshot.graphics = {...(snapshot.graphics || {}), key: found.key};
+    const list = $('#graphics-model-list'); list.replaceChildren();
+    for (const model of found.models) { const option = element('option'); option.value = model.name; option.label = model.label; list.append(option); }
+    renderGraphics(found.problem || `${found.models.length} picture ${found.models.length === 1 ? 'model' : 'models'} listed from your key. Choose one, then Save settings.`);
+    if (!found.problem && !form.elements['graphics.model'].value && found.models.length === 1) form.elements['graphics.model'].value = found.models[0].name;
+  } catch (error) { hint.textContent = error.message; }
+  finally { button.disabled = false; saveState(); }
+}
+async function saveGraphicsKey(clear) {
+  const input = $('#graphics-key'), state = $('#graphics-key-state');
+  if (!clear && !input.value.trim()) { state.textContent = 'Paste the key first.'; input.focus(); return; }
+  const button = clear ? $('#graphics-key-clear') : $('#graphics-key-save'); button.disabled = true;
+  try {
+    const answer = await api('graphics', clear ? {clear: true} : {key: input.value.trim()});
+    snapshot.graphics = {...(snapshot.graphics || {}), key: answer.key}; input.value = '';
+    renderGraphics();
+    if (!clear) { state.textContent = 'Key saved on this computer.'; await listGraphicsModels(); }
+  } catch (error) { state.textContent = error.message; }
+  finally { button.disabled = false; }
+}
+form.elements['graphics.provider'].addEventListener('change', () => renderGraphics());
+$('#graphics-models-refresh').addEventListener('click', listGraphicsModels);
+$('#graphics-key-save').addEventListener('click', () => saveGraphicsKey(false));
+$('#graphics-key-clear').addEventListener('click', () => saveGraphicsKey(true));
 // Research sites: canonical https://host[/path], shown as host/path. Each site is checked
 // by the server when it is added (core/studio_core/research_sites.py), and again on save:
 // one rule everywhere.
@@ -908,8 +960,9 @@ function wantedValues() {
       wanted.render = {previews: value('render.previews')};
     }
   }
-  // Research sites are kept in Shared settings, not in first-run setup.
+  // Research sites and document graphics are kept in Shared settings, not in first-run setup.
   if (!setup) {
+    wanted.graphics = {provider: value('graphics.provider'), model: value('graphics.model')};
     wanted.research = {sites: [...researchSites]};
   }
   return wanted;

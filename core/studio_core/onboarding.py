@@ -7,7 +7,7 @@ import threading
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from studio_core import preferences, brand_catalog, brand_data, research_sites, runtime
+from studio_core import graphics, preferences, brand_catalog, brand_data, research_sites, runtime
 from studio_core.model_catalog import Catalog
 from studio_core.server import for_product
 from studio_core.studios_config import for_product as config_for
@@ -38,7 +38,7 @@ class Controller:
 
         class Page(protocol.Page):
             reads = ('/onboarding/api/home', '/onboarding/api/models')
-            writes = ('/onboarding/api/shared', '/onboarding/api/setup', '/onboarding/api/models', '/onboarding/api/brands', '/onboarding/api/brands-repository', '/onboarding/api/research-site')
+            writes = ('/onboarding/api/shared', '/onboarding/api/setup', '/onboarding/api/models', '/onboarding/api/graphics', '/onboarding/api/brands', '/onboarding/api/brands-repository', '/onboarding/api/research-site')
 
             def read(self, path, one):
                 if path.endswith('/models'):
@@ -61,6 +61,8 @@ class Controller:
                                              or not Path(skill).expanduser().is_absolute()):
                         raise ValueError('Choose an absolute installed brand skill folder, or leave it blank.')
                     return protocol.as_json(200, brand_catalog.choices(skill))
+                if path.endswith('/graphics'):
+                    return protocol.as_json(200, graphics.act(sent))
                 if path.endswith('/models'):
                     return protocol.as_json(200, owner.models.get(sent.get('agent'), refresh=True))
                 with owner.lock:
@@ -84,6 +86,7 @@ class Controller:
                 # Each kind of work as the form fills it in, with the kinds not yet saved.
                 'models_shown': None if problem else preferences.model_profiles.shown(values),
                 'studios': [], 'efforts': preferences.EFFORTS,
+                'graphics': graphics.snapshot({} if problem else values, runtime.assistant_default()),
                 'assistant_default': runtime.assistant_default()}
 
     def accepts(self, target):

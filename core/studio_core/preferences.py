@@ -3,7 +3,7 @@ import re
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from studio_core import model_profiles, research_sites, runtime
+from studio_core import graphics, model_profiles, research_sites, runtime
 
 WorkspaceError = ValueError
 
@@ -11,6 +11,7 @@ EFFORTS = {'claude': ('low', 'medium', 'high', 'xhigh', 'max'),
            'codex': ('none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra')}
 FIELDS = {'person': {'name'}, 'assistant': {'agent', 'model', 'effort'},
           'team': {'repository', 'branch'}, 'local': {'root'}, 'render': {'previews'},
+          'graphics': {'provider', 'model'},
           'brand': {'repository', 'release', 'brand', 'variant', 'skill', 'brands'}}
 
 
@@ -95,6 +96,7 @@ def check(changes, current):
         raise WorkspaceError('Choose a light or dark appearance, or match this computer.')
     if (merged.get('render') or {}).get('previews') not in (None, 'local', 'drive'):
         raise WorkspaceError('Choose local or Google Drive slide previews.')
+    graphics.check(merged.get('graphics') or {})
     skill = (merged.get('brand') or {}).get('skill')
     if skill and not Path(skill).expanduser().is_absolute():
         raise WorkspaceError('Use Git repository for a brand skill URL. Installed skill folder '
@@ -196,6 +198,7 @@ LABELS = {('person', 'name'): 'Your name', ('assistant', 'agent'): 'Assistant',
           ('brand', 'brand'): 'Default brand', ('brand', 'variant'): 'Default variant',
           ('brand', 'release'): 'Brand skill release', ('output',): 'Deliver as',
           ('appearance',): 'Appearance',
+          ('graphics', 'provider'): 'Document graphics', ('graphics', 'model'): 'Graphics model',
           ('render', 'previews'): 'Slide previews', ('research', 'sites'): 'Research sites',
           ('models', 'mode'): 'Model routing', ('models', 'agent'): 'Model profiles'}
 

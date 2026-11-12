@@ -71,6 +71,12 @@ def snapshot():
             'Choose a bounded model ID in shared settings.')
     require(effort is None or effort in EFFORTS[agent], 'Choose an effort supported by the shared assistant.')
     local = native()
+    # Document graphics is a shared setting. With none chosen the provider follows the
+    # assistant as before, and the model is this studio's own earlier choice.
+    from studio_core import graphics
+    require(isinstance(shared.get('graphics', {}), dict), 'Restore a valid shared document graphics section before starting provider work.')
+    drawn = graphics.chosen(shared, agent)
+    image_model = drawn['model'] or local.get('gemini_model') or None
     return {'assistant': {'agent': agent, 'model': assistant.get('model'), 'effort': assistant.get('effort')},
             'person': deepcopy(shared.get('person') or {}), 'brand': deepcopy(shared.get('brand') or {}),
             'native': local, 'native_revision': digest(local),
@@ -78,7 +84,8 @@ def snapshot():
             'google': {'account': local.get('google_account') or None, 'folder': local.get('google_folder') or ''},
             'material_folders': {key: str(Path((shared.get('local') or {}).get('root') or '~/Studios').expanduser() / (key+'-workspace') / folder) for key,folder in (('blog','blogs'),('presentation','presentations'),('training','trainings'))},
             'renderer': os.environ.get('INFOGRAPHIC_STUDIO_RENDERER') or local.get('renderer') or packaged_renderer(),
-            'image_provider': 'codex' if agent == 'codex' else 'gemini'}
+            'image_provider': drawn['provider'], 'image_model': image_model if drawn['provider'] == 'gemini' else None,
+            'image_key': graphics.key_state()}
 
 
 def packaged_renderer():
