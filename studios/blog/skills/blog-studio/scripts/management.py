@@ -3124,7 +3124,11 @@ def server(root, port=0, bind=True, shared_setup=False, keep_workspace=True):
             admit('GET', target, headers)
             parsed = urlsplit(target)
             if controller and controller.accepts(target):
-                status, media, body = controller.answer(target, headers)
+                reply = controller.answer(target, headers)
+                if len(reply) > 3:
+                    # Its script or style, with the caching headers it came with.
+                    return (*reply[:3], {**HEADERS, **reply[3]})
+                status, media, body = reply
                 return made(status, body, media)
             if parsed.path in STATIC:
                 name, media = STATIC[parsed.path]

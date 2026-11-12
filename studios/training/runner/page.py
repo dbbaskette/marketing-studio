@@ -175,7 +175,8 @@ What a caller needs to know
   on, which the page asks for only while that job's Show activity is open.
 - A training started on the desk (`flow: 'desk'`) is shown and changed there: `GET
   /api/drafts?path=` answers `drafts.view`, and `POST /api/drafts/ready` {path, name,
-  seen}, `/api/drafts/level-ready` {path, level, seen: {name: hash}}, `/api/drafts/draft`
+  seen}, `/api/drafts/level-ready` {path, level, seen: {name: hash}, kind?: 'scenario' or
+  'yoodli', for those cards alone}, `/api/drafts/draft`
   {path, seen: {name: hash}} (Return to draft, and Undo after Mark ready),
   `/api/drafts/update` {path, name}, `/api/drafts/keep` {path, name, reason, seen} and
   `/api/drafts/send` {path, name} each answer it after the change (`level-ready` adds
@@ -711,12 +712,13 @@ class RunnerPage(desk.Page):
             if path == f'{DRAFTS}/ready':
                 self.engine.mark_ready(root, name, desk.text(sent, 'seen', False))
             elif path == f'{DRAFTS}/level-ready':
-                level, seen = sent.get('level'), sent.get('seen')
+                level, seen, kind = sent.get('level'), sent.get('seen'), sent.get('kind')
                 if level is not None and not isinstance(level, str) \
+                        or kind not in (None, 'scenario', 'yoodli') \
                         or seen is not None and not isinstance(seen, dict):
                     raise desk.Refusal(HTTPStatus.BAD_REQUEST, 'Give the level as text and '
                                        'what was shown of each card by its name.')
-                added = self.engine.mark_level_ready(root, level or None, seen or {})
+                added = self.engine.mark_level_ready(root, level or None, seen or {}, kind)
             elif path == f'{DRAFTS}/draft':
                 seen = sent.get('seen')
                 if not isinstance(seen, dict):

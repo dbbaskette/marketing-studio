@@ -188,6 +188,14 @@ class SharedSetupTests(IsolatedHome):
         self.assertIn(b'X-Test-Token', body)
         self.assertNotIn(b'a' * 40, body)
 
+    def test_the_setup_page_gets_its_script_and_styles(self):
+        page = self.controller()
+        for path in ('/onboarding/app.js', '/onboarding/style.css', '/onboarding/home.css'):
+            reply = page.answer(path, self.headers())
+            self.assertEqual(reply[0], 200, path)
+            self.assertTrue(reply[2], path)
+            self.assertEqual(reply[3]['Cache-Control'], 'no-cache', path)
+
     def test_launch_adopts_local_defaults_once_and_preserves_existing_workspaces(self):
         gitstate = mock.Mock()
         gitstate.current.return_value = None

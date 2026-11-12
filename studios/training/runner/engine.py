@@ -6008,10 +6008,11 @@ class Engine(Reviewing):
         self.carry_on(root)
         return self.view(root)
 
-    def mark_level_ready(self, path, level, seen) -> dict:
+    def mark_level_ready(self, path, level, seen, kind=None) -> dict:
         """Mark every card of one level ready, in `drafts.ORDER`, each with the version the
         person was shown (`seen`, by name). It stops at the first that cannot be, saying why,
-        and commits once. Returns {'marked': [names], 'stopped': {'name', 'said'} or None}."""
+        and commits once. With `kind`, 'scenario' or 'yoodli', only the level's cards of
+        that kind. Returns {'marked': [names], 'stopped': {'name', 'said'} or None}."""
         marked, stopped = [], None
         with self.files:
             root = self._on_desk(path, decided=True)[0]
@@ -6023,6 +6024,8 @@ class Engine(Reviewing):
                 raise WorkspaceError(f'This training has no level {level}.')
             seen = seen if isinstance(seen, dict) else {}
             for name in drafts.level_ready(root, session, level):
+                if kind and workspace.split(name)[0].partition(':')[0] != kind:
+                    continue
                 try:
                     # A card the person was not shown is not marked: its version is unknown.
                     self._mark(root, self._load(root), name, seen.get(name) or '')
@@ -6032,6 +6035,9 @@ class Engine(Reviewing):
                 marked.append(name)
             if marked:
                 which = f'level {level}' if level else 'every material'
+                if kind:
+                    which = ('every Yoodli layout' if kind == 'yoodli' else 'every practice '
+                             'scenario') + (f' of level {level}' if level else '')
                 self._ready_again(root)
                 self._remember_decision(root, self._load(root), which, 'approve')
                 self._commit(root, f'mark {which} ready')

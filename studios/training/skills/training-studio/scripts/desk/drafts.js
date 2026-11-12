@@ -2070,7 +2070,26 @@ function deckParts(found) {
       selection.bar.hidden = true;
       preview.replaceChildren(renderSlide());
     });
-    area.append(add(label, make('span', 'field-label', 'Slide to review'), select));
+    // Back and Next walk the deck in order; the list still jumps to any slide.
+    const turn = (by) => {
+      const to = slides[slides.findIndex(slide => slide.id === select.value) + by];
+      if (!to) return;
+      select.value = to.id;
+      select.dispatchEvent(new Event('change'));
+    };
+    const back = capsule('Back', '', () => turn(-1), found.name + ':slide-back');
+    const next = capsule('Next', '', () => turn(1), found.name + ':slide-next');
+    back.setAttribute('aria-label', 'Previous slide'); next.setAttribute('aria-label', 'Next slide');
+    const place = make('span', 'field-label', '');
+    const ends = () => {
+      const index = slides.findIndex(slide => slide.id === select.value);
+      back.disabled = index <= 0; next.disabled = index >= slides.length - 1;
+      place.textContent = 'Slide to review · ' + (index + 1) + ' of ' + slides.length;
+    };
+    select.addEventListener('change', ends);
+    ends();
+    area.append(add(make('div', 'desk-reading-tools'), add(label, place, select),
+      add(make('div', 'bar desk-section-navigation'), back, next)));
   }
   function renderSlide() {
     const slide = slides.find(slide => slide.id === heldDeck.slide[found.name]);
@@ -3624,7 +3643,17 @@ function paintDesk(fresh, fromPoll = false) {
       }
       select.value = selected;
       select.addEventListener('change', () => { held.material[level] = select.value; paintDesk(false); });
-      column.prepend(add(make('label', 'field'), make('span', 'field-label', label), select));
+      const picker = add(make('label', 'field'), make('span', 'field-label', label), select);
+      // Every scenario or Yoodli layout that waits, marked together after one confirmation.
+      const together = levelWaiting(items);
+      if (ours && !conversation && together.length > 1) {
+        const all = capsule('Mark all ' + together.length + ' ready', '',
+          () => confirmLevel(level, together, selectedCard.kind), 'desk-group-ready');
+        all.setAttribute('aria-label', 'Mark all ' + together.length + ' '
+          + DESK_WORDS.kinds[selectedCard.kind] + ' drafts ready');
+        column.prepend(add(make('div', 'desk-reading-tools'), picker,
+          add(make('div', 'bar desk-section-navigation'), all)));
+      } else column.prepend(picker);
     }
     if(ours&&run.outline?.content_first&&run.outline.waiting&&shown.some(one=>one.name===selected&&one.kind==='deck'))column.prepend(slideTextReview(run.outline,held));
     if (!shown.length) column.append(make('p', 'quiet', 'Nothing is made at this level.'));
@@ -3777,16 +3806,16 @@ async function deskDecide(route, sent, pressed, { flush = true, path: at = null 
 }
 
 // Mark this level ready: the drafts the sheet named, each with the version shown on it.
-function markLevel(level, shown, pressed) {
+function markLevel(level, shown, pressed, kind) {
   const seen = {};
   for (const one of shown) if (one.seen) seen[one.name] = one.seen;
-  return deskDecide('level-ready', { level, seen }, pressed);
+  return deskDecide('level-ready', { level, seen, ...(kind ? { kind } : {}) }, pressed);
 }
 
 // The confirmation before Mark this level ready: each material it marks, whether it was
 // opened here in the version shown, and which are kept in the Document Library. Nothing is
 // sent until the person confirms; Cancel changes nothing and returns to the button.
-function confirmLevel(level, waiting) {
+function confirmLevel(level, waiting, kind) {
   const held = deskHeld(view.path);
   const opened = held.opened || {};
   const rows = make('ul', 'rows');
@@ -3809,12 +3838,14 @@ function confirmLevel(level, waiting) {
   const kept = waiting.filter((one) => ['document', 'brief'].includes(one.kind)).map(cardTitle);
   const go = capsule('Mark ' + count(waiting.length, 'material', 'materials') + ' ready', 'filled',
     async () => {
-      const answer = await markLevel(level, waiting, go);
+      const answer = await markLevel(level, waiting, go, kind);
       if (view.sheet === 'desk-kit') closeSheet();
       // The button is gone once nothing waits: the toast's Undo is the way back.
-      if (answer && !focusKey('desk-level-ready')) focusKey('desk-undo');
+      if (answer && !focusKey(kind ? 'desk-group-ready' : 'desk-level-ready')) focusKey('desk-undo');
     }, 'desk-level-ready-confirm');
-  DESK.kitSheet = [sheetTitle(level ? 'Mark level ' + level + ' ready?' : 'Mark every material ready?'),
+  const every = kind === 'yoodli' ? 'every Yoodli layout' : 'every practice scenario';
+  DESK.kitSheet = [sheetTitle(kind ? 'Mark ' + every + (level ? ' of level ' + level : '') + ' ready?'
+    : level ? 'Mark level ' + level + ' ready?' : 'Mark every material ready?'),
     make('p', '', 'Ready is your approval of the version you read.' + (unread.length
       ? ' Not opened yet: ' + series(unread) + '.' : ' You opened each of them.')),
     make('h3', 'sheet-part', '1. Materials to mark ready'), rows,
@@ -3824,7 +3855,7 @@ function confirmLevel(level, waiting) {
       + (kept.length === 1 ? 'it.' : 'them.')
       : 'Nothing here goes to the Document Library: only a guide or a brief does.'),
     add(make('div', 'bar'), go, capsule('Cancel', 'quiet', () => closeSheet(), 'cancel'))];
-  openSheet('desk-kit', 'desk-level-ready')();
+  openSheet('desk-kit', kind ? 'desk-group-ready' : 'desk-level-ready')();
 }
 
 // What Mark ready did, said with Undo while each version is the one marked: Undo returns
