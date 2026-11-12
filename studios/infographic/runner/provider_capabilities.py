@@ -129,7 +129,10 @@ def claude_inspection_command(folder: Path, mcp_config: Path) -> list[str]:
 
 
 def private_child_environment(environ: dict[str, str]) -> dict[str, str]:
-    """Minimal environment for image/renderer children, excluding provider keys."""
-    allowed = ('PATH', 'HOME', 'TMPDIR', 'LANG', 'LC_ALL', 'CODEX_HOME', 'CLAUDE_CONFIG_DIR',
-               'SYSTEMROOT', 'WINDIR')
+    """Minimal environment for image/renderer children, excluding provider keys.
+
+    The person's own name is kept: Claude Code looks its saved sign-in up by it, and
+    without it answers that nobody is signed in."""
+    allowed = ('PATH', 'HOME', 'USER', 'LOGNAME', 'TMPDIR', 'LANG', 'LC_ALL', 'CODEX_HOME',
+               'CLAUDE_CONFIG_DIR', 'SYSTEMROOT', 'WINDIR')
     return {key: environ[key] for key in allowed if key in environ}
