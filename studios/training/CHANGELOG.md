@@ -34,6 +34,8 @@ Unreleased: the desk says where a level stands in one line (ready to read, marke
 
 ## Unreleased — 4.14.0
 
+The roadmap across the top of a desk is drawn as a route: tinted as far as the work has come, with numbered marks, a line under each phase saying what it is, and a line that moves while the assistant works. Page scripts and styles are compressed and reused instead of downloaded on every open.
+
 Each finished draft can be marked ready as soon as it is written, while the materials built from it are still being made. Marking a whole level at once still waits until every material in the level has a draft.
 
 Completed research sections expose saved read-only prose before final checking. Previews name their revision and assigned sources and remain ineligible for delivery. Queued concerns save privately across reloads without changing evidence or starting work; apply actual changes through the existing explicit refresh/impact flow. Timing separates the first readable section from the checked result.

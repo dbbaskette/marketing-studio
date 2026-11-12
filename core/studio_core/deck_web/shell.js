@@ -317,11 +317,24 @@ const StudioShell = (() => {
   // The one arc every studio shares. `at` is the phase in hand, 0 to 3; `yours` marks it as
   // waiting for the person, `finished` fills all four, `note` is said under the phase in hand.
   const PHASES = ['Brief', 'Plan', 'Make', 'Ship'];
+  // What each phase is, said under its name so the line reads as a route, not four words.
+  const PHASE_SAYS = ['What it is for', 'Its outline and sources', 'Drafts, checks and review', 'Finish and share'];
   function arc({ at = 0, yours = false, finished = false, note = '' } = {}, label) {
     const line = track(PHASES.map((name, index) => ({ label: name,
       state: finished || index < at ? 'done' : index > at ? 'todo' : yours ? 'yours' : 'current',
       note: index === at && !finished ? note : '' })), label || 'Where this work is');
     line.classList.add('track-arc');
+    // Each mark carries its number until it is done, and each phase says what it is. A note
+    // means the assistant is at work in the phase in hand: the line onward from it moves.
+    Array.from(line.children).forEach((item, index) => {
+      const mark = item.querySelector('.track-mark');
+      if (mark && item.dataset.state !== 'done') mark.textContent = String(index + 1);
+      const says = make('span', 'track-says', PHASE_SAYS[index]); says.setAttribute('aria-hidden', 'true');
+      const at_note = item.querySelector('.track-note');
+      if (at_note) item.insertBefore(says, at_note); else item.insertBefore(says, item.querySelector('.offscreen'));
+    });
+    line.dataset.live = note && !yours && !finished ? 'true' : 'false';
+    line.style.setProperty('--arc-reach', (finished ? 100 : Math.round((Math.min(at, 3) + 0.5) * 25)) + '%');
     line.dataset.zone = 'rail'; line.dataset.key = 'workbench-arc';
     return line;
   }

@@ -761,7 +761,7 @@ TEXT_APPROVAL = ('Needs your text approval. Read its slide text, then approve it
                  'changes. Nothing is designed until you decide.')
 NOTHING_NEEDED = 'Nothing needed from you. Each material opens here as it is ready.'
 # Said instead once a finished draft is on the desk: reading it is open, and nothing waits on it.
-DRAFTS_TO_READ = ('Nothing is waiting on you. {drafts} to read while the rest {verb} '
+DRAFTS_TO_READ = ('Nothing holds the training up. {drafts} to read and mark ready while the rest {verb} '
                   'written.')
 WRITING = 'Being written. It opens here when it is ready.'
 QUEUED = 'Not written yet. Nothing is writing it while the training waits for you or is paused.'

@@ -4330,10 +4330,66 @@ body[data-product="Training Studio"] .cult-tab-rail > [role="tab"] {
 .workbench-top { display: grid; gap: 0.8rem; }
 .workbench-head { display: grid; grid-template-columns: minmax(0, 1fr) minmax(15rem, 24rem); gap: 1rem 2rem; align-items: center; }
 @media (max-width: 52rem) { .workbench-head { grid-template-columns: minmax(0, 1fr); } }
-.track-arc { margin: 0.2rem 0 0.4rem; }
-.track-arc .track-stage { font-size: 0.86rem; }
-.track-arc .track-label { font-weight: 650; }
-.track-arc .track-stage::before { height: 3px; top: 0.4rem; transition: background-color 0.6s ease; }
+/* The arc is the one signature, so it is drawn as a route: a band washed in the studio's
+   colour as far as the work has come, numbered marks, what each phase is, and a line that
+   moves onward from the phase in hand while the assistant works. Flat, never material. */
+.track-arc {
+  margin: 0.2rem 0 0.4rem;
+  padding: 1rem 1.2rem 0.9rem;
+  border: 1px solid color-mix(in srgb, var(--track-color) 22%, var(--hair));
+  border-radius: 1.1rem;
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--track-color) 13%, var(--card)) 0%,
+      color-mix(in srgb, var(--track-color) 7%, var(--card)) var(--arc-reach, 12%),
+      var(--card) calc(var(--arc-reach, 12%) + 22%));
+}
+.track-arc .track-stage { padding-top: 2.5rem; font-size: 0.86rem; }
+.track-arc .track-stage:last-child { min-width: 1.9rem; }
+.track-arc .track-label { font-size: 0.95rem; font-weight: 700; color: var(--ink); letter-spacing: -0.005em; }
+.track-arc .track-stage[data-state="todo"] .track-label { color: var(--quiet); font-weight: 650; }
+.track-arc .track-says { display: block; padding-right: 0.8rem; font-size: 0.78rem; color: var(--quiet); }
+.track-arc .track-note { margin-top: 0.15rem; font-size: 0.78rem; font-weight: 600; color: var(--track-color); }
+.track-arc .track-stage[data-state="yours"] .track-note { color: var(--yours); }
+.track-arc .track-stage::before {
+  top: 0.82rem; left: 2.25rem; right: 0.35rem; height: 4px; border-radius: 2px;
+  transition: background-color 0.6s ease;
+}
+.track-arc .track-stage[data-state="todo"]::before, .track-arc .track-stage[data-state="current"]::before,
+.track-arc .track-stage[data-state="yours"]::before {
+  background: repeating-linear-gradient(90deg, var(--control-line) 0 0.3rem, transparent 0.3rem 0.65rem);
+}
+.track-arc .track-stage[data-state="done"]::before {
+  background: linear-gradient(90deg, var(--track-color), color-mix(in srgb, var(--track-color) 70%, var(--card)));
+}
+.track-arc[data-live="true"] .track-stage[data-state="current"]::before {
+  background:
+    linear-gradient(90deg, transparent, var(--track-color), transparent) -60% 0 / 45% 100% no-repeat,
+    repeating-linear-gradient(90deg, color-mix(in srgb, var(--track-color) 45%, var(--card)) 0 0.3rem, transparent 0.3rem 0.65rem);
+  animation: pulse-travels 2.2s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+.track-arc .track-mark, .track-arc .track-stage[data-state="current"] .track-mark,
+.track-arc .track-stage[data-state="yours"] .track-mark {
+  top: 0; left: 0; width: 1.9rem; height: 1.9rem; font-size: 0.82rem; border-width: 2px;
+  color: var(--quiet);
+}
+.track-arc .track-stage[data-state="done"] .track-mark { color: var(--on-studio, var(--on-accent)); font-size: 0.9rem; }
+.track-arc .track-stage[data-state="current"] .track-mark {
+  border-color: var(--track-color); color: var(--track-color); font-weight: 800;
+  box-shadow: 0 0 0 0.28rem color-mix(in srgb, var(--track-color) 18%, transparent);
+}
+.track-arc[data-live="true"] .track-stage[data-state="current"] .track-mark { animation: arc-works 2.2s ease-in-out infinite; }
+.track-arc .track-stage[data-state="yours"] .track-mark { color: var(--on-yours, #201400); font-weight: 800; }
+@keyframes arc-works {
+  50% { box-shadow: 0 0 0 0.5rem color-mix(in srgb, var(--track-color) 6%, transparent); }
+}
+@media (max-width: 37.5rem) {
+  .track-arc { padding: 0.8rem 0.9rem 0.7rem; }
+  .track-arc .track-stage:not([aria-current]) .track-says { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .track-arc[data-live="true"] .track-stage[data-state="current"]::before,
+  .track-arc[data-live="true"] .track-stage[data-state="current"] .track-mark { animation: none; }
+}
 
 .move-card {
   display: grid;

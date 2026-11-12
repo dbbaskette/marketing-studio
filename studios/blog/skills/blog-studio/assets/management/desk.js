@@ -900,11 +900,16 @@ function sDeskBench(held){
   const at=start?(start.open==='outline'?1:2):!hasText?1:finished||held.finish?3:2;
   const stopped=!!(start&&start.problem);
   // In Review mode the move is the fixes still to decide, counted as the page counts them.
-  const fixes=held.mode==='review'&&held.review&&!view.working?sReviewState(held).pending.length:0;
+  const reviewing=held.mode==='review'&&held.review&&!view.working?sReviewState(held):null;
+  const fixes=reviewing?reviewing.pending.length:0;
+  // Nothing checked yet: the move is the check itself, not Finishing, which comes after it.
+  const unchecked=!!reviewing&&!reviewing.any&&!reviewing.failed.length;
   const move=stopped?{title:'It stopped and needs you',text:'See what happened below, then choose how to go on.'}
     :working||finished?null
     :!hasText?{title:'Write the draft from your outline',text:'Shape the outline, then write the draft or one section at a time.'}
     :fixes?{title:fixes===1?'1 fix to review in your text':fixes+' fixes to review in your text',text:'Accept or reject each one where it is marked. Nothing changes until you do.'}
+    :unchecked?{title:'Check your draft',text:'Start the check here, or choose what it covers below first. Nothing changes until you accept a fix.',
+      action:sDeskCan(held)?{label:'Check spelling and grammar',run:()=>{const go=held.review.head&&sReviewFind(held.review.head,'check');if(go)go.click();}}:null}
     :sDeskCan(held)?{title:'Review your draft',text:'Finishing checks it before you publish. Nothing changes until you accept.',action:{label:'Open Finishing',run:()=>sDeskFinishFrom(held)}}:null;
   const head=sNode('div','workbench-head');head.dataset.key='workbench-head';
   // What is under way, in the words its own screen uses: a check in review mode, or the job.
@@ -1793,7 +1798,7 @@ function sReviewHead(held,state){
     // what it is doing this moment, and Stop. The page's own lede and activity lines give
     // way to it while it shows (blog.css), so nothing says the same thing twice.
     const human=state.working.kind==='finish-humanize',steps=state.human?(human?'Step 2 of 2: the wording check. The copy edit is done and its fixes are in your text.':'Step 1 of 2: the copy edit. The wording check follows by itself.'):'';
-    const line=sNode('h2','desk-working-note',sReviewDoing(state));line.setAttribute('role','status');
+    const line=sNode('h2','desk-working-note review-status-title',sReviewDoing(state));line.setAttribute('role','status');
     const stop=sButton('Stop',async button=>{await busy(button,'Stopping…',async()=>{try{const before=held.view;held.view=await api('desk-stop',{id:held.id,job:state.working.id});sDeskRefresh(held,before);}catch(error){notice(error.message,true);}});});stop.disabled=!sDeskCan(held);sReviewMark(stop,'stop');
     const label=sNode('p','move-label','Working now · nothing for you to do');
     head.append(sAdd(sNode('div','card review-checking review-status'),label,line,steps?sNode('p','review-status-step',steps):null,sNode('p','quiet',sReviewLede(state)),sActivityNow(held.view.activity,{id:held.id}),sAdd(sNode('div','bar'),stop)));

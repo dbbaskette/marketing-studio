@@ -377,9 +377,7 @@
 
 /* What the review left after its one pass of fixes: notes, folded away. */
 .desk-review-notes > summary {
-  cursor: pointer;
   padding: 6px 0;
-  color: var(--quiet);
 }
 
 .desk-review-notes[open] > summary {

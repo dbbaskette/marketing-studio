@@ -2,42 +2,79 @@
 
 # Marketing Studio
 
-One local home for writing blogs, making branded presentations, developing training,
-and explaining ideas with infographics. Bring your material, work with your signed-in
-Codex or Claude Code assistant, and refine the result on each studio’s editing desk.
-You decide what is ready, what goes to Google, and what is shared.
+Write the blog. Build the deck. Teach the course. Draw the idea. Marketing Studio is one
+local home for all four, worked with the assistant you already use and finished on a
+desk where every decision is yours.
+
+Bring a topic, a document or a half-finished draft. Your signed-in Codex or Claude Code
+assistant does the long work in the background; you read, edit and decide. Nothing goes
+to Google, to your team or to anyone else until you send it.
 
 [Get started](#get-started) · [Downloads](https://github.com/dbbaskette/marketing-studio/releases)
 · [Installation](docs/installation.md) · [Shared settings](docs/shared-setup.md)
-· [Incremental workflow](docs/incremental-workflow.md)
+· [Keep work moving](docs/incremental-workflow.md)
 
-## Choose your studio
+## Four studios, one way of working
 
-| Studio | Bring | Make and refine |
+| Studio | Bring | Take away |
 | --- | --- | --- |
-| [Blog Studio](studios/blog/README.md) | A topic, outline, draft, Google Doc or published post's link | Blogs, copy edits, voice-guided revisions, suggestions for the original author, and GEO reviews and reports for clarity in AI search |
-| [Presentation Studio](studios/presentation/README.md) | An idea, document or existing deck | A branded slide deck, with slide text approval before design and focused changes afterward |
-| [Training Studio](studios/training/README.md) | A topic, audience and reference material | A teaching plan, learner guides, briefs, slides and practice at levels 101–401 |
-| [Infographic Studio](studios/infographic/README.md) | Documents, notes, links or measured data | A visual page with editable labels and charts, optional artwork and approved exports |
+| [Blog Studio](studios/blog/README.md) | A topic, outline, draft, Google Doc or a published post's link | A finished blog, copy edits marked in your text, suggestions for the original author, and a GEO review for AI search |
+| [Presentation Studio](studios/presentation/README.md) | An idea, a document or an existing deck | A deck in your brand: slide text first, then design, then delivery when you choose |
+| [Training Studio](studios/training/README.md) | A topic, an audience and reference material | A teaching plan, learner guides, briefs, slides and practice, at levels 101 to 401 |
+| [Infographic Studio](studios/infographic/README.md) | Documents, notes, links or measured data | One clear page with editable labels and charts, optional artwork and approved exports |
 
-Use any studio independently, or install the suite. Opening a studio starts no
-assistant job. The applications run locally; assistant requests and explicitly
-chosen research, Google or team operations use their respective services.
+Use one studio on its own or install the suite. Opening a studio starts no assistant job.
+
+![One route for every piece of work: Brief, Plan, Make and Ship, and what each phase is in Blog Studio, Presentation Studio, Training Studio and Infographic Studio](docs/assets/marketing-studio-roadmap.svg)
+
+### You always know where you are
+
+Every desk opens with the same three things, in the same place:
+
+- **The roadmap.** Brief, Plan, Make, Ship. It is tinted as far as the work has come,
+  each phase says what it is, and the line moves while your assistant is working.
+- **Your move.** The one thing waiting for you, with the button that does it. When
+  nothing is waiting, it says so.
+- **Working now.** What the assistant is doing this moment, with **Stop**. Read or edit
+  what is already there while it works.
+
+### It checks its own work before it asks you
+
+The studios are built to keep going. They stop for you when a decision is yours, and
+not otherwise.
+
+- **Slide text checks itself.** In Presentation Studio and Training Studio a second
+  assistant job checks the slide text against your sources and corrects it once before
+  you see it.
+- **One pass of fixes, not a list of suggestions.** After a deck is designed it is
+  reviewed, and what the review finds is fixed in a single pass, drawing and wording
+  both. Whatever is left is kept as quiet review notes that hold nothing up.
+- **Questions only when they are yours.** The assistant asks about your intent, a fact
+  that is not in the sources, or a choice between valid options. It does not ask about
+  anything it can look up or fix.
+- **Approve as you go.** In Training Studio each finished draft can be marked ready
+  while the next is still being written from it.
+- **No clock on the long work.** In Blog Studio, Presentation Studio and Training
+  Studio an assistant step runs until it finishes or you press **Stop**.
 
 ## Brand packs
 
-Open **Brands** to create or update the packs and icon libraries used by the studios.
-It uses the repository saved under **Shared settings → Brand → Brands repository**.
+Open **Brands** to create or update the packs and icon libraries the studios draw
+from. A pack holds a brand's colours, fonts, logos, slide templates, layouts and its
+written guide. Packs live in the repository saved under **Shared settings → Brand →
+Brands repository**, and every pack found there can be chosen as your default or for
+one piece of work.
+
 Sources, extraction and review stay in a working copy until **Save** checks, seals and
-commits that one brand. **Push** is a separate action with the exact destination and
-saved commits shown. Opening the list starts no assistant and fetches no repository.
-See [Brands](docs/shared-setup.md#brands).
+commits that one brand. **Push** is a separate action that shows the exact destination
+and the saved commits first. Opening the list starts no assistant and fetches no
+repository. See [Brands](docs/shared-setup.md#brands).
 
 ## Get started
 
 ### 1. Install
 
-Choose an available bundle for your operating system and processor from
+Choose a bundle for your operating system and processor from
 [Releases](https://github.com/dbbaskette/marketing-studio/releases). Unzip it and run
 this inside the unpacked folder:
 
@@ -45,11 +82,11 @@ this inside the unpacked folder:
 bash install.sh
 ```
 
-Prepared platform bundles include private runtimes and the tools selected for that
-bundle. Source installers may download prerequisites. **Bring Git and an installed,
-signed-in Codex or Claude Code assistant**; bundled installers do not include the
-assistant or sign you in. Google access, brand skills, fonts and preview tools depend
-on what you make. See [requirements and platform support](docs/installation.md).
+Prepared bundles include private runtimes and the tools selected for that bundle.
+Source installers may download prerequisites. **Bring Git and an installed, signed-in
+Codex or Claude Code assistant**; the installers do not include the assistant or sign
+you in. Google access, brand skills, fonts and preview tools depend on what you make.
+See [requirements and platform support](docs/installation.md).
 
 For a source installation:
 
@@ -67,51 +104,48 @@ or `--studios infographic`. Select skill integration with `--target codex` or
 
 Run `marketing-studio` (or `~/.local/bin/marketing-studio` if it is not on your PATH).
 Choose your assistant, name, work folder or team repository, and optional brand and
-Google preferences. You can complete the same shared setup from any studio.
+Google preferences. The same shared setup can be completed from any studio, and it
+starts no assistant work.
 
-Shared settings also hold task model profiles, research sites, delivery defaults
-and installation locations. Existing projects keep their saved inputs and choices;
-changing defaults does not move a workspace. Setup starts no assistant work.
+Shared settings also hold task model profiles, research sites, delivery defaults and
+installation locations. Existing projects keep their saved inputs and choices; changing
+a default never moves a workspace. Under **Assistant → Quick scan speed** you can pick
+a lighter first pass after seeing the model and reasoning it would use.
+[Quick scan settings](docs/shared-setup.md#quick-scan-speed)
 
-Under **Assistant → Quick scan speed**, inspect the effective model and reasoning
-before choosing a lighter first pass. **Use this Quick choice** enables task routing;
-review the other task choices before **Save settings**. Existing projects keep their
-saved choices. [Quick scan settings](docs/shared-setup.md#quick-scan-speed)
+### 3. Make something
 
-### 3. Start a project
-
-- **Blog Studio:** start a new blog or choose **Edit or polish a draft**. Review
-  marked changes, edit a section, or use the full desk and Finishing tools. To review a
-  post for readers and AI search, tick **Include a GEO review**. For a post that is already
-  live, choose **Get a GEO report for a published post**.
-- **Presentation Studio:** choose an idea, document or existing deck. Where a slide
-  text review is required, choose **Approve text & design deck** before design starts.
-  Refine the designed slides and choose **Deliver** yourself.
-- **Training Studio:** edit the provisional outline, then choose **Approve outline
-  & research**. New trainings prioritize each level's guide and brief, then practice,
-  before decks. Read drafts as they arrive and mark them ready yourself. A requested
-  deck has its own slide-text approval before design. See the
+- **Blog Studio.** Start a new blog, or choose **Edit or polish a draft**. **Your move**
+  starts the check; each fix is marked in your text to accept or reject. Finishing
+  holds the claim check, the GEO review and the send to Google. For a post that is
+  already live, choose **Get a GEO report for a published post**.
+- **Presentation Studio.** Start from an idea, a document or an existing deck. Read
+  the checked slide text and choose **Approve text & design deck**. The designed deck
+  is reviewed and fixed once by itself; refine what you like and choose **Deliver**.
+- **Training Studio.** Edit the proposed outline, then choose **Approve outline &
+  research**. Guides and briefs come first, then practice, then decks. Read each draft
+  as it arrives and mark it ready. Slide text approval before design is on by default
+  and can be turned off when you start. See the
   [training flow and task map](docs/design/create-training-task-flow.md).
-- **Infographic Studio:** choose a source-backed story, build and inspect the page,
-  then approve the exact checked revision and prepare its files.
+- **Infographic Studio.** Choose a source-backed story and build the page; the preview
+  is drawn as soon as it is built. Inspect it, approve the exact checked revision and
+  prepare its files.
 
-You can also ask your assistant to use a studio directly in chat. New conversation
-work uses the desk’s checked records without launching another assistant. A focused
-request stays focused; transferring execution to the runner is explicit.
+You can also ask your assistant to use a studio directly in chat. A focused request
+stays focused, and handing the work to a studio's runner is always explicit.
 
-Home shows **Unfinished drafts** alongside saved work that **Needs you**. Resume a
-private form, start fresh explicitly, or discard it without deleting a project.
-Blog Studio also preserves unfinished New blog and Polish forms across reloads.
+Home lists **Unfinished drafts**, work that **Needs you**, work **In progress** and
+**Recent work**. Resume a private form, start fresh, or discard it without deleting a
+project. [Keep work moving](docs/incremental-workflow.md) covers recovering edits made
+in two tabs, reading research while it is still being checked, and how flagged claims
+are handled.
 
-Presentation Studio and Training Studio retain slide corrections and recover
-cross-tab conflicts with a copy of all local edits and an explicit latest-version
-comparison. Design waits for approval of the saved corrections. Research exposes
-accepted findings and completed section drafts while later work continues; both
-remain unreviewed until the final independent check. Training Studio lets you
-explicitly include flagged claims, optionally with warnings, or exclude them; those choices
-never turn uncertainty into independently checked evidence. Large workspaces retain
-bounded compact polling instead of fetching every document on every idle probe.
-[Keep work moving](docs/incremental-workflow.md) explains these controls and limits.
+### On your phone
+
+Start with `marketing-studio start --all --lan` and open the private link it prints, on
+the same trusted Wi-Fi. Pages are compressed and reused between visits, so they open
+quickly over a slow link. The link grants access to your local tools: keep it private
+and never expose these ports publicly. [Phone access](docs/local-network.md)
 
 ## Sources and the Document Library
 
@@ -160,9 +194,7 @@ marketing-studio open infographic
 | `marketing-studio --help` | See commands and options |
 
 Select individual studios with `--bs`, `--ps`, `--ts` and `--is`. Active jobs block a
-normal stop or restart. For phone access, use the private link printed by the LAN
-command on the same trusted network. Links grant access to your local tools; keep
-them private and never expose these HTTP ports publicly. [Phone access](docs/local-network.md)
+normal stop or restart.
 
 ## Your work stays yours
 

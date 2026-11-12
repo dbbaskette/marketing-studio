@@ -339,7 +339,7 @@ async function action(verb, values={}, revision=null, options={}) {
   const unlock=options.quiet?lockControls():()=>{},owner=beginWork(label||'Saving your changes',0,id);
   if(options.quiet){owner.quiet=true;owner.detail='This can take a moment. Your saved work is kept.';paintWork();}
   let checking=false;
-  const polling=setInterval(async()=>{if(checking)return;checking=true;try{progressNotice(await request('/api/activity?id='+encodeURIComponent(id)),owner,id);}catch(f){connectionUncertain(owner);}finally{checking=false;}},2000);
+  const polling=setInterval(async()=>{if(checking||document.hidden)return;checking=true;try{progressNotice(await request('/api/activity?id='+encodeURIComponent(id)),owner,id);}catch(f){connectionUncertain(owner);}finally{checking=false;}},2000);
   try {
     const answer = await request('/api/action', {action:verb, id, expected_revision:revision??held.project.revision, ...values});
     if(!options.quiet&&!here(id)){const result=answer.result,state=result?.state;elsewhere(owner,['unknown','failed'].includes(state)?(imageProblems[result.reason]||imageUncertain):'');return result;}
@@ -422,7 +422,8 @@ async function drawHome() {
   } catch (failure) { error(failure.message); }
 }
 async function bytes(file) { if (file.size > 16_000_000) throw Error('Choose a source no larger than 16 MB.'); return new Uint8Array(await file.arrayBuffer()); }
-function encoded(raw) { let binary=''; for (const v of raw) binary += String.fromCharCode(v); return btoa(binary); }
+// In pieces, so a large source does not hold the page still while it is prepared.
+function encoded(raw) { let binary=''; for (let at=0; at<raw.length; at+=0x8000) binary += String.fromCharCode.apply(null, raw.subarray(at, at+0x8000)); return btoa(binary); }
 function retain(input, key) { input.addEventListener('input', () => { draft[key] = input.value; }); }
 async function startNewIntake(){if(!await privateIntake.startFresh())return;resetIntake();intakeLoaded=true;await newSheet();}
 async function newSheet() {
@@ -1011,7 +1012,11 @@ async function compose(){
     const capability=await request('/api/computer');
     sheet('Build this page',make('p','',capability.disclosure),make('p','','The selected story is composed with your pinned brand. If artwork helps explain the story, your assistant writes detailed art direction and the selected image provider generates it. Fonts and layout are checked first. Nothing is approved or published.'),add(make('div','bar'),button('Build page',async()=>{
       if(!held.project.brand){try{await request('/api/brand-current',{id:held.project.id,expected_revision:held.project.revision});await openProject(held.project.id);}catch(f){error(f.message);return;}}
+      const before=held.project.revision,building=held.project.id;
       await action('build',{request_id:requestId()});
+      // A built page is drawn straight away: the preview is local and starts no assistant or
+      // image request, so there is nothing to ask before showing what was made.
+      if(here(building)&&held.project.scene&&held.project.revision!==before)await action('preview');
     },true),button('Cancel',closeSheet)));
   }catch(f){error(f.message);}
 }

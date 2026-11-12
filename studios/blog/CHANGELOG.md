@@ -32,6 +32,8 @@ Unreleased: the desk's view switch, **Go to section** and **Polish**, **Sources*
 
 ## Unreleased — 4.10.1
 
+Before a check has run, **Your move** on the desk is the check itself and starts it. The roadmap across the top of a desk is drawn as a route: tinted as far as the work has come, with numbered marks, a line under each phase saying what it is, and a line that moves while the assistant works; it no longer collapses on a phone. Page scripts and styles are compressed and reused instead of downloaded on every open. On Marketing Studio's home an unfinished blog is listed as in progress, not as waiting on you.
+
 Saved work publishes compact metadata for Marketing Studio’s Needs you, In progress and Recent work overview. Direct resume opens the saved editing/decision context. Metadata browsing starts no studio or provider work.
 
 Releases are published from `skills/blog-studio/VERSION`. Each entry says what

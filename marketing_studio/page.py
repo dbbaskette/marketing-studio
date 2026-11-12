@@ -304,6 +304,37 @@ class Home(server.Page):
                 raise WorkspaceError(str(error)) from error
         if path == '/api/computer':
             return server.as_json(200, {'computer': self.computer(True)})
+        # Opening or connecting a studio can take a minute or more. The settings are read under
+        # the lock; the launch itself is not, so Home, a phone and every other button keep
+        # answering meanwhile. The launcher has its own lock for the studios it starts.
+        if path == '/api/open':
+            with self.changes:
+                preferences = state.read()
+                if not self.configured(shared.read()[0]):
+                    raise WorkspaceError('Finish shared setup before opening a studio.')
+                values, problem = shared.read()
+                if problem:
+                    raise WorkspaceError(problem)
+                # This computer keeps the loopback link; only a phone is given a studio's bridge.
+                remote = getattr(self.caller, 'remote', False)
+                resume = sent.get('resume')
+                if resume is not None:
+                    try: work_overview.check(sent.get('studio'), resume)
+                    except (ValueError, KeyError) as error: raise WorkspaceError(str(error)) from None
+            link = self.launcher.open(sent.get('studio'), preferences, values, remote=remote)
+            if resume is not None: link = work_overview.link(sent.get('studio'), resume, link)
+            return server.as_json(200, {'link': link})
+        if path == '/api/connect':
+            with self.changes:
+                preferences = state.read()
+                values, problem = shared.read()
+                if problem:
+                    raise WorkspaceError(problem)
+                if not self.configured(values):
+                    raise WorkspaceError('Finish shared setup before connecting a studio.')
+            result = self.launcher.connect(sent.get('studio'), preferences, values)
+            with self.changes:
+                return server.as_json(200, {**self.snapshot(), 'connected': result})
         with self.changes:
             if path == '/api/shared':
                 before = shared.read()[0]
@@ -353,29 +384,4 @@ class Home(server.Page):
                         raise WorkspaceError('That folder does not contain the studio launcher.')
                 kept = state.read()
                 state.save({**kept, 'paths': {**kept.get('paths', {}), **paths}})
-            elif path == '/api/open':
-                preferences = state.read()
-                if not self.configured(shared.read()[0]):
-                    raise WorkspaceError('Finish shared setup before opening a studio.')
-                values, problem = shared.read()
-                if problem:
-                    raise WorkspaceError(problem)
-                # This computer keeps the loopback link; only a phone is given a studio's bridge.
-                remote = getattr(self.caller, 'remote', False)
-                resume = sent.get('resume')
-                if resume is not None:
-                    try: work_overview.check(sent.get('studio'), resume)
-                    except (ValueError, KeyError) as error: raise WorkspaceError(str(error)) from None
-                link = self.launcher.open(sent.get('studio'), preferences, values, remote=remote)
-                if resume is not None: link = work_overview.link(sent.get('studio'), resume, link)
-                return server.as_json(200, {'link': link})
-            elif path == '/api/connect':
-                preferences = state.read()
-                values, problem = shared.read()
-                if problem:
-                    raise WorkspaceError(problem)
-                if not self.configured(values):
-                    raise WorkspaceError('Finish shared setup before connecting a studio.')
-                result = self.launcher.connect(sent.get('studio'), preferences, values)
-                return server.as_json(200, {**self.snapshot(), 'connected': result})
             return server.as_json(200, self.snapshot())

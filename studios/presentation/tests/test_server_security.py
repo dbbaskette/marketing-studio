@@ -347,6 +347,9 @@ class RefusalTests(SocketCase):
             with self.subTest(label):
                 self.assertEqual(status, expected[label])
                 for name, value in SECURITY_HEADERS.items():
+                    # A script or style is asked about again on every open, never stored blind.
+                    if name == 'Cache-Control' and label in ('the script', 'the styles'):
+                        value = 'no-cache'
                     self.assertEqual(headers.get_all(name), [value])
                 self.assertNotIn('Python', headers.get('Server', ''))
 

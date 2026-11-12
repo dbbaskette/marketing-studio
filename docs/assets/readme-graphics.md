@@ -26,6 +26,7 @@ outdated graphics without changing files. No image provider or application start
 | Product | Asset |
 | --- | --- |
 | Marketing Studio | [Suite header](marketing-studio-header.svg) |
+| Marketing Studio | [The route every studio follows](marketing-studio-roadmap.svg) |
 | Blog Studio | [Blog Studio header](../../studios/blog/docs/assets/blog-studio-header.svg) |
 | Presentation Studio | [Presentation Studio header](../../studios/presentation/docs/assets/presentation-studio-header.svg) |
 | Training Studio | [Training Studio header](../../studios/training/docs/assets/training-studio-header.svg) |

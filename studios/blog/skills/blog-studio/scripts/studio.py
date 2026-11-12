@@ -146,7 +146,7 @@ def write_json(path, value):
             work_summary.save(
                 path.parent,
                 value.get('title'),
-                'recent' if stage in ('ready', 'published') else 'needs-you',
+                'recent' if stage in ('ready', 'published') else 'in-progress',
                 'Open editorial work'
                 if stage in ('ready', 'published')
                 else 'Continue the saved blog',

@@ -1,6 +1,8 @@
 """Shared loopback HTTP security and page server."""
 from __future__ import annotations
 
+import gzip
+import hashlib
 import json
 import os
 import re
@@ -55,6 +57,35 @@ NOT_A_PERSON = ('The link that opens the page carries its key, and the key is sh
 # Marketing Studio names the port of its home page when it starts a studio, so the studio's
 # page can offer the way back however that page was reached.
 SUITE_PORT = 'MARKETING_STUDIO_HOME_PORT'
+
+
+# A page's scripts and styles, as last sent: {sha256 of the bytes: gzip of them}. They are the
+# same bytes on every open, so the browser is told to ask again each time (never to trust a
+# stale copy) and is answered "not changed" when its copy is current, compressed otherwise.
+_PACKED: dict = {}
+_PACKED_LOCK = threading.Lock()
+STATIC_CACHE = 'no-cache'
+
+
+def static_reply(kind: str, body: bytes, headers) -> tuple:
+    """A script or a style sheet: answered 304 to a browser that already holds these very
+    bytes, and gzipped to one that reads gzip. Never for HTML or the API, which stay
+    `no-store`."""
+    mark = hashlib.sha256(body).hexdigest()[:32]
+    packs = 'gzip' in (headers.get('Accept-Encoding') or '').lower()
+    tag = f'"{mark}{"-gz" if packs else ""}"'
+    extra = {'Cache-Control': STATIC_CACHE, 'ETag': tag, 'Vary': 'Accept-Encoding'}
+    if tag in [one.strip() for one in (headers.get('If-None-Match') or '').split(',')]:
+        return HTTPStatus.NOT_MODIFIED, None, b'', extra
+    if not packs:
+        return HTTPStatus.OK, kind, body, extra
+    with _PACKED_LOCK:
+        packed = _PACKED.get(mark)
+        if packed is None:
+            if len(_PACKED) > 64:
+                _PACKED.clear()
+            packed = _PACKED[mark] = gzip.compress(body, 6, mtime=0)
+    return HTTPStatus.OK, kind, packed, {**extra, 'Content-Encoding': 'gzip'}
 
 
 def suite_port(environ=None) -> int | None:
@@ -348,7 +379,8 @@ class Page:
                 raise Refusal(HTTPStatus.NOT_FOUND, 'Nothing is served here.')
             if kind.startswith('text/html'):
                 body = with_appearance(with_suite_port(body, suite_port()))
-            return HTTPStatus.OK, kind, body
+                return HTTPStatus.OK, kind, body
+            return static_reply(kind, body, headers)
         if url.path == '/favicon.ico':
             return HTTPStatus.NO_CONTENT, None, b''
         if url.path in self.framed:

@@ -130,14 +130,15 @@ def describe(product, root, record):
         waiting = [name for name, gate in (record.get('gates') or {}).items() if gate.get('state') == 'waiting']
         if record.get('halted'): state, action = 'needs-you', 'Review the stopped step'
         elif waiting:
-            state, action = 'needs-you', {'gate:story':'Review the slide story','gate:outline':'Review slide text','gate:build':'Review delivery'}.get(waiting[-1], 'Review the pending decision')
+            state, action = 'needs-you', {'gate:story':'Review the slide story','gate:outline':'Review slide text','gate:look':'Pick a look for the deck','gate:build':'Review delivery'}.get(waiting[-1], 'Review the pending decision')
     progress = (record.get('research_execution') or {}).get('progress') or {}
     if state == 'recent' and ((progress.get('agents') or {}).get('count') or any(
             job.get('status') in ('working','waiting','running') for job in (record.get('drafts') or {}).get('jobs') or [])):
         state, action = 'in-progress', 'Open saved progress'
     if product == 'blog':
         stage = (record.get('editorial') or {}).get('stage') or record.get('stage')
-        state, action = ('recent', 'Open editorial work') if stage in ('ready', 'published') else ('needs-you', 'Continue the saved blog')
+        # An unfinished blog is work in progress: nothing in its saved state says it waits on anyone.
+        state, action = ('recent', 'Open editorial work') if stage in ('ready', 'published') else ('in-progress', 'Continue the saved blog')
     if product == 'infographic':
         title = (record.get('brief') or {}).get('title') or title
         state, action = ('recent', 'Open delivery') if record.get('approval') else ('needs-you', 'Review the saved infographic')

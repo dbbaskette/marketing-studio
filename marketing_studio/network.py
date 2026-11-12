@@ -229,8 +229,10 @@ class BridgeHandler(BaseHTTPRequestHandler):
         # A strict allowlist prevents hop-by-hop, forwarding, or duplicate headers
         # from altering the loopback target or its native authorization boundary.
         headers = {}
+        # If-None-Match and Accept-Encoding let a page's scripts and styles be answered "not
+        # changed" or compressed, which is most of what a phone downloads.
         for name in ('Content-Type', own.token_header, 'Sec-Fetch-Site',
-                     'Sec-Fetch-Mode', 'Sec-Fetch-Dest'):
+                     'Sec-Fetch-Mode', 'Sec-Fetch-Dest', 'If-None-Match', 'Accept-Encoding'):
             values = self.headers.get_all(name, [])
             if len(values) > 1:
                 return self.send_error(400, 'Send each request header once.')
@@ -248,12 +250,16 @@ class BridgeHandler(BaseHTTPRequestHandler):
             response = connection.getresponse()
             self.send_response(response.status)
             begun = True
+            revalidated = False
             for name, value in response.getheaders():
                 if name.lower() in ('content-type', 'content-length', 'content-disposition',
                                      'content-security-policy', 'x-content-type-options',
-                                     'x-frame-options', 'referrer-policy', 'cross-origin-resource-policy', 'allow'):
+                                     'x-frame-options', 'referrer-policy', 'cross-origin-resource-policy', 'allow',
+                                     'etag', 'content-encoding', 'vary'):
                     self.send_header(name, value)
-            self.send_header('Cache-Control', 'no-store')
+                # Only a script or style the studio itself marked as safe to ask about again.
+                revalidated = revalidated or (name.lower() == 'cache-control' and value.strip() == 'no-cache')
+            self.send_header('Cache-Control', 'no-cache' if revalidated else 'no-store')
             self.end_headers()
             while chunk := response.read(64 * 1024):
                 self.wfile.write(chunk)
