@@ -1003,13 +1003,23 @@ function receiptSheet(delivery,receipts){
 }
 function recoveryContent(r) {
   if(!r.current)return add(make('div','stack'),make('p','','An earlier step failed: '+r.label+'. Your page has changed since then.'),make('p','quiet','This failure does not describe the current page. Use the current page action above to continue; nothing was retried automatically.'),r.diagnostic?make('p','field-hint','Earlier diagnostic reference: '+r.diagnostic):null);
-  const retry=r.current&&r.next_action?button(r.next_label,()=>action(r.next_action,r.next_values,r.revision),true):null;
+  const retry=r.current&&r.next_action?button(r.next_label,async()=>{if(['build','preview','export'].includes(r.next_action)&&!(await rendererReady()))return;return action(r.next_action,r.next_values,r.revision);},true):null;
   return add(make('div','stack'),make('p','',r.message||r.label+' could not finish.'),r.help?make('p','quiet',r.help):null,make('p','quiet','Completed: '+(r.completed.join(', ')||'Earlier saved work')+'.'),make('p','quiet','Your saved page, artwork and image request identity are kept. '+(['preview','export','compose-image'].includes(r.next_action)?'This local retry does not generate artwork.':'Retry composition continues the saved build, including artwork when the page requires it.')),r.diagnostic?make('p','field-hint','Diagnostic reference: '+r.diagnostic):null,retry);
 }
 function recoverySheet(r){sheet('Continue from the saved step',recoveryContent(r),button('Back to the page',closeSheet));}
+// Drawing a page needs a renderer on this computer. Without one, say so and give the way to
+// Settings, before any work is started that could only fail.
+function rendererSheet(){
+  sheet('Set up the page renderer',make('p','','No page renderer is set up on this computer, so the page cannot be drawn yet.'),make('p','quiet','Choose one in Settings, Page renderer, then build the page again. Your story and saved work are kept.'),add(make('div','bar'),button('Open Settings',()=>{closeSheet();showSettings();},true),button('Not now',closeSheet)));
+}
+async function rendererReady(){
+  try{if((await request('/api/computer')).renderer_available)return true;}catch(failure){error(failure.message);return false;}
+  rendererSheet();return false;
+}
 async function compose(){
   try {
     const capability=await request('/api/computer');
+    if(!capability.renderer_available){rendererSheet();return;}
     sheet('Build this page',make('p','',capability.disclosure),make('p','','The selected story is composed with your pinned brand. If artwork helps explain the story, your assistant writes detailed art direction and the selected image provider generates it. Fonts and layout are checked first. Nothing is approved or published.'),add(make('div','bar'),button('Build page',async()=>{
       if(!held.project.brand){try{await request('/api/brand-current',{id:held.project.id,expected_revision:held.project.revision});await openProject(held.project.id);}catch(f){error(f.message);return;}}
       const before=held.project.revision,building=held.project.id;
@@ -1091,7 +1101,13 @@ async function showSettings() {
         list([...capability.problems, ...capability.unknown].map(code => messages[code] || code))),
       card('Page renderer', make('p', '', capability.renderer_available
         ? 'Installed renderer found. Preview checks actual fonts, layout, and output.'
-        : 'Configure an installed renderer, or use a prepared download that includes it. No browser is downloaded here.')),
+        : preferences.native.renderer ? 'The renderer named below is no longer at that path, so pages cannot be drawn.'
+        : 'No page renderer is set up, so pages cannot be drawn yet. No browser is downloaded here.'),
+        ...(capability.renderer_available ? [] : capability.renderer_found.length
+          ? [make('p', 'quiet', 'A headless renderer another tool installed is already on this computer. If that tool removes it later, choose one here again.'),
+             ...capability.renderer_found.map((path, n) => add(make('div', 'bar'), make('code', 'field-hint', path),
+               button(n ? 'Use this one' : 'Use this renderer', () => save({renderer: path}, 'Page renderer set. Pages can be drawn now.'), !n)))]
+          : [make('p', 'quiet', 'Give the full path of an installed Chromium headless shell under Infographic defaults, Advanced renderer setting, or use a prepared download that includes one.')])),
       card('Shared settings', sharedLink, make('p', 'quiet', 'Your infographic workspace stays local. Team connection and sharing happen only when you choose them in the team repository.')),
       card('Team repository', make('p','quiet','Shared infographics live in the team repository set in shared settings. It is separate from the Document Library on this computer.'),
         teamEmail.wrap, button('Save team email', () => save({team_email: teamEmail.input.value}, 'Team email saved.'))),

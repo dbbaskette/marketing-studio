@@ -1,6 +1,7 @@
 """Shared/native preference ownership and honest non-billable readiness."""
 from copy import deepcopy
 import json
+import os
 import threading
 from unittest import mock
 
@@ -74,6 +75,32 @@ class SettingsTests(Isolated):
         report = computer.inspect(chosen=settings.snapshot(), command=lambda _: '/synthetic/codex', environ={})
         self.assertFalse(report['credential_required'])
         self.assertNotIn('gemini-key-required', report['problems'])
+
+
+class RendererOnThisComputerTests(Isolated):
+    def shell(self, version, folder='.cache/hyperframes/chrome/chrome-headless-shell'):
+        path = self.home / folder / version / 'chrome-headless-shell-mac-arm64' / 'chrome-headless-shell'
+        path.parent.mkdir(parents=True)
+        path.write_text('#!/bin/sh\n')
+        path.chmod(0o755)
+        return path
+
+    def test_a_shell_another_tool_installed_is_offered_and_never_chosen_unasked(self):
+        self.settings.write_text(json.dumps({'assistant': {'agent': 'codex'}}))
+        self.assertEqual(computer.found_renderers(), [])
+        older, newer = self.shell('one'), self.shell('two')
+        os.utime(older, (1, 1))
+        plain = self.home / '.cache/hyperframes/chrome/chrome-headless-shell/three/x/chrome-headless-shell'
+        plain.parent.mkdir(parents=True)
+        plain.write_text('not runnable')
+        report = computer.inspect(command=lambda _: '/synthetic/codex', environ={})
+        self.assertEqual(report['renderer_found'], [str(newer), str(older)])
+        self.assertFalse(report['renderer_available'])
+        self.assertIsNone(settings.snapshot()['renderer'])
+        chosen = settings.save({'renderer': str(newer)}, expected=settings.snapshot()['native_revision'])
+        report = computer.inspect(chosen=chosen, command=lambda _: '/synthetic/codex', environ={})
+        self.assertTrue(report['renderer_available'])
+        self.assertEqual(report['renderer_found'], [])
 
 
 class SharedDeliveryDefaultsTests(Isolated):

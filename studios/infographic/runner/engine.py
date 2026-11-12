@@ -14,6 +14,9 @@ from .assistant_failure import AssistantFailure
 from .validation import REQUIRED_CHECKS, records, require, text
 from .workspace import _read, file_lock
 
+NO_RENDERER = ('No page renderer is set up on this computer, so the page cannot be drawn. '
+               'Open Settings, Page renderer, choose one, then build the page again.')
+
 
 class Engine:
     def __init__(self, store, *, executable=None, renderer=None, adapters=None, assistant=None):
@@ -140,11 +143,19 @@ class Engine:
         direction = self.assistant.art_direction(project)
         return self.image_direction(ident, direction, expected_revision=expected_revision)
 
+    def can_draw(self):
+        """Whether a page renderer this computer can run is set up."""
+        return bool(self.renderer is not None or self.executable and Path(self.executable).is_file()
+                    and os.access(self.executable, os.X_OK))
+
     def build(self, ident, *, expected_revision, request_id):
         with file_lock(self.store._project(ident) / 'jobs/build.lock'):
             from .validation import identifier
             require(identifier(request_id), 'Give this build an owned request identity.')
             self.store.expect(self.store.read(ident), expected_revision)
+            # Said before anything is started, in words: a missing renderer is a setting to
+            # fix, not a failed step to retry.
+            require(self.can_draw(), NO_RENDERER)
             checkpoint = {'step': 'composition', 'completed': [], 'asset': None, 'revision': expected_revision}
             build_recovery.keep(self.store, ident, checkpoint['step'])
             try:
@@ -166,8 +177,7 @@ class Engine:
         project = self.store.read(ident)
         self.store.expect(project, expected_revision)
         require(project['selected_story'] is not None, 'Choose the story before building its page.')
-        require(self.renderer is not None or self.executable and Path(self.executable).is_file()
-                and os.access(self.executable, os.X_OK), 'Configure the installed renderer before starting a page build.')
+        require(self.can_draw(), NO_RENDERER)
         if project['scene'] is None:
             project = scene.adopt_best(self.store, ident, expected_revision=project['revision'])
         checkpoint['completed'] = ['Page composition']
