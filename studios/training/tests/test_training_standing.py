@@ -15,7 +15,7 @@ from test_runner_deck import DeckCase, MAJOR
 
 from runner import drafts, page, pipeline
 
-STANDING_FIELDS = {'state', 'phase', 'words', 'sentence', 'level', 'counts', 'levels', 'next',
+STANDING_FIELDS = {'state', 'phase', 'words', 'sentence', 'level', 'counts', 'levels', 'next', 'offer',
                    'kinds'}
 COUNT_FIELDS = {'materials', 'to_write', 'updating', 'drafts', 'attention', 'decision', 'ready'}
 
@@ -93,13 +93,13 @@ class StandingTests(DeckCase):
 
     def two_levels_with_a_major_finding(self):
         """The audited sequence: two levels, every draft written, and a major review finding
-        kept on the level 101 deck."""
-        self.workers.found = [[MAJOR], [], [], []]
+        that the one pass of fixes left on the level 101 deck, kept as a review note."""
+        self.workers.found = [[MAJOR], [MAJOR], [], []]
         root = self.begin(levels=['101', '201'])
         self.assertEqual(self.to_end(root), [])
         return root
 
-    def test_row_194_every_screen_agrees_on_a_finished_job_that_needs_attention(self):
+    def test_row_194_every_screen_agrees_on_a_finished_job_whose_deck_keeps_review_notes(self):
         root = self.two_levels_with_a_major_finding()
         jobs, commits = len(self.workers.jobs), self.log()
         item, listing = self.listed(root)
@@ -115,21 +115,24 @@ class StandingTests(DeckCase):
                 self.assertEqual(where['state'], 'needs-you')
                 self.assertEqual(where['sentence'], told['sentence'])
                 self.assertFalse(where['ready'])
-        self.assertEqual((told['phase'], told['words']), ('attention', 'Needs attention'))
+        # What the review left is a note: the deck is a draft like the rest, and nothing
+        # says it needs attention.
+        self.assertEqual((told['phase'], told['words']), ('drafts', 'Drafts to mark ready'))
         self.assertEqual(told['next'], {'kind': 'material', 'label': 'Review the level 101 '
-                                        'slide deck', 'material': 'deck@101', 'level': '101',
-                                        'slide': MAJOR['slide']})
-        self.assertTrue(told['sentence'].startswith(
-            'The level 101 slide deck needs attention before it can be marked ready.'))
-        self.assertIn('9 drafts to mark ready', told['sentence'])
-        self.assertEqual(shown['needs'], ['the level 101 slide deck'])
+                                        'blueprint', 'material': 'blueprint@101',
+                                        'level': '101', 'slide': None})
+        self.assertEqual(told['sentence'], '10 drafts to read and mark ready.')
+        self.assertEqual(shown['needs'], [])
+        deck_card = next(card for card in shown['cards'] if card['name'] == 'deck@101')
+        self.assertEqual((deck_card['state'], deck_card['needs']), ('draft', []))
+        self.assertEqual(len(deck_card['notes']), 1)
         # Still to write counts drafts that do not exist yet: all ten do.
         self.assertEqual(told['counts'], {'materials': 10, 'to_write': 0, 'updating': 0,
-                                          'drafts': 9, 'attention': 1, 'decision': 0,
+                                          'drafts': 10, 'attention': 0, 'decision': 0,
                                           'ready': 0})
         self.assertEqual((item['to_make'], item['to_write'], item['to_review'],
-                          item['attention']), (0, 0, 9, 1))
-        self.assertEqual(told['levels']['101']['attention'], 1)
+                          item['attention']), (0, 0, 10, 0))
+        self.assertEqual(told['levels']['101']['attention'], 0)
         self.assertEqual(told['levels']['201'], {**told['levels']['201'], 'attention': 0,
                                                  'drafts': 5})
         # The row of stages never calls a stage done that is not Ready, nor the index begun.
@@ -153,9 +156,9 @@ class StandingTests(DeckCase):
         self.assertEqual({name for name in now if now[name] != before[name]}, {'document@201'})
         self.assertEqual(now['document@201'], 'ready')
         counts = after['standing']['counts']
-        self.assertEqual((counts['drafts'], counts['ready'], counts['attention']), (8, 1, 1))
+        self.assertEqual((counts['drafts'], counts['ready'], counts['attention']), (9, 1, 0))
         self.assertEqual(after['standing']['levels']['201']['ready'], 1)
-        self.assertEqual(after['standing']['next']['material'], 'deck@101')
+        self.assertEqual(after['standing']['next']['material'], 'blueprint@101')
 
     def test_drafts_with_nothing_to_settle_wait_for_mark_ready_and_then_are_ready(self):
         root = self.begin(levels=['101'])
