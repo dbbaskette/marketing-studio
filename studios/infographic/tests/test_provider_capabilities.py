@@ -65,6 +65,9 @@ class CapabilityTests(Isolated):
     def test_children_do_not_inherit_provider_credentials_or_git_overrides(self):
         values = {'PATH': '/bin', 'HOME': str(self.home), 'GEMINI_API_KEY': 'sentinel',
                   'OPENAI_API_KEY': 'sentinel', 'ANTHROPIC_API_KEY': 'sentinel',
-                  'GIT_DIR': 'wrong', 'CUSTOM_SECRET': 'sentinel'}
+                  'GIT_DIR': 'wrong', 'CUSTOM_SECRET': 'sentinel',
+                  'USER': 'author', 'LOGNAME': 'author'}
+        # The person's name is kept: Claude Code finds its saved sign-in by it.
         self.assertEqual(capabilities.private_child_environment(values),
-                         {'PATH': '/bin', 'HOME': str(self.home)})
+                         {'PATH': '/bin', 'HOME': str(self.home), 'USER': 'author',
+                          'LOGNAME': 'author'})
