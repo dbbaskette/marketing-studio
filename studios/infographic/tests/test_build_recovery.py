@@ -175,6 +175,17 @@ class SafeRendererFailures(Isolated):
         self.assertNotIn('private-token', json.dumps(shown))
         self.assertNotIn('/private/machine', json.dumps(shown))
 
+    def test_a_build_without_a_renderer_says_so_and_leaves_no_failed_step(self):
+        from runner.engine import NO_RENDERER
+        engine = fixtures.Engine(self.store)
+        engine.executable = None
+        before = build_recovery.read(self.store, self.ident)
+        with self.assertRaises(Invalid) as refused:
+            engine.build(self.ident, expected_revision=self.store.read(self.ident)['revision'], request_id='request-one')
+        self.assertEqual(str(refused.exception), NO_RENDERER)
+        self.assertIn('Settings', NO_RENDERER)
+        self.assertEqual(build_recovery.read(self.store, self.ident), before)
+
     def test_missing_renderer_also_has_a_persisted_recovery(self):
         from runner.render import RenderError
         engine = fixtures.Engine(self.store)
