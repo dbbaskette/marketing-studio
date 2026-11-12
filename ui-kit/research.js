@@ -12,6 +12,34 @@ const StudioResearch = (() => {
   const message = error => error && error.message || String(error || 'This action could not finish.');
   const summary = state => !state ? 'Loading sources…' : state.external ? (state.restricted ? 'Use supplied sources and search approved sites.' : 'Use supplied sources and search the public web.') : 'Use supplied sources only.';
 
+  // Every web link in a file a person chose: a plain list, a spreadsheet export, notes or a
+  // saved page. Order kept, each link once; http is asked for as https, and a link carrying a
+  // sign-in is left out. `left` counts what was found and not kept.
+  const LINK_FILE_BYTES = 256 * 1024, MOST_SOURCES = 40;
+  function linksIn(text) {
+    const links = [], seen = new Set(); let left = 0;
+    for (const found of String(text || '').match(/https?:\/\/[^\s<>"'`|\\^{}]+/gi) || []) {
+      let link = found.replace(/^http:/i, 'https:');
+      // Punctuation and a closing bracket after a link belong to the sentence around it.
+      for (;;) { const cut = link.replace(/[.,;:!?*]+$/, '').replace(/&(?:amp|quot|gt|lt);?$/i, '');
+        const close = cut.slice(-1), open = {')': '(', ']': '['}[close];
+        const next = open && cut.split(open).length < cut.split(close).length ? cut.slice(0, -1) : cut;
+        if (next === link) break; link = next; }
+      link = link.replace(/&amp;/gi, '&');
+      let parsed; try { parsed = new URL(link); } catch (_) { left += 1; continue; }
+      if (parsed.username || parsed.password || !parsed.hostname.includes('.')) { left += 1; continue; }
+      if (seen.has(parsed.href)) continue;
+      seen.add(parsed.href); links.push(link);
+    }
+    return {links, left};
+  }
+  async function linksInFile(file) {
+    if (!file) return {links: [], left: 0, problem: 'Choose a file first.'};
+    if (file.size > LINK_FILE_BYTES) return {links: [], left: 0, problem: file.name + ': choose a file of links within 256 KB.'};
+    const found = linksIn(await file.text());
+    return found.links.length ? found : {...found, problem: file.name + ' has no web links in it. Links start with https://.'};
+  }
+
   const queuedNotes = new Map();
   function noteEditor(row, hooks) {
     if (typeof Drafting === 'undefined' || !hooks.notes || !hooks.notesScope) return null;
@@ -55,7 +83,7 @@ const StudioResearch = (() => {
       this.kept = {};     // source id -> what the Document Library said of its file
       this.value = adapter.value || null;
       this.resume = adapter.resume || null;
-      this.urls = ''; this.text = ''; this.name = 'Pasted notes'; this.busy = false; this.problem = ''; this.reading = '';
+      this.urls = ''; this.text = ''; this.name = 'Pasted notes'; this.busy = false; this.problem = ''; this.reading = ''; this.said = '';
       for(const key of ['urls','text','name','pasting','keep']) if(adapter.entry && adapter.entry[key] !== null && adapter.entry[key] !== undefined) this[key] = adapter.entry[key];
       this.node = make('section', 'research-source-editor stack');
       this.node.setAttribute('aria-label', adapter.label || 'Research sources');
@@ -70,9 +98,9 @@ const StudioResearch = (() => {
       finally { this.busy = false; this.render(); this.changed(); }
     }
     changed() { if (this.a.onChange) this.a.onChange(this.value); }
-    async act(action, data = {}) {
+    async act(action, data = {}, saying = '') {
       if (this.busy || !this.value) return false;
-      this.busy = true; this.problem = ''; this.reading = action === 'capture' || action === 'tabs' ? 'Reading source…' : 'Saving source choices…'; this.render();
+      this.busy = true; this.problem = ''; this.reading = saying || (action === 'capture' || action === 'tabs' ? 'Reading source…' : 'Saving source choices…'); this.render();
       try {
         const { library_kept: kept, ...value } = await this.a.request({action, id: this.value.id, expected: this.value.revision, ...data});
         this.value = value;
@@ -89,10 +117,35 @@ const StudioResearch = (() => {
         let parsed; try { parsed = new URL(url); } catch (_) { this.problem = 'Check this link: ' + url; this.render(); return; }
         if (parsed.protocol !== 'https:' || parsed.username || parsed.password) { this.problem = 'Use HTTPS links without embedded credentials.'; this.render(); return; }
       }
-      for (const url of links) {
-        if (!await this.act('capture', {kind: 'url', url})) break;
+      // One request takes a fixed number of sources. What does not fit stays in the box.
+      const room = Math.max(0, MOST_SOURCES - array(this.value && this.value.sources).length), taken = links.slice(0, room);
+      let added = 0;
+      for (const url of taken) {
+        if (!await this.act('capture', {kind: 'url', url}, taken.length > 1 ? 'Reading link ' + (added + 1) + ' of ' + taken.length + '…' : '')) break;
+        added += 1;
         this.urls = this.urls.split(/\s+/).filter(v => v && v !== url).join('\n');
       }
+      if (!this.problem && links.length > room) this.problem = (added ? 'Added ' + added + '. ' : '') + 'One request takes ' + MOST_SOURCES + ' sources at most. The ' + (links.length - room === 1 ? 'link left in the box was' : (links.length - room) + ' links left in the box were') + ' not added: remove a source to make room.';
+      this.render();
+      return added;
+    }
+    // A file of links: every link in it goes into the box and is added, like pasted ones.
+    async linkFile(file) {
+      if (this.busy || !this.value) return;
+      let found; try { found = await linksInFile(file); } catch (_) { found = {links: [], left: 0, problem: 'This file could not be read as text.'}; }
+      if (found.problem) { this.problem = found.problem; this.said = ''; this.render(); return; }
+      const have = new Set(array(this.value.sources).map(source => source.origin)), fresh = found.links.filter(link => !have.has(link));
+      const already = found.links.length - fresh.length;
+      if (!fresh.length) { this.problem = ''; this.said = 'Every link in ' + file.name + ' is already a source here.'; this.render(); return; }
+      const typed = this.urls.trim().split(/\s+/).filter(Boolean);
+      this.urls = [...typed, ...fresh.filter(link => !typed.includes(link))].join('\n');
+      this.said = '';
+      const added = await this.links();
+      const unread = array(this.value.sources).filter(source => fresh.includes(source.origin) && source.status === 'needs-attention').length;
+      this.said = (added || 0) + ' of ' + fresh.length + (fresh.length === 1 ? ' link' : ' links') + ' in ' + file.name + ' added.'
+        + (unread ? ' ' + unread + ' could not be read: each says why below.' : '')
+        + (already ? ' ' + already + (already === 1 ? ' was' : ' were') + ' already here.' : '')
+        + (found.left ? ' ' + found.left + (found.left === 1 ? ' was' : ' were') + ' not usable and left out.' : '');
       this.render();
     }
     async files(files) {
@@ -188,7 +241,12 @@ const StudioResearch = (() => {
       file.accept = '.pdf,application/pdf,.docx,.txt,.md,.markdown,.html,.htm';
       file.setAttribute('aria-label', 'Upload source files');
       file.addEventListener('change', () => this.files(file.files));
+      const linkFile = make('input'); linkFile.type = 'file'; linkFile.hidden = true;
+      linkFile.accept = '.txt,.md,.markdown,.csv,.html,.htm,text/plain,text/csv';
+      linkFile.setAttribute('aria-label', 'Upload a file of links');
+      linkFile.addEventListener('change', () => { const chosen = linkFile.files && linkFile.files[0]; if (chosen) this.linkFile(chosen); });
       const actions = add(make('div', 'bar'), button('Choose files', () => file.click(), 'research-files'),
+        button('Add links from a file', () => linkFile.click(), 'research-links-file'),
         button(this.pasting ? 'Close pasted text' : 'Paste text', () => { this.pasting = !this.pasting; this.render(); this.changed(); }, 'research-paste'));
       // Optional, per studio: Add from library, which the studio's own adapter opens (the
       // shared StudioLibrary.pick) and whose picks it lists under the sources (`extra`).
@@ -198,7 +256,8 @@ const StudioResearch = (() => {
         try { this.saved = await this.a.request({action:'saved'}); this.render(); }
         catch(error) { this.problem=message(error); this.render(); }
       }, 'research-saved'));
-      add(panel, actions, file);
+      add(panel, actions, file, linkFile);
+      if (this.said) { const said = make('p', 'quiet field-hint', this.said); said.setAttribute('role', 'status'); said.dataset.key = 'research-links-said'; panel.append(said); }
       if (this.keep !== null) panel.append(this.keepChoice());
       if (this.pasting) {
         const name = field('Source name', this.name, 'research-text-name'); name.input.addEventListener('input', () => this.name = name.input.value);
@@ -488,6 +547,6 @@ const StudioResearch = (() => {
     box.append(make('p', 'field-hint', plan.final_check));
     return {node: box, selected: ids, value: () => ({expected: plan.expected, sections: [...ids]})};
   }
-  return {Editor, progress, summary, impact, workingDraft};
+  return {Editor, progress, summary, impact, workingDraft, linksIn, linksInFile};
 })();
 if (typeof module === 'object' && module.exports) module.exports = StudioResearch;

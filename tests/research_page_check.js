@@ -149,5 +149,35 @@ const key=(editor,k)=>all(editor.node).find(n=>n.dataset.key===k);
  assert.equal(savedNote.draft.note,'B');assert.match(noteStatus(notesNodes).textContent,/not queued until you save/);
  const older=await mount({...previewState,combining:[{...previewState.combining[0],preview:{...previewState.combining[0].preview,basis:'revision2'}}]});
  assert.equal(noteInput(older).value,'C');assert.match(noteStatus(older).textContent,/earlier section revision/);
+ // A file of links: every link in it is added, each once, and the page says what happened.
+ {const held={id:'links',revision:'0',external:false,restricted:false,workers:3,focus:'',sites:[],sources:[{id:'0',name:'Here',kind:'url',origin:'https://example.invalid/here',status:'ready'}]},sent=[];
+  const ask=async one=>{sent.push(one);if(one.action==='capture')held.sources.push({id:String(held.sources.length),name:one.url,kind:'url',origin:one.url,status:'ready'});held.revision=String(sent.length);return JSON.parse(JSON.stringify(held));};
+  const many=new kit.Editor({request:ask,value:JSON.parse(JSON.stringify(held))});
+  assert.ok(key(many,'research-links-file'),'the shared editor offers a file of links');
+  assert.ok(all(many.node).some(n=>n.type==='file'&&/\.csv/.test(n.accept)&&!n.multiple));
+  const file=(name,text,size)=>({name,size:size===undefined?text.length:size,text:async()=>text});
+  await many.linkFile(file('reading.md','# Reading\n- [One](https://example.invalid/one).\n- http://example.invalid/two, twice: https://example.invalid/one\nhttps://example.invalid/here\n"https://example.invalid/three?x=1&amp;y=2",note\nhttps://someone:secret@example.invalid/private\n'));
+  assert.deepEqual(sent.filter(r=>r.action==='capture').map(r=>r.url),['https://example.invalid/one','https://example.invalid/two','https://example.invalid/three?x=1&y=2']);
+  assert.equal(many.urls,'');assert.equal(many.problem,'');
+  assert.match(many.said,/^3 of 3 links in reading\.md added\. 1 was already here\. 1 was not usable and left out\.$/);
+  assert.equal(key(many,'research-links-said').textContent,many.said);
+  assert.ok(!JSON.stringify(sent).includes('secret'),'a link carrying a sign-in is never sent');
+  held.sources.at(-1).status='needs-attention';many.value=JSON.parse(JSON.stringify(held));
+  const unread=new kit.Editor({request:async one=>{if(one.action==='capture')held.sources.push({id:'u',name:one.url,kind:'url',origin:one.url,status:'needs-attention'});return JSON.parse(JSON.stringify(held));},value:JSON.parse(JSON.stringify(held))});
+  await unread.linkFile(file('one.txt','https://example.invalid/unread'));
+  assert.match(unread.said,/^1 of 1 link in one\.txt added\. 1 could not be read: each says why below\.$/);
+  held.sources=held.sources.filter(source=>source.id!=='u');held.sources.at(-1).status='ready';many.value=JSON.parse(JSON.stringify(held));
+  const before=sent.length;
+  await many.linkFile(file('empty.txt','no links here'));assert.match(many.problem,/no web links/);
+  await many.linkFile(file('big.txt','https://example.invalid/big',300000));assert.match(many.problem,/within 256 KB/);
+  await many.linkFile(file('again.txt','https://example.invalid/one'));assert.match(many.said,/already a source here/);assert.equal(many.problem,'');
+  assert.equal(sent.length,before,'nothing is asked for a file with nothing new');
+  // One request takes 40 sources: the rest stay in the box, and the page says so.
+  await many.linkFile(file('long.txt',Array.from({length:40},(_,n)=>'https://example.invalid/more-'+n).join('\n')));
+  assert.equal(many.value.sources.length,40);assert.equal(many.urls.split('\n').length,4);
+  assert.match(many.problem,/Added 36\. One request takes 40 sources at most\. The 4 links left in the box were not added/);
+  assert.match(many.said,/^36 of 40 links in long\.txt added\.$/);
+  assert.deepEqual(JSON.parse(JSON.stringify(kit.linksIn('(https://example.invalid/wiki/Thing_(x)). <a href="https://example.invalid/z">z</a> https://localhost/x'))),{links:['https://example.invalid/wiki/Thing_(x)','https://example.invalid/z'],left:1});
+ }
  console.log('PASS shared source editor: explicit scope, mixed links, validation, draft/focus preservation, progress, no provider actions');
 })().catch(error=>{console.error(error);process.exitCode=1;});
