@@ -490,7 +490,7 @@ async function newSheet() {
       kept.append(button('Remove '+chosen.title,()=>{draft.library=draft.library.filter(one=>one!==chosen);closeSheet();newSheet();}));
       form.append(kept);
     }
-    form.append(button('Add a Google Doc, Slides or public page',()=>remoteSheet(preview=>{draft.materials.push({preview,acknowledged:false});newSheet();})));
+    form.append(button('Add a Google Doc, Slides, public page or a file of links',()=>remoteSheet(preview=>{draft.materials.push({preview,acknowledged:false});newSheet();},previews=>{for(const preview of previews)draft.materials.push({preview,acknowledged:false});newSheet();})));
     if(draft.upload)form.append(button('Remove selected CSV',()=>{draft.upload=null;draft.csv=null;draft.selection=null;draft.upload_added=false;newSheet();}));
     for (const material of draft.materials) {
       const preview = material.preview;
@@ -1295,7 +1295,10 @@ function briefSheet(typed=null){
 }
 
 function googleLink(url,label){const link=make('a','button',label);link.href=url;link.target='_blank';link.rel='noopener noreferrer';return link;}
-async function remoteSheet(done){
+const LINKS_AT_ONCE=12;
+// `many`, where the caller can take several previews at once: a file of links, each read and
+// previewed like a pasted one. A link that cannot be read does not stop the others.
+async function remoteSheet(done,many){
   const url=field('Document or page link'),tabs=field('Tab IDs, or slides as slide-2, slide-5, comma separated (optional; otherwise all)');
   url.input.type='url';url.input.placeholder='Paste a Google Docs, Google Slides or public HTTPS link';
   const problem=make('p','problem');problem.setAttribute('role','alert');
@@ -1305,7 +1308,31 @@ async function remoteSheet(done){
     if(sent.kind==='google-doc'&&tabs.input.value.trim())sent.tabs=tabs.input.value.split(',').map(t=>t.trim());
     const preview=await request('/api/remote-preview',sent);done(preview);
   }catch(f){problem.textContent=f.message;}finally{go.disabled=false;}},true);
-  sheet('Add a document or page',make('p','','Paste a Google Docs, Google Slides or public page link. Uses your existing Google sign-in, just like Blog Studio. Review captured text before importing.'),url.wrap,detail('Choose specific tabs or slides',tabs.wrap),problem,add(make('div','bar'),go,button('Cancel',()=>{closeSheet();if(!held)newSheet();})));
+  let fromFile=null;
+  if(many&&typeof StudioResearch!=='undefined'){
+    const picked=field('Or add every link in a file');picked.input.type='file';picked.input.accept='.txt,.md,.markdown,.csv,.html,.htm,text/plain,text/csv';
+    picked.wrap.append(make('span','field-hint','A text, Markdown, CSV or saved web page file. Each https link in it is read and previewed, up to '+LINKS_AT_ONCE+' at a time.'));
+    picked.input.addEventListener('change',async()=>{
+      const chosen=(picked.input.files||[])[0];if(!chosen)return;
+      let found;try{found=await StudioResearch.linksInFile(chosen);}catch(f){found={links:[],left:0,problem:'This file could not be read as text.'};}
+      if(found.problem){problem.textContent=found.problem;return;}
+      const taken=found.links.slice(0,LINKS_AT_ONCE),previews=[],failed=[];
+      go.disabled=true;picked.input.disabled=true;
+      try{for(const link of taken){problem.textContent='Reading link '+(previews.length+failed.length+1)+' of '+taken.length+'…';
+        try{previews.push(await request('/api/remote-preview',{kind:new URL(link).hostname==='docs.google.com'?'google-doc':'url',url:link}));}catch(f){failed.push(link+' ('+f.message+')');}}}
+      finally{go.disabled=false;picked.input.disabled=false;}
+      const said=[];
+      if(failed.length)said.push((failed.length===1?'1 link was':failed.length+' links were')+' not read: '+failed.slice(0,3).join('; ')+(failed.length>3?'; and '+(failed.length-3)+' more':'')+'.');
+      if(found.links.length>taken.length)said.push((found.links.length-taken.length)+' more were left out: a file adds '+LINKS_AT_ONCE+' links at a time.');
+      if(found.left)said.push(found.left+(found.left===1?' was':' were')+' not usable and left out.');
+      if(!previews.length){problem.textContent=said.join(' ');return;}
+      many(previews);
+      toast('Read '+previews.length+' of '+found.links.length+(found.links.length===1?' link':' links')+' from '+chosen.name+'. Review each before saving.');
+      if(said.length)error(said.join(' '));
+    });
+    fromFile=picked.wrap;
+  }
+  sheet('Add a document or page',make('p','','Paste a Google Docs, Google Slides or public page link. Uses your existing Google sign-in, just like Blog Studio. Review captured text before importing.'),url.wrap,detail('Choose specific tabs or slides',tabs.wrap),fromFile,problem,add(make('div','bar'),go,button('Cancel',()=>{closeSheet();if(!held)newSheet();})));
 }
 
 function sourceImportSheet(preview,replaceId,back='ig-research',acknowledgedBefore=false){
