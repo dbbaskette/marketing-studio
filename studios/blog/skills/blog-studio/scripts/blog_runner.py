@@ -35,6 +35,9 @@ STATE = 'derived/blog-run.json'
 # A from-files run embeds the uploaded files; past this many JSON characters of source
 # text, each file is excerpted to its share and the run says which ones were.
 SOURCE_BUDGET = 240_000
+# The most sources one blog pins. It is a guard against a runaway list, not a working limit:
+# a file of links may add hundreds, and past SOURCE_BUDGET each is excerpted to its share.
+MOST_SOURCES = 500
 STAGES = {
     'angles': (
         'Angles',
@@ -1317,8 +1320,8 @@ def create(root, data, approval='conversation'):
         # into the workspace only once the whole request has passed, below.
         studio.style_check(root, style)
     sources = data.get('sources', [])
-    if not isinstance(sources, list) or len(sources) > 50 or len(set(sources)) != len(sources):
-        raise ValueError('Select at most 50 different sources.')
+    if not isinstance(sources, list) or len(sources) > MOST_SOURCES or len(set(sources)) != len(sources):
+        raise ValueError('Select at most %d different sources.' % MOST_SOURCES)
     for source in sources:
         studio.item(root, 'sources', source)
     # Library items read with a role for this blog only; the library record is not changed.
@@ -1531,11 +1534,11 @@ def library_picks(root, chosen, sources):
     """{id: purposes} for library items read with a role for one blog: `[{id, role}]`, or
     `[{id, role, location}]` for a row the catalog lists from the Team Hub, which is checked
     out here first. Each is a library item (never a file uploaded for one blog), no more than
-    50 with the sources, and none of them twice."""
+    MOST_SOURCES with the sources, and none of them twice."""
     import blog_library
 
-    if not isinstance(chosen, list) or len(chosen) + len(sources) > 50:
-        raise ValueError('Pick at most 50 library items and sources together.')
+    if not isinstance(chosen, list) or len(chosen) + len(sources) > MOST_SOURCES:
+        raise ValueError('Pick at most %d library items and sources together.' % MOST_SOURCES)
     picked = {}
     for entry in chosen:
         if (

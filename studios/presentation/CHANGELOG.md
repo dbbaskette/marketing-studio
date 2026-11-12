@@ -1,6 +1,6 @@
 # Changelog
 
-Unreleased: links can be added from a file. Where a new deck's research sources are chosen, **Add links from a file** takes a text, Markdown, CSV or saved web page file and adds every https link in it as a source, each once. The page says how many were added, which were already there and which could not be read. One request still takes 40 sources at most; links that do not fit stay in the box.
+Unreleased: links can be added from a file. Where a new deck's research sources are chosen, **Add links from a file** takes a text, Markdown, CSV or saved web page file and adds every https link in it as a source, each once. The page says how many were added, which were already there and which could not be read. Links are not counted against the 40 files and pasted texts a request takes, so a file adds as many as it holds.
 
 Unreleased: a deck checks itself, and asks you only what is yours to decide.
 - **The slide text checks itself.** After the assistant drafts the slide text, a second assistant checks it against your brief and sources and corrects it, once, before you read it. You are shown only the corrected text, with no list of findings. A rewrite after **Ask for changes** is checked once more; text already checked is never checked again, and a check that does not finish shows the text as it was written.

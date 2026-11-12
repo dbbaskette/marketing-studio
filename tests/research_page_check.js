@@ -172,11 +172,10 @@ const key=(editor,k)=>all(editor.node).find(n=>n.dataset.key===k);
   await many.linkFile(file('big.txt','https://example.invalid/big',300000));assert.match(many.problem,/within 256 KB/);
   await many.linkFile(file('again.txt','https://example.invalid/one'));assert.match(many.said,/already a source here/);assert.equal(many.problem,'');
   assert.equal(sent.length,before,'nothing is asked for a file with nothing new');
-  // One request takes 40 sources: the rest stay in the box, and the page says so.
-  await many.linkFile(file('long.txt',Array.from({length:40},(_,n)=>'https://example.invalid/more-'+n).join('\n')));
-  assert.equal(many.value.sources.length,40);assert.equal(many.urls.split('\n').length,4);
-  assert.match(many.problem,/Added 36\. One request takes 40 sources at most\. The 4 links left in the box were not added/);
-  assert.match(many.said,/^36 of 40 links in long\.txt added\.$/);
+  // A file adds as many links as it holds: none is held back for a count.
+  await many.linkFile(file('long.txt',Array.from({length:60},(_,n)=>'https://example.invalid/more-'+n).join('\n')));
+  assert.equal(many.value.sources.length,64);assert.equal(many.urls,'');assert.equal(many.problem,'');
+  assert.match(many.said,/^60 of 60 links in long\.txt added\.$/);
   assert.deepEqual(JSON.parse(JSON.stringify(kit.linksIn('(https://example.invalid/wiki/Thing_(x)). <a href="https://example.invalid/z">z</a> https://localhost/x'))),{links:['https://example.invalid/wiki/Thing_(x)','https://example.invalid/z'],left:1});
  }
  console.log('PASS shared source editor: explicit scope, mixed links, validation, draft/focus preservation, progress, no provider actions');

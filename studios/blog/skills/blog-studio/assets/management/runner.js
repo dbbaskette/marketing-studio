@@ -1259,16 +1259,14 @@ function sFilesCard(draft,problem,again,lock,about={}){
     many.addEventListener('change',async()=>{const chosen=(many.files||[])[0];if(!chosen||studio.busy)return;
       let found;try{found=await StudioResearch.linksInFile(chosen);}catch(_){found={links:[],left:0,problem:'This file could not be read as text.'};}
       if(found.problem){problem.textContent=found.problem;return;}
-      const have=new Set(draft.files.map(file=>file.link).filter(Boolean)),fresh=found.links.filter(link=>!have.has(link)),room=Math.max(0,20-draft.files.length),taken=fresh.slice(0,room);
+      const have=new Set(draft.files.map(file=>file.link).filter(Boolean)),fresh=found.links.filter(link=>!have.has(link)),taken=fresh;
       if(!fresh.length){problem.textContent='Every link in '+chosen.name+' is already a source here.';return;}
-      if(!taken.length){problem.textContent='Use up to 20 files for one blog.';return;}
       many.disabled=true;studio.busy=true;lock(true);const failed=[];let added=0;
       try{for(const link of taken){problem.textContent='Reading link '+(added+failed.length+1)+' of '+taken.length+'…';
         try{remember(await api('upload',{operation:operationId(),files:[{link,purpose:draft.role}],purpose:'material',keep:false,analyze:false}));added+=1;}catch(error){failed.push(link+' ('+error.message+')');}}}
       finally{studio.busy=false;lock(false);many.disabled=false;}
       const said=[];
       if(failed.length)said.push((failed.length===1?'1 link was':failed.length+' links were')+' not added: '+failed.slice(0,3).join('; ')+(failed.length>3?'; and '+(failed.length-3)+' more':'')+'.');
-      if(fresh.length>taken.length)said.push((fresh.length-taken.length)+' more were left out: one blog takes up to 20 files.');
       if(found.left)said.push(found.left+(found.left===1?' was':' were')+' not usable and left out.');
       if(added)sToast('Added '+added+' of '+fresh.length+(fresh.length===1?' link':' links')+' from '+chosen.name+'.');
       draft.problem=said.join(' ');again();});

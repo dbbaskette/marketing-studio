@@ -1,6 +1,6 @@
 # Changelog
 
-Unreleased: links can be added from a file. Under **Add a source**, **Web link**, **Or add every link in a file** takes a text, Markdown, CSV or saved web page file and reads each public https link in it as a source for this blog, one after another. A page that cannot be read does not stop the others, and the page lists which were not added. A blog still takes up to 20 files.
+Unreleased: links can be added from a file. Under **Add a source**, **Web link**, **Or add every link in a file** takes a text, Markdown, CSV or saved web page file and reads each public https link in it as a source for this blog, one after another. A page that cannot be read does not stop the others, and the page lists which were not added. A file adds as many links as it holds; when a blog's sources are more than a run can read whole, each is excerpted to its share, as before.
 
 Unreleased: while a check runs, one status box says what you are waiting on. It names the check, which step it is in (the copy edit, then the wording check), what the assistant is doing this moment with **Show activity**, and **Stop**. The sentence above the draft, the separate activity lines and the long text in the band at the top give way to it, so the same status is no longer said in several places.
 
