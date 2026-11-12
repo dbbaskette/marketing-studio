@@ -128,6 +128,15 @@ assistant, and the one thing it may need from the person, is in the rail (or the
 A screen still has one filled button: the move's own action is amber. **F** on a desk reads
 the work alone.
 
+- **The arc is drawn as a route.** It is the one signature, so it carries the flair: a flat
+  band tinted in the studio's colour as far as the work has come (`--arc-reach`), a numbered
+  mark for each phase that becomes a tick when done, a line under each name saying what the
+  phase is, a dotted line for what is ahead, and, while the assistant works
+  (`data-live="true"`, set when the arc has a note), a light that travels the line onward
+  from the phase in hand. It stays flat: no material, no shadow.
+- **The move does the thing.** Where the next step is one control, the move carries that
+  control, so the person never scrolls to find what the card names. Before Blog Studio's
+  first check, the move is the check.
 - **Make lasts until nothing is left to read or decide.** Reviewing drafts is Make, with the
   note "yours to review". Ship is sending finished work: Training Studio once every material
   is ready, Blog Studio in Finishing.

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Rebuild the five README illustrations with Python's standard library.
+"""Rebuild the README illustrations with Python's standard library.
 
 Run from any directory: python3 scripts/readme_graphics.py [--check]
 These are workflow illustrations, not screenshots or generated project content.
@@ -132,6 +132,70 @@ def render(product):
     return ''.join(out)
 
 
+# The route every studio follows, and what each phase is in each studio.
+PHASES = (('Brief', 'What it is for'), ('Plan', 'Its outline and sources'),
+          ('Make', 'Drafts, checks and review'), ('Ship', 'Finish and share'))
+ROUTES = (
+    ('Blog Studio', '#2463c4', ('Topic, sources, kind of post', 'Angle and outline',
+                                'Draft, check, accept or reject', 'Finishing and send')),
+    ('Presentation Studio', '#a64b12', ('Idea, document or deck', 'Slide story and slide text',
+                                        'Design, review, one fix pass', 'Deliver')),
+    ('Training Studio', '#7442b4', ('Topic, audience and levels', 'Outline and research',
+                                    'Guides, briefs, practice, decks', 'Mark ready and share')),
+    ('Infographic Studio', '#087b7b', ('Brief and sources', 'Choose the story',
+                                       'Build, preview and edit', 'Approve and export')),
+)
+ROADMAP = 'docs/assets/marketing-studio-roadmap.svg'
+
+
+def roadmap():
+    """One route, four studios: the arc each desk shows, with the third phase in hand."""
+    blue, left, step = '#2463c4', 268, 244
+    out = ['<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="470" '
+           'viewBox="0 0 1280 470" role="img" aria-labelledby="title desc">',
+           '<title id="title">One route for every piece of work</title>',
+           '<desc id="desc">Every studio follows the same four phases: Brief, Plan, Make and '
+           'Ship. ' + ' '.join(f'{name}: {", ".join(says)}.' for name, _, says in ROUTES)
+           + ' Illustration, not a screenshot.</desc>',
+           '<defs><linearGradient id="reach" x1="0" x2="1" y1="0" y2="0">'
+           '<stop offset="0" stop-color="#dfe9f9"/><stop offset="0.62" stop-color="#eef3fb"/>'
+           '<stop offset="0.86" stop-color="#ffffff"/></linearGradient></defs>',
+           '<g font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">',
+           rect(0, 0, 1280, 470, '#f3f6fa', 20),
+           text(48, 58, 'One route for every piece of work', 28, '#17243a', 700),
+           text(48, 90, 'You always see where the work is, what is happening now, and what is next.',
+                17, '#526176'),
+           rect(48, 116, 1184, 118, 'url(#reach)', 18, '#c9d7ee')]
+    for n, (name, says) in enumerate(PHASES):
+        x = left + n * step
+        if n < 3:
+            done = n < 2
+            out += [f'<line x1="{x+28}" y1="158" x2="{x+step-22}" y2="158" stroke="{blue if done else "#aab7c9"}" '
+                    f'stroke-width="5" stroke-linecap="round"{"" if done else " stroke-dasharray=\"2 12\""}/>']
+        if n < 2:
+            out += [f'<circle cx="{x}" cy="158" r="19" fill="{blue}"/>',
+                    f'<path d="M{x-8} {158}l6 6 11-12" fill="none" stroke="#ffffff" stroke-width="3.2" '
+                    'stroke-linecap="round" stroke-linejoin="round"/>']
+        elif n == 2:
+            out += [f'<circle cx="{x}" cy="158" r="27" fill="{blue}" opacity="0.14"/>',
+                    f'<circle cx="{x}" cy="158" r="19" fill="#ffffff" stroke="{blue}" stroke-width="3.5"/>',
+                    text(x - 5, 164, '3', 17, blue, 800)]
+        else:
+            out += [f'<circle cx="{x}" cy="158" r="19" fill="#ffffff" stroke="#aab7c9" stroke-width="2.5"/>',
+                    text(x - 5, 164, '4', 17, '#6b7a90', 700)]
+        out += [text(x - 19, 204, name, 19, '#17243a' if n < 3 else '#526176', 700),
+                text(x - 19, 224, says, 14, '#526176')]
+    out += [text(72, 164, 'Every desk', 15, blue, 700), text(72, 185, 'shows this', 15, blue, 700)]
+    for row, (studio, color, says) in enumerate(ROUTES):
+        y = 262 + row * 48
+        out += [rect(48, y, 1184, 38, '#ffffff', 10, '#d8e0ea'), rect(48, y, 8, 38, color, 4),
+                text(72, y + 25, studio, 15, color, 700)]
+        for n, said in enumerate(says):
+            out += [text(left - 19 + n * step, y + 25, said, 14.5, '#263449', 500)]
+    out += ['</g></svg>\n']
+    return ''.join(out)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--check', action='store_true', help='check without changing files')
@@ -148,9 +212,15 @@ def main():
         else:
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(content, encoding='utf-8')
+    content = roadmap()
+    if args.check:
+        if not (ROOT / ROADMAP).is_file() or (ROOT / ROADMAP).read_text(encoding='utf-8') != content:
+            outdated.append(ROADMAP)
+    else:
+        (ROOT / ROADMAP).write_text(content, encoding='utf-8')
     if outdated:
         parser.exit(1, 'Rebuild README graphics: ' + ', '.join(outdated) + '\n')
-    print('Five README graphics are current.' if args.check else 'Built five README graphics.')
+    print('Six README graphics are current.' if args.check else 'Built six README graphics.')
 
 
 if __name__ == '__main__':

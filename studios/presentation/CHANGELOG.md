@@ -24,6 +24,8 @@ Unreleased: New deck's three steps each say what was chosen and open when presse
 
 ## Unreleased — 4.15.0
 
+The roadmap across the top of a desk is drawn as a route: tinted as far as the work has come, with numbered marks, a line under each phase saying what it is, and a line that moves while the assistant works. Page scripts and styles are compressed and reused instead of downloaded on every open. On Marketing Studio's home a deck that waits for its look says so.
+
 Completed research sections expose saved read-only prose before final checking. Previews name their revision and assigned sources and remain ineligible for delivery. Queued concerns save privately across reloads without changing evidence or starting work; apply actual changes through the existing explicit refresh/impact flow. Timing separates the first readable section from the checked result.
 
 ## Unreleased — 4.14.1

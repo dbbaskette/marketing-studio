@@ -35,9 +35,11 @@ def main():
                 if args.product!='training' or not args.rendered:
                     parser.error('--review-fixes requires training --rendered')
                 from test_runner_deck import MAJOR
-                case.workers.found=[[{**MAJOR,'slide':'check-yourself',
+                # The same five again after the one fix pass, so they are left as review notes.
+                five=[{**MAJOR,'slide':'check-yourself',
                     'note':f'Detail {number} needs attention.',
-                    'fix':f'Make detail {number} easier to read.'} for number in range(1,6)],[]]
+                    'fix':f'Make detail {number} easier to read.'} for number in range(1,6)]
+                case.workers.found=[five,five,[]]
             from studio_core import preferences,studios_config
             studios_config.update({'local':{'root':str(case.space.root)}});preferences.finish(studios_config,lambda _:None)
             catalog=mock.patch('studio_core.model_catalog.Catalog.get',return_value={'agent':'codex','models':[],'problem':None});catalog.start();case.addCleanup(catalog.stop)
