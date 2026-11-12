@@ -65,7 +65,8 @@ class CurrentCriticRepairTests(DeckCase):
                 'slides': made['slides'], 'deckSha256': made['deckSha256']}))
             return made
         self.slides.preview = current
-        self.workers.found = [[MAJOR], []]
+        # Found again after the one automatic pass of fixes, so it is still there to keep.
+        self.workers.found = [[MAJOR], [MAJOR], []]
         root = self.begin(flow='desk', slide_text_review=True)
         self.to_end(root)
         seen = self.engine._load(root)['deck']['']['saved']['sha256']

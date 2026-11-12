@@ -1780,7 +1780,7 @@ function deskCard(found) {
   }
   const editing = found.kind === 'deck' ? deckParts(found) : material ? materialParts(material, found) : deskMaterialLoading(found, held);
   const compact = found.seen && ['draft', 'ready'].includes(found.state)
-    && !list(found.needs).length && !list(found.checks?.problems).length;
+    && !list(found.needs).length && !list(found.notes).length && !list(found.checks?.problems).length;
   if (compact) {
     node.classList.add('desk-card-compact');
     const status = found.checks?.passed ? DESK_WORDS.tabs[found.state]
@@ -1792,7 +1792,16 @@ function deskCard(found) {
   } else add(node, state(DESK_WORDS.beads[found.state] || 'none', found.says),
     checkedPart(found.checks, found.name), bar.childNodes.length ? bar : null, deskLibraryKept(found));
   if (list(found.needs).length) add(node, add(make('details', 'card-part'),
-    make('summary', '', 'Detailed review notes'), bullets(found.needs, 'reasons')));
+    make('summary', '', 'What waits on you'), bullets(found.needs, 'reasons')));
+  // What the review left after its one pass of fixes: to read, collapsed, never a stop.
+  if (list(found.notes).length) {
+    const notes = add(make('details', 'card-part'),
+      make('summary', '', 'Review notes (' + found.notes.length + ')'),
+      make('p', 'quiet', 'The review fixed what it could and left these. Nothing here waits on you.'),
+      bullets(found.notes, 'reasons'));
+    notes.dataset.key = found.name + ':review-notes';
+    add(node, notes);
+  }
   if (found.kind === 'blueprint') add(node, updateChainPart(found.level));
   return editing ? add(make('div', 'desk-material-group stack'), node, editing) : node;
 }
@@ -2041,7 +2050,7 @@ function deckParts(found) {
   heldDeck.slideTask ||= {};
   const issues = list(found.proposals?.review?.items).filter(item => item.state === 'open' && item.present !== false);
   if (!slides.some(slide => slide.id === heldDeck.slide[found.name])) {
-    heldDeck.slide[found.name] = slides.find(slide => issues.some(item => item.part === slide.id))?.id || slides[0]?.id;
+    heldDeck.slide[found.name] = slides[0]?.id;
   }
   const preview = make('div', 'desk-slide-preview');
   if (slides.length) {
@@ -2050,7 +2059,7 @@ function deckParts(found) {
     select.dataset.key = found.name + ':slide-to-review';
     for (const slide of slides) {
       const option = make('option', '', slide.number + '. ' + slide.title
-        + (issues.some(item => item.part === slide.id) ? ' · Review suggestion' : ''));
+        + (issues.some(item => item.part === slide.id) ? ' · Review note' : ''));
       option.value = slide.id; select.append(option);
     }
     select.value = heldDeck.slide[found.name];
@@ -2129,7 +2138,7 @@ function deckParts(found) {
         make('p', 'quiet', slide.price), go);
     }
     const count = issues.filter(item => item.part === slide.id).length;
-    if (!changes.childNodes.length) changes.append(make('p', 'quiet', 'No review suggestions for this slide.'));
+    if (!changes.childNodes.length) changes.append(make('p', 'quiet', 'No review notes for this slide.'));
     const tasks = [{id:'preview',label:'Preview'}, {id:'text',label:'Text & notes'},
       {id:'review',label:'Review & changes' + (count ? ' (' + count + ')' : '')}];
     const inspector = add(make('section', 'desk-slide-inspector stack'), words, changes);
@@ -2177,11 +2186,15 @@ function slideReviewChoices(found, slide, ours) {
   const all = list(proposals?.items).filter(item => item.part === slide.id && item.state === 'open');
   const items = all.filter(item => item.present !== false), older = all.length - items.length;
   if (!all.length) return null;
-  const box = add(make('section', 'stack'), make('p', 'sheet-part', 'Review suggestions'));
-  if (older) box.append(make('p', 'quiet', older + (older === 1 ? ' suggestion refers' : ' suggestions refer')
+  // What the review left after its one pass of fixes: notes to read, behind the slide's
+  // Review & changes tab, which is never the one a slide opens on.
+  const box = add(make('section', 'stack'),
+    make('p', 'sheet-part', 'Review notes (' + all.length + ')'));
+  box.append(make('p', 'quiet', 'The review fixed what it could and left these. Nothing here waits on you.'));
+  if (older) box.append(make('p', 'quiet', older + (older === 1 ? ' note refers' : ' notes refer')
     + ' to an earlier drawing. Check the updated slide before requesting more changes.'));
   if (!items.length) return box;
-  box.append(make('p', '', 'Choose the fixes you want, then apply them together. Selecting a fix starts no work.'));
+  if (ours) box.append(make('p', 'quiet', 'To act on any, choose them and apply them together. Selecting one starts no work.'));
   const held = deskHeld(view.path); held.reviewChoices ||= {};
   const basis = proposals.job + ':' + found.seen;
   let choices = held.reviewChoices[found.name];
@@ -2194,7 +2207,7 @@ function slideReviewChoices(found, slide, ours) {
   const inputs = [];
   const selectAll = capsule('Select all fixes', 'quiet', () => {for (const item of items) picked.add(item.id); update();});
   const clear = capsule('Clear selection', 'quiet', () => {picked.clear(); update();});
-  const apply = capsule('Apply selected fixes', found.state === 'needs' ? 'filled' : 'quiet', () => decide('apply', apply));
+  const apply = capsule('Apply selected fixes', 'quiet', () => decide('apply', apply));
   const dismiss = capsule('Dismiss selected', 'quiet', () => decide('skip', dismiss));
   const update = () => {
     count.textContent = picked.size + ' of ' + items.length + ' selected';
@@ -2217,22 +2230,23 @@ function slideReviewChoices(found, slide, ours) {
     if (action === 'apply') {
       const total = answer.applied ?? ids.length;
       toast(total ? total + (total === 1 ? ' fix queued' : ' fixes queued')
-        + ' together. The section redraw and deck check follow.' : 'No fixes were queued. Review the remaining suggestions.',
+        + ' together. The section redraw and deck check follow.' : 'No fixes were queued. The remaining notes are kept.',
         total ? {label:'View progress', key:'desk-queued-progress', run:() => {
           const target = byId('desk-flow-summary');
           if (target) { target.focus(); target.scrollIntoView({block:'start'}); }
         }} : null);
-    } else toast('Selected suggestions dismissed. No redraw started.');
+    } else toast('Selected notes dismissed. No redraw started.');
   }
   if (ours) box.append(count, add(make('div', 'bar'), selectAll, clear));
   items.forEach((item, index) => {
-    const label = 'Include suggestion ' + (index + 1);
+    const label = 'Include note ' + (index + 1);
     const choice = trainingTick(label, picked.has(item.id), on => {
       if (on) picked.add(item.id); else picked.delete(item.id); update();
     }, found.name + ':' + slide.id + ':review:' + item.id);
     inputs.push([choice.querySelector('input'), item.id]);
-    box.append(add(make('section', 'card-part'), ours ? choice : make('p', 'sheet-part', 'Suggestion ' + (index + 1)),
-      make('p', '', item.reason || item.says), make('p', 'desk-plain', item.after)));
+    box.append(add(make('section', 'card-part'), ours ? choice : make('p', 'sheet-part', 'Note ' + (index + 1)),
+      make('p', '', item.reason || item.says), make('p', 'desk-plain', item.after),
+      item.ask ? make('p', 'quiet', 'The review asked you: ' + item.ask) : null));
   });
   if (ours) add(box, make('p', 'quiet', items[0].price || slide.price
     || 'Selected fixes are sent together in one redraw, followed by a deck check.'),
@@ -2319,7 +2333,7 @@ async function slideHistory(found, slide) {
       const row = add(make('section', 'card'), make('h3', 'card-title', version.at),
         make('p', 'quiet', ({save: 'Saved', selection: 'Selection', note: 'Slide note',
           redraw: 'Redrawn', restore: 'Restored', outline: 'Outline changed', finishing: 'Finishing',
-          open: 'Opened on the desk', update: 'Updated'})[version.source] || 'An earlier version'), make('p', 'desk-plain', version.words.title),
+          open: 'Opened on the desk', update: 'Updated', review: 'Before the review corrected its words'})[version.source] || 'An earlier version'), make('p', 'desk-plain', version.words.title),
         make('p', 'quiet', version.drawing ? 'Words and drawing' : 'Words only'));
       if (version.picture) row.append(pictureAt({ path: view.path, artifact: found.name,
         number: slide.number, version: slide.id + '/' + version.stamp }, 'Earlier slide ' + slide.number, version.stamp));
@@ -3177,7 +3191,8 @@ function slideTextReview(outline, held) {
         draft_revision:state.draft.revision,
         ...(edited?{edited}:{})});
       if(view.turn!==turn)return;
-      state.note='';state.edits=null;view.run=result;await drawDesk(true);
+      // Stay where the person was reading: the desk is redrawn in place, not from the top.
+      state.note='';state.edits=null;view.run=result;await drawDesk(false);
     }});
   review.id='slide-text-review';
   return review;
@@ -3186,8 +3201,10 @@ function slideTextReview(outline, held) {
 function slideTextNotice(outline,held,shown){
   const deck=shown.find(one=>one.kind==='deck');
   const open=capsule('Review slide text','quiet',()=>{
-    if(deck){held.sources=false;held.material[held.level||'']=deck.name;paintDesk(true);}
-    const heading=byId('slide-text-review')?.querySelector('h2');if(heading){heading.tabIndex=-1;heading.focus({preventScroll:true});}
+    if(deck){held.sources=false;held.material[held.level||'']=deck.name;paintDesk(false);}
+    const review=byId('slide-text-review'),heading=review?.querySelector('h2');
+    if(review)review.scrollIntoView({block:'start'});
+    if(heading){heading.tabIndex=-1;heading.focus({preventScroll:true});}
   },'desk-open-slide-text');
   return add(make('section','paper slide-text-notice'),make('h2','doc-title','Deck text needs your approval'),
     make('p','quiet','Review and correct the slide text in Deck before design starts. The other training materials stay available below.'),open);
@@ -3272,7 +3289,8 @@ function outlinePlanReview(plan, held) {
       if(decision==='save')toast('Outline saved. No assistant work started.');
     }catch(error){problem.textContent=error.message;}
     finally{view.busy=false;controls.forEach(node=>node.disabled=false);}
-    if(view.turn===turn&&!problem.textContent)await drawDesk(true);
+    // Saving draws the outline afresh; approving carries on in place, not from the top.
+    if(view.turn===turn&&!problem.textContent)await drawDesk(decision!=='approve');
   }
   return add(box,problem,saved,add(make('div','bar'),save,approve));
 }
@@ -3430,23 +3448,35 @@ function workbenchMove(found, held, run) {
   const standing = found.standing;
   if (!standing) return null;
   const next = standing.next;
+  // Open a material's card on the desk: its level, the material, then into view.
+  const open = (to) => {
+    deskGoTo(held, { next: to }, null);
+    paintDesk(false);
+    const target = to.material ? byId(headingId(to.material))
+      : byId({ plan: 'desk-plan-review' }[to.kind] || '') || main().querySelector('.move-target');
+    if (target) { target.scrollIntoView({ block: 'start' }); target.focus({ preventScroll: true }); }
+  };
   if (standing.state !== 'needs-you' || !next) {
+    // Nothing waits on the person, but there may be something they can do now: mark a
+    // finished draft ready while the rest is made, or resume a run they halted.
+    const offer = standing.offer;
+    const act = !offer || !deskOurs() ? null : offer.kind === 'resume'
+      ? capsule(offer.label, '', (event) => steer('resume', event.currentTarget), 'workbench-move-resume')
+      : capsule(offer.label, 'quiet', () => open(offer), 'workbench-move-offer');
     const calm = add(make('section', 'move-card move-card-calm'),
       make('h2', 'move-title', standing.phase === 'ready' ? 'Everything here is ready'
+        : offer?.kind === 'resume' ? standing.words + ': resume when you are ready'
+        : offer ? 'Drafts are ready to mark while work continues'
         : 'Nothing is yours right now'),
       make('p', 'quiet', standing.phase === 'ready' ? 'Send it where it goes from Export & share.'
+        : offer ? offer.says
         : found.progress?.running ? 'Read what is finished while the rest is made.'
-          : standing.sentence || ''));
+          : standing.sentence || ''),
+      act ? add(make('div', 'bar'), act) : null);
     calm.dataset.key = 'workbench-move';
     return calm;
   }
-  const go = capsule(next.label || 'Open it', '', () => {
-    deskGoTo(held, standing, null);
-    paintDesk(false);
-    const target = next.material ? byId(headingId(next.material))
-      : byId({ plan: 'desk-plan-review' }[next.kind] || '') || main().querySelector('.move-target');
-    if (target) { target.scrollIntoView({ block: 'start' }); target.focus({ preventScroll: true }); }
-  }, 'workbench-move-go');
+  const go = capsule(next.label || 'Open it', '', () => open(next), 'workbench-move-go');
   // The move counts the whole training; the standing below it counts the level in view.
   const levels = Object.keys(standing.levels || {}).filter(Boolean);
   const across = levels.length > 1 ? ' That is across levels '

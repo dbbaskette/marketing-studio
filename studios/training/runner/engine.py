@@ -355,6 +355,9 @@ REVIEW_DECIDES = ('This is part of the {name} that is waiting for you, so it is 
                   'with everything the review covers. Nothing was changed.')
 REVIEW_NAMES = {'direction': 'first drafts review', 'final': 'final review'}
 PREVIEWS = 'previews'   # in the per-user data folder: the render's turn, and each deck's file
+# The desk's receipt when the one pass of fixes after a review corrects what a slide says.
+FIXED_WORDS = ('Corrected on the desk after the review of the drawn slides: only the words the '
+               'review found wrong were changed.')
 DECK_KEPT = ('What you approved the deck should say is kept, and so is everything made '
              'before it.')
 CHANGED = '{it} has changed since it was opened. Read the new version before deciding.'
@@ -3319,6 +3322,8 @@ class Engine(Reviewing):
         mine = found.decks[level]
         if not self._judged_here(root, it, mine) or not self._may_go(root):
             return
+        if mine.rewording:   # the review is kept: this try corrects the words it faulted
+            return self._reword(root, run, found, it)
         work = pipeline.work(root, found, it, None, last_error(self._load(root), it.id), [])
         outcome, handed, started_at, folder = self._job(root, run, it, work)
         if outcome.reason == 'stopped':
@@ -3357,21 +3362,14 @@ class Engine(Reviewing):
                 'coverage': coverage, 'at': home.now()}}
             self._note(root, level, rounds=rounds)
             record = self._load(root)
+            fixing, rewording = [], []
             if drafts.on_desk(record):
-                from studio_core.drafting import findings as review_findings
-                proposals = drafts.deck_proposals(self, root, level)
-                ident = workspace.qualify('deck', level)
-                drawings = drafts.deck_drawings(root, level)
-                items = [{**item, 'drawn': drawings.get(item['part'])}
-                         for item in review_findings.items(findings, 'slide')]
-                previous = (proposals.summary(ident, proposals.desk.read(ident)).get('review')
-                            or {}).get('items') or ()
-                for item in items:
-                    same = next((old for old in previous if all(old.get(key) == item.get(key)
-                                 for key in ('part', 'note', 'fix', 'drawn'))), None)
-                    if same and same.get('state') in ('skipped', 'applied'):
-                        item['state'] = same['state']
-                proposals.keep(ident, secrets.token_hex(16), 'finish-review', items)
+                # One pass of fixes, without asking: every slide with something wrong in how
+                # it is drawn is drawn again, the words the review faulted are corrected, and
+                # the review looks at those slides once more. What is left is kept as the
+                # review's notes on the deck. Nothing waits on them.
+                fixing, rewording = self._fix_pass(record, level, mine, rounds, findings)
+                self._keep_notes(root, level, findings, fixing, rewording)
             self._tried(record, it.id, started_at, outcome.seconds, 'kept',
                         **self._cost(outcome))
             # What drawing cannot put right goes back to the person, once for each start.
@@ -3381,8 +3379,278 @@ class Engine(Reviewing):
             if sent:
                 self._back_said(root, it, f'keep the review of {workspace.label(it.artifact)}')
             else:
-                self._commit(root, f'keep the review of {workspace.label(it.artifact)}')
+                mended = len({note['slide'] for note in (*fixing, *rewording)})
+                self._commit(root, f'keep the review of {workspace.label(it.artifact)}' + (
+                    f", and fix what it found on {mended} slide"
+                    f"{'' if mended == 1 else 's'}" if mended else ''))
         shutil.rmtree(folder, ignore_errors=True)
+
+    def _keep_notes(self, root: Path, level: str | None, findings: list[dict],
+                    fixing=(), rewording=()) -> None:
+        """Keep what a desk deck's review found as its notes on the deck, each on its slide,
+        leaving out what the pass of fixes is putting right now (`fixing`, `rewording`). A
+        note the person already applied or dismissed stays so. Call it holding `files`."""
+        from studio_core.drafting import findings as review_findings
+        proposals = drafts.deck_proposals(self, root, level)
+        ident = workspace.qualify('deck', level)
+        drawings = drafts.deck_drawings(root, level)
+        drawn, worded = ({note['slide'] for note in group} for group in (fixing, rewording))
+        left = [finding for finding in findings if finding.get('ask') or not (
+            finding.get('slide') in drawn and finding.get('about', deck.ABOUT[0]) == deck.ABOUT[0]
+            or finding.get('slide') in worded and finding.get('about') == deck.ABOUT[1])]
+        items = [{**item, 'drawn': drawings.get(item['part'])}
+                 for item in review_findings.items(left, 'slide', fields=('ask',))]
+        previous = (proposals.summary(ident, proposals.desk.read(ident)).get('review')
+                    or {}).get('items') or ()
+        for item in items:
+            same = next((old for old in previous if all(old.get(key) == item.get(key)
+                         for key in ('part', 'note', 'fix', 'drawn'))), None)
+            if same and same.get('state') in ('skipped', 'applied'):
+                item['state'] = same['state']
+        proposals.keep(ident, secrets.token_hex(16), 'finish-review', items)
+
+    def _fix_pass(self, record: dict, level: str | None, mine: pipeline.Deck, rounds: list,
+                  findings: list[dict]) -> tuple[list[dict], list[dict]]:
+        """Queue the one automatic pass of fixes a desk deck gets after the first review of
+        what was drawn from a start, and return what it will put right: a note for each slide
+        with something wrong in how it is drawn, whatever its severity, from the review, the
+        screens and the brand's check, which is queued to be drawn again; and each finding
+        about what a slide says that its words can be corrected for, which the review step's
+        next try corrects. Once for each start, whether or not anything was found: a later
+        review queues nothing. Call it holding `files`; the caller stores the record."""
+        kept, start = self._decided(record, level), mine.start.get('folder')
+        if (kept.get('fix_pass') or {}).get('start') == start or len(rounds) != 1:
+            return [], []
+        last, sections = rounds[-1], mine.start.get('sections') or ()
+        found = [*findings, *(last.get('audit_findings') or ()),
+                 *deck.sent_back(last.get('screens') or ())]
+        queued = [{'id': secrets.token_hex(6), **note, 'at': home.now(), 'by': 'review',
+                   'status': 'waiting'} for note in deck.to_fix(found, sections)]
+        words = deck.to_reword(findings, sections)
+        kept['fix_pass'] = {'start': start, 'at': home.now(),
+                            'slides': [note['slide'] for note in queued],
+                            **({'words': {'state': pipeline.FIX_DUE, 'findings': words}}
+                               if words else {})}
+        if queued:
+            kept.setdefault('notes', []).extend(queued)
+            kept['redrawing'] = True
+        return queued, words
+
+    def _reword(self, root: Path, run: _Run, found: pipeline.Survey, it: pipeline.Step) -> None:
+        """The second half of a desk deck's one pass of fixes: one try at correcting the
+        words its review faulted, by a worker given only the words. What it changed is kept
+        as what the deck says, bound as the desk binds it, and each changed slide is queued
+        to be drawn again with its new words. It is tried once: whatever it could not do
+        stays among the review's notes, and nothing stops."""
+        level = self._level(it)
+        mine = found.decks[level]
+        wanted = ((mine.kept.get('fix_pass') or {}).get('words') or {}).get('findings') or []
+        work = pipeline.reword_work(root, found, it, wanted, None)
+        outcome, handed, started_at, folder = self._job(root, run, it, work)
+        if outcome.reason == 'stopped':
+            return self._stopped(root, it, outcome, started_at)
+        with self.files:
+            record = self._load(root)
+            words = self._decided(record, level)['fix_pass']['words']
+            changed, why = None, None
+            try:
+                if handed['artifacts']:
+                    changed = self._reworded(root, record, level, found, handed, wanted)
+                else:
+                    why = pipeline.why_not(handed, outcome.detail)
+            except (WorkspaceError, OSError, KeyError, ValueError, TypeError,
+                    StopIteration) as refusal:
+                record = self._load(root)
+                words = self._decided(record, level)['fix_pass']['words']
+                why = plainly(refusal) if isinstance(refusal, WorkspaceError) else \
+                    f'{type(refusal).__name__}: {refusal}'
+            words.update(state=pipeline.FIX_DONE if changed is not None else pipeline.FIX_LEFT,
+                         at=home.now(), slides=changed or [], **({'why': why} if why else {}))
+            self._tried(record, it.id, started_at, outcome.seconds,
+                        'kept' if changed is not None else 'discarded', why,
+                        **self._cost(outcome))
+            kept = self._decided(record, level)
+            if not changed:
+                # Nothing was reworded, so these stay among the review's notes.
+                rounds = pipeline.read_built(root, level).get('rounds') or [{}]
+                fixing = [note for note in kept.get('notes') or ()
+                          if note.get('by') == 'review'
+                          and note.get('status') in ('waiting', 'drawing')]
+                self._keep_notes(root, level, (rounds[-1].get('review') or {}).get('findings')
+                                 or [], fixing)
+            self._store(root, record)
+            count = len(changed or ())
+            self._commit(root, (
+                f"correct what {workspace.label(it.artifact)} says on {count} slide"
+                f"{'' if count == 1 else 's'}, as its review found" if changed else
+                f'keep what the review of {workspace.label(it.artifact)} found about its '
+                'words as notes: ' + (why or 'nothing in them could be corrected without you')))
+        shutil.rmtree(folder, ignore_errors=True)
+
+    def _reworded(self, root: Path, record: dict, level: str | None, found: pipeline.Survey,
+                  handed: dict, wanted: list[dict]) -> list[str]:
+        """Keep the corrected words of a drawn desk deck in place of the ones its sections
+        were drawn from, and queue each changed slide to be drawn again with them. Only the
+        slides the review named, and only those in a section, are taken from what was handed
+        in. A deck drawn from its approved design has the changed words put to the slides
+        tool as a design of its own, accepted with the desk's receipt as the desk accepts
+        what a deck says. Returns the slides changed. Call it holding `files`; the caller
+        stores the record."""
+        mine, kept = found.decks[level], self._decided(record, level)
+        name = workspace.qualify('deck', level)
+        built = pipeline.read_built(root, level)
+        start = built['start']
+        base = pipeline.place(root, level, pipeline.WORK)
+        folder = base / start['folder']
+        outline_file = pipeline.place(root, level, pipeline.OUTLINE)
+        outline = home.read_json(outline_file, {})
+        given = json.loads(next(iter(handed['artifacts'].values()))['text'])
+        new = {slide.get('id'): slide for slide in deck.slides_of(given)}
+        where = {slide: section['id'] for section in start.get('sections') or ()
+                 for slide in section['slides']}
+        named = {finding['slide'] for finding in wanted}
+        changed = [slide['id'] for slide in outline['slides']
+                   if slide['id'] in named and slide['id'] in where and slide['id'] in new
+                   and drafts.words_of(new[slide['id']]) != drafts.words_of(slide)]
+        if not changed:
+            return []
+        edited = json.loads(json.dumps(outline))
+        edited['slides'] = [new[slide['id']] if slide['id'] in changed else slide
+                            for slide in edited['slides']]
+        problems = deck.rules(edited, pipeline._text(
+            root, found.session, workspace.qualify('blueprint', level)) or '',
+            known=pipeline.research_ids(root), delivery=pipeline.delivery_of(found.session))
+        if problems:
+            raise WorkspaceError(' '.join(problems))
+        design = None
+        if start.get('design'):
+            # The approved design with these slides' words changed, and nothing else.
+            tool, token = self.slides(), secrets.token_hex(12)
+            source = pipeline.design_project(root, level)
+            checked = tool.design_check(source)
+            plan = json.loads(json.dumps(checked['plan']))
+            for target in plan['slides']:
+                if target.get('id') in changed:
+                    target['title'] = new[target['id']]['title']
+                    target['copy'] = deck._copy(new[target['id']])
+                    target.pop('visibleText', None)
+            project = pipeline.place(root, level, f'deck/design-edits/{token}')
+            try:
+                project.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copytree(source, project,
+                                ignore=shutil.ignore_patterns('design-edits'))
+                proposal = project.parent / f'{token}.plan.json'
+                worker_tools._write(proposal,
+                                    json.dumps(plan, indent=2, ensure_ascii=False) + '\n')
+                status = tool.design_propose(project, proposal, checked['revision'],
+                                             pipeline.contract(root, mine))
+                proposal.unlink(missing_ok=True)
+                question = status.get('question')
+                if not isinstance(question, dict) or question.get('phase') != 'design':
+                    raise WorkspaceError('The slides tool did not take the corrected words '
+                                         'as a design.')
+                tool.design_respond(project, {
+                    'questionId': question['id'], 'planRevision': status['revision'],
+                    'decision': 'approve', 'feedback': FIXED_WORDS})
+                approved = tool.design_check(project)
+                if approved['revision'] != status['revision']:
+                    raise WorkspaceError('The slides tool holds another design than the one '
+                                         'the corrected words were put to it as.')
+            except BaseException:
+                shutil.rmtree(project, ignore_errors=True)
+                (project.parent / f'{token}.plan.json').unlink(missing_ok=True)
+                raise
+            design = {'plan': approved['plan'], 'revision': status['revision'],
+                      'project': f'deck/design-edits/{token}'}
+        # Each slide as it was is kept in its history first: the person can take it back.
+        for slide in changed:
+            drafts.keep_slide(self, root, level, slide, 'review')
+        if design:
+            design_file = pipeline.place(root, level, pipeline.DESIGN)
+            text = json.dumps(design['plan'], indent=2, ensure_ascii=False) + '\n'
+            worker_tools._write(design_file, text)
+            bound = {'sha256': workspace.sha256_file(design_file),
+                     'revision': design['revision'], 'project': design['project']}
+            kept['outline']['design'] = bound['sha256']
+            kept['approved']['design'] = bound
+            start['design'] = bound
+            worker_tools._write(folder / pipeline.APPROVED_DESIGN, text)
+        home.write_json(outline_file, edited)
+        digest = workspace.sha256_file(outline_file)
+        for item in (kept.get('outline'), kept.get('approved')):
+            if item:
+                item['sha256'] = digest
+        chosen = (kept.get('look') or {}).get('chosen')
+        if chosen:
+            chosen['outline'] = digest
+        if built.get('look') and built['look'].get('outline'):
+            built['look']['outline'] = digest
+        start['outline'] = digest
+        whole = home.read_json(folder / 'given' / 'outline.json', {})
+        now = {slide.get('id'): slide for slide in deck.slides_of(edited)}
+        whole['slides'] = [now[item['id']] if item.get('id') in changed else item
+                           for item in whole['slides']]
+        home.write_json(folder / 'given' / 'outline.json', whole)
+        home.write_json(folder / pipeline.TOOL_OUTLINE,
+                        deck.for_tool(whole, self.slides().knows()))
+        said = {}
+        for finding in wanted:
+            said.setdefault(finding['slide'], []).append(finding.get('note') or '')
+        kept['redrawing'] = True
+        kept.setdefault('notes', []).extend({
+            'id': secrets.token_hex(6), 'slide': slide, 'section': where[slide],
+            'note': ('The review found: ' + ' '.join(said.get(slide) or ())
+                     + ' Its words were corrected. Use the exact updated words in the '
+                     'outline: ' + json.dumps(drafts.words_of(now[slide]),
+                                              ensure_ascii=False))[:4000],
+            'at': home.now(), 'by': 'review', 'status': 'waiting'} for slide in changed)
+        pipeline.write_built(root, level, built)
+        return changed
+
+    def _ask_review(self, record: dict, level: str | None, it: pipeline.Step,
+                    last: dict) -> None:
+        """Put to the person what the review of a kept desk deck asks them, as one question:
+        only what a finding marked as theirs to decide, and each only once. Call it holding
+        `files`; the caller stores the record."""
+        kept = self._decided(record, level)
+        open_ = deck.questions((last.get('review') or {}).get('findings'))
+        # Once for each start: a later review of the same slides asks nothing again.
+        if not open_ or record.get('question') or kept.get('review_asked') == last.get('start'):
+            return
+        kept['review_asked'] = last.get('start')
+        record['question'] = {
+            'id': secrets.token_hex(6), 'step': it.id,
+            'text': deck.question_text(workspace.label(it.artifact), open_),
+            'from': f'The review of {workspace.label(it.artifact)}', 'at': home.now(),
+            'deck': {'level': level, 'slides': [
+                {key: finding.get(key) for key in ('slide', 'number', 'about', 'ask')}
+                for finding in open_]}}
+
+    def _review_answered(self, root: Path, asked: dict, text: str) -> None:
+        """Act on the person's answer to what a deck's review asked: it is kept with the
+        deck, and each slide it is about whose question was about how it is drawn is drawn
+        again with the answer, as a change the person asked for. An answer about what a
+        slide says is kept for them to make in its words: drawing cannot change approved
+        words. Call it holding `files`."""
+        level = (asked.get('deck') or {}).get('level')
+        record = self._load(root)
+        kept = self._decided(record, level)
+        kept.setdefault('review_answers', []).append(
+            {'question': asked['text'], 'answer': text, 'at': home.now(),
+             'slides': [entry.get('slide') for entry in asked['deck'].get('slides') or ()]})
+        self._store(root, record)
+        notes = [{'slide': entry['slide'],
+                  'note': (f"The review asked: {entry.get('ask')} The person answered: "
+                           f'{text}')[:4000]}
+                 for entry in asked['deck'].get('slides') or ()
+                 if entry.get('about', deck.ABOUT[0]) == deck.ABOUT[0]]
+        if not notes:
+            return
+        try:
+            self.slide_notes(root, level, notes, (kept.get('saved') or {}).get('sha256'),
+                             _defer=True)
+        except WorkspaceError:
+            pass    # the answer is kept with the deck; the slide can still be noted by hand
 
     def _send_back(self, record: dict, mine: pipeline.Deck, findings: list[dict],
                    rendered: str | None) -> bool:
@@ -3468,6 +3736,8 @@ class Engine(Reviewing):
             kept.pop('redesign', None)
             kept.pop('redrawing', None)
             kept.pop('draw_all', None)
+            if drafts.on_desk(record):
+                self._ask_review(record, level, it, last)
             if (kept.get('note_chain') or {}).get('status') == 'working':
                 kept['note_chain']['status'] = 'done'
             self._store(root, record)
@@ -4112,7 +4382,11 @@ class Engine(Reviewing):
         if designed is None:
             return self._problem(root, it.id, 'stopped', DESIGN_GONE, KEPT)
         record = self._load(root)
-        scoped = (says and drafts.on_desk(record) and it.artifact in drafts.updates(record)
+        # On the desk what a deck says is written, then checked and corrected once by a
+        # second worker, before the person is shown it: this try is that check.
+        checking = bool(says and found.decks[self._level(it)].checking)
+        scoped = (says and not checking and drafts.on_desk(record)
+                  and it.artifact in drafts.updates(record)
                   and 'slides' in (step.request or {}))
         if scoped:
             with self.files:
@@ -4156,12 +4430,15 @@ class Engine(Reviewing):
                    if it.id == 'research-plan' and record.get('documents') else None)
         naming = (self._naming(root, found.session)
                   if it.stage in pipeline.NAMED and it.kind == 'agent' else None)
-        work = pipeline.work(root, found, it, step.request, last_error(record, it.id),
-                             record['answers'].get(it.id, []), sources, naming, designed,
-                             bool(designed) and self._has('design-icon-ids'),
-                             synthesis=bool(record.get('research_contract')),
-                             asked=record.get('research_questions') or (),
-                             update=drafts.on_desk(record) and it.artifact in drafts.updates(record))
+        work = pipeline.outline_check_work(
+            root, found, it, last_error(record, it.id), record['answers'].get(it.id, []),
+            designed, bool(designed) and self._has('design-icon-ids')) if checking else \
+            pipeline.work(root, found, it, step.request, last_error(record, it.id),
+                          record['answers'].get(it.id, []), sources, naming, designed,
+                          bool(designed) and self._has('design-icon-ids'),
+                          synthesis=bool(record.get('research_contract')),
+                          asked=record.get('research_questions') or (),
+                          update=drafts.on_desk(record) and it.artifact in drafts.updates(record))
         outcome, handed, started_at, folder = self._job(root, run, it, work)
         if outcome.reason == 'stopped':
             return self._stopped(root, it, outcome, started_at)
@@ -4191,13 +4468,18 @@ class Engine(Reviewing):
                     record['drafted'].append(it.artifact)
                     self._store(root, record)
                 if says:  # kept in the deck's own folder: its gate is the runner's
-                    if drafts.on_desk(record):
+                    if drafts.on_desk(record) and not checking:
                         for slide in home.read_json(pipeline.place(root, self._level(it), pipeline.OUTLINE), {}).get('slides', []):
                             drafts.keep_slide(self, root, self._level(it), slide['id'],
                                               'update' if scoped else 'outline')
                     self._decided(record, self._level(it)).update(
-                        outline=pipeline.keep_outline(root, found, self._level(it), handed,
-                                                      step.request, designed),
+                        outline={**pipeline.keep_outline(root, found, self._level(it), handed,
+                                                         step.request, designed),
+                                 # The assistant's own text is checked once; words the
+                                 # person asked for are kept as they asked for them.
+                                 **({'check': pipeline.CHECKED_TEXT} if checking else
+                                    {'check': pipeline.CHECK_DUE} if drafts.on_desk(record)
+                                    and (step.request or {}).get('kind') != 'revise' else {})},
                         asked=None, waiting=None)
                 else:
                     pipeline.keep_draft(root, it, handed, step.request, found,
@@ -4208,6 +4490,7 @@ class Engine(Reviewing):
                             **self._cost(outcome))
                 self._store(root, record)
                 self._commit(root, 'keep ' + (f'what {workspace.label(it.artifact)} says'
+                                              + (', checked and corrected' if checking else '')
                                               if says else workspace.label(it.artifact)))
             shutil.rmtree(folder, ignore_errors=True)
         elif handed['question']:
@@ -4221,9 +4504,32 @@ class Engine(Reviewing):
                     'at': home.now()}
                 self._store(root, record)
                 self._commit(root, f'a worker asks a question: {it.label}')
-        else:
+        elif not (checking and self._check_left(root, it, outcome, started_at,
+                                                pipeline.why_not(handed, outcome.detail))):
             self._failed(root, it, outcome, started_at,
                          pipeline.why_not(handed, outcome.detail))
+
+    def _check_left(self, root: Path, it: pipeline.Step, outcome: agents.Outcome,
+                    started_at: str, detail: str) -> bool:
+        """The check of what a deck says did not work on the last try it has: the text is
+        kept as it was written, said to be unchecked where it is shown, and the training
+        carries on. The check is the assistant's own, so it never stops a training. False
+        while it has tries left, or when no agent can be used at all, which the step says."""
+        with self.files:
+            record = self._load(root)
+            failed = (record['steps'].get(it.id) or {}).get('failed', 0)
+            if stops.agent_stopped('', outcome, detail) is not None \
+                    or failed + 1 < pipeline.ATTEMPTS:
+                return False
+            entry = self._tried(record, it.id, started_at, outcome.seconds, 'discarded',
+                                detail, **self._cost(outcome))
+            entry['failed'] = 0
+            drafted = self._decided(record, self._level(it)).get('outline') or {}
+            drafted.update(check=pipeline.CHECK_LEFT, check_note=detail)
+            self._store(root, record)
+            self._commit(root, f'keep what {workspace.label(it.artifact)} says as it was '
+                         'written: its check did not finish')
+        return True
 
     # --- research ------------------------------------------------------------------------
 
@@ -5627,7 +5933,7 @@ class Engine(Reviewing):
         if base == 'deck' and self._decided(record, level).get('redrawing'):
             raise WorkspaceError(drafts.BUSY)
         if workspace.split(name)[0] == 'deck' and name in state \
-                and drafts.needs_you(root, self._survey_files(root, record), name):
+                and drafts.needs_you(root, self._survey_files(root, record), name, record):
             raise WorkspaceError(drafts.NEEDS_YOU.format(it=workspace.label(name)))
         # What it was before, so Undo (Return to draft of this very approval) puts it back.
         before = (workspace.load(root)['artifacts'].get(name) or {}).get('approved')
@@ -6243,6 +6549,8 @@ class Engine(Reviewing):
                 {'question': asked['text'], 'answer': text.strip(), 'at': home.now()})
             record['question'] = None
             self._store(root, record)
+            if asked.get('deck'):
+                self._review_answered(root, asked, text.strip())
             self._commit(root, 'a worker\'s question was answered on the page')
         self.wake(root)
         return self.view(root)
@@ -7210,7 +7518,9 @@ class Engine(Reviewing):
         objections = workspace.review_file('research')
         drawing = self._drawing(found)
         level = self._level(drawing) if drawing else None
-        outline = pipeline.outline_view(root, found, level) if drawing else None
+        # What a deck says is shown once its own check has corrected it, never before.
+        outline = pipeline.outline_view(root, found, level) \
+            if drawing and not found.decks[level].checking else None
         if outline is not None:
             if deck_content.enabled(record):
                 outline['content_first'] = True

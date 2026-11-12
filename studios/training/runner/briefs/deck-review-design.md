@@ -20,8 +20,9 @@ Answer every criterion the review lists for a slide, for every slide, from what 
 For each `issue` or `uncertain`, also:
 
 - `severity`: `critical`, `major` or `minor`, as your input defines them.
-- `about`: `drawing` when drawing the slide again would put it right and keep its approved visual concept and its words; `content` when only a change to what the slide says, its words or its facts, would; `concept` when the approved visual concept itself does not teach the claim and another one would. The last two are not put right by drawing: they go back to the person, who approved the words and the concept.
+- `about`: `drawing` when drawing the slide again would put it right and keep its approved visual concept and its words; `content` when only a change to what the slide says, its words or its facts, would; `concept` when the approved visual concept itself does not teach the claim and another one would. The last two are not put right by drawing. For `content`, say in `fix` exactly what the words should say instead, when it follows from your inputs, so that the words can be corrected and the slide drawn again; `concept` is kept for the person, who approved it.
 - `fix`: what would put it right, when you can say. It may be left out.
+- `ask`: a question for the person, in one or two plain sentences, and only for what is theirs to decide: what they intend, a fact that none of your inputs holds, or a choice between options that are each valid. Leave it out for everything else. Do not ask about anything that can be looked up in the sources or put right without them: say what is wrong and how to fix it instead.
 
 Judge whether each visual teaches. Ask what the learner can see that they could not read in a list of the same words. A slide that teaches a mechanism, a flow, ownership or containment shows its parts and how they connect, accurately. Boxes are not a fault in themselves, and neither is a missing icon. A slide approved as direct text, such as a question or a quotation, passes without any picture when it serves its purpose.
 
@@ -39,4 +40,4 @@ Name up to three weakest slides, the weakest first.
 2. Call `submit_coverage` with the slides for each objective, and a line on why those slides.
 3. Then stop. Your last message can be one line.
 
-Nobody can answer questions in this job. Judge, and say what you found.
+Nobody answers questions while you work. Judge, and say what you found. A question that only the person can settle goes in a finding's `ask`: it is put to them after what the review found has been fixed.
