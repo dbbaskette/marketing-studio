@@ -768,6 +768,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       if (!held.view.working || held.watching) return; held.watching = true;
       const follow = async () => {
         if (!a.current(held)) { held.watching = false; return; }
+        // A tab nobody is looking at asks nothing; it catches up within one beat of being shown.
+        if (typeof document !== 'undefined' && document.hidden) { setTimeout(follow, POLL); return; }
         try {
           await k.flush(held); const view = await a.api(a.routes.view + '?id=' + encodeURIComponent(held.id)); if (!a.current(held)) { held.watching = false; return; }
           const ended = !view.working, before = held.view; held.view = view; a.hooks.refresh(held, before);

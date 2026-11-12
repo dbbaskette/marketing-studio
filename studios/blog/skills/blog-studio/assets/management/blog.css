@@ -273,6 +273,7 @@
 
 /* A draft to read and no pressing move: the band is one quiet row, so the writing starts higher. */
 .workbench-quiet .workbench-head{grid-template-columns:minmax(0,1fr) auto;gap:.4rem 1.2rem}
+@media (max-width:52rem){.workbench-quiet .workbench-head{grid-template-columns:minmax(0,1fr)}}
 .workbench-quiet .workbench-head>.move-card{display:flex;flex-wrap:wrap;align-items:center;gap:.3rem .8rem;padding:.4rem .8rem}
 .workbench-quiet .move-card>p:not(.move-label){display:none}
 .workbench-quiet .move-card .move-title{font-size:1rem;margin:0}
@@ -282,7 +283,8 @@
    own activity lines give way to it, so nothing is said twice. */
 .review-status{display:grid;gap:.45rem;max-width:44rem;border:1px solid color-mix(in srgb,var(--studio-color,var(--accent)) 45%,var(--hair));background:color-mix(in srgb,var(--studio-color,var(--accent)) 7%,var(--card))}
 .review-status>.move-label{margin:0;color:var(--studio-color,var(--accent));font-weight:650}
-.review-status>.desk-working-note{margin:0;font-size:1.25rem;color:inherit}
+.review-status>.desk-working-note{margin:0}
+.review-status-title{font-size:1.25rem;color:inherit}
 .review-status-step{margin:0;font-weight:600}
 .review-status>.bar{margin-top:.2rem}
 *:has(>.review-head .review-status)>.lede,*:has(>.review-head .review-status)>.activity-holder{display:none}

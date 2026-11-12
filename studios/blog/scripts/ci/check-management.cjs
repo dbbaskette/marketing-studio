@@ -3329,7 +3329,7 @@ async function geoReportJourney(){
   await t.submit();
   assert.equal(created.length,1,'one press, one job');assert.deepEqual(created[0].published,{preview:'p'.repeat(32),expected:'e'.repeat(32)});assert.match(created[0].operation,/^[0-9a-f]{32}$/);
   assert.equal(t.f.run('studio.screen'),'geo-report');
-  assert.ok(t.nodes().some(n=>n.className==='desk-working-note'&&/One job/.test(n.textContent)));
+  assert.ok(t.nodes().some(n=>String(n.className||'').split(' ').includes('desk-working-note')&&/One job/.test(n.textContent)));
   // Ready: the report is an opaque reading document.
   t.f.run('studio.geoReady=true');await t.tick();
   const paper=t.nodes().find(n=>n.tagName==='article'&&/geo-report-paper/.test(n.className));
@@ -3394,7 +3394,7 @@ async function findTextJourney(){
   // A press asks once; progress is a status line, with Stop, and focus moves to Stop.
   await t.click('Ask Codex to find the post’s text');
   assert.equal(asks().length,1);assert.equal(asks()[0].data.url,LINK);assert.match(asks()[0].data.operation,/^[0-9a-f]{32}$/);
-  const line=inBox().find(n=>n.className==='desk-working-note');
+  const line=inBox().find(n=>String(n.className||'').split(' ').includes('desk-working-note'));
   assert.equal(line.textContent,'Codex is looking for where this page gets its text…');assert.equal(line.attributes.role,'status');
   const stop=inBox().find(n=>n.tagName==='button'&&n.textContent==='Stop');assert.ok(stop.focused,'focus follows the work');
   await t.tick();assert.equal(state.polls.length,1,'it is watched');assert.ok(box(),'still working');
@@ -4460,7 +4460,7 @@ async function deskReviewHumanize(){
   // chain and the line saying what it does now.
   view=fit({...view,working:{id:'h1',kind:'finish-humanize',status:'queued',busy:true,part:'finishing'},jobs:[{id:'c1',kind:'finish-copyedit',status:'ready',applied:true,error:''},{id:'h1',kind:'finish-humanize',status:'queued',busy:true}],finishing:{copyedit:finishSet('copyedit',HUMAN_COPY)}});
   await tick();
-  assert.ok(nodes().some(n=>n.className==='desk-working-note'&&n.textContent==='Looking for machine-like wording…'),'the second step said');
+  assert.ok(nodes().some(n=>String(n.className||'').split(' ').includes('desk-working-note')&&n.textContent==='Looking for machine-like wording…'),'the second step said');
   assert.equal(f.get('above').textContent,'Looking for machine-like wording…');
   await press(head(),'Stop');assert.equal(last('/api/desk-stop').job,'h1','Stop stops the chain');
   view={...view,working:{id:'h1',kind:'finish-humanize',status:'queued',busy:true,part:'finishing'}};f.set('next',view);await f.run('studio.desk.view=next;sDeskReview(studio.desk)');

@@ -3132,7 +3132,10 @@ def server(root, port=0, bind=True, shared_setup=False, keep_workspace=True):
                 if media.startswith('text/html'):
                     # Only when Marketing Studio started this desk does its page link back.
                     body = with_appearance(with_suite_port(body, suite_port()))
-                return made(200, body, media)
+                    return made(200, body, media)
+                # A script or style: "not changed" to a browser that holds it, gzip otherwise.
+                status, kind, body, extra = shared_server.static_reply(media, body, headers)
+                return status, kind, body, {**HEADERS, **extra}
             result = None
             if parsed.path.startswith('/api/'):
                 with serialized():

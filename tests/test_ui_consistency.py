@@ -331,7 +331,7 @@ class SharedLookTests(unittest.TestCase):
                 '.desk-finish-sheet', '.desk-finish-tools', '.desk-proposal', '.desk-sides',
                 '.desk-side', '.desk-quote', '.desk-edit', '.desk-comments', '.desk-comment',
                 '.diff-add', '.diff-remove')
-        placements = {'.review-checking>.desk-working-note', '.review-fix>.desk-sides',
+        placements = {'.review-checking>.desk-working-note', '.review-status>.desk-working-note', '.review-fix>.desk-sides',
                       '.review-quick-list .desk-quote'}
 
         def named(css):
