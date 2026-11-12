@@ -129,13 +129,20 @@ A page saved with the older text-paragraph layout first offers **Make this story
 
 | Configuration | Text, planning and inspection | Artwork |
 | --- | --- | --- |
-| **Codex** | Shared Codex model/effort and existing sign-in | Scoped built-in image route, when available to that installed runtime and account |
-| **Claude Code + Gemini** | Your signed-in Claude Code assistant | An explicitly chosen image-capable Gemini model through its Interactions API |
+| **Codex draws** | Your shared assistant | Codex's built-in image route, under your Codex sign-in, when that installed runtime and account offer it |
+| **Gemini draws** | Your shared assistant | The Gemini picture model you chose, through its Interactions API, billed to your Gemini API key |
 
-Codex does not require a separate OpenAI image API key and does not silently fall
-back to another provider. For Gemini, supply `GEMINI_API_KEY` in the environment of
-the server you explicitly launch. A desktop launch does not inherit an arbitrary
-terminal’s exports. Never put the key into shared settings, content, prompts or issues.
+Who draws is the shared **Document graphics** setting in Marketing Studio: open
+**Shared settings**, then **Document graphics**. Choose Gemini or Codex there. With no
+choice made, drawing follows your assistant as before: Codex for Codex, Gemini for
+Claude Code.
+
+For Gemini, paste your API key there and press **Save key**, then **List models from
+Gemini** to choose a picture model your key can use. The key is kept in a private file
+on this computer beside your settings. It is never shown again, never written into the
+shared settings file, a workspace, a prompt or a log, and it is not accepted over the
+phone link. A `GEMINI_API_KEY` in the launch environment still works and is used first.
+Codex needs no separate key and never silently falls back to another provider.
 Gemini image API usage is separate from Claude Code usage.
 
 Only reported usage/cost is shown; unknown prices are not estimated. Image intent

@@ -124,11 +124,13 @@ class StaticLayoutTests(unittest.TestCase):
         form = html.find('settings-form')
         cards = [(node.attrs.get('data-step'), headings(node)[0].words()) for node in form.children
                  if node.tag == 'section' and 'card' in node.classes]
-        # The four everyday choices first, each a setup step; then the named Advanced parts,
-        # which only Shared settings shows, after its Advanced heading.
+        # The four everyday choices first, each a setup step; then Document graphics, an
+        # everyday choice only Shared settings shows; then the named Advanced parts, after
+        # their Advanced heading.
         self.assertEqual(cards, [
             ('0', 'You and your assistant'), ('1', 'Your workspace'), ('2', 'Brand'),
-            ('2', 'Delivery and previews'), ('settings', 'Models and reasoning'),
+            ('2', 'Delivery and previews'), ('settings', 'Document graphics'),
+            ('settings', 'Models and reasoning'),
             ('settings', 'Brand skill release'), ('settings', 'Research sites'),
             ('settings', 'Studio installations')])
         order = [node.attrs.get('id') for node in form.children if node.attrs.get('id')]

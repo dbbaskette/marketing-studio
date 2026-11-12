@@ -308,8 +308,8 @@ const imageProblems={
   'sign-in-required':'Sign in to your selected assistant on this computer, then start the image request again. Your earlier work is kept.',
   'quota':'The image provider reported a usage or rate limit. Your earlier work is kept. Try again when your allowance resets.',
   'invalid-asset':'The returned image was not a usable PNG, so it was not added. Your earlier work is kept.',
-  'gemini-key-required':'Set GEMINI_API_KEY in the server launch environment before starting image work.',
-  'image-model-unavailable':'Choose a Gemini image model available to your account in Settings.'
+  'gemini-key-required':'Save a Gemini API key in Marketing Studio, Shared settings, Document graphics, then start the image request again.',
+  'image-model-unavailable':'Choose a Gemini picture model your key can use in Shared settings, Document graphics.'
 };
 // One image request in words: which provider did what, and how it ended. Saved artwork that
 // was found or recovered is said first, as Image work needs attention says it.
@@ -1042,7 +1042,7 @@ async function showSettings() {
   try {
     preferences = await request('/api/preferences');
     const capability = await request('/api/computer');
-    const sharedLink = make('a', 'button', 'Shared assistant and brand settings');
+    const sharedLink = make('a', 'button', 'Shared settings: assistant, brand and document graphics');
     sharedLink.href = '/onboarding/#token=' + encodeURIComponent(token) + '&view=settings';
     const model = field('Gemini image model', preferences.native.gemini_model || '');
     const teamEmail=field('Team Git email',preferences.native.team_email||'');
@@ -1055,9 +1055,9 @@ async function showSettings() {
     const messages = {
       'assistant-missing': 'Install the selected assistant on this computer before starting assistant work.',
       'sign-in-required': 'Sign in to the selected assistant on this computer.',
-      'gemini-key-required': 'Supply GEMINI_API_KEY in the server launch environment.',
-      'gemini-model-required': 'Choose an image-capable Gemini model below.',
-      'image-model-unavailable': 'Choose a Gemini image model available to your account.',
+      'gemini-key-required': 'Save a Gemini API key in Shared settings, Document graphics.',
+      'gemini-model-required': 'Choose a Gemini picture model in Shared settings, Document graphics.',
+      'image-model-unavailable': 'Choose a Gemini picture model your key can use, in Shared settings, Document graphics.',
       'image-tool-unavailable': 'The installed Codex does not offer its image tool on this computer.',
       'manual-image-review-required': 'Review the actual page yourself; your assistant cannot inspect images here.',
       'sign-in-not-checked': 'Sign-in is checked the first time you start assistant work.',
@@ -1067,7 +1067,8 @@ async function showSettings() {
       'generation-and-editing-not-live-verified': 'Artwork generation and artwork revisions are checked the first time you use them.'
     };
     const imageDefaults = [];
-    if (preferences.image_provider === 'gemini') imageDefaults.push(model.wrap);
+    // The picture model is a shared setting now; an earlier choice made here still applies until one is saved there.
+    if (preferences.image_provider === 'gemini') imageDefaults.push(make('p', 'quiet', 'Gemini picture model: ' + (preferences.image_model || 'none chosen yet') + '. Change it in Shared settings, Document graphics.'));
     const save = async (changes, said) => {
       try {
         await request('/api/preferences', {expected: preferences.native_revision, changes});
@@ -1079,7 +1080,6 @@ async function showSettings() {
       make('p', 'quiet', 'Defaults apply to new work. Your existing workspace and saved brand stay in place.'),
       button('Save defaults', () => {
         const changes = {renderer: renderer.input.value,google_account:googleAccount.input.value,google_folder:googleFolder.input.value};
-        if (preferences.image_provider === 'gemini') changes.gemini_model = model.input.value;
         return save(changes, 'Defaults saved.');
       }, true));
     $('main').replaceChildren(

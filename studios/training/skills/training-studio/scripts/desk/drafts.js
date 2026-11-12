@@ -2022,6 +2022,8 @@ function deckParts(found) {
   const deckActions = add(make('details', 'card-part'), make('summary', '', 'Deck actions'));
   deckActions.dataset.key = found.name + ':deck-actions';
   if (ours) area.append(selection.bar);
+  const rebranded = rebrandStatus(found);
+  if (rebranded) area.append(rebranded);
   if (list(found.slides).length) deckActions.append(capsule('Review slide text', 'quiet', () => deckOutline(found)));
   if (ours && found.local && list(found.slides).length) deckActions.append(add(make('details', 'card-part'),
     make('summary', '', 'Change the whole deck'), wholeDeckNote(found)));
@@ -2043,7 +2045,10 @@ function deckParts(found) {
       const answer = await deskDecide('look-samples', { level: found.level }, again);
       if (answer) lookSheet(found, answer.look);
     });
-    add(deckActions, add(make('div', 'bar'), again), make('p', 'quiet', found.look_price));
+    // Offered once the deck is drawn here, and only where there is another brand to choose.
+    const rebrand = list(found.rebrand?.skills).length || (found.local && brandOptions(found).length > 1)
+      ? capsule('Change brand', 'quiet', () => deckBrandSheet(found), found.name + ':deck-brand') : null;
+    add(deckActions, add(make('div', 'bar'), again, rebrand), make('p', 'quiet', found.look_price));
   }
   const slides = list(found.slides), heldDeck = deskHeld(view.path);
   heldDeck.slide ||= {};
@@ -2412,6 +2417,95 @@ function lookSheet(found, look) {
       look?.failed ? retry : null, look?.default_available ? fallback : null,
       capsule('Cancel', 'quiet', () => closeSheet()))];
   openSheet('desk-kit', '')();
+}
+
+// Change brand: the brands this computer can draw the deck in, the one it is in now, and
+// what choosing another does. Nothing is sent until the person confirms.
+function brandOptions(found) {
+  const options = [];
+  for (const entry of list(found.brand?.choices)) {
+    const variants = list(entry.variants);
+    for (const variant of variants.length ? variants : [null]) {
+      options.push({ brand: entry.brand, variant,
+        label: (entry.name || entry.brand) + (variant ? ' · ' + variant : '') });
+    }
+  }
+  return options;
+}
+
+function deckBrandSheet(found) {
+  const error = make('p', 'notice'); error.setAttribute('role', 'alert'); error.hidden = true;
+  const say = (words) => { error.textContent = words || ''; error.hidden = !words; };
+  const parts = [sheetTitle('Change brand')];
+  // 1. A copy in another brand, made by a rebranding skill: minutes, nothing drawn again.
+  const skills = list(found.rebrand?.skills);
+  if (skills.length) {
+    const pick = make('select', 'input'); pick.dataset.key = 'deck-rebrand-skill';
+    for (const one of skills) { const option = make('option', '', one.name); option.value = one.id; pick.append(option); }
+    const copy = capsule('Make a rebranded copy', 'filled', async () => {
+      const answer = await deskDecide('deck-brand-copy', { level: found.level, seen: found.seen,
+        skill: pick.value }, copy);
+      if (answer) closeSheet(); else say(deskHeld(view.path).said);
+    }, 'deck-rebrand-apply');
+    parts.push(make('h3', 'sheet-part', 'Rebrand this deck as a copy'),
+      make('p', '', 'Your deck goes to the brand’s rebranding skill as it is. It comes back as a '
+        + 'new Google Slides copy in that brand, with the same words, slide order, notes, '
+        + 'charts and pictures. Nothing is drawn again, so this takes minutes. This deck and '
+        + 'the training stay as they are.'),
+      add(make('label', 'field'), make('span', 'field-label', 'Rebrand as'), pick),
+      add(make('div', 'bar'), copy));
+  }
+  // 2. The whole deck drawn again in another of the brand skill's brands.
+  const options = brandOptions(found), now = found.brand?.now || {};
+  const same = (one) => one.brand === now.brand && (one.variant || null) === (now.variant || null);
+  if (found.local && options.length > 1) {
+    const select = make('select', 'input');
+    select.dataset.key = 'deck-brand-choice';
+    options.forEach((one, index) => {
+      const option = make('option', '', one.label + (same(one) ? ' · the brand it is in now' : ''));
+      option.value = String(index); select.append(option);
+    });
+    select.value = String(Math.max(options.findIndex((one) => !same(one)), 0));
+    const apply = capsule('Redraw in this brand', skills.length ? '' : 'filled', async () => {
+      const one = options[Number(select.value)];
+      if (!one || same(one)) { say('Choose a brand the deck is not in already.'); return; }
+      const answer = await deskDecide('deck-brand', { level: found.level, seen: found.seen,
+        brand: { brand: one.brand, variant: one.variant } }, apply);
+      if (answer) closeSheet(); else say(deskHeld(view.path).said);
+    }, 'deck-brand-apply');
+    const redraw = [add(make('label', 'field'), make('span', 'field-label', 'Brand for the deck'), select),
+      make('p', '', 'What the deck says stays as you approved it. Every slide is drawn again in '
+        + 'the brand you choose, in that brand’s default look, and reviewed again. Each slide as '
+        + 'it is now is kept in its History. The brand is the training’s, so a deck at another '
+        + 'level is redrawn too.'),
+      make('p', 'quiet', found.look_price), add(make('div', 'bar'), apply)];
+    parts.push(skills.length
+      ? add(make('details', 'card-part'), make('summary', '', 'Or draw the whole deck again in another brand'), ...redraw)
+      : make('h3', 'sheet-part', 'Draw the whole deck again in another brand'), ...(skills.length ? [] : redraw));
+  }
+  parts.push(error, add(make('div', 'bar'), capsule('Cancel', 'quiet', () => closeSheet())));
+  DESK.kitSheet = parts;
+  openSheet('desk-kit', found.name + ':deck-brand')();
+}
+
+// The last rebranded copy asked for, said on the deck: being made, made with its address,
+// or what went wrong.
+function rebrandStatus(found) {
+  const last = found.rebrand?.last;
+  if (!last) return null;
+  const line = make('p', last.state === 'failed' ? 'notice' : 'quiet');
+  line.setAttribute('role', last.state === 'failed' ? 'alert' : 'status');
+  line.dataset.key = found.name + ':rebrand-status';
+  if (last.state === 'working') line.textContent = 'Making a ' + last.name + ' copy of this deck. It takes a few minutes; you can keep working.';
+  else if (last.state === 'done') {
+    const link = make('a', 'link', 'Open the ' + last.name + ' copy in Google Slides');
+    link.href = last.url; link.target = '_blank'; link.rel = 'noopener';
+    add(line, link, last.exceptions ? ' It was made with exceptions; read its report before you use it.' : '');
+  } else {
+    line.textContent = 'The ' + last.name + ' copy was not finished. ' + (last.said || '');
+    if (last.url) { const link = make('a', 'link', ' Open what was made'); link.href = last.url; link.target = '_blank'; link.rel = 'noopener'; line.append(link); }
+  }
+  return line;
 }
 
 // Whether a material is open for editing. It opens to read, as learners will receive it;

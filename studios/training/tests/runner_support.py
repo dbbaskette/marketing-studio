@@ -46,6 +46,9 @@ check decides when the next batch starts.</p>
 </body></html>"""
 
 
+# No test reads the rebranding skills installed for this person.
+os.environ.setdefault('TRAINING_STUDIO_REBRAND_HOME', '/nonexistent/training-studio-tests')
+
 class Web:
     """A pretend web: what each address answers, and the addresses each host name has."""
 

@@ -41,15 +41,23 @@ def engine(store):
     assistant = chosen['assistant']
     def codex_adapter(folder):
         return Codex(folder, model=assistant['model'], effort=assistant['effort'])
-    codex_adapter.configuration = dict(assistant)
+    if assistant['agent'] != 'codex':
+        # Codex drawing for another assistant uses Codex's own defaults, not that assistant's model.
+        def codex_adapter(folder):
+            return Codex(folder)
+        codex_adapter.configuration = {'agent': 'codex', 'model': None, 'effort': None}
+    else:
+        codex_adapter.configuration = dict(assistant)
     from studio_core.runtime import assistant_command
     codex_adapter.preflight = lambda: require(assistant_command('codex') is not None, 'Install or select an available Codex CLI before starting image work.')
     adapters = {'codex': codex_adapter}
-    if chosen['native'].get('gemini_model'):
+    image_model = chosen.get('image_model') or chosen['native'].get('gemini_model')
+    if image_model:
+        from studio_core import graphics
         def gemini_adapter(folder):
-            return Gemini(folder, model=chosen['native']['gemini_model'])
-        gemini_adapter.configuration = {'model': chosen['native']['gemini_model'], 'api': 'interactions', 'image_size': '2K'}
-        gemini_adapter.preflight = lambda: require(bool(os.environ.get('GEMINI_API_KEY')), 'Set GEMINI_API_KEY in the server launch environment before starting image work. Do not paste it into this page.')
+            return Gemini(folder, model=image_model, key=graphics.key)
+        gemini_adapter.configuration = {'model': image_model, 'api': 'interactions', 'image_size': '2K'}
+        gemini_adapter.preflight = lambda: require(bool(graphics.key()), 'Save a Gemini API key in Marketing Studio, Shared settings, Document graphics, before starting image work.')
         adapters['gemini'] = gemini_adapter
     found = Engine(store, executable=chosen['renderer'], adapters=adapters, assistant=Author(assistant))
     found.configuration = chosen
@@ -151,7 +159,7 @@ def action(found, sent):
     if verb == 'image-start':
         config = getattr(found, 'configuration', None)
         if config:
-            require(sent.get('provider') == config['image_provider'], 'Change the shared assistant explicitly before selecting another image provider.')
+            require(sent.get('provider') == config['image_provider'], 'Change Document graphics in Shared settings before selecting another image provider.')
         require(sent.get('provider') in found.adapters, 'Configure the selected image adapter and model before starting image work.')
         preflight = getattr(found.adapters[sent['provider']], 'preflight', None)
         if preflight: preflight()

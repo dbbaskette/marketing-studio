@@ -2274,7 +2274,17 @@ def deck_card(engine, root, level, found):
     notes = [note for note in mine.kept.get('notes') or [] if note['id'] in chain.get('ids', [])]
     done = sum(all(note['status'] == 'done' for note in notes if note['section'] == section)
                for section in chain.get('sections', []))
+    now, choices = pipeline.brand_of(found.session), engine.brands() or []
     return {'slides': slides, 'local': bool(drawn), 'look_price': price,
+            # The brand the deck is drawn in, and the brands this computer can draw it in.
+            'brand': {'now': {'brand': now[0], 'variant': now[1]} if now else None,
+                      'choices': choices},
+            # A copy in another brand, made by a rebranding skill: the skills here, and
+            # the last copy asked for (working, done with its address, or what failed).
+            'rebrand': {'skills': [{'id': one['id'], 'name': one['name']}
+                                   for one in engine.rebrand_skills()],
+                        'last': {key: value for key, value in (mine.kept.get('rebrand') or {}).items()
+                                 if key != 'seen'} or None},
             'change': {**chain, 'done': done, 'total': len(chain.get('sections', []))} if chain else None,
             'outline': outline, 'outline_delivery': pipeline.delivery_of(found.session), 'selection': selection,
             'look': (mine.kept.get('look_pending') or None)}

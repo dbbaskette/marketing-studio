@@ -1,6 +1,7 @@
 """The Training Studio desk's scoped deck changes."""
 import copy
 import json
+import unittest
 from pathlib import Path
 from unittest import mock
 
@@ -1870,3 +1871,115 @@ class SelectionSettlementRoutesTests(PageCase):
         result = next(item for item in drafts.view(self.engine, root)['cards'] if item['kind'] == 'deck')['selection']['result']
         self.assertTrue(result['fits'])
         self.assertNotIn('approval', result)
+
+
+class DeckRebrandTests(DeckCase):
+    """Change brand on a drawn deck: the same words, drawn again in the other brand."""
+
+    def test_another_brand_redraws_the_deck_and_keeps_what_it_says(self):
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        seen = self.engine._load(root)['deck']['']['saved']['sha256']
+        outline = (pipeline.place(root, None, pipeline.OUTLINE)).read_bytes()
+        sections, outlines = len(self.workers.of('section')), len(self.workers.of('outline'))
+        before = pipeline.brand_of(workspace.load(root))
+        other = 'dark' if before[1] != 'dark' else 'light'
+        shown = drafts.view(self.engine, root)
+        with self.assertRaisesRegex(Exception, 'already drawn in that brand'):
+            self.engine.deck_rebrand(root, None, {'brand': before[0], 'variant': before[1]}, seen)
+        with self.assertRaisesRegex(Exception, 'The brand is one of'):
+            self.engine.deck_rebrand(root, None, {'brand': 'no-such-brand', 'variant': None}, seen)
+        self.engine.deck_rebrand(root, None, {'brand': before[0], 'variant': other}, seen)
+        self.assertEqual(self.to_end(root), [])
+        self.assertEqual(pipeline.brand_of(workspace.load(root)), (before[0], other))
+        self.assertEqual(pipeline.read_built(root, None)['brand']['variant'], other)
+        self.assertGreater(len(self.workers.of('section')), sections)
+        # What the deck says was approved once, and is not written again.
+        self.assertEqual(len(self.workers.of('outline')), outlines)
+        self.assertEqual(pipeline.place(root, None, pipeline.OUTLINE).read_bytes(), outline)
+        self.assertEqual(workspace.person_statuses(root, workspace.load(root))['deck'], 'draft')
+        record = self.engine._load(root)
+        self.assertIsNone(record['problem'])
+        # Nothing is left asking for the person: no update open, no redraw under way.
+        self.assertNotIn('deck', drafts.updates(record))
+        self.assertFalse(record['deck'][''].get('redrawing'))
+        self.assertEqual(shown['cards'] and next(card for card in shown['cards']
+                         if card['kind'] == 'deck')['brand']['now'],
+                         {'brand': before[0], 'variant': before[1]})
+
+
+class DeckRebrandCopyTests(DeckCase):
+    """Change brand as a copy: the existing deck handed to a rebranding skill, nothing drawn."""
+
+    SKILL = {'id': 'example-brand', 'name': 'Example Two', 'path': '/synthetic/example-brand'}
+
+    def ready(self):
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        self.engine.rebrand_skills = lambda: [dict(self.SKILL)]
+        self.asked = []
+
+        def run(skill, source, name, run_dir):
+            self.asked.append((skill['id'], source, name))
+            return self.result
+        self.engine.rebrand_run = run
+        return root, self.engine._load(root)['deck']['']['saved']['sha256']
+
+    def test_the_existing_deck_is_rebranded_as_a_copy_with_nothing_drawn_again(self):
+        self.result = {'status': 'branded', 'url': 'https://docs.google.com/presentation/d/copy/edit'}
+        root, seen = self.ready()
+        jobs, brand = len(self.workers.jobs), pipeline.brand_of(workspace.load(root))
+        log = self.log()
+        shown = self.engine.deck_rebrand_copy(root, None, 'example-brand', seen, wait=True)
+        card = next(card for card in shown['cards'] if card['kind'] == 'deck')
+        self.assertEqual(card['rebrand']['skills'], [{'id': 'example-brand', 'name': 'Example Two'}])
+        self.assertEqual(card['rebrand']['last']['state'], 'done')
+        self.assertEqual(card['rebrand']['last']['url'], self.result['url'])
+        self.assertNotIn('seen', card['rebrand']['last'])
+        self.assertEqual(len(self.asked), 1)
+        self.assertEqual(self.asked[0][0], 'example-brand')
+        # No assistant job, no change to the training's brand or to the deck's state.
+        self.assertEqual(len(self.workers.jobs), jobs)
+        self.assertEqual(pipeline.brand_of(workspace.load(root)), brand)
+        self.assertEqual(workspace.person_statuses(root, workspace.load(root))['deck'], 'draft')
+        self.assertEqual(self.engine._load(root)['deck']['']['saved']['sha256'], seen)
+        self.assertEqual(self.log(), log)
+
+    def test_a_copy_that_fails_says_why_and_an_unknown_skill_is_refused(self):
+        self.result = {'status': 'error', 'error': 'The source deck could not be read.'}
+        root, seen = self.ready()
+        with self.assertRaisesRegex(Exception, 'Choose one of the rebranding skills'):
+            self.engine.deck_rebrand_copy(root, None, 'no-such-brand', seen, wait=True)
+        with self.assertRaisesRegex(Exception, 'has changed'):
+            self.engine.deck_rebrand_copy(root, None, 'example-brand', 'old', wait=True)
+        shown = self.engine.deck_rebrand_copy(root, None, 'example-brand', seen, wait=True)
+        last = next(card for card in shown['cards'] if card['kind'] == 'deck')['rebrand']['last']
+        self.assertEqual((last['state'], last['said']), ('failed', 'The source deck could not be read.'))
+
+
+class RebrandSkillTests(unittest.TestCase):
+    def test_skills_are_found_by_their_command_and_named_by_their_heading(self):
+        import tempfile
+        from runner import rebrand
+        with tempfile.TemporaryDirectory() as folder:
+            home_folder = Path(folder)
+            for name, heading in (('true-source-brand', '# TrueSource brand\n'), ('plain-brand', '')):
+                skill = home_folder / '.claude/skills' / name / 'scripts'
+                skill.mkdir(parents=True)
+                (skill / 'brand.py').write_text('')
+                (skill.parent / 'SKILL.md').write_text('---\nname: x\n---\n\n' + heading)
+            (home_folder / '.claude/skills/harness-brand/scripts').mkdir(parents=True)   # no brand.py
+            found = rebrand.skills(home_folder)
+            self.assertEqual([(one['id'], one['name']) for one in found],
+                             [('plain-brand', 'Plain'), ('true-source-brand', 'TrueSource')])
+            self.assertEqual(rebrand.source_id('# Slide deck\n\n- URL: x\n- ID: 1AbC_dEf-0123456789\n'),
+                             '1AbC_dEf-0123456789')
+            self.assertIsNone(rebrand.source_id('no id here'))
+            # A skill never set up says how; one that is, has its printed result read.
+            with self.assertRaisesRegex(Exception, 'setup.sh'):
+                rebrand.run(found[1], 'source', 'Name', home_folder / 'run')
+            (Path(found[1]['path']) / '.venv').mkdir()
+            done = mock.Mock(stdout='{"status": "branded", "url": "https://example.invalid/d"}', stderr='')
+            result = rebrand.run(found[1], 'source', 'Name', home_folder / 'run', execute=lambda command: done)
+            self.assertEqual(rebrand.says(found[1], result),
+                             {'state': 'done', 'url': 'https://example.invalid/d', 'exceptions': False})

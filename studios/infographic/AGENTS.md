@@ -7,7 +7,9 @@
 - Verification never starts providers, reads personal credentials, changes a real
   workspace, or installs software. Live provider acceptance is a separate action.
 - Shared settings retain the existing studios-config file and adjacent lock.
-  Gemini credentials stay in the image adapter's environment, never saved settings.
+  A Gemini key comes from the launch environment or from the private key file beside the
+  studios config that Shared settings, Document graphics, writes (`studio_core.graphics`).
+  It is never written into the studios config, a workspace, a log or a page.
 - Preserve existing studios' worker confinement. Image tools and image inspection
   require explicit, narrowly scoped native adapters.
 - New work uses the editing desk. Story selection and final approval are

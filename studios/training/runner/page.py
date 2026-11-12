@@ -175,7 +175,9 @@ What a caller needs to know
   on, which the page asks for only while that job's Show activity is open.
 - A training started on the desk (`flow: 'desk'`) is shown and changed there: `GET
   /api/drafts?path=` answers `drafts.view`, and `POST /api/drafts/ready` {path, name,
-  seen}, `/api/drafts/level-ready` {path, level, seen: {name: hash}, kind?: 'scenario' or
+  seen}, `/api/drafts/deck-brand-copy` {path, level, skill, seen} (Change brand: a copy of
+  the deck rebranded by a rebranding skill, nothing drawn again), `/api/drafts/deck-brand`
+  {path, level, brand: {brand, variant}, seen} (the decks drawn again in another brand), `/api/drafts/level-ready` {path, level, seen: {name: hash}, kind?: 'scenario' or
   'yoodli', for those cards alone}, `/api/drafts/draft`
   {path, seen: {name: hash}} (Return to draft, and Undo after Mark ready),
   `/api/drafts/update` {path, name}, `/api/drafts/keep` {path, name, reason, seen} and
@@ -276,7 +278,7 @@ WRITES = ('/api/research-decision', '/api/research-note', '/api/slide-text-draft
           '/api/research-site', f'{DRAFTS}/open', f'{DRAFTS}/migrate',
           f'{DRAFTS}/slide-note', f'{DRAFTS}/slide-words', f'{DRAFTS}/slide-speaker-notes', f'{DRAFTS}/slide-words-decide',
           f'{DRAFTS}/finding', f'{DRAFTS}/slide-restore', f'{DRAFTS}/look-samples',
-          f'{DRAFTS}/look', f'{DRAFTS}/draw-here', f'{DRAFTS}/deck-note', f'{DRAFTS}/deck-stop',
+          f'{DRAFTS}/look', f'{DRAFTS}/draw-here', f'{DRAFTS}/deck-brand', f'{DRAFTS}/deck-brand-copy', f'{DRAFTS}/deck-note', f'{DRAFTS}/deck-stop',
           f'{DRAFTS}/slide-selection', f'{DRAFTS}/slide-selection-settle', f'{DRAFTS}/deck-outline', f'{DRAFTS}/deck-outline-price',
           f'{DRAFTS}/source', f'{DRAFTS}/finish', f'{DRAFTS}/apply', f'{DRAFTS}/skip',
           f'{DRAFTS}/doc', *DECIDED, *TYPED, *JOBS)
@@ -1148,7 +1150,7 @@ class RunnerPage(desk.Page):
             except WorkspaceError as refusal:
                 raise desk.Refusal(HTTPStatus.CONFLICT, str(refusal))
         if path in (f'{DRAFTS}/slide-restore', f'{DRAFTS}/look-samples',
-                    f'{DRAFTS}/look', f'{DRAFTS}/draw-here'):
+                    f'{DRAFTS}/look', f'{DRAFTS}/draw-here', f'{DRAFTS}/deck-brand', f'{DRAFTS}/deck-brand-copy'):
             root = self.on_desk(desk.text(sent, 'path'))
             level = desk.text(sent, 'level', False) or None
             if type(sent.get('redraw', False)) is not bool:
@@ -1159,6 +1161,12 @@ class RunnerPage(desk.Page):
                         desk.text(sent, 'stamp'), desk.text(sent, 'seen'), redraw=sent.get('redraw', False))
                 elif path.endswith('/look-samples'):
                     result = {'look': self.engine.look_samples(root, level)}
+                elif path.endswith('/deck-brand-copy'):
+                    result = self.engine.deck_rebrand_copy(root, level, desk.text(sent, 'skill'),
+                                                           desk.text(sent, 'seen'))
+                elif path.endswith('/deck-brand'):
+                    result = self.engine.deck_rebrand(root, level, sent.get('brand'),
+                                                      desk.text(sent, 'seen'))
                 elif path.endswith('/draw-here'):
                     result = self.engine.draw_here(root, level, desk.text(sent, 'seen'))
                 else:
