@@ -133,7 +133,9 @@ class SlideNoteTests(DeckCase):
 
 
     def test_review_finding_apply_makes_a_priced_note(self):
-        self.workers.found = [[{**MAJOR, 'slide': 'check-yourself'}], []]
+        # Still found after the one automatic pass of fixes, so it is kept as a note.
+        found = {**MAJOR, 'slide': 'check-yourself'}
+        self.workers.found = [[found], [found], []]
         root = self.begin(flow='desk')
         self.to_end(root)
         shown = self.engine.deck_proposals(root, None)['review']
@@ -148,9 +150,16 @@ class SlideNoteTests(DeckCase):
         self.assertEqual(note['note'], item['after'])
         self.assertEqual(note['status'], 'done')
 
+    def asked(self, root):
+        """The slide changes the person queued, apart from the review's own pass of fixes."""
+        return [note for note in self.engine._load(root)['deck'][''].get('notes') or ()
+                if note.get('by') == 'page']
+
     def review_batch(self):
-        self.workers.found = [[{**MAJOR, 'slide': 'check-yourself',
-                               'fix': f'Improve detail {number}.'} for number in range(5)], []]
+        found = [{**MAJOR, 'slide': 'check-yourself',
+                  'fix': f'Improve detail {number}.'} for number in range(5)]
+        # Still found after the one automatic pass of fixes, so they are kept as notes.
+        self.workers.found = [found, found, []]
         root = self.begin(flow='desk')
         self.to_end(root)
         shown = self.engine.deck_proposals(root, None)['review']
@@ -168,7 +177,7 @@ class SlideNoteTests(DeckCase):
         self.assertEqual(result, {'applied': 5, 'left': []})
         wake.assert_called_once_with(root)
         keep.assert_called_once_with(self.engine, root, None, 'check-yourself', 'note')
-        notes = self.engine._load(root)['deck']['']['notes']
+        notes = self.asked(root)
         self.assertEqual([note['note'] for note in notes], [item['after'] for item in shown['items']])
         self.assertEqual({note['status'] for note in notes}, {'waiting'})
         # A repeated submission cannot queue the same fixes twice.
@@ -186,7 +195,7 @@ class SlideNoteTests(DeckCase):
         with mock.patch.object(self.engine, 'carry_on') as wake:
             self.engine.deck_finding(root, None, seen, shown['job'], 'skip', ids[:2])
             wake.assert_not_called()
-            self.assertFalse(self.engine._load(root)['deck'][''].get('notes'))
+            self.assertFalse(self.asked(root))
             result = self.engine.deck_finding(root, None, seen, shown['job'], 'apply', ids[2:4])
             wake.assert_called_once_with(root)
         self.assertEqual(result['applied'], 2)
@@ -213,19 +222,25 @@ class SlideNoteTests(DeckCase):
                     {'slide': 'missing-slide', 'note': 'Invalid target.'}], seen)
             wake.assert_not_called()
             keep.assert_not_called()
-        self.assertFalse(self.engine._load(root)['deck'][''].get('notes'))
+        self.assertFalse(self.asked(root))
         self.assertEqual({item['state'] for item in self.engine.deck_proposals(root, None)['review']['items']}, {'open'})
 
-    def test_skipping_a_grave_finding_still_blocks_ready(self):
-        self.workers.found = [[{**MAJOR, 'slide': 'check-yourself'}]]
+    def test_a_grave_finding_left_after_the_fixes_is_a_note_and_never_blocks_ready(self):
+        found = {**MAJOR, 'slide': 'check-yourself'}
+        self.workers.found = [[found], [found]]
         root = self.begin(flow='desk')
         self.to_end(root)
         shown = self.engine.deck_proposals(root, None)['review']
         seen = self.engine._load(root)['deck']['']['saved']['sha256']
+        card = next(card for card in drafts.view(self.engine, root)['cards']
+                    if card['kind'] == 'deck')
+        self.assertEqual((card['state'], card['needs']), ('draft', []))
+        self.assertEqual(len(card['notes']), 1)
+        # Dismissing it is the person's choice, and so is marking the deck ready with it.
         self.engine.deck_finding(root, None, seen, shown['job'], 'skip', [shown['items'][0]['id']])
         self.assertEqual(self.engine.deck_proposals(root, None)['review']['items'][0]['state'], 'skipped')
-        with self.assertRaisesRegex(Exception, 'Settle what needs you'):
-            self.engine.mark_ready(root, 'deck', seen)
+        self.engine.mark_ready(root, 'deck', seen)
+        self.assertEqual(workspace.person_statuses(root, workspace.load(root))['deck'], 'approved')
 
     def test_a_note_makes_a_ready_deck_a_draft_and_refuses_an_old_form(self):
         root = self.begin(flow='desk')
@@ -259,7 +274,7 @@ class SlideNoteTests(DeckCase):
             file.write_text(json.dumps(packet))
             return made
         self.slides.preview = legacy
-        self.workers.found = [[MAJOR], []]
+        self.workers.found = [[MAJOR], [MAJOR], []]
         root = self.begin(flow='desk')
         self.to_end(root)
         seen = self.engine._load(root)['deck']['']['saved']['sha256']
@@ -309,7 +324,8 @@ class JudgedSlideNoteTests(DeckCase):
 
 class SlideNotePageTests(PageCase):
     def test_slide_note_and_finding_routes(self):
-        self.workers.found = [[{**MAJOR, 'slide': 'check-yourself'}], []]
+        found = {**MAJOR, 'slide': 'check-yourself'}
+        self.workers.found = [[found], [found], []]
         root = self.begin(flow='desk')
         self.to_end(root)
         seen = self.engine._load(root)['deck']['']['saved']['sha256']

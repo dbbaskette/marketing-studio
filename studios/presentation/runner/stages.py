@@ -45,6 +45,8 @@ PIPELINE: tuple[Step, ...] = (
        'Taking the outline straight from your deck'),
     _s('outline', 'outline', 'agent', 'Draft the outline',
        'Drafting the outline of your deck'),
+    _s('outline-check', 'outline', 'agent', 'Check the slide text',
+       'Checking the slide text'),
     _s('gate:outline', 'outline', 'gate', 'Approve the outline',
        'Waiting for you to approve the outline'),
     _s('brand', 'look', 'code', 'Load the brand',
@@ -63,8 +65,8 @@ PIPELINE: tuple[Step, ...] = (
        'Putting the sections together into one deck'),
     _s('build-review', 'build', 'agent', 'Check the deck',
        'Reviewing the whole deck for problems'),
-    _s('build-repair', 'build', 'agent', 'Fix what the check found',
-       'Repairing the slides that need it'),
+    _s('build-repair', 'build', 'agent', 'Fix what the review found',
+       'Fixing what the review found'),
     _s('build-render', 'build', 'code', 'Render the slides',
        'Rendering the slides so you can see them'),
     _s('gate:build', 'build', 'gate', 'Approve the deck',
@@ -76,6 +78,9 @@ BY_NAME = {s.name: s for s in PIPELINE}
 
 _EXISTING_EXTRACT = ('brand-only', 'polish', 'redesign', 'rework')
 _RESEARCH = ('research-plan', 'gate:research-plan', 'research', 'research-report', 'gate:research')
+# A deck started with this marker has its slide text checked by a second assistant, once,
+# before the person reads it. A deck started before it keeps the steps it began with.
+TEXT_CHECK = 'slide-text-check-v1'
 
 
 def _route(run: dict) -> str:
@@ -105,6 +110,9 @@ def _has(run: dict, name: str) -> bool:
         return existing
     if name == 'extract':
         return existing and level in _EXISTING_EXTRACT
+    if name == 'outline-check':
+        return run.get('text_check') == TEXT_CHECK and run.get('execution') != 'conversation' \
+            and _has(run, 'outline')
     if name in ('outline', 'gate:outline'):
         return route in ('scratch', 'document') or (existing and level == 'rework')
     if name in ('look-preview', 'gate:look'):

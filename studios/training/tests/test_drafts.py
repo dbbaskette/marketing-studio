@@ -593,9 +593,20 @@ class DeskReadyTests(DeckCase):
         self.assertEqual(self.to_end(root), [])
         self.grave(root)
         found = self.engine._survey(root, self.record(root))
-        self.assertEqual(drafts.needs_you(root, found, 'deck@101'),
+        # What the review left is a note to read, and keeps nothing from being marked.
+        self.assertEqual(drafts.needs_you(root, found, 'deck@101', self.record(root)), [])
+        self.assertEqual(drafts.review_notes(root, found, 'deck@101'),
                          ['Critical on what-it-does: The diagram contradicts the guide.'])
-        self.assertEqual(drafts.needs_you(root, found, 'brief@101'), [])
+        # Only a question its review put to the person holds the deck.
+        with self.engine.files:
+            record = self.record(root)
+            record['question'] = {'id': 'asked', 'step': 'deck-save@101', 'at': 'now',
+                                  'text': 'Slide 2 of the level 101 slide deck: which claim?',
+                                  'deck': {'level': '101', 'slides': []}}
+            self.engine._store(root, record)
+        self.assertEqual(drafts.needs_you(root, found, 'deck@101', self.record(root)),
+                         [drafts.ASKED])
+        self.assertEqual(drafts.needs_you(root, found, 'brief@101', self.record(root)), [])
         seen = {name: self.seen(root, name) for name in self.drafted(root)}
         commits = len(self.log())
         marked = self.engine.mark_level_ready(root, '101', seen)

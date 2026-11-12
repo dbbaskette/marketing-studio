@@ -19,7 +19,7 @@ Ask every question of every inspected slide and check whole-deck consistency. Ea
 - `slide`: the ID of the slide.
 - `question`: the number of the question.
 - `severity`: `critical`, `major` or `minor`, as your input defines them.
-- `about`: `drawing` when the fault is in how the slide is drawn, which whoever drew it can put right; `content` when it is in what the slide says, such as too many words to fit, a caveat that pulls away from the title, or a title that claims what the points do not show. Only the person who approved the words can change those.
+- `about`: `drawing` when the fault is in how the slide is drawn, which whoever drew it can put right; `content` when it is in what the slide says, such as too many words to fit, a caveat that pulls away from the title, or a title that claims what the points do not show. Whoever drew the slide cannot change its words: a separate job corrects what it can look up or fix, and the rest is left for the person as a note.
 - `note`: one sentence on what is wrong on that slide, exact enough to act on.
 - `fix`: what would put it right, when you can say. It may be left out.
 
@@ -34,4 +34,4 @@ Name up to three weakest slides, the weakest first.
 1. Call `submit_assessment` with your findings and your weakest slides. It is recorded against this exact render. If it comes back with problems, fix them and hand it back again.
 2. Then stop. Your last message can be one line.
 
-Nobody can answer questions in this job. Judge, and say what you found.
+Nobody can answer questions in this job. Judge, and say what you found. Do not write a question to the person as a finding: say what is wrong on the slide, and whoever puts it right asks the person only what is theirs to decide.

@@ -2791,8 +2791,8 @@ class DecisionMessageTests(PageCase):
 
 
 FORBIDDEN = ('artifact', 'stale', 'lineage', 'your review')
-CARD_KEYS = ['actions', 'checks', 'held', 'kind', 'label', 'level', 'name', 'needs', 'says',
-             'seen', 'state']
+CARD_KEYS = ['actions', 'checks', 'held', 'kind', 'label', 'level', 'name', 'needs', 'notes',
+             'says', 'seen', 'state']
 
 
 def hashed(root: Path, name: str) -> str | None:

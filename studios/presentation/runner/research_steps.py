@@ -316,7 +316,9 @@ class Researching:
                             action=stops.agent_action(outcome))
                     elif outcome.reason == 'timeout':
                         if not research_sections.timeout(self, root, refusal, 'presentation'):
-                            self._out_of_time(root, 'research', 'The research', record, 1)
+                            # No job of this studio is given a time limit now: one that
+                            # still ends for its time is tried again like any other.
+                            self._problem(root, 'research', 'failed', str(refusal), KEPT)
                     else:
                         self._problem(root, 'research', 'failed', str(refusal), KEPT)
                     raise Halted()

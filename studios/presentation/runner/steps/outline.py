@@ -4,7 +4,10 @@ What a caller needs to know
 ---------------------------
     work = outline.outline_work(root, run, request, error, brand, slides=None)
     work = outline.extract_work(root, run, request, error, brand, slides=None)
+    work = outline.check_work(root, run, request, error, brand, slides=None)   # the text, checked
+    work = outline.fix_work(root, run, error, brand, found, slides=None)       # a review's wording
     outline.keep_outline(root, run, handed, extracted=False)   # keep a draft, open the gate
+    outline.show(root, run)                                    # open the gate on what is kept
     outline.apply_edits(root, run, edited, slides, brand)       # the page's edits, re-checked
     outline.inventory_of(root)                                  # classify.json, or None
 
@@ -13,6 +16,12 @@ What a caller needs to know
 - `outline_work` picks the brief by route: scratch, a document (a spec or material), or an
   existing deck being reworked. `extract_work` reads an existing deck into an outline and
   holds it to the rules its level has. Both hand back under the name "outline".
+- A deck with the step 'outline-check' has its slide text checked by a second worker before
+  the person reads it: `keep_outline` keeps the writer's draft without opening the gate, and
+  the check's own keep (`checked=True`), or `show` where the check was not kept, opens it.
+  `text_checked` records the outline a check was kept for, so no text is checked twice.
+  `fix_work` is the job that puts right what a deck's review found in the wording: it hands
+  the whole outline back, and only the slides it was given to change are taken from it.
 - A rule crosses into the worker-tools process, so a rule is a top-level function or a
   functools.partial of one with JSON arguments: `verbatim` and `same_slides`.
 - Verbatim covers the words a slide shows (title, subtitle, detail, points' label and text,
@@ -49,6 +58,7 @@ INVENTORY = 'classify.json'
 REPORT = Path('research') / 'report.md'
 NAME = 'outline'
 GATE = 'gate:outline'
+CHECK = 'outline-check'    # the step that checks the slide text, where the deck has it
 LEVELS_COUNTED = ('brand-only', 'polish')
 
 
@@ -312,7 +322,9 @@ def one_line_titles(outline) -> list[str]:
 
 
 def _job(root, run, request, error, brand, slides, brief_kind, level, inputs, rules, intro,
-         ask):
+         ask, role=None):
+    """One job that hands an outline back. `role` names a job that is not the writer's own
+    ('text-check', 'review-fix'), kept with its artifact so the two are told apart."""
     root = Path(root)
     form = run.get('form') or {}
     contract = (slides or slides_tool.Slides()).outline_contract(Path(brand))
@@ -345,16 +357,16 @@ def _job(root, run, request, error, brand, slides, brief_kind, level, inputs, ru
     # How the deck is delivered is the form's, read through build.delivery: the outline is
     # held to it, whatever the writer put.
     spec = {'kind': 'outline', 'brand': str(brand), 'rules': [r for r in rules if r],
-            'delivery': build.delivery(run)}
+            'delivery': build.delivery(run), **({'role': role} if role else {})}
     return Work(guidance=briefs.guidance(brief_kind, level=level), task='\n\n'.join(lines),
                 profile='write', name=NAME,
                 prepared={'inputs': inputs, 'artifacts': {NAME: spec}, 'ask': ask})
 
 
-def outline_work(root, run: dict, request: dict | None, error: str | None, brand: Path,
-                 slides=None) -> Work:
-    """The job of writing the outline of a deck from a brief, a document, or the deck there
-    is."""
+def _written_from(root, run: dict) -> tuple[str, str, dict]:
+    """What a deck's outline is written from, by its route: the brief's kind, the line that
+    says what to write it from, and the inputs (the person's document, the inventory of a
+    deck given, the brief and the research)."""
     root = Path(root)
     route = run.get('route') or (run.get('form') or {}).get('route')
     inputs = {}
@@ -396,10 +408,69 @@ def outline_work(root, run: dict, request: dict | None, error: str | None, brand
         inputs['Research selection'] = (HANDOFF + ' Use only retained findings to shape this presentation. '
             'The report and brief preserve the full reviewed research; do not reintroduce excluded '
             'finding claims through paraphrase. Excluded finding IDs: ' + ', '.join(sorted(excluded)))
+    return kind, intro, inputs
+
+
+def _rules(root) -> list:
     from runner.steps import build
-    return _job(root, run, request, error, brand, slides, kind, None, inputs,
-                [one_line_titles, build.parts_rules,
-                 functools.partial(build.bookkeeping, ids=research_ids(root))], intro, True)
+    return [one_line_titles, build.parts_rules,
+            functools.partial(build.bookkeeping, ids=research_ids(root))]
+
+
+def outline_work(root, run: dict, request: dict | None, error: str | None, brand: Path,
+                 slides=None) -> Work:
+    """The job of writing the outline of a deck from a brief, a document, or the deck there
+    is."""
+    kind, intro, inputs = _written_from(root, run)
+    return _job(root, run, request, error, brand, slides, kind, None, inputs, _rules(root),
+                intro, True)
+
+
+CHECK_ROLE = 'text-check'
+FIX_ROLE = 'review-fix'
+CHECK_SAYS = ('A writer drafted the outline in your input "The current outline" from the '
+              'inputs listed below. Check what every slide says against them and against '
+              'the questions in your guidance, and correct what is wrong yourself. Hand the '
+              'whole outline back, corrected, with every slide you did not need to change '
+              'exactly as it is, its id included.')
+CHECK_NOTE = ('\n\nThe writer drafted it again to meet this note from the person. Keep what the '
+              'note asked for:\n\n{note}')
+FIX_SAYS = ('The deck was built from the outline in your input "The current outline", and '
+            'its review found fault with what some slides say: your input "what the review '
+            'found" lists each one. Put right every one you can from the inputs listed below. '
+            'Change only these slides: {slides}. Hand the whole outline back, with every '
+            'other slide exactly as it is.')
+
+
+def _plain(run: dict) -> dict:
+    """The run without the outline gate's note: a job that is not the writer's is not asked
+    to make the person's change again."""
+    return {**run, 'gates': {name: gate for name, gate in (run.get('gates') or {}).items()
+                             if name != GATE}}
+
+
+def check_work(root, run: dict, request: dict | None, error: str | None, brand: Path,
+               slides=None) -> Work:
+    """The job of checking the slide text a writer drafted, and correcting it: a second
+    worker, given what the writer was given. It asks the person nothing."""
+    _, _, inputs = _written_from(root, run)
+    gate = (run.get('gates') or {}).get(GATE) or {}
+    note = gate.get('note') if gate.get('state') == 'changes' else None
+    said = CHECK_SAYS + (CHECK_NOTE.format(note=note) if note else '')
+    return _job(root, _plain(run), None, error, brand, slides, 'text-check', None, inputs,
+                _rules(root), said, False, role=CHECK_ROLE)
+
+
+def fix_work(root, run: dict, error: str | None, brand: Path, found: str, ids: list[str],
+             slides=None) -> Work:
+    """The job of putting right what a deck's review found in the words of the slides
+    `ids`: `found` is what the review said, as text. It may ask the person what only they
+    can decide."""
+    _, _, inputs = _written_from(root, run)
+    # The outline's own request for changes was met before the deck was drawn.
+    return _job(root, _plain(run), None, error, brand, slides, 'review-fix', None,
+                {**inputs, 'what the review found': found}, _rules(root),
+                FIX_SAYS.format(slides=', '.join(ids)), True, role=FIX_ROLE)
 
 
 def extract_work(root, run: dict, request: dict | None, error: str | None, brand: Path,
@@ -448,17 +519,51 @@ def _write(root, outline: dict) -> None:
     write_atomic(root / OUTLINE_MD, _render(outline))
 
 
-def keep_outline(root, run: dict, handed, extracted: bool = False) -> dict:
-    """Keep an outline a worker handed back, and put it in front of the person when the deck
-    has the gate. `extracted` is a deck read in by `extract`: a later outline step, where the
-    deck has one, still has to rework it, so the gate stays closed."""
-    outline = json.loads(handed) if isinstance(handed, str) else handed
-    _write(root, outline)
-    names = [step.name for step in stages.steps(run)]
-    if GATE in names and not (extracted and NAME in names):
+def digest(root) -> str | None:
+    """The outline as it is kept now, as a hash."""
+    import hashlib
+    try:
+        return hashlib.sha256((Path(root) / OUTLINE).read_bytes()).hexdigest()
+    except OSError:
+        return None
+
+
+def checks_itself(run: dict) -> bool:
+    """Whether the deck's slide text is checked by a second worker before it is shown."""
+    return CHECK in [step.name for step in stages.steps(run)]
+
+
+def text_checked(root, run: dict) -> bool:
+    """Whether the outline kept now is the one a check was kept for."""
+    kept = (run.get('text_checked') or {}).get('outline')
+    return bool(kept) and kept == digest(root)
+
+
+def show(root, run: dict) -> dict:
+    """Put the outline that is kept in front of the person, where the deck has the gate."""
+    if GATE in [step.name for step in stages.steps(run)]:
         gate = (run.setdefault('gates', {})).get(GATE) or {}
         run['gates'][GATE] = {**gate, 'state': 'waiting',
                               'round': int(gate.get('round') or 0) + 1}
+    decks.write_run(root, run)
+    return run
+
+
+def keep_outline(root, run: dict, handed, extracted: bool = False,
+                 checked: bool = False) -> dict:
+    """Keep an outline a worker handed back, and put it in front of the person when the deck
+    has the gate. `extracted` is a deck read in by `extract`: a later outline step, where the
+    deck has one, still has to rework it, so the gate stays closed. A deck whose slide text
+    checks itself keeps its writer's draft with the gate closed too: the check's own keep
+    (`checked`) opens it, on the corrected text, and records the outline it was kept for."""
+    outline = json.loads(handed) if isinstance(handed, str) else handed
+    _write(root, outline)
+    names = [step.name for step in stages.steps(run)]
+    if checked:
+        run['text_checked'] = {'outline': digest(root), 'at': home.now()}
+    if GATE in names and not (extracted and NAME in names) \
+            and (checked or CHECK not in names or extracted):
+        return show(root, run)
     decks.write_run(root, run)
     return run
 

@@ -19,9 +19,10 @@ Ask every question of every slide. Each "no" is one finding:
 - `slide`: the ID of the slide.
 - `question`: the number of the question.
 - `severity`: `critical`, `major` or `minor`, as your input defines them.
-- `about`: `drawing` when the fault is in how the slide is drawn, which whoever drew it can put right; `content` when it is in what the slide says, such as too many words to fit, a caveat that pulls away from the title, or a title that claims what the points do not show. Only the person who approved the words can change those.
+- `about`: `drawing` when the fault is in how the slide is drawn, which whoever drew it can put right; `content` when it is in what the slide says, such as too many words to fit, a caveat that pulls away from the title, or a title that claims what the points do not show. Drawing cannot put those right: say in `fix` exactly what the words should say instead, when it follows from your inputs, so that the words can be corrected and the slide drawn again.
 - `note`: one sentence on what is wrong on that slide, exact enough to act on.
 - `fix`: what would put it right, when you can say. It may be left out.
+- `ask`: a question for the person, in one or two plain sentences, and only for what is theirs to decide: what they intend, a fact that none of your inputs holds, or a choice between options that are each valid. Leave it out for everything else. Do not ask about anything that can be looked up in the sources or put right without them: say what is wrong and how to fix it instead.
 
 Judge only what is visible in the pictures. Do not propose a change to the colors of the brand. Be exact and unsparing: a slide that is merely acceptable still gets its findings, and a deck is not good because it is on brand. Look hardest for what no program reports: one of several equals set larger or in another color; an emphasis the title does not single out; a line or an arrow through text; a label far from what it names; a slide so full that nothing leads.
 
@@ -39,4 +40,4 @@ Then say which slides address each objective, from what the slides visibly say: 
 2. Call `submit_coverage` with the slides for each objective, and a line on why those slides.
 3. Then stop. Your last message can be one line.
 
-Nobody can answer questions in this job. Judge, and say what you found.
+Nobody answers questions while you work. Judge, and say what you found. A question that only the person can settle goes in a finding's `ask`: it is put to them after what the review found has been fixed.

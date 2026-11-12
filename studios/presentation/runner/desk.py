@@ -237,7 +237,8 @@ def working(root, run: dict, state: dict | None = None) -> dict | None:
         if halted:
             return {'what': REVIEW_HALTED, 'done': 0, 'total': 0, 'halted': True}
         if not run.get('halted'):
-            return {'what': REVIEWING, 'done': 0, 'total': 0}
+            # The review, then its one pass of fixes, then the look at what was fixed.
+            return {'what': build.pass_words(root, state) or REVIEWING, 'done': 0, 'total': 0}
     if not arrived(run) or resting(run) or decks.delivered(root):
         return None
     nxt = stages.survey(run).next
@@ -687,7 +688,7 @@ def _parts(root, state: dict, outline: dict) -> list[tuple[str | None, bool, lis
 # --- History -------------------------------------------------------------------------------
 
 VERSION_SOURCES = ('save', 'selection', 'note', 'redraw', 'restore', 'outline', 'finishing',
-                   'open')
+                   'open', 'review')
 PART = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_-]{4,40}$')   # the outline's slide ID rule
 STAMP = re.compile(r'^[0-9A-Za-z]{8,40}$')
 DRAWINGS = Path('work') / 'desk' / 'versions'   # each slide's drawings: this computer's only

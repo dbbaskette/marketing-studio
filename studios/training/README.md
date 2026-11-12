@@ -91,7 +91,10 @@ Only **Start** begins work.
    guide the selected materials. An assistant decides what the independent check flags, so the
    training carries on; tick **Decide flagged research myself** to make those choices yourself. There is no sample lesson
    to approve.
-4. **Review slide text.** Before any slide is drawn, **Review slide text**
+4. **Review slide text.** The assistant writes the slide text, then a second
+   assistant checks it against the plan, the guide and the sources and corrects it
+   once; the desk says **Checking the slide text** meanwhile, and you are shown only
+   the corrected text. Before any slide is drawn, **Review slide text**
    opens the Deck tab with one slide at a time. Untick **Approve the slide text before the
    deck is drawn** on the form to have the deck drawn straight from its words. Correct titles, points and notes
    directly; corrections and review position save privately across reloads. The
@@ -155,18 +158,29 @@ details. **Mark ready** remains your review decision, and problems stay visible.
 Rendered slides have three tasks: **Preview**, **Text & notes**, and **Review &
 changes**. Selecting another slide keeps the review position and per-slide unsaved
 text. On wide screens, the preview stays beside a focused inspector while editing
-or reviewing suggestions. Narrow screens show one task with **Back to preview**;
+or reading review notes. Narrow screens show one task with **Back to preview**;
 History stays beside the task controls. The selected task also survives background refreshes. **Deck actions**, below the slide,
 holds whole-deck changes and alternate looks. The slide card supports words, speaker
 notes and section-scoped redraw requests.
 Drawing-bound word edits retain Harness Slides’ explicit design-answer requirement.
 
-In **Review & changes**, select the suggestions you want or choose **Select all
-fixes**, then **Apply selected fixes**. The selected count and redraw scope appear
-before you start. The fixes are queued together for one section redraw and deck
-check; selecting suggestions starts no work. Choices survive slide navigation,
-refreshes and failed requests while the drawing is unchanged. **Dismiss selected**
-starts no redraw. A queued fix still needs the drawing and check to finish.
+After the slides are drawn, a different assistant reviews their text and layout,
+and one pass of fixes follows without asking: the desk says **Fixing what the
+review found**, then **Checking the fixes**. Slides with something wrong in how
+they are drawn are drawn again, wording is corrected where the fix can be made or
+looked up, and there is no second pass. What the review still finds is kept as
+**Review notes** on the deck card and in each slide's **Review & changes**. Review
+notes are to read: nothing waits on them and they never hold **Mark ready**. The
+deck waits for you only when the review has a question that is yours to decide,
+shown as one numbered question with an answer box.
+
+To act on a review note yourself, open **Review & changes**, select the notes you
+want or choose **Select all fixes**, then **Apply selected fixes**. The selected
+count and redraw scope appear before you start. The fixes are queued together for
+one section redraw and deck check; selecting notes starts no work. Choices survive
+slide navigation, refreshes and failed requests while the drawing is unchanged.
+**Dismiss selected** starts no redraw. A queued fix still needs the drawing and
+check to finish.
 
 When an input changes, dependent material may be **held**. Choose **Update** to
 remake it from the current input, or **Keep as it is**. The proposed update says

@@ -113,7 +113,17 @@ On a phone the desk keeps out of the way of what you read. The toolbar is one ro
 
 ## The deck
 
-The deck card shows one slide at a time. Choose a slide in **Slide to review**; slides with review suggestions are marked. Expand **Edit slide text and speaker notes** to change its words. Detailed review notes stay collapsed on the deck card. You can edit slide words and speaker notes, choose a look, and request changes to a slide or the whole deck. A slide note redraws its section; other slides are kept. Review findings are proposals: **Apply fix to this slide** requests a change at the displayed price, while **Dismiss suggestion** records that you read the finding. There are no automatic repair rounds on the desk. A grave finding still blocks **Mark ready**, even if skipped.
+The deck card shows one slide at a time. Choose a slide in **Slide to review**; slides with review notes are marked. Expand **Edit slide text and speaker notes** to change its words. **Review notes** stay collapsed on the deck card. You can edit slide words and speaker notes, choose a look, and request changes to a slide or the whole deck. A slide note redraws its section; other slides are kept. 
+
+The deck checks and fixes itself before it asks you anything:
+
+1. **Checking the slide text.** After the slide text is written, a second assistant checks it against the teaching plan, the learner guide, the research and a short list of questions, and corrects it once. You are shown only the corrected text, with no list of findings. If the check cannot finish, the text is shown as it was written and says so.
+2. **Fixing what the review found.** After the slides are drawn and reviewed, one pass of fixes runs without asking. A slide with anything wrong in how it is drawn, whatever its severity, has its section drawn again. Wording the review faulted is corrected where the correction can be made or looked up (a typo, text too long for its slide, wording that disagrees with the plan, the guide or the sources), and that slide is drawn again with the new words; the slide as it was is in its **History**.
+3. **Checking the fixes.** The review looks again at the slides it flagged. There is no second pass.
+
+What the review still finds after that is kept as **Review notes**: collapsed on the deck card, and under **Review & changes** on each slide. They are to read. Nothing waits on them, the deck stays a draft you can mark ready, and they never block **Mark ready**. To act on one yourself, select it and choose **Apply selected fixes**, which requests a change at the displayed price; **Dismiss selected** records that you read it.
+
+The deck waits for you only when the review has a question that is yours to decide: what you intend, a fact the sources do not hold, or a choice between valid options. Several are put as one numbered question with an answer box, once. Until you answer, the deck card says a question is waiting and **Mark ready** is held. Your answer is kept with the deck; where it is about how a slide is drawn, that slide is drawn again with it, and where it is about the words, change them in **Text & notes**.
 
 Harness Slides 0.16 requires your explicit approval of its design questions when a word change affects an approved drawing. The desk shows the questions and submits your answers. A proposal alone does not approve the change. If the change cannot be checked or rendered, the previous deck remains. Speaker notes do not require this design approval.
 

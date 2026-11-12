@@ -212,33 +212,190 @@ class BrandCheckTests(FinishCase):
                 self.assertEqual(str(caught.exception), desk.NOT_ON_DESK)
 
 
+def content_finding(number: int, note: str, fix: str):
+    """A review that finds one major problem with what slide `number` says."""
+    def found(slides):
+        slide = next(one for one in slides if one['number'] == number)
+        return [{'slide': slide['id'], 'question': 2, 'severity': 'major', 'about': 'content',
+                 'note': note, 'fix': fix}]
+    return found
+
+
 class ReviewTests(FinishCase):
-    """Task 4.3: Review the deck, with what it finds as proposals."""
+    """Review the deck: one pass of fixes without asking, then what is left as notes."""
 
     NOTE, FIX = 'The steps read right to left.', 'Draw them left to right.'
+
+    def deck(self, **changes) -> Path:
+        """A deck on the desk that changed since it was reviewed: it was reviewed by itself
+        as it was built, and a note on a slide has drawn it again since. Review the deck is
+        there to ask."""
+        root = super().deck(**changes)
+        self.engine.desk_note(root, 5, 'Shorter.', self.expected(root))
+        self.on_desk(root)
+        self.assertFalse(self.desk_view(root)['reviewed'])
+        self.before = len(self.workers.of('review'))
+        return root
+
+    def reviews(self) -> int:
+        return len(self.workers.of('review')) - self.before
 
     def review(self, root: Path) -> dict:
         return self.engine.desk_finish(root, 'review', self.expected(root))
 
-    def test_review_findings_arrive_as_proposals_and_nothing_is_redrawn(self):
+    def test_a_review_makes_one_pass_of_fixes_and_stops(self):
         root = self.deck()
         self.workers.found = [drawing_finding(3, self.NOTE, self.FIX)]
         drawn = self.sections()
         self.review(root)
-        self.assertEqual(len(self.workers.of('review')), 1)
-        self.assertEqual(self.sections(), drawn)
+        # The review, its slide's section drawn again, and the look at what was fixed.
+        self.assertEqual(self.reviews(), 2)
+        self.assertEqual(self.sections(), drawn + 1)
+        task = self.workers.of('section')[-1].task
+        self.assertIn('what the review found', task)
         self.on_desk(root)
-        items = self.finishing(root, 'review')['items']
-        self.assertEqual([(item['number'], item['severity'], item['after']) for item in items],
-                         [(3, 'major', f'{self.NOTE} {self.FIX}')])
-        self.assertEqual(build.read_state(root)['repair'], [])
-        record = self.record(root)
-        self.assertNotIn('review_requested', record)
-        self.assertTrue(self.desk_view(root)['reviewed'])
+        self.assertEqual(self.finishing(root, 'review')['items'], [])
+        state = build.read_state(root)
+        self.assertEqual(state['repair'], [])
+        self.assertFalse(build.fixing(state))
+        self.assertNotIn('review_requested', self.record(root))
+        shown = self.desk_view(root)
+        self.assertTrue(shown['reviewed'])
+        self.assertEqual(shown['review_pass'],
+                         {'found': 1, 'done': True, 'left': 0, 'rechecked': True})
 
-    def test_apply_on_a_finding_is_a_slide_note(self):
+    def test_a_minor_drawing_finding_is_fixed_too(self):
+        root = self.deck()
+        self.workers.found = [lambda slides: [{
+            **drawing_finding(3, self.NOTE, self.FIX)(slides)[0], 'severity': 'minor'}]]
+        drawn = self.sections()
+        self.review(root)
+        self.assertEqual(self.sections(), drawn + 1)
+        self.assertIn('Only these slides need repair: ' + LONG_OUTLINE['slides'][2]['id'],
+                      self.workers.of('section')[-1].task)
+
+    def test_what_the_pass_leaves_is_a_note_and_never_holds_the_deck(self):
+        root = self.deck()
+        # The review of the fixed deck still finds it: there is no second pass.
+        self.workers.found = [drawing_finding(3, self.NOTE, self.FIX)] * 2
+        drawn = self.sections()
+        self.review(root)
+        self.assertEqual((self.reviews(), self.sections()), (2, drawn + 1))
+        shown = self.on_desk(root)
+        items = self.finishing(root, 'review')['items']
+        self.assertEqual([(item['number'], item['severity'], item['state'], item['present'])
+                          for item in items], [(3, 'major', 'open', True)])
+        self.assertEqual(shown['desk']['review_pass'],
+                         {'found': 1, 'done': True, 'left': 1, 'rechecked': True})
+        # Nothing waits on the person but Deliver itself, and no question is open.
+        self.assertEqual(shown['sentence'], 'Ready to deliver.')
+        self.assertIsNone(shown['question'])
+        self.assertTrue(shown['desk']['deliverable'])
+        self.assertIsNone(shown['desk']['working'])
+        self.assertEqual(build.read_state(root)['repair'], [])
+        self.assertIn('kept as notes', (root / 'reviews' / (
+            f"build-{len(build.read_state(root)['rounds'])}.md")).read_text(encoding='utf-8'))
+        self.engine.desk_deliver(root, self.expected(root))
+        self.assertEqual(self.state(root), 'finished')
+
+    def reworded(self) -> tuple[str, dict]:
+        """The outline with slide 3's title corrected, as the wording job hands it back."""
+        ident = LONG_OUTLINE['slides'][2]['id']
+        said = json.loads(json.dumps(LONG_OUTLINE))
+        said['slides'][2]['title'] = 'Capacity holds with two instances or more'
+        return ident, said
+
+    def test_a_wording_finding_is_corrected_and_its_slide_drawn_again(self):
+        root = self.deck()
+        ident, self.workers.fixed_said = self.reworded()
+        self.workers.outline_said = self.workers.fixed_said   # as its composer draws it
+        self.workers.found = [content_finding(3, 'The title says three; the source says two.',
+                                              'Say two.')]
+        since = len(self.workers.jobs)
+        self.review(root)
+        self.assertEqual(self.kinds(since), ['review', 'review-fix', 'section', 'review'])
+        job = self.workers.of('review-fix')[-1]
+        self.assertIn(f'Change only these slides: {ident}.', job.task)
+        self.assertIn('Do not ask about anything you can look up', job.guidance)
+        self.on_desk(root)
+        title = next(slide['title'] for slide in self.desk_view(root)['outline']['slides']
+                     if slide['id'] == ident)
+        self.assertEqual(title, 'Capacity holds with two instances or more')
+        self.assertIn(f'The words of slides {ident} changed',
+                      self.workers.of('section')[-1].task)
+        self.assertEqual(self.finishing(root, 'review')['items'], [])
+        self.assertEqual(desk.versions_of(root, ident)[0]['source'], 'review')
+
+    def test_the_wording_job_changes_only_the_slides_it_was_given(self):
+        root = self.deck()
+        ident, said = self.reworded()
+        said['slides'][3]['title'] = 'A title nobody asked to change'
+        self.workers.fixed_said = said
+        self.workers.outline_said = self.reworded()[1]
+        self.workers.found = [content_finding(3, 'The title says three; the source says two.',
+                                              'Say two.')]
+        self.review(root)
+        self.on_desk(root)
+        titles = [slide['title'] for slide in self.desk_view(root)['outline']['slides']]
+        self.assertEqual(titles[3], LONG_OUTLINE['slides'][3]['title'])
+        self.assertEqual(titles[2], 'Capacity holds with two instances or more')
+
+    def test_only_an_open_question_makes_the_deck_wait(self):
+        from runner_support import asks
+        root = self.deck()
+        asked = '1. Which year is the figure for? 2. Should the price be shown?'
+        self.workers.then('review-fix', asks(asked))
+        self.workers.found = [content_finding(3, 'The year is not in any source.', '')]
+        self.review(root)
+        shown = self.view(root)
+        self.assertEqual(shown['state'], 'waiting')
+        self.assertEqual(shown['question']['text'], asked)
+        self.assertEqual(shown['sentence'], f'A question is waiting for you: {asked}')
+        self.assertFalse(shown['desk']['deliverable'])
+        self.assertTrue(self.workers.of('review-fix')[-1].task)
+        self.engine.answer(root, shown['question']['id'], '1. 2025. 2. No.')
+        # The job runs again with the answer, and the deck comes back to the desk.
+        self.assertIn('Answer: 1. 2025. 2. No.', self.workers.of('review-fix')[-1].task)
+        shown = self.on_desk(root)
+        self.assertIsNone(shown['question'])
+        self.assertTrue(shown['desk']['deliverable'])
+
+    def test_a_wording_fix_that_does_not_finish_never_stops_the_deck(self):
+        from runner_support import fails
+        root = self.deck()
+        self.workers.then('review-fix', fails(), fails())
+        self.workers.found = [content_finding(3, 'The title says three; the source says two.',
+                                              'Say two.')] * 2
+        self.review(root)
+        shown = self.on_desk(root)
+        self.assertIsNone(shown['problem'])
+        self.assertEqual(len(self.workers.of('review-fix')), 2)
+        self.assertEqual(self.reviews(), 1)     # nothing changed, so nothing is looked at again
+        self.assertEqual(len(self.finishing(root, 'review')['items']), 1)
+        self.assertTrue(shown['desk']['deliverable'])
+
+    def test_a_pass_that_is_stopped_can_be_given_up(self):
         root = self.deck()
         self.workers.found = [drawing_finding(3, self.NOTE, self.FIX)]
+
+        def stopping(tools, job):
+            self.engine.act(root, 'stop')
+            return self.workers.section(tools, job)
+
+        self.workers.then('section', stopping)
+        self.review(root)
+        self.assertEqual(self.record(root)['halted']['state'], 'stopped')
+        self.engine.desk_stop(root)
+        shown = self.on_desk(root)
+        self.assertNotIn('review_requested', self.record(root))
+        self.assertTrue(shown['desk']['deliverable'])
+        self.assertEqual(self.reviews(), 1)
+        # What the review found is kept as a note.
+        self.assertEqual(len(self.finishing(root, 'review')['items']), 1)
+
+    def test_apply_on_a_note_is_a_slide_note(self):
+        root = self.deck()
+        self.workers.found = [drawing_finding(3, self.NOTE, self.FIX)] * 2
         self.review(root)
         kept = self.finishing(root, 'review')
         drawn = self.sections()
@@ -248,18 +405,18 @@ class ReviewTests(FinishCase):
         self.assertIn(f'Slide 3: {self.NOTE} {self.FIX}', tasks[0])
         self.on_desk(root)
         notes = self.record(root)['desk_notes']
-        self.assertEqual([(item['number'], item['note'], item['status']) for item in notes],
-                         [(3, f'{self.NOTE} {self.FIX}', 'done')])
+        self.assertEqual([(item['number'], item['note'], item['status'])
+                          for item in notes[-1:]], [(3, f'{self.NOTE} {self.FIX}', 'done')])
 
     CHANGED = 'This slide changed since this was found, so it was not noted. Skip it.'
 
     def reviewed(self, root: Path) -> dict:
         """A review that finds something on slides 2 and 3, both in section 1, and on slide
-        6: its findings, by slide number."""
+        6, and finds them still there after its pass of fixes: its notes, by slide number."""
         self.workers.found = [lambda slides: [
             *drawing_finding(2, 'The boxes crowd.', 'Give them room.')(slides),
             *drawing_finding(3, self.NOTE, self.FIX)(slides),
-            *drawing_finding(6, 'The rows crowd.', 'Space them.')(slides)]]
+            *drawing_finding(6, 'The rows crowd.', 'Space them.')(slides)]] * 2
         self.review(root)
         kept = self.finishing(root, 'review')
         self.assertEqual(kept['reviewed_deck'], build.read_state(root)['rounds'][-1]['deck'])
@@ -336,14 +493,15 @@ class ReviewTests(FinishCase):
         root = self.deck()
         self.workers.found = [drawing_finding(3, self.NOTE, self.FIX)]
         self.review(root)
+        self.assertEqual(self.reviews(), 2)
         self.engine.desk_note(root, 6, 'Give the rollback its own row.', self.expected(root))
         self.on_desk(root)
-        self.assertEqual(len(self.workers.of('review')), 1)
+        self.assertEqual(self.reviews(), 2)
 
     def test_review_is_priced_from_its_last_try(self):
         root = self.deck()
         said = self.desk_view(root)['finish_prices']['review']
-        self.assertTrue(said.endswith(desk.NO_RECORD), said)
+        self.assertTrue(said.startswith(finishing.REVIEW_SAYS), said)
         self.workers.cost = 0.42
         self.review(root)
         tried = self.record(root)['steps']['build-review']['tries'][-1]
@@ -357,7 +515,7 @@ class ReviewTests(FinishCase):
         with self.assertRaises(WorkspaceError) as caught:
             self.engine.desk_finish(root, 'review', 'x')
         self.assertEqual(str(caught.exception), desk.CHANGED)
-        self.assertEqual(self.workers.of('review'), [])
+        self.assertEqual(self.reviews(), 0)
 
     def test_the_same_deck_is_not_reviewed_twice(self):
         root = self.deck()
@@ -365,7 +523,7 @@ class ReviewTests(FinishCase):
         with self.assertRaises(WorkspaceError) as caught:
             self.review(root)
         self.assertEqual(str(caught.exception), finishing.REVIEWED)
-        self.assertEqual(len(self.workers.of('review')), 1)
+        self.assertEqual(self.reviews(), 1)
 
     def given_up(self, root: Path, steps: dict) -> None:
         """The review that stopped is given up: the desk rests as it did before it."""
