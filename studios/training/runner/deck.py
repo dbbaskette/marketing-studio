@@ -24,6 +24,9 @@ What a caller needs to know
     deck.assessment(kept, packets, binding, sources=True)   # as the slides tool takes it
     deck.found(unresolved, kept, slides)        # what it leaves unresolved, as findings
     deck.to_repair(findings, sections)          # the sections a review sends back
+    deck.to_fix(findings, sections)             # what the desk's one pass of fixes draws again
+    deck.to_reword(findings, sections)          # the wording findings that pass corrects
+    deck.questions(findings)                    # the findings that ask the person something
     deck.to_outline(findings)                   # what only a change at the outline puts right
     deck.before(slides)                         # what a deck of this size has cost before
 
@@ -120,6 +123,7 @@ ABOUT_WORDS = {'drawing': 'how it is drawn', 'content': 'what it says',
                'concept': 'the visual concept it was approved with'}
 MARKED = 'Looked at at full size, slide by slide, by a reviewer that drew none of the deck.'
 NOTE = 12               # the shortest note the slides tool takes for a finding
+ASK = 600               # characters of a question a finding puts to the person
 CLUSTER = 3             # overlap findings on one slide that send it back to be drawn again
 PARTS = 8               # short labels one point may give the parts of a diagram
 PART_WORDS = 6          # words one of them may hold, as the slides tool allows
@@ -1211,11 +1215,13 @@ def checked(finding, slides: list[dict],
         return None, f'{ident}: `note` is one sentence on what is wrong on the slide.'
     if finding.get('about', ABOUT[0]) not in ABOUT:
         return None, f'{ident}: `about` is one of: ' + ', '.join(ABOUT) + '.'
-    fix = finding.get('fix')
+    fix, ask = finding.get('fix'), finding.get('ask')
     return {'slide': ident, 'number': numbers[ident], 'question': question,
             'severity': finding['severity'], 'about': finding.get('about', ABOUT[0]),
             'note': note.strip(),
-            'fix': fix.strip() if isinstance(fix, str) and fix.strip() else None}, None
+            'fix': fix.strip() if isinstance(fix, str) and fix.strip() else None,
+            **({'ask': ' '.join(ask.split())[:ASK]}
+               if isinstance(ask, str) and ask.strip() else {})}, None
 
 
 def ordered(findings) -> list[dict]:
@@ -1227,6 +1233,57 @@ def ordered(findings) -> list[dict]:
 def grave(findings) -> list[dict]:
     """The findings that keep a deck from being called clear."""
     return [finding for finding in ordered(findings) if finding['severity'] in GRAVE]
+
+
+def to_fix(findings, sections: list[dict]) -> list[dict]:
+    """What the one automatic pass of fixes on the desk draws again after a review: for each
+    slide of a section with a finding about how it is drawn, of any severity, {'slide',
+    'section', 'note'}, the note being every such finding on it as its composer is told it.
+    A finding that asks the person something waits for their answer, and one about what a
+    slide says is put right in its words first (`to_reword`): neither is here."""
+    where = {slide: section['id'] for section in sections for slide in section['slides']}
+    said: dict = {}
+    for finding in ordered(findings):
+        if finding.get('about', ABOUT[0]) == ABOUT[0] and finding.get('slide') in where \
+                and not finding.get('ask'):
+            said.setdefault(finding['slide'], []).append(
+                ' '.join(f"{finding.get('note') or ''} {finding.get('fix') or ''}".split()))
+    return [{'slide': slide, 'section': where[slide],
+             'note': ' '.join(dict.fromkeys(lines))[:4000]} for slide, lines in said.items()]
+
+
+def to_reword(findings, sections: list[dict]) -> list[dict]:
+    """What the one automatic pass of fixes corrects in the words of a deck: each finding
+    about what a slide of a section says that asks the person nothing, as {'slide', 'number',
+    'note', 'fix'}. A finding about the approved visual concept is not here: that is kept as
+    a note."""
+    where = {slide for section in sections for slide in section['slides']}
+    return [{key: finding.get(key) for key in ('slide', 'number', 'note', 'fix')}
+            for finding in ordered(findings)
+            if finding.get('about') == ABOUT[1] and finding.get('slide') in where
+            and not finding.get('ask')]
+
+
+def questions(findings, asked=()) -> list[dict]:
+    """The findings that put a question to the person, each once, leaving out those already
+    asked (`asked`, as [slide, question] pairs)."""
+    seen, made = {tuple(pair) for pair in asked or ()}, []
+    for finding in ordered(findings):
+        key = (finding.get('slide'), finding.get('ask'))
+        if finding.get('ask') and key not in seen:
+            seen.add(key)
+            made.append(finding)
+    return made
+
+
+def question_text(it: str, open_: list[dict]) -> str:
+    """One question for the person from what a review asks: the question itself, or several
+    numbered, each with the slide it is about."""
+    if len(open_) == 1:
+        return f"Slide {open_[0]['number']} of {it}: {open_[0]['ask']}"
+    return (f'The review of {it} has {len(open_)} questions for you. Answer each by its '
+            'number.\n' + '\n'.join(f"{number}. Slide {finding['number']}: {finding['ask']}"
+                                     for number, finding in enumerate(open_, start=1)))
 
 
 def to_repair(findings, sections: list[dict]) -> list[str]:
@@ -1536,6 +1593,8 @@ def judged(given, packets: list[dict]) -> tuple[list[dict], list[str]]:
                     problems.append(f'{where}: `about` is one of: ' + ', '.join(JUDGED) + '.')
                 made.update(severity=check.get('severity'), about=check.get('about'),
                             fix=fix.strip() if isinstance(fix, str) and fix.strip() else None)
+                if isinstance(check.get('ask'), str) and check['ask'].strip():
+                    made['ask'] = ' '.join(check['ask'].split())[:ASK]
             mine.append(made)
         kept.append({'slide': ident, 'checks': mine})
     return kept, problems
@@ -1571,7 +1630,8 @@ def found(unresolved, kept: list[dict], slides: list[dict]) -> list[dict]:
                      'severity': mine['severity'] if mine else SEVERITIES[0],
                      'about': mine['about'] if mine else ABOUT[0],
                      'note': str(entry.get('detail') or '').strip(),
-                     'fix': mine['fix'] if mine else None})
+                     'fix': mine['fix'] if mine else None,
+                     **({'ask': mine['ask']} if mine and mine.get('ask') else {})})
     return [finding for finding in made if finding['number'] is not None]
 
 

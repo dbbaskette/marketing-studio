@@ -51,6 +51,12 @@ What a caller needs to know
 - A section is drawn again only for a major or critical finding about how it is drawn,
   and at most `deck.REPAIRS` times. A finding about what a slide says is kept for the
   person, at gate 6, where asking for changes leads back to what the deck says.
+- On the desk a deck checks and fixes itself instead, each once: what it says is checked
+  and corrected by a second job of `deck-outline` before anyone is shown it (`Deck.checking`);
+  after the first review every slide with a finding about how it is drawn is drawn again,
+  and the words the review faulted are corrected by a second job of `deck-review`
+  (`Deck.rewording`), then the review looks again. What is left is kept as notes, and only
+  a question a finding asks the person makes the deck wait.
 - On a computer that cannot make a deck, or for a training with no brand chosen, the deck
   has one step, last: the training stops with `next.kind` `'deck'` when the deck is all
   that is left, `Survey.missing` says why, and the index is written once the deck is
@@ -245,6 +251,16 @@ TRAINING = (
 )
 # How the rows are laid out: once for the training, once for each level, and within a level
 # once for each practice scenario.
+# What the desk says while what a deck says checks itself, and while the one automatic pass
+# of fixes after its review is drawn.
+CHECK_DUE, CHECKED_TEXT, CHECK_LEFT = 'due', 'done', 'left'
+FIX_DUE, FIX_DONE, FIX_LEFT = 'due', 'done', 'left'
+UNCHECKED = ('The check of this slide text did not finish, so it is shown as it was written. '
+             'Read it with that in mind.')
+CHECKING = ('Check the slide text of {it} and correct it',
+            'Checking the slide text of {it}')
+FIXING = ('Fix what the review of {it} found', 'Fixing what the review of {it} found')
+RECHECKING = ('Check the fixes to {it}', 'Checking the fixes to {it}')
 EACH_LEVEL = ('document', 'brief', 'deck', 'scenario', 'yoodli')
 EACH_SCENARIO = ('scenario', 'yoodli')
 LAST = ('deck', 'package')
@@ -356,6 +372,8 @@ class Deck:
     todo: tuple[str, ...] = ()    # the sections still to draw
     again: tuple[str, ...] = ()   # the sections a review sent back, still to draw again
     rounds: tuple = ()            # each whole deck built from this start, with its review
+    checking: bool = False        # what it says is written, and its own check is still due
+    rewording: bool = False       # its review is kept, and the words it faulted are still to fix
 
     @property
     def start(self) -> dict:
@@ -1152,6 +1170,7 @@ def stands(root: Path, session: dict, state: dict, asked: dict, run: dict,
         done = set(DECK_STEPS[:-1]) | ({DECK_STEPS[-1]} if state[name] == 'approved' else set())
         return Deck(level, name, frozenset(done), kept, built, outline, rounds=rounds)
     done, drafted, request = set(), kept.get('outline') or {}, asked.get(name)
+    checking = False
     if _read(place(root, level, HANDOFF)) == handoff_text(root, session, level):
         done.add('deck-handoff')
     if brand.get('sha256') and not brand.get('changed') \
@@ -1162,7 +1181,11 @@ def stands(root: Path, session: dict, state: dict, asked: dict, run: dict,
     if said and drafted.get('sha256') == said and drafted.get('design') == drawn_as \
             and not kept.get('asked') and drafted.get('from') == made_from(root, session, name) \
             and (request is None or drafted.get('answers') == request.get('at')):
-        done.add('deck-outline')
+        # On the desk what the deck says is checked once by a second worker before anyone
+        # is shown it: until then the step is not done, whatever restarts in between.
+        checking = drafts.on_desk(run) and drafted.get('check') == CHECK_DUE
+        if not checking:
+            done.add('deck-outline')
     approved = kept.get('approved') or {}
     if said and approved.get('sha256') == said \
             and (approved.get('design') or {}).get('sha256') == drawn_as:
@@ -1211,10 +1234,15 @@ def stands(root: Path, session: dict, state: dict, asked: dict, run: dict,
         and bool(shots(root, level, last.get('deck'))) and holds(last) and intact(work, last)
     if whole:
         done.add('deck-whole')
-    if whole and last.get('review'):
+    # After the first review on the desk, the words it faulted are corrected by a second job
+    # of the same step: until that is settled the review is not done, whatever restarts.
+    fix = kept.get('fix_pass') or {}
+    rewording = drafts.on_desk(run) and bool(start) and fix.get('start') == start.get('folder') \
+        and (fix.get('words') or {}).get('state') == FIX_DUE
+    if whole and last.get('review') and not rewording:
         done.add('deck-review')
     return Deck(level, name, frozenset(done), kept, built, outline, waiting, first, again,
-                rounds)
+                rounds, checking, rewording and whole and bool(last.get('review')))
 
 
 def intact(work: Path, made: dict | None) -> bool:
@@ -1356,6 +1384,19 @@ def _next(first: Step | None, session: dict, state: dict, asked: dict,
                 'kind': 'revise', 'note': drafts.DECK_UPDATE, 'slides': [],
                 'inputs': None, 'at': pending.get('at')}
         request = mine.kept.get('asked') or scoped or asked.get(first.artifact)
+        it = workspace.label(first.artifact)
+        if bare(first.id) == 'deck-outline' and mine.checking:
+            first = replace(first, label=CHECKING[0].format(it=it),
+                            doing=CHECKING[1].format(it=it))
+        elif bare(first.id) == 'deck-review' and mine.rewording \
+                or bare(first.id) == 'deck-repair' and fixing(mine):
+            first = replace(first, label=FIXING[0].format(it=it),
+                            doing=FIXING[1].format(it=it))
+        elif bare(first.id) == 'deck-review' and len(mine.rounds) == 2 \
+                and fixed(mine):
+            # The review after the one pass of fixes looks again at what it flagged.
+            first = replace(first, label=RECHECKING[0].format(it=it),
+                            doing=RECHECKING[1].format(it=it))
         return Next(first.kind, first, request, {
             'deck-sections': mine.todo, 'deck-repair': mine.again}.get(bare(first.id), ()))
     if first.id == 'intake':
@@ -2148,6 +2189,112 @@ def outline_work(root: Path, found: Survey, step: Step, request: dict | None,
                 task, 'write', prepared, name)
 
 
+def fixed(mine: Deck) -> bool:
+    """Whether the one automatic pass of fixes put anything right in what a deck was drawn
+    from now: a slide drawn again, or its words corrected."""
+    fix = mine.kept.get('fix_pass') or {}
+    return fix.get('start') == mine.start.get('folder') and bool(
+        fix.get('slides') or (fix.get('words') or {}).get('slides'))
+
+
+def fixing(mine: Deck) -> bool:
+    """Whether the sections a deck draws again now are the one automatic pass of fixes its
+    review queued, not a change the person asked for."""
+    return any(note.get('by') == 'review' and note.get('status') in ('waiting', 'drawing')
+               for note in mine.kept.get('notes') or ())
+
+
+CHECK_TASK = (
+    'Check the slide text of {it} before anyone is shown it, and correct it yourself. '
+    'Another worker wrote it from the same inputs you have; it is below as the earlier '
+    'draft. Read every slide against the blueprint, the learner guide and the research '
+    'findings it was written from, and against these questions:\n\n{questions}\n\n'
+    'Correct what you find, once: a wrong or unsupported fact, wording that disagrees with '
+    'the blueprint or the guide, a typo, text that is too long for its slide, a slide that '
+    'does not serve its objective. Keep every slide ID, the order and whatever is already '
+    'right exactly as it is. Then hand in the whole corrected text'
+    '{designed} with submit_outline, even when you changed nothing. List no findings: the '
+    'person is shown only the corrected text.\n\n'
+    'Do not ask the person about anything you can look up in your inputs or put right '
+    'yourself. Ask only for what is theirs to decide: what they intend, a fact your inputs '
+    'do not hold, or a choice between options that are each valid.')
+TEXT_QUESTIONS = (
+    'Is every fact, figure and name on the slide in the blueprint, the guide or the findings, '
+    'and stated the way they state it?',
+    'Does each slide make one point, and does its title say that point?',
+    'Does the text fit its slide: within the word budget, with no sentence that could be shorter?',
+    'Is the wording consistent from slide to slide: the same name for the same thing?',
+    'Is the spelling and grammar right?',
+    'Does every objective have a slide that teaches it, and every content slide an objective?')
+
+
+def outline_check_work(root: Path, found: Survey, step: Step, error: str | None,
+                       answered: list[dict], designed: bool = False,
+                       icons: bool = False) -> Work:
+    """The job of checking what one deck says, by a second worker, once: it reads the text
+    against what it was written from and hands in the corrected text in its place."""
+    made = outline_work(root, found, step, None, None, [], designed, icons)
+    level = workspace.split(step.artifact)[1]
+    earlier = _read(place(root, level, OUTLINE)) or ''
+    if designed and _read(place(root, level, DESIGN)):
+        earlier = ('The outline:\n\n' + earlier.rstrip('\n') + '\n\nThe proposal made from '
+                   'it and its design:\n\n' + _read(place(root, level, DESIGN)))
+    task = (CHECK_TASK.format(
+        it=workspace.label(step.artifact),
+        questions='\n'.join(f'{number}. {question}' for number, question
+                            in enumerate(TEXT_QUESTIONS, start=1)),
+        designed=' and its design, together,' if designed else '')
+        + f"\n\nYour inputs are {_inputs(made.prepared['inputs'])}."
+        + f'\n\nThe earlier draft:\n\n{earlier}'
+        + _again(None, None, error, answered, 'the slide text'))
+    return replace(made, task=task, prepared={**made.prepared, 'ask': _can_ask(answered)})
+
+
+REWORD_TASK = (
+    'Correct the slide text of {it} where its review found it wrong. The slides were drawn '
+    'and reviewed, and your input "what the review found" lists what the review found wrong '
+    'with what some slides say. The slide text as it stands is below as the earlier draft.'
+    '\n\nCorrect each thing yourself, once, where the correction is one you can make or look '
+    'up in your inputs: a typo, text too long for its slide, wording that disagrees with the '
+    'blueprint, the learner guide or the research findings, a fact stated otherwise than its '
+    'source states it. Where putting a slide right would take the person, because it turns '
+    'on what they intend, on a fact your inputs do not hold, or on a choice between options '
+    'that are each valid, leave that slide exactly as it is: it is kept as a note for them.'
+    '\n\nChange only the slides named there, and copy every other slide exactly. Keep every '
+    'slide ID, its kind and the order, and add or remove no slide. Hand in the whole slide '
+    'text with submit_outline, even when you changed nothing. Nobody answers questions in '
+    'this job.')
+
+
+def reword_work(root: Path, found: Survey, step: Step, findings: list[dict],
+                error: str | None) -> Work:
+    """The job of correcting what a drawn deck says where its review found it wrong, by a
+    worker that is given only the words: the slides `findings` name may change, and every
+    other slide is copied. How each changed slide is drawn follows from its words, in the
+    engine."""
+    made = outline_work(root, found, step, None, None, [], False)
+    level = workspace.split(step.artifact)[1]
+    earlier = _read(place(root, level, OUTLINE)) or ''
+    previous = json.loads(earlier)
+    named = {finding['slide'] for finding in findings}
+    frozen = {slide['id']: slide for slide in deck.slides_of(previous)
+              if slide.get('id') not in named}
+    inputs = {**made.prepared['inputs'], 'what the review found': '\n'.join(
+        f"- {finding['slide']} (slide {finding.get('number')}): {finding.get('note') or ''}"
+        + (f" Suggested: {finding['fix']}" if finding.get('fix') else '')
+        for finding in findings)}
+    spec = {**made.prepared['artifacts'][made.name], 'design': False, 'frozen': frozen,
+            'previous': previous}
+    spec.pop('icons', None)
+    task = (REWORD_TASK.format(it=workspace.label(step.artifact))
+            + f'\n\nYour inputs are {_inputs(inputs)}.'
+            + f'\n\nThe earlier draft:\n\n{earlier}'
+            + _again(None, None, error, [], 'the slide text'))
+    return replace(made, guidance=briefs.guidance('deck-outline', design=False, icons=False),
+                   task=task, prepared={**made.prepared, 'inputs': inputs, 'ask': False,
+                                        'artifacts': {made.name: spec}})
+
+
 def numbered(ident: str | None) -> int:
     """A section's number, from its ID: `section-2` is 2."""
     if not isinstance(ident, str) or not SECTION.match(ident):
@@ -2200,11 +2347,22 @@ def section_work(root: Path, found: Survey, step: Step, section: str, error: str
         frozen = {slide['id']: slide for slide in old.get('slides') or ()
                   if slide.get('id') not in changed}
         inputs['your earlier section'] = earlier
-        inputs['what the person asked'] = '\n'.join(
-            f"{note['slide']}: {note['note']}" for note in notes)
-        task = (f'Draw section {number} again. The person asked for the changes in '
-                '"what the person asked", on the slides it names. Copy every other slide '
-                'in your section exactly, including its drawing.')
+        if all(note.get('by') == 'review' for note in notes):
+            # The one automatic pass of fixes after the review: nobody asked for these.
+            inputs['what the review found'] = '\n'.join(
+                f"{note['slide']}: {note['note']}" for note in notes)
+            task = (f'Draw section {number} again. It was drawn, rendered and reviewed, and '
+                    'the review found the things in "what the review found" wrong on the '
+                    'slides it names. Put each right, and look at each slide again before '
+                    'you hand it in. Keep the approved words of a slide, unless what is said '
+                    'of it gives its updated words: then use exactly those. Copy every other '
+                    'slide in your section exactly, including its drawing.')
+        else:
+            inputs['what the person asked'] = '\n'.join(
+                f"{note['slide']}: {note['note']}" for note in notes)
+            task = (f'Draw section {number} again. The person asked for the changes in '
+                    '"what the person asked", on the slides it names. Copy every other slide '
+                    'in your section exactly, including its drawing.')
     elif again:
         drawn = (mine.built.get('sections') or {}).get(section) or {}
         slides = [slide for slide in mine.last['slides'] if slide['id'] in ids]
@@ -2642,6 +2800,8 @@ def outline_view(root: Path, found: Survey, level: str | None) -> dict | None:
         'This is not the version the checks were run on.']
     worth += [f"Did not pass ({outcome['check']}): {problem}" for outcome in ran
               if outcome['status'] != 'passed' for problem in outcome['problems']]
+    if current and drafted.get('check') == CHECK_LEFT:
+        worth.insert(0, UNCHECKED)
     back = returned(mine)
     if back:   # first, since it is why this is put to the person again
         worth[:0] = [RETURNED] + [

@@ -7359,13 +7359,52 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         result = self.open_desk(self.on_desk(a_desk(found), **{
             'POST /api/drafts/finding': [a_desk(self.slide_card())]}),
             [{'click': 'Review & changes (1)'}, {'snapshot': 'finding'},
-             {'tick': 'Include suggestion 1'}, {'click': 'Apply 1 fix'}, {'snapshot': 'after'}])
+             {'tick': 'Include note 1'}, {'click': 'Apply 1 fix'}, {'snapshot': 'after'}])
         self.assertIn('The labels are small.', result['snapshots']['finding']['text'])
+        # It is a note the review left, said to wait on nobody, with the controls kept.
+        self.assertIn('Review notes (1)', result['snapshots']['finding']['text'])
+        self.assertIn('Nothing here waits on you', result['snapshots']['finding']['text'])
+        self.assertNotIn('Review suggestion', result['snapshots']['finding']['text'])
         self.assertIn('Dismiss selected', result['snapshots']['finding']['buttons'])
         self.assertEqual(self.posts(result)[0], ('/api/drafts/finding', {
             'path': str(self.root), 'level': '101', 'seen': found['seen'],
             'job': 'proposal-set', 'ids': ['one'], 'action': 'apply'}))
         self.assertNotIn('Apply selected fixes', result['snapshots']['after']['buttons'])
+
+    def standing(self, **told):
+        return {'state': 'in-progress', 'phase': 'working', 'words': 'Working on its own',
+                'sentence': 'Writing the brief.', 'level': '101', 'levels': {}, 'next': None,
+                'offer': None, 'counts': {'drafts': 2, 'to_write': 1}, 'kinds': {}, **told}
+
+    def test_the_move_card_says_drafts_can_be_marked_while_work_continues(self):
+        offer = {'kind': 'material', 'label': 'Review the level 101 learner guide',
+                 'material': 'document@101', 'level': '101', 'slide': None,
+                 'says': '2 drafts are ready to read and mark ready now, while the rest is made.'}
+        result = self.open_desk(self.on_desk(a_desk(standing=self.standing(offer=offer))),
+                                [{'snapshot': 'working'}])
+        shot = result['snapshots']['working']
+        self.assertIn('Drafts are ready to mark while work continues', shot['text'])
+        self.assertIn(offer['says'], shot['text'])
+        self.assertIn(offer['label'], shot['buttons'])
+        self.assertNotIn('Nothing is yours right now', shot['text'])
+
+    def test_the_move_card_with_nothing_to_offer_says_so(self):
+        result = self.open_desk(self.on_desk(a_desk(standing=self.standing())),
+                                [{'snapshot': 'calm'}])
+        self.assertIn('Nothing is yours right now', result['snapshots']['calm']['text'])
+
+    def test_the_move_card_of_a_paused_run_offers_resume(self):
+        offer = {'kind': 'resume', 'label': 'Resume training', 'material': None, 'level': '',
+                 'slide': None, 'says': 'Paused. Nothing more is made until you resume.'}
+        told = self.standing(phase='stopped', words='Paused', sentence='Paused.', offer=offer)
+        answers = self.answers(**{'GET /api/run': [a_desk_run('paused', 'Paused.')],
+                                  'GET /api/drafts': [a_desk(running=False, standing=told)]})
+        result = self.open_desk(answers, [{'snapshot': 'paused'}])
+        shot = result['snapshots']['paused']
+        self.assertIn('Paused: resume when you are ready', shot['text'])
+        self.assertIn(offer['says'], shot['text'])
+        self.assertIn('Resume training', shot['buttons'])
+        self.assertNotIn('Nothing is yours right now', shot['text'])
 
     def review_card(self):
         found = self.slide_card()
@@ -7396,8 +7435,8 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
             'POST /api/drafts/finding': [
                 {'status': 409, 'body': {'error': 'This section is busy. Try again when it finishes.'}},
                 a_desk(self.slide_card())]}), [
-            {'click': 'Review & changes (5)'}, {'tick': 'Include suggestion 2'},
-            {'tick': 'Include suggestion 4'}, {'click': 'Apply 2 fixes'}, {'snapshot': 'failed'},
+            {'click': 'Review & changes (5)'}, {'tick': 'Include note 2'},
+            {'tick': 'Include note 4'}, {'click': 'Apply 2 fixes'}, {'snapshot': 'failed'},
             {'click': 'Dismiss selected'}, {'snapshot': 'dismissed'}])
         self.assertIn('2 of 5 selected', result['snapshots']['failed']['text'])
         self.assertIn('This section is busy.', result['snapshots']['failed']['text'])
@@ -7412,7 +7451,7 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
             item['present'] = False
         result = self.open_desk(self.on_desk(a_desk(found)), [
             {'click': 'Review & changes'}, {'snapshot': 'stale'}])
-        self.assertIn('5 suggestions refer to an earlier drawing', result['snapshots']['stale']['text'])
+        self.assertIn('5 notes refer to an earlier drawing', result['snapshots']['stale']['text'])
         self.assertNotIn('Apply selected fixes', result['snapshots']['stale']['buttons'])
         self.assertFalse(self.posts(result))
 
@@ -7423,24 +7462,24 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         result = self.open_desk(self.on_desk(a_desk(found), **{
             'GET /api/drafts': [a_desk(found), a_desk(found), a_desk(changed)]}), [
             {'click': 'Review & changes (5)'}, {'click': 'Select all fixes'}, {'snapshot': 'chosen'},
-            {'click': 'Clear selection'}, {'snapshot': 'cleared'}, {'tick': 'Include suggestion 3'},
+            {'click': 'Clear selection'}, {'snapshot': 'cleared'}, {'tick': 'Include note 3'},
             {'polls': 1}, {'snapshot': 'updated'}])
         self.assertIn('5 of 5 selected', result['snapshots']['chosen']['text'])
         for name in ('cleared', 'updated'):
             self.assertIn('0 of 5 selected', result['snapshots'][name]['text'])
-            self.assertNotIn('Include suggestion 3', result['snapshots'][name]['ticked'])
+            self.assertNotIn('Include note 3', result['snapshots'][name]['ticked'])
         self.assertFalse(self.posts(result))
 
     def test_slide_inspector_retains_text_and_review_choices(self):
         result = self.open_desk(self.on_desk(a_desk(self.review_card())), [
             {'click': 'Text & notes'}, {'fill': 'Slide 5 title', 'value': 'My pending title'},
             {'click': 'Back to preview'}, {'snapshot': 'preview'},
-            {'click': 'Review & changes (5)'}, {'tick': 'Include suggestion 2'},
+            {'click': 'Review & changes (5)'}, {'tick': 'Include note 2'},
             {'click': 'Back to preview'}, {'click': 'Text & notes'}, {'snapshot': 'words'},
             {'click': 'Review & changes (5)'}, {'snapshot': 'review'}], narrow=True)
         self.assertIn('History', result['snapshots']['preview']['buttons'])
         self.assertEqual(result['snapshots']['words']['fields']['Slide 5 title'], 'My pending title')
-        self.assertIn('Include suggestion 2', result['snapshots']['review']['ticked'])
+        self.assertIn('Include note 2', result['snapshots']['review']['ticked'])
         self.assertFalse(self.posts(result))
 
     def test_bound_words_show_the_actual_question_and_wait_for_an_answer(self):

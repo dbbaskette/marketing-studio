@@ -1605,7 +1605,7 @@ TOOLS = [
                        'slide': TEXT, 'question': NUMBER,
                        'severity': {'type': 'string', 'enum': list(deck.SEVERITIES)},
                        'about': {'type': 'string', 'enum': list(deck.ABOUT)},
-                       'note': TEXT, 'fix': TEXT},
+                       'note': TEXT, 'fix': TEXT, 'ask': TEXT},
                    'required': ['slide', 'question', 'severity', 'note']}},
                 'weakest': {'type': 'array', 'items': TEXT}}, ['findings']),
     _described('submit_judgements', 'Hand in your review against the design: for every '
@@ -1621,7 +1621,7 @@ TOOLS = [
                                'reason': TEXT, 'objects': {'type': 'array', 'items': TEXT},
                                'severity': {'type': 'string', 'enum': list(deck.SEVERITIES)},
                                'about': {'type': 'string', 'enum': list(deck.JUDGED)},
-                               'fix': TEXT},
+                               'fix': TEXT, 'ask': TEXT},
                            'required': ['criterion', 'status', 'reason', 'objects']}}},
                    'required': ['slide', 'checks']}},
                 'weakest': {'type': 'array', 'items': TEXT}}, ['slides']),

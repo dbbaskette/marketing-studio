@@ -594,18 +594,42 @@ def ready(root: Path) -> bool:
     return bool(assess.run_checks(root)['ready'])
 
 
-def needs_you(root: Path, found, name: str) -> list[str]:
-    """What keeps a material from being marked ready, a sentence each: for a deck, the grave
-    findings its last round's review still has and its audit's blockers. `found` is the
-    training's survey. Nothing for any other material."""
+ASKED = ('The review of this deck has a question for you. Answer it, then mark the deck '
+         'ready.')
+
+
+def needs_you(root: Path, found, name: str, record: dict | None = None) -> list[str]:
+    """What keeps a material from being marked ready, a sentence each: for a deck, a local
+    draft that was never delivered, and a question its review put to the person that they
+    have not answered (`record` is the run record that holds it). What its review still
+    finds after its one pass of fixes is kept as notes on the deck (`review_notes`) and
+    keeps nothing. `found` is the training's survey. Nothing for any other material."""
     if workspace.split(name)[0] != 'deck':
         return []
     if workspace.pending_local_deck(root, found.session, name):
         return ['This deck has an undelivered local draft. Resolve it explicitly before marking a deck ready.']
+    asked = ((record or {}).get('question') or {}).get('deck')
+    if asked and (asked.get('level') or None) == workspace.split(name)[1]:
+        return [ASKED]
+    return []
+
+
+def review_notes(root: Path, found, name: str) -> list[str]:
+    """What the review of a deck still finds after its one pass of fixes, and what the
+    brand's check does, a sentence each, to read. None of it waits on the person."""
+    if workspace.split(name)[0] != 'deck':
+        return []
     from runner import pipeline
-    shown = pipeline.deck_gate(root, found.session, name)
-    return review_policy.held((shown.get('review') or {}).get('findings'),
+    try:
+        shown = pipeline.deck_gate(root, found.session, name)
+    except (workspace.WorkspaceError, OSError, KeyError, ValueError):
+        return []
+    said = review_policy.held((shown.get('review') or {}).get('findings'),
                               (shown.get('audit') or {}).get('blockers'))
+    return said + [f"Minor on {finding.get('slide') or finding.get('number')}: "
+                   f"{str(finding.get('note') or '').strip()}"
+                   for finding in (shown.get('review') or {}).get('findings') or ()
+                   if isinstance(finding, dict) and finding.get('severity') == 'minor']
 
 
 def level_ready(root: Path, session: dict, level: str | None,
@@ -743,6 +767,9 @@ WRITING = 'Being written. It opens here when it is ready.'
 QUEUED = 'Not written yet. Nothing is writing it while the training waits for you or is paused.'
 UPDATING = 'Being made again from what it is built from now.'
 DRAFT = 'A draft. Nothing is ready until you mark it.'
+# A deck whose review left something after its one pass of fixes: said, and never a stop.
+REVIEWED = ('A draft. The review fixed what it could and left {notes} on its slides. Nothing '
+            'there waits on you: read them if you like, then mark it ready.')
 READY = 'Ready. You marked it ready.'
 NEEDS = 'Needs you before using.'
 LEFT_OUT = 'Left out.'
@@ -862,7 +889,8 @@ def _cards(engine, root: Path, record: dict, found) -> list[dict]:
                 spec = workspace.artifact(root, session, name)
                 seen = workspace.sha256_file(root / spec['file'])
                 waiting = _hold(root, session, holding, name, plain)[0]
-                needs = needs_you(root, found, name) if seen and kind == 'deck' else []
+                needs = needs_you(root, found, name, record) if seen and kind == 'deck' else []
+                notes = review_notes(root, found, name) if seen and kind == 'deck' else []
                 card_actions = ['download'] if seen else []
                 if person.get(name) in ('skipped', 'unavailable'):
                     why = _left_out(root, session, name)
@@ -896,8 +924,7 @@ def _cards(engine, root: Path, record: dict, found) -> list[dict]:
                                       and not busy_now else []),
                                     *(['keep'] if waiting is None else []), 'download']
                 elif needs:
-                    shown, says = 'needs', ('This deck has unresolved review issues. '
-                                           'Review the affected slides below before marking it ready.')
+                    shown, says = 'needs', ' '.join(needs)
                 elif person.get(name) == 'approved':
                     shown, says = 'ready', READY
                     # Return to draft: the person's own way back from Ready, never in a
@@ -905,7 +932,8 @@ def _cards(engine, root: Path, record: dict, found) -> list[dict]:
                     if not in_conversation(record):
                         card_actions = ['draft', *card_actions]
                 else:
-                    shown, says = 'draft', DRAFT
+                    shown, says = 'draft', (REVIEWED.format(
+                        notes=_things(len(notes), 'note', 'notes')) if notes else DRAFT)
                     card_actions = ['ready', *(['send'] if name in copied_to
                                                and name not in sent(record) else []),
                                     'download']
@@ -919,7 +947,7 @@ def _cards(engine, root: Path, record: dict, found) -> list[dict]:
                     'name': name, 'level': level or '', 'kind': kind,
                     'label': workspace.label(name), 'state': shown, 'says': says,
                     'seen': seen, 'held': name in holding, 'actions': card_actions,
-                    'needs': needs})
+                    'needs': needs, 'notes': notes})
     return cards
 
 
@@ -1038,6 +1066,10 @@ OUTLINE_WAITS = ('Needs your outline approval before detailed research starts. '
                  'Edit the sections, objectives and questions, then approve the scope.')
 ATTENTION = '{It} needs attention before it can be marked ready.'
 DRAFTS_LEFT = '{drafts} to read and mark ready.'
+# Said while work carries on and finished drafts already wait for Mark ready.
+DRAFTS_MEANWHILE = ('{drafts} ready to read and mark ready now, while the rest is made.')
+RESUME = {'paused': 'Paused. Nothing more is made until you resume.',
+          'stopped': 'Stopped. Nothing more is made until you resume.'}
 ALL_READY = 'Every material is marked ready.'
 
 
@@ -1083,7 +1115,9 @@ def standing(engine, root, record: dict | None = None, found=None,
     of PHASES; `words` its short label. `counts` (and `levels`, the same for each level) tell
     drafts still to write from drafts to mark ready, attention and decisions. `next` is the
     person's next action, {'kind', 'label', 'material', 'level', 'slide'}, or None while
-    there is nothing for them to do. Reading it starts nothing."""
+    there is nothing for them to do. `offer` is something they can do now though nothing
+    waits on them, in the same shape: mark a finished draft ready while the rest is made, or
+    resume a run they paused or stopped. Reading it starts nothing."""
     root = Path(root)
     record = engine._load(root) if record is None else record
     if not on_desk(record) or in_conversation(record):
@@ -1115,7 +1149,7 @@ def standing(engine, root, record: dict | None = None, found=None,
     remains = ('Still to do: ' + ', '.join(remains) + '.') if remains else ''
     problem, question = record.get('problem'), record.get('question')
     deciding, attention, drafted = first('decide'), first('needs', 'held'), first('draft')
-    nxt, level = None, ''
+    nxt, offer, level = None, None, ''
     if problem:
         phase, now = 'stopped', 'needs-you'
         words = 'Stopped: something went wrong'
@@ -1125,6 +1159,9 @@ def standing(engine, root, record: dict | None = None, found=None,
                'level': '', 'slide': None}
     elif state in ('paused', 'stopped'):
         phase, now, words, said = 'stopped', 'in-progress', state.capitalize(), sentence
+        # A run the person halted has one next action, and it is theirs: Resume.
+        offer = {'kind': 'resume', 'label': 'Resume training', 'material': None,
+                 'level': '', 'slide': None, 'says': RESUME[state]}
     elif question:
         phase, now, words = 'decision', 'needs-you', 'Needs your answer'
         said = QUESTION.format(text=question['text'])
@@ -1157,6 +1194,10 @@ def standing(engine, root, record: dict | None = None, found=None,
         phase, now, words, said = 'working', 'in-progress', PHASE_WORDS['working'], sentence
         writing = first('writing')
         level = writing['level'] if writing else ''
+        if drafted:   # finished drafts can be marked ready while the rest is made
+            ready_now = _things(counts['drafts'], 'draft is', 'drafts are').capitalize()
+            offer = {**to(drafted, label=f"Review {drafted['label']}"),
+                     'says': DRAFTS_MEANWHILE.format(drafts=ready_now)}
     elif drafted:
         phase, now, words = 'drafts', 'needs-you', PHASE_WORDS['drafts']
         said = DRAFTS_LEFT.format(drafts=_things(counts['drafts'], 'draft', 'drafts')
@@ -1186,7 +1227,7 @@ def standing(engine, root, record: dict | None = None, found=None,
         kinds.setdefault(card['kind'], []).append(card['state'])
     return {'state': now, 'phase': phase, 'words': words, 'sentence': said.strip(),
             'level': level or '', 'counts': counts, 'levels': by_level, 'next': nxt,
-            'kinds': kinds}
+            'offer': offer, 'kinds': kinds}
 
 
 # A stage of the row, from its materials' cards: done only once every one is Ready.
@@ -2075,7 +2116,7 @@ def design_words(plan: dict, outline: dict, slide: str, field: str, old: str, te
     return made
 
 
-SLIDE_SOURCES = ('save', 'selection', 'note', 'redraw', 'restore', 'outline', 'finishing', 'open', 'update')
+SLIDE_SOURCES = ('save', 'selection', 'note', 'redraw', 'restore', 'outline', 'finishing', 'open', 'update', 'review')
 SLIDE_WORDS = ('title', 'subtitle', 'points', 'caveat', 'source', 'notes')
 # Harness Slides outline and composition IDs; new slides must satisfy both.
 SLIDE_ID = re.compile(r'[a-zA-Z_][a-zA-Z0-9_-]{4,40}')
