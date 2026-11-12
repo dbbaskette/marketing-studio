@@ -71,11 +71,19 @@ Research. Missing prerequisites are shown before the work that needs them.
    points and notes directly; corrections and review position save privately across
    reloads. **Save corrections** starts no assistant or design work. Use **Ask for
    changes** for an assistant revision, or **Approve text & design deck** to approve
-   all slide text with your corrections. Pick a look
-   when you chose to pick one; genuine questions, failures and limits can also need you.
-5. **Refine the designed deck.** The navigator shows every slide and what needs
-   attention. Work on the selected slide, review findings, and use Finishing.
-6. **Choose Deliver.** Confirm the output and any warnings yourself. Delivery
+   all slide text with your corrections. The text you read has already been checked:
+   a second assistant compares the draft with your brief and sources and corrects it,
+   once, and you see only the corrected text. The start uses the brand's default look
+   unless you choose to pick one; genuine questions and failures can also need you.
+5. **The deck checks itself.** Once every slide is drawn, a review looks at the text
+   and the layout and makes one pass of fixes without asking: slides are drawn again,
+   and wording the assistant can correct or look up is corrected. It asks you only
+   what is yours to decide (what you meant, a fact no source has, a choice between
+   valid options), as one numbered question. There is no second pass.
+6. **Refine the designed deck.** The navigator shows every slide and what needs
+   attention. Work on the selected slide and use Finishing. What the review could not
+   settle is kept there as review notes; they never hold the deck.
+7. **Choose Deliver.** Confirm the output and any warnings yourself. Delivery
    creates the Google Slides link or PowerPoint result. Later changes produce a
    new delivery revision; the original source deck is never overwritten.
 
@@ -119,8 +127,10 @@ slide restoration; it patches a copy of the original deck.
 - **Outline:** reorder slides and change their content, with the redraw scope shown.
 - **History:** compare earlier words and restore them. Drawings and previews are local
   to the computer that made them; teammates may have the words without those pictures.
-- **Finishing:** review the brand check, deck findings, speaker-note proposals and
-  timing. Apply or skip proposed changes yourself.
+- **Finishing:** the brand check, the review notes, speaker-note proposals and
+  timing. **Review the deck** reviews the deck again after a change, with one pass of
+  fixes; what is left is notes to read, each with Apply and Skip, and nothing waits on
+  them.
 - **Sources:** add files, text or a Document Library revision without silently
   rerunning research. Research updates are separate, explicit actions.
 
@@ -162,8 +172,8 @@ work keeps its compatible path.
 ## Help and development
 
 Use **Status → Check this computer** for missing tools or sign-in. A failed step
-keeps the saved work and explains retry options; a time limit needs your
-explicit decision to continue. Nothing stops or warns for what a deck costs; where
+keeps the saved work and explains retry options. No step is ended for how long it
+takes: Stop is yours. Nothing stops or warns for what a deck costs; where
 the assistant reports a cost, it is shown as information. A team sharing failure keeps local work.
 
 For updates and rollback, use the [suite installation guide](../../docs/installation.md).

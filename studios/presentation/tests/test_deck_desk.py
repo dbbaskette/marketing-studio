@@ -665,7 +665,7 @@ class DeliverTests(DeskCase):
         root = self.deck()
         self.deliver(root)
         said = json.loads((root / 'deliver.json').read_text())
-        self.assertEqual((said['revision'], said['review_status']), (1, 'unreviewed'))
+        self.assertEqual((said['revision'], said['review_status']), (1, 'reviewed'))
         self.assertEqual(self.names(), ['Rolling restarts'])
         record = self.record(root)
         self.assertEqual(record['gates']['gate:build']['by'],

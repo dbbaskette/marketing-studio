@@ -1243,7 +1243,13 @@ def section_work(root, run: dict, section: str, request: dict | None, error: str
     if drawn_bare:
         lines.append('These slides show no words in the deck you were given, so draw no '
                      'text on them: ' + ', '.join(drawn_bare) + '.')
-    focused = {finding['slide'] for finding in grave(found) if finding.get('about') == 'drawing'}
+    # A desk deck's one pass of fixes puts right every drawing finding, whatever its
+    # severity, and draws again the slides whose words the pass corrected.
+    passing = decks.on_desk(run) and fixing(state)
+    focused = {finding['slide'] for finding in (found if passing else grave(found))
+               if finding.get('about') == 'drawing'}
+    if passing:
+        focused.update(ident for ident in (state['fix'].get('reworded') or ()) if ident in ids)
     focused.update(entry['slide'] for entry in previewed)
     asked_numbers = ((run.get('gates') or {}).get('gate:build') or {}).get('slides')
     if asked_numbers and last:
@@ -1278,7 +1284,10 @@ def section_work(root, run: dict, section: str, request: dict | None, error: str
                 {key: slide[key] for key in ('id', 'title', 'sources', 'layout', 'picture',
                                              'notes') if slide.get(key)},
                 ensure_ascii=False) for slide in set_bare))
-    first_draft = decks.user_first(run)
+    # A section drawn again for what a review found is repaired, not drafted afresh.
+    first_draft = decks.user_first(run) and not (passing and drawn)
+    if not first_draft:
+        spec.pop('user_first', None)
     spec['progress'] = build_progress.begin(root, began['folder'], section,
         [{'id': slide['id'], 'title': slide.get('title') or '', 'number': number}
          for number, slide in enumerate(slides_of(whole), 1) if slide['id'] in ids])
@@ -1294,8 +1303,8 @@ its content and keep every approved word, brand rule and asset permission.
 Use check_section until deterministic validation passes. Render once with
 preview_section, fix reported blocking validation errors within the normal limits,
 then submit_section with exactly that rendered section. Do not inspect pixels,
-run critique, or spend time on discretionary visual polishing. The person will
-see the first native build before choosing whether to request AI review.
+run critique, or spend time on discretionary visual polishing. A separate review
+of the whole deck follows the build.
 Do not claim visual review or invent assessment evidence. Then stop.
 '''
     return Work(guidance=guidance,
@@ -1830,7 +1839,7 @@ def repair_sections(found) -> list[str]:
 
 
 def _review_md(number: int, findings: list[dict], slides: list[dict], back: list[str],
-               spent: bool) -> str:
+               spent: bool, desk: str | None = None) -> str:
     titles = {slide['id']: slide['title'] for slide in slides}
     lines = [f'# Review of the deck, round {number}', '', remains(findings), '']
     for finding in ordered(findings):
@@ -1838,10 +1847,16 @@ def _review_md(number: int, findings: list[dict], slides: list[dict], back: list
                      f"{finding['severity']}, {finding['about']}: {finding['note']}"
                      + (f" Suggested: {finding['fix']}" if finding.get('fix') else ''))
         if finding.get('persistent'):
-            lines.append('  Still unresolved after a focused repair; decide the specific correction or tradeoff.')
+            lines.append('  Still there after the fixes: a note for you, not a stop.' if desk
+                         else '  Still unresolved after a focused repair; decide the specific correction or tradeoff.')
     if findings:
         lines.append('')
-    if back:
+    if desk == 'fixing':
+        lines.append(FIXING_NOTE + (' Drawn again: ' + ', '.join(back).replace(
+            'section-', 'section ') + '.' if back else ''))
+    elif desk and findings:
+        lines.append(NOTES_NOTE)
+    elif back:
         lines.append('Drawn again: ' + ', '.join(back).replace('section-', 'section ') + '.')
     elif spent and grave(findings):
         lines.append(f'The slides were drawn again {REPAIRS} times after a review, which is '
@@ -1849,10 +1864,19 @@ def _review_md(number: int, findings: list[dict], slides: list[dict], back: list
     return '\n'.join(lines).rstrip() + '\n'
 
 
+FIXING_NOTE = ('These are put right in one pass, without asking: slides are drawn again, and '
+               'wording the assistant can correct or look up is corrected.')
+NOTES_NOTE = ('The one pass of fixes is done. What is listed here is kept as notes: the deck '
+              'does not wait on them.')
+
+
 def keep_review(root, run: dict, handed) -> list[dict]:
     """Keep what the reviewer found in the last round, write it to reviews/build-<n>.md,
     and send back the sections with a major or critical drawing finding, for at most
-    REPAIRS rounds. Returns the findings, each with the section its slide is in."""
+    REPAIRS rounds. A desk deck has one pass of fixes instead (`state['fix']`): its first
+    review sends back every section with a drawing finding and keeps the wording findings
+    for the wording job; the review after the pass sends nothing back. Returns the findings,
+    each with the section its slide is in."""
     root = Path(root)
     state = read_state(root)
     last, began = _last(state), _started(state)
@@ -1877,20 +1901,133 @@ def keep_review(root, run: dict, handed) -> list[dict]:
     back = repair_sections(findings)
     spent = state.get('repaired', 0) >= REPAIRS
     on_desk = decks.on_desk(run)
-    if spent or on_desk:
-        # A desk deck sends nothing back: what the review found waits in Finishing, slide by
-        # slide, until the person applies it; and a later note is not reviewed again.
+    number = len(state['rounds'])
+    opened = False
+    if on_desk:
+        # A desk deck's review is followed by one pass of fixes, and no second: every
+        # section with a finding about how a slide is drawn is drawn again, whatever its
+        # severity, and a separate job corrects what the findings say of the words. The
+        # review after that pass sends nothing back: what it still finds is kept as notes.
+        fix = state.get('fix')
+        if findings and not fix:
+            back = sorted({finding['section'] for finding in findings
+                           if finding.get('about') == ABOUT[0] and finding.get('section')},
+                          key=numbered)
+            state['fix'] = {'round': number, 'at': home.now(), 'sections': back,
+                            'wording': [finding for finding in findings
+                                        if finding.get('about') == ABOUT[1]]}
+            opened = True
+        else:
+            back = []
+            if fix and not fix.get('closed_at'):
+                fix.update(closed_at=home.now(), rechecked=number)
+        if not opened and run.pop('review_requested', None) is not None:
+            decks.write_run(root, run)
+    elif spent:
         back = []
-    if on_desk and run.pop('review_requested', None) is not None:
-        decks.write_run(root, run)
-    if back:
+    if back and not on_desk:
         state['repaired'] = state.get('repaired', 0) + 1
     state['repair'] = back
     write_state(root, state)
     number = len(state['rounds'])
     write_atomic(root / REVIEWS / f'build-{number}.md',
-                 _review_md(number, findings, last['slides'], back, spent))
+                 _review_md(number, findings, last['slides'], back, spent,
+                            desk='fixing' if opened else 'notes' if on_desk else None))
     return findings
+
+
+# --- the one pass of fixes after a desk deck's review -----------------------------------------
+
+def fixing(state: dict) -> bool:
+    """Whether a desk deck's one pass of fixes is under way: its review opened it, and the
+    review of the fixed deck (or nothing left to do) has not closed it."""
+    fix = state.get('fix')
+    return bool(fix) and not fix.get('closed_at')
+
+
+def wording(state: dict) -> list[dict]:
+    """The findings about what slides say that the pass's wording job has still to take."""
+    fix = state.get('fix') or {}
+    return list(fix.get('wording') or ()) if fixing(state) and not fix.get('worded_at') else []
+
+
+def told_wording(found, slides: list[dict], questions=critic.LEGACY) -> str:
+    """What a review found in what slides say, as the job that corrects the words is told
+    it."""
+    lines = ['# What the review found in what the slides say', '',
+             'Someone who wrote and drew none of this deck looked at each slide as it was '
+             'rendered. Each thing found wrong with what a slide says is below.', '']
+    for slide in slides:
+        mine = [finding for finding in ordered(found) if finding['slide'] == slide['id']]
+        if not mine:
+            continue
+        lines += [f"## Slide {slide['number']}: `{slide['id']}`, \"{slide['title']}\"", '']
+        for finding in mine:
+            quoted = asked_text(finding, questions)
+            lines.append(f"- **{finding['severity']}**, {quoted + ' ' if quoted else ''}"
+                         f"{finding['note']}"
+                         + (f" Suggested: {finding['fix']}" if finding.get('fix') else ''))
+        lines.append('')
+    return '\n'.join(lines)
+
+
+def worded(root, sections=(), slides=()) -> dict:
+    """The pass's wording job is done: the sections whose slides it reworded are drawn
+    again with the sections the review sent back, and `slides` are the ones it changed.
+    Returns the state."""
+    state = read_state(root)
+    fix = state.get('fix')
+    if fix and not fix.get('worded_at'):
+        fix.update(worded_at=home.now(), reworded=list(slides))
+        fix['sections'] = sorted({*(fix.get('sections') or ()), *sections}, key=numbered)
+        state['repair'] = sorted({*(state.get('repair') or ()), *sections}, key=numbered)
+        write_state(root, state)
+    return state
+
+
+def pass_words(root, state: dict | None = None) -> str | None:
+    """What a desk deck's pass of fixes is doing now, as the page says it: None when no
+    pass is under way."""
+    state = state if state is not None else read_state(root)
+    if not fixing(state) or not state.get('rounds'):
+        return None
+    if wording(state):
+        return 'Fixing what the review found: correcting the wording'
+    left = to_draw(root)
+    if left:
+        return ('Fixing what the review found: drawing '
+                + ('1 section' if len(left) == 1 else f'{len(left)} sections') + ' again')
+    if state['rounds'][-1].get('review') is None:
+        return 'Checking the fixes'
+    return 'Fixing what the review found: putting the deck together'
+
+
+def pass_view(state: dict) -> dict | None:
+    """The pass of fixes as Finishing says it: how many things the review found, and, once
+    the pass is done, how many are left as notes. None for a deck that had no pass."""
+    fix, rounds = state.get('fix'), state.get('rounds') or []
+    if not fix or not rounds or not 1 <= int(fix.get('round') or 0) <= len(rounds):
+        return None
+    found = len(((rounds[fix['round'] - 1].get('review') or {}).get('findings')) or ())
+    done = bool(fix.get('closed_at'))
+    left = len(((rounds[-1].get('review') or {}).get('findings')) or ()) if done else None
+    return {'found': found, 'done': done, 'left': left,
+            'rechecked': bool(fix.get('rechecked'))}
+
+
+def close_fix(root, sections=None) -> bool:
+    """Close the pass of fixes where it is still open: nothing more is sent back for it.
+    With `sections`, only those stay to be drawn again (a pass given up keeps the sections
+    whose words it already changed). True when it was open."""
+    state = read_state(root)
+    if not fixing(state):
+        return False
+    state['fix'].update(closed_at=home.now())
+    if sections is not None:
+        state['repair'] = [section for section in state.get('repair') or ()
+                           if section in sections]
+    write_state(root, state)
+    return True
 
 
 # --- the deck ------------------------------------------------------------------------------

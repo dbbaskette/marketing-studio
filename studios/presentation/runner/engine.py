@@ -163,6 +163,8 @@ from runner.steps import look as looks
 from runner.steps import outline as outlines
 
 AT_ONCE = 3             # research questions, or sections, worked on at the same time
+SOFT_TRIES = 2          # tries at a job the deck does not wait on: after them it carries on
+FIX_JOB = 'build-repair:words'   # the job that corrects the wording a review found
 READY_FOR = 60          # seconds a look at an agent is reused
 MODELS_FOR = 3600       # seconds a list of an agent's models is reused
 MODELS_MISSED = 60      # seconds before a list that could not be made is asked for again
@@ -190,7 +192,8 @@ RUN = {
     'gate:classify': '_gate', 'scan': '_scan', 'gate:story': '_gate', 'research-plan': '_research_plan',
     'gate:research-plan': '_gate', 'research': '_research',
     'research-report': '_research_report', 'gate:research': '_gate', 'extract': '_extract',
-    'outline': '_outline', 'gate:outline': '_gate', 'brand': '_brand_step',
+    'outline': '_outline', 'outline-check': '_outline_check', 'gate:outline': '_gate',
+    'brand': '_brand_step',
     'look-preview': '_look_preview', 'gate:look': '_gate', 'patch': '_patch',
     'build-start': '_build_start', 'build-sections': '_build_sections',
     'build-whole': '_build_whole', 'build-review': '_build_review',
@@ -885,6 +888,8 @@ class Engine(Jobs, Researching, DeskActions):
                               limits={'step_seconds': chosen.step_seconds})
                 if self.content_first and decks.on_desk(record):
                     record['deck_content'] = deck_content.PROTOCOL
+                # Its slide text is checked by a second assistant before the person reads it.
+                record['text_check'] = stages.TEXT_CHECK
                 if contract:
                     if selected_sources:
                         record['research_inputs'] = research_sources.install(selected_sources, root)
@@ -1897,6 +1902,29 @@ class Engine(Jobs, Researching, DeskActions):
                         root, record, self._text(handed, outlines.NAME)),
                     'keep the outline')
 
+    def _outline_check(self, root: Path, run: _Run, step: stages.Step) -> None:
+        """The slide text checks itself: a second worker, given what the writer was given,
+        corrects the draft once, and the person is shown only the corrected text. Text a
+        check was already kept for is not checked again, and a check that did not work in
+        SOFT_TRIES tries never stops the deck: the text is shown as it was written."""
+        record = self._load(root)
+        skipped = 'the slide text is checked already' if outlines.text_checked(root, record) \
+            else 'show the slide text as written: its check did not finish' \
+            if tries(record, step.name).get('failed', 0) >= SOFT_TRIES \
+            or not (root / outlines.OUTLINE).is_file() else None
+        if skipped:
+            with self.files:
+                record = outlines.show(root, self._load(root))
+                self._done(root, step, time.monotonic(), skipped, record)
+            return
+        contract = self._contract(root)
+        self._agent(root, run, step,
+                    lambda record, request, error: outlines.check_work(
+                        root, record, request, error, contract, self.slides()),
+                    lambda record, handed: outlines.keep_outline(
+                        root, record, self._text(handed, outlines.NAME), checked=True),
+                    'keep the slide text, checked')
+
     def _patch(self, root: Path, run: _Run, step: stages.Step) -> None:
         self._contract(root)
 
@@ -1963,22 +1991,42 @@ class Engine(Jobs, Researching, DeskActions):
     def _review(self, root: Path, run: _Run, step: stages.Step) -> None:
         def keep(record, handed):
             build.keep_review(root, record, handed)
-            if decks.on_desk(record):
-                self._desk_reviewed(root)   # what it found waits in Finishing, per slide
+            if decks.on_desk(record) and not build.fixing(build.read_state(root)):
+                self._desk_reviewed(root)   # what is left is kept as notes, per slide
 
+        name = f'{step.name}:review' if step.name == 'build-repair' else step.name
+        record = self._load(root)
+        if decks.on_desk(record) and not record.get('review_requested') \
+                and tries(record, name).get('failed', 0) >= SOFT_TRIES:
+            # The review nobody asked for never stops the deck: it carries on unreviewed,
+            # says so, and Review the deck asks again.
+            with self.files:
+                state = build.read_state(root)
+                state['unreviewed'] = len(state['rounds'])
+                build.write_state(root, state)
+                self._commit(root, 'carry on without the review: it did not finish')
+            return
         self._agent(root, run, step,
                     lambda record, request, error: build.review_work(root, record), keep,
-                    'keep the review of the deck', name=f'{step.name}:review'
-                    if step.name == 'build-repair' else None,
-                    label='Review the deck again' if step.name == 'build-repair' else None)
+                    'keep the review of the deck', name=name if name != step.name else None,
+                    label='Check the fixes' if build.fixing(build.read_state(root))
+                    else 'Review the deck again' if step.name == 'build-repair' else None)
 
     @staticmethod
     def _reviewed(root: Path) -> bool:
         state = build.read_state(root)
         return bool(state['rounds']) and state['rounds'][-1].get('review') is not None
 
+    def _review_owed(self, root: Path) -> bool:
+        """Whether the deck is reviewed in the chain under way: as its form or the person
+        asked (`decks.review_due`), and again once a desk deck's pass of fixes changed it."""
+        state = build.read_state(root)
+        if state.get('unreviewed') == len(state.get('rounds') or ()):
+            return False    # its review did not finish, and the deck carried on
+        return decks.review_due(self._load(root)) or build.fixing(state)
+
     def _build_review(self, root: Path, run: _Run, step: stages.Step) -> None:
-        if decks.user_first(self._load(root)):
+        if not self._review_owed(root):
             with self.files:
                 self._done(root, step, time.monotonic(), 'AI review deferred to your decision')
             return
@@ -1998,17 +2046,55 @@ class Engine(Jobs, Researching, DeskActions):
 
     def _build_repair(self, root: Path, run: _Run, step: stages.Step) -> None:
         """Draw again what a review or the person sent back, put the deck together and
-        review it again, until nothing is sent back."""
+        review it again, until nothing is sent back. A desk deck's review is followed by one
+        pass of fixes: the wording job first, then the sections it and the review sent back,
+        then the review of the fixed deck, which sends nothing back."""
         how = self._renderer(root, step)
         self._contract(root)
+        if decks.on_desk(self._load(root)) and build.wording(build.read_state(root)):
+            return self._fix_words(root, run, step)
         if build.to_draw(root):
             return self._draw(root, run, step, how)
         if self._needs_whole(root):
             return self._whole(root, how)
-        if not self._reviewed(root) and not decks.user_first(self._load(root)):
+        if not self._reviewed(root) and self._review_owed(root):
             return self._review(root, run, step)
         with self.files:
-            self._done(root, step, time.monotonic(), 'nothing more is sent back')
+            record = self._load(root)
+            if decks.on_desk(record) and build.close_fix(root):
+                # The pass changed nothing that needed another look: what the review found
+                # is kept as notes.
+                self._desk_reviewed(root)
+                record.pop('review_requested', None)
+            self._done(root, step, time.monotonic(), 'nothing more is sent back', record)
+
+    def _fix_words(self, root: Path, run: _Run, step: stages.Step) -> None:
+        """The wording job of a desk deck's pass of fixes: it corrects what the review found
+        in what slides say, where it can look the answer up or fix it, and asks the person
+        only what is theirs to decide. A job that did not work in SOFT_TRIES tries never
+        stops the deck: the wording stays, and what was found is kept as notes."""
+        state, record = build.read_state(root), self._load(root)
+        found, last = build.wording(state), state['rounds'][-1]
+        ids = sorted({finding['slide'] for finding in found})
+        # A deck that keeps its own deck's words, or has no outline of its own to correct,
+        # keeps its wording: what was found stays as notes.
+        kept = desk.words_locked(record) \
+            or 'outline' not in {one.name for one in stages.steps(record)}
+        if kept or tries(record, FIX_JOB).get('failed', 0) >= SOFT_TRIES:
+            with self.files:
+                build.worded(root)
+                self._commit(root, 'keep the wording as it is' if kept
+                             else 'leave the wording as it is: its fix did not finish')
+            return
+        contract = self._contract(root)
+        told = build.told_wording(found, last['slides'], build.round_questions(last))
+        self._agent(root, run, step,
+                    lambda record, request, error: outlines.fix_work(
+                        root, record, error, contract, told, ids, self.slides()),
+                    lambda record, handed: self._desk_fix_keep(
+                        root, record, self._text(handed, outlines.NAME), ids),
+                    'correct the wording the review found', name=FIX_JOB,
+                    label='Fix the wording the review found')
 
     # --- what a person does ------------------------------------------------------------------
 
@@ -2405,7 +2491,7 @@ class Engine(Jobs, Researching, DeskActions):
             record = delivering.again(root, record, self.slides(),
                                       note or f'Change {which}.', space)
         kept = {name: dict(record['steps'].get(name) or {})
-                for name in ('outline', 'extract', 'brand', 'look-preview')}
+                for name in ('outline', 'outline-check', 'extract', 'brand', 'look-preview')}
         look = dict(record['gates'].get('gate:look') or {})
         record = stages.reopen(record, 'gate:outline')
         for name, entry in kept.items():
@@ -2992,6 +3078,10 @@ class Engine(Jobs, Researching, DeskActions):
                         if research_contract.job_round(name)]
             if live:
                 return 'working', f'{live[-1]}.'
+        if nxt.name == 'build-repair' and decks.on_desk(record):
+            passing = build.pass_words(root)
+            if passing:
+                return 'working', f'{passing}.'
         error = last_error(record, nxt.name)
         if error:
             return 'working', f'{nxt.doing} again. The last try did not work: {error}'

@@ -14,8 +14,10 @@ What a caller needs to know
 - One try at an agent step (`Jobs._agent`) is an empty job folder under `agents.staging()`,
   a brief, a worker and results taken only from what the worker tools accepted. It is tried
   up to ATTEMPTS times, with the reason for the last failure added to its task; then the
-  deck stops and says what went wrong, and a step whose last try ran out of time offers
-  more time (`stops.MORE_TIME`). An agent that cannot be used, or whose account refused the
+  deck stops and says what went wrong. No job is ended for how long it takes: only the
+  quick scan for a slide story keeps a limit of its own, as it has an outline to fall back
+  on. A deck stopped at a time limit before this (`stops.MORE_TIME`) is still carried on by
+  its own action. An agent that cannot be used, or whose account refused the
   job, stops it at once and points at the Status screen. A worker's question stops the run
   until the person answers; the answers go into the task of the next try, and after
   QUESTIONS answers the worker may ask no more.
@@ -354,16 +356,6 @@ class Jobs:
                 return False
             return True
 
-    def _out_of_time(self, root: Path, step: str, label: str, record: dict,
-                     tries: int) -> None:
-        """Stop at a step whose last try ran out of the time a step may take, saying so
-        and offering more time."""
-        seconds = int((record.get('limits') or {}).get('step_seconds')
-                      or settings.load().step_seconds)
-        own = bool(record.get('more_time')) and seconds == record['more_time']
-        self._problem(root, step, 'failed', stops.timed_out(label, seconds, tries, 'deck', own),
-                      KEPT, stops.MORE_TIME, detail={'seconds': seconds})
-
     def _folder(self, root: Path, name: str, number: int) -> Path:
         base, stem = agents.staging(), f'{root.name}--{folder_name(name)}-'
         left = re.compile(re.escape(stem) + r'\d+-[0-9a-f]{6}')
@@ -405,15 +397,13 @@ class Jobs:
         return replace(work, task=work.task + '\n\n' + FROM_AUTHOR.format(
             text='\n\n'.join(quoted(text) for text in carried)))
 
-    def _job(self, root: Path, run: Run, name: str, doing: str, work, deck: bool = True, *, limits=None, section=None):
+    def _job(self, root: Path, run: Run, name: str, doing: str, work, deck: bool = True, *, limits=None, section=None, quick=False):
         """Run one worker on one job. Returns how the agent ended, what the worker tools
         accepted from it, when it started and the job's folder. A note the person left for
-        the next step goes with it, once."""
+        the next step goes with it, once. Assistant work is never ended for how long it
+        takes: only a `quick` job, which has something to fall back on, keeps `limits`."""
         work = self._noted(root, name, doing, work)
         record = self._load(root)
-        if section:
-            record = {**record, 'limits': {**record['limits'], 'step_seconds': max(record['limits']['step_seconds'],
-                (record.get('section_synthesis') or {}).get('more_time', {}).get(section, 0))}}
         from runner import slide_story
         if name == 'outline' and slide_story.applies(record):
             work = replace(work, prepared={**work.prepared, 'inputs': {**work.prepared.get('inputs', {}),
@@ -427,10 +417,9 @@ class Jobs:
         runtimes = {key: value for key, value in self._look()['runtimes'].items() if value} \
             if deck else {}
         worker_tools.prepare(folder, **{**work.prepared, 'runtimes': runtimes})
-        requested = limits
-        limits = record.get('limits') or {}
-        ceiling = agents.Limits(int(limits.get('step_seconds') or settings.load().step_seconds))
-        bounded = ceiling if requested is None else agents.Limits(min(ceiling.seconds, requested.seconds))
+        # Ending a job for its time discards what it had done, and another try starts from
+        # nothing: there is no ceiling. Stop is the person's.
+        bounded = limits if quick and limits is not None else agents.Limits(None)
         job = agents.Job(work.guidance, work.task, folder, work.profile,
                          tuple(worker_tools.command(folder)),
                          bounded,
@@ -530,8 +519,7 @@ class Jobs:
     def _failed(self, root: Path, name: str, label: str, outcome: agents.Outcome,
                 started_at: str, detail: str, question: bool = False, guard=None) -> None:
         """Note a try that did not work. After the last one a step may have, or when the
-        agent cannot be used at all, the deck stops and says so: a step whose last try ran
-        out of time offers more time."""
+        agent cannot be used at all, the deck stops and says so, and offers to try again."""
         with self.files:
             record = self._load(root)
             if self._superseded(root, record, guard, name, started_at, outcome):
@@ -546,8 +534,6 @@ class Jobs:
                 self._title(record.get('agent')), outcome, detail), KEPT,
                 action=stops.agent_action(outcome))
         elif not question and entry['failed'] >= ATTEMPTS:
-            if outcome.reason == 'timeout':
-                return self._out_of_time(root, step, label, record, ATTEMPTS)
             self._problem(root, step, 'failed', (
                 f'This step did not work in {ATTEMPTS} tries: {label}. The last one: '
                 f'{detail}'), KEPT)

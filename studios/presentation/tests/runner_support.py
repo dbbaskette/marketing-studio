@@ -770,6 +770,9 @@ class Workers:
         spec = tools.job
         kind = (f"question:{spec['finding']}" if spec.get('finding') else
                 'review' if spec.get('review') else next(iter(spec['artifacts'])))
+        # The slide text's own check and a review's wording fix hand an outline back too.
+        kind = (spec['artifacts'].get('outline') or {}).get('role') or kind \
+            if kind == 'outline' else kind
         self.jobs.append((kind, job, spec))
         queued = self.queued.get(kind) or self.queued.get(kind.partition(':')[0])
         act = queued.pop(0) if queued else getattr(
@@ -829,6 +832,22 @@ class Workers:
         assert checked[1].startswith('Nothing to put right'), checked[1]
         self._ok(tools.submit_outline(said))
         tools.submit_review('Six slides. The check slide is the one I am least sure of.')
+
+    def text_check(self, tools, job):
+        """The slide text's check: the draft as it is kept, unless `checked_said` corrects
+        it."""
+        said = json.dumps(getattr(self, 'checked_said', None)
+                          or json.loads(tools.read_input('The current outline')[1]))
+        self._ok(tools.submit_outline(said))
+        tools.submit_review('The text needed nothing.')
+
+    def review_fix(self, tools, job):
+        """A review's wording fix: the outline as it is kept, unless `fixed_said` corrects
+        it."""
+        said = json.dumps(getattr(self, 'fixed_said', None)
+                          or json.loads(tools.read_input('The current outline')[1]))
+        self._ok(tools.submit_outline(said))
+        tools.submit_review('Nothing needed changing.')
 
     def section(self, tools, job):
         from stand_ins.slides import sketch

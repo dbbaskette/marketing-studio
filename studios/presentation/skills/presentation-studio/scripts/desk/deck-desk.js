@@ -50,7 +50,7 @@
     save: 'Before words you typed', selection: 'Before a change to selected words',
     note: 'Before a note redrew the slide', redraw: 'Before the slide was redrawn with new words',
     restore: 'Before an earlier version was restored', outline: 'Before the outline was saved',
-    finishing: 'Before a change from Finishing', open: 'As it was when it came to the desk',
+    finishing: 'Before a change from Finishing', review: 'Before the review’s fix', open: 'As it was when it came to the desk',
   };
   const NO_NOTE = 'Say how the slide should change.';
   const NO_DECK_NOTE = 'Say how the whole deck should change.';
@@ -170,7 +170,8 @@
 
   function start() {
     const draft = h.view.draft;
-    if (!draft.look) draft.look = 'pick';
+    // The brand's default look, unless the person chooses to pick: the run does not stop for it.
+    if (!draft.look) draft.look = 'default';
     if (draft.readAs === undefined) draft.readAs = '';
     const drafted = make('span', '');
     const told = () => { drafted.textContent = 'Drafted by ' + h.words.AGENT_NAMES[draft.agent]
@@ -297,8 +298,10 @@
     }
     if (text) {
       steps.push(['Approve the slide text.', 'The titles, the words on each slide, their '
-        + 'order and the speaker notes are drafted first. Read them, ask for changes, or '
-        + 'choose Approve text & design deck. Nothing is designed until you approve.']);
+        + 'order and the speaker notes are drafted first. A second assistant then checks '
+        + 'them against your brief and sources and corrects them, so you read only the '
+        + 'corrected text. Read it, ask for changes, or choose Approve text & design deck. '
+        + 'Nothing is designed until you approve.']);
     }
     if (looked(draft)) {
       const after = text ? 'once the text is approved, ' : '';
@@ -311,6 +314,12 @@
     }
     // An existing deck kept as it says is changed after its look, the way the runner goes.
     if (!text) steps.push(['The changes are made.', 'On a copy of your deck, on its own.']);
+    if (!existing || draft.level !== 'selected') {
+      steps.push(['The deck checks itself.', 'Once every slide is drawn, a review looks at '
+        + 'the text and the layout and makes one pass of fixes, without asking. It asks you '
+        + 'only what is yours to decide. What is left is kept as notes, and never holds the '
+        + 'deck.']);
+    }
     steps.push(['Review the deck.', 'It opens on the desk, a card for each slide: change its '
       + 'words, or note a slide to redraw it.'],
     ['Deliver.', 'Always yours, when the deck is right.']);
@@ -545,6 +554,36 @@
     ready: ['Mark the deck ready', 'Your approval is recorded; nothing is delivered.'],
     resume: ['It is paused', 'Resume it when you want it to go on.'],
   };
+  // The move card's own button: the action its title names, or the way to where it is done.
+  function moveAction(run, move) {
+    const to = (selector, label) => ({ label, run: () => {
+      const node = document.querySelector(selector);
+      if (!node) return;
+      if (node.scrollIntoView) node.scrollIntoView({ block: 'center' });
+      const control = node.matches('button, textarea, input') ? node
+        : node.querySelector('textarea, input, button') || node;
+      if (control.focus) control.focus({ preventScroll: true });
+    } });
+    const found = run.desk || {};
+    if (move === 'answer') return to('#answer-run', 'Answer it');
+    if (move === 'problem') return to('[data-key="problem-action"]', 'See what happened');
+    if (move === 'look') return to('.card-needs', 'Pick the look');
+    if (move === 'text') return to('.slide-text-review', 'Read the slide text');
+    if (move === 'story') return to('.slide-text-review', 'Read the slide story');
+    if (move === 'deliver') {
+      return deliverableNow(found) ? { label: 'Deliver',
+        run: h.openSheet('desk-deliver', 'deliver') } : null;
+    }
+    if (move === 'ready') {
+      return found.can_mark_ready ? { label: 'Mark ready',
+        run: () => openDeskPreview(run, 'ready') } : null;
+    }
+    if (move === 'resume') {
+      return { label: 'Resume', run: (event) => h.steer('resume', event.currentTarget) };
+    }
+    return null;
+  }
+
   function standing(run, lead) {
     const found = run.desk || {}, gate = run.gate, read = h.theirs(run);
     const waiting = gate && !read && run.state !== 'working';
@@ -565,13 +604,15 @@
     if (typeof StudioShell === 'undefined') return null;
     const { at, move, finished, working } = standing(run, lead);
     const said = MOVES[move];
-    return ['workbench-band', [at, move, finished, working], () => {
+    return ['workbench-band', [at, move, finished, working, (run.desk.working || {}).what,
+      run.sentence, deliverableNow(run.desk || {})], () => {
       const head = make('div', 'workbench-head');
       head.append(StudioShell.arc({ at, yours: Boolean(move) && move !== 'resume', finished,
         note: finished ? '' : stageOf(run).toLowerCase() }, 'Where this deck is'),
-      said ? StudioShell.move({ title: said[0], text: said[1] })
+      said ? StudioShell.move({ title: said[0], text: said[1], action: moveAction(run, move) })
         : StudioShell.move({ calm: true, title: finished ? 'Delivered' : 'Nothing is yours right now',
-          text: finished ? 'Every revision keeps its receipt below.' : working ? 'A change is being drawn.' : '' }));
+          text: finished ? 'Every revision keeps its receipt below.'
+            : working ? ((run.desk.working || {}).what || run.sentence || 'A change is being drawn.') : '' }));
       return h.add(make('div', 'workbench-top'),
         StudioShell.pulse(move ? 'yours' : working ? 'working' : 'still'), head);
     }];
@@ -585,8 +626,9 @@
       ['workbench-pulse', [move, working], () => StudioShell.pulse(move ? 'yours' : working ? 'working' : 'still')],
       ['workbench-arc', [at, Boolean(move), finished], () => StudioShell.arc({ at, yours: Boolean(move) && move !== 'resume',
         finished, note: finished ? '' : stageOf(run).toLowerCase() }, 'Where this deck is')],
-      ['workbench-move', [move, finished, working, run.sentence], () => said
-        ? StudioShell.move({ title: said[0], text: said[1] })
+      ['workbench-move', [move, finished, working, run.sentence,
+        deliverableNow(run.desk || {})], () => said
+        ? StudioShell.move({ title: said[0], text: said[1], action: moveAction(run, move) })
         : StudioShell.move({ calm: true, title: finished ? 'Delivered' : 'Nothing is yours right now',
           text: finished ? 'Every revision keeps its receipt below.'
             : working ? (run.sentence || 'The deck opens here when it is ready.') : '' })],
@@ -1062,6 +1104,18 @@
       && Boolean(found.expected);
   }
 
+  // Why Deliver cannot be pressed now, in a few words.
+  function notDeliverable(run) {
+    const found = run.desk;
+    if (run.question) return 'Waiting for your answer to a question.';
+    if (run.problem) return 'It stopped: see what happened first.';
+    if (!found.drawn_here) return 'The deck is not drawn on this computer.';
+    if (found.working) return (found.working.what || 'A change is being made') + '.';
+    if (!found.arrived) return 'The deck is still being made.';
+    if (found.deliverable === false) return 'A change is still waiting or being drawn.';
+    return 'The deck is being read again.';
+  }
+
   // Deliver, the one filled button, then Download and More.
   function deskActions(run, lead) {
     if (h.theirs(run)) return [];
@@ -1070,6 +1124,12 @@
       : '', h.openSheet('desk-deliver', 'deliver'), 'deliver');
     if (deliver) {
       deliver.disabled = !deliverableNow(found);
+      // A Deliver that cannot be pressed says why, beside it.
+      const why = deliver.disabled ? notDeliverable(run) : '';
+      if (why) {
+        deliver.title = why;
+        deliver.setAttribute('aria-describedby', 'desk-deliver-why');
+      }
     }
     // Download says which revision it saves: the one delivered, else the deck as it is drawn
     // now, which is not delivered yet.
@@ -1086,7 +1146,10 @@
       ? h.capsule('Mark ready', lead === 'ready' ? 'filled' : '',
         () => openDeskPreview(run, 'ready'), 'mark-ready') : null;
     if (ready) ready.disabled = !found.can_mark_ready;
-    const actions = [ready, deliver, download, finish, moreFor(run)].filter(Boolean);
+    const why = deliver && deliver.disabled ? notDeliverable(run) : '';
+    const reason = why ? make('span', 'quiet desk-deliver-why', why) : null;
+    if (reason) reason.id = 'desk-deliver-why';
+    const actions = [ready, deliver, reason, download, finish, moreFor(run)].filter(Boolean);
     if (!h.narrow()) return actions;
     const primary = actions.filter(node => node.classList.contains('button-filled'));
     const rest = actions.filter(node => !primary.includes(node)).flatMap(node =>
@@ -1359,11 +1422,11 @@
     if (one.note && one.note.status === 'waiting') waits.push('your note waits to be drawn');
     // A fix for a blocker is counted with the blocker, once. The brand check's fix for a
     // warning is still a warning: proposed only because Brand check was opened, it is worth a
-    // look and asks nothing of the person. The review's fixes come from a review they asked
-    // for, and wait for them.
+    // look and asks nothing of the person. So is what the review left after its one pass of
+    // fixes: a note to read, which the deck never waits on.
     const fixes = found.proposals.filter(({ key }) => key !== 'brand');
-    if (fixes.length) waits.push(h.count(fixes.length, 'fix', 'fixes') + ' to apply or skip');
     const looks = [];
+    if (fixes.length) looks.push(h.count(fixes.length, 'review note', 'review notes'));
     if (found.findings.length) {
       looks.push(h.count(found.findings.length, 'review finding', 'review findings'));
     }
@@ -2231,7 +2294,8 @@
     const state = finishState(path);
     return [state.finish && state.finish.tool, found.finishing, found.brand_check,
       found.brand_current, found.finish_prices, found.rehearse, found.reviewing,
-      found.reviewed, found.working, found.seen, found.expected, held.confirm[path] || '',
+      found.reviewed, found.review_pass, found.working, found.seen, found.expected,
+      held.confirm[path] || '',
       Object.keys(held.editing).filter((key) => key.startsWith(path + '\n'))];
   }
 
@@ -2269,17 +2333,17 @@
       else parts.push(brandLines(found.brand_check));
     } else if (key === 'review') {
       const go = h.capsule('Review the deck', '', () => act('desk-finish', { path,
-        tool: 'review', expected: found.expected }, go, 'The deck is being reviewed. What it '
-        + 'finds comes back here, slide by slide.'), 'desk-review');
+        tool: 'review', expected: found.expected }, go, 'The deck is being reviewed. It fixes '
+        + 'what it can in one pass, and what is left comes back here as notes.'), 'desk-review');
       go.disabled = working || found.reviewing || found.reviewed || !found.expected;
       parts.push(bar(go), make('p', 'quiet', (found.finish_prices || {}).review || ''));
       if (found.reviewing) {
         parts.push(h.add(make('p', 'desk-working-note'), h.state('current',
-          'Reviewing the deck…')));
-      } else if (found.reviewed) {
-        parts.push(make('p', 'quiet', 'The deck was reviewed as it is drawn now.'));
+          ((found.working || {}).what || 'Reviewing the deck') + '…')));
+      } else {
+        parts.push(make('p', 'quiet', reviewSays(found)));
       }
-      if (set) parts.push(...proposalCards(run, key, set));
+      if (set && !found.reviewing) parts.push(reviewNotes(run, key, set));
     } else if (key === 'notes') {
       const go = h.capsule('Propose speaker notes', '', () => act('desk-finish', { path,
         tool: 'notes' }, go, 'Speaker notes are being proposed for every slide.'), 'desk-notes');
@@ -2291,6 +2355,42 @@
       parts.push(...rehearsed(found.rehearse || {}));
     }
     return parts;
+  }
+
+  // Where the review stands, in a sentence: what it found, what its one pass fixed, and
+  // what is left. What is left is notes: nothing here says the deck waits.
+  function reviewSays(found) {
+    if (!found.reviewed) {
+      return 'The deck changed since it was reviewed, or was never reviewed. Review the deck '
+        + 'looks at it as it is drawn now.';
+    }
+    const pass = found.review_pass;
+    if (!pass || !pass.done || !pass.found) {
+      return 'The deck was reviewed as it is drawn now. The review found nothing to change.';
+    }
+    const fixed = Math.max(0, pass.found - (pass.left || 0));
+    return 'The deck was reviewed as it is drawn now. The review found ' + h.count(pass.found,
+      'thing', 'things') + ' and made one pass of fixes' + (fixed ? ', which put ' + fixed
+      + ' right' : '') + '. ' + (pass.left ? h.count(pass.left, 'note is', 'notes are')
+      + ' left to read. The deck does not wait on ' + (pass.left === 1 ? 'it' : 'them')
+      + ': deliver when you are ready.'
+      : 'Nothing is left.');
+  }
+
+  // What the review left, folded away: notes to read, each still with Apply and Skip for
+  // the person who opens them.
+  function reviewNotes(run, key, set) {
+    const items = h.list(set.items);
+    const open = items.filter((item) => item.state === 'open').length;
+    if (!items.length) return make('p', 'quiet', 'No review notes.');
+    const node = make('details', 'desk-review-notes');
+    node.dataset.key = 'desk-review-notes';
+    const among = items.map((item) => ({ key, item }));
+    return h.add(node, make('summary', '', h.count(items.length, 'review note', 'review notes')
+      + (open === items.length ? '' : ' · ' + open + ' not yet applied or skipped')),
+    make('p', 'quiet', 'Kept for you to read. Apply redraws the slide with the note; Skip '
+      + 'puts it away. Leaving them changes nothing.'),
+    ...items.map((item) => proposalCard(run, key, set, item, among)));
   }
 
   function brandLines(listed) {

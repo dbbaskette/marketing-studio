@@ -329,7 +329,11 @@ class DeskRouteTests(RouteCase):
                          {'desk'} if record.get('review_events') else set())
         self.assertNotIn('review_policy', record)
         delivered = json.loads((root / decks.DELIVER).read_text())
-        self.assertEqual((delivered['revision'], delivered['review_status']), (1, 'unreviewed'))
+        # A deck drawn here is reviewed by itself before it reaches the desk; your own deck at
+        # Selected changes is not drawn here, and is not reviewed.
+        reviewed = 'build-review' in {step.name for step in stages.steps(record)}
+        self.assertEqual((delivered['revision'], delivered['review_status']),
+                         (1, 'reviewed' if reviewed else 'unreviewed'))
         self.assertTrue(delivered['url'].startswith('https://'), delivered)
         relative = root.relative_to(self.space.repo).as_posix()
         tracked = self.git('ls-files', relative).splitlines()

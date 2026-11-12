@@ -259,6 +259,9 @@ class DeskActions:
                 'finish_prices': {'review': finishing.review_price(record),
                                   'notes': finishing.notes_price(record)},
                 'reviewing': bool(record.get('review_requested')) and not record.get('halted'),
+                # The one pass of fixes that follows a review: what it found, and what is
+                # left as notes once it is done. Notes never keep the deck from delivery.
+                'review_pass': build.pass_view(state),
                 'rehearse': finishing.rehearse(desk._outline(root),
                                                (record.get('form') or {}).get('minutes'))}
 
@@ -463,11 +466,24 @@ class DeskActions:
                 what = 'stop the change on the desk'
             if record.pop('review_requested', None) is not None:
                 # The review is given up: the deck rests on the desk as it did before it.
-                for name in ('build-review', 'build-repair', 'build-render'):
-                    if name in record['steps']:
-                        record['steps'][name] = {**record['steps'][name], 'done': True}
-                record['gates']['gate:build'] = {**(record['gates'].get('gate:build') or {}),
-                                                 'state': 'waiting'}
+                # Where its pass of fixes had begun, the slides whose words it changed are
+                # still drawn again and the deck put together, and nothing else is fixed.
+                reworded = set((state.get('fix') or {}).get('reworded') or ())
+                retold = [entry['id'] for entry in (state.get('start') or {}).get('sections')
+                          or () if reworded & set(entry['slides'])]
+                passing = build.close_fix(root, retold)
+                rounds = len(state.get('rounds') or ())
+                pending = passing and (build.to_draw(root) or state.get('rewhole') or any(
+                    entry.get('round', 0) >= rounds
+                    for entry in (state.get('sections') or {}).values()))
+                if passing:
+                    self._desk_reviewed(root)
+                if not pending:
+                    for name in ('build-review', 'build-repair', 'build-render'):
+                        if name in record['steps']:
+                            record['steps'][name] = {**record['steps'][name], 'done': True}
+                    record['gates']['gate:build'] = {
+                        **(record['gates'].get('gate:build') or {}), 'state': 'waiting'}
                 what = 'stop the review of the deck'
             if desk.selected(record):
                 # The plan made before the change is put back: the copy is made again from it.
@@ -1308,7 +1324,8 @@ class DeskActions:
                 self._store(root, record)
             record, also = self._desk_resting(root, self._load(root), space)
             kept = {name: dict(record['steps'].get(name) or {})
-                    for name in ('outline', 'extract', 'brand', 'look-preview')}
+                    for name in ('outline', 'outline-check', 'extract', 'brand',
+                                 'look-preview')}
             look = dict(record['gates'].get('gate:look') or {})
             record = stages.reopen(record, 'gate:outline')
             for name, entry in kept.items():
@@ -1651,6 +1668,9 @@ class DeskActions:
             if desk.reviewed(state):
                 raise WorkspaceError(finishing.REVIEWED)
             record['review_requested'] = {'at': home.now(), 'deck': expected}
+            # Each review the person asks for is followed by one pass of fixes of its own.
+            if state.pop('fix', None) is not None:
+                build.write_state(root, state)
             # As review_draft does, except that what each step took is kept, for the price.
             for name in ('build-review', 'build-repair', 'build-render'):
                 if name in record['steps']:
@@ -1673,6 +1693,64 @@ class DeskActions:
         finishing.proposals().keep(str(root), secrets.token_hex(16), 'finish-review',
                                    finishing.review_items(root, state),
                                    reviewed_deck=desk.last_round(state).get('deck'))
+
+    def _desk_fix_keep(self, root, record: dict, handed: str, ids: list[str]) -> None:
+        """Keep what the pass's wording job handed back: only the words of the slides it was
+        given (`ids`) are taken from its outline, checked as the Outline tab's edits are. A
+        slide a composer draws is drawn again with its new words; a cover, section or
+        closing slide takes them where they fit as it is drawn, and keeps its words where
+        they do not. Call it holding `files`, between the chain's steps."""
+        state, now = build.read_state(root), desk._outline(root)
+        theirs = {slide.get('id'): slide for slide in build.slides_of(json.loads(handed))}
+        mine = {slide.get('id'): slide for slide in build.slides_of(now)}
+        where = {ident: entry['id'] for entry in (state.get('start') or {}).get('sections')
+                 or () for ident in entry['slides']}
+        edited, changed, leads = now, [], []
+        for ident in ids:
+            if ident not in theirs or ident not in mine:
+                continue
+            wanted = desk.words_of(theirs[ident])
+            if wanted == desk.words_of(mine[ident]):
+                continue
+            if ident not in where:
+                try:
+                    file = words.lead_file(root, state, ident)
+                    patched = home.read_json(file, {}) if file else None
+                    for field in desk.changed_fields(mine[ident], wanted) if file else ():
+                        patched = words.patch_section(
+                            patched, ident, field, words.text_of(mine[ident], field),
+                            words.text_of(wanted, field))
+                    if not file or words.lead_fits(patched, state['start']['brand'],
+                                                   self.slides()):
+                        continue
+                except WorkspaceError:
+                    continue
+                leads.append((file, patched))
+            edited = desk.with_slide_words(edited, ident, wanted)
+            changed.append(ident)
+        try:
+            outline = outlines.checked_edits(root, record, edited['slides'], self.slides(),
+                                             self._contract(root)) if changed else None
+        except WorkspaceError:
+            outline, changed, leads = None, [], []   # nothing changes: the notes stand
+        if changed:
+            whole = words.given(root)
+            for ident in changed:
+                desk.keep_slide(root, ident, 'review')
+                whole = words.with_words(whole, outline, ident)
+                desk.advance(record, ident)
+                if ident in where:
+                    retold = record.setdefault('desk', {}).setdefault('retold', {}).setdefault(
+                        where[ident], [])
+                    if ident not in retold:
+                        retold.append(ident)
+            outlines._write(root, outline)
+            words.retold(root, whole, self.slides().knows())
+            for file, patched in leads:
+                words.land_lead(root, file, patched)
+            self._store(root, record)
+        build.worded(root, sorted({where[ident] for ident in changed if ident in where},
+                                  key=build.numbered), changed)
 
     def _desk_propose_notes(self, path) -> dict:
         """Speaker notes for every slide, proposed by a job from its words, the outline and

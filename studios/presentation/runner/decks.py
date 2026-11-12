@@ -62,6 +62,17 @@ def user_first(run: dict) -> bool:
     return (run.get('form') or {}).get('initial_review') == 'user-first' and not run.get('review_requested')
 
 
+def review_due(run: dict) -> bool:
+    """Whether the deck is reviewed in the chain under way without being asked again. A
+    gated deck: unless its form put the review off for the person. A deck on the desk: the
+    first time it is built, before it reaches the desk, and after that when the person asks
+    with Review the deck."""
+    if on_desk(run):
+        return bool(run.get('review_requested')) \
+            or not (run.get('desk') or {}).get('arrived_at')
+    return not user_first(run)
+
+
 # --- the form ------------------------------------------------------------------------------
 
 def _text(sent: dict, key: str, label: str, required: bool = False) -> str:
@@ -251,9 +262,10 @@ def check_form(sent: dict, brands: list | None, *, references=False) -> dict:
 
 def _desk_form(sent: dict, checked: dict) -> None:
     """What the desk's start adds to the form: its flow, the look it chose and, for a
-    document, how the start said to read it. A desk deck is always built as a first draft:
-    the deck check runs only when the person asks for it, so a desk form's own choice of
-    that is not read."""
+    document, how the start said to read it. A desk deck is always built as a first draft
+    (`initial_review` is 'user-first', which its composers read), and reviewed once it is
+    whole, with one pass of fixes (`review_due`); after that the review runs when the person
+    asks for it. A desk form's own choice of that is not read."""
     flow = sent.get('flow')
     if flow in (None, ''):
         if sent.get('look') not in (None, '') or sent.get('reading') not in (None, ''):

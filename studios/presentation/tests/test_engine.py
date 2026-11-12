@@ -634,29 +634,22 @@ class RetryTests(StudioCase):
                          'rate limit. Wait until it resets, then Try again.')
         self.assertEqual(len(self.workers.of('outline')), 1)
 
-    def test_a_step_that_runs_out_of_time_offers_more_time_for_this_deck(self):
-        from dataclasses import replace
-        self.workers.then('outline', *[fails('It did not finish in 1350 seconds, so it was stopped.', reason='timeout')] * 3)
+    def test_no_assistant_job_is_ended_for_how_long_it_takes(self):
+        self.workers.then('outline', *[fails()] * 3)
         root = self.saved_start()
-        view = self.view(root)
-        self.assertEqual(view['problem'], {
-            'state': 'failed', 'action': 'more-time', 'seconds': 1350,
-            'why': 'Draft the outline ran out of the time a step may take: its last try was '
-                   'stopped after 22.5 minutes, and it did not work in 3 tries. That limit, 22.5 '
-                   'minutes a step, is in Settings, under Limits.',
-            'kept': 'Everything kept before this step is still here. Nothing from the tries '
-                    'that failed was kept.'})
+        # No job is given a time limit, whatever Settings still holds.
+        self.assertEqual(self.settings.load().step_seconds, 1350)
+        self.assertEqual({job.limits.seconds for job in self.workers.of('outline')}, {None})
+        self.assertEqual(self.view(root)['problem']['action'], 'retry')
+        # A deck that stopped at a time limit before is still carried on by its own action.
+        with self.engine.files:
+            record = self.engine._load(root)
+            record['halted'].update(action='more-time', seconds=1350)
+            self.engine._store(root, record)
+            self.engine._commit(root, 'as a deck stopped at a time limit before')
         self.engine.act(root, 'more-time')
         self.assertEqual(self.waiting(root), 'gate:outline')
-        self.assertEqual(self.workers.of('outline')[-1].limits.seconds, 2700)
-        self.assertEqual((self.record(root)['limits']['step_seconds'],
-                          self.record(root)['more_time']), (2700, 2700))
-        # Settings keeps its own limit, for other decks, and a larger one there still counts.
-        self.assertEqual(self.settings.load().step_seconds, 1350)
-        self.settings.save(replace(self.settings.load(), step_seconds=3600))
-        self.engine.act(root, 'stop')
-        self.engine.act(root, 'resume')
-        self.assertEqual(self.record(root)['limits']['step_seconds'], 3600)
+        self.assertIsNone(self.workers.of('outline')[-1].limits.seconds)
 
 
 class QuestionTests(StudioCase):
@@ -937,7 +930,7 @@ class HaltTests(StudioCase):
         kept = self.record(root)
         self.assertEqual((kept['spending_policy'], kept['cleared']), ('hard-stop', 1.5))
 
-    def test_a_research_job_that_runs_out_of_time_offers_more_time(self):
+    def test_a_research_job_that_still_ends_for_its_time_offers_try_again(self):
         from runner import research_steps
         from runner.agents import Outcome
         root = self.saved_start(research=True)
@@ -949,9 +942,12 @@ class HaltTests(StudioCase):
         with mock.patch.object(research_steps.research_contract, 'native', side_effect=late):
             self.decide(root, 'gate:research-plan')
         problem = self.view(root)['problem']
-        self.assertEqual((problem['action'], problem['seconds']), ('more-time', 1350))
-        self.assertTrue(problem['why'].startswith(
-            'The research ran out of the time a step may take: it was stopped after 22.5 minutes.'))
+        # No job is given a time limit now, so there is no more time to offer: it is tried
+        # again like any other step that failed.
+        self.assertEqual(problem['action'], 'retry')
+        self.assertNotIn('seconds', problem)
+        self.assertEqual(problem['why'],
+                         'Research did not finish its author job in round 1 of 3.')
 
     def test_undo_takes_back_the_last_step(self):
         root = self.saved_start()

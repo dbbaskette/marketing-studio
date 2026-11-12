@@ -44,11 +44,12 @@ NOTES_MOST = 4000          # characters in one slide's speaker notes, as its box
 BRAND_SAYS = "The brand's check: {says}"
 NO_TOOL = 'Choose Brand check, Review the deck, Speaker notes or Rehearse.'
 NOT_CHECKED = 'The brand skill was not there to check this deck.'
-REVIEW_SAYS = ('Reviews every slide as it is drawn now. What it finds comes back here, slide by '
-               'slide, and nothing changes until you apply it.')
+REVIEW_SAYS = ('Reviews every slide as it is drawn now, then fixes what it can in one pass: slides '
+               'are drawn again, and wording it can correct or look up is corrected. What is '
+               'left comes back here as notes, and the deck does not wait on them.')
 NOTES_SAYS = ('Proposes speaker notes for every slide from its words, the outline and your '
               'sources. Nothing changes until you apply them, and applying redraws nothing.')
-REVIEWED = ('The deck was reviewed as it is drawn now. What the review found is under Review '
+REVIEWED = ('The deck was reviewed as it is drawn now. What the review left is under Review '
             'the deck.')
 NO_DECK = 'The deck has not been rendered yet. Review it once it is on the desk.'
 OWN_DECK = ('Finishing is for decks drawn here. Your own deck at Selected changes keeps its '

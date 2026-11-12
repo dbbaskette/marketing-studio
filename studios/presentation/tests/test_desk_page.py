@@ -116,7 +116,7 @@ class StartTests(DeskPageCase):
             {'click': 'An idea'}, {'fill': 'A short title', 'value': 'Rolling restarts'},
             {'fill': 'What should they take away?', 'value': 'When capacity holds.'},
             {'fill': 'What should it cover? (optional)', 'value': ' Rollback first. '},
-            {'click': 'Start'}])
+            {'intakePage': 2}, {'click': 'Pick it when the samples are drawn'}, {'click': 'Start'}])
         (address, body), = self.posts(result)
         self.assertEqual(address, '/api/decks')
         form = body['form']
@@ -142,8 +142,10 @@ class StartTests(DeskPageCase):
                  if name in ('Pick it when the samples are drawn', 'Use the brand’s default look')]
         self.assertEqual(looks, ['Pick it when the samples are drawn',
                                  'Use the brand’s default look'])
+        # The brand's default look is the start's own choice: the run does not stop for it
+        # unless the person chooses to pick.
         self.assertEqual([name for name in idea['pressed'] if name in looks],
-                         ['Pick it when the samples are drawn'])
+                         ['Use the brand’s default look'])
         self.assertIn('Use the brand’s default look', default['pressed'])
         (_, body), = self.posts(result)
         self.assertEqual(body['form']['look'], 'default')
@@ -250,6 +252,7 @@ class StartTests(DeskPageCase):
         other = 'Google Slides' if default == 'pptx' else 'PowerPoint (.pptx)'
         result = self.new_deck([
             {'click': 'An existing deck'}, {'click': 'Redesign, keep content'},
+            {'intakePage': 2}, {'click': 'Pick it when the samples are drawn'},
             {'intakePage': 2}, {'snapshot': 'pick'}, {'click': 'Use the brand’s default look'},
             {'intakePage': 2}, {'snapshot': 'default'}, {'click': 'Brand, output and assistant'},
             {'click': other}, {'intakePage': 2}, {'snapshot': 'changed'}], intake_title=True)
@@ -275,7 +278,8 @@ class StartTests(DeskPageCase):
 
     def test_what_happens_after_start_follows_the_choices(self):
         result = self.new_deck([
-            {'click': 'An idea'}, {'intakePage': 2}, {'snapshot': 'idea'},
+            {'click': 'An idea'}, {'intakePage': 2}, {'click': 'Pick it when the samples are drawn'},
+            {'intakePage': 2}, {'snapshot': 'idea'},
             {'click': 'Use the brand’s default look'}, {'intakePage': 2}, {'snapshot': 'default'},
             {'click': 'A document'}, {'tick': 'Research the approved story'}, {'intakePage': 2}, {'snapshot': 'unread'},
             {'click': 'It lays out the slides'}, {'intakePage': 2}, {'snapshot': 'script'},
@@ -1083,7 +1087,7 @@ class DeskTests(DeskPageCase):
         self.assertIn('Slide 3: Text runs off the slide.', sheet)
         self.assertIn('The brand check found 1 problem that blocks delivery. Deliver anyway, or '
                       'fix them first.', sheet)
-        self.assertIn('This deck has not been reviewed.', sheet)
+        self.assertIn('This deck was reviewed.', sheet)
         self.assertEqual(result['snapshots']['sheet']['filled'], ['Deliver anyway'])
         self.assertEqual(self.posts(result), [('/api/desk-deliver', {
             'path': path, 'expected': desk['expected'],
@@ -1406,9 +1410,9 @@ class WorkbenchTests(DeskPageCase):
             self.assertIn(line, lines[looks:delivery])
         self.assertNotIn('Slide 3: Text runs off the slide.', lines[looks:delivery])
         self.assertLess(next(i for i,line in enumerate(lines) if '1 blocker' in line), delivery)
-        self.assertEqual(lines[delivery + 1], 'The 8 slides as they are drawn now, not reviewed: '
-                         'only the brand check ran. It goes to Google Slides. Nothing is sent '
-                         'until you confirm it in Deliver.')
+        self.assertEqual(lines[delivery + 1], 'The 8 slides as they are drawn now, reviewed as '
+                         'they are. It goes to Google Slides. Nothing is sent until you '
+                         'confirm it in Deliver.')
         # The navigator says the same of each slide, a blocker apart from a warning.
         self.assertTrue([name for name in summary['buttons']
                          if name.startswith('Slide 3: ') and name.endswith(', blocks delivery')])
@@ -1435,8 +1439,10 @@ class WorkbenchTests(DeskPageCase):
             **{'POST /api/desk-apply': [ok(shown)]})
         shots = result['snapshots']
         summary = shots['summary']['text'].split('\n')
-        self.assertIn('Slide 4: 1 fix to apply or skip.', summary)
-        # The finding the fix was made from is counted, and shown, once: as the fix.
+        # What the review left is a note, worth a look: the deck never waits on it.
+        self.assertIn('Slide 4: 1 review note.', summary)
+        self.assertNotIn('Waiting for you', summary)
+        # The finding the note was made from is counted, and shown, once: as the note.
         self.assertNotIn('Slide 4: 1 review finding.', summary)
         found = shots['found']['text'].split('\n')
         self.assertIn('Proposed by the review Major', found)
@@ -2261,6 +2267,43 @@ class FinishingPageTests(DeskPageCase):
         drawn = len(self.workers.of('section'))
         self.post('desk-apply', self.posts(result)[0][1])
         self.assertEqual(len(self.workers.of('section')), drawn)
+
+    def test_what_the_review_left_is_notes_folded_away_that_never_wait(self):
+        path = self.desk_deck()
+        shown = reviewed_on(self.run_of(path), 4)
+        shown['desk'].update(reviewed=True, review_pass={
+            'found': 3, 'done': True, 'left': 1, 'rechecked': True})
+        result = self.open_deck(path, shown, [
+            {'snapshot': 'desk'}, {'disclose': 'desk-summary'}, {'snapshot': 'summary'},
+            {'click': 'Finishing'}, {'click': 'Review the deck'}, {'snapshot': 'review'}])
+        shots = result['snapshots']
+        review = shots['review']['text']
+        self.assertIn('The review found 3 things and made one pass of fixes, which put 2 '
+                      'right. 1 note is left to read. The deck does not wait on it: deliver '
+                      'when you are ready.', review)
+        self.assertIn('1 review note', review)
+        self.assertIn('Leaving them changes nothing.', review)
+        for gone in ('to review.', 'to apply or skip', 'proposal'):
+            self.assertNotIn(gone, review)
+        # A note is worth a look; nothing on the desk says the deck waits on it.
+        summary = shots['summary']['text'].split('\n')
+        self.assertIn('Slide 4: 1 review note.', summary)
+        self.assertNotIn('Waiting for you', summary)
+        self.assertEqual(shots['desk']['toolbar'][0],
+                         {'name': 'Deliver', 'filled': True, 'quiet': False})
+        self.assertEqual(self.posts(result), [])
+
+    def test_a_deliver_that_cannot_be_pressed_says_why_beside_it(self):
+        path = self.desk_deck()
+        shown = copy.deepcopy(self.run_of(path))
+        shown['desk'].update(deliverable=False, reviewing=True, working={
+            'what': 'Fixing what the review found: drawing 2 sections again', 'done': 0,
+            'total': 0})
+        result = self.open_deck(path, shown, [{'snapshot': 'desk'}])
+        lines = result['snapshots']['desk']['text'].split('\n')
+        # The reason, a sentence of its own beside Deliver, as well as the line with Stop.
+        self.assertIn('Fixing what the review found: drawing 2 sections again.', lines)
+        self.assertIn('Fixing what the review found: drawing 2 sections again', lines)
 
     def test_no_word_a_person_should_not_read_in_finishing(self):
         path = self.research_deck()
