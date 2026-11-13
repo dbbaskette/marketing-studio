@@ -309,26 +309,43 @@ def run_companion(name: str, pin: dict, checkout: Path, home: Path,
     return outcome
 
 
+def newest_companion(name: str, pin: dict) -> tuple[dict, str | None]:
+    """The newest stable release of a companion, checked as a lock is: its exact version,
+    commit and source checksum. When its repository cannot be reached, or its newest release
+    is not one this installer can check, the saved lock stands in, with why."""
+    try:
+        return resolve_companion(name, pin), None
+    except InstallError as refusal:
+        return dict(pin), str(refusal)
+
+
 def bring_companions(home: Path, root: Path, harnesses: list[str], pins: dict, agree,
                      state: dict, declined: str | None = None) -> dict:
-    """Install each missing companion, or one older than its requirement, at its exact locked
-    version, commit and checksum, after asking. An installed copy that meets the requirement
-    is left alone, and nothing is looked up online; newer releases come only through an
-    explicit lock refresh. Nothing here undoes the studio's own installation: what goes
+    """Install each companion that is missing, or older than its requirement, after asking.
+    What is installed is the companion's newest stable release, looked up in its own
+    repository once the person has agreed, fetched at its exact commit and checked file for
+    file, as a lock is. The lock in companions.json is the oldest release ever installed, and
+    what is installed when the newest cannot be looked up or checked; `looked` then says why.
+    Nothing is looked up or fetched before that yes, and an installed copy that meets the
+    requirement is left alone. Nothing here undoes the studio's own installation: what goes
     wrong is reported. `declined` says why one was not agreed to."""
     outcomes = {}
-    for name, pin in pins.items():
+    for name, locked in pins.items():
         found = companion_found(home, harnesses, name)
-        outcome = {'wanted': pin['version'], 'found': found, 'state': 'left alone'}
-        if wanting(found, minimum_version(pin)):
+        outcome = {'wanted': locked['version'], 'found': found, 'state': 'left alone'}
+        if wanting(found, minimum_version(locked)):
             if not node_is_enough(node_version()):
                 outcome.update({'state': 'failed', 'detail': f'its installer needs Node '
                                 f'{NODE_NEEDED} or newer.'})
-            elif not agree(name, pin, found):
+            elif not agree(name, locked, found):
                 outcome['state'] = 'waiting'
                 if declined:
                     outcome['why'] = declined
             else:
+                pin, unreachable = newest_companion(name, locked)
+                outcome['wanted'] = pin['version']
+                if unreachable:
+                    outcome['looked'] = unreachable
                 try:
                     checkout = fetch_companion(name, pin, root)
                     outcome.update(run_companion(name, pin, checkout, home, harnesses))
@@ -342,7 +359,7 @@ def bring_companions(home: Path, root: Path, harnesses: list[str], pins: dict, a
         outcomes[name] = outcome
     return outcomes
 
-SHARED = ('minimum_version', 'select_release', 'lock_companion', 'resolve_companion', 'read_pins', 'as_tuple', 'tree_digest', 'git', 'fetch_revision', 'fetch_companion', 'companion_found', 'wanting', 'companion_command', 'run_companion', 'bring_companions')
+SHARED = ('minimum_version', 'select_release', 'lock_companion', 'resolve_companion', 'read_pins', 'as_tuple', 'tree_digest', 'git', 'fetch_revision', 'fetch_companion', 'companion_found', 'wanting', 'companion_command', 'run_companion', 'newest_companion', 'bring_companions')
 
 
 def bind(namespace):

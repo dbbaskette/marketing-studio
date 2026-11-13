@@ -17,7 +17,8 @@ What a caller needs to know
     recovery.take(engine, root, way)       # do one; call it holding the engine's `files`
 
 - Nothing is offered to a training that is not on the desk, or for a stop that is not a
-  deck's: those keep the one action their stop has.
+  deck's: those keep the one action their stop has. A deck's stop is one that failed or one
+  the runner stopped itself, such as a brand that changed under the deck.
 - None of these spends anything by itself. Bringing the deck back and approving the slide
   text start the deck's steps again, as Try again does.
 """
@@ -75,7 +76,7 @@ def ways(root: Path, record: dict, session: dict) -> list[dict]:
     problem = record.get('problem') or {}
     step = problem.get('step') or ''
     base = _base(step) if step else ''
-    if problem.get('state') == 'failed' and base in pipeline.DECK_STEPS \
+    if problem.get('state') in ('failed', 'stopped') and base in pipeline.DECK_STEPS \
             and 'deck' in session['settings']['stages']:
         level = level_of(step)
         if base in AFTER_TEXT and pipeline.place(root, level, pipeline.OUTLINE).is_file():

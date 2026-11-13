@@ -119,14 +119,20 @@ locks are in `pins/companions.json`.
 Each companion lock names an exact `version`, `commit` and source `sha256`, and a
 requirement, which is always the locked release itself: `requirement: ">=1.2.0"` for Harness
 Research and `requirement: ">=0.17.0"` for Harness Slides. The studios always use the latest
-locked Harness companions, so an installed copy older than the lock is offered its update. Source installs, companion updates and
-release bundles all use the exact lock. A missing companion, or one older than its
-requirement, is fetched at the locked commit and must match the locked checksum file
-for file; nothing is recomputed. The requirement only decides which already-installed
-copy is accepted. An accepted copy is left alone without looking anything up online,
-so a source install with current companions succeeds offline.
+locked Harness companions, so an installed copy older than the lock is offered its update.
 
-Moving to newer releases is an explicit maintainer step. Refresh the locks, then run
+A source install or companion update does not stop at the lock. Once you agree to it, a
+missing companion, or one older than its requirement, is brought to its **newest stable
+release**: the release is looked up in the companion's own repository, fetched at its exact
+commit, and checked (package version, entry, installer and a checksum of every file) before
+its installer runs. The lock is the oldest release ever installed, and what is installed
+when the newest cannot be looked up or checked; the result then says why. Release bundles
+use the exact lock. The requirement only decides which already-installed copy is accepted.
+An accepted copy is left alone without looking anything up online, so a source install with
+current companions succeeds offline.
+
+Moving the lock itself to newer releases is a maintainer step, for bundles and for the
+oldest release accepted. Refresh the locks, then run
 the research contract tests against the newly locked Harness Research source before
 building a new set of platform downloads:
 
@@ -145,10 +151,10 @@ locked tag, mismatched package, unsafe source, or failed resolution leaves the l
 unchanged. Normal bundle builds reuse the exact saved lock, so all platform builds can
 use the same inputs.
 
-An explicit source companion install or update asks before fetching source or running
-installers, then records the locked version, commit and checksum. `--companions skip`,
-noninteractive unapproved installs, offline bundle installation, status checks and
-opening studios fetch nothing. Only the refresh reads release tags: stable numeric tags
+An explicit source companion install or update asks before looking anything up, fetching
+source or running installers, then records the version, commit and checksum it installed.
+`--companions skip`, noninteractive unapproved installs, offline bundle installation, status
+checks and opening studios fetch nothing. The refresh and an agreed install read release tags: stable numeric tags
 are eligible; branches and prerelease tags are ignored. Without a requirement, the lock
 itself is the minimum accepted. Newer installed releases are never downgraded. Private
 Python and Node downloads remain exact and checksum-verified.

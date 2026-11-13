@@ -1,5 +1,7 @@
 # Changelog
 
+Unreleased: installing or updating a companion skill brings its newest release. Once you agree, Harness Research and Harness Slides are looked up in their own repositories and installed at their newest stable release, checked file for file, instead of the version this Presentation Studio was pinned to. The pinned version is still what is installed when the newest cannot be looked up.
+
 Unreleased: a research run that has kept nothing moves to the installed Harness Research. A training or deck is tied to the helper version it started with, so one started before an update kept that version's limits (200 entries) even after a newer helper was installed. While research has registered nothing yet, the run now moves to the installed stable release and takes what it takes; a run with saved research stays with the helper that wrote it.
 
 Unreleased: one research run reads up to 1,000 links, or 2,000 files and pasted texts, with Harness Research 1.2.0 (was 100 and 200). Sources are registered a hundred at a time, so a long list starts quickly. An older installed Harness Research still takes 200 entries and says so when research starts.
