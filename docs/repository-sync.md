@@ -18,7 +18,7 @@ discover_harness = true
 marketing-studio = https://github.com/dbbaskette/marketing-studio.git
 harness-research-skill = https://github.com/dbbaskette/harness-research-skill.git
 harness-slides-skill = https://github.com/dbbaskette/harness-slides-skill.git
-tanzu-brand = https://github.com/dbbaskette/tanzu-brand.git
+harness-brand-skill = https://github.com/dbbaskette/harness-brand-skill.git
 ```
 
 Change `directory` to choose the destination on that host. `~` expands to the
@@ -36,7 +36,7 @@ With the config above, all four checkouts live here, including Marketing Studio:
   marketing-studio/
   harness-research-skill/
   harness-slides-skill/
-  tanzu-brand/
+  harness-brand-skill/
 ```
 
 The configured destination applies even when `sync.sh` is launched from a checkout

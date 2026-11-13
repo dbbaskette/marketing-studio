@@ -23,7 +23,7 @@ from studio_core.install_log import redact
 DEFAULTS = {
     'harness-research': ('harness-research-skill', 'https://github.com/dbbaskette/harness-research-skill.git'),
     'harness-slides': ('harness-slides-skill', 'https://github.com/dbbaskette/harness-slides-skill.git'),
-    'brand': ('tanzu-brand', 'https://github.com/dbbaskette/tanzu-brand.git'),
+    'brand': ('harness-brand-skill', 'https://github.com/dbbaskette/harness-brand-skill.git'),
 }
 INHERITED = ('GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_OBJECT_DIRECTORY',
              'GIT_COMMON_DIR', 'GIT_PREFIX')
@@ -73,7 +73,7 @@ def configured_repositories(path):
         if not entries:
             raise ValueError('List at least one repository in [repositories].')
         labels = {'marketing-studio': 'Marketing Studio', 'harness-research-skill': 'Harness Research',
-                  'harness-slides-skill': 'Harness Slides', 'tanzu-brand': 'Tanzu Brand'}
+                  'harness-slides-skill': 'Harness Slides', 'harness-brand-skill': 'Harness Brand'}
         result, seen = [], set()
         for folder, url in entries.items():
             if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]*', folder):
@@ -118,7 +118,7 @@ def repositories(root, config=None):
         if path.resolve() in seen:
             continue
         seen.add(path.resolve())
-        result.append(Repository('Tanzu Brand' if key == 'brand' else key.replace('-', ' ').title(), path, url))
+        result.append(Repository('Harness Brand' if key == 'brand' else key.replace('-', ' ').title(), path, url))
     return discover_harness(result, root.parent)
 
 

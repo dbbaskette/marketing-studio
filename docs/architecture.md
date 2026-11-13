@@ -112,7 +112,10 @@ Git address or a folder on this computer. Saving it fetches nothing. The Brand c
 Get brands action (`studio_core.brand_data.bring`) clones a Git address into Marketing
 Studio's data folder under `brands/`, or fast-forwards that copy, uses a folder as it is,
 and records the result in Harness Brand's `harness-brand/data` file, which Harness Brand
-and apply-brand read wherever they run.
+and its brand shortcuts read wherever they run. Left empty, Marketing Studio reads the
+folder Harness Brand already reads (`studio_core.brand_data.harness_folder`), so every
+app uses one brands folder. When Get brands moves Harness Brand to another folder, it
+says which folder it read before.
 
 When Marketing Studio opens a studio, it names its own tab and passes its address in
 the link's fragment. The studio accepts that address only for the same host on another

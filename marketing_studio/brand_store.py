@@ -117,7 +117,11 @@ def storage(shared, checkouts=()) -> Storage:
     shared = shared if isinstance(shared, dict) else {}
     address = (shared.get('brand') or {}).get('brands')
     if not isinstance(address, str) or not address.strip():
-        raise WorkspaceError('Choose the brands repository in Shared settings, Brand, then save settings.')
+        # No repository set: the folder Harness Brand reads, used as a folder on this computer.
+        try:
+            address = str(brand_data.chosen(None))
+        except ValueError as failure:
+            raise WorkspaceError(str(failure)) from failure
     address = address.strip()
     try:
         folder = brand_data.place(address).resolve()

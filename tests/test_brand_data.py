@@ -42,6 +42,43 @@ class BrandDataTests(IsolatedHome):
     def recorded(self) -> str:
         return (self.root / 'config' / 'harness-brand' / 'data').read_text()
 
+    def test_a_brand_with_only_a_rebranding_profile_is_a_brand(self):
+        # Harness Brand 1.1 keeps a brand's rebranding profile in `rebrand/`, beside `pack/`.
+        folder = self.brands_folder(self.root / 'mixed', 'authored')
+        for brand, kind in (('restyled', 'rebrand'), ('older', 'apply-brand')):
+            (folder / brand / kind).mkdir(parents=True)
+            (folder / brand / kind / 'brand.json').write_text('{}')
+        (folder / 'icon-libraries').mkdir()
+        self.assertEqual(brand_data.brands(folder), ['authored', 'older', 'restyled'])
+
+    def test_with_no_repository_set_the_brands_are_the_ones_harness_brand_reads(self):
+        with mock.patch.dict(os.environ, {'HARNESS_BRAND_DATA': ''}):
+            # Harness Brand has no folder: said, and nothing is recorded.
+            with mock.patch.object(brand_data.Path, 'home', return_value=self.root / 'nobody'):
+                self.assertIsNone(brand_data.harness_folder())
+                with self.assertRaisesRegex(Exception, 'Harness Brand has no brands folder yet'):
+                    brand_data.bring('')
+            folder = self.brands_folder(self.root / 'theirs', 'acme', 'other')
+            brand_data.record(folder)
+            self.assertEqual(brand_data.harness_folder(), folder)
+            self.assertEqual(brand_data.chosen(None), folder)
+            self.assertEqual(brand_data.bring(None), {
+                'folder': str(folder), 'brands': ['acme', 'other'], 'action': 'used',
+                'following': True})
+            self.assertEqual(self.recorded(), f'{folder}\n', 'the record is left as it was')
+        # What a command's environment names comes first, as it does for Harness Brand.
+        with mock.patch.dict(os.environ, {'HARNESS_BRAND_DATA': str(self.root / 'named')}):
+            self.assertEqual(brand_data.harness_folder(), self.root / 'named')
+
+    def test_get_brands_says_which_folder_harness_brand_read_before(self):
+        with mock.patch.dict(os.environ, {'HARNESS_BRAND_DATA': ''}):
+            first = self.brands_folder(self.root / 'first', 'acme')
+            second = self.brands_folder(self.root / 'second', 'acme')
+            self.assertNotIn('replaced', brand_data.bring(str(first)))
+            self.assertNotIn('replaced', brand_data.bring(str(first)))
+            self.assertEqual(brand_data.bring(str(second))['replaced'], str(first))
+            self.assertEqual(self.recorded(), f'{second}\n')
+
     def test_saving_the_setting_fetches_nothing(self):
         with mock.patch('subprocess.run') as run, mock.patch('subprocess.Popen') as start:
             self.write('/api/shared', {'changes': {'brand': {'brands': 'https://example.com/org/brands.git'}}, 'seen': {}})
