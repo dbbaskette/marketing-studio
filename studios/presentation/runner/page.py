@@ -202,7 +202,8 @@ WRITES = ('/api/research-note', '/api/slide-text-draft', '/api/intake-draft', '/
           '/api/deliver', '/api/storyboard', '/api/review-draft', '/api/build-feedback', '/api/progress-seen',
           '/api/note', '/api/research-site', '/api/picture',
           '/api/picture-remove', '/api/desk-outline-price', SOURCE, *DESK)
-WRITES = (*WRITES, '/api/desk-migrate', '/api/desk-ready')
+COPY = '/api/deck-copy'   # a deck's setup, for the start form to make a new one from
+WRITES = (*WRITES, '/api/desk-migrate', '/api/desk-ready', COPY)
 # Browsing the shared Document Library: it reads, and selects nothing for a deck.
 WRITES = (*WRITES, *library_context.ROUTES)
 PPTX = 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
@@ -511,6 +512,12 @@ class RunnerPage(server.Page):
             except ValueError as error:
                 raise server.Refusal(HTTPStatus.BAD_REQUEST, str(error)) from None
         self.engine.seen()
+        if path == COPY:
+            deck = self.deck(server.text(sent, 'path'))
+            try:
+                return server.as_json(HTTPStatus.OK, self.engine.copy_setup(deck))
+            except WorkspaceError as refusal:
+                raise server.Refusal(HTTPStatus.CONFLICT, str(refusal)) from None
         if path in ('/api/desk-migrate', '/api/desk-ready'):
             from runner import desk_chat
             root = self.deck(server.text(sent, 'path'))

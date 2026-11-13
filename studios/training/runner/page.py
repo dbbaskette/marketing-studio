@@ -262,6 +262,7 @@ JOBS = tuple(f'{DRAFTS}/{action}' for action in ('note', 'revise', 'selection', 
 VERSIONS = f'{DRAFTS}/versions'
 SETTINGS = '/api/training-settings'   # Change settings (#296): the form, and its save
 SETTINGS_SOURCES = f'{SETTINGS}/sources'   # a source draft holding what research reads now
+COPY = '/api/training-copy'   # a training's setup, for the start form to make a new one from
 MODELS = '/api/training-models'   # Use the current model settings: what changes, and its save
 CARD = f'{DRAFTS}/card'   # one card with its parts, as the shared kit reads it
 PART_LIMIT = 1_000_000   # bytes: one part of the largest size, as JSON
@@ -270,7 +271,7 @@ READS = ('/api/research-note', '/api/updates', '/api/slide-text-draft', '/api/ou
          '/api/download', '/api/slide', '/api/status', '/api/published', '/api/delete', '/api/deck-draft-ticket',
          DRAFTS, CARD, VERSIONS, f'{DRAFTS}/update-preview', f'{DRAFTS}/slide-versions', f'{DRAFTS}/source-price',
          f'{DRAFTS}/proofread', f'{DRAFTS}/migration-preview', f'{DRAFTS}/doc-preview')
-WRITES = ('/api/research-decision', '/api/research-note', '/api/slide-text-draft', '/api/outline-flow', '/api/intake-draft', '/api/training-plan', '/api/research-sources', SETTINGS, SETTINGS_SOURCES, MODELS, '/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/answer',
+WRITES = ('/api/research-decision', '/api/research-note', '/api/slide-text-draft', '/api/outline-flow', '/api/intake-draft', '/api/training-plan', '/api/research-sources', SETTINGS, SETTINGS_SOURCES, COPY, MODELS, '/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/answer',
           '/api/documents', '/api/copies', '/api/share', '/api/outline', '/api/review', '/api/drive',
           '/api/publish', '/api/adopt', '/api/fetch', '/api/delete', '/api/companions',
           '/api/asset', '/api/upgrade', '/api/restart', '/api/versions', '/api/redesign',
@@ -981,6 +982,10 @@ class RunnerPage(desk.Page):
         self.engine.seen()
         if path in (SETTINGS, SETTINGS_SOURCES):
             return desk.as_json(HTTPStatus.OK, self.settings(path, sent))
+        if path == COPY:
+            training = self.driving(desk.text(sent, 'path'))
+            return desk.as_json(HTTPStatus.OK, self.typed(
+                lambda: self.engine.copy_setup(training)))
         if path == MODELS:
             from runner import model_settings
             training = self.driving(desk.text(sent, 'path'))

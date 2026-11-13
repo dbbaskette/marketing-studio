@@ -1576,9 +1576,9 @@ function deckRow(brief, kind) {
     + (brief.state === 'working' && !elsewhere(brief) ? ' working' : ''));
   const shape = kind === 'needs' ? (brief.state === 'failed' ? 'late' : 'review')
     : kind === 'finished' ? 'done' : null;
-  const remove = deleteButton(brief);
+  const others = [copyAsNewButton(brief), deleteButton(brief)].filter(Boolean);
   return add(row, shape ? bead(shape) : null, text,
-    remove ? add(make('div', 'bar row-actions'), go, remove) : go);
+    others.length ? add(make('div', 'bar row-actions'), go, ...others) : go);
 }
 
 // A card with a row for each deck, as a part of its screen. A row is built again only when
@@ -1689,7 +1689,7 @@ function deckCard(brief) {
     sheetThumb(brief));
   const go = capsule('Open', '', openDeck(brief), 'open ' + brief.path);
   go.setAttribute('aria-label', 'Open ' + title);
-  return add(node, add(make('div', 'bar'), go, deleteButton(brief)));
+  return add(node, add(make('div', 'bar'), go, copyAsNewButton(brief), deleteButton(brief)));
 }
 
 // Every deck with where it stands: the list of the runner's it is in.
@@ -6519,6 +6519,93 @@ function deleteButton(brief) {
   return node;
 }
 
+// --- copy as new ---------------------------------------------------------------------
+// A deck's setup and material, put in the start form to change and start as a new deck.
+// The one copied is only read; nothing starts until Start.
+const COPY_REPLACES = 'This studio keeps one unfinished form. Discard it and copy this deck '
+  + 'instead? Existing decks and captured sources are kept.';
+
+function copyAsNewButton(brief) {
+  if (!brief || !brief.path || brief.error) return null;
+  const key = 'copy ' + brief.path;
+  const node = capsule('Copy as new', 'quiet', () => copyAsNew(brief, key, node), key);
+  node.setAttribute('aria-label', 'Copy as new: ' + (brief.title || 'Untitled')
+    + '. Opens the start form filled in with its setup and material.');
+  return node;
+}
+
+// The start form's draft, filled in from what the runner read of a deck.
+function copiedDraft(found, from) {
+  const form = found.form || {};
+  const route = ROUTES.some((one) => one[0] === form.route) ? form.route : 'scratch';
+  const source = form.source || {};
+  const kinds = SOURCE_KINDS[route] || [];
+  const delivery = DELIVERIES.findIndex((kind) => kind[0] === form.delivery);
+  const draft = Object.assign(newDraft(), {
+    route, title: found.title || '', audience: form.audience || '', goal: form.goal || '',
+    notes: form.notes || '', minutes: form.minutes ? String(form.minutes) : '',
+    delivery: delivery < 0 ? null : delivery,
+    research: route !== 'existing' && Boolean(form.research),
+    researchQuestions: list(form.research_questions).join('\n'),
+    level: form.level || null, selected: form.selected || '',
+    source: Math.max(0, kinds.findIndex((kind) => kind[0] === source.kind)),
+    link: source.link || '', text: found.text || '', upload: found.upload || null,
+    look: form.look === 'pick' ? 'pick' : 'default', readAs: form.reading || '',
+    output: Math.max(0, OUTPUTS.findIndex((kind) => kind[0] === form.output)),
+    copiedFrom: from, copyLeft: list(found.left) });
+  // The start form's editor opens on the draft that holds the copied sources.
+  if (found.sources) draft.sourceDraft = { id: found.sources.id, revision: found.sources.revision };
+  // Its brand, where this computer still has it; otherwise the one newDraft chose.
+  if (form.brand && brandsFound().some((brand) => brand.brand === form.brand)) {
+    draft.brand = form.brand;
+    draft.variant = form.variant || '';
+  }
+  return settleBrand(draft);
+}
+
+async function copyAsNew(brief, key, pressed) {
+  const turn = view.turn;
+  const store = intakeStore();
+  await restoreIntake();
+  if (store.saved && !confirm(COPY_REPLACES)) return;
+  pressed.disabled = true;
+  let found;
+  try {
+    found = await send('deck-copy', { path: brief.path });
+  } catch (failure) {
+    toast(failure.message + (failure.kind === 'stopped' ? '' : ' Nothing was copied.'));
+    return;
+  } finally {
+    pressed.disabled = false;
+  }
+  if (turn !== view.turn) return;
+  if (store.saved && !await store.discard()) {
+    toast(store.problem || 'The unfinished form could not be discarded. Nothing was copied.');
+    return;
+  }
+  view.draft = copiedDraft(found, brief.title || 'Untitled');
+  view.sheet = 'new';
+  view.opener = key;
+  drawSheet();
+  draw(false);
+  paintAgents();
+  readAgents();
+  readModels(view.draft.agent);
+  byId('sheet').focus();
+  store.keep(view.draft);
+}
+
+// What a copied form says above its steps: where it came from, and what did not come.
+function copiedNote(draft) {
+  if (!draft.copiedFrom) return null;
+  const node = callout('',
+    make('p', '', 'Copied from “' + draft.copiedFrom + '”: its setup, what it started from and '
+      + 'its research sources. Change anything, then Start. It is made again as a new deck, '
+      + 'and “' + draft.copiedFrom + '” stays as it is.'));
+  for (const said of list(draft.copyLeft)) add(node, make('p', 'problem', said));
+  return node;
+}
+
 // Open the sheet for the open deck, or for `brief`, a deck on a list.
 function askDelete(opener, brief) {
   return async () => {
@@ -7862,7 +7949,7 @@ function begin() {
 
 function deskParts() {
   return {
-    view, make, add, count, list, series, lower, capital, spoken, given, card, bullets, callout, intakeStore, narrow,
+    view, make, add, count, list, series, lower, capital, spoken, given, card, bullets, callout, copiedNote, intakeStore, narrow,
     state, button, capsule, chip, field, refuse, choice, explained, segmented, pickCard, oneOf,
     moreMenu, submitButton, alertLine, problemLine, say, outLink, pageHead, focusKey, byId,
     send, ask, toast, dropToast, deckToast, notify, show, refresh, placeParts, fit, tidyPictures, pager, slideName,

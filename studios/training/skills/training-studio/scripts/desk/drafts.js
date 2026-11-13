@@ -850,7 +850,8 @@ function deskStart() {
         + (outputs === 1 ? ' output' : ' outputs');
     },
     close:closeSheet,discarded:() => {view.draft = null;}});
-  return [add(make('div', 'sheet-heading'), sheetTitle('New training')), form];
+  return [add(make('div', 'sheet-heading'), sheetTitle('New training')), copiedNote(draft), form]
+    .filter(Boolean);
 }
 
 // What Start sends: the form, as a desk training, with no review level.

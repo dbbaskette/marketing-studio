@@ -920,6 +920,11 @@ class Engine(Jobs, Researching, DeskActions):
         self.wake(root)
         return result
 
+    def copy_setup(self, path) -> dict:
+        """A deck's setup and material, for the start form to make a new one from."""
+        from runner import copy_setup
+        return copy_setup.of(self, path)
+
     @staticmethod
     def _start_library(form, picks) -> list:
         """The library's revisions chosen at the start, by their shape alone: each by its

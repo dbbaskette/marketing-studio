@@ -2154,7 +2154,7 @@ function trainingCard(training) {
   return add(node, beads(training.stages, true), state(shape, words),
     lastOr(training, 'row-says'), whoLine(training), noticeLine(training),
     add(make('div', 'bar'), add(make('span', 'quiet'), 'Changed ', when(training.touched_at)),
-      go, deleteButton(training)));
+      go, copyAsNewButton(training), deleteButton(training)));
 }
 
 // What is typed in a list's search box is kept as it is typed, and applied on Search.
@@ -8247,10 +8247,93 @@ function deleteButton(training) {
   return node;
 }
 
-// A row's way in, with the way to delete it beside it where there is one.
+// A row's way in, with the ways to copy it and to delete it beside it where there are any.
 function withDelete(go, training) {
-  const remove = deleteButton(training);
-  return remove ? add(make('div', 'bar row-actions'), go, remove) : go;
+  const others = [copyAsNewButton(training), deleteButton(training)].filter(Boolean);
+  return others.length ? add(make('div', 'bar row-actions'), go, ...others) : go;
+}
+
+// --- copy as new ---------------------------------------------------------------------
+// A training's setup and documents, put in the start form to change and start as a new
+// training. The one copied is only read; nothing starts until Start.
+const COPY_REPLACES = 'This studio keeps one unfinished form. Discard it and copy this '
+  + 'training instead? Existing trainings and captured sources are kept.';
+
+// Offered for a training a run drives here, which is one the runner can read the setup of.
+function copyAsNewButton(training) {
+  if (!view.runner || training.error || !training.run) return null;
+  const key = 'copy ' + training.path;
+  const node = capsule('Copy as new', 'quiet', () => copyAsNew(training, key, node), key);
+  node.setAttribute('aria-label', 'Copy as new: ' + (training.title || 'Untitled')
+    + '. Opens the start form filled in with its setup and documents.');
+  return node;
+}
+
+// The start form's draft, filled in from what the runner read of a training.
+function copiedDraft(found, from) {
+  const values = found.values;
+  const deck = DECKS.findIndex((kind) => kind[0] === values.deck_target);
+  const draft = Object.assign(newDraft(), {
+    title: found.title || '', topic: values.topic || '', audience: values.audience || '',
+    time: values.time_limit || '', purpose: Math.max(0, PURPOSES.indexOf(values.purpose)),
+    levels: list(values.levels).slice(), brief: values.brief_kind === 'competitive' ? 1 : 0,
+    materials: list(values.materials).slice(), yoodli: Boolean(values.yoodli),
+    deck: deck < 0 ? DECKS.length - 1 : deck,
+    delivery: Math.max(0, DELIVERIES.findIndex((kind) => kind[0] === values.delivery)),
+    walkthrough: Boolean(values.walkthrough),
+    scenarioPlan: { mode: (values.scenario_plan && values.scenario_plan.mode) || 'ai',
+      scenarios: list(values.scenario_plan && values.scenario_plan.scenarios)
+        .map((row) => ({ ...row })) },
+    researchQuestions: list(values.research_questions).join('\n'),
+    flagsReview: Boolean(found.flags_review),
+    // The start form's editor opens on the draft that holds the copied documents.
+    sourceDraft: { id: found.sources.id, revision: found.sources.revision },
+    copiedFrom: from, copyLeft: list(found.left) });
+  if (found.slide_text_review === false) draft.slideTextReview = false;
+  // Its brand, where this computer still has it; otherwise the shared one newDraft chose.
+  if (values.brand && brandsFound().some((brand) => brand.brand === values.brand.brand)) {
+    draft.brand = values.brand.brand;
+    draft.variant = values.brand.variant || '';
+  }
+  return settleDeck(draft);
+}
+
+async function copyAsNew(training, key, pressed) {
+  const turn = view.turn;
+  const store = intakeStore();
+  await restoreIntake();
+  if (store.saved && !confirm(COPY_REPLACES)) return;
+  pressed.disabled = true;
+  let found;
+  try {
+    found = await send('training-copy', { path: training.path });
+  } catch (failure) {
+    toast(failure.message + (failure.kind === 'stopped' ? '' : ' Nothing was copied.'));
+    return;
+  } finally {
+    pressed.disabled = false;
+  }
+  if (turn !== view.turn) return;
+  if (store.saved && !await store.discard()) {
+    toast(store.problem || 'The unfinished form could not be discarded. Nothing was copied.');
+    return;
+  }
+  view.draft = copiedDraft(found, training.title || 'Untitled');
+  openSheet('new', key)();
+  readAgents();
+  readModels(view.draft.agent);
+  store.keep(view.draft);
+}
+
+// What a copied form says above its steps: where it came from, and what did not come.
+function copiedNote(draft) {
+  if (!draft.copiedFrom) return null;
+  const node = callout('',
+    make('p', '', 'Copied from “' + draft.copiedFrom + '”: its setup, its documents and where '
+      + 'its research may search. Change anything, then Start. It is researched and written '
+      + 'again as a new training, and “' + draft.copiedFrom + '” stays as it is.'));
+  for (const said of list(draft.copyLeft)) add(node, make('p', 'problem', said));
+  return node;
 }
 
 // Open the sheet for the open training, or for `training`, one on a list.
