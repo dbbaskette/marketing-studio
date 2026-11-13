@@ -610,7 +610,7 @@ class ConfiguredRepository(BrandsCase):
 
     def test_missing_setting_never_falls_back_to_team_storage(self):
         shared.update({'brand': {'brands': None}})
-        self.assertIn('Choose the brands repository', self.call('list')['unavailable'])
+        self.assertIn('Harness Brand has no brands folder yet', self.call('list')['unavailable'])
         self.assertFalse(self.brands.exists())
 
     def test_changed_repository_refuses_an_old_working_copy(self):

@@ -1,7 +1,8 @@
 """Rebrand a finished deck as a copy, with a rebranding skill on this computer.
 
 A rebranding skill (`tanzu-brand`, `true-source-brand`, `broadcom-brand`, or any folder
-named `<something>-brand` that holds `scripts/brand.py`) takes a deck that is already in
+named `<something>-brand` that holds `scripts/brand.py`: since Harness Brand 1.1 each is a
+shortcut to its one shared rebranding worker, with the brand fixed) takes a deck that is already in
 Google Slides and returns a new native copy in its brand. It keeps what the deck says, its
 slide order, notes, charts and pictures. Nothing is drawn again and no assistant is asked,
 so it takes minutes, where drawing a deck again takes as long as the first drawing did.
@@ -34,8 +35,9 @@ FINISHED = ('branded', 'branded_with_exceptions')
 MINUTES = 20
 NO_SKILL = ('No rebranding skill is on this computer. Install one, such as true-source-brand '
             'or tanzu-brand, to rebrand a deck as a copy.')
-NOT_SET_UP = ('{name} is not set up yet. In a terminal, run `bash scripts/setup.sh --fetch` '
-              'in {path} once, then try again.')
+NOT_SET_UP = ('{name} is not set up yet. In a terminal, run `node scripts/harness-brand.mjs '
+              'rebrand setup` in the Harness Brand skill folder once, then try again. (An '
+              'older brand skill is set up with `bash scripts/setup.sh --fetch` in {path}.)')
 
 
 def _name(folder: Path) -> str:

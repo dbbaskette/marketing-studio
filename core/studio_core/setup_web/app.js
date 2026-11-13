@@ -1208,7 +1208,10 @@ $('#get-brands').addEventListener('click', async () => {
   try {
     const got = await api('brands-repository', {});
     const how = {cloned: 'Copied', updated: 'Updated', used: 'Using'}[got.action] || 'Using';
-    status.textContent = `${how} ${got.brands.length} brand${got.brands.length === 1 ? '' : 's'} (${got.brands.join(', ')}) at ${got.folder}. The brand skills read them from there.`;
+    const which = `${how} ${got.brands.length} brand${got.brands.length === 1 ? '' : 's'} (${got.brands.join(', ')}) at ${got.folder}`;
+    status.textContent = got.following
+      ? `${which}, the folder Harness Brand reads. Marketing Studio follows it while no repository is set here.`
+      : `${which}. The brand skills read them from there.${got.replaced ? ` Until now Harness Brand read ${got.replaced}; it reads this folder from now on.` : ''}`;
   } catch (error) { status.textContent = `${error.message} Your form is kept.`; }
   finally { button.disabled = false; }
 });

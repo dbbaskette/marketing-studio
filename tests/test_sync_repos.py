@@ -116,7 +116,7 @@ class SyncRepositoriesTests(unittest.TestCase):
     def test_config_paths_from_another_host_use_folder_names_beside_marketing_studio(self):
         config = self.main / 'studio-package.local.json'
         config.write_text(json.dumps({'schema': 1, 'sources': {
-            'brand': {'path': '/another/computer/Projects/tanzu-brand'},
+            'brand': {'path': '/another/computer/Projects/harness-brand-skill'},
             'harness-slides': {'git': 'https://example.com/custom-slides.git', 'ref': 'v1.0.0'}}}))
         extra = self.projects / 'harness-extra'
         extra.mkdir()
@@ -125,7 +125,7 @@ class SyncRepositoriesTests(unittest.TestCase):
         self.assertTrue(all(repo.path.parent == self.projects for repo in selected))
         self.assertEqual(selected[0].path, self.main)
         self.assertIn(extra, [repo.path for repo in selected])
-        self.assertIn(self.projects / 'tanzu-brand', [repo.path for repo in selected])
+        self.assertIn(self.projects / 'harness-brand-skill', [repo.path for repo in selected])
         self.assertIn(self.projects / 'custom-slides', [repo.path for repo in selected])
         self.assertNotIn('v1.0.0', [repo.url for repo in selected])
 
@@ -144,12 +144,12 @@ class SyncRepositoriesTests(unittest.TestCase):
     def test_no_upstream_is_left_unchanged_and_nonrepository_folders_are_preserved(self):
         self.git(self.main, 'branch', '--unset-upstream')
         self.assertIn('no upstream', self.update()[1])
-        plain = self.projects / 'tanzu-brand'
+        plain = self.projects / 'harness-brand-skill'
         plain.mkdir()
         sentinel = plain / 'keep.txt'
         sentinel.write_text('keep')
         with self.assertRaises(ValueError), contextlib.redirect_stdout(io.StringIO()):
-            sync_repos.Sync().update(sync_repos.Repository('Tanzu Brand', plain, self.remote.as_uri()))
+            sync_repos.Sync().update(sync_repos.Repository('Harness Brand', plain, self.remote.as_uri()))
         self.assertEqual(sentinel.read_text(), 'keep')
 
     def test_timeout_stops_the_git_process_and_reports_the_timeout(self):
@@ -184,7 +184,7 @@ class SyncConfigTests(unittest.TestCase):
     def test_sample_targets_the_four_repositories_under_the_destination_home(self):
         selected = sync_repos.repositories(self.root, ROOT / 'sync.cfg.sample')
         self.assertEqual([repo.path for repo in selected], [self.home / 'Projects' / name for name in
-                         ('marketing-studio', 'harness-research-skill', 'harness-slides-skill', 'tanzu-brand')])
+                         ('marketing-studio', 'harness-research-skill', 'harness-slides-skill', 'harness-brand-skill')])
         self.assertEqual(len({repo.url for repo in selected}), 4)
         self.assertFalse((self.home / 'Projects').exists())
 
