@@ -412,12 +412,29 @@ const StudioResearch = (() => {
     const phase = state.phase || 'investigate';
     const incomplete = ['check-incomplete', 'creator-review'].includes(phase);
     const assembling = array(state.agents?.active).some(agent => agent.section === 'final' || agent.stream === 'final');
-    const titles = {'creator-review': 'Research needs your decision', 'creator-approved': 'Research choices saved', investigate: 'Collecting evidence', 'investigating': 'Collecting evidence', synthesize: 'Combining findings', 'combining-findings': 'Combining findings', review: 'Independent check', 'independent-check': 'Independent check', complete: 'Research is ready', 'ready-for-review': 'Research is ready', 'needs-attention': 'Research needs attention', 'needs-revision': 'Research needs correction', 'stopping': 'Stopping research', 'pausing': 'Finishing active research before pausing', paused: 'Research paused', stopped: 'Research stopped'};
+    const titles = {'creator-review': 'Research needs your decision', 'creator-approved': 'Research choices saved', read: 'Reading your documents', investigate: 'Collecting evidence', 'investigating': 'Collecting evidence', synthesize: 'Combining findings', 'combining-findings': 'Combining findings', review: 'Independent check', 'independent-check': 'Independent check', complete: 'Research is ready', 'ready-for-review': 'Research is ready', 'needs-attention': 'Research needs attention', 'needs-revision': 'Research needs correction', 'stopping': 'Stopping research', 'pausing': 'Finishing active research before pausing', paused: 'Research paused', stopped: 'Research stopped'};
     const box = make('section', 'research-progress paper'); box.setAttribute('aria-label', 'Research progress');
-    const stage = {investigate:0, investigating:0, synthesize:1, 'combining-findings':1, review:2, 'independent-check':2, 'check-incomplete':2, 'creator-review':2, complete:3, 'ready-for-review':3}[phase];
+    const stage = {read:0, investigate:0, investigating:0, synthesize:1, 'combining-findings':1, review:2, 'independent-check':2, 'check-incomplete':2, 'creator-review':2, complete:3, 'ready-for-review':3}[phase];
     const heading = add(make('div', 'research-progress-heading'),
       make('p', 'quiet research-stage-label', stage < 3 ? 'Research · Stage ' + (stage + 1) + ' of 3' : stage === 3 ? 'Research complete' : 'Research progress'),
       make('h3', 'card-title', phase === 'check-incomplete' ? 'Independent check incomplete' : assembling ? 'Assembling the final brief' : titles[phase] || 'Research'));
+    // More than fifty documents are read in groups first: how far that has got, and which
+    // documents are open now. Afterwards, one line on what the reading found.
+    if (state.reading && state.reading.total) {
+      const r = state.reading, working = array(r.groups).filter(group => group.status === 'working');
+      const spans = working.map(group => group.from + '–' + group.to);
+      const note = make('div', 'research-reading-progress'); note.dataset.key = 'research-reading-progress';
+      if (phase === 'read' || r.read < r.total) {
+        const bar = make('progress', 'research-reading'); bar.max = r.total; bar.value = r.read; bar.setAttribute('aria-label', 'Documents read');
+        add(note, bar, make('p', 'quiet', r.read + ' of ' + r.total + ' documents read, in groups of up to 50, one reader to a group.'
+          + (spans.length ? ' Reading documents ' + (spans.length === 1 ? spans[0] : spans.slice(0, -1).join(', ') + ' and ' + spans.at(-1)) + ' now.' : '')));
+      } else {
+        add(note, make('p', 'quiet', 'All ' + r.total + ' documents were read in groups of up to 50. Each research area was given the ones that bear on it most, 50 at most.'
+          + (r.unused ? ' ' + r.unused + (r.unused === 1 ? ' bears' : ' bear') + ' on no research area and ' + (r.unused === 1 ? 'was' : 'were') + ' not passed on.' : '')
+          + (r.dropped ? ' ' + r.dropped + ' more were relevant to an area that already had 50.' : '')));
+      }
+      heading.append(note);
+    }
     const header = add(make('div', 'research-progress-header'), heading);
     const agents = state.agents;
     const count = Number.isInteger(agents?.count) && agents.count >= 0 ? agents.count : null;

@@ -9,7 +9,7 @@
       "stub": "bootstrap/SKILL.md",
       "installer": "scripts/install.mjs",
       "note": "Stable collection plus explicit unchanged-save review retention. Existing runs keep their saved runtime, context and revision policy.",
-      "requirement": ">=1.0.0"
+      "requirement": ">=1.1.1"
     },
     "harness-slides": {
       "repository": "https://github.com/dbbaskette/harness-slides-skill.git",

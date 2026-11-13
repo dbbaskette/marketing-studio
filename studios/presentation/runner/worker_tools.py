@@ -315,6 +315,9 @@ from studio_core.research_contract import check_json as check_research_json
 VALIDATORS = {'research-plan': check_plan, 'outline': check_outline,
               'section': check_section}
 VALIDATORS['research-json'] = check_research_json
+# One group of documents read and noted, for research over more than fifty sources.
+from studio_core.research_reading import check as check_reading_notes  # noqa: E402
+VALIDATORS['reading-notes'] = check_reading_notes
 REGISTERED: dict[str, dict] = {}    # a kind added by register: {'call', 'extension'}
 
 
@@ -678,6 +681,9 @@ class WorkerTools:
             if spec['kind'] == 'research-json':
                 # A dossier may cite only what this job saved; the author can correct it here.
                 spec = {**spec, 'captures': self._index(), 'folder': str(self.folder)}
+            if spec['kind'] == 'reading-notes':
+                # Notes are for documents this job opened: its own tool log says which.
+                spec = {**spec, 'folder': str(self.folder)}
             return check(text, spec)
         problems, ran, warnings, kept = check(text, spec, self.slides(), self.folder / 'drafts')
         for outcome in ran:

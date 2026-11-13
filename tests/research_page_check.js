@@ -212,5 +212,11 @@ const key=(editor,k)=>all(editor.node).find(n=>n.dataset.key===k);
   many.progress={done:11,total:60};many.render();assert.match(key(many,'research-reading-now').textContent,/^Reading link 12 of 60\./);many.progress=null;
   assert.deepEqual(JSON.parse(JSON.stringify(kit.linksIn('(https://example.invalid/wiki/Thing_(x)). <a href="https://example.invalid/z">z</a> https://localhost/x'))),{links:['https://example.invalid/wiki/Thing_(x)','https://example.invalid/z'],left:1});
  }
+ // Research over many documents: the reading stage says how far it has got and what is open.
+ {const reading=kit.progress({phase:'read',streams:[],agents:{count:2,active:[]},reading:{total:766,read:100,of:16,groups:[{from:101,to:150,status:'working'},{from:151,to:200,status:'working'},{from:201,to:250,status:'waiting'}]}});
+  const said=all(reading).map(n=>n.textContent).join(' ');
+  assert.match(said,/Reading your documents/);assert.match(said,/100 of 766 documents read, in groups of up to 50/);assert.match(said,/Reading documents 101–150 and 151–200 now\./);
+  const after=all(kit.progress({phase:'investigate',streams:[],agents:{count:0,active:[]},reading:{total:766,read:766,of:16,groups:[],unused:12,dropped:3}})).map(n=>n.textContent).join(' ');
+  assert.match(after,/All 766 documents were read in groups of up to 50/);assert.match(after,/12 bear on no research area and were not passed on\./);assert.match(after,/3 more were relevant/);}
  console.log('PASS shared source editor: explicit scope, mixed links, validation, draft/focus preservation, progress, no provider actions');
 })().catch(error=>{console.error(error);process.exitCode=1;});

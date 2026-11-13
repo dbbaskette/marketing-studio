@@ -20,6 +20,7 @@ from datetime import datetime, timezone
 from urllib.parse import urlsplit
 
 from studio_core import research_contract as rc, research_timing, research_sections, research_preview, research_quality
+from studio_core import research_reading
 from studio_core.shared_runner.worker_tools import tidy
 
 PROTOCOL = 'harness-collection-v1'
@@ -42,6 +43,38 @@ COMPOSE = ('Write connected findings, report sections and an authored brief from
            + rc.SYNTHESIZED + ' ')
 # What a synthesis returns, and which of its parts must hold at least one item.
 COMPOSED = ('schema', 'findings', 'sections', 'brief', 'comparisons')
+
+
+TOO_MANY = ('This research has {count} documents, and one research agent reads at most {most}. '
+            'Remove or exclude some, then start again.')
+
+
+INTAKE = {'entries': 200}
+INTAKE_FILE = 'references/intake-limits.json'
+OVER_INTAKE = ('The installed Harness Research takes at most {most} entries in one research run, and a link '
+               'counts as two. This run has {count}. Update Harness Research to read more, or remove some sources.')
+
+
+def intake_limits(runtime):
+    """What the installed Harness Research says one run may take in; an older one says nothing
+    and has the limits it always had."""
+    try:
+        value = json.loads((Path(runtime) / INTAKE_FILE).read_text(encoding='utf-8'))
+        entries = value['entries']
+    except (OSError, ValueError, KeyError, TypeError):
+        return dict(INTAKE)
+    return {'entries': entries} if type(entries) is int and entries >= INTAKE['entries'] else dict(INTAKE)
+
+
+def intake_entries(sources):
+    """How many entries these sources register as: a chosen link is two, anything else one."""
+    count = 0
+    for source in sources:
+        if source.get('permission', 'selected' if source.get('offered', True) else 'public') != 'selected':
+            continue
+        linked = urlsplit(source.get('origin', source.get('url', '')) or '').scheme in ('http', 'https')
+        count += 2 if linked else 1
+    return count
 
 
 def digest(value):
@@ -326,7 +359,7 @@ class Workflow:
     def run(self, root, task, invoke, sources=(), *, limit=3, progress=lambda state: None,
             allowed=lambda: True, cancelled=lambda: False, readable=None, restart_stopped=False,
             section_policy=None, section_context=None, impact=None, input_snapshot=None,
-            creator_review=False, **_):
+            creator_review=False, reading=False, **_):
         if capability(self.runtime) is None:
             raise ValueError('This workflow needs the complete Harness Research 1.1 collection runtime.')
         if task.get('research_policy') and not research_quality.valid_policy(task['research_policy']):
@@ -341,6 +374,14 @@ class Workflow:
             hashlib.sha256(s['text'].encode()).hexdigest(),
             hashlib.sha256(bytes_of(s['original_path'])).hexdigest() if s.get('original_path') else None]
             for s in sources], capability(self.runtime), areas])
+        # Said here, before anything is registered, and never after the work has begun.
+        chosen_count = sum(source.get('permission', 'selected' if source.get('offered', True) else 'public') == 'selected'
+                           for source in sources)
+        if not reading and chosen_count > research_reading.GROUP:
+            raise ValueError(TOO_MANY.format(count=chosen_count, most=research_reading.GROUP))
+        most, count = intake_limits(self.runtime)['entries'], intake_entries(sources)
+        if count > most:
+            raise ValueError(OVER_INTAKE.format(most=most, count=count))
         case, offered = self.asset(root, task, sources, basis)
         host_file = '.harness-research/studio-execution.json'
         host_path = rc.inside(case, host_file)
@@ -480,8 +521,76 @@ class Workflow:
             if section_policy: research_sections.invalidate(case, review, affected)
             for stream in affected:
                 self.command(case, 'collection', 'retry', {'workstream': stream, 'reason': 'The creator explicitly requested another correction attempt.'})
+        # More than fifty documents are read in groups first, one agent to a group, and each
+        # area's investigator is then offered only the documents its notes rank highest.
+        given = {area['id']: offered for area in areas}
+        cited_most = None
+        if research_reading.needed(offered):
+            if not reading:
+                raise ValueError(TOO_MANY.format(count=len(research_reading.selected(offered)), most=research_reading.GROUP))
+            chosen = research_reading.selected(offered)
+            every = research_reading.groups(chosen)
+            place = {source['file']: n for n, source in enumerate(sorted(chosen, key=lambda one: one['file']), start=1)}
+            waiting = research_reading.waiting(root, offered, areas)
+            todo = {tuple(source['file'] for source in group) for group in waiting}
+            spans = [{'from': place[group[0]['file']], 'to': place[group[-1]['file']], 'status': 'waiting'} for group in waiting]
+            with state_lock:
+                tracked['reading'] = {'total': len(chosen), 'read': len(chosen) - sum(len(g) for g in waiting),
+                                      'groups': spans, 'of': len(every)}
+            if waiting:
+                report('read')
+
+            def note(number, group):
+                require()
+                worker = 'reader-' + secrets.token_hex(12)
+                span = spans[number]
+                with state_lock: span['status'] = 'working'
+                report()
+                wanted = research_reading.spec(group, areas)
+                payload = {'task': task, 'worker': worker, 'areas': research_reading.labels(areas),
+                    'documents': wanted['documents'], 'return': research_reading.GUIDANCE,
+                    '_execution': {'phase': 'read', 'round': 1, 'stream': f'group-{number + 1:02d}',
+                        'workers': len(waiting), 'mode': 'reading', 'invocation': 'research-invocation-' + secrets.token_hex(16),
+                        'span': [span['from'], span['to'], len(chosen)], 'reading': wanted}}
+                try:
+                    text, _ = invoke('read', research_reading.GUIDANCE, payload, group, False)
+                    problems = research_reading.check(text, wanted)[0]
+                    if problems: raise ValueError(' '.join(problems))
+                    require()
+                    research_reading.keep(root, group, areas, json.loads(text), worker)
+                except BaseException:
+                    with state_lock: span['status'] = 'failed'
+                    report()
+                    raise
+                with state_lock:
+                    span['status'] = 'read'
+                    tracked['reading']['read'] += len(group)
+                report()
+
+            missed = []
+            with ThreadPoolExecutor(max_workers=min(3, max(1, limit))) as pool:
+                futures = [pool.submit(contextvars.copy_context().run, note, number, group) for number, group in enumerate(waiting)]
+                for future in as_completed(futures):
+                    try: future.result()
+                    except BaseException as error: missed.append(error)
+            if missed:
+                # Groups that finished keep their notes; a retry reads only the rest.
+                report('needs-attention')
+                raise missed[0]
+            require()
+            plan = research_reading.assign(root, offered, areas)
+            rc.write(case, '.harness-research/studio-reading.json', json.dumps(plan))
+            found = [source for source in offered if source not in chosen]
+            by_file = {source['file']: source for source in chosen}
+            given = {area['id']: [by_file[file] for file in plan['assignment'][area['id']]] + found for area in areas}
+            # The independent check reads every cited original, so what all areas cite together
+            # stays within one agent's fifty too.
+            cited_most = max(1, research_reading.GROUP // len(areas))
+            with state_lock:
+                tracked['reading'].update(unused=len(plan['unused']), dropped=sum(plan['dropped'].values()))
+            report('investigate')
         # Every source each investigator is given, with each field it must return (#303).
-        outline = rc.source_outline(offered, self.runtime)
+        outlines = {area['id']: rc.source_outline(given[area['id']], self.runtime) for area in areas}
         # And the exact shape the synthesis and the review return.
         synthesis_outline = rc.synthesis_outline(self.runtime)
         review_outline = rc.review_outline(self.runtime)
@@ -516,7 +625,9 @@ class Workflow:
                     'return': EVIDENCE + (' ' + research_quality.FOCUSED_GUIDANCE +
                         f' Return at most {task["research_policy"]["facts_per_area"]} essential facts '
                         f'and {task["research_policy"]["sources_per_area"]} cited sources for this area.'
-                        if task.get('research_policy') else ''), 'source_outline': outline,
+                        if task.get('research_policy') else '') + (
+                        f' Cite at most {cited_most} sources for this area: the ones that carry the most.'
+                        if cited_most else ''), 'source_outline': outlines[area['id']],
                     'previous_review': review, 'previous_dossier': dossier,
                     '_execution': {'phase': 'investigate', 'round': number, 'stream': area['id'],
                         'workers': len(pending), 'mode': 'evidence', 'invocation': invocation,
@@ -524,7 +635,7 @@ class Workflow:
                 terminal = {'workstream': area['id'], 'investigator': worker, 'attempt': registration['number']}
                 try:
                     text, captures = invoke('investigate', (self.runtime / 'references/investigate.md').read_text(),
-                                            payload, offered, task['source_mode'] != 'selected')
+                                            payload, given[area['id']], task['source_mode'] != 'selected')
                     require_cancelled = cancelled()
                     self.command(case, 'collection', 'finish', {**terminal, 'outcome': 'completed',
                         'note': 'The host transport returned from this isolated invocation.'})
@@ -535,6 +646,9 @@ class Workflow:
                     research_quality.evidence(value, task.get('research_policy'))
                     if not isinstance(value.get('sources'), list) or not isinstance(value.get('facts'), list):
                         raise ValueError('Return captured sources and facts as arrays.')
+                    if cited_most and len(value['sources']) > cited_most:
+                        raise ValueError(f'Cite at most {cited_most} sources for this area; {len(value["sources"])} were returned. '
+                                         'Keep the ones that carry the most.')
                     value, problems = rc.source_metadata(value, self.runtime)
                     if problems: raise ValueError(' '.join(problems))
                     value, problems, _ = rc.citation_sources(value, captures)

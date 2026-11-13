@@ -21,6 +21,10 @@ def refresh(path, check=False):
     document = json.loads(before)
     pins = read_pins(path)
     resolved = {name: resolve_companion(name, pin) for name, pin in pins.items()}
+    # The studios always use the latest locked Harness companions: a companion that states a
+    # requirement has it moved up with the lock, so an older installed copy is updated to it.
+    resolved = {name: {**pin, 'requirement': '>=' + pin['version']} if 'requirement' in pins[name] else pin
+                for name, pin in resolved.items()}
     changed = [name for name in pins if pins[name] != resolved[name]]
     if changed and not check:
         document['companions'] = resolved

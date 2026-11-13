@@ -1,5 +1,7 @@
 # Changelog
 
+Unreleased: research reads many documents in groups. With more than fifty readable sources, the documents are divided into groups of at most fifty and one reader per group notes what each covers and which research areas it bears on; each area's investigator is then given the fifty that bear on it most, never more. Every document is read by some agent, the research screen shows how far the reading has got, and a retry reads only the groups that did not finish. Fifty sources or fewer are researched as before.
+
 Unreleased: links can be added from a file. Where a new deck's research sources are chosen, **Add links from a file** takes a text, Markdown, CSV or saved web page file and adds every https link in it as a source, each once. The page says how many were added, which were already there and which could not be read. Links are not counted against the 40 files and pasted texts a request takes, so a file adds as many as it holds.
 
 Unreleased: a deck checks itself, and asks you only what is yours to decide.
