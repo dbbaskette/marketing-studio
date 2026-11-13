@@ -638,6 +638,15 @@ function documentsPart(draft, changed = retell, keep = false, hint = DESK_WORDS.
   return node;
 }
 
+// The Sources step in a few words: everything research will read, whichever way it was added
+// (links, uploaded files, pasted text and library documents), and what could not be read.
+function startSourcesSay(draft) {
+  const held = list(draft.sourceEditor && draft.sourceEditor.value && draft.sourceEditor.value.sources);
+  const ready = held.filter((source) => source.status === 'ready').length + startPicks(draft).length;
+  const unread = held.filter((source) => source.status === 'needs-attention').length;
+  return count(ready, 'source', 'sources') + (unread ? ' · ' + unread + ' not read' : '');
+}
+
 // Where research looks, in one line, said again whenever a document or a choice changes.
 function researchLine(draft, line) {
   if (draft.sourceEditor) {
@@ -666,6 +675,9 @@ function sourcesStep(draft, brand, looks) {
       libraryFull: () => startPicks(draft).length >= START_PICKS,
       extra: () => startPickList(draft),
       onChange: () => { if (draft.retell) draft.retell();
+        // The step's own count follows the editor, which changes without a form event.
+        const said = draft.sourceEditor && draft.sourceEditor.node.closest('form')?.querySelectorAll('.intake-step-summary')[1];
+        if (said) said.textContent = startSourcesSay(draft);
         if(view.sheet === 'new' && view.draft === draft && !draft.starting)intakeStore().keep(draft); }});
   }
   return [draft.sourceEditor ? draft.sourceEditor.node : documentsPart(draft, retell, true),
@@ -832,7 +844,7 @@ function deskStart() {
   intakeStore().pages(form,{draft,steps,names:['Goal','Sources','Review'],validate,start:startTraining,
     summaries:index => {
       if (index === 0) return draft.title.trim() || 'Title and audience';
-      if (index === 1) return startPicks(draft).length + ' documents selected';
+      if (index === 1) return startSourcesSay(draft);
       const outputs = draft.materials.length + (DECKS[draft.deck][0] ? 1 : 0);
       return (draft.levels.length ? draft.levels.join(', ') : 'No levels') + ' · ' + outputs
         + (outputs === 1 ? ' output' : ' outputs');

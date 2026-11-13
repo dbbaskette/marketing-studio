@@ -172,10 +172,44 @@ const key=(editor,k)=>all(editor.node).find(n=>n.dataset.key===k);
   await many.linkFile(file('big.txt','https://example.invalid/big',300000));assert.match(many.problem,/within 256 KB/);
   await many.linkFile(file('again.txt','https://example.invalid/one'));assert.match(many.said,/already a source here/);assert.equal(many.problem,'');
   assert.equal(sent.length,before,'nothing is asked for a file with nothing new');
+  {const row=many.source({id:'r',name:'Rolling restarts',kind:'url',origin:'https://example.invalid/post',status:'ready',characters:8764});
+   assert.ok(all(row).some(n=>n.textContent==='Page text read · 8,764 characters'),'a link row says its text was read');
+   assert.ok(!all(many.source({id:'n',name:'x',kind:'url',origin:'https://example.invalid/x',status:'needs-attention',problem:'no'})).some(n=>/text read/i.test(n.textContent)));}
+  // A file chosen while links are still being read waits its turn and is then added.
+  {const slow={id:'slow',revision:'0',external:false,restricted:false,workers:3,focus:'',sites:[],sources:[]},order=[];let release;
+   const gate=new Promise(done=>{release=done;});
+   const waits=new kit.Editor({request:async one=>{if(one.action==='capture'){if(one.kind==='url')await gate;order.push(one.kind);slow.sources.push({id:String(slow.sources.length),name:one.name||one.url,kind:one.kind,origin:one.url||'',status:'ready'});}return JSON.parse(JSON.stringify(slow));},value:JSON.parse(JSON.stringify(slow))});
+   const reading=waits.linkFile(file('two.txt','https://example.invalid/w1 https://example.invalid/w2'));await settle();
+   const adding=waits.files([{name:'late.pdf',size:5,arrayBuffer:async()=>Buffer.from('%PDF-')}]);await settle();
+   assert.deepEqual(order,[],'nothing is read until the first page answers');
+   release();await reading;await adding;
+   assert.deepEqual(order,['url','url','file']);assert.equal(waits.value.sources.length,3);}
   // A file adds as many links as it holds: none is held back for a count.
   await many.linkFile(file('long.txt',Array.from({length:60},(_,n)=>'https://example.invalid/more-'+n).join('\n')));
   assert.equal(many.value.sources.length,64);assert.equal(many.urls,'');assert.equal(many.problem,'');
   assert.match(many.said,/^60 of 60 links in long\.txt added\.$/);
+  // A long list: one line says how it stands, it can be searched while a source is read, and
+  // what could not be read is shown alone and left out in one go.
+  held.sources[5].status='needs-attention';held.sources[6].status='needs-attention';many.value=JSON.parse(JSON.stringify(held));many.render();
+  assert.equal(key(many,'research-overview').textContent,'64 sources · 62 read · 2 could not be read');
+  assert.match(many.listNode.className,/research-source-scroll/);
+  const find=all(many.node).find(n=>n.dataset.key==='research-find'&&n.tagName==='input');
+  find.value='MORE-59';find.listeners.input();
+  assert.equal(many.listNode.children.filter(row=>!row.hidden).length,1);assert.equal(key(many,'research-shown').textContent,'Showing 1 of 64.');
+  many.busy=true;many.render();
+  assert.equal(all(many.node).find(n=>n.dataset.key==='research-find'&&n.tagName==='input').disabled,false,'searching never waits on reading');
+  assert.equal(key(many,'research-files').disabled,true);many.busy=false;
+  many.find='';await key(many,'research-show-unread').listeners.click();
+  assert.equal(many.listNode.children.length,2);assert.match(key(many,'research-shown').textContent,/the 2 that could not be read/);
+  const asked=sent.length;
+  held.sources.forEach(source=>{if(source.status==='needs-attention')source.status='excluded';});
+  await many.excludeUnread();
+  assert.deepEqual(sent.slice(asked).map(r=>r.action),['exclude','exclude']);
+  assert.equal(key(many,'research-overview').textContent,'64 sources · 62 read · 2 excluded');assert.equal(many.only,'');
+  many.value={...many.value,over:'One research run reads at most 100 links.'};many.render();
+  assert.equal(key(many,'research-over').textContent,'One research run reads at most 100 links.');assert.equal(many.valid(),false);
+  many.value={...many.value,over:null};
+  many.progress={done:11,total:60};many.render();assert.match(key(many,'research-reading-now').textContent,/^Reading link 12 of 60\./);many.progress=null;
   assert.deepEqual(JSON.parse(JSON.stringify(kit.linksIn('(https://example.invalid/wiki/Thing_(x)). <a href="https://example.invalid/z">z</a> https://localhost/x'))),{links:['https://example.invalid/wiki/Thing_(x)','https://example.invalid/z'],left:1});
  }
  console.log('PASS shared source editor: explicit scope, mixed links, validation, draft/focus preservation, progress, no provider actions');
