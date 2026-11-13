@@ -58,7 +58,8 @@ POSTS = ('/api/research-note', '/api/slide-text-draft', '/api/intake-draft', '/a
          '/api/versions', '/api/computer', '/api/brand', '/api/brand/install',
          '/api/shared', '/api/deliver', '/api/storyboard', '/api/review-draft', '/api/build-feedback', '/api/progress-seen',
          '/api/note', '/api/research-site', '/api/picture',
-         '/api/picture-remove', '/api/desk-outline-price', *DESK_POSTS, *LIBRARY_POSTS)
+         '/api/picture-remove', '/api/desk-outline-price', '/api/deck-copy', *DESK_POSTS,
+         *LIBRARY_POSTS)
 BOTH = ('/api/research-note', '/api/slide-text-draft', '/api/intake-draft', '/api/setup', '/api/decks', '/api/run', '/api/delete', '/api/computer', '/api/storyboard',
         '/api/desk-outline-price')
 LISTED = [{'name': 'gpt-6-sol', 'label': 'GPT-6-Sol (gpt-6-sol)', 'family': None,

@@ -209,7 +209,8 @@
     h.intakeStore().pages(form,{draft,steps,names:['Source','Audience','Review'],validate,summaries,
       start:go => h.startDeck(go,{ready,form:formFor}),close:h.closeSheet,
       discarded:() => {h.view.draft = null;}});
-    return [h.add(make('div', 'sheet-heading'), h.sheetTitle('New deck')), form];
+    return [h.add(make('div', 'sheet-heading'), h.sheetTitle('New deck')), h.copiedNote(draft), form]
+      .filter(Boolean);
   }
 
   function kindCards(draft) {

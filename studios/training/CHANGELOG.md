@@ -1,5 +1,7 @@
 # Changelog
 
+Unreleased: **Copy as new**, on Home and on the Trainings list. Beside a training's Open is a way to start another like it: the start form opens filled in with its topic, audience, levels, materials, deck choices, research questions and where research may search, and with its documents already added, including those added on the desk after it started. Change anything, such as what it should teach, then Start: it is researched and written again as a new training, and the one copied is only read. A document that is not on this computer is named, to add again. A document from the Document Library comes as the revision the training kept.
+
 Unreleased: installing or updating a companion skill brings its newest release. Once you agree, Harness Research and Harness Slides are looked up in their own repositories and installed at their newest stable release, checked file for file, instead of the version this Training Studio was pinned to. The pinned version is still what is installed when the newest cannot be looked up. Also, a deck the runner stopped itself, such as one whose brand changed, now offers **Review the slide text** and **Finish without the deck** as a failed one does.
 
 Unreleased: rebranding a deck as a copy follows Harness Brand 1.1. The brand skills (`tanzu-brand`, `true-source-brand`, `broadcom-brand`) are now shortcuts to Harness Brand's one rebranding worker and are still found and run the same way. One that is not set up now says to run `rebrand setup` in the Harness Brand skill folder.

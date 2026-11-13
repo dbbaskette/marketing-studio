@@ -1,5 +1,7 @@
 # Changelog
 
+Unreleased: **Copy as new**, on Home and on the Decks list. Beside a deck's Open is a way to start another like it: the start form opens filled in with what it started from (the idea's notes, the uploaded or pasted document, the deck to improve or its Google link), its audience, goal, length, brand, look and research choices, with its research sources already added. Change anything, such as the goal, then Start: it is made again as a new deck, and the one copied is only read. Material that is not on this computer is named, to choose again.
+
 Unreleased: installing or updating a companion skill brings its newest release. Once you agree, Harness Research and Harness Slides are looked up in their own repositories and installed at their newest stable release, checked file for file, instead of the version this Presentation Studio was pinned to. The pinned version is still what is installed when the newest cannot be looked up.
 
 Unreleased: a research run that has kept nothing moves to the installed Harness Research. A training or deck is tied to the helper version it started with, so one started before an update kept that version's limits (200 entries) even after a newer helper was installed. While research has registered nothing yet, the run now moves to the installed stable release and takes what it takes; a run with saved research stays with the helper that wrote it.

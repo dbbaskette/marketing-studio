@@ -7775,6 +7775,11 @@ class Engine(Reviewing):
         from runner import settings_change
         return settings_change.sources(self, path)
 
+    def copy_setup(self, path) -> dict:
+        """A training's setup and documents, for the start form to make a new one from."""
+        from runner import copy_setup
+        return copy_setup.of(self, path)
+
     def change_settings(self, path, sent: dict, preview: bool = False) -> dict:
         """Say what a change of settings does, or save it; the training then waits for Continue."""
         from runner import settings_change
