@@ -300,7 +300,7 @@ def _draft(scratch: Path, name: str, text: str) -> Path:
 
 
 DRAWN = ('outline', 'section')      # the kinds whose check asks the slides tool
-EXTENSIONS = {'research-json': '.json', 'research-plan': '.json', 'outline': '.json', 'section': '.json'}
+EXTENSIONS = {'research-json': '.json', 'reading-notes': '.json', 'research-plan': '.json', 'outline': '.json', 'section': '.json'}
 
 
 def picture(path: Path) -> bytes:

@@ -140,7 +140,8 @@ class CompanionVersionsTests(unittest.TestCase):
         record = json.loads(path.read_text())
         self.assertEqual(record['unrelated'], {'keep': True})
         self.assertEqual(record['companions']['harness-research']['version'], '1.1.0')
-        self.assertEqual(record['companions']['harness-research']['requirement'], '>=1.0.0')
+        # The requirement moves up with the lock: the studios always use the latest locked release.
+        self.assertEqual(record['companions']['harness-research']['requirement'], '>=1.1.0')
         self.assertFalse(updater().refresh(path)['written'])
 
     def test_failed_refresh_never_replaces_the_lock_file(self):
@@ -227,6 +228,19 @@ class PinnedFloorTests(unittest.TestCase):
         self.assertIn('`requirement: ">=0.17.0"` for Harness Slides', installation)
         for path in ('README.md', 'docs/installation.md'):
             self.assertNotIn('0.14.1', (ROOT / path).read_text(encoding='utf-8'), path)
+
+    def test_the_harness_companions_are_always_held_to_their_latest_locked_release(self):
+        pins = json.loads((ROOT / 'pins/companions.json').read_text(encoding='utf-8'))['companions']
+        self.assertEqual(set(pins), {'harness-research', 'harness-slides'})
+        for name, pin in pins.items():
+            with self.subTest(companion=name):
+                self.assertEqual(pin['requirement'], '>=' + pin['version'])
+                # An installed copy one release behind is offered the update; the lock itself is not.
+                older = '.'.join(str(part) for part in (*companions.as_tuple(pin['version'])[:2], 0)) \
+                    if companions.as_tuple(pin['version'])[2] else None
+                self.assertEqual(companions.wanting({'claude': pin['version']}, companions.minimum_version(pin)), [])
+                if older:
+                    self.assertEqual(companions.wanting({'claude': older}, companions.minimum_version(pin)), ['claude'])
 
     def test_brand_skill_floor_is_not_installed(self):
         path = ROOT / 'pins/companions.json'

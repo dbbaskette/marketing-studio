@@ -109,6 +109,80 @@ class SessionTests(unittest.TestCase):
             value['prose'][0].update(verdict='narrow', note='Synthetic prose correction')
         return json.dumps(value), []
 
+    def many(self, count=120):
+        return [{'file': f'sources/doc-{n:03d}.txt', 'text': TEXT + f'\nDocument {n}.', 'title': f'Document {n}',
+                 'origin': f'Supplied document {n}', 'permission': 'selected'} for n in range(count)]
+
+    def reader(self, seen, fail=None):
+        """An invoke that reads groups as a reading agent would, and records what each agent was given."""
+        original = self.invoke
+        def invoke(phase, guidance, payload, offered, fetch):
+            seen.append((phase, len(offered), copy.deepcopy(payload)))
+            if phase != 'read':
+                return original(phase, guidance, payload, offered, fetch)
+            group = payload['_execution']['stream']
+            self.calls.append((phase, group))
+            if fail and group in fail:
+                fail.discard(group)
+                raise ValueError('Synthetic reading failure')
+            areas = [area['area'] for area in payload['areas']]
+            notes = [{'source': f's{n}', 'covers': 'Synthetic capacity notes.', 'terms': ['capacity'], 'read': 'full',
+                      'bears_on': [{'area': areas[n % len(areas)], 'rank': 1}]} for n in range(1, len(offered) + 1)]
+            return json.dumps({'schema': 1, 'notes': notes, 'summary': 'A synthetic group about capacity.'}), []
+        return invoke
+
+    def test_more_than_fifty_documents_are_read_in_groups_and_no_agent_is_given_more(self):
+        self.barrier = None; self.task['source_mode'] = 'selected'
+        seen = []
+        result, manifest = self.workflow.run(self.root, self.task, self.reader(seen), self.many(), reading=True,
+                                             progress=self.states.append)
+        self.assertTrue(result['review']['accepted'])
+        self.assertEqual(sorted(count for phase, count, _ in seen if phase == 'read'), [20, 50, 50])
+        self.assertTrue(all(count <= 50 for _, count, _ in seen), [(p, c) for p, c, _ in seen])
+        investigations = [(count, payload) for phase, count, payload in seen if phase == 'investigate']
+        self.assertEqual((len(investigations), sum(count for count, _ in investigations)), (3, 120))
+        for count, payload in investigations:
+            self.assertEqual(len(payload['source_outline']['sources']), count)
+            self.assertIn('Cite at most 16 sources', payload['return'])
+        reading = [state['reading'] for state in self.states if state.get('phase') == 'read']
+        self.assertEqual((reading[0]['total'], reading[0]['read'], reading[0]['of']), (120, 0, 3))
+        self.assertEqual(self.states[-1]['reading']['read'], 120)
+        plan = json.loads((session.case_for(self.root) / '.harness-research/studio-reading.json').read_text())
+        self.assertEqual(sum(len(files) for files in plan['assignment'].values()), 120)
+        self.assertEqual(len({file for files in plan['assignment'].values() for file in files}), 120)
+        self.assertEqual((plan['unused'], plan['dropped']), ([], {}))
+
+    def test_a_failed_group_keeps_the_others_and_a_retry_reads_only_it(self):
+        self.barrier = None; self.task['source_mode'] = 'selected'
+        seen = []
+        with self.assertRaisesRegex(ValueError, 'Synthetic reading failure'):
+            self.workflow.run(self.root, self.task, self.reader(seen, fail={'group-02'}), self.many(), reading=True)
+        self.assertFalse(any(phase == 'investigate' for phase, _, _ in seen))
+        seen.clear(); self.calls.clear()
+        result, _ = self.workflow.run(self.root, self.task, self.reader(seen), self.many(), reading=True)
+        self.assertEqual([count for phase, count, _ in seen if phase == 'read'], [50])
+        self.assertTrue(result['review']['accepted'])
+
+    def test_many_documents_are_refused_plainly_where_groups_are_not_read(self):
+        self.barrier = None; self.task['source_mode'] = 'selected'
+        with self.assertRaisesRegex(ValueError, '60 documents, and one research agent reads at most 50'):
+            self.run_session(self.many(60))
+        self.assertEqual(self.calls, [])
+        self.assertFalse((self.root / '.studio-research').exists(), 'nothing is registered for a run that cannot go on')
+
+    def test_more_than_the_installed_helper_takes_is_said_before_anything_is_registered(self):
+        self.barrier = None; self.task['source_mode'] = 'selected'
+        links = [{**source, 'origin': f'https://example.invalid/{n}'} for n, source in enumerate(self.many(101))]
+        self.assertEqual(session.intake_entries(links), 202)
+        with self.assertRaisesRegex(ValueError, 'at most 200 entries.*This run has 202'):
+            self.workflow.run(self.root, self.task, self.invoke, links, reading=True)
+        self.assertEqual(self.calls, [])
+        self.assertFalse((self.root / '.studio-research').exists())
+        newer = self.root / 'newer'; (newer / 'references').mkdir(parents=True)
+        (newer / session.INTAKE_FILE).write_text(json.dumps({'schema': 1, 'entries': 4000}))
+        self.assertEqual(session.intake_limits(newer), {'entries': 4000})
+        self.assertEqual(session.intake_limits(self.root), {'entries': 200})
+
     def run_session(self, sources=()):
         return self.workflow.run(self.root, self.task, self.invoke, sources, progress=self.states.append)
 

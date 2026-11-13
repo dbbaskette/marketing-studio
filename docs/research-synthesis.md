@@ -6,7 +6,7 @@ helper supports it. Blog Studio, Presentation Studio and Training Studio share
 confinement, model profiles, stop controls and review levels.
 
 The companion lock selects the stable **1.1.1** release at an exact commit and
-checksum. Harness Research accepts newer stable releases through `>=1.0.0`;
+checksum. Harness Research is always the latest locked release (`>=1.1.1` today), and accepts newer stable releases;
 Harness Slides also retains stable `>=` selection. Prerelease tags are excluded,
 and each resolved release is locked to its commit and source checksum.
 Installing/updating companions remains an explicit action. Merely opening a

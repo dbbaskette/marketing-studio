@@ -62,7 +62,7 @@ class PrepareTests(JobCase):
                                                                 'brief_kind': 'sales'}})
         self.assertEqual(list(worker_tools.VALIDATORS), [
             'finishing', 'research-plan', 'blueprint', 'document', 'brief', 'scenario', 'yoodli', 'outline',
-            'section', 'part', 'slide-words', 'research-json', 'provisional-outline',
+            'section', 'part', 'slide-words', 'research-json', 'reading-notes', 'provisional-outline',
             'flag-decisions'])
 
     def test_a_finding_needs_a_question_id(self):

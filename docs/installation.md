@@ -117,8 +117,9 @@ runtime locks are in `pins/runtimes.json`. Companion requirements and exact rele
 locks are in `pins/companions.json`.
 
 Each companion lock names an exact `version`, `commit` and source `sha256`, and a
-minimum requirement: `requirement: ">=1.0.0"` for Harness Research and
-`requirement: ">=0.17.0"` for Harness Slides. Source installs, companion updates and
+requirement, which is always the locked release itself: `requirement: ">=1.1.1"` for Harness
+Research and `requirement: ">=0.17.0"` for Harness Slides. The studios always use the latest
+locked Harness companions, so an installed copy older than the lock is offered its update. Source installs, companion updates and
 release bundles all use the exact lock. A missing companion, or one older than its
 requirement, is fetched at the locked commit and must match the locked checksum file
 for file; nothing is recomputed. The requirement only decides which already-installed
@@ -136,7 +137,8 @@ python3 scripts/ci/research-runtime.py "$TMPDIR/research-runtime"
 STUDIO_TEST_RESEARCH_RUNTIME="$TMPDIR/research-runtime" PYTHONPATH=tests python3 -m unittest test_research_contract
 ```
 
-The refresh selects the newest stable numeric Git tag satisfying the requirement,
+The refresh selects the newest stable numeric Git tag satisfying the requirement, moves the
+requirement up to that release so older installed copies are updated to it,
 resolves annotated tags to commits, verifies the package version and entry, and records
 a source checksum. It never runs an installer or modifies installed skills. A moved
 locked tag, mismatched package, unsafe source, or failed resolution leaves the lock

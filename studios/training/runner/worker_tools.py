@@ -535,6 +535,9 @@ VALIDATORS = {'finishing': check_finishing, 'research-plan': check_plan, 'bluepr
               'yoodli': check_yoodli, 'outline': check_outline, 'section': check_section,
               'part': check_part, 'slide-words': check_slide_words}
 VALIDATORS['research-json'] = check_research_json
+# One group of documents read and noted, for research over more than fifty sources.
+from studio_core.research_reading import check as check_reading_notes  # noqa: E402
+VALIDATORS['reading-notes'] = check_reading_notes
 from runner.outline_first import validate as check_provisional_outline
 VALIDATORS['provisional-outline'] = check_provisional_outline
 from runner.research_decision import validate as check_flag_decisions
@@ -879,6 +882,9 @@ class WorkerTools:
             if spec['kind'] == 'research-json':
                 # A dossier may cite only what this job saved; the author can correct it here.
                 spec = {**spec, 'captures': self._index(), 'folder': str(self.folder)}
+            if spec['kind'] == 'reading-notes':
+                # Notes are for documents this job opened: its own tool log says which.
+                spec = {**spec, 'folder': str(self.folder)}
             return VALIDATORS[spec['kind']](text, spec)
         problems, ran, warnings, kept = VALIDATORS[spec['kind']](
             text, spec, self.slides(), self.folder / 'drafts')
