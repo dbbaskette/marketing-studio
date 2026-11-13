@@ -1,5 +1,7 @@
 # Changelog
 
+Unreleased: a research run that has kept nothing moves to the installed Harness Research. A training or deck is tied to the helper version it started with, so one started before an update kept that version's limits (200 entries) even after a newer helper was installed. While research has registered nothing yet, the run now moves to the installed stable release and takes what it takes; a run with saved research stays with the helper that wrote it.
+
 Unreleased: one research run reads up to 1,000 links, or 2,000 files and pasted texts, with Harness Research 1.2.0 (was 100 and 200). Sources are registered a hundred at a time, so a long list starts quickly. An older installed Harness Research still takes 200 entries and says so when research starts.
 
 Unreleased: research reads many documents in groups. With more than fifty readable sources, the documents are divided into groups of at most fifty and one reader per group notes what each covers and which research areas it bears on; each area's investigator is then given the fifty that bear on it most, never more. Every document is read by some agent, the research screen shows how far the reading has got, and a retry reads only the groups that did not finish. Fifty sources or fewer are researched as before.

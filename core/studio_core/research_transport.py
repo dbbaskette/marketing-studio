@@ -1,5 +1,6 @@
 """Shared confined native transport for the opted-in collection protocol."""
 import copy
+import re
 import json
 from pathlib import Path
 import secrets
@@ -46,6 +47,52 @@ def describe(progress):
                 phase, 'Preparing the research areas.')
 
 
+def _release(version):
+    found = re.match(r'(\d+)\.(\d+)\.(\d+)$', str(version or ''))
+    return tuple(int(part) for part in found.groups()) if found else None
+
+
+def kept_nothing(root):
+    """Whether research has registered nothing with Harness Research yet: no topic asset and
+    no current case. Captured inputs alone are the studio's own copies."""
+    base = Path(root) / rc.CASE
+    return not (base / 'current.json').exists() and not any(base.glob('*/topic'))
+
+
+def move_to_installed(engine, root, record, product='training'):
+    """A run is tied to the Harness Research it started with, so its saved work is read by
+    the helper that wrote it. One that has kept nothing has nothing to read back: it moves to
+    the installed helper when that is a newer stable release, and gets that helper's limits."""
+    saved = record.get('research_contract')
+    if not isinstance(saved, dict) or not parallel.protocol(record) or not kept_nothing(root):
+        return record
+    installed = rc.snapshot(engine.research())
+    was, now = _release(saved.get('version')), _release((installed or {}).get('version'))
+    if not installed or installed == saved or not was or not now or now <= was:
+        return record
+    runtime = Path(engine.research().runtime)
+    supported = parallel.capability(runtime)
+    if not supported:
+        return record
+    with engine.files:
+        current = engine._load(root)
+        if current.get('research_contract') != saved:
+            return current
+        current['research_contract'] = installed
+        current['research_execution']['capability'] = supported
+        if research_sections.enabled(current) and current['section_synthesis'].get('reuse') is not None:
+            current['section_synthesis']['reuse'] = research_sections.reuse_capability(runtime)
+        if product == 'training':
+            import workspace
+            with workspace.locked(root):
+                session = workspace.load(root)
+                if session.get('research_contract') == saved:
+                    session['research_contract'] = installed
+                    workspace.store(root, session)
+        engine._store(root, current)
+        return current
+
+
 def native(engine, root, run, task, sources, product='training'):
     from runner import agents, companion, documents
     if product == 'presentation':
@@ -59,6 +106,7 @@ def native(engine, root, run, task, sources, product='training'):
     task = copy.deepcopy(task)
     focus = (record.get('research_inputs') or {}).get('focus')
     if focus: task['scope'] += '\nResearch focus: ' + focus
+    record = move_to_installed(engine, root, record, product)
     tool = rc.matching(engine.research(), record.get('research_contract'))
     if tool is None:
         raise WorkspaceError('This research run needs its saved Harness Research version. Restore it before continuing.')
