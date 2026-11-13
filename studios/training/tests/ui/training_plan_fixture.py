@@ -41,7 +41,12 @@ def main():
             if workspace_mode:
                 from test_runner_deck import MAJOR
                 case.workers.found = [[MAJOR]]
-            root = case.supplied(**({'materials': ['document', 'brief', 'scenario'], 'yoodli': True} if '--practice' in sys.argv else {})) if '--settings' in sys.argv else case.space.root if '--new' in sys.argv else case.begin(flow='desk', **({} if workspace_mode else {'deck_target': None, 'brand': None}),
+            if '--stopped-deck' in sys.argv:
+                # A deck that stops at its sections, to see the ways on from a stop.
+                from runner_support import fails
+                case.engine.content_first = True
+                case.workers.then('section', *[fails()] * 12)
+            root = case.begin(flow='desk', slide_text_review=False) if '--stopped-deck' in sys.argv else case.supplied(**({'materials': ['document', 'brief', 'scenario'], 'yoodli': True} if '--practice' in sys.argv else {})) if '--settings' in sys.argv else case.space.root if '--new' in sys.argv else case.begin(flow='desk', **({} if workspace_mode else {'deck_target': None, 'brand': None}),
                 **({'levels':['101','201']} if '--two-levels' in sys.argv else {}),
                 **({'yoodli': True} if '--yoodli' in sys.argv else {}))
         server = desk.Desk(page=lambda port: page.RunnerPage(port, case.engine))

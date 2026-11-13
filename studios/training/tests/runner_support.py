@@ -1109,6 +1109,7 @@ class Brand:
         # records the one chosen. An older one, the default here, offers none.
         self.offers_looks, self.chosen, self.written, self.cannot_render = False, [], [], False
         self.takes_unrendered, self.unrendered = True, []
+        self.cannot_draw = None   # what the brand says when its own sample slide does not fit
         # A brand that is the entry to slide building: `entry` is what `guides()` says
         # ('brand', 'plain' or None, an older brand), and `guided` each guidance call.
         self.entry, self.guided = None, []
@@ -1195,6 +1196,9 @@ class Brand:
         output = Path(output)
         output.mkdir(parents=True)
         samples = []
+        if self.cannot_draw:
+            shutil.rmtree(output, ignore_errors=True)
+            raise brand_skill_refused([self.cannot_draw])
         if self.cannot_render and preview:
             shutil.rmtree(output, ignore_errors=True)   # as the brand removes what it began
             raise brand_skill_refused(['Google Slides could not be reached to render the '

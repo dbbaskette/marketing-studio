@@ -1004,6 +1004,21 @@ summary {
   margin-top: 0.3rem;
 }
 
+/* Other ways on from a stop: each button with what it does, one to a row. */
+.ways-on {
+  list-style: none;
+  margin: 0.5rem 0 0.9rem;
+  padding: 0;
+  display: grid;
+  gap: 0.7rem;
+}
+
+.way-on {
+  display: grid;
+  gap: 0.3rem;
+  justify-items: start;
+}
+
 .row-title {
   display: block;
   font-size: 1.04rem;

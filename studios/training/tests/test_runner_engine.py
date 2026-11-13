@@ -1886,7 +1886,7 @@ class HaltTests(StudioCase):
                      'nothing to resume.')
         self.refused(root, 'retry', 'Nothing here failed, so there is nothing to try again.')
         self.refused(root, 'restart', 'A run can be asked to: pause, resume, stop, retry, '
-                     'finish-level, more-time.')
+                     'finish-level, more-time, slide-text, leave-deck, bring-deck.')
 
         self.workers.then('research-plan', fails(), fails(), fails())
         failed = self.saved_start(title='Health checks')
@@ -1901,7 +1901,7 @@ class HaltTests(StudioCase):
         for action in ACTIONS:
             with self.subTest(action):
                 self.refused(root, action, 'finished as far as the runner takes it|not paused '
-                             'or stopped|Nothing here failed')
+                             'or stopped|Nothing here failed|not offered')
         elsewhere = self.base / 'elsewhere'
         with self.assertRaisesRegex(WorkspaceError, 'No run is driving this training'):
             self.engine.act(elsewhere, 'pause')

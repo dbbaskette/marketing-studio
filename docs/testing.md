@@ -73,6 +73,7 @@ provider job or reads this computer's studio settings:
 | Brands | `python3 tests/brands_fixture.py` |
 | Training Studio, a training being written | `python3 tests/training_progress_fixture.py` |
 | Training Studio, drafts to review | `python3 studios/training/tests/ui/training_plan_fixture.py --desk` |
+| Training Studio, a deck that stopped | `python3 studios/training/tests/ui/training_plan_fixture.py --desk --stopped-deck` |
 | A deck's slides, in either deck studio | `python3 tests/slide_review_fixture.py training --rendered` or `presentation` |
 | Presentation Studio, an empty workspace | `python3 studios/presentation/tests/ui/intake_fixture.py` |
 | Blog Studio, a draft on the desk | `python3 tests/blog_browsing_fixture.py` |

@@ -3392,7 +3392,9 @@ function slideTextReview(outline, held) {
   const review=Drafting.slideContent({slides:outline.slides,
     label:'Review slide text'+(outline.level?' · Level '+outline.level:''),persistence:state.draft,
     note:state.note,onNote:note=>state.note=note,
-    edits:state.edits,onEdit:slides=>state.edits=slides,
+    // Words written with each slide's design are corrected by asking for changes: an edit
+    // here would leave the design describing other words.
+    edits:outline.design?null:state.edits,onEdit:outline.design?null:slides=>state.edits=slides,
     onDecision:async(decision,note,edited)=>{
       const result=await send('outline',{path,level:outline.level||null,
         decision:decision==='changes'?'revise':'approve',note,seen:outline.sha256,
@@ -3889,6 +3891,7 @@ function paintDesk(fresh, fromPoll = false) {
       ours && run.outline?.content_first && run.outline.waiting ? slideTextNotice(run.outline, held, shown) : null,
       run.question && ours ? questionPart(run, found.title) : null,
       run.problem ? problemPart(run, lead === 'problem') : null,
+      ours && run.deck_aside ? deckAsidePart() : null,
       adding(run) && ours && !held.unsent ? documentsCard(run, lead === 'documents') : null,
       preparingPlan || waitingPlan ? null : levelStanding(found, level),
       finished ? publishCard(run, published) : null,

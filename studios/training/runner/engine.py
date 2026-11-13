@@ -243,6 +243,7 @@ from studio_core.drafting import basis, guards
 
 from runner import agents, companion, deck, deck_edit, draft_jobs, drafts, gitstate, pipeline, settings, team, worker_tools
 from runner import library
+from runner import recovery
 from studio_core.document_library import LibraryError
 from studio_core.document_library import context as library_context
 from runner import brand as brand_skill
@@ -269,7 +270,8 @@ MODELS_FOR = 3600       # seconds a list of an agent's models is reused
 MODELS_MISSED = 60      # seconds before a list that could not be made is asked for again
 LOOKED_FOR = 300        # seconds a look at what this computer has for a deck is reused
 BUSY_TRIES = 20         # times a finding is offered while another save holds the lock
-ACTIONS = ('pause', 'resume', 'stop', 'retry', 'finish-level', stops.MORE_TIME)
+ACTIONS = ('pause', 'resume', 'stop', 'retry', 'finish-level', stops.MORE_TIME,
+           *recovery.WAYS)
 # The stages that are for the whole training, before each level is built in turn: a level's
 # blueprint is drafted among them, so finishing "this level" means nothing there yet.
 WHOLE_TRAINING = ('intake', 'research-plan', 'research', 'blueprint')
@@ -358,6 +360,10 @@ PREVIEWS = 'previews'   # in the per-user data folder: the render's turn, and ea
 # The desk's receipt when the one pass of fixes after a review corrects what a slide says.
 FIXED_WORDS = ('Corrected on the desk after the review of the drawn slides: only the words the '
                'review found wrong were changed.')
+# The brand refused its own sample slide, and not for want of a renderer.
+BRAND_CANNOT_DRAW = ('The brand could not draw a sample slide of this deck, so its slides '
+                     'would be refused the same way: {why} Put the brand pack right, then '
+                     'try again. Nothing has been spent on drawing slides.')
 DECK_KEPT = ('What you approved the deck should say is kept, and so is everything made '
              'before it.')
 CHANGED = '{it} has changed since it was opened. Read the new version before deciding.'
@@ -1506,9 +1512,9 @@ class Engine(Reviewing):
                     record['research_contract'] = contract
                     record['schema'] = 3
                 # What the deck says is approved before anything is drawn, unless the form
-                # turned that off.
-                if desk and self.content_first and form.get('slide_text_review') \
-                        and not form.get('walkthrough'):
+                # turned that off. A walkthrough of each slide's design does not turn it
+                # off: on the desk nothing else would stop for the person before drawing.
+                if desk and self.content_first and form.get('slide_text_review'):
                     record['deck_content'] = deck_content.PROTOCOL
                 if desk and not form.get('flags_review'):
                     # Flags the independent check leaves are decided by an assistant, so
@@ -2475,8 +2481,14 @@ class Engine(Reviewing):
                           'default': manifest.get('default'),
                           'house': [str(line) for line in manifest.get('house') or ()]}
                 kept = folder.name
-            except (WorkspaceError, OSError, KeyError, TypeError, ValueError):
+            except (WorkspaceError, OSError, KeyError, TypeError, ValueError) as second:
                 shutil.rmtree(folder, ignore_errors=True)
+                if (str(second).strip() or type(second).__name__) == why:
+                    # Refused in the same words with nothing to render: the brand cannot
+                    # draw a slide of this deck at all, so its sections would be refused
+                    # the same way. Stop here, before anything is spent on them.
+                    return self._problem(root, it.id, 'failed',
+                                         BRAND_CANNOT_DRAW.format(why=why), DECK_KEPT)
             with self.files:
                 self._note(root, level, look={**base, 'failed': why, 'folder': kept,
                                               'unseen': unseen})
@@ -4337,6 +4349,13 @@ class Engine(Reviewing):
             self._problem(root, 'research' if question else step.id, 'failed',
                           stops.agent_stopped(self._title(record['agent']), outcome, detail),
                           KEPT, action=stops.agent_action(outcome))
+        elif not question and outcome.reason != 'timeout' \
+                and entry['failed'] < pipeline.ATTEMPTS and pipeline.same_cause(entry['attempts']):
+            # The checks refused it twice in the same words: another try would spend the
+            # same again and be refused the same way.
+            self._problem(root, step.id, 'failed', (
+                f'This step failed twice for the same reason, so it was not tried again: '
+                f'{step.label}. {detail}'), KEPT)
         elif not question and entry['failed'] >= pipeline.ATTEMPTS:
             if outcome.reason == 'timeout':
                 return self._out_of_time(root, step.id, step.label, record, pipeline.ATTEMPTS)
@@ -6580,6 +6599,14 @@ class Engine(Reviewing):
         if action not in ACTIONS:
             raise WorkspaceError('A run can be asked to: ' + ', '.join(ACTIONS) + '.')
         run = self._run(root)
+        if action in recovery.WAYS:
+            # A way on from a stopped deck, or back from one set aside (`recovery`).
+            with self.files:
+                self._edits_first(root)
+                self._commit(root, recovery.take(self, root, action))
+            run.stop.clear()
+            self.wake(root)
+            return self.view(root)
         # Whether the originals a research check could not read can be served now, asked
         # before the files are held: a dry read reads files of its own.
         held = (self._load(root).get('problem') or {}).get('unreadable')
@@ -7690,8 +7717,13 @@ class Engine(Reviewing):
                          # The research check's objections, read where the stop is.
                          **({'objections': objections} if problem.get('objected')
                             and (root / objections).is_file() else {}),
-                         **self._research_tried(record, problem, root)}
+                         **self._research_tried(record, problem, root),
+                         # Ways on beside the one action, for a deck that stopped.
+                         **({'ways': recovery.ways(root, record, found.session)}
+                            if mine and recovery.ways(root, record, found.session) else {})}
                         if problem else None),
+            'deck_aside': bool(mine and drafts.on_desk(record)
+                               and recovery.aside(found.session)),
             'documents': self._supplied(root, record, found),
             'research_from': self._research_view(record),
             'copies': self._copies(found, (record.get('copies') or {}).get('remote')),

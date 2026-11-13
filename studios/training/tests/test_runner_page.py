@@ -49,7 +49,7 @@ POSTS = ('/api/research-decision', '/api/research-note', '/api/slide-text-draft'
          '/api/upgrade', '/api/restart', '/api/versions', '/api/brand', '/api/brand/install', '/api/review',
          '/api/note', '/api/research-site')
 BOTH = ('/api/research-note', '/api/slide-text-draft', '/api/outline-flow', '/api/intake-draft', '/api/setup', '/api/run', '/api/trainings')
-RUN_KEYS = ['agent', 'ahead', 'can_migrate_desk', 'can_open_desk', 'clash', 'controls', 'copies', 'current_models', 'decided', 'deck', 'deck_left', 'documents', 'driver', 'effort',
+RUN_KEYS = ['agent', 'ahead', 'can_migrate_desk', 'can_open_desk', 'clash', 'controls', 'copies', 'current_models', 'decided', 'deck', 'deck_aside', 'deck_left', 'documents', 'driver', 'effort',
             'finished', 'flow', 'kept', 'last_shared', 'look', 'mine', 'model', 'model_mode', 'note', 'notice', 'outline', 'problem',
             'question', 'queue', 'redesign', 'research_from', 'research_progress', 'review', 'review_level', 'sentence', 'settings', 'spent', 'state', 'steps', 'taken', 'timing',
             'workers']
@@ -1745,7 +1745,8 @@ class RunTests(PageCase):
         path = self.saved_started()
         for sent, expect, said in (
                 ({'path': path, 'action': 'restart'}, 400,
-                 'A run can be asked to: pause, resume, stop, retry, finish-level, more-time.'),
+                 'A run can be asked to: pause, resume, stop, retry, finish-level, more-time, '
+                 'slide-text, leave-deck, bring-deck.'),
                 ({'path': path}, 400, 'Give action as text.'),
                 ({'action': 'pause'}, 400, 'Give path as text.'),
                 ({'path': path, 'action': 'pause'}, 409, 'Only a training that is working '
