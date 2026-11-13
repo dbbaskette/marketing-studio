@@ -1,5 +1,7 @@
 # Changelog
 
+Unreleased: a research run that has kept nothing moves to the installed Harness Research. A training or deck is tied to the helper version it started with, so one started before an update kept that version's limits (200 entries) even after a newer helper was installed. While research has registered nothing yet, the run now moves to the installed stable release and takes what it takes; a run with saved research stays with the helper that wrote it.
+
 Unreleased: Change settings chooses the materials. Its Materials section now has the learner guide, reference brief, practice scenarios and Yoodli scenarios to tick, as the start form does. One with work in it stays, and practice scenarios stay as chosen once the blueprint is written. Unaccepted research starts again with the plan kept, because research is told which materials are wanted.
 
 Unreleased: one research run reads up to 1,000 links, or 2,000 files and pasted texts, with Harness Research 1.2.0 (was 100 and 200). Sources are registered a hundred at a time, so a long list starts quickly. An older installed Harness Research still takes 200 entries and says so when research starts.
