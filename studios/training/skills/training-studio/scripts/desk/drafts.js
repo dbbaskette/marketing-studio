@@ -1014,6 +1014,7 @@ async function openChangeSettings(opener) {
     draft: { topic: values.topic || '', audience: values.audience || '',
       time: values.time_limit || '', purpose: Math.max(0, purposes.indexOf(values.purpose)),
       levels: list(values.levels).slice(), brief: values.brief_kind === 'competitive' ? 1 : 0,
+      materials: list(values.materials).slice(), yoodli: Boolean(values.yoodli),
       deck: deck < 0 ? DECKS.length - 1 : deck,
       brand: (values.brand && values.brand.brand) || '',
       variant: (values.brand && values.brand.variant) || '',
@@ -1049,10 +1050,19 @@ function settingsSectionSummary(changing) {
   const index = changing.section || 0, draft = changing.draft;
   return 'Section ' + (index + 1) + ' of 3 · ' + (index === 0
     ? (draft.audience.trim() || 'Goal and audience') : index === 1
-      ? 'Levels ' + draft.levels.join(', ') : 'Sources and research questions');
+      ? settingsMade(draft) : 'Sources and research questions');
+}
+// What a training makes, in a line: its materials, its deck and its levels.
+function settingsMade(draft) {
+  const made = [...MATERIALS.filter(([id]) => draft.materials.includes(id)).map(([, name]) => name),
+    ...(draft.yoodli ? ['Yoodli scenarios'] : []),
+    ...(DECKS[draft.deck][0] ? ['Slide deck'] : [])];
+  return (made.length ? made.join(', ') : 'Nothing chosen yet')
+    + (draft.levels.length ? ' · Levels ' + draft.levels.join(', ') : '');
 }
 function revealChangedSetting(id) {
-  showSettingsSection(id === 'change-questions' ? 2 : id === 'change-scenario-options' ? 1 : 0);
+  showSettingsSection(id === 'change-questions' ? 2
+    : ['change-scenario-options', 'change-materials'].includes(id) ? 1 : 0);
 }
 
 // The first thing on the form that can be changed: the topic, unless it is locked.
@@ -1100,6 +1110,8 @@ function settingsBody(changing) {
     purpose: purposes[draft.purpose], time_limit: draft.time.trim() || null,
     levels: LEVELS.filter((level) => draft.levels.includes(level)),
     brief_kind: draft.brief ? 'competitive' : 'product',
+    materials: MATERIALS.map(([id]) => id).filter((id) => draft.materials.includes(id)),
+    yoodli: Boolean(draft.yoodli),
     scenario_plan: scenarioPlanBody(draft),
     research_questions: draft.researchQuestions.split('\n'),
     deck_target: deck,
@@ -1112,7 +1124,13 @@ function settingsBody(changing) {
 
 function settingsReady(changing) {
   const { draft } = changing;
-  const scenarioProblem = changing.shown.practice ? scenarioPlanProblem(draft) : '';
+  if (!draft.materials.length && DECKS[draft.deck][0] === null) {
+    say(byId('change-problem'), 'Choose at least one material to make, or a slide deck.');
+    revealChangedSetting('change-materials');
+    byId('change-materials')?.querySelector('input:not(:disabled)')?.focus();
+    return false;
+  }
+  const scenarioProblem = draft.materials.includes('scenario') ? scenarioPlanProblem(draft) : '';
   if (scenarioProblem) {
     say(byId('change-problem'), scenarioProblem);
     revealChangedSetting('change-scenario-options');
@@ -1232,6 +1250,41 @@ function settingsSheet() {
     const box = levels.querySelector('input[data-key="change-level ' + level + '"]');
     if (box) box.disabled = true;
   }
+  // Which materials are made. One with work in it stays; the practice scenarios stay as
+  // chosen once the blueprint, which plans the practice, is written.
+  const madeMaterials = list(shown.made_materials);
+  const scenarioFields = scenarioPlanFields(draft, edited, 'change');
+  const yoodli = add(make('div', 'field'), trainingTick('Yoodli scenarios', draft.yoodli,
+    (on) => { draft.yoodli = on; edited(); }, 'change-yoodli'),
+  make('p', 'quiet field-hint', 'Yoodli scenarios are built from the reference brief and the '
+    + 'practice scenarios, so they need both.'));
+  const settleMaterials = () => {
+    scenarioFields.hidden = !draft.materials.includes('scenario');
+    const able = ['brief', 'scenario'].every((id) => draft.materials.includes(id));
+    if (!able) draft.yoodli = false;
+    const box = yoodli.querySelector('input');
+    box.checked = draft.yoodli;
+    box.disabled = !able || madeMaterials.includes('yoodli');
+  };
+  const stays = [...MATERIALS.filter(([id]) => madeMaterials.includes(id)).map(([, name]) => name),
+    ...(madeMaterials.includes('yoodli') ? ['Yoodli scenarios'] : [])];
+  const materials = checkChoices('Materials to make', MATERIALS,
+    (id) => draft.materials.includes(id), (id, on) => {
+      draft.materials = MATERIALS.map(([key]) => key)
+        .filter((key) => (key === id ? on : draft.materials.includes(key)));
+      settleMaterials();
+      say(byId('change-problem'), '');
+      edited();
+    }, 'change-material', [stays.length ? 'What has work in it stays: ' + series(stays) + '.' : '',
+      shown.blueprint_made ? 'The blueprint is written and plans the practice, so practice '
+        + 'scenarios stay as they were chosen.' : '',
+      'Each one you add is written after research, at its own cost.'].filter(Boolean).join(' '));
+  materials.id = 'change-materials';
+  for (const [id] of MATERIALS) {
+    const box = materials.querySelector('input[data-key="change-material ' + id + '"]');
+    if (box && (madeMaterials.includes(id) || (id === 'scenario' && shown.blueprint_made))) box.disabled = true;
+  }
+  settleMaterials();
   const brief = choice('What the brief is about', ['One product or technology', 'A comparison'],
     draft.brief, (index) => { draft.brief = index; edited(); }, 'change-brief');
   let decks;
@@ -1312,8 +1365,7 @@ function settingsSheet() {
   });
   const sections = add(make('div', 'stack'),
     createStep(1, 'What it teaches', topic, audience, time, purpose),
-    createStep(2, 'What is made', levels, brief,
-      shown.practice ? scenarioPlanFields(draft, edited, 'change') : null, ...decks),
+    createStep(2, 'What is made', materials, yoodli, levels, brief, scenarioFields, ...decks),
     createStep(3, 'Research', sources, line, questions, again));
   sections.id = 'change-sections';
   Array.from(sections.children).forEach((node, index) => { node.hidden = index !== (changing.section || 0); });

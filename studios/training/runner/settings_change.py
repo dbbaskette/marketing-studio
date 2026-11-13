@@ -52,6 +52,7 @@ NAMES = {'topic': 'the topic', 'audience': 'the audience', 'purpose': 'what it i
          'time_limit': 'the time limit', 'levels': 'the levels', 'brief_kind': 'the brief',
          'research_questions': 'the research questions', 'sources': 'the sources',
          'search': 'where research may search', 'workers': 'the research workers',
+         'materials': 'the materials', 'yoodli': 'the Yoodli scenarios',
          'deck_target': 'the slide deck', 'brand': 'the deck’s brand',
          'delivery': 'how the deck is used', 'walkthrough': 'the slide walkthrough', 'scenario_plan': 'the scenario choices'}
 DECK_FIELDS = ('deck_target', 'brand', 'delivery', 'walkthrough')
@@ -73,6 +74,13 @@ SERIAL_DRAFT = ('This training’s research uses the earlier research workflow, 
                 'until its report is finished. Its other settings can still be changed.')
 UNCONFIRMED = ('An earlier research job has not confirmed that it ended, so what research '
                'reads stays as it is. Try again first; earlier work is kept.')
+MATERIAL_NAMES = {'document': 'learner guide', 'brief': 'reference brief',
+                  'scenario': 'practice scenarios'}
+MADE_STAYS = ('The {it} has work in it, so it stays. Its files are kept.')
+AFTER_BLUEPRINT = ('The teaching blueprint is written, and it plans the practice, so practice '
+                   'scenarios stay as they were chosen. The learner guide and the reference '
+                   'brief can still be added.')
+CHANGED_AWAY = 'Left out when the training’s settings were changed.'
 PLAIN = ('This training was started without levels, so it stays one training without levels.')
 WAITS = 'Nothing starts until you press Continue.'
 KEPT = 'Everything else made so far is kept as it was.'
@@ -115,6 +123,9 @@ def values(root: Path, session: dict, record: dict) -> dict:
     return {'topic': said.get('topic') or session['title'], 'audience': said.get('audience') or '',
             'purpose': said.get('purpose') or '', 'time_limit': _time(said),
             'levels': list(session['levels']), 'brief_kind': session['settings']['brief_kind'],
+            'materials': [stage for stage in pipeline.MATERIALS
+                          if stage in session['settings']['stages']],
+            'yoodli': 'yoodli' in session['settings']['stages'],
             'research_questions': list(record.get('research_questions') or []),
             'research_from': {key: looks[key] for key in ('documents', 'sites', 'web')},
             'deck_target': session['settings']['deck_target'], 'brand': _brand(session),
@@ -141,6 +152,16 @@ def _serial_draft(root: Path, record: dict) -> bool:
 def _made_levels(root: Path, session: dict) -> list[str]:
     """The levels with work in them, which stay: their folders hold what was made."""
     return [level for level in session['levels'] if workspace.level_work(root, level)]
+
+
+def _stage_made(root: Path, session: dict, stage: str) -> bool:
+    """Whether any file of a material (or the blueprint) has been written, at any level."""
+    return any(workspace.split(name)[0].partition(':')[0] == stage and _made(root, session, name)
+               for name in workspace.artifact_names(root, session))
+
+
+def _made_materials(root: Path, session: dict) -> list[str]:
+    return [stage for stage in (*pipeline.MATERIALS, 'yoodli') if _stage_made(root, session, stage)]
 
 
 def locked(root: Path, session: dict, record: dict) -> dict:
@@ -199,6 +220,8 @@ def form(engine, path) -> dict:
                 'values': values(root, session, record),
                 'locked': locked(root, session, record),
                 'made_levels': _made_levels(root, session),
+                'made_materials': _made_materials(root, session),
+                'blueprint_made': _stage_made(root, session, 'blueprint'),
                 'documents': _documents(engine, root),
                 'practice': 'scenario' in pipeline.wanted(session),
                 'research': {'accepted': accepted,
@@ -327,16 +350,13 @@ def _checked(engine, root: Path, session: dict, record: dict, sent: dict) -> tup
         given['research_from'] = prepared['research_from']
     else:
         given['research_from'] = now['research_from']
-    stages = session['settings']['stages']
     # A brand that is not changing is not checked against the brand skill here now: one
     # dropped or renamed since, or none on a deck training, never blocks another change.
     same = (given['deck_target'] == now['deck_target'] and _brand_sent(given['brand'])
             == _brand_sent(now['brand']))
     checked = pipeline.check_form({
         'title': session['title'], **given,
-        'materials': [stage for stage in pipeline.MATERIALS if stage in stages],
-        'copies': session['settings'].get('copies') or [], 'yoodli': 'yoodli' in stages,
-        'flow': 'desk'}, None if same else engine.brands())
+        'copies': session['settings'].get('copies') or [], 'flow': 'desk'}, None if same else engine.brands())
     # The brand as the session keeps it ("brand/variant"), and as the form shows it.
     if checked['deck_target'] is None:
         checked['brand'] = None
@@ -396,6 +416,7 @@ def plan(engine, root: Path, session: dict, record: dict, sent: dict) -> dict:
            'purpose': checked['purpose'], 'time_limit': checked['time_limit'],
            'levels': checked['levels'], 'brief_kind': checked['brief_kind'],
            'research_questions': checked['research_questions'],
+           'materials': checked['materials'], 'yoodli': checked['yoodli'],
            'scenario_plan': checked.get('scenario_plan', practice_intent.of(session)),
            'deck_target': checked['deck_target'], 'brand': checked['brand_value'],
            'delivery': checked['delivery'] if checked['deck_target'] else now['delivery'],
@@ -414,13 +435,25 @@ def plan(engine, root: Path, session: dict, record: dict, sent: dict) -> dict:
                                  'materials are kept.')
         if not new['levels']:
             raise WorkspaceError('A training with levels keeps at least one level.')
+    if 'materials' in changed or 'yoodli' in changed:
+        made = _made_materials(root, session)
+        for stage in (*pipeline.MATERIALS, 'yoodli'):
+            wanted = new['yoodli'] if stage == 'yoodli' else stage in new['materials']
+            if stage in made and not wanted:
+                raise WorkspaceError(MADE_STAYS.format(
+                    it='Yoodli scenarios' if stage == 'yoodli' else MATERIAL_NAMES[stage]))
+        if ('scenario' in new['materials']) != ('scenario' in now['materials']) \
+                and _stage_made(root, session, 'blueprint'):
+            raise WorkspaceError(AFTER_BLUEPRINT)
     accepted = _accepted(root, session)
     again = sent.get('research_again') is True
     researched = [name for name in changed if name in RESEARCHED]
     intake = _intake({**checked, 'research_from': checked['research_from']})
     before = (root / 'intake.md').read_text(encoding='utf-8') if (root / 'intake.md').is_file() else ''
     differs = [heading for heading, text in _lines(intake).items() if _lines(before).get(heading) != text]
-    stages = ('deck_target' in changed and (now['deck_target'] is None) != (new['deck_target'] is None))
+    # The research task names the materials wanted, so a change of them is a new task.
+    stages = ('deck_target' in changed and (now['deck_target'] is None) != (new['deck_target'] is None)) \
+        or 'materials' in changed or 'yoodli' in changed
     saved_workers = (record.get('research_inputs') or {}).get('workers') or 3
     split = 'workers' in changed and research_parallel.protocol(record) and \
         _streams(engine, root, saved_workers) != _streams(engine, root, prepared['workers'])
@@ -526,6 +559,17 @@ def _words(root, session, record, changed, outcome, lost, researched, differs, n
                         + (' at ' + series(level for level in session['levels']) if session['levels'] else '')
                         + '.' + (' The one you marked ready stays in its file but is no longer '
                                  'the training’s brief.' if marked else ''))
+    if 'materials' in changed or 'yoodli' in changed:
+        def chosen(held):
+            return [MATERIAL_NAMES[stage] for stage in held['materials']] \
+                + (['Yoodli scenarios'] if held['yoodli'] else [])
+        more = [name for name in chosen(new) if name not in chosen(now)]
+        fewer = [name for name in chosen(now) if name not in chosen(new)]
+        if more:
+            said.append('Also made now: ' + series(more) + '.')
+        if fewer:
+            said.append('No longer made: ' + series(fewer) + '. Nothing of '
+                        + ('it' if len(fewer) == 1 else 'them') + ' had been written.')
     added = [level for level in new['levels'] if level not in now['levels']]
     dropped = [level for level in now['levels'] if level not in new['levels']]
     if added:
@@ -663,6 +707,17 @@ def _apply(engine, root: Path, found: dict) -> dict:
                 session['settings']['brand'] = None
                 session['settings']['deck_target'] = None
                 workspace.store(root, session)
+    if 'materials' in changed or 'yoodli' in changed:
+        # Yoodli is built from the brief and the scenarios: it goes first, and comes back last.
+        if now['yoodli'] and not new['yoodli']:
+            workspace.skip(root, 'yoodli', reason=CHANGED_AWAY, by='page')
+        for stage in pipeline.MATERIALS:
+            if stage in now['materials'] and stage not in new['materials']:
+                workspace.skip(root, stage, reason=CHANGED_AWAY, by='page')
+            elif stage in new['materials'] and stage not in now['materials']:
+                workspace.skip(root, stage, clear=True, by='page')
+        if new['yoodli'] and not now['yoodli']:
+            workspace.skip(root, 'yoodli', clear=True, by='page')
     if 'scenario_plan' in changed:
         with workspace.locked(root):
             session = workspace.load(root)

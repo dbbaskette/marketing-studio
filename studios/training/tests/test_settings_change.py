@@ -192,6 +192,70 @@ class DiscardTests(SettingsCase):
         self.assertIsNotNone(self.record(root)['research'], 'The plan stays handed over')
 
 
+class MaterialTests(SettingsCase):
+    """Which materials are made is changed like the rest of the start form."""
+
+    def test_the_form_says_which_materials_are_made_and_which_have_work_in_them(self):
+        root = self.supplied(materials=['document', 'brief', 'scenario'], yoodli=True)
+        shown = self.form(root)
+        self.assertEqual(shown['values']['materials'], ['document', 'brief', 'scenario'])
+        self.assertTrue(shown['values']['yoodli'])
+        self.assertEqual((shown['made_materials'], shown['blueprint_made']), ([], False))
+
+    def test_a_material_is_added_and_another_left_out_before_any_is_written(self):
+        root = self.supplied()   # the learner guide only
+        shown = self.form(root)
+        sent = self.sent(shown, materials=['brief', 'scenario'], yoodli=True)
+        said = self.engine.change_settings(root, sent, preview=True)
+        self.assertEqual(said['changed'], ['materials', 'yoodli'])
+        words = ' '.join(said['words'])
+        self.assertIn('You changed the materials and the Yoodli scenarios.', words)
+        self.assertIn('Also made now: reference brief, practice scenarios and Yoodli scenarios.', words)
+        self.assertIn('No longer made: learner guide.', words)
+        before = len(self.workers.jobs)
+        self.engine.change_settings(root, {**sent, 'confirmed': True})
+        session = workspace.load(root)
+        self.assertEqual([stage for stage in session['settings']['stages'] if stage != 'deck'],
+                         ['brief', 'scenario', 'yoodli'])
+        self.assertEqual(len(self.workers.jobs), before, 'Nothing starts until Continue')
+        again = self.form(root)
+        self.assertEqual((again['values']['materials'], again['values']['yoodli']),
+                         (['brief', 'scenario'], True))
+        self.assertNotEqual(again['revision'], shown['revision'])
+        # And back: Yoodli goes before the brief and the scenarios it is built from.
+        back = self.sent(again, materials=['document'], yoodli=False)
+        self.engine.change_settings(root, {**back, 'confirmed': True})
+        self.assertEqual([stage for stage in workspace.load(root)['settings']['stages']
+                          if stage != 'deck'], ['document'])
+
+    def test_what_cannot_be_made_is_refused_as_the_start_form_refuses_it(self):
+        root = self.supplied()
+        shown = self.form(root)
+        for change, why in (({'materials': ['document'], 'yoodli': True}, 'Yoodli needs a reference brief'),
+                            ({'materials': ['slides']}, 'Choose materials from'),
+                            ({'materials': []}, 'Choose at least one material')):
+            with self.assertRaisesRegex(WorkspaceError, why):
+                self.engine.change_settings(root, self.sent(shown, **change), preview=True)
+        self.assertEqual(self.form(root)['revision'], shown['revision'])
+
+    def test_a_material_with_work_in_it_stays_and_scenarios_stay_once_the_blueprint_is_written(self):
+        from runner import settings_change
+        root = self.supplied(materials=['document', 'brief'])
+        shown = self.form(root)
+        made = mock.patch.object(settings_change, '_stage_made',
+                                 side_effect=lambda root, session, stage: stage in ('document', 'blueprint'))
+        with made:
+            self.assertEqual(self.form(root)['made_materials'], ['document'])
+            self.assertTrue(self.form(root)['blueprint_made'])
+            with self.assertRaisesRegex(WorkspaceError, 'learner guide has work in it, so it stays'):
+                self.engine.change_settings(root, self.sent(shown, materials=['brief']), preview=True)
+            with self.assertRaisesRegex(WorkspaceError, 'blueprint is written'):
+                self.engine.change_settings(
+                    root, self.sent(shown, materials=['document', 'brief', 'scenario']), preview=True)
+            said = self.engine.change_settings(root, self.sent(shown, materials=['document']), preview=True)
+            self.assertEqual(said['changed'], ['materials'])
+
+
 class KeepTests(SettingsCase):
     def test_scenario_descriptions_keep_research_and_hold_materials_without_starting_work(self):
         from test_practice_intent import PLAN
@@ -542,9 +606,11 @@ SHOWN = {'path': '', 'title': 'Rolling restarts', 'may': True, 'why': None, 'rev
          'values': {'topic': 'Rolling restarts on the platform', 'audience': 'Engineers',
                     'purpose': 'Field enablement', 'time_limit': '25 minutes',
                     'levels': ['101', '201'], 'brief_kind': 'product', 'research_questions': [],
+                    'materials': ['document'], 'yoodli': False,
                     'research_from': {'documents': True, 'sites': [], 'web': False},
                     'deck_target': None, 'brand': None, 'delivery': 'live', 'walkthrough': False},
-         'locked': {}, 'made_levels': ['101'], 'documents': 0,
+         'locked': {}, 'made_levels': ['101'], 'made_materials': [], 'blueprint_made': False,
+         'documents': 0,
          'research': {'accepted': False, 'discards': {'tries': 1, 'seconds': 1260, 'dollars': 4.47}}}
 DRAFT = {'id': 'a' * 32, 'revision': 'b' * 32, 'external': False, 'restricted': False,
          'sites': [], 'workers': 3, 'focus': '', 'formats': ['.txt'],
@@ -605,6 +671,9 @@ class SheetTests(ScriptedPage, DeskPageCase):
         self.assertIn('1. What it teaches', form)
         self.assertNotIn('2. What is made', form)
         self.assertIn('A level with work in it stays: 101.', shots['materials']['text'])
+        self.assertIn('Materials to make', shots['materials']['text'])
+        self.assertIn('Each one you add is written after research, at its own cost.', shots['materials']['text'])
+        self.assertIn('Section 2 of 3 · Learner guide · Levels 101, 201', shots['materials']['text'])
         self.assertIn('Research from your documents.', shots['research']['text'])
         self.assertIn('$4.47', shots['review']['text'])
         self.assertIn('cannot be undone', shots['review']['text'])
@@ -615,6 +684,7 @@ class SheetTests(ScriptedPage, DeskPageCase):
         self.assertEqual(posted[1]['expected'], 'r1')
         self.assertEqual(posted[1]['research_questions'], ['Why?', 'How?', 'When?'])
         self.assertEqual(posted[1]['topic'], 'Rolling restarts on the platform')
+        self.assertEqual((posted[1]['materials'], posted[1]['yoodli']), (['document'], False))
         self.assertNotIn('research_inputs', posted[1], 'Without the panel the sources stay as they are')
         self.assertIn('Nothing starts until you press Continue.', shots['saved']['text'])
         self.assertNotIn('Discard and save', shots['saved']['buttons'], 'The sheet is put away')
