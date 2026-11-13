@@ -777,13 +777,27 @@ class SectionToolTests(ToolCase):
         bad = drawn(self.spec, lambda text: text.replace('Traffic', 'Load'))
         said = self.refused(tools.preview_section(json.dumps(bad)))
         self.assertIn('Nothing was rendered, and this did not use up a preview.', said)
+        # Why it was refused is kept: a job that ends there says what stood in its way.
+        blocked = worker_tools.collect(self.job)['problems']['section']
+        self.assertTrue(blocked and all(line in said for line in blocked), blocked)
+        self.assertEqual(tools._state()['submissions'], {}, 'not counted as a hand-in')
         self.slides.refuse['preview'] = ['The render has 8 pages for 2 slides.']
         said = self.refused(tools.preview_section(json.dumps(good)))
+        self.assertEqual(worker_tools.collect(self.job)['problems']['section'],
+                         ['The render has 8 pages for 2 slides.'])
         self.assertEqual(said, 'The slides compile but could not be rendered, and this did '
                          'not use up a preview:\n- The render has 8 pages for 2 slides.')
         self.assertEqual(tools._state().get('previews', 0), 0)
         self.assertFalse((self.job / 'shown').exists() and any((self.job / 'shown').iterdir()))
         self.assertFalse((self.base / 'render.lock').exists(), 'the turn is given back')
+
+    def test_a_preview_that_renders_clears_what_blocked_the_one_before(self):
+        tools, good = self.composer(), drawn(self.spec)
+        bad = drawn(self.spec, lambda text: text.replace('Traffic', 'Load'))
+        self.refused(tools.preview_section(json.dumps(bad)))
+        self.assertIn('section', worker_tools.collect(self.job)['problems'])
+        self.ok(tools.preview_section(json.dumps(good)))
+        self.assertEqual(worker_tools.collect(self.job)['problems'], {})
 
     def test_what_is_handed_in_must_be_what_was_last_previewed(self):
         tools, good = self.composer(), drawn(self.spec)
@@ -2048,6 +2062,25 @@ class LookTests(DeckCase):
                    if event['gate'] == 'gate:deck-look']
         self.assertIn('Google Slides could not be reached', event['note'])
 
+    def test_a_brand_that_cannot_draw_its_own_sample_stops_before_any_section(self):
+        # Refused in the same words with and without a renderer: its slides would be too.
+        self.brand.cannot_draw = ('executive: the sample slide does not fit: look_sample/title: '
+                                  'needs 53.2pt of height but has 34.92pt; shorten the title')
+        root = self.saved_begin()
+        view = self.drawn(root)
+        problem = self.record(root)['problem']
+        self.assertEqual((problem['step'], problem['action']), ('deck-look', 'retry'))
+        self.assertIn('could not draw a sample slide', problem['what'])
+        self.assertIn('needs 53.2pt of height but has 34.92pt', problem['what'])
+        self.assertIn('Nothing has been spent on drawing slides', problem['what'])
+        self.assertNotIn('section', self.kinds())
+        self.assertIsNone(self.built(root).get('look'), 'no look is noted or picked blind')
+        # Put right, Try again draws the looks and the deck carries on.
+        self.brand.cannot_draw = None
+        view = self.engine.act(root, 'retry')
+        self.assertIsNone(view['problem'], view)
+        self.assertTrue(view['look']['waiting'])
+
     def test_the_brand_refuses_a_pick_for_samples_of_an_older_outline(self):
         root = self.saved_begin()
         self.looking(root)
@@ -2261,6 +2294,23 @@ class RepairTests(DeckCase):
         self.assertIn('This version was made because you asked for changes: Fix the fourth '
                       'slide.', (root / 'reviews' / 'deck.md').read_text())
         self.assertEqual(self.to_end(root), ['deck', 'scenario:main'])
+
+    def test_a_section_refused_twice_in_the_same_words_is_not_tried_a_third_time(self):
+        said = 'when-capacity-holds/title: needs 53.2pt of height but has 34.92pt'
+
+        def blocked(tools, job):
+            # Its preview is refused, so it ends with nothing handed in.
+            tools._blocked([said])
+        self.workers.then('section', *[blocked] * 6)
+        root = self.saved_begin()
+        self.drawn(root)
+        problem = self.record(root)['problem']
+        self.assertIn('failed twice for the same reason, so it was not tried again: Draw '
+                      'section', problem['what'])
+        self.assertIn(pipeline.REFUSED + said, problem['what'])
+        tries = [len(entry['attempts']) for step, entry in self.record(root)['steps'].items()
+                 if step.startswith('deck-sections:')]
+        self.assertTrue(tries and max(tries) == 2, tries)
 
     def test_a_section_that_fails_three_times_stops_the_training(self):
         self.workers.then('section', fails(), fails(), fails(), fails(), fails(), fails())

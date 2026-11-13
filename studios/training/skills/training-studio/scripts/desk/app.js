@@ -152,6 +152,9 @@ const STEERED = {
   retry: 'Trying again.',
   'more-time': 'Trying again, with twice the time for each step.',
   'finish-level': 'It finishes this level, then waits. Resume it when you are ready for the next.',
+  'slide-text': 'The slide text is waiting for your approval. Nothing is drawn until then.',
+  'leave-deck': 'The deck is set aside. Everything written for it is kept.',
+  'bring-deck': 'The deck is back and carries on from what it kept.',
 };
 const AGENTS = ['claude', 'codex'];
 const AGENT_NAMES = { claude: 'Claude Code', codex: 'Codex' };
@@ -5739,7 +5742,30 @@ function problemPart(run, lead) {
       // Beside Try again: change what it was started with, then Continue (#296), or bring
       // its models up to date with Settings.
       theirs ? null : settingsButton(run, 'problem-settings'),
-      theirs ? null : modelsButton(run, 'problem-models')), decisions, shown);
+      theirs ? null : modelsButton(run, 'problem-models')),
+    theirs ? null : waysPart(found), decisions, shown);
+}
+
+// Other ways on from a deck that stopped, each with what it does: Try again is not the only
+// one. Nothing here spends anything by itself.
+function waysPart(found) {
+  const ways = list(found.ways);
+  if (!ways.length) return null;
+  const rows = make('ul', 'ways-on');
+  for (const way of ways) {
+    const go = capsule(way.label, '', () => steer(way.id, go), 'problem-way-' + way.id);
+    add(rows, add(make('li', 'way-on'), go, make('span', 'quiet', way.says)));
+  }
+  return add(make('div', 'card-part'), make('p', 'row-title', 'Or, instead of trying again'), rows);
+}
+
+// A deck set aside after it stopped: said for as long as it is, with the way to bring it back.
+function deckAsidePart() {
+  const back = capsule('Bring the deck back', '', () => steer('bring-deck', back), 'bring-deck');
+  return callout('', make('h2', 'aside-title', 'The slide deck is set aside'),
+    make('p', '', 'It stopped, and you chose to finish without it. Everything written for it '
+      + 'is kept, and the other materials can be marked ready and exported.'),
+    add(make('div', 'bar'), back));
 }
 
 // Beside a stop's one action: Try again once Status has been put right, and deleting a

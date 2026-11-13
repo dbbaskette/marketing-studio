@@ -36,6 +36,27 @@ class ContentFirstTests(DeckCase):
         self.assertTrue(self.workers.of('section'))
         self.assertFalse(self.view(root)['problem'])
 
+
+class WalkthroughTextTests(DeckCase):
+    """A walkthrough of each slide's design keeps the slide text approval on the desk."""
+
+    def setUp(self):
+        super().setUp()
+        self.slides.design = True
+
+    def test_a_desk_walkthrough_still_waits_for_the_slide_text(self):
+        self.engine.content_first = True
+        root = self.begin(flow='desk', slide_text_review=True, walkthrough=True)
+        self.assertIn('deck_content', self.engine._load(root))
+        shown = self.view(root)['outline']
+        self.assertTrue(shown['waiting'] and shown['content_first'])
+        self.assertIsNotNone(shown['design'], 'written with its design')
+        self.assertFalse(self.workers.of('section'), 'nothing is drawn before approval')
+        self.engine.outline(root, None, 'approve', seen=shown['sha256'])
+        self.assertTrue(self.workers.of('section'))
+        self.assertFalse(self.view(root)['problem'])
+
+
 from test_runner_deck import PageCase
 
 class ContentPageTests(PageCase):

@@ -958,6 +958,15 @@ class WorkerTools:
         """Compile a draft of the section without rendering it. Free."""
         return self._tried('section', section)
 
+    def _blocked(self, problems: list[str]) -> None:
+        """Keep why the last preview of a section was refused, as a hand-back that was: a
+        job that ends without handing anything in then says what stood in its way. A
+        preview that renders clears it. It is not counted as a hand-in."""
+        name, _ = self._spec('section')
+        state = self._state()
+        state['problems'][name] = list(problems)
+        home.write_json(self.folder / 'state.json', state)
+
     @tool
     def preview_section(self, section):
         """Render a draft of the section and return a picture of every slide."""
@@ -970,6 +979,7 @@ class WorkerTools:
         drawn, text = as_json(section, 'section')
         problems, _, _, kept = self._validate(spec, text)
         if problems:
+            self._blocked(problems)
             return False, ('Nothing was rendered, and this did not use up a preview. Put '
                            'these right first:\n- ' + '\n- '.join(problems))
         build = self.folder / 'builds' / f'{used + 1}-{secrets.token_hex(3)}'
@@ -984,11 +994,13 @@ class WorkerTools:
             slides = pictures(found, taken, self.folder / 'shown')
         except WorkspaceError as refusal:
             lines = [self._plainly(line) for line in said_no(refusal)]
+            self._blocked(lines)
             return False, ('The slides compile but could not be rendered, and this did not '
                            'use up a preview:\n- ' + '\n- '.join(lines))
         finally:  # a build and a render hold a deck of several megabytes each
             shutil.rmtree(build, ignore_errors=True)
             shutil.rmtree(taken, ignore_errors=True)
+        self._blocked([])
         home.write_json(self.folder / 'state.json', {
             **self._state(), 'previews': used + 1, 'previewed': self._digest(drawn),
             'shown': [{key: slide[key] for key in ('number', 'id', 'title')}

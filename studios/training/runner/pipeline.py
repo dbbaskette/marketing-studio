@@ -2518,11 +2518,23 @@ def _read(path: Path) -> str | None:
 
 # --- what is kept ------------------------------------------------------------------------
 
+REFUSED = 'What it handed back did not pass the checks: '
+
+
+def same_cause(attempts) -> bool:
+    """Whether a step's last two tries were refused by the checks in the same words. A
+    third try at the same thing would be refused the same way."""
+    last = [one.get('error') for one in list(attempts or ())[-2:]
+            if isinstance(one, dict) and one.get('outcome') == 'failed']
+    return (len(last) == 2 and last[0] == last[1] and isinstance(last[0], str)
+            and last[0].startswith(REFUSED))
+
+
 def why_not(handed: dict, said: str) -> str:
     """Why a job that ended handed back nothing that was kept, in a sentence."""
     refused = [problem for found in handed['problems'].values() for problem in found]
     if refused:
-        return ('What it handed back did not pass the checks: ' + ' '.join(refused[:3])
+        return (REFUSED + ' '.join(refused[:3])
                 + (' And more.' if len(refused) > 3 else ''))
     return said or 'It ended without handing anything back.'
 
