@@ -117,7 +117,7 @@ runtime locks are in `pins/runtimes.json`. Companion requirements and exact rele
 locks are in `pins/companions.json`.
 
 Each companion lock names an exact `version`, `commit` and source `sha256`, and a
-requirement, which is always the locked release itself: `requirement: ">=1.1.1"` for Harness
+requirement, which is always the locked release itself: `requirement: ">=1.2.0"` for Harness
 Research and `requirement: ">=0.17.0"` for Harness Slides. The studios always use the latest
 locked Harness companions, so an installed copy older than the lock is offered its update. Source installs, companion updates and
 release bundles all use the exact lock. A missing companion, or one older than its

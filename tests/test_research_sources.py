@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+import unittest.mock
 import marketing_studio  # noqa: F401
 from studio_core import google_reference
 from studio_core.research_sources import Sources
@@ -47,6 +48,14 @@ class SourceTests(unittest.TestCase):
         from studio_core.research_sources import page_name
         self.assertEqual(page_name(b'%PDF-', 'application/pdf', 'https://example.invalid/files/Field%20guide.pdf'), 'Field guide.pdf')
 
+    def test_one_research_run_reads_a_thousand_links(self):
+        from studio_core import research_sources
+        self.assertEqual(research_sources.RESEARCH_ENTRIES, 2000)
+        links = [{'kind': 'url', 'status': 'ready'}] * 1000
+        self.assertIsNone(research_sources.over(links))
+        self.assertIn('at most 1,000 links, or 2,000 files', research_sources.over(links + links[:1]))
+
+    @unittest.mock.patch('studio_core.research_sources.RESEARCH_ENTRIES', 200)
     def test_more_than_one_research_run_can_read_is_said_before_start(self):
         for n in range(100):
             self.act('capture', kind='url', url=f'https://example.invalid/page-{n}')

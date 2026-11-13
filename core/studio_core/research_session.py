@@ -50,6 +50,7 @@ TOO_MANY = ('This research has {count} documents, and one research agent reads a
 
 
 INTAKE = {'entries': 200}
+REGISTER = 100
 INTAKE_FILE = 'references/intake-limits.json'
 OVER_INTAKE = ('The installed Harness Research takes at most {most} entries in one research run, and a link '
                'counts as two. This run has {count}. Update Harness Research to read more, or remove some sources.')
@@ -328,7 +329,7 @@ class Workflow:
         inventory = json.loads((target / 'sources.json').read_text())['entries']
         # Registering again updates capture_sha256, so a capture registered untidied by an
         # earlier version is corrected here on Try again (#295).
-        offered = []
+        offered, updates = [], []
         for source, filename, linked in selected:
             origin = source.get('origin', source.get('url', ''))
             original = next(e for e in inventory if e.get('filename') == filename)
@@ -336,12 +337,15 @@ class Workflow:
             file = 'sources/selected/' + filename + '.txt'
             text = capture_text(source['text'], kept_copies(target, file))
             rc.write(target, file, text)
-            self.command(target, 'asset', 'source', {'id': entry['id'], 'outcome': 'captured',
+            updates.append({'id': entry['id'], 'outcome': 'captured',
                 'capture_file': file, 'accessed_at': source.get('accessed_at') or now(),
                 'note': 'Selected studio capture; the remote original was not automatically refreshed.'})
             offered.append({**source, 'text': text, 'file': file, 'origin': entry['origin'], 'url': entry['origin'],
                 'permission': 'selected', 'path': rc.inside(target, file),
                 'original': original['original_file'], 'original_path': rc.inside(target, original['original_file'])})
+        # Registered a hundred at a time: one helper call for each source made a long list slow.
+        for start in range(0, len(updates), REGISTER):
+            self.command(target, 'asset', 'source', {'entries': updates[start:start + REGISTER]})
         for source in public:
             if task['source_mode'] == 'selected':
                 raise ValueError('Public captures need explicit external-search permission.')
