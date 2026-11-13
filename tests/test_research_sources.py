@@ -30,6 +30,39 @@ class SourceTests(unittest.TestCase):
         self.assertTrue(all(s['permission'] == 'selected' for s in ready['sources']))
         self.assertEqual(self.network, ['https://example.invalid/reference'])
         self.assertEqual(ready['workers'], 3)
+    def test_a_link_row_carries_the_page_title_and_how_much_text_was_read(self):
+        pages = {'https://example.invalid/post': (b'<html><head><title> Rolling &amp;\n restarts </title></head><body><p>Instances restart one at a time.</p></body></html>', 'text/html; charset=utf-8'),
+                 'https://example.invalid/files/Field%20guide.pdf': (b'Plain synthetic text.', 'text/plain'),
+                 'https://example.invalid/untitled': (b'<html><body><p>No title here.</p></body></html>', 'text/html')}
+        self.sources.fetch = lambda url: {'raw': pages[url][0], 'mime': pages[url][1], 'url': url}
+        for url in pages:
+            self.act('capture', kind='url', url=url)
+        shown = {s['origin']: s for s in self.sources.shown(self.sources.load(self.value['id']))['sources']}
+        post = shown['https://example.invalid/post']
+        self.assertEqual(post['name'], 'Rolling & restarts')
+        self.assertEqual(post['characters'], len(self.sources.preview(self.value['id'], post['id'])['text']))
+        self.assertIn('Instances restart one at a time.', self.sources.preview(self.value['id'], post['id'])['text'])
+        self.assertEqual(shown['https://example.invalid/untitled']['name'], 'https://example.invalid/untitled')
+        self.assertEqual(shown['https://example.invalid/files/Field%20guide.pdf']['name'], 'https://example.invalid/files/Field%20guide.pdf')
+        from studio_core.research_sources import page_name
+        self.assertEqual(page_name(b'%PDF-', 'application/pdf', 'https://example.invalid/files/Field%20guide.pdf'), 'Field guide.pdf')
+
+    def test_more_than_one_research_run_can_read_is_said_before_start(self):
+        for n in range(100):
+            self.act('capture', kind='url', url=f'https://example.invalid/page-{n}')
+        self.assertIsNone(self.sources.shown(self.sources.load(self.value['id']))['over'])
+        self.assertEqual(len(self.sources.prepared(self.value['id'], self.value['revision'])['sources']), 100)
+        self.act('capture', kind='url', url='https://example.invalid/one-more')
+        said = self.sources.shown(self.sources.load(self.value['id']))['over']
+        self.assertIn('at most 100 links', said)
+        self.assertIn('You have 101 links, which is 2 over', said)
+        with self.assertRaisesRegex(ValueError, 'at most 100 links'):
+            self.sources.prepared(self.value['id'], self.value['revision'])
+        last = self.value['sources'][-1]['id']
+        self.act('exclude', source=last)
+        self.assertIsNone(self.sources.shown(self.sources.load(self.value['id']))['over'])
+        self.sources.prepared(self.value['id'], self.value['revision'])
+
     def test_links_are_not_counted_and_files_and_pasted_text_still_are(self):
         for n in range(40):
             self.act('capture', kind='text', name=f'Notes {n}', text=f'Synthetic supplied notes {n}.')

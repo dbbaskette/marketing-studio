@@ -15,7 +15,7 @@ const StudioResearch = (() => {
   // Every web link in a file a person chose: a plain list, a spreadsheet export, notes or a
   // saved page. Order kept, each link once; http is asked for as https, and a link carrying a
   // sign-in is left out. `left` counts what was found and not kept.
-  const LINK_FILE_BYTES = 256 * 1024;
+  const LINK_FILE_BYTES = 256 * 1024, LONG_LIST = 8;
   function linksIn(text) {
     const links = [], seen = new Set(); let left = 0;
     for (const found of String(text || '').match(/https?:\/\/[^\s<>"'`|\\^{}]+/gi) || []) {
@@ -110,7 +110,21 @@ const StudioResearch = (() => {
       catch (error) { this.problem = message(error); return false; }
       finally { this.busy = false; this.reading = ''; this.render(); this.changed(); }
     }
-    async links() {
+    // Links and files are read one after another. What is added while a long list of links
+    // is still being read waits its turn; nothing chosen is dropped.
+    run(job) { const next = (this.chain || Promise.resolve()).then(job, job); this.chain = next.catch(() => {}); return next; }
+    links() { return this.run(() => this.readLinks()); }
+    files(files) { const chosen = Array.from(files || []); return this.run(() => this.readFiles(chosen)); }
+    linkFile(file) { return this.run(() => this.readLinkFile(file)); }
+    // Leave out every source that could not be read, in one go, so a few bad links among
+    // hundreds do not each need a press before starting.
+    excludeUnread() {
+      return this.run(async () => {
+        const ids = array(this.value && this.value.sources).filter(source => source.status === 'needs-attention').map(source => source.id);
+        for (const [at, id] of ids.entries()) if (!await this.act('exclude', {source: id}, 'Excluding ' + (at + 1) + ' of ' + ids.length + '…')) break;
+      });
+    }
+    async readLinks() {
       const links = this.urls.trim().split(/\s+/).filter(Boolean);
       if (!links.length) { this.problem = 'Paste one or more links first.'; this.render(); return; }
       for (const url of links) {
@@ -119,16 +133,18 @@ const StudioResearch = (() => {
       }
       let added = 0;
       for (const url of links) {
+        this.progress = links.length > 1 ? {done: added, total: links.length} : null;
         if (!await this.act('capture', {kind: 'url', url}, links.length > 1 ? 'Reading link ' + (added + 1) + ' of ' + links.length + '…' : '')) break;
         added += 1;
         this.urls = this.urls.split(/\s+/).filter(v => v && v !== url).join('\n');
       }
+      this.progress = null;
       this.render();
       return added;
     }
     // A file of links: every link in it goes into the box and is added, like pasted ones.
-    async linkFile(file) {
-      if (this.busy || !this.value) return;
+    async readLinkFile(file) {
+      if (!this.value) return;
       let found; try { found = await linksInFile(file); } catch (_) { found = {links: [], left: 0, problem: 'This file could not be read as text.'}; }
       if (found.problem) { this.problem = found.problem; this.said = ''; this.render(); return; }
       const have = new Set(array(this.value.sources).map(source => source.origin)), fresh = found.links.filter(link => !have.has(link));
@@ -137,7 +153,7 @@ const StudioResearch = (() => {
       const typed = this.urls.trim().split(/\s+/).filter(Boolean);
       this.urls = [...typed, ...fresh.filter(link => !typed.includes(link))].join('\n');
       this.said = '';
-      const added = await this.links();
+      const added = await this.readLinks();
       const unread = array(this.value.sources).filter(source => fresh.includes(source.origin) && source.status === 'needs-attention').length;
       this.said = (added || 0) + ' of ' + fresh.length + (fresh.length === 1 ? ' link' : ' links') + ' in ' + file.name + ' added.'
         + (unread ? ' ' + unread + ' could not be read: each says why below.' : '')
@@ -145,8 +161,8 @@ const StudioResearch = (() => {
         + (found.left ? ' ' + found.left + (found.left === 1 ? ' was' : ' were') + ' not usable and left out.' : '');
       this.render();
     }
-    async files(files) {
-      for (const file of Array.from(files || [])) {
+    async readFiles(files) {
+      for (const file of files) {
         if (file.size > 8_000_000) { this.problem = file.name + ': choose a source within 8 MB.'; this.render(); continue; }
         const bytes = new Uint8Array(await file.arrayBuffer()); let binary = '';
         for (let i = 0; i < bytes.length; i += 8192) binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
@@ -155,7 +171,7 @@ const StudioResearch = (() => {
     }
     spec() { return this.value ? {id: this.value.id, expected: this.value.revision} : null; }
     valid(hasPrimary = false) {
-      return !!this.value && !this.busy && !this.problem && array(this.value.sources).every(s => ['ready', 'excluded'].includes(s.status))
+      return !!this.value && !this.busy && !this.problem && !this.value.over && array(this.value.sources).every(s => ['ready', 'excluded'].includes(s.status))
         && (hasPrimary || this.value.external || this.value.sources.some(s => s.status === 'ready'));
     }
     choice(hasPrimary = false) { const s = this.value || {}; return {documents: hasPrimary || array(s.sources).some(s => s.status === 'ready'), sites: s.external && s.restricted ? array(s.sites) : [], web: !!s.external && !s.restricted}; }
@@ -171,6 +187,8 @@ const StudioResearch = (() => {
       const row = make('li', 'research-source-row');
       const copy = add(make('div', 'research-source-copy'), make('p', 'row-title', source.name),
         make('p', 'quiet', source.origin || source.kind));
+      // Say that the text itself was read, and how much: a link's row is more than its address.
+      if (source.status === 'ready' && source.characters) copy.append(make('p', 'quiet', (['url', 'google-doc', 'google-slides'].includes(source.kind) ? 'Page text read' : 'Text read') + ' · ' + Number(source.characters).toLocaleString('en-US') + ' characters'));
       if (source.kind === 'google-doc' || source.kind === 'google-slides') {
         const tabs = array(source.tabs), selected = array(source.selected_tabs);
         const detail = make('details', 'research-tabs'); detail.dataset.key = 'tabs-' + source.id;
@@ -223,6 +241,7 @@ const StudioResearch = (() => {
       const restore = focused || (document.activeElement === document.body ? this.focused : '');
       const opened = Array.from(this.node.querySelectorAll('details[open][data-key]')).map(n => n.dataset.key);
       const scroll = this.node.scrollTop;
+      let keptListScroll = 0;
       this.node.replaceChildren();
       const state = this.value;
       const panel = make('div', 'research-sources paper');
@@ -268,7 +287,54 @@ const StudioResearch = (() => {
           }
         }, 'research-add-text'));
       }
-      const list = make('ul', 'research-source-list'); for (const source of array(state && state.sources)) list.append(this.source(source));
+      // Many sources: one line says how many there are and how they stand, the list scrolls in
+      // its own box and can be searched, and what could not be read can be shown alone.
+      const sources = array(state && state.sources), unread = sources.filter(source => source.status === 'needs-attention');
+      const long = sources.length > LONG_LIST;
+      if (this.only === 'unread' && !unread.length) this.only = '';
+      if (sources.length) {
+        const ready = sources.filter(source => source.status === 'ready').length, excluded = sources.filter(source => source.status === 'excluded').length;
+        const overview = make('div', 'research-overview');
+        const said = make('p', 'row-title', sources.length + (sources.length === 1 ? ' source' : ' sources') + ' · ' + ready + ' read'
+          + (unread.length ? ' · ' + unread.length + ' could not be read' : '') + (excluded ? ' · ' + excluded + ' excluded' : ''));
+        said.dataset.key = 'research-overview'; said.setAttribute('role', 'status'); overview.append(said);
+        if (this.progress) {
+          const bar = make('progress', 'research-reading'); bar.max = this.progress.total; bar.value = this.progress.done;
+          bar.setAttribute('aria-label', 'Links read');
+          const now = make('p', 'quiet', 'Reading link ' + Math.min(this.progress.done + 1, this.progress.total) + ' of ' + this.progress.total + '. You can keep scrolling and searching; files you choose now are added when the links finish.');
+          now.dataset.key = 'research-reading-now';
+          add(overview, bar, now);
+        }
+        // Too many for one research run: said here, while it can still be put right.
+        if (state.over) { const much = make('p', 'problem', state.over); much.dataset.key = 'research-over'; much.setAttribute('role', 'alert'); overview.append(much); }
+        panel.append(overview);
+      }
+      const list = make('ul', 'research-source-list' + (long ? ' research-source-scroll' : ''));
+      if (long) { list.tabIndex = 0; list.setAttribute('aria-label', 'Your sources. Scroll to see all ' + sources.length + '.'); }
+      const shown = make('p', 'quiet field-hint'); shown.dataset.key = 'research-shown'; shown.setAttribute('role', 'status');
+      const sift = () => {
+        const words = (this.find || '').trim().toLowerCase(); let seen = 0;
+        for (const row of list.children) { if (row.dataset.find === undefined) continue; row.hidden = !!words && !row.dataset.find.includes(words); if (!row.hidden) seen += 1; }
+        const total = this.only === 'unread' ? unread.length : sources.length;
+        shown.textContent = words ? 'Showing ' + seen + ' of ' + total + '.' : this.only === 'unread' ? 'Showing the ' + total + ' that could not be read.' : '';
+        shown.hidden = !shown.textContent;
+      };
+      if (long) {
+        const find = field('Find a source', this.find || '', 'research-find'); find.input.type = 'search'; find.input.placeholder = 'Part of a title or address';
+        find.input.dataset.free = 'true'; find.input.addEventListener('input', () => { this.find = find.input.value; sift(); });
+        const tools = make('div', 'bar');
+        if (unread.length) {
+          const all = button('All ' + sources.length, () => { this.only = ''; this.render(); }, 'research-show-all');
+          const bad = button('Could not be read ' + unread.length, () => { this.only = 'unread'; this.render(); }, 'research-show-unread');
+          all.dataset.free = bad.dataset.free = 'true';
+          all.setAttribute('aria-pressed', String(this.only !== 'unread')); bad.setAttribute('aria-pressed', String(this.only === 'unread'));
+          add(tools, all, bad, button('Exclude all ' + unread.length + ' that could not be read', () => this.excludeUnread(), 'research-exclude-unread'));
+        }
+        add(panel, find.wrap, unread.length ? tools : null, shown);
+      }
+      for (const source of this.only === 'unread' ? unread : sources) { const row = this.source(source); row.dataset.find = ((source.name || '') + ' ' + (source.origin || '')).toLowerCase(); list.append(row); }
+      sift();
+      keptListScroll = this.listNode ? this.listNode.scrollTop : 0; this.listNode = list;
       const extra = this.a.extra ? this.a.extra(this) : null;
       if (!state || (!state.sources.length && !extra)) list.append(make('li', 'quiet', state ? 'Add material here, or allow external search below.' : 'Loading the source draft…'));
       add(panel, list, extra); this.node.append(panel);
@@ -308,7 +374,9 @@ const StudioResearch = (() => {
       }
       const status = make('p', this.problem ? 'problem' : 'quiet', this.problem || this.reading); status.setAttribute('role', this.problem ? 'alert' : 'status'); status.hidden = !status.textContent; this.node.append(status);
       if (this.problem) this.node.append(button('Reload sources', () => this.load(), 'research-reload'));
-      for (const control of this.node.querySelectorAll('button, input, textarea, select')) control.disabled = this.busy || !state;
+      // Looking through the list never waits on a source being read.
+      for (const control of this.node.querySelectorAll('button, input, textarea, select')) control.disabled = (this.busy || !state) && !control.dataset.free;
+      if (this.listNode) this.listNode.scrollTop = keptListScroll;
       // A studio whose library choices are full says so beside them (`libraryFull`), and Add from library waits.
       if (this.a.library && this.a.libraryFull && this.a.libraryFull()) { const more = Array.from(this.node.querySelectorAll('button')).find(n => n.dataset.key === 'research-library'); if (more) more.disabled = true; }
       if (this.problem) { const reload = Array.from(this.node.querySelectorAll('button')).find(n => n.dataset.key === 'research-reload'); if (reload) reload.disabled = this.busy; }

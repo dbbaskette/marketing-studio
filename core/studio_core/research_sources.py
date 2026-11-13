@@ -3,12 +3,13 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import html
 import json
 from pathlib import Path
 import re
 import secrets
 from datetime import datetime, timezone
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 
 from studio_core import google_reference, public_fetch, source_documents, research_sites
 from studio_core.process_lock import ProcessRLock
@@ -17,6 +18,27 @@ from studio_core import research_contract as rc
 LIMIT = 8_000_000
 MOST = 40
 LINKS = ('url', 'google-doc', 'google-slides')
+# What one research run can take in, as Harness Research counts it: a link is two entries (its
+# address and its captured text), anything else is one. Said before Start, never after.
+RESEARCH_ENTRIES = 200
+
+
+def entries(sources):
+    """How many research entries the readable sources come to."""
+    return sum(2 if s.get('kind') in LINKS else 1 for s in sources if s.get('status') == 'ready')
+
+
+def over(sources):
+    """Why these sources are too many for one research run, or None."""
+    count = entries(sources)
+    if count <= RESEARCH_ENTRIES:
+        return None
+    links = sum(s.get('kind') in LINKS and s.get('status') == 'ready' for s in sources)
+    other = count - 2 * links
+    return (f'One research run reads at most {RESEARCH_ENTRIES // 2} links, or {RESEARCH_ENTRIES} files and pasted '
+            f'texts; a link counts as two. You have {links} {"link" if links == 1 else "links"}'
+            + (f' and {other} other {"source" if other == 1 else "sources"}' if other else '')
+            + f', which is {count - RESEARCH_ENTRIES} over. Remove or exclude the ones this work needs least.')
 TYPES = {'.txt': 'text', '.md': 'text', '.markdown': 'text', '.pdf': 'pdf', '.docx': 'docx', '.html': 'html', '.htm': 'html'}
 
 
@@ -27,6 +49,17 @@ def digest(value):
 def require(value, message):
     if not value:
         raise ValueError(message)
+
+
+def page_name(raw, mime, url):
+    """What a fetched page is called in a list: its own title, a document's filename, else its address."""
+    if mime == 'text/html':
+        found = re.search(rb'<title[^>]*>(.*?)</title>', raw[:200_000], flags=re.I | re.S)
+        title = ' '.join(html.unescape(found.group(1).decode('utf-8', errors='ignore')).split()) if found else ''
+        if title:
+            return title[:200]
+    leaf = unquote(urlsplit(url).path.rsplit('/', 1)[-1]).strip()
+    return leaf[:200] if mime == 'application/pdf' and leaf else url
 
 
 class Sources:
@@ -62,8 +95,8 @@ class Sources:
     def shown(value):
         keys = ('id', 'revision', 'external', 'restricted', 'sites', 'workers', 'focus')
         return {**{k: value[k] for k in keys}, 'sources': [{k: s[k] for k in (
-            'id', 'name', 'kind', 'origin', 'status', 'warnings', 'problem', 'tabs', 'selected_tabs', 'captured_at', 'sha256')
-            if k in s} for s in value['sources']], 'formats': list(TYPES)}
+            'id', 'name', 'kind', 'origin', 'status', 'warnings', 'problem', 'tabs', 'selected_tabs', 'captured_at', 'sha256', 'characters')
+            if k in s} for s in value['sources']], 'formats': list(TYPES), 'over': over(value['sources'])}
 
     def create(self, *, sites=()):
         with self.lock:
@@ -240,6 +273,7 @@ class Sources:
                 require(isinstance(url, str) and len(url) <= 4096, 'Give a document or public page link.')
                 source['requested_url'] = url
                 source['origin'] = url
+                source['name'] = url   # a page that cannot be read is still listed by its address
                 if urlsplit(url).hostname == 'docs.google.com':
                     found = self.google(url, account=self.account() if callable(self.account) else self.account,
                                         selected=data.get('selected'),
@@ -249,8 +283,8 @@ class Sources:
                 else:
                     found = self.fetch(url)
                     raw = found['raw']
-                    source.update(kind='url', name=found['url'], origin=found['url'])
                     mime = found['mime'].split(';', 1)[0]
+                    source.update(kind='url', name=page_name(raw, mime, found['url']), origin=found['url'])
                     require(mime in ('text/plain', 'text/html', 'application/pdf'), 'Use a readable text, HTML or PDF reference.')
                     extracted = self.extract(raw, {'text/plain': 'text', 'text/html': 'html', 'application/pdf': 'pdf'}[mime])
             elif kind == 'text':
@@ -273,7 +307,8 @@ class Sources:
             text = extracted.get('text', '')
             require(isinstance(text, str) and 0 < len(text.encode()) <= LIMIT and text.strip(),
                     'This source contains no readable text. Use a text copy or exclude it.')
-            source.update(raw=raw, text=text, warnings=extracted.get('warnings', []))
+            # How much was read, so a row can say the page's text was fetched and not only its address.
+            source.update(raw=raw, text=text, warnings=extracted.get('warnings', []), characters=len(text))
         except (ValueError, OSError) as error:
             source.update(status='needs-attention', problem=str(error))
         return source
@@ -295,6 +330,7 @@ class Sources:
                     'Retry, remove or explicitly exclude unreadable sources before starting.')
             ready = [s for s in value['sources'] if s['status'] == 'ready']
             require(primary or ready or value['external'], 'Add a source or allow additional external search.')
+            require(over(ready) is None, over(ready))
             offered = []
             for source in ready:
                 folder = self.folder(ident)
