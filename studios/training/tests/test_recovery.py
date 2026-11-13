@@ -26,6 +26,19 @@ class RecoveryTests(DeckCase):
         self.assertEqual(view['problem']['ways'][0]['label'], 'Review the slide text')
         self.assertFalse(view['deck_aside'])
 
+    def test_a_deck_the_runner_stopped_itself_offers_the_same_ways_on(self):
+        # Such as a brand that changed under the deck: recorded as stopped, not failed.
+        root, view = self.stopped()
+        record = self.engine._load(root)
+        record['problem'].update(state='stopped', step='deck-sections')
+        with self.engine.files:
+            self.engine._store(root, record)
+        self.assertEqual([way['id'] for way in self.view(root)['problem']['ways']],
+                         ['slide-text', 'leave-deck'])
+        self.workers.queued.pop('section', None)
+        shown = self.engine.act(root, 'slide-text')['outline']
+        self.assertTrue(shown['waiting'] and shown['content_first'])
+
     def test_a_stop_that_is_not_a_decks_offers_nothing_more(self):
         self.engine.content_first = True
         self.workers.then('document', *[fails()] * 3)

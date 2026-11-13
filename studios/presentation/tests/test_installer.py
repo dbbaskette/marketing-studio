@@ -722,7 +722,7 @@ class CompanionTests(InstallerCase):
         self.assertEqual(asked, ['Fetch harness-research and run its installer? [y/N]: ',
                                  'Fetch harness-slides and run its installer? [y/N]: '])
         said = printed.getvalue()
-        self.assertIn(f"at revision {self.pins['harness-slides']['commit'][:12]} and checked",
+        self.assertIn(f"(revision {self.pins['harness-slides']['commit'][:12]} when the newest cannot",
                       said)
         self.assertIn('Then its own installer would be run with Node.', said)
         self.assertEqual(self.fetched('harness-research') + self.fetched('harness-slides'), [])
@@ -810,8 +810,8 @@ class CompanionTests(InstallerCase):
         with mock.patch('builtins.input', lambda question: 'n'), contextlib.redirect_stdout(printed):
             install.offer('harness-research', {**pin, 'requirement': '>=0.7.0'}, {'claude': '0.6.0'})
         self.assertNotIn('stable tags', printed.getvalue())
-        self.assertIn(f"harness-research {pin['version']} is newer than the 0.6.0", printed.getvalue())
-        self.assertIn(f"at revision {pin['commit'][:12]} and checked", printed.getvalue())
+        self.assertIn(f"harness-research {pin['version']} or newer is newer than the 0.6.0", printed.getvalue())
+        self.assertIn(f"(revision {pin['commit'][:12]} when the newest cannot", printed.getvalue())
 
     def test_a_companion_whose_version_cannot_be_read_is_left_alone_and_named(self):
         (self.claude / 'harness-research').mkdir()

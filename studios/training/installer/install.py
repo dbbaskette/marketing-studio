@@ -897,12 +897,13 @@ def offer(name: str, pin: dict, found: dict) -> bool:
     """Ask the person whether to fetch a companion and run its installer."""
     source = pin['repository'].removesuffix('.git')
     having = sorted({version for version in found.values() if version})
-    print(f"\n{name} {pin['version']} "
+    print(f"\n{name} {pin['version']} or newer "
           + (f'is newer than the {having[0]} on this computer' if having
              else 'is not on this computer')
           + f": {NEEDS.get(name, 'part of a training cannot be made without it')}.")
-    print(f"  It would be fetched from {source} at revision {pin['commit'][:12]} and checked, "
-          'file for file,\n  against what this installer expects. Then its own installer '
+    print(f"  Its newest release would be looked up at {source}, fetched and checked, file for "
+          f"file\n  (revision {pin['commit'][:12]} when the newest cannot be looked up). Then its "
+          'own installer '
           'would be run with Node.\n  That installer registers the skill for every assistant '
           'it knows, not only those above.')
     if pin.get('note'):

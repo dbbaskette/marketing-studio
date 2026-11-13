@@ -160,12 +160,12 @@ class CompanionVersionsTests(unittest.TestCase):
                 {'harness-research': pin or self.pin}, agree, self.root_state, declined)['harness-research']
 
     def offline(self):
-        """Release lookups fail as they would offline; fetching an exact commit still works."""
+        """Release lookups fail as they do offline; fetching an exact commit still works."""
         real = companions.git
 
         def git(args, cwd):
             if args[0] == 'ls-remote':
-                raise AssertionError('Release lookup used')
+                return 128, 'Could not resolve host'
             return real(args, cwd)
         return mock.patch.object(companions, 'git', side_effect=git)
 
@@ -196,13 +196,35 @@ class CompanionVersionsTests(unittest.TestCase):
                     self.assertEqual(result['state'], 'left alone')
                     self.assertEqual(self.root_state, {})
 
-    def test_install_uses_the_exact_lock_even_when_newer_tags_exist(self):
+    def test_install_brings_the_newest_release_once_agreed(self):
+        newest = self.release('1.1.0')
+        for found in ({'codex': None}, {'codex': '0.9.0'}):
+            with self.subTest(found=found), \
+                    mock.patch.object(companions, 'run_companion', return_value={'state': 'installed'}) as run:
+                result = self.bring(found, lambda *args: True)
+            self.assertEqual((result['wanted'], result['state']), ('1.1.0', 'installed'))
+            self.assertNotIn('looked', result)
+            installed = run.call_args.args[1]
+            self.assertEqual((installed['version'], installed['commit']), ('1.1.0', newest))
+            self.assertNotEqual(installed['sha256'], self.pin['sha256'], 'checked as its own release')
+            recorded = self.root_state['companions']['harness-research']
+            self.assertEqual((recorded['version'], recorded['commit'], recorded['sha256']),
+                             ('1.1.0', newest, installed['sha256']))
+
+    def test_an_installed_copy_meeting_the_requirement_is_not_looked_up(self):
+        self.release('1.1.0')
+        with mock.patch.object(companions, 'git', side_effect=AssertionError('Lookup used')):
+            result = self.bring({'codex': '1.0.0'}, lambda *args: True)
+        self.assertEqual((result['wanted'], result['state']), ('1.0.0', 'left alone'))
+
+    def test_install_uses_the_exact_lock_when_the_newest_cannot_be_looked_up(self):
         self.release('1.1.0')
         for found in ({'codex': None}, {'codex': '0.9.0'}):
             with self.subTest(found=found), self.offline(), \
                     mock.patch.object(companions, 'run_companion', return_value={'state': 'installed'}) as run:
                 result = self.bring(found, lambda *args: True)
             self.assertEqual((result['wanted'], result['state']), ('1.0.0', 'installed'))
+            self.assertIn('could not be checked', result['looked'])
             self.assertEqual(run.call_args.args[1], self.pin)
             recorded = self.root_state['companions']['harness-research']
             self.assertEqual({key: recorded[key] for key in ('version', 'commit', 'sha256')},
