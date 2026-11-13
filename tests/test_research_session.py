@@ -8,6 +8,7 @@ import secrets
 import tempfile
 import threading
 import unittest
+import unittest.mock
 from unittest import mock
 import marketing_studio  # noqa: F401
 from studio_core import research_session as session, research_contract as rc
@@ -174,8 +175,10 @@ class SessionTests(unittest.TestCase):
         self.barrier = None; self.task['source_mode'] = 'selected'
         links = [{**source, 'origin': f'https://example.invalid/{n}'} for n, source in enumerate(self.many(101))]
         self.assertEqual(session.intake_entries(links), 202)
-        with self.assertRaisesRegex(ValueError, 'at most 200 entries.*This run has 202'):
-            self.workflow.run(self.root, self.task, self.invoke, links, reading=True)
+        # Whatever the helper under test takes, an older one that states no limits takes 200.
+        with unittest.mock.patch.object(session, 'intake_limits', lambda runtime: dict(session.INTAKE)):
+            with self.assertRaisesRegex(ValueError, 'at most 200 entries.*This run has 202'):
+                self.workflow.run(self.root, self.task, self.invoke, links, reading=True)
         self.assertEqual(self.calls, [])
         self.assertFalse((self.root / '.studio-research').exists())
         newer = self.root / 'newer'; (newer / 'references').mkdir(parents=True)

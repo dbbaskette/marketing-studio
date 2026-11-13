@@ -1,5 +1,7 @@
 # Changelog
 
+Unreleased: one research run reads up to 1,000 links, or 2,000 files and pasted texts, with Harness Research 1.2.0 (was 100 and 200). Sources are registered a hundred at a time, so a long list starts quickly. An older installed Harness Research still takes 200 entries and says so when research starts.
+
 Unreleased: research reads many documents in groups. With more than fifty readable sources, the documents are divided into groups of at most fifty and one reader per group notes what each covers and which research areas it bears on; each area's investigator is then given the fifty that bear on it most, never more. Every document is read by some agent. The research screen shows how many have been read and which are open, and a retry reads only the groups that did not finish. Fifty sources or fewer are researched as before. A run is still held to what the installed Harness Research takes in (200 entries, a link counting as two), and now says so before it starts.
 
 Unreleased: the Sources step counts what research will read. Its tab said **0 documents selected** however many links and files were added, because it counted only library documents. It now says, for example, **766 sources · 3 not read**, and follows the list as it grows. Each link's row is named by its page title and says how much text was read, and a file chosen while a long list of links is still being read waits its turn instead of being dropped.

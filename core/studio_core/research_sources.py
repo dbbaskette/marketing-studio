@@ -18,9 +18,10 @@ from studio_core import research_contract as rc
 LIMIT = 8_000_000
 MOST = 40
 LINKS = ('url', 'google-doc', 'google-slides')
-# What one research run can take in, as Harness Research counts it: a link is two entries (its
-# address and its captured text), anything else is one. Said before Start, never after.
-RESEARCH_ENTRIES = 200
+# What one research run can take in, as Harness Research 1.2.0 and newer count it: a link is two
+# entries (its address and its captured text), anything else is one. Said before Start, never
+# after. An older installed Harness Research takes fewer and is named when research starts.
+RESEARCH_ENTRIES = 2000
 
 
 def entries(sources):
@@ -35,7 +36,7 @@ def over(sources):
         return None
     links = sum(s.get('kind') in LINKS and s.get('status') == 'ready' for s in sources)
     other = count - 2 * links
-    return (f'One research run reads at most {RESEARCH_ENTRIES // 2} links, or {RESEARCH_ENTRIES} files and pasted '
+    return (f'One research run reads at most {RESEARCH_ENTRIES // 2:,} links, or {RESEARCH_ENTRIES:,} files and pasted '
             f'texts; a link counts as two. You have {links} {"link" if links == 1 else "links"}'
             + (f' and {other} other {"source" if other == 1 else "sources"}' if other else '')
             + f', which is {count - RESEARCH_ENTRIES} over. Remove or exclude the ones this work needs least.')

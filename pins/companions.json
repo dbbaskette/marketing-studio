@@ -3,13 +3,13 @@
   "companions": {
     "harness-research": {
       "repository": "https://github.com/dbbaskette/harness-research-skill.git",
-      "version": "1.1.1",
-      "commit": "d27811e498ab73381a5a3c975ec5d30c80878280",
-      "sha256": "a24d9151e9d3a4c7d613572ba0b04788211162815f614d2d62b7c9a09af752c6",
+      "version": "1.2.0",
+      "commit": "e809e004f5e6dd7d224d818ff62272dfcb1896cb",
+      "sha256": "8fd552d480dec352deb8469b676fa93380860a34282481a774c56c9c0d55cab3",
       "stub": "bootstrap/SKILL.md",
       "installer": "scripts/install.mjs",
-      "note": "Stable collection plus explicit unchanged-save review retention. Existing runs keep their saved runtime, context and revision policy.",
-      "requirement": ">=1.1.1"
+      "note": "One run takes up to 2,000 source entries; stable collection and unchanged-save review retention. Existing runs keep their saved runtime, context and revision policy.",
+      "requirement": ">=1.2.0"
     },
     "harness-slides": {
       "repository": "https://github.com/dbbaskette/harness-slides-skill.git",
