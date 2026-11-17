@@ -271,6 +271,8 @@ const SECTION_WORDS = {
 const ASSET_WORDS = {
   recorded: ['done', 'Recorded'], wanted: ['none', 'Still needed'],
   drawn: ['done', 'Drawn from its numbers'],
+  left: ['none', 'Left out, as you asked'],
+  brand: ['done', 'Comes with the brand'],
   missing: ['late', 'Its file is missing'], changed: ['late', 'Its file has changed'],
   conflict: ['late', 'Recorded as something else'],
 };
@@ -5475,8 +5477,8 @@ function failedStep(run, found) {
 function actionSays(run, found) {
   if (found.settings) return '';
   if (found.waits === 'assets') {
-    return 'The deck is drawn once its pictures are here. Without one, redesign the deck or '
-      + 'leave it out.';
+    return 'The deck is drawn once its pictures are here. Carry on without it draws those '
+      + 'slides with no picture, in the brand\'s own layout.';
   }
   if (found.creator_review) return 'View flagged items to read the content, why it was flagged, and its sources. Opening the review changes nothing and starts no new work.';
   if (found.action === 'resume') {
@@ -5745,7 +5747,7 @@ function problemPart(run, lead) {
     add(make('p', ''), make('strong', '', 'What happened: '), found.what),
     keptPart(found.kept),
     does ? make('p', 'quiet', does) : null,
-    add(make('div', 'bar'), decide, go, read, theirs ? null : alsoPart(found),
+    add(make('div', 'bar'), decide, go, read, theirs ? null : alsoPart(found, unasked),
       // Beside Try again: change what it was started with, then Continue (#296), or bring
       // its models up to date with Settings.
       theirs ? null : settingsButton(run, 'problem-settings'),
@@ -5777,13 +5779,19 @@ function deckAsidePart() {
 
 // Beside a stop's one action: Try again once Status has been put right, and deleting a
 // training whose answers are missing.
-function alsoPart(found) {
+function alsoPart(found, unasked) {
   if (found.action === 'status') {
     const again = capsule('Try again', '', () => steer('retry', again), 'problem-retry');
     return again;
   }
   if (found.action === 'new') {
     return capsule('Delete this training', 'quiet', askDelete('delete'), 'problem-delete');
+  }
+  // A deck waiting for a picture can go on without it: its slide is drawn without one.
+  if (found.action === 'asset' && found.waits === 'assets' && !unasked) {
+    const without = capsule('Carry on without it', '', () => steer('without', without),
+      'problem-without');
+    return without;
   }
   return null;
 }

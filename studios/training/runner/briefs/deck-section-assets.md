@@ -9,4 +9,4 @@ The slides tool keeps a record of every picture and icon this deck may use, each
 
 - A chart the design selected is not a picture: you draw it yourself as a chart node, as your brief says, from the numbers the deck has.
 
-You cannot add a picture of your own. A picture that is missing is the person's to supply.
+You cannot add a picture of your own. A supplied picture that is not recorded was left out by the person: draw its slide without it.

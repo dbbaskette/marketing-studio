@@ -127,6 +127,9 @@ SUPPLIED = ('supplied', 'screenshot', 'chart')   # the assets a person gives, on
 # A chart nobody supplied a picture of is drawn by its section's composer, as a chart, from
 # the numbers the deck already has. The deck never waits for one.
 COMPOSED = ('chart',)
+# The pictures a person said their deck goes without, {asset ID: its `ref`}. Each slide is
+# drawn without its picture, and the deck stops waiting for it.
+WITHOUT = 'deck/without.json'
 JUDGED = 'design'   # a start whose deck the slides tool reviews against its approved design
 SHOWS = 'deck/review.json'          # what its gate shows of the deck that was saved
 HISTORY = 'deck/history'            # what a deck was, kept when it is drawn again from a design
@@ -1090,6 +1093,48 @@ def recorded(root: Path, level: str | None) -> dict:
     return {entry['assetId']: entry for entry in listed or ()
             if isinstance(entry, dict) and isinstance(entry.get('assetId'), str)} \
         if isinstance(listed, list) else {}
+
+
+def without(root: Path, level: str | None) -> dict:
+    """The pictures a person left out of a deck: {asset ID: the `ref` it had then}."""
+    found = home.read_json(place(root, level, WITHOUT), {})
+    return {asset: ref for asset, ref in found.items() if isinstance(ref, str)} \
+        if isinstance(found, dict) else {}
+
+
+def leads(root: Path, level: str | None) -> set:
+    """The IDs of a deck's cover, section and closing slides, as its outline has them. Each
+    is drawn in the brand's own layout, from the brand's template."""
+    outline = home.read_json(place(root, level, OUTLINE), {})
+    return {slide.get('id') for slide in deck.slides_of(outline)
+            if slide.get('kind') in deck.LEADS}
+
+
+def branded(candidate: dict, lead: set) -> bool:
+    """Whether a picture the design calls supplied is the brand's own layout: one named on
+    a cover, section or closing slide, which the slides tool draws from the brand's
+    template. The person is never asked for it."""
+    return candidate['kind'] == 'supplied' and candidate['slide'] in lead
+
+
+def left_out(candidate: dict, left: dict) -> bool:
+    """Whether the person said the deck goes without this picture, as the design names it
+    now: a design approved since that names another picture by the same ID asks again."""
+    return candidate['kind'] in SUPPLIED and left.get(candidate['asset']) == candidate['ref']
+
+
+def leave_out(root: Path, level: str | None) -> list[str]:
+    """Note that the deck goes without every picture its design asks a person for that is
+    not recorded. Returns their asset IDs."""
+    known, design = recorded(root, level), home.read_json(place(root, level, DESIGN), {})
+    left, lead = without(root, level), leads(root, level)
+    new = {candidate['asset']: candidate['ref'] for candidate in deck.candidates(design)
+           if candidate['kind'] in SUPPLIED and candidate['kind'] not in COMPOSED
+           and candidate['asset'] not in known and not left_out(candidate, left)
+           and not branded(candidate, lead)}
+    if new:
+        home.write_json(place(root, level, WITHOUT), {**left, **new})
+    return sorted(new)
 
 
 def assets_now(root: Path, level: str | None, known: dict | None = None) -> dict:
@@ -2905,10 +2950,13 @@ def assets_view(root: Path, level: str | None) -> list[dict]:
     """Each asset a deck's approved design uses, and how it stands in the slides tool's
     manifest of the deck, read from the files as they lie."""
     known, design = recorded(root, level), home.read_json(place(root, level, DESIGN), {})
-    now, listed = assets_now(root, level, known), []
+    now, listed, left = assets_now(root, level, known), [], without(root, level)
+    lead = leads(root, level)
     for candidate in deck.candidates(design):
         entry = known.get(candidate['asset'])
         state = ('drawn' if entry is None and candidate['kind'] in COMPOSED
+                 else 'brand' if entry is None and branded(candidate, lead)
+                 else 'left' if entry is None and left_out(candidate, left)
                  else 'wanted' if entry is None else 'conflict' if entry.get('kind')
                  != candidate['kind'] else 'recorded' if entry.get('kind') == 'icon'
                  else 'missing' if now.get(candidate['asset']) is None
@@ -2917,7 +2965,8 @@ def assets_view(root: Path, level: str | None) -> list[dict]:
         listed.append({**{key: candidate[key] for key in ('asset', 'slide', 'kind', 'ref',
                                                           'concept')},
                        'state': state, 'alt': (entry or {}).get('alt'),
-                       'supply': candidate['kind'] in SUPPLIED and state != 'drawn'})
+                       'supply': candidate['kind'] in SUPPLIED
+                       and state not in ('drawn', 'brand')})
     return listed
 
 

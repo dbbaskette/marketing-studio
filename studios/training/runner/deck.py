@@ -180,7 +180,12 @@ PLACED = ("A picture the design selected is recorded in the deck's asset manifes
           'nowhere else: never estimate or invent a value. Say in its title when a figure '
           'is hypothetical or illustrative, and name where the numbers come from in '
           '`source`. If the numbers it needs are not given, show the comparison as a table '
-          'or as text and say so when you hand in.', '')
+          'or as text and say so when you hand in.', '',
+          "A supplied picture named on a cover, section or closing slide is the brand's own "
+          'layout, which the slides tool applies: there is nothing to place. '
+          'Any other supplied picture or screenshot that is not recorded was left out by the person: '
+          "draw its slide without it, in the brand's own layout, and never leave a gap or a "
+          'placeholder where it would have been.', '')
 USE = ('The deck is both presented and handed out. Every slide must make sense to someone '
        'reading it alone, so no slide may depend on its speaker notes for meaning. The notes '
        'carry the talk track and timing for a presenter.')   # as a deck for reading has it

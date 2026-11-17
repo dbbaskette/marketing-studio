@@ -1746,7 +1746,7 @@ class RunTests(PageCase):
         for sent, expect, said in (
                 ({'path': path, 'action': 'restart'}, 400,
                  'A run can be asked to: pause, resume, stop, retry, finish-level, more-time, '
-                 'slide-text, leave-deck, bring-deck.'),
+                 'without, slide-text, leave-deck, bring-deck.'),
                 ({'path': path}, 400, 'Give action as text.'),
                 ({'action': 'pause'}, 400, 'Give path as text.'),
                 ({'path': path, 'action': 'pause'}, 409, 'Only a training that is working '
