@@ -2998,6 +2998,26 @@ class AssetTests(DeckCase):
             self.assertIn(f'trainings/rolling-restarts/{kept}', tracked)
         self.assertEqual(self.git('status', '--porcelain'), '')
 
+    def test_a_chart_nobody_supplied_is_drawn_and_never_waited_for(self):
+        design = runner_support.designed(OUTLINE)
+        design['slides'][1]['asset']['candidates'].append({
+            'assetId': 'benefit_chart', 'kind': 'chart',
+            'ref': 'Bar chart: 12 instances before, 9 after', 'concept': 'Capacity kept',
+            'status': 'pending'})
+        self.workers.design_said = design
+        root = self.saved_begin()
+        view = self.drawn(root)
+        self.assertNotEqual((view.get('problem') or {}).get('action'), 'asset',
+                            (view.get('problem') or {}).get('what'))
+        self.assertEqual(self.listed(view)['benefit_chart'], 'drawn')
+        shown = next(one for one in view['deck']['assets'] if one['asset'] == 'benefit_chart')
+        self.assertFalse(shown['supply'])
+        # Its section's composer is told to draw it as a chart, from the deck's numbers.
+        start = next((root / 'work' / 'deck').glob('start-*'))
+        told = (start / 'given' / 'section-1.md').read_text()
+        self.assertIn('type": "chart', told)
+        self.assertIn('never estimate or invent a value', told)
+
     def test_visual_05_missing_asset_waits(self):
         self.workers.design_said = with_assets(runner_support.designed(OUTLINE), generated=True)
         self.workers.placing = {'what-it-does': [

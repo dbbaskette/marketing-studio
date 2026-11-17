@@ -270,6 +270,7 @@ const SECTION_WORDS = {
 // How each asset a deck's approved design uses stands in the slides tool's record of it.
 const ASSET_WORDS = {
   recorded: ['done', 'Recorded'], wanted: ['none', 'Still needed'],
+  drawn: ['done', 'Drawn from its numbers'],
   missing: ['late', 'Its file is missing'], changed: ['late', 'Its file has changed'],
   conflict: ['late', 'Recorded as something else'],
 };
@@ -5677,12 +5678,18 @@ function researchDecisionPart(run) {
 function problemPart(run, lead) {
   const found = run.problem;
   const theirs = run.mine === false;
-  const label = found.label || (found.action === 'retry' ? 'Try again' : 'Resume');
+  // A deck that waited only for what it now draws itself, such as a chart, has no picture
+  // left to add: its one action carries on.
+  const unasked = found.action === 'asset'
+    && !list(run.deck && run.deck.assets).some((asset) => asset.supply);
+  const label = unasked ? 'Carry on'
+    : found.label || (found.action === 'retry' ? 'Try again' : 'Resume');
   // An agent that could not be used: Status says what it needs. Missing answers: a new
   // training in its place.
   const goes = found.action === 'status' ? () => show('status')
     : found.action === 'new' ? () => openNew('problem-action')
     // A deck waiting for a picture leads to the deck's picture form, and to its file.
+    : unasked ? () => steer('retry', go)
     : found.action === 'asset' ? () => {
     const assets = list(run.deck && run.deck.assets);
     const at = assets.findIndex((asset) => asset.supply);

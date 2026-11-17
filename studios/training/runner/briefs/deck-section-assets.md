@@ -7,4 +7,6 @@ The slides tool keeps a record of every picture and icon this deck may use, each
 - For a slide whose visual is `generated-art`, ask for the picture with `request_asset`: its asset ID, the slide, a brief for the picture, and what it shows. Write the brief from the slide's claim and design. Ask once, and only for an asset your brief names; each request costs money. If the tool cannot make it, draw the rest of the slide and say why when you hand in.
 - `request_asset` with an icon's library ID records a brand icon under a new asset ID, for a thing the design does not name.
 
+- A chart the design selected is not a picture: you draw it yourself as a chart node, as your brief says, from the numbers the deck has.
+
 You cannot add a picture of your own. A picture that is missing is the person's to supply.

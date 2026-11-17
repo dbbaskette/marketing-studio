@@ -171,7 +171,16 @@ PLACED = ("A picture the design selected is recorded in the deck's asset manifes
           'by its asset ID: `{"type": "image", "id": "<your ID>", "asset": "<asset ID>"}`, '
           'with `alt` where the recorded one does not say what it shows here. `list_assets` '
           'lists every recorded asset. Generated art for a slide whose visual is '
-          '`generated-art` is made with `request_asset`, from a brief you write.', '')
+          '`generated-art` is made with `request_asset`, from a brief you write.', '',
+          'A chart the design selected that is not recorded is yours to draw, as a chart '
+          'node and never as a picture: `{"type": "chart", "id": "<your ID>", "kind": "bar" '
+          '| "line" | "pie", "data": {"categories": [...], "series": [{"name": "...", '
+          '"values": [...]}]}, "title": "...", "units": "...", "source": "..."}`. Take its '
+          "numbers from the design's `ref`, the slide's words and your sources, and from "
+          'nowhere else: never estimate or invent a value. Say in its title when a figure '
+          'is hypothetical or illustrative, and name where the numbers come from in '
+          '`source`. If the numbers it needs are not given, show the comparison as a table '
+          'or as text and say so when you hand in.', '')
 USE = ('The deck is both presented and handed out. Every slide must make sense to someone '
        'reading it alone, so no slide may depend on its speaker notes for meaning. The notes '
        'carry the talk track and timing for a presenter.')   # as a deck for reading has it
