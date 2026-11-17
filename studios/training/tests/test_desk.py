@@ -6546,8 +6546,8 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         self.assertIn('Supply the picture', shots['led']['sheet'])
         # The stop leads with the picture: its filled button takes you to the form.
         self.assertEqual(first['filled'], ['Add the picture'])
-        self.assertIn('The deck is drawn once its pictures are here. Without one, redesign '
-                      'the deck or leave it out.', first['text'])
+        self.assertIn('The deck is drawn once its pictures are here. Carry on without it '
+                      'draws those slides with no picture', first['text'])
         self.assertNotIn('Try again re-runs', first['text'])
         self.assertEqual(shots['led']['focus'], 'asset-1-file')
         self.assertIn('Choose the picture first.', shots['unchosen']['sheet'])

@@ -3018,6 +3018,39 @@ class AssetTests(DeckCase):
         self.assertIn('type": "chart', told)
         self.assertIn('never estimate or invent a value', told)
 
+    def test_a_deck_carries_on_without_a_picture_the_person_leaves_out(self):
+        self.workers.design_said = with_assets(runner_support.designed(OUTLINE))
+        root = self.saved_begin()
+        view = self.drawn(root)
+        self.assertEqual((view['state'], view['problem']['action']), ('waiting', 'asset'))
+        view = self.engine.act(root, 'without')
+        self.assertNotEqual((view.get('problem') or {}).get('action'), 'asset',
+                            (view.get('problem') or {}).get('what'))
+        self.assertEqual(self.listed(self.view(root))['console_view'], 'left')
+        self.assertEqual(pipeline.without(root, None),
+                         {'console_view': 'The restart in the console'})
+        # Its section's composer is told to draw the slide without the picture.
+        start = next((root / 'work' / 'deck').glob('start-*'))
+        self.assertIn('was left out by the person', (start / 'given' / 'section-1.md').read_text())
+        # A deck that waits for no picture has none to leave out.
+        with self.assertRaises(WorkspaceError):
+            self.engine.act(root, 'without')
+
+    def test_a_cover_template_the_design_calls_supplied_is_never_waited_for(self):
+        design = runner_support.designed(OUTLINE)
+        lead = next(slide['id'] for slide in OUTLINE['slides'] if slide['kind'] == 'cover')
+        cover = next(slide for slide in design['slides'] if slide['id'] == lead)
+        cover['asset'] = {**cover['asset'], 'candidates': [{
+            'assetId': 'brand-cover', 'kind': 'supplied', 'ref': 'The brand cover template',
+            'concept': 'Brand identity', 'status': 'resolved'}]}
+        self.workers.design_said = design
+        root = self.saved_begin()
+        view = self.drawn(root)
+        self.assertNotEqual((view.get('problem') or {}).get('action'), 'asset',
+                            (view.get('problem') or {}).get('what'))
+        shown = next(one for one in view['deck']['assets'] if one['asset'] == 'brand-cover')
+        self.assertEqual((shown['state'], shown['supply']), ('brand', False))
+
     def test_visual_05_missing_asset_waits(self):
         self.workers.design_said = with_assets(runner_support.designed(OUTLINE), generated=True)
         self.workers.placing = {'what-it-does': [

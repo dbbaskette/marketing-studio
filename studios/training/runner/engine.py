@@ -270,8 +270,10 @@ MODELS_FOR = 3600       # seconds a list of an agent's models is reused
 MODELS_MISSED = 60      # seconds before a list that could not be made is asked for again
 LOOKED_FOR = 300        # seconds a look at what this computer has for a deck is reused
 BUSY_TRIES = 20         # times a finding is offered while another save holds the lock
-ACTIONS = ('pause', 'resume', 'stop', 'retry', 'finish-level', stops.MORE_TIME,
+WITHOUT = 'without'     # carry on without the pictures a deck waits for
+ACTIONS = ('pause', 'resume', 'stop', 'retry', 'finish-level', stops.MORE_TIME, WITHOUT,
            *recovery.WAYS)
+NO_PICTURE_WAIT = 'This deck is not waiting for a picture, so there is none to leave out.'
 # The stages that are for the whole training, before each level is built in turn: a level's
 # blueprint is drafted among them, so finishing "this level" means nothing there yet.
 WHOLE_TRAINING = ('intake', 'research-plan', 'research', 'blueprint')
@@ -2785,6 +2787,8 @@ class Engine(Reviewing):
                 recorded = {entry['assetId']: entry
                             for entry in tool.asset_status(project).get('assets') or ()}
             by_id, provider = {candidate['asset']: candidate for candidate in wanted}, {}
+            known = {'left': pipeline.without(root, level),
+                    'lead': pipeline.leads(root, level)}
             try:
                 tool.asset_check(project, contract, project)
             except slides_tool.Refused as refusal:
@@ -2798,19 +2802,20 @@ class Engine(Reviewing):
                             == candidate['kind']:
                         said.append(_assets_said(problem, recorded))
                         continue
-                    said += self._wanting(candidate, recorded, find, provider)
+                    said += self._wanting(candidate, recorded, find, provider, known)
                 said += [] if refusal.found else refusal.problems
         except WorkspaceError as refusal:
             said.append(f'The slides tool could not say what is recorded. {refusal}')
         if said:
             # It leads with the picture: the page opens the deck's picture form.
             self._problem(root, it.id, 'waiting', ASSETS_WAIT.format(said=' '.join(said)),
-                          ASSETS_KEPT, action='asset', waits='assets')
+                          ASSETS_KEPT, action='asset', waits='assets',
+                          detail={'level': level})
             return None
         return pipeline.assets_now(root, level)
 
     def _wanting(self, candidate: dict, recorded: dict, find: bool,
-                 provider: dict) -> list[str]:
+                 provider: dict, known: dict) -> list[str]:
         """What one asset an approved design names still wants, a sentence each: nothing when
         it is recorded as the kind the design asks for, or is an icon just looked for in the
         brand's library, or is generated art its composer makes with a provider that is set
@@ -2835,6 +2840,10 @@ class Engine(Reviewing):
                     f"provider ({provider.get('provider')}) is not set up: "
                     f"{provider.get('status')}. " + (steps or 'Set it up as harness-slides '
                                                      'says.') + ' Then try again.']
+        if pipeline.branded(candidate, known['lead']):
+            return []       # the brand's own cover, section or closing layout
+        if pipeline.left_out(candidate, known['left']):
+            return []       # the person said the deck goes without it
         if candidate['kind'] in pipeline.SUPPLIED:
             return [f"{where} needs the {candidate['kind']} {what}. Supply it on this page."]
         return [f"{where} needs the icon {what}, which is not recorded yet."]
@@ -6644,6 +6653,12 @@ class Engine(Reviewing):
                 if state not in ('paused', 'stopped') and problem.get('action') != 'resume':
                     raise WorkspaceError('This training is not paused or stopped, so there '
                                          'is nothing to resume.')
+            elif action == WITHOUT:
+                if problem.get('waits') != 'assets':
+                    raise WorkspaceError(NO_PICTURE_WAIT)
+                level = problem['level'] if 'level' in problem else self._level(
+                    self._survey(root, record).next.step)
+                pipeline.leave_out(root, level)
             # A deck waiting for its pictures is looked at again on Try again too.
             elif problem.get('action') not in ('retry', 'asset', stops.STATUS,
                                                stops.MORE_TIME) or (
@@ -6652,7 +6667,7 @@ class Engine(Reviewing):
             elif problem.get('unreadable') and unserved:
                 # The check would stop the same way: say so again, and start nothing.
                 raise WorkspaceError(problem['what'])
-            if action in ('resume', 'retry', stops.MORE_TIME):
+            if action in ('resume', 'retry', stops.MORE_TIME, WITHOUT):
                 # Continue after Change settings carries twice the time for each step from a
                 # stop for time before it (#296).
                 carried = problem.get('carried') if problem.get('settings') else None
@@ -6675,9 +6690,10 @@ class Engine(Reviewing):
             self._commit(root, {'pause': 'paused on the page', 'stop': 'stopped on the page',
                                 'resume': 'resumed on the page',
                                 'retry': 'asked to try again on the page',
+                                WITHOUT: 'asked to carry on without its pictures on the page',
                                 stops.MORE_TIME: 'asked to try again with more time on the page',
                                 'finish-level': 'asked to finish the level, then wait'}[action])
-        if action in ('resume', 'retry', stops.MORE_TIME):
+        if action in ('resume', 'retry', stops.MORE_TIME, WITHOUT):
             run.stop.clear()
             self.wake(root)
         return self.view(root)
