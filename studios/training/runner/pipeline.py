@@ -124,6 +124,9 @@ DESIGNS = 'deck'                    # where the slides tool keeps its record of 
 APPROVED_DESIGN = Path('given') / 'design.json'   # in a start: the plan the tool approved
 ASSETS = 'deck/.harness-slides/assets.json'   # the tool's record of the deck's pictures and icons
 SUPPLIED = ('supplied', 'screenshot', 'chart')   # the assets a person gives, on the page
+# A chart nobody supplied a picture of is drawn by its section's composer, as a chart, from
+# the numbers the deck already has. The deck never waits for one.
+COMPOSED = ('chart',)
 JUDGED = 'design'   # a start whose deck the slides tool reviews against its approved design
 SHOWS = 'deck/review.json'          # what its gate shows of the deck that was saved
 HISTORY = 'deck/history'            # what a deck was, kept when it is drawn again from a design
@@ -2905,7 +2908,8 @@ def assets_view(root: Path, level: str | None) -> list[dict]:
     now, listed = assets_now(root, level, known), []
     for candidate in deck.candidates(design):
         entry = known.get(candidate['asset'])
-        state = ('wanted' if entry is None else 'conflict' if entry.get('kind')
+        state = ('drawn' if entry is None and candidate['kind'] in COMPOSED
+                 else 'wanted' if entry is None else 'conflict' if entry.get('kind')
                  != candidate['kind'] else 'recorded' if entry.get('kind') == 'icon'
                  else 'missing' if now.get(candidate['asset']) is None
                  else 'changed' if now[candidate['asset']] != entry.get('sha256')
@@ -2913,7 +2917,7 @@ def assets_view(root: Path, level: str | None) -> list[dict]:
         listed.append({**{key: candidate[key] for key in ('asset', 'slide', 'kind', 'ref',
                                                           'concept')},
                        'state': state, 'alt': (entry or {}).get('alt'),
-                       'supply': candidate['kind'] in SUPPLIED})
+                       'supply': candidate['kind'] in SUPPLIED and state != 'drawn'})
     return listed
 
 

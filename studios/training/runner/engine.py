@@ -2823,6 +2823,8 @@ class Engine(Reviewing):
                     f"its approved design asks for a {candidate['kind']}."]
         if entry is not None or candidate['kind'] == 'icon' and find:
             return []
+        if candidate['kind'] in pipeline.COMPOSED:
+            return []       # its section draws it as a chart, from the numbers the deck has
         if candidate['kind'] == 'generated':
             if not provider:
                 provider.update(tool.images_status())
