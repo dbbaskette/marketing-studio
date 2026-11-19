@@ -44,7 +44,7 @@ argues from it and numbers its items as "spec item N".
 - Training: a change to status, approval, inputs or readiness adds a row to the
   state-transition matrix and its `test_row_NN` test (`docs/development.md:111`).
 - Person-facing sentences never say "artifact", "stale" or "lineage" (Presentation).
-- UI follows `docs/design/golden-gate.md`; forms and reading surfaces stay opaque.
+- UI follows `docs/design/ui-kit.md`; forms and reading surfaces stay opaque.
 - Tests use disposable settings, workspaces, Git identities and the stand-ins. No provider
   job, no image generation, no network, never the person's studio state.
 - Never install or update a studio or companion automatically.

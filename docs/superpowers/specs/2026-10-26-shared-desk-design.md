@@ -60,7 +60,7 @@ a tool by its name.
 ### The desk styles are in a page stylesheet
 
 `.desk-*` rules are in `blog.css:168-225`, `.gap-items` at `:100-103` and `.diff-add` and
-`.diff-remove` at `:11`. `docs/design/golden-gate.md` says a page stylesheet "never draws"
+`.diff-remove` at `:11`. `docs/design/ui-kit.md` says a page stylesheet "never draws"
 a shared control. A second studio would copy about 30 rules.
 
 ### Two names to keep apart

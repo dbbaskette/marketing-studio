@@ -20,7 +20,7 @@ Each studio's start form, run record, worker tools and gate use the module.
 ## Global constraints
 
 - Standard library only; no frontend build step; full product names.
-- UI follows `docs/design/golden-gate.md`: forms and reading surfaces stay opaque.
+- UI follows `docs/design/ui-kit.md`: forms and reading surfaces stay opaque.
 - Tests use disposable settings (`STUDIOS_CONFIG`), data roots and workspaces; capture
   tests use stub resolvers and openers, never the network; no provider jobs.
 - Saved runs written before this change stay readable through `research_sites.legacy()`.

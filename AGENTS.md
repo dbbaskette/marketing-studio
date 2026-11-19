@@ -4,10 +4,9 @@
   their independently runnable directories under studios/.
 - Use full product names in code, documentation, issues, and commits.
 - Python 3.11 or newer, standard library only, and no frontend build step.
-- UI changes follow the shared Golden Gate-inspired design in
-  `docs/design/golden-gate.md`; use the `macos-golden-gate-design` skill when
-  available. Reserve material for navigation, toolbars and transient controls;
-  keep forms and reading surfaces opaque.
+- UI changes use the `ui-ux-pro-max` skill for design decisions. Reuse the shared
+  components and keep to the tested layout rules in `docs/design/ui-kit.md`; change a
+  rule, its test and that page together.
 - No writing or training content belongs in this repository.
 - Tests use disposable settings, workspaces, Git identities, and processes. Never
   touch the person's real studio state or start provider jobs during verification.

@@ -1,4 +1,4 @@
-"""Marketing Studio's home and shared setup follow the Layout rules in docs/design/golden-gate.md.
+"""Marketing Studio's home and shared setup follow the Layout rules in docs/design/ui-kit.md.
 
 One lede a view, one heading a card, the card titles the only titles of a setup step, This
 computer's check in its toolbar, and launch cards drawn with the shared tile and status line.

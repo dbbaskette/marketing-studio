@@ -784,7 +784,7 @@ changes for authors first, then what changes for maintainers.
   `POST /api/library-author-different` (pairs kept in `.library/author-pairs.json`) in
   `library_add.py`; `curate` takes `author`, recorded as a curation override;
   `library-selection` accepts up to 500 items for learning. The layout rules are in
-  `docs/design/golden-gate.md`.
+  `docs/design/ui-kit.md`.
 - **For maintainers: the desk's parts are shared.** Nothing changes for authors. The
   desk's text-keeping rules moved to the monorepo's `core/studio_core/drafting/` (with
   `text_checks.py` and `step_times.py` beside it), its page parts to `ui-kit/drafting.js`

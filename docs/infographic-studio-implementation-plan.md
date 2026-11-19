@@ -1026,7 +1026,7 @@ Acceptance criteria:
 
 **Delivery:** First release
 
-**Paths:** `studios/infographic/tests/ui/`, `scripts/ci/`, `docs/design/golden-gate.md`, `studios/infographic/docs/acceptance.md`
+**Paths:** `studios/infographic/tests/ui/`, `scripts/ci/`, `docs/design/ui-kit.md`, `studios/infographic/docs/acceptance.md`
 
 Work:
 

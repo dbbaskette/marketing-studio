@@ -17,7 +17,7 @@
 - Use the existing studios-config file and adjacent lock; preserve unrelated values and conflicting-edit guards. Installation folders remain under one Save in Shared settings.
 - Preserve original files, history, source and guidance pins, Google baselines, team ownership and readiness. No automatic migration, assistant installation or update, publishing or delivery.
 - Only the person approves. Automatic continuation is recorded as continuation, never person approval; new or changed materials are not Ready.
-- Follow docs/design/golden-gate.md: material only on navigation, toolbars and transient controls; opaque forms and reading surfaces, one primary action, a lede, 44px controls, no phone overflow.
+- Follow docs/design/ui-kit.md: material only on navigation, toolbars and transient controls; opaque forms and reading surfaces, one primary action, a lede, 44px controls, no phone overflow.
 - Person-facing text never says artifact, stale or lineage, and never exposes hashes.
 - Verification uses disposable settings, workspaces, HOME, Git identities and processes. Never launch real Marketing Studio or Studio applications or provider, Google or image jobs. Fake scripted servers are allowed. Do not change workflow files.
 - Public issues, PRs and docs contain no credentials, private content or machine-specific operational records.

@@ -2,7 +2,7 @@
 
 This review covered reading order, control visibility, page length and stable
 navigation across Marketing Studio, shared settings and the four native studios.
-It followed the [Golden Gate design rules](golden-gate.md). Browser verification
+It followed the [Golden Gate design rules](ui-kit.md). Browser verification
 used disposable workspaces and synthetic material, with no live provider jobs.
 
 ## Findings and resolutions

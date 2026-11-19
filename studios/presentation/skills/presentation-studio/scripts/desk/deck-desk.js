@@ -394,7 +394,7 @@
     const words = h.words;
     // An existing deck has no research: what it says is the deck's own.
     const researched = draft.route !== 'existing';
-    // An independent choice, so a native checkbox in label.check (golden-gate.md).
+    // An independent choice, so a native checkbox in label.check (ui-kit.md).
     const research = researched ? StudioLists.tick({ id: 'research-first',
       label: 'Research the approved story', on: draft.research, flip: (on) => {
         draft.research = on;

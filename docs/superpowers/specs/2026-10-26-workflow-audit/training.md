@@ -401,7 +401,7 @@ Ranked by what a reader loses.
 Page: studios/training/skills/training-studio/scripts/desk/app.js (one controller for the
 conversation-mode page and the runner), index.html, style.css (byte-identical to
 ui-kit/style.css), plus core/studio_core/deck_web/deck-panels.{js,css}.
-Rules: docs/design/golden-gate.md:51-67.
+Rules: docs/design/ui-kit.md:51-67.
 
 ### Shell-wide (affects every screen)
 - Phone, fixed bar behind the tab bar: the combined review's send bar `.review-bar` is

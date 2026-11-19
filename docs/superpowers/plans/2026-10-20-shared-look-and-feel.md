@@ -44,7 +44,7 @@ Marketing Studio home and setup move onto the shell. Blog Studio's editorial scr
 | `studios/blog/preview/blog-studio.html` | Shared stylesheet, toolbar, cards and fields. |
 | `studios/blog/docs/development.md` | Serve the beginner page from the Blog Studio root. |
 | `docs/design/unified-settings-preview.html` | Rebuild on the shared stylesheet. |
-| `docs/design/golden-gate.md` | Component inventory and the layout-only rule. |
+| `docs/design/ui-kit.md` | Component inventory and the layout-only rule. |
 | `docs/design/*.jpg` | Regenerate the three screenshots. |
 
 Do not rename `index.html`, `app.js`, `home.css`, `style.css`, `blog.css` or `deck.css`. The static file maps (`marketing_studio/server.py`, `core/studio_core/onboarding.py`), the network allowlist (`marketing_studio/network.py`) and the packaging link rules (`core/studio_core/packaging.py`) name them.
@@ -1756,7 +1756,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 **Files:**
 - Modify: `docs/design/unified-settings-preview.html`
-- Modify: `docs/design/golden-gate.md`
+- Modify: `docs/design/ui-kit.md`
 - Replace: `docs/design/unified-settings-home.jpg`, `docs/design/unified-settings-models.jpg`, `docs/design/golden-gate-presentation.jpg`
 
 - [ ] **Step 1: Link the shared stylesheet in the design preview.** In `<head>`, before its `<style>`, add `<link rel="stylesheet" href="../../ui-kit/style.css">`.
@@ -1789,7 +1789,7 @@ Expected: PASS. Each remaining failure names one selector and the drawn properti
 - forms are opaque;
 - the "Design preview" note is still visible.
 
-- [ ] **Step 5: Document the inventory in `docs/design/golden-gate.md`.** Append:
+- [ ] **Step 5: Document the inventory in `docs/design/ui-kit.md`.** Append:
 
 ```markdown
 ## Shared components and page stylesheets

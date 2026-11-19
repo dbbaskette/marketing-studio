@@ -20,7 +20,7 @@ Design: [the spec](../specs/2026-10-23-library-voices-and-layout-design.md).
 5. **Create a voice / Create a style** guided sheets; the Voices screen.
 6. **Other screens**: Home order, Blogs title and primary, Settings order, Refresh Hub in
    Team sharing.
-7. **Docs**: layout rules in `docs/design/golden-gate.md`; Blog Studio docs that name moved
+7. **Docs**: layout rules in `docs/design/ui-kit.md`; Blog Studio docs that name moved
    controls; CHANGELOG.
 8. **Verification**: `check-management.cjs` journeys (select all, create voices, create a
    voice from each source, moved controls reachable), the Blog suite, ruff, build, command

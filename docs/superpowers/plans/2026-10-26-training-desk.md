@@ -64,7 +64,7 @@ shared-desk and deck-desk specs (`2026-10-26-shared-desk-design.md`,
   Studio, Blog Studio, Marketing Studio, Harness Research, Harness Slides.
 - Person-facing sentences never say "artifact", "stale" or "lineage", and never show a
   hash.
-- UI follows `docs/design/golden-gate.md`:
+- UI follows `docs/design/ui-kit.md`:
   - one filled action per screen;
   - a `.lede`;
   - what needs the person first;

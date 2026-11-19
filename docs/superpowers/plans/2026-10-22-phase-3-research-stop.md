@@ -36,7 +36,7 @@ the function it names, not by its words.
   21a216e: re-read every named file on the phase's own base first. Training matrix row numbers
   named here are a guide; each new row takes the next free number on that base.
 - Python 3.11 or newer, standard library only; no frontend build step.
-- UI follows `docs/design/golden-gate.md`: material only for navigation, toolbars and
+- UI follows `docs/design/ui-kit.md`: material only for navigation, toolbars and
   transient controls; the brief, report and evidence are opaque reading surfaces.
 - Full product names in code, docs and commits: Blog Studio, Presentation Studio,
   Training Studio, Marketing Studio, Harness Research.
