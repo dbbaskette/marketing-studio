@@ -59,7 +59,7 @@ Read-only. Paths relative to repo root unless noted. P = studios/presentation, D
 - **Rehearsal.** README.md:38 says "Rehearsal is not part of a deck yet, so the page does not show it". Yet every deck carries "Rehearse (coming later)" (stages.py:72), and deck.css:25 says "Rehearsing with Yoodli is shown dimmed", naming a third-party product for a style nothing uses (§3).
 - **Old brand step.** The look gate still has the cover path: "This is your cover, drawn in that brand, so you can see it is the one you meant." (4729-4731). The rebrand sheet comment says "The cover is drawn again" (5535-5536), while its own text says the looks are drawn again (5565).
 
-## 4. Layout-rule gaps, screen by screen (rules: docs/design/golden-gate.md:51-67)
+## 4. Layout-rule gaps, screen by screen (rules: docs/design/ui-kit.md:51-67)
 
 What is already right: glass only on the sidebar, toolbar and sheet (cards are opaque `.card`; `.shine` is disabled in ui-kit/style.css:327-330); shared controls come from ui-kit; controls are at least 2.75rem tall. Screens are ranked by use.
 
@@ -379,7 +379,7 @@ The serving route already exists. `C/server.py:472-475` serves `C/deck_web/*` to
    - Server: `desk_finish.keep`, `_latest`, `_prune`, `read`, `sets`, `forget`, `apply`, `skip` (desk_finish.py:42-300) become a core "proposals" module. Each studio supplies `present(item)` and `apply(item)`. Blog's are text swaps. Presentation's are a section repair, a notes write or a composition patch.
 7. **Desk layout CSS.** Move into ui-kit/style.css as shared `.desk-*`:
    - `.desk-layout`, `.desk-column`, `.desk-aside`, `.desk-part-head`, `.desk-text`, `.desk-note`, `.desk-working`, `.desk-problem`, `.desk-stale`, `.desk-versions`, `.desk-version`, `.desk-compare`, `.desk-plain del/ins` (blog.css:170-201).
-   - ui-kit's own rule is that a page stylesheet "never draws" a shared control (docs/design/golden-gate.md:91-95).
+   - ui-kit's own rule is that a page stylesheet "never draws" a shared control (docs/design/ui-kit.md:91-95).
    - Without the move, deck.css would copy about 30 rules.
 8. **Progress copy and clock.** Move `sDeskEstimate`, `sDeskClock`, `sDeskSpent`, `sDeskProgress` (desk.js:268-292) into desk-kit.js ("Nothing needed from you. … opens here when it is ready, in about N minutes."). This gives one sentence in every studio. It works with C/stops.py `lasted`.
 9. **Create once per page operation.** Blog's `desk._create` (1123-1175) uses an operation ID plus a request fingerprint, so a retried Start returns the same blog. Presentation's `Engine.start` (engine.py:725) has its own same-moment claim handling. Worth a shared helper for the create step only.

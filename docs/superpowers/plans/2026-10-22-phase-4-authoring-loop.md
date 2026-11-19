@@ -39,7 +39,7 @@ code names (`review:direction`, `gate:look`, `package`).
   Presentation's page tests enforce `FORBIDDEN_WORDS`).
 - One filled button on a screen: every new button here is quiet unless the spec says it
   leads.
-- UI follows `docs/design/golden-gate.md`: material only for navigation, toolbars and
+- UI follows `docs/design/ui-kit.md`: material only for navigation, toolbars and
   transient controls (sheets, toasts); forms and reading surfaces opaque.
 - Tests use disposable settings, workspaces, Git identities and data folders; scripted
   workers; a pretend Drive. No provider job and no real Google call, ever.

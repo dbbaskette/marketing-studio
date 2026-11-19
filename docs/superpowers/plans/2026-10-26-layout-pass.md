@@ -5,7 +5,7 @@
 > checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Presentation Studio, Training Studio and Marketing Studio's home and shared setup
-follow the Layout rules in `docs/design/golden-gate.md`: one filled primary first in each
+follow the Layout rules in `docs/design/ui-kit.md`: one filled primary first in each
 toolbar, one lede, content in the order a person works, filter rows and a selection bar on
 lists, numbered sheets for what makes something, one heading per card, 44px controls and no
 bar under the phone tab bar. The components those rules name move out of Blog Studio's
@@ -40,7 +40,7 @@ label, and keep piece 1's words where it rewrote a sentence quoted here. Piece 3
   numbers named here are a guide; each new row takes the next free number on that base.
 - Python 3.11 or newer, standard library only; no frontend build step; no markup strings in
   page scripts (the harnesses have no HTML parser and fail on `innerHTML`).
-- UI follows `docs/design/golden-gate.md`: glass only for the sidebar, toolbar, sheets,
+- UI follows `docs/design/ui-kit.md`: glass only for the sidebar, toolbar, sheets,
   selection bars and toasts; forms, lists and documents opaque. A page stylesheet sizes and
   places; it never draws a shared control and takes every colour from a token.
 - Full product names in code, docs and commits: Marketing Studio, Blog Studio, Presentation
@@ -82,7 +82,7 @@ label, and keep piece 1's words where it rewrote a sentence quoted here. Piece 3
 - Modify: `ui-kit/style.css` (a new section "lists, sheet steps and page heads", after
   `.table`), `studios/blog/skills/blog-studio/assets/management/blog.css`,
   `studios/blog/skills/blog-studio/assets/management/index.html`,
-  `docs/design/golden-gate.md` (the component table)
+  `docs/design/ui-kit.md` (the component table)
 - Delete: `studios/blog/skills/blog-studio/assets/management/training-studio-ui.json` and
   its sentence in `studios/blog/skills/blog-studio/references/package-notes.md:26` (skip if
   piece 2 deleted them)
@@ -131,7 +131,7 @@ label, and keep piece 1's words where it rewrote a sentence quoted here. Piece 3
   `selection-bar glass`; `<div id="studio-page">` → `<div id="studio-page" class="stack">`;
   `class="view-head"` → `class="page-head view-head"`. No change to `app.js`, `runner.js` or
   `desk.js` is needed: they use ids and the unchanged class names.
-- [ ] **Step 5: Docs.** `docs/design/golden-gate.md`'s component table gains rows: Filters
+- [ ] **Step 5: Docs.** `docs/design/ui-kit.md`'s component table gains rows: Filters
   (`.filter-bar`, `.more-filters`, `.filters-toggle`), Selection (`.panel-heading`,
   `.select-page`, `.selection-bar`), Sheet steps (`.create-flow`, `.create-step`,
   `.create-foot`, `.sheet-heading`), Page (`.stack`, `.page-head`), Ticks (`label.check`,
@@ -654,7 +654,7 @@ child]}`.
 ## Task 14: Docs
 
 **Files:**
-- Modify: `docs/design/golden-gate.md` (Layout rules intro; take new screenshots only if the
+- Modify: `docs/design/ui-kit.md` (Layout rules intro; take new screenshots only if the
   owner asks), `README.md:288` (stays "Shared settings → Studio installations", owner
   2026-10-27), `studios/presentation/docs/runner.md:45` (New deck is a sheet in
   numbered steps), `studios/presentation/docs/capabilities.md:11,18` (the step names),

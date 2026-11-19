@@ -188,7 +188,7 @@ substituted into the HTML); Blog Studio uses it (`start_studio.py:82-84`, `manag
 Below, bare `index.html`, `app.js` and `home.css` mean `core/studio_core/setup_web/…`;
 `runner.js` means Blog Studio's `assets/management/runner.js`.
 
-### B.1 Layout rules (golden-gate.md "Layout rules")
+### B.1 Layout rules (ui-kit.md "Layout rules")
 
 Ranked by what a person loses.
 
@@ -528,7 +528,7 @@ Ranked by what a person loses if the studios differ.
    - `.decision-notice` is the same as `.callout[data-kind="yours"]`.
    - `.context-note`, `.dialog-notice` and `.sync-status` are the same as `.callout` or `.notice`.
    - `.help` and `.footnote` are the same as `.quiet` or `.field-hint`.
-   - `.error,.problem{color:var(--late)}` (`:42`) and `.sheet .input{max-width:none}` (`:13`) restyle shared classes from a page stylesheet, which `golden-gate.md` forbids.
+   - `.error,.problem{color:var(--late)}` (`:42`) and `.sheet .input{max-width:none}` (`:13`) restyle shared classes from a page stylesheet, which `ui-kit.md` forbids.
 6. **Stay in `blog.css`:**
    - The library table (`#editorial-screen`, `#results`, `.view-library`).
    - `.import-post-list`, `.author-*` and `.sample-picks`.

@@ -1,57 +1,18 @@
-# Golden Gate-inspired studio UIs
+# The shared UI kit
 
-Marketing Studio, shared setup, Blog Studio, Presentation Studio, Training Studio
-and Infographic Studio use one restrained visual language through `ui-kit/style.css`. Use the
-`macos-golden-gate-design` skill when available and keep the existing web stack.
-This is a CSS approximation, not native system material or physical refraction.
-Navigation and toolbar material use diffuse blur, a soft light edge and a subtle
-cool tint. These highlights belong to the shell; the canvas stays neutral.
+Marketing Studio, shared setup, Blog Studio, Presentation Studio, Training Studio and
+Infographic Studio draw their pages from one stylesheet, `ui-kit/style.css`, and one shell.
+This page records what exists, so a change reuses it instead of drawing a second copy.
 
-Marketing Studio uses blue for selected navigation and the system accent, when
-available, for shared actions. Blog Studio uses
-blue, Presentation Studio uses warm orange, Training Studio uses violet and Infographic Studio uses teal on
-launch icons and buttons. The same identity follows into each native studio's
-sidebar symbol, navigation, primary actions and selected controls through its
-`data-product` attribute and the linked shared stylesheet. Each identity has
-independent light and dark tokens.
-Status words and dots retain semantic colors, and studio identity never replaces
-the visible product name. Selection has a stronger label, bounded fill and accent edge.
+Design decisions for new or changed UI come from the `ui-ux-pro-max` skill: accessibility,
+interaction, layout, typography and colour. This page does not set a visual direction. It
+lists the shared components, and the layout and stylesheet rules that tests check
+(`tests/test_layout_pass.py`, `tests/test_ui_consistency.py`). Where a better design needs
+one of those rules changed, change the rule, its test and this page together.
 
-| Surface | Treatment |
-| --- | --- |
-| Sidebar and unified toolbar | Subordinate neutral material, modest diffusion, shared pane boundaries |
-| Forms, documents, reviews and data | Opaque content/paper tokens, readable text and quiet separators |
-| Selected navigation or choices | Explicit selected state, accent and tighter rounded highlight |
-| Studio launch cards and slide choices | Meaningful object boundaries, opaque fill, restrained border |
-| Sheets, menus and toasts | One elevated surface with existing keyboard/dismissal behavior |
-| Status and errors | Existing words and state shapes; semantic colors remain informative |
-
-The shell meets the viewport edges. Ordinary content does not float inside an
-extra rounded app window. Avoid per-row glass, wallpaper washes, repeated shadows
-and pointer-following highlights. Keep material tokens separate from opaque
-content tokens. Preserve current brand identity and use the existing system font
-stack without distributing fonts.
-
-Secondary actions use opaque neutral control fills and visible boundaries, including
-on reading cards. Quiet means subordinate to the primary action, not transparent
-or indistinguishable from the background. Disabled controls retain their shape
-and reduced emphasis.
-
-Shared tokens define independent light and dark appearances. Existing contrast
-checks cover text, selected states, focus rings and semantic status colors.
-Reduced transparency and increased contrast use solid surfaces and stronger
-boundaries; reduced motion disables movement. When backdrop filtering is absent,
-the opaque fallback retains the same layout and controls.
-
-The native bottom navigation remains available at narrow widths. Shared setup
-reflows field grids and keeps controls consistently sized. Long paths must wrap
-within the pane rather than widening the viewport. Keep existing workflow,
-authentication, source permissions and approval behavior unchanged in visual work.
-
-The unified-settings HTML file in this directory is a design preview using
-synthetic in-memory data. It shares this visual direction; its profile routing,
-global limits and override interactions do not imply those pending backend
-features are already implemented.
+Each studio keeps its own colour through `data-product` and `[data-studio]`: Marketing
+Studio and Blog Studio blue, Presentation Studio warm orange, Training Studio violet and
+Infographic Studio teal. Light and dark appearances have independent tokens.
 
 ## Layout rules
 
@@ -69,34 +30,9 @@ These rules put each screen in the order a person works. Every studio follows th
 | Spacing | Cards and sections `1.1rem` apart; a step or field group `0.6rem` inside; one heading level per card (`.card-title`), `.sheet-part` for a section inside a sheet. |
 | Long forms and editors | Use named sections or task tabs when a person works on one part at a time. Retain local edits, selection and focus across switches and refreshes. Reveal a hidden invalid field before focusing it. Keep status and the next action visible; put secondary explanations in disclosures. |
 | Phone | Toolbar actions wrap under the title; long labels wrap inside their button; every control is at least 44px tall; fixed bars sit above the tab bar and the page leaves room for them. |
-| Glass | Sidebar, toolbar, sheets, selection bars, Shared settings' save bar and toasts only. Forms, lists, documents and reviews stay opaque, and so does a `.dialog` that holds form fields. |
+| Material | Sidebar, toolbar, sheets, selection bars, Shared settings' save bar and toasts only. Forms, lists, documents and reviews stay opaque, and so does a `.dialog` that holds form fields. |
 
-Golden Gate 2.1 favors integrated workspace structure and deliberate hierarchy.
-The launchpad leads with the creative task, uses opaque studio-tinted cards and
-filled launch actions, and keeps healthy setup explanations in Details. Needs you
-and In progress remain visible; completed Recent work is a stable disclosure.
-Empty, unavailable, limited and reconnecting saved-work states use different copy.
-
-Training Studio's working
-progress uses a shared separator instead of another content card. Current work,
-usable drafts and actions stay visible; activity/timing and research approach are
-disclosed separately. Creation keeps the next action and selected outputs
-in its summary. Outline approval consequences and incomplete-scan warnings
-stay visible. Disclosures need stable focus across refreshes and 44px touch targets.
-Do not shrink text or hide meaningful uncertainty to achieve a shorter screen.
-
-Healthy material headers share their title, state and actions without an extra
-card around the document. Successful automatic checks are optional detail; problems
-stay visible and creator approval stays explicit. More than three document sections
-use a labeled native picker beside Edit, retaining focus, selection and local text.
-At the phone breakpoint, commands reflow immediately instead of waiting for a poll.
-
-The [November 2026 visibility review](2026-11-06-visibility-review.md) records the
-cross-studio findings, fixes and desktop/phone verification.
-The subsequent [Golden Gate 2.1 audit](2026-11-06-golden-gate-21-audit.md) records
-the launchpad, reading-flow and responsiveness improvements with measurements.
-
-## Golden Gate 3: the shell kit
+## The shell kit
 
 One signature, kept to one place: the **progress track**, a project's stages as a single
 line in its studio's colour, filled where done, larger where the work is now, and amber
@@ -104,7 +40,7 @@ where it waits for the person. Around it the shell stays quiet. `StudioShell`
 (`studio_core/deck_web/shell.js`) gives every page the track, Search and jump (Cmd or
 Ctrl+K), the Light, Dark and Auto appearance (one shared setting), and the finish card.
 The Home headline is the one place the shell uses the system serif. See the
-[design](../superpowers/specs/2026-11-10-golden-gate-3-design.md).
+[design it was built from](../superpowers/specs/2026-11-10-golden-gate-3-design.md).
 
 | Need | Component |
 | --- | --- |
@@ -191,14 +127,6 @@ lays out its own parts. It may size and place a shared control, but never draws 
 styles bare controls or headings for the whole page, and takes every colour from a token.
 `tests/test_ui_consistency.py` checks the stylesheets' selectors; a page class on a shared
 element is outside what it can see.
-
-The current launchpad and reading desk below use synthetic data. The remaining
-settings and Presentation Studio images illustrate their established surfaces.
-
-![Marketing Studio Golden Gate 2.1 home](golden-gate-21-home.png)
-![Training Studio compact reading desk on a phone](golden-gate-21-training-phone.png)
-![Shared settings, models](unified-settings-models.jpg)
-![Presentation Studio](golden-gate-presentation.jpg)
 
 The [Cult-inspired workflow implementation](../superpowers/plans/2026-11-07-cult-ui-workflows.md)
 records the Training Studio inspector, compact progress, guided steps and grouped

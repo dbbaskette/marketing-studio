@@ -864,7 +864,7 @@ own non-desk rules.
 - Modify: `docs/core-status.md` (a row: "Desk parts | `core/studio_core/drafting/`,
   `text_checks.py`, `step_times.py`, `ui-kit/drafting.js` | Job queues, kinds and
   writing context; each desk's own screens"), `docs/architecture.md` (the `core/` and
-  `ui-kit/` rows name the desk parts), `docs/design/golden-gate.md` (a component row:
+  `ui-kit/` rows name the desk parts), `docs/design/ui-kit.md` (a component row:
   "Desk | `.desk-*` from `drafting.js`"), `studios/blog/CHANGELOG.md` (Unreleased, for
   maintainers: the desk's parts and styles are shared; `desk-edit.md` is now
   `studio_core.drafting.prompts.edit_rule`; `scripts/text_checks.py` is a shim; desk jobs

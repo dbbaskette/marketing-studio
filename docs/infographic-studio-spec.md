@@ -308,7 +308,7 @@ the launch entry, shared setup, and shared settings. The [existing architecture]
 continues to define the shared infrastructure boundary.
 
 Use Python 3.11 or newer and the standard library for application code, with
-vanilla JavaScript and the shared UI kit. Follow the [Golden Gate design](design/golden-gate.md):
+vanilla JavaScript and the shared UI kit. Follow the [Golden Gate design](design/ui-kit.md):
 material for navigation and toolbars; opaque forms, sources, and infographic
 review. The infographic's artwork follows its selected brand, independently of
 the application shell.

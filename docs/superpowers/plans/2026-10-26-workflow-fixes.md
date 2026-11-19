@@ -32,7 +32,7 @@ plan. Evidence: `docs/superpowers/specs/2026-10-26-workflow-audit/`.
 - Line references are at main cc53056. Re-read every named file on this piece's base
   first, and find a control by the function named here, not by its label.
 - Python 3.11 or newer, standard library only; no frontend build step.
-- UI follows `docs/design/golden-gate.md`. New sheets have their submit and Cancel together.
+- UI follows `docs/design/ui-kit.md`. New sheets have their submit and Cancel together.
   Forms and reading surfaces stay opaque. No layout restyling: that is piece 4.
 - Full product names in code, docs and commits: Marketing Studio, Blog Studio,
   Presentation Studio, Training Studio, Harness Research, Harness Slides.

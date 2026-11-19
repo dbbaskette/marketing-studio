@@ -5,7 +5,7 @@ studio to the other studios. We also need to do an audit of workflow and clean i
 asked whether that meant the layout rules or the writing desk as well: "1 and 2".
 
 This is piece 4 of `2026-10-26-workflow-audit.md`. It applies the Layout rules in
-`docs/design/golden-gate.md` to Presentation Studio, Training Studio, and Marketing Studio's
+`docs/design/ui-kit.md` to Presentation Studio, Training Studio, and Marketing Studio's
 home and shared setup (`core/studio_core/setup_web/*`). It does it the way Blog Studio's
 layout pass did (PR #98, `studios/blog/docs/superpowers/specs/2026-10-23-library-voices-and-layout-design.md`):
 one primary per toolbar, a one-sentence lede, content in the order a person works, filter
@@ -198,7 +198,7 @@ Each rule moves with the same values, so Blog Studio looks the same.
 | A tick with its label | `.check`, `.check input` | Same names |
 | Launch card tile | `home.css` `.studio-icon` | `.card[data-studio] > .studio-symbol`: the studio's wash and colour, no lift |
 
-A page stylesheet may still size and place these. `docs/design/golden-gate.md`'s component
+A page stylesheet may still size and place these. `docs/design/ui-kit.md`'s component
 table gains rows for them. `tests/test_ui_consistency.py` adds them to `COMPONENTS` and
 `SHARED`, so a page stylesheet can no longer draw them, and adds
 `core/studio_core/deck_web/deck-panels.css` to `PAGE_STYLES` (its literal fallback colours,

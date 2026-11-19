@@ -31,7 +31,7 @@ step); `unittest`; the page harnesses (`studios/*/tests/page_harness.js`,
   unrelated values are preserved; an edit from an outdated form is refused.
 - Tests use disposable `HOME`, `STUDIOS_CONFIG`, workspaces, data roots
   (`PRESENTATION_STUDIO_DATA`, Training's helpers) and Git identities; no provider jobs.
-- UI follows `docs/design/golden-gate.md`: forms and reading surfaces stay opaque; new cards
+- UI follows `docs/design/ui-kit.md`: forms and reading surfaces stay opaque; new cards
   use the existing `card`, `segmented`/`sChoice` and `chip`/`sCheck` components.
 - Stored values stay: stage ids, `derived/blog-package.md`, `research` values,
   `initial_review` values, the `rehearse` gate id, `review_policy` record shape.

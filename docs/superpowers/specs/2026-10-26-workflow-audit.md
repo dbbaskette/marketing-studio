@@ -54,7 +54,7 @@ for asking for a change.
 ### Layout rules
 
 Presentation Studio and Training Studio miss most of the layout rules in
-`docs/design/golden-gate.md`: more than one filled button per screen, no ledes, what needs
+`docs/design/ui-kit.md`: more than one filled button per screen, no ledes, what needs
 the person below work in progress, full-page wizards instead of numbered sheets, no filter
 rows, controls under 44px. Marketing Studio's setup has three titles for one step, two
 saves, and a page stylesheet that draws shared controls. The components the rules name

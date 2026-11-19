@@ -111,7 +111,7 @@ page. The duplicates in `home.css` and `blog.css` are removed.
   no-server use. Served locally from the Blog Studio root rather than `preview/`, so the
   stylesheet resolves.
 - **Design documents.** Rebuild `docs/design/unified-settings-preview.html` on the
-  shared shell and controls, and regenerate its screenshots. `docs/design/golden-gate.md`
+  shared shell and controls, and regenerate its screenshots. `docs/design/ui-kit.md`
   gains the component inventory and the rule that page stylesheets add layout only.
 
 ## A way back to Marketing Studio

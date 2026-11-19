@@ -119,7 +119,7 @@ Both workflows end at a provisional voice to audition and confirm, as today.
 
 ## 3. Layout and workflow order
 
-Rules, written down for the other studios in `docs/design/golden-gate.md` ("Layout rules"):
+Rules, written down for the other studios in `docs/design/ui-kit.md` ("Layout rules"):
 a screen's toolbar holds its title and at most one filled (primary) action, with
 secondary actions as plain buttons beside it; a one-sentence lede opens the page; content
 follows in the order a person works; filters sit in one row with rarely used ones under
