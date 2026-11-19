@@ -4685,8 +4685,12 @@ class Engine(Reviewing):
                     'purpose': research_contract.purpose(
                         'training' + depth, intake.get('purpose') or 'teach the topic',
                         'Prioritize learner tasks, prerequisites, misconceptions, grounded '
-                        'worked examples and limits. Research supplies evidence; the teaching '
-                        'plan and materials are authored afterward.'),
+                        'worked examples and limits. The topic may state what the training '
+                        'is to teach: for each such statement, report what the sources say '
+                        'about it, with the specifics, versions and examples that would let '
+                        'someone teach it, and say plainly where they are silent or disagree. '
+                        'Research supplies evidence; the teaching plan and materials are '
+                        'authored afterward.'),
                     'scope': about,
                     'planning_questions': (home.read_json(root / pipeline.PLAN, {}).get('items') or []
                                            if research_parallel.protocol(record) else found.research.questions),

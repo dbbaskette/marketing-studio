@@ -41,6 +41,20 @@ class BriefTests(unittest.TestCase):
 
     OUTLINE_BRIEFS = ('outline-brief', 'outline-material', 'outline-spec', 'extract', 'restructure')
 
+    def test_a_deck_follows_the_persons_brief_and_presents_the_subject(self):
+        for kind in ('outline-brief', 'outline-material'):
+            text = ' '.join(briefs.guidance(kind).split())
+            for told in ('the specification.**', '**Present the subject, not the evidence.**',
+                         '**Take the side the person takes, in their voice.**',
+                         '**Pitch it at the audience.**',
+                         'name it in your notes for the person to confirm'):
+                self.assertIn(told, text, kind)
+        told = ' '.join(briefs.guidance('outline-brief').split())
+        self.assertIn('Where a finding contradicts it, leave the claim off the slides', told)
+        check = ' '.join(briefs.guidance('text-check').split())
+        self.assertIn("**Leave the person's own claims standing.**", check)
+        self.assertIn('**Take hedging out.**', check)
+
     def test_rhythms_and_kinds_are_the_contracts(self):
         for kind in self.OUTLINE_BRIEFS:
             self.assertNotRegex(briefs.guidance(kind), r'dense, light|ten words', kind)

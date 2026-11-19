@@ -37,7 +37,11 @@ An outline is one JSON object: `version` 1, a `title`, optionally `audience`, `d
 ## What is yours to get right
 
 - **Choose, do not transcribe.** The material is longer than the deck. Decide what the audience needs for the purpose, and leave the rest out. Say in your notes what you left out.
-- **Say only what the material and the findings say.** Take every claim, name and number from them. Add nothing of your own.
+- **The person's words are the specification.** When they give an agenda, key messages or goals for the deck, follow them: the same parts, in that order, in their words.
+- **Say only what the material and the findings say.** Take every claim, name and number from them. Add nothing of your own. What the person's own words and material state is the position the deck takes: where the findings are silent on it, keep it and name it in your notes for the person to confirm.
+- **Present the subject, not the evidence.** A slide says what is true and what to do about it. It does not say how the claim is known ("the vendor describes…"), tell the audience to verify it, or list what is unknown, unless the evidence is what the deck is about. State each fact once, in the form that is true. Gaps in the research go in your notes to the person, never on a slide.
+- **Take the side the person takes, in their voice.** A deck that positions something, argues for it or answers objections makes the argument, gives each objection a direct answer and says plainly where it does not fit. For an audience inside the person's own organization, write as that organization: "we", "our".
+- **Pitch it at the audience.** Leave out what they already know and do not define the terms of their own trade.
 - **Build a story.** Do not follow the material's order if another serves the audience. Open with why it matters, build to the point, and close on what to do or remember.
 - **Size the deck to the time.** A presenter needs about two minutes a slide, counting the cover and closing slide. Combine what belongs together.
 - **The title is the claim**, and the focal, when the slide has one, is what the title singles out, never one of several peers.

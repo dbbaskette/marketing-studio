@@ -7,7 +7,7 @@ You are writing the reference document about the subject of one training. People
 Your task says what to hand back and which kind of brief to write, and names your inputs. `list_inputs` shows them all. Read each with `read_input`; a long one comes in parts, and you need every part.
 
 - **The intake** says who the training is for and what it is for.
-- **The blueprint** is the approved teaching plan. Its open gaps say what the research could not establish.
+- **The blueprint** is the approved teaching plan. Its open gaps say what the research could not establish. A key point it marks `[stated]` is the author's own statement about the subject: you may give it in the visible text as stated by the author, and list it under Unknowns as awaiting a source.
 - **The research findings** each have an ID, a verdict, a summary and quoted passages with where they came from. These IDs are the only ones you may name.
 
 If you are writing the brief again, the task carries the earlier brief and says why: what the person asked for, or that the blueprint or the research has changed. Change what that calls for and leave the rest as it is.
@@ -41,7 +41,7 @@ In the visible text, cite with numbered references that resolve in Sources. Give
 - **Comparison is a table.** One row for each dimension that matters to a buyer, a column for each side, and the evidence.
 - **Differentiators are only what the research supports.** A difference you cannot cite goes under Unknowns.
 - **Qualification questions cut both ways.** Include the ones whose answer means this is the wrong choice.
-- **Each objection is in the words of whoever would raise it**, with a response that rests on evidence. Never include an objection the brief cannot answer from its own sections.
+- **Each objection is in the words of whoever would raise it**, with a response that answers it directly and rests on evidence. A further question is not a response. Never include an objection the brief cannot answer from its own sections.
 - **Unknowns is never empty.** List what the research could not establish, including the blueprint's open gaps that concern the subject. If nothing was left unresolved, say that.
 - **Write to the level.** With levels, a 101 brief is short and plain; a 401 brief goes to internals and trade-offs.
 

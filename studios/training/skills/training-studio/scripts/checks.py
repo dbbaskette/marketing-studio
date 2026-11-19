@@ -142,7 +142,7 @@ def _module_line(parsed: dict, module: dict, line: str) -> None:
             parsed['duplicates'].append(point.group(1))
         module['key_points'][point.group(1)] = {
             'module_number': point.group(2), 'findings': FINDING.findall(line),
-            'unsupported': '[unsupported]' in line}
+            'unsupported': '[unsupported]' in line, 'stated': '[stated]' in line}
     elif line.startswith('Misconception:'):
         module['misconceptions'].append({'text': line, 'findings': FINDING.findall(line)})
     elif line.startswith('Example:'):
@@ -205,8 +205,9 @@ def lint_blueprint(text: str, findings: dict | None, level: str | None = None) -
                 if not re.search(rf'\b{re.escape(point)}\b', parsed['open_gaps']):
                     points.append(f'{point} is [unsupported] and must be listed '
                                   'under "## Open gaps".')
-            elif not detail['findings']:
-                points.append(f'{point} cites no finding and is not marked [unsupported].')
+            elif not detail['findings'] and not detail['stated']:
+                points.append(f'{point} cites no finding and is not marked [stated] or '
+                              '[unsupported].')
 
     checks = [result('blueprint.structure', structure),
               result('blueprint.objectives', placement),
