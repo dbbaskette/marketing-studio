@@ -225,6 +225,11 @@ def handoff(title: str, level: str | None, blueprint: str, said: dict, target: s
                + (': ' + ', '.join(scenarios) if scenarios else '')
                + ', then a closing slide.')
     made = {'google': 'Google Slides', 'pptx': 'PowerPoint'}.get(target, 'not chosen')
+    # A presented session asks the room a question; a workshop, or a plan that names no
+    # format, checks understanding with the learners' own work.
+    session = (framed.get('format') or '').lower().startswith('session')
+    check = 'A question for the room in each module' if session else \
+        'A check for understanding in each module'
     lines = [f'# Deck handoff: {title}' + (f', level {level}' if level else ''), '',
              'Written by the runner from the record of this training. It is written again '
              'whenever the blueprint or the settings change.', '',
@@ -237,8 +242,7 @@ def handoff(title: str, level: str | None, blueprint: str, said: dict, target: s
     lines += [f'Level: {level}'] if level else []
     lines += ['', '## Use', '', USES.get(delivery, USE), '', '## Required elements', '',
               '- The objectives near the start.',
-              '- A check for understanding in each module' + (f': {modules}.' if modules
-                                                              else '.'),
+              f'- {check}' + (f': {modules}.' if modules else '.'),
               '- A recap.', f'- {closing}', '', '## Sources', '',
               'Work from the blueprint, ' + ('the learner guide and ' if guide else 'and ')
               + 'the research findings. They are your sources, not the audience\'s: a '
@@ -253,8 +257,14 @@ def handoff(title: str, level: str | None, blueprint: str, said: dict, target: s
                       ', with no brand chosen.'), '']
     assessment = parsed.get('assessment') or {}
     lines += ['## Teaching and assessment', '',
-              'Use the module timing for explanation, demonstration, learner practice and '
-              'debrief. A slide count is not a duration plan. Each check needs an answer '
+              ('This is a presented session: use the module timing for explanation, '
+               'examples, any demonstration and questions. It has no learner exercises. '
+               'The checks below are questions the presenter may put to the room, with the '
+               'answer in the notes; they are not activity slides. '
+               if session else
+               'Use the module timing for explanation, demonstration, learner practice and '
+               'debrief. ')
+              + 'A slide count is not a duration plan. Each check needs an answer '
               'and rationale in the presenter notes. Keep learner-facing meaning visible.', '']
     # Carry the author's actual check/observation wording, not an invented replacement.
     if isinstance(assessment, dict):
@@ -350,17 +360,20 @@ def plain(text) -> str:
 
 def gaps(blueprint: str) -> dict:
     """The key points a deck must leave out: each one the blueprint marks as unsupported
-    or names under its open gaps, with its wording."""
+    or names under its open gaps, with its wording. One marked as the person's own
+    statement stays in."""
     points, section = {}, None
     for line in blueprint.splitlines():
         if line.startswith('## '):
             section = line[3:].strip().lower()
         found = KEY_POINT.match(line)
         if found and section != 'open gaps':
-            points[found.group(1)] = (found.group(2), '[unsupported]' in line)
+            points[found.group(1)] = (found.group(2), '[unsupported]' in line,
+                                      '[stated]' in line)
     named = set(re.findall(r'\bK\d+\.\d+\b', checks.parse_blueprint(blueprint)['open_gaps']))
-    return {ident: text for ident, (text, unsupported) in points.items()
-            if unsupported or ident in named}
+    # The person's own statement is taught, even where a gap mentions it.
+    return {ident: text for ident, (text, unsupported, stated) in points.items()
+            if unsupported or (ident in named and not stated)}
 
 
 def _says(slide: dict) -> str:

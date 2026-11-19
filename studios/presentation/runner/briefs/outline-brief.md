@@ -37,7 +37,12 @@ An outline is one JSON object: `version` 1, a `title`, optionally `audience`, `d
 ## What is yours to get right
 
 - **Size the deck to the time.** A presenter needs about two minutes a slide, counting the cover and the closing slide. A deck that is too long is paid for twice, as every slide is drawn and reviewed. Combine what belongs together.
+- **The brief is the specification.** When it gives an agenda, key messages or goals for the deck, the deck follows them: the same parts, in that order, in the person's words. A part it names, such as a demonstration, has its slide.
+- **State what the brief states.** What the brief says about the subject is the position the deck takes, at full strength. Research fills it in with specifics and examples; it does not rule on it. Where the findings are silent on a claim the brief makes, keep the claim, give `request` as its source and name it in your notes for the person to confirm. Where a finding contradicts it, leave the claim off the slides and say so first in your notes.
 - **Say only what you were given.** Take every claim, name and number from the brief and the findings, and give `request` as the sources of what the brief itself says. Add nothing of your own, and say so in your notes where you had to leave a gap.
+- **Present the subject, not the evidence.** A slide says what is true and what to do about it. It does not say how the claim is known ("the vendor describes…"), tell the audience to verify it, or list what is unknown, unless the evidence is what the deck is about. State each fact once, in the form that is true. Gaps in the research go in your notes to the person, never on a slide.
+- **Take the side the person takes, in their voice.** A deck that positions something, argues for it or answers objections makes the argument, gives each objection a direct answer and says plainly where it does not fit. For an audience inside the person's own organization, write as that organization: "we", "our".
+- **Pitch it at the audience.** Leave out what they already know and do not define the terms of their own trade.
 - **Equals read as equals.** Give the points of a list the same weight.
 - **Fewer words.** A slide whose words do not fit its drawing cannot be put right by whoever draws it. Where a slide is near its word budget, make it two.
 - **Names as code.** Write a configuration field, command, API or file name as a code span in backticks, such as `highAvailability`, with plain English first the time it appears. A title names things in words and takes no code span.

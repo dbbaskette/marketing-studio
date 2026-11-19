@@ -68,6 +68,12 @@ Unreleased: the desk says where a level stands in one line (ready to read, marke
 
 ## Unreleased — 4.14.0
 
+A training now teaches the brief you give it. Paste an abstract, an agenda or objectives into **What should it teach?** and they are followed as written: your objectives are kept in your words (the quick scan, the outline you approve and the blueprint no longer split or add to them), the order you describe becomes the modules, and a demonstration you name keeps its place and its minutes. The blueprint is written from the outline you approved as well as from the research.
+
+What you state about your subject is taught as you stated it. A claim research found no source for is marked `[stated]` in the blueprint, taught at full strength in the guide and the deck, and listed in the review notes for you to confirm, with what the sources do say. Before, it was dropped and the training taught learners to verify it. A statement of yours that a source contradicts is still left out, and the notes say so first.
+
+A training is a presented session unless you ask for a hands-on workshop. A session opens each part on why it matters, explains with an example or a demonstration and puts one question to the room; the running scenario, pair activities and activity slides appear only in a workshop. The guide and deck teach the subject, not the evidence: they say what is true and cite it, answer each objection directly, say plainly where the product does not fit, and write as your organization to its own people at their level. Research gaps stay in the notes to you.
+
 The roadmap across the top of a desk is drawn as a route: tinted as far as the work has come, with numbered marks, a line under each phase saying what it is, and a line that moves while the assistant works. Page scripts and styles are compressed and reused instead of downloaded on every open.
 
 Each finished draft can be marked ready as soon as it is written, while the materials built from it are still being made. Marking a whole level at once still waits until every material in the level has a draft.

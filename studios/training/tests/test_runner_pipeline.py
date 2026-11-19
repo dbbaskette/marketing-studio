@@ -677,6 +677,30 @@ class WorkTests(StudioCase):
                       'seconds, so it was stopped.', again.task)
         self.assertFalse(again.prepared['ask'], 'a step may ask only so many questions')
 
+    def test_a_blueprint_is_written_from_the_outline_the_person_approved(self):
+        from runner import drafts, outline_first
+        found = pipeline.survey(self.root)
+        step = next(step for step in found.steps if step.id == 'blueprint@301')
+        plain = pipeline.blueprint_work(self.root, found, step, None, None, [])
+        self.assertNotIn('approved outline', plain.prepared['inputs'])
+        outline = outline_first.seed('Synthetic subject', ['What are the limits?'])
+        outline['sections'][0]['objectives'] = ['Say what the synthetic subject is for.']
+        record = self.root / drafts.RECORD
+        record.parent.mkdir(parents=True, exist_ok=True)
+        kept = json.loads(record.read_text()) if record.exists() else {}
+        record.write_text(json.dumps({**kept, 'outline_first': {'schema': 1,
+                                                                 'outline': outline}}))
+        told = pipeline.blueprint_work(self.root, found, step, None, None, [])
+        given = told.prepared['inputs']['approved outline']
+        self.assertIn('Its sections are the modules, in this order, and its objectives are '
+                      'the objectives. An objective listed under several sections is one '
+                      'objective that those modules all serve.', given)
+        self.assertIn('## Foundations of Synthetic subject (section-foundations)', given)
+        self.assertIn('- Say what the synthetic subject is for.', given)
+        self.assertIn('- What are the limits?', given)
+        self.assertIn('"approved outline"', told.task)
+        self.assertLess(given.index('Foundations of'), given.index('Applying '))
+
     def test_a_blueprint_job_is_for_one_level_and_says_whether_practice_is_wanted(self):
         found = pipeline.survey(self.root)
         step = next(step for step in found.steps if step.id == 'blueprint@301')

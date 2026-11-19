@@ -257,6 +257,34 @@ class BriefTests(JobCase):
         self.assertIn('[R:<finding-id>]', text)
         self.assertIn('[unsupported]', text)
 
+    def test_a_training_teaches_the_brief_the_person_gave(self):
+        plan = ' '.join(own(EVERY['blueprint']).split())
+        for told in ('It is the specification.', '`Format: session` or `Format: workshop`',
+                     'It is the default', '**Their objectives are the objectives.**',
+                     '**Their outline is the outline.**', '**Their statements are taught.**',
+                     '**Take the side the intake takes.**',
+                     '`- K1.5: <claim> [stated]`', 'Never use `[unsupported]` for it',
+                     'no module teaches learners about the gaps',
+                     'Taught as you stated them; no source was found, so please confirm',
+                     'The approved outline', 'It wins where it differs from the intake',
+                     'Do not build a claim from what the intake only implies',
+                     'has a key point that answers it'):
+            self.assertIn(told, plan)
+        guide = ' '.join(own(EVERY['document']).split())
+        for told in ('marks `[stated]` is named and taught like any other',
+                     'Teach the subject, not the evidence.',
+                     'add no exercises beyond the knowledge checks', 'Add no detail of your own to it.',
+                     'in the last module that serves that objective'):
+            self.assertIn(told, guide)
+        outline = ' '.join(briefs.guidance('deck-outline').split())
+        for told in ('**A session is presented.**', 'no activity slides',
+                     '**A workshop runs as a class.**', '**A demonstration has its slide.**',
+                     '**Teach the subject, not the evidence.**',
+                     'One it marks `[stated]` is the person\'s own statement',
+                     'so the room is asked first', 'It adds no new fact.'):
+            self.assertIn(told, outline)
+        self.assertIn('A further question is not a response.', own(EVERY['brief']))
+
     def test_a_level_adds_what_a_levelled_blueprint_needs(self):
         plain, levelled = EVERY['blueprint'], EVERY['blueprint@301']
         self.assertNotIn('for level', plain)

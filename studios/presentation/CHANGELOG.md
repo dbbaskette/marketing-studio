@@ -1,5 +1,7 @@
 # Changelog
 
+Unreleased: a deck follows the brief you give it. An agenda, key messages or goals you write are kept in your order and your words, and what you state about your subject is the position the deck takes: where research found no source for it, the slide keeps it and the notes ask you to confirm. Slides say what is true and what to do, not how a claim is known or that it should be verified, and the text check takes such hedging out. A deck that argues for something makes the argument in your organization's voice.
+
 Unreleased: **Copy as new**, on Home and on the Decks list. Beside a deck's Open is a way to start another like it: the start form opens filled in with what it started from (the idea's notes, the uploaded or pasted document, the deck to improve or its Google link), its audience, goal, length, brand, look and research choices, with its research sources already added. Change anything, such as the goal, then Start: it is made again as a new deck, and the one copied is only read. Material that is not on this computer is named, to choose again.
 
 Unreleased: installing or updating a companion skill brings its newest release. Once you agree, Harness Research and Harness Slides are looked up in their own repositories and installed at their newest stable release, checked file for file, instead of the version this Presentation Studio was pinned to. The pinned version is still what is installed when the newest cannot be looked up.

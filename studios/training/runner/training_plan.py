@@ -92,7 +92,7 @@ def group(root, session, record, listed, done):
 
 
 def clean(text):
-    return re.sub(r'\s*\[(?:R:[^\]]+|unsupported)\]', '', text).strip()
+    return re.sub(r'\s*\[(?:R:[^\]]+|unsupported|stated)\]', '', text).strip()
 
 
 def view(root, found, record):

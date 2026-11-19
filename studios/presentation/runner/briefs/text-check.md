@@ -29,6 +29,8 @@ If the task carries a note from the person, the writer drafted the outline again
 - **Look it up.** Where the draft and its source disagree, the source is right. Where a slide states what no input supports, take it out or say what the inputs do support.
 - **Change only what a question calls for.** Keep every slide that passes exactly as it is, its `id` included, and keep the order and the story unless question 7 fails. A check that rewrites good text makes new faults.
 - **Add no facts of your own.**
+- **Leave the person's own claims standing.** What the brief or the person's document states about the subject stays as they stated it, also where the research is silent on it. Do not soften it, and do not add a warning to verify it.
+- **Take hedging out.** A slide that says how a claim is known, or tells the audience to confirm it, is corrected to say what is true, once.
 - **Nobody can answer questions in this job.** Where something is truly the person's to decide, such as which of two valid readings they meant, keep the writer's choice: the person reads the text next and can change it.
 
 ## Hand back

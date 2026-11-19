@@ -769,6 +769,7 @@ class WorkerTests(StudioCase):
         self.assertTrue(text.startswith('# Reviewed research handoff\n\n'
                                         + research_contract.HANDOFF), text[:200])
         self.assertNotIn('Cite stable finding IDs', text)
+        self.assertIn('do not pass the caution on to the learner', text)
         self.assertIn('# Prioritized handoff', text)
 
     def test_the_review_at_a_gate_carries_the_checks_and_the_workers_own_notes(self):
@@ -1247,6 +1248,8 @@ class ResearchTests(StudioCase):
         kind, goal, priorities = built.call_args[0]
         self.assertTrue(kind.startswith('training'), kind)
         self.assertIn('Prioritize learner tasks', priorities)
+        self.assertIn('for each such statement, report what the sources say about it',
+                      priorities)
         self.assertEqual(captured[0]['purpose'], research_contract.purpose(kind, goal, priorities))
 
     def test_bringing_the_research_up_to_date_reaches_the_author(self):
@@ -1886,7 +1889,7 @@ class HaltTests(StudioCase):
                      'nothing to resume.')
         self.refused(root, 'retry', 'Nothing here failed, so there is nothing to try again.')
         self.refused(root, 'restart', 'A run can be asked to: pause, resume, stop, retry, '
-                     'finish-level, more-time, slide-text, leave-deck, bring-deck.')
+                     'finish-level, more-time, without, slide-text, leave-deck, bring-deck.')
 
         self.workers.then('research-plan', fails(), fails(), fails())
         failed = self.saved_start(title='Health checks')
@@ -1901,7 +1904,7 @@ class HaltTests(StudioCase):
         for action in ACTIONS:
             with self.subTest(action):
                 self.refused(root, action, 'finished as far as the runner takes it|not paused '
-                             'or stopped|Nothing here failed|not offered')
+                             'or stopped|Nothing here failed|not offered|not waiting for a picture')
         elsewhere = self.base / 'elsewhere'
         with self.assertRaisesRegex(WorkspaceError, 'No run is driving this training'):
             self.engine.act(elsewhere, 'pause')

@@ -1,6 +1,6 @@
 # Blueprint
 
-Design backward: what the learner can do, how to observe it, then the teaching that gets them there.
+Design backward: what the learner can do, how to observe it, then the teaching.
 
 Follow the shape of the example blueprint exactly. `training.py check` reads its headings, IDs and line prefixes.
 
@@ -18,7 +18,7 @@ The frame gives the audience, purpose and time, and for a competitive brief the 
 | Course | 2 to 6 modules of 3 to 5 objectives each |
 | Separate trainings | More than 6 modules. Propose a split, each part in its own directory |
 
-Propose the size the research supports and give the reason. Do not pad to reach a size. A time limit from intake wins: fit it, and list what was cut.
+Propose the size the research supports, with the reason. Do not pad. A time limit from intake wins: fit it, and list what was cut.
 
 ## Objectives
 
@@ -35,11 +35,12 @@ Write behaviors you could watch someone do. "Understand rolling restarts" is not
 
 ## Modules
 
-Under each module heading, one item per line:
+One item per line:
 
 - `Objectives: O1, O2`
 - `- K<module>.<n>: <one claim> [R:<finding-id>]` for each key point. Cite every finding the claim rests on. Only `supported` findings can be cited.
-- `- K1.4: <claim> [unsupported]` for a claim the research could not support. It will not be taught, and it must also appear under Open gaps.
+- `- K1.5: <claim> [stated]` for intake's own claim that no finding supports or contradicts. It is taught as stated; say so at the gate.
+- `- K1.4: <claim> [unsupported]` for any other unsupported claim. It is not taught, and must appear under Open gaps.
 - `Misconception: "<what people believe>" Correction: <what is true> [R:<finding-id>]`. A correction may cite a `contradicted` finding.
 - `Example: <one concrete worked example>`. At least one per module.
 
@@ -59,7 +60,7 @@ Modes are `roleplay`, `pitch`, `tutor` and `questionnaire`. Use `roleplay` or `p
 
 ## Open gaps
 
-Every unresolved research question that affects the training, every `[unsupported]` key point by its ID, and what the training leaves out as a result.
+Every unresolved research question that affects the training, every `[unsupported]` key point by its ID, and what is left out as a result.
 
 ## Gate 3
 

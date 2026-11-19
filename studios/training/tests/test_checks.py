@@ -144,8 +144,18 @@ class BlueprintTests(unittest.TestCase):
 
     def test_a_key_point_without_a_citation_fails(self):
         report = self.lint(BLUEPRINT.replace(' [R:health-checks]', ''))
-        self.assertIn('K1.3 cites no finding and is not marked [unsupported].',
+        self.assertIn('K1.3 cites no finding and is not marked [stated] or [unsupported].',
                       named(report, 'blueprint.key-points')['problems'])
+
+    def test_the_persons_own_statement_needs_no_finding_and_is_taught(self):
+        stated = BLUEPRINT.replace(' [R:health-checks]', ' [stated]')
+        report = self.lint(stated)
+        self.assertEqual(named(report, 'blueprint.key-points')['problems'], [])
+        parsed = checks.parse_blueprint(stated)
+        self.assertTrue(parsed['modules']['M1']['key_points']['K1.3']['stated'])
+        left_out = checks.document_coverage(parsed, DOCUMENT.replace(' K1.3', ''))
+        self.assertIn('K1.3 is not covered by any section.', left_out['problems'])
+        self.assertEqual(checks.document_coverage(parsed, DOCUMENT)['problems'], [])
 
     def test_an_unsupported_point_must_be_listed_as_a_gap(self):
         report = self.lint(BLUEPRINT.replace('- K1.4: no evidence', '- No evidence'))

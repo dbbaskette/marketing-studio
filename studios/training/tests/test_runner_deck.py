@@ -17,6 +17,7 @@ from unittest import mock
 from urllib.parse import urlencode
 
 import helpers  # noqa: F401
+import checks
 import runner_support
 from runner_support import (BLUEPRINT, CHOSEN, NO_BRAND_SKILL, NO_SLIDES, OUTLINE, Brand,
                             JobCase, Slides, StudioCase, drawn, fails, left, png)
@@ -97,6 +98,12 @@ class RuleTests(JobCase):
             'Leave out detail.'])
         self.assertEqual(deck.rules(with_slide(0, subtitle='One\nTwo'), BLUEPRINT),
                          ['cover-restarts: the subtitle of a cover is one line.'])
+
+    def test_the_persons_own_statement_is_taught_even_where_a_gap_mentions_it(self):
+        stated = BLUEPRINT.replace(' [R:health-checks]', ' [stated]').replace(
+            '## Open gaps\n', '## Open gaps\n- K1.3: no source was found; to confirm.\n')
+        self.assertIn('K1.3', checks.parse_blueprint(stated)['open_gaps'])
+        self.assertEqual(sorted(deck.gaps(stated)), ['K1.4'])
 
     def test_what_the_blueprint_lists_under_its_open_gaps_stays_out(self):
         self.assertEqual(deck.gaps(BLUEPRINT),
@@ -546,6 +553,19 @@ class RuleTests(JobCase):
         for objective, assessment in checks.parse_blueprint(BLUEPRINT)['assessment'].items():
             self.assertIn(f'- {objective}: {assessment}', text)
         self.assertIn('practice and debrief', text)
+        self.assertIn('- A check for understanding in each module: M1, Rolling restarts.', text)
+
+    def test_the_handoff_of_a_presented_session_asks_the_room_and_plans_no_exercises(self):
+        session = BLUEPRINT.replace('Time: 25 min\n', 'Time: 25 min\nFormat: session\n')
+        text = deck.handoff('Rolling restarts', None, session, {}, 'google', None, False)
+        self.assertIn('- A question for the room in each module: M1, Rolling restarts.', text)
+        self.assertNotIn('A check for understanding in each module', text)
+        self.assertIn('This is a presented session', text)
+        self.assertIn('It has no learner exercises.', text)
+        self.assertNotIn('practice and debrief', text)
+        workshop = BLUEPRINT.replace('Time: 25 min\n', 'Time: 25 min\nFormat: workshop\n')
+        self.assertIn('practice and debrief', deck.handoff(
+            'Rolling restarts', None, workshop, {}, 'google', None, False))
 
 
 class CodeSpanWordTests(unittest.TestCase):
@@ -4280,7 +4300,7 @@ class BriefTests(JobCase):
         for told in ('the IDs of the blueprint objectives it serves',
                      'its title, its points, its caveat and its source line together',
                      'A cover carries a title and one subtitle line',
-                     "Nothing under the blueprint's open gaps is on a slide",
+                     "What the blueprint's open gaps say is missing stays off the slides",
                      'has a focal that is not one of them'):
             self.assertIn(told, briefs.guidance('deck-outline'))
         self.assertIn('`about`: `drawing`', briefs.guidance('deck-review'))

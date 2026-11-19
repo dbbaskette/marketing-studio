@@ -302,7 +302,8 @@ CHECKED = {
                                 'shape a blueprint needs.',
     ('blueprint', 'objectives'): 'Every objective is in a module and has an assessment '
                                  'entry.',
-    ('blueprint', 'key-points'): 'Every key point cites a finding or is marked unsupported, '
+    ('blueprint', 'key-points'): 'Every key point cites a finding, is your own statement or is '
+                                 'marked unsupported, '
                                  'and every module has an example.',
     ('blueprint', 'citations'): 'Every finding cited exists and has the verdict its use '
                                 'needs.',
@@ -1716,8 +1717,10 @@ def findings_text(root: Path) -> str:
                    '# Creator-approved research\n\n' if record.get('creator_review')
                    else '# Reviewed research handoff\n\n')
         return (heading + research_contract.HANDOFF
-                + ' Keep its conditions, counterevidence and gaps. Facts, interpretations and '
-                'recommendations differ.\n\n'
+                + ' Facts, interpretations and recommendations differ. Its conditions, '
+                'counterevidence and gaps are there to keep what you write right: state each '
+                'fact once in the form that is true, and do not pass the caution on to the '
+                'learner.\n\n'
                 + (root / 'research/brief.md').read_text() + '\n\n'
                 + json.dumps({'digest': record['digest'], 'findings': record['findings'],
                               'facts': record['facts'], 'sources': record['sources']}))
@@ -1734,6 +1737,31 @@ def findings_text(root: Path) -> str:
             quote = ' '.join(str(passage.get('quote', '')).split())
             lines.append(f"Quoted from {passage.get('title')} ({passage.get('origin')}): "
                          f'"{quote}"')
+        lines.append('')
+    return '\n'.join(lines)
+
+
+def approved_outline(root: Path) -> str | None:
+    """The outline the person approved before research, as a blueprint's writer reads it:
+    its sections in order with the objectives they kept. None for a training that had no
+    such outline."""
+    record = home.read_json(root / drafts.RECORD, {})
+    outline = (record.get('outline_first') or {}).get('outline') \
+        if isinstance(record, dict) else None
+    if not isinstance(outline, dict) or not outline.get('sections'):
+        return None
+    lines = ['# The outline the person approved before research', '',
+             'They read it, changed what they wanted and approved it. Its sections are the '
+             'modules, in this order, and its objectives are the objectives. An objective '
+             'listed under several sections is one objective that those modules all serve.', '',
+             outline.get('overview') or '', '']
+    for section in outline['sections']:
+        lines += [f"## {section['title']} ({section['id']})", '']
+        lines += [f'- {objective}' for objective in section['objectives']]
+        lines.append('')
+    if outline.get('personal_questions'):
+        lines += ['## What the person asked to have answered', '']
+        lines += [f'- {question}' for question in outline['personal_questions']]
         lines.append('')
     return '\n'.join(lines)
 
@@ -1774,6 +1802,9 @@ def blueprint_work(root: Path, found: Survey, step: Step, request: dict | None,
         practice += (' Use exactly these scenario IDs: ' + ', '.join(scenario_ids)
                      + '. Cover every creator description once at this level; keep existing scenarios. '
                        'Fill in the details yourself. Do not add unrelated scenarios.')
+    approved = approved_outline(root)
+    if approved:
+        inputs['approved outline'] = approved
     earlier = _earlier(root, session, level)
     if earlier:
         inputs['earlier levels'] = earlier
@@ -2259,7 +2290,8 @@ CHECK_TASK = (
     'findings it was written from, and against these questions:\n\n{questions}\n\n'
     'Correct what you find, once: a wrong or unsupported fact, wording that disagrees with '
     'the blueprint or the guide, a typo, text that is too long for its slide, a slide that '
-    'does not serve its objective. Keep every slide ID, the order and whatever is already '
+    'does not serve its objective. A claim the blueprint marks [stated] is the person\'s own '
+    'and stays as it is worded. Keep every slide ID, the order and whatever is already '
     'right exactly as it is. Then hand in the whole corrected text'
     '{designed} with submit_outline, even when you changed nothing. List no findings: the '
     'person is shown only the corrected text.\n\n'
