@@ -678,6 +678,7 @@ function sourcesStep(draft, brand, looks) {
       libraryFull: () => startPicks(draft).length >= START_PICKS,
       extra: () => startPickList(draft),
       onChange: () => { if (draft.retell) draft.retell();
+        if (draft.retellOutline && !draft._outlineReading) draft.retellOutline();
         // The step's own count follows the editor, which changes without a form event.
         const said = draft.sourceEditor && draft.sourceEditor.node.closest('form')?.querySelectorAll('.intake-step-summary')[1];
         if (said) said.textContent = startSourcesSay(draft);
@@ -787,6 +788,145 @@ function startKind(draft, practiceOnly) {
   if (draft.sourceEditor) draft.sourceEditor.act('configure', { external: !practiceOnly });
 }
 
+// The person's own outline for the training, given on the first step as a file or as a link
+// to a Google Doc or a page. It is read like any other source, so it is listed under Sources
+// and research can read it, and Start names it as the plan the training follows. Before the
+// sources have loaded, a saved choice stands; once they have, it holds only while that
+// source is still among them and was read.
+function startOutline(draft) {
+  const held = draft.outline;
+  if (!held) return null;
+  const editor = draft.sourceEditor;
+  if (!editor || !editor.value) return held;
+  return list(editor.value.sources).some((source) => source.id === held.source
+    && source.status === 'ready') ? held : null;
+}
+
+const OUTLINE_TYPES = '.pdf,application/pdf,.docx,.txt,.md,.markdown,.html,.htm';
+
+function outlineField(draft) {
+  const file = make('input');
+  file.type = 'file';
+  file.hidden = true;
+  file.accept = OUTLINE_TYPES;
+  file.setAttribute('aria-label', 'Upload your outline');
+  const problem = alertLine('new-outline-problem');
+  const shown = make('div', 'outline-upload');
+  const kept = () => {
+    if (view.sheet === 'new' && view.draft === draft && !draft.starting) intakeStore().keep(draft);
+  };
+  // Read one outline through the source editor: `read` captures it, and `same` finds it
+  // again when it was already among the sources. `named` is what a refusal calls it.
+  const take = async (named, read, same, back) => {
+    const editor = draft.sourceEditor;
+    say(problem, '');
+    if (!editor || !editor.value) {
+      say(problem, 'The form is still loading its sources. Try again in a moment.');
+      return;
+    }
+    const before = new Set(list(editor.value.sources).map((source) => source.id));
+    draft._outlineReading = named;
+    draw();
+    await read(editor);
+    draft._outlineReading = '';
+    const sources = list(editor.value && editor.value.sources);
+    const found = sources.find((source) => !before.has(source.id)) || sources.find(same);
+    if (found && found.status === 'ready') {
+      draft.outline = { source: found.id, name: found.name };
+      draft.outlineLink = '';
+      // What it should teach is now answered: a box refused for being empty no longer is.
+      if (byId('new-topic') && byId('new-topic').getAttribute('aria-invalid')) refuse('new-topic', '');
+    } else {
+      const told = (found && found.problem) || editor.problem || 'It could not be read.';
+      // A network error is said in words a person can act on.
+      const why = /^\[Errno/.test(told) ? 'It could not be reached. Check the address, and '
+        + 'that this computer is online.' : told;
+      // One that could not be read is not left among the sources to block the start.
+      if (found && !before.has(found.id)) await editor.act('remove', { source: found.id });
+      say(problem, named + ': ' + why);
+    }
+    draw();
+    kept();
+    focusKey(draft.outline ? 'new-outline-remove' : back);
+  };
+  const useLink = () => {
+    const url = (draft.outlineLink || '').trim();
+    let parsed = null;
+    try { parsed = new URL(url); } catch (_) { parsed = null; }
+    if (!parsed) {
+      say(problem, url ? 'Check this link: ' + url : 'Paste the link to your outline first.');
+      focusKey('new-outline-link');
+      return;
+    }
+    if (parsed.protocol.replace(':', '') !== 'https' || parsed.username || parsed.password) {
+      say(problem, 'Use an HTTPS link without embedded credentials.');
+      focusKey('new-outline-link');
+      return;
+    }
+    take('The link', (editor) => editor.run(() => editor.act('capture', { kind: 'url', url },
+      'Reading link…')), (source) => source.origin === url, 'new-outline-link');
+  };
+  const draw = () => {
+    const held = startOutline(draft);
+    if (!held && draft.outline) delete draft.outline;
+    if (draft._outlineReading) {
+      const reading = make('p', 'quiet field-hint', draft._outlineReading === 'The link'
+        ? 'Reading the link…' : 'Reading ' + draft._outlineReading + '…');
+      reading.setAttribute('role', 'status');
+      shown.replaceChildren(reading);
+    } else if (held) {
+      const remove = capsule('Remove', 'quiet', async () => {
+        const editor = draft.sourceEditor;
+        delete draft.outline;
+        if (editor && editor.value) await editor.act('remove', { source: held.source });
+        draw();
+        kept();
+        focusKey('new-outline');
+      }, 'new-outline-remove');
+      remove.setAttribute('aria-label', 'Remove the outline ' + held.name);
+      const said = make('p', 'quiet', 'Your outline. The training follows it, and your other '
+        + 'sources fill in its detail. What you type above is optional.');
+      said.setAttribute('role', 'status');
+      shown.replaceChildren(add(make('div', 'research-source-row'),
+        add(make('div', 'research-source-copy'), make('p', 'row-title', held.name), said),
+        remove));
+    } else {
+      const choose = capsule('Upload an outline', 'quiet', () => file.click(), 'new-outline');
+      choose.setAttribute('aria-describedby', 'new-outline-hint new-outline-problem');
+      const hint = make('p', 'quiet field-hint', 'Or give your outline, agenda or syllabus as '
+        + 'a file, tables and all, or as a link. It is followed as written, and what you type '
+        + 'above becomes optional.');
+      hint.id = 'new-outline-hint';
+      const link = field('new-outline-link', 'Link to your outline', draft, 'outlineLink',
+        { hint: 'A Google Doc or a web page. A Google Doc is read with your existing Google '
+          + 'sign-in.' });
+      const box = link.querySelector('input');
+      box.type = 'url';
+      box.placeholder = 'Paste the link';
+      // Enter here reads the link. It does not send the form on to its next step.
+      box.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter') return;
+        event.preventDefault();
+        useLink();
+      });
+      shown.replaceChildren(add(make('div', 'bar'), choose), hint,
+        add(make('div', 'research-link-entry'), link,
+          capsule('Use this link', 'quiet', useLink, 'new-outline-use-link')));
+    }
+  };
+  file.addEventListener('change', () => {
+    const chosen = file.files && file.files[0];
+    file.value = '';
+    if (!chosen) { say(problem, ''); return; }
+    take(chosen.name, (editor) => editor.files([chosen]),
+      (source) => source.name === chosen.name, 'new-outline');
+  });
+  // The Sources step can remove the same source: this line follows it.
+  draft.retellOutline = draw;
+  draw();
+  return add(make('div', 'field'), shown, file, problem);
+}
+
 // The new-training sheet: three numbered steps in the order they are filled in, then Start
 // and a persistent footer. The runner prepares one outline review before building the
 // selected materials. Saved runs keep their original review behavior.
@@ -801,6 +941,8 @@ function deskStart() {
   const form = make('form', 'create-flow');
   form.noValidate = true;
   const [title, topic, audience, purpose] = topicStep(draft);
+  // With the shared source editor, a long outline can be uploaded in place of typing it.
+  if (typeof StudioResearch !== 'undefined') topic.append(outlineField(draft));
   const brand = brandOption(draft);
   const looks = make('p', 'quiet research-line');
   // A deck chosen or put away shows or hides its brand, a step on; a document or a source
@@ -831,7 +973,7 @@ function deskStart() {
     createStep(3,'Outputs and review',summary,...shapeStep(draft),...advanced)];
   const validate = (index,final = false) => {
     if(index === 0){
-      const missing = [['new-title',draft.title,'Give it a title first.'],['new-topic',draft.topic,'Say what it should teach first.'],['new-audience',draft.audience,'Say who it is for first.']]
+      const missing = [['new-title',draft.title,'Give it a title first.'],['new-topic',startOutline(draft) ? draft.topic || 'outline' : draft.topic,'Say what it should teach, or upload your outline, first.'],['new-audience',draft.audience,'Say who it is for first.']]
         .filter(([id,value,message]) => {refuse(id,value.trim() ? '' : message);return !value.trim();});
       if(missing.length){focusKey(missing[0][0]);return false;}
       return true;
@@ -860,8 +1002,13 @@ function deskStart() {
 // What Start sends: the form, as a desk training, with no review level.
 function deskBody(draft) {
   const deck = DECKS[settleDeck(draft).deck][0];
+  const outline = draft.sourceEditor ? startOutline(draft) : null;
   return {
-    title: draft.title.trim(), topic: draft.topic.trim(), audience: draft.audience.trim(),
+    title: draft.title.trim(),
+    // With an outline uploaded and nothing typed, the outline is what it should teach.
+    topic: draft.topic.trim() || (outline ? 'The course in my outline, “' + outline.name + '”.' : ''),
+    audience: draft.audience.trim(),
+    ...(outline ? { outline_source: outline.source } : {}),
     purpose: PURPOSES[draft.purpose],
     levels: LEVELS.filter((level) => draft.levels.includes(level)),
     brief_kind: draft.brief ? 'competitive' : 'product',

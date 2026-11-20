@@ -5295,7 +5295,9 @@ function startReady(draft) {
     return false;
   }
   const missing = [['new-title', draft.title, 'Give it a title first.'],
-    ['new-topic', draft.topic, 'Say what it should teach first.'],
+    // An uploaded outline answers what it should teach, with nothing typed.
+    ['new-topic', draft.topic || (typeof startOutline === 'function' && startOutline(draft)
+      ? 'outline' : ''), 'Say what it should teach, or upload your outline, first.'],
     ['new-audience', draft.audience, 'Say who it is for first.']]
     .filter(([id, value, text]) => refuse(id, value.trim() ? '' : text)
       .getAttribute('aria-invalid'));

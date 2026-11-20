@@ -629,6 +629,14 @@ def check_form(sent: dict, brands=None, *, conversation=False) -> dict:
     form['flags_review'] = sent.get('flags_review', False)
     if form['flags_review'] not in (True, False):
         raise WorkspaceError('Say whether to decide flagged research yourself with true or false.')
+    # The source the person uploaded as their own outline for the training, by its ID among
+    # the start's sources. The start checks that it is one of them.
+    if sent.get('outline_source') is not None:
+        form['outline_source'] = sent['outline_source']
+        if not (isinstance(form['outline_source'], str)
+                and re.fullmatch(r'[A-Za-z0-9_-]{1,80}', form['outline_source'])):
+            raise WorkspaceError('Upload the outline again: it was not one of this form\'s '
+                                 'sources.')
     form['research_from'] = research_from(sent)
     form['source_scope'] = scope_of(form['research_from'])
     if not isinstance(sent.get('yoodli', False), bool):

@@ -174,6 +174,14 @@ class FormTests(StudioCase):
             'delivery': 'live', 'walkthrough': False, 'slide_text_review': True,
             'flags_review': False})
 
+    def test_the_form_may_name_a_source_as_the_persons_own_outline(self):
+        self.assertNotIn('outline_source', pipeline.check_form(dict(FORM)))
+        form = pipeline.check_form({**FORM, 'outline_source': 'a1b2c3'})
+        self.assertEqual(form['outline_source'], 'a1b2c3')
+        for wrong in ('../etc', '', 7, ['a1b2c3']):
+            with self.assertRaisesRegex(WorkspaceError, 'Upload the outline again'):
+                pipeline.check_form({**FORM, 'outline_source': wrong})
+
     def test_selected_materials_use_existing_skip_decisions_and_manual_gate_counts(self):
         form = pipeline.check_form({**FORM, 'materials': ['document', 'document']})
         self.assertEqual(form['materials'], ['document'])
