@@ -161,6 +161,43 @@ class OutlineTests(StudioCase):
         self.assertIn('not a source to weigh: build it and fill it in',given)
         self.assertIn('2. The engines (12 min)',given)
 
+    def test_an_outline_uploaded_at_the_start_is_the_plan_by_the_persons_word(self):
+        from runner_support import FORM
+        from pathlib import Path
+        outline_first=outline
+        TEXT='Capacity holds only when more than one instance is running.'
+        from studio_core import research_sources
+        store=research_sources.Sources(self.space.root/'.research-sources')
+        draft=store.create()
+        draft=store.mutate(draft['id'],draft['revision'],'capture',kind='text',name='Synthetic notes',text=TEXT)
+        long='1. Welcome\n2. The engines\n'+'A table row of the outline. '*2000
+        draft=store.mutate(draft['id'],draft['revision'],'capture',kind='text',name='My course outline',text=long)
+        chosen=next(source['id'] for source in draft['sources'] if source['name']=='My course outline')
+        form=pipeline.check_form({**FORM,'flow':'desk','materials':['document'],'outline_source':'not-a-source'})
+        with self.assertRaisesRegex(WorkspaceError,'no longer among the sources'):
+            self.engine.start(form,research_inputs={'id':draft['id'],'expected':draft['revision']})
+        form=pipeline.check_form({**FORM,'flow':'desk','materials':['document'],'outline_source':chosen})
+        root=Path(self.engine.start(form,research_inputs={'id':draft['id'],'expected':draft['revision']})['path'])
+        record=self.engine._load(root)
+        plan=record['outline_first']['plan']
+        self.assertEqual((plan['source'],plan['by']),('My course outline','person'))
+        self.assertEqual(plan['file'],'sources/research-inputs/'+chosen+'.txt')
+        # The scan read it first and at greater length, was told it is the plan, and its
+        # own naming of another document does not replace the person's choice.
+        work,_,files=outline_first.work(self.engine,root,self.engine._survey(root,record),record)
+        pieces=json.loads(work.prepared['inputs']['source-excerpts'])
+        self.assertEqual(pieces[0]['source'],'My course outline')
+        self.assertEqual(len(pieces[0]['excerpt']),outline_first.PLAN_CHARS)
+        self.assertLessEqual(sum(len(one['excerpt']) for one in pieces),outline_first.INPUT_CHARS)
+        self.assertIn('The person uploaded "My course outline" as their own outline',work.guidance)
+        spec=work.prepared['artifacts']['scan']
+        self.assertEqual(spec['plan'],'My course outline')
+        other={**outline_first.seed('Synthetic subject'),'plan_source':'Synthetic notes'}
+        problems,_,_,kept=outline_first.validate(json.dumps(other),spec)
+        self.assertEqual(problems,[])
+        self.assertEqual(json.loads(kept)['plan_source'],'My course outline')
+        self.assertIn('A table row of the outline.',pipeline.person_outline(root))
+
     def test_time_cap_keeps_an_editable_fallback_without_escalation(self):
         self.workers.queued['scan'] = [lambda tools, job: agents.Outcome(False, 'timeout', 'Synthetic timeout', seconds=180, cost=0.03)]
         root = self.start()

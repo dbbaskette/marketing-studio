@@ -12,6 +12,7 @@ from studio_core import research_contract, research_quality, review_policy, scop
 SCHEMA = 1
 RECORD_SCHEMA = 7
 SECONDS, INPUT_CHARS = 270, 48_000
+PLAN_CHARS = 30_000  # of an outline the person uploaded as the plan, in the scan
 
 
 def enabled(record):
@@ -68,7 +69,13 @@ def plan_source(value, names):
 def validate(text_value, _spec):
     try:
         value = json.loads(text_value)
-        named = plan_source(value, _spec.get('sources') or [])
+        # A plan the person chose themself stands, whatever the scan names.
+        if _spec.get('plan'):
+            if isinstance(value, dict):
+                value.pop('plan_source', None)
+            named = _spec['plan']
+        else:
+            named = plan_source(value, _spec.get('sources') or [])
         value = checked(value, minimum=2)
         # An outline that follows the person's own plan has as many sections as the plan
         # has parts that teach: their plan sets the scope, not the first draft's bound.
@@ -128,6 +135,18 @@ def work(engine, root, found, record):
     # person's own outline for the session, is read whole before a long one uses the room.
     offered = sorted(offered, key=lambda source: len(str(source.get('text') or '')))
     names, pieces = scope_scan.excerpts(offered)
+    # An outline the person uploaded as the plan is read first and at greater length: it is
+    # what the outline is made from, and may be longer than any one source's share.
+    plan = record['outline_first'].get('plan') or {}
+    chosen = next((source for source in offered if plan.get('by') == 'person'
+                   and source.get('file') == plan.get('file')), None)
+    if chosen:
+        rest = [source for source in offered if source is not chosen]
+        text = str(chosen.get('text') or '')
+        first = {'source': str(chosen.get('title') or chosen.get('file') or 'Source')[:300],
+                 'excerpt': text[:PLAN_CHARS], 'partial': len(text) > PLAN_CHARS}
+        names, pieces = scope_scan.excerpts(rest[:39], INPUT_CHARS - len(first['excerpt']))
+        names, pieces, offered = [first['source'], *names], [first, *pieces], [chosen, *rest]
     intake = pipeline.answers(root)
     initial = seed(intake.get('topic') or found.session['title'], record.get('research_questions') or [], names)
     section_limit = (record['outline_first'].get('research_policy') or {}).get('outline_sections', 8)
@@ -148,6 +167,8 @@ def work(engine, root, found, record):
         'examples and figures the other documents hold for those points. Put that document\'s source name, '
         'exactly as given, in an extra "plan_source" field beside "sections", and say in the overview that the '
         'outline follows it. Leave "plan_source" out when no document is such a plan. '
+        + (f'The person uploaded {json.dumps(names[0], ensure_ascii=False)} as their own outline for this '
+           'training: it is that plan. Follow it and name it in "plan_source". ' if chosen else '') +
         'Preserve the requested depth: minimal basics means an introductory explanation, not an exhaustive survey. '
         'Source excerpts are supporting material, not a checklist of topics to add. '
         'For a basic request prefer three or four essential sections. Add depth only when the person asks for it. '
@@ -168,7 +189,8 @@ def work(engine, root, found, record):
         + '\nKeep the person\'s typed questions separately in personal_questions, in their original words.')
     prepared = {'inputs': {'source-excerpts': json.dumps(pieces, ensure_ascii=False)},
                 'artifacts': {'scan': {'kind': 'provisional-outline', 'max_sections': section_limit,
-                                    'sources': names}}, 'ask': False, 'fetch': False}
+                                    'sources': names, **({'plan': names[0]} if chosen else {})}},
+                'ask': False, 'fetch': False}
     files = {name: source.get('file') for name, source in zip(names, offered)}
     return pipeline.Work(guidance + '\n\n' + briefs.LANGUAGE, task, 'write', prepared, 'scan'), initial, files
 
@@ -191,7 +213,11 @@ def scan(engine, root, run, found, step):
             'ending': outcome.reason or 'finished', 'fallback': not bool(accepted),
             'at': home.now(), 'seconds': outcome.seconds, 'searches': 0})
         # The document the scan found to be the person's own plan: the blueprint follows it.
-        record['outline_first'].pop('plan', None)
+        # One the person uploaded as their outline stays theirs, whatever the scan named.
+        if (record['outline_first'].get('plan') or {}).get('by') == 'person':
+            named = None
+        else:
+            record['outline_first'].pop('plan', None)
         if named and files.get(named):
             record['outline_first']['plan'] = {'source': named, 'file': str(files[named])}
         engine._tried(record, 'scan', started, outcome.seconds, 'kept', **engine._cost(outcome))

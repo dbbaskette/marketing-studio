@@ -1487,6 +1487,11 @@ class Engine(Reviewing):
             taken = library_context.snapshots(library) if library else []
         except LibraryError as refusal:
             raise WorkspaceError(str(refusal)) from None
+        outline = form.get('outline_source')
+        if outline and not any(source.get('id') == outline
+                               for source in (selected_sources or {}).get('sources') or ()):
+            raise WorkspaceError('The outline you uploaded is no longer among the sources. '
+                                 'Upload it again, then start.')
         if selected_sources:
             form = {**form, 'research_from': selected_sources['research_from'],
                     'source_scope': pipeline.scope_of(selected_sources['research_from'])}
@@ -1539,6 +1544,14 @@ class Engine(Reviewing):
                             record.update(schema=8, section_synthesis=research_sections.pin(self.research().runtime))
                 if selected_sources:
                     record['research_inputs'] = research_sources.install(selected_sources, root)
+                    if outline and record.get('outline_first'):
+                        # The person uploaded this source as their own outline: it is the
+                        # plan the scan follows and the blueprint builds, by their word.
+                        named = next(source for source in home.read_json(
+                            root / 'sources/research-inputs/manifest.json', {})['sources']
+                            if source['id'] == outline)
+                        record['outline_first']['plan'] = {
+                            'source': named['name'], 'file': named['file'], 'by': 'person'}
                     if parallel:
                         record['research_execution']['workers'] = selected_sources['workers']
                     if record.get('documents') is not None:
