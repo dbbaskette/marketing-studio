@@ -216,13 +216,16 @@ def lint_blueprint(text: str, findings: dict | None, level: str | None = None) -
 
     warnings = []
     lesson = len(modules) == 1
+    # A presented session follows the parts and objectives its author gave: a part of it may
+    # serve one objective, and that is no sign of a module that is too thin.
+    session = bool(re.search(r'(?im)^Format:\s*session\b', text))
     for identifier, module in modules.items():
         count = len(module['objectives'])
         if lesson and count > 5:
             warnings.append(f'{identifier} has {count} objectives; '
                             'a lesson usually has 5 or fewer.')
-        if not lesson and not 3 <= count <= 5:
-            warnings.append(f'{identifier} has {count} objectives; '
+        if not lesson and not session and not 3 <= count <= 5:
+            warnings.append(f'{identifier} has {count} objective{"" if count == 1 else "s"}; '
                             'a course module usually has 3 to 5.')
     if lesson and sum(module['minutes'] for module in modules.values()) > 45:
         warnings.append('A lesson usually runs 45 minutes or less; consider a course.')

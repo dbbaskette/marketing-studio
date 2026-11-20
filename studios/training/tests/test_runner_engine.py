@@ -767,10 +767,44 @@ class WorkerTests(StudioCase):
         with mock.patch.object(pipeline.workspace, 'research_record', return_value=record):
             text = pipeline.findings_text(root)
         self.assertTrue(text.startswith('# Reviewed research handoff\n\n'
-                                        + research_contract.HANDOFF), text[:200])
+                                        + pipeline.RESEARCH_USE), text[:200])
         self.assertNotIn('Cite stable finding IDs', text)
-        self.assertIn('do not pass the caution on to the learner', text)
+        self.assertNotIn(research_contract.HANDOFF, text)
+        for told in ('take the facts and leave the hedging behind',
+                     'the material of the person\'s own organization',
+                     'what the more specific one says is the fact',
+                     'Never tell a learner that sources conflict'):
+            self.assertIn(told, text)
         self.assertIn('# Prioritized handoff', text)
+
+    def test_the_checks_warnings_reach_a_writer_as_notes_and_not_as_orders(self):
+        from synthesis_fixture import research_stop
+        root = self.saved_start()
+        research_stop(root / 'research')
+        brief = root / 'research/brief.md'
+        head, _, rest = brief.read_text().partition('\n\n')
+        brief.write_text(head + '\n\n> Preserve the automatic warnings below and do not reuse '
+                         'excluded claims.\n\n> Training Studio’s automatic review included '
+                         'with warning: Two documents disagree.\n\n' + rest)
+        record = {'schema': 2, 'digest': 'synthetic-digest', 'findings': [], 'facts': [],
+                  'sources': [], 'creator_review': {'by': 'assistant', 'choices': {
+                      'assessment:coverage': 'include', 'assessment:usefulness': 'include',
+                      'findings:section-one': 'include', 'facts:f-1': 'include-plain'},
+                      'notes': {'assessment:coverage': 'Two documents disagree.',
+                                'assessment:usefulness': 'Two documents disagree.',
+                                'findings:section-one': 'The table says three engines.',
+                                'facts:f-1': 'A point of wording.'}}}
+        with mock.patch.object(pipeline.workspace, 'research_record', return_value=record):
+            text = pipeline.findings_text(root)
+        self.assertNotIn('> ', text)
+        self.assertNotIn('Preserve the automatic warnings', text)
+        self.assertIn('# Prioritized handoff', text)
+        notes = text[text.index('## The check\'s notes on this research'):]
+        self.assertIn('Read them as corrections to what you write, and pass none of them on.',
+                      notes)
+        self.assertEqual(notes.count('Two documents disagree.'), 1)
+        self.assertIn('- findings:section-one: The table says three engines.', notes)
+        self.assertNotIn('A point of wording.', notes)
 
     def test_the_review_at_a_gate_carries_the_checks_and_the_workers_own_notes(self):
         root = self.saved_start()
@@ -1250,6 +1284,8 @@ class ResearchTests(StudioCase):
         self.assertIn('Prioritize learner tasks', priorities)
         self.assertIn('for each such statement, report what the sources say about it',
                       priorities)
+        self.assertIn('their own organization\'s material on the subject', priorities)
+        self.assertNotIn('outline for this training', priorities)
         self.assertEqual(captured[0]['purpose'], research_contract.purpose(kind, goal, priorities))
 
     def test_bringing_the_research_up_to_date_reaches_the_author(self):

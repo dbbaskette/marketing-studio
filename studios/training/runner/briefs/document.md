@@ -45,15 +45,15 @@ A comment is a claim that its section teaches those things. The program cannot t
 
 - State nothing as fact beyond the findings and the blueprint's `[stated]` key points. A `supported` finding can back a statement. A `contradicted` finding can back only the correction of the claim it contradicts. What neither says, leave out.
 - Cite findings with numbered references that resolve in Sources. Cite every `[stated]` key point to one shared Sources entry, "The brief for this training".
-- Teach the subject, not the evidence. Say what is true and cite it: "A rolling restart replaces one batch at a time [2]", not "the vendor's documentation describes restarts as replacing". Do not teach the reader to verify, to qualify or to wait for confirmation, and do not turn a gap in the research into a lesson. The gaps are the author's to settle and stay out of the guide.
-- Take the side the blueprint takes. When the training positions something or answers objections, give the argument and the direct answer, and say plainly where it does not fit.
+- Teach the subject, not the evidence. Say what is true and cite it: "A rolling restart replaces one batch at a time [2]", not "the vendor's documentation describes restarts as replacing". The findings report with caution; take their facts and leave that voice: no "planned ... would", "illustrative", "according to", "the materials do not establish" or "confirm before promising". Say once when something arrives, then what it does, in the present tense. Where two documents disagree, state what the more specific one says, or the newer where they are alike. Do not teach the reader to verify, to qualify or to wait for confirmation, and do not turn a gap in the research into a lesson. The gaps are the author's to settle and stay out of the guide, its answer key included.
+- Take the side the blueprint takes. When the training positions something or answers objections, give the argument and the direct answer, and say plainly where it does not fit. Do not argue the alternative's case, and do not grade the author's own claims: no answer is wrong for saying what the blueprint teaches.
 - When the audience is the author's own organization, write as that organization to its people: "we", "our".
 - Define a term the first time it appears.
 - Give every concept a concrete example before or straight after the abstract statement.
 - Write to the audience in the intake: assume what they know, explain what they do not. Do not define the everyday terms of their own work.
 - Prefer short sections with descriptive headings over long ones.
-- A time limit in the intake is the session's. The guide is read before or after it: keep it to what can be read in a third of that time.
-- Where the blueprint plans an activity, separate the worked example from a fresh learner exercise, and include a useful debrief and a next action the learner can try in their own work. Where it plans none (`Format: session`), add no exercises beyond the knowledge checks. Hypothetical details can make an example concrete, but label them and never invent capabilities, measurements or customer results.
+- The time in the blueprint's frame is the session's. The guide is read before or after it: keep it to what can be read in a third of that time.
+- Where the blueprint plans an activity, separate the worked example from a fresh learner exercise, and include a useful debrief and a next action the learner can try in their own work. Where it plans none (`Format: session`), add no exercises beyond the knowledge checks. Hypothetical details can make an example concrete: say so once, in passing, and never invent capabilities, measurements or customer results.
 
 ## Hand back
 

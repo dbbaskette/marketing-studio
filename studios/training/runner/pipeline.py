@@ -1708,6 +1708,52 @@ def research_ids(root: Path) -> list[str]:
     return sorted({str(ident) for ident in found if ident})
 
 
+# How the writers of a training read research. Harness Research reports with caution and its
+# check argues with the draft. Both are right for research and wrong in front of a learner.
+RESEARCH_USE = (
+    'Read the research brief first: it says what matters for this training. The research is '
+    'here to make what you write specific and right. It reports with caution, and a check '
+    'has argued with it. Neither voice belongs in what a learner reads: take the facts and '
+    'leave the hedging behind.\n\n'
+    '- The documents behind it are the material of the person\'s own organization unless one '
+    'plainly comes from someone else. State what they say as fact, in that organization\'s '
+    'voice: "we patch five release lines", not "the vendor says it patches".\n'
+    '- Conditions, counterevidence, gaps and the check\'s notes are corrections for you. '
+    'Where one narrows a fact, write the narrower fact, once, as the fact. Where two '
+    'documents disagree, what the more specific one says is the fact, or the newer one '
+    'where they are alike.\n'
+    '- What the research calls unverified, unproven, missing, disputed or awaiting approval '
+    'goes in your notes for the person and nowhere a learner reads. Never tell a learner '
+    'that sources conflict, that something is unverified, or what the material does not '
+    'show.\n'
+    '- A statement that begins "included this with a warning" was questioned by the check: '
+    'use it as its note corrects it. Never rest anything on a claim the research says was '
+    'excluded.\n'
+    '- Facts, interpretations and recommendations differ. A recommendation is the '
+    'researcher\'s suggestion: teach it only where it serves what the person asked for.\n'
+    '- IDs, digests and verdicts are for checking, provenance, notes and source lines: never '
+    'put one in the words a reader reads.')
+
+
+def _research_brief(root: Path, record: dict) -> str:
+    """The research brief as a writer is handed it. The banner over it tells every reader to
+    preserve the check's warnings; here they are given as notes to the writer instead."""
+    kept = [line for line in (root / 'research/brief.md').read_text().split('\n')
+            if not line.startswith('> ')]
+    text = re.sub(r'\n{3,}', '\n\n', '\n'.join(kept)).strip()
+    review = record.get('creator_review') or {}
+    notes = []
+    for key, choice in (review.get('choices') or {}).items():
+        note = ' '.join(str((review.get('notes') or {}).get(key) or '').split())
+        if choice == 'include' and note and note not in [said for _, said in notes]:
+            notes.append((key, note))
+    if notes:
+        text += ('\n\n## The check\'s notes on this research\n\nWritten to the researcher. '
+                 'Read them as corrections to what you write, and pass none of them on.\n\n'
+                 + '\n'.join(f'- {key}: {note}' for key, note in notes))
+    return text
+
+
 def findings_text(root: Path) -> str:
     """The research as a worker reads it: each question's ID, verdict, summary and quotes."""
     record = workspace.research_record(root) or {'items': [], 'results': {}}
@@ -1716,12 +1762,7 @@ def findings_text(root: Path) -> str:
                    if (record.get('creator_review') or {}).get('by') == 'assistant' else
                    '# Creator-approved research\n\n' if record.get('creator_review')
                    else '# Reviewed research handoff\n\n')
-        return (heading + research_contract.HANDOFF
-                + ' Facts, interpretations and recommendations differ. Its conditions, '
-                'counterevidence and gaps are there to keep what you write right: state each '
-                'fact once in the form that is true, and do not pass the caution on to the '
-                'learner.\n\n'
-                + (root / 'research/brief.md').read_text() + '\n\n'
+        return (heading + RESEARCH_USE + '\n\n' + _research_brief(root, record) + '\n\n'
                 + json.dumps({'digest': record['digest'], 'findings': record['findings'],
                               'facts': record['facts'], 'sources': record['sources']}))
     lines = ['# Research findings', '',
@@ -1777,6 +1818,23 @@ def _inputs(inputs: dict) -> str:
     return ', '.join(names[:-1]) + (' and ' if len(names) > 1 else '') + names[-1]
 
 
+def person_outline(root: Path) -> str | None:
+    """The person's own outline for this training, when the scan found one among their
+    documents: the whole document, as the plan a blueprint builds. None when there is none
+    or it can no longer be read."""
+    record = home.read_json(root / drafts.RECORD, {})
+    plan = (record.get('outline_first') or {}).get('plan') if isinstance(record, dict) else None
+    try:
+        text = research_contract.inside(root, str(plan['file'])).read_text(encoding='utf-8')
+    except (KeyError, TypeError, OSError, ValueError):
+        return None
+    if not text.strip():
+        return None
+    return ('# The person\'s own outline for this training\n\n'
+            f"From their document \"{plan.get('source')}\". It is their plan for the session, "
+            'not a source to weigh: build it and fill it in.\n\n' + text[:60000])
+
+
 def blueprint_work(root: Path, found: Survey, step: Step, request: dict | None,
                    error: str | None, answered: list[dict]) -> Work:
     """The job of drafting one blueprint."""
@@ -1805,6 +1863,9 @@ def blueprint_work(root: Path, found: Survey, step: Step, request: dict | None,
     approved = approved_outline(root)
     if approved:
         inputs['approved outline'] = approved
+    planned = person_outline(root)
+    if planned:
+        inputs['person outline'] = planned
     earlier = _earlier(root, session, level)
     if earlier:
         inputs['earlier levels'] = earlier

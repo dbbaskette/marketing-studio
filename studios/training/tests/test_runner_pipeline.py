@@ -700,6 +700,16 @@ class WorkTests(StudioCase):
         self.assertIn('- What are the limits?', given)
         self.assertIn('"approved outline"', told.task)
         self.assertLess(given.index('Foundations of'), given.index('Applying '))
+        self.assertNotIn('person outline', told.prepared['inputs'])
+        kept = json.loads(record.read_text())
+        kept['outline_first']['plan'] = {'source': 'My session outline',
+                                         'file': 'sources/supplied/plan.txt'}
+        record.write_text(json.dumps(kept))
+        (self.root / 'sources/supplied').mkdir(parents=True, exist_ok=True)
+        (self.root / 'sources/supplied/plan.txt').write_text('2. The engines (12 min)\n')
+        told = pipeline.blueprint_work(self.root, found, step, None, None, [])
+        self.assertIn('2. The engines (12 min)', told.prepared['inputs']['person outline'])
+        self.assertIn('"person outline"', told.task)
 
     def test_a_blueprint_job_is_for_one_level_and_says_whether_practice_is_wanted(self):
         found = pipeline.survey(self.root)

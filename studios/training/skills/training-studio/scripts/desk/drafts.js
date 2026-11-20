@@ -670,6 +670,9 @@ function sourcesStep(draft, brand, looks) {
     // Training Studio offers Keep in library for each file the editor captures.
     draft.sourceEditor = new StudioResearch.Editor({request: sent => send('research-sources', sent),
       resume: draft.sourceDraft, entry: draft.sourceEntry, keepChoice: true,
+      // The scan follows the person's own plan for the session when one is among these.
+      primarySummary: 'If one of these is your own outline or agenda for the session, it is '
+        + 'followed, and the others fill in its detail.',
       // Add from library: documents kept on this computer, pinned when the training starts.
       library: (editor) => pickStartLibrary(draft, editor),
       libraryFull: () => startPicks(draft).length >= START_PICKS,
