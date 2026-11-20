@@ -176,7 +176,7 @@ class BriefTests(JobCase):
         self.assertIn('`<!-- findings: licensing migration-effort -->`', text)
         self.assertIn('Section 6 may also name a `contradicted` finding', text)
         self.assertIn('Start with where the brief is weakest, and why.', text)
-        self.assertIn('**Unknowns is never empty.**', text)
+        self.assertIn('**Unknowns is short.**', text)
         for kind in ('product', 'competitive'):
             self.job = self.base / kind
             tools = self.tools(artifacts={'brief': {'kind': 'brief', 'brief_kind': kind,
@@ -262,28 +262,42 @@ class BriefTests(JobCase):
         for told in ('It is the specification.', '`Format: session` or `Format: workshop`',
                      'It is the default', '**Their objectives are the objectives.**',
                      '**Their outline is the outline.**', '**Their statements are taught.**',
-                     '**Take the side the intake takes.**',
+                     '**Take the side they take.**',
+                     '**Their own outline document is the plan.**', 'Do not redesign a `person outline`.',
+                     '`Opening:` and `Closing:`', '**Say it the way an instructor says it.**',
+                     'the more specific one is the fact; if alike, the newer',
+                     'Never restate it as a larger claim and then mark that unsupported.',
+                     'It does not argue the alternative\'s case',
                      '`- K1.5: <claim> [stated]`', 'Never use `[unsupported]` for it',
                      'no module teaches learners about the gaps',
                      'Taught as you stated them; no source was found, so please confirm',
                      'The approved outline', 'It wins where it differs from the intake',
-                     'Do not build a claim from what the intake only implies',
+                     'Do not build a claim from what they only imply',
                      'has a key point that answers it'):
             self.assertIn(told, plan)
         guide = ' '.join(own(EVERY['document']).split())
         for told in ('marks `[stated]` is named and taught like any other',
                      'Teach the subject, not the evidence.',
                      'add no exercises beyond the knowledge checks', 'Add no detail of your own to it.',
-                     'in the last module that serves that objective'):
+                     'in the last module that serves that objective',
+                     'take their facts and leave that voice', 'its answer key included',
+                     'do not grade the author\'s own claims'):
             self.assertIn(told, guide)
         outline = ' '.join(briefs.guidance('deck-outline').split())
         for told in ('**A session is presented.**', 'no activity slides',
                      '**A workshop runs as a class.**', '**A demonstration has its slide.**',
                      '**Teach the subject, not the evidence.**',
                      'One it marks `[stated]` is the person\'s own statement',
-                     'so the room is asked first', 'It adds no new fact.'):
+                     'so the room is asked first', 'It adds no new fact.',
+                     '**Open and close as the frame says.**',
+                     'A title is a claim the presenter makes with confidence.'):
             self.assertIn(told, outline)
-        self.assertIn('A further question is not a response.', own(EVERY['brief']))
+        reference = own(EVERY['brief'])
+        for told in ('A further question is not a response.',
+                     '**Write as the organization to its own people**',
+                     'state it plainly, as the organization\'s position',
+                     'It is not a review of the evidence or of the author\'s wording.'):
+            self.assertIn(told, reference)
 
     def test_a_level_adds_what_a_levelled_blueprint_needs(self):
         plain, levelled = EVERY['blueprint'], EVERY['blueprint@301']

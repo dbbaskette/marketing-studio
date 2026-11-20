@@ -147,6 +147,17 @@ class BlueprintTests(unittest.TestCase):
         self.assertIn('K1.3 cites no finding and is not marked [stated] or [unsupported].',
                       named(report, 'blueprint.key-points')['problems'])
 
+    def test_a_presented_session_is_not_told_its_parts_serve_too_few_objectives(self):
+        second = BLUEPRINT[BLUEPRINT.index('## M1'):BLUEPRINT.index('## Assessment plan')] \
+            .replace('M1', 'M2').replace('K1.', 'K2.').replace('Objectives: O1, O2, O3',
+                                                               'Objectives: O1')
+        course = BLUEPRINT.replace('## Assessment plan', second + '## Assessment plan')
+        said = [w for w in self.lint(course)['warnings'] if 'course module usually' in w]
+        self.assertTrue(said, self.lint(course))
+        session = course.replace('## Frame\n', '## Frame\nFormat: session\n')
+        self.assertFalse([w for w in self.lint(session)['warnings']
+                          if 'course module usually' in w])
+
     def test_the_persons_own_statement_needs_no_finding_and_is_taught(self):
         stated = BLUEPRINT.replace(' [R:health-checks]', ' [stated]')
         report = self.lint(stated)

@@ -1,6 +1,6 @@
 ## This blueprint is for level {level}
 
-The training has levels. Use the table as a starting point. The person’s explicit task, audience, depth and requested teaching approach govern the content; do not reduce an applied introductory lesson to terminology alone. Each level assumes the prerequisites stated in its plan.
+The training has levels. The table is a starting point: the person’s task, audience, depth and teaching approach govern, and an applied introductory lesson is not reduced to terminology. Each level assumes the prerequisites its plan states.
 
 | Level | Depth | In field enablement |
 | --- | --- | --- |

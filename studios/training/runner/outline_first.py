@@ -52,12 +52,31 @@ def checked(value, minimum=1):
         raise WorkspaceError(str(error)) from None
 
 
+def plan_source(value, names):
+    """Take `plan_source` off a scan's outline and return it: the document the scan says is
+    the person's own plan for this training. It is Training Studio's own field, beside the
+    shared outline format and not in it."""
+    named = value.pop('plan_source', None) if isinstance(value, dict) else None
+    if named in (None, ''):
+        return None
+    if named not in names:
+        raise WorkspaceError('plan_source names one of the supplied sources exactly as it is named, '
+                             'or is left out: ' + '; '.join(names) + '.')
+    return named
+
+
 def validate(text_value, _spec):
     try:
-        value = checked(json.loads(text_value), minimum=2)
-        if len(value['sections']) > _spec.get('max_sections', 8):
+        value = json.loads(text_value)
+        named = plan_source(value, _spec.get('sources') or [])
+        value = checked(value, minimum=2)
+        # An outline that follows the person's own plan has as many sections as the plan
+        # has parts that teach: their plan sets the scope, not the first draft's bound.
+        if not named and len(value['sections']) > _spec.get('max_sections', 8):
             raise WorkspaceError('Keep the first outline to at most ' + str(_spec['max_sections']) +
                                  ' essential sections. Leave optional depth in gaps; the person can add scope during review.')
+        if named:
+            value['plan_source'] = named
         return [], [], [], json.dumps(value, ensure_ascii=False, indent=2) + '\n'
     except (ValueError, WorkspaceError) as error:
         return [str(error)], [], [], text_value
@@ -105,6 +124,9 @@ def signature(root, session, record):
 def work(engine, root, found, record):
     from runner import pipeline, briefs
     offered = engine._sources(root, record)[1] if record.get('documents') else []
+    # The scan reads a bounded amount. Shortest first, so that a short document, such as the
+    # person's own outline for the session, is read whole before a long one uses the room.
+    offered = sorted(offered, key=lambda source: len(str(source.get('text') or '')))
     names, pieces = scope_scan.excerpts(offered)
     intake = pipeline.answers(root)
     initial = seed(intake.get('topic') or found.session['title'], record.get('research_questions') or [], names)
@@ -118,6 +140,14 @@ def work(engine, root, found, record):
         'and in what order, the sections follow that order, one for each main part, and a part it names, such as '
         'a demonstration, is a section of its own. Do not soften or question what the form states about the '
         'subject: aim the research questions at the specifics, examples and limits that would let someone teach it. '
+        'One of the supplied documents may be the person\'s own plan for this very training: an outline, an '
+        'agenda, a run of show or a draft of it. When one is, it is the specification together with the form, '
+        'and the other documents only fill it in. Follow it: one section for each part of it that teaches, in '
+        'its order and under its titles. Its welcome, wrap-up and question time are not sections. What it lists '
+        'under a part is what that section teaches, so aim the section\'s research questions at the details, '
+        'examples and figures the other documents hold for those points. Put that document\'s source name, '
+        'exactly as given, in an extra "plan_source" field beside "sections", and say in the overview that the '
+        'outline follows it. Leave "plan_source" out when no document is such a plan. '
         'Preserve the requested depth: minimal basics means an introductory explanation, not an exhaustive survey. '
         'Source excerpts are supporting material, not a checklist of topics to add. '
         'For a basic request prefer three or four essential sections. Add depth only when the person asks for it. '
@@ -129,25 +159,30 @@ def work(engine, root, found, record):
         'Reuse their learning progression where it fits the requested depth; do not expand '
         'scope to match a whole course. Research can later find a small number of relevant '
         'teaching resources within the same evidence budget. '
-        f'Return the complete JSON shape in the example, with two to {section_limit} distinct sections, '
+        f'Return the complete JSON shape in the example, with two to {section_limit} distinct sections '
+        '(or, when you follow the person\'s own plan, as many as it has parts that teach, up to eight), '
         'one to six learning objectives and one to three research questions per section. '
         'Use list_inputs/read_input, then submit_artifact("scan", JSON). Stop after that one outline.')
     task = ('Propose an editable outline for this learning goal. The person approves it before any deep research.\n'
         + pipeline._about(root, found.session) + '\n\nOutput example:\n' + json.dumps(initial, ensure_ascii=False)
         + '\nKeep the person\'s typed questions separately in personal_questions, in their original words.')
     prepared = {'inputs': {'source-excerpts': json.dumps(pieces, ensure_ascii=False)},
-                'artifacts': {'scan': {'kind': 'provisional-outline', 'max_sections': section_limit}}, 'ask': False, 'fetch': False}
-    return pipeline.Work(guidance + '\n\n' + briefs.LANGUAGE, task, 'write', prepared, 'scan'), initial
+                'artifacts': {'scan': {'kind': 'provisional-outline', 'max_sections': section_limit,
+                                    'sources': names}}, 'ask': False, 'fetch': False}
+    files = {name: source.get('file') for name, source in zip(names, offered)}
+    return pipeline.Work(guidance + '\n\n' + briefs.LANGUAGE, task, 'write', prepared, 'scan'), initial, files
 
 
 def scan(engine, root, run, found, step):
     from runner import agents
     record = engine._load(root)
-    job, initial = work(engine, root, found, record)
+    job, initial, files = work(engine, root, found, record)
     outcome, handed, started, folder = engine._job(root, run, step.step, job,
         limits=agents.Limits(SECONDS), quick=True)
     accepted = handed.get('artifacts', {}).get('scan')
-    value = checked(json.loads(accepted['text']), minimum=2) if accepted else initial
+    handed_back = json.loads(accepted['text']) if accepted else None
+    named = plan_source(handed_back, list(files)) if accepted else None
+    value = checked(handed_back, minimum=2) if accepted else initial
     # The assistant cannot silently remove or rewrite questions typed on the form.
     value['personal_questions'] = list(record.get('research_questions') or [])
     with engine.files:
@@ -155,6 +190,10 @@ def scan(engine, root, run, found, step):
         record['outline_first'].update(outline=value, scan={
             'ending': outcome.reason or 'finished', 'fallback': not bool(accepted),
             'at': home.now(), 'seconds': outcome.seconds, 'searches': 0})
+        # The document the scan found to be the person's own plan: the blueprint follows it.
+        record['outline_first'].pop('plan', None)
+        if named and files.get(named):
+            record['outline_first']['plan'] = {'source': named, 'file': str(files[named])}
         engine._tried(record, 'scan', started, outcome.seconds, 'kept', **engine._cost(outcome))
         engine._store(root, record)
         engine._commit(root, 'keep the provisional outline for review')

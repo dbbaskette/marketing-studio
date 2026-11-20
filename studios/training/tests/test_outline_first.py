@@ -105,11 +105,61 @@ class OutlineTests(StudioCase):
         record=self.engine._load(root);record['documents']={'done':'synthetic'}
         offered=[{'title':'Source '+str(i),'text':'x'*100_000} for i in range(50)]
         with mock.patch.object(self.engine,'_sources',return_value=([],offered)):
-            work,_=outline.work(self.engine,root,self.engine._survey(root,record),record)
+            work,_,_=outline.work(self.engine,root,self.engine._survey(root,record),record)
         sources=json.loads(work.prepared['inputs']['source-excerpts'])
         self.assertLessEqual(sum(len(one['excerpt']) for one in sources),outline.INPUT_CHARS)
         self.assertLessEqual(len(sources),40)
         self.assertTrue(all(one['partial'] for one in sources))
+
+    def test_the_scan_reads_the_shortest_documents_first_and_may_name_the_persons_own_plan(self):
+        root=self.start()
+        record=self.engine._load(root);record['documents']={'done':'synthetic'}
+        offered=[{'title':'Long deck','file':'sources/supplied/long.txt','text':'x'*100_000},
+                 {'title':'My session outline','file':'sources/supplied/plan.txt','text':'1. Welcome\n2. The engines'}]
+        with mock.patch.object(self.engine,'_sources',return_value=([],offered)):
+            work,_,files=outline.work(self.engine,root,self.engine._survey(root,record),record)
+        sources=json.loads(work.prepared['inputs']['source-excerpts'])
+        self.assertEqual([one['source'] for one in sources],['My session outline','Long deck'])
+        self.assertFalse(sources[0]['partial'])
+        self.assertEqual(files['My session outline'],'sources/supplied/plan.txt')
+        spec=work.prepared['artifacts']['scan']
+        self.assertEqual(spec['sources'],['My session outline','Long deck'])
+        for told in ('the person\'s own plan for this very training','the other documents only fill it in',
+                     'Its welcome, wrap-up and question time are not sections','"plan_source"'):
+            self.assertIn(told,work.guidance)
+        named={**outline.seed('Synthetic subject'),'plan_source':'My session outline'}
+        problems,_,_,kept=outline.validate(json.dumps(named),spec)
+        self.assertEqual(problems,[])
+        self.assertEqual(json.loads(kept)['plan_source'],'My session outline')
+        problems,_,_,_=outline.validate(json.dumps({**named,'plan_source':'Another document'}),spec)
+        self.assertIn('plan_source names one of the supplied sources exactly',problems[0])
+        plain,_,_,kept=outline.validate(json.dumps(outline.seed('Synthetic subject')),spec)
+        self.assertEqual(plain,[])
+        self.assertNotIn('plan_source',json.loads(kept))
+
+    def test_the_document_the_scan_names_as_the_plan_is_kept_for_the_blueprint(self):
+        real=outline.work
+        def work(engine,root,found,record):
+            job,initial,_=real(engine,root,found,record)
+            job.prepared['artifacts']['scan']['sources']=['My session outline']
+            return job,initial,{'My session outline':'sources/supplied/plan.txt'}
+        def scanner(tools,job):
+            result={**outline.seed('Synthetic subject'),'plan_source':'My session outline'}
+            self.assertTrue(tools.submit_artifact('scan',json.dumps(result))[0])
+            return agents.Outcome(True,cost=0.02,seconds=1)
+        self.workers.queued['scan']=[scanner]
+        with mock.patch.object(outline,'work',side_effect=work):
+            root=self.start()
+        kept=self.engine._load(root)['outline_first']
+        self.assertEqual(kept['plan'],{'source':'My session outline','file':'sources/supplied/plan.txt'})
+        self.assertNotIn('plan_source',kept['outline'])
+        self.assertIsNone(pipeline.person_outline(root))
+        (root/'sources/supplied').mkdir(parents=True,exist_ok=True)
+        (root/'sources/supplied/plan.txt').write_text('1. Welcome (3 min)\n2. The engines (12 min)\n')
+        given=pipeline.person_outline(root)
+        self.assertIn('From their document "My session outline"',given)
+        self.assertIn('not a source to weigh: build it and fill it in',given)
+        self.assertIn('2. The engines (12 min)',given)
 
     def test_time_cap_keeps_an_editable_fallback_without_escalation(self):
         self.workers.queued['scan'] = [lambda tools, job: agents.Outcome(False, 'timeout', 'Synthetic timeout', seconds=180, cost=0.03)]

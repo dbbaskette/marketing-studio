@@ -4679,6 +4679,7 @@ class Engine(Reviewing):
             if outline_first.enabled(record):
                 about = outline_first.research_scope(record, about)
             intake = pipeline.answers(root)
+            planned = (record.get('outline_first') or {}).get('plan')
             depth = (' at levels ' + ', '.join(found.session['levels'])) if found.session['levels'] else ''
             task = {'topic': intake.get('topic') or found.session['title'],
                     'audience': intake.get('audience') or 'Learners',
@@ -4689,7 +4690,16 @@ class Engine(Reviewing):
                         'is to teach: for each such statement, report what the sources say '
                         'about it, with the specifics, versions and examples that would let '
                         'someone teach it, and say plainly where they are silent or disagree. '
-                        'Research supplies evidence; the teaching plan and materials are '
+                        'Documents the person supplied are their own organization\'s '
+                        'material on the subject unless one plainly comes from someone '
+                        'else: report what they say as the working facts, in plain '
+                        'statements, and where two of them disagree say which is more '
+                        'specific, which is newer, and what each says. '
+                        + (f'One of them, "{planned["source"]}", is the person\'s own '
+                           'outline for this training. It is the plan, not evidence to '
+                           'weigh: find in the other documents the details, examples and '
+                           'figures that fill in each of its points. ' if planned else '')
+                        + 'Research supplies evidence; the teaching plan and materials are '
                         'authored afterward.'),
                     'scope': about,
                     'planning_questions': (home.read_json(root / pipeline.PLAN, {}).get('items') or []
