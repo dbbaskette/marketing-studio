@@ -549,7 +549,9 @@ class RuleTests(JobCase):
         self.assertEqual([line for line in text.splitlines() if line.startswith('#')], [
             '# Deck handoff: Rolling restarts, level 301', '## Goal',
             '## Audience and duration', '## Use', '## Required elements', '## Sources',
-            '## Research', '## Output', '## Teaching and assessment'])
+            '## Research', '## Output', '## Teaching and assessment', '### Starting point', '### Shared case'])
+        self.assertIn('Opening check: Which instances can serve now?', text)
+        self.assertIn('Observations: A serving, B restarting, C serving.', text)
         for told in ('- Describe what a rolling restart does (O1)', 'Duration: 25 min',
                      'no slide may depend on its speaker notes', 'M1, Rolling restarts',
                      'says what to practice next: main, then a closing slide.',

@@ -6,7 +6,7 @@ import subprocess
 from unittest import mock
 from helpers import Isolated
 import test_desk_engine as desk
-from runner import handoffs,intake,sources,team
+from runner import handoffs,intake,server,sources,team
 from runner.contracts import Invalid
 from runner.workspace import Store
 
@@ -53,8 +53,12 @@ class HandoffTests(Isolated):
         record['desk_ready'] = {'blueprint': digest}
         session.write_text(json.dumps(record))
         row, = offered()
-        preview = handoffs.prepare(root, 'training', row['file'], row['sha256'], row['view'])
         store = Store.setup(self.workspace)
+        page = mock.Mock(store=store)
+        with mock.patch.object(server.shared, 'as_json', side_effect=lambda status, payload: payload):
+            preview = server.Page.write(page, '/api/handoff-preview', {
+                'root': str(root), 'studio': 'training', 'file': row['file'],
+                'expected_sha256': row['sha256'], 'view': row['view']})
         project_record = store.create('Release aid')
         adopted = intake.adopt(store, project_record['id'], preview['id'], expected_revision=0)
         source = adopted['sources'][0]
