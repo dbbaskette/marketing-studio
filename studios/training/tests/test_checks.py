@@ -79,6 +79,18 @@ class BlueprintTests(unittest.TestCase):
     def lint(self, text=BLUEPRINT, findings=helpers.FINDINGS, level=None):
         return checks.lint_blueprint(text, findings, level)
 
+    def test_teaching_sections_validate_sources_and_opening_remediation(self):
+        for text in (BLUEPRINT.replace('Basis: K1.1, K1.2', 'Basis: K1.4'),
+                     BLUEPRINT.replace('If missed:', 'Unknown:'),
+                     BLUEPRINT.replace('[K1.2]', '[K9.9]')):
+            self.assertIn('failed', [item['status'] for item in self.lint(text)['checks']])
+        legacy = BLUEPRINT[:BLUEPRINT.index('## Starting point')] + BLUEPRINT[BLUEPRINT.index('## Assessment plan'):]
+        self.assertNotIn('failed', [item['status'] for item in self.lint(legacy)['checks']])
+        row = checks.teaching_plan.alignment(PARSED)[1]
+        self.assertIn('three-instance', row[2])
+        self.assertIn('single-instance', row[3])
+        self.assertIn('Explains', row[4])
+
     def test_the_example_passes_every_check(self):
         report = self.lint()
         self.assertEqual([item['status'] for item in report['checks']], ['passed'] * 4)

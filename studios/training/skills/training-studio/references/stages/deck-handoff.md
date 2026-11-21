@@ -1,6 +1,6 @@
 # Deck handoff
 
-The `harness-slides` skill plans and builds the deck. Training Studio does not write a slide plan. It writes a one-page handoff, starts the task, and records the result.
+Use `harness-slides` to plan and build the deck from this handoff.
 
 If `harness-slides` is not installed, run `training.py skip deck --unavailable --reason "harness-slides is not installed"`, tell the user, and move on to the scenario stage.
 
@@ -15,7 +15,7 @@ One page, with these headings:
 - **Sources.** `blueprint.md`, `document.md` and `research-report.md`. When the document is skipped, `blueprint.md` and `research-report.md`. Add the user's own documents under `sources/`, for exact figures and names.
 - **Research.** Complete. Work from the sources only and start no new research. Anything under the blueprint's open gaps stays out.
 - **Output.** Google Slides or PowerPoint, from `settings.deck_target`, and the brand from `settings.brand` if one is set.
-- **Teaching and assessment.** Carry each objective's actual `Check:` and `Observe:` from the blueprint. Budget demonstrations, responses, practice and debrief within module timing; do not convert duration into a fixed slide count. Put check answers and rationale in presenter notes.
+- **Teaching and assessment.** Carry each objective's actual `Check:` and `Observe:` from the blueprint. Budget demonstrations, responses, practice and debrief within module timing; do not convert duration into a fixed slide count. For live delivery put answers in notes. For reading, show feedback after the attempt.
 
 `deck-handoff.md` is derived. Rewrite it whenever the blueprint or the settings change; never `save` it.
 
@@ -33,15 +33,15 @@ One page, with these headings:
 
 ## Review coverage
 
-Rehearse slides and notes in order. Resolve each demo prop or supply a labeled simulation. Time the attempt and debrief. Check the answer follows the attempt. Map each objective to slides in scratch JSON:
+Rehearse slides and notes in order. Resolve each demo prop or supply a labeled simulation. Time the attempt and debrief. In self-paced exports hide notes. Check titles, alt text and reading order preserve the attempt and later visible feedback. Map taught slides and actual attempts per objective:
 
 ```json
-{"O1": [3], "O2": [5, 6], "O3": []}
+{"objectives":{"O1":[3,4],"O2":[5]},"assessed":{"O1":[4],"O2":[]}}
 ```
 
 Record it with `training.py save deck --coverage <file>`. This is your review judgment, so present it as reviewed, not as checked.
 
-The review is tied to that exact deck and blueprint. If either changes, `check` reports the coverage as unavailable until you review the deck again and record it again.
+Review again if the deck or blueprint changes.
 
 ## Gate 6
 

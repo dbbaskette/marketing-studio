@@ -3396,7 +3396,13 @@ class Engine(Reviewing):
                         for objective, numbers in (earlier.get('coverage') or {}).items()}
             coverage.update({objective: numbers for objective, numbers in
                              handed['coverage']['objectives'].items() if objective not in coverage})
+            performance = handed['coverage'].get('assessed')
+            if scoped and performance is not None:
+                prior = earlier.get('assessed')
+                performance = ({ident: sorted(set(nums) | (set(prior.get(ident, [])) - reviewed_numbers))
+                                for ident, nums in performance.items()} if prior is not None else None)
             rounds[-1] = {**rounds[-1], 'review': {
+                **({'assessed': performance} if performance is not None else {}),
                 'findings': findings, 'weakest': assessed['weakest'],
                 **({key: assessed.get(key) for key in ('direct', 'complete')}
                    if rounds[-1].get('judged') else {}),

@@ -1,10 +1,10 @@
 # Blueprint
 
-Design backward from the learner's task to observable success, then the teaching. Follow the example's headings, IDs and line prefixes.
+Follow the example. Design backward from the task.
 
 ## Frame and sizing
 
-Give the audience, purpose, time, task and format. A workshop adds a realistic scenario. For a comparison, name both sides. For a level, add `Level: 301` and prerequisites. A lesson usually fits five objectives and 45 minutes; a course has two to six modules. Beyond that propose a split. Honor the approved objectives, order and time budget.
+Give audience, task, time, format and prerequisites. Workshops add a scenario. Keep approved objectives, order and timing.
 
 ## Objectives and modules
 
@@ -17,6 +17,8 @@ Use `### O<n> — <behavior> [<level>]`. Levels are recall, explain, apply and h
 - `Hook:` consequence. `Example:` worked observation. `Ask:` question for the participant. `Listen for:` evidence of understanding. Research questions guide the author.
 - Workshops add `Activity: <minutes> min. <task>. Output: <product>. Good answer: <criteria>`. Label simulations. Put a material research limit in the learner decision or instructor preflight, or omit the dependent claim.
 
+Use the example's Starting point, Shared case and Job aid sections when applicable. Check each objective against the evidence shown, learner task and success criterion.
+
 ## Assessment, practice and gaps
 
 Under Assessment plan give each objective a fresh case: `- O1: Check: <question> | Observe: <behavior>`. Budget time to attempt, explain and debrief.
@@ -27,4 +29,4 @@ Under Open gaps name every unresolved question affecting instruction, unsupporte
 
 ## Gate 3
 
-Write `blueprint.md`, run `training.py save blueprint --built` and `training.py check`, then fix failures. Present the gate. On approval run `training.py approve blueprint` for each applicable level.
+Save with `training.py save blueprint --built`. Run `training.py check`. After approval use `training.py approve blueprint` per level.

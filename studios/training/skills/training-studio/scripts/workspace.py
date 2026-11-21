@@ -716,7 +716,17 @@ def save(root: Path, name: str, source: Path | None = None, built: bool = False,
     if coverage is not None:
         if split(name)[0] != 'deck':
             raise WorkspaceError('Only the deck takes a reviewed coverage record.')
+        assessed = None
+        if isinstance(coverage, dict) and 'assessed' in coverage:
+            if set(coverage) != {'objectives', 'assessed'}:
+                raise WorkspaceError('Supply only objectives and assessed in the coverage record.')
+            assessed, coverage = coverage['assessed'], coverage['objectives']
+            check_coverage(root, session, name, assessed)
+            if not isinstance(coverage, dict) or set(assessed) != set(coverage):
+                raise WorkspaceError('Assessed and covered slides must name the same objectives.')
         check_coverage(root, session, name, coverage)
+        if assessed is not None and any(set(slides) - set(coverage[obj]) for obj, slides in assessed.items()):
+            raise WorkspaceError('An assessed slide must also cover its objective.')
     if source is not None:
         if name == 'research':
             raise WorkspaceError(
@@ -734,7 +744,8 @@ def save(root: Path, name: str, source: Path | None = None, built: bool = False,
         blueprint = artifact(root, session, qualify('blueprint', split(name)[1]))['file']
         entry['reviewed_coverage'] = {'deck_sha256': entry['sha256'],
                                       'blueprint_sha256': sha256_file(root / blueprint),
-                                      'at': now(), 'objectives': coverage}
+                                      'at': now(), 'objectives': coverage,
+                                      **({'assessed': assessed} if assessed is not None else {})}
     made = {'via': via, 'session': session_token}
     log(session, 'save', artifact=name, sha256=entry['sha256'],
         **{key: value for key, value in made.items() if value is not None})

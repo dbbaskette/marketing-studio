@@ -265,16 +265,21 @@ def handoff(title: str, level: str | None, blueprint: str, said: dict, target: s
     lines += ['## Teaching and assessment', '',
               ('This is a presented session: use the module timing for explanation, '
                'examples, any demonstration and questions. It has no learner exercises. '
-               'The checks below are questions the presenter may put to the room, with the '
-               'answer in the notes; they are not activity slides. '
+               'The checks below invite a brief response. '
                if session else
                'Use the module timing for explanation, demonstration, learner practice and '
                'debrief. ')
-              + 'A slide count is not a duration plan. Each check needs an answer '
-              'and rationale in the presenter notes. Keep learner-facing meaning visible. '
+              + 'A slide count is not a duration plan. '
+              + ('Give a self-paced reader a neutral question, visible evidence, time to respond, '
+                 'then visible feedback with rationale on a later slide. ' if delivery == 'reading' else
+                 'Keep each answer and rationale in the presenter notes for debrief. ')
+              + 'Keep learner-facing meaning visible. '
               'For every demonstration supply the prop or a labeled simulation. In a lab '
               'give setup, commands, expected observations and recovery. Rehearse the '
               'attempt before revealing the answer, then allow time to hear reasoning.', '']
+    for name in ('Starting point', 'Shared case'):
+        if name in parsed['teaching']:
+            lines += [f'### {name}', *parsed['teaching'][name], '']
     # Carry the author's actual check/observation wording, not an invented replacement.
     if isinstance(assessment, dict):
         lines += [f'- {ident}: {value}' for ident, value in assessment.items()]

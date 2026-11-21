@@ -158,7 +158,7 @@ def work(engine, root, found, record):
         'several sections, word for word, and it is still one objective. When the form says what the session covers '
         'and in what order, the sections follow that order, one for each main part, and a part it names, such as '
         'a demonstration, is a section of its own. Direct section questions to the researcher: establish '
-        'technical claims, applicable versions, examples and limits using the supplied sources. '
+        'technical claims, applicable versions, specific source passages and conditions for a worked case. Identify a prerequisite or common mistake when it changes the lesson. '
         'One of the supplied documents may be the person\'s own plan for this very training: an outline, an '
         'agenda, a run of show or a draft of it. When one is, it is the specification together with the form, '
         'and the other documents only fill it in. Follow it: one section for each part of it that teaches, in '

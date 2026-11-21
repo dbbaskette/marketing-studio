@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import re
 
+from studio_core import teaching_plan
+
 MODES = ('roleplay', 'pitch', 'tutor', 'questionnaire')
 LEVELS = ('recall', 'explain', 'apply', 'handle')
 
@@ -81,7 +83,7 @@ def check_research_plan(plan, most=30) -> dict:
 def parse_blueprint(text: str) -> dict:
     """Read a blueprint's frame, objectives, modules, plans and gaps."""
     parsed = {'level': None, 'objectives': {}, 'modules': {}, 'assessment': {},
-              'practice': [], 'open_gaps': '', 'malformed': [], 'duplicates': []}
+              'teaching': teaching_plan.sections(text), 'practice': [], 'open_gaps': '', 'malformed': [], 'duplicates': []}
     section, module = None, None
     for line in text.splitlines():
         if line.startswith('## '):
@@ -147,6 +149,7 @@ def _module_line(parsed: dict, module: dict, line: str) -> None:
         module['misconceptions'].append({'text': line, 'findings': FINDING.findall(line)})
     elif line.startswith('Example:'):
         module['examples'] += 1
+        module.setdefault('examples_text', []).append(line.partition(':')[2].strip())
 
 
 def lint_blueprint(text: str, findings: dict | None, level: str | None = None) -> dict:
@@ -175,6 +178,8 @@ def lint_blueprint(text: str, findings: dict | None, level: str | None = None) -
                 structure.append(f"Practice plan: {entry['id']} names unknown "
                                  f'objective {objective}.')
 
+    structure.extend(teaching_plan.problems(parsed['teaching'], {
+        key: point for module in modules.values() for key, point in module['key_points'].items()}))
     placement = []
     placed = {objective for module in modules.values() for objective in module['objectives']}
     for identifier in objectives:

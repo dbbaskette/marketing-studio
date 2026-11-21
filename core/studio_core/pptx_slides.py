@@ -257,3 +257,69 @@ def slides(data):
         slide["objectId"] = identity(number, snapshot[0]["text"])
         result.append(slide)
     return {"slides": result}
+
+
+def _reader_elements(tree):
+    """Slide XML in stored object order. Include descriptions alongside visible objects."""
+    for item in tree:
+        if item.tag == MC + 'AlternateContent':
+            branch = item.find(MC + 'Fallback')
+            if branch is None:
+                branch = item.find(MC + 'Choice')
+            if branch is not None:
+                yield from _reader_elements(branch)
+            continue
+        if item.tag not in (P+'sp', P+'pic', P+'graphicFrame', P+'grpSp', P+'cxnSp'):
+            continue
+        props = item.find('./*/' + P + 'cNvPr')
+        if props is not None and props.get('hidden') in ('true', '1'):
+            continue
+        if props is not None:
+            for field in ('title', 'descr'):
+                if props.get(field):
+                    yield 'Accessibility: ' + props.get(field)
+        if item.tag == P + 'grpSp':
+            yield from _reader_elements(item)
+        else:
+            for paragraph in item.iter(A + 'p'):
+                text = ''.join(t.text or '' for t in paragraph.iter(A + 't'))
+                if text.strip():
+                    yield text
+
+
+def reader_review(path):
+    """Notes-hidden evidence from the rendered deck for the existing visual reviewer."""
+    try:
+        with path.open('rb') as stream:
+            package = Package(stream.read(LIMIT + 1))
+        main = next((p for kind, p in package.relationships('').values()
+                     if kind.endswith('/officeDocument')), 'ppt/presentation.xml')
+        order = package.xml(main).find(P+'sldIdLst')
+        if order is None or not 1 <= len(order) <= MOST_SLIDES:
+            refuse(COUNT)
+        targets = package.relationships(main)
+        lines = ['Read in slide and object order with speaker notes hidden. Compare these '
+                 'text and accessibility labels with the rendered pictures. For each exercise, '
+                 'locate the evidence, attempt and later visible feedback. Flag early answers '
+                 'in titles or descriptions, missing equivalent evidence, or feedback only in notes.']
+        remaining = 120_000
+        for number, entry in enumerate(order, 1):
+            kind, part = targets.get(entry.get(R+'id'), ('', ''))
+            if not kind.endswith('/slide'):
+                refuse()
+            slide = package.xml(part)
+            if slide.get('show') in ('false', '0'):
+                lines.append(f'Slide {number} is hidden.')
+                continue
+            tree = slide.find(P+'cSld/'+P+'spTree')
+            if tree is None:
+                refuse()
+            line = f'Slide {number}\n' + '\n'.join(_reader_elements(tree))
+            if len(line) > remaining:
+                lines.append(f'Object transcript incomplete from slide {number}. Inspect the export manually.')
+                break
+            lines.append(line)
+            remaining -= len(line)
+        return '\n\n'.join(lines)
+    except (ValueError, OSError):
+        return 'Exported reading order and alt text unavailable. Record this limitation and check the visible exercise sequence in the slide pictures.'

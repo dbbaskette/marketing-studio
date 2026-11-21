@@ -36,6 +36,8 @@ Call `list_inputs` first. It lists anything provided for this job, and any sourc
 
 An honest `insufficient` is worth more than a `supported` that stretches its quotes.
 
+For a worked case, identify the original passage, the version or configuration where it applies, and what observation would distinguish the alternatives. Leave invented exercise observations to the teaching author.
+
 ## Hand back
 
 Call `submit_finding` once, with:

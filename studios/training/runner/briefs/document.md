@@ -55,6 +55,8 @@ A comment is a claim that its section teaches those things. The program cannot t
 - The time in the blueprint's frame is the session's. The guide is read before or after it: keep it to what can be read in a third of that time.
 - Where the blueprint plans an activity, separate the worked example from a fresh learner exercise, and include a useful debrief and a next action the learner can try in their own work. Where it plans none (`Format: session`), add no exercises beyond the knowledge checks. Hypothetical details can make an example concrete: say so once, in passing, and never invent capabilities, measurements or customer results.
 
+Use the blueprint's Starting point to adapt the opening if the prerequisite is missing. Use the Shared case's exact identifiers, values, assumptions and decision in each worked example based on it. Label the separate transfer attempt and change only its named variable. Give targeted feedback for the tempting alternative and let the learner try again.
+
 ## Hand back
 
 1. Call `submit_artifact` with the name your task gives and the whole guide as its text.

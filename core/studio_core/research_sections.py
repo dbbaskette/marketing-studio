@@ -213,7 +213,7 @@ def combine(case, task, areas, registry, base, offered, invoke, *, round, guidan
         view = {**selected, 'facts': deduplicate(selected['facts'])}
         payload = {'task': {key: task[key] for key in rc.TASK_FIELDS}, 'worker': worker,
             'section': area, 'evidence': view, 'gaps': [gap for gap in registry['gaps'] if gap['workstream'] == area['id']],
-            'return': 'Write only this approved section’s findings and report sections. Return schema 2 with findings and sections. No sources, facts, brief or comparisons. Use the approved question ID as the primary finding ID. Preserve qualifications; unsupported material is a gap.',
+            'return': 'Write only this approved section’s findings and report sections. Return schema 2 with findings and sections. No sources, facts, brief or comparisons. Use the approved question ID as the primary finding ID. Preserve qualifications; unsupported material is a gap. For a worked case identify the source passage, its applicable conditions and the observations that distinguish the available actions. Label simulated values.',
             '_execution': {'phase': 'synthesize', 'round': round, 'stream': area['id'], 'workers': min(3, len(areas)),
                 'mode': 'compose-section', 'evidence_base': selected,
                 'research_policy': task.get('research_policy'),

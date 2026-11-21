@@ -1167,6 +1167,15 @@ class ReviewToolTests(ToolCase):
         self.assertEqual(worker_tools.collect(self.job)['coverage'], {
             'objectives': {'O1': [2, 3], 'O2': [3], 'O3': []}, 'reasons': 'As titled.'})
 
+    def test_assessed_slides_need_a_reviewed_learner_attempt(self):
+        tools = self.looked()
+        covered = {'O1': [2, 3], 'O2': [3], 'O3': []}
+        assessed = {'O1': [3], 'O2': [], 'O3': []}
+        self.assertIn('reviewed coverage', self.refused(tools.submit_coverage(
+            covered, assessed={**assessed, 'O3': [3]})))
+        self.ok(tools.submit_coverage(covered, assessed=assessed))
+        self.assertEqual(worker_tools.collect(self.job)['coverage']['assessed'], assessed)
+
     def test_a_picture_reaches_an_agent_as_an_image_after_the_text(self):
         tools = self.reviewer()
         reply = worker_tools.answer(tools, {'jsonrpc': '2.0', 'id': 7, 'method': 'tools/call',

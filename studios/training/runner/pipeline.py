@@ -1966,6 +1966,12 @@ def _update_inputs(root, session, name, inputs, update):
                        'names': draft_jobs.intake_names(root)}, plan_changed
 
 
+def _case_inputs(inputs):
+    case = checks.teaching_plan.sections(inputs['blueprint']).get('Shared case')
+    if case:
+        inputs['Shared case for all materials'] = '\n'.join(case)
+
+
 def document_work(root: Path, found: Survey, step: Step, request: dict | None,
                   error: str | None, answered: list[dict], naming: str | None = None, update=False) -> Work:
     """The job of writing one learner guide, from its level's blueprint and the research."""
@@ -1974,6 +1980,7 @@ def document_work(root: Path, found: Survey, step: Step, request: dict | None,
     blueprint = _text(root, session, workspace.qualify('blueprint', level)) or ''
     inputs = {'intake': _read(root / 'intake.md') or '', 'blueprint': blueprint,
               'research findings': findings_text(root)}
+    _case_inputs(inputs)
     earlier = _earlier(root, session, level)
     if earlier:
         inputs['earlier levels'] = earlier
@@ -2040,6 +2047,7 @@ def scenario_work(root: Path, found: Survey, step: Step, request: dict | None,
               'blueprint': _text(root, session, workspace.qualify('blueprint', level)) or ''}
     brief = (_text(root, session, workspace.qualify('brief', level))
              if 'brief' in wanted(session) else None)
+    _case_inputs(inputs)
     if brief:
         inputs['brief'] = brief
     intent = practice_intent.descriptions(session, ident)
@@ -2302,6 +2310,7 @@ def outline_work(root: Path, found: Survey, step: Step, request: dict | None,
     _read_also(root, mine, inputs, [*DRAFTING, *(DESIGNING if designed else ()),
                                     *_brand_for_workers(root, mine)])
     inputs['blueprint'] = blueprint
+    _case_inputs(inputs)
     guide = (_text(root, session, workspace.qualify('document', level))
              if 'document' in wanted(session) else None)
     if guide:
@@ -2607,15 +2616,19 @@ def review_work(root: Path, found: Survey, step: Step, error: str | None) -> Wor
     slides = [{**{key: slide[key] for key in ('number', 'id', 'title')},
                'image': str(place(root, level, SHOTS) / f"{slide['number']}.png")}
               for slide in last['slides'] if not scope or slide['id'] in scope]
+    inputs = {'Assessment map': '\n'.join(checks.teaching_plan.alignment_table(parsed))}
+    if delivery_of(session) == 'reading' and last.get('file'):
+        from studio_core import pptx_slides
+        inputs['Reader view of the export'] = pptx_slides.reader_review(work / last['file'])
     if last.get('judged'):
-        return _judging_work(root, step, mine, slides, objectives, earlier, error)
+        return _judging_work(root, step, mine, slides, objectives, earlier, error, inputs)
     task = (f'Review {workspace.label(step.artifact)} as it was rendered: '
             f'{len(slides)} slides. Your input "the review" has the questions, the slides '
             'and the objectives. Hand in what you find with submit_assessment, then say '
-            'which slides address each objective with submit_coverage.'
+            'which slides address each objective and which assess it with submit_coverage. Read the assessment map and any reader view of the export.'
             + _again(None, None, error, [], 'the review'))
     questions = deck.round_questions(last)
-    prepared = {'inputs': {'the review': deck.asked(objectives, slides, earlier,
+    prepared = {'inputs': {**inputs, 'the review': deck.asked(objectives, slides, earlier,
                                                     last.get('screens'), questions,
                                                     last.get('audit_warnings'))},
                 'ask': False,
@@ -2628,7 +2641,7 @@ def review_work(root: Path, found: Survey, step: Step, error: str | None) -> Wor
 
 
 def _judging_work(root: Path, step: Step, mine: Deck, slides: list[dict], objectives: dict,
-                  earlier, error: str | None) -> Work:
+                  earlier, error: str | None, inputs: dict) -> Work:
     """The job of reviewing a whole deck against its approved design: the slides tool's own
     assessment, answered by a worker that drew none of it."""
     work, last = place(root, mine.level, WORK), mine.last
@@ -2642,8 +2655,8 @@ def _judging_work(root: Path, step: Step, mine: Deck, slides: list[dict], object
             'criteria, each slide with what you may cite and what the slides tool points at, '
             'and the objectives. Hand in your judgement of every criterion of every slide with '
             'submit_judgements, then say which slides address each objective with '
-            'submit_coverage.' + _again(None, None, error, [], 'the review'))
-    prepared = {'inputs': {'the review': deck.judging(objectives, slides, packets, earlier,
+            'submit_coverage, including assessed slides. Read the assessment map and any reader view of the export.' + _again(None, None, error, [], 'the review'))
+    prepared = {'inputs': {**inputs, 'the review': deck.judging(objectives, slides, packets, earlier,
                                                       last.get('screens'))},
                 'ask': False,
                 'review': {'preview': str(work / last['preview']), 'deck': last['deck'],
@@ -2854,6 +2867,8 @@ def keep_draft(root: Path, step: Step, handed: dict, request: dict | None,
         lines.append(DECLARED)
     elif kind == 'blueprint':
         lines += _practice_note(draft['text'], session)
+        lines += ['', 'Planned assessment', *checks.teaching_plan.alignment_table(
+            checks.parse_blueprint(draft['text']))]
     elif kind == 'scenario':
         lines += _scenario_note(draft['text'], 'laid' if found is not None
                                 and step.artifact in found.own else 'runner')
@@ -3160,6 +3175,8 @@ def deck_shows(root: Path, session: dict, mine: Deck, audit: dict, cited: dict |
                if last.get('judged') else {}),
             'audit': audit,
             'coverage': [{'objective': ident, 'says': objective['text'],
+                          **({'assessed': review['assessed'].get(ident, [])}
+                             if 'assessed' in review else {}),
                           'reviewed': list((review.get('coverage') or {}).get(ident) or ()),
                           'cited': sorted(number for number in (cited or {}).get(ident) or ()
                                           if type(number) is int)}
@@ -3226,6 +3243,14 @@ def deck_note(shows: dict, request: dict | None, dated: bool) -> list[str]:
                                                          else 's') + ' '
               + ', '.join(map(str, entry['reviewed'])) if entry['reviewed']
               else 'not found on any slide') for entry in shows['coverage']]
+    if shows['coverage'] and all('assessed' not in entry for entry in shows['coverage']):
+        lines.append('Learner attempts were not recorded in this review.')
+    for entry in shows['coverage']:
+        if 'assessed' in entry:
+            where = ', '.join(str(n) for n in entry['assessed'])
+            lines.append(f"- {entry['objective']} performance: " +
+                         (f"learner attempt on slide(s) {where}." if where else
+                          "no slide asks learners to perform this objective."))
     lines += ['', 'This is the deck the pictures on the page show. Approving it approves '
               'exactly those slides.']
     if request:
@@ -3264,6 +3289,9 @@ def keep_deck(root: Path, found: Survey, mine: Deck, source: Path | None, link: 
 def _keep_deck(root, found, mine, source, link, shows):
     name, session = mine.name, found.session
     coverage = None if shows.get('review_pending') else {entry['objective']: entry['reviewed'] for entry in shows['coverage']}
+    if coverage and all('assessed' in row for row in shows['coverage']):
+        coverage = {'objectives': coverage, 'assessed': {
+            row['objective']: row['assessed'] for row in shows['coverage']}}
     request, dated = found.asked.get(name), found.state.get(name) == 'stale'
     if link is not None:
         file = workspace.managed(root, workspace.artifact(root, session, name)['file'])
