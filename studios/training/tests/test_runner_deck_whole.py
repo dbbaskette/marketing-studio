@@ -553,9 +553,9 @@ class GivenTests(WholeCase):
         writer = [spec for kind, _, spec in self.workers.jobs if kind == 'outline'][-1]
         self.assertEqual([entry['name'] for entry in writer['inputs']], [
             'handoff', 'outline contract', 'drafting guidance', 'brand design', 'blueprint',
-            'learner guide', 'research findings', 'naming rules'])
+            'Shared case for all materials', 'learner guide', 'research findings', 'naming rules'])
         reviewer = [spec for kind, _, spec in self.workers.jobs if kind == 'review'][-1]
-        self.assertEqual([entry['name'] for entry in reviewer['inputs']], ['the review'])
+        self.assertEqual([entry['name'] for entry in reviewer['inputs']], ['Assessment map', 'Reader view of the export', 'the review'])
 
     def test_a_composer_is_offered_only_the_icons_the_slides_tool_can_place(self):
         root = self.begin()

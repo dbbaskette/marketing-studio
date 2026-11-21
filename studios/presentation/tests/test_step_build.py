@@ -246,7 +246,7 @@ class GuidanceTests(Deck):
         self.entered()
         self.built()
         inputs = build.review_work(self.root, self.run_).prepared['inputs']
-        self.assertEqual(list(inputs), ['the review', 'review guidance',
+        self.assertEqual(list(inputs), ['the review', 'Reader view of the export', 'review guidance',
                                         'brand review checklist'])
         self.assertEqual(inputs['review guidance'], 'Review every slide.\n')
         self.assertIn('Use the Brand checklist.', inputs['brand review checklist'])
@@ -254,7 +254,7 @@ class GuidanceTests(Deck):
     def test_without_them_the_reviewer_has_only_the_review(self):
         self.built()
         inputs = build.review_work(self.root, self.run_).prepared['inputs']
-        self.assertEqual(list(inputs), ['the review'])
+        self.assertEqual(list(inputs), ['the review', 'Reader view of the export'])
 
     def test_a_brand_whose_entry_fails_is_noted_and_the_deck_carries_on(self):
         self.brand.run.guides = True

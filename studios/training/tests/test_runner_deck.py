@@ -1790,7 +1790,7 @@ class FlowTests(DeckCase):
         job, spec = jobs['outline']
         self.assertEqual([entry['name'] for entry in spec['inputs']], [
             'handoff', 'outline contract', 'drafting guidance', 'brand design', 'blueprint',
-            'learner guide', 'research findings', 'naming rules'])
+            'Shared case for all materials', 'learner guide', 'research findings', 'naming rules'])
         self.assertEqual(job.guidance, briefs.guidance('deck-outline'))
         job, spec = jobs['section']
         self.assertEqual(([entry['name'] for entry in spec['inputs']], spec['ask']),
@@ -1898,7 +1898,7 @@ class BrandEntryTests(DeckCase):
         work = pipeline.review_work(root, self.engine._survey(root, self.record(root)),
                                     pipeline.gate_for('deck'), None)
         inputs = work.prepared['inputs']
-        self.assertEqual(list(inputs), ['the review', 'review guidance',
+        self.assertEqual(list(inputs), ['Assessment map', 'Reader view of the export', 'the review', 'review guidance',
                                         'brand review checklist'])
         self.assertEqual(inputs['review guidance'], 'Pinned review guidance.\n')
         self.assertIn('Use the Brand checklist.', inputs['brand review checklist'])
@@ -1909,7 +1909,7 @@ class BrandEntryTests(DeckCase):
         self.drawn(root)
         work = pipeline.review_work(root, self.engine._survey(root, self.record(root)),
                                     pipeline.gate_for('deck'), None)
-        self.assertEqual(list(work.prepared['inputs']), ['the review'])
+        self.assertEqual(list(work.prepared['inputs']), ['Assessment map', 'Reader view of the export', 'the review'])
 
     def test_a_brand_without_the_entry_keeps_the_installed_tools_guidance(self):
         root = self.saved_begin()
