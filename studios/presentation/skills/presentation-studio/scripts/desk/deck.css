@@ -390,3 +390,8 @@
   max-width: 26ch;
   font-size: 0.85em;
 }
+
+/* What the person asked for last time round keeps the lines they wrote it in. */
+.asked-words {
+  white-space: pre-line;
+}

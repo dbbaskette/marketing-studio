@@ -70,6 +70,8 @@ What a caller needs to know
   out at the research go with either decision, with no worker. A drop, rewording, new
   question, research-again or slide mark is enough for changes without a note; a leave-out
   is not. The marks, then the person's own words, are the note the stop's worker reads.
+  The gate keeps the person's own words (`free`) and the marks said by each item's title
+  (`asked`, `marks.recap`) beside it, and those are what the page shows at the next round.
 - The brand is exported once, with the first step that needs it, and checked before every
   step that uses it: the outline, the sample of the brand, the patch, each step of the
   build and its render. A brand that changed since stops the deck with build's sentence.
@@ -2376,6 +2378,7 @@ class Engine(Jobs, Researching, DeskActions):
             cleared = {'again': None, 'added': None, 'free': None, 'refresh': None} \
                 if gate == 'gate:research' else {'saying': None} \
                 if gate == 'gate:outline' else {}
+            cleared.update(self._own_words_kept(gate, note))
             record['gates'][gate] = {**gated, 'state': 'approved', 'note': note,
                                      'at': at, 'by': by,
                                      'round': int(gated.get('round') or 1), **cleared}
@@ -2385,6 +2388,7 @@ class Engine(Jobs, Researching, DeskActions):
         more = {'again': None, 'added': None, 'free': None, 'refresh': None} \
             if gate == 'gate:research' else {'saying': None} \
             if gate == 'gate:outline' else {}
+        more.update(self._own_words_kept(gate, note))
         # An outline that came back from the deck is redrafted in the brand the deck was
         # built in: that is not checked again.
         look = {name: dict(record['steps'].get(name) or {}) for name in ('brand', 'look-preview')} \
@@ -2506,7 +2510,7 @@ class Engine(Jobs, Researching, DeskActions):
             record['gates']['gate:look'] = look
         gated = record['gates'].get('gate:outline') or {}
         record['gates']['gate:outline'] = {
-            **gated, 'state': 'waiting', 'note': note, 'at': at, 'by': by,
+            **gated, 'state': 'waiting', 'note': note, 'at': at, 'by': by, 'asked': None,
             'round': int(gated.get('round') or 1) + 1,
             'saying': {ids[number]: note or '' for number in named}}
         built = record['gates'].get('gate:build') or {}
@@ -2693,23 +2697,41 @@ class Engine(Jobs, Researching, DeskActions):
             return [str(one['id']) for one in slides if isinstance(one, dict) and one.get('id')]
         return []
 
+    @staticmethod
+    def _own_words_kept(gate: str, note: str | None) -> dict:
+        """What a reviewed stop keeps beside its note when it is decided, before any marks:
+        the person's own words (`free`), and no marks. The note a worker reads is written
+        from the marks; at the next round the person is shown `asked` and their own words
+        instead."""
+        return {'free': note, 'asked': None} if gate in marks.REVIEWED else {}
+
     def _apply_marks(self, root: Path, record: dict, gate: str, marked: dict,
                      note: str | None) -> tuple[dict, str | None, dict]:
         """What the marks of a request for changes do before the stop is reopened: drop
         questions from the plan or add them to it, keep what was left out, and set down
         which questions the worker researches again. Returns the run, the note its worker
-        reads and what the gate keeps beside it."""
-        more = {}
+        reads and what the gate keeps beside it: the person's own words, and the marks as
+        they read them (`asked`)."""
+        more, slides, before, titles = self._own_words_kept(gate, note), (), (), None
         if gate == 'gate:research-plan' and marked.get('dropped'):
             self._drop_questions(root, record, marked['dropped'])
         elif gate == 'gate:research':
+            before = list((record.get('research') or {}).get('left_out') or ())
+            if record.get('research_contract'):
+                # A finding of the research bundle has a title of its own.
+                titles = {item['id']: item['title']
+                          for item in self._findings_shown(root, record)}
             if 'left_out' in marked:
                 record['research'] = {**(record.get('research') or {}),
                                       'left_out': marked['left_out']}
             added = self._add_questions(root, record, marked.get('add') or [])
             again = {**(marked.get('again') or {}), **{ident: '' for ident in added}}
-            more = {'again': again, 'added': added, 'free': note,
-                    'refresh': True if marked.get('refresh') else None}
+            more.update(again=again, added=added,
+                        refresh=True if marked.get('refresh') else None)
+        elif gate == 'gate:outline':
+            # The person's edit is kept by now, so a slide is numbered where they put it.
+            slides = build.slides_of(home.read_json(root / outlines.OUTLINE, None))
+        more['asked'] = marks.recap(gate, marked, slides, before, titles) or None
         return record, marks.note(gate, marked, note), more
 
     def act(self, path, action: str) -> dict:
@@ -3219,8 +3241,13 @@ class Engine(Jobs, Researching, DeskActions):
         if nxt is None or nxt.kind != 'gate' or gate_state(record, nxt.name) != 'waiting':
             return None
         gate = record['gates'].get(nxt.name) or {}
+        # What the person asked for last time round, in their own words: where they marked
+        # anything, the marks by each item's title and what they wrote, never the note the
+        # runner wrote for the worker from them.
+        asked = list(gate.get('asked') or ())
         shown = {'name': nxt.name, 'label': nxt.label, 'words': WORDS[nxt.name],
-                 'round': gate.get('round'), 'note': gate.get('note'),
+                 'round': gate.get('round'),
+                 'note': gate.get('free') if asked else gate.get('note'), 'asked': asked,
                  'said': record['said'].get(FED_BY.get(nxt.name, ''))}
         view = getattr(self, f"_show_{nxt.name.partition(':')[2].replace('-', '_')}")
         shown.update(view(root, record))

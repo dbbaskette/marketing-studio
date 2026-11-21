@@ -5,6 +5,7 @@ What a caller needs to know
     marked = marks.check(gate, decision, extra, ids)   # the marks, cleaned, or a refusal
     marks.asks(marked)                                 # whether any mark needs a worker
     marks.note(gate, marked, free)                     # the note a worker reads, or None
+    marks.recap(gate, marked, slides, before)          # the marks as the person reads them
     marks.title('licensing-cost')                      # 'Licensing cost'
     marks.new_id('What does it cost?', taken)          # 'what-does-it-cost'
     marks.first_sentence(text)
@@ -18,6 +19,9 @@ What a caller needs to know
 - Approve takes only what needs no worker: drops at the plan and leave-outs at the
   research. Anything else is refused with AS_CHANGES.
 - `check` returns only the marks that say something, and `left_out` whenever it was sent.
+- The worker's note names each item by its ID. `recap` says the same marks to the person,
+  each item by its title, for the stop's next round: a slide by its number and title in
+  `slides`, and of the findings only those left out or brought back since `before`.
 """
 from __future__ import annotations
 
@@ -155,6 +159,39 @@ def note(gate: str, marked: dict, free: str | None) -> str | None:
     if free:
         said = f'{said}\n\n{free}' if said else free
     return said or None
+
+
+def recap(gate: str, marked: dict, slides=(), before=(), titles=None) -> list[str]:
+    """What the marks asked for, a line each, as the person reads it at the stop's next
+    round: each item by its title, never its ID. `slides` are the outline's slides in order;
+    `before` the findings left out until now; `titles` a finding's own title by its ID, where
+    it has one."""
+    def named(ident):
+        return (titles or {}).get(ident) or title(ident)
+    lines = []
+    if gate == 'gate:research-plan':
+        lines += [f'Reword “{named(ident)}” as: {text}'
+                  for ident, text in (marked.get('reword') or {}).items()]
+        lines += [f'Add a question: {text}' for text in marked.get('add') or ()]
+        lines += [f'Drop “{named(ident)}”' for ident in marked.get('dropped') or ()]
+    elif gate == 'gate:research':
+        lines += [f'Research “{named(ident)}” again' + (f': {line}' if line else '')
+                  for ident, line in (marked.get('again') or {}).items()]
+        lines += [f'Add a question: {text}' for text in marked.get('add') or ()]
+        if 'left_out' in marked:
+            lines += [f'Leave out “{named(ident)}”' for ident in marked['left_out']
+                      if ident not in before]
+            lines += [f'Bring back “{named(ident)}”' for ident in before
+                      if ident not in marked['left_out']]
+        lines += ['Bring the evidence up to date'] if marked.get('refresh') else []
+    elif gate == 'gate:outline':
+        placed = {str(slide.get('id')): (f'Slide {number}',
+                                         ' '.join(str(slide.get('title') or '').split()))
+                  for number, slide in enumerate(slides, 1) if isinstance(slide, dict)}
+        for ident, line in (marked.get('slides') or {}).items():
+            slide, called = placed.get(ident, ('Slide', title(ident)))
+            lines.append(f'{slide} “{called}”: {line}' if called else f'{slide}: {line}')
+    return lines
 
 
 def title(ident: str) -> str:
