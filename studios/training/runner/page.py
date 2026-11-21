@@ -935,7 +935,7 @@ class RunnerPage(desk.Page):
                 if root is None: raise ValueError('Choose saved work in this workspace.')
                 values = {key:value for key,value in sent.items() if key not in ('path','id')}
                 return desk.as_json(HTTPStatus.OK, research_notes.dispatch(home.data_root(), root, sent.get('id'), values))
-            except intake_drafts.Conflict as failure:
+            except intake_drafts.Conflict:
                 raise desk.Refusal(HTTPStatus.CONFLICT, 'This queued note changed in another tab. Copy your text before reloading. Evidence is unchanged.') from None
             except ValueError as failure:
                 raise desk.Refusal(HTTPStatus.BAD_REQUEST, str(failure)) from None

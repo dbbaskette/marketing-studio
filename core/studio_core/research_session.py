@@ -577,7 +577,6 @@ class Workflow:
             every = research_reading.groups(chosen)
             place = {source['file']: n for n, source in enumerate(sorted(chosen, key=lambda one: one['file']), start=1)}
             waiting = research_reading.waiting(root, offered, areas)
-            todo = {tuple(source['file'] for source in group) for group in waiting}
             spans = [{'from': place[group[0]['file']], 'to': place[group[-1]['file']], 'status': 'waiting'} for group in waiting]
             with state_lock:
                 tracked['reading'] = {'total': len(chosen), 'read': len(chosen) - sum(len(g) for g in waiting),

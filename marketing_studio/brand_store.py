@@ -93,10 +93,11 @@ class Storage:
                 else f'{self.folder}, kept with local Git')
 
 
-def git(repo, *args, env=None, seconds=60):
+def git(repo, *args, env=None, seconds=60, input_text=None):
     try:
         return subprocess.run(['git', '-C', str(repo), *args], capture_output=True, text=True,
-                              timeout=seconds, stdin=subprocess.DEVNULL,
+                              timeout=seconds, input=input_text,
+                              stdin=subprocess.DEVNULL if input_text is None else None,
                               env={**os.environ, 'GIT_TERMINAL_PROMPT': '0',
                                    'GIT_SSH_COMMAND': 'ssh -o BatchMode=yes', **(env or {})})
     except FileNotFoundError as failure:
@@ -1094,9 +1095,20 @@ def outgoing_commits(place: Storage) -> dict:
             ids = commits.stdout.splitlines()
             preview['commits'] = len(ids)
             items = set()
+            paths_by_commit = {}
+            if ids:
+                # A NUL marks each commit. Git quotes unusual pathnames in the name-only output.
+                changed = git(place.repo, 'diff-tree', '--stdin', '--root', '--format=%x00%H',
+                              '--no-notes', '--name-only', '-r', input_text=commits.stdout)
+                if changed.returncode:
+                    preview['blocked'] = 'Git could not read the outgoing changes.'
+                else:
+                    for block in changed.stdout.split('\0')[1:]:
+                        commit, _, paths = block.partition('\n\n')
+                        paths_by_commit[commit] = paths.splitlines()
             for commit in ids:
-                changed = git(place.repo, 'diff-tree', '--root', '--no-commit-id', '--name-only', '-r', commit)
-                paths = changed.stdout.splitlines()
+                # diff-tree omits empty commits and merges under its default merge policy.
+                paths = paths_by_commit.get(commit, [])
                 owned = set()
                 for path in paths:
                     bits = path.split('/')
@@ -1108,7 +1120,7 @@ def outgoing_commits(place: Storage) -> dict:
                         owned.add(bits[0])
                     else:
                         preview['blocked'] = 'An outgoing commit includes files outside a brand or icon library. Review and push it with Git.'
-                if changed.returncode or len(owned) != 1:
+                if len(owned) != 1:
                     preview['blocked'] = 'Each outgoing commit must contain exactly one brand or icon library. Review and push it with Git.'
                 items.update(owned)
             preview['brands'] = len(ids)

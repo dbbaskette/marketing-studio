@@ -3540,7 +3540,6 @@ class Engine(Reviewing):
         what a deck says. Returns the slides changed. Call it holding `files`; the caller
         stores the record."""
         mine, kept = found.decks[level], self._decided(record, level)
-        name = workspace.qualify('deck', level)
         built = pipeline.read_built(root, level)
         start = built['start']
         base = pipeline.place(root, level, pipeline.WORK)

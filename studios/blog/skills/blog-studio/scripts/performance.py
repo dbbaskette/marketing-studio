@@ -171,9 +171,13 @@ def passages(root, article_id, source=None, query='', limit=3, offset=0, max_cha
         root, 'passages', {'hash': digest, 'version': PASSAGE_VERSION}, lambda: passage_index(text)
     )
     terms = query.casefold().split()
-    matches = [
-        v for v in index if all(term in text[v['start'] : v['end']].casefold() for term in terms)
-    ]
+    matches = index
+    if terms:
+        matches = []
+        for span in index:
+            paragraph = text[span['start'] : span['end']].casefold()
+            if all(term in paragraph for term in terms):
+                matches.append(span)
     rows = []
     remaining = max_chars
     for span in matches[offset : offset + limit]:
