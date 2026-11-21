@@ -86,7 +86,7 @@ const DESK_HAVE=[['topic','A topic'],['outline','An outline or notes'],['draft',
 const DESK_OUTLINE_WAYS=[['outline','Write from my outline'],['shape','Shape an outline with me first']];
 const DESK_START_STEPS=['Idea and sources','Writing preferences'];
 const DESK_START_LEDES=['Bring your idea or outline and add any sources once.','Check the writing preferences, then start. Your choices and sources are kept.'];
-const DESK_INTAKE_FIELDS='step kind style researchOn have title audience point angles angle angleOp outline outlineFrom outlineWay source article manuscript url link collection preview first_pass humanizeOn humanizeLevel geoReview voiceOn voiceGuide files role keep from searchSites searchWeb length tone operation upload uploaded docKeep sourceDraft sourceEntry fileData outlineFileData'.split(' ');
+const DESK_INTAKE_FIELDS='step kind style researchOn have brief title audience point angles angle angleOp outline outlineFrom outlineWay source article manuscript url link collection preview first_pass humanizeOn humanizeLevel geoReview voiceOn voiceGuide files role keep from searchSites searchWeb length tone operation upload uploaded docKeep sourceDraft sourceEntry fileData outlineFileData'.split(' ');
 class BlogIntake extends Drafting.Intake {
   snapshot(held,open=true){
     const value=Object.fromEntries(DESK_INTAKE_FIELDS.filter(key=>held[key]!==undefined).map(key=>[key,held[key]]));
@@ -151,7 +151,7 @@ function sDeskResearchDefault(value){const ticks=OLD_RESEARCH[value]||(value&&ty
 function sDeskHeld(){
   if(studio.deskStart)return studio.deskStart;
   const defaults=studio.options?.settings?.defaults||{},preset=studio.deskPreset||{};studio.deskPreset=null;
-  return studio.deskStart={step:0,kind:'',style:'',researchOn:false,have:'topic',title:'',audience:'',point:'',angles:[],angle:null,angleOp:null,anglesBusy:false,anglesProblem:'',outline:'',outlineFrom:'paste',outlineFile:null,outlineWay:'outline',source:'paste',article:null,manuscript:'',url:'',link:'',collection:null,collectionProblem:'',file:null,preview:null,first_pass:null,humanizeOn:false,humanizeLevel:'light',geoReview:false,voiceOn:false,voiceGuide:'',files:[],role:'material',keep:false,from:{on:true,documents:true,sites:false,web:false,picked:[...sSharedSites()],added:[]},...sDeskResearchDefault(defaults.research),length:'style',tone:defaults.tone||'',operation:operationId(),upload:operationId(),...preset};
+  return studio.deskStart={step:0,kind:'',style:'',researchOn:false,have:'topic',brief:false,title:'',audience:'',point:'',angles:[],angle:null,angleOp:null,anglesBusy:false,anglesProblem:'',outline:'',outlineFrom:'paste',outlineFile:null,outlineWay:'outline',source:'paste',article:null,manuscript:'',url:'',link:'',collection:null,collectionProblem:'',file:null,preview:null,first_pass:null,humanizeOn:false,humanizeLevel:'light',geoReview:false,voiceOn:false,voiceGuide:'',files:[],role:'material',keep:false,from:{on:true,documents:true,sites:false,web:false,picked:[...sSharedSites()],added:[]},...sDeskResearchDefault(defaults.research),length:'style',tone:defaults.tone||'',operation:operationId(),upload:operationId(),...preset};
 }
 // Home's tasks, New blog, the library's "Write a blog from these", an interview's outline and
 // a saved blog's details all start here.
@@ -168,6 +168,7 @@ async function sDeskBegin(preset={}){
 // What a step of New blog holds so far, for its place in the step row.
 function sDeskStepSays(held,index){
   if(index===0)return (held.title||'').trim()||(DESK_HAVE.find(([value])=>value===held.have)||[])[1]||'Your idea';
+  if(held.brief)return 'Brand template';
   const kind=(studio.options?.styles||[]).find(found=>found.id===held.kind);
   return (kind?kind.name:'Any kind of post')+((held.tone||'').trim()?' · '+held.tone.trim():'');
 }
@@ -178,7 +179,8 @@ async function sDeskStart(){
   const held=sDeskHeld();
   if(restore){Object.assign(held,intake.saved);sDeskFilesRestore(held);}
   if(held.have==='draft'){sDeskPolish(held);sDeskIntakeControls(held);return;}
-  sFrame('New blog',[],'New writing',()=>sRoute('home'));
+  if(held.brief)held.have='topic';
+  sFrame(held.brief?'New solution brief':'New blog',[],'New writing',()=>sRoute('home'));
   held.step=Math.min(held.step,1);
   // The same guided step row the other studios' starts show: what was chosen in each step,
   // a tick once the first is complete, and a press that opens a step.
@@ -197,7 +199,8 @@ function sDeskWriting(held){return held.have!=='draft';}
 // First: the writing task and one source list. A draft switches to its polishing screen.
 function sDeskHave(held){
   const form=sNode('form','narrow desk-start'),problem=sNode('p','problem',held.problem||'');problem.setAttribute('role','alert');delete held.problem;
-  const parts=[sCard('What do you have?',sChoice('What you bring',DESK_HAVE,held,'have',()=>sDeskStart()))];
+  // A solution brief is always written from its sources: there is nothing else to bring.
+  const parts=held.brief?[]:[sCard('What do you have?',sChoice('What you bring',DESK_HAVE,held,'have',()=>sDeskStart()))];
   const content=held.have==='topic'?sDeskTopic(held):[sDeskOutlineIn(held)],research=sDeskResearchOptions(held);
   parts.push(content[0],sFilesCard(held,problem,()=>sDeskStartAgain(held),()=>{}),...content.slice(1),research);
   const go=sNode('button','button button-filled','Next');go.type='submit';go.disabled=!access.actions.edit;
@@ -212,9 +215,11 @@ function sDeskSettings(held){
   const form=sNode('form','narrow desk-start'),problem=sNode('p','problem',held.problem||'');problem.setAttribute('role','alert');delete held.problem;
   const go=sNode('button','button button-filled','Start');go.type='submit';go.disabled=studio.busy||!access.actions.edit;
   const kinds=(studio.options?.styles||[]).filter(kind=>kind.status!=='retired');
-  form.append(sCard('Kind of post (optional)',sField('desk-kind','Kind of post',held,'kind',{options:[['','Follow my idea and sources'],...kinds.map(kind=>[kind.id,kind.name])],changed:()=>{held.style=held.kind;sStyleSamples(held);}}),sNode('p','quiet','A saved kind supplies a usual shape and length. Leave it open for this blog.')));
-  form.append(sCard(sDeskWriting(held)?'Length and tone':'Tone',sDeskWriting(held)?sLengthSelect(held,'desk-length'):null,sField('desk-tone','Tone',held,'tone',{max:2000,hint:'Such as clear and conversational.'})));
-  form.append(sDeskGeoStart(held));
+  // A solution brief has its own shape, length and voice: the brand's template and messaging.
+  if(held.brief)form.append(sCard('Brand template',sNode('p','','The brief is written in your brand’s voice and laid out in its solution brief template: a cover, a sidebar on each page and one row of four icons from the brand’s icon library.'),sNode('p','quiet','It uses the brand chosen in Settings. Once the draft is written, Make the brief on the desk produces the Word file and the PDF.')));
+  else form.append(sCard('Kind of post (optional)',sField('desk-kind','Kind of post',held,'kind',{options:[['','Follow my idea and sources'],...kinds.map(kind=>[kind.id,kind.name])],changed:()=>{held.style=held.kind;sStyleSamples(held);}}),sNode('p','quiet','A saved kind supplies a usual shape and length. Leave it open for this blog.')));
+  if(!held.brief)form.append(sCard(sDeskWriting(held)?'Length and tone':'Tone',sDeskWriting(held)?sLengthSelect(held,'desk-length'):null,sField('desk-tone','Tone',held,'tone',{max:2000,hint:'Such as clear and conversational.'})));
+  if(!held.brief)form.append(sDeskGeoStart(held));
   const back=sButton('Back',()=>{held.step=0;sTop();sDeskStart();});
   form.append(sAdd(sNode('div','form-foot'),problem,sAdd(sNode('div','bar'),back,go)));
   form.addEventListener('submit',async event=>{
@@ -294,7 +299,12 @@ function sDeskHaveProblem(held){
   return '';
 }
 // A topic: the point typed, or three angles from the sources chosen, to pick and edit.
+// A solution brief's start: what it is about. Its sources are the files card below.
+function sDeskBriefTopic(held){
+  return [sCard('Your brief',sField('desk-title','Working title',held,'title',{required:true,max:500}),sField('desk-audience','Who is it for?',held,'audience',{max:500}),sField('desk-point','What it is about',held,'point',{long:true,max:2000,hint:'The offering, the problem it solves and what the reader should do next. Add the approved messaging and product documents below.'}))];
+}
 function sDeskTopic(held){
+  if(held.brief)return sDeskBriefTopic(held);
   const card=sCard('Your topic',sField('desk-title','Working title',held,'title',{required:true,max:500}),sField('desk-audience','Who is it for?',held,'audience',{max:500}),sField('desk-point','The point to make',held,'point',{long:true,max:2000,hint:'What the reader should understand or do afterward.'}));
   const ready=held.files.filter(file=>file.state==='ready').length;
   const ask=sButton(held.angles.length?'Suggest three more':'Suggest three angles',button=>sDeskAskAngles(held,button));ask.disabled=!access.actions.edit||held.anglesBusy;
@@ -538,7 +548,7 @@ async function sDeskGo(held){
   const turn=studio.turn;
   if(!await sDeskKeep(held))throw Error(sBlogIntake().problem||'Save this intake before starting.');
   // A draft takes a kind of post only to be reshaped to it (sDeskPolish keeps held.style so).
-  const common={intake_revision:sBlogIntake().revision,operation:held.operation,style:held.have==='draft'?held.style:held.kind||'',tone:held.tone,sources:sDeskUploads(held.files),library:sDeskLibraryPicks(held.files),...sDeskKept(held.files),...(held.title.trim()?{title:held.title.trim()}:{}),...(held.geoReview?{geo_review:true}:{})};
+  const common={intake_revision:sBlogIntake().revision,operation:held.operation,style:held.brief?'':held.have==='draft'?held.style:held.kind||'',tone:held.brief?'':held.tone,sources:sDeskUploads(held.files),library:sDeskLibraryPicks(held.files),...sDeskKept(held.files),...(held.title.trim()?{title:held.title.trim()}:{}),...(held.geoReview&&!held.brief?{geo_review:true}:{})};
   let made;
   if(held.have==='draft'){
     const settings={...common,first_pass:held.first_pass,...sDeskPolishOptions(held)};
@@ -566,7 +576,7 @@ async function sDeskGo(held){
     const wantsResearch=sourceChoice&&(held.researchOn||sourceChoice.web||sourceChoice.sites.length);
     if(wantsResearch&&!held.sourceEditor.valid(primary))throw new Error('Finish reading, remove or exclude unreadable sources before starting.');
     const research=wantsResearch?{research_inputs:held.sourceEditor.spec()}:!held.sourceEditor&&(held.searchSites||held.searchWeb)?{research_from:{sites:held.searchSites?sChosenSites(held.from):[],web:!!held.searchWeb}}:{};
-    const writing={...common,way:held.have==='topic'?'topic':held.outlineWay,length:held.length||'style',...research,...(held.have==='topic'&&held.angleOp?{angles:held.angleOp}:{})};
+    const writing={...common,way:held.brief?'brief':held.have==='topic'?'topic':held.outlineWay,length:held.brief?'style':held.length||'style',...research,...(held.have==='topic'&&held.angleOp?{angles:held.angleOp}:{})};
     if(held.have==='topic')made=await api('desk-create',{...writing,point:held.point.trim(),...(held.audience.trim()?{audience:held.audience.trim()}:{})});
     else if(held.outlineFrom==='paste')made=await api('desk-create',{...writing,outline:held.outline});
     else{
@@ -686,7 +696,34 @@ function sDeskShareActions(held){
   const copy=sButton('Copy',async()=>{if(typeof navigator==='undefined'||!navigator.clipboard?.writeText)throw new Error('Download the draft and copy it from there.');if(held.mode==='review')await sReviewFlush(held);const found=await sDeskMarkdown(held);await navigator.clipboard.writeText(found.markdown);sToast(deskWithout('Markdown copied',found.missing));});
   const download=sButton('Download',async()=>{if(held.mode==='review')await sReviewFlush(held);const found=await sDeskMarkdown(held);await sDownload({content:found.markdown,name:'DRAFT.md'});if(found.missing.length)sToast(deskWithout('Downloaded',found.missing));});
   const publish=sButton(view.publication?'Published':'Mark as published',()=>sDeskPublish(held));publish.disabled=!editable;
+  // A solution brief is made in the brand's template; a blog is marked as published.
+  if(view.brief){const make=sButton('Make the brief',button=>sDeskBrief(held,button),'filled');make.disabled=!editable;return [copy,download,make];}
   return [copy,download,...sDeskGoogleActions(held,true),publish];
+}
+// Make the brief: Harness Brand lays the draft out in the brand's solution brief template.
+// The sheet says what was checked and offers the Word file and the PDF; the draft is unchanged.
+function sBriefFile(file,type){
+  const bytes=Uint8Array.from(atob(file.content),char=>char.charCodeAt(0)),url=URL.createObjectURL(new Blob([bytes],{type})),link=sNode('a','');
+  link.href=url;link.download=file.name;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+function sBriefSheet(made){
+  const open=made.checks.filter(check=>!check.passed);
+  const said=sNode('p','',(made.pages?made.pages+' pages. ':'')+(open.length?open.length+(open.length===1?' thing':' things')+' to look at before it goes out.':'Every check passed.'));
+  const list=sNode('ul','brief-checks');
+  for(const check of made.checks){const row=sNode('li',check.passed?'quiet':'problem',(check.passed?'Passed: ':'Look at: ')+check.label+(check.detail?' '+check.detail:''));list.append(row);}
+  const bar=sNode('div','bar');
+  if(made.files.pdf)bar.append(sButton('Download PDF',()=>sBriefFile(made.files.pdf,'application/pdf'),'filled'));
+  bar.append(sButton('Download Word file',()=>sBriefFile(made.files.word,'application/vnd.openxmlformats-officedocument.wordprocessingml.document')));
+  const notes=(made.warnings||[]).map(warning=>sNode('p','quiet',warning));
+  const kept=sNode('p','quiet','Kept on this computer at '+made.files.word.path+'. Word may break pages a line or two differently from the PDF.');
+  sOpenSheet('Solution brief',said,list,bar,...notes,kept);
+}
+async function sDeskBrief(held,button){
+  await busy(button,'Making the brief…',async()=>{
+    await sDeskFlush(held);
+    const result=await api('desk-brief',{id:held.id});
+    if(result.brief_made)sBriefSheet(result.brief_made);
+  });
 }
 // Share: every way the draft leaves the desk, behind one button, so the toolbar keeps a
 // single filled action. On a phone the toolbar folds itself, so the items go in as they are.

@@ -722,6 +722,23 @@ DRAFT_TASK = (
     'section, in order, each followed by its text. Return the Markdown in content.'
 )
 UNREADABLE_OUTLINE = 'The outline came back in a shape Blog Studio cannot read. Run it again.'
+# A solution brief (the desk's `brief` way) is planned and written to its own guide.
+BRIEF_OUTLINE = (
+    'This is a solution brief, not a blog post. Plan it as the guide below sets out: the '
+    'sections in its order, and in each section’s brief the claims it makes with the source '
+    'each comes from, and the sidebar that page carries. Say in opening_brief the subtitle, '
+    'the intro’s points and the four icon-row items.'
+)
+BRIEF_DRAFT = (
+    'This is a solution brief, not a blog post. Write the whole brief from outline as the '
+    'guide below sets out: the opening (subtitle line, intro, icon row, first sidebar), then a '
+    '`## ` heading for each outline section, in order, each with its text and its sidebar. '
+    'Return the Markdown in content.'
+)
+
+
+def _is_brief(root, ident):
+    return bool(studio.item(root, 'articles', ident)[1].get('brief'))
 
 
 def _research_extra(root, ident):
@@ -782,8 +799,12 @@ def outline_job(root, ident, start=False):
         task = SHAPE
     elif notes:
         task = 'The author’s own outline or notes are in notes. ' + blog_runner.FROM_OUTLINE
+    brief = _is_brief(root, ident)
+    if brief:
+        task = BRIEF_OUTLINE
     guidance = _guide('desk-write.md') + ('\n\n' + task if task else '') + '\n\n'
-    guidance += _guide('blog-argument-outline.md') + '\n\n' + shared + said
+    guidance += _guide('solution-brief.md' if brief else 'blog-argument-outline.md')
+    guidance += '\n\n' + shared + said
     guidance += '\n' + RETURN + '\n' + OUTLINE_JSON
     return _queue(
         root,
@@ -815,8 +836,9 @@ def draft_job(root, ident, seen, start=False):
         **extra,
         **research,
     }
-    guidance = _guide('desk-write.md') + '\n\n' + DRAFT_TASK + '\n\n'
-    guidance += _guide('blog-write.md') + '\n\n' + shared + said
+    brief = _is_brief(root, ident)
+    guidance = _guide('desk-write.md') + '\n\n' + (BRIEF_DRAFT if brief else DRAFT_TASK) + '\n\n'
+    guidance += _guide('solution-brief.md' if brief else 'blog-write.md') + '\n\n' + shared + said
     guidance += '\n' + RETURN + '\n' + blog_runner.GAPS_OPEN
     return _queue(
         root,
@@ -2244,6 +2266,8 @@ def view(root, ident):
         # Images too large for the blog's shared files, kept in its Google Doc: shown as such.
         'kept_images': desk_images.kept_in_doc(draft),
         'markdown': desk.join(draft, images=False),
+        # A solution brief: Share offers Make the brief in place of a blog's publishing.
+        'brief': bool(record.get('brief')),
         'jobs': rows,
         'chain': chain,
         'working': next((row for row in reversed(rows) if row['busy']), None),

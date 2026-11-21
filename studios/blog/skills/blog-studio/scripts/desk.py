@@ -57,7 +57,11 @@ CREATE = frozenset(
 )
 # What the person brings: a draft (edit), a topic (author), an outline written from or an
 # outline shaped with them first (co-author).
-WAYS = ('draft', 'topic', 'outline', 'shape')
+WAYS = ('draft', 'topic', 'outline', 'shape', 'brief')
+# A solution brief is laid out in a brand's document template, so it cannot start without one.
+BRIEF_NEEDS_BRAND = (
+    'A solution brief is laid out in a brand’s template. Choose a brand in Settings, then start.'
+)
 # The draft's parts and their Markdown reading are the shared desk's (studio_core.drafting).
 FENCE = parts.FENCE
 TITLE = parts.TITLE
@@ -234,7 +238,11 @@ def _attach(root, data, record):
     import blog_runner
 
     sources = data.get('sources', [])
-    if not isinstance(sources, list) or len(sources) > blog_runner.MOST_SOURCES or len(set(sources)) != len(sources):
+    if (
+        not isinstance(sources, list)
+        or len(sources) > blog_runner.MOST_SOURCES
+        or len(set(sources)) != len(sources)
+    ):
         raise ValueError('Select at most %d different sources.' % blog_runner.MOST_SOURCES)
     for source in sources:
         if not isinstance(source, str):
@@ -305,7 +313,11 @@ def create(root, data):
         raise ValueError('Choose whether to include a GEO review.')
     way = data.get('way', 'draft')
     if way not in WAYS:
-        raise ValueError('Choose a topic, an outline or notes, or a draft.')
+        raise ValueError('Choose a topic, an outline or notes, a draft or a solution brief.')
+    if way == 'brief' and not brand:
+        raise ValueError(BRIEF_NEEDS_BRAND)
+    if way == 'brief' and (style or length != 'style'):
+        raise ValueError('A solution brief has its own shape and length. Leave both unset.')
     if way != 'draft':
         if given:
             raise ValueError('A start from a topic or an outline brings no draft. Choose A draft.')
@@ -489,6 +501,8 @@ def _start(root, data, way, title, tone, length, style, author, brand):
     point, audience = point.strip(), audience.strip()
     if way == 'topic' and not point:
         raise ValueError('Say the point to make, or pick an angle.')
+    if way == 'brief' and not point:
+        raise ValueError('Say what the brief is about and what it should lead the reader to do.')
     notes = ''
     if way in ('outline', 'shape'):
         if data.get('outline') and data.get('outline_source'):
@@ -526,6 +540,9 @@ def _start(root, data, way, title, tone, length, style, author, brand):
     record['flow'] = 'desk'
     if brand:
         record['brand'] = brand
+    if way == 'brief':
+        # A solution brief, not a blog: Share makes it in the brand's template (brief.make).
+        record['brief'] = {'template': 'solution-brief'}
     if data.get('geo_review'):
         record['geo_review'] = {'include': True}
     _attach(root, data, record)
@@ -555,6 +572,7 @@ def _start(root, data, way, title, tone, length, style, author, brand):
         record['style'] = studio.style_pin(root, style)
     steps = (['research'] if found else []) + {
         'topic': ['outline', 'draft'],
+        'brief': ['outline', 'draft'],
         'outline': ['draft'] if parsed else ['outline', 'draft'],
         'shape': ['outline'],
     }[way]
@@ -1303,6 +1321,7 @@ def add_sources(root, ident, data):
     draft = read(root, ident)
     _attach(root, {'sources': chosen, 'library': library}, record)
     import blog_runner
+
     if len(record['sources']) > blog_runner.MOST_SOURCES:
         raise ValueError('A blog reads at most %d sources.' % blog_runner.MOST_SOURCES)
     studio.persist(directory, 'articles', record)
@@ -1448,6 +1467,8 @@ ROUTES = {
     'first-pass': {'id', 'seen', 'choice'},
     'stop': {'id', 'job'},
     'open': {'id'},
+    # A solution brief's Share: make it in the brand's template (the draft is not changed).
+    'brief': {'id'},
     'angles': {
         'operation',
         'title',
@@ -1647,6 +1668,10 @@ def dispatch(root, action, data):
         )
     elif action == 'first-pass':
         desk_jobs.first_pass(root, ident, seen, data.get('choice'))
+    elif action == 'brief':
+        import brief
+
+        return {**desk_jobs.view(root, ident), 'brief_made': brief.make(root, ident)}
     elif action == 'outline-save':
         outline_save(root, ident, seen, data.get('sections'))
     elif action == 'unremove':

@@ -29,6 +29,10 @@ Existing imported articles retain their original, source and voice pins.
 - A supplied draft uses `manuscript` (Markdown), `source` (a saved source ID), or
   `article` (an already imported article ID), one only; `way` defaults to `draft`.
 - A topic uses `way: "topic"`, `title` and `point`, with optional `audience`.
+- A solution brief uses `way: "brief"`, `title` and `point`; it needs a brand and takes no
+  `style` or `length`. Write it to [solution brief](modules/solution-brief.md), not the blog
+  guides. Then `python3 <runtime>/brief.py --root PATH --id ID` lays it out with Harness
+  Brand and prints the files and what to check.
 - Supplied outline or interview notes use `way: "outline"` or `way: "shape"`
   and `outline` text or a saved `outline_source` ID. Shape stops at the outline.
 - `scope` is `draft` by default, `outline` for an outline-only request or

@@ -2362,7 +2362,7 @@ def report_google(root, data):
 
 
 INTAKE_FIELDS = frozenset(
-    'step kind style researchOn have title audience point angles angle angleOp outline outlineFrom outlineWay source article manuscript url link collection preview first_pass humanizeOn humanizeLevel geoReview voiceOn voiceGuide files role keep from searchSites searchWeb length tone operation upload uploaded docKeep sourceDraft sourceEntry fileData outlineFileData intakeOpen'.split()
+    'step kind style researchOn have brief title audience point angles angle angleOp outline outlineFrom outlineWay source article manuscript url link collection preview first_pass humanizeOn humanizeLevel geoReview voiceOn voiceGuide files role keep from searchSites searchWeb length tone operation upload uploaded docKeep sourceDraft sourceEntry fileData outlineFileData intakeOpen'.split()
 )
 
 
