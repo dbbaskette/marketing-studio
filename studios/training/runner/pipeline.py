@@ -1723,31 +1723,17 @@ def research_ids(root: Path) -> list[str]:
     return sorted({str(ident) for ident in found if ident})
 
 
-# How the writers of a training read research. Harness Research reports with caution and its
-# check argues with the draft. Both are right for research and wrong in front of a learner.
+# Every downstream author receives the same evidence policy with the research.
 RESEARCH_USE = (
-    'Read the research brief first: it says what matters for this training. The research is '
-    'here to make what you write specific and right. It reports with caution, and a check '
-    'has argued with it. Neither voice belongs in what a learner reads: take the facts and '
-    'leave the hedging behind.\n\n'
-    '- The documents behind it are the material of the person\'s own organization unless one '
-    'plainly comes from someone else. State what they say as fact, in that organization\'s '
-    'voice: "we patch five release lines", not "the vendor says it patches".\n'
-    '- Conditions, counterevidence, gaps and the check\'s notes are corrections for you. '
-    'Where one narrows a fact, write the narrower fact, once, as the fact. Where two '
-    'documents disagree, what the more specific one says is the fact, or the newer one '
-    'where they are alike.\n'
-    '- What the research calls unverified, unproven, missing, disputed or awaiting approval '
-    'goes in your notes for the person and nowhere a learner reads. Never tell a learner '
-    'that sources conflict, that something is unverified, or what the material does not '
-    'show.\n'
-    '- A statement that begins "included this with a warning" was questioned by the check: '
-    'use it as its note corrects it. Never rest anything on a claim the research says was '
-    'excluded.\n'
-    '- Facts, interpretations and recommendations differ. A recommendation is the '
-    'researcher\'s suggestion: teach it only where it serves what the person asked for.\n'
-    '- IDs, digests and verdicts are for checking, provenance, notes and source lines: never '
-    'put one in the words a reader reads.')
+    "Separate documented behavior, local configuration and hypothetical exercise assumptions. "
+    "Use the sources that apply to the version, environment and audience in the brief. "
+    "Keep conditions that change the learner's action with the claim. If applicability is "
+    "unknown, teach the check or conditional decision, put setup details in instructor "
+    "preflight, or omit the dependent claim. Do not resolve disagreement by date alone. "
+    "Teach supplied positioning as positioning. A roadmap date is not released behavior. "
+    "Respect decisions to exclude evidence. For claims included with warnings, keep the "
+    "qualification wherever it affects a decision. Keep review bookkeeping and IDs in "
+    "author notes, citations and provenance.")
 
 
 def _research_brief(root: Path, record: dict) -> str:
@@ -1764,7 +1750,7 @@ def _research_brief(root: Path, record: dict) -> str:
             notes.append((key, note))
     if notes:
         text += ('\n\n## The check\'s notes on this research\n\nWritten to the researcher. '
-                 'Read them as corrections to what you write, and pass none of them on.\n\n'
+                 'For each material warning, teach its condition, put it in instructor preflight, or omit the dependent claim. Record which in your review.\n\n'
                  + '\n'.join(f'- {key}: {note}' for key, note in notes))
     return text
 
@@ -2394,8 +2380,7 @@ CHECK_TASK = (
     'findings it was written from, and against these questions:\n\n{questions}\n\n'
     'Correct what you find, once: a wrong or unsupported fact, wording that disagrees with '
     'the blueprint or the guide, a typo, text that is too long for its slide, a slide that '
-    'does not serve its objective. A claim the blueprint marks [stated] is the person\'s own '
-    'and stays as it is worded. Keep every slide ID, the order and whatever is already '
+    'does not serve its objective. Keep the source and scope of [stated] claims explicit. Keep every slide ID, the order and whatever is already '
     'right exactly as it is. Then hand in the whole corrected text'
     '{designed} with submit_outline, even when you changed nothing. List no findings: the '
     'person is shown only the corrected text.\n\n'
@@ -2409,7 +2394,16 @@ TEXT_QUESTIONS = (
     'Does the text fit its slide: within the word budget, with no sentence that could be shorter?',
     'Is the wording consistent from slide to slide: the same name for the same thing?',
     'Is the spelling and grammar right?',
-    'Does every objective have a slide that teaches it, and every content slide an objective?')
+    'Does every objective have a slide that teaches it, and every content slide an objective?',
+    'Rehearse each task in slide order from the visible evidence, speaker notes and supplied '
+    'materials. Can a learner commit before the first reveal and cite the observation that '
+    'supports the action? Remove author-facing questions and answer leaks.',
+    'Can an instructor actually show or run every promised demo? Locate the supplied prop '
+    'or include a labeled simulated transcript on the slide and the expected output in notes. '
+    'For a hands-on lab, walk through prerequisites, commands, expected output and recovery.',
+    'Allow time to read, attempt, hear reasoning and debrief. Explain why a plausible '
+    'alternative fails and what changed evidence would change the answer. Shorten the '
+    'teaching or task if response and feedback cannot fit the allotted minutes.')
 
 
 def outline_check_work(root: Path, found: Survey, step: Step, error: str | None,
@@ -3178,6 +3172,10 @@ def deck_note(shows: dict, request: dict | None, dated: bool) -> list[str]:
     clear while a major finding remains."""
     audit, findings = shows['audit'], shows['findings']
     lines = [shows['unreviewed'], ''] if shows.get('unreviewed') else []
+    for finding in findings:
+        if finding.get('severity') == 'critical':
+            lines.append(f"Resolve before teaching slide {finding['number']}: {finding['note']}"
+                         + (f" Suggested fix: {finding['fix']}" if finding.get('fix') else ''))
     lines += ['Checked for you:',
              "- The brand's own audit "
              + {'ok': 'raised nothing.', 'warnings': 'passed it, with warnings.'}.get(
@@ -3194,13 +3192,14 @@ def deck_note(shows: dict, request: dict | None, dated: bool) -> list[str]:
         return lines
     lines += ['', deck.remains(findings)]
     left = deck.grave(findings)
-    if left:
+    remaining = [finding for finding in left if finding['severity'] != 'critical']
+    if remaining:
         lines += ['', 'What the review still finds, in the reviewer\'s words:']
         lines += [f"- Slide {finding['number']}, {finding['severity']}, "
                   + (f"{deck.CATEGORIES.get(finding['category'], 'found').lower()}, "
                      if finding.get('category') else '')
                   + f"about {deck.ABOUT_WORDS.get(finding['about'], 'how it is drawn')}"
-                  f": {finding['note']}" for finding in left]
+                  f": {finding['note']}" for finding in remaining]
     if any(finding['about'] == deck.ABOUT[1] for finding in left) \
             and not any(finding['about'] == deck.JUDGED[2] for finding in left):
         lines += ['', 'A finding about what a slide says is yours to settle. Ask for '

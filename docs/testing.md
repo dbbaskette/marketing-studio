@@ -217,3 +217,7 @@ calls, counts same-second results once, and leaves unknown timings unestimated.
 Presentation Studio’s `WordsTests` includes first-edit/autosave focus preservation;
 its DOM harness models focus loss when a connected subtree is moved. See
 [the companion compatibility check](research-responsiveness-contracts.md).
+
+## Training outcomes
+
+Use the [paired teaching benchmark](../studios/training/docs/teaching-benchmark.md) for a blinded comparison of technical workshops and CLI labs, followed by a separately scored learner transfer exercise.

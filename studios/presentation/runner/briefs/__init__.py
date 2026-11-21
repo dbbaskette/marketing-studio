@@ -34,6 +34,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from studio_core import critic
+
 HERE = Path(__file__).resolve().parent
 KINDS = ('research-plan-queue', 'classify', 'research-plan', 'research-question', 'outline-brief', 'outline-material',
          'outline-spec', 'extract', 'restructure', 'section', 'section-repair',
@@ -59,4 +61,6 @@ def guidance(kind: str, level: str | None = None, repair: bool = False) -> str:
     text = read(kind)
     if level is not None:
         text += '\n' + read(f'extract-{level}')
+    if kind in ('review', 'section', 'section-repair'):
+        text += "\n" + critic.ATTRIBUTION + "\n"
     return text

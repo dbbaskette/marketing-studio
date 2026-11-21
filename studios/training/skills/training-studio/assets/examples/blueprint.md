@@ -6,6 +6,9 @@ Illustrative example of the required shape. Its content is not researched.
 Audience: solutions engineers who deploy apps but have not had to explain restart behaviour to a customer.
 Purpose: field enablement
 Time: 25 min
+Format: workshop
+Scenario: Hypothetical service restart during a busy period.
+Task: Explain whether the proposed restart preserves serving capacity.
 
 ## Sizing
 Lesson. The research supports three objectives that fit in 25 minutes. Rollback behaviour was cut: its research question is still pending.
@@ -22,7 +25,11 @@ Objectives: O1, O2, O3
 - K1.3: Health checks decide when the next batch starts. [R:health-checks]
 - K1.4: Rolling restarts give zero downtime for every app type. [unsupported]
 Misconception: "Rolling always means zero downtime." Correction: a single-instance app still drops requests while it restarts. [R:zero-downtime]
-Example: A three-instance web app restarted one instance at a time while it serves traffic.
+Hook: A customer wants to restart during a busy period. What must remain available?
+Example: A three-instance web app restarted one instance at a time while it serves traffic. Show a simulated status line: A serving, B restarting, C serving.
+Ask: Which instances can serve this request? What changes if B is the only instance? Listen for: A and C remain available in the example. A sole restarting instance leaves no serving capacity.
+Activity: 5 min. In pairs, change the service to one instance and draft a customer response. Output: a capacity prediction and its condition. Good answer: identifies the missing serving instance and avoids promising uptime.
+Presenter handoff: Show the status line before asking. Allow a minute for answers, then use the single-instance case to debrief the zero-downtime objection.
 
 ## Assessment plan
 - O1: Check: What happens to an app's instances during a rolling restart? | Observe: States that instances are replaced in batches.

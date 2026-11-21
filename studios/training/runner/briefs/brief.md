@@ -37,7 +37,7 @@ In the visible text, cite with numbered references that resolve in Sources. Give
 
 ## What makes a brief worth having
 
-- **Write as the organization to its own people** when the audience is internal: "we", and plain statements. The findings report with caution; take their facts and leave that voice: no "the vendor says", "the author describes", "planned ... would" or "confirm before promising". Say once when something arrives, then what it does. Where two documents disagree, state what the more specific one says, or the newer where they are alike.
+- **Write as the organization to its own people** for internal readers. Give limitations and version conditions with the claim. Keep plans in the future tense. If sources disagree, identify the applicable version or leave the claim under Unknowns.
 - **State weaknesses as plainly as strengths.** Limitations says where the subject falls short and, in a competitive brief, where the alternative is stronger. A limit is a fact about the subject: what it does not do, where it does not run. A doubt about the evidence is not one. A brief that only flatters one side fails the person using it in front of a customer.
 - **Comparison is a table.** One row for each dimension that matters to a buyer, a column for each side, and the evidence.
 - **Differentiators are only what the research supports.** A difference you cannot cite goes under Unknowns.

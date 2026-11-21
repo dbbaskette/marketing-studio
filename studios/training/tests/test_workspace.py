@@ -1869,7 +1869,7 @@ class DeskWorkspaceTests(DeskCase):
 
 
 BLUEPRINT = (helpers.EXAMPLES / 'blueprint.md').read_text(encoding='utf-8')
-MAIN_LINE = BLUEPRINT.splitlines()[32]
+MAIN_LINE = next(line for line in BLUEPRINT.splitlines() if line.startswith('- main:'))
 OTHER_LINE = '- exec-cost: roleplay. Objectives: O1. A finance lead who asks what a restart costs.'
 
 

@@ -271,7 +271,10 @@ def handoff(title: str, level: str | None, blueprint: str, said: dict, target: s
                'Use the module timing for explanation, demonstration, learner practice and '
                'debrief. ')
               + 'A slide count is not a duration plan. Each check needs an answer '
-              'and rationale in the presenter notes. Keep learner-facing meaning visible.', '']
+              'and rationale in the presenter notes. Keep learner-facing meaning visible. '
+              'For every demonstration supply the prop or a labeled simulation. In a lab '
+              'give setup, commands, expected observations and recovery. Rehearse the '
+              'attempt before revealing the answer, then allow time to hear reasoning.', '']
     # Carry the author's actual check/observation wording, not an invented replacement.
     if isinstance(assessment, dict):
         lines += [f'- {ident}: {value}' for ident, value in assessment.items()]

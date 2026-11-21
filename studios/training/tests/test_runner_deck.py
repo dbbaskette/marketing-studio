@@ -565,7 +565,7 @@ class RuleTests(JobCase):
         self.assertIn('- A check for understanding in each module: M1, Rolling restarts.', text)
 
     def test_the_handoff_of_a_presented_session_asks_the_room_and_plans_no_exercises(self):
-        session = BLUEPRINT.replace('Time: 25 min\n', 'Time: 25 min\nFormat: session\n')
+        session = BLUEPRINT.replace('Format: workshop', 'Format: session')
         text = deck.handoff('Rolling restarts', None, session, {}, 'google', None, False)
         self.assertIn('- A question for the room in each module: M1, Rolling restarts.', text)
         self.assertNotIn('A check for understanding in each module', text)

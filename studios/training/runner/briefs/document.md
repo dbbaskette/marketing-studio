@@ -35,8 +35,8 @@ Follow the shape of the example at the end of this guidance. A course is one gui
 Under the heading of each section put a comment that names the objectives and key points the section teaches: `<!-- covers: O1 K1.1 K1.2 -->`. A program reads these.
 
 - Every objective, and every key point that cites a finding, must be named in some section's comment.
-- A key point the blueprint marks `[unsupported]` must not be named, and must not be taught.
-- A key point the blueprint marks `[stated]` is named and taught like any other. It is the person's own statement about their subject: teach it as the blueprint words it, at full strength. Add no detail of your own to it. Say it, tie it to the nearest thing a finding supports, and move on, however short that leaves the section.
+- For each [stated] key point, name the author's policy, positioning or hypothetical assumption. Preserve scope and cite the brief. Treat unverified technical capabilities in older plans as gaps.
+- A key point the blueprint marks `[unsupported]` must not be named in coverage or taught in prose.
 - Name only IDs that are in the blueprint.
 
 A comment is a claim that its section teaches those things. The program cannot tell whether the prose does, and the person who reviews the guide will read it to find out. Make each claim true: before you hand back, read every section against its comment.
@@ -45,7 +45,7 @@ A comment is a claim that its section teaches those things. The program cannot t
 
 - State nothing as fact beyond the findings and the blueprint's `[stated]` key points. A `supported` finding can back a statement. A `contradicted` finding can back only the correction of the claim it contradicts. What neither says, leave out.
 - Cite findings with numbered references that resolve in Sources. Cite every `[stated]` key point to one shared Sources entry, "The brief for this training".
-- Teach the subject, not the evidence. Say what is true and cite it: "A rolling restart replaces one batch at a time [2]", not "the vendor's documentation describes restarts as replacing". The findings report with caution; take their facts and leave that voice: no "planned ... would", "illustrative", "according to", "the materials do not establish" or "confirm before promising". Say once when something arrives, then what it does, in the present tense. Where two documents disagree, state what the more specific one says, or the newer where they are alike. Do not teach the reader to verify, to qualify or to wait for confirmation, and do not turn a gap in the research into a lesson. The gaps are the author's to settle and stay out of the guide, its answer key included.
+- For a technical task, state each condition that changes the action. Separate observed behavior from assumptions. Give a check or conditional next step when a version or local setting is unknown. Teach only the supported scope of a claim.
 - Take the side the blueprint takes. When the training positions something or answers objections, give the argument and the direct answer, and say plainly where it does not fit. Do not argue the alternative's case, and do not grade the author's own claims: no answer is wrong for saying what the blueprint teaches.
 - When the audience is the author's own organization, write as that organization to its people: "we", "our".
 - Define a term the first time it appears.

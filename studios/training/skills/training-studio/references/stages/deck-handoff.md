@@ -33,7 +33,7 @@ One page, with these headings:
 
 ## Review coverage
 
-Read the finished slides and note which slides address each objective. Write the result to a scratch JSON file, objective ID to slide numbers, with an empty list for an objective you could not find:
+Rehearse slides and notes in order. Resolve each demo prop or supply a labeled simulation. Time the attempt and debrief. Check the answer follows the attempt. Map each objective to slides in scratch JSON:
 
 ```json
 {"O1": [3], "O2": [5, 6], "O3": []}
@@ -45,7 +45,7 @@ The review is tied to that exact deck and blueprint. If either changes, `check` 
 
 ## Gate 6
 
-Present the gate as the gates reference describes: where the deck is, and the reviewed coverage, naming any objective you could not find.
+Present the deck, missing coverage and any slide whose labels or evidence could lead learners to the wrong action.
 
 On approval: `training.py approve deck`.
 

@@ -770,10 +770,8 @@ class WorkerTests(StudioCase):
                                         + pipeline.RESEARCH_USE), text[:200])
         self.assertNotIn('Cite stable finding IDs', text)
         self.assertNotIn(research_contract.HANDOFF, text)
-        for told in ('take the facts and leave the hedging behind',
-                     'the material of the person\'s own organization',
-                     'what the more specific one says is the fact',
-                     'Never tell a learner that sources conflict'):
+        for told in ('local configuration', 'hypothetical exercise assumptions',
+                     'teach the check or conditional decision', 'omit the dependent claim'):
             self.assertIn(told, text)
         self.assertIn('# Prioritized handoff', text)
 
@@ -800,7 +798,7 @@ class WorkerTests(StudioCase):
         self.assertNotIn('Preserve the automatic warnings', text)
         self.assertIn('# Prioritized handoff', text)
         notes = text[text.index('## The check\'s notes on this research'):]
-        self.assertIn('Read them as corrections to what you write, and pass none of them on.',
+        self.assertIn('teach its condition, put it in instructor preflight, or omit the dependent claim',
                       notes)
         self.assertEqual(notes.count('Two documents disagree.'), 1)
         self.assertIn('- findings:section-one: The table says three engines.', notes)
