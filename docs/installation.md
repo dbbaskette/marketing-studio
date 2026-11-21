@@ -134,6 +134,10 @@ dependencies with lifecycle scripts disabled, and includes dependency license no
 Private runtime checksums are in `pins/runtimes.json`. The companions are named in
 `pins/companions.json`.
 
+Marketing Studio and its four studios share release 4.17.0. Harness Research, Harness
+Slides, and Harness Brand share release 1.5.0. The Broadcom, Tanzu, and TrueSource
+brand shortcuts also report 1.5.0 in their skill metadata.
+
 **Companions come from `main`.** There are no release tags to choose and nothing is
 locked. Each companion names its repository, its `main` branch and the oldest version
 Marketing Studio works with: `requirement: ">=1.3.1"` for Harness Research and

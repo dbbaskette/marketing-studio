@@ -49,4 +49,4 @@ Open a saved guide, brief or slide to edit it. If a source changes, **Update** s
 
 </details>
 
-[Desk guide](docs/the-desk.md) · [Practice and Yoodli](docs/scenarios-and-yoodli.md) · [Google Docs](docs/google-docs.md) · [Work in chat](skills/training-studio/references/conversation.md) · [All studios](../../README.md)
+[Desk guide](docs/the-desk.md) · [Share training in a Team Hub](docs/team-hub.md) · [Practice and Yoodli](docs/scenarios-and-yoodli.md) · [Google Docs](docs/google-docs.md) · [Work in chat](skills/training-studio/references/conversation.md) · [All studios](../../README.md)

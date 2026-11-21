@@ -1330,7 +1330,6 @@ function sDeskPanelShow(held){return DESK_KIT.panelShow(held);}
 // happens as soon as focus leaves it.
 function sDeskPanelSync(held,force=false){return DESK_KIT.panelSync(held,force);}
 function sDeskToolList(held){return DESK_KIT.toolList(held);}
-function sDeskToolSays(held,key){return DESK_KIT.toolSays(held,key);}
 function sDeskToolView(held,key){return DESK_KIT.toolView(held,key);}
 // Apply a voice: the voice guide to rewrite in, read when the tool opens.
 function sDeskVoiceOptions(held,f){

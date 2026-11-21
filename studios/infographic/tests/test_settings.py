@@ -58,6 +58,21 @@ class SettingsTests(Isolated):
         self.assertCountEqual(outcomes, ['saved', 'conflict'])
         self.assertIn(settings.native()['gemini_model'], ('fixture-one', 'fixture-two'))
 
+    def test_graphics_disclosure_uses_selected_provider_and_model(self):
+        self.shared('codex')
+        chosen = settings.snapshot()
+        chosen.update(image_provider='gemini', image_model='fixture-graphics')
+        report = computer.inspect(chosen=chosen, command=lambda _: '/synthetic/codex', environ={})
+        self.assertEqual((report['assistant'], report['image_provider'], report['image_model']),
+                         ('Codex', 'Gemini API', 'fixture-graphics'))
+        self.assertTrue(report['credential_required'])
+        chosen['assistant']['agent'] = 'claude'
+        chosen['image_provider'] = 'codex'
+        report = computer.inspect(chosen=chosen, command=lambda _: '/synthetic/codex', environ={})
+        self.assertEqual((report['assistant'], report['image_provider'], report['image_model']),
+                         ('Claude Code', 'Codex built-in image generation', None))
+        self.assertFalse(report['credential_required'])
+
     def test_readiness_exposes_missing_model_renderer_and_presence_without_secrets_or_jobs(self):
         self.shared('claude')
         chosen = settings.snapshot()

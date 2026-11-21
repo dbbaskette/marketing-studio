@@ -14,6 +14,31 @@ from runner.workspace import Store
 
 
 class WorkspaceTests(Isolated):
+    def test_listing_uses_saved_page_and_recovers_older_pointers(self):
+        from runner import history
+        store = Store.setup(self.workspace)
+        project = store.create('Page identity')
+        ident = project['id']
+        for _ in range(8):
+            with store.locked():
+                project = store.commit_locked(project, {**project, 'revision': project['revision'] + 1})
+        with mock.patch.object(store, 'history', wraps=store.history) as read:
+            self.assertEqual(store.listing()[0]['page_revision'], 0)
+            read.assert_not_called()
+            path = store._project(ident) / 'current.json'
+            pointer = json.loads(path.read_text())
+            del pointer['page_revision']
+            path.write_text(json.dumps(pointer))
+            self.assertEqual(store.listing()[0]['page_revision'], 0)
+            self.assertGreater(read.call_count, 0)
+            read.reset_mock()
+            self.assertEqual(store.listing()[0]['page_revision'], 0)
+            read.assert_not_called()
+        restored = history.restore(store, ident, 0, expected_revision=project['revision'])
+        with store.locked():
+            store.commit_locked(restored, {**restored, 'revision': restored['revision'] + 1})
+        self.assertEqual(Store.current().listing()[0]['page_revision'], restored['revision'])
+
     def test_read_only_status_does_not_initialize_and_setup_preserves_shared_settings(self):
         self.assertIsNone(Store.current())
         self.assertFalse(self.data.exists())

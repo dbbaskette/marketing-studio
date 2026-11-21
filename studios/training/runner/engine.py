@@ -809,7 +809,7 @@ class Engine(Reviewing):
         return [*self.documents.listed(root),
                 *research_sources.document_entries(root, record.get('research_inputs'))]
 
-    def _survey(self, root: Path, record: dict, copies=None) -> pipeline.Survey:
+    def _survey(self, root: Path, record: dict, copies=None, *, supplied=None) -> pipeline.Survey:
         """Where a training is, with its copies and the person's documents looked at.
         `copies` saves looking at the copies again when the caller just has."""
         if record.get('unfinished_migration') and drafts.in_conversation(record) \
@@ -820,7 +820,8 @@ class Engine(Reviewing):
             source_index = home.read_json(root / documents_kept.INDEX, {}) if record.get('documents') else {}
             supplied = source_index.get('documents', [])
             return pipeline.survey(root, record, self._wanted(root, record) if copies is None else copies, supplied, None)
-        supplied = self._document_entries(root, record) if record.get('documents') else ()
+        if supplied is None:
+            supplied = self._document_entries(root, record) if record.get('documents') else ()
         copies = self._wanted(root, record) if copies is None else copies
         return pipeline.survey(root, record, copies, supplied, self._deck_here(root, record))
 
@@ -3539,7 +3540,6 @@ class Engine(Reviewing):
         what a deck says. Returns the slides changed. Call it holding `files`; the caller
         stores the record."""
         mine, kept = found.decks[level], self._decided(record, level)
-        name = workspace.qualify('deck', level)
         built = pipeline.read_built(root, level)
         start = built['start']
         base = pipeline.place(root, level, pipeline.WORK)
@@ -7617,13 +7617,12 @@ class Engine(Reviewing):
         return ('Add your documents, then say that is all of them. Nothing is researched '
                 f'until you do.{only}')
 
-    def _supplied(self, root: Path, record: dict, found: pipeline.Survey) -> dict | None:
+    def _supplied(self, root: Path, record: dict, found: pipeline.Survey, added) -> dict | None:
         """The person's documents, for a training that takes any: what is added, what
         this computer can take, and whether the run is waiting for them."""
         given = record.get('documents')
         if not given:
             return None
-        added = self._document_entries(root, record)
         types, waiting = list(self.documents.accepts()), found.next.kind == 'documents'
         note = []  # the page itself says where documents are kept
         if '.pdf' in self.documents.TYPES and '.pdf' not in types:
@@ -7698,7 +7697,8 @@ class Engine(Reviewing):
             return None
         record = self._load(root)
         copies = self._wanted(root, record)
-        found = self._survey(root, record, copies)
+        supplied = self._document_entries(root, record) if record.get('documents') else ()
+        found = self._survey(root, record, copies, supplied=supplied)
         run, ending = self._run(root), found.next.kind
         resting = self._resting(record)
         report = self.index.readiness(root, copies) if ending == 'done' else None
@@ -7779,7 +7779,7 @@ class Engine(Reviewing):
                         if problem else None),
             'deck_aside': bool(mine and drafts.on_desk(record)
                                and recovery.aside(found.session)),
-            'documents': self._supplied(root, record, found),
+            'documents': self._supplied(root, record, found, supplied),
             'research_from': self._research_view(record),
             'copies': self._copies(found, (record.get('copies') or {}).get('remote')),
             **({'change_impact': research_impact.native(self, root, record, 'training')} if research_sections.enabled(record) else {}),

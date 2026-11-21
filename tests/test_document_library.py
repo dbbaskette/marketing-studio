@@ -123,6 +123,20 @@ class LocationTests(LibraryCase):
 
 
 class RecordTests(LibraryCase):
+    def test_large_unchanged_catalog_is_reused_and_corruption_is_rebuilt(self):
+        made = self.made()
+        for index in range(65):
+            made.add_upload(f'document-{index}.txt', b'word ' * 900)
+        expected = made.catalog()
+        cache = made._state() / 'catalog.json'
+        self.assertGreater(cache.stat().st_size, store.RECORD_LIMIT)
+        with mock.patch.object(store, '_atomic', wraps=store._atomic) as write:
+            self.assertEqual(made.catalog(), expected)
+            write.assert_not_called()
+            cache.write_bytes(b'broken')
+            self.assertEqual(made.catalog(), expected)
+            write.assert_called_once()
+
     def test_upload_keeps_original_and_markdown_and_retries_idempotently(self):
         made = self.made()
         row = made.add_upload('Field notes.md', b'# Notes\n\nCapacity holds.\n', operation=OPERATION)

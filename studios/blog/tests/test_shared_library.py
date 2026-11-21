@@ -329,12 +329,20 @@ class KeepUploadTests(SharedLibraryCase):
             self.upload('yes', operation='d' * 32)
 
     def test_keep_in_library_keeps_a_file_of_any_type(self):
-        kept = shared_library.keep_upload({'filename': 'cover.png', 'content': b'\x89PNG synthetic cover'})
+        kept = shared_library.keep_upload(
+            {'filename': 'cover.png', 'content': b'\x89PNG synthetic cover'}
+        )
         self.assertEqual(kept['state'], 'kept')
         row = document_library.opened().describe(kept['id'])
-        self.assertEqual((row['state'], row['state_label'], row['type'], row['studio'], row['readable']),
-                         ('kept', 'Kept as a file', 'PNG file', 'blog', False))
-        self.assertEqual(document_library.opened().matching(), [], 'a file with no text is never chosen as a source')
+        self.assertEqual(
+            (row['state'], row['state_label'], row['type'], row['studio'], row['readable']),
+            ('kept', 'Kept as a file', 'PNG file', 'blog', False),
+        )
+        self.assertEqual(
+            document_library.opened().matching(),
+            [],
+            'a file with no text is never chosen as a source',
+        )
 
     def test_a_library_failure_never_stops_the_upload(self):
         with patch.object(

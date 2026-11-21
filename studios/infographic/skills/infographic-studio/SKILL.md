@@ -38,10 +38,10 @@ launch the page's planning assistant again for work you are already doing.
 4. Compose readable editable text/chart geometry. Describe meaningful subjects,
    counts, spatial relationships, reading order and reserved label regions before
    image generation. Never use artwork as the only representation of an exact value.
-5. Disclose the provider and usage before an image action. Shared Codex uses its
-   signed-in built-in image tool; shared Claude Code uses the Gemini API and an
-   explicitly configured model/key. No API-key fallback for Codex, no guessed prices,
-   no automatic retry of uncertain work. Inspect status/recovery after interruption.
+5. Before an image action, run `computer` and disclose the image provider, any
+   configured model and the account usage. Document graphics overrides the
+   default (Codex draws for Codex, Gemini for Claude Code). Never guess a price,
+   silently switch providers or retry uncertain work. Check recovery after interruption.
 6. Render the actual page, inspect its PNG and original artwork at intended size,
    record located observations and specific corrections. Generation is not visual
    verification. Focused edits name one text element or preserve the original image

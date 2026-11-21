@@ -14,6 +14,20 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class InfographicReleaseTests(unittest.TestCase):
+    def test_every_studio_ships_the_suite_release(self):
+        version = (ROOT / 'VERSION').read_text().strip()
+        for product in json.loads((ROOT / 'SUITE.json').read_text())['studios']:
+            root = ROOT / 'studios' / product
+            versions = [root / 'VERSION', root / 'skills' / (product + '-studio') / 'VERSION']
+            self.assertTrue(any(path.is_file() for path in versions), product)
+            for path in versions:
+                if path.is_file():
+                    self.assertEqual(path.read_text().strip(), version, str(path))
+        entry = ROOT / 'studios/infographic/guidance'
+        manifest = json.loads((entry / 'manifest.json').read_text())
+        self.assertEqual(manifest['version'], version)
+        self.assertEqual(manifest['files']['SKILL.md'], hashlib.sha256((entry / 'SKILL.md').read_bytes()).hexdigest())
+
     def test_catalog_control_flags_and_minimal_companion_subsets(self):
         self.assertEqual(catalog.STUDIOS['infographic'][0], 'Infographic Studio')
         self.assertTrue(control.valid({'command': 'start', 'studio': 'infographic'}))

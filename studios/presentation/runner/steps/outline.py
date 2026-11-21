@@ -528,11 +528,6 @@ def digest(root) -> str | None:
         return None
 
 
-def checks_itself(run: dict) -> bool:
-    """Whether the deck's slide text is checked by a second worker before it is shown."""
-    return CHECK in [step.name for step in stages.steps(run)]
-
-
 def text_checked(root, run: dict) -> bool:
     """Whether the outline kept now is the one a check was kept for."""
     kept = (run.get('text_checked') or {}).get('outline')

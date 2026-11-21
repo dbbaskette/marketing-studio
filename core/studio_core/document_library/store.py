@@ -264,15 +264,18 @@ def _bounded(path: Path, limit: int) -> bytes:
     if path.is_symlink() or not path.is_file():
         raise LibraryError(MISSING)
     with open(path, 'rb') as stream:
-        data = stream.read(limit + 1)
-    if len(data) > limit:
+        size = os.fstat(stream.fileno()).st_size
+        if size > limit:
+            raise LibraryError(CHANGED)
+        data = stream.read(size + 1)
+    if len(data) != size:
         raise LibraryError(CHANGED)
     return data
 
 
-def _json(path: Path):
+def _json(path: Path, limit: int = RECORD_LIMIT):
     try:
-        return json.loads(_bounded(path, RECORD_LIMIT).decode('utf-8'))
+        return json.loads(_bounded(path, limit).decode('utf-8'))
     except (LibraryError, OSError, ValueError):
         return None
 
@@ -553,7 +556,9 @@ class Library:
             numbers = self._numbers(folder)
             heads.append([ident, numbers[-1] if numbers else 0, self._hidden(folder)])
         cache = self._state() / 'catalog.json'
-        found = _json(cache)
+        # Rows contain bounded display metadata and a case-folded search excerpt.
+        # Scale the read budget with the actual catalog; revision files retain their own cap.
+        found = _json(cache, 1024 + len(heads) * 128_000)
         if isinstance(found, dict) and found.get('schema') == SCHEMA and found.get('index') == INDEX \
                 and found.get('signature') == heads and isinstance(found.get('entries'), list):
             return found['entries']
@@ -586,7 +591,7 @@ class Library:
         try:
             self._state().mkdir(exist_ok=True, mode=0o700)
             _atomic(cache, json.dumps({'schema': SCHEMA, 'index': INDEX, 'signature': heads,
-                                       'entries': entries}).encode())
+                                       'entries': entries}, ensure_ascii=False).encode())
         except OSError:
             pass    # the index is only a convenience: it is rebuilt from the records
         return entries

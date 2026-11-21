@@ -264,7 +264,9 @@ def install(data):
             chosen.get('tag'),
             chosen.get('commit'),
         ):
-            raise ValueError('The brand skill\'s main branch changed. Check and save it before installing.')
+            raise ValueError(
+                "The brand skill's main branch changed. Check and save it before installing."
+            )
         lock_path = data_root() / 'brand-use.lock'
         lock_path.parent.mkdir(parents=True, exist_ok=True)
         lease = lock_path.open('a')
@@ -319,8 +321,7 @@ def _install(kept, lease):
         matches = [
             row
             for row in skills
-            if row['version'] == version
-            and (not old['name'] or row['name'] == old['name'])
+            if row['version'] == version and (not old['name'] or row['name'] == old['name'])
         ]
         with locked(_path().with_suffix('.lock')):
             current = _read()

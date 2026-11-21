@@ -1,6 +1,5 @@
 """Shared confined native transport for the opted-in collection protocol."""
 import copy
-import re
 import json
 from pathlib import Path
 import secrets
@@ -45,13 +44,6 @@ def describe(progress):
             'review': 'Independently checking the report against the captured sources.',
             'complete': 'The evidence, report and brief passed their independent check.'}.get(
                 phase, 'Preparing the research areas.')
-
-
-def kept_nothing(root):
-    """Whether research has registered nothing with Harness Research yet: no topic asset and
-    no current case. Captured inputs alone are the studio's own copies."""
-    base = Path(root) / rc.CASE
-    return not (base / 'current.json').exists() and not any(base.glob('*/topic'))
 
 
 def move_to_installed(engine, root, record, product='training'):

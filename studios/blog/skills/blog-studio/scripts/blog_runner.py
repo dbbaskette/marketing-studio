@@ -1320,7 +1320,11 @@ def create(root, data, approval='conversation'):
         # into the workspace only once the whole request has passed, below.
         studio.style_check(root, style)
     sources = data.get('sources', [])
-    if not isinstance(sources, list) or len(sources) > MOST_SOURCES or len(set(sources)) != len(sources):
+    if (
+        not isinstance(sources, list)
+        or len(sources) > MOST_SOURCES
+        or len(set(sources)) != len(sources)
+    ):
         raise ValueError('Select at most %d different sources.' % MOST_SOURCES)
     for source in sources:
         studio.item(root, 'sources', source)

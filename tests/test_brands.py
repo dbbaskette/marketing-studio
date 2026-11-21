@@ -740,6 +740,18 @@ class RemoteRepository(BrandsCase):
         self.assertEqual(self.pushes[0][-1], preview['head']+':refs/heads/main')
         self.assertEqual(self.call('list')['packs'][0]['unshared'], 0)
 
+    def test_batched_preview_keeps_commit_boundaries_and_blocks_an_empty_commit(self):
+        self.made()
+        (self.brands / 'other').mkdir()
+        (self.brands / 'other' / 'guide').write_text('Second brand')
+        self.log(self.brands, 'add', 'other/guide')
+        self.log(self.brands, 'commit', '--quiet', '-m', 'Second brand')
+        preview = self.call('list')['push']
+        self.assertEqual((preview['commits'], preview['items'], preview['blocked']),
+                         (2, ['example', 'other'], None))
+        self.log(self.brands, 'commit', '--allow-empty', '-m', 'Empty')
+        self.assertTrue(self.call('list')['push']['blocked'])
+
     def test_an_unrelated_outgoing_commit_or_changed_head_refuses_push(self):
         preview = self.made()['push']
         (self.brands / 'unrelated.md').write_text('not a brand')

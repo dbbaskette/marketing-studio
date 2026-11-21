@@ -22,7 +22,7 @@ import time
 from studio_core import activity_log, studios_config, workspace_setup
 
 from .contracts import (MAX_ASSET_BYTES, MAX_RECORD_BYTES, PRODUCT, Invalid,
-                        advance, canonical, new_project, renamed, renaming)
+                        advance, basis, canonical, new_project, renamed, renaming)
 from .validation import identifier, image_size, relative_path, require, sha, validate_project
 
 NOFOLLOW = getattr(os, 'O_NOFOLLOW', 0)
@@ -127,6 +127,7 @@ class Store:
         self.owner = owner
         self._thread_lock = threading.RLock()
         self._held = threading.local()
+        self._legacy_pages = {}
 
     @classmethod
     def current(cls, data: Path | None = None):
@@ -265,6 +266,10 @@ class Store:
         return path
 
     def read(self, ident: str) -> dict:
+        project, _ = self._current(ident)
+        return project
+
+    def _current(self, ident: str):
         self._verify_owner()
         self._project(ident)
         pointer = _json(self.root, f'projects/{ident}/current.json', 10_000)
@@ -283,9 +288,24 @@ class Store:
         validate_project(project)
         if project['id'] != ident or project['owner'] != self.owner or project['revision'] != pointer['revision']:
             raise Invalid('The infographic identity or workspace owner does not match.')
-        return project
+        return project, pointer
 
-    def _publish(self, project: dict):
+    def _page_revision(self, project, pointer):
+        revision = project['revision']
+        page = pointer.get('page_revision')
+        if type(page) is int and 0 <= page <= revision:
+            return page
+        ident = project['id']
+        fingerprint = pointer['sha256']
+        previous = self._legacy_pages.get(ident)
+        if previous and previous[0] == fingerprint:
+            return previous[1]
+        from .history import Pages
+        page = Pages(self, ident, (project,)).of(revision)
+        self._legacy_pages[ident] = (fingerprint, page)
+        return page
+
+    def _publish(self, project: dict, *, previous=None, restored=False):
         if not getattr(self._held, 'active', False):
             raise Invalid('Infographic Studio saves must hold the workspace lock.')
         validate_project(project)
@@ -300,8 +320,13 @@ class Store:
             _atomic(version, raw)
         elif _read(self.root, version.relative_to(self.root).as_posix(), MAX_RECORD_BYTES) != raw:
             raise Invalid('An existing immutable revision is damaged.')
+        page = project['revision']
+        if previous is not None and not restored and basis(previous) == basis(project):
+            pointer = _json(self.root, f"projects/{project['id']}/current.json", 10_000)
+            page = self._page_revision(previous, pointer)
         _atomic(folder / 'current.json', canonical({'schema': 1, 'id': project['id'],
-                                                  'revision': project['revision'], 'sha256': value}))
+                                                  'revision': project['revision'], 'sha256': value,
+                                                  'page_revision': page}))
         from studio_core import work_summary
         try: work_summary.save(folder, project['brief']['title'], 'recent' if project['approval'] else 'needs-you', 'Open delivery' if project['approval'] else 'Review the saved infographic')
         except OSError: pass
@@ -338,7 +363,7 @@ class Store:
                 return self._rename_locked(current, brief['title'], expected_revision)
             project = advance(current, {'brief': brief},
                               expected_revision=expected_revision, owner=self.owner)
-            self._publish(project)
+            self._publish(project, previous=current)
             return project
 
     def _rename_locked(self, current: dict, title, expected_revision) -> dict:
@@ -356,7 +381,7 @@ class Store:
         if carried is not None:
             self.write_blob(current['id'], 'jobs/visual_' + secrets.token_hex(12) + '/review.json',
                             canonical(carried))
-        self._publish(result)
+        self._publish(result, previous=current)
         return result
 
     def expect(self, project: dict, revision: int):
@@ -370,7 +395,7 @@ class Store:
         current = self.read(project['id'])
         self.expect(current, project['revision'])
         result = advance(current, changes, expected_revision=current['revision'], owner=self.owner)
-        self._publish(result)
+        self._publish(result, previous=current)
         return result
 
     def update(self, ident: str, changes: dict, *, expected_revision: int) -> dict:
@@ -379,14 +404,15 @@ class Store:
             self.expect(current, expected_revision)
             return self.change_locked(current, changes)
 
-    def commit_locked(self, previous: dict, result: dict) -> dict:
+    def commit_locked(self, previous: dict, result: dict, *, restored=False) -> dict:
         """Internal state transition, never a public arbitrary-record write endpoint."""
         require(getattr(self._held, 'active', False), 'Hold the workspace lock before saving.')
-        self.expect(self.read(previous['id']), previous['revision'])
+        current = self.read(previous['id'])
+        self.expect(current, previous['revision'])
         require(result['id'] == previous['id'] and result['owner'] == self.owner
                 and result['revision'] == previous['revision'] + 1,
                 'Internal state transitions need the exact next revision and owner.')
-        self._publish(result)
+        self._publish(result, previous=current, restored=restored)
         if any(result.get(key) and result.get(key) != previous.get(key) for key in ('stories', 'scene')):
             activity_log.checkpoint(self._project(result['id']) / activity_log.FILE,
                                     'output-saved', 'revision-' + str(result['revision']))
@@ -452,13 +478,12 @@ class Store:
             if not identifier(folder.name):
                 continue
             try:
-                project = self.read(folder.name)
+                project, pointer = self._current(folder.name)
                 from .progress import readiness
                 from . import build_recovery, exports
-                from .history import Pages
                 result.append({'id': project['id'], 'title': project['brief']['title'],
                                'revision': project['revision'], 'readiness': readiness(project, build_recovery.read(self, project['id'], project=project), exports.manifests(self, project)),
-                               'page_revision': Pages(self, project['id'], (project,)).of(project['revision'])})
+                               'page_revision': self._page_revision(project, pointer)})
             except Invalid:
                 result.append({'id': folder.name, 'problem': 'This infographic cannot be read safely.'})
         return result

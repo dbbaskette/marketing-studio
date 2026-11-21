@@ -44,14 +44,15 @@ def inspect(*, chosen=None, command=runtime.assistant_command, environ=None):
                         installed=command('claude' if gemini and agent == 'claude' else 'codex' if not gemini else agent) is not None,
                         credential_present=bool(graphics.key(environ)) if gemini else False)
     capability['assistant'] = 'Codex' if agent == 'codex' else 'Claude Code'
-    model_configured = bool(chosen.get('image_model') or chosen['native'].get('gemini_model')) if gemini else True
+    model = (chosen.get('image_model') or chosen['native'].get('gemini_model')) if gemini else None
+    model_configured = bool(model) if gemini else True
     if not model_configured:
         capability['problems'].append('gemini-model-required')
         capability['state'] = 'unavailable'
     renderer = chosen.get('renderer')
     renderer_available = usable(renderer)
     return {**capability, 'generation_started': False,
-            'model_configured': model_configured,
+            'image_model': model, 'model_configured': model_configured,
             'renderer_configured': bool(chosen.get('renderer')),
             'renderer_available': renderer_available,
             'renderer_found': [] if renderer_available else found_renderers(),
