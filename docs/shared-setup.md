@@ -249,9 +249,9 @@ which opens the document just below its row. The preview holds every download
 from library**. **Close preview** returns focus to that row's Preview.
 
 **Add documents, file by file.** Each chosen file is added on its own and reported
-by name: **Added**, **Already there** or **Not added**, with why (not a text,
-Markdown, HTML, Word or PDF file; larger than 8 MB; empty). One refusal stops
-nothing. A file keeps its operation ID while the page is open, and what was added
+by name: **Added**, **Already there** or **Not added**, with why (larger than 8 MB;
+empty; a name with a folder in it or a leading dot). A file of any type is added. One
+refusal stops nothing. A file keeps its operation ID while the page is open, and what was added
 leaves the selection, so **Add to library** again tries only what was refused. The
 same file uploaded again (its name, bytes, title and studio) is the document already
 kept, even from another page. The page always asks the library, so a file removed
@@ -268,11 +268,23 @@ again with **Restore to library**. Uploading the same file again restores it too
 Finishing, delivering or adding existing work again keeps it hidden until it is
 restored.
 
+**A file of any type is kept.** The bytes of every upload are kept as they were sent.
+Text, Markdown, HTML, Word (.docx), PowerPoint (.pptx), Excel (.xlsx) and PDF files
+also have their text read into Markdown, so they can be chosen as sources. Any other
+file (a picture, an archive, an older .doc or .ppt, a Keynote file) is marked **Kept
+as a file**: it is listed with its name, type and size, downloaded and removed like
+any other, and cannot be chosen in **Add from library**, since it has no text.
+Nothing in a kept file is opened, run or rendered, and an original only ever leaves
+the library as a download: a type the library reads under its own media type, any
+other as `application/octet-stream`. Records stay schema 1: a library made before
+opens unchanged, and its search index is rebuilt once to show each file's type and
+size.
+
 Every file is checked against its hash before it is previewed, downloaded or
 pinned, and a link, a missing file or a changed file is refused. Some files can't
 be added as context until their text is supplied: an image-only PDF is marked
-**Needs text**, and an unreadable file is marked **Cannot be read**. Nothing is
-read with OCR, a model or the network.
+**Needs text**, and a file of a readable type whose text could not be read is marked
+**Cannot be read**. Nothing is read with OCR, a model or the network.
 
 | Content | Kept |
 | --- | --- |

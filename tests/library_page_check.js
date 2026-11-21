@@ -291,5 +291,41 @@ async function post(route, body) {
   waiting[0][1](answer([docs[0], docs[2]]));
   await settle();
   assert.deepEqual(racing.shownIds(), ['doc-1'], 'a late answer from an older load is not drawn');
+  // A file of a type with no text to read: its name, type and size and a plain note, never an
+  // error. It is previewed, downloaded and removed like any other, and cannot be ticked.
+  const note = 'It is kept as the file it is. The library cannot read text from this type of file, so it cannot be used as a source.';
+  const kept = { id: 'kept-1', revision: 1, title: 'photo', kind: 'upload', kind_label: 'Uploaded document', studio: 'marketing',
+    studio_label: 'Marketing Studio', updated_at: '2026-11-20T10:00:00Z', formats: ['original'], format_labels: ['Original'],
+    readable: false, state: 'kept', state_label: 'Kept as a file', problem: note, original_name: 'photo.png', type: 'PNG file', bytes: 1234567 };
+  const small = { ...kept, id: 'kept-2', title: 'Makefile', original_name: 'Makefile', type: 'File', bytes: 512 };
+  const keptPost = async (route, body) => route === 'library'
+    ? { available: true, items: [kept, small, docs[0]], total: 3, offset: 0, limit: 25, remembered: {}, hidden: 0, kinds: {}, studios: {}, origins: {}, states: { kept: 'Kept as a file' } }
+    : route === 'library-document' ? { ...(body.id === 'kept-1' ? kept : docs[0]), text: '', truncated: false, characters: 0, gaps: [] }
+    : { document: { id: body.id, hidden: body.hidden } };
+  const saved = [];
+  const files = new kit.Catalog({ studio: 'marketing', post: keptPost, manage: true, download: (row, format) => saved.push([row.id, format]) });
+  await settle();
+  const keptRow = find(files.node, 'library-row-kept-1');
+  assert.ok(keptRow.text.includes('Kept as a file photo.png · PNG file · 1.2 MB'), keptRow.text);
+  assert.ok(find(files.node, 'library-row-kept-2').text.includes('Kept as a file Makefile · File · 512 bytes'));
+  assert.ok(all(keptRow).some((n) => n.className === 'quiet' && n.textContent === 'Kept to download. It has no text the library can read, so it is not a source.'), 'the note is said plainly');
+  assert.equal(all(keptRow).filter((n) => n.className === 'problem').length, 0, 'a kept file is not shown as an error');
+  assert.equal(all(keptRow).find((n) => n.className === 'tag').textContent, 'Kept as a file');
+  assert.equal(all(find(files.node, 'library-row-doc-0')).filter((n) => n.className === 'tag').length, 0);
+  await click(find(files.node, 'library-preview-kept-1'));
+  const keptPreview = all(files.node).find((n) => n.className === 'library-preview');
+  assert.ok(all(keptPreview).some((n) => n.tagName === 'p' && n.textContent === 'photo.png · PNG file · 1.2 MB'));
+  assert.ok(all(keptPreview).some((n) => n.className === 'quiet' && n.textContent === note));
+  assert.equal(all(keptPreview).filter((n) => n.className === 'problem' || n.className === 'library-preview-text').length, 0);
+  assert.deepEqual(all(keptPreview).filter((n) => n.tagName === 'button' && n.textContent.startsWith('Download')).map((n) => n.textContent), ['Download original']);
+  await click(find(keptPreview, 'library-download-original-kept-1'));
+  assert.deepEqual(saved, [['kept-1', 'original']]);
+  assert.ok(find(files.node, 'library-remove-kept-1'), 'it is removed like any other');
+  const choosing = kit.pick({ studio: 'training', post: keptPost, use: async () => true });
+  await settle();
+  const chooser = document.body.children.filter((n) => n.tagName === 'dialog').at(-1);
+  assert.equal(find(chooser, 'library-tick-kept-1').disabled, true, 'a file with no text is never chosen as a source');
+  assert.equal(find(chooser, 'library-tick-doc-0').disabled, false);
+  find(chooser, 'library-cancel').listeners.click(); await settle(); await choosing;
   console.log('library page check passed');
 })().catch((error) => { console.error(error); process.exit(1); });

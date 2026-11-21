@@ -346,32 +346,42 @@ class UploadTests(LibraryCase):
         with self.assertRaisesRegex(WorkspaceError, 'not a document added'):
             library.upload_again(self.engine, root, 'two.md')
 
-    def test_a_spreadsheet_is_a_source_and_is_plainly_not_kept_in_the_library(self):
+    def test_a_spreadsheet_kept_from_the_source_editor_is_read_in_the_library_too(self):
         import base64
         import tempfile
-        from studio_core import document_library
         from studio_core.research_sources import Sources
         folder = tempfile.TemporaryDirectory()
         self.addCleanup(folder.cleanup)
         store = Sources(Path(folder.name) / '.research-sources')
         draft = library.research_sources(store, {'action': 'create'})
-        before = self.library.catalog()['total']
         kept = library.research_sources(store, {
             'action': 'capture', 'id': draft['id'], 'expected': draft['revision'], 'keep': True,
             'kind': 'file', 'name': 'numbers.xlsx', 'content': base64.b64encode(tiny_workbook()).decode()})
         source = kept['sources'][0]
         self.assertEqual((source['status'], source['kind']), ('ready', 'file'))
-        self.assertEqual(store.preview(kept['id'], source['id'])['text'], '# Numbers\nSynthetic count,12\n')
-        self.assertEqual(kept['library_kept'], {'state': 'not-taken', 'source': source['id'],
-                                                'problem': document_library.NOT_TAKEN})
-        self.assertEqual(document_library.NOT_TAKEN, 'The Document Library keeps text, Markdown, HTML, Word (.docx) '
-                         'and PDF files only, so this file is a source for this project and is not kept in the library.')
+        self.assertEqual((kept['library_kept']['state'], kept['library_kept']['source'], kept['library_kept']['readable']),
+                         ('kept', source['id'], True))
+        row = self.library.describe(kept['library_kept']['document'])
+        self.assertEqual((row['state'], row['type'], row['studio'], row['formats']),
+                         ('readable', 'Excel', 'training', ['markdown', 'original']))
+        self.assertEqual(self.library.preview(row['id'])['text'], '# Numbers\nSynthetic count,12\n')
+        self.assertEqual(self.library.download(row['id'], 1, 'original')[2], tiny_workbook())
         again = library.research_sources(store, {'action': 'library-keep', 'id': kept['id'],
                                                  'expected': kept['revision'], 'source': source['id']})
-        self.assertEqual(again['library_kept']['state'], 'not-taken')
-        self.assertEqual(self.library.catalog()['total'], before)
-        self.assertEqual([document_library.takes(name) for name in ('a.pptx', 'a.xlsx', 'a.PDF', 'a.md', None)],
-                         [False, False, True, True, False])
+        self.assertEqual(again['library_kept']['document'], kept['library_kept']['document'])
+        self.assertEqual(self.library.catalog()['total'], 1)
+
+    def test_keep_in_library_keeps_a_file_of_any_type_and_says_when_it_has_no_text(self):
+        kept = library.upload('diagram.png', b'\x89PNG synthetic picture')
+        self.assertEqual((kept['state'], kept['readable']), ('kept', False))
+        row = self.library.describe(kept['document'])
+        self.assertEqual((row['state'], row['state_label'], row['type'], row['bytes']), ('kept', 'Kept as a file', 'PNG file', 22))
+        self.assertIn('cannot be used as a source', row['problem'])
+        self.assertEqual(self.library.matching(), [])
+        with self.assertRaisesRegex(Exception, 'cannot be added'):
+            self.library.snapshot(row['id'], 1)
+        self.assertEqual(library.upload('diagram.png', b'\x89PNG synthetic picture')['document'], kept['document'])
+        self.assertEqual(library.upload('../diagram.png', b'x')['state'], 'failed')
 
     def test_the_source_editor_keeps_an_accepted_file_only_when_asked(self):
         import base64

@@ -244,8 +244,6 @@ const StudioResearch = (() => {
       if (source.status === 'excluded') copy.append(make('p', 'quiet', 'Excluded from this request.'));
       const kept = this.kept[source.id];
       if (kept && kept.state === 'kept') copy.append(make('p', 'quiet', 'Kept in the Document Library too.'));
-      // A type the library does not keep, such as a PowerPoint file: said once, with no retry.
-      if (kept && kept.state === 'not-taken') copy.append(make('p', 'quiet', kept.problem || 'Not kept in the Document Library.'));
       if (kept && kept.state === 'failed') add(copy, make('p', 'problem', 'Not kept in the Document Library: ' + (kept.problem || 'it could not be kept.')),
         button('Keep in library again', () => this.act('library-keep', {source: source.id}), 'library-keep-' + source.id));
       if (array(source.warnings).length) copy.append(make('p', 'quiet', source.warnings.join(' ')));

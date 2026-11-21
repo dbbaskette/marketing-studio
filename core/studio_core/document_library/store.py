@@ -18,6 +18,8 @@ Layout
         revision.json                           # written last: what the revision is
         content.md                              # readable Markdown, when there is any
         original<ending>                        # an upload's bytes, as they were sent
+                                                # (`original` alone for an ending that is not
+                                                # plain letters and digits, or none)
         content.pdf                             # finished work's PDF, once it is saved
     <library>/.state/catalog.json               # a search index, rebuilt from records
     <library>/.state/filters.json               # each studio's browsing filters
@@ -35,6 +37,19 @@ Remove from library hides a document: `document.json` says so, written atomicall
 lock. A hidden document is left out of the catalog, Select all matching, Update available
 and new pins; nothing of it is deleted, a project that pinned it keeps its own copy, and
 Restore shows it again. Uploading the same file again restores it too.
+
+An upload of any type is kept: its bytes always, and readable Markdown when its type has
+a reader here (READERS) and its text could be read. A file with no reader (a picture, an
+archive, an older Office file, anything else) is kept whole with the state `kept`: it is
+listed, previewed by name, type and size, downloaded and removed like any other, and never
+offered as a source, since it has no text. Nothing in a kept file is opened, run, rendered
+or followed, and an original leaves the library only as a download: a known type under its
+own media type, any other as `application/octet-stream`.
+
+The record format is schema 1 throughout. What any type added is one more conversion
+state (`kept`), `application/octet-stream` as an original's media type and `original` as
+a kept file's name; a record written before reads as it always did, and a reader from
+before takes a state it does not know for `unreadable`.
 
 A document's text is never trusted: it is shown as text, never as markup, and is never
 sent anywhere by the library. Nothing here uses the network, starts an assistant, runs
@@ -61,6 +76,10 @@ class LibraryError(ValueError):
     """A refusal, in a sentence a person can act on."""
 
 
+class _NoReader(Exception):
+    """An upload of a type the library keeps and does not read."""
+
+
 SCHEMA = 1
 PRODUCT = 'Studios Document Library'
 KINDS = {'upload': 'Uploaded document', 'blog': 'Blog', 'presentation': 'Presentation',
@@ -72,16 +91,20 @@ STUDIOS = {'marketing': 'Marketing Studio', 'blog': 'Blog Studio',
            'infographic': 'Infographic Studio'}
 FORMATS = {'markdown': 'Markdown', 'original': 'Original', 'pdf': 'PDF'}
 STATES = {'readable': 'Readable', 'needs-text': 'Needs text', 'unreadable': 'Cannot be read',
-          'missing': 'Files missing'}
-ENDINGS = {'.txt': 'text', '.md': 'text', '.html': 'html',
-           '.htm': 'html', '.docx': 'docx', '.pdf': 'pdf'}
-MEDIA = {'.txt': 'text/plain', '.md': 'text/markdown',
+          'kept': 'Kept as a file', 'missing': 'Files missing'}
+# The types whose text is read, by ending: every other file is kept as the file it is.
+READERS = {'.txt': 'text', '.md': 'text', '.markdown': 'text', '.html': 'html', '.htm': 'html',
+           '.docx': 'docx', '.pdf': 'pdf', '.pptx': 'pptx', '.xlsx': 'xlsx'}
+MEDIA = {'.txt': 'text/plain', '.md': 'text/markdown', '.markdown': 'text/markdown',
          '.html': 'text/html', '.htm': 'text/html', '.pdf': 'application/pdf',
-         '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'}
-# Said when a studio would keep a file of another type, such as a PowerPoint file or a
-# spreadsheet a source editor read: the project keeps its source, the library is not given it.
-NOT_TAKEN = ('The Document Library keeps text, Markdown, HTML, Word (.docx) and PDF files only, so this '
-             'file is a source for this project and is not kept in the library.')
+         '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+         '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+         '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}
+UNKNOWN_MEDIA = 'application/octet-stream'     # a file of any other type: only ever a download
+TYPES = {'.txt': 'Text', '.md': 'Markdown', '.markdown': 'Markdown', '.html': 'HTML', '.htm': 'HTML',
+         '.docx': 'Word', '.pdf': 'PDF', '.pptx': 'PowerPoint', '.xlsx': 'Excel'}
+ENDING = re.compile(r'^\.[a-z0-9]{1,16}$')    # an ending a kept file's own name may carry
+INDEX = 2                   # the search index's own format: rows say a file's type and size
 LIMITS = {'bytes': 8_000_000,       # one original, as the studios' supplied documents take
           'text': 8_000_000,        # bytes of one revision's Markdown
           'documents': 5_000,       # documents a catalog reads
@@ -99,6 +122,9 @@ NAME = 120                  # characters in an uploaded file's name
 TITLE = 200                 # characters in a title
 WAIT = 10.0
 STALE = 3600                # seconds before a hidden half-made revision is cleared away
+KEPT = ('It is kept as the file it is. The library cannot read text from this type of file, so it '
+        'cannot be used as a source. To use its words, add a text, Word, PowerPoint, Excel or PDF '
+        'version.')
 NO_TEXT = ('It has no readable text yet. Upload a text or Word version of it, then choose '
            'that one. Nothing is read from pictures automatically.')
 CHANGED = ('Its files in the library changed after they were kept, so it cannot be used. '
@@ -266,22 +292,49 @@ def _slug(value: str) -> str:
     return re.sub(r'[^a-z0-9]+', '-', plain).strip('-')[:40] or 'document'
 
 
-def takes(name) -> bool:
-    """True when an upload of this name is a type the library keeps."""
-    return isinstance(name, str) and _ending(name) in ENDINGS
-
-
 def _ending(name: str) -> str:
     return Path(name).suffix.lower()
 
 
+def _kept_name(ending: str) -> str:
+    """The name an original is kept under in its revision's folder: never the name it was
+    sent with, and its ending only when that is plain letters and digits."""
+    return 'original' + (ending if ENDING.match(ending) else '')
+
+
+def file_type(name) -> str:
+    """What kind of file a name says it is, for a person: `PDF`, `PowerPoint`, `PNG file`."""
+    ending = _ending(name) if isinstance(name, str) else ''
+    if ending in TYPES:
+        return TYPES[ending]
+    return ending[1:].upper() + ' file' if ENDING.match(ending) else 'File'
+
+
+def _read(data: bytes, kind: str) -> dict:
+    """What a type's reader reads of an upload. A PowerPoint file and a spreadsheet are
+    read as the source editor reads them (`research_sources.read`)."""
+    if kind in ('pptx', 'xlsx'):
+        from studio_core import research_sources
+        return research_sources.read(data, kind, source_documents.extract)
+    return source_documents.extract(data, kind)
+
+
 def _markdown(found: dict, kind: str) -> str:
-    """Readable Markdown from what an extractor read: page headings for a PDF, paragraphs
-    for the rest. Nothing is added that the document did not say."""
+    """Readable Markdown from what an extractor read: page headings for a PDF, slide
+    headings for a PowerPoint file, a spreadsheet's sheets under their names as they were
+    read, paragraphs for the rest. Nothing is added that the document did not say."""
     text = found['text']
-    if kind == 'text':
+    if kind in ('text', 'xlsx'):
         return text
     parts = []
+    if kind == 'pptx':
+        # A slide's shapes are one passage each: gather them under the slide they are on.
+        slides = {}
+        for place in found['locations']:
+            passage = text[place['start']:place['end']].strip()
+            if passage:
+                slides.setdefault(place['label'].split(' / ')[0], []).append(passage)
+        return '\n\n'.join(f'## {slide}\n\n' + '\n\n'.join(said) for slide, said in slides.items()).strip() + '\n'
     for place in found['locations']:
         passage = text[place['start']:place['end']].strip()
         if not passage:
@@ -449,6 +502,8 @@ class Library:
                 path = place / part['file']
                 if path.is_symlink() or not path.is_file():
                     return 'missing', MISSING
+        if state == 'kept':
+            return state, KEPT
         if state != 'readable':
             return state, problem or NO_TEXT
         return state, None
@@ -480,6 +535,10 @@ class Library:
             'pdf': (pdf or {}).get('state'),
             'pdf_note': (pdf or {}).get('reason') if pdf and pdf.get('state') != 'saved' else None,
             'original_name': (original or {}).get('filename'),
+            # What kind of file the original is and how large, so a file kept with no
+            # readable text is still told from the others.
+            'type': file_type((original or {}).get('filename')) if original else None,
+            'bytes': (original or {}).get('bytes') if type((original or {}).get('bytes')) is int else None,
             'project': {'studio': project.get('studio'), 'title': project.get('title'),
                         'revision': project.get('revision')} if project else None,
             'scope': 'local',
@@ -495,7 +554,7 @@ class Library:
             heads.append([ident, numbers[-1] if numbers else 0, self._hidden(folder)])
         cache = self._state() / 'catalog.json'
         found = _json(cache)
-        if isinstance(found, dict) and found.get('schema') == SCHEMA \
+        if isinstance(found, dict) and found.get('schema') == SCHEMA and found.get('index') == INDEX \
                 and found.get('signature') == heads and isinstance(found.get('entries'), list):
             return found['entries']
         entries = []
@@ -526,7 +585,7 @@ class Library:
             entries.append(row)
         try:
             self._state().mkdir(exist_ok=True, mode=0o700)
-            _atomic(cache, json.dumps({'schema': SCHEMA, 'signature': heads,
+            _atomic(cache, json.dumps({'schema': SCHEMA, 'index': INDEX, 'signature': heads,
                                        'entries': entries}).encode())
         except OSError:
             pass    # the index is only a convenience: it is rebuilt from the records
@@ -633,7 +692,9 @@ class Library:
             part = record.get('original') or {}
             data = self._checked(place, part)
             name = part.get('filename') or f'{stem}{_ending(part.get("file") or "")}'
-            media = part.get('media') or 'application/octet-stream'
+            # Only a type the library reads goes out under its own media type; whatever
+            # else a record says, any other file is a plain download.
+            media = part.get('media') if part.get('media') in MEDIA.values() else UNKNOWN_MEDIA
         elif which == 'pdf':
             part = record.get('pdf') or {}
             data = self._checked(place, part, LIMITS['pdf']) if part.get('state') == 'saved' else None
@@ -757,9 +818,10 @@ class Library:
 
     def add_upload(self, name, data, title=None, operation=None, studio='marketing',
                    author=None) -> dict:
-        """Keep an uploaded file: its bytes as they were sent, and readable Markdown when
-        its text can be read. A file whose text cannot be read is kept, marked as needing
-        text, and cannot be chosen as context until text is supplied. Returns its row.
+        """Keep an uploaded file of any type: its bytes as they were sent, and readable
+        Markdown when its type has a reader (READERS) and its text can be read. A file whose
+        text cannot be read is kept, marked as needing text, and one of a type with no
+        reader is kept as a file (`kept`); neither can be chosen as context. Returns its row.
 
         The same operation ID returns what it kept. The same file (name, bytes, title and
         studio) under another operation ID is the document already kept, and its row says
@@ -768,10 +830,8 @@ class Library:
         is kept instead, and its row says `repaired`."""
         plain = _plain(name, NAME)
         if plain is None or any(c in plain for c in '/\\:') or plain.startswith('.'):
-            raise LibraryError('Upload a text, Markdown, HTML, Word (.docx) or PDF file by its name.')
-        if _ending(plain) not in ENDINGS:
-            raise LibraryError(f'"{plain}" is not a text, Markdown, HTML, Word (.docx) or PDF '
-                               'file, so it was not added.')
+            raise LibraryError('Add a file by its own name: one with no folder in it, that does not '
+                               f'start with a dot and is at most {NAME} characters.')
         if type(data) is not bytes or not data:
             raise LibraryError(f'"{plain}" is empty.')
         if len(data) > LIMITS['bytes']:
@@ -784,13 +844,18 @@ class Library:
         if operation is not None and (not isinstance(operation, str) or not OPERATION.match(operation)):
             raise LibraryError('An upload needs its operation ID.')
         fingerprint = _sha(json.dumps([plain, _sha(data), shown, studio]).encode())
-        ending, kind = _ending(plain), ENDINGS[_ending(plain)]
+        ending, kind = _ending(plain), READERS.get(_ending(plain))
         try:
-            found = source_documents.extract(data, kind)
+            if kind is None:
+                raise _NoReader()
+            found = _read(data, kind)
             text = _markdown(found, kind) if found['readable'] else ''
             gaps, method = list(found['warnings']), found['extractor']
             state = 'readable' if text.strip() else 'needs-text'
             problem = None if text.strip() else NO_TEXT
+        except _NoReader:
+            # No reader for this type: the file is kept whole and nothing in it is opened.
+            text, gaps, method, state, problem = '', [], None, 'kept', None
         except ValueError as failure:
             text, gaps, method = '', [], None
             state = 'needs-text' if kind == 'pdf' else 'unreadable'
@@ -798,12 +863,13 @@ class Library:
         encoded = text.encode('utf-8')
         if len(encoded) > LIMITS['text']:
             encoded, state, problem = b'', 'unreadable', 'Its text is longer than the library keeps for one document.'
-        files = {f'original{ending}': data}
+        kept_as = _kept_name(ending)
+        files = {kept_as: data}
         record = {'title': shown, 'kind': 'upload', 'origin': 'upload', 'studio': studio,
                   'key': None, 'project': None, 'author': who, 'operation': operation,
                   'fingerprint': fingerprint,
-                  'original': {'file': f'original{ending}', 'filename': plain,
-                               'media': MEDIA[ending], 'bytes': len(data), 'sha256': _sha(data)},
+                  'original': {'file': kept_as, 'filename': plain, 'media': MEDIA.get(ending, UNKNOWN_MEDIA),
+                               'bytes': len(data), 'sha256': _sha(data)},
                   'markdown': None, 'pdf': None,
                   'conversion': {'method': method, 'state': state, 'gaps': gaps[:20], 'problem': problem}}
         if encoded:
@@ -983,14 +1049,13 @@ class Library:
         if original is not None:
             plain = _plain(filename, NAME)
             if type(original) is not bytes or not original or plain is None \
-                    or any(c in plain for c in '/\\:') or plain.startswith('.') \
-                    or _ending(plain) not in ENDINGS:
+                    or any(c in plain for c in '/\\:') or plain.startswith('.'):
                 raise LibraryError(f'"{shown}" has no file the library can keep.')
             if len(original) > LIMITS['bytes']:
                 raise LibraryError(f'"{shown}" is larger than 8 MB, the most one document can be.')
             ending = _ending(plain)
-            files[f'original{ending}'] = original
-            part = {'file': f'original{ending}', 'filename': plain, 'media': MEDIA[ending],
+            files[_kept_name(ending)] = original
+            part = {'file': _kept_name(ending), 'filename': plain, 'media': MEDIA.get(ending, UNKNOWN_MEDIA),
                     'bytes': len(original), 'sha256': _sha(original)}
         if not encoded and part is None:
             raise LibraryError(f'"{shown}" has no text or file to keep.')

@@ -279,16 +279,25 @@ class StartSourceTests(LibraryCase):
         self.assertEqual((desk['id'], desk['revision']), (kept['id'], kept['revision']))
         self.assertEqual(self.library.catalog(kind='upload')['total'], 1)
 
-    def test_a_spreadsheet_is_a_source_and_is_plainly_not_kept_in_the_library(self):
-        from studio_core import document_library
-        before = self.library.catalog(kind='upload')['total']
+    def test_a_spreadsheet_kept_from_the_source_editor_is_read_in_the_library_too(self):
         answer = self.capture(True, name='numbers.xlsx', data=tiny_workbook())
         source = answer['sources'][0]
         self.assertEqual((source['status'], source['kind']), ('ready', 'file'))
-        self.assertEqual(answer['library_kept'], {'state': 'not-taken', 'source': source['id'],
-                                                  'problem': document_library.NOT_TAKEN})
-        self.assertIn('is not kept in the library', document_library.NOT_TAKEN)
-        self.assertEqual(self.library.catalog(kind='upload')['total'], before)
+        kept = answer['library_kept']
+        self.assertEqual((kept['state'], kept['source']), ('kept', source['id']))
+        row = self.library.describe(kept['id'])
+        self.assertEqual((row['state'], row['type'], row['studio'], row['formats']),
+                         ('readable', 'Excel', 'presentation', ['markdown', 'original']))
+        self.assertEqual(self.library.preview(row['id'])['text'], '# Numbers\nSynthetic count,12\n')
+
+    def test_keep_in_library_keeps_a_file_of_any_type_and_says_when_it_has_no_text(self):
+        kept = desk_actions.library_upload('diagram.png', b'\x89PNG synthetic picture')
+        self.assertEqual((kept['state'], kept['state_label'], kept['type'], kept['readable']),
+                         ('kept', 'Kept as a file', 'PNG file', False))
+        self.assertIn('cannot be used as a source', kept['problem'])
+        self.assertEqual(self.library.matching(), [])
+        self.assertEqual(self.library.download(kept['id'], 1, 'original'),
+                         ('diagram.png', 'application/octet-stream', b'\x89PNG synthetic picture'))
 
     def test_only_this_project_or_no_choice_keeps_nothing(self):
         self.assertNotIn('library_kept', self.capture(False))

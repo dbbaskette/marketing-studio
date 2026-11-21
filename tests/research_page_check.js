@@ -123,13 +123,13 @@ const key=(editor,k)=>all(editor.node).find(n=>n.dataset.key===k);
  key(keeping,'library-keep-k0').listeners.click();await settle();
  assert.deepEqual(JSON.parse(JSON.stringify(kept.at(-1))),{action:'library-keep',id:'keeping',expected:'0',source:'k0'});
  assert.ok(all(keeping.node).some(n=>n.textContent==='Kept in the Document Library too.'));
- // A file of a type the library does not keep is said once, plainly, with nothing to try again.
+ // The library keeps a file of any type, so a PowerPoint file kept with Keep in library says so like any other.
  const untaken=new kit.Editor({keepChoice:true,value:{id:'untaken',revision:'0',external:false,restricted:false,workers:3,focus:'',sites:[],sources:[]},request:async sent=>sent.action==='folder'
   ?{id:'untaken',revision:'2',external:false,restricted:false,workers:3,focus:'',sites:[],sources:[{id:'u0',name:'deck.pptx',kind:'file',status:'ready'},{id:'u1',name:'Notes/a.md',kind:'file',status:'ready'}],folder:{where:'local',title:'Kit',found:1,added:1,hidden:0,stopped:null,skipped_count:0,unlisted:0,skipped:[]}}
-  :{id:'untaken',revision:'1',external:false,restricted:false,workers:3,focus:'',sites:[],sources:[{id:'u0',name:'deck.pptx',kind:'file',status:'ready'}],library_kept:{state:'not-taken',source:'u0',problem:'The Document Library keeps text, Markdown, HTML, Word (.docx) and PDF files only, so this file is a source for this project and is not kept in the library.'}}});
+  :{id:'untaken',revision:'1',external:false,restricted:false,workers:3,focus:'',sites:[],sources:[{id:'u0',name:'deck.pptx',kind:'file',status:'ready'}],library_kept:{state:'kept',source:'u0'}}});
  await untaken.files([{name:'deck.pptx',size:3,arrayBuffer:async()=>Buffer.from('PK!')}]);
- assert.ok(all(untaken.node).some(n=>n.className==='quiet'&&n.textContent.startsWith('The Document Library keeps text, Markdown, HTML, Word (.docx) and PDF files only')));
- assert.equal(key(untaken,'library-keep-u0'),undefined);assert.equal(all(untaken.node).some(n=>n.className==='problem'),false);
+ assert.ok(all(untaken.node).some(n=>n.className==='quiet'&&n.textContent==='Kept in the Document Library too.'));
+ assert.equal(all(untaken.node).some(n=>n.textContent.includes('files only')),false);assert.equal(/not-taken/.test(fs.readFileSync(path.join(__dirname,'../ui-kit/research.js'),'utf8')),false);
  untaken.folderPath='/synthetic/Kit';await untaken.folder();
  assert.equal(key(untaken,'research-folder-said').textContent,'1 document added from Kit. Documents from a folder are kept in this project only, not in the Document Library.');
  key(keeping,'research-keep-1').listeners.click();await settle();assert.equal(key(keeping,'research-keep-1')['aria-pressed'],'true');

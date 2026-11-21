@@ -1348,6 +1348,7 @@ async function openLibrary() {
             const found = await api('library-download', {id: row.id, revision: row.revision, format});
             const bytes = Uint8Array.from(atob(found.content), c => c.charCodeAt(0));
             const link = document.createElement('a');
+            // Always saved as a file, under its name: the page never opens or shows a kept file.
             link.href = URL.createObjectURL(new Blob([bytes], {type: found.media}));
             link.download = found.name; document.body.append(link); link.click(); link.remove();
             setTimeout(() => URL.revokeObjectURL(link.href), 1000);
@@ -1499,6 +1500,8 @@ async function uploadOne(file) {
     if (kept.restored) return {state: 'added', detail: `Shown again as “${kept.title}”: it had been removed from the library.`};
     if (kept.repaired) return {state: 'added', detail: `Kept again as “${kept.title}”: the library’s earlier copy had changed or gone missing.`};
     if (kept.already || before) return {state: 'already', detail: `Already in the library as “${kept.title}”, so it was not added again.`};
+    // A file kept with no text to read was added as asked: its note is not a "but".
+    if (kept.state === 'kept') return {state: 'added', detail: `Added as “${kept.title}”. ${kept.problem}`};
     return {state: 'added', detail: kept.readable ? `Added as “${kept.title}”.` : `Added as “${kept.title}”, but ${kept.problem}`};
   } catch (error) { return {state: 'refused', detail: error.message}; }
 }
