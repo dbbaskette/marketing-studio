@@ -140,6 +140,34 @@ def phase_words(phase, number, data):
     return words
 
 
+def move_to_installed(run, runtime):
+    """Move a blog's research record to the installed Harness Research, which it goes on
+    with whichever version it started on, and return what it held before: {'capability'}.
+    The case an older Blog Studio saved was named by that helper's digest, and is still
+    found by it (`research_session.Workflow.run`). Kept once, as `earlier`, in the record."""
+    execution = run.get('research_execution')
+    try:
+        installed = research_contract.capability(Path(runtime))
+    except (OSError, ValueError, KeyError, TypeError):
+        installed = None
+    if not isinstance(execution, dict):
+        if installed and isinstance(run.get('research_contract'), dict):
+            run['research_contract'] = installed
+        return None
+    kept = execution.get('earlier')
+    earlier = kept if isinstance(kept, dict) else {'research_contract': run.get('research_contract'),
+                                                   'capability': execution.get('capability')}
+    try:
+        supported = research_session.capability(runtime)
+    except (OSError, ValueError, KeyError, TypeError):
+        supported = None
+    if installed and supported and (installed != run.get('research_contract')
+                                    or supported != execution.get('capability')):
+        execution.setdefault('earlier', earlier)
+        run['research_contract'], execution['capability'] = installed, supported
+    return {'capability': earlier.get('capability')}
+
+
 def generate(
     directory,
     run,
@@ -438,17 +466,12 @@ def generate(
                         )
             return answer['content'], sources
 
-        # After an update the blog keeps the helper version it started with, while it is retained.
-        runtime = research_contract.runtime_for(run.get('research_contract'))
+        # Every blog goes on with the installed Harness Research, whichever version it started on.
+        runtime = research_contract.runtime_for(run.get('research_contract'))   # not compared
         if runtime is None:
-            raise ValueError(
-                'Restore the saved Harness Research version before continuing this blog.'
-            )
+            raise ValueError(research_contract.NOT_INSTALLED)
+        earlier = move_to_installed(run, runtime)
         if research_session.enabled(run):
-            if research_session.capability(runtime) != run['research_execution']['capability']:
-                raise ValueError(
-                    'Restore the saved Harness Research collection capability before continuing.'
-                )
             transport = research_text.Transport(
                 runtime, lambda phase, data, guide: call(phase, data, guide)
             )
@@ -460,6 +483,7 @@ def generate(
                 limit=run['research_execution']['workers'],
                 progress=tell,
                 cancelled=stop.is_set,
+                earlier=earlier,
             )
         else:
             research_contract.Workflow(runtime).run(directory, task, invoke, sources)

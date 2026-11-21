@@ -39,7 +39,8 @@ explicit action in a studio's settings. **Where is your brand skill?** offers
 **Git repository** and **Installed skill folder** as separate, optional inputs.
 A repository address does not require an installed folder. Leave the folder
 blank for automatic discovery, or use it to select an existing installation.
-The optional release tag is under **Advanced → Brand skill release**.
+The brand skill is installed from its repository's `main`, so there is no release to
+choose. **Advanced → Brand skill release** is kept for older settings and is not used.
 
 Optional studio controls retain built-in defaults: writing tone, time
 limits, parallel work, notifications and update checks. Research scope, author

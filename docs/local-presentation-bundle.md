@@ -139,12 +139,11 @@ archive. Failed downloads or verification leave earlier archives intact.
   status. Snapshot locks are written only into the bundle, and installation uses
   those bundled files without fetching a moving repository. Config paths and
   credentials are not copied into the bundle.
-- **Unconfigured Harness Slides and Harness Research:** update
-  `pins/companions.json`, then rerun. To resolve the newest stable releases allowed
-  by the existing requirements:
+- **Unconfigured Harness Slides and Harness Research:** the bundle carries their
+  `main` as it is when it is built. To see what each `main` holds first, and that it
+  meets the floor in `pins/companions.json`:
 
   ```sh
-  python3 scripts/update_companions.py --check
   python3 scripts/update_companions.py
   presentation-studio-package
   ```

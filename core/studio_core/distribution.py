@@ -15,7 +15,7 @@ import tarfile
 import tempfile
 import urllib.request
 
-from .companions import fetch_companion, read_pins, tree_digest
+from .companions import fetch_main, read_pins, tree_digest
 
 PLATFORMS = ('macos-arm64', 'macos-x64', 'linux-arm64', 'linux-x64')
 
@@ -151,6 +151,22 @@ def python_notices(pin, cache, destination):
             raise ValueError('The Python build source did not contain its dependency notices.')
 
 
+def installed_version(result):
+    """The real version folder a companion's installer made, from its JSON result.
+
+    A newer installer answers with `runtime` as its stable `current` link, and names the
+    folder in `versionDirectory` and `id`. An older one answers only with `runtime`, the
+    folder itself. Either way the bundle records the folder's own name, never `current`,
+    and its files are copied from the real folder.
+    """
+    named = result.get('versionDirectory')
+    folder = Path(named if isinstance(named, str) and named else result['runtime']).resolve()
+    if not folder.is_dir() or folder.parent.name != 'versions' \
+            or result.get('id', folder.name) != folder.name:
+        raise ValueError('The companion installer did not name the version folder it installed.')
+    return folder
+
+
 def prepare(root, destination, target, cache, studios, companion_sources=None):
     """A developer build; never uses installed skills, credentials, or a real HOME."""
     root, destination, cache = Path(root).resolve(), Path(destination).resolve(), Path(cache).resolve()
@@ -163,7 +179,7 @@ def prepare(root, destination, target, cache, studios, companion_sources=None):
     if set(sources) - set(companions):
         raise ValueError('Unknown configured companion source.')
     for name, source in sources.items():
-        if tree_digest(Path(source)) != companions[name]['sha256']:
+        if tree_digest(Path(source)) != companions[name].get('sha256'):
             raise ValueError('Configured companion source failed its checksum: ' + name)
     pins = json.loads((root / 'pins/runtimes.json').read_text())
     selected = pins['platforms'][target]
@@ -193,13 +209,18 @@ def prepare(root, destination, target, cache, studios, companion_sources=None):
                    NPM_CONFIG_CACHE=str(cache / 'npm'), NPM_CONFIG_GLOBALCONFIG=str(home / 'npm-global.conf'),
                    GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM='1')
         for name, pin in companions.items():
-            checkout = Path(sources[name]) if name in sources else fetch_companion(name, pin, cache)
+            # A bundle carries whatever `main` was when it was built: its commit and checksum
+            # are recorded with it. A configured source is the one its record names.
+            if name in sources:
+                checkout = Path(sources[name])
+            else:
+                checkout, pin = fetch_main(name, pin, cache)
             shared = work / name
             command = ['node', str(checkout / pin['installer']), '--home', str(home), '--shared', str(shared)]
             if name == 'harness-slides':
                 command.append('--skip-dependencies')
             done = subprocess.run(command, env=env, capture_output=True, text=True, timeout=300, check=True)
-            prepared = Path(json.loads(done.stdout)['runtime'])
+            prepared = installed_version(json.loads(done.stdout))
             if name == 'harness-slides':
                 subprocess.run(['npm', 'ci', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund'],
                                cwd=prepared, env=env, check=True, timeout=900)

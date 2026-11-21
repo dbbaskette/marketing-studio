@@ -2,11 +2,18 @@
 """Fetch, pin and verify the guidance a deck follows.
 
 Guidance is the skill's SKILL.md, references and assets. It can be newer than the installed
-scripts, so it is fetched from the skill's repository and pinned for each deck. Scripts
-are never fetched: every command runs from the installed copy.
+scripts, so it is fetched from the skill's repository. Scripts are never fetched: every
+command runs from the installed copy, whatever a deck was started on.
 
-Only guidance this helper fetched itself from the source branch is used. A deck names
-the commit it is pinned to, and nothing else from it is trusted: its guidance is kept in
+New work takes the newest guidance. A deck in progress keeps the instructions it was
+saved with: its pin names their commit and nothing else, no folder and no installed version.
+Nothing stops because an update happened or a cache was cleaned: a pin that cannot be read,
+or whose commit the source branch does not have, continues on the current guidance and is
+saved again. The one refusal is saved instructions that need a newer Presentation Studio
+than the one installed.
+
+Only guidance this helper fetched itself from the source branch is used. Of a deck's
+pin only the commit is read, and nothing else from it is trusted: its guidance is kept in
 the per-user data folder by commit, checked against that commit's own files, and the commit
 must be on the source branch. git runs without the user's config or environment, and the
 local copy of the branch is used only as this helper made it; anything else is rebuilt.
@@ -49,15 +56,40 @@ ISOLATED = ('--no-replace-objects',
             '-c', 'core.commitGraph=false', '-c', 'gc.auto=0', '-c', 'maintenance.auto=false',
             '-c', 'protocol.allow=never', '-c', 'protocol.https.allow=always',
             '-c', 'protocol.file.allow=always')
-UNREADABLE = 'The guidance pin for this deck cannot be read.'
+CONTINUES = ('The instructions saved with this deck could not be used, so it continues '
+             'on the current ones.')
 
 
 class SyncError(Exception):
     """A reason guidance could not be fetched or used, to show as it is."""
 
 
+class NeedsNewer(SyncError):
+    """Guidance that asks for a newer Presentation Studio than the one installed. `needed`
+    is the version it asks for."""
+
+    def __init__(self, needed: str):
+        self.needed = needed
+        super().__init__(f'The newest guidance needs Presentation Studio {needed} or later; '
+                         f'{runtime_version()} is installed. Update the skill to use it.')
+
+
 def runtime_version() -> str:
     return (RUNTIME / 'VERSION').read_text(encoding='utf-8').strip()
+
+
+def address() -> Path:
+    """Where this skill is reached, for anything handed out or saved. An installed copy is
+    in `versions/<id>`, a folder an update leaves behind and a clean-up removes; the
+    `current` link beside `versions` always names the installed one, so that is its address.
+    A checkout is its own."""
+    for folder in (RUNTIME, *RUNTIME.parents):
+        if folder.parent.name == 'versions':
+            current = folder.parent.parent / 'current' / RUNTIME.relative_to(folder)
+            if (current / 'scripts' / Path(__file__).name).is_file():
+                return current
+            break
+    return RUNTIME
 
 
 def source() -> dict:
@@ -75,18 +107,24 @@ def source() -> dict:
 
 def bundled() -> Path:
     """The guidance that came with the installed scripts, used when nothing newer can be had."""
-    inside = RUNTIME / 'guidance'
-    return inside if (inside / 'SKILL.md').is_file() else RUNTIME
+    base = address()
+    inside = base / 'guidance'
+    return inside if (inside / 'SKILL.md').is_file() else base
 
 
 def helper() -> str:
-    """How to run the helper: the installer's `presentation` command when that is what ran this,
-    since it finds a Python new enough; otherwise what that command runs, the runner's
-    studio.py: beside the scripts in an installed copy, at the top of a checkout."""
+    """How to run the helper: the installer's `presentation` command when that is what ran
+    this or it stands beside the installed copy, since it finds a Python new enough;
+    otherwise what that command runs, the runner's studio.py: beside the scripts in an
+    installed copy, at the top of a checkout. Never a `versions/<id>` path: see `address`."""
     command = os.environ.get('PRESENTATION_STUDIO_HELPER')
     if command and Path(command).is_file():
         return command
-    places = (RUNTIME / 'runner' / 'studio.py', RUNTIME.parent.parent / 'runner' / 'studio.py')
+    base = address()
+    command = base.parent / 'presentation'
+    if base != RUNTIME and base.name == 'current' and command.is_file():
+        return str(command)
+    places = (base / 'runner' / 'studio.py', base.parent.parent / 'runner' / 'studio.py')
     return str(next((place for place in places if place.is_file()), places[0]))
 
 
@@ -177,11 +215,6 @@ def as_tuple(version: str) -> tuple[int, ...]:
         raise SyncError(f'"{version}" is not a version number.')
 
 
-def hashes(folder: Path) -> dict[str, str]:
-    return {path.relative_to(folder).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
-            for path in sorted(folder.rglob('*')) if path.is_file()}
-
-
 def fetch() -> str:
     """Fetch the source branch, with its history, into the cache; return its commit.
 
@@ -216,8 +249,7 @@ def manifest(commit: str, repo: Path | None = None) -> dict:
         raise SyncError('The guidance manifest is not one this version understands.')
     needed = str(found.get('minimum_runtime', '0'))
     if as_tuple(needed) > as_tuple(runtime_version()):
-        raise SyncError(f'The newest guidance needs Presentation Studio {needed} or later; '
-                        f'{runtime_version()} is installed. Update the skill to use it.')
+        raise NeedsNewer(needed)
     return found
 
 
@@ -307,18 +339,21 @@ def pin_path(project: Path) -> Path:
     return project / STATE_DIR / 'guidance.json'
 
 
-def write_pin(project: Path, commit: str | None, folder: Path) -> dict:
-    # `path` and `files` are for versions before 0.18.1, which read them. Nothing here does.
-    pin = {'schema': 1, 'commit': commit, 'path': str(folder),
-           'files': hashes(folder) if commit else {}, 'runtime': runtime_version(),
+def write_pin(project: Path, commit: str | None) -> dict:
+    """Save which instructions a deck follows: their commit, or None for the ones
+    installed with the skill. No folder and no digests of files are kept: both go out of
+    date when an update moves the installed copy, and a pin from an older version that has
+    them is read without them. `runtime` is the version the deck started on, to show;
+    nothing is ever compared with it."""
+    pin = {'schema': 1, 'commit': commit, 'runtime': runtime_version(),
            'pinned_at': home.now()}
     home.write_json(pin_path(project), pin)
     return pin
 
 
 def pinned(project: Path) -> Path | None:
-    """The folder of the guidance a deck is pinned to, when this computer has it. The
-    deck names only the commit; the folder is always the one in the data folder."""
+    """The folder of the guidance a deck in progress follows, when this computer has it.
+    The deck names only the commit; the folder is always the one in the data folder."""
     pin = home.read_json(pin_path(project), None)
     commit = pin.get('commit') if isinstance(pin, dict) else None
     if not isinstance(commit, str) or not COMMIT.fullmatch(commit):
@@ -334,10 +369,11 @@ def answer(folder: Path, commit: str | None, freshness: str, pinned: bool,
             'notice': notice}
 
 
-def latest() -> tuple[Path, str | None, str, str | None]:
-    """The newest usable guidance: folder, commit, freshness and a notice if it fell back."""
+def latest(head: str | None = None) -> tuple[Path, str | None, str, str | None]:
+    """The newest usable guidance: folder, commit, freshness and a notice if it fell back.
+    `head` is the source branch's commit when it was fetched a moment ago."""
     try:
-        commit = fetch()
+        commit = head or fetch()
         fresh = 'cached' if (folder_for(commit) / 'SKILL.md').is_file() else 'fetched'
         return materialize(commit), commit, fresh, None
     except SyncError as failure:
@@ -347,14 +383,15 @@ def latest() -> tuple[Path, str | None, str, str | None]:
 
 
 def start(project: Path) -> dict:
-    """The guidance to follow here: the pinned one for a deck, else the newest."""
+    """The guidance to follow here: the saved one for a deck in progress, else the
+    newest."""
     if pin_path(project).is_file():
         return resume(project)
     folder, commit, freshness, notice = latest()
     home.write_json(guidance_root() / 'last.json', {'commit': commit})
     has_deck = (project / 'run.json').is_file()
     if has_deck:
-        write_pin(project, commit, folder)
+        write_pin(project, commit)
     return answer(folder, commit, freshness, has_deck, notice)
 
 
@@ -365,63 +402,86 @@ def adopt(project: Path) -> dict | None:
         return None
     commit = last.get('commit')
     if commit is None:
-        return write_pin(project, None, bundled())
+        return write_pin(project, None)
     if not isinstance(commit, str) or not COMMIT.fullmatch(commit) \
             or not (folder_for(commit) / 'SKILL.md').is_file():
         return None
-    return write_pin(project, commit, folder_for(commit))
+    return write_pin(project, commit)
+
+
+def carry_on(project: Path, head: str | None = None) -> dict:
+    """Continue a deck whose saved instructions cannot be used at all, on the newest
+    usable guidance, and save that as its pin. It is said once, in the notice; nothing is
+    asked of the person and nothing has to be run."""
+    folder, commit, freshness, notice = latest(head)
+    write_pin(project, commit)
+    return answer(folder, commit, freshness, True, f'{CONTINUES} {notice}' if notice else CONTINUES)
 
 
 def resume(project: Path) -> dict:
-    """The guidance a deck is pinned to: its commit's, from the source branch only."""
+    """The guidance a deck in progress follows: the instructions it was saved with, by
+    its pin's commit and from the source branch only, with no network when this computer
+    has them.
+
+    Only the pin's `schema` and `commit` are read. A pin that cannot be read, or whose
+    commit the source branch does not have, carries on with the current guidance. Saved
+    instructions that cannot be had for now (no network, damaged files) use the installed
+    ones for this visit and keep the pin. Only saved instructions that need a newer
+    Presentation Studio than the one installed are refused: following older ones in their
+    place would quietly change the deck."""
+    if not pin_path(project).is_file():
+        return start(project)
     pin = home.read_json(pin_path(project), None)
-    if not isinstance(pin, dict) or pin.get('schema') != 1:
-        raise SyncError(UNREADABLE)
-    commit = pin.get('commit')
+    commit = pin.get('commit') if isinstance(pin, dict) and pin.get('schema') == 1 else False
     if commit is None:
         return answer(bundled(), None, 'installed', True)
     if not isinstance(commit, str) or not COMMIT.fullmatch(commit):
-        raise SyncError(UNREADABLE)
+        return carry_on(project)
+    head = None
     try:
         repo = cache()
         if not on_main(commit, repo):
-            fetch()
+            head = fetch()
         known = on_main(commit, repo)
     except SyncError as failure:
         return answer(bundled(), None, 'installed', True, (
-            'The guidance this deck was pinned to is not on this computer and '
+            'The guidance this deck was saved with is not on this computer and '
             f'could not be fetched: {failure} Using the guidance installed with the skill.'))
     if not known:
-        where = source()
-        raise SyncError(f'This deck is pinned to guidance {commit[:12]}, which is not on '
-                        f"the {where['branch']} branch of {where['repository']}. Guidance is "
-                        'only taken from there. Run update to move this deck to the '
-                        'current guidance.')
+        return carry_on(project, head)
     try:
         folder = materialize(commit, repo)
+    except NeedsNewer as failure:
+        raise SyncError(f"This deck's instructions need Presentation Studio {failure.needed} "
+                        f'or later; {runtime_version()} is installed. Update Presentation '
+                        'Studio to continue it.')
     except SyncError as failure:
         return answer(bundled(), None, 'installed', True, (
-            f'The guidance this deck was pinned to cannot be used: {failure} Using the '
+            f'The guidance this deck was saved with cannot be used: {failure} Using the '
             'guidance installed with the skill.'))
     return answer(folder, commit, 'pinned', True)
 
 
 def update(project: Path) -> dict:
-    """Move a deck to the newest guidance. Checks may give different results afterwards."""
+    """Move a deck to the newest guidance, when the person asks for that. Nothing needs
+    it: a deck carries on without it after any update. Checks may give different results
+    afterwards."""
     if not (project / 'run.json').is_file():
         raise SyncError('No deck in this directory.')
-    before = home.read_json(pin_path(project), {})
+    before = home.read_json(pin_path(project), None)
+    before = before.get('commit') if isinstance(before, dict) else None
     commit = fetch()
     folder = materialize(commit)
-    write_pin(project, commit, folder)
-    changed = before.get('commit') != commit
+    write_pin(project, commit)
     return answer(folder, commit, 'fetched', True, (
-        f"Guidance moved from {(before.get('commit') or 'the installed copy')[:12]} to "
-        f'{commit[:12]}. Run the checks again; results can differ.') if changed else None)
+        f"Guidance moved from {str(before or 'the installed copy')[:12]} to "
+        f'{commit[:12]}. Run the checks again; results can differ.')
+        if before != commit else None)
 
 
 def summary(project: Path) -> dict | None:
-    """What a deck is pinned to, for status output."""
+    """Which instructions a deck follows, for status output. `runtime` is the Presentation
+    Studio it started on, to show and nothing more."""
     pin = home.read_json(pin_path(project), None)
     if not isinstance(pin, dict):
         return None

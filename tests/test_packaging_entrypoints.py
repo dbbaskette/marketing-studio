@@ -127,6 +127,13 @@ class PackagingEntryTests(unittest.TestCase):
                 record = json.loads((base / 'installation.json').read_text())
                 self.assertEqual(record['studios'], selected)
                 self.assertEqual(record['product'], product)
+                # The suite's runtime is named through `current`, which its next update moves.
+                stable = home / '.local/share/marketing-studio/current'
+                self.assertEqual(record['suite'], str(stable))
+                for written in (version / 'bin/gcloud', version / 'environment.sh',
+                                home / ('Applications/Verify ' + product.title() + ' Studio.sh')):
+                    self.assertIn(str(stable / 'runtime/python/bin'), written.read_text(), written.name)
+                    self.assertNotIn('marketing-studio/versions/', written.read_text(), written.name)
                 title = product.title() + ' Studio'
                 self.assertTrue((home / ('Applications/Verify ' + title + '.sh')).is_file())
                 self.assertTrue((home / ('Applications/Diagnose ' + title + ' Git.sh')).is_file())

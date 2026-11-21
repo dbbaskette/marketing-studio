@@ -68,8 +68,9 @@ See the [developer guide](docs/development.md).
 
 Author work lives in a workspace, by default `.blog-studio` under the writing
 project, and optionally in a separate private Team Hub repository. Neither is
-part of any package. Each blog records the Blog Studio version it was started
-with, and adopting a newer version for a blog marks its earlier reviews stale.
+part of any package. Every blog runs the installed Blog Studio. Each records the
+version its completed reviews were judged under; judging a blog again under a
+newer version is the author's choice and marks its earlier reviews stale.
 
 ## Upgrading 1.x installations
 

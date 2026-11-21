@@ -2105,6 +2105,10 @@ class PageScriptTests(ScriptedPage, PageCase):
             **gate, 'decision': 'revise', 'note': 'Shorten the opening.'})]
         answers['GET /api/trainings'].append(self.read('trainings'))
         answers['GET /api/gate'].append(self.read('gate', **gate))
+        # A pin as an older version left it: the folder it was installed in and file digests.
+        (self.root / '.training-studio' / 'guidance.json').write_text(json.dumps({
+            'schema': 1, 'commit': None, 'path': '/gone/versions/abc123/guidance', 'files': {},
+            'runtime': '4.1.0', 'pinned_at': '2026-01-01T00:00:00Z'}))
         answers['GET /api/training'] = [self.read('training', path=str(self.root))]
         result = self.run_page(answers, [
             {'snapshot': 'home'},
@@ -2217,8 +2221,12 @@ class PageScriptTests(ScriptedPage, PageCase):
                       'not approved yet, changes asked for', 'In the way', 'Checks',
                       'Warnings', 'Practice', 'Research', 'Guidance',
                       'How this training is decided', 'Carry on with your assistant',
-                      'Use training-studio to resume the training in'):
+                      'Use training-studio to resume the training in',
+                      'Follows the guidance installed with Training Studio, saved ',
+                      ', started on Training Studio 4.1.0.'):
             self.assertIn(shown, one['text'])
+        for gone in ('Pinned to', 'versions/abc123', 'scripts version'):
+            self.assertNotIn(gone, one['text'])
         self.assertEqual(one['pressed'], ['On this page'])
 
         every = shots['trainings']
@@ -10712,9 +10720,8 @@ class UpkeepScreenTests(ScriptedPage, PageCase):
 
         asked = shots['asked']
         for said in ('Update the companion skills?', 'What is brought',
-                     'harness-slides 0.13.1, from '
-                     'https://github.com/dbbaskette/harness-slides-skill at revision '
-                     '2ceaf5d8b013.',
+                     'harness-slides 0.13.1 or newer: the main branch of '
+                     'https://github.com/dbbaskette/harness-slides-skill, as it is now.',
                      'checked file for file before any of it is run',
                      'Its installer also downloads, from npm, the packages its slide engine '
                      'needs.'):
@@ -10933,8 +10940,8 @@ class UpkeepScreenTests(ScriptedPage, PageCase):
             self.assertIn(said, home['text'])
         self.assertNotIn('Upgrade', home['buttons'])
         asked = shots['asked']['sheet']
-        for said in ('Install the brand skill 0.13.1?', 'What is installed',
-                     'Release v0.13.1, at revision c3405eee0aad.',
+        for said in ('Install the brand skill from its main branch?', 'What is installed',
+                     'Its main branch, at revision c3405eee0aad.',
                      'From https://github.com/acme/brand.git.', 'What happens',
                      'Its own installer is run, and told to leave harness-research alone.',
                      'Where it would put in its own harness-slides in place of the one '

@@ -902,7 +902,7 @@ def status(root: Path) -> dict:
         'requests': session['requests'],
         'settings': session['settings'],
         'unavailable_stages': session['unavailable'],
-        'pins': session['pins'],
+        'pins': pins_shown(session),
         'research': research_summary(root, session, state.get('research') == 'approved'),
         'artifacts': state,
         'files': {name: artifact(root, session, name)['file'] for name in state},
@@ -1678,19 +1678,34 @@ def level_work(root: Path, level: str) -> list[str]:
                   if path.is_file() or path.is_symlink())
 
 
+def pins_shown(session: dict) -> dict:
+    """The harness skill tasks a training resumes with, for output: each task and its run.
+    A training saved before this may also hold `runtime`, the folder a companion skill was
+    installed in then. It is left in the saved record and never shown, used or checked: the
+    skill itself says where it runs from each time it is started or resumed."""
+    return {key: {name: value for name, value in entry.items() if name != 'runtime'}
+            if isinstance(entry, dict) else entry for key, entry in session['pins'].items()}
+
+
 @mutating
-def pin(root: Path, skill: str, task: str, runtime: str, run: str | None = None,
-        level: str | None = None) -> dict:
-    """Record the harness skill task this training, or one of its levels, resumes with."""
+def pin(root: Path, skill: str, task: str, runtime: str | None = None,
+        run: str | None = None, level: str | None = None) -> dict:
+    """Record the harness skill task this training, or one of its levels, resumes with: the
+    task and its run, never where the skill is installed. `runtime` is taken and ignored, for
+    the guidance a training in progress was saved with, which still passes it."""
     session = load(root)
     check_choice(skill, PINNABLE, 'A pinned skill')
     if level is not None and level not in session['levels']:
         raise WorkspaceError('The level is one of: ' + (', '.join(session['levels'])
                                                         or 'none; this is a plain training'))
     key = qualify(skill, level)
-    session['pins'][key] = {'task': task, 'runtime': runtime}
+    before = session['pins'].get(key)
+    entry = {'task': task}
+    if isinstance(before, dict) and 'runtime' in before:
+        entry['runtime'] = before['runtime']    # what an older version saved stays as it is
     if run:
-        session['pins'][key]['run'] = run
+        entry['run'] = run
+    session['pins'][key] = entry
     log(session, 'pin', skill=skill, task=task)
     store(root, session)
-    return session['pins']
+    return pins_shown(session)

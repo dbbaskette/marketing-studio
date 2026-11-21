@@ -1,4 +1,13 @@
-"""Companion requirements and verified release locks for all installers."""
+"""The companion skills every installer brings: from their repository's `main`, checked.
+
+There are no release locks and no tags. A pin names a companion's repository, its `main`
+branch, and the oldest version this Marketing Studio works with (`version`, `requirement`):
+a floor only, never what is installed. An install fetches `main`, checks it file for file
+before anything of it runs (no links, no hooks, its entry and installer where the pin says,
+a version at or above the floor) and runs its own installer. An update means that the
+installed copy's commit differs from `main`'s: `main` is installed again. An offline bundle
+carries whatever `main` was when it was built, with that commit and its checksum.
+"""
 import hashlib
 import json
 import os
@@ -14,6 +23,7 @@ InstallError = ValueError
 VERSION = re.compile(r'^\d+\.\d+\.\d+(?:-[a-z0-9]+(?:\.[a-z0-9]+)*)?$')
 HEX = {'commit': re.compile(r'^[0-9a-f]{40}$'), 'sha256': re.compile(r'^[0-9a-f]{64}$')}
 NODE_NEEDED = 20
+BRANCH = 'main'   # every companion is installed and updated from its main branch
 HARNESS = {'claude': 'Claude Code', 'codex': 'Codex'}
 
 
@@ -49,25 +59,29 @@ def node_is_enough(node: str | None) -> bool:
 
 
 def read_pins(path: Path) -> dict:
-    """The pinned companions: {name: {repository, version, commit, sha256, stub, installer}}."""
+    """The companions: {name: {repository, branch, version, stub, installer, ...}}. `version`
+    is the oldest accepted; `branch` is always `main`. A bundle's own record may add the
+    `commit` and `sha256` of the `main` it carries."""
     try:
         kept = json.loads(path.read_text(encoding='utf-8'))
         pins = kept['companions']
         if kept['schema'] != 1 or not isinstance(pins, dict):
             raise ValueError
         for name, pin in pins.items():
-            for key in ('repository', 'version', 'commit', 'sha256', 'stub', 'installer'):
+            for key in ('repository', 'version', 'stub', 'installer'):
                 if not isinstance(pin[key], str) or not pin[key]:
                     raise ValueError
+            pin.setdefault('branch', BRANCH)
             inside = [Path(pin[key]) for key in ('stub', 'installer')]
             if not re.fullmatch(r'[a-z][a-z0-9-]{0,63}', name) \
-                    or not VERSION.match(pin['version']) \
-                    or any(not pattern.match(pin[key]) for key, pattern in HEX.items()) \
+                    or not VERSION.match(pin['version']) or pin['branch'] != BRANCH \
+                    or any(key in pin and not pattern.match(str(pin[key]))
+                           for key, pattern in HEX.items()) \
                     or any(part.is_absolute() or '..' in part.parts for part in inside):
                 raise ValueError
             if as_tuple(pin['version']) < as_tuple(minimum_version(pin)):
                 raise ValueError
-    except (OSError, ValueError, KeyError, TypeError):
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
         raise InstallError(f'{path} does not say which companion skills to install, or says '
                            'it in a way this installer does not read. Get this repository '
                            'again.')
@@ -87,8 +101,8 @@ def version_key(version: str) -> tuple:
 
 
 def minimum_version(pin: dict) -> str:
-    """The oldest installed copy that is accepted: the requirement's version, or the lock
-    itself when there is no requirement. Installs always use the exact lock."""
+    """The oldest installed copy that is accepted, and the oldest `main` that is installed:
+    the requirement's version, else the pin's own `version`."""
     requirement = pin.get('requirement')
     if requirement is None and 'requirement' not in pin:
         return pin['version']
@@ -98,69 +112,16 @@ def minimum_version(pin: dict) -> str:
     return match[1]
 
 
-def select_release(pin: dict) -> dict:
-    """Look up stable tags only, for an explicit lock refresh. No source is downloaded and
-    no installer runs."""
-    if 'requirement' not in pin:
-        return dict(pin)
-    code, said = git(['ls-remote', '--tags', '--', pin['repository']], Path(tempfile.gettempdir()))
-    if code:
-        raise InstallError('Companion releases could not be checked. Retry when the repository is reachable.')
-    tags = {}
-    for line in said.splitlines():
-        parts = line.split()
-        if len(parts) != 2 or not HEX['commit'].fullmatch(parts[0]):
-            continue
-        match = re.fullmatch(r'refs/tags/(v?\d+\.\d+\.\d+)(\^\{\})?', parts[1])
-        if match:
-            tags.setdefault(match[1], {})['peeled' if match[2] else 'commit'] = parts[0]
-    floor = max(as_tuple(pin['version']), as_tuple(minimum_version(pin)))
-    candidates = {}
-    for tag, values in tags.items():
-        version = tag.removeprefix('v')
-        if as_tuple(version) < floor:
-            continue
-        commit = values.get('peeled', values.get('commit'))
-        if version in candidates and candidates[version] != commit:
-            raise InstallError('Two companion tags name the same version at different commits.')
-        candidates[version] = commit
-    if not candidates:
-        raise InstallError('No stable companion tag satisfies ' + pin['requirement'] + ' and the saved release lock.')
-    version = max(candidates, key=as_tuple)
-    commit = candidates[version]
-    if version == pin['version']:
-        if commit != pin['commit']:
-            raise InstallError('The locked companion release tag changed. Its saved commit and checksum were preserved.')
-        return dict(pin)
-    # The old release's checksum must never be attributed to newly selected code.
-    return {**pin, 'version': version, 'commit': commit, 'sha256': None}
-
-
-def lock_companion(name: str, pin: dict) -> dict:
-    """Resolve new bytes at the selected immutable commit, without executing code."""
-    if pin['sha256'] is not None:
-        return dict(pin)
-    with tempfile.TemporaryDirectory(prefix='studio-companion-lock-') as temporary:
-        folder = Path(temporary)
-        commit = fetch_revision(pin['repository'], pin['commit'], folder)
-        if commit != pin['commit']:
-            raise InstallError('The companion did not resolve to its selected commit.')
-        sha256 = tree_digest(folder)  # Refuse links before opening package metadata.
-        try:
-            version = json.loads((folder / 'package.json').read_text(encoding='utf-8'))['version']
-            stub = (folder / pin['stub']).read_text(encoding='utf-8')
-        except (OSError, ValueError, KeyError, TypeError) as failure:
-            raise InstallError('The companion release has no readable package and entry.') from failure
-        named = re.search(r'^name: *(\S+) *$', stub, re.MULTILINE)
-        if version != pin['version'] or not named or named.group(1) != name \
-                or not (folder / pin['installer']).is_file():
-            raise InstallError('The companion release does not match its tag, entry, or installer.')
-    return {**pin, 'sha256': sha256}
-
-
-def resolve_companion(name: str, pin: dict) -> dict:
-    """Resolve a requirement into an exact version, commit and source checksum."""
-    return lock_companion(name, select_release(pin))
+def main_commit(pin: dict) -> str:
+    """The commit `main` of a companion's repository is at now. Only the branch is read:
+    nothing is downloaded or run."""
+    code, said = git(['ls-remote', '--', pin['repository'], 'refs/heads/' + pin.get('branch', BRANCH)],
+                     Path(tempfile.gettempdir()))
+    found = said.split()[0] if code == 0 and said.split() else ''
+    if not HEX['commit'].fullmatch(found):
+        raise InstallError(f"The main branch of {pin['repository']} could not be read. Retry "
+                           'when the repository is reachable.')
+    return found
 
 
 def tree_digest(folder: Path) -> str:
@@ -195,10 +156,12 @@ def git(args: list[str], cwd: Path) -> tuple[int, str]:
 def fetch_revision(repository: str, revision: str, into: Path) -> str:
     """Put one revision of a repository into an empty folder as plain files, with nothing of
     git left in it. Returns the commit that was fetched."""
-    for step in (['init', '-q'],
-                 ['fetch', '-q', '--depth', '1', '--no-tags', repository, revision],
-                 ['-c', 'core.autocrlf=false', '-c', 'advice.detachedHead=false', 'checkout',
-                  '-q', '--detach', 'FETCH_HEAD']):
+    # No template, so no hook is ever placed, and none could run: hooks are switched off.
+    for step in (['init', '-q', '--template='],
+                 ['-c', 'core.hooksPath=/dev/null', 'fetch', '-q', '--depth', '1', '--no-tags',
+                  repository, revision],
+                 ['-c', 'core.autocrlf=false', '-c', 'advice.detachedHead=false',
+                  '-c', 'core.hooksPath=/dev/null', 'checkout', '-q', '--detach', 'FETCH_HEAD']):
         code, said = git(step, into)
         if code != 0:
             why = said.splitlines()[-1] if said else 'git gave no reason'
@@ -210,9 +173,66 @@ def fetch_revision(repository: str, revision: str, into: Path) -> str:
     return commit
 
 
+def _checked(name: str, pin: dict, folder: Path) -> str:
+    """The version a fetched companion holds, once it is checked as one: its entry names it,
+    its installer is where the pin says, and it is not older than the pin's floor. Nothing
+    of it is run."""
+    stub = folder / pin['stub']
+    named = re.search(r'^name: *(\S+) *$', stub.read_text(encoding='utf-8'), re.MULTILINE) \
+        if stub.is_file() and not stub.is_symlink() else None
+    try:
+        version = json.loads((folder / 'package.json').read_text(encoding='utf-8'))['version']
+    except (OSError, ValueError, KeyError, TypeError):
+        version = None
+    if not named or named.group(1) != name or not (folder / pin['installer']).is_file() \
+            or not isinstance(version, str) or not VERSION.match(version):
+        raise InstallError(f'{name} on its main branch does not hold the entry, the installer '
+                           'and the version this installer expects. None of it was run.')
+    floor = minimum_version(pin)
+    if as_tuple(version) < as_tuple(floor):
+        raise InstallError(f'The main branch of {name} holds {version}, older than the {floor} '
+                           'this version needs. None of it was run. Try again once it is updated.')
+    return version
+
+
+def fetch_main(name: str, pin: dict, root: Path) -> tuple[Path, dict]:
+    """The companion's repository at `main` as it is now, checked, in this installer's own
+    folder: (the folder, the pin with the `version`, `commit` and `sha256` it holds). A copy
+    fetched before at the same commit is used when it is still whole, file for file. A pin
+    that carries a `commit` and `sha256`, as a bundle's record does, is fetched exactly."""
+    if pin.get('commit') and pin.get('sha256'):
+        kept = fetch_companion(name, pin, root)
+        return kept, {**pin, 'version': _checked(name, pin, kept)}
+    commit = main_commit(pin)
+    kept = root / 'companions' / name / commit[:12]
+    record = kept.with_name(kept.name + '.sha256')
+    if kept.is_dir() and record.is_file():
+        digest = record.read_text(encoding='utf-8').strip()
+        if tree_digest(kept) != digest:
+            raise InstallError(f'{kept} has changed since it was fetched. Remove that folder '
+                               'and run this again.')
+        return kept, {**pin, 'version': _checked(name, pin, kept), 'commit': commit, 'sha256': digest}
+    kept.parent.mkdir(parents=True, exist_ok=True)
+    pending = Path(tempfile.mkdtemp(prefix='.pending-', dir=kept.parent))
+    try:
+        fetched = fetch_revision(pin['repository'], 'refs/heads/' + pin.get('branch', BRANCH), pending)
+        if fetched != commit:   # main moved while it was fetched: what was fetched is used
+            commit, kept = fetched, root / 'companions' / name / fetched[:12]
+            record = kept.with_name(kept.name + '.sha256')
+        digest = tree_digest(pending)   # refuses a link before anything is read
+        version = _checked(name, pin, pending)
+        shutil.rmtree(kept, ignore_errors=True)
+        os.replace(pending, kept)
+        record.write_text(digest + '\n', encoding='utf-8')
+    finally:
+        shutil.rmtree(pending, ignore_errors=True)
+    return kept, {**pin, 'version': version, 'commit': commit, 'sha256': digest}
+
+
 def fetch_companion(name: str, pin: dict, root: Path) -> Path:
-    """The companion's repository at its pinned revision, checked, in this installer's own
-    folder. Refuses anything that is not exactly what companions.json names."""
+    """The companion's repository at the exact `commit` a pin names, checked file for file
+    against its `sha256`, in this installer's own folder: what a bundle built from `main`
+    recorded. Refuses anything that is not exactly that."""
     kept = root / 'companions' / name / pin['commit'][:12]
     if kept.is_dir():
         if tree_digest(kept) != pin['sha256']:
@@ -224,14 +244,14 @@ def fetch_companion(name: str, pin: dict, root: Path) -> Path:
     try:
         commit = fetch_revision(pin['repository'], pin['commit'], pending)
         if commit != pin['commit'] or tree_digest(pending) != pin['sha256']:
-            raise InstallError(f"What {pin['repository']} gave for {name} {pin['version']} "
+            raise InstallError(f"What {pin['repository']} gave for {name} at {pin['commit'][:12]} "
                                'is not what this installer expects, file for file. None of '
                                'it was kept and none of it was run.')
         stub = pending / pin['stub']
         named = re.search(r'^name: *(\S+) *$', stub.read_text(encoding='utf-8'), re.MULTILINE) \
             if stub.is_file() else None
         if not named or named.group(1) != name or not (pending / pin['installer']).is_file():
-            raise InstallError(f'{name} at its pinned revision does not hold the entry and '
+            raise InstallError(f'{name} at its recorded revision does not hold the entry and '
                                'the installer this installer expects. None of it was run.')
         os.replace(pending, kept)
     finally:
@@ -257,7 +277,7 @@ def companion_found(home: Path, harnesses: list[str], name: str) -> dict:
 
 
 def wanting(found: dict, wanted: str) -> list[str]:
-    """The assistants that have no copy of a companion, or an older one than is pinned."""
+    """The assistants that have no copy of a companion, or one older than `wanted`."""
     return [harness for harness, version in found.items()
             if version is None or (version and as_tuple(version) < as_tuple(wanted))]
 
@@ -309,62 +329,69 @@ def run_companion(name: str, pin: dict, checkout: Path, home: Path,
     return outcome
 
 
-def newest_companion(name: str, pin: dict) -> tuple[dict, str | None]:
-    """The newest stable release of a companion, checked as a lock is: its exact version,
-    commit and source checksum. When its repository cannot be reached, or its newest release
-    is not one this installer can check, the saved lock stands in, with why."""
-    try:
-        return resolve_companion(name, pin), None
-    except InstallError as refusal:
-        return dict(pin), str(refusal)
+def installed_commit(state: dict, name: str) -> str | None:
+    """The commit of `main` this installer last installed of a companion, or None."""
+    kept = ((state or {}).get('companions') or {}).get(name)
+    commit = kept.get('commit') if isinstance(kept, dict) else None
+    return commit if isinstance(commit, str) and HEX['commit'].fullmatch(commit) else None
 
 
 def bring_companions(home: Path, root: Path, harnesses: list[str], pins: dict, agree,
-                     state: dict, declined: str | None = None) -> dict:
-    """Install each companion that is missing, or older than its requirement, after asking.
-    What is installed is the companion's newest stable release, looked up in its own
-    repository once the person has agreed, fetched at its exact commit and checked file for
-    file, as a lock is. The lock in companions.json is the oldest release ever installed, and
-    what is installed when the newest cannot be looked up or checked; `looked` then says why.
-    Nothing is looked up or fetched before that yes, and an installed copy that meets the
-    requirement is left alone. Nothing here undoes the studio's own installation: what goes
-    wrong is reported. `declined` says why one was not agreed to."""
+                     state: dict, declined: str | None = None, update: bool = False) -> dict:
+    """Install each companion that is missing, or older than this version needs, after
+    asking; with `update`, also each whose installed commit differs from its `main` now,
+    or was not installed from here. What is installed is `main`, fetched once the person
+    has agreed and checked file for file (`fetch_main`). Nothing is looked up or fetched
+    before that yes, and an installed copy that is new enough is otherwise left alone.
+    Nothing here undoes the studio's own installation: what goes wrong is reported.
+    `declined` says why one was not agreed to."""
     outcomes = {}
-    for name, locked in pins.items():
+    for name, pin in pins.items():
         found = companion_found(home, harnesses, name)
-        outcome = {'wanted': locked['version'], 'found': found, 'state': 'left alone'}
-        if wanting(found, minimum_version(locked)):
+        outcome = {'wanted': pin['version'], 'found': found, 'state': 'left alone'}
+        short = wanting(found, minimum_version(pin))
+        moved = None
+        if update and not short:
+            try:
+                head = main_commit(pin)
+            except InstallError as refusal:
+                outcome['looked'] = str(refusal)
+                head = None
+            if head is not None and head != installed_commit(state, name):
+                moved = head
+        if short or moved:
             if not node_is_enough(node_version()):
                 outcome.update({'state': 'failed', 'detail': f'its installer needs Node '
                                 f'{NODE_NEEDED} or newer.'})
-            elif not agree(name, locked, found):
+            elif not agree(name, pin, found):
                 outcome['state'] = 'waiting'
                 if declined:
                     outcome['why'] = declined
             else:
-                pin, unreachable = newest_companion(name, locked)
-                outcome['wanted'] = pin['version']
-                if unreachable:
-                    outcome['looked'] = unreachable
                 try:
-                    checkout = fetch_companion(name, pin, root)
-                    outcome.update(run_companion(name, pin, checkout, home, harnesses))
+                    checkout, fetched = fetch_main(name, pin, root)
+                    outcome['wanted'] = fetched['version']
+                    outcome['commit'] = fetched['commit']
+                    outcome.update(run_companion(name, fetched, checkout, home, harnesses))
                 except InstallError as refusal:
                     outcome.update({'state': 'refused', 'detail': str(refusal)})
+                    fetched = None
                 outcome['found'] = companion_found(home, harnesses, name)
                 if outcome['state'] == 'installed':
                     state.setdefault('companions', {})[name] = {
-                        'version': pin['version'], 'commit': pin['commit'], 'sha256': pin['sha256'],
+                        'version': fetched['version'], 'commit': fetched['commit'],
+                        'sha256': fetched['sha256'], 'branch': fetched.get('branch', BRANCH),
                         'installed_at': now()}
         outcomes[name] = outcome
     return outcomes
 
-SHARED = ('minimum_version', 'select_release', 'lock_companion', 'resolve_companion', 'read_pins', 'as_tuple', 'tree_digest', 'git', 'fetch_revision', 'fetch_companion', 'companion_found', 'wanting', 'companion_command', 'run_companion', 'newest_companion', 'bring_companions')
+SHARED = ('minimum_version', 'main_commit', 'read_pins', 'as_tuple', 'tree_digest', 'git', 'fetch_revision', '_checked', 'fetch_main', 'fetch_companion', 'companion_found', 'wanting', 'companion_command', 'run_companion', 'installed_commit', 'bring_companions')
 
 
 def bind(namespace):
     """Retain each native installer's public globals and test injection points."""
     namespace['VERSION'] = VERSION
+    namespace.setdefault('BRANCH', BRANCH)
     for name in SHARED:
         original = globals()[name]
         function = FunctionType(original.__code__, namespace, name, original.__defaults__, original.__closure__)

@@ -597,10 +597,12 @@ Open **Settings → Brand skill**, as in Training Studio. A brand skill belongs 
 your organisation and is supplied separately. You can write without one.
 
 - **Its repository** takes an https or ssh address that Git can access with your
-  existing sign-in. **Which release** takes a tag such as `v1.4.0`; leave it empty
-  for the newest. **Check and save** reads release tags before saving anything.
-  A failed check preserves the previous settings. Clear both fields to forget
-  the repository; installed skills stay installed.
+  existing sign-in. The brand skill is installed from its `main` branch: there is
+  no release to choose, and a release saved by an older version is not used.
+  **Check and save** reads where `main` is before saving anything. A failed check
+  preserves the previous settings. Clear the field to forget the repository;
+  installed skills stay installed. A skill chosen here is kept by its stable
+  `current` address, so it is found again after the brand skill updates.
 - **Use this brand skill** lists skills found in the usual shared install and
   assistant skill folders, following Training Studio's discovery rules.
   `BRAND_SKILL_RUNTIME` can point to a particular installed skill folder.

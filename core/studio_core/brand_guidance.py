@@ -3,6 +3,7 @@
 What a caller needs to know
 ---------------------------
     kept = brand_guidance.recorded(answer)        # what a studio keeps of `guidance start`
+    brand_guidance.tell(project, answer)          # its notice, in the project's activity log
     texts = brand_guidance.snapshot(answer)       # {name: text} from the returned snapshot
     texts.update(brand_guidance.brand_texts(contract_path))   # the brand's own handoff
     brand_guidance.review_texts(answer)           # the brand's review checklist, for the reviewer
@@ -13,7 +14,8 @@ What a caller needs to know
   a task, and returns {task, revision, guidance, runtime, ...}: `guidance` is the
   snapshot's SKILL.md, and `runtime` the installed slides tool to run every command with.
   A studio records the task with the deck and resumes it later. `recorded` keeps only the
-  fields a studio needs, as text.
+  fields a studio needs, as text, and never `runtime`: each answer names it afresh. A resume
+  of a task started on another slides tool version carries a `notice`, which `tell` shows.
 - `snapshot` reads the guidance a worker is handed from that snapshot, by the names the
   studios already use for them, and one drawn example for each relation. Only regular
   files inside the snapshot are read, each up to READ_MOST characters.
@@ -43,7 +45,9 @@ GUIDES = {'slides guidance': 'SKILL.md', 'drafting guidance': 'references/draft.
           'parallel build': 'references/parallel-build.md'}
 RELATIONS = ('order', 'dependency', 'hierarchy', 'membership', 'contrast', 'parallel',
              'overlap', 'quantity', 'none')
-KEPT = ('task', 'revision', 'runtime', 'runtimeVersion', 'freshness', 'notice')
+# Never `runtime`: every start or resume names the installed slides tool afresh, and a
+# folder kept from an earlier one may be a version an update has removed since.
+KEPT = ('task', 'revision', 'runtimeVersion', 'freshness', 'notice')
 RECIPES = ('recipes', 'slideRecipes', 'slideDesignRecipes', 'designRecipes')
 REVIEW_CHECKLIST = 'brand review checklist'
 
@@ -54,9 +58,27 @@ def example(relation: str) -> str:
 
 
 def recorded(answer) -> dict:
-    """What a studio keeps of a brand's `guidance start` or `resume` answer."""
+    """What a studio keeps of a brand's `guidance start` or `resume` answer: never the slides
+    tool's folder, which each answer names afresh."""
     answer = answer if isinstance(answer, dict) else {}
     return {key: str(answer[key]) for key in KEPT if isinstance(answer.get(key), (str, int))}
+
+
+def tell(project, answer, label: str = "The brand's slide guidance") -> str | None:
+    """Show the person the `notice` an answer of the brand skill carries, in the project's
+    activity log under `label`: a guidance start or resume of a task started on another
+    version of the slides tool, or a contract check of a contract an older Harness Brand
+    exported. Returns the notice, or None when there is none."""
+    notice = answer.get('notice') if isinstance(answer, dict) else None
+    if not isinstance(notice, str) or not notice.strip():
+        return None
+    from studio_core import activity_log
+    try:
+        activity_log.append(Path(project) / 'work' / activity_log.FILE, activity_log.entry(
+            label, 'brand-notice', None, 'finished', [notice.strip()]))
+    except (OSError, ValueError):
+        pass
+    return notice.strip()
 
 
 def _read(base: Path, relative: str) -> str | None:

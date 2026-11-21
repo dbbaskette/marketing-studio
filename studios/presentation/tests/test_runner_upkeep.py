@@ -105,8 +105,8 @@ class UpkeepCase(unittest.TestCase):
         return folder
 
     def pin(self, **versions) -> None:
-        pins = {name: {'repository': str(self.base / f'{name}.git'), 'version': version,
-                       'commit': 'a' * 40, 'sha256': 'b' * 64, 'stub': 'bootstrap/SKILL.md',
+        pins = {name: {'repository': str(self.base / f'{name}.git'), 'branch': 'main',
+                       'version': version, 'stub': 'bootstrap/SKILL.md',
                        'installer': 'scripts/install.mjs'}
                 for name, version in {**PINS, **versions}.items()}
         (self.installer / 'companions.json').write_text(json.dumps(
@@ -143,7 +143,9 @@ class CompanionTests(UpkeepCase):
                                               'harness-research': 'ok'})
         self.assertEqual(found['companions'][0]['says'], 'harness-slides for Claude Code is '
                          'older than the 0.14.1 this Presentation Studio was made with.')
-        self.assertEqual(found['companions'][0]['commit'], 'a' * 12)
+        # Nothing was installed from here, so no installed commit is known.
+        self.assertEqual((found['companions'][0]['commit'], found['companions'][0]['branch']),
+                         (None, 'main'))
         rows = {row['name']: row for row in self.keeper().versions(found, None, False)['rows']}
         self.assertEqual((rows['harness-slides']['state'], rows['harness-slides']['target']),
                          ('update', '0.14.1'))
@@ -160,7 +162,7 @@ class CompanionTests(UpkeepCase):
                           'brand skill'])
         self.assertEqual(rows[-1]['says'], 'No brand skill is installed, so a deck stops where '
                          'it first needs your brand. Name its repository in Settings to install '
-                         'and upgrade it from here.')
+                         'and update it from here.')
 
     def test_each_assistant_is_looked_at_for_itself(self):
         self.pin()
@@ -259,7 +261,8 @@ class UpdateTests(UpkeepCase):
         self.assertEqual((update['state'], update['says']),
                          ('done', 'harness-slides 0.14.1 was installed by its own installer.'))
         asked = json.loads((self.installer / 'asked.json').read_text())
-        self.assertEqual(asked[:4], ['companions', '--companions', 'install', '--while-open'])
+        self.assertEqual(asked[:5], ['companions', '--companions', 'install', '--update',
+                                     '--while-open'])
         self.assertIn(str(self.home), asked)
         self.assertEqual(looked, ['again'])
 
@@ -359,12 +362,13 @@ def setUpModule():
     for name, version in (('harness-research', '0.8.0'), ('harness-slides', '0.14.1')):
         _made[name] = StandIn(base, name)
         commit = _made[name].release(version)
-        pins[name] = {'repository': str(_made[name].bare), 'version': '0.0.0',
-                      'commit': '0' * 40, 'sha256': '0' * 64, 'stub': 'bootstrap/SKILL.md',
+        # Installed from its main branch, with this release as the oldest accepted.
+        pins[name] = {'repository': str(_made[name].bare), 'branch': 'main', 'version': version,
+                      'requirement': '>=' + version, 'stub': 'bootstrap/SKILL.md',
                       'installer': 'scripts/install.mjs'}
         write_pins(base / 'companions.json', pins)
-        install.pin(base / 'companions.json', name, commit)
         pins = install.read_pins(base / 'companions.json')
+        _made[name].commit = commit
     _made['pins'] = pins
 
 
@@ -536,7 +540,7 @@ class InstalledUpdateTests(InstalledCase):
         (command, seconds), = asked
         self.assertEqual(command[2:], [
             str(staged / 'installer' / 'install.py'), 'companions', '--companions', 'install',
-            '--while-open', '--json', '--home', str(self.home), '--root', str(self.root)])
+            '--update', '--while-open', '--json', '--home', str(self.home), '--root', str(self.root)])
         self.assertEqual(seconds, upkeep.UPDATE_SECONDS)
         done = keep.report()['update']
         self.assertEqual(done['state'], 'failed')

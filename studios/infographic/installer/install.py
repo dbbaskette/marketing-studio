@@ -17,7 +17,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'runner'))
-from studio_core.packaging import files
+from studio_core.packaging import GONE, files, prune, stable_address, version_target
 from studio_core.runtime import shell_path
 sys.path.insert(0, str(ROOT))
 from runner.workspace import _atomic, _directory, file_lock
@@ -86,6 +86,9 @@ def main(argv=None):
     top.add_argument('--target', choices=('codex', 'claude', 'both'), default='both')
     top.add_argument('--companions', choices=('skip', 'ask', 'install'), default='skip')
     top.add_argument('--pins', type=Path)
+    # From the Marketing Studio installer, which removes older versions itself once every
+    # studio has installed: until then a failure of its own puts the old pointers back.
+    top.add_argument('--defer-cleanup', action='store_true', help=argparse.SUPPRESS)
     top.add_argument('--yes', action='store_true')
     top.add_argument('--json', action='store_true')
     args = top.parse_args(argv)
@@ -108,6 +111,13 @@ def main(argv=None):
         if args.action in ('rollback', 'uninstall'):
             if not previous: return {'action': args.action, 'changed': False}
             key = 'previous' if args.action == 'rollback' else 'original'
+            if args.action == 'rollback' and isinstance(previous[key], dict):
+                # An update keeps one version. Look before anything is put back.
+                for name, item in previous[key].items():
+                    text = item.get('link') if isinstance(item, dict) else None
+                    target = version_target(name, text) if isinstance(text, str) else None
+                    if target is not None and not target.is_dir():
+                        raise ValueError(GONE)
             restore(previous[key], allowed)
             return {'action': args.action, 'changed': True, 'workspace': 'kept', 'versions': 'kept'}
         before = snapshot(managed)
@@ -149,9 +159,9 @@ def main(argv=None):
             link(managed[0], 'versions/' + key)
             for harness, folder in (('codex', '.agents'), ('claude', '.claude')):
                 if args.target in ('both', harness): link(home / folder / 'skills' / NAME, data / 'current')
-            # A prepared suite retains its immutable runtime even after Marketing
-            # Studio is uninstalled; source installs use the explicitly running Python.
-            command = shlex.quote(sys.executable) + ' ' + shlex.quote(str(data / 'current/runner/studio.py'))
+            # A prepared suite's private Python is named through its `current` link, which
+            # the next update moves; source installs use the explicitly running Python.
+            command = shlex.quote(str(stable_address(sys.executable))) + ' ' + shlex.quote(str(data / 'current/runner/studio.py'))
             environment = shell_path()
             helper = '#!/bin/sh\n' + MARK + '\n' + environment + 'exec ' + command + ' "$@"\n'
             launcher = '#!/bin/sh\n' + MARK + '\n' + environment + 'exec ' + command + ' serve --open\n'
@@ -166,7 +176,12 @@ def main(argv=None):
         except BaseException:
             restore(before, managed)
             raise
-        return {'action': 'install', 'product': 'Infographic Studio', 'version': key, 'path': str(data / 'current'), 'companions': []}
+        # Last, when nothing more can fail and with the running lease still held: every other
+        # version goes, so nothing can go on using an older copy.
+        cleaned = {'removed': [], 'retained': []} if args.defer_cleanup else prune(versions, key)
+        return {'action': 'install', 'product': 'Infographic Studio', 'version': key, 'path': str(data / 'current'),
+                'runtime': str(data / 'current'), 'id': key, 'versionDirectory': str(destination),
+                'companions': [], **cleaned}
 
 
 if __name__ == '__main__':

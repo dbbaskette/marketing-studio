@@ -208,8 +208,8 @@ def dispatch(engine, path, sent):
                 return {key: shown[key] for key in ('expected', 'items', 'report')}
             if sent.get('action') != 'save' or sent.get('expected') != shown['expected']:
                 raise WorkspaceError('This draft or its inputs changed. Reopen the current flags before saving.')
-            tool = rc.matching(engine.research(), record.get('research_contract'))
-            if tool is None: raise WorkspaceError('Restore the saved research helper before continuing.')
+            tool = rc.matching(engine.research())   # the installed helper, whichever version research started on
+            if tool is None: raise WorkspaceError(rc.NOT_INSTALLED)
             verified = tool._json('synthesis', 'verify', '--project', str(research_session.case_for(root)))
             if verified.get('status') not in ('needs-revision', 'draft') or verified.get('artifact_integrity') == 'failed':
                 raise WorkspaceError('Research integrity or source state changed. Recheck the draft before deciding.')

@@ -10,6 +10,7 @@ from contextlib import contextmanager
 
 from .distribution import digest, host_platform
 from .companions import tree_digest, VERSION, version_key
+from . import packaging
 
 
 def record(source):
@@ -111,8 +112,9 @@ def plan(source, home, studios, target):
                 result.append({'name': name, 'keep': True, 'current': current, 'links': links})
                 continue
         # An upstream install at the same source revision can have no npm packages
-        # yet, or a different npm-generated lock. Keep it intact and give the
-        # prepared production tree its own immutable version directory.
+        # yet, or a different npm-generated lock. It is left intact while this install
+        # can still fail, and the prepared production tree gets its own version
+        # directory. `prune` removes the other one once the whole suite has installed.
         bundled_id = item['id'] + '-bundle-' + tree_digest(package)[:12]
         result.append({'name': name, 'package': package, 'destination': root / 'versions' / bundled_id,
                        'current': current, 'links': links, 'keep': False})
@@ -140,5 +142,30 @@ def install(planned, link):
             link(item['current'], 'versions/' + destination.name)
         for path in item['links']:
             link(path, item['current'])
-        results[item['name']] = {'state': 'left alone' if item['keep'] else 'installed', 'source': 'bundled'}
+        results[item['name']] = {'state': 'left alone' if item['keep'] else 'installed', 'source': 'bundled',
+                                 'runtime': str(item['current']), 'removed': [], 'retained': []}
+        if not item['keep']:
+            results[item['name']].update(id=item['destination'].name, versionDirectory=str(item['destination']))
+    return results
+
+
+def prune(planned):
+    """Remove each installed companion's other version folders, as its own installer does.
+
+    Call this only after the whole suite install has succeeded: until then a failure
+    restores the old `current`, which needs the old folder. A companion that was left
+    alone, being newer than the bundle, keeps everything it has. Nothing is removed when
+    `current` no longer names the version installed here.
+    """
+    results = {}
+    for item in planned:
+        if item['keep']:
+            continue
+        destination, current = item['destination'], item['current']
+        if current.is_symlink() and os.readlink(current) == 'versions/' + destination.name:
+            results[item['name']] = packaging.prune(destination.parent, destination.name)
+        else:
+            results[item['name']] = {'removed': [], 'retained': [{
+                'path': str(destination.parent),
+                'reason': 'The installed pointer changed, so older versions were left in place.'}]}
     return results

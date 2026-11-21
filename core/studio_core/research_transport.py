@@ -47,11 +47,6 @@ def describe(progress):
                 phase, 'Preparing the research areas.')
 
 
-def _release(version):
-    found = re.match(r'(\d+)\.(\d+)\.(\d+)$', str(version or ''))
-    return tuple(int(part) for part in found.groups()) if found else None
-
-
 def kept_nothing(root):
     """Whether research has registered nothing with Harness Research yet: no topic asset and
     no current case. Captured inputs alone are the studio's own copies."""
@@ -60,28 +55,37 @@ def kept_nothing(root):
 
 
 def move_to_installed(engine, root, record, product='training'):
-    """A run is tied to the Harness Research it started with, so its saved work is read by
-    the helper that wrote it. One that has kept nothing has nothing to read back: it moves to
-    the installed helper when that is a newer stable release, and gets that helper's limits."""
+    """Every run goes on with the installed Harness Research, whichever version it started
+    on, and gets that helper's limits: the record is moved to the installed helper's
+    capabilities, with nothing asked. What it held before is kept once, as `earlier`, so
+    that research saved under an older Marketing Studio, whose identities named a helper's
+    digest, is still recognised as the same research (`research_impact.earlier`)."""
     saved = record.get('research_contract')
-    if not isinstance(saved, dict) or not parallel.protocol(record) or not kept_nothing(root):
+    if not isinstance(saved, dict):
         return record
-    installed = rc.snapshot(engine.research())
-    was, now = _release(saved.get('version')), _release((installed or {}).get('version'))
-    if not installed or installed == saved or not was or not now or now <= was:
+    tool = engine.research()
+    installed = rc.snapshot(tool)
+    runtime = Path(tool.runtime)
+    collection = parallel.protocol(record)
+    supported = parallel.capability(runtime) if collection else None
+    if not installed or (collection and not supported):
         return record
-    runtime = Path(engine.research().runtime)
-    supported = parallel.capability(runtime)
-    if not supported:
+    reuse = research_sections.reuse_capability(runtime)
+    sectioned = research_sections.enabled(record) and record['section_synthesis'].get('reuse') is not None
+    if installed == saved and (not collection or supported == record['research_execution']['capability']) \
+            and (not sectioned or record['section_synthesis']['reuse'] == reuse):
         return record
     with engine.files:
         current = engine._load(root)
         if current.get('research_contract') != saved:
             return current
+        if collection:
+            execution = current['research_execution']
+            execution.setdefault('earlier', research_impact.earlier(current))
+            execution['capability'] = supported
         current['research_contract'] = installed
-        current['research_execution']['capability'] = supported
         if research_sections.enabled(current) and current['section_synthesis'].get('reuse') is not None:
-            current['section_synthesis']['reuse'] = research_sections.reuse_capability(runtime)
+            current['section_synthesis']['reuse'] = reuse
         if product == 'training':
             import workspace
             with workspace.locked(root):
@@ -107,16 +111,17 @@ def native(engine, root, run, task, sources, product='training'):
     focus = (record.get('research_inputs') or {}).get('focus')
     if focus: task['scope'] += '\nResearch focus: ' + focus
     record = move_to_installed(engine, root, record, product)
-    tool = rc.matching(engine.research(), record.get('research_contract'))
+    tool = rc.matching(engine.research())
     if tool is None:
-        raise WorkspaceError('This research run needs its saved Harness Research version. Restore it before continuing.')
+        raise WorkspaceError(rc.NOT_INSTALLED)
     kept = getattr(engine, 'documents', None) or documents
     originals = {s['file']: s['original'] for s in kept.listed(root)
                  if s.get('file') and s.get('original') and s.get('distinct', True)}
     sources = [{**s, **({'original': originals[s['file']],
                         'original_path': rc.inside(root, originals[s['file']])}
                        if s.get('file') in originals else {})} for s in sources]
-    if record.get('research_impact') and record['research_impact']['input'] != research_impact.snapshot(root, record, sources, task['planning_questions']):
+    if record.get('research_impact') and not research_impact.same_input(
+            record['research_impact']['input'], research_impact.snapshot(root, record, sources, task['planning_questions']), record):
         raise WorkspaceError('Research inputs changed after the affected-work preview. Review the current preview again.')
     attempt = secrets.token_hex(16)
     driver = copy.deepcopy(record.get('driver'))
@@ -237,18 +242,22 @@ def native(engine, root, run, task, sources, product='training'):
             raise failure
         return accepted['text'], handed['sources']
 
+    models = model_profiles.chosen_by_kind(record, 'level_of_effort' if product == 'presentation' else 'effort')
+    context = {'recipe': research_sections.PROTOCOL, 'draft_recipe': 2, 'models': models,
+               'checking': models['checking']}
+    earlier = research_impact.earlier(record)
     try:
-        if parallel.capability(tool.runtime) != record['research_execution']['capability']:
-            raise WorkspaceError('Restore the saved Harness Research collection capability before continuing.')
         return parallel.Workflow(tool.runtime, tool._json).run(
             root, task, invoke, sources, reading=True,
             limit=min(3, engine.at_once, record['research_execution'].get('workers', 3)),
             progress=progress, allowed=lambda: not cancelled() and engine._may_go(root),
             impact=record.get('research_impact'), input_snapshot=research_impact.snapshot(root, record, sources, task['planning_questions']),
             section_policy=record['section_synthesis'] if research_sections.enabled(record) else None,
-            section_context={'recipe': research_sections.PROTOCOL, 'draft_recipe': 2, 'scope_identity': research_impact.global_identity(record), 'helper': record['research_execution']['capability'],
-                'models': model_profiles.chosen_by_kind(record, 'level_of_effort' if product == 'presentation' else 'effort'),
-                'checking': model_profiles.chosen_by_kind(record, 'level_of_effort' if product == 'presentation' else 'effort')['checking']},
+            section_context={**context, 'scope_identity': research_impact.global_identity(record),
+                             'helper': rc.stable(record['research_execution']['capability'])},
+            earlier={'capability': earlier['capability'], 'reuse': earlier['reuse'],
+                     'section_context': {**context, 'scope_identity': research_impact.global_identity(record, older=True),
+                                         'helper': earlier['capability']}},
             creator_review=product == 'training',
             cancelled=cancelled, restart_stopped=True, readable=lambda cause: rc.dry_read(engine, root, cause))
     except (InterruptedError, companion.Stopped):

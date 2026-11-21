@@ -1391,8 +1391,8 @@ class Keeper:
             raise WorkspaceError(self.refuse)
         return {'stand_in': True}
 
-    def remember_brand(self, repository: str, listed: dict) -> None:
-        self.asked.append(('remember_brand', repository, sorted(listed)))
+    def remember_brand(self, repository: str, commit: str) -> None:
+        self.asked.append(('remember_brand', repository, commit))
 
 
 class UpkeepTests(PageCase):
@@ -1481,25 +1481,19 @@ class UpkeepTests(PageCase):
         said = self.post('brand', {'repository': str(self.base / 'nowhere.git')}, 400)
         self.assertTrue(said['error'].startswith("The brand skill's repository could not be "
                                                  'read. It was not found ('), said['error'])
-        self.assertEqual(self.post('brand', {'repository': str(bare), 'release': 'v9.0.0'},
-                                   400)['error'],
-                         f'{bare} has no release v9.0.0. Its newest is v1.2.0. Leave the '
-                         'release empty for the newest.')
-        self.assertEqual(self.post('brand', {'release': 'v1.2.0'}, 400)['error'],
-                         "A release is chosen from the brand skill's repository: give the "
-                         'repository too.')
         self.assertIsNone(settings.load().brand_repository, 'nothing was kept')
+        # It is installed from main: a release sent by an older page is not kept or used.
         made = self.post('brand', {'repository': str(bare), 'release': '1.2.0'})
-        self.assertEqual((made['brand']['repository'], made['brand']['release']),
-                         (str(bare), 'v1.2.0'))
+        self.assertEqual((made['brand']['repository'], made['brand']['release']), (str(bare), None))
         self.assertEqual((settings.load().brand_repository, settings.load().brand_release),
-                         (str(bare), 'v1.2.0'))
+                         (str(bare), None))
         # It is kept for every studio, in the file they share, and nowhere else.
         self.assertEqual(json.loads(Path(os.environ['STUDIOS_CONFIG']).read_text())['brand'],
-                         {'repository': str(bare), 'release': 'v1.2.0'})
+                         {'repository': str(bare)})
         self.assertNotIn('brand_repository', json.loads(settings.path().read_text()))
-        self.assertEqual(keeper.asked, [('remember_brand', str(bare), ['v1.2.0',
-                                                                       'v2026.1.0'])])
+        main = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=work, check=True,
+                              capture_output=True, text=True).stdout.strip()
+        self.assertEqual(keeper.asked, [('remember_brand', str(bare), main)])
         self.assertEqual(self.post('setup', {'limits': {'parallel': 3}})['brand']['repository'],
                          str(bare), 'a change to anything else leaves it as it was')
         cleared = self.post('brand', {'repository': ''})

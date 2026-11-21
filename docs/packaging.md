@@ -51,7 +51,9 @@ Offline bundles carry those tools too. Newly installed studios share one private
 tool set keyed by the complete pinned tools lock, so installing another studio
 reuses LibreOffice, Google Cloud CLI, Git and preview dependencies. Each product
 keeps its own launch environment and installation record. Changed pins install
-beside previous tools; existing versions and rollback paths are retained. Nothing uses system Python or Node during
+beside previous tools, and those private tool folders are kept. Marketing Studio, the
+studios and the bundled companions are different: each keeps one version, named through
+its `current` link ([installation](installation.md)). Nothing uses system Python or Node during
 bundled installation, and setup never installs an assistant or starts a provider job.
 Packaging needs an existing Python 3.11+, Git, Node 22+ and npm on the build computer;
 it can build and verify Apple Silicon archives on an Intel Mac. Native execution
@@ -131,9 +133,9 @@ file; use a fresh download for other checksum failures.
 companion or npm application dependency. Mixed subsets include only the companions
 the other selected pipelines need. The pinned renderer is included only in subsets
 containing Infographic Studio; unsupported renderer platforms fail before runtime
-downloads. Native versions materialize approved core/UI links as ordinary files and
-retain their own renderer. Marketing Studio removal preserves independently runnable
-native installs and immutable private runtime versions.
+downloads. A native version materializes approved core/UI links as ordinary files and
+has its own renderer. Marketing Studio removal preserves independently runnable
+native installs and the installed private runtime.
 
 ```sh
 python3 scripts/build_bundles.py --platform macos-arm64 --studios infographic --output /absolute/build/output

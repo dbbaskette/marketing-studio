@@ -4,6 +4,7 @@ nor an installed skill is needed, and nothing touches the network.
 import gc
 import json
 import os
+import shutil
 import sys
 import tempfile
 import unittest
@@ -46,7 +47,8 @@ class Commands:
 
     def __call__(self, command, cwd=None):
         self.ran.append(command)
-        brands, title = self.known.get(command[1], (None, None))
+        # A skill is run through the address it was found by; it is the same script.
+        brands, title = self.known.get(str(Path(command[1]).resolve()), (None, None))
         if command[2:] == ['brands', '--json'] and brands is not None:
             return 0, json.dumps(brands), ''
         if command[2:] == ['version'] and title:
@@ -164,8 +166,10 @@ class FindingABrandSkillTests(unittest.TestCase):
         self.run.knows(version, 'acme-brand')
         self.run.knows(shared, 'other-brand', LISTED[:1], title=None)
         self.run.knows(plain, 'third-brand', LISTED[1:], title='Third Brand')
+        # Said through its `current` link, never the version folder an update removes.
+        current = version.parent.parent / 'current'
         self.assertEqual(brand.found(self.run), [
-            {'name': 'Acme Brand', 'version': '1.2.3', 'runtime': str(version),
+            {'name': 'Acme Brand', 'version': '1.2.3', 'runtime': str(current),
              'brands': LISTED},
             {'name': 'other-brand', 'version': None, 'runtime': str(shared),
              'brands': LISTED[:1]},
@@ -173,7 +177,14 @@ class FindingABrandSkillTests(unittest.TestCase):
              'brands': LISTED[1:]}])
         self.assertEqual(sum(command[2:] == ['brands', '--json'] for command in self.run.ran),
                          3, 'one skill behind four links is asked once')
-        self.assertEqual(brand.Brand(run=self.run).runtime, version)
+        self.assertEqual(brand.Brand(run=self.run).runtime, current)
+        # A setting saved before an update names the version folder, which is gone now.
+        newer = skill(version.parent / '1.4.0', 'acme-brand')
+        self.run.knows(newer, 'acme-brand')
+        current.unlink()
+        current.symlink_to(Path('versions') / '1.4.0')
+        shutil.rmtree(version)
+        self.assertEqual(brand.Brand(runtime=version, run=self.run).runtime, current)
 
     def test_the_override_is_the_only_place_looked(self):
         usual = skill(self.claude / 'acme-brand', 'acme-brand')
@@ -455,12 +466,13 @@ class FloorTests(unittest.TestCase):
     """The oldest brand skill a deck takes, read from the pins it was installed with."""
 
     def test_too_old(self):
-        self.assertEqual(brand.FLOOR, '0.14.0')
-        self.assertEqual(brand.too_old('0.13.2'), 'Your brand skill is 0.13.2. Decks need '
-                         '0.14.0 or newer, for its look samples and talk-or-handout export. '
+        # Harness Brand 1.4.0 is the first to hand out its stable `current` address.
+        self.assertEqual(brand.FLOOR, '1.4.0')
+        self.assertEqual(brand.too_old('1.3.0'), 'Your brand skill is 1.3.0. Decks need '
+                         '1.4.0 or newer, for its look samples and talk-or-handout export. '
                          'Update it in Settings.')
-        self.assertIsNone(brand.too_old('0.14.0'))
-        self.assertIsNone(brand.too_old('1.2.0'))
+        self.assertIsNone(brand.too_old('1.4.0'))
+        self.assertIsNone(brand.too_old('1.5.0'))
         self.assertIsNone(brand.too_old(None), 'a skill that says no version is not judged')
         self.assertIsNotNone(brand.too_old('2026.6.0'), 'a year-numbered release came first')
 

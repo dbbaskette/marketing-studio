@@ -51,7 +51,7 @@ def check(archive):
         selected = json.loads((source / 'bundle-manifest.json').read_text())['studios']
         shutil.rmtree(unpacked)
         data = home / '.local/share/marketing-studio'
-        current = (data / 'current').resolve()
+        current = data / 'current'   # the address the launchers use; never the version folder
         python = current / 'runtime/python/bin/python3'
         node = current / 'runtime/node/bin/node'
         report = json.loads(run([str(home / '.local/bin/marketing-studio'), 'status', '--json'], env))

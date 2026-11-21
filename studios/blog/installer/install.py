@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 """Install the complete Blog Studio skill for local Codex and Claude Code.
 
-The skill folder beside this installer is copied into a verified, versioned
-directory. Harness skill folders are links to it, so an update or rollback is
-one atomic link switch. Nothing is downloaded and no account is needed.
+The skill folder beside this installer is copied into a verified directory, and
+`current` is a link to it. Harness skill folders, launchers and the installation
+record name `current`, never that directory, so an update is one atomic link
+switch and rewrites nothing else. Once an update has succeeded the directory it
+replaced is removed: one version is kept. Nothing is downloaded and no account
+is needed.
 """
 
 import argparse
@@ -220,6 +223,23 @@ def package_key(manifest):
     )
 
 
+def version_id(root, name):
+    """A recorded version as the name of its folder in `versions`.
+
+    The record holds that name. One written by an earlier installer holds the folder's
+    whole path, which is read the same way and written back as the name.
+    """
+    recorded = Path(name)
+    if recorded.is_absolute():
+        if recorded.parent != root / 'versions':
+            raise ValueError()
+    elif recorded.name != name or name in ('', '.', '..'):
+        raise ValueError()
+    if (root / 'versions' / recorded.name).is_symlink():
+        raise ValueError()
+    return recorded.name
+
+
 def read_state(root):
     path = root / 'installation.json'
     if not path.exists():
@@ -236,14 +256,8 @@ def read_state(root):
             or not isinstance(state.get('targets'), dict)
         ):
             raise ValueError()
-        for name in [state['version'], *state.get('history', [])]:
-            version = Path(name)
-            if (
-                not version.is_absolute()
-                or version.parent != root / 'versions'
-                or version.is_symlink()
-            ):
-                raise ValueError()
+        state['version'] = version_id(root, state['version'])
+        state['history'] = [version_id(root, name) for name in state.get('history', [])]
         if any(not Path(name).is_absolute() for name in state['targets'].values()):
             raise ValueError()
         if 'launchers' in state:
@@ -315,8 +329,11 @@ def installation_lock(root):
 
 
 def stable_interpreter(path):
-    """A path that survives patch upgrades: never resolved into a versioned Homebrew Cellar."""
-    path = Path(os.path.abspath(os.fspath(path)))
+    """A path that survives upgrades: never resolved into a versioned Homebrew Cellar, and
+    never the folder of an installed version, which the next update removes."""
+    from studio_core.packaging import stable_address
+
+    path = stable_address(os.path.abspath(os.fspath(path)))
     parts = path.parts
     if 'Cellar' in parts and len(parts) > parts.index('Cellar') + 2:
         index = parts.index('Cellar')
@@ -438,7 +455,8 @@ def stage_version(source, root, manifest, interpreter, active=None):
         if intact(candidate, manifest):
             return candidate, False
     if destination.exists() or destination.is_symlink():
-        # A damaged copy stays for diagnosis; a clean one is staged beside it.
+        # A damaged copy is left while this install can still fail, and a clean one is
+        # staged beside it. The damaged one goes once the install has succeeded.
         destination = versions / (key + '-repair-' + uuid.uuid4().hex[:8])
     stage = versions / ('.' + uuid.uuid4().hex)
     try:
@@ -458,6 +476,24 @@ def stage_version(source, root, manifest, interpreter, active=None):
     finally:
         if stage.exists():
             shutil.rmtree(stage)
+
+
+def placed(root, version, cleanup=True):
+    """What an install answers about where it is, and the older versions it removed.
+
+    `runtime` is the address to use and to save: the `current` link, which the next update
+    moves. `versionDirectory` is where this version's files are, and is replaced by the next
+    update. Every other entry in `versions` goes, so nothing can stay on an older copy.
+    """
+    from studio_core.packaging import prune
+
+    cleaned = prune(root / 'versions', version.name) if cleanup else {'removed': [], 'retained': []}
+    return {
+        'runtime': str(root / 'current'),
+        'id': version.name,
+        'versionDirectory': str(version),
+        **cleaned,
+    }
 
 
 def backup_path(root, path):
@@ -641,8 +677,14 @@ def install(
     repair=False,
     legacy=(),
     home=None,
+    cleanup=True,
 ):
-    """Install or update; `repair` is the same operation and is kept as a familiar verb."""
+    """Install or update; `repair` is the same operation and is kept as a familiar verb.
+
+    Once it has succeeded, every other folder in `versions` is removed, so one version is
+    kept. `cleanup=False` leaves them for the Marketing Studio installer, which removes
+    them itself when all its studios are in: until then its own failure restores them.
+    """
     source = Path(source).resolve()
     root = Path(root).expanduser().absolute()
     if root.is_symlink():
@@ -663,7 +705,7 @@ def install(
             raise InstallError(
                 'The current runtime is outside managed version storage. No changes were made.'
             )
-        recorded = Path(state['version']) if state else None
+        recorded = root / 'versions' / state['version'] if state else None
         # An interrupted earlier run can leave `current` ahead of the record.
         # A verified managed version is ours, so adopt it instead of refusing.
         active = original if intact(original) else None
@@ -703,6 +745,7 @@ def install(
                 'targets': wanted,
                 'launchers': state.get('launchers', {}),
                 'preserved_launchers': [],
+                **placed(root, version, cleanup),
             }
         history = list((state or {}).get('history', []))
         for earlier in (recorded, active):
@@ -710,12 +753,12 @@ def install(
                 earlier is not None
                 and earlier != version
                 and intact(earlier)
-                and (not history or Path(history[-1]) != earlier)
+                and (not history or history[-1] != earlier.name)
             ):
-                history.append(str(earlier))
+                history.append(earlier.name)
         saved = {
             'schema': 1,
-            'version': str(version),
+            'version': version.name,
             'history': history,
             'targets': wanted,
             'backups': list((state or {}).get('backups', [])),
@@ -774,10 +817,17 @@ def install(
         }
         if recovered:
             result['recovered'] = 'An interrupted earlier setup was completed.'
+        # Last, when nothing more can fail and Blog Studio is known to be closed.
+        result.update(placed(root, version, cleanup))
         return result
 
 
 def rollback(root):
+    """Switch back to the version before the last update, when it is still on this computer.
+
+    An update removes the version it replaced, so this is refused, with nothing changed,
+    unless that folder could not be removed then.
+    """
     root = Path(root).resolve()
     with installation_lock(root), not_running(root):
         state = read_state(root)
@@ -786,23 +836,27 @@ def rollback(root):
         current = root / 'current'
         if current.exists() and not current.is_symlink():
             raise InstallError('The managed current path is not a link. No changes were made.')
-        target = Path(state['history'][-1])
-        if target.parent != root / 'versions' or target.is_symlink():
+        target = root / 'versions' / state['history'][-1]
+        if target.is_symlink():
             raise InstallError('The previous runtime is outside managed storage.')
+        if not target.is_dir():
+            from studio_core.packaging import GONE
+
+            raise InstallError(GONE)
         manifest = verify_package(target)
         original = link_target(current) if current.is_symlink() else None
         leaving = (
             original
             if original is not None and original.parent == root / 'versions'
-            else Path(state['version'])
+            else root / 'versions' / state['version']
         )
         # The old version's recorded interpreter may be gone; record one that runs.
         configure(target, manifest, stable_interpreter(sys.executable))
         launcher_changes = []
         replace_link(current, target)
         try:
-            state['history'] = state['history'][:-1] + ([str(leaving)] if leaving != target else [])
-            state['version'] = str(target)
+            state['history'] = state['history'][:-1] + ([leaving.name] if leaving != target else [])
+            state['version'] = target.name
             state['launchers'], skipped = write_launchers(
                 root, launcher_home(root, state.get('launcher_home')), state, launcher_changes
             )
@@ -855,7 +909,7 @@ def uninstall(root, agents):
         return {
             'status': 'uninstalled',
             'removed': [k for k, _ in removed],
-            'retained': 'Your writing, Team Hubs, backups and installed versions were kept. To delete the installed versions, remove '
+            'retained': 'Your writing, Team Hubs, backups and the installed version were kept. To delete the installed version, remove '
             + str(root / 'versions')
             + '.',
         }
@@ -928,7 +982,7 @@ def inspect(root, selected):
                 'path': config['python'],
                 'status': 'ready' if interpreter_works(config['python']) else 'missing',
             }
-            if not state or Path(state['version']) != active:
+            if not state or root / 'versions' / state['version'] != active:
                 raise InstallError(
                     'An earlier setup was interrupted. Run repair from the installer.'
                 )
@@ -1098,6 +1152,9 @@ def main():
     )
     parser.add_argument('--dry-run', action='store_true')
     parser.add_argument('--json', action='store_true')
+    # From the Marketing Studio installer, which removes older versions itself once every
+    # studio has installed: until then a failure of its own puts the old pointers back.
+    parser.add_argument('--defer-cleanup', action='store_true', help=argparse.SUPPRESS)
     args = parser.parse_args()
     try:
         with interruptible():
@@ -1209,6 +1266,7 @@ def run(args):
                 repair=args.action == 'repair',
                 legacy=legacy,
                 home=args.home,
+                cleanup=not args.defer_cleanup,
             )
         except ReplaceRequired as needed:
             if args.yes:
@@ -1229,6 +1287,7 @@ def run(args):
                 repair=args.action == 'repair',
                 legacy=legacy,
                 home=args.home,
+                cleanup=not args.defer_cleanup,
             )
     elif args.action == 'rollback':
         result = rollback(root)
@@ -1313,8 +1372,15 @@ def run(args):
         print('Google: ' + result['google']['status'])
         if result['google'].get('next_step'):
             print(result['google']['next_step'])
-    if result.get('retained'):
+    if result.get('removed'):
+        print(
+            'Older versions removed: ' + str(len(result['removed'])) + '. Only the newest is kept.'
+        )
+    if isinstance(result.get('retained'), str):  # what an uninstall keeps
         print(result['retained'])
+    else:
+        for kept in result.get('retained', []):
+            print('Could not be removed: ' + kept['path'] + ' (' + kept['reason'] + ')')
     return 0
 
 

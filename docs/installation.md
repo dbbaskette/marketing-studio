@@ -33,9 +33,9 @@ From a consolidated checkout, install a particular studio with
 `bash install.sh --studios training`. Each independent `studios/<name>/`
 directory also has its own `install.sh` for its native installer.
 
-Platform downloads include private Python and Node runtimes, pinned Harness Research
-and Harness Slides, and the slide engine's production JavaScript dependencies. Setup
-copies them into versioned installation folders. It does not run npm, fetch companion
+Platform downloads include private Python and Node runtimes, Harness Research and
+Harness Slides as their `main` was when the download was built, and the slide engine's
+production JavaScript dependencies. Setup copies them into versioned installation folders. It does not run npm, fetch companion
 repositories, install both assistants, or modify shell startup files. No system Python,
 Node, npm, pip, Homebrew, or compiler is needed for this path. Standard operating-system
 libraries are still required; the bundle is not a container image.
@@ -52,10 +52,28 @@ assistant recorded here, and `marketing-studio doctor` reports when it is missin
 The same private runtimes support each studio's independent launcher. Deleting the
 unpacked download does not remove the installed runtimes. Existing workspaces and
 shared settings stay where they are. Companion installations use the upstream shared
-locations, locks, version folders, and discovery links. Unrelated skills are preserved;
+locations, version folders, `current` links and discovery links. Unrelated skills are preserved;
 newer independently installed companions are kept. An installation failure restores
-recorded pointers. Rollback restores previous suite, studio and companion pointers;
-retained version folders remain available.
+recorded pointers, and removes nothing.
+
+**One version is kept.** Marketing Studio, each studio and each bundled companion is
+installed in its own `versions/` folder, with a `current` link beside it. Every
+launcher, command, skill link and saved path names `current`, never the folder it
+points at, so an update moves that one link and nothing else needs rewriting. Once an
+update has fully succeeded, the installer removes every other folder in each `versions/`
+it installed into, and reports what it removed and anything it could not. Nothing can
+go on using an older copy, and no old folder is left for you to clean up. Two things
+stay: a companion that is newer than the bundled one is left exactly as it is, and an
+older Marketing Studio folder is kept while a studio this install did not renew still
+opens with the Python inside it, until that studio is next installed. Uninstalling
+Marketing Studio from a platform download keeps its `current` link and private
+runtime, because the studios open with them.
+
+Since an update keeps one version, `rollback` normally has nothing to return to. It
+checks first and changes nothing: "The earlier version is no longer on this computer:
+an update keeps only the newest. Install the release you want instead." To go back,
+install the release you want. Rollback still works when every earlier folder it would
+point at is still there, which happens only when one could not be removed.
 
 You can check prerequisites without installing system software:
 
@@ -111,53 +129,46 @@ it does not opt into assistant provisioning.
 
 Release preparation is a developer operation. It requires Python 3.11+, Git, Node 20+
 and npm. It uses a disposable HOME, ignores user npm configuration, verifies every
-runtime archive and companion source pin, installs only production npm dependencies
-with lifecycle scripts disabled, and includes dependency license notices. Private
-runtime locks are in `pins/runtimes.json`. Companion requirements and exact release
-locks are in `pins/companions.json`.
+runtime archive and checks each companion it fetches, installs only production npm
+dependencies with lifecycle scripts disabled, and includes dependency license notices.
+Private runtime checksums are in `pins/runtimes.json`. The companions are named in
+`pins/companions.json`.
 
-Each companion lock names an exact `version`, `commit` and source `sha256`, and a
-requirement, which is always the locked release itself: `requirement: ">=1.2.0"` for Harness
-Research and `requirement: ">=0.17.0"` for Harness Slides. The studios always use the latest
-locked Harness companions, so an installed copy older than the lock is offered its update.
+**Companions come from `main`.** There are no release tags to choose and nothing is
+locked. Each companion names its repository, its `main` branch and the oldest version
+Marketing Studio works with: `requirement: ">=1.3.1"` for Harness Research and
+`requirement: ">=0.19.0"` for Harness Slides, the first versions reached through their
+stable `current` address. That version is a floor and a label only, never what is
+installed. Once you agree to it, a missing companion, or one older than its floor, is
+installed from `main` as it is then: fetched with no hooks, checked file for file (no
+links, its entry and installer where the pin says, a version at or above the floor)
+before its own installer runs, and recorded with the commit and checksum it was. A `main`
+older than the floor is refused with a sentence that says to try again once it is updated.
 
-A source install or companion update does not stop at the lock. Once you agree to it, a
-missing companion, or one older than its requirement, is brought to its **newest stable
-release**: the release is looked up in the companion's own repository, fetched at its exact
-commit, and checked (package version, entry, installer and a checksum of every file) before
-its installer runs. The lock is the oldest release ever installed, and what is installed
-when the newest cannot be looked up or checked; the result then says why. Release bundles
-use the exact lock. The requirement only decides which already-installed copy is accepted.
-An accepted copy is left alone without looking anything up online, so a source install with
-current companions succeeds offline.
+An update means that `main` is at another commit than the one installed: a studio's
+Update, or `install.py companions --update`, installs `main` again. A copy that meets the
+floor is otherwise left alone without looking anything up online, so a source install with
+current companions succeeds offline. An offline bundle carries whatever `main` was when it
+was built, with that commit and checksum in its record.
 
-Moving the lock itself to newer releases is a maintainer step, for bundles and for the
-oldest release accepted. Refresh the locks, then run
-the research contract tests against the newly locked Harness Research source before
-building a new set of platform downloads:
+To see what each `main` holds before a build, and to run the research contract tests
+against Harness Research's `main`:
 
 ```sh
-python3 scripts/update_companions.py --check
 python3 scripts/update_companions.py
 python3 scripts/ci/research-runtime.py "$TMPDIR/research-runtime"
 STUDIO_TEST_RESEARCH_RUNTIME="$TMPDIR/research-runtime" PYTHONPATH=tests python3 -m unittest test_research_contract
 ```
 
-The refresh selects the newest stable numeric Git tag satisfying the requirement, moves the
-requirement up to that release so older installed copies are updated to it,
-resolves annotated tags to commits, verifies the package version and entry, and records
-a source checksum. It never runs an installer or modifies installed skills. A moved
-locked tag, mismatched package, unsafe source, or failed resolution leaves the lock
-unchanged. Normal bundle builds reuse the exact saved lock, so all platform builds can
-use the same inputs.
+`update_companions.py` reads where each `main` is, fetches and checks it as an install
+would and reports its version and commit. It writes nothing and runs no installer, and it
+fails when a `main` is older than its floor.
 
 An explicit source companion install or update asks before looking anything up, fetching
-source or running installers, then records the version, commit and checksum it installed.
-`--companions skip`, noninteractive unapproved installs, offline bundle installation, status
-checks and opening studios fetch nothing. The refresh and an agreed install read release tags: stable numeric tags
-are eligible; branches and prerelease tags are ignored. Without a requirement, the lock
-itself is the minimum accepted. Newer installed releases are never downgraded. Private
-Python and Node downloads remain exact and checksum-verified.
+source or running installers. `--companions skip`, noninteractive unapproved installs,
+offline bundle installation, status checks and opening studios fetch nothing. Newer
+installed copies are never replaced except by an update you ask for. Private Python and
+Node downloads remain exact and checksum-verified.
 
 ```sh
 python3 scripts/build_bundles.py --platform macos-arm64

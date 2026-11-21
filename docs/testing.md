@@ -29,8 +29,12 @@ mount is used for records, not as an active Git working directory.
 
 Tests cover settings merges and locking, stale forms, HTTP access controls,
 native workspace contracts, private CLI reuse, deterministic full/subset
-archives, source-independent installs, repeat installs, rollback, failed-install
-restoration, active-work refusal, and content retention. Shell bootstrap tests
+archives, source-independent installs, repeat installs, the one version an update
+keeps (no launcher, link or record names a version folder; a link or leftover beside
+the versions is removed without being followed; a folder that cannot be removed is
+reported), rollback's refusal once the earlier version is gone, failed-install
+restoration with the old version still whole, active-work refusal, and content
+retention. Shell bootstrap tests
 replace package managers and assistants with disposable fixtures; they never
 install packages or access an account on the development computer.
 
@@ -104,8 +108,11 @@ Git repositories and identities.
 
 `tests/test_distribution.py` checks runtime archive boundaries, checksums, ordinary
 file materialization, platform selection, offline companion installation, refusal of
-unrelated skills, and restoration after a failed pointer switch. Bootstrap tests use
-fake tools and never provision the host.
+unrelated skills, restoration after a failed pointer switch, the one version kept of
+each bundled companion (and none removed from a newer one installed independently),
+and that a companion installer's answer is read whether it names its version folder
+or only its `current` link. `tests/test_packaging_links.py` holds the shared rule for
+a `versions/` folder. Bootstrap tests use fake tools and never provision the host.
 
 Build a platform download before testing it. The acceptance script unpacks it into a
 disposable HOME, excludes system Python/Node/npm from its launch path, prohibits package
@@ -159,12 +166,13 @@ See [local-network access](local-network.md) for the user-facing connection boun
 
 ## Companion version requirements
 
-`test_companion_versions.py` resolves stable and annotated tags from disposable local
-Git repositories. It checks numeric version ordering, exact-pin compatibility, cached
-update targets, source checksums, tag movement, package/version mismatch, unsafe links,
-failed refresh preservation, explicit consent, skipped resolution, and newer-version
-preservation. Native installer and upkeep suites verify the shared bindings and UI
-update eligibility. Tests never fetch public repositories or install real skills.
+`test_companion_versions.py` installs companions from the `main` branch of disposable
+local Git repositories, whatever tags they have. It checks the floor (a `main` older than
+it is refused with an update sentence), file-for-file checks, unsafe links, hooks never
+placed or run, a fetched copy that changed, an update once `main` moves and none while it
+has not, an exact bundle record, explicit consent and skipped resolution. Native installer
+and upkeep suites verify the shared bindings and UI update eligibility. Tests never fetch
+public repositories or install real skills.
 
 For review-level fixes after the full suite, use
 `bash scripts/ci/tart-macos.sh --guest scripts/ci/guest-review-levels.sh`.
@@ -175,7 +183,7 @@ implementations are unchanged.
 
 ## Synthesis research integration
 
-`test_research_contract.py` runs against the exact locked release helper, with
+`test_research_contract.py` runs against Harness Research's `main`, checked as an install checks it, with
 synthetic dossiers and independent scripted invocations. Native integration suites
 cover research handoff, new versus legacy selection, source hashes, revision
 requests, the browser worker path, stable Training Studio citations and controlled

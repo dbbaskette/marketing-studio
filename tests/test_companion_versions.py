@@ -1,4 +1,8 @@
-"""Version resolution against synthetic Git repositories; no network or installed skills."""
+"""Companions from `main` against synthetic Git repositories; no network or installed skills.
+
+There are no release tags and no locks: a companion is installed and updated from its
+repository's `main`, checked file for file, with the pin's version as a floor only.
+"""
 import importlib.util
 import json
 import os
@@ -8,7 +12,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-import marketing_studio
+import marketing_studio  # noqa: F401
 from studio_core import companions
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -21,9 +25,9 @@ def updater():
     return module
 
 
-class CompanionVersionsTests(unittest.TestCase):
+class CompanionMainTests(unittest.TestCase):
     def setUp(self):
-        temp = tempfile.TemporaryDirectory(prefix='studio-companion-tests-', dir='/tmp')
+        temp = tempfile.TemporaryDirectory(prefix='studio-companion-tests-')
         self.addCleanup(temp.cleanup)
         self.root = Path(temp.name).resolve()
         self.repo = self.root / 'remote'
@@ -32,31 +36,28 @@ class CompanionVersionsTests(unittest.TestCase):
                                                'GIT_CONFIG_NOSYSTEM': '1'})
         patcher.start()
         self.addCleanup(patcher.stop)
-        self.git('init', '-q')
+        self.git('init', '-q', '-b', 'main')
         self.git('config', 'user.name', 'Synthetic Release')
         self.git('config', 'user.email', 'synthetic@example.invalid')
-        commit = self.release('1.0.0')
-        exported = self.root / 'exported'
-        exported.mkdir()
-        companions.fetch_revision(str(self.repo), commit, exported)
-        self.pin = {'repository': str(self.repo), 'version': '1.0.0', 'commit': commit,
-                    'sha256': companions.tree_digest(exported), 'stub': 'bootstrap/SKILL.md',
-                    'installer': 'scripts/install.mjs', 'requirement': '>=1.0.0'}
+        self.first = self.commit('1.0.0')
+        self.pin = {'repository': str(self.repo), 'branch': 'main', 'version': '1.0.0',
+                    'stub': 'bootstrap/SKILL.md', 'installer': 'scripts/install.mjs',
+                    'requirement': '>=1.0.0'}
 
     def git(self, *arguments):
         return subprocess.check_output(['git', *arguments], cwd=self.repo, text=True,
                                        stderr=subprocess.PIPE).strip()
 
-    def release(self, version, tag=None, annotated=False):
+    def commit(self, version, tag=None):
         (self.repo / 'package.json').write_text(json.dumps({'version': version}))
         (self.repo / 'bootstrap').mkdir(exist_ok=True)
         (self.repo / 'bootstrap/SKILL.md').write_text('---\nname: harness-research\n---\n')
         (self.repo / 'scripts').mkdir(exist_ok=True)
         (self.repo / 'scripts/install.mjs').write_text('// Synthetic installer; never execute.\n')
         self.git('add', '-A')
-        self.git('commit', '-qm', 'Synthetic release '+version)
-        selected = tag or 'v'+version
-        self.git('tag', *(['-a', '-m', 'Synthetic release'] if annotated else []), selected)
+        self.git('commit', '-qm', 'Synthetic ' + version)
+        if tag:
+            self.git('tag', tag)
         return self.git('rev-parse', 'HEAD')
 
     def pinfile(self, pin=None):
@@ -65,109 +66,76 @@ class CompanionVersionsTests(unittest.TestCase):
                                    'companions': {'harness-research': pin or self.pin}}))
         return path
 
-    def test_newest_stable_tag_uses_numeric_order_and_annotated_commit(self):
-        self.release('1.2.0')
-        expected = self.release('1.10.0', annotated=True)
-        self.release('99.0.0', tag='v99.0.0-beta')
-        self.release('100.0.0', tag='unreleased-example')
-        selected = companions.select_release(self.pin)
-        self.assertEqual(selected['version'], '1.10.0')
-        self.assertEqual(selected['commit'], expected)
-        self.assertIsNone(selected['sha256'])
-        resolved = companions.lock_companion('harness-research', selected)
-        self.assertRegex(resolved['sha256'], r'^[0-9a-f]{64}$')
-        self.assertNotEqual(resolved['sha256'], self.pin['sha256'])
-        self.assertEqual(self.pin['version'], '1.0.0')
+    def test_main_is_installed_whatever_tags_there_are(self):
+        self.commit('1.1.0', tag='v1.1.0')
+        newest = self.commit('1.2.0')   # main moved past the last tag
+        folder, fetched = companions.fetch_main('harness-research', self.pin, self.root / 'install')
+        self.assertEqual((fetched['version'], fetched['commit']), ('1.2.0', newest))
+        self.assertEqual(fetched['sha256'], companions.tree_digest(folder))
+        self.assertFalse((folder / '.git').exists())
+        self.assertEqual(companions.main_commit(self.pin), newest)
 
-    def test_old_exact_pins_still_do_not_look_up_releases(self):
-        pin = {key: value for key, value in self.pin.items() if key != 'requirement'}
-        with mock.patch.object(companions, 'git', side_effect=AssertionError('Lookup used')):
-            self.assertEqual(companions.resolve_companion('harness-research', pin), pin)
-        self.assertEqual(companions.read_pins(self.pinfile(pin))['harness-research'], pin)
+    def test_pins_name_main_and_a_floor_only(self):
+        self.assertEqual(companions.read_pins(self.pinfile())['harness-research']['branch'], 'main')
+        without = {key: value for key, value in self.pin.items() if key != 'branch'}
+        self.assertEqual(companions.read_pins(self.pinfile(without))['harness-research']['branch'], 'main')
+        for wrong in ({'branch': 'v1.0.0'}, {'branch': 'release'}, {'requirement': '>=2.0.0'},
+                      {'requirement': 'latest'}, {'commit': 'not-a-commit'}, {'stub': '../SKILL.md'}):
+            with self.subTest(wrong=wrong), self.assertRaises(ValueError):
+                companions.read_pins(self.pinfile({**self.pin, **wrong}))
 
-    def test_invalid_requirements_and_locks_below_minimum_are_refused(self):
-        for requirement in ('latest', '>=1.0', '>1.0.0', '>=1.0.0-beta', '>=2.0.0', None, 1):
-            with self.subTest(requirement=requirement), self.assertRaises(ValueError):
-                companions.read_pins(self.pinfile({**self.pin, 'requirement': requirement}))
+    def test_a_main_older_than_the_floor_is_refused_with_an_update_sentence(self):
+        floor = {**self.pin, 'version': '2.0.0', 'requirement': '>=2.0.0'}
+        with self.assertRaisesRegex(ValueError, 'older than the 2.0.0 this version needs'):
+            companions.fetch_main('harness-research', floor, self.root / 'install')
+        self.assertEqual(list((self.root / 'install/companions/harness-research').iterdir()), [])
 
-    def test_existing_release_hash_and_tag_cannot_be_silently_replaced(self):
-        self.assertEqual(companions.resolve_companion('harness-research', self.pin), self.pin)
-        (self.repo / 'changed').write_text('New bytes under the same tag')
-        self.git('add', '-A'); self.git('commit', '-qm', 'Changed release')
-        self.git('tag', '-f', 'v1.0.0')
-        with self.assertRaisesRegex(ValueError, 'tag changed'):
-            companions.resolve_companion('harness-research', self.pin)
-
-    def test_moved_tag_after_selection_cannot_change_downloaded_commit(self):
-        selected_commit = self.release('1.1.0')
-        selected = companions.select_release(self.pin)
-        self.release('2.0.0')
-        self.git('tag', '-f', 'v1.1.0')
-        resolved = companions.lock_companion('harness-research', selected)
-        self.assertEqual(resolved['commit'], selected_commit)
-        self.assertEqual(resolved['version'], '1.1.0')
-
-    def test_tag_and_package_version_must_agree(self):
-        self.release('1.1.0', tag='v2.0.0')
-        with self.assertRaisesRegex(ValueError, 'match its tag'):
-            companions.resolve_companion('harness-research', self.pin)
-
-    def test_unsafe_source_links_are_refused_before_metadata_is_read(self):
-        self.release('1.1.0')
+    def test_unsafe_links_are_refused_before_anything_is_read_or_run(self):
         (self.repo / 'outside').symlink_to('/etc/passwd')
         self.git('add', '-A'); self.git('commit', '-qm', 'Unsafe package link')
-        self.git('tag', 'v1.2.0')
         with self.assertRaisesRegex(ValueError, 'link or a special file'):
-            companions.resolve_companion('harness-research', self.pin)
+            companions.fetch_main('harness-research', self.pin, self.root / 'install')
 
-    def test_no_matching_tag_and_remote_failure_are_explicit(self):
-        with mock.patch.object(companions, 'git', return_value=(0, '')):
-            with self.assertRaisesRegex(ValueError, 'No stable'):
-                companions.select_release(self.pin)
-        with mock.patch.object(companions, 'git', return_value=(1, 'unavailable')):
-            with self.assertRaisesRegex(ValueError, 'could not be checked'):
-                companions.select_release(self.pin)
+    def test_a_fetched_copy_that_changed_is_refused_rather_than_used(self):
+        folder, _ = companions.fetch_main('harness-research', self.pin, self.root / 'install')
+        (folder / 'scripts/install.mjs').write_text('// Changed after the check.\n')
+        with self.assertRaisesRegex(ValueError, 'has changed since it was fetched'):
+            companions.fetch_main('harness-research', self.pin, self.root / 'install')
 
-    def test_refresh_records_exact_bytes_and_preserves_other_metadata(self):
-        self.release('1.1.0')
+    def test_hooks_are_never_placed_or_run(self):
+        hooks = self.root / 'hooks'
+        hooks.mkdir()
+        (hooks / 'post-checkout').write_text('#!/bin/sh\ntouch "$0.ran"\n')
+        (hooks / 'post-checkout').chmod(0o755)
+        with mock.patch.dict(os.environ, {'GIT_CONFIG_COUNT': '1', 'GIT_CONFIG_KEY_0': 'core.hooksPath',
+                                          'GIT_CONFIG_VALUE_0': str(hooks)}):
+            companions.fetch_main('harness-research', self.pin, self.root / 'install')
+        self.assertFalse((hooks / 'post-checkout.ran').exists())
+
+    def test_an_unreachable_main_is_explicit(self):
+        with mock.patch.object(companions, 'git', return_value=(128, 'Could not resolve host')):
+            with self.assertRaisesRegex(ValueError, 'main branch of .* could not be read'):
+                companions.main_commit(self.pin)
+
+    def test_the_report_reads_main_and_writes_nothing(self):
+        newest = self.commit('1.1.0')
         path = self.pinfile()
-        previous = path.read_bytes()
-        result = updater().refresh(path, check=True)
-        self.assertFalse(result['written'])
-        self.assertEqual(path.read_bytes(), previous)
-        result = updater().refresh(path)
-        self.assertTrue(result['written'])
-        record = json.loads(path.read_text())
-        self.assertEqual(record['unrelated'], {'keep': True})
-        self.assertEqual(record['companions']['harness-research']['version'], '1.1.0')
-        # The requirement moves up with the lock: the studios always use the latest locked release.
-        self.assertEqual(record['companions']['harness-research']['requirement'], '>=1.1.0')
-        self.assertFalse(updater().refresh(path)['written'])
+        before = path.read_bytes()
+        result = updater().report(path)
+        self.assertEqual(path.read_bytes(), before)
+        found = result['companions']['harness-research']
+        self.assertEqual((found['version'], found['commit'], found['floor']), ('1.1.0', newest, '1.0.0'))
+        self.assertEqual(result['short'], [])
+        short = updater().report(self.pinfile({**self.pin, 'version': '3.0.0', 'requirement': '>=3.0.0'}))
+        self.assertEqual(short['short'], ['harness-research'])
 
-    def test_failed_refresh_never_replaces_the_lock_file(self):
-        self.release('1.1.0', tag='v2.0.0')
-        path = self.pinfile()
-        previous = path.read_bytes()
-        with self.assertRaises(ValueError):
-            updater().refresh(path)
-        self.assertEqual(path.read_bytes(), previous)
-
-    def bring(self, found, agree, declined=None, pin=None):
-        self.root_state = {}
+    def bring(self, found, agree, declined=None, pin=None, update=False, state=None):
+        self.root_state = state if state is not None else {}
         with mock.patch.object(companions, 'companion_found', return_value=found), \
                 mock.patch.object(companions, 'node_version', return_value='v24.0.0'):
             return companions.bring_companions(self.root / 'home', self.root / 'install', ['codex'],
-                {'harness-research': pin or self.pin}, agree, self.root_state, declined)['harness-research']
-
-    def offline(self):
-        """Release lookups fail as they do offline; fetching an exact commit still works."""
-        real = companions.git
-
-        def git(args, cwd):
-            if args[0] == 'ls-remote':
-                return 128, 'Could not resolve host'
-            return real(args, cwd)
-        return mock.patch.object(companions, 'git', side_effect=git)
+                {'harness-research': pin or self.pin}, agree, self.root_state, declined,
+                update=update)['harness-research']
 
     def test_skip_and_noninteractive_ask_never_query_or_fetch(self):
         for declined in ('skipped', 'nobody to ask'):
@@ -175,111 +143,101 @@ class CompanionVersionsTests(unittest.TestCase):
                 self.assertEqual(self.bring({'codex': None}, lambda *args: False, declined)['state'], 'waiting')
 
     def test_declining_does_not_download_source_or_run_installers(self):
-        self.release('1.1.0')
         with mock.patch.object(companions, 'fetch_revision', side_effect=AssertionError('Source fetched')):
             result = self.bring({'codex': None}, lambda *args: False, 'declined')
-        self.assertEqual(result['state'], 'waiting')
-        self.assertEqual(result['wanted'], '1.0.0')
+        self.assertEqual((result['state'], result['wanted']), ('waiting', '1.0.0'))
         self.assertFalse((self.root / 'install').exists())
 
-    def test_newer_installed_release_is_never_downgraded(self):
-        self.release('1.1.0')
-        with mock.patch.object(companions, 'fetch_revision', side_effect=AssertionError('Source fetched')):
-            self.assertEqual(self.bring({'codex': '2.0.0'}, lambda *args: True)['state'], 'left alone')
-
-    def test_an_installed_copy_meeting_the_requirement_is_accepted_offline(self):
-        newer = {**self.pin, 'version': '1.1.0', 'commit': self.release('1.1.0')}
-        with mock.patch.object(companions, 'git', side_effect=AssertionError('Lookup used')):
-            for pin in (self.pin, newer):
-                with self.subTest(locked=pin['version']):
-                    result = self.bring({'codex': '1.0.0'}, lambda *args: True, pin=pin)
-                    self.assertEqual(result['state'], 'left alone')
-                    self.assertEqual(self.root_state, {})
-
-    def test_install_brings_the_newest_release_once_agreed(self):
-        newest = self.release('1.1.0')
+    def test_install_brings_main_once_agreed_and_records_its_commit(self):
+        newest = self.commit('1.1.0')
         for found in ({'codex': None}, {'codex': '0.9.0'}):
             with self.subTest(found=found), \
                     mock.patch.object(companions, 'run_companion', return_value={'state': 'installed'}) as run:
                 result = self.bring(found, lambda *args: True)
-            self.assertEqual((result['wanted'], result['state']), ('1.1.0', 'installed'))
-            self.assertNotIn('looked', result)
+            self.assertEqual((result['wanted'], result['state'], result['commit']), ('1.1.0', 'installed', newest))
             installed = run.call_args.args[1]
             self.assertEqual((installed['version'], installed['commit']), ('1.1.0', newest))
-            self.assertNotEqual(installed['sha256'], self.pin['sha256'], 'checked as its own release')
             recorded = self.root_state['companions']['harness-research']
-            self.assertEqual((recorded['version'], recorded['commit'], recorded['sha256']),
-                             ('1.1.0', newest, installed['sha256']))
+            self.assertEqual((recorded['version'], recorded['commit'], recorded['sha256'], recorded['branch']),
+                             ('1.1.0', newest, installed['sha256'], 'main'))
 
-    def test_an_installed_copy_meeting_the_requirement_is_not_looked_up(self):
-        self.release('1.1.0')
+    def test_an_installed_copy_meeting_the_floor_is_left_alone_without_update(self):
+        self.commit('1.1.0')
         with mock.patch.object(companions, 'git', side_effect=AssertionError('Lookup used')):
-            result = self.bring({'codex': '1.0.0'}, lambda *args: True)
-        self.assertEqual((result['wanted'], result['state']), ('1.0.0', 'left alone'))
+            for found in ({'codex': '1.0.0'}, {'codex': '2.0.0'}):
+                with self.subTest(found=found):
+                    result = self.bring(found, lambda *args: True)
+                    self.assertEqual(result['state'], 'left alone')
+                    self.assertEqual(self.root_state, {})
 
-    def test_install_uses_the_exact_lock_when_the_newest_cannot_be_looked_up(self):
-        self.release('1.1.0')
-        for found in ({'codex': None}, {'codex': '0.9.0'}):
-            with self.subTest(found=found), self.offline(), \
-                    mock.patch.object(companions, 'run_companion', return_value={'state': 'installed'}) as run:
-                result = self.bring(found, lambda *args: True)
-            self.assertEqual((result['wanted'], result['state']), ('1.0.0', 'installed'))
-            self.assertIn('could not be checked', result['looked'])
-            self.assertEqual(run.call_args.args[1], self.pin)
-            recorded = self.root_state['companions']['harness-research']
-            self.assertEqual({key: recorded[key] for key in ('version', 'commit', 'sha256')},
-                             {key: self.pin[key] for key in ('version', 'commit', 'sha256')})
+    def test_an_update_installs_main_when_it_moved_and_not_otherwise(self):
+        state = {'companions': {'harness-research': {'commit': self.first, 'version': '1.0.0'}}}
+        with mock.patch.object(companions, 'run_companion', side_effect=AssertionError('Installer ran')):
+            result = self.bring({'codex': '1.0.0'}, lambda *args: True, update=True, state=state)
+        self.assertEqual(result['state'], 'left alone')   # main is where it was installed from
+        moved = self.commit('1.0.1')
+        with mock.patch.object(companions, 'run_companion', return_value={'state': 'installed'}):
+            result = self.bring({'codex': '1.0.0'}, lambda *args: True, update=True, state=state)
+        self.assertEqual((result['state'], result['commit']), ('installed', moved))
+        self.assertEqual(state['companions']['harness-research']['commit'], moved)
 
-    def test_a_lock_whose_source_changed_is_refused_rather_than_recomputed(self):
-        changed = {**self.pin, 'sha256': '0' * 64}
-        with self.offline(), mock.patch.object(companions, 'run_companion',
-                                               side_effect=AssertionError('Installer ran')):
-            result = self.bring({'codex': None}, lambda *args: True, pin=changed)
+    def test_an_update_of_a_copy_not_installed_from_here_takes_main(self):
+        newest = self.commit('1.0.1')
+        with mock.patch.object(companions, 'run_companion', return_value={'state': 'installed'}):
+            result = self.bring({'codex': '5.0.0'}, lambda *args: True, update=True)
+        self.assertEqual((result['state'], result['commit']), ('installed', newest))
+
+    def test_a_main_below_the_floor_is_refused_and_nothing_runs(self):
+        floor = {**self.pin, 'version': '2.0.0', 'requirement': '>=2.0.0'}
+        with mock.patch.object(companions, 'run_companion', side_effect=AssertionError('Installer ran')):
+            result = self.bring({'codex': None}, lambda *args: True, pin=floor)
         self.assertEqual(result['state'], 'refused')
-        self.assertIn('not what this installer expects', result['detail'])
+        self.assertIn('older than the 2.0.0 this version needs', result['detail'])
         self.assertEqual(self.root_state, {})
 
+    def test_a_bundle_record_of_an_exact_commit_is_fetched_exactly(self):
+        exported = self.root / 'exported'
+        exported.mkdir()
+        companions.fetch_revision(str(self.repo), self.first, exported)
+        exact = {**self.pin, 'commit': self.first, 'sha256': companions.tree_digest(exported)}
+        self.commit('1.5.0')   # main moved on since the bundle was built
+        folder, fetched = companions.fetch_main('harness-research', exact, self.root / 'install')
+        self.assertEqual((fetched['commit'], fetched['version']), (self.first, '1.0.0'))
+        with self.assertRaisesRegex(ValueError, 'not what this installer expects'):
+            companions.fetch_main('harness-research', {**exact, 'sha256': '0' * 64}, self.root / 'other')
 
-class PinnedFloorTests(unittest.TestCase):
-    def test_slides_floor_preserves_supported_runtime_and_lock_names_new_release(self):
+
+class FloorTests(unittest.TestCase):
+    def test_the_companions_come_from_main_with_the_floors_marketing_studio_needs(self):
         pins = json.loads((ROOT / 'pins/companions.json').read_text(encoding='utf-8'))
-        slides = pins['companions']['harness-slides']
-        self.assertEqual(slides['requirement'], '>=0.17.0')
-        self.assertEqual(slides['version'], '0.17.0')
-        installation = (ROOT / 'docs/installation.md').read_text(encoding='utf-8')
-        self.assertIn('`requirement: ">=0.17.0"` for Harness Slides', installation)
-        for path in ('README.md', 'docs/installation.md'):
-            self.assertNotIn('0.14.1', (ROOT / path).read_text(encoding='utf-8'), path)
-
-    def test_the_harness_companions_are_always_held_to_their_latest_locked_release(self):
-        pins = json.loads((ROOT / 'pins/companions.json').read_text(encoding='utf-8'))['companions']
-        self.assertEqual(set(pins), {'harness-research', 'harness-slides'})
-        for name, pin in pins.items():
+        companion = pins['companions']
+        self.assertEqual(set(companion), {'harness-research', 'harness-slides'})
+        self.assertEqual({name: (pin['branch'], pin['requirement']) for name, pin in companion.items()},
+                         {'harness-research': ('main', '>=1.3.1'), 'harness-slides': ('main', '>=0.19.0')})
+        for name, pin in companion.items():
             with self.subTest(companion=name):
+                self.assertNotIn('commit', pin)
+                self.assertNotIn('sha256', pin)
                 self.assertEqual(pin['requirement'], '>=' + pin['version'])
-                # An installed copy one release behind is offered the update; the lock itself is not.
-                older = '.'.join(str(part) for part in (*companions.as_tuple(pin['version'])[:2], 0)) \
-                    if companions.as_tuple(pin['version'])[2] else None
                 self.assertEqual(companions.wanting({'claude': pin['version']}, companions.minimum_version(pin)), [])
-                if older:
-                    self.assertEqual(companions.wanting({'claude': older}, companions.minimum_version(pin)), ['claude'])
+                self.assertEqual(companions.wanting({'claude': '0.1.0'}, companions.minimum_version(pin)), ['claude'])
 
-    def test_brand_skill_floor_is_not_installed(self):
+    def test_brand_skill_floor_is_not_installed_by_the_installers(self):
         path = ROOT / 'pins/companions.json'
         pins = json.loads(path.read_text(encoding='utf-8'))
         floor = pins['brand_skill']
-        self.assertEqual((floor['requirement'], floor['tested']), ('>=0.14.0', '1.1.0'))
+        self.assertEqual((floor['requirement'], floor['tested']), ('>=1.4.0', '1.4.0'))
         self.assertTrue(floor['note'])
         self.assertNotIn('brand_skill', pins['companions'])
         self.assertEqual(sorted(companions.read_pins(path)), ['harness-research', 'harness-slides'])
-        temp = tempfile.TemporaryDirectory()
-        self.addCleanup(temp.cleanup)
-        copy = Path(temp.name) / 'companions.json'
-        copy.write_text(path.read_text(encoding='utf-8'), encoding='utf-8')
-        with mock.patch.object(companions, 'resolve_companion', lambda name, pin: pin):
-            result = updater().refresh(copy, check=True)
-        self.assertEqual(sorted(result['companions']), ['harness-research', 'harness-slides'])
-        self.assertEqual(json.loads(copy.read_text(encoding='utf-8'))['brand_skill'], floor)
+
+    def test_no_document_calls_companions_locked_or_pinned_to_a_release(self):
+        for path in ('README.md', 'docs/installation.md'):
+            text = (ROOT / path).read_text(encoding='utf-8')
+            with self.subTest(path=path):
+                self.assertNotIn('0.14.1', text)
+                self.assertNotIn('locked release', text)
+                self.assertNotIn('newest stable tag', text)
 
 
 if __name__ == '__main__':

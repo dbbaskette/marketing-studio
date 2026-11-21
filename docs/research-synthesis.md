@@ -5,13 +5,12 @@ helper supports it. Blog Studio, Presentation Studio and Training Studio share
 `studio_core.research_contract`; they keep their own source permissions, worker
 confinement, model profiles, stop controls and review levels.
 
-The companion lock selects the stable **1.2.0** release at an exact commit and
-checksum. Harness Research is always the latest locked release (`>=1.2.0` today), and accepts newer stable releases;
-Harness Slides also retains stable `>=` selection. Prerelease tags are excluded,
-and each resolved release is locked to its commit and source checksum.
-Installing/updating companions remains an explicit action. Merely opening a
-studio never downloads or replaces tools. New runs on an older installed helper
-retain the older adapter; existing runs never change research formats on resume.
+Harness Research is installed and updated from its repository's `main`, checked file
+for file, with **1.3.1** the oldest accepted (`>=1.3.1`); Harness Slides likewise, with
+0.19.0 the oldest. Nothing is locked to a release or a tag. Installing/updating companions
+remains an explicit action. Merely opening a studio never downloads or replaces tools.
+Every run uses the installed helper; existing runs never change research formats on
+resume.
 
 ## Training Studio creator decisions
 
@@ -463,8 +462,18 @@ Harness Research 1.1.1 makes `synthesis save --reuse-unchanged --context FILE`
 explicitly idempotent only with matching dossier, evidence/original snapshots,
 scope, protocol, guidance/runtime and review-independence identities. Ordinary
 saves remain revision-based. Its internal state schema 3 is refused by older
-runtimes; the portable output remains schema 2. Installed helpers are never
-silently updated. A changed or missing immutable input cannot retain a review.
+runtimes; the portable output remains schema 2. A changed or missing immutable input
+cannot retain a review.
+
+Every run uses the installed Harness Research through its stable `current` address,
+whichever version it started on; an update that removes the version folder it started
+from changes nothing for it. The identities the studios keep (a case's name, the
+section and final keys, the unchanged-save context and the global research identity)
+name the helper's protocol and the contract's schema only, never its version or a digest
+of its files, so an update never makes finished research, its sections or its review run
+again. Identities an older Marketing Studio kept, digests and all, are recognised as the
+same research and keyed anew as they are met. Harness Research 1.3.1 is the oldest
+installed and it is installed from `main`.
 
 Harness Slides 0.17.0 similarly offers opt-in `--review-context` draft inspection
 reuse. Changed slides and immediate neighbors need inspection; brand, fonts,
@@ -473,8 +482,8 @@ separate `--finalize` consistency receipt binds the exact final whole-deck
 revision, with creative assessment where applicable. Presentation Studio's
 existing `reusable_review` already applies the corresponding native pixel,
 dependency and question checks and retains whole-deck inspection. Neither layer
-carries the person's approval. The supported helper minimum stays 0.16.0 for
-existing callers; new raw companion flags require the advertised capability.
+carries the person's approval. Harness Slides 0.19.0 is the oldest the studios take,
+installed from `main`; new raw companion flags require the advertised capability.
 
 
 ## Readable evidence before the investigator barrier

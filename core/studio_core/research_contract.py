@@ -17,6 +17,7 @@ import tempfile
 import time
 import unicodedata
 
+
 IDS_FOR_QUESTIONS = ('Planning questions have IDs. A finding that answers one has an ID '
                      "that begins with that question's ID and two hyphens, such as "
                      'instance-min--capacity. Keep each ID within 64 characters.')
@@ -89,6 +90,8 @@ def purpose(kind: str, goal, priorities: str) -> str:
 
 
 OWNER = 'harness-research-synthesis'
+NOT_INSTALLED = ('Harness Research is not installed on this computer, so research cannot continue. '
+                 'Install it, then try again. Saved research is kept.')
 # Where the Harness Research installer keeps `current` and versions/<version>-<digest>.
 SHARED = (Path('Library/Application Support/Harness Research'), Path('.local/share/harness-research'))
 CASE = Path('.studio-research')
@@ -160,51 +163,50 @@ def capability(runtime):
     return {'schema': 2, 'version': package['version'], 'digest': digest.hexdigest()}
 
 
-def runtime_for(saved, runtime=None):
-    """The helper with a run's saved capability: the current one, or a version the Harness
-    Research installer retained in versions/<version>-<digest> after an update. None when
-    neither is installed."""
-    version = saved.get('version') if isinstance(saved, dict) else None
-    if not isinstance(version, str) or not version:
-        return None
+def stable(value):
+    """What a saved helper capability says that outlives an update of Harness Research: its
+    schema or protocol, never a version or a digest of the installed files. Identities that
+    decide whether finished research is still current are made of this, so an update never
+    makes research, its sections or its review run again."""
+    if not isinstance(value, dict):
+        return value
+    return {key: item for key, item in value.items() if key not in ('version', 'digest')}
+
+
+def runtime_for(saved=None, runtime=None):
+    """The installed helper, which every run uses whichever version it started on: its
+    stable address, never a version folder an update removes. None when no Harness Research
+    with synthesis is installed. `saved` is accepted and not compared."""
     try:
-        current = (Path(runtime) if runtime else find_runtime()).resolve()
-    except (OSError, ValueError):
-        current = None
-    folders = [current.parent] if current and current.parent.name == 'versions' else []
-    if not os.environ.get('HARNESS_RESEARCH_RUNTIME'):
-        folders += [Path.home() / root / 'versions' for root in SHARED]
-    candidates = [current] if current else []
-    for folder in dict.fromkeys(folders):
+        found = Path(runtime) if runtime else find_runtime()
+        return found if capability(found) is not None else None
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
+def matching(tool, saved=None):
+    """`tool`, the installed helper, for a run started on any version of it. None only when
+    no Harness Research with synthesis is installed. `saved` is accepted and not compared."""
+    return tool if snapshot(tool) is not None else None
+
+
+def stable_place(place):
+    """`place`, said through its installer's `current` link when it is a version folder of one,
+    else as it was named. This file also runs on its own, so it does not import the shared
+    rule in `studio_core.packaging.stable_place`, which this follows."""
+    place = Path(place).absolute()
+    try:
+        resolved = place.resolve()
+    except (OSError, RuntimeError):
+        return place
+    if resolved.parent.name == 'versions':
+        current = resolved.parent.parent / 'current'
         try:
-            # A retained version is a real folder; a link could point anywhere.
-            candidates += sorted(path for path in folder.iterdir()
-                                 if path.name.startswith(version + '-')
-                                 and not path.is_symlink() and path.is_dir())
+            if current.is_symlink() and current.resolve() == resolved:
+                return current
         except OSError:
-            continue
-    for candidate in candidates:
-        try:
-            if capability(candidate) == saved:
-                return candidate
-        except (OSError, ValueError, KeyError, TypeError):
-            continue
-    return None
-
-
-def matching(tool, saved):
-    """`tool`, or a copy of it running the retained helper version `saved` describes. None
-    when that version is no longer installed."""
-    if not saved:
-        return None
-    if snapshot(tool) == saved:
-        return tool
-    runtime = runtime_for(saved, getattr(tool, 'runtime', None))
-    if runtime is None:
-        return None
-    kept = copy.copy(tool)
-    kept.runtime = runtime
-    return kept
+            pass
+    return place
 
 
 def find_runtime():
@@ -216,7 +218,9 @@ def find_runtime():
     ]
     for root in roots:
         if (root / 'scripts/harness-research.mjs').is_file():
-            return root.resolve()
+            # Its stable address: an update replaces the version folder behind `current`,
+            # and a run or a job spec that named that folder would stop working.
+            return stable_place(root)
     raise ValueError('Install the shared Harness Research 1.0 or newer before starting synthesis research.')
 
 
@@ -759,7 +763,7 @@ def took(seconds, dollars):
 # schema, and were checked against Harness Research LIMITS_VERIFIED_WITH. A re-pin to another
 # version fails tests/test_research_packet_problems.py until the gated parity tests
 # (STUDIO_TEST_RESEARCH_RUNTIME) are run against it and this is updated.
-LIMITS_VERIFIED_WITH = '1.2.0'
+LIMITS_VERIFIED_WITH = '1.3.1'
 TEXT_LIMIT = 4000
 LIMITS = {'statement': 10000, 'quote': 30000}
 # Fields the studio knows and checks against its own captures: an investigator copies them.
@@ -1865,10 +1869,13 @@ def native(engine, root, run, task, sources, product):
     else:
         from runner.pipeline import Work, Step
     from workspace import WorkspaceError
-    # After an update the run keeps the helper version it started with, while it is retained.
-    tool = matching(engine.research(), engine._load(root).get('research_contract'))
+    # Every run uses the installed helper, whichever version it started on, and its record
+    # says so from now on.
+    from studio_core.research_transport import move_to_installed
+    move_to_installed(engine, root, engine._load(root), product)
+    tool = matching(engine.research())
     if tool is None:
-        raise WorkspaceError('This research run needs its saved Harness Research version. Restore it before continuing.')
+        raise WorkspaceError(NOT_INSTALLED)
     folders = []
     # What every job of this try took, so the stop can say what the rounds cost.
     spent = {'jobs': 0, 'seconds': 0.0, 'dollars': None, 'tokens': None, 'rounds': 0}

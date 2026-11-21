@@ -32,12 +32,12 @@ modify a page-driven training through conversation commands.
 
 ## Existing legacy research
 
-Keep the original format, runtime and saved guidance. Installing a newer helper
-does not convert an existing run.
+Keep the original format and saved guidance, on the installed helper. Each
+visit, take `<runtime>` from its start or resume answer; never save a path.
 
-1. Load Harness Research in this training's directory. Start a guidance task only
-   on its first use; record `training.py pin harness-research --task <id>
-   --runtime <path>`. On resume, continue its pinned task.
+1. Load Harness Research in this training's directory. Start a guidance task
+   only on first use; record `training.py pin harness-research --task <id>`.
+   On resume, continue it.
 2. Hand over the approved plan: `node "<runtime>/scripts/harness-research.mjs"
    plan --project . --file .training-studio/research-plan.json`. Pin again with
    `--run <the returned run>`. Follow its guidance and record findings as you go.
@@ -51,7 +51,7 @@ does not convert an existing run.
 On resume and before later gates, refresh legacy helper `status --project .`.
 Changed evidence returns research to draft and invalidates downstream work.
 For a research top-up, preserve existing question definitions in an extended
-plan, save it through the core, and review the added questions. Let the pinned
+plan, save it through the core, and review the added questions. Let the
 helper carry unchanged findings; investigate the rest. Repeat the research
 review, then rebuild affected blueprints and briefs.
 

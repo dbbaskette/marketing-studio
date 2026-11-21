@@ -79,7 +79,7 @@ What a caller needs to know
   it began, whatever tool comes. `redesign` draws such a deck again from a design, when the
   person asks and never otherwise: what it was is kept as its history, and only that deck
   is made again.
-- slides.MINIMUM is 0.17.0, the Harness Slides the installer pins: an older tool is
+- slides.MINIMUM is 0.19.0, the installer's floor for Harness Slides: an older tool is
   refused before any deck call. Every tool from that floor has these, so they are used
   without asking: the tool's own check of what an approved design still wants, icons named
   by their library IDs, a review's packets in one call, its render through Drive, sources
@@ -2362,7 +2362,10 @@ class Engine(Reviewing):
         level = self._level(step)
         mine = found.decks[level]
         try:
-            self._skill().check(pipeline.contract(root, mine))
+            checked = self._skill().check(pipeline.contract(root, mine))
+            # A contract an older Harness Brand exported still holds, with a notice that
+            # says how to export it again: shown, and the deck goes on.
+            brand_guidance.tell(root, checked, "The deck's brand")
         except WorkspaceError as refusal:
             with self.files:
                 self._note(root, level, brand={**(mine.built.get('brand') or {}),
@@ -2412,7 +2415,7 @@ class Engine(Reviewing):
             # composer unchanged.
             guided = self._guide(work, chosen, told, (
                 (found.decks.get(level) or pipeline.Deck(level, '', frozenset(), {}, {}, None))
-                .built.get('brand') or {}).get('guidance') or {})
+                .built.get('brand') or {}).get('guidance') or {}, root)
             for name, text in brand_guidance.brand_texts(contract).items():
                 worker_tools._write(told / pipeline.reading_file(name), text)
             kept = {'brand': chosen[0], 'variant': chosen[1], 'folder': folder.name,
@@ -2684,7 +2687,8 @@ class Engine(Reviewing):
         self.carry_on(root)
         return self.view(root)
 
-    def _guide(self, work: Path, chosen: tuple, told: Path, saved: dict) -> dict:
+    def _guide(self, work: Path, chosen: tuple, told: Path, saved: dict,
+               root: Path | None = None) -> dict:
         """Start a deck's slide task through the brand, or resume the one kept with it for
         the same brand, with the deck's own work folder as its project, which is never
         shared. What it returns for workers is written beside what else the brand step
@@ -2716,6 +2720,8 @@ class Engine(Reviewing):
         said = brand_guidance.worker(answer)
         if said:
             worker_tools._write(told / pipeline.reading_file(pipeline.BRAND_WORKER), said)
+        if root is not None:   # its notice, such as a task started on another version
+            brand_guidance.tell(root, answer)
         return {**brand_guidance.recorded(answer), 'brand': list(chosen),
                 'checkpoints': brand_guidance.checkpoints(answer)}
 

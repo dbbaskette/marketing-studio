@@ -1,59 +1,56 @@
 #!/usr/bin/env python3
-"""Refresh exact companion locks to the newest stable tags allowed by their >= requirements.
+"""Report what each companion's `main` holds now, against the floor this version needs.
 
-Only downloads source metadata and Git revisions; never installs tools or runs providers.
+Companions are installed and updated from their repository's `main`; nothing here is
+locked or written. For each companion this reads the commit `main` is at, fetches it into a
+temporary folder, checks it file for file as an install would (no links, its entry and
+installer, a version at or above the pin's floor) and reports its version. Only Git
+revisions are downloaded; no tool is installed and no provider runs. A `main` older than
+the floor is reported and the command fails, so the floor can be raised only once `main`
+meets it.
 """
 import argparse
 import json
-import os
 from pathlib import Path
-import secrets
 import sys
+import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'core'))
-from studio_core.companions import read_pins, resolve_companion
+from studio_core.companions import InstallError, fetch_main, minimum_version, read_pins
 
 
-def refresh(path, check=False):
-    path = Path(path)
-    before = path.read_bytes()
-    document = json.loads(before)
-    pins = read_pins(path)
-    resolved = {name: resolve_companion(name, pin) for name, pin in pins.items()}
-    # The studios always use the latest locked Harness companions: a companion that states a
-    # requirement has it moved up with the lock, so an older installed copy is updated to it.
-    resolved = {name: {**pin, 'requirement': '>=' + pin['version']} if 'requirement' in pins[name] else pin
-                for name, pin in resolved.items()}
-    changed = [name for name in pins if pins[name] != resolved[name]]
-    if changed and not check:
-        document['companions'] = resolved
-        pending = path.with_name('.' + path.name + '.pending-' + secrets.token_hex(6))
-        try:
-            with pending.open('x') as stream:
-                stream.write(json.dumps(document, indent=2) + '\n')
-            if path.read_bytes() != before:
-                raise ValueError('Companion locks changed during refresh. Retry against the new file.')
-            os.replace(pending, path)
-        finally:
-            pending.unlink(missing_ok=True)
-    return {'changed': changed, 'written': bool(changed and not check),
-            'companions': {name: {'requirement': pin.get('requirement', pin['version']),
-                                 'version': pin['version'], 'commit': pin['commit'],
-                                 'sha256': pin['sha256']} for name, pin in resolved.items()}}
+def report(path):
+    pins = read_pins(Path(path))
+    found, short = {}, []
+    with tempfile.TemporaryDirectory(prefix='studio-companion-main-') as temporary:
+        for name, pin in pins.items():
+            entry = {'repository': pin['repository'], 'branch': pin['branch'],
+                     'floor': minimum_version(pin)}
+            try:
+                _, fetched = fetch_main(name, pin, Path(temporary))
+                entry.update(version=fetched['version'], commit=fetched['commit'],
+                             sha256=fetched['sha256'])
+            except InstallError as refusal:
+                entry['problem'] = str(refusal)
+                short.append(name)
+            found[name] = entry
+    return {'companions': found, 'short': short}
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--pins', type=Path, default=ROOT / 'pins/companions.json')
-    parser.add_argument('--check', action='store_true', help='Report allowed upgrades without changing the lock file.')
+    parser.add_argument('--check', action='store_true',
+                        help='Accepted for older callers; nothing is ever written.')
     args = parser.parse_args(argv)
     try:
-        print(json.dumps(refresh(args.pins, args.check), indent=2))
-        return 0
+        result = report(args.pins)
     except (OSError, ValueError) as failure:
-        print('Companion refresh failed: ' + str(failure), file=sys.stderr)
+        print('Companion check failed: ' + str(failure), file=sys.stderr)
         return 1
+    print(json.dumps(result, indent=2))
+    return 1 if result['short'] else 0
 
 
 if __name__ == '__main__':

@@ -6,11 +6,15 @@ import re
 import shutil
 import subprocess
 
+from studio_core.packaging import stable_address, stable_place
+
 
 def choices(skill=None, home=None, run=subprocess.run, which=shutil.which):
     home = Path(home) if home is not None else Path.home()
     selected = skill or os.environ.get('BRAND_SKILL_RUNTIME')
-    roots = [Path(selected).expanduser()] if selected else [
+    # A folder saved inside `versions/` is said through `current`; so is each one found. An
+    # update keeps only the newest version, and the saved folder may be gone.
+    roots = [stable_address(Path(selected).expanduser(), saved=True)] if selected else [
         path for folder in (home / '.agents/skills', home / '.codex/skills', home / '.claude/skills')
         if folder.is_dir() for path in sorted(folder.iterdir())]
     node = which('node')
@@ -18,10 +22,14 @@ def choices(skill=None, home=None, run=subprocess.run, which=shutil.which):
         return {'skills': [], 'problem': 'Node.js is needed to list installed brands. You can keep the saved IDs or leave them blank.'}
     seen, found, problems = set(), [], []
     for folder in roots[:100]:
-        folder = folder.resolve()
-        if folder in seen or not (folder / 'SKILL.md').is_file():
+        try:
+            seen_as = folder.resolve(strict=True)
+        except (OSError, RuntimeError):
             continue
-        seen.add(folder)
+        folder = stable_place(folder)
+        if seen_as in seen or not (folder / 'SKILL.md').is_file():
+            continue
+        seen.add(seen_as)
         try:
             package = json.loads((folder / 'package.json').read_text()).get('name')
         except (OSError, ValueError, AttributeError):

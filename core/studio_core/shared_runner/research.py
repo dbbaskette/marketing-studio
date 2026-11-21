@@ -33,6 +33,7 @@ import shutil
 import tempfile
 from pathlib import Path
 
+
 from studio_core import research_contract
 from workspace import WorkspaceError
 
@@ -94,7 +95,10 @@ class Research:
 
     def __init__(self, runtime: Path | None = None, run=None):
         self.run = run or run_command
-        self.runtime = Path(runtime) if runtime else find_runtime()
+        # A folder named earlier, such as one a job was given before an update, is said
+        # through `current` when it was a version folder: an update removes that folder.
+        from studio_core.packaging import stable_address   # bound parts import their own
+        self.runtime = stable_address(runtime, saved=True) if runtime else find_runtime()
         self.node = 'node' if run else shutil.which('node')
         if self.node is None:
             raise WorkspaceError('harness-research needs Node.js 20 or newer, which was not '

@@ -16,9 +16,45 @@ def inventory(sources):
             if source.get('original_path') else None} for source in sources], key=lambda row: row['name'])
 
 
-def global_identity(record):
-    return sections.fingerprint({key: record.get(key) for key in
-        ('form', 'brief', 'research_from', 'research_contract', 'model_profiles', 'deck_content')})
+GLOBAL = ('form', 'brief', 'research_from', 'research_contract', 'model_profiles', 'deck_content')
+
+
+def earlier(record):
+    """What a run's record held of the helper before it first moved to an installed one:
+    {'research_contract', 'capability', 'reuse'}. Research saved by an older Marketing Studio
+    named these, digests and all, in the identities it kept; they are compared with it as
+    well, so the same research is recognised after any update (`move_to_installed`)."""
+    execution = record.get('research_execution') if isinstance(record.get('research_execution'), dict) else {}
+    kept = execution.get('earlier')
+    if isinstance(kept, dict):
+        return {key: kept.get(key) for key in ('research_contract', 'capability', 'reuse')}
+    policy = record.get('section_synthesis') if isinstance(record.get('section_synthesis'), dict) else {}
+    return {'research_contract': record.get('research_contract'), 'capability': execution.get('capability'),
+            'reuse': policy.get('reuse')}
+
+
+def global_identity(record, older=False):
+    """What research as a whole was made from. The helper counts only by its contract's
+    schema: an update of Harness Research leaves it the same. With `older`, the identity an
+    older Marketing Studio kept, which named the helper's version and digest."""
+    values = {key: record.get(key) for key in GLOBAL}
+    values['research_contract'] = (earlier(record)['research_contract'] if older
+                                   else rc.stable(values['research_contract']))
+    return sections.fingerprint(values)
+
+
+def same_global(saved, record):
+    """Whether a saved global identity is this record's, now or as an older Marketing Studio
+    kept it."""
+    return saved in (global_identity(record), global_identity(record, older=True))
+
+
+def same_input(saved, current, record):
+    """Whether a saved input snapshot is the current one, its global identity compared by
+    `same_global`."""
+    if not isinstance(saved, dict) or not same_global(saved.get('global'), record):
+        return False
+    return {**saved, 'global': current['global']} == current
 
 
 def snapshot(root, record, sources, questions):
@@ -37,7 +73,7 @@ def preview(root, record, sources, questions, outputs=()):
     old, new = ({row['name']: row for row in value['sources']} for value in (prior, current))
     changed = [{'name': name, 'kind': 'added' if name not in old else 'removed' if name not in new else 'changed'}
         for name in sorted(old.keys() | new.keys()) if old.get(name) != new.get(name)]
-    broad = prior.get('global') != current['global'] or any(row['kind'] != 'added' for row in changed)
+    broad = not same_global(prior.get('global'), record) or any(row['kind'] != 'added' for row in changed)
     old_questions = {row['id']: row for row in prior['questions']}
     rows = [{'id': row['id'], 'title': row.get('question') or row.get('text') or row['id'],
         'required': broad or old_questions.get(row['id']) != row} for row in questions]
@@ -69,8 +105,10 @@ def confirm(root, record, sources, questions, supplied, outputs=()):
         'input': snapshot(root, record, sources, questions), 'expected': plan['expected']}
 
 
-def reuse(workflow, root, case, task, areas, intent, context, require):
-    """Import unchanged accepted packets through the supported host protocol, checking bytes."""
+def reuse(workflow, root, case, task, areas, intent, context, require, earlier_context=None, earlier_global=()):
+    """Import unchanged accepted packets through the supported host protocol, checking bytes.
+    A case saved by an older Marketing Studio kept identities that named the helper's digest:
+    `earlier_context` and `earlier_global` are those, and count as the same."""
     if not intent or intent.get('schema') != 1: return
     previous = rc.inside(root, intent['from'])
     if previous == case: return
@@ -78,12 +116,13 @@ def reuse(workflow, root, case, task, areas, intent, context, require):
     if not old_path.is_file(): return
     old = json.loads(old_path.read_bytes())
     current = intent['input']
-    if old.get('global') != current['global']: return
+    if old.get('global') != current['global'] and not (
+            old.get('global') in earlier_global and current['global'] in earlier_global): return
     old_inputs, new_inputs = ({row['name']: row for row in value['sources']} for value in (old, current))
     if any(new_inputs.get(name) != row for name, row in old_inputs.items()): return
     context_current(root, task, intent)
     old_context = previous / '.harness-research/studio-section-context.json'
-    if not old_context.is_file() or json.loads(old_context.read_bytes()) != context: return
+    if not old_context.is_file() or json.loads(old_context.read_bytes()) not in (context, earlier_context or context): return
     old_status = workflow.command(previous, 'collection', 'status')
     if old_status.get('status') == 'stale': return
     state = json.loads((previous / '.harness-research/collection.json').read_bytes())

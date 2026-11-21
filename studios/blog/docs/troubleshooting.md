@@ -41,7 +41,7 @@ to share; the output contains paths and versions, never credentials.
 | Two Blog Studio entries | A manual copy sits beside the managed one. Run setup and let it move the extra folder to backups. |
 | “This guidance needs a newer local Blog Studio runtime. Run the installer update.” | You are on version 1.x, which is retired. Install the current version; see “Coming from version 1.x” in the [installation guide](installation.md). |
 | A helper fails with “No such file or directory” for Python | Run `sh installer/install.sh repair`. Until then Blog Studio can use any Python 3.11 or later. |
-| A blog shows an old guidance value, or reviews turned stale after “use the current guidance” | Each blog keeps the version it was started with. Adopting the installed version is your choice and marks earlier reviews stale, because they were judged under the earlier guidance. Rerun the checks you need. |
+| A blog shows an old guidance value, or reviews turned stale after “use the current guidance” | The blog runs the installed Blog Studio all the same. The value only records which version its completed reviews were judged under, and an update changes neither it nor the reviews. Recording the installed version instead is your choice and marks earlier reviews stale, because they were judged under the earlier guidance. Rerun the checks you need. |
 
 Your blogs, voices and sources live in the workspace you chose, by default
 `.blog-studio` in your writing project. No setup problem requires deleting them.

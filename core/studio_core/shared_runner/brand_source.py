@@ -1,55 +1,49 @@
-"""The brand skill's own repository: which releases it has, and installing one with the
+"""The brand skill's own repository: where its main branch is, and installing main with the
 brand skill's own installer.
 
 What a caller needs to know
 ---------------------------
-    found = brand_source.check(address, release, place)   # refuses in a sentence
-    found['chosen']                 # {'tag', 'version', 'commit'}: the one to install
-    listed = brand_source.releases(address, place)        # {tag: {...}}, or a refusal
-    folder, how = brand_source.fetch(address, tag, commit, into, stop)
-    brings = brand_source.bootstraps(folder)              # {'harness-slides': '0.13.1'}
+    found = brand_source.check(address, None, place)    # refuses in a sentence
+    found['chosen']                 # {'tag': 'main', 'version': None, 'commit'}: what to install
+    commit = brand_source.head(address, place)          # the commit main is at, or a refusal
+    folder, how = brand_source.fetch(address, commit, into, stop)
+    brand_source.version_of(folder)                     # the version main holds
+    brings = brand_source.bootstraps(folder)            # {'harness-slides': '0.15.1'}
     code, late, said = brand_source.install(folder, home, seconds, stop)
 
 - The repository is the person's choice, and is reached with their own git access, as the
   workspace is: through `hub.run`, which never asks on a terminal and gives ssh BatchMode.
   The guidance's isolated git, which ignores the person's settings, is never used here.
-- A release is a tag such as `v1.4.0`. Releases are ordered as the brand skill's own
-  updater orders them: a version whose first number is a year, 2000 to 2099, is from an
-  older way of numbering and comes before every other (`order`).
-- `check` reads the repository's tags with `git ls-remote` and nothing else. A repository
-  that cannot be read is refused with a sentence that says whether git could not sign in,
-  the repository was not found, or it could not be reached. One with no release, or
-  without the release named, is refused too. `chosen` is the release named, else the
-  newest.
-- `fetch` puts the release in a new folder inside `into` and returns that folder and how
-  it came (`zip` or `tag`):
-  - With `gh` installed and signed in, and an address on github.com, the release's ZIP
-    is downloaded: on a Mac the one named `-mac.zip` when there is one, otherwise the only
-    other. A `.sha256` beside it is checked. It is unpacked with nothing outside its folder
-    and no links.
-  - Otherwise, or when the release has no ZIP, the tag is cloned at depth one, and its
-    commit must be `commit`, the one the person was shown.
-- `install` runs the release's own installer from that folder, under
-  `companion.supervise`: `scripts/install-mac.mjs --yes --research skip` on a Mac, else
+- There are no releases to choose from and no tags are read: the brand skill is installed
+  and updated from its repository's `main`. An update is due when main is at another commit
+  than the one installed. `order` still orders version numbers, for the floor a deck needs:
+  a version whose first number is a year, 2000 to 2099, is from an older way of numbering
+  and comes before every other.
+- `check` reads where main is with `git ls-remote` and nothing else. A repository that
+  cannot be read is refused with a sentence that says whether git could not sign in, the
+  repository was not found, or it could not be reached. One with no main branch is refused
+  too. A release named, kept by an older version, is not used.
+- `fetch` clones main at depth one into a new folder inside `into`, with the person's own
+  git access, and its commit must be `commit`, the one the person was shown. Nothing of it
+  is run, and it holds no hooks.
+- `install` runs main's own installer from that folder, under `companion.supervise`:
+  `scripts/install-mac.mjs --yes --research skip` on a Mac, else
   `scripts/install-skill.mjs --research skip`. `--research skip` keeps it from touching
   harness-research. It has no such option for harness-slides, which it leaves alone only
-  when one it can use is installed; `bootstraps` reads which version that is, from the
-  release's own record of what it installs. `home`, when it is not the person's own, is
-  given to it as HOME.
+  when one it can use is installed; `bootstraps` reads the oldest version it accepts, from
+  main's own record of what it installs. `home`, when it is not the person's own, is given
+  to it as HOME.
 - Nothing here is run before the person's yes; the caller asks for that.
 """
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import re
 import shutil
-import stat
 import sys
 import tempfile
-import zipfile
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 
 import hub
 from workspace import WorkspaceError
@@ -60,16 +54,13 @@ from runner import companion, settings
 # `for_product`, has a stand-in.
 PRODUCT = globals().get('PRODUCT', 'the studio')
 
-LOOK_SECONDS = 30          # for the repository to say which tags it has
-FETCH_SECONDS = 600        # for a release to be downloaded or cloned
-TAG = re.compile(r'^([0-9a-f]{40})\trefs/tags/(v?(\d+\.\d+\.\d+))(\^\{\})?$')
+LOOK_SECONDS = 30          # for the repository to say where main is
+FETCH_SECONDS = 600        # for main to be cloned
+BRANCH = 'main'           # the only thing installed: main, as it is now
+COMMIT = re.compile(r'^[0-9a-f]{40}$')
 YEARS = range(2000, 2100)  # a first number in here is a year: the older way of numbering
-GITHUB = re.compile(r'^(?:https://github\.com/|git@github\.com:|ssh://git@github\.com/)'
-                    r'([\w.-]+)/([\w.-]+?)(?:\.git)?/?$')
 SOURCES = Path('scripts') / 'lib' / 'harness-install-sources.json'
 SKIPPED = ('harness-research',)   # what `--research skip` keeps the installer from touching
-MOST_FILES = 5000          # in a release ZIP
-MOST_BYTES = 500_000_000   # unpacked, in a release ZIP
 PLATFORM = sys.platform
 SIGN_IN = ('terminal prompts disabled', 'could not read username', 'could not read password',
            'authentication failed', 'permission denied', 'host key verification failed',
@@ -88,25 +79,6 @@ def order(version) -> tuple:
     return (0 if parts[0] in YEARS else 1, *parts)
 
 
-def listed(text: str) -> dict:
-    """Each release tag `git ls-remote --tags` printed: {tag: {'tag', 'version', 'commit'}}.
-    An annotated tag's commit is the one it points at."""
-    found = {}
-    for line in text.splitlines():
-        match = TAG.match(line.strip())
-        if match:
-            commit, name, version, peeled = match.groups()
-            entry = found.setdefault(name, {'tag': name, 'version': version, 'commit': commit})
-            if peeled:
-                entry['commit'] = commit
-    return found
-
-
-def newest(found: dict) -> dict | None:
-    """The newest of the releases `listed` found, or None."""
-    return max(found.values(), key=lambda entry: order(entry['version'])) if found else None
-
-
 def plain(reason: str) -> str:
     """Why a repository could not be read, as a sentence a person can act on."""
     said = reason.lower()
@@ -121,14 +93,18 @@ def plain(reason: str) -> str:
             'is online, then try again.')
 
 
-def releases(address: str, place: Path, seconds: float = LOOK_SECONDS) -> dict:
-    """The repository's release tags, as `listed` gives them. Refuses in a sentence when it
-    cannot be read with this person's own git access."""
-    done = hub.run(place, 'ls-remote', '--tags', '--', address, timeout=seconds)
+def head(address: str, place: Path, seconds: float = LOOK_SECONDS) -> str:
+    """The commit the repository's main branch is at. Refuses in a sentence when it cannot
+    be read with this person's own git access, or has no main branch."""
+    done = hub.run(place, 'ls-remote', '--', address, 'refs/heads/' + BRANCH, timeout=seconds)
     if done.returncode != 0:
         raise WorkspaceError(f"The brand skill's repository could not be read. "
                              f'{plain(hub.reason(done))}')
-    return listed(done.stdout)
+    found = (done.stdout.split() or [''])[0]
+    if not COMMIT.match(found):
+        raise WorkspaceError(f'{address} has no main branch, which the brand skill is installed '
+                             'from. Check the address.')
+    return found
 
 
 def _address(address: str) -> str:
@@ -144,28 +120,18 @@ def _address(address: str) -> str:
 
 def check(address, release, place: Path) -> dict:
     """Whether the brand skill can be installed from this repository, by this person:
-    {'repository', 'release', 'releases', 'newest', 'chosen'}. `release` is the tag kept,
-    or None for the newest; `releases` is every release, newest first."""
+    {'repository', 'release', 'branch', 'commit', 'chosen', 'newest', 'releases'}. It is
+    installed from main: `release`, a tag an older version kept, is not used, and
+    `release` comes back None. `chosen` and `newest` are main, as {'tag': 'main',
+    'version': None, 'commit'}."""
     address = settings.check_repository(address)
     if address is None:
         raise WorkspaceError("Give the brand skill's repository address.")
     address = _address(address)
-    release = settings.check_release(release, address)
-    found = releases(address, place)
-    if not found:
-        raise WorkspaceError(f'{address} has no releases: no tag such as v1.0.0. Check the '
-                             'address, or ask whoever keeps it to tag a release.')
-    latest = newest(found)
-    chosen = latest
-    if release is not None:
-        chosen = found.get(release) or found.get(f'v{release}')
-        if chosen is None:
-            raise WorkspaceError(f"{address} has no release {release}. Its newest is "
-                                 f"{latest['tag']}. Leave the release empty for the newest.")
-    return {'repository': address, 'release': release and chosen['tag'],
-            'releases': sorted(found.values(), key=lambda entry: order(entry['version']),
-                               reverse=True),
-            'newest': latest, 'chosen': chosen}
+    commit = head(address, place)
+    chosen = {'tag': BRANCH, 'version': None, 'commit': commit}
+    return {'repository': address, 'release': None, 'branch': BRANCH, 'commit': commit,
+            'releases': [], 'newest': chosen, 'chosen': chosen}
 
 
 # --- fetching a release --------------------------------------------------------------------
@@ -204,143 +170,58 @@ def last_line(*said: str) -> str:
     return 'it said nothing'
 
 
-def _zip_name(names: list[str]) -> str | None:
-    """The release's ZIP to install: the Mac one on a Mac, otherwise the only other."""
-    zips = [name for name in names if name.endswith('.zip')]
-    mac = [name for name in zips if name.endswith('-mac.zip')]
-    other = [name for name in zips if not name.endswith('-mac.zip')]
-    if PLATFORM == 'darwin' and len(mac) == 1:
-        return mac[0]
-    if len(other) == 1:
-        return other[0]
-    return zips[0] if len(zips) == 1 else None
-
-
-def unpack(archive: Path, into: Path) -> Path:
-    """A release ZIP's files, written into an empty folder; the folder of the skill in it.
-    A path outside the folder, a link, or more than a release holds, is refused."""
-    try:
-        with zipfile.ZipFile(archive) as packed:
-            members = packed.infolist()
-            if len(members) > MOST_FILES or sum(one.file_size for one in members) > MOST_BYTES:
-                raise WorkspaceError('The release ZIP holds more than a skill does.')
-            for one in members:
-                inside = PurePosixPath(one.filename)
-                mode = one.external_attr >> 16
-                if inside.is_absolute() or '\\' in one.filename or any(
-                        part in ('.', '..') for part in inside.parts):
-                    raise WorkspaceError('The release ZIP has a file that cannot be placed.')
-                if stat.S_ISLNK(mode):
-                    raise WorkspaceError('The release ZIP holds a link, which a skill never '
-                                         'does.')
-                target = into / inside
-                if one.is_dir():
-                    target.mkdir(parents=True, exist_ok=True)
-                    continue
-                target.parent.mkdir(parents=True, exist_ok=True)
-                with packed.open(one) as source, open(target, 'xb') as written:
-                    shutil.copyfileobj(source, written)
-                if mode & 0o111:
-                    target.chmod(0o755)
-    except (zipfile.BadZipFile, OSError, ValueError) as failure:
-        raise WorkspaceError(f'The release ZIP could not be unpacked ({failure}).')
-    if (into / 'SKILL.md').is_file():
-        return into
-    held = [folder for folder in into.iterdir() if (folder / 'SKILL.md').is_file()]
-    if len(held) != 1:
-        raise WorkspaceError('The release ZIP does not hold a skill.')
-    return held[0]
-
-
-def _gh_env() -> dict:
-    return {**os.environ, 'GH_PROMPT_DISABLED': '1', 'GH_NO_UPDATE_NOTIFIER': '1',
-            'NO_COLOR': '1'}
-
-
-def _by_gh(gh: str, slug: str, tag: str, into: Path, stop) -> Path | None:
-    """The release's ZIP, downloaded with gh, checked and unpacked; None when gh is not
-    signed in or the release has no ZIP to install."""
-    env = _gh_env()
-    code, late, _, _ = _run([gh, 'auth', 'status', '--hostname', 'github.com'],
-                            LOOK_SECONDS, stop, env)
-    if code != 0 or late:
-        return None
-    code, late, out, _ = _run([gh, 'release', 'view', tag, '--repo', slug, '--json',
-                               'assets'], LOOK_SECONDS, stop, env)
-    code = 1 if late else code
-    try:
-        names = [str(asset.get('name')) for asset in json.loads(out).get('assets') or []
-                 if isinstance(asset, dict)] if code == 0 else []
-    except (ValueError, AttributeError):
-        names = []
-    name = _zip_name(names)
-    if name is None:
-        return None
-    sums = f'{name}.sha256' if f'{name}.sha256' in names else None
-    download = into / 'download'
-    download.mkdir()
-    code, late, out, err = _run([gh, 'release', 'download', tag, '--repo', slug, '--dir',
-                                 str(download), '--pattern', name,
-                                 *(['--pattern', sums] if sums else [])],
-                                FETCH_SECONDS, stop, env)
-    archive = download / name
-    if code != 0 or late or not archive.is_file():
-        raise WorkspaceError(f'Its ZIP could not be downloaded with gh ({last_line(err, out)})')
-    if sums:
-        kept = (download / sums).read_text(encoding='utf-8', errors='replace').split()
-        digest = hashlib.sha256(archive.read_bytes()).hexdigest()
-        if len(kept) != 2 or kept[1] != name or kept[0] != digest:
-            raise WorkspaceError(f'Its ZIP does not match the checksum published beside it, '
-                                 f'{sums}')
-    folder = into / 'unpacked'
-    folder.mkdir()
-    return unpack(archive, folder)
-
-
-def _by_tag(address: str, tag: str, commit: str, into: Path) -> Path:
-    """The tag, cloned at depth one with the person's own git access. Its commit must be
-    the one that was shown."""
+def fetch(address: str, commit: str, into: Path, stop=None) -> tuple[Path, str]:
+    """Main, cloned at depth one into a new folder inside the empty folder `into`, with the
+    person's own git access: (its folder, 'main'). Its commit must be `commit`, the one that
+    was shown. No hook is placed or run."""
+    if stop is not None and stop.is_set():
+        raise companion.Stopped('It was stopped before it finished.')
     tree = into / 'tree'
-    done = hub.run(into, 'clone', '--quiet', '--depth', '1', '--branch', tag,
-                   *hub.COPY_AS_IS, '--', address, str(tree), timeout=FETCH_SECONDS)
+    done = hub.run(into, '-c', 'core.hooksPath=/dev/null', 'clone', '--quiet', '--depth', '1',
+                   '--no-tags', '--template=', '--branch', BRANCH, *hub.COPY_AS_IS, '--',
+                   address, str(tree), timeout=FETCH_SECONDS)
     if done.returncode != 0:
-        raise WorkspaceError(f'{tag} could not be fetched. {plain(hub.reason(done))}')
-    head = hub.run(tree, 'rev-parse', 'HEAD')
-    if head.returncode != 0 or head.stdout.strip() != commit:
-        raise WorkspaceError(f'{tag} was fetched at another commit than the {commit[:12]} you '
+        raise WorkspaceError(f'Its main branch could not be fetched. {plain(hub.reason(done))}')
+    found = hub.run(tree, 'rev-parse', 'HEAD')
+    if found.returncode != 0 or found.stdout.strip() != commit:
+        raise WorkspaceError(f'main was fetched at another commit than the {commit[:12]} you '
                              'were shown. Look at it again before you install')
-    return tree
+    return tree, BRANCH
 
 
-def fetch(address: str, tag: str, commit: str, into: Path, stop=None) -> tuple[Path, str]:
-    """The release, in a new folder inside the empty folder `into`: (its folder, 'zip' or
-    'tag')."""
-    match, gh = GITHUB.match(address), shutil.which('gh')
-    if match and gh:
-        folder = _by_gh(gh, f'{match[1]}/{match[2]}', tag, into, stop)
-        if folder is not None:
-            return folder, 'zip'
-    return _by_tag(address, tag, commit, into), 'tag'
+def version_of(folder: Path) -> str | None:
+    """The version main holds, from its package.json, or None when it says none."""
+    try:
+        version = json.loads((Path(folder) / 'package.json').read_text(encoding='utf-8'))['version']
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    return version if isinstance(version, str) and order(version) else None
 
 
 # --- its own installer ---------------------------------------------------------------------
 
 def bootstraps(folder: Path) -> dict:
-    """The companion versions a release's installer brings when it finds none it can use,
-    as the release records them: {'harness-slides': '0.13.1', ...}. Empty when it records
+    """The companion versions main's installer brings when it finds none it can use, as it
+    records them: {'harness-slides': '0.15.1', ...}. A record of `version` is that version;
+    one of a `branch` with a `minimumVersion`, as Harness Brand 1.4.0 and newer keep, brings
+    that branch, at that version or newer, and the minimum is given. Empty when it records
     none."""
     try:
         kept = json.loads((folder / SOURCES).read_text(encoding='utf-8'))
     except (OSError, ValueError):
         return {}
-    return {f'harness-{kind}': entry['version'] for kind, entry in
-            (kept.items() if isinstance(kept, dict) else ())
-            if re.fullmatch(r'[a-z]{1,40}', str(kind)) and isinstance(entry, dict)
-            and isinstance(entry.get('version'), str) and order(entry['version'])}
+    found = {}
+    for kind, entry in (kept.items() if isinstance(kept, dict) else ()):
+        if not re.fullmatch(r'[a-z]{1,40}', str(kind)) or not isinstance(entry, dict):
+            continue
+        version = entry.get('version', entry.get('minimumVersion'))
+        if isinstance(version, str) and order(version):
+            found[f'harness-{kind}'] = version
+    return found
 
 
 def installer(folder: Path, node: str) -> list[str]:
-    """How the release's own installer is run: the Mac one on a Mac, else the other."""
+    """How main's own installer is run: the Mac one on a Mac, else the other."""
     mac, other = folder / 'scripts' / 'install-mac.mjs', folder / 'scripts' / 'install-skill.mjs'
     if PLATFORM == 'darwin' and mac.is_file():
         return [node, str(mac), '--yes', '--research', 'skip']
@@ -352,8 +233,8 @@ def installer(folder: Path, node: str) -> list[str]:
 
 
 def install(folder: Path, home: Path, seconds: float, stop=None) -> tuple[int, bool, str]:
-    """Run the release's own installer: (its exit code, whether it ran out of time, the
-    last thing it said)."""
+    """Run main's own installer: (its exit code, whether it ran out of time, the last thing
+    it said)."""
     node = shutil.which('node')
     if node is None:
         raise WorkspaceError('Its installer needs Node.js 20 or newer, which was not found '

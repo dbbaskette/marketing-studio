@@ -65,7 +65,10 @@ def session_supported(value):
             or not isinstance(value.get('requests', []), list)
             or any(not isinstance(request, dict) for request in value.get('requests', []))):
         return False
-    if any(not isinstance(pin, dict) or any(not isinstance(pin.get(key), str) or not pin[key] for key in ('task', 'runtime')) for pin in value['pins'].values()):
+    # A pin names the companion task to resume with. One saved before pins stopped keeping a
+    # companion's install folder also holds `runtime`, which is neither required nor read.
+    if any(not isinstance(pin, dict) or not isinstance(pin.get('task'), str) or not pin['task']
+           for pin in value['pins'].values()):
         return False
     for entry in value['artifacts'].values():
         if not isinstance(entry, dict) or not relative(entry.get('file')) \

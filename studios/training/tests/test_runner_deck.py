@@ -3683,19 +3683,19 @@ class TroubleTests(DeckCase):
         with mock.patch.object(Slides, 'VERSION', '0.15.1'):
             missing = self.engine.deck_needs(fresh=True)['missing']
         self.assertIn('The slides tool on this computer is version 0.15.1, and a deck needs '
-                      "0.17.0 or newer. Acme Brand's own installer brings 0.15.1. Update Harness Slides.",
+                      "0.19.0 or newer. Acme Brand's own installer brings 0.15.1. Update Harness Slides.",
                       missing)
-        self.acme_brand('0.17.0')
+        self.acme_brand('0.19.0')
         with mock.patch.object(Slides, 'VERSION', '0.15.1'):
             missing = self.engine.deck_needs(fresh=True)['missing']
         self.assertIn('The slides tool on this computer is version 0.15.1, and a deck needs '
-                      '0.17.0 or newer. Update Harness Slides.', missing)
+                      '0.19.0 or newer. Update Harness Slides.', missing)
         self.acme_brand('0.15.1')
         refusal = slides_tool.TooOld('0.15.1')
         with mock.patch.object(self.engine, 'slides',
                                mock.Mock(side_effect=refusal)):
             missing = self.engine.deck_needs(fresh=True)['missing']
-        self.assertIn('harness-slides 0.15.1 is installed, and a deck needs 0.17.0 or newer. '
+        self.assertIn('harness-slides 0.15.1 is installed, and a deck needs 0.19.0 or newer. '
                       "Acme Brand's own installer brings 0.15.1. Update Harness Slides, then try again.",
                       missing)
 
@@ -3710,7 +3710,7 @@ class TroubleTests(DeckCase):
             view = self.view(root)
         self.assertEqual(view['state'], 'done')
         self.assertEqual(view['deck_left']['says'], left(
-            pipeline.DECK_LEFT, 'harness-slides 0.15.1 is installed, and a deck needs 0.17.0 '
+            pipeline.DECK_LEFT, 'harness-slides 0.15.1 is installed, and a deck needs 0.19.0 '
             'or newer. Update Harness Slides, then try again.'))
         after = sorted(str(path.relative_to(root)) for path in root.rglob('*'))
         self.assertLessEqual(set(before), set(after), 'nothing it had is lost')
@@ -3749,13 +3749,13 @@ class TroubleTests(DeckCase):
                                     delivery=pipeline.delivery_of(workspace.load(root))), [])
 
     def test_a_brand_skill_older_than_the_floor_is_said_and_holds_a_new_deck(self):
-        said = brand_skill.too_old('0.13.2')
-        self.brand.version = '0.13.2'
+        said = brand_skill.too_old('1.3.0')
+        self.brand.version = '1.3.0'
         self.assertEqual(self.engine.deck_needs(fresh=True)['old_brand'], said)
         root = self.saved_begin()
         self.to_end(root)
         self.assertEqual(self.view(root)['deck_left']['says'], left(pipeline.DECK_LEFT, said))
-        self.brand.version = '0.14.0'
+        self.brand.version = '1.4.0'
         self.assertIsNone(self.engine.deck_needs(fresh=True)['old_brand'])
         self.assertEqual(self.engine.deck_needs()['missing'], [])
 

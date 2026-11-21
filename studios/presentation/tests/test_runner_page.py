@@ -1025,8 +1025,8 @@ class Keeper:
     def install_brand(self, working: bool, release: str) -> dict:
         return self.answer('install_brand', working, release)
 
-    def remember_brand(self, repository: str, listed: dict) -> None:
-        self.asked.append(('remember_brand', repository, sorted(listed)))
+    def remember_brand(self, repository: str, commit: str) -> None:
+        self.asked.append(('remember_brand', repository, commit))
 
 
 class UpkeepTests(PageCase):
@@ -1076,20 +1076,14 @@ class UpkeepTests(PageCase):
         said = self.post('brand', {'repository': str(self.base / 'nowhere.git')}, 400)
         self.assertTrue(said['error'].startswith("The brand skill's repository could not be "
                                                  'read. It was not found ('), said['error'])
-        self.assertEqual(self.post('brand', {'repository': str(bare), 'release': 'v9.0.0'},
-                                   400)['error'],
-                         f'{bare} has no release v9.0.0. Its newest is v1.2.0. Leave the '
-                         'release empty for the newest.')
-        self.assertEqual(self.post('brand', {'release': 'v1.2.0'}, 400)['error'],
-                         "A release is chosen from the brand skill's repository: give the "
-                         'repository too.')
         self.assertIsNone(settings.load().brand_repository, 'nothing was kept')
+        # It is installed from main: a release sent by an older page is not kept or used.
         made = self.post('brand', {'repository': str(bare), 'release': '1.2.0'})
-        self.assertEqual((made['brand']['repository'], made['brand']['release']),
-                         (str(bare), 'v1.2.0'))
-        self.assertEqual(settings.brand_source(), (str(bare), 'v1.2.0'))
-        self.assertEqual(keeper.asked, [('remember_brand', str(bare), ['v1.2.0',
-                                                                       'v2026.1.0'])])
+        self.assertEqual((made['brand']['repository'], made['brand']['release']), (str(bare), None))
+        self.assertEqual(settings.brand_source(), (str(bare), None))
+        main = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=work, check=True,
+                              capture_output=True, text=True).stdout.strip()
+        self.assertEqual(keeper.asked, [('remember_brand', str(bare), main)])
         self.assertEqual(self.post('setup', {'limits': {'parallel': 3}})['brand']['repository'],
                          str(bare), 'a change to anything else leaves it as it was')
         cleared = self.post('brand', {'repository': ''})

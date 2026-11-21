@@ -17,6 +17,8 @@ import sys
 import time
 from pathlib import Path
 
+from studio_core.packaging import stable_address, stable_place
+
 import desk
 import studio
 
@@ -184,7 +186,7 @@ def runtime():
     given = os.environ.get('HARNESS_BRAND_RUNTIME')
     home = Path.home()
     places = (
-        [Path(given).expanduser()]
+        [stable_address(Path(given).expanduser(), saved=True)]
         if given
         else [
             home / 'Library/Application Support/Harness Brand/current',
@@ -198,7 +200,8 @@ def runtime():
         raise ValueError(NOT_INSTALLED)
     if "'--layout'" not in (found / 'rebrand/scripts/brand.py').read_text(errors='replace'):
         raise ValueError(TOO_OLD)
-    return found.resolve()
+    # Its stable address, through `current`: the next update removes the version folder.
+    return stable_place(found)
 
 
 def _python(folder):

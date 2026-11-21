@@ -34,7 +34,9 @@ HOMES = ('.claude/skills', '.codex/skills', '.agents/skills')
 FINISHED = ('branded', 'branded_with_exceptions')
 MINUTES = 20
 NO_SKILL = ('No rebranding skill is on this computer. Install one, such as true-source-brand '
-            'or tanzu-brand, to rebrand a deck as a copy.')
+            'or tanzu-brand, to rebrand a deck as a copy. If one was installed and Harness Brand '
+            'has been updated since, run `node scripts/harness-brand.mjs rebrand setup` once in '
+            'the Harness Brand skill folder (its `current` folder), then try again.')
 NOT_SET_UP = ('{name} is not set up yet. In a terminal, run `node scripts/harness-brand.mjs '
               'rebrand setup` in the Harness Brand skill folder once, then try again. (An '
               'older brand skill is set up with `bash scripts/setup.sh --fetch` in {path}.)')

@@ -140,8 +140,8 @@ recorded Python, and generated launchers. Add `--json` for structured results.
 | --- | --- |
 | `~/.agents/skills/blog-studio` | Link that Codex discovers |
 | `~/.claude/skills/blog-studio` | Link that Claude Code discovers; follows `CLAUDE_CONFIG_DIR` |
-| `~/.local/share/blog-studio/versions/` | Verified copies of each installed version |
-| `~/.local/share/blog-studio/current` | Link to the version in use; both tools share it |
+| `~/.local/share/blog-studio/versions/` | The verified copy of the installed version; an update keeps one |
+| `~/.local/share/blog-studio/current` | Link to that copy. Both tools, the launchers and the record name this link |
 | `~/.local/share/blog-studio/studio` | Open the UI or run `check` |
 | `~/.local/share/blog-studio/blog` | Run the workspace helper with a supported Python |
 | `~/Applications/Open Blog Studio.command` | Mac double-click launcher |
@@ -171,12 +171,15 @@ setup again.
 
 Close Blog Studio before updating, repairing, rolling back, or uninstalling; setup
 refuses to change an installation while its page is running. Both update methods
-keep the previous version for rollback and leave your writing alone. If only one tool is set up, setup asks
+leave your writing alone and keep one version: once the update has succeeded, the
+version it replaced is removed, and setup says what it removed. If only one tool is set up, setup asks
 once whether to add the other. Open a new session afterwards.
 
-Each blog records the Blog Studio version it was started with, so its completed
-reviews stay meaningful after an update. To move a blog to the installed
-version, say “Use the current guidance for this blog.” Its earlier reviews are
+Every blog runs the installed Blog Studio. After an update, a blog you started
+earlier uses the new version at once, and nothing has to be moved or converted.
+Each blog also records the Blog Studio version its completed reviews were judged
+under, so those reviews stay valid after an update. Judging it again is your
+choice: say “Use the current guidance for this blog.” Its earlier reviews are
 then marked stale so you can rerun the ones you need.
 
 ### Coming from version 1.x
@@ -187,12 +190,13 @@ blog with “This guidance needs a newer local Blog Studio runtime. Run the
 installer update.” Install the current version as described above; setup
 upgrades the existing installation in place.
 
-- Blogs you started in 1.x open and save as before. Their recorded guidance
-  shows the earlier value until you ask to use the current guidance.
+- Blogs you started in 1.x open and save as before, on the installed version.
+  The guidance value they record shows the earlier one until you ask to use the
+  current guidance; it says only what their reviews were judged under.
 - You no longer need access to the Blog Studio repository, or a GitHub sign-in,
   to write. A Team Hub still uses your own GitHub access to the Hub repository.
 - Each workspace has a `task-context` folder left by 1.x. Version 2 does not
-  read it. You can delete it once you are sure you will not roll back to 1.x.
+  read it. You can delete it once you are sure you will not install 1.x again.
 
 ## Check, repair, roll back or remove
 
@@ -213,13 +217,19 @@ sh installer/install.sh uninstall
 - **repair** is the same as running setup again. It replaces damaged files with
   a clean copy, records a working Python when the earlier one was removed or
   upgraded away, and finishes a setup that was interrupted. A damaged copy is
-  kept beside the new one for diagnosis.
-- **rollback** switches back to the version you had before the last update,
-  after verifying it. Run it again to return. Rolling back to 1.x restores a
-  version that can continue existing blogs but cannot start new ones.
+  left alone until the clean one is in place, then removed.
+- **rollback** normally has nothing to return to, because an update keeps only
+  the newest version. It then changes nothing and says: "The earlier version is
+  no longer on this computer: an update keeps only the newest. Install the
+  release you want instead." To go back, run setup from the release you want.
+  For a release from before this change, delete
+  `~/.local/share/blog-studio/installation.json` first: its setup cannot read
+  the newer record, and completes the installation without one.
+  If the earlier version could not be removed and is still there, rollback
+  verifies it and switches back to it.
 - **uninstall** removes the links from your tools and, when the last tool is
   removed, the unchanged launchers setup wrote. It keeps your writing, Team
-  Hubs, backups and the installed versions. To free the space, delete
+  Hubs, backups and the installed version. To free the space, delete
   `~/.local/share/blog-studio/versions` afterwards; leave the rest of that
   folder if you use a Team Hub.
 

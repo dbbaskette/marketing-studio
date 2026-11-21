@@ -62,6 +62,8 @@ import re
 import shutil
 from pathlib import Path
 
+from studio_core.packaging import stable_address, stable_place
+
 from studio_sync.support import WorkspaceError
 
 from . import companion as companions
@@ -191,9 +193,12 @@ def _installed(run=None, home: Path | None = None):
     seen = set()
     for place in locations(home) if node else []:
         try:
-            runtime = place.resolve()
+            place.resolve(strict=True)
         except (OSError, RuntimeError):
             continue  # a link that leads nowhere
+        # Said through its `current` link, never the version folder behind it: a setting or
+        # a job that names it goes on working after the next update removes that folder.
+        runtime = stable_place(place)
         hints = [name for name in (place.name, place.parent.name) if name != 'current'] or ['brand']
         script = None if runtime in seen else companion(runtime, *hints)
         seen.add(runtime)
@@ -241,11 +246,13 @@ class Brand:
                     f'{VARIABLE}, then try again.'
                 )
             return
-        self.runtime = Path(runtime)
+        # A folder saved earlier inside `versions/` is said through `current`: an update
+        # keeps only the newest version, so the saved one may be gone.
+        self.runtime = stable_address(runtime, saved=True)
         hints = [
             name for name in (self.runtime.name, self.runtime.parent.name) if name != 'current'
         ] or ['brand']
-        self.script = companion(self.runtime.resolve(), *hints)
+        self.script = companion(self.runtime, *hints)
         if self.script is None and not run:
             raise WorkspaceError(
                 f'{runtime} does not hold a brand skill: a skill whose own '

@@ -74,7 +74,7 @@ Be clear about what this does. It stops an assistant that follows its instructio
 
 ## Trainings, Status and Settings
 
-- **Trainings** shows every training on this computer as a card. Open one to see its files, what is in the way, its checks, what was left out, which objectives its scenarios exercise, its research and the guidance it is pinned to. From there you can open any file, bring back a stage that was left out, and copy a sentence that asks your assistant to resume.
+- **Trainings** shows every training on this computer as a card. Open one to see its files, what is in the way, its checks, what was left out, which objectives its scenarios exercise, its research, the guidance it follows and the Training Studio version it started on. From there you can open any file, bring back a stage that was left out, and copy a sentence that asks your assistant to resume.
 - **Status** shows everything at once: each training's stage, where it stands, how long since it changed and how many things are in its way. **Check this computer** looks for what a training needs: Claude Code and Codex, each installed, signed in where that can be asked, and reachable from the network you are on; Node; the two companion skills; and, as extras, the Google Cloud CLI and pandoc. Anything missing comes with how to put it right. The check asks each tool for its version, asks Codex whether it is signed in, and opens a connection to each service. It never starts an assistant.
 - **Settings** holds notifications and where each training is decided. Served from the runner, it holds more; see [two ways it is served](#two-ways-it-is-served).
 

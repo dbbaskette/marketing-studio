@@ -33,6 +33,8 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from studio_core.packaging import stable_address, stable_place
+
 from .errors import WorkspaceError
 
 VARIABLE = 'BRAND_SKILL_RUNTIME'
@@ -243,13 +245,16 @@ def find(chosen=None, data=None, home=None, which=shutil.which):
         raise WorkspaceError(f'{SKILL} needs Node.js 20 or newer, which was not found on this '
                              'computer. Install it, then open Brands again.')
     env = environment(data)
-    places = [Path(chosen).expanduser()] if chosen else locations(home)
+    # A folder saved inside `versions/` is said through `current`: an update keeps only the
+    # newest version. What is found is said the same way, never by its version folder.
+    places = [stable_address(Path(chosen).expanduser(), saved=True)] if chosen else locations(home)
     candidates, seen = [], set()
     for place in places:
         try:
-            folder = place.resolve()
+            place.resolve(strict=True)
         except (OSError, RuntimeError):
             continue
+        folder = stable_place(place)
         if folder in seen:
             continue
         seen.add(folder)

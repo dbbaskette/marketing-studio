@@ -14,6 +14,7 @@ import studio
 import studios_config
 from studio_brand import brand, companion, source, settings
 from studio_sync.support import data_root, locked
+from studio_core.packaging import stable_address
 
 _CACHE = {}
 _CACHE_LOCK = threading.Lock()
@@ -40,8 +41,12 @@ def _read():
         preferences = shared.get('brand', {})
         value['skill_before'] = preferences.get('skill')
         if 'skill' in preferences:
+            # A skill saved inside a `versions/` folder is said through `current`: an update
+            # keeps only the newest version, and the saved one may be gone.
             value['runtime'] = (
-                str(Path(preferences['skill']).expanduser()) if preferences.get('skill') else ''
+                str(stable_address(Path(preferences['skill']).expanduser(), saved=True))
+                if preferences.get('skill')
+                else ''
             )
         value['shared_before'] = {key: preferences.get(key) for key in ('repository', 'release')}
         value.update({key: preferences.get(key) or '' for key in ('repository', 'release')})
@@ -243,7 +248,7 @@ def _companions():
 def install(data):
     global _JOB
     if set(data) != {'confirmed', 'repository', 'tag', 'commit'} or data['confirmed'] is not True:
-        raise ValueError('Confirm the displayed brand repository, release and commit first.')
+        raise ValueError('Confirm the displayed brand repository, branch and commit first.')
     with _JOB_LOCK:
         if _JOB and _JOB.get('status') == 'working':
             raise ValueError('A brand skill installation is already running.')
@@ -254,7 +259,7 @@ def install(data):
             chosen.get('tag'),
             chosen.get('commit'),
         ):
-            raise ValueError('The brand release changed. Check and save it before installing.')
+            raise ValueError('The brand skill\'s main branch changed. Check and save it before installing.')
         lock_path = data_root() / 'brand-use.lock'
         lock_path.parent.mkdir(parents=True, exist_ok=True)
         lease = lock_path.open('a')
@@ -281,15 +286,15 @@ def _install(kept, lease):
     global _JOB
     try:
         chosen = kept['checked']
-        checked = source.check(kept['repository'], chosen['tag'], home())
+        # Installed from main, at the commit shown: one that moved since is looked at again.
+        checked = source.check(kept['repository'], None, home())
         if checked['chosen']['commit'] != chosen['commit']:
-            raise ValueError('The release tag moved. Check and save it again before installing.')
+            raise ValueError('The main branch moved. Check and save it again before installing.')
         before = _companions()
         old = status()
         with tempfile.TemporaryDirectory(prefix='blog-brand-install-') as temporary:
-            folder, _ = source.fetch(
-                kept['repository'], chosen['tag'], chosen['commit'], Path(temporary)
-            )
+            folder, _ = source.fetch(kept['repository'], chosen['commit'], Path(temporary))
+            version = source.version_of(folder)
             for name, version in source.bootstraps(folder).items():
                 if name in source.SKIPPED:
                     continue
@@ -309,7 +314,7 @@ def _install(kept, lease):
         matches = [
             row
             for row in skills
-            if row['version'] == chosen['version']
+            if row['version'] == version
             and (not old['name'] or row['name'] == old['name'])
         ]
         with locked(_path().with_suffix('.lock')):

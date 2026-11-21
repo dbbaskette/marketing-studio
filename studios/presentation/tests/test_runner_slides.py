@@ -114,15 +114,27 @@ class FindingTheRuntimeTests(unittest.TestCase):
         shared = installed(self.home / '.local' / 'share' / 'harness-slides' / 'current')
         self.assertEqual(slides.find_runtime(), shared)
 
-    def test_links_are_followed_so_one_version_is_used_throughout(self):
-        version = installed(self.home / 'Library' / 'Application Support' / 'Harness Slides'
-                            / 'versions' / '0.13.0')
-        (version.parent.parent / 'current').symlink_to(Path('versions') / '0.13.0')
+    def test_the_stable_address_is_used_so_an_update_keeps_working(self):
+        # The tool is said through `current`, never its version folder, which the next update
+        # removes: a deck or a job that named it goes on with the newer version.
+        shared = self.home / 'Library' / 'Application Support' / 'Harness Slides'
+        version = installed(shared / 'versions' / '0.13.0')
+        (shared / 'current').symlink_to(Path('versions') / '0.13.0')
         skill = self.home / '.agents' / 'skills'
         skill.mkdir(parents=True)
-        (skill / 'harness-slides').symlink_to(version.parent.parent / 'current')
-        self.assertEqual(slides.find_runtime(), version)
-        self.assertEqual(slides.Slides(run=says()).runtime, version)
+        (skill / 'harness-slides').symlink_to(shared / 'current')
+        self.assertEqual(slides.find_runtime(), shared / 'current')
+        self.assertEqual(slides.Slides(run=says()).runtime, shared / 'current')
+        # An update installs a newer version, flips `current` and removes the old folder: a
+        # job given the old folder before the update runs the new one.
+        newer = installed(shared / 'versions' / '0.19.0')
+        (shared / 'current').unlink()
+        (shared / 'current').symlink_to(Path('versions') / '0.19.0')
+        shutil.rmtree(version)
+        found = slides.Slides(runtime=version, run=says())
+        self.assertEqual(found.runtime, shared / 'current')
+        self.assertTrue((found.runtime / slides.SCRIPT).is_file())
+        self.assertEqual(found.runtime.resolve(), newer.resolve())
 
     def test_its_own_guidance_is_read_from_inside_its_folder_and_never_run(self):
         home = installed(self.home / 'runtime')
@@ -178,7 +190,7 @@ class FindingTheRuntimeTests(unittest.TestCase):
 
     def test_a_tool_that_is_too_old_is_refused_when_it_is_found(self):
         os.environ[slides.VARIABLE] = str(installed(self.home / 'runtime'))
-        for version in (slides.MINIMUM, '0.17.1-beta.2', '1.0.0'):
+        for version in (slides.MINIMUM, '0.19.1-beta.2', '1.0.0'):
             self.assertEqual(slides.Slides(run=says(version)).version(), version)
         for version in ('0.12.9', '0.9.0'):
             with self.assertRaisesRegex(WorkspaceError, f'harness-slides {version} is '
@@ -212,7 +224,7 @@ class FindingTheRuntimeTests(unittest.TestCase):
         with self.assertRaises(WorkspaceError) as refused:
             slides.Slides(run=says('0.15.1'))
         self.assertEqual(str(refused.exception), 'harness-slides 0.15.1 is installed, and a '
-                         'deck needs 0.17.0 or newer. Update Harness Slides, then try again.')
+                         'deck needs 0.19.0 or newer. Update Harness Slides, then try again.')
         self.assertEqual(refused.exception.version, '0.15.1')
 
 

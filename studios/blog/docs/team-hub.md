@@ -40,7 +40,7 @@ until deliberately refreshed.
 Once a writing workspace selects a hub, normal Blog Studio saves synchronize
 that changed item and its dependencies. An article includes its original,
 outline/draft history, interview and decisions, derived copy, source roles,
-voice revision, the Blog Studio version it was started with, selected context,
+voice revision, the Blog Studio version its reviews were judged under, selected context,
 and review state. Original
 uploads retain their bytes; automatic sharing excludes machine-specific paths,
 runtime caches, and incidental configuration files.
