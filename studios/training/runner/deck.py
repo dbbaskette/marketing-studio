@@ -186,6 +186,8 @@ PLACED = ("A picture the design selected is recorded in the deck's asset manifes
           'Any other supplied picture or screenshot that is not recorded was left out by the person: '
           "draw its slide without it, in the brand's own layout, and never leave a gap or a "
           'placeholder where it would have been.', '')
+OWN_DOCUMENTS = ("The person's own documents are offered beside them, for the exact figure, "
+                 'name or example behind a claim. ')
 USE = ('The deck is both presented and handed out. Every slide must make sense to someone '
        'reading it alone, so no slide may depend on its speaker notes for meaning. The notes '
        'carry the talk track and timing for a presenter.')   # as a deck for reading has it
@@ -212,11 +214,13 @@ def frame(blueprint: str) -> dict:
 
 def handoff(title: str, level: str | None, blueprint: str, said: dict, target: str | None,
             brand: tuple[str, str] | None, guide: bool, scenarios=None,
-            delivery: str = DELIVERY) -> str:
+            delivery: str = DELIVERY, documents: bool = False) -> str:
     """deck-handoff.md: one page, written from the record, under the headings the skill's
     own deck stage gives it. `said` is what intake says, `guide` whether the training has
     a learner guide, and `scenarios` the titles of the practice scenarios its closing slide
-    points to, in words, or None when the training has no practice."""
+    points to, in words, or None when the training has no practice. `documents` says the
+    person supplied documents of their own, which the deck's writer is offered. A training
+    with none has the handoff it always had."""
     parsed, framed = checks.parse_blueprint(blueprint), frame(blueprint)
     modules = '; '.join(f"{ident}, {module['title']}"
                         for ident, module in parsed['modules'].items())
@@ -245,7 +249,9 @@ def handoff(title: str, level: str | None, blueprint: str, said: dict, target: s
               f'- {check}' + (f': {modules}.' if modules else '.'),
               '- A recap.', f'- {closing}', '', '## Sources', '',
               'Work from the blueprint, ' + ('the learner guide and ' if guide else 'and ')
-              + 'the research findings. They are your sources, not the audience\'s: a '
+              + 'the research findings. '
+              + (OWN_DOCUMENTS if documents else '')
+              + 'They are your sources, not the audience\'s: a '
               "slide's `source` cites only what the audience can look up by name, such as a "
               "product's documentation, or is left out. Finding, objective and blueprint "
               "IDs go in the slide's `provenance`, which only the speaker notes carry.", '',

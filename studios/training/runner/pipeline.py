@@ -1036,7 +1036,14 @@ def handoff_text(root: Path, session: dict, level: str | None) -> str:
         session['title'], level,
         _text(root, session, workspace.qualify('blueprint', level)) or '', answers(root),
         session['settings']['deck_target'], brand_of(session), 'document' in wanted(session),
-        scenarios, delivery_of(session))
+        scenarios, delivery_of(session), documents=_has_documents(root))
+
+
+def _has_documents(root: Path) -> bool:
+    """Whether the person supplied documents of their own for this training, as its run
+    record says: the ones research was given, and the deck's writer is offered."""
+    record = home.read_json(root / drafts.RECORD, {})
+    return bool(isinstance(record, dict) and record.get('documents'))
 
 
 def scenario_title(root: Path, session: dict, name: str) -> str:
@@ -1843,9 +1850,32 @@ def person_outline(root: Path) -> str | None:
             'not a source to weigh: build it and fill it in.\n\n' + text[:60000])
 
 
+DOCUMENTS = ("The person's own documents are saved for you as well: `list_inputs` names each "
+             'one, `search_source` finds a word, a name or a figure in one, and `read_source` '
+             'reads around it. They hold the exact figures, names, lists and examples behind '
+             'the findings. Go to them for the specifics.\n')
+
+
+SPECIFICS = ('A key point gives the number, the name, the price or the date its document '
+             'gives, never a summary of it. Before you write a module, search their documents '
+             'for its figures, named examples, comparisons and proof points, and put them in '
+             'its key points and its `Example`. Where a finding covers the fact, cite the '
+             'finding and take the exact figure from the document. A specific fact one of '
+             'their own documents states, that no finding covers and none contradicts '
+             'outright, is `[stated]`. Say in your notes which document each came from, and '
+             'which you took where two of them disagree.\n')
+
+
+def _documents(sources) -> list:
+    """The person's documents as a writer is offered them: the readable ones research was
+    given, to look a figure, a name or an example up in. Empty when there are none."""
+    return list((sources or ((), ()))[1])
+
+
 def blueprint_work(root: Path, found: Survey, step: Step, request: dict | None,
-                   error: str | None, answered: list[dict]) -> Work:
-    """The job of drafting one blueprint."""
+                   error: str | None, answered: list[dict], sources=None) -> Work:
+    """The job of drafting one blueprint. The documents the person supplied are offered to
+    it, as they are to research, so a key point can carry the figure its document gives."""
     session, name = found.session, 'blueprint'
     level = workspace.split(step.artifact)[1]
     own = sorted(workspace.split(scenario)[0].partition(':')[2]
@@ -1877,19 +1907,21 @@ def blueprint_work(root: Path, found: Survey, step: Step, request: dict | None,
     earlier = _earlier(root, session, level)
     if earlier:
         inputs['earlier levels'] = earlier
+    offered = _documents(sources)
     task = (f'Draft {workspace.label(step.artifact)} for this training.\n\n'
             f'{_about(root, session)}\n'
             + (f'This blueprint is for level {level}.\n' if level else '')
             + f'{practice}\n\n'
             f'Your inputs are {_inputs(inputs)}.\n'
-            f'Hand the blueprint back with submit_artifact under the name "{name}".'
+            + (DOCUMENTS + SPECIFICS if offered else '')
+            + f'Hand the blueprint back with submit_artifact under the name "{name}".'
             + _again(request, _text(root, session, step.artifact), error, answered,
                      'the blueprint', found.state.get(step.artifact) == 'stale'))
     prepared = {'inputs': inputs,
                 'artifacts': {name: {'kind': 'blueprint', 'level': level,
                                      'findings': session.get('findings'),
                                      **({'scenario_ids': scenario_ids} if scenario_ids is not None else {})}},
-                'ask': _can_ask(answered)}
+                'ask': _can_ask(answered), **({'sources': offered} if offered else {})}
     return Work(briefs.guidance('blueprint', level=level), task, 'write', prepared, name)
 
 
@@ -2269,11 +2301,12 @@ def naming_rules(root: Path, mine: Deck) -> str | None:
 
 def outline_work(root: Path, found: Survey, step: Step, request: dict | None,
                  error: str | None, answered: list[dict], designed: bool = False,
-                 icons: bool = False) -> Work:
+                 icons: bool = False, sources=None) -> Work:
     """The job of writing what one deck says: its outline, from the handoff, the
-    blueprint, the guide and the research findings. When `designed`, the worker proposes
-    how each slide is drawn as well, and hands both in together; with `icons`, it names each
-    icon by its ID in the brand's library, which it may search."""
+    blueprint, the guide and the research findings, with the person's own documents offered
+    for the figures and names behind them. When `designed`, the worker proposes how each
+    slide is drawn as well, and hands both in together; with `icons`, it names each icon by
+    its ID in the brand's library, which it may search."""
     session, name = found.session, 'outline'
     level = workspace.split(step.artifact)[1]
     mine = found.decks[level]
@@ -2301,6 +2334,7 @@ def outline_work(root: Path, found: Survey, step: Step, request: dict | None,
     if earlier and designed and _read(place(root, level, DESIGN)):
         earlier = ('The outline:\n\n' + earlier.rstrip('\n') + '\n\nThe proposal made from '
                    'it and its design:\n\n' + _read(place(root, level, DESIGN)))
+    offered = _documents(sources)
     dated = bool(earlier) and (mine.kept.get('outline') or {}).get('from') != made_from(
         root, session, step.artifact)
     task = (f'Write what {workspace.label(step.artifact)} says: its outline'
@@ -2309,6 +2343,7 @@ def outline_work(root: Path, found: Survey, step: Step, request: dict | None,
             + (f'This deck is for level {level}.\n' if level else '')
             + DELIVERED[delivery_of(session)] + '\n'
             + f'\nYour inputs are {_inputs(inputs)}.\n'
+            + (DOCUMENTS if offered else '')
             + ('Hand the outline in with its design, together, with submit_outline.'
                if designed else 'Hand the outline in with submit_outline.')
             + _again(request, earlier, error, answered, 'the outline', dated)
@@ -2332,7 +2367,7 @@ def outline_work(root: Path, found: Survey, step: Step, request: dict | None,
                                      'known': research_ids(root),
                                      **({'frozen': frozen, 'previous': previous} if previous else {}),
                                      **({'icons': True} if designed and icons else {})}},
-                'ask': _can_ask(answered)}
+                'ask': _can_ask(answered), **({'sources': offered} if offered else {})}
     return Work(briefs.guidance('deck-outline', design=designed, icons=designed and icons),
                 task, 'write', prepared, name)
 
@@ -2368,8 +2403,8 @@ CHECK_TASK = (
     'yourself. Ask only for what is theirs to decide: what they intend, a fact your inputs '
     'do not hold, or a choice between options that are each valid.')
 TEXT_QUESTIONS = (
-    'Is every fact, figure and name on the slide in the blueprint, the guide or the findings, '
-    'and stated the way they state it?',
+    'Is every fact, figure and name on the slide in the blueprint, the guide, the findings or '
+    "the person's own documents, and stated the way they state it?",
     'Does each slide make one point, and does its title say that point?',
     'Does the text fit its slide: within the word budget, with no sentence that could be shorter?',
     'Is the wording consistent from slide to slide: the same name for the same thing?',
@@ -2379,10 +2414,10 @@ TEXT_QUESTIONS = (
 
 def outline_check_work(root: Path, found: Survey, step: Step, error: str | None,
                        answered: list[dict], designed: bool = False,
-                       icons: bool = False) -> Work:
+                       icons: bool = False, sources=None) -> Work:
     """The job of checking what one deck says, by a second worker, once: it reads the text
     against what it was written from and hands in the corrected text in its place."""
-    made = outline_work(root, found, step, None, None, [], designed, icons)
+    made = outline_work(root, found, step, None, None, [], designed, icons, sources)
     level = workspace.split(step.artifact)[1]
     earlier = _read(place(root, level, OUTLINE)) or ''
     if designed and _read(place(root, level, DESIGN)):
@@ -2394,6 +2429,7 @@ def outline_check_work(root: Path, found: Survey, step: Step, error: str | None,
                             in enumerate(TEXT_QUESTIONS, start=1)),
         designed=' and its design, together,' if designed else '')
         + f"\n\nYour inputs are {_inputs(made.prepared['inputs'])}."
+        + ('\n' + DOCUMENTS.rstrip('\n') if made.prepared.get('sources') else '')
         + f'\n\nThe earlier draft:\n\n{earlier}'
         + _again(None, None, error, answered, 'the slide text'))
     return replace(made, task=task, prepared={**made.prepared, 'ask': _can_ask(answered)})
@@ -2640,14 +2676,16 @@ def work(root: Path, found: Survey, step: Step, request: dict | None, error: str
          answered: list[dict], sources=None, naming: str | None = None,
          designed: bool = False, icons: bool = False, synthesis=False, asked=(), update=False) -> Work:
     """The job a drafting step gives a worker. `sources` is what `documents.sources`
-    returned, which only the research questions are drafted from. `naming` is how the
+    returned: the research questions are drafted from it, and the writers of a blueprint
+    and of what a deck says are offered the same documents to look specifics up in. `naming` is how the
     training's brand names the organisation and its products, which the writers of the
     guide, the brief and the scenarios are given. `designed` says the writer of what a deck
     says proposes its design too, and `icons` that it names each icon by its library ID."""
     if step.id == 'research-plan':
         return plan_work(root, found, request, error, answered, sources, synthesis=synthesis, asked=asked)
     if bare(step.id) == 'deck-outline':
-        return outline_work(root, found, step, request, error, answered, designed, icons)
+        return outline_work(root, found, step, request, error, answered, designed, icons,
+                            sources)
     if bare(step.id) == 'deck-review':
         return review_work(root, found, step, error)
     kind = workspace.split(step.artifact)[0].partition(':')[0]
@@ -2655,6 +2693,8 @@ def work(root: Path, found: Survey, step: Step, request: dict | None, error: str
         return WORKS[kind](root, found, step, request, error, answered, naming, update)
     if kind in NAMED:
         return WORKS[kind](root, found, step, request, error, answered, naming)
+    if kind == 'blueprint':
+        return blueprint_work(root, found, step, request, error, answered, sources)
     return WORKS[kind](root, found, step, request, error, answered)
 
 

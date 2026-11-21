@@ -8,6 +8,8 @@ What a caller needs to know
     found = library.opened()            # the Library when its folder exists, else None
     made = library.opened(create=True)  # an explicit use: the location is frozen and made
     made.add_upload(name, data, operation=...)          # an upload, original and Markdown
+    library.takes(name)                 # whether an upload of this name is a type it keeps;
+                                        # NOT_TAKEN is the sentence for one it does not
     made.retain(key=..., studio=..., kind=..., title=..., text=...)   # finished work
     found.catalog(query=..., kind=..., studio=..., offset=..., limit=...)
     found.preview(ident, revision)      # readable Markdown, bounded
@@ -22,8 +24,8 @@ workspaces; `blog_existing.py`, `presentation_existing.py`, `training_existing.p
 See `store.py` for the record contract. The library never selects context, never starts
 research or an assistant, and never shares anything: a project's choice is the project's.
 """
-from .store import (FORMATS, KINDS, LIMITS, ORIGINS, STUDIOS, Library, LibraryError,
-                    location, opened)
+from .store import (FORMATS, KINDS, LIMITS, NOT_TAKEN, ORIGINS, STUDIOS, Library, LibraryError,
+                    location, opened, takes)
 
-__all__ = ['FORMATS', 'KINDS', 'LIMITS', 'ORIGINS', 'STUDIOS', 'Library', 'LibraryError',
-           'location', 'opened']
+__all__ = ['FORMATS', 'KINDS', 'LIMITS', 'NOT_TAKEN', 'ORIGINS', 'STUDIOS', 'Library', 'LibraryError',
+           'location', 'opened', 'takes']

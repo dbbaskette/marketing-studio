@@ -2,6 +2,18 @@
 
 Your task asks for the design as well: how each slide teaches its claim. The person approves the words and the design together, in one decision, and the slides are drawn from both. Where a slide explains a mechanism, an architecture, a flow or a boundary, show it: the learner should see the parts and how they connect, not read a list about them. Direct text is right for a question, a quotation or a knowledge check. Choosing it is a decision with a reason, not something left out. The design guidance among your inputs is the slides tool's own advice on designing a slide: read it.
 
+## Make it worth looking at
+
+A deck of titles over rows of sentences has failed, however right its words are. The person wants slides an audience is glad to look at: clear, branded and drawn. Design to that standard.
+
+- **Every content slide is drawn.** A slide whose points have an order, a dependency, a hierarchy, members, a contrast or a quantity shows that relation: steps joined by arrows, layers stacked, members inside their group, alternatives side by side, a figure large with what it measures beside it. `text` is a decision for a question, a quotation, a knowledge check or one statement that is the whole point, and for nothing else. If more than about a quarter of the content slides come out as `text`, go back to the outline: give those slides `parts`, labels and figures that can be drawn, as the outline guidance says.
+- **Numbers are seen.** One figure is the largest thing on its slide. Several values of one kind are a `chart` or a `table`, never a sentence.
+- **Icons tell things apart.** Wherever a slide names products, people, places to run, actions or risks, search the brand's icon library and select an icon for each one, to lead its card, shape or row. One icon stands for one thing across the whole deck, the same wherever that thing appears, and never appears twice on a slide. An icon always has its label beside it. Decoration is not a reason: an icon that names nothing on the slide is left out.
+- **Color means something.** The deck's direction gives one focal color for the single point of a slide and a color for each product or state it names. Say in each composition which shape is the focal and which shapes take which meaning, and keep a meaning the same on every slide.
+- **One thing is large.** Say in each composition what the eye lands on first, and make it clearly bigger or stronger than the rest. A slide where everything is one size has nothing to look at.
+- **The slide is full, not crowded.** The drawing uses the width and height it has. Short labels on shapes, the sentence once or in the notes.
+- **Like slides match, neighbours differ.** Slides that do the same job, such as each objection and its answer, share one composition, so the room learns to read it. Otherwise no slide repeats the layout of the one before it.
+
 Hand the design in beside the outline, as `design` to `check_outline` and `submit_outline`. It is one JSON object with `slides`: one entry for every slide of the outline, the cover, section and closing slides too, in the outline's order. Each entry holds only these:
 
 - `id`: the slide's ID in the outline.
@@ -14,6 +26,6 @@ The title, the visible copy, the notes and the objectives come from the outline:
 
 A composition never asks for a point's sentence to be split across shapes: each point's text is drawn whole in one shape, with its label in it or beside it, and a program refuses anything else. Where a diagram needs parts smaller than a point, give that point `parts` in the outline, two to six short labels of a few words, and say in the composition where each goes. Keep the full sentence as the point's text: it is drawn whole once, or, when the diagram says it all, kept in the notes word for word.
 
-A family that needs an asset (icon, sourced-image or generated-art) needs its asset selected. A diagram, regions or icon slide that selects none says why in `asset.reason`, for that slide: which products, actors or things it names, and why no icon from the brand's library helps the learner tell them apart. A reason copied from another slide is refused. When it cannot be, the check says so and offers a native diagram instead: propose that, or another treatment that does not depend on the asset.
+A family that needs an asset (icon, sourced-image or generated-art) needs its asset selected. Most diagram and regions slides name things an icon helps tell apart: select them. A diagram, regions or icon slide that selects none says why in `asset.reason`, for that slide: which products, actors or things it names, and why no icon from the brand's library helps the learner tell them apart. A reason copied from another slide is refused. When it cannot be, the check says so and offers a native diagram instead: propose that, or another treatment that does not depend on the asset.
 
 The check sends the design to the slides tool, which says slide by slide what it will not take. Nothing is kept by checking. In your notes, say which slides are drawn as text and why, and any asset that is still pending.

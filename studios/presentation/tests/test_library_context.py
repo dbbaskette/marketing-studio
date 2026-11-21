@@ -26,6 +26,27 @@ from studio_core import document_library
 from studio_core.document_library import context
 
 
+def tiny_workbook():
+    """A one-cell synthetic .xlsx, built with zipfile: a file the source editor reads and the
+    Document Library does not keep."""
+    import io
+    import zipfile
+    main = 'xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"'
+    rel = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
+    rels = 'xmlns="http://schemas.openxmlformats.org/package/2006/relationships"'
+    parts = {
+        '_rels/.rels': f'<Relationships {rels}><Relationship Id="r1" Type="{rel}/officeDocument" Target="xl/workbook.xml"/></Relationships>',
+        'xl/workbook.xml': f'<workbook {main} xmlns:r="{rel}"><sheets><sheet name="Numbers" sheetId="1" r:id="r1"/></sheets></workbook>',
+        'xl/_rels/workbook.xml.rels': f'<Relationships {rels}><Relationship Id="r1" Type="{rel}/worksheet" Target="worksheets/sheet1.xml"/></Relationships>',
+        'xl/worksheets/sheet1.xml': f'<worksheet {main}><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>Synthetic count</t></is></c><c r="B1"><v>12</v></c></row></sheetData></worksheet>',
+    }
+    held = io.BytesIO()
+    with zipfile.ZipFile(held, 'w') as archive:
+        for name, text in parts.items():
+            archive.writestr(name, text)
+    return held.getvalue()
+
+
 class LibraryCase(DeckCase):
     def setUp(self):
         super().setUp()
@@ -257,6 +278,17 @@ class StartSourceTests(LibraryCase):
             'runbook.md', b'# Runbook\n\nTwo batches at a time.\n', None)
         self.assertEqual((desk['id'], desk['revision']), (kept['id'], kept['revision']))
         self.assertEqual(self.library.catalog(kind='upload')['total'], 1)
+
+    def test_a_spreadsheet_is_a_source_and_is_plainly_not_kept_in_the_library(self):
+        from studio_core import document_library
+        before = self.library.catalog(kind='upload')['total']
+        answer = self.capture(True, name='numbers.xlsx', data=tiny_workbook())
+        source = answer['sources'][0]
+        self.assertEqual((source['status'], source['kind']), ('ready', 'file'))
+        self.assertEqual(answer['library_kept'], {'state': 'not-taken', 'source': source['id'],
+                                                  'problem': document_library.NOT_TAKEN})
+        self.assertIn('is not kept in the library', document_library.NOT_TAKEN)
+        self.assertEqual(self.library.catalog(kind='upload')['total'], before)
 
     def test_only_this_project_or_no_choice_keeps_nothing(self):
         self.assertNotIn('library_kept', self.capture(False))

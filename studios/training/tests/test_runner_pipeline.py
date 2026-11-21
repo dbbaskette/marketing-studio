@@ -719,6 +719,25 @@ class WorkTests(StudioCase):
         self.assertIn('2. The engines (12 min)', told.prepared['inputs']['person outline'])
         self.assertIn('"person outline"', told.task)
 
+    def test_a_blueprint_is_offered_the_persons_documents_for_its_specifics(self):
+        found = pipeline.survey(self.root)
+        step = next(step for step in found.steps if step.id == 'blueprint@301')
+        plain = pipeline.blueprint_work(self.root, found, step, None, None, [])
+        self.assertNotIn('sources', plain.prepared)
+        self.assertNotIn(pipeline.DOCUMENTS, plain.task)
+        offered = [{'title': 'Pricing sheet', 'origin': 'supplied pricing.pdf',
+                    'text': 'A seat costs 40 dollars.', 'file': 'sources/supplied/pricing-pdf.txt'}]
+        sources = ([{'id': 'pricing-pdf'}], offered)
+        told = pipeline.blueprint_work(self.root, found, step, None, None, [], sources)
+        self.assertEqual(told.prepared['sources'], offered)
+        self.assertIn(pipeline.DOCUMENTS + pipeline.SPECIFICS, told.task)
+        self.assertIn('never a summary of it', told.task)
+        self.assertIn('is `[stated]`', told.task)
+        # The dispatcher hands a blueprint its documents, and a guide none.
+        through = pipeline.work(self.root, found, step, None, None, [], sources)
+        self.assertEqual(through.prepared['sources'], offered)
+        self.assertEqual(through.task, told.task)
+
     def test_a_blueprint_job_is_for_one_level_and_says_whether_practice_is_wanted(self):
         found = pipeline.survey(self.root)
         step = next(step for step in found.steps if step.id == 'blueprint@301')

@@ -78,6 +78,10 @@ ENDINGS = {'.txt': 'text', '.md': 'text', '.html': 'html',
 MEDIA = {'.txt': 'text/plain', '.md': 'text/markdown',
          '.html': 'text/html', '.htm': 'text/html', '.pdf': 'application/pdf',
          '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'}
+# Said when a studio would keep a file of another type, such as a PowerPoint file or a
+# spreadsheet a source editor read: the project keeps its source, the library is not given it.
+NOT_TAKEN = ('The Document Library keeps text, Markdown, HTML, Word (.docx) and PDF files only, so this '
+             'file is a source for this project and is not kept in the library.')
 LIMITS = {'bytes': 8_000_000,       # one original, as the studios' supplied documents take
           'text': 8_000_000,        # bytes of one revision's Markdown
           'documents': 5_000,       # documents a catalog reads
@@ -260,6 +264,11 @@ def _plain(value, limit: int) -> str | None:
 def _slug(value: str) -> str:
     plain = unicodedata.normalize('NFKD', value).encode('ascii', 'ignore').decode().lower()
     return re.sub(r'[^a-z0-9]+', '-', plain).strip('-')[:40] or 'document'
+
+
+def takes(name) -> bool:
+    """True when an upload of this name is a type the library keeps."""
+    return isinstance(name, str) and _ending(name) in ENDINGS
 
 
 def _ending(name: str) -> str:

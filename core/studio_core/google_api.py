@@ -12,14 +12,19 @@ import os
 import re
 import shutil
 import subprocess
+import threading
 import urllib.error
 import urllib.parse
 import urllib.request
 
 DOC_MIME = "application/vnd.google-apps.document"
 SLIDES_MIME = "application/vnd.google-apps.presentation"
+SHEET_MIME = "application/vnd.google-apps.spreadsheet"
+FOLDER_MIME = "application/vnd.google-apps.folder"
+SHORTCUT_MIME = "application/vnd.google-apps.shortcut"
 DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 PPTX_MIME = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 LIMIT = 40_000_000
 ERROR_LIMIT = 65_536
 SERVICES = {
@@ -275,6 +280,7 @@ class Client:
             None,
         )
         self.opener = urllib.request.build_opener(NoRedirect())
+        self._signing = threading.Lock()
 
     def selected_account(self):
         if self.account is None:
@@ -297,7 +303,11 @@ class Client:
         ):
             raise GoogleError("Google transfer exceeds its bounded size.")
         if self._token is None:
-            self._token = self.token_provider(self.selected_account())
+            # Asked for once, however many threads share this client (a folder's documents
+            # are read several at a time).
+            with self._signing:
+                if self._token is None:
+                    self._token = self.token_provider(self.selected_account())
         sent = {
             "Content-Type": "application/json",
             **(headers or {}),
@@ -388,6 +398,65 @@ class Client:
             + identifier(file_id)
             + "/export?"
             + urllib.parse.urlencode({"mimeType": PPTX_MIME}),
+            json_result=False,
+        ).data
+
+    def children(self, folder_id, page_token=None):
+        """One page of what a Google Drive folder holds directly, shared drives included.
+
+        Read-only listing for a folder a person named. A shortcut carries its target in
+        `shortcutDetails`; `nextPageToken` is present while more pages remain.
+        """
+        if page_token is not None and (
+            not isinstance(page_token, str) or not 0 < len(page_token) <= 2000
+        ):
+            raise GoogleError("Google returned an unusable folder page.")
+        asked = {
+            "q": "'" + identifier(folder_id) + "' in parents and trashed = false",
+            "fields": "nextPageToken,files(id,name,mimeType,size,"
+            "shortcutDetails(targetId,targetMimeType))",
+            "pageSize": "200",
+            "supportsAllDrives": "true",
+            "includeItemsFromAllDrives": "true",
+        }
+        if page_token:
+            asked["pageToken"] = page_token
+        found = self.request(
+            "https://www.googleapis.com/drive/v3/files?" + urllib.parse.urlencode(asked)
+        )
+        if not isinstance(found.get("files"), list):
+            raise GoogleError("Google returned an unusable folder listing.")
+        return found
+
+    def entry(self, file_id):
+        """A Drive file's name, type and size, and what it points to when it is a shortcut."""
+        return self.request(
+            "https://www.googleapis.com/drive/v3/files/"
+            + identifier(file_id)
+            + "?"
+            + urllib.parse.urlencode(
+                {"supportsAllDrives": "true", "fields": "id,name,mimeType,size,trashed,"
+                 "shortcutDetails(targetId,targetMimeType)"}
+            )
+        )
+
+    def download(self, file_id):
+        """An uploaded Drive file's own bytes. Google files are exported instead."""
+        return self.request(
+            "https://www.googleapis.com/drive/v3/files/"
+            + identifier(file_id)
+            + "?"
+            + urllib.parse.urlencode({"alt": "media", "supportsAllDrives": "true"}),
+            json_result=False,
+        ).data
+
+    def export_workbook(self, file_id):
+        """A Google Sheets file as an .xlsx workbook through Drive, with every sheet in it."""
+        return self.request(
+            "https://www.googleapis.com/drive/v3/files/"
+            + identifier(file_id)
+            + "/export?"
+            + urllib.parse.urlencode({"mimeType": XLSX_MIME}),
             json_result=False,
         ).data
 

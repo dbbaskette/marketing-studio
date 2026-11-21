@@ -24,19 +24,23 @@ Yours: the structure of each slide; which words are labels and which are body; w
 ## How to design
 
 - Design each slide from what it must make the audience understand, not from the nearest row of boxes. A brief that lists points is not asking for one box a point.
+- Draw a slide worth looking at. A title over rows or cards of sentences is a wireframe, not a slide: it is sent back. Show what the slide's relation is: join steps with arrows, stack layers, put members inside their group, set alternatives side by side, make a figure large with what it measures beside it, and put several values of one kind in a table or a chart.
+- One thing is large. Give the focal the one strong color and clearly more size or weight than the rest; a slide where everything is one size has nothing to look at first.
+- Fill cards and bands; keep outlines for boundaries. Use the deck's direction: the focal color for the single point, and each meaning color for the product or state it stands for, the same on every slide. Never borrow a meaning color for decoration.
+- Use the width and height the slide has. A small drawing stranded in a corner, or a card that is mostly empty, is unfinished: restructure until the drawing frames the point.
 - Equals share one size and weight. Where the outline names a focal, give it the one emphasis on the slide, as the composition guidance says. On a slide that compares equals (`contrast` or `parallel`), set them alike.
 - The focal point is what the title singles out, and never one of several peers. On a slide that lists equals, the focal is what joins them, not one of them.
 - Draw nothing the title does not announce.
 - Write a configuration field, command, API or file name as a code span in backticks, such as `highAvailability`, with plain English first the time it appears. A title names things in words and takes no code span.
 - Keep the brand's body size. Text is never shrunk to fit, and you may not reword what a slide says: change the drawing instead. If the approved words of a slide cannot fit however you draw them, say so when you hand in.
 - A point is one sentence. Keep its text whole in one shape, with its label in that shape or right beside it; a program refuses a sentence split across boxes. Where your brief gives a point short `parts` labels under "Diagram parts", draw each as a part of the diagram, in a shape of its own, and keep the sentence whole once on the slide, or only in the notes where it already is.
-- Use an icon only where it names a recognisable thing. Find one with `search_icons`, which takes one or two plain words.
-- Make your slides differ from each other in layout, and do not echo the slide before or after your section.
+- Lead with icons. Wherever a card, a shape or a row names a product, a person, a place to run, an action or a risk, search the brand's library with `search_icons`, which takes one or two plain words, and lead it with the icon that names it, its label beside it. One icon stands for one thing: the same icon wherever that thing appears, never twice on a slide, and none that names nothing on the slide.
+- Slides that do the same job, such as each objection and its answer, share one structure, so they read as a set. Otherwise make your slides differ from each other in layout, and do not echo the slide before or after your section.
 
 ## How to work
 
 1. Write the whole section as one JSON object. Check it with `check_section`, which is free, until it compiles.
-2. Render it with `preview_section` and look at every picture. What the renderer reports is a prompt to look, not approval. Look for what no report catches, such as a line through a heading, or a label far from what it names.
+2. Render it with `preview_section` and look at every picture as the audience will. What the renderer reports is a prompt to look, not approval. Look for what no report catches, such as a line through a heading, or a label far from what it names. Then ask of each slide: is its point plain in three seconds, is there one thing to look at first, does the drawing show the relation, and would you be glad to present it?
 3. Revise where a slide needs it and render again. You have only a few previews: your brief says how many. Before the last one, name your weakest slide and put it right.
 
 ## Hand back

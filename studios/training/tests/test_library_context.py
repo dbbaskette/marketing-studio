@@ -26,6 +26,27 @@ from studio_core.document_library import context
 NOTES = b'# Notes\n\nCapacity holds only when more than one instance is running.\n'
 
 
+def tiny_workbook():
+    """A one-cell synthetic .xlsx, built with zipfile: a file the source editor reads and the
+    Document Library does not keep."""
+    import io
+    import zipfile
+    main = 'xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"'
+    rel = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
+    rels = 'xmlns="http://schemas.openxmlformats.org/package/2006/relationships"'
+    parts = {
+        '_rels/.rels': f'<Relationships {rels}><Relationship Id="r1" Type="{rel}/officeDocument" Target="xl/workbook.xml"/></Relationships>',
+        'xl/workbook.xml': f'<workbook {main} xmlns:r="{rel}"><sheets><sheet name="Numbers" sheetId="1" r:id="r1"/></sheets></workbook>',
+        'xl/_rels/workbook.xml.rels': f'<Relationships {rels}><Relationship Id="r1" Type="{rel}/worksheet" Target="worksheets/sheet1.xml"/></Relationships>',
+        'xl/worksheets/sheet1.xml': f'<worksheet {main}><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>Synthetic count</t></is></c><c r="B1"><v>12</v></c></row></sheetData></worksheet>',
+    }
+    held = io.BytesIO()
+    with zipfile.ZipFile(held, 'w') as archive:
+        for name, text in parts.items():
+            archive.writestr(name, text)
+    return held.getvalue()
+
+
 class LibraryCase(StudioCase):
     def setUp(self):
         super().setUp()
@@ -324,6 +345,33 @@ class UploadTests(LibraryCase):
         self.assertEqual(self.library.catalog()['total'], 1)
         with self.assertRaisesRegex(WorkspaceError, 'not a document added'):
             library.upload_again(self.engine, root, 'two.md')
+
+    def test_a_spreadsheet_is_a_source_and_is_plainly_not_kept_in_the_library(self):
+        import base64
+        import tempfile
+        from studio_core import document_library
+        from studio_core.research_sources import Sources
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        store = Sources(Path(folder.name) / '.research-sources')
+        draft = library.research_sources(store, {'action': 'create'})
+        before = self.library.catalog()['total']
+        kept = library.research_sources(store, {
+            'action': 'capture', 'id': draft['id'], 'expected': draft['revision'], 'keep': True,
+            'kind': 'file', 'name': 'numbers.xlsx', 'content': base64.b64encode(tiny_workbook()).decode()})
+        source = kept['sources'][0]
+        self.assertEqual((source['status'], source['kind']), ('ready', 'file'))
+        self.assertEqual(store.preview(kept['id'], source['id'])['text'], '# Numbers\nSynthetic count,12\n')
+        self.assertEqual(kept['library_kept'], {'state': 'not-taken', 'source': source['id'],
+                                                'problem': document_library.NOT_TAKEN})
+        self.assertEqual(document_library.NOT_TAKEN, 'The Document Library keeps text, Markdown, HTML, Word (.docx) '
+                         'and PDF files only, so this file is a source for this project and is not kept in the library.')
+        again = library.research_sources(store, {'action': 'library-keep', 'id': kept['id'],
+                                                 'expected': kept['revision'], 'source': source['id']})
+        self.assertEqual(again['library_kept']['state'], 'not-taken')
+        self.assertEqual(self.library.catalog()['total'], before)
+        self.assertEqual([document_library.takes(name) for name in ('a.pptx', 'a.xlsx', 'a.PDF', 'a.md', None)],
+                         [False, False, True, True, False])
 
     def test_the_source_editor_keeps_an_accepted_file_only_when_asked(self):
         import base64

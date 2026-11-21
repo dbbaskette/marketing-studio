@@ -5,8 +5,10 @@ import tempfile
 import unittest
 import unittest.mock
 import marketing_studio  # noqa: F401
-from studio_core import google_reference
+from studio_core import google_reference, research_sources, source_folders
 from studio_core.research_sources import Sources
+import pptx_fixture
+import xlsx_fixture
 
 class SourceTests(unittest.TestCase):
     def setUp(self):
@@ -72,10 +74,19 @@ class SourceTests(unittest.TestCase):
         self.assertIsNone(self.sources.shown(self.sources.load(self.value['id']))['over'])
         self.sources.prepared(self.value['id'], self.value['revision'])
 
+    def test_the_ceiling_on_files_and_pasted_texts_fits_inside_one_research_run(self):
+        from studio_core import research_sources, source_folders
+        self.assertEqual(research_sources.MOST, 400)
+        # Each file or pasted text is one research entry, so a full draft still starts.
+        self.assertLessEqual(research_sources.MOST, research_sources.RESEARCH_ENTRIES)
+        self.assertLessEqual(source_folders.FOLDER_MOST, research_sources.MOST)
+        self.assertIsNone(research_sources.over([{'kind': 'file', 'status': 'ready'}] * research_sources.MOST))
+
+    @unittest.mock.patch('studio_core.research_sources.MOST', 40)
     def test_links_are_not_counted_and_files_and_pasted_text_still_are(self):
         for n in range(40):
             self.act('capture', kind='text', name=f'Notes {n}', text=f'Synthetic supplied notes {n}.')
-        with self.assertRaisesRegex(ValueError, 'Links are not counted'):
+        with self.assertRaisesRegex(ValueError, 'at most 40 files and pasted texts in one request. Links are not counted'):
             self.act('capture', kind='text', name='One more', text='Synthetic supplied notes.')
         for n in range(45):
             self.act('capture', kind='url', url=f'https://example.invalid/reference-{n}')
@@ -198,3 +209,251 @@ class SourceTests(unittest.TestCase):
         self.assertEqual(len(created),1)
         self.assertEqual(len(results),3)
         self.assertTrue(all(result==results[0] for result in results))
+
+
+class FolderTests(unittest.TestCase):
+    """Add a folder, for a folder on this computer: a disposable tree, no network."""
+
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory(); self.addCleanup(temp.cleanup)
+        self.root = Path(temp.name).resolve()
+        self.kit = self.root / 'Field kit'
+        for folder in ('Compete/Battlecards', 'Notes', '.git', 'Notes/.cache'):
+            (self.kit / folder).mkdir(parents=True)
+        (self.kit / 'Compete/Battlecards/EDB battlecard.md').write_text('Synthetic battlecard.')
+        (self.kit / 'Notes/overview.txt').write_text('Synthetic overview.')
+        (self.kit / 'Notes/Overview copy.TXT').write_text('Synthetic overview.')      # the same bytes
+        (self.kit / 'Notes/.cache/hidden.md').write_text('Hidden synthetic text.')
+        (self.kit / '.git/config.md').write_text('Hidden synthetic settings.')
+        (self.kit / '.notes.md').write_text('Hidden synthetic notes.')
+        (self.kit / 'deck.pptx').write_bytes(pptx_fixture.deck(pptx_fixture.SAMPLE))
+        (self.kit / 'picture.png').write_bytes(b'not a document')
+        (self.kit / 'empty.md').write_bytes(b'')
+        outside = self.root / 'outside'; outside.mkdir()
+        (outside / 'secret.md').write_text('OUTSIDE THE FOLDER')
+        (self.kit / 'escape.md').symlink_to(outside / 'secret.md')
+        (self.kit / 'Elsewhere').symlink_to(outside, target_is_directory=True)
+        (self.kit / 'Notes/again').symlink_to(self.kit, target_is_directory=True)     # a loop
+        self.network = []
+        self.sources = Sources(self.root / 'store', fetch=lambda url: self.network.append(url),
+                               drive=lambda account: self.network.append('drive'))
+        self.value = self.sources.create()
+
+    def add(self, location=None):
+        self.value = self.sources.mutate(self.value['id'], self.value['revision'], 'folder',
+                                         location=str(location or self.kit))
+        return self.value.pop('folder')
+
+    def test_a_folder_on_this_computer_becomes_ordinary_sources_and_says_what_it_left(self):
+        report = self.add()
+        added = {s['name']: s for s in self.value['sources']}
+        self.assertEqual(sorted(added), ['Compete/Battlecards/EDB battlecard.md', 'Notes/Overview copy.TXT', 'deck.pptx'])
+        self.assertTrue(all(s['kind'] == 'file' and s['status'] == 'ready' for s in added.values()))
+        self.assertTrue(all(research_sources.re.fullmatch('[a-f0-9]{32}', s['id']) for s in added.values()))
+        # Where it came from is the folder's name and the path below it, never this computer's path.
+        self.assertEqual(added['Compete/Battlecards/EDB battlecard.md']['origin'], 'Field kit/Compete/Battlecards/EDB battlecard.md')
+        private = {s['name']: s for s in self.sources.load(self.value['id'])['sources']}
+        self.assertEqual(private['deck.pptx']['local_path'], str(self.kit / 'deck.pptx'))
+        self.assertEqual(private['deck.pptx']['folder'], str(self.kit))
+        deck = self.sources.preview(self.value['id'], added['deck.pptx']['id'])['text']
+        self.assertIn('Synthetic opening', deck)
+        self.assertIn('Closing speaker context.', deck)
+        self.assertEqual((report['where'], report['title'], report['added'], report['found']), ('local', 'Field kit', 3, 5))
+        skipped = {row['name']: row for row in report['skipped']}
+        self.assertEqual({name: row['code'] for name, row in skipped.items()}, {
+            'empty.md': 'unreadable', 'escape.md': 'outside', 'Elsewhere': 'outside', 'picture.png': 'unsupported',
+            'Notes/overview.txt': 'duplicate', 'Notes/again/': 'repeat'})
+        self.assertEqual(skipped['Notes/again/']['reason'], 'Appears more than once in this folder. It leads back to a folder already scanned.')
+        self.assertEqual(skipped['Notes/overview.txt']['reason'],
+                         'Already a source here. It has the same content as “Notes/Overview copy.TXT”.')
+        self.assertEqual(skipped['picture.png']['reason'], 'Not a type that can be read.')
+        self.assertEqual(skipped['escape.md']['reason'], 'A link that leads outside the folder.')
+        self.assertEqual(report['skipped_count'], 6)
+        self.assertEqual(report['reasons'], {'unreadable': 1, 'outside': 2, 'unsupported': 1, 'duplicate': 1, 'repeat': 1})
+        self.assertEqual(report['hidden'], 3)       # .git, .notes.md and Notes/.cache: counted, never opened
+        self.assertIsNone(report['stopped'])
+        everything = json.dumps([self.value, report]) + ''.join(
+            self.sources.preview(self.value['id'], s['id'])['text'] for s in self.value['sources'])
+        self.assertNotIn('OUTSIDE THE FOLDER', everything)
+        self.assertNotIn('Hidden synthetic', everything)
+        self.assertEqual(self.network, [], 'a folder on this computer asks nothing of the network or Google')
+
+    def test_what_a_folder_added_starts_and_installs_like_any_other_source(self):
+        from studio_core.research_sources import install, sources
+        self.add()
+        ready = self.sources.prepared(self.value['id'], self.value['revision'])
+        self.assertEqual(ready['research_from'], {'documents': True, 'sites': [], 'web': False})
+        item = self.root / 'item'
+        saved = install(ready, item)
+        self.assertEqual(saved['count'], 3)
+        manifest = (item / 'sources/research-inputs/manifest.json').read_text()
+        self.assertNotIn(str(self.root), manifest, 'the path on this computer stays in the private draft')
+        plan, offered = sources(item, saved)
+        self.assertEqual(sorted(row['title'] for row in plan), sorted(s['name'] for s in self.value['sources']))
+        named = {row['title']: row for row in plan}
+        self.assertTrue(named['deck.pptx']['original_file'].endswith('.original.pptx'))
+        self.assertEqual(named['deck.pptx']['origin'], 'Field kit/deck.pptx')
+        self.assertTrue(all(row['permission'] == 'selected' for row in offered))
+
+    def test_adding_the_same_folder_again_adds_nothing_twice(self):
+        self.add()
+        before = self.value['revision']
+        again = self.add()
+        self.assertEqual(again['added'], 0)
+        self.assertEqual(self.value['revision'], before, 'nothing added leaves the draft as it was')
+        self.assertEqual(len(self.value['sources']), 3)
+        self.assertEqual(again['reasons']['duplicate'], 4)
+        row = next(r for r in again['skipped'] if r['name'] == 'deck.pptx')
+        self.assertEqual(row['reason'], 'Already a source here. It has the same content as “deck.pptx”.')
+
+    def test_one_add_is_bounded_and_adding_again_continues(self):
+        with unittest.mock.patch.object(source_folders, 'FOLDER_MOST', 2):
+            first = self.add()
+            self.assertEqual(first['added'], 2)
+            over = [row for row in first['skipped'] if row['code'] == 'over-limit']
+            self.assertEqual([row['name'] for row in over], ['Notes/Overview copy.TXT', 'Notes/overview.txt'])
+            self.assertEqual(over[0]['reason'], 'Over the limit. One folder add takes 2 documents. Add the folder again to read the next ones.')
+            self.assertEqual((first['again'], first['next']), (True, 'Add the same folder again to read the next ones.'))
+            second = self.add()
+            self.assertEqual(second['added'], 1)
+        self.assertEqual(len(self.value['sources']), 3)
+
+    def test_the_drafts_own_ceiling_holds_and_is_said(self):
+        with unittest.mock.patch.object(research_sources, 'MOST', 1):
+            report = self.add()
+        self.assertEqual(report['added'], 1)
+        over = [row for row in report['skipped'] if row['code'] == 'over-limit']
+        self.assertEqual(len(over), 4, 'every document past the ceiling is named, none is dropped unsaid')
+        self.assertEqual(over[0]['reason'], 'Over the limit. These sources hold 1 files and pasted texts, the most one request takes.')
+        self.assertEqual((report['again'], report['next']), (False, None), 'a full draft is not helped by adding again')
+
+    def test_depth_looking_and_time_are_bounded_and_said(self):
+        deep = self.root / 'deep'
+        (deep / 'a/b/c').mkdir(parents=True)
+        (deep / 'top.md').write_text('Top synthetic text.')
+        (deep / 'a/b/c/low.md').write_text('Low synthetic text.')
+        scan = source_folders.local(deep, research_sources.TYPES, research_sources.LIMIT, depth=2)
+        self.assertEqual([item['name'] for item in scan['found']], ['top.md'])
+        self.assertEqual(scan['skipped'], [{'name': 'a/b/c/', 'code': 'too-deep', 'reason': 'More than 6 folders deep.'}])
+        self.assertEqual(source_folders.FOLDER_DEPTH, 6)
+        stopped = source_folders.local(self.kit, research_sources.TYPES, research_sources.LIMIT, looked=3)
+        self.assertTrue(stopped['stopped'])
+        self.assertEqual(stopped['looked'], 3)
+        said = source_folders.report(stopped, 0, where='local', title='Field kit')
+        self.assertEqual(said['stopped'], 'The scan stopped after looking at 3 files and folders. Add a smaller folder to read the rest.')
+        ticks = iter([0, 0, 1000, 1000, 1000, 1000, 1000])
+        self.sources.clock = lambda: next(ticks)
+        late = self.add()
+        self.assertEqual(late['added'], 1)
+        self.assertEqual(late['reasons']['out-of-time'], 4)
+        self.assertIn({'name': 'empty.md', 'code': 'out-of-time', 'reason': 'Not read in time. Add the folder again to read the rest.'}, late['skipped'])
+
+    def test_a_file_over_8_mb_is_left_and_said(self):
+        big = self.root / 'big'; big.mkdir()
+        with (big / 'large.txt').open('wb') as handle:
+            handle.truncate(research_sources.LIMIT + 1)
+        (big / 'small.txt').write_text('Small synthetic text.')
+        report = self.add(big)
+        self.assertEqual([s['name'] for s in self.value['sources']], ['small.txt'])
+        self.assertEqual(report['skipped'], [{'name': 'large.txt', 'code': 'too-large', 'reason': 'Larger than 8 MB.'}])
+
+    def test_files_on_this_computer_are_read_several_at_a_time_with_the_same_result(self):
+        import threading
+        from studio_core import source_documents
+        expected = self.add()
+        names = [s['name'] for s in self.value['sources']]
+        watch, met, seen = threading.Lock(), threading.Event(), {'active': 0, 'peak': 0}
+        def extract(raw, kind):
+            with watch:
+                seen['active'] += 1
+                seen['peak'] = max(seen['peak'], seen['active'])
+                if seen['active'] >= 2:
+                    met.set()
+            try:
+                assert met.wait(5), 'files were not read at the same time'
+                return source_documents.extract(raw, kind)
+            finally:
+                with watch:
+                    seen['active'] -= 1
+        together = Sources(self.root / 'together', extract=extract)
+        value = together.create()
+        value = together.mutate(value['id'], value['revision'], 'folder', location=str(self.kit))
+        self.assertGreater(seen['peak'], 1)
+        self.assertLessEqual(seen['peak'], source_folders.FOLDER_WORKERS)
+        self.assertEqual([s['name'] for s in value['sources']], names)
+        self.assertEqual(value['folder'], expected)
+        self.assertEqual((expected['again'], expected['next']), (False, None))
+
+    def test_a_workbook_in_a_folder_is_read_sheet_by_sheet(self):
+        books = self.root / 'books'; books.mkdir()
+        (books / 'Pipeline.xlsx').write_bytes(xlsx_fixture.workbook(xlsx_fixture.SAMPLE))
+        (books / 'broken.xlsx').write_bytes(b'not a workbook')
+        report = self.add(books)
+        source = self.value['sources'][0]
+        self.assertEqual((source['name'], source['kind'], source['warnings']), ('Pipeline.xlsx', 'file', []))
+        self.assertEqual(self.sources.preview(self.value['id'], source['id'])['text'], xlsx_fixture.SAMPLE_TEXT)
+        self.assertEqual(report['skipped'], [{'name': 'broken.xlsx', 'code': 'unreadable',
+                                              'reason': 'Could not be read. ' + research_sources.xlsx_sheets.UNREADABLE}])
+
+    def test_a_long_skipped_list_is_counted_in_full_and_listed_up_to_its_limit(self):
+        scan = source_folders.started()
+        scan['skipped'] = [source_folders.skip(f'file-{n}.png', 'unsupported') for n in range(source_folders.FOLDER_REPORTED + 7)]
+        said = source_folders.report(scan, 0, where='local', title='Many')
+        self.assertEqual((len(said['skipped']), said['skipped_count'], said['unlisted']), (source_folders.FOLDER_REPORTED, source_folders.FOLDER_REPORTED + 7, 7))
+        self.assertEqual(said['reasons'], {'unsupported': source_folders.FOLDER_REPORTED + 7})
+
+    def test_sources_changed_in_another_view_add_nothing_and_leave_no_files(self):
+        stale = self.value['revision']
+        other = self.sources.mutate(self.value['id'], stale, 'capture', kind='text', name='Notes', text='Synthetic notes.')
+        with self.assertRaisesRegex(ValueError, 'another view'):
+            self.sources.mutate(self.value['id'], stale, 'folder', location=str(self.kit))
+        kept = self.sources.read(self.value['id'])
+        self.assertEqual(kept['revision'], other['revision'])
+        self.assertEqual(len(kept['sources']), 1)
+        private = self.sources.load(self.value['id'])['sources'][0]
+        files = sorted(p.name for p in (self.sources.folder(self.value['id']) / 'captures').iterdir())
+        self.assertEqual(files, sorted([Path(private['file']).name, Path(private['original']).name]))
+
+    def test_what_counts_as_a_folder_is_a_whole_path_or_a_google_drive_folder_link(self):
+        for given in ('https://drive.google.com/drive/folders/1AbC_def-0123456789',
+                      'https://drive.google.com/drive/u/0/folders/1AbC_def-0123456789?lfhs=2',
+                      'https://drive.google.com/drive/folders/1AbC_def-0123456789/?usp=sharing',
+                      '  "1AbC_def-0123456789"  ', '1AbC_def-0123456789'):
+            self.assertEqual(source_folders.location(given), ('drive', '1AbC_def-0123456789'), given)
+        self.assertEqual(source_folders.location(' ' + str(self.kit) + ' '), ('local', self.kit))
+        self.assertEqual(source_folders.location("'" + str(self.kit) + "'"), ('local', self.kit))
+        for given, said in (('Field kit/Notes', 'whole folder path'), (str(self.kit / 'missing'), 'was not found'),
+                            (str(self.kit / 'deck.pptx'), 'was not found'),
+                            ('https://docs.google.com/document/d/1AbC_def-0123456789/edit', 'starts with https://drive.google.com/drive/folders/'),
+                            ('http://drive.google.com/drive/folders/1AbC_def-0123456789', 'starts with'),
+                            ('https://drive.google.com.example.invalid/drive/folders/1AbC_def-0123456789', 'starts with'),
+                            ('https://user:secret@drive.google.com/drive/folders/1AbC_def-0123456789', 'starts with'),
+                            ('', 'folder path on this computer or a Google Drive folder link'), (7, 'folder path')):
+            with self.assertRaisesRegex(ValueError, said):
+                source_folders.location(given)
+        for sent in ({}, {'location': str(self.kit), 'kind': 'file'}):
+            with self.assertRaisesRegex(ValueError, 'folder path on this computer or a Google Drive folder link'):
+                self.sources.mutate(self.value['id'], self.value['revision'], 'folder', **sent)
+
+    def test_dispatch_takes_a_folder_as_the_page_sends_it(self):
+        answer = self.sources.dispatch({'action': 'folder', 'id': self.value['id'], 'expected': self.value['revision'],
+                                        'location': str(self.kit / 'Notes')})
+        self.assertEqual(answer['folder']['added'], 1)
+        self.assertEqual([s['name'] for s in answer['sources']], ['Overview copy.TXT'])
+        self.assertIn('.pptx', answer['formats'])
+
+    def test_an_uploaded_powerpoint_file_is_read_with_its_speaker_notes(self):
+        deck = pptx_fixture.deck(pptx_fixture.SAMPLE)
+        self.value = self.sources.mutate(self.value['id'], self.value['revision'], 'capture', kind='file',
+                                         name='Synthetic.PPTX', content=base64.b64encode(deck).decode())
+        source = self.value['sources'][0]
+        self.assertEqual((source['status'], source['kind']), ('ready', 'file'))
+        text = self.sources.preview(self.value['id'], source['id'])['text']
+        self.assertIn('Count 12', text)
+        self.assertIn('Opening speaker context.', text)
+        self.assertNotIn('Slide image placeholder', text)
+        self.assertEqual(source['warnings'], ['Images, charts, video and WordArt are not interpreted. Supply their meaningful text or data separately.'])
+        self.value = self.sources.mutate(self.value['id'], self.value['revision'], 'capture', kind='file',
+                                         name='broken.pptx', content=base64.b64encode(b'not a deck').decode())
+        self.assertEqual(self.value['sources'][-1]['problem'], research_sources.PPTX_UNREADABLE)
+        self.assertNotIn('Google', research_sources.PPTX_UNREADABLE)

@@ -1052,6 +1052,15 @@ class DocumentTests(FlowCase):
         self.engine.supply(root, 'done')
         return root
 
+    def test_the_writers_of_a_blueprint_are_offered_the_documents_and_a_guide_is_not(self):
+        root = self.settled()
+        self.to_gate(root, 'brief')
+        jobs = {kind: (job, spec) for kind, job, spec in self.workers.jobs}
+        job, spec = jobs['blueprint']
+        self.assertIn(pipeline.DOCUMENTS + pipeline.SPECIFICS, job.task)
+        job, spec = jobs['document']
+        self.assertNotIn(pipeline.DOCUMENTS, job.task)
+
     def test_row_132_a_document_added_after_the_plan_is_kept_and_not_read(self):
         root = self.settled()
         before = (len(self.workers.jobs), workspace.statuses(root, workspace.load(root)),

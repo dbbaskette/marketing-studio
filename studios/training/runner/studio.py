@@ -177,7 +177,9 @@ def saved_work(args, make=engines.Engine, out=None) -> int:
 
 
 def desk_command(args, make=engines.Engine, out=None):
-    """JSON conversation commands; no server, setup, upkeep or assistant launch."""
+    """JSON conversation commands; no server, setup, upkeep or assistant launch. None uses
+    the network, but `create` given a Google Drive folder link as `folder`, which reads that
+    folder with the existing Google sign-in because the person asked for it."""
     from runner import desk_chat
     engine = make()
     try:
@@ -201,6 +203,7 @@ def desk_command(args, make=engines.Engine, out=None):
         if action == 'create':
             data = dict(data)
             named = data.pop('uploads', {})
+            folder = data.pop('folder', None)
             if not isinstance(named, dict) or len(named) > 1:
                 raise WorkspaceError('Uploads maps one source filename to an explicit local path.')
             uploads = {}
@@ -211,7 +214,24 @@ def desk_command(args, make=engines.Engine, out=None):
                 if source.is_symlink() or not source.is_file() or source.stat().st_size > 64_000_000:
                     raise WorkspaceError('The upload must be a local file of at most 64 MB.')
                 uploads[name] = source.read_bytes()
+            found = None
+            if folder is not None:
+                # One folder path or Google Drive folder link: every document in it becomes a
+                # supplied document, as a single upload does. Refused before anything is read
+                # when the research does not read supplied documents.
+                from runner import desk_folder
+                desk_chat.takes_documents(data)
+                more, found = desk_folder.uploads(
+                    folder, room=desk_chat.MOST_UPLOADS - len(uploads),
+                    spare=desk_chat.UPLOAD_BYTES - sum(map(len, uploads.values())), taken=uploads)
+                if not more:
+                    why = ' '.join(f"{row['name']}: {row['reason']}" for row in found['skipped'][:5])
+                    raise WorkspaceError('No document in this folder could be added, so nothing was created.'
+                                         + (' ' + why if why else ' It holds no documents that can be read.'))
+                uploads.update(more)
             result = desk_chat.create(engine, data, uploads)
+            if found is not None:
+                result['folder'] = found
         elif action == 'migration-preview':
             result = desk_chat.migration_preview(engine, args.folder)
         elif action == 'migrate':
@@ -236,6 +256,14 @@ def desk_command(args, make=engines.Engine, out=None):
         raise WorkspaceError(str(error)) from None
 
 
+DESK_HELP = {'create': 'start requested work from a JSON form. Its optional `uploads` maps one file name to '
+             'a local path. Its optional `folder` is a folder path on this computer or a Google Drive '
+             'folder link: the folder is scanned, subfolders included, each readable document becomes '
+             'one of the training\'s documents, and the answer lists what was added and what was '
+             'skipped, with the reason. Only a Google Drive folder uses the network, with the existing '
+             'Google sign-in, and only because the form names it.'}
+
+
 def parser() -> argparse.ArgumentParser:
     top = argparse.ArgumentParser(prog='studio', description=__doc__.splitlines()[0])
     commands = top.add_subparsers(dest='command', required=True)
@@ -255,7 +283,7 @@ def parser() -> argparse.ArgumentParser:
     conversation = commands.add_parser('desk', help='checked conversation work as JSON')
     actions = conversation.add_subparsers(dest='desk_action', required=True)
     for name in ('create', 'show', 'save', 'context', 'submit', 'scope', 'handoff', 'take', 'answer', 'ready', 'return-delivered', 'migration-preview', 'migrate'):
-        action = actions.add_parser(name)
+        action = actions.add_parser(name, help=DESK_HELP.get(name))
         if name != 'create':
             action.add_argument('--folder', required=True, type=Path)
         if name not in ('show', 'context', 'migration-preview', 'migrate'):
