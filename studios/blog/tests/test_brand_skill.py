@@ -468,6 +468,23 @@ class BrandSkillTests(unittest.TestCase):
             brands.configure({'runtime': str(second), 'skill_before': shown.get('skill_before')})
         self.assertEqual(brands.status()['runtime'], str(first))
 
+    def test_companions_report_their_versions_with_double_dash_version(self):
+        for name, banner in (
+            ('harness-research', 'harness-research 1.2.3'),
+            ('harness-slides', 'Harness Slides 2.3.4'),
+        ):
+            folder = self.base / name
+            scripts = folder / 'scripts'
+            scripts.mkdir(parents=True)
+            (scripts / f'{name}.mjs').write_text(
+                "if (process.argv.slice(2).join(' ') !== '--version') process.exit(1);\n"
+                f'console.log({json.dumps(banner)});\n'
+            )
+            os.environ[name.upper().replace('-', '_') + '_RUNTIME'] = str(folder)
+        self.assertEqual(
+            brands._companions(), {'harness-research': '1.2.3', 'harness-slides': '2.3.4'}
+        )
+
     def test_confirmed_install_runs_real_release_installer_in_synthetic_home(self):
         _, found = self.checked()
         with self.assertRaises(ValueError):
