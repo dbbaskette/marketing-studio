@@ -1,71 +1,30 @@
 # Blueprint
 
-Design backward: what the learner can do, how to observe it, then the teaching.
+Design backward from the learner's task to observable success, then the teaching. Follow the example's headings, IDs and line prefixes.
 
-Follow the shape of the example blueprint exactly. `training.py check` reads its headings, IDs and line prefixes.
+## Frame and sizing
 
-## Sections, in this order
+Give the audience, purpose, time, task and format. A workshop adds a realistic scenario. For a comparison, name both sides. For a level, add `Level: 301` and prerequisites. A lesson usually fits five objectives and 45 minutes; a course has two to six modules. Beyond that propose a split. Honor the approved objectives, order and time budget.
 
-`## Frame`, `## Sizing`, `## Objectives`, one `## M<n> — <title> (<minutes> min)` per module, `## Assessment plan`, `## Practice plan`, `## Open gaps`. A plain hyphen or a colon works in place of the dash.
+## Objectives and modules
 
-The frame gives the audience, purpose and time, and for a competitive brief the two sides. With levels it also has a line `Level: 301` and says what earlier levels are assumed.
+Use `### O<n> — <behavior> [<level>]`. Levels are recall, explain, apply and handle. Under each `## M<n> — <title> (<minutes> min)` put one item per line:
 
-## Sizing
+- `Objectives: O1, O2`.
+- `- K1.1: <claim> [R:<finding-id>]`. Cite supported findings and preserve applicable conditions.
+- Use `[stated]` for attributed positioning, local policy or an explicit exercise assumption. Put an unsupported technical capability under `[unsupported]` and in Open gaps.
+- `Misconception: "<belief>" Correction: <correction> [R:<finding-id>]`. A correction may cite a contradicted finding.
+- `Hook:` consequence. `Example:` worked observation. `Ask:` question for the participant. `Listen for:` evidence of understanding. Research questions guide the author.
+- Workshops add `Activity: <minutes> min. <task>. Output: <product>. Good answer: <criteria>`. Label simulations. Put a material research limit in the learner decision or instructor preflight, or omit the dependent claim.
 
-| Size | When |
-| --- | --- |
-| Lesson | Up to 5 objectives and 45 minutes. One module |
-| Course | 2 to 6 modules of 3 to 5 objectives each |
-| Separate trainings | More than 6 modules. Propose a split, each part in its own directory |
+## Assessment, practice and gaps
 
-Propose the size the research supports, with the reason. Do not pad. A time limit from intake wins: fit it, and list what was cut.
+Under Assessment plan give each objective a fresh case: `- O1: Check: <question> | Observe: <behavior>`. Budget time to attempt, explain and debrief.
 
-## Objectives
+Under Practice plan use `- <scenario-id>: <mode>. Objectives: O2, O3. <role>`. Modes are roleplay, pitch, tutor and questionnaire. Use roleplay or pitch for handle objectives. List existing scenarios when supplied; omit the section if scenarios were skipped.
 
-`### O<n> — <one observable behavior> [<level>]`
-
-| Level | The learner can |
-| --- | --- |
-| `recall` | State it |
-| `explain` | Say why or when, in their own words |
-| `apply` | Use it on a new case |
-| `handle` | Hold a live conversation about it: answer an objection, run a discovery call |
-
-Write behaviors you could watch someone do. "Understand rolling restarts" is not one. "Explain when a rolling restart keeps capacity" is.
-
-## Modules
-
-One item per line:
-
-- `Objectives: O1, O2`
-- `- K<module>.<n>: <one claim> [R:<finding-id>]` for each key point. Cite every finding the claim rests on. Only `supported` findings can be cited.
-- `- K1.5: <claim> [stated]` for intake's own claim that no finding supports or contradicts. It is taught as stated; say so at the gate.
-- `- K1.4: <claim> [unsupported]` for any other unsupported claim. It is not taught, and must appear under Open gaps.
-- `Misconception: "<what people believe>" Correction: <what is true> [R:<finding-id>]`. A correction may cite a `contradicted` finding.
-- `Example: <one concrete worked example>`. At least one per module.
-
-## Assessment plan
-
-One line per objective: `- O1: Check: <knowledge-check question> | Observe: <what a practice session should show>`
-
-The check goes into the document; the observation guides the scenarios. Each must ask for the behavior its objective names: explaining a procedure is not evidence of being able to perform it.
-
-Assess transfer with a fresh case. Budget teaching, practice and debrief within module time. Name the learner's output and observable success; label hypothetical cases and invent no product facts.
-
-## Practice plan
-
-One line per scenario, proposed or already supplied: `- <scenario-id>: <mode>. Objectives: O2, O3. <who the AI plays, in a phrase>`
-
-Modes are `roleplay`, `pitch`, `tutor` and `questionnaire`. Use `roleplay` or `pitch` for `handle` objectives. If the user already has scenario files, list those and say which objectives each exercises. The section is optional when scenarios are skipped.
-
-## Open gaps
-
-Every unresolved research question that affects the training, every `[unsupported]` key point by its ID, and what is left out as a result.
+Under Open gaps name every unresolved question affecting instruction, unsupported key point ID and resulting omission.
 
 ## Gate 3
 
-Write the first version to `blueprint.md` and run `training.py save blueprint --built`. Run `training.py check` and fix what fails.
-
-Present the gate as the gates reference describes. If a gap matters, offer a research top-up before approval.
-
-On approval: `training.py approve blueprint`. With levels, approve each level's blueprint; the training moves on once all are approved.
+Write `blueprint.md`, run `training.py save blueprint --built` and `training.py check`, then fix failures. Present the gate. On approval run `training.py approve blueprint` for each applicable level.

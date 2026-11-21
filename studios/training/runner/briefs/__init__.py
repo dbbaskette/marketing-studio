@@ -57,6 +57,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from studio_core import critic
+
 import runner  # noqa: F401  puts the core on the import path
 import checks
 import workspace
@@ -149,6 +151,8 @@ def guidance(job: str, level: str | None = None, kind: str | None = None,
         text = _replaced(text, read(DESIGNED[job]))
     if level is not None:
         text += '\n' + read(LEVELLED[job]).replace('{level}', level)
+    if job in ('deck-review', 'deck-section'):
+        text += "\n" + critic.ATTRIBUTION + "\n"
     if job not in EXAMPLE:
         return text
     name = EXAMPLE[job].replace('{kind}', kind or '')

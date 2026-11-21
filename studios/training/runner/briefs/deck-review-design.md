@@ -32,7 +32,7 @@ Judge only what is visible in the pictures. Do not propose a change to the color
 
 When your input lists what an earlier review found, the slides were drawn again since. Look for each of those findings. Where one is not put right, answer its criterion so again.
 
-Name up to three weakest slides, the weakest first.
+Name up to three weakest slides. Put misleading evidence or an incorrect action ahead of cosmetic issues.
 
 ## Hand back
 

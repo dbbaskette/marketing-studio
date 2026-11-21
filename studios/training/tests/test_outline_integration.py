@@ -90,6 +90,7 @@ class OutlineIntegrationTests(StudioCase):
         approved = json.loads(self.read_all(tools,'approved-teaching-outline'))
         first = approved['sections'][0]['id']
         self.assertTrue(approved['sections'])
+        self.assertTrue(all('questions' not in section for section in approved['sections']))
         rewritten=text
         for name_id in ('availability','instance-min','health-checks','zero-downtime'):
             rewritten=rewritten.replace('[R:'+name_id+']','[R:'+first+']')

@@ -565,7 +565,7 @@ class RuleTests(JobCase):
         self.assertIn('- A check for understanding in each module: M1, Rolling restarts.', text)
 
     def test_the_handoff_of_a_presented_session_asks_the_room_and_plans_no_exercises(self):
-        session = BLUEPRINT.replace('Time: 25 min\n', 'Time: 25 min\nFormat: session\n')
+        session = BLUEPRINT.replace('Format: workshop', 'Format: session')
         text = deck.handoff('Rolling restarts', None, session, {}, 'google', None, False)
         self.assertIn('- A question for the room in each module: M1, Rolling restarts.', text)
         self.assertNotIn('A check for understanding in each module', text)
@@ -4362,8 +4362,12 @@ class BriefTests(JobCase):
         plain, designed = briefs.guidance('deck-section'), briefs.guidance('deck-section',
                                                                             design=True)
         self.assertEqual(plain.count(briefs.LANGUAGE), 1)
+        from studio_core import critic
         self.assertEqual(plain.replace('\n' + briefs.LANGUAGE + '\n', '', 1),
-                         briefs.read('deck-section'), 'only the shared language guidance is added')
+                         briefs.read('deck-section') + '\n' + critic.ATTRIBUTION + '\n')
+        for job in ('deck-review', 'deck-section'):
+            for with_design in (True, False):
+                self.assertIn(critic.ATTRIBUTION, briefs.guidance(job, design=with_design))
         for gone in ('whether an icon helps', 'Lead with icons.'):
             self.assertIn(gone, plain)
             self.assertNotIn(gone, designed)

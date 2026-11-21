@@ -261,36 +261,23 @@ class BriefTests(JobCase):
         plan = ' '.join(own(EVERY['blueprint']).split())
         for told in ('It is the specification.', '`Format: session` or `Format: workshop`',
                      'It is the default', '**Their objectives are the objectives.**',
-                     '**Their outline is the outline.**', '**Their statements are taught.**',
-                     '**Take the side they take.**',
-                     '**Their own outline document is the plan.**', 'Do not redesign a `person outline`.',
-                     '`Opening:` and `Closing:`', '**Say it the way an instructor says it.**',
-                     'the more specific one is the fact; if alike, the newer',
-                     'Never restate it as a larger claim and then mark that unsupported.',
-                     'It does not argue the alternative\'s case',
-                     '`- K1.5: <claim> [stated]`', 'Never use `[unsupported]` for it',
-                     'no module teaches learners about the gaps',
-                     'Taught as you stated them; no source was found, so please confirm',
-                     'The approved outline', 'It wins where it differs from the intake',
-                     'Do not build a claim from what they only imply',
-                     'has a key point that answers it'):
+                     '**Their outline is the outline.**',
+                     '**Their own outline document is the plan.**', '`Opening:` and `Closing:`',
+                     'For technical claims use the applicable documented behavior',
+                     'Resolve conflicts by applicability', 'An unverified platform capability is a gap',
+                     'instructor preflight', 'The approved outline'):
             self.assertIn(told, plan)
         guide = ' '.join(own(EVERY['document']).split())
-        for told in ('marks `[stated]` is named and taught like any other',
-                     'Teach the subject, not the evidence.',
-                     'add no exercises beyond the knowledge checks', 'Add no detail of your own to it.',
+        for told in ('Preserve scope', 'add no exercises beyond the knowledge checks',
                      'in the last module that serves that objective',
-                     'take their facts and leave that voice', 'its answer key included',
-                     'do not grade the author\'s own claims'):
+                     'state each condition that changes the action'):
             self.assertIn(told, guide)
         outline = ' '.join(briefs.guidance('deck-outline').split())
         for told in ('**A session is presented.**', 'no activity slides',
                      '**A workshop runs as a class.**', '**A demonstration has its slide.**',
-                     '**Teach the subject, not the evidence.**',
-                     'One it marks `[stated]` is the person\'s own statement',
+                     'Supply the actual prop', 'Label simulated data',
                      'so the room is asked first', 'It adds no new fact.',
-                     '**Open and close as the frame says.**',
-                     'A title is a claim the presenter makes with confidence.'):
+                     '**Open and close as the frame says.**', 'Correct early reveals'):
             self.assertIn(told, outline)
         reference = own(EVERY['brief'])
         for told in ('A further question is not a response.',

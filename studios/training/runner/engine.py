@@ -3442,7 +3442,7 @@ class Engine(Reviewing):
             finding.get('slide') in drawn and finding.get('about', deck.ABOUT[0]) == deck.ABOUT[0]
             or finding.get('slide') in worded and finding.get('about') == deck.ABOUT[1])]
         items = [{**item, 'drawn': drawings.get(item['part'])}
-                 for item in review_findings.items(left, 'slide', fields=('ask',))]
+                 for item in review_findings.items(deck.ordered(left), 'slide', fields=('ask',))]
         previous = (proposals.summary(ident, proposals.desk.read(ident)).get('review')
                     or {}).get('items') or ()
         for item in items:
@@ -4238,9 +4238,13 @@ class Engine(Reviewing):
             record = {**record, 'limits': {**record['limits'], 'step_seconds': max(record['limits']['step_seconds'],
                 (record.get('section_synthesis') or {}).get('more_time', {}).get(section, 0))}}
         if outline_first.enabled(record) and step.stage in ('blueprint', 'document', 'brief', 'scenario', 'yoodli', 'deck'):
-            scope = json.dumps(record['outline_first']['outline'], ensure_ascii=False)
+            outline = record['outline_first']['outline']
+            # Section questions seed research. Keep author prompts out of the teaching script.
+            scope = json.dumps({**outline, 'sections': [
+                {key: value for key, value in section.items() if key != 'questions'}
+                for section in outline['sections']]}, ensure_ascii=False)
             work = replace(work, prepared={**work.prepared, 'inputs': {**work.prepared.get('inputs', {}),
-                'approved-teaching-outline': scope}}, task=work.task + '\n\nFollow the approved teaching sections, objectives and questions in approved-teaching-outline. Only checked research supplies facts; the provisional scan supplies no evidence.')
+                'approved-teaching-outline': scope}}, task=work.task + '\n\nFollow the approved teaching sections and objectives in approved-teaching-outline. Use checked research to design a learner task. Write fresh Ask prompts addressed to participants. Only checked research supplies facts; the provisional scan supplies no evidence.')
         if work.prepared.get('fetch'):
             # A job that saves pages keeps to where the run says research may look: its
             # tools refuse a page outside your sites, and it is told to search them first.

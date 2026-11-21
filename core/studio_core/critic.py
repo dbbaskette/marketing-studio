@@ -23,6 +23,12 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+ATTRIBUTION = (
+    "Trace each decision-bearing label, value and connector to the entity it belongs to. "
+    "If the rendered grouping implies the wrong owner, state or action, report a critical "
+    "finding. Name the label, what it appears to describe, its correct owner and the fix. "
+    "Drawers keep each label and its evidence together through layout and repair.")
+
 PACKET = 'critic.json'
 MOST = 12   # questions a preview may ask of a slide
 MISSING = ("The slides tool's review questions are not with this preview. Put the deck "

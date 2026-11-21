@@ -21,7 +21,10 @@ class BriefTests(unittest.TestCase):
     def test_levels_and_repair(self):
         for level in briefs.LEVELS:
             self.assertIn('## The freedom', briefs.guidance('extract', level=level))
-        self.assertEqual(briefs.guidance('section', repair=True), briefs.read('section-repair'))
+        repair = briefs.guidance('section', repair=True)
+        self.assertTrue(repair.startswith(briefs.read('section-repair')))
+        for guidance in (repair, briefs.guidance('section'), briefs.guidance('review')):
+            self.assertIn('its correct owner and the fix', guidance)
         with self.assertRaises(ValueError):
             briefs.guidance('section', level='polish')
 

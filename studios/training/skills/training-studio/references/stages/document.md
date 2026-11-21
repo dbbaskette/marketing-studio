@@ -20,7 +20,7 @@ Follow the shape of the example document. A course is one document with a chapte
 
 ## Coverage comments
 
-Put `<!-- covers: O1 K1.1 K1.2 -->` under the heading of each section, naming the objectives and key points that section teaches. `training.py check` requires every objective and every supported or `[stated]` key point to be named somewhere, and fails the document if an `[unsupported]` key point is named. A `[stated]` point is the user's own claim: teach it as worded, with no advice to verify it.
+Put `<!-- covers: O1 K1.1 K1.2 -->` under the heading of each section, naming the objectives and key points that section teaches. `training.py check` requires every objective and every supported or `[stated]` key point to be named somewhere, and fails the document if an `[unsupported]` key point is named. A `[stated]` point is the user's own claim: cite it as local policy, positioning or an exercise assumption. Teach applicable version and setup conditions.
 
 This is declared coverage. It proves a section claims to teach something, not that the prose does. Before the gate, read each section against its comment and say what you found.
 
