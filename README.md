@@ -2,7 +2,7 @@
 
 Bring your material, choose what you want to make, and work with your signed-in Codex or Claude Code assistant on a local editing desk. You can install the whole suite or just the studio you need.
 
-![Four studios turn source material into a blog, a slide deck, a lesson or a visual page.](docs/assets/marketing-studio-header.svg)
+![Marketing Studio banner with illustrations of a page layout, a document, a workflow, and charts.](docs/assets/marketing-studio-banner.jpg)
 
 ## Choose a studio
 
