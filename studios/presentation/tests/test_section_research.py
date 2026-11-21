@@ -62,21 +62,21 @@ class SectionResearchTests(StudioCase):
         self.assertIsNone(shown['problem'], shown['problem'])
         self.assertEqual(shown['research_progress']['phase'], 'complete')
         self.assertEqual(len(self.section_jobs), len(story['outline']['sections']) + 1)
-        self.assertLessEqual(self.section_jobs[-1][1], research_sections.SECONDS)
+        self.assertTrue(all(seconds is None for _, seconds in self.section_jobs))
 
         return root
 
     def test_new_schema_and_section_transport_pass_complete_check(self):
         self._complete_section_work()
 
-    def test_section_work_is_given_time_limits_and_no_spending_limit(self):
+    def test_section_work_has_no_studio_time_or_spending_limit(self):
         root=self._complete_section_work()
         self.assertNotIn('spending', self.view(root))
         self.assertTrue(self.workers.jobs)
-        self.assertTrue(all(not hasattr(item[1].limits, 'dollars') and item[1].limits.seconds > 0
+        self.assertTrue(all(not hasattr(item[1].limits, 'dollars')
                             for item in self.workers.jobs))
 
-    def test_timeout_grants_only_the_failed_contribution_more_time(self):
+    def test_retry_after_a_provider_timeout_continues_only_the_unfinished_work(self):
         self.fail_one = True
         root = self.start(research=True)
         view = self.view(root)
@@ -84,16 +84,17 @@ class SectionResearchTests(StudioCase):
         self.engine.decide(root, slide_story.GATE, 'approve', extra={'outline': story['outline']}, expected=story['expected'])
         record = self.engine._load(root)
         halted = record.get('halted') or record.get('problem')
-        self.assertEqual(halted['action'], 'more-time')
+        self.assertEqual(halted['action'], 'retry')
+        self.assertNotIn('seconds', halted)
         ident = halted['section']
         before = record['limits']['step_seconds']
         previous = list(self.section_jobs)
-        self.engine.act(root, 'more-time')
+        self.engine.act(root, 'retry')
         record = self.engine._load(root)
         self.assertEqual(record['limits']['step_seconds'], before)
-        self.assertEqual(record['section_synthesis']['more_time'][ident], 2 * research_sections.SECONDS)
+        self.assertEqual(record['section_synthesis']['more_time'], {})
         subsequent = self.section_jobs[len(previous):]
-        self.assertEqual(subsequent, [(ident, 2 * research_sections.SECONDS), ('final', research_sections.SECONDS)])
+        self.assertEqual(subsequent, [(ident, None), ('final', None)])
 
     def test_preview_polling_reuses_local_metadata_but_confirmation_rehashes_sources(self):
         from studio_core import research_impact

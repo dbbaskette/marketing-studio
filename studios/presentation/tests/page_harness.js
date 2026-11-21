@@ -789,6 +789,10 @@ async function app(file) {
   const window = {
     document,
     Notification,
+    confirm(message) {
+      if (!plan.confirmations?.length) throw new Error('Unexpected confirmation: ' + message);
+      return plan.confirmations.shift();
+    },
     location: { hash: plan.hash === undefined ? '#token=the-test-key' : plan.hash,
       reload() { report.reloads += 1; } },
     // A plan with {state} opens the page as a reload does, at the screen that state names.

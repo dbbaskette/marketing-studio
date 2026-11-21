@@ -394,11 +394,26 @@ class LayoutTests(test_desk.ScriptedPage, test_runner_page.PageCase):
         result = self.run_page(self.answers(), [
             {'click': 'New deck'}, {'click': 'An idea'},
             {'fill': 'A short title', 'value': 'Kept for later'}, {'click': 'Cancel'},
-            {'snapshot': 'closed'}, {'click': 'New deck'}, {'snapshot': 'again'}])
+            {'snapshot': 'closed'}, {'click': 'Resume draft'}, {'snapshot': 'again'}])
         shots = result['snapshots']
         self.assertEqual(shots['closed']['sheet'], '')
         self.assertEqual(shots['again']['fields']['A short title'], 'Kept for later')
         self.assertTrue(any(one['address'] == '/api/intake-draft' and one['method'] == 'POST' for one in result['requests']))
+        self.assertEqual(self.posts(result), [])
+
+    def test_starting_fresh_requires_confirmation_to_replace_an_unfinished_deck_form(self):
+        result = self.run_page(self.answers(), [
+            {'click': 'New deck'}, {'click': 'An idea'},
+            {'fill': 'A short title', 'value': 'Saved title'}, {'click': 'Cancel'},
+            {'click': 'New deck'}, {'snapshot': 'declined'},
+            {'click': 'New deck'}, {'click': 'An idea'}, {'click': 'Next'}, {'snapshot': 'fresh'}],
+            confirmations=[False, True])
+        self.assertIn('Resume draft', result['snapshots']['declined']['buttons'])
+        self.assertIn('Saved title', result['snapshots']['declined']['text'])
+        self.assertEqual(result['snapshots']['fresh']['fields']['A short title'], '')
+        discards = [call for call in result['requests']
+                    if call['address'] == '/api/intake-draft' and (call.get('body') or {}).get('action') == 'discard']
+        self.assertEqual(len(discards), 1)
         self.assertEqual(self.posts(result), [])
 
     def test_screen_new_still_opens_the_form(self):

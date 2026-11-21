@@ -27,7 +27,6 @@ What a caller needs to know
 """
 from __future__ import annotations
 
-from studio_core import research_sections
 import contextvars
 import json
 import re
@@ -314,11 +313,11 @@ class Researching:
                         self._problem(root, 'research', 'failed', stops.agent_stopped(
                             self._title(record.get('agent')), outcome, outcome.detail), KEPT,
                             action=stops.agent_action(outcome))
-                    elif outcome.reason == 'timeout':
-                        if not research_sections.timeout(self, root, refusal, 'presentation'):
-                            # No job of this studio is given a time limit now: one that
-                            # still ends for its time is tried again like any other.
-                            self._problem(root, 'research', 'failed', str(refusal), KEPT)
+                    elif outcome.reason == 'timeout' and getattr(refusal, 'section', None):
+                        self._problem(root, 'research', 'failed', str(refusal),
+                            'Completed research areas and section contributions are kept. '
+                            'Try again continues with the unfinished work.',
+                            detail={'section': refusal.section})
                     else:
                         self._problem(root, 'research', 'failed', str(refusal), KEPT)
                     raise Halted()
