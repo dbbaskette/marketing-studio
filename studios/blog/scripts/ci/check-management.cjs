@@ -134,6 +134,7 @@ async function check(){
   await deskReviewReturnAndSend();
   await deskIntakePersistence();
   await deskTopicStart();
+  await solutionBriefStart();
   await deskOutlineStarts();
   await deskOtherWaysIn();
   await deskPolishStart();
@@ -472,7 +473,7 @@ async function phase4Starts(){
   const f=fixture(url=>url==='/api/run-options'?{settings:{defaults:{engine:'codex',seconds:600,research:'supplied-only',tone:'',author:''}},sources:[],profiles:[],styles:[],agents:{codex:true}}:{items:[]});
   f.loadRunner();f.run('sHome()');
   const nodes=()=>descendants(f.get('studio-page'));
-  for(const title of ['Write from a topic or my documents','Work from my outline or notes','Edit or polish a draft'])assert.ok(nodes().some(n=>n.textContent===title));
+  for(const title of ['Write from a topic or my documents','Work from my outline or notes','Edit or polish a draft','Write a solution brief'])assert.ok(nodes().some(n=>n.textContent===title));
   for(const title of ['Outline only','Revise or review a draft','New blog from my files'])assert.ok(!nodes().some(n=>n.textContent===title),title+' is no longer a way to start');
   // A draft the person brings opens on the writing desk.
   await nodes().find(n=>n.textContent==='Edit or polish a draft').listeners.click();
@@ -3087,6 +3088,39 @@ async function deskIntakePersistence(){
   assert.equal(edited.f.run('studio.deskStart.title'),'Later edit');
   const clean=deskStartFixture();await clean.f.run('sDeskBegin()');await clean.click('Discard draft');
   assert.equal(clean.f.run('studio.deskStart'),null);assert.equal(clean.f.run('sBlogIntake().saved'),null);
+}
+// A solution brief: Home's card opens the desk start with nothing to choose but what it is about
+// and its sources; no kind of post, length or tone; Start asks for the brief way. On the desk,
+// Share offers Make the brief in place of Mark as published, and its sheet lists what to look at
+// with both downloads.
+async function solutionBriefStart(){
+  const t=deskStartFixture((url,data)=>{
+    if(url==='/api/desk-create')return {...startView(),brief:true,first_pass_problem:null};
+    if(url.startsWith('/api/desk?'))return {...startView(),brief:true};
+    return null;
+  });
+  await t.f.run("sRoute('home')");
+  await t.click('Write a solution brief');
+  assert.equal(t.f.run('studio.screen'),'desk-start');assert.equal(t.f.run('studio.deskStart.brief'),true);
+  assert.equal(t.f.get('title').textContent,'New solution brief');
+  for(const gone of ['What do you have?','Need an angle?'])assert.ok(!t.nodes().some(n=>n.textContent===gone),gone+' is not asked for a brief');
+  assert.ok(t.byId('files-input'),'the messaging and product documents are added here');
+  t.type('desk-title','A synthetic platform');t.type('desk-audience','Platform teams');t.type('desk-point','What the made-up platform does.');
+  await t.submit();assert.equal(t.f.run('studio.deskStart.step'),1);
+  assert.ok(t.nodes().some(n=>n.textContent==='Brand template'));
+  assert.ok(t.nodes().some(n=>/icons from the brand’s icon library/.test(n.textContent)),'the start says where the icons come from');
+  for(const id of ['desk-kind','desk-length','desk-tone'])assert.equal(t.byId(id),undefined,id+' is not asked for a brief');
+  await t.submit();
+  const made=t.requests.find(r=>r.url==='/api/desk-create').data;
+  assert.equal(made.way,'brief');assert.equal(made.style,'');assert.equal(made.tone,'');assert.equal(made.length,'style');
+  assert.equal(made.point,'What the made-up platform does.');assert.equal(made.audience,'Platform teams');assert.equal(made.geo_review,undefined);
+  const actions=t.f.run("sDeskShareActions({view:{brief:true,publication:null},id:'b1',mode:'write'}).map(node=>node.textContent)");
+  assert.ok(actions.includes('Make the brief'));assert.ok(!actions.includes('Mark as published'));
+  t.f.run("sBriefSheet({pages:5,checks:[{label:'Four or five pages',passed:true,detail:''},{label:'One sidebar on a page',passed:false,detail:'Two overlap on page 3.'}],files:{word:{name:'solution-brief.docx',path:'/synthetic/solution-brief.docx',content:'d29yZA=='},pdf:{name:'solution-brief.pdf',path:'/synthetic/solution-brief.pdf',content:'cGRm'}},warnings:['A made-up warning.']})");
+  const said=t.sheet().map(n=>n.textContent);
+  assert.ok(said.includes('5 pages. 1 thing to look at before it goes out.'));
+  assert.ok(said.includes('Look at: One sidebar on a page Two overlap on page 3.'));assert.ok(said.includes('Passed: Four or five pages'));
+  for(const label of ['Download PDF','Download Word file','A made-up warning.'])assert.ok(said.includes(label),label);
 }
 async function deskTopicStart(){
   let polls=0;
