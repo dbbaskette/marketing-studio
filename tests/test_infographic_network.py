@@ -103,21 +103,23 @@ class InfographicNetworkTests(unittest.TestCase):
         key=secrets.token_urlsafe(24)
         bridge=BridgeServer(('127.0.0.1',0),f'127.0.0.1:{native.server_port}',key,'X-Infographic-Studio-Token','infographic')
         threading.Thread(target=bridge.serve_forever,daemon=True).start()
-        def request(path,size,token=True):
-            headers={'Origin':'http://'+bridge.authority,'Content-Type':'application/json'}
+        def request(path, size, *, upload=True, token=True):
+            headers={'Origin':'http://'+bridge.authority,'Content-Type':'application/json',
+                     'Content-Length': str(size)}
             if token:headers['X-Infographic-Studio-Token']=key
             with contextlib.closing(http.client.HTTPConnection('127.0.0.1',bridge.server_port,timeout=10)) as client:
-                client.request('POST',path,body=b' '*size,headers=headers);response=client.getresponse();response.read();return response.status
+                # A refusal is based on headers. Sending a large body at the same time can
+                # race the server closing the socket before the client reads its response.
+                client.request('POST', path, body=b' ' * size if upload else None, headers=headers)
+                response = client.getresponse()
+                response.read()
+                return response.status
         try:
             for path in ('/api/source-preview','/api/action','/api/csv-preview','/api/csv-selection'):
                 self.assertEqual(request(path,100_000),200)
-            self.assertEqual(request('/api/preferences',100_000),413)
-            self.assertEqual(request('/api/source-preview',100_000,token=False),403)
-            # Oversized headers are rejected before any upload is read or forwarded.
-            with contextlib.closing(http.client.HTTPConnection('127.0.0.1',bridge.server_port,timeout=5)) as client:
-                client.putrequest('POST','/api/source-preview');client.putheader('Origin','http://'+bridge.authority)
-                client.putheader('X-Infographic-Studio-Token',key);client.putheader('Content-Length','24000001');client.endheaders()
-                response=client.getresponse();self.assertEqual(response.status,413);response.read()
+            self.assertEqual(request('/api/preferences', 100_000, upload=False), 413)
+            self.assertEqual(request('/api/source-preview', 100_000, upload=False, token=False), 403)
+            self.assertEqual(request('/api/source-preview', 24_000_001, upload=False), 413)
             self.assertEqual(len(received),4)
         finally:
             bridge.shutdown();bridge.server_close();native.shutdown();native.server_close()

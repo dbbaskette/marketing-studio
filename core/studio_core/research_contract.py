@@ -2023,4 +2023,7 @@ def main(argv=None):
 
 
 if __name__ == '__main__':
+    # A direct file invocation starts with studio_core itself on the import path.
+    import sys
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     raise SystemExit(main())
