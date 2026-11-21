@@ -10,16 +10,16 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PRODUCTS = (
-    ('marketing', 'Marketing Studio', 'One home. Four ways to make something.',
-     '#2463c4', ('Shared settings', 'Your sources', 'Choose a studio', 'Your decisions')),
-    ('blog', 'Blog Studio', 'From a rough idea to words worth sharing.',
-     '#2463c4', ('Bring your material', 'Write on the desk', 'Review suggestions', 'Send when ready')),
-    ('presentation', 'Presentation Studio', 'Your story. Your brand. Every slide considered.',
-     '#a64b12', ('Idea, document or deck', 'Approve slide text', 'Refine the design', 'Choose Deliver')),
-    ('training', 'Training Studio', 'A clear path from subject to learning.',
-     '#7442b4', ('Audience and sources', 'Review the plan', 'Build your materials', 'Mark ready')),
-    ('infographic', 'Infographic Studio', 'Make the important idea visible.',
-     '#087b7b', ('Sources and facts', 'Choose a story', 'Refine the page', 'Approve and export')),
+    ('marketing', 'Marketing Studio', 'Choose your studio', '#2463c4',
+     ('A topic and your source material', 'The format your audience needs', 'A post, deck, lesson or visual page')),
+    ('blog', 'Blog Studio', 'The writing desk', '#2463c4',
+     ('A point to make or a draft to edit', 'The angle, voice and edits to keep', 'A post to copy, download or send')),
+    ('presentation', 'Presentation Studio', 'The slide deck', '#a64b12',
+     ('An idea, document or existing deck', 'The message, slide text and design', 'Google Slides or PowerPoint')),
+    ('training', 'Training Studio', 'Materials by learning level', '#7442b4',
+     ('A learner goal and reference docs', 'The outline, level and materials', 'A guide, practice or teaching deck')),
+    ('infographic', 'Infographic Studio', 'The visual page', '#087b7b',
+     ('A process, comparison or data', 'One takeaway and a page layout', 'PNG, PDF, SVG or accessible text')),
 )
 
 
@@ -51,10 +51,10 @@ def icon(kind, x, y, color):
             f'{paths[kind]}</g>')
 
 
-def illustration(kind, color):
+def illustration(kind, color, caption):
     bits = [rect(804, 66, 412, 228, '#ffffff', 16, '#d8e0ea'),
             rect(805, 67, 410, 38, '#edf2f8', 15),
-            text(824, 92, 'THE WORKBENCH', 12, '#526176', 650)]
+            text(824, 93, caption, 16, '#263449', 650)]
     if kind == 'marketing':
         for n, (key, title, _, accent, _) in enumerate(PRODUCTS[1:]):
             x, y = 822 + (n % 2) * 194, 121 + (n // 2) * 77
@@ -107,28 +107,22 @@ def illustration(kind, color):
 
 
 def render(product):
-    kind, title, tagline, color, steps = product
-    out = ['<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="440" '
-           'viewBox="0 0 1280 440" role="img" aria-labelledby="title desc">',
+    kind, title, caption, color, steps = product
+    labels = ('Bring', 'Choose', 'Take away')
+    description = '. '.join(f'{label}: {value}' for label, value in zip(labels, steps))
+    out = ['<svg xmlns="http://www.w3.org/2000/svg" width="920" height="264" '
+           'viewBox="0 0 920 264" role="img" aria-labelledby="title desc">',
            f'<title id="title">{escape(title)}</title>',
-           f'<desc id="desc">Workflow illustration: {escape(". ".join(steps))}. '
-           'Illustrated interface, not a screenshot.</desc>',
+           f'<desc id="desc">{escape(description)}.</desc>',
            '<g font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">',
-           rect(0, 0, 1280, 440, '#f3f6fa', 20),
-           rect(0, 0, 1280, 12, color, 0),
-           icon(kind, 48, 49, color),
-           text(101, 76, title, 28, '#17243a', 700),
-           text(48, 149, tagline, 28, '#17243a', 650),
-           text(48, 191, 'Local work. Your assistant. Your decisions.', 19, '#526176'),
-           text(48, 260, 'A DESK FOR THE WORK, FROM START TO FINISH', 13, color, 650),
-           illustration(kind, color)]
-    for n, label in enumerate(steps):
-        x = 48 + n * 304
-        out += [rect(x, 331, 280, 62, '#ffffff', 10, '#d8e0ea'),
-                f'<circle cx="{x+25}" cy="362" r="13" fill="{color}"/>',
-                text(x + 21, 367, str(n + 1), 13, '#ffffff', 700),
-                text(x + 49, 367, label, 16, '#263449', 600)]
-    out += ['</g></svg>\n']
+           rect(0, 0, 920, 264, '#f5f7fa', 16),
+           rect(0, 16, 5, 232, color, 2)]
+    for row, (label, value) in enumerate(zip(labels, steps)):
+        y = 42 + 75 * row
+        out += [text(32, y, label, 15, color, 700),
+                text(32, y + 29, value, 22, '#17243a', 550)]
+    out += ['<g transform="translate(-320 -48)">', illustration(kind, color, caption),
+            '</g></g></svg>\n']
     return ''.join(out)
 
 
