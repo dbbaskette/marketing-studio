@@ -30,7 +30,7 @@ class HandoffTests(Isolated):
 
     def test_job_aid_requires_current_person_approval_and_imports_only_learner_text(self):
         root = self.temp / 'trainings'
-        project = root / 'restart'
+        project = root / '201'  # A training can have the same name as a level.
         records = project / '.training-studio'
         records.mkdir(parents=True)
         (root / 'hub.json').write_text(json.dumps({'tool':'training-studio','schema':1,'folder':'trainings'}))
@@ -67,6 +67,15 @@ class HandoffTests(Isolated):
         self.assertNotIn('Instructor notes', body)
         self.assertNotIn('K1.1', body)
         self.assertEqual(source['provenance']['origin_sha256'], digest)
+        level = project / '301'
+        level.mkdir()
+        (level / 'blueprint.md').write_bytes(blueprint.read_bytes())
+        record['levels'] = ['301']
+        record['artifacts']['blueprint@301'] = record['artifacts']['blueprint']
+        record['desk_ready']['blueprint@301'] = digest
+        session.write_text(json.dumps(record))
+        row, = offered()
+        self.assertEqual(row['file'], '201/301/blueprint.md')
         intake_file.write_text('Changed workshop')
         self.assertEqual(offered(), [])
         with self.assertRaisesRegex(Invalid, 'approved'):

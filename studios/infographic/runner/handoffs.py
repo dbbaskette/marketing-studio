@@ -46,12 +46,17 @@ def folder(root, studio):
     return root
 
 
-def _approved_aid(path, raw, digest):
-    if path.name != 'blueprint.md' or b'## Job aid' not in raw:
+def _approved_aid(root, relative, raw, digest):
+    parts = Path(relative).parts
+    if parts[-1] != 'blueprint.md' or b'## Job aid' not in raw:
         return None
-    project, name = path.parent, 'blueprint'
-    if project.name in training_existing.LEVELS:
-        project, name = project.parent, 'blueprint@' + project.name
+    if len(parts) == 2:
+        name = 'blueprint'
+    elif len(parts) == 3 and parts[1] in training_existing.LEVELS:
+        name = 'blueprint@' + parts[1]
+    else:
+        return None
+    project = root / parts[0]
     if not training_existing.approved_blueprint(project, name, digest):
         return None
     try:
@@ -92,7 +97,7 @@ def inventory(root, studio):
                     "sha256": hashlib.sha256(raw).hexdigest(),
                 }
             )
-            if studio == 'training' and _approved_aid(path, raw, found[-1]['sha256']):
+            if studio == 'training' and _approved_aid(root, relative, raw, found[-1]['sha256']):
                 found.append({**found[-1], 'view': 'job-aid'})
             require(
                 len(found) <= 1000,
@@ -121,7 +126,7 @@ def prepare(root, studio, file, expected_sha256, view=None):
     )
     require(view in (None, 'job-aid'), 'Choose a listed handoff.')
     if view == 'job-aid':
-        aid = _approved_aid(root / file, raw, expected_sha256) if studio == 'training' else None
+        aid = _approved_aid(root, file, raw, expected_sha256) if studio == 'training' else None
         require(aid, 'The one-page job aid needs a current, person-approved training blueprint.')
         return intake.prepare(aid.encode(), kind='handoff', name='One-page job aid.md',
             extracted={'text': aid, 'readable': True, 'extractor': 'training-job-aid-v1',
