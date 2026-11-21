@@ -4469,13 +4469,17 @@ class Engine(Reviewing):
                 self._commit(root, 'write the research plan from the approved outline'
                              if outline_first.enabled(record) else 'write the research plan from the form')
             return
+        # The person's documents go to research, and to the writers of a blueprint and of
+        # what a deck says, who look the figures and names behind a finding up in them.
         sources = (self._sources(root, record)
-                   if it.id == 'research-plan' and record.get('documents') else None)
+                   if record.get('documents') and (
+                       it.id == 'research-plan' or it.stage == 'blueprint'
+                       or pipeline.bare(it.id) == 'deck-outline') else None)
         naming = (self._naming(root, found.session)
                   if it.stage in pipeline.NAMED and it.kind == 'agent' else None)
         work = pipeline.outline_check_work(
             root, found, it, last_error(record, it.id), record['answers'].get(it.id, []),
-            designed, bool(designed) and self._has('design-icon-ids')) if checking else \
+            designed, bool(designed) and self._has('design-icon-ids'), sources) if checking else \
             pipeline.work(root, found, it, step.request, last_error(record, it.id),
                           record['answers'].get(it.id, []), sources, naming, designed,
                           bool(designed) and self._has('design-icon-ids'),

@@ -534,6 +534,15 @@ class RuleTests(JobCase):
                             'content slide before it' in problem for problem in told), told)
         self.assertEqual(deck.rules({'slides': [content, short]}, blueprint), [])
 
+    def test_the_handoff_names_the_persons_documents_only_when_there_are_some(self):
+        given = ('Rolling restarts', '301', BLUEPRINT, {}, 'google', ('example-co', 'light'),
+                 True, ['main'])
+        plain, told = deck.handoff(*given), deck.handoff(*given, documents=True)
+        self.assertNotIn(deck.OWN_DOCUMENTS, plain, 'a training with none has the handoff it had')
+        self.assertIn('the research findings. ' + deck.OWN_DOCUMENTS + 'They are your sources, '
+                      "not the audience's", told)
+        self.assertEqual(told.replace(deck.OWN_DOCUMENTS, ''), plain)
+
     def test_the_handoff_has_the_headings_the_skill_gives_it(self):
         text = deck.handoff('Rolling restarts', '301', BLUEPRINT, {}, 'google',
                             ('example-co', 'light'), True, ['main'])
@@ -4271,8 +4280,11 @@ class BriefTests(JobCase):
     def test_a_decks_briefs_name_only_tools_their_workers_have(self):
         import re
         named = re.compile(r'`((?:list|read|submit|save|search|ask|check|preview|look)_[a-z_]+)`')
+        # What a deck says is written with the person's documents to hand, when there are
+        # any: its worker searches and reads them as research does.
         expect = {'deck-outline': {'list_inputs', 'read_input', 'check_outline',
-                                   'submit_outline', 'submit_review', 'ask_person'},
+                                   'submit_outline', 'submit_review', 'ask_person',
+                                   'search_source', 'read_source'},
                   'deck-section': {'list_inputs', 'read_input', 'check_section',
                                    'preview_section', 'search_icons', 'submit_section'},
                   'deck-review': {'list_inputs', 'read_input', 'look_at_slide',
@@ -4352,15 +4364,15 @@ class BriefTests(JobCase):
         self.assertEqual(plain.count(briefs.LANGUAGE), 1)
         self.assertEqual(plain.replace('\n' + briefs.LANGUAGE + '\n', '', 1),
                          briefs.read('deck-section'), 'only the shared language guidance is added')
-        for gone in ('whether an icon helps', 'Use an icon only where it names a recognisable '
-                     'thing.'):
+        for gone in ('whether an icon helps', 'Lead with icons.'):
             self.assertIn(gone, plain)
             self.assertNotIn(gone, designed)
         for told in ("So is each slide's approved design", "Copy each slide's `intent`",
                      'Draw the visual the design approved',
                      'Where it chose direct text, draw text, and add nothing to decorate it',
                      'Place the icons the design names',
-                     'Add another only where it names a recognisable thing',
+                     'the design named no icon for it, add the one that names it',
+                     'A title over rows or cards of sentences is a wireframe',
                      'Draw nothing the title does not announce', '`search_icons`'):
             self.assertIn(told, designed)
         self.assertEqual(designed.count('## '), plain.count('## '))

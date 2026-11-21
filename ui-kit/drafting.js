@@ -42,6 +42,9 @@ const Drafting = (() => {
       })();
       return this.loading;
     }
+    // What a person has typed into the shared source editor and not yet added: links, pasted
+    // text and its name, a folder path or Google Drive folder link, and the choices beside them.
+    static sourceEntry(editor) { return Object.fromEntries(['urls','text','name','pasting','keep','folderPath'].map(key => [key, editor[key] ?? null])); }
     snapshot(draft, open = true) {
       const found = {};
       for (const [key,value] of Object.entries(draft)) {
@@ -51,8 +54,7 @@ const Drafting = (() => {
       }
       if (draft.sourceEditor) {
         found.sourceDraft = draft.sourceEditor.spec() || draft.sourceEditor.resume || draft.sourceDraft || null;
-        found.sourceEntry = Object.fromEntries(['urls','text','name','pasting','keep']
-          .map(key => [key,draft.sourceEditor[key] ?? null]));
+        found.sourceEntry = Intake.sourceEntry(draft.sourceEditor);
       }
       found.intakeOpen = open;
       return found;

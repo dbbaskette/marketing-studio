@@ -30,6 +30,7 @@ In a single message, ask only for what the user has not already said. Offer a de
 List the files, ignoring dot-directories.
 
 - **Scenario files** are `scenario.md` and anything under `scenarios/` (inside a level folder when the training has levels). They are the user's practice scenarios, not sources. Tell the user which you found.
+- **A whole folder.** When the person gives a folder path on the computer or a Google Drive folder link, put it in the create input as `folder`, with documents selected in research_from. `studio desk create` scans it, subfolders included, keeps up to 40 readable documents as sources, and returns `folder`: what was added and what was skipped, each with its reason. Tell the person both. Only a Drive folder uses the network. On the page, **Add a folder** does the same.
 - **Possible sources** are everything else that looks like material. Name them and ask which to use. Use only those selected. Keep each original under `sources/` with a readable text snapshot beside it, with page, slide or heading locators, as `harness-research` requires. A file that cannot be read is a named coverage gap; never guess at its contents.
 
 ## Record it

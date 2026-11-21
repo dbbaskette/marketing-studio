@@ -90,7 +90,7 @@ const DESK_INTAKE_FIELDS='step kind style researchOn have brief title audience p
 class BlogIntake extends Drafting.Intake {
   snapshot(held,open=true){
     const value=Object.fromEntries(DESK_INTAKE_FIELDS.filter(key=>held[key]!==undefined).map(key=>[key,held[key]]));
-    if(held.sourceEditor){value.sourceDraft=held.sourceEditor.spec()||held.sourceEditor.resume||held.sourceDraft||null;value.sourceEntry=Object.fromEntries(['urls','text','name','pasting','keep'].map(key=>[key,held.sourceEditor[key]??null]));}
+    if(held.sourceEditor){value.sourceDraft=held.sourceEditor.spec()||held.sourceEditor.resume||held.sourceDraft||null;value.sourceEntry=Drafting.Intake.sourceEntry(held.sourceEditor);}
     return {...value,intakeOpen:open};
   }
 }
@@ -236,7 +236,7 @@ function sDeskResearchOptions(held){
   const saved=(held.sourceEditor?.value?.sources||[]).some(source=>source.status==='ready');if(saved)held.researchOn=true;
   const toggle=sCheck('desk-research-on','Research these sources before writing',held,'researchOn',saved?'Saved research is checked for this blog’s purpose. Remove it from Sources to write without that check.':'Research runs if either option is on. Leave both off to write directly from your sources.');if(saved)toggle.querySelector('input').disabled=true;box.append(toggle);
   if(typeof StudioResearch!=='undefined'){
-    if(!held.sourceEditor){held.sourceSignature='[]';held.sourceEditor=new StudioResearch.Editor({resume:held.sourceDraft,onChange:value=>{const signature=JSON.stringify(value?.sources||[]);if(signature!==held.sourceSignature){held.sourceSignature=signature;sDeskStartAgain(held);}},request:async sent=>{let value=await api('research-sources',sent);if(sent.action==='create'&&(held.searchSites||held.searchWeb))value=await api('research-sources',{action:'configure',id:value.id,expected:value.revision,external:true,restricted:!held.searchWeb});return value;},policyOnly:true});if(held.sourceEntry)Object.assign(held.sourceEditor,held.sourceEntry);}
+    if(!held.sourceEditor){held.sourceSignature='[]';held.sourceEditor=new StudioResearch.Editor({resume:held.sourceDraft,entry:held.sourceEntry,onChange:value=>{const signature=JSON.stringify(value?.sources||[]);if(signature!==held.sourceSignature){held.sourceSignature=signature;sDeskStartAgain(held);}},request:async sent=>{let value=await api('research-sources',sent);if(sent.action==='create'&&(held.searchSites||held.searchWeb))value=await api('research-sources',{action:'configure',id:value.id,expected:value.revision,external:true,restricted:!held.searchWeb});return value;},policyOnly:true});if(held.sourceEntry)Object.assign(held.sourceEditor,held.sourceEntry);}
     box.append(held.sourceEditor.node);
   }else sAdd(box,sCheck('desk-sites','Search my sites',held,'searchSites',null,()=>sDeskStartAgain(held)),held.searchSites?sSitePicker(held.from,'desk-research',()=>{}):null,sCheck('desk-web','Search the web too',held,'searchWeb'));
   return box;

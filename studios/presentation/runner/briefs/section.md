@@ -29,19 +29,22 @@ Each slide comes from the approved outline (version 1) with its title, what the 
 ## How to design
 
 - Design each slide from what it must make the audience understand, not from the nearest row of boxes. A brief that lists points is not asking for one box a point.
+- Draw a slide worth looking at. A title over rows or cards of sentences is a wireframe, not a slide: it is sent back. Show what the slide's relation is: join steps with arrows, stack layers, put members inside their group, set alternatives side by side, make a figure large with what it measures beside it, and put several values of one kind in a table or a chart.
+- One thing is large. Give the focal clearly more size or weight than the rest; a slide where everything is one size has nothing to look at first.
+- Use the width and height the slide has. A small drawing stranded in a corner, or a card that is mostly empty, is unfinished: restructure until the drawing frames the point.
 - How each slide looks is the brand's: its colours, what each one means, how cards are filled and which icons are used come from the brand's worker guidance and the house style in your brief, in the look the person chose.
 - The focal point is what the title singles out, and never one of several peers. On a slide that lists equals, the focal is what joins them, not one of them.
 - Draw nothing the title does not announce.
 - Write a configuration field, command, API or file name as a code span in backticks, such as `highAvailability`, with plain English first the time it appears. A title names things in words and takes no code span.
 - Keep the brand's body size. Text is never shrunk to fit, and you may not reword what a slide says: change the drawing instead. If the approved words of a slide cannot fit however you draw them, say so when you hand in.
 - A slide your task gives a picture draws it as the image node given, by its `asset`, and keeps its words as text.
-- Find an icon with `search_icons`, which takes one or two plain words, where the brand's guidance asks for one.
-- Make your slides differ from each other in layout, and do not echo the slide before or after your section.
+- Lead with icons where the brand's guidance allows them. Wherever a card, a shape or a row names a product, a person, a place to run, an action or a risk, find the icon that names it with `search_icons`, which takes one or two plain words, and lead with it, its label beside it. One icon stands for one thing: the same icon wherever that thing appears, never twice on a slide, and none that names nothing on the slide.
+- Slides that do the same job, such as each objection and its answer, share one structure, so they read as a set. Otherwise make your slides differ from each other in layout, and do not echo the slide before or after your section.
 
 ## How to work
 
 1. Write the whole section as one JSON object. Check it with `check_section`, which is free, until it compiles.
-2. Render it with `preview_section` and look at every picture. What the renderer reports is a prompt to look, not approval. Look for what no report catches, such as a line through a heading, or a label far from what it names.
+2. Render it with `preview_section` and look at every picture as the audience will. What the renderer reports is a prompt to look, not approval. Look for what no report catches, such as a line through a heading, or a label far from what it names. Then ask of each slide: is its point plain in three seconds, is there one thing to look at first, does the drawing show the relation, and would you be glad to present it?
 3. Revise where a slide needs it and render again. You have only a few previews: your brief says how many. Before the last one, name your weakest slide and put it right.
 
 ## Hand back

@@ -84,7 +84,8 @@ const StudioResearch = (() => {
       this.value = adapter.value || null;
       this.resume = adapter.resume || null;
       this.urls = ''; this.text = ''; this.name = 'Pasted notes'; this.busy = false; this.problem = ''; this.reading = ''; this.said = '';
-      for(const key of ['urls','text','name','pasting','keep']) if(adapter.entry && adapter.entry[key] !== null && adapter.entry[key] !== undefined) this[key] = adapter.entry[key];
+      this.folderPath = ''; this.folderResult = null;   // Add a folder: what is typed, and what the last add did
+      for(const key of ['urls','text','name','pasting','keep','folderPath']) if(adapter.entry && adapter.entry[key] !== null && adapter.entry[key] !== undefined) this[key] = adapter.entry[key];
       this.node = make('section', 'research-source-editor stack');
       this.node.setAttribute('aria-label', adapter.label || 'Research sources');
       this.render();
@@ -102,8 +103,9 @@ const StudioResearch = (() => {
       if (this.busy || !this.value) return false;
       this.busy = true; this.problem = ''; this.reading = saying || (action === 'capture' || action === 'tabs' ? 'Reading source…' : 'Saving source choices…'); this.render();
       try {
-        const { library_kept: kept, ...value } = await this.a.request({action, id: this.value.id, expected: this.value.revision, ...data});
+        const { library_kept: kept, folder: found, ...value } = await this.a.request({action, id: this.value.id, expected: this.value.revision, ...data});
         this.value = value;
+        if (found) this.folderResult = found;
         if (kept && kept.source) this.kept[kept.source] = kept;
         return true;
       }
@@ -116,6 +118,41 @@ const StudioResearch = (() => {
     links() { return this.run(() => this.readLinks()); }
     files(files) { const chosen = Array.from(files || []); return this.run(() => this.readFiles(chosen)); }
     linkFile(file) { return this.run(() => this.readLinkFile(file)); }
+    folder() { return this.run(() => this.readFolder()); }
+    // One folder on this computer or in Google Drive: the studio scans it and adds every
+    // document it can read as a source of its own, then says what it added and skipped.
+    async readFolder() {
+      const location = (this.folderPath || '').trim();
+      if (!location) { this.problem = 'Give a folder path or a Google Drive folder link first.'; this.render(); return; }
+      this.folderResult = null;
+      if (await this.act('folder', {location}, 'Scanning the folder and reading its documents. A large folder can take a few minutes…')) { this.folderPath = ''; this.render(); }
+    }
+    folderSaid(found) {
+      const count = (n, one, many) => n + ' ' + (n === 1 ? one : many);
+      const added = Number(found.added) || 0, skipped = Number(found.skipped_count) || 0, from = found.title ? ' from ' + found.title : '';
+      let text = added ? count(added, 'document', 'documents') + ' added' + from + '.' : 'No documents were added' + from + '.';
+      if (skipped) text += ' ' + count(skipped, 'was', 'were') + ' skipped: each says why below.';
+      else if (!added) text += ' It holds no documents that can be read. Check that this is the folder you meant.';
+      if (found.hidden) text += ' ' + count(found.hidden, 'hidden item was', 'hidden items were') + ' not looked at.';
+      // Keep in library is a choice for an uploaded file. A scanned folder is never sent there.
+      if (added && this.keep !== null) text += ' Documents from a folder are kept in this project only, not in the Document Library.';
+      if (found.stopped) text += ' ' + found.stopped;
+      // Some were not started in time or were past what one add takes: adding again reads them.
+      if (found.next) text += ' ' + found.next;
+      const said = make('p', 'quiet field-hint', text); said.setAttribute('role', 'status'); said.dataset.key = 'research-folder-said';
+      const box = add(make('div', 'research-overview'), said);
+      const rows = array(found.skipped);
+      if (rows.length) {
+        const detail = make('details', 'research-tabs'); detail.dataset.key = 'research-folder-skipped';
+        const list = make('ul', 'research-source-list' + (rows.length > LONG_LIST ? ' research-source-scroll' : ''));
+        if (rows.length > LONG_LIST) { list.tabIndex = 0; list.setAttribute('aria-label', 'Skipped documents. Scroll to see all ' + rows.length + '.'); }
+        for (const row of rows) list.append(add(make('li', 'research-source-row'), add(make('div', 'research-source-copy'), make('p', 'row-title', row.name), make('p', 'quiet', row.reason))));
+        add(detail, make('summary', '', 'Skipped documents · ' + skipped), list,
+          found.unlisted ? make('p', 'quiet', count(found.unlisted, 'more is', 'more are') + ' not listed here.') : null);
+        box.append(detail);
+      }
+      return box;
+    }
     // Leave out every source that could not be read, in one go, so a few bad links among
     // hundreds do not each need a press before starting.
     excludeUnread() {
@@ -207,6 +244,8 @@ const StudioResearch = (() => {
       if (source.status === 'excluded') copy.append(make('p', 'quiet', 'Excluded from this request.'));
       const kept = this.kept[source.id];
       if (kept && kept.state === 'kept') copy.append(make('p', 'quiet', 'Kept in the Document Library too.'));
+      // A type the library does not keep, such as a PowerPoint file: said once, with no retry.
+      if (kept && kept.state === 'not-taken') copy.append(make('p', 'quiet', kept.problem || 'Not kept in the Document Library.'));
       if (kept && kept.state === 'failed') add(copy, make('p', 'problem', 'Not kept in the Document Library: ' + (kept.problem || 'it could not be kept.')),
         button('Keep in library again', () => this.act('library-keep', {source: source.id}), 'library-keep-' + source.id));
       if (array(source.warnings).length) copy.append(make('p', 'quiet', source.warnings.join(' ')));
@@ -253,8 +292,16 @@ const StudioResearch = (() => {
       add(links.wrap, make('p', 'field-hint', 'Uses your existing Google sign-in and shared defaults.'));
       const addLinks = button('Add links', () => this.links(), 'research-add-links');
       add(panel, add(make('div', 'research-link-entry'), links.wrap, addLinks));
+      const folder = field('Add a folder', this.folderPath, 'research-folder');
+      folder.input.placeholder = 'A folder path or a Google Drive folder link';
+      folder.input.addEventListener('input', () => this.folderPath = folder.input.value);
+      // Enter adds the folder; it never submits the form the editor sits in.
+      folder.input.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); this.folder(); } });
+      add(folder.wrap, make('p', 'field-hint', 'Reads the documents in it and its subfolders, including Google Docs, Google Slides and Google Sheets in Google Drive.'));
+      add(panel, add(make('div', 'research-link-entry'), folder.wrap, button('Add folder', () => this.folder(), 'research-add-folder')));
+      if (this.folderResult) panel.append(this.folderSaid(this.folderResult));
       const file = make('input'); file.type = 'file'; file.multiple = true; file.hidden = true;
-      file.accept = '.pdf,application/pdf,.docx,.txt,.md,.markdown,.html,.htm';
+      file.accept = '.pdf,application/pdf,.docx,.pptx,.xlsx,.txt,.md,.markdown,.html,.htm';
       file.setAttribute('aria-label', 'Upload source files');
       file.addEventListener('change', () => this.files(file.files));
       const linkFile = make('input'); linkFile.type = 'file'; linkFile.hidden = true;

@@ -27,6 +27,9 @@ from studio_core.sync_guard import SYNC_WAIT, worker_in_progress
 KINDS = ('text', 'outline', 'research', 'drawing', 'part')
 CHANGED = 'The training or its inputs changed. Read desk context again before saving.'
 MAX_BYTES, MAX_FILES = 256 * 1024 * 1024, 10000
+# What new work takes as supplied documents: how many, and how many bytes in all.
+MOST_UPLOADS, UPLOAD_BYTES = 40, 64_000_000
+SELECT = 'Explicitly select supplied documents in the research source scope before adding them.'
 
 
 def scope_of(value):
@@ -39,11 +42,19 @@ def scope_of(value):
 def create(engine, form, uploads=None):
     if not isinstance(form, dict):
         raise WorkspaceError('Supply a JSON object for desk creation.')
-    if uploads is not None and (not isinstance(uploads, dict) or len(uploads) > 40 or
+    if uploads is not None and (not isinstance(uploads, dict) or len(uploads) > MOST_UPLOADS or
             any(not isinstance(name, str) or not isinstance(data, bytes) for name, data in uploads.items()) or
-            sum(map(len, uploads.values())) > 64_000_000):
+            sum(map(len, uploads.values())) > UPLOAD_BYTES):
         raise WorkspaceError('Supply a bounded map of named local source bytes.')
     return engine.start(form, execution='conversation', scope=scope_of(form.get('scope')), uploads=uploads)
+
+
+def takes_documents(form):
+    """Refuse, before anything is read, a form whose research does not read supplied documents."""
+    if not isinstance(form, dict):
+        raise WorkspaceError('Supply a JSON object for desk creation.')
+    if not pipeline.check_form({**form, 'flow': 'desk'}, conversation=True)['research_from']['documents']:
+        raise WorkspaceError(SELECT)
 
 
 def _start(engine, form, scope, uploads=None):
@@ -51,7 +62,7 @@ def _start(engine, form, scope, uploads=None):
     # No assistant/capability check, guidance fetch, worker, network claim or settings write.
     checked = pipeline.check_form({**form, 'flow': 'desk'}, conversation=True)
     if uploads and not checked['research_from']['documents']:
-        raise WorkspaceError('Explicitly select supplied documents in the research source scope before adding them.')
+        raise WorkspaceError(SELECT)
     space, chosen = engine.space(), settings.load()
     gitstate.identity(space.repo)
     with gitstate.workspace_locked(space, engine.files, configured=True):
@@ -66,7 +77,7 @@ def _start(engine, form, scope, uploads=None):
             for name, data in (uploads or {}).items():
                 entry = engine.documents.add(root, name, data)
                 if not entry.get('readable'):
-                    raise WorkspaceError('A supplied source could not be read. Supply a readable local export.')
+                    raise WorkspaceError(f'A supplied source could not be read: {name}. Supply a readable local export.')
             record.pop('review_policy', None)
             record.pop('review_layout', None)
             record.update(schema=drafts.SCHEMA, flow='desk', execution='conversation',

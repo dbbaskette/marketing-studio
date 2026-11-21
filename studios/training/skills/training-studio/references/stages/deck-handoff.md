@@ -12,7 +12,7 @@ One page, with these headings:
 - **Audience and duration.** From intake and the blueprint.
 - **Use.** From `settings.delivery`: `live`, presented in a session, or `reading`, read on its own; a training started before this was asked is `reading`. Either way no slide may depend on its speaker notes for meaning. For a talk the notes carry what the presenter says and the source behind each claim; for reading, the talk track and timing.
 - **Required elements.** The objectives near the start; a check for understanding in each module; a recap; a closing slide that points to the practice scenarios.
-- **Sources.** `blueprint.md`, `document.md` and `research-report.md`. When the document is skipped, `blueprint.md` and `research-report.md`.
+- **Sources.** `blueprint.md`, `document.md` and `research-report.md`. When the document is skipped, `blueprint.md` and `research-report.md`. Add the user's own documents under `sources/`, for exact figures and names.
 - **Research.** Complete. Work from the sources only and start no new research. Anything under the blueprint's open gaps stays out.
 - **Output.** Google Slides or PowerPoint, from `settings.deck_target`, and the brand from `settings.brand` if one is set.
 - **Teaching and assessment.** Carry each objective's actual `Check:` and `Observe:` from the blueprint. Budget demonstrations, responses, practice and debrief within module timing; do not convert duration into a fixed slide count. Put check answers and rationale in presenter notes.
@@ -23,7 +23,7 @@ One page, with these headings:
 
 1. Load the `harness-slides` skill and follow its entrypoint with this directory as the project. Start a task the first time; on a later visit, continue the pinned task through that skill's resume entrypoint.
 2. `training.py pin harness-slides --task <id> --runtime <path>`. With levels, use the level's folder as the project and add `--level <level>`.
-3. Give it `deck-handoff.md` and the source files, and follow its own guidance. Intake is settled: answer its intake questions from the handoff. Its own draft and review steps with the user still apply.
+3. Give it `deck-handoff.md` and the source files, and follow its own guidance. Ask for a deck worth looking at: slides drawn from their relation, figures large, brand icons for what is named, direct text only for a question or a quotation. Intake is settled: answer its intake questions from the handoff. Its own draft and review steps with the user still apply.
 4. Creating or changing a Google Slides deck follows that skill's authorisation rules.
 
 ## Record

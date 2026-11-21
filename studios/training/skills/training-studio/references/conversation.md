@@ -6,7 +6,7 @@ Use `studio desk` from the installed Training Studio runner, with JSON files or 
 
 `studio desk create --input FILE` takes title, topic, audience, purpose, levels (`[]` or 101/201/301/401), materials (`document`, `brief`, `scenario`), brief_kind, deck_target, brand, research_from and required scope. Scope is a finite list from `text`, `outline`, `research`, `drawing`, `part`. Derive it from the person's actual request; never add research or drawings to an outline request. For only a teaching plan, use `materials: []`, no deck_target, and `scope: ["outline"]`. The plan may record that research was not supplied; it stays Draft. Supplying research later holds it for a checked update.
 
-Copies and Yoodli are off unless explicitly requested. Google links are not fetched. Explicit local uploads map a filename to an absolute path; select documents in research_from first. Original uploads and source scope are pinned.
+Copies and Yoodli are off unless explicitly requested. Google links are not fetched, except a Google Drive folder given as `folder`. Explicit local uploads map a filename to an absolute path, and `folder` takes a whole folder; select documents in research_from first. Original uploads and source scope are pinned.
 
 ## Context and checked submissions
 

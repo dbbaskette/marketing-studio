@@ -23,7 +23,7 @@ Ask every question of every inspected slide and check whole-deck consistency. Ea
 - `note`: one sentence on what is wrong on that slide, exact enough to act on.
 - `fix`: what would put it right, when you can say. It may be left out.
 
-Judge only what is visible in the pictures. Do not propose a change to the colours of the brand. Be exact and unsparing: a slide that is merely acceptable still gets its findings, and a deck is not good because it is on brand. Look hardest for what no program reports: one of several equals set larger or in another colour; an emphasis the title does not single out; a line or an arrow through text; a label far from what it names; a slide so full that nothing leads.
+Judge only what is visible in the pictures. Do not propose a change to the colours of the brand. Be exact and unsparing: a slide that is merely acceptable still gets its findings, and a deck is not good because it is on brand. Look hardest for what no program reports: one of several equals set larger or in another colour; an emphasis the title does not single out; a line or an arrow through text; a label far from what it names; a slide so full that nothing leads; a title over rows or cards of sentences where the points have an order, a contrast, members or a quantity that was never drawn; products, people, places or actions named with no icon to tell them apart, where the brand uses icons; a slide with nothing large to look at first, or one that leaves most of its space empty.
 
 When your input lists what an earlier review found, the slides were drawn again since. Look for each of those findings. Where one is not put right, record it again.
 

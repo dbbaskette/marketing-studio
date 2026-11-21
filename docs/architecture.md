@@ -259,7 +259,11 @@ Marketing Studio owns `studio_core.research_sources`, `google_reference`,
 `source_documents`, `research_session`, `research_transport` and `research_text`.
 The first three capture selected references (`google_reference` reads Google
 Slides decks through `pptx_slides`, from a Google Drive PowerPoint export); the controller coordinates bounded
-invocations through the pinned Harness Research collection protocol. Harness
+invocations through the pinned Harness Research collection protocol.
+`source_folders` lists one folder a person names, on this computer or in Google
+Drive, and `research_sources` reads each document found as an ordinary source,
+within stated limits and with every skipped document reported (`xlsx_sheets`
+reads a Google Sheets export or an .xlsx file, every sheet). Harness
 Research owns packets, registries, assembly and review validation. Python does
 not implement another evidence merger.
 

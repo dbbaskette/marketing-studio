@@ -62,7 +62,7 @@ Unless the person gave the order, order the modules by what a learner needs firs
 
 - `Objectives: O1, O2`
 - `- K<module>.<n>: <one claim> [R:<finding-id>]` for each key point. Cite every finding the claim rests on. Only a `supported` finding can be cited.
-- `- K1.5: <claim> [stated]` for a claim the intake or the person's outline makes that no finding supports and none contradicts outright. It is taught as they made it, in their words and at full strength, beside the nearest specific the findings support. Never use `[unsupported]` for it or list it under Open gaps: it goes in your notes.
+- `- K1.5: <claim> [stated]` for a claim their intake, outline or own documents make that no finding supports and none contradicts outright. It is taught as they made it, in their words and at full strength, beside the nearest specific the findings support. Never use `[unsupported]` for it or list it under Open gaps: it goes in your notes.
 - `- K1.4: <claim> [unsupported]` for a claim of your own that the research could not support, and for a claim of theirs that a finding contradicts outright; that it is unproven is not that. It will not be taught, and it must also appear under Open gaps.
 - `Misconception: "<what people believe>" Correction: <what is true> [R:<finding-id>]`. One where the module has one. A correction may cite a `contradicted` finding.
 - `Example: <one concrete worked example>`. At least one per module. In a workshop the first is drawn from the frame's scenario.

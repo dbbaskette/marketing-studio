@@ -44,6 +44,49 @@ const key=(editor,k)=>all(editor.node).find(n=>n.dataset.key===k);
  assert.equal(document.activeElement.dataset.key,'research-paste','Successful capture returns to a stable source action');
  assert.ok(!requests.some(r=>['start','generate','publish','google-write'].includes(r.action)));
  state.sources[0].status='needs-attention';editor.value=state;assert.equal(editor.valid(),false);state.sources[0].status='excluded';assert.equal(editor.valid(),true);
+ // Add a folder: one field for a folder path or a Google Drive folder link, then what the scan added and each document it skipped, with the reason.
+ assert.ok(filePicker.accept.split(',').includes('.pptx'));assert.ok(filePicker.accept.split(',').includes('.xlsx'));
+ let folderState={id:'folder',revision:'0',external:false,restricted:false,workers:3,focus:'',sites:[],sources:[]},scanning=false;const folderSent=[];
+ const folders=new kit.Editor({value:folderState,request:async sent=>{folderSent.push(sent);
+  scanning=all(folders.node).some(n=>n.role==='status'&&n.textContent.startsWith('Scanning the folder and reading its documents.'))&&key(folders,'research-add-folder').disabled;
+  if(sent.location==='/missing')throw Error('This folder was not found on this computer. Check the path and try again.');
+  if(sent.location==='/empty')return {...JSON.parse(JSON.stringify(folderState)),folder:{where:'local',title:'Empty',found:0,added:0,hidden:0,stopped:null,skipped_count:0,unlisted:0,skipped:[]}};
+  folderState={...folderState,revision:'1',sources:[{id:'f1',name:'Compete/Battlecards/EDB battlecard.pdf',kind:'file',origin:'Field kit/Compete/Battlecards/EDB battlecard.pdf',status:'ready'}]};
+  return {...JSON.parse(JSON.stringify(folderState)),folder:{where:'local',title:'Field kit',found:2,added:1,hidden:2,stopped:'The scan stopped after looking at 2,000 files and folders. Add a smaller folder to read the rest.',again:true,next:'Add the same folder again to read the next ones.',skipped_count:12,unlisted:1,
+   skipped:Array.from({length:11},(_,n)=>({name:'Pictures/picture-'+n+'.png',code:'unsupported',reason:'Not a type that can be read.'}))}};}});
+ assert.equal(key(folders,'research-folder').tagName,'input');
+ assert.ok(all(folders.node).some(n=>n.className==='field-label'&&n.textContent==='Add a folder'),'the field has a visible label, not only a placeholder');
+ assert.ok(all(folders.node).some(n=>n.className==='field-hint'&&n.textContent.includes('Google Docs, Google Slides and Google Sheets')));
+ assert.equal(key(folders,'research-folder-said'),undefined);
+ await folders.folder();assert.match(folders.problem,/folder path or a Google Drive folder link first/);assert.equal(folderSent.length,0);
+ folders.problem='';folders.folderPath='  /Users/synthetic/Field kit  ';folders.render();
+ let prevented=0;key(folders,'research-folder').listeners.keydown({key:'Enter',preventDefault:()=>{prevented+=1;}});await settle();await settle();
+ assert.equal(prevented,1,'Enter adds the folder and never submits the form around the editor');
+ assert.deepEqual(JSON.parse(JSON.stringify(folderSent[0])),{action:'folder',id:'folder',expected:'0',location:'/Users/synthetic/Field kit'});
+ assert.equal(scanning,true,'the wait is explained and the action cannot be pressed twice');
+ assert.equal('folder' in folders.value,false,'the scan report is not part of the draft');assert.equal(folders.folderPath,'');
+ assert.equal(folders.value.sources.length,1);assert.equal(folders.valid(),true);
+ assert.ok(all(folders.node).some(n=>n.className==='row-title'&&n.textContent==='Compete/Battlecards/EDB battlecard.pdf'),'what was found is an ordinary source row');
+ const folderSaid=key(folders,'research-folder-said');assert.equal(folderSaid.role,'status');
+ assert.equal(folderSaid.textContent,'1 document added from Field kit. 12 were skipped: each says why below. 2 hidden items were not looked at. The scan stopped after looking at 2,000 files and folders. Add a smaller folder to read the rest. Add the same folder again to read the next ones.');
+ const skippedBox=key(folders,'research-folder-skipped');assert.equal(skippedBox.tagName,'details');
+ assert.equal(skippedBox.children[0].tagName,'summary');assert.equal(skippedBox.children[0].textContent,'Skipped documents · 12');
+ const skippedList=skippedBox.children[1];assert.equal(skippedList.children.length,11);assert.equal(skippedList.className,'research-source-list research-source-scroll');assert.equal(skippedList.tabIndex,0);
+ assert.deepEqual(all(skippedList.children[0]).filter(n=>n.tagName==='p').map(n=>n.textContent),['Pictures/picture-0.png','Not a type that can be read.']);
+ assert.ok(all(skippedBox).some(n=>n.textContent==='1 more is not listed here.'));
+ skippedBox.open=true;folders.render();assert.equal(key(folders,'research-folder-skipped').open,true,'the skipped list stays open across a redraw');
+ folders.folderPath='/empty';await folders.folder();
+ assert.equal(key(folders,'research-folder-said').textContent,'No documents were added from Empty. It holds no documents that can be read. Check that this is the folder you meant.');
+ assert.equal(key(folders,'research-folder-skipped'),undefined);
+ folders.folderPath='/missing';await folders.folder();assert.match(folders.problem,/was not found on this computer/);assert.equal(folders.folderPath,'/missing','a refused path stays in the field to be corrected');
+ // A folder location typed and not yet added comes back after a reload, with the other typed entries.
+ const Intake=vm.runInContext('Drafting.Intake',context);
+ folders.folderPath='https://drive.google.com/drive/folders/synthetic_folder_0001';folders.urls='https://example.invalid/typed';
+ const typed=new Intake(async()=>({})).snapshot({title:'Synthetic',sourceEditor:folders}).sourceEntry;
+ assert.deepEqual(JSON.parse(JSON.stringify(typed)),{urls:'https://example.invalid/typed',text:'',name:'Pasted notes',pasting:null,keep:null,folderPath:'https://drive.google.com/drive/folders/synthetic_folder_0001'});
+ const reopened=new kit.Editor({request,value:{...state,sources:[]},entry:JSON.parse(JSON.stringify(typed))});
+ assert.equal(key(reopened,'research-folder').value,'https://drive.google.com/drive/folders/synthetic_folder_0001');assert.equal(key(reopened,'research-urls').value,'https://example.invalid/typed');
+ assert.equal(new kit.Editor({request,value:{...state,sources:[]},entry:{urls:'kept'}}).folderPath,'','a draft saved before folders existed still opens');
  // A native inventory can own intake while this adapter retains shared policy.
  const policy=new kit.Editor({request,value:{...state,sources:[],external:false},policyOnly:true});
  assert.equal(all(policy.node).some(n=>n.type==='file'),false,'policy-only adapters have no duplicate upload picker');
@@ -80,6 +123,15 @@ const key=(editor,k)=>all(editor.node).find(n=>n.dataset.key===k);
  key(keeping,'library-keep-k0').listeners.click();await settle();
  assert.deepEqual(JSON.parse(JSON.stringify(kept.at(-1))),{action:'library-keep',id:'keeping',expected:'0',source:'k0'});
  assert.ok(all(keeping.node).some(n=>n.textContent==='Kept in the Document Library too.'));
+ // A file of a type the library does not keep is said once, plainly, with nothing to try again.
+ const untaken=new kit.Editor({keepChoice:true,value:{id:'untaken',revision:'0',external:false,restricted:false,workers:3,focus:'',sites:[],sources:[]},request:async sent=>sent.action==='folder'
+  ?{id:'untaken',revision:'2',external:false,restricted:false,workers:3,focus:'',sites:[],sources:[{id:'u0',name:'deck.pptx',kind:'file',status:'ready'},{id:'u1',name:'Notes/a.md',kind:'file',status:'ready'}],folder:{where:'local',title:'Kit',found:1,added:1,hidden:0,stopped:null,skipped_count:0,unlisted:0,skipped:[]}}
+  :{id:'untaken',revision:'1',external:false,restricted:false,workers:3,focus:'',sites:[],sources:[{id:'u0',name:'deck.pptx',kind:'file',status:'ready'}],library_kept:{state:'not-taken',source:'u0',problem:'The Document Library keeps text, Markdown, HTML, Word (.docx) and PDF files only, so this file is a source for this project and is not kept in the library.'}}});
+ await untaken.files([{name:'deck.pptx',size:3,arrayBuffer:async()=>Buffer.from('PK!')}]);
+ assert.ok(all(untaken.node).some(n=>n.className==='quiet'&&n.textContent.startsWith('The Document Library keeps text, Markdown, HTML, Word (.docx) and PDF files only')));
+ assert.equal(key(untaken,'library-keep-u0'),undefined);assert.equal(all(untaken.node).some(n=>n.className==='problem'),false);
+ untaken.folderPath='/synthetic/Kit';await untaken.folder();
+ assert.equal(key(untaken,'research-folder-said').textContent,'1 document added from Kit. Documents from a folder are kept in this project only, not in the Document Library.');
  key(keeping,'research-keep-1').listeners.click();await settle();assert.equal(key(keeping,'research-keep-1')['aria-pressed'],'true');
  await keeping.files([{name:'only.md',size:3,arrayBuffer:async()=>Buffer.from('# O')}]);
  assert.equal(kept.filter(r=>r.action==='capture').at(-1).keep,false);

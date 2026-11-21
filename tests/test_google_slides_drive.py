@@ -14,11 +14,16 @@ from unittest import mock
 import urllib.error
 import zipfile
 
+import re
+import threading
+from urllib.parse import parse_qs, urlsplit
+
 import marketing_studio  # noqa: F401
-from studio_core import google_api, google_reference, pptx_slides
+from studio_core import google_api, google_reference, pptx_slides, research_sources, source_folders
 from studio_core.google_api import Client, GoogleError, Response, SLIDES_MIME
 from studio_core.research_sources import Sources
 import pptx_fixture
+import xlsx_fixture
 
 URL = 'https://docs.google.com/presentation/d/synthetic_deck/edit'
 TOKEN = 'synthetic-memory-only-token'
@@ -332,3 +337,370 @@ class SavedSourceTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+ROOT = 'synthetic_root_folder_0001'
+FOLDER, SHORTCUT = google_api.FOLDER_MIME, google_api.SHORTCUT_MIME
+
+
+def child(ident, name, mime, **more):
+    return {'id': ident, 'name': name, 'mimeType': mime, **more}
+
+
+def shortcut(ident, name, target, mime):
+    return child(ident, name, SHORTCUT, shortcutDetails={'targetId': target, 'targetMimeType': mime})
+
+
+class FakeFolderDrive:
+    """A synthetic Google Drive tree behind the real client: listing pages, metadata, the
+    Google Docs API, exports and downloads. Every destination asked for is recorded."""
+
+    def __init__(self, tree, *, page=3):
+        self.tree, self.page, self.urls, self.denied = tree, page, [], set()
+        self.docs, self.decks, self.sheets, self.media, self.links = {}, {}, {}, {}, {}
+        # How many documents are being read at once: `together` readers are held until that
+        # many are in a request at the same moment, and `slow` holds one file's bytes back
+        # until another's were asked for. Events, never timing.
+        self.watch, self.active, self.peak, self.together = threading.Lock(), 0, 0, 0
+        self.met, self.slow, self.seen, self.tokens = threading.Event(), {}, {}, 0
+        self.names = {item['id']: item for items in tree.values() for item in items}
+
+    def meta(self, ident):
+        if ident in self.tree:
+            return {'id': ident, 'name': 'Field kit', 'mimeType': FOLDER, 'trashed': False}
+        if ident in self.links:
+            return {'id': ident, 'name': 'Shortcut to the kit', 'mimeType': SHORTCUT, 'trashed': False,
+                    'shortcutDetails': {'targetId': self.links[ident][0], 'targetMimeType': self.links[ident][1]}}
+        mime = (google_api.DOC_MIME if ident in self.docs else SLIDES_MIME if ident in self.decks
+                else google_api.SHEET_MIME if ident in self.sheets else 'text/plain')
+        return {'id': ident, 'name': 'Its own name', 'mimeType': mime, 'version': '3',
+                'modifiedTime': '2026-11-01T00:00:00Z', 'trashed': False,
+                'capabilities': {'canDownload': True}, 'size': str(len(self.media.get(ident, b'')))}
+
+    def __call__(self, method, url, headers, payload):
+        parts = urlsplit(url)
+        ident = re.sub(r'/export$', '', parts.path).rsplit('/', 1)[-1]
+        reading = parts.path != '/drive/v3/files' and ident not in self.tree and ident not in self.links
+        if not reading:
+            return self.answer(method, url, headers, payload)
+        with self.watch:
+            self.active += 1
+            self.peak = max(self.peak, self.active)
+            if self.active >= self.together:
+                self.met.set()
+            self.seen.setdefault(ident, threading.Event()).set()
+            held = self.seen.setdefault(self.slow[ident], threading.Event()) if ident in self.slow else None
+        try:
+            assert self.met.wait(5), 'documents were not read at the same time'
+            assert held is None or held.wait(5), 'a later document was not read while this one was slow'
+            return self.answer(method, url, headers, payload)
+        finally:
+            with self.watch:
+                self.active -= 1
+
+    def answer(self, method, url, headers, payload):
+        self.urls.append(url)
+        assert method == 'GET' and payload is None and headers['Authorization'] == 'Bearer ' + TOKEN
+        parts = urlsplit(url)
+        asked = parse_qs(parts.query)
+        if parts.netloc == 'docs.googleapis.com':
+            ident = parts.path.rsplit('/', 1)[-1]
+            return Response(200, {}, json.dumps({'documentId': ident, 'body': {'content': [
+                {'paragraph': {'elements': [{'textRun': {'content': self.docs[ident]}}]}}]}}).encode())
+        assert parts.netloc == 'www.googleapis.com'
+        if parts.path == '/drive/v3/files':
+            folder = re.fullmatch(r"'([A-Za-z0-9_-]+)' in parents and trashed = false", asked['q'][0]).group(1)
+            assert asked['supportsAllDrives'] == ['true'] and asked['includeItemsFromAllDrives'] == ['true']
+            assert 'shortcutDetails(targetId,targetMimeType)' in asked['fields'][0]
+            if folder in self.denied:
+                return Response(403, {}, json.dumps({'error': {'status': 'PERMISSION_DENIED'}}).encode())
+            start = int(asked.get('pageToken', ['0'])[0])
+            items = self.tree[folder]
+            body = {'files': items[start:start + self.page]}
+            if start + self.page < len(items):
+                body['nextPageToken'] = str(start + self.page)
+            return Response(200, {}, json.dumps(body).encode())
+        ident, export = re.fullmatch(r'/drive/v3/files/([A-Za-z0-9_-]+)(/export)?', parts.path).groups()
+        if ident in self.denied:
+            return Response(404, {}, b'{}')
+        if export:
+            assert asked['mimeType'] in ([google_api.XLSX_MIME], [google_api.PPTX_MIME])
+            return Response(200, {}, self.sheets[ident] if asked['mimeType'] == [google_api.XLSX_MIME] else self.decks[ident])
+        if asked.get('alt') == ['media']:
+            return Response(200, {}, self.media[ident])
+        return Response(200, {}, json.dumps(self.meta(ident)).encode())
+
+    def token(self, account):
+        with self.watch:
+            self.tokens += 1
+        return TOKEN
+
+    def client(self):
+        return Client('editor@example.invalid', token_provider=self.token, transport=self)
+
+    def asked(self, part):
+        return [url for url in self.urls if part in url]
+
+
+def field_kit():
+    """Nested folders, more than one page, shortcuts to a file and to a folder, a loop, a
+    sheet, unsupported types, an oversized file, a repeat, a locked folder and a locked file."""
+    drive = FakeFolderDrive({
+        ROOT: [child('doc_plan', 'Plan', google_api.DOC_MIME), child('deck_main', 'Deck', SLIDES_MIME),
+               child('sheet_one', 'Numbers', google_api.SHEET_MIME), child('file_notes', 'notes.md', 'text/markdown', size='22'),
+               child('file_deck', 'slides.pptx', google_api.PPTX_MIME, size='2000'),
+               child('file_photo', 'photo.png', 'image/png', size='10'),
+               child('form_one', 'Survey', 'application/vnd.google-apps.form'),
+               child('file_huge', 'huge.txt', 'text/plain', size=str(research_sources.LIMIT + 1)),
+               child('doc_private', 'Private doc', google_api.DOC_MIME),
+               child('folder_compete', 'Compete', FOLDER), child('folder_locked', 'Locked', FOLDER)],
+        'folder_compete': [child('folder_cards', 'Battlecards', FOLDER),
+                           shortcut('short_plan', 'Plan again', 'doc_plan', google_api.DOC_MIME),
+                           shortcut('short_note', 'Linked notes', 'file_linked', 'text/plain'),
+                           shortcut('short_shared', 'Shared', 'folder_shared', FOLDER),
+                           shortcut('short_broken', 'Gone', None, None)],
+        'folder_cards': [child('doc_card', 'EDB battle/card', google_api.DOC_MIME),
+                         shortcut('short_top', 'Back to top', ROOT, FOLDER)],
+        'folder_shared': [child('file_inside', 'Inside shared.md', 'text/markdown', size='20')],
+        'folder_locked': [child('doc_never', 'Never listed', google_api.DOC_MIME)],
+    })
+    drive.docs = {'doc_plan': 'Synthetic plan text.', 'doc_card': 'Synthetic battlecard text.',
+                  'doc_private': 'PRIVATE', 'doc_never': 'NEVER'}
+    drive.decks = {'deck_main': pptx_fixture.deck(pptx_fixture.SAMPLE)}
+    drive.sheets = {'sheet_one': xlsx_fixture.workbook(xlsx_fixture.SAMPLE)}
+    drive.media = {'file_notes': b'Synthetic notes file.', 'file_linked': b'Synthetic linked notes.',
+                   'file_inside': b'Synthetic shared notes.', 'file_huge': b'NEVER DOWNLOADED',
+                   'file_deck': pptx_fixture.deck(pptx_fixture.SAMPLE[:1])}
+    drive.denied = {'folder_locked', 'doc_private'}
+    return drive
+
+
+class DriveFolderTests(unittest.TestCase):
+    """Add a folder, for a Google Drive folder, through a fake transport only."""
+
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory(); self.addCleanup(temp.cleanup)
+        self.drive = field_kit()
+        self.accounts = []
+        # Every Google read, a single link's included, goes to the fake transport.
+        self.sources = Sources(Path(temp.name).resolve() / 'store', account=lambda: 'editor@example.invalid',
+                               drive=lambda account: self.accounts.append(account) or self.drive.client(),
+                               google=lambda url, **options: google_reference.capture(
+                                   url, **{**options, 'client': options.get('client') or self.drive.client()}))
+        self.value = self.sources.create()
+
+    def add(self, location='https://drive.google.com/drive/u/0/folders/' + ROOT + '?lfhs=2'):
+        self.value = self.sources.mutate(self.value['id'], self.value['revision'], 'folder', location=location)
+        return self.value.pop('folder')
+
+    def test_a_drive_folder_is_listed_through_and_each_document_is_an_ordinary_source(self):
+        report = self.add()
+        self.assertEqual(self.accounts, ['editor@example.invalid'])
+        added = {s['name']: s for s in self.value['sources']}
+        self.assertEqual({name: s['kind'] for name, s in added.items()}, {
+            'Deck': 'google-slides', 'notes.md': 'file', 'Numbers.xlsx': 'file', 'Plan': 'google-doc', 'slides.pptx': 'file',
+            'Compete/Linked notes.txt': 'file', 'Compete/Battlecards/EDB battle-card': 'google-doc',
+            'Compete/Shared/Inside shared.md': 'file'})
+        self.assertTrue(all(s['status'] == 'ready' and re.fullmatch('[a-f0-9]{32}', s['id']) for s in added.values()))
+        # Each keeps its Google identity where every source keeps its origin.
+        self.assertEqual(added['Plan']['origin'], 'https://docs.google.com/document/d/doc_plan/edit')
+        self.assertEqual(added['Deck']['origin'], 'https://docs.google.com/presentation/d/deck_main/edit')
+        self.assertEqual(added['Numbers.xlsx']['origin'], 'https://docs.google.com/spreadsheets/d/sheet_one/edit')
+        self.assertEqual(added['Compete/Linked notes.txt']['origin'], 'https://drive.google.com/file/d/file_linked/view')
+        self.assertEqual(added['Numbers.xlsx']['warnings'], [], 'every sheet was read, so nothing is said to be missing')
+        text = lambda name: self.sources.preview(self.value['id'], added[name]['id'])['text']
+        self.assertEqual(text('Plan'), 'Synthetic plan text.\n')
+        self.assertEqual(text('Numbers.xlsx'), xlsx_fixture.SAMPLE_TEXT)
+        self.assertTrue(self.drive.asked('/files/sheet_one/export?mimeType=application%2Fvnd.openxmlformats-officedocument.spreadsheetml.sheet'))
+        self.assertIn('Closing speaker context.', text('Deck'))
+        self.assertIn('Opening speaker context.', text('slides.pptx'))
+        self.assertEqual(text('Compete/Shared/Inside shared.md'), 'Synthetic shared notes.\n')
+        self.assertEqual(len(added['Deck']['tabs']), 3)
+        self.assertEqual((report['where'], report['title'], report['added'], report['found']), ('drive', 'Field kit', 8, 9))
+        self.assertEqual({row['name']: row['code'] for row in report['skipped']}, {
+            'huge.txt': 'too-large', 'photo.png': 'unsupported', 'Survey': 'unsupported', 'Private doc': 'no-permission',
+            'Compete/Gone': 'unreadable', 'Compete/Plan again': 'repeat', 'Compete/Battlecards/Back to top/': 'repeat',
+            'Locked/': 'no-permission'})
+        said = {row['name']: row['reason'] for row in report['skipped']}
+        self.assertEqual(said['huge.txt'], 'Larger than 8 MB.')
+        self.assertEqual(said['Survey'], 'Not a type that can be read. Among Google files, only Google Docs, Google Slides and Google Sheets are read.')
+        self.assertEqual(said['Compete/Battlecards/Back to top/'], 'Appears more than once in this folder. It leads back to a folder already scanned.')
+        self.assertTrue(said['Locked/'].startswith('No permission to read it. This Google account cannot open this file.'))
+        self.assertTrue(said['Private doc'].startswith('No permission to read it. '))
+        everything = json.dumps([self.value, report]) + ''.join(text(name) for name in added)
+        self.assertNotIn('PRIVATE', everything)
+        self.assertNotIn('NEVER', everything)
+        # Listing followed every page, and nothing oversized, unsupported or locked was downloaded.
+        self.assertTrue(self.drive.asked('pageToken=3'))
+        self.assertEqual(len([u for u in self.drive.asked('/drive/v3/files?') if 'synthetic_root_folder_0001' in u]), 4)
+        for never in ('file_huge', 'file_photo', 'form_one', 'doc_never'):
+            self.assertFalse(self.drive.asked('/' + never), never)
+        self.assertEqual(len(self.drive.asked('/documents/doc_plan')), 1, 'a shortcut to a file already found reads nothing twice')
+        self.assertEqual(len(self.drive.asked('/files/file_linked?')), 2, 'a shortcut target is sized, then downloaded')
+        for url in self.drive.urls:
+            google_api.fixed_url(url)
+            self.assertIn(urlsplit(url).netloc, ('www.googleapis.com', 'docs.googleapis.com'))
+            self.assertFalse('slides.googleapis.com' in url or 'sheets.googleapis.com' in url)
+
+    def test_what_is_already_here_is_not_added_or_read_again(self):
+        self.value = self.sources.mutate(self.value['id'], self.value['revision'], 'capture', kind='url',
+                                         url='https://docs.google.com/document/d/doc_plan/edit')
+        self.assertEqual(self.value['sources'][0]['name'], 'Its own name')
+        self.drive.urls.clear()
+        first = self.add()
+        self.assertEqual(first['added'], 7)
+        self.assertIn({'name': 'Plan', 'code': 'duplicate', 'reason': 'Already a source here.'}, first['skipped'])
+        self.assertFalse(self.drive.asked('/documents/doc_plan'))
+        self.drive.urls.clear()
+        again = self.add(ROOT)        # the bare folder identity is the same folder
+        self.assertEqual(again['added'], 0)
+        self.assertEqual(again['reasons']['duplicate'], 8)
+        self.assertEqual(len(self.value['sources']), 8)
+        self.assertFalse(self.drive.asked('/documents/') or self.drive.asked('/export') or self.drive.asked('alt=media'),
+                         'a document known by its Google identity is skipped before anything is fetched')
+
+    def test_the_same_bytes_under_another_identity_are_a_duplicate(self):
+        self.drive.media['file_inside'] = self.drive.media['file_notes']
+        report = self.add()
+        self.assertIn({'name': 'Compete/Shared/Inside shared.md', 'code': 'duplicate',
+                       'reason': 'Already a source here. It has the same content as “notes.md”.'}, report['skipped'])
+        self.assertEqual(report['added'], 7)
+
+    def test_one_add_takes_its_limit_and_names_the_rest(self):
+        with mock.patch.object(source_folders, 'FOLDER_MOST', 3):
+            first = self.add()
+            self.assertEqual(first['added'], 3)
+            self.assertEqual([s['name'] for s in self.value['sources']], ['Deck', 'notes.md', 'Numbers.xlsx'])
+            self.assertEqual((first['again'], first['next']), (True, 'Add the same folder again to read the next ones.'))
+            over = [row['name'] for row in first['skipped'] if row['code'] == 'over-limit']
+            self.assertEqual(over, ['Plan', 'Private doc', 'slides.pptx', 'Compete/Linked notes.txt',
+                                    'Compete/Battlecards/EDB battle-card', 'Compete/Shared/Inside shared.md'])
+            second = self.add()
+            self.assertEqual(second['added'], 3)
+        self.assertEqual(len(self.value['sources']), 6)
+
+    def test_looking_stops_at_its_limit_and_depth_is_bounded(self):
+        scan = source_folders.drive(self.drive.client(), ROOT, research_sources.TYPES, research_sources.LIMIT, looked=4)
+        self.assertTrue(scan['stopped'])
+        self.assertEqual(scan['looked'], 4)
+        self.assertEqual(len(self.drive.asked('/drive/v3/files?')), 2, 'listing stops once the limit is in sight')
+        shallow = source_folders.drive(self.drive.client(), ROOT, research_sources.TYPES, research_sources.LIMIT, depth=1)
+        self.assertIn({'name': 'Compete/Battlecards/', 'code': 'too-deep', 'reason': 'More than 6 folders deep.'}, shallow['skipped'])
+        self.assertIn({'name': 'Compete/Shared/', 'code': 'too-deep', 'reason': 'More than 6 folders deep.'}, shallow['skipped'])
+        self.assertNotIn('Compete/Battlecards/EDB battle-card', [item['name'] for item in shallow['found']])
+
+    def test_a_link_that_is_not_an_open_folder_is_refused_whole(self):
+        before = self.value['revision']
+        self.drive.denied.add(ROOT)
+        with self.assertRaisesRegex(ValueError, 'No Google Drive folder with this link or identity is open to this account'):
+            self.add()
+        with self.assertRaisesRegex(ValueError, 'This is not a Google Drive folder this account can open'):
+            self.add('https://drive.google.com/drive/folders/doc_plan_0001')
+        self.drive.denied = {'folder_compete'}
+        self.drive.tree[ROOT] = [child('folder_compete', 'Compete', FOLDER)]
+        report = self.add()
+        self.assertEqual((report['added'], [row['code'] for row in report['skipped']]), (0, ['no-permission']))
+        self.assertEqual(self.sources.read(self.value['id'])['revision'], before)
+
+    def test_documents_are_read_several_at_a_time_and_no_more_than_the_limit(self):
+        self.assertEqual((source_folders.FOLDER_WORKERS, source_folders.FOLDER_AHEAD), (8, 16))
+        self.drive.together = 3      # readers are held until three are reading at once
+        with mock.patch.object(source_folders, 'FOLDER_WORKERS', 3):
+            report = self.add()
+        self.assertEqual(report['added'], 8)
+        self.assertEqual(self.drive.peak, 3, 'three at once, and never a fourth')
+        self.assertEqual(self.drive.tokens, 1, 'one sign-in token is shared by every reader')
+        again = field_kit()
+        again.together = 2
+        self.drive = again
+        self.value = self.sources.create()
+        self.add()
+        self.assertGreater(again.peak, 1)
+        self.assertLessEqual(again.peak, source_folders.FOLDER_WORKERS)
+
+    def one_at_a_time(self):
+        """What reading the same folder one document after another adds and skips."""
+        drive = field_kit()
+        drive.media['file_inside'] = drive.media['file_notes']
+        temp = tempfile.TemporaryDirectory(); self.addCleanup(temp.cleanup)
+        alone = Sources(Path(temp.name).resolve() / 'store', account=lambda: 'editor@example.invalid',
+                        drive=lambda account: drive.client(),
+                        google=lambda url, **options: google_reference.capture(url, **{**options, 'client': options.get('client') or drive.client()}))
+        value = alone.create()
+        with mock.patch.object(source_folders, 'FOLDER_WORKERS', 1):
+            value = alone.mutate(value['id'], value['revision'], 'folder', location=ROOT)
+        self.assertEqual(drive.peak, 1)
+        return [(s['name'], s['kind'], s['sha256']) for s in value['sources']], value['folder']
+
+    def test_order_and_the_kept_one_of_two_alike_are_what_reading_in_turn_gives(self):
+        expected, said = self.one_at_a_time()
+        # The first document in order and the first of two alike are the slowest: each is
+        # answered only after the last document in order was asked for.
+        self.drive.media['file_inside'] = self.drive.media['file_notes']
+        self.drive.slow = {'deck_main': 'file_inside', 'file_notes': 'file_inside'}
+        self.drive.together = 2
+        report = self.add()
+        self.assertGreater(self.drive.peak, 1)
+        self.assertEqual([(s['name'], s['kind'], s['sha256']) for s in self.value['sources']], expected)
+        self.assertEqual([s['name'] for s in self.value['sources']][:3], ['Deck', 'notes.md', 'Numbers.xlsx'])
+        self.assertEqual(report, said)
+        self.assertIn({'name': 'Compete/Shared/Inside shared.md', 'code': 'duplicate',
+                       'reason': 'Already a source here. It has the same content as “notes.md”.'}, report['skipped'])
+        self.assertEqual((report['again'], report['next']), (False, None))
+
+    def test_documents_not_started_in_time_are_named_and_never_fetched(self):
+        calls = []
+        self.sources.clock = lambda: calls.append(1) or (0 if len(calls) <= 3 else 10_000)
+        self.drive.together = 2
+        report = self.add()
+        self.assertEqual([s['name'] for s in self.value['sources']], ['Deck', 'notes.md'])
+        late = [row['name'] for row in report['skipped'] if row['code'] == 'out-of-time']
+        self.assertEqual(late, ['Numbers.xlsx', 'Plan', 'Private doc', 'slides.pptx', 'Compete/Linked notes.txt',
+                                'Compete/Battlecards/EDB battle-card', 'Compete/Shared/Inside shared.md'])
+        self.assertEqual(report['skipped'][-1]['reason'], 'Not read in time. Add the folder again to read the rest.')
+        self.assertEqual((report['again'], report['next']), (True, 'Add the same folder again to read the next ones.'))
+        for never in ('doc_plan', 'sheet_one', 'file_deck', 'doc_card', 'file_inside', 'doc_private'):
+            self.assertFalse(self.drive.asked('/' + never), never)
+        self.sources.clock = lambda: 0
+        rest = self.add()
+        self.assertEqual((rest['added'], rest['again'], len(self.value['sources'])), (6, False, 8))
+
+    def test_a_link_to_a_shortcut_scans_the_folder_it_points_to(self):
+        self.drive.links = {'shortcut_to_root_0001': (ROOT, FOLDER), 'shortcut_to_doc_00001': ('doc_plan', google_api.DOC_MIME),
+                            'shortcut_to_gone_0001': ('folder_gone', FOLDER)}
+        report = self.add('https://drive.google.com/drive/folders/shortcut_to_root_0001')
+        self.assertEqual((report['title'], report['added']), ('Field kit', 8))
+        self.assertTrue(self.drive.asked('q=%27' + ROOT + '%27'), 'the folder pointed to is the one listed')
+        self.assertFalse(self.drive.asked('q=%27shortcut_to_root_0001%27'))
+        with self.assertRaisesRegex(ValueError, 'This is not a Google Drive folder this account can open'):
+            self.add('https://drive.google.com/drive/folders/shortcut_to_doc_00001')
+        self.drive.denied.add('folder_gone')
+        with self.assertRaisesRegex(ValueError, 'No Google Drive folder with this link or identity is open'):
+            self.add('https://drive.google.com/drive/folders/shortcut_to_gone_0001')
+
+    def test_a_caller_with_less_room_says_so_in_its_own_words(self):
+        draft = self.sources.create()
+        answer = self.sources.add_folder(draft['id'], draft['revision'], {'location': ROOT}, most=2,
+                                         full='A training takes 2 documents here.')
+        self.assertEqual(answer['folder']['added'], 2)
+        over = [row for row in answer['folder']['skipped'] if row['code'] == 'over-limit']
+        self.assertEqual(len(over), 7)
+        self.assertEqual(over[0]['reason'], 'Over the limit. A training takes 2 documents here.')
+
+    def test_choosing_tabs_keeps_the_name_that_says_where_a_document_was_found(self):
+        self.add()
+        card = next(s for s in self.value['sources'] if s['name'] == 'Compete/Battlecards/EDB battle-card')
+        self.value = self.sources.mutate(self.value['id'], self.value['revision'], 'tabs', source=card['id'], selected=['body'])
+        kept = next(s for s in self.value['sources'] if s['id'] == card['id'])
+        self.assertEqual(kept['name'], 'Compete/Battlecards/EDB battle-card')
+        self.assertEqual(kept['origin'], 'https://docs.google.com/document/d/doc_card/edit?tab=body')
+
+    def test_the_folder_listing_asks_only_for_the_folder_named(self):
+        self.drive.client().children(ROOT)
+        asked = parse_qs(urlsplit(self.drive.urls[-1]).query)
+        self.assertEqual(asked['q'], ["'" + ROOT + "' in parents and trashed = false"])
+        for unsafe in ("x' or name contains '", '../x', ''):
+            with self.assertRaises(GoogleError):
+                self.drive.client().children(unsafe)
+        with self.assertRaises(GoogleError):
+            self.drive.client().children(ROOT, page_token='')
