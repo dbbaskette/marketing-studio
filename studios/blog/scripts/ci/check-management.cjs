@@ -887,20 +887,20 @@ async function staleSharedForms(){
 
   for(const kind of ['brand','team']){
     let current=false;const posted=[];
-    const old=kind==='brand'?{repository:'/synthetic/brand',release:'v1.0.0',skills:[],shared_before:{repository:'/synthetic/brand',release:'v1.0.0'}}:{repository:'/synthetic/team',branch:'main',share:'decision',shared_before:{team:{repository:'/synthetic/team',branch:'main'},share:'decision'}};
-    const fresh=kind==='brand'?{...old,release:'v2.0.0',shared_before:{repository:'/synthetic/brand',release:'v2.0.0'}}:{...old,share:'asked',shared_before:{team:{repository:'/synthetic/team',branch:'main'},share:'asked'}};
+    const old=kind==='brand'?{repository:'/synthetic/brand',skills:[],shared_before:{repository:'/synthetic/brand'}}:{repository:'/synthetic/team',branch:'main',share:'decision',shared_before:{team:{repository:'/synthetic/team',branch:'main'},share:'decision'}};
+    const fresh=kind==='brand'?{...old,repository:'/synthetic/brand-2',shared_before:{repository:'/synthetic/brand-2'}}:{...old,share:'asked',shared_before:{team:{repository:'/synthetic/team',branch:'main'},share:'asked'}};
     const g=fixture((url,options)=>{
       if(options?.method==='POST'){posted.push({url,data:JSON.parse(options.body)});if(!current)return {__http:400,error:'Shared settings changed in another studio. Reload before saving.'};return fresh;}
       if(url==='/api/'+kind){current=true;return fresh;}if(url==='/api/run-settings')return {defaults,workspace:'/synthetic'};if(url==='/api/run-options')return {settings:{defaults},sources:[],profiles:[],agents:{}};return empty();
     });
     g.loadRunner();g.set('shown',old);g.set('defaults',defaults);g.run("studio.settings={defaults,workspace:'/synthetic'};studio.screen='settings';studio."+kind+"=shown;sPage("+(kind==='brand'?'sBrandCard()':'sTeamCard()')+")");
     const fields=()=>descendants(g.get('studio-page'));
-    const field=fields().find(e=>e.id===(kind==='brand'?'brand-release':'team-sharing'));
+    const field=fields().find(e=>e.id===(kind==='brand'?'brand-repository':'team-sharing'));
     await field.parent.parent.listeners.submit({preventDefault(){}});
     assert.equal(posted.length,1);assert.deepEqual(posted[0].data.shared_before,old.shared_before);
     reload=fields().find(e=>e.textContent==='Reload shared settings');await reload.listeners.click();assert.equal(posted.length,1);
-    const refreshed=fields().find(e=>e.id===(kind==='brand'?'brand-release':'team-sharing'));
-    assert.equal(refreshed.value,kind==='brand'?'v2.0.0':'asked');
+    const refreshed=fields().find(e=>e.id===(kind==='brand'?'brand-repository':'team-sharing'));
+    assert.equal(refreshed.value,kind==='brand'?'/synthetic/brand-2':'asked');
     await refreshed.parent.parent.listeners.submit({preventDefault(){}});
     assert.equal(posted.length,2);assert.deepEqual(posted[1].data.shared_before,fresh.shared_before);
   }
@@ -970,24 +970,27 @@ async function interviewVoice(){
 
 async function brandInputs(){
   const requests=[],defaults={engine:'codex',seconds:600,research:'none',tone:'Clear',author:''};
-  let found={repository:'/synthetic/brand-repo',release:'',runtime:'/synthetic/brand-two',name:'Synthetic Brand',version:'1.0.0',skills:[{runtime:'/synthetic/brand-one',name:'Brand one',version:'1.0.0'},{runtime:'/synthetic/brand-two',name:'Brand two',version:'1.0.0'}],brands:[{brand:'fictional',name:'Fictional identity',variants:['light','dark']}],checked:{tag:'v1.2.0',version:'1.2.0',commit:'a'.repeat(40)},job:{}};
+  let found={repository:'/synthetic/brand-repo',runtime:'/synthetic/brand-two',name:'Synthetic Brand',version:'1.0.0',skills:[{runtime:'/synthetic/brand-one',name:'Brand one',version:'1.0.0'},{runtime:'/synthetic/brand-two',name:'Brand two',version:'1.0.0'}],brands:[{brand:'fictional',name:'Fictional identity',variants:['light','dark']}],checked:{tag:'main',version:'1.2.0',commit:'a'.repeat(40)},job:{}};
   const f=fixture((url,options)=>{if(options?.method==='POST'){requests.push({url,data:JSON.parse(options.body)});if(url==='/api/brand-configure'){found={...found,...requests.at(-1).data};return found;}if(url==='/api/brand-install')return {...found,job:{status:'working',message:'Installing…'}};}
     if(url==='/api/brand')return found;if(url==='/api/run-settings')return {defaults,workspace:'/synthetic',configured:true};if(url==='/api/run-options')return {settings:{defaults},brand:found,sources:[],profiles:[],agents:{codex:true}};if(url==='/api/team')return {};if(url==='/api/computer')return {checks:[],brand:found};return empty();});
   f.loadRunner();f.set('brand',found);f.set('defaults',defaults);f.run("studio.brand=brand;studio.settings={defaults,workspace:'/synthetic'};studio.screen='settings';sSettings()");
   const byId=id=>descendants(f.get('studio-page')).find(e=>e.id===id);
   assert.equal(byId('brand-skill').value,'/synthetic/brand-two');
   assert.equal(byId('brand-repository').value,'/synthetic/brand-repo');
-  let input=byId('brand-release');input.value='v1.1.0';input.listeners.input();
+  // There is no release to choose: the brand skill is installed and updated from main.
+  assert.equal(byId('brand-release'),undefined);
+  assert.match(text(f.get('studio-page')),/installed and updated from its main branch/);
+  let input=byId('brand-repository');input.value='/synthetic/brand-repo-2';input.listeners.input();
   await input.parent.parent.listeners.submit({preventDefault(){}});
-  assert.deepEqual(requests.pop(),{url:'/api/brand-configure',data:{repository:'/synthetic/brand-repo',release:'v1.1.0'}});
+  assert.deepEqual(requests.pop(),{url:'/api/brand-configure',data:{repository:'/synthetic/brand-repo-2'}});
   input=byId('brand-skill');input.value='/synthetic/brand-one';input.listeners.change();
   await input.parent.parent.listeners.submit({preventDefault(){}});
   assert.deepEqual(requests.pop(),{url:'/api/brand-configure',data:{runtime:'/synthetic/brand-one'}});
-  const install=descendants(f.get('studio-page')).find(e=>e.tagName==='button'&&e.textContent==='Install selected release');
+  const install=descendants(f.get('studio-page')).find(e=>e.tagName==='button'&&e.textContent==='Update the brand skill');
   await install.listeners.click();assert.equal(requests.length,0,'opening the install sheet must run nothing');
-  assert.match(text(f.get('sheet')),/v1.2.0/);assert.match(text(f.get('sheet')),new RegExp('a'.repeat(40)));
+  assert.match(text(f.get('sheet')),/Main branch, at revision/);assert.doesNotMatch(text(f.get('sheet')),/[Rr]elease/);assert.match(text(f.get('sheet')),new RegExp('a'.repeat(40)));
   const confirm=descendants(f.get('sheet')).find(e=>e.textContent==='Install it now');await confirm.listeners.click();
-  assert.deepEqual(requests.pop(),{url:'/api/brand-install',data:{confirmed:true,repository:found.repository,tag:'v1.2.0',commit:'a'.repeat(40)}});
+  assert.deepEqual(requests.pop(),{url:'/api/brand-install',data:{confirmed:true,repository:found.repository,tag:'main',commit:'a'.repeat(40)}});
 }
 
 // Select all: the heading's box ticks the rows on this page; the bar, shown only while

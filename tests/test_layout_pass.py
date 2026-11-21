@@ -131,7 +131,7 @@ class StaticLayoutTests(unittest.TestCase):
             ('0', 'You and your assistant'), ('1', 'Your workspace'), ('2', 'Brand'),
             ('2', 'Delivery and previews'), ('settings', 'Document graphics'),
             ('settings', 'Models and reasoning'),
-            ('settings', 'Brand skill release'), ('settings', 'Research sites'),
+            ('settings', 'Research sites'),
             ('settings', 'Studio installations')])
         order = [node.attrs.get('id') for node in form.children if node.attrs.get('id')]
         self.assertLess(order.index('delivery-part'), order.index('advanced-head'))
@@ -149,7 +149,6 @@ class StaticLayoutTests(unittest.TestCase):
         html = page()
         for control, title, step in (('model-profiles', 'Models and reasoning', 'settings'),
                                      ('assistant-model', 'Models and reasoning', 'settings'),
-                                     ('brand-release', 'Brand skill release', 'settings'),
                                      ('output', 'Delivery and previews', '2')):
             with self.subTest(control=control):
                 node = html.find(control)
@@ -158,6 +157,21 @@ class StaticLayoutTests(unittest.TestCase):
                     card = card.parent
                 self.assertEqual(headings(card)[0].words(), title)
                 self.assertEqual(card.attrs.get('data-step'), step)
+
+    def test_there_is_no_brand_skill_release_to_choose(self):
+        # The brand skill is installed and updated from its repository's main: no part,
+        # field, section button or saved value names a release.
+        html = page()
+        ids = {node.attrs.get('id') for node in html.root.all()}
+        self.assertFalse({'brand-release', 'release-part', 'release-more', 'release-owner',
+                          'release-state'} & ids)
+        source = (WEB / 'index.html').read_text()
+        self.assertNotIn('Brand release', source)
+        self.assertNotIn('brand.release', source)
+        self.assertIn('installed and updated from its <code>main</code> branch', source)
+        script = (WEB / 'app.js').read_text()
+        self.assertNotIn('brand.release', script)
+        self.assertNotIn("'release'", script)
 
     def test_first_run_setup_is_one_column_in_every_look(self):
         # The liquid look widens .page; first-run setup keeps the toolbar's and notice's column.
@@ -276,9 +290,9 @@ class SharedSetupJourneyTests(PageLayoutTests):
             'quick': {'selection': 'explicit', 'model': 'synthetic-small', 'effort': 'low'},
             'main': {'selection': 'inherit'}, 'complex': {'selection': 'provider_default'}}},
         'research': {'sites': ['https://docs.example.com/guide']}}
-    STATE = ['save-state', 'models-owner', 'models-state', 'release-owner', 'release-state',
+    STATE = ['save-state', 'models-owner', 'models-state',
              'research-state', 'installations-owner', 'settings-nav', 'advanced-head', 'models-part',
-             'release-part', 'research-sites', 'installations', 'done-settings']
+             'research-sites', 'installations', 'done-settings']
 
     def shown(self, **changes):
         return {**self.SHOWN, 'shared': {**self.OVERRIDES, **changes}, 'computer': None}
@@ -301,13 +315,13 @@ class SharedSetupJourneyTests(PageLayoutTests):
         # out from Main and Complex (test_model_profiles covers those): only Quick is its own.
         self.assertIn('By task: 1 of 6 kinds of work have their own model or reasoning',
                       shown['words']['models-state'])
-        self.assertEqual((shown['words']['release-owner'], shown['words']['release-state']),
-                         ('Override', 'Pinned to v1.4.0'))
+        # A release an older version saved is not shown anywhere.
+        self.assertFalse(any('v1.4.0' in words for words in shown['words'].values()))
         self.assertEqual(shown['words']['research-state'], '1 site')
         self.assertEqual(shown['words']['installations-owner'], 'Found automatically')
         self.assertFalse(any(shown['hidden'][part] for part in ('settings-nav', 'done-settings')))
         self.assertTrue(all(shown['hidden'][part] for part in (
-            'advanced-head', 'models-part', 'release-part', 'research-sites', 'installations')))
+            'advanced-head', 'models-part', 'research-sites', 'installations')))
         self.assertEqual(shots['typed']['words']['save-state'], 'Unsaved changes')
         # Only the leaf that was typed is sent; every override and unknown value is left alone.
         self.assertEqual(json.loads(shots['typed']['read']['#probe']['text']), {'person': {'name': 'Bea'}})
@@ -359,9 +373,9 @@ class SharedSetupJourneyTests(PageLayoutTests):
     def test_load_newer_settings_keeps_other_edits_and_shows_both_values(self):
         load = 'snapshot = ' + json.dumps(self.shown()) + '; setup = false; fill(); renderHome(); markSaved();'
         newer = {**self.shown(), 'shared': {**self.OVERRIDES, 'person': {'name': 'Cy'},
-                                            'brand': {**self.OVERRIDES['brand'], 'release': 'v2.0.0'}}}
+                                            'brand': {**self.OVERRIDES['brand'], 'repository': 'https://example.com/brand-2.git'}}}
         probe = ("$('#probe').textContent = JSON.stringify({name: form.elements['person.name'].value,"
-                 " output: form.elements.output.value, release: form.elements['brand.release'].value,"
+                 " output: form.elements.output.value, repository: form.elements['brand.repository'].value,"
                  " notes: conflictNotes.map(held => held.note.children[0].textContent)});")
         shots = self.page([
             {'run': load}, {'show': 'settings'},
@@ -373,7 +387,8 @@ class SharedSetupJourneyTests(PageLayoutTests):
         loaded = shots['loaded']
         form = json.loads(loaded['read']['#probe']['text'])
         # The person's edits stay; the value only someone else changed is the newer one.
-        self.assertEqual((form['name'], form['output'], form['release']), ('Bea', 'google', 'v2.0.0'))
+        self.assertEqual((form['name'], form['output'], form['repository']),
+                         ('Bea', 'google', 'https://example.com/brand-2.git'))
         self.assertEqual(form['notes'], ['Saved in another tab or studio: “Cy”. Yours: “Bea”. Save settings keeps yours.'])
         self.assertEqual(loaded['words']['save-state'], 'Unsaved changes')
         self.assertTrue(loaded['read']['#problem']['hidden'])
@@ -512,7 +527,7 @@ class SharedSetupJourneyTests(PageLayoutTests):
             {'snapshot': 'first', 'ids': self.STATE + ['assistant-part', 'models-pointer']}])
         first = shots['first']
         self.assertFalse(first['hidden']['assistant-part'])
-        for part in ('settings-nav', 'advanced-head', 'models-part', 'release-part', 'research-sites',
+        for part in ('settings-nav', 'advanced-head', 'models-part', 'research-sites',
                      'installations', 'save-state', 'done-settings'):
             with self.subTest(part=part):
                 self.assertTrue(first['hidden'][part])

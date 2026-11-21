@@ -3,7 +3,7 @@ brand skill's own installer.
 
 What a caller needs to know
 ---------------------------
-    found = brand_source.check(address, None, place)    # refuses in a sentence
+    found = brand_source.check(address, place)          # refuses in a sentence
     found['chosen']                 # {'tag': 'main', 'version': None, 'commit'}: what to install
     commit = brand_source.head(address, place)          # the commit main is at, or a refusal
     folder, how = brand_source.fetch(address, commit, into, stop)
@@ -22,7 +22,7 @@ What a caller needs to know
 - `check` reads where main is with `git ls-remote` and nothing else. A repository that
   cannot be read is refused with a sentence that says whether git could not sign in, the
   repository was not found, or it could not be reached. One with no main branch is refused
-  too. A release named, kept by an older version, is not used.
+  too.
 - `fetch` clones main at depth one into a new folder inside `into`, with the person's own
   git access, and its commit must be `commit`, the one the person was shown. Nothing of it
   is run, and it holds no hooks.
@@ -70,7 +70,7 @@ NOT_FOUND = ('not found', 'does not appear to be a git repository', 'does not ex
 
 
 def order(version) -> tuple:
-    """How releases are ordered: one numbered from a year before every other, then by its
+    """How versions are ordered: one numbered from a year before every other, then by its
     numbers. Something that is not a version comes first of all."""
     try:
         parts = tuple(int(part) for part in str(version).split('.'))
@@ -118,23 +118,22 @@ def _address(address: str) -> str:
     return str(folder)
 
 
-def check(address, release, place: Path) -> dict:
+def check(address, place: Path) -> dict:
     """Whether the brand skill can be installed from this repository, by this person:
-    {'repository', 'release', 'branch', 'commit', 'chosen', 'newest', 'releases'}. It is
-    installed from main: `release`, a tag an older version kept, is not used, and
-    `release` comes back None. `chosen` and `newest` are main, as {'tag': 'main',
-    'version': None, 'commit'}."""
+    {'repository', 'branch', 'commit', 'chosen', 'newest'}. It is installed and updated
+    from main: `chosen` and `newest` are main, as {'tag': 'main', 'version': None,
+    'commit'}."""
     address = settings.check_repository(address)
     if address is None:
         raise WorkspaceError("Give the brand skill's repository address.")
     address = _address(address)
     commit = head(address, place)
     chosen = {'tag': BRANCH, 'version': None, 'commit': commit}
-    return {'repository': address, 'release': None, 'branch': BRANCH, 'commit': commit,
-            'releases': [], 'newest': chosen, 'chosen': chosen}
+    return {'repository': address, 'branch': BRANCH, 'commit': commit, 'newest': chosen,
+            'chosen': chosen}
 
 
-# --- fetching a release --------------------------------------------------------------------
+# --- fetching main ------------------------------------------------------------------------
 
 def _text(data: bytes) -> str:
     return data.decode('utf-8', 'replace').replace('\r\n', '\n')
@@ -227,7 +226,7 @@ def installer(folder: Path, node: str) -> list[str]:
         return [node, str(mac), '--yes', '--research', 'skip']
     if other.is_file():
         return [node, str(other), '--research', 'skip']
-    raise WorkspaceError(f'The release has no installer {PRODUCT} knows how to run: '
+    raise WorkspaceError(f'Its main branch has no installer {PRODUCT} knows how to run: '
                          'scripts/install-mac.mjs on a Mac, or scripts/install-skill.mjs. '
                          'Nothing was run')
 

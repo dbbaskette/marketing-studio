@@ -28,23 +28,23 @@ What a caller needs to know
   that was found and the brands it has, with every brand skill found under `skills` as
   {'name', 'path', 'chosen'}; `brand_skill` names one of those paths to use. Both are
   asked of the engine, which looks at this computer and reuses the look, so asking for
-  this again starts nothing while nothing has changed. `brand` also has `repository` and
-  `release`: where the brand skill is installed from, as kept by `save_brand`.
-- `save_brand(engine, {"repository", "release"})` keeps the brand skill's repository once
-  `brand_source.check` can read it with this person's git access, and refuses in a sentence
-  otherwise. An empty repository forgets it. A brand skill installed by hand is used
+  this again starts nothing while nothing has changed. `brand` also has `repository`:
+  where the brand skill is installed and updated from, its `main`, as kept by `save_brand`.
+- `save_brand(engine, {"repository"})` keeps the brand skill's repository once
+  `brand_source.check` can read its main branch with this person's git access, and refuses
+  in a sentence otherwise. A `release` sent by an older page is not read. An empty repository forgets it. A brand skill installed by hand is used
   either way.
 - `notify` is {'on', 'can', 'problem'}: whether the runner tells the person through the
   computer's own notifications when no page is open, whether this computer has a way to,
   and a sentence when it has none. It is sent as true or false, and cannot be turned on
   where there is no way.
-- `updates` is {'look'}: whether the runner looks online, at most once a day, for newer
-  releases. It is sent as `look_for_updates`, true or false. `upkeep` is what the runner
+- `updates` is {'look'}: whether the runner looks online, at most once a day, at where
+  the main branches are. It is sent as `look_for_updates`, true or false. `upkeep` is what the runner
   found when it last looked at Training Studio and its skills on this computer, or None
   where it does not look (see `upkeep.Upkeep.report`).
 - The values every studio shares are kept only in the studios config (`studios_config`),
   and saving one here writes it there: the agent, its model and its level and the brand
-  skill's repository and release (see `settings`), when to share for a team workspace, and
+  skill's repository (see `settings`), when to share for a team workspace, and
   the team repository when set-up joins another one, with its branch where the file names
   no branch for that repository. A folder on this computer writes no `team` and no `share`.
   While the file cannot be read, a save that would change one of them is refused before
@@ -61,7 +61,7 @@ What a caller needs to know
   team repository written as for any join, and the refusal says so instead.
 - `shared` is what the file holds that Training Studio can use, in the file's own shape:
   `team` {repository, branch}, `assistant` {agent, model, effort}, `brand` {repository,
-  release, brand, variant}, `output`, `share` and `research` {sites}, your sites as
+  brand, variant}, `output`, `share` and `research` {sites}, your sites as
   canonical https addresses. A value that would be refused here is left out, and so is
   anything Training Studio does not use. `shared_problem` is a sentence when the file could
   not be read, which is then as if there were none. The page fills in a first set-up's
@@ -74,15 +74,15 @@ What a caller needs to know
   folder on this computer is never compared, and only the repository is: a Training Studio
   folder in a repository keeps the branch its hub.json names.
 - `migrate()`, when the runner starts, moves the shared values this computer kept as its
-  own before they were shared (agent, model, level, the brand skill's repository and
-  release in runner.json; when to share, and the team repository and branch it joined, in
+  own before they were shared (agent, model, level and the brand skill's repository in
+  runner.json; when to share, and the team repository and branch it joined, in
   the workspace record) into the file where it has none, and takes them out of runner.json
   and the record. The record keeps its repository and branch, which say what the clone is.
   When to share moves from a record of a team repository even where its clone or marker is
   gone, and leaves the record only once the file holds it.
   A value the file holds already stays as it is. A model and a level go only beside the
-  same agent, a release only beside the same repository, and a branch only beside the same
-  team repository. Where a value differed, `shared_notice` is a sentence that says so, until
+  same agent, and a branch only beside the same team repository. A brand skill release kept
+  there by an older version is not moved: there is none to choose. Where a value differed, `shared_notice` is a sentence that says so, until
   `notice_read()`. While the file cannot be read nothing is moved. What moves is worked out
   again under the file's lock, so a value another studio writes meanwhile stays.
 """
@@ -143,8 +143,7 @@ def describe(engine) -> dict:
             'previews': {'how': chosen.previews, 'pool': needs['pool'], 'drive': needs['drive'],
                          'local': needs['local'], 'left': engine.previews_left()},
             'brand': {**needs['brand'], 'skills': engine.brand_skills(),
-                      'repository': chosen.brand_repository,
-                      'release': chosen.brand_release}}
+                      'repository': chosen.brand_repository}}
 
 
 # --- the studios config ------------------------------------------------------------------
@@ -176,8 +175,7 @@ def shared() -> tuple[dict, str | None]:
                  'branch': branch if branch and BRANCH.match(branch) and '..' not in branch
                  and not branch.endswith(('/', '.', '.lock')) else None},
         'assistant': {name: usable[name] for name in ('agent', 'model', 'effort')},
-        'brand': {'repository': usable['brand_repository'],
-                  'release': usable['brand_release'], 'skill': usable['brand_skill'],
+        'brand': {'repository': usable['brand_repository'], 'skill': usable['brand_skill'],
                   'brand': _word(brand.get('brand')), 'variant': _word(brand.get('variant'))},
         'output': found.get('output') if found.get('output') in OUTPUTS else None,
         'render': {'previews': settings.shared_now(found)['previews']},
@@ -199,7 +197,7 @@ def shared() -> tuple[dict, str | None]:
 # What the person is told of a value the file held already, when this computer had another.
 LABELS = {'agent': 'the agent', 'model': 'the model', 'effort': 'the reasoning level',
           'brand_repository': "the brand skill's repository",
-          'brand_release': "the brand skill's release", 'share': 'when to share',
+          'share': 'when to share',
           'previews': 'slide previews', 'brand_skill': 'the installed brand skill'}
 
 
@@ -256,9 +254,9 @@ def _moving(found: dict, kept: dict, share: str | None, record) -> tuple[dict, l
         mine.append(('team', 'repository', None, record.address))
         if team.get('repository') is None or same_address(team['repository'], record.address):
             mine.append(('team', 'branch', None, record.branch))
-    # A model and a level are for their agent, and a release for its repository: beside
-    # another agent or another repository in the file, this computer's are not used.
-    owns = {'model': 'agent', 'effort': 'agent', 'brand_release': 'brand_repository'}
+    # A model and a level are for their agent: beside another agent in the file, this
+    # computer's are not used.
+    owns = {'model': 'agent', 'effort': 'agent'}
     others = {name for name in ('agent', 'brand_repository') if name in kept
               and _group(found, settings.SHARED[name][0]).get(settings.SHARED[name][1])
               not in (None, kept[name])}

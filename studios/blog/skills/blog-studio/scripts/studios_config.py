@@ -10,7 +10,9 @@ KEYS = {
     'team': {'repository', 'branch'},
     'person': {'name'},
     'assistant': {'agent', 'model', 'effort'},
-    'brand': {'repository', 'release', 'brand', 'variant', 'skill'},
+    # A brand `release` kept by an older version is not read, and left as it is: the brand
+    # skill is installed and updated from its repository's main.
+    'brand': {'repository', 'brand', 'variant', 'skill'},
     'output': None,
     'share': None,
     'review': {'level'},
@@ -26,16 +28,6 @@ def check_brand_repository(value):
     if not re.match(r'^(https?://|ssh://|[\w.-]+@[\w.-]+:)', value):
         if not Path(value).expanduser().is_absolute():
             raise ValueError('Use an https or ssh repository address, or an absolute folder path.')
-    return value
-
-
-def check_brand_release(value, repository=None):
-    if value in (None, ''):
-        return None
-    if not isinstance(value, str) or not re.fullmatch(r'[\w][\w.+-]{0,99}', value) or '..' in value:
-        raise ValueError('Give a release tag such as v1.4.0, or leave it empty for the newest.')
-    if not repository:
-        raise ValueError('Give the brand skill repository before choosing a release.')
     return value
 
 
@@ -88,8 +80,7 @@ def _decode(raw):
         if value['team']['repository'] not in (None, ''):
             repository(value['team']['repository'])
     brand = value.get('brand', {})
-    address = check_brand_repository(brand.get('repository'))
-    check_brand_release(brand.get('release'), address)
+    check_brand_repository(brand.get('repository'))
     return value
 
 
@@ -232,7 +223,7 @@ def migrate(root=None):
                 None,
                 {
                     **{
-                        key: ('brand', key) for key in ('repository', 'release', 'brand', 'variant')
+                        key: ('brand', key) for key in ('repository', 'brand', 'variant')
                     },
                     'runtime': ('brand', 'skill'),
                 },
@@ -263,7 +254,10 @@ def migrate(root=None):
                 if not isinstance(values, dict):
                     raise ValueError('Legacy settings are not an object.')
                 selected = {key: value for key, value in values.items() if key in mapping}
-                if not selected:
+                # A brand skill release an older version kept is not moved, and goes with the
+                # rest: the brand skill is installed and updated from its repository's main.
+                retired = source.name == 'brand.json' and values.pop('release', None) is not None
+                if not selected and not retired:
                     continue
                 from studio_core.preferences import ready
 
@@ -313,7 +307,8 @@ def migrate(root=None):
                         + ', '.join(sorted(set(kept)))
                         + '.'
                     )
-                studio.write_json(notice_path, {'notice': message})
+                if changes or kept:   # not when only a retired value went
+                    studio.write_json(notice_path, {'notice': message})
             except (OSError, ValueError):
                 problem = 'Shared settings migration could not finish. Existing shared values were kept; correct studios-config.json and retry.'
         notice = None

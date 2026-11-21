@@ -25,20 +25,19 @@ BRANCH = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$')   # a branch a file 
 
 def save_brand(engine, sent: dict) -> dict:
     """Keep the brand skill's repository, once this person's own git access can read its
-    main branch, which it is installed from. A release, sent by an older page, is not kept:
-    there are none to choose from. An empty address forgets the repository. Where main is,
-    is kept for the versions, and the set-up described."""
+    main branch, which it is installed and updated from. A `release`, sent by an older page,
+    is not read: there is none to choose. An empty address forgets the repository. Where
+    main is, is kept for the versions, and the set-up described."""
     repository = _text(sent, 'repository')
     told = seen(sent)
     shown = None if told is None else settings.seen(told)
     kept = settings.load()
     if repository is None:
-        settings.save(replace(kept, brand_repository=None, brand_release=None), shown)
+        settings.save(replace(kept, brand_repository=None), shown)
         return describe(engine)
     studios_config.writable()   # before git is asked anything
-    found = brand_source.check(repository, None, _anywhere())
-    settings.save(replace(kept, brand_repository=found['repository'], brand_release=None),
-                  shown)
+    found = brand_source.check(repository, _anywhere())
+    settings.save(replace(kept, brand_repository=found['repository']), shown)
     keeping = getattr(engine, 'upkeep', None)
     if keeping is not None:
         keeping.remember_brand(found['repository'], found['commit'])

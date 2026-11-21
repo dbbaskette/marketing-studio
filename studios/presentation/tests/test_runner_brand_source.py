@@ -192,26 +192,20 @@ class ReleaseTests(SourceCase):
         newer = self.brand.release('0.13.1')
         git(self.brand.work, 'tag', 'not-a-release')
         git(self.brand.work, 'push', '-q', '--tags', str(self.brand.bare))
-        found = brand_source.check(self.address, None, self.place)
+        found = brand_source.check(self.address, self.place)
         self.assertEqual(found['chosen'], {'tag': 'main', 'version': None, 'commit': newer})
-        self.assertEqual((found['commit'], found['branch'], found['releases'], found['release']),
-                         (newer, 'main', [], None))
+        self.assertEqual((found['commit'], found['branch']), (newer, 'main'))
+        self.assertEqual(set(found), {'repository', 'branch', 'commit', 'chosen', 'newest'},
+                         'no release is chosen or said')
         self.assertEqual(brand_source.head(self.address, self.place), newer)
-
-    def test_a_release_named_by_an_older_version_is_not_used(self):
-        self.brand.release('0.10.2')
-        newer = self.brand.release('0.13.1')
-        for asked in ('v0.10.2', '0.10.2', 'v9.9.9'):
-            found = brand_source.check(self.address, asked, self.place)
-            self.assertEqual((found['release'], found['chosen']['commit']), (None, newer))
 
     def test_a_repository_that_cannot_be_used_is_refused_in_a_plain_sentence(self):
         with self.assertRaises(WorkspaceError) as refused:
-            brand_source.check(self.address, None, self.place)
+            brand_source.check(self.address, self.place)
         self.assertEqual(str(refused.exception), f'{self.address} has no main branch, which '
                          'the brand skill is installed from. Check the address.')
         with self.assertRaises(WorkspaceError) as refused:
-            brand_source.check(str(self.base / 'nowhere.git'), None, self.place)
+            brand_source.check(str(self.base / 'nowhere.git'), self.place)
         self.assertTrue(str(refused.exception).startswith(
             "The brand skill's repository could not be read. It was not found ("),
             str(refused.exception))
@@ -221,7 +215,7 @@ class ReleaseTests(SourceCase):
                 ('--upload-pack=touch', 'as one address'),
                 ('', "Give the brand skill's repository address.")):
             with self.subTest(address=address), self.assertRaises(WorkspaceError) as refused:
-                brand_source.check(address, None, self.place)
+                brand_source.check(address, self.place)
             self.assertIn(says, str(refused.exception))
 
     def test_why_git_failed_is_said_as_what_to_do(self):
@@ -330,11 +324,10 @@ class BrandInstallCase(UpkeepCase):
         self.keep = self.keeper(after=lambda: self.after.append('looked'))
         self.addCleanup(self.keep.close)
 
-    def choose(self, release: str | None = None) -> dict:
+    def choose(self) -> dict:
         """Name the brand repository in Settings, as the page's save does."""
-        found = brand_source.check(self.address, release, self.base)
-        settings.save(settings.Settings(brand_repository=found['repository'],
-                                        brand_release=found['release']))
+        found = brand_source.check(self.address, self.base)
+        settings.save(settings.Settings(brand_repository=found['repository']))
         self.keep.remember_brand(found['repository'], found['commit'])
         return found
 
@@ -346,8 +339,8 @@ class BrandInstallCase(UpkeepCase):
         return [json.loads(line) for line in self.record.read_text().splitlines()] \
             if self.record.is_file() else []
 
-    def install(self, release: str) -> dict:
-        shown = self.keep.install_brand(False, release)
+    def install(self, commit: str) -> dict:
+        shown = self.keep.install_brand(False, commit)
         settle(self.keep)
         return shown
 
@@ -382,14 +375,15 @@ class BrandRowTests(BrandInstallCase):
         self.keep.check(repair=False)
         shown = self.keep.report()['versions']
         row = shown['rows'][-1]
-        self.assertEqual((row['state'], row['newest'], row['target'], row['release'],
-                          row['commit']), ('missing', None, 'main', 'main', commit[:12]))
+        self.assertEqual((row['state'], row['newest'], row['target'], row['commit']),
+                         ('missing', None, 'main', commit[:12]))
+        self.assertNotIn('release', row)
         self.assertEqual(row['says'], 'No brand skill is installed, so a deck stops where it first needs your brand. '
                          f'Its main branch, at {commit[:12]}, can be installed from {self.address}.')
         self.assertEqual(shown['key'], 'brand skill main')
         self.assertEqual(shown['brand'], {
             'offered': True, 'action': 'Install', 'repository': self.address,
-            'release': 'main', 'version': 'main', 'commit': commit[:12],
+            'version': 'main', 'commit': commit[:12],
             'installed': None, 'state': None, 'since': None, 'says': None})
 
         self.install('main')

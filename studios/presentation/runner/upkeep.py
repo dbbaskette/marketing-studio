@@ -9,10 +9,10 @@ What a caller needs to know
     keep.check(repair=False)     # the part on this computer only, changing nothing
     keep.report()                # what was found, for the page; never waits, starts nothing
     keep.update(working)         # bring missing, older or moved companions from main; refuses
-    keep.upgrade(working, '0.22.0')   # install that newer Presentation Studio beside this one
+    keep.upgrade(working, '0.22.0')   # install main, as shown (its label or commit), beside this one
     keep.restart(working)        # after an upgrade: stop, so that `studio` starts the new one
     keep.dismiss(key)            # Home stops showing the versions until a newer one is out
-    keep.install_brand(working, 'main')     # the brand skill, from its repository's main
+    keep.install_brand(working, commit)     # the brand skill, from its repository's main
     keep.remember_brand(address, commit)    # where Settings' check found its main branch
     keep.close()                 # end an update in hand
 
@@ -47,17 +47,24 @@ What a caller needs to know
     the companion it found when it started.
   - When it ends, `after` is called, so that the computer is looked at again.
 - Online, at most once a day and only while the setting `look_for_updates` is on:
-  - It runs `git ls-remote --tags` against Presentation Studio's repository, and `git ls-remote`
-    of `refs/heads/main` against each companion's and the brand skill's when one is
-    named, through `hub.run`, with LOOK_SECONDS to answer.
-  - Only what they say is kept, in `updates.json` in the data folder: the studio's
-    newest tag, and where each main branch is. Whether one is newer is worked out each
-    time it is shown. Nothing is downloaded or run.
-- The newest Presentation Studio is its newest release tag once there is one, and until then
-  the version on `main` when guidance was last fetched. Which companion versions that
-  newest one is pinned to is read from its `installer/companions.json` in the guidance
-  cache, which holds `main` with its history; a tag is read there only when its commit is
-  on `main`. All of that is local. When it cannot be read, it is not guessed.
+  - It runs `git ls-remote` of `refs/heads/main` against Presentation Studio's repository, and
+    against each companion's and the brand skill's when one is named, through `hub.run`,
+    with LOOK_SECONDS to answer. No tag is read: everything is installed and updated from
+    `main`.
+  - Only what they say is kept, in `updates.json` in the data folder: where each main
+    branch is. Whether one has moved is worked out each time it is shown. Nothing is run.
+  - When Presentation Studio's own main has moved past the guidance cache, main is fetched into
+    that cache with the guidance's own isolated git, as a new deck's start fetches it, so
+    its VERSION and its pins can be read. Not for a studio Marketing Studio updates, and
+    not into a cache the helper would rebuild.
+- The newest Presentation Studio is its repository's `main`: where it was last found online, or in
+  the guidance cache when that was fetched since. It is offered when its commit is not the
+  one this copy came from (`installed_commit`: a checkout's own, or the one the installer
+  kept for this version; one not known counts as different), unless main says an older
+  version. A version only names it: main's VERSION, or the commit's first 12 characters
+  when the version is the same as this one or not known. Which companion versions it is
+  pinned to is read from its `installer/companions.json` in the guidance cache. All of
+  that is local. When it cannot be read, it is not guessed.
 - `report()['versions']` has a row for Presentation Studio and one for each companion: what is
   installed, the newest, what this version is pinned to and the newest one's pin, a state
   (`current`, `update`, `missing` or `unknown`) and a sentence. A companion released
@@ -65,15 +72,16 @@ What a caller needs to know
   (the lock itself without one), is offered at its exact lock; nothing installs during a
   check.
   Where a companion's tool is found, what it says of itself is said too.
-- `upgrade` installs the newest Presentation Studio, the one the person confirmed:
-  - the revision, a tag or `main`, is fetched by name into a temporary folder with the
-    guidance's own isolated git, and only its plain files are written out;
-  - its `VERSION` must be the one shown, and then its own installer runs `install
-    --while-open`, which checks it, lays it beside this version and moves `current`;
+- `upgrade` installs Presentation Studio from `main`, as the person confirmed it:
+  - `main` is fetched by name into a temporary folder with the guidance's own isolated
+    git, and only its plain files are written out. Its commit must be the one shown, and
+    its `VERSION` the one shown when one was;
+  - then its own installer runs `install --while-open --commit <that commit>`, which
+    checks it, lays it beside this version, keeps the commit and moves `current`;
   - all of it under `companion.supervise`, with UPGRADE_SECONDS to finish.
   This version's folder is left as it is, so the runner keeps running from it. It is
   refused from a checkout, which is upgraded with `git pull`, while a deck is working,
-  while anything else is in hand, and when the newest is no longer the one confirmed.
+  while anything else is in hand, and when main has moved on from what was confirmed.
 - `restart` is offered once an upgrade is installed. It sets `restarting` to the command
   that opens Presentation Studio, the one the installer wrote, and calls `leave`; `studio
   serve` then stops and runs that command in its place. Without that command, the person
@@ -82,9 +90,8 @@ What a caller needs to know
   start resolved, or the copy installed with this version.
 - The brand skill has a row of its own, BRAND, last. Its installed version is what the
   brand skill found in this home says of itself, the one chosen in Settings or else the
-  first. Its newest is the newest release in the repository named in Settings, looked for
-  with the rest, by `brand_source`'s order; `releases` keeps each release's commit, so a
-  release chosen in Settings is shown too. With no repository named, a brand skill
+  first. Its newest is where the main branch of the repository named in Settings is,
+  looked for with the rest: there is no release to choose. With no repository named, a brand skill
   installed by hand is shown and nothing is offered. Its name is the one it gives itself.
 - `install_brand` installs the brand skill's main branch, at the commit shown, the one
   the person confirmed, in the background; `versions['brand']` says what it would do and
@@ -124,6 +131,7 @@ import home  # noqa: F401  read by the shared parts
 import hub  # noqa: F401  read by the shared parts
 import sync_guidance
 from studio_core.companions import minimum_version  # noqa: F401  read by the shared parts
+from studio_core.packaging import installed_commit as kept_commit, source_commit  # noqa: F401  read by the shared parts
 from workspace import WorkspaceError
 
 from runner import brand as brand_skill, brand_source, companion, settings  # noqa: F401  read by the shared parts
@@ -321,11 +329,11 @@ class Upkeep:
     # --- online --------------------------------------------------------------------------
 
     def repositories(self) -> dict:
-        """Where each release is looked for: Presentation Studio's repository and each
+        """Where each main branch is looked for: Presentation Studio's repository and each
         companion's, as its pin names it."""
         found = {SELF: sync_guidance.source()['repository']}
         found.update({name: pin['repository'] for name, pin in self.pins()[0].items()})
-        brand, _ = settings.brand_source()
+        brand = settings.brand_source()
         if brand:
             found[BRAND] = brand
         return found
@@ -360,20 +368,25 @@ class Upkeep:
 
 
     def _install(self, newest: dict, target: str | None) -> None:
-        """Fetch the newest revision and run its own installer, beside this version."""
-        version, state, says, commit = newest['version'], 'failed', None, None
+        """Fetch main and run its own installer, beside this version."""
+        label, state, says, commit = newest['label'], 'failed', None, None
         holder = Path(tempfile.mkdtemp(prefix='presentation-studio-upgrade-'))
         try:
             repository = str(sync_guidance.source()['repository'])
             tree, commit = fetch_tree(repository, newest['ref'], holder)
+            if commit != newest['commit']:
+                raise WorkspaceError(f"{newest['from']} has moved on to {commit[:12]} since "
+                                     f"{newest['commit'][:12]} was shown. Look at it again "
+                                     'before you upgrade')
             found = (tree / 'VERSION').read_text(encoding='utf-8').strip() \
                 if (tree / 'VERSION').is_file() else None
-            if found != version:
+            if not found or not _version(found) \
+                    or (newest['version'] and found != newest['version']):
                 raise WorkspaceError(f"{repository} has version {found or 'unknown'} at "
                                      f"{newest['ref']}")
-            state, says = self._run_installer(tree, version, target)
+            state, says = self._run_installer(tree, found, target, commit, label)
         except (sync_guidance.SyncError, WorkspaceError, OSError) as refusal:
-            says = f'Presentation Studio {version} was not installed: {str(refusal).rstrip(".")}.'
+            says = f'Presentation Studio {label} was not installed: {str(refusal).rstrip(".")}.'
         except Exception as failure:  # said on the page; the runner keeps serving
             says = f'The upgrade could not be run ({type(failure).__name__}: {failure}).'
         finally:
@@ -391,7 +404,7 @@ class Upkeep:
         """The brand skill's repository, and what to install from it as last known: its main
         branch, at the commit it was at, {'tag': 'main', 'version': None, 'commit'}, or None.
         There are no releases to choose from: the brand skill is installed from main."""
-        repository, _ = settings.brand_source()
+        repository = settings.brand_source()
         if not repository or online.get('repository') != repository:
             return repository, None
         commit = online.get('commit') if online.get('branch') == 'main' else None
@@ -399,11 +412,11 @@ class Upkeep:
             return repository, None
         return repository, {'tag': 'main', 'version': None, 'commit': commit}
 
-    def install_brand(self, working: bool, release: str) -> dict:
-        """Install `release` of the brand skill from its repository, with its own installer,
-        in the background. Refused, in a sentence, with no repository named, while a deck
-        is working, while anything else is in hand, while a companion waits for Update, and
-        when `release` is not the one known to install."""
+    def install_brand(self, working: bool, commit: str) -> dict:
+        """Install the brand skill from its repository's main, at `commit`, the revision shown,
+        with its own installer, in the background. Refused, in a sentence, with no repository
+        named, while a deck is working, while anything else is in hand, while a companion
+        waits for Update, and when main is no longer at `commit`."""
         with self._lock:
             found = self._found
             self._refuse_busy()
@@ -416,9 +429,9 @@ class Upkeep:
         if target is None:
             raise WorkspaceError(f'Where the main branch of {repository} is, is not known here '
                                  'yet. Save the repository in Settings again to look.')
-        if str(release) not in (target['tag'], target['commit'], target['commit'][:12]):
+        if str(commit) not in (target['tag'], target['commit'], target['commit'][:12]):
             raise WorkspaceError(f"The main branch is now at {target['commit'][:12]}, not "
-                                 f'{release}. Look at it again before you install.')
+                                 f'{commit}. Look at it again before you install.')
         if working:
             raise WorkspaceError(BRAND_WORKING)
         waiting = [entry['name'] for entry in found['companions']
@@ -431,15 +444,15 @@ class Upkeep:
         before = self._the_brand(found.get('brands') or [])
         with self._lock:
             self._refuse_busy()
-            self._brand = {'state': 'running', 'since': _now(), 'release': target['tag'],
-                           'says': f"Fetching {target['tag']} from {repository} and running "
+            self._brand = {'state': 'running', 'since': _now(), 'commit': target['commit'][:12],
+                           'says': f"Fetching main from {repository} and running "
                                    'its own installer. This can take a few minutes.'}
         self._background(lambda: self._bring_brand(repository, target, before),
                          'installing the brand skill')
         return self.report()
 
     def _bring_brand(self, repository: str, target: dict, before: dict | None) -> None:
-        """Fetch the release, check it leaves the companions alone, run its own installer,
+        """Fetch main, check it leaves the companions alone, run its own installer,
         then look again."""
         tag, commit, version = target['tag'], target['commit'], target['version']
         holder = Path(tempfile.mkdtemp(prefix='presentation-studio-brand-'))
@@ -509,7 +522,7 @@ class Upkeep:
         return found
 
     def _would_change(self, folder: Path) -> str | None:
-        """What the release's installer would change of the companions, said in a sentence;
+        """What main's installer would change of the companions, said in a sentence;
         None when it would leave them alone. It brings its own copy of each it records,
         unless every one installed here is at least that version and one is there."""
         for name, wanted in brand_source.bootstraps(folder).items():
@@ -560,7 +573,6 @@ class Upkeep:
                'reports': (f"The brand skill in use is {skill['name']}, at {skill['runtime']}."
                            if skill else None),
                'known_at': known.get('known_at'), 'repository': repository,
-               'release': target and target['tag'],
                'commit': target and target['commit'][:12]}
         named = skill['name'] if skill else 'The brand skill'
         having = f'{named} {installed}' if installed else named
@@ -605,7 +617,7 @@ class Upkeep:
         """What installing the brand skill would do, for the page's sheet."""
         return {'offered': bool(row['target'] and row['repository'] and not busy),
                 'action': 'Upgrade' if row['installed'] else 'Install',
-                'repository': row['repository'], 'release': row['release'],
+                'repository': row['repository'],
                 'version': row['target'], 'commit': row['commit'],
                 'installed': row['installed'],
                 'state': brand and brand['state'], 'since': brand and brand['since'],
@@ -644,12 +656,12 @@ class Upkeep:
             return {**row, 'state': 'unknown', 'says': entry['says']}
         if following and _version(installed) < _version(following):
             return {**row, 'state': 'update', 'target': following, 'says': (
-                f"{name} {following} comes with Presentation Studio {newest['version']}, which "
+                f"{name} {following} comes with Presentation Studio {newest['label']}, which "
                 f'is made with it. This computer has {installed}.')}
         if newest and pins is None:
             return {**row, 'state': 'current', 'says': (
                 f'{name} {installed} is what this Presentation Studio is made with. Which version '
-                f"Presentation Studio {newest['version']} is made with is not known here yet.")}
+                f"Presentation Studio {newest['label']} is made with is not known here yet.")}
         return {**row, 'state': 'current', 'says': (
             f'{name} {installed} is what this Presentation Studio is made with.'
             if installed == pinned else

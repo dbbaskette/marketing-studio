@@ -13,7 +13,8 @@ What a caller needs to know
   (image/png) and the deck itself (the .pptx).
 - Scratch forms accept optional `notes` (at most 4000 characters). Direction look picks bind to the shown samples; edited outlines stop for newly drawn looks. A finished team deck can have `mine: true` and no active driver when this computer delivered it; asking for changes reclaims it in that request.
 - Reads (GET):
-  - `/api/capabilities` {"runner": true, "version"}; `/api/setup`, what `setup.describe`
+  - `/api/capabilities` {"runner": true, "version", "install"}, `install` the installed copy
+    it runs from (None for a checkout), which the page waits for after a restart; `/api/setup`, what `setup.describe`
     says; `/api/agents` {"agents": [{"agent", "installed", "signed_in", "reachable",
     "version", "problem"}]}; `/api/models?agent=` what an agent offers to choose from
     ({"agent", "models", "levels", "source", "problem"}; a list that could not be made is
@@ -71,16 +72,17 @@ What a caller needs to know
   - `/api/share` {}, `/api/fetch` {}, `/api/drive` {"path", "action": take|hand-over},
     `/api/publish` {"path"}, `/api/delete` {"path", "title"}, `/api/bring` {"path"}: a
     deck this computer knows from outside the workspace, copied in (`engine.bring`).
-  - `/api/companions` {}, `/api/upgrade` {"version"}, `/api/restart` {}, `/api/versions`
-    {"dismiss"}: asked of `engine.upkeep`, each answering {"upkeep"}; 409 where nothing
-    looks after the skills here, and while a deck is working (`upkeep` says so).
-  - `/api/brand` {"repository", "release"} keeps the brand skill's repository once git can
-    read it as this person, and answers the set-up; it is 400, with a sentence, when it
-    cannot be read or has no such release. An empty repository forgets it.
-    `/api/brand/install` {"release"} installs that release of the brand skill with its own
-    installer, in the background, and answers {"upkeep"}; it is 409 while a deck is
-    working, while anything else is in hand, while a companion waits for Update, and when
-    `release` is not the one shown in `upkeep.versions.brand`.
+  - `/api/companions` {}, `/api/upgrade` {"version"} (main's label or commit, as shown),
+    `/api/restart` {}, `/api/versions` {"dismiss"}: asked of `engine.upkeep`, each answering
+    {"upkeep"}; 409 where nothing looks after the skills here, and while a deck is working
+    (`upkeep` says so). Presentation Studio is updated from its repository's `main`.
+  - `/api/brand` {"repository"} keeps the brand skill's repository once git can read its
+    main branch as this person, and answers the set-up; it is 400, with a sentence, when it
+    cannot be read. An empty repository forgets it. A `release` sent by an older page is
+    not read. `/api/brand/install` {"commit"} installs the brand skill from main at that
+    revision with its own installer, in the background, and answers {"upkeep"}; it is 409
+    while a deck is working, while anything else is in hand, while a companion waits for
+    Update, and when main is no longer at the revision shown in `upkeep.versions.brand`.
   - `/api/computer` {}: look at this computer again, and at the skills, and wake the decks
     that were waiting on what was missing.
   - The desk, for a deck started from the desk's start (`engine.desk_*`), each answering the
@@ -266,7 +268,8 @@ class RunnerPage(server.Page):
         self.engine.seen()
         if path == '/api/capabilities':
             return server.as_json(HTTPStatus.OK, {'runner': True,
-                                                  'version': gitstate.installed()})
+                                                  'version': gitstate.installed(),
+                                                  'install': gitstate.installed_copy()})
         if path == '/api/setup':
             return server.as_json(HTTPStatus.OK, setup.describe(self.engine))
         if path == '/api/agents':
@@ -617,9 +620,9 @@ class RunnerPage(server.Page):
             setup.notice_read()
             return server.as_json(HTTPStatus.OK, setup.describe(self.engine))
         if path == '/api/brand/install':
-            release = server.text(sent, 'release')
+            commit = server.text(sent, 'commit')
             return server.as_json(HTTPStatus.OK, {'upkeep': self.keeper().install_brand(
-                self.working(), release)})
+                self.working(), commit)})
         return super().write(path, sent)
 
     def keeper(self):

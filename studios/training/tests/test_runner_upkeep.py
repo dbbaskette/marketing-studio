@@ -1,10 +1,10 @@
 """What the runner looks after when it starts: the links the installer placed, the
-companion skills against the pins this version was installed with, which releases exist,
-and which guidance a new training gets.
+companion skills against the pins this version was installed with, where each main branch
+is, and which guidance a new training gets.
 
 Training Studio is installed by its own installer into a temporary home. The companions
-are the installer tests' stand-ins, and each repository is a bare one made here, with its
-release tags. Nothing real is read, and nothing is fetched from anywhere but there.
+are the installer tests' stand-ins, and each repository is a bare one made here, whose
+main moves on. Nothing real is read, and nothing is fetched from anywhere but there.
 """
 import contextlib
 import io
@@ -362,57 +362,125 @@ class CompanionTests(UpkeepCase):
 
 
 class ReleaseCase(UpkeepCase):
-    """An installed version, and Training Studio's repository with releases to tag."""
+    """An installed version, and Training Studio's repository, whose main moves on."""
 
     def setUp(self):
         super().setUp()
         self.keep = self.keeper()
         self.keep.check()
         self.work = self.base / 'training-studio-work'
-        git(self.base, 'init', '-q', str(self.work))
-        (self.work / 'VERSION').write_text('1\n')
-        git(self.work, 'add', '-A')
-        git(self.work, 'commit', '-q', '-m', 'one')
+        git(self.base, 'init', '-q', '-b', 'main', str(self.work))
+        (self.work / 'guidance').mkdir()
+        (self.work / 'guidance' / 'manifest.json').write_text(json.dumps(
+            {'schema': 1, 'content_root': 'skills/training-studio', 'minimum_runtime': '0.1.0'}))
+        (self.work / 'skills' / 'training-studio').mkdir(parents=True)
+        self.moves = 0
 
-    def release(self, *versions: str) -> None:
-        for version in versions:
-            git(self.work, 'tag', version)
-        git(self.work, 'push', '-q', '--tags', str(self.source))
+    def advance(self, version: str) -> str:
+        """main moves on, to a commit whose VERSION is `version`: its commit."""
+        self.moves += 1
+        (self.work / 'skills' / 'training-studio' / 'VERSION').write_text(f'{version}\n')
+        (self.work / 'moved').write_text(f'{self.moves}\n')
+        git(self.work, 'add', '-A')
+        git(self.work, 'commit', '-q', '-m', f'Version {version}')
+        git(self.work, 'push', '-q', str(self.source), 'HEAD:refs/heads/main')
+        return git(self.work, 'rev-parse', 'HEAD')
+
+    def look(self, keep: upkeep.Upkeep | None = None) -> bool:
+        """Look online now, whenever the last look was."""
+        saved = self.root / upkeep.SAVED
+        if saved.is_file():
+            kept = json.loads(saved.read_text())
+            saved.write_text(json.dumps({**kept, 'at': '2020-01-01T00:00:00Z'}))
+        keep = keep or self.keep
+        found = keep.look()
+        keep.check()
+        return found
 
     def rows(self, keep: upkeep.Upkeep | None = None) -> dict:
         return {row['name']: row for row in (keep or self.keep).report()['versions']['rows']}
 
 
 class ReleaseTests(ReleaseCase):
-    def test_a_newer_training_studio_is_said_and_offered_from_the_page(self):
-        self.release('v0.1.0', 'v99.0.0', 'not-a-release', 'v99.0.0-rc1')
-        self.assertTrue(self.keep.look())
+    def test_an_update_is_offered_when_main_moves_and_tags_are_never_read(self):
+        old = self.advance('1.0.0')
+        git(self.work, 'tag', 'v999.0.0', old)
+        head = self.advance('99.0.0')
+        git(self.work, 'push', '-q', '--tags', str(self.source))
+        self.assertTrue(self.look())
         shown = self.keep.report()
         own = self.rows()['training-studio']
-        self.assertEqual((own['installed'], own['newest'], own['state'], own['target']),
-                         (VERSION, '99.0.0', 'update', '99.0.0'))
-        self.assertEqual(own['says'], f'Training Studio 99.0.0 is out, and this is {VERSION}.')
+        self.assertEqual((own['installed'], own['newest'], own['state'], own['target'],
+                          own['commit']), (VERSION, '99.0.0', 'update', '99.0.0', head[:12]))
+        self.assertEqual(own['says'],
+                         f'A newer Training Studio is available ({VERSION} → 99.0.0).')
         versions = shown['versions']
         self.assertEqual((versions['checkout'], versions['command']), (False, None))
         self.assertEqual(versions['upgrade'], {
-            'offered': True, 'version': '99.0.0', 'from': 'tag', 'state': None, 'since': None,
-            'says': None, 'restart': False})
+            'offered': True, 'version': '99.0.0', 'from': 'main', 'commit': head[:12],
+            'installs': None, 'state': None, 'since': None, 'says': None, 'restart': False})
         self.assertEqual((shown['releases']['on'], shown['releases']['problem']), (True, None))
         kept = json.loads((self.root / upkeep.SAVED).read_text())
-        commit = git(self.work, 'rev-parse', 'HEAD')
         self.assertEqual({key: kept['found']['training-studio'][key]
-                          for key in ('latest', 'tag', 'commit')},
-                         {'latest': '99.0.0', 'tag': 'v99.0.0', 'commit': commit})
+                          for key in ('latest', 'tag', 'commit', 'branch')},
+                         {'latest': None, 'tag': None, 'commit': head, 'branch': 'main'})
         self.assertEqual(set(kept['found']), {'training-studio', 'harness-research',
                                               'harness-slides'})
 
-    def test_an_annotated_release_is_known_by_the_commit_it_points_at(self):
-        git(self.work, 'tag', '-a', '-m', 'A release', 'v99.0.1')
-        git(self.work, 'push', '-q', '--tags', str(self.source))
-        self.keep.look()
-        kept = json.loads((self.root / upkeep.SAVED).read_text())
-        self.assertEqual(kept['found']['training-studio']['commit'],
-                         git(self.work, 'rev-parse', 'HEAD'))
+    def test_main_moving_on_with_the_same_version_is_named_by_its_commit(self):
+        head = self.advance(VERSION)
+        self.look()
+        own = self.rows()['training-studio']
+        self.assertEqual((own['newest'], own['state'], own['target']),
+                         (head[:12], 'update', head[:12]))
+        self.assertEqual(own['says'], f'A newer Training Studio is available ({VERSION} → '
+                         f'{head[:12]}).')
+        self.assertEqual(self.keep.report()['versions']['upgrade']['version'], head[:12])
+
+    def test_none_is_offered_while_this_copy_is_what_main_is_until_main_moves(self):
+        head = self.advance(VERSION)
+        keep = self.keeper(self.installed('--commit', head))
+        state = install.read_state(self.root)
+        self.assertEqual(state['commits'][state['current']], head)
+        self.assertEqual(keep.installed_commit(), head)
+        self.look(keep)
+        own = self.rows(keep)['training-studio']
+        self.assertEqual((own['installed'], own['newest'], own['state'], own['target']),
+                         (VERSION, VERSION, 'current', None))
+        self.assertEqual(own['says'], f'Training Studio {VERSION} is up to date with main.')
+        self.assertFalse(keep.report()['versions']['upgrade']['offered'])
+        self.assertNotIn('training-studio', keep.report()['versions']['key'] or '')
+        with self.assertRaises(WorkspaceError) as refused:
+            keep.upgrade(False, head[:12])
+        self.assertEqual(str(refused.exception), upkeep.NOTHING_NEWER)
+        # main moves on: offered again, with no new version needed.
+        moved = self.advance(VERSION)
+        self.look(keep)
+        own = self.rows(keep)['training-studio']
+        self.assertEqual((own['state'], own['target']), ('update', moved[:12]))
+        self.assertTrue(keep.report()['versions']['upgrade']['offered'])
+
+    def test_a_main_that_says_an_older_version_is_not_offered(self):
+        self.advance('0.0.1')
+        self.look()
+        own = self.rows()['training-studio']
+        self.assertEqual(own['state'], 'current')
+        self.assertFalse(self.keep.report()['versions']['upgrade']['offered'])
+
+    def test_a_release_tag_an_older_version_kept_is_not_used(self):
+        saved = self.root / upkeep.SAVED
+        saved.write_text(json.dumps({'schema': 1, 'at': '2020-01-01T00:00:00Z', 'found': {
+            'training-studio': {'repository': str(self.source), 'problem': None,
+                                'latest': '99.0.0', 'tag': 'v99.0.0', 'commit': 'a' * 40,
+                                'known_at': '2020-01-01T00:00:00Z'}}}))
+        self.keep.check()
+        own = self.rows()['training-studio']
+        self.assertEqual((own['newest'], own['state']), (None, 'unknown'))
+        head = self.advance('99.0.0')
+        self.assertTrue(self.look())
+        kept = json.loads(saved.read_text())['found']['training-studio']
+        self.assertEqual((kept['commit'], kept['branch'], kept['tag'], kept['latest']),
+                         (head, 'main', None, None))
 
     def test_a_companion_whose_main_moved_is_offered_main_and_tags_are_never_read(self):
         tag(_made['harness-slides'], 'v0.14.0')
@@ -427,9 +495,8 @@ class ReleaseTests(ReleaseCase):
         kept = json.loads(record.read_text()) if record.is_file() else {}
         kept['companions'] = {name: {'commit': _made[name].commit} for name in ('harness-research', 'harness-slides')}
         record.write_text(json.dumps(kept))
-        self.release('v0.1.0')
-        self.keep.look()
-        self.keep.check()
+        self.advance('0.1.0')
+        self.look()
         rows = self.rows()
         slides = rows['harness-slides']
         self.assertEqual((slides['installed'], slides['newest'], slides['state'], slides['target'],
@@ -443,20 +510,11 @@ class ReleaseTests(ReleaseCase):
                         _made['harness-slides'].commit)
         self.addCleanup(git, _made['harness-slides'].work, 'reset', '-q', '--hard',
                         _made['harness-slides'].commit)
-        (self.root / upkeep.SAVED).unlink()
-        self.keep.look()
-        self.keep.check()
+        self.look()
         slides = self.rows()['harness-slides']
         self.assertEqual((slides['state'], slides['target']), ('update', 'main'))
         self.assertIn(f'Its main branch is at {moved[:12]} now', slides['says'])
         self.assertTrue(self.keep.report()['update']['offered'])
-
-    def test_once_installed_a_release_is_no_longer_newer(self):
-        self.release(f'v{VERSION}')
-        self.keep.look()
-        own = self.rows()['training-studio']
-        self.assertEqual((own['state'], own['says']),
-                         ('current', f'Training Studio {VERSION} is the newest.'))
 
     def test_git_is_asked_without_a_terminal_and_with_a_short_time_limit(self):
         asked = []
@@ -467,14 +525,14 @@ class ReleaseTests(ReleaseCase):
 
         with mock.patch.object(upkeep.hub, 'run', run):
             self.keep.look()
-        # Training Studio's own releases are its tags; each companion's main is where it is.
-        self.assertEqual([args[:3] for args, _ in asked][0], ('ls-remote', '--tags', '--'))
-        self.assertEqual([(args[:2], args[3:]) for args, _ in asked][1:],
-                         [(('ls-remote', '--'), ('refs/heads/main',))] * 2)
+        # Each main is where it is, Training Studio's own first: no tag is asked for.
+        self.assertEqual([(args[:2], args[3:]) for args, _ in asked],
+                         [(('ls-remote', '--'), ('refs/heads/main',))] * 3)
+        self.assertEqual(asked[0][0][2], str(self.source))
         self.assertEqual({timeout for _, timeout in asked}, {upkeep.LOOK_SECONDS})
 
     def test_starting_looks_on_this_computer_then_online_in_the_background(self):
-        self.release('v99.0.0')
+        self.advance('99.0.0')
         (self.claude / 'training-studio').unlink()
         let, order = threading.Event(), []
         local = upkeep.Upkeep._local
@@ -502,15 +560,15 @@ class ReleaseTests(ReleaseCase):
 
 
 class UpgradeTests(ReleaseCase):
-    """Upgrading Training Studio itself: refused where it must be, and what it runs. The
-    whole upgrade, from an older install to a newer one, is the page tests'."""
+    """Upgrading Training Studio itself from main: refused where it must be, and what it
+    runs. The whole upgrade, from an older install to main, is the page tests'."""
 
     def test_suite_installation_defers_native_upgrade_to_the_suite_installer(self):
         record = self.home / '.local/share/marketing-studio/installation.json'
         record.parent.mkdir(parents=True)
         record.write_text(json.dumps({'schema': 1, 'studios': ['training']}))
-        self.release('v99.0.0')
-        self.keep.look()
+        self.advance('99.0.0')
+        self.look()
         versions = self.keep.report()['versions']
         self.assertFalse(versions['upgrade']['offered'])
         self.assertEqual(versions['suite'], 'marketing-studio')
@@ -527,12 +585,14 @@ class UpgradeTests(ReleaseCase):
         keep = upkeep.Upkeep(home_dir=self.home, root=self.base / 'nothing-installed',
                              installer=helpers.REPO / 'installer' / 'install.py')
         keep.check()
-        self.release('v99.0.0')
+        self.assertRegex(keep.installed_commit() or '', '^[0-9a-f]{40}$',
+                         "a checkout's own commit")
+        self.advance('99.0.0')
         # The checkout's own installer pins its companions to their public repositories:
         # only Training Studio's own, the local one, is asked, so nothing leaves this computer.
         own = {upkeep.SELF: keep.repositories()[upkeep.SELF]}
         with mock.patch.object(keep, 'repositories', return_value=own):
-            keep.look()
+            self.look(keep)
         versions = keep.report()['versions']
         self.assertEqual((versions['checkout'], versions['command']),
                          (True, f'cd {helpers.REPO} && git pull'))
@@ -545,12 +605,13 @@ class UpgradeTests(ReleaseCase):
             keep.upgrade(False, '99.0.0')
         self.assertEqual(str(refused.exception), upkeep.FROM_CHECKOUT)
 
-    def test_an_upgrade_is_refused_while_working_and_unless_it_is_the_newest(self):
-        self.release('v99.0.0')
-        self.keep.look()
+    def test_an_upgrade_is_refused_while_working_and_unless_it_is_main_as_shown(self):
+        head = self.advance('99.0.0')
+        self.look()
         with mock.patch.object(upkeep.companion, 'supervise') as ran:
             for working, version, said in (
                     (True, '99.0.0', upkeep.UPGRADE_WORKING),
+                    (True, head[:12], upkeep.UPGRADE_WORKING),
                     (False, '98.0.0', 'The newest Training Studio is now 99.0.0, not 98.0.0. '
                                       'Look at it again before you upgrade.')):
                 with self.assertRaises(WorkspaceError) as refused:
@@ -563,9 +624,9 @@ class UpgradeTests(ReleaseCase):
                           installer=self.base / 'gone' / 'install.py').upgrade(False, '99.0.0')
         self.assertEqual(str(refused.exception), upkeep.NO_INSTALLER)
 
-    def test_the_upgrade_runs_the_fetched_versions_own_installer_beside_this_one(self):
-        self.release('v99.0.0')
-        self.keep.look()
+    def test_the_upgrade_runs_mains_own_installer_beside_this_one(self):
+        head = self.advance('99.0.0')
+        self.look()
         asked, fetched, going = [], [], threading.Event()
 
         def fetch(repository, ref, into):
@@ -574,7 +635,7 @@ class UpgradeTests(ReleaseCase):
             tree = into / 'tree'
             (tree / 'skills' / 'training-studio').mkdir(parents=True)
             (tree / 'skills' / 'training-studio' / 'VERSION').write_text('99.0.0\n')
-            return tree, 'c' * 40
+            return tree, head
 
         def supervise(command, cwd, env, stdin, seconds, errors, each, stop):
             asked.append((command, seconds))
@@ -587,21 +648,23 @@ class UpgradeTests(ReleaseCase):
 
         with mock.patch.object(upkeep, 'fetch_tree', fetch), \
                 mock.patch.object(upkeep.companion, 'supervise', supervise):
-            shown = self.keep.upgrade(False, '99.0.0')
+            shown = self.keep.upgrade(False, head)
             self.assertEqual(shown['versions']['upgrade']['state'], 'running')
             self.assertFalse(shown['versions']['upgrade']['offered'])
             going.set()
             settle(self.keep)
-        self.assertEqual(fetched, [(str(self.source), 'refs/tags/v99.0.0')])
+        self.assertEqual(fetched, [(str(self.source), 'refs/heads/main')])
         (command, seconds), = asked
         self.assertEqual(command[3:], [
             'install', '--yes', '--json', '--companions', 'skip', '--while-open',
-            '--home', str(self.home), '--root', str(self.root), '--target', 'both'])
+            '--home', str(self.home), '--root', str(self.root), '--commit', head,
+            '--target', 'both'])
         self.assertTrue(command[2].endswith('/tree/installer/install.py'))
         self.assertEqual(seconds, upkeep.UPGRADE_SECONDS)
         versions = self.keep.report()['versions']
-        self.assertEqual((versions['upgrade']['state'], versions['upgrade']['restart']),
-                         ('restart', True))
+        self.assertEqual((versions['upgrade']['state'], versions['upgrade']['restart'],
+                          versions['upgrade']['installs']),
+                         ('restart', True, '99.0.0-abcdef012345'))
         self.assertEqual(versions['upgrade']['says'], 'Training Studio 99.0.0 is installed, '
                          'checked and in place. Restart to use it. This page comes back by '
                          'itself.')
@@ -622,43 +685,46 @@ class UpgradeTests(ReleaseCase):
         self.assertEqual((self.keep.restarting, left),
                          (['/bin/sh', str(self.root / 'studio'), 'serve'], ['left']))
 
-    def test_a_version_that_is_not_the_one_shown_is_not_installed(self):
-        self.release('v99.0.0')
-        self.keep.look()
+    def test_what_is_fetched_must_be_main_as_shown(self):
+        head = self.advance('99.0.0')
+        self.look()
+        for commit, version, said in (
+                ('c' * 40, '99.0.0', f'main has moved on to {"c" * 12} since {head[:12]} was '
+                                     'shown. Look at it again before you upgrade.'),
+                (head, '1.0.0', f'{self.source} has version 1.0.0 at refs/heads/main.')):
+            def fetch(repository, ref, into, commit=commit, version=version):
+                (into / 'tree' / 'skills' / 'training-studio').mkdir(parents=True)
+                (into / 'tree' / 'skills' / 'training-studio' / 'VERSION').write_text(
+                    f'{version}\n')
+                return into / 'tree', commit
 
-        def fetch(repository, ref, into):
-            (into / 'tree' / 'skills' / 'training-studio').mkdir(parents=True)
-            (into / 'tree' / 'skills' / 'training-studio' / 'VERSION').write_text('1.0.0\n')
-            return into / 'tree', 'c' * 40
-
-        with mock.patch.object(upkeep, 'fetch_tree', fetch), \
-                mock.patch.object(upkeep.companion, 'supervise') as ran:
-            self.keep.upgrade(False, '99.0.0')
-            settle(self.keep)
-        ran.assert_not_called()
-        upgrade = self.keep.report()['versions']['upgrade']
-        self.assertEqual(upgrade['state'], 'failed')
-        self.assertEqual(upgrade['says'], f'Training Studio 99.0.0 was not installed: '
-                         f'{self.source} has version 1.0.0 at refs/tags/v99.0.0.')
+            with mock.patch.object(upkeep, 'fetch_tree', fetch), \
+                    mock.patch.object(upkeep.companion, 'supervise') as ran:
+                self.keep.upgrade(False, '99.0.0')
+                settle(self.keep)
+            ran.assert_not_called()
+            upgrade = self.keep.report()['versions']['upgrade']
+            self.assertEqual(upgrade['state'], 'failed')
+            self.assertEqual(upgrade['says'], f'Training Studio 99.0.0 was not installed: {said}')
         with self.assertRaises(WorkspaceError) as refused:
             self.keep.restart(False)
         self.assertEqual(str(refused.exception), upkeep.NO_RESTART)
 
-    def test_a_revision_is_fetched_by_name_as_plain_files_only(self):
+    def test_main_is_fetched_by_name_as_plain_files_only(self):
+        self.advance('99.0.0')
         (self.work / 'run.sh').write_text('#!/bin/sh\n')
         (self.work / 'run.sh').chmod(0o755)
         (self.work / 'link').symlink_to('/etc/passwd')
-        git(self.work, 'add', '-A')
-        git(self.work, 'commit', '-q', '-m', 'two')
-        self.release('v99.0.0')
+        head = self.advance('99.0.1')
         into = self.base / 'fetched'
         into.mkdir()
-        tree, commit = upkeep.fetch_tree(str(self.source), 'refs/tags/v99.0.0', into)
-        self.assertEqual(commit, git(self.work, 'rev-parse', 'HEAD'))
-        self.assertEqual(sorted(path.name for path in tree.iterdir()), ['VERSION', 'run.sh'])
+        tree, commit = upkeep.fetch_tree(str(self.source), 'refs/heads/main', into)
+        self.assertEqual(commit, head)
+        self.assertEqual(sorted(path.name for path in tree.iterdir()),
+                         ['guidance', 'moved', 'run.sh', 'skills'])
         self.assertTrue(os.access(tree / 'run.sh', os.X_OK))
         self.assertEqual(sorted(path.name for path in into.iterdir()), ['tree'])
-        for wrong in ('HEAD', 'refs/tags/../x', '--upload-pack=x'):
+        for wrong in ('HEAD', 'refs/heads/../x', '--upload-pack=x'):
             with self.assertRaises(sync_guidance.SyncError):
                 upkeep.fetch_tree(str(self.source), wrong, self.base)
 
@@ -737,38 +803,41 @@ class GuidanceTests(UpkeepCase):
         self.assertFalse(keep.report()['update']['offered'],
                          'nothing unpinned: it comes with the newer Training Studio')
 
-        # Online: a release of the companion beyond even the newest pin, and a release of
-        # Training Studio at the commit main has, whose pins are read the same way.
+        # Online: a tag of the companion beyond even the newest pin is never read, and
+        # Training Studio's newest is main, as the guidance cache holds it.
         tag(_made['harness-slides'], 'v0.15.0')
         self.addCleanup(git, _made['harness-slides'].bare, 'tag', '-d', 'v0.15.0')
         self.addCleanup(git, _made['harness-slides'].work, 'tag', '-d', 'v0.15.0')
-        git(remote, 'tag', 'v99.1.0')
+        git(remote, 'tag', 'v99.9.0')
         self.look_online(True)
         with mock.patch.dict(os.environ, {'TRAINING_STUDIO_SOURCE': str(remote)}):
             self.assertTrue(keep.look())
         rows = {row['name']: row for row in keep.report()['versions']['rows']}
-        # A companion's tags are never read: it is installed from main.
         self.assertEqual((rows['harness-slides']['next'], rows['harness-slides']['newest']),
                          ('0.14.0', None))
         self.assertIsNone(rows['harness-slides']['beyond'])
-        self.assertEqual(keep.report()['versions']['upgrade']['from'], 'tag')
+        self.assertEqual(rows['training-studio']['newest'], '99.1.0')
+        self.assertEqual(keep.report()['versions']['upgrade']['from'], 'main')
 
-        # A release whose commit was never fetched with main: its pins are not guessed.
-        (remote / 'elsewhere').write_text('not on main\n')
-        git(remote, 'checkout', '-q', '-b', 'side')
+        # main moves on past the guidance cache: the look fetches it there, so its version
+        # and its pins are read, as a new training's start would have fetched them.
+        (remote / 'skills' / 'training-studio' / 'VERSION').write_text('99.2.0\n')
+        pins = json.loads(json.dumps(_made['pins']))
+        pins['harness-slides'].update(version='0.14.2', commit='a' * 40, sha256='b' * 64)
+        write_pins(remote / 'installer' / 'companions.json', pins)
         git(remote, 'add', '-A')
-        git(remote, 'commit', '-q', '-m', 'Off main')
-        git(remote, 'tag', 'v99.2.0')
+        git(remote, 'commit', '-q', '-m', 'Version 99.2.0')
+        moved = git(remote, 'rev-parse', 'HEAD')
         saved = json.loads((self.root / upkeep.SAVED).read_text())
         saved['at'] = '2020-01-01T00:00:00Z'
         (self.root / upkeep.SAVED).write_text(json.dumps(saved))
         with mock.patch.dict(os.environ, {'TRAINING_STUDIO_SOURCE': str(remote)}):
             self.assertTrue(keep.look())
+            keep.check()
         rows = {row['name']: row for row in keep.report()['versions']['rows']}
-        self.assertEqual((rows['training-studio']['newest'], rows['harness-slides']['next'],
-                          rows['harness-slides']['state']), ('99.2.0', None, 'current'))
-        self.assertIn('Which version Training Studio 99.2.0 is made with is not known here yet',
-                      rows['harness-slides']['says'])
+        self.assertEqual((rows['training-studio']['newest'], rows['training-studio']['commit'],
+                          rows['harness-slides']['next'], rows['harness-slides']['target']),
+                         ('99.2.0', moved[:12], '0.14.2', '0.14.2'))
 
 
 class SavedLookTests(ReleaseCase):
@@ -783,15 +852,15 @@ class SavedLookTests(ReleaseCase):
         self.assertEqual((found['at'], found['dismissed'], found['schema']),
                          ('2026-10-01T00:00:00Z', None, 1))
         entry = found['found'][own]
-        self.assertEqual(sorted(entry), ['commit', 'known_at', 'latest', 'problem',
+        self.assertEqual(sorted(entry), ['branch', 'commit', 'known_at', 'latest', 'problem',
                                          'repository', 'tag'])
         self.assertRegex(entry['commit'], '^[0-9a-f]{40}$')
         self.assertEqual((entry['known_at'], entry['latest'], entry['problem'], entry['tag'],
-                          entry['repository']),
-                         ('2026-10-01T00:00:00Z', latest, None, 'v' + latest, str(self.source)))
+                          entry['branch'], entry['repository']),
+                         ('2026-10-01T00:00:00Z', None, None, None, 'main', str(self.source)))
 
     def test_the_saved_look_is_written_as_before(self):
-        self.release('v99.0.0')
+        self.advance('99.0.0')
         with mock.patch.object(upkeep, '_now', lambda: '2026-10-01T00:00:00Z'):
             self.assertTrue(self.keep.look())
         self.assertEqual(sorted(json.loads(self.keep.saved_path().read_text())['found']),

@@ -12,7 +12,23 @@ EFFORTS = {'claude': ('low', 'medium', 'high', 'xhigh', 'max'),
 FIELDS = {'person': {'name'}, 'assistant': {'agent', 'model', 'effort'},
           'team': {'repository', 'branch'}, 'local': {'root'}, 'render': {'previews'},
           'graphics': {'provider', 'model'},
-          'brand': {'repository', 'release', 'brand', 'variant', 'skill', 'brands'}}
+          'brand': {'repository', 'brand', 'variant', 'skill', 'brands'}}
+# Kept by an older version, and sent by a form an older version drew: the brand skill is
+# installed and updated from its repository's main, so there is no release to choose. A
+# saved one is never read or shown, and is left as it is; one sent is dropped, not refused.
+RETIRED = {'brand': ('release',)}
+
+
+def without_retired(changes):
+    """`changes`, or the values a form is shown, without those no version reads any more
+    (RETIRED)."""
+    if not isinstance(changes, dict):
+        return changes
+    kept = dict(changes)
+    for group, names in RETIRED.items():
+        if isinstance(kept.get(group), dict) and any(name in kept[group] for name in names):
+            kept[group] = {key: value for key, value in kept[group].items() if key not in names}
+    return kept
 
 
 def repository(value):
@@ -108,10 +124,6 @@ def check(changes, current):
     for field in ('brand', 'variant'):
         if brand.get(field) and not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]{0,79}', brand[field]):
             raise WorkspaceError('Use a short brand or variant ID with letters, numbers, dots or dashes.')
-    release = brand.get('release')
-    if release and (not brand.get('repository') or not re.fullmatch(r'[\w][\w.+-]{0,99}', release)
-                    or '..' in release):
-        raise WorkspaceError('Give a brand repository and a release tag such as v1.4.0.')
     root = (merged.get('local') or {}).get('root')
     if root and not Path(root).expanduser().is_absolute():
         raise WorkspaceError('Choose an absolute work folder, or one beginning with ~/.')
@@ -156,6 +168,7 @@ def visible(values):
 def save(config, changes, seen):
     if not isinstance(seen, dict):
         raise ValueError('Reload shared settings before saving changes.')
+    changes = without_retired(changes)
     if isinstance(changes, dict) and 'research' in changes:
         # Saved as the studios read them: canonical, deduplicated, at most fifty.
         changes = {**changes, 'research': research_sites.check_shared(changes['research'])}
@@ -196,7 +209,7 @@ LABELS = {('person', 'name'): 'Your name', ('assistant', 'agent'): 'Assistant',
           ('team', 'branch'): 'Branch', ('share',): 'Share changes',
           ('brand', 'repository'): 'Brand Git repository', ('brand', 'skill'): 'Installed skill folder',
           ('brand', 'brand'): 'Default brand', ('brand', 'variant'): 'Default variant',
-          ('brand', 'release'): 'Brand skill release', ('output',): 'Deliver as',
+          ('output',): 'Deliver as',
           ('appearance',): 'Appearance',
           ('graphics', 'provider'): 'Document graphics', ('graphics', 'model'): 'Graphics model',
           ('render', 'previews'): 'Slide previews', ('research', 'sites'): 'Research sites',

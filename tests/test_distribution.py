@@ -509,7 +509,7 @@ class OfflineInstallTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertEqual(json.loads(said.splitlines()[-1]), {'error': (
             'The earlier version is no longer on this computer: an update keeps only the newest. '
-            'Install the release you want instead. Nothing was changed.')})
+            'Install the version you want from its repository instead. Nothing was changed.')})
         self.assertEqual({path: os.readlink(path) for path in pointers}, pointers)
         self.assertEqual((self.data / 'installation.json').read_bytes(), record)
         self.assertEqual((self.data / 'marketing-studio').read_bytes(), launcher)

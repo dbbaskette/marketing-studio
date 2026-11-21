@@ -194,7 +194,9 @@ class ConfigTests(unittest.TestCase):
         self.assertIn('Existing shared values were kept', shown['migration_notice'])
         shared = studios_config.read()[0]
         self.assertEqual(shared['assistant']['model'], 'legacy-model')
-        self.assertEqual(shared['brand']['release'], 'v1.4.0')
+        # A brand release an older version kept is not moved: there is none to choose.
+        self.assertEqual(shared['brand']['repository'], 'https://example.invalid/brand.git')
+        self.assertNotIn('release', shared['brand'])
         self.assertEqual(shared['team']['branch'], 'main')
         self.assertEqual(shared['share'], 'asked')
         self.assertEqual(shared['output'], 'google')
@@ -255,7 +257,7 @@ class ConfigTests(unittest.TestCase):
             {
                 'person': {'name': 'Author Two'},
                 'assistant': {'agent': 'codex'},
-                'brand': {'repository': 'https://example.invalid/brand.git', 'release': 'v1.4.0'},
+                'brand': {'repository': 'https://example.invalid/brand.git'},
             }
         )
         current = blog_runner.settings(one)

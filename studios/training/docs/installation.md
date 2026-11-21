@@ -141,11 +141,11 @@ sh installer/install.sh install --dry-run
 
 ## Update
 
-Once a day the runner checks whether a newer Training Studio is out. If one is, Home says so with an "Upgrade" button; see [keeping it current](runner.md#keeping-it-current). After your yes, the runner fetches that version and runs its own installer, then asks you to restart. The new copy is installed beside the one that is running, the runner with it, and `current` moves to it. Trainings you have already made are not touched; they live in your own folders.
+Training Studio is updated from this repository's `main`; there are no release tags to wait for. Once a day the runner checks whether `main` is at another commit than the one installed. If it is, Home says so with an "Upgrade" button, the version shown as a label (4.16.0 → 4.17.0, or `main`'s commit when the version did not change); see [keeping it current](runner.md#keeping-it-current). After your yes, the runner fetches `main` and runs its own installer, which keeps the commit it was installed from, then asks you to restart. The new copy is installed beside the one that is running, the runner with it, and `current` moves to it. Trainings you have already made are not touched; they live in your own folders.
 
 One version is kept. Every link, launcher and saved path names `~/.local/share/training-studio/current`, never the folder it points at, so an update changes that one link. When an install has fully succeeded with Training Studio closed, every other folder in `versions` is removed, and the installer says what it removed and anything it could not. An upgrade made from the open runner removes nothing, since the runner is still working from the older copy; that copy goes with the next install made while Training Studio is closed.
 
-You can also update by hand: close Training Studio, get the newer version of this repository and run the installer again. An install made before version 0.21.0 has to be updated this way once, since its runner cannot upgrade itself yet. One made before 0.19.0 also shows no versions at all, since it has no installer beside its runner to ask.
+You can also update by hand: close Training Studio, pull `main` in your copy of this repository and run the installer again. An install made before version 0.21.0 has to be updated this way once, since its runner cannot upgrade itself yet. One made before 0.19.0 also shows no versions at all, since it has no installer beside its runner to ask.
 
 The installer never changes anything while the runner is working. It says so and stops. Close the runner's window, or press Ctrl-C in it, and run the installer again. This holds for going back a version and for removing too. The one exception is the runner's own upgrade: it asks the newer version's installer, with the hidden `--while-open`, to install beside the version that is running and to move nothing else.
 
@@ -155,7 +155,7 @@ The installer never changes anything while the runner is working. It says so and
 sh installer/install.sh rollback
 ```
 
-An update keeps only the newest version, so there is normally nothing to go back to, and the installer says so and changes nothing: "The earlier version is no longer on this computer: an update keeps only the newest. Install the release you want instead." To go back, get the release you want and install it. Rollback still works when the earlier folder is on disk, which happens only when it could not be removed or the upgrade was made from the open runner: it then points `current` at that version, and its runner with it. The companion skills are not changed: each has its own installer, which is the way to go back.
+An update keeps only the newest version, so there is normally nothing to go back to, and the installer says so and changes nothing: "The earlier version is no longer on this computer: an update keeps only the newest. Install the version you want from its repository instead." To go back, check out the commit you want in a copy of the repository and install from it. Rollback still works when the earlier folder is on disk, which happens only when it could not be removed or the upgrade was made from the open runner: it then points `current` at that version, and its runner with it. The companion skills are not changed: each has its own installer, which is the way to go back.
 
 ## Remove
 

@@ -5,6 +5,7 @@ links through: a page file that links to `ui-kit/` under its own name travels as
 copy, and any other link stops the package.
 """
 import importlib
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -174,6 +175,52 @@ class OneVersionTests(unittest.TestCase):
                          self.versions / '1.0.0-old')
         self.assertEqual(packaging.version_target(current, 'versions/1.0.0-old'), self.versions / '1.0.0-old')
         self.assertIsNone(packaging.version_target(self.root / 'skills/tool', str(current)))
+
+
+
+class InstalledCommitTests(unittest.TestCase):
+    """Which commit of main each installed version came from: what a studio compares with
+    where main is now, to offer an update."""
+
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.root = Path(folder.name).resolve()
+
+    def git(self, *args):
+        return subprocess.run(['git', '-c', 'user.name=A Test', '-c', 'user.email=t@example.com',
+                               *args], cwd=self.root, check=True, capture_output=True,
+                              text=True).stdout.strip()
+
+    def test_a_checkout_says_its_commit_and_a_plain_folder_says_none(self):
+        (self.root / 'skill').mkdir()
+        self.assertIsNone(packaging.source_commit(self.root / 'skill'))
+        self.git('init', '-q', '-b', 'main')
+        (self.root / 'skill' / 'VERSION').write_text('1.0.0\n')
+        self.git('add', '-A')
+        self.git('commit', '-q', '-m', 'One')
+        self.assertEqual(packaging.source_commit(self.root / 'skill'),
+                         self.git('rev-parse', 'HEAD'))
+
+    def test_the_commit_is_kept_by_version_and_only_for_versions_in_the_history(self):
+        one, two = 'a' * 40, 'b' * 40
+        state = {'history': ['1.0.0-aaaaaaaaaaaa']}
+        packaging.remember_commit(state, '1.0.0-aaaaaaaaaaaa', one)
+        state['history'].append('1.1.0-bbbbbbbbbbbb')
+        packaging.remember_commit(state, '1.1.0-bbbbbbbbbbbb', two)
+        self.assertEqual(packaging.installed_commit(state, '1.0.0-aaaaaaaaaaaa'), one)
+        self.assertEqual(packaging.installed_commit(state, '1.1.0-bbbbbbbbbbbb'), two)
+        # The same files installed again from a download keep the commit they came from.
+        packaging.remember_commit(state, '1.1.0-bbbbbbbbbbbb', None)
+        self.assertEqual(packaging.installed_commit(state, '1.1.0-bbbbbbbbbbbb'), two)
+        # A version gone from the history is let go of; one never recorded is not known.
+        state['history'] = ['1.1.0-bbbbbbbbbbbb']
+        packaging.remember_commit(state, '1.1.0-bbbbbbbbbbbb', two)
+        self.assertEqual(state['commits'], {'1.1.0-bbbbbbbbbbbb': two})
+        self.assertIsNone(packaging.installed_commit(state, '0.9.0-cccccccccccc'))
+        # A record from an older installer, with no commits, or a broken one, says none.
+        for older in ({}, {'commits': 'x'}, {'commits': {'1.1.0-bbbbbbbbbbbb': 'not-a-commit'}}):
+            self.assertIsNone(packaging.installed_commit(older, '1.1.0-bbbbbbbbbbbb'))
 
 
 if __name__ == '__main__':

@@ -84,7 +84,7 @@ class SuiteTests(unittest.TestCase):
         return done
 
     GONE = ('The earlier version is no longer on this computer: an update keeps only the newest. '
-            'Install the release you want instead. Nothing was changed.')
+            'Install the version you want from its repository instead. Nothing was changed.')
     LATER = {'blog': 'skills/blog-studio/SKILL.md', 'presentation': 'skills/presentation-studio/VERSION',
              'training': 'skills/training-studio/VERSION', 'infographic': 'VERSION'}
 

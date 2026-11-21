@@ -119,7 +119,7 @@ Link your checkout so your assistant uses your changes as you make them:
 sh installer/install.sh install --link
 ```
 
-Bump `skills/training-studio/VERSION` when you release a change. The installed version is named by that number and a hash of every file.
+Bump `skills/training-studio/VERSION` when a change should be told apart in what a person sees. It is a label: an installed Training Studio is updated from `main` whenever `main` is at another commit than the one it was installed from, and no tag is made or read for it. The installed version is named by that number and a hash of every file, and the installer keeps the commit it came from.
 
 ## The main branch is live
 
@@ -223,11 +223,11 @@ No test starts a real agent, the real harness-research, the slides tool or a bra
 - **The installer brings the runner.** `installer/install.py` copies `runner/` beside the helper's scripts in each installed version, where `runner/__init__.py` finds them, and writes the launchers. Each companion is fetched at the commit `installer/companions.json` pins and installed by its own installer; `install.py pin` moves a pin.
 - **The runner asks the installer.** Each installed version also holds `installer/install.py` and the `companions.json` it was installed with, the same layout as a checkout's. `runner/upkeep.py` loads that file and uses its own `read_state`, `replace_link`, `companion_found`, `wanting` and `write_launchers`. It does not use a second copy of them.
   - Its Update runs `install.py companions --while-open` as a command of its own, under `companion.supervise`.
-  - The online look is `git ls-remote --tags` through `hub.run`, at most once a day. Its result is kept in `updates.json` in the data folder.
-  - Its Upgrade fetches the newest revision by name with `sync_guidance`'s isolated git into a temporary folder and runs that revision's own `install.py install --while-open`. The pins of the newest version are read from the guidance cache, never fetched for themselves.
+  - The online look is `git ls-remote` of each `main` through `hub.run`, at most once a day; when Training Studio's own `main` moved, it is fetched into the guidance cache with `sync_guidance.fetch`. Its result is kept in `updates.json` in the data folder.
+  - Its Upgrade fetches `main` by name with `sync_guidance`'s isolated git into a temporary folder, checks its commit is the one shown, and runs that copy's own `install.py install --while-open --commit <commit>`. The installer keeps the commit beside the version (`studio_core.packaging.remember_commit`), and the runner compares it with `main`'s. The pins of the newest version are read from the guidance cache, never fetched for themselves.
   - Restart stops the runner; `studio serve` then runs the installer's `studio` command in its place, handing the page's key over once through `TRAINING_STUDIO_RESTART`.
-  - `tests/test_runner_page.py` upgrades an older install to a newer one through the page, from a local bare repository holding this checkout at a higher version.
-  - `tests/test_runner_upkeep.py` installs into a temporary home against the installer tests' stand-in companions and bare repositories with tags.
+  - `tests/test_runner_page.py` upgrades an older install to `main` through the page, from a local bare repository holding this checkout at a higher version.
+  - `tests/test_runner_upkeep.py` installs into a temporary home against the installer tests' stand-in companions and bare repositories whose `main` moves.
   - `studio serve` and `studio status` are the only places an `Upkeep` is made, so no other test reads a real home or asks the network.
 
 ## What is not yet verified

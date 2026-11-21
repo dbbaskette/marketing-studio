@@ -119,7 +119,7 @@ class LayoutTests(test_desk.ScriptedPage, test_desk.PageCase):
     def test_settings_has_one_lede_and_one_versions_link(self):
         self.started()
         held = {**SET_UP, 'updates': {'look': True},
-                'brand': {'repository': 'git@example.com:team/brand.git', 'release': ''}}
+                'brand': {'repository': 'git@example.com:team/brand.git'}}
         result = self.run_page(self.answers(held), [{'click': 'Settings'},
                                                     {'snapshot': 'settings'}],
                                notifications='default')

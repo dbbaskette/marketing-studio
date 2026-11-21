@@ -81,7 +81,7 @@ Undo it with `sh installer/install.sh uninstall`. Without installing, the runner
 
 ## Releasing
 
-`main` is live: an installed copy fetches its guidance from it. Guidance that needs a script change raises `minimum_runtime` in `guidance/manifest.json` and the `VERSION` files together. A release is a `vX.Y.Z` tag on `main`; the runner offers it as an upgrade.
+`main` is live: an installed copy fetches its guidance from it. Guidance that needs a script change raises `minimum_runtime` in `guidance/manifest.json` and the `VERSION` files together. An installed Presentation Studio is updated from `main` too: the runner offers `main` as an upgrade once it is at another commit than the one installed, with the `VERSION` as its label. No tag is made or read for it.
 
 Saved work is never pinned to an installed version. A deck's guidance pin (`.presentation-studio/guidance.json`) holds the commit of its instructions and, to show, the version it started on; no path and no file digests, and nothing compares that version. A pin from an older release that has them is read without them. A new deck takes the newest guidance; a deck in progress keeps the instructions it was saved with and always runs the installed scripts. `resume` never refuses because of an update or a cleaned folder: an unreadable pin, or a commit that is not on `main`, carries on with the current guidance, is saved again and returns a `notice`. Its one refusal is a saved commit whose `minimum_runtime` is newer than the installed scripts. Any path the helper hands out comes from `sync_guidance.address()`, the `current` link, never a `versions/<id>` folder.
 

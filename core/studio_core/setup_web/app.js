@@ -350,9 +350,6 @@ function describeAdvanced() {
   owner('#models-owner', byTask || Boolean(model || effort));
   $('#models-pointer').textContent = `Uses ${byTask ? 'models chosen by task' : single}. ${setup ? 'You can change this in Shared settings, Advanced, after setup.' : 'Change it under Advanced: Models and reasoning.'}`;
   describeQuick();
-  const release = value('brand.release');
-  $('#release-state').textContent = release ? `Pinned to ${release}` : 'Newest release';
-  owner('#release-owner', Boolean(release));
   $('#research-state').textContent = researchSites.length ? `${researchSites.length} ${researchSites.length === 1 ? 'site' : 'sites'}` : 'No sites yet';
   const folders = [...$('#path-fields').children].filter(field => (field.children?.[1]?.value || '').trim()).length;
   $('#installations-state').textContent = folders ? `${folders} ${folders === 1 ? 'folder' : 'folders'} set by you` : 'Every studio found automatically';
@@ -954,7 +951,7 @@ function wantedValues() {
     wanted.share = value('share');
   }
   if (!setup || step === 2) {
-    wanted.brand = Object.fromEntries(['repository', 'release', 'brand', 'variant', 'skill', 'brands'].map(key => [key, value(`brand.${key}`)]));
+    wanted.brand = Object.fromEntries(['repository', 'brand', 'variant', 'skill', 'brands'].map(key => [key, value(`brand.${key}`)]));
     if (!blogAlone()) {
       wanted.output = value('output');
       wanted.render = {previews: value('render.previews')};

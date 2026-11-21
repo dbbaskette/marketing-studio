@@ -71,8 +71,8 @@ runtime, because the studios open with them.
 
 Since an update keeps one version, `rollback` normally has nothing to return to. It
 checks first and changes nothing: "The earlier version is no longer on this computer:
-an update keeps only the newest. Install the release you want instead." To go back,
-install the release you want. Rollback still works when every earlier folder it would
+an update keeps only the newest. Install the version you want from its repository instead." To go back,
+install the version you want from its repository. Rollback still works when every earlier folder it would
 point at is still there, which happens only when one could not be removed.
 
 You can check prerequisites without installing system software:
@@ -144,6 +144,13 @@ installed from `main` as it is then: fetched with no hooks, checked file for fil
 links, its entry and installer where the pin says, a version at or above the floor)
 before its own installer runs, and recorded with the commit and checksum it was. A `main`
 older than the floor is refused with a sentence that says to try again once it is updated.
+
+**Studios come from `main` too.** A studio installed on its own updates itself from its
+repository's `main`: once a day it compares the commit it was installed from, which its
+installer keeps, with where `main` is, and offers **Upgrade** when they differ. The version
+is only a label ("4.16.0 → 4.17.0", or `main`'s commit when the version did not change);
+no tag is made, read or waited for. A studio installed by Marketing Studio is updated by
+Marketing Studio's installer.
 
 An update means that `main` is at another commit than the one installed: a studio's
 Update, or `install.py companions --update`, installs `main` again. A copy that meets the

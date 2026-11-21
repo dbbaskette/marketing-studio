@@ -383,7 +383,7 @@ class OneVersionTests(InstallerCase):
 
 class RollbackTests(InstallerCase):
     GONE = ('The earlier version is no longer on this computer: an update keeps only the '
-            'newest. Install the release you want instead. Nothing was changed.')
+            'newest. Install the version you want from its repository instead. Nothing was changed.')
 
     def test_rollback_after_an_update_refuses_and_changes_nothing(self):
         self.run_installer('install', '--yes')

@@ -66,6 +66,38 @@ def git(cwd: Path, *args: str) -> str:
                           text=True).stdout.strip()
 
 
+def advance(base: Path, source: Path, version: str) -> str:
+    """Presentation Studio's repository: main moves on, to a commit whose VERSION is
+    `version`, at its top and in its guidance's content root. Its commit."""
+    work = base / 'presentation-studio-work'
+    if not work.exists():
+        git(base, 'init', '-q', '-b', 'main', str(work))
+        (work / 'guidance').mkdir()
+        (work / 'guidance' / 'manifest.json').write_text(json.dumps(
+            {'schema': 1, 'content_root': 'skills/presentation-studio',
+             'minimum_runtime': '0.1.0'}))
+        (work / 'skills' / 'presentation-studio').mkdir(parents=True)
+    (work / 'VERSION').write_text(f'{version}\n')
+    (work / 'skills' / 'presentation-studio' / 'VERSION').write_text(f'{version}\n')
+    moves = work / 'moved'
+    moves.write_text(str(int(moves.read_text()) + 1 if moves.exists() else 1))
+    git(work, 'add', '-A')
+    git(work, 'commit', '-q', '-m', f'Version {version}')
+    git(work, 'push', '-q', str(source), 'HEAD:refs/heads/main')
+    return git(work, 'rev-parse', 'HEAD')
+
+
+def look_now(keep) -> bool:
+    """Look online now, whenever the last look was, then look at this computer."""
+    saved = keep.saved_path()
+    if saved.is_file():
+        kept = json.loads(saved.read_text())
+        saved.write_text(json.dumps({**kept, 'at': '2020-01-01T00:00:00Z'}))
+    found = keep.look()
+    keep.check(repair=False)
+    return found
+
+
 class UpkeepCase(unittest.TestCase):
     def setUp(self):
         holder = tempfile.TemporaryDirectory()
@@ -268,25 +300,21 @@ class UpdateTests(UpkeepCase):
 
 
 class ReleaseTests(UpkeepCase):
-    def release(self, version: str) -> None:
-        work = self.base / 'work'
-        if not work.exists():
-            git(self.base, 'init', '-q', '-b', 'main', str(work))
-        (work / 'VERSION').write_text(f'{version}\n')
-        git(work, 'add', '-A')
-        git(work, 'commit', '-q', '-m', f'Release {version}')
-        git(work, 'tag', f'v{version}')
-        git(work, 'push', '-q', '--tags', str(self.source), 'main')
+    def release(self, version: str) -> str:
+        return advance(self.base, self.source, version)
 
     def test_a_newer_presentation_studio_is_said_and_offered_only_where_it_can_be(self):
         self.release('99.0.0')
         keep = self.keeper()
         keep.check(repair=False)
         self.assertTrue(keep.look())
+        keep.check(repair=False)
         report = keep.report()
         own = report['versions']['rows'][0]
         self.assertEqual((own['name'], own['installed'], own['newest'], own['state']),
                          ('presentation-studio', keep.version(), '99.0.0', 'update'))
+        self.assertTrue(own['says'].startswith('A newer Presentation Studio is available '
+                                               f'({keep.version()} → 99.0.0).'), own['says'])
         self.assertFalse(report['versions']['upgrade']['offered'],
                          'never from a copy of the repository')
         with self.assertRaises(WorkspaceError) as caught:
@@ -298,12 +326,14 @@ class ReleaseTests(UpkeepCase):
         self.assertEqual(str(caught.exception), upkeep.FROM_CHECKOUT)
 
     def test_it_looks_at_most_once_a_day_and_never_when_turned_off(self):
-        self.release('0.2.0')
+        head = self.release('0.2.0')
         keep = self.keeper()
         self.assertTrue(keep.look())
         self.assertFalse(keep.look(), 'once a day')
         kept = json.loads(keep.saved_path().read_text())
-        self.assertEqual(kept['found']['presentation-studio']['latest'], '0.2.0')
+        self.assertEqual({key: kept['found']['presentation-studio'][key]
+                          for key in ('commit', 'branch', 'tag', 'latest')},
+                         {'commit': head, 'branch': 'main', 'tag': None, 'latest': None})
         keep.saved_path().unlink()
         settings.save(settings.Settings(look_for_updates=False))
         self.assertFalse(keep.look())
@@ -581,18 +611,13 @@ class UpgradeTests(InstalledCase):
         super().setUp()
         self.keep = self.keeper()
         self.keep.check()
-        self.work = self.base / 'presentation-studio-work'
-        git(self.base, 'init', '-q', str(self.work))
-        (self.work / 'VERSION').write_text('1\n')
-        git(self.work, 'add', '-A')
-        git(self.work, 'commit', '-q', '-m', 'one')
 
     def test_suite_installation_defers_native_upgrade_to_the_suite_installer(self):
         record = self.home / '.local/share/marketing-studio/installation.json'
         record.parent.mkdir(parents=True)
         record.write_text(json.dumps({'schema': 1, 'studios': ['presentation']}))
-        self.release('v99.0.0')
-        self.keep.look()
+        self.release('99.0.0')
+        look_now(self.keep)
         versions = self.keep.report()['versions']
         self.assertFalse(versions['upgrade']['offered'])
         self.assertEqual(versions['suite'], 'marketing-studio')
@@ -605,10 +630,8 @@ class UpgradeTests(InstalledCase):
             with self.assertRaisesRegex(WorkspaceError, 'Marketing Studio installer'):
                 self.keep.upgrade(False, '99.0.0')
 
-    def release(self, *versions: str) -> None:
-        for version in versions:
-            git(self.work, 'tag', version)
-        git(self.work, 'push', '-q', '--tags', str(self.source))
+    def release(self, version: str) -> str:
+        return advance(self.base, self.source, version)
 
     def test_a_checkout_shows_the_versions_and_says_it_is_upgraded_with_git_pull(self):
         keep = upkeep.Upkeep(home_dir=self.home, root=self.base / 'nothing-installed',
@@ -617,27 +640,50 @@ class UpgradeTests(InstalledCase):
         # version has the stand-ins' pins beside its installer, and so does this.
         keep.pins = lambda: upkeep.read_pins(self.pins_file)
         keep.check()
-        self.release('v99.0.0')
-        keep.look()
+        self.release('99.0.0')
+        look_now(keep)
         versions = keep.report()['versions']
         self.assertEqual((versions['checkout'], versions['command']),
                          (True, f'cd {helpers.REPO} && git pull'))
+        self.assertEqual(versions['rows'][0]['state'], 'update')
         self.assertFalse(versions['upgrade']['offered'])
         with self.assertRaises(WorkspaceError) as refused:
             keep.upgrade(False, '99.0.0')
         self.assertEqual(str(refused.exception), upkeep.FROM_CHECKOUT)
 
-    def test_an_installed_version_is_offered_the_newer_one(self):
-        self.release('v99.0.0')
-        self.assertTrue(self.keep.look())
+    def test_an_installed_version_is_offered_main_once_it_moves(self):
+        head = self.release('99.0.0')
+        self.assertTrue(look_now(self.keep))
         versions = self.keep.report()['versions']
         self.assertEqual((versions['checkout'], versions['command']), (False, None))
-        self.assertEqual((versions['upgrade']['offered'], versions['upgrade']['version']),
-                         (True, '99.0.0'))
+        self.assertEqual((versions['upgrade']['offered'], versions['upgrade']['version'],
+                          versions['upgrade']['from'], versions['upgrade']['commit']),
+                         (True, '99.0.0', 'main', head[:12]))
 
-    def test_the_upgrade_runs_the_fetched_versions_own_installer_beside_this_one(self):
-        self.release('v99.0.0')
-        self.keep.look()
+    def test_none_is_offered_while_this_copy_is_what_main_is(self):
+        head = self.release(VERSION)
+        keep = self.keeper(self.installed('--commit', head))
+        self.assertEqual(keep.installed_commit(), head)
+        look_now(keep)
+        own = keep.report()['versions']['rows'][0]
+        self.assertEqual((own['state'], own['says']),
+                         ('current', f'Presentation Studio {VERSION} is up to date with main.'))
+        self.assertFalse(keep.report()['versions']['upgrade']['offered'])
+        moved = self.release(VERSION)
+        look_now(keep)
+        own = keep.report()['versions']['rows'][0]
+        self.assertEqual((own['state'], own['target'], own['says']),
+                         ('update', moved[:12], 'A newer Presentation Studio is available '
+                                                f'({VERSION} → {moved[:12]}).'))
+        with mock.patch.object(upkeep.companion, 'supervise') as ran:
+            with self.assertRaises(WorkspaceError) as refused:
+                keep.upgrade(True, moved[:12])
+        self.assertEqual(str(refused.exception), upkeep.UPGRADE_WORKING)
+        ran.assert_not_called()
+
+    def test_the_upgrade_runs_mains_own_installer_beside_this_one(self):
+        head = self.release('99.0.0')
+        look_now(self.keep)
         asked, fetched, going = [], [], threading.Event()
 
         def fetch(repository, ref, into):
@@ -646,7 +692,7 @@ class UpgradeTests(InstalledCase):
             tree = into / 'tree'
             tree.mkdir()
             (tree / 'VERSION').write_text('99.0.0\n')   # the repository's own, at its top
-            return tree, 'c' * 40
+            return tree, head
 
         def supervise(command, cwd, env, stdin, seconds, errors, each, stop):
             asked.append((command, seconds))
@@ -663,16 +709,18 @@ class UpgradeTests(InstalledCase):
             self.assertEqual(shown['versions']['upgrade']['state'], 'running')
             going.set()
             settle(self.keep)
-        self.assertEqual(fetched, [(str(self.source), 'refs/tags/v99.0.0')])
+        self.assertEqual(fetched, [(str(self.source), 'refs/heads/main')])
         (command, seconds), = asked
         self.assertEqual(command[3:], [
             'install', '--yes', '--json', '--companions', 'skip', '--while-open',
-            '--home', str(self.home), '--root', str(self.root), '--target', 'both'])
+            '--home', str(self.home), '--root', str(self.root), '--commit', head,
+            '--target', 'both'])
         self.assertTrue(command[2].endswith('/tree/installer/install.py'))
         self.assertEqual(seconds, upkeep.UPGRADE_SECONDS)
         versions = self.keep.report()['versions']
-        self.assertEqual((versions['upgrade']['state'], versions['upgrade']['restart']),
-                         ('restart', True))
+        self.assertEqual((versions['upgrade']['state'], versions['upgrade']['restart'],
+                          versions['upgrade']['installs']),
+                         ('restart', True, '99.0.0-abcdef012345'))
         left = []
         self.keep.leave = lambda: left.append('left')
         with self.assertRaises(WorkspaceError) as refused:
@@ -683,24 +731,27 @@ class UpgradeTests(InstalledCase):
         self.assertEqual((self.keep.restarting, left),
                          (['/bin/sh', str(self.root / 'studio'), 'serve'], ['left']))
 
-    def test_a_version_that_is_not_the_one_shown_is_not_installed(self):
-        self.release('v99.0.0')
-        self.keep.look()
+    def test_what_is_fetched_must_be_main_as_shown(self):
+        head = self.release('99.0.0')
+        look_now(self.keep)
+        for commit, version, said in (
+                ('c' * 40, '99.0.0', f'main has moved on to {"c" * 12} since {head[:12]} was '
+                                     'shown. Look at it again before you upgrade.'),
+                (head, '1.0.0', f'{self.source} has version 1.0.0 at refs/heads/main.')):
+            def fetch(repository, ref, into, commit=commit, version=version):
+                (into / 'tree').mkdir()
+                (into / 'tree' / 'VERSION').write_text(f'{version}\n')
+                return into / 'tree', commit
 
-        def fetch(repository, ref, into):
-            (into / 'tree').mkdir()
-            (into / 'tree' / 'VERSION').write_text('1.0.0\n')
-            return into / 'tree', 'c' * 40
-
-        with mock.patch.object(upkeep, 'fetch_tree', fetch), \
-                mock.patch.object(upkeep.companion, 'supervise') as ran:
-            self.keep.upgrade(False, '99.0.0')
-            settle(self.keep)
-        ran.assert_not_called()
-        upgrade = self.keep.report()['versions']['upgrade']
-        self.assertEqual(upgrade['state'], 'failed')
-        self.assertEqual(upgrade['says'], f'Presentation Studio 99.0.0 was not installed: '
-                         f'{self.source} has version 1.0.0 at refs/tags/v99.0.0.')
+            with mock.patch.object(upkeep, 'fetch_tree', fetch), \
+                    mock.patch.object(upkeep.companion, 'supervise') as ran:
+                self.keep.upgrade(False, '99.0.0')
+                settle(self.keep)
+            ran.assert_not_called()
+            upgrade = self.keep.report()['versions']['upgrade']
+            self.assertEqual(upgrade['state'], 'failed')
+            self.assertEqual(upgrade['says'],
+                             f'Presentation Studio 99.0.0 was not installed: {said}')
         with self.assertRaises(WorkspaceError) as refused:
             self.keep.restart(False)
         self.assertEqual(str(refused.exception), upkeep.NO_RESTART)
@@ -751,12 +802,12 @@ class SavedLookTests(UpkeepCase):
         self.assertEqual((found['at'], found['dismissed'], found['schema']),
                          ('2026-10-01T00:00:00Z', None, 1))
         entry = found['found'][own]
-        self.assertEqual(sorted(entry), ['commit', 'known_at', 'latest', 'problem',
+        self.assertEqual(sorted(entry), ['branch', 'commit', 'known_at', 'latest', 'problem',
                                          'repository', 'tag'])
         self.assertRegex(entry['commit'], '^[0-9a-f]{40}$')
         self.assertEqual((entry['known_at'], entry['latest'], entry['problem'], entry['tag'],
-                          entry['repository']),
-                         ('2026-10-01T00:00:00Z', latest, None, 'v' + latest, str(self.source)))
+                          entry['branch'], entry['repository']),
+                         ('2026-10-01T00:00:00Z', None, None, None, 'main', str(self.source)))
 
     def test_the_saved_look_is_written_as_before(self):
         ReleaseTests.release(self, '0.2.0')

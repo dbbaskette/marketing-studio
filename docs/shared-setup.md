@@ -17,7 +17,7 @@ or every optional tool is available.
 | Marketing Studio setup complete | Independently open any studio | Normal native home, shared model and preview defaults | `native_launch_acceptance.py`, `SharedSetupTests.test_native_runners_consume_live_shared_model_brand_and_preview_choices` |
 
 Shared choices: person, assistant/model/reasoning, local work root or team
-repository/branch/sharing, brand repository/release/identity/variant/installed skill,
+repository/branch/sharing, brand repository/identity/variant/installed skill,
 delivery format, slide preview method, and research sites. Work already created retains its own
 choices. Native workspace migration never moves existing content.
 
@@ -39,8 +39,10 @@ explicit action in a studio's settings. **Where is your brand skill?** offers
 **Git repository** and **Installed skill folder** as separate, optional inputs.
 A repository address does not require an installed folder. Leave the folder
 blank for automatic discovery, or use it to select an existing installation.
-The brand skill is installed from its repository's `main`, so there is no release to
-choose. **Advanced → Brand skill release** is kept for older settings and is not used.
+The brand skill is installed and updated from its repository's `main`, so there is no
+release to choose and Shared settings has no release field. A `brand.release` an older
+version saved is not read or shown, is left in the file as it is, and one sent by a form
+an older version drew is dropped without a refusal.
 
 Optional studio controls retain built-in defaults: writing tone, time
 limits, parallel work, notifications and update checks. Research scope, author
@@ -438,8 +440,7 @@ they recorded. See [saved-work compatibility](saved-work-compatibility.md).
 First-run setup asks only the four everyday choices, in three steps: you and your
 assistant, your workspace, and brand and delivery. Shared settings shows one section
 at a time. Desktop section buttons group **Everyday** (Assistant, Workspace, Brand,
-Delivery) and **Advanced** (Models, Brand release, Research sites,
-Installations). On a phone, use the **Settings section** selector. Changing sections
+Delivery) and **Advanced** (Models, Research sites, Installations). On a phone, use the **Settings section** selector. Changing sections
 keeps unsaved values; an invalid field or conflicting edit opens its section before
 taking focus. **About shared and project settings** expands the ownership explanation.
 A new person can make the four everyday choices, save, and return to Studios without
@@ -477,8 +478,8 @@ on the button, or moves to the results heading when the check was started from a
 screen.
 
 Selecting an Advanced section opens its controls. A value set in place of the
-automatic one is tagged **Override** (models by task or a chosen model, a pinned
-release, an installation folder you set). Model lists are read only when Models
+automatic one is tagged **Override** (models by task or a chosen model, an
+installation folder you set). Model lists are read only when Models
 and reasoning is opened, so opening the page asks no assistant anything.
 
 Each part is tagged with who owns it. **Shared** values are saved once for every studio

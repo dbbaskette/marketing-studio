@@ -13,11 +13,11 @@ from __future__ import annotations
 import re
 
 
-SAVED = 'updates.json'    # in the data folder: the releases last found online, and when
+SAVED = 'updates.json'    # in the data folder: where each main branch was last found, and when
 DAY = 24 * 3600           # seconds between looks online
 LOOK_SECONDS = 15         # for one repository to answer
 UPDATE_SECONDS = 2400     # for the companions to be fetched, checked and installed
-TAG = re.compile(r'^([0-9a-f]{40})\trefs/tags/(v?(\d+\.\d+\.\d+))(\^\{\})?$')
+COMMIT = re.compile(r'[0-9a-f]{40}')
 UPDATING = 'The companion skills are being updated already.'
 NO_RESTART = 'There is no upgrade waiting for a restart.'
 BRAND = 'brand skill'     # the brand skill's row, and its entry in what was found online
@@ -51,21 +51,6 @@ def _version(text: str) -> tuple:
         return tuple(int(part) for part in text.split('.'))
     except (AttributeError, ValueError):
         return ()
-
-
-def newest(listed: str) -> dict | None:
-    """The newest release among the tags `git ls-remote --tags` printed, as {'version',
-    'tag', 'commit'}, or None. An annotated tag's commit is the one it points at."""
-    found = {}
-    for line in listed.splitlines():
-        match = TAG.match(line.strip())
-        if match:
-            commit, name, version, peeled = match.groups()
-            entry = found.setdefault(name, {'version': version, 'tag': name, 'commit': commit})
-            if peeled:
-                entry['commit'] = commit
-    return max(found.values(), key=lambda entry: _version(entry['version'])) if found \
-        else None
 
 
 def fetch_tree(repository: str, ref: str, into: Path) -> tuple[Path, str]:
@@ -179,7 +164,7 @@ class Upkeep:
         """The page's "Check again": the part on this computer now, online in the
         background when that is due."""
         self.check(repair=True)
-        self._background(self.look, 'looking for releases')
+        self._background(self.look, 'looking for updates')
 
     def _first(self) -> None:
         self.check(repair=True)
@@ -340,8 +325,11 @@ class Upkeep:
         return head if head != here else None
 
     def look(self) -> bool:
-        """Ask each repository which releases it has, when that is due. Only the tags are
-        read: nothing is downloaded or run. True when it looked."""
+        """Ask each repository where its main branch is, when that is due: the studio's own,
+        each companion's and the brand skill's. Only that commit is read, and nothing is run.
+        When the studio's own main has moved past the guidance cache, main is fetched into
+        that cache, as a new item's start fetches it, so its version and its pins can be
+        read. True when it looked."""
         if not self.due():
             return False
         place = home.data_root()
@@ -351,31 +339,28 @@ class Upkeep:
             # What was known last is kept when it cannot be asked now, with when it was.
             known = before.get(name) if isinstance(before.get(name), dict) \
                 and before[name].get('repository') == repository else {}
-            # A companion and the brand skill are installed from their main branch: only the
-            # commit it is at is read. The studio's own releases are its tags.
-            on_main = name != SELF
+            branch = self._branch() if name == SELF else 'main'
             entry = {'repository': repository, 'problem': None,
                      **{key: known.get(key) for key in ('latest', 'tag', 'commit', 'known_at',
-                                                        *(('branch',) if on_main else ()))}}
+                                                        'branch')}}
+            if known.get('branch') != branch:   # a release tag an older version kept
+                entry.update(latest=None, tag=None, commit=None, known_at=None, branch=None)
             try:
-                done = hub.run(place, 'ls-remote', *(('--', repository, 'refs/heads/main')
-                                                     if on_main else ('--tags', '--', repository)),
+                done = hub.run(place, 'ls-remote', '--', repository, f'refs/heads/{branch}',
                                timeout=LOOK_SECONDS)
             except WorkspaceError as refusal:
                 entry['problem'] = str(refusal).rstrip('.')
             else:
                 head = (done.stdout.split() or [''])[0] if done.returncode == 0 else ''
-                if done.returncode == 0 and on_main and not re.fullmatch('[0-9a-f]{40}', head):
-                    entry['problem'] = 'it has no main branch'
+                if done.returncode == 0 and not COMMIT.fullmatch(head):
+                    entry['problem'] = f'it has no {branch} branch'
                 elif done.returncode == 0 and name == BRAND:
                     entry.update(**self._brand_entry(head), known_at=_now())
-                elif done.returncode == 0 and on_main:
-                    entry.update(latest=None, tag=None, commit=head, branch='main',
-                                 known_at=_now())
                 elif done.returncode == 0:
-                    latest = newest(done.stdout) or {}
-                    entry.update(latest=latest.get('version'), tag=latest.get('tag'),
-                                 commit=latest.get('commit'), known_at=_now())
+                    entry.update(latest=None, tag=None, commit=head, branch=branch,
+                                 known_at=_now())
+                    if name == SELF:
+                        self._fetch_main(head)
                 else:
                     entry['problem'] = hub.reason(done)
             found[name] = entry
@@ -455,8 +440,8 @@ class Upkeep:
 
     def _brand_installed(self, repository: str, target: dict,
                          before: dict | None) -> tuple[str, str]:
-        """Whether the release is now the brand skill found here. A brand skill chosen in
-        Settings that was the one upgraded is moved to the new version."""
+        """Whether what was installed from main is now the brand skill found here. A brand
+        skill chosen in Settings that was the one upgraded is moved to the new version."""
         tag, version = target['tag'], target['version']
         now = [entry for entry in self._brands() if entry.get('version') == version]
         if not now:
@@ -483,7 +468,7 @@ class Upkeep:
         return lines
 
     def dismiss(self, key: str) -> dict:
-        """Stop showing the versions on Home until a newer one is out than `key` names."""
+        """Stop showing the versions on Home until main has moved on from what `key` names."""
         if not isinstance(key, str) or not key or len(key) > 500:
             raise WorkspaceError('Name what is dismissed as the key the page was given.')
         kept = self._saved()
@@ -501,7 +486,7 @@ class Upkeep:
             first = online[missed[0]]['problem']
             named = ["the brand skill's repository" if name == BRAND else name
                      for name in missed]
-            problem = (f'The last look for newer releases did not reach {_who(named)} '
+            problem = (f'The last look for updates did not reach {_who(named)} '
                        f'({first}). It is tried again in a day.')
         return {'on': settings.load().look_for_updates, 'at': kept.get('at'),
                 'problem': problem}
@@ -573,28 +558,87 @@ class Upkeep:
             return None
         return {'version': found, 'commit': commit} if _version(found) else None
 
+    @staticmethod
+    def _branch() -> str:
+        """The studio's source branch, `main`, that it is installed and updated from."""
+        return str(sync_guidance.source().get('branch', 'main'))
+
+    def _fetch_main(self, head: str) -> None:
+        """Bring the source branch into the guidance cache when it is not at `head` there,
+        with the guidance's own isolated git, so that its version and pins can be read. Not
+        for a studio Marketing Studio updates, and not into a cache the helper would rebuild:
+        that is the helper's. What cannot be fetched is left: the commit is then shown."""
+        if self.suite_managed():
+            return
+        main = self._main()
+        if main is not None and main['commit'] == head:
+            return
+        cache = sync_guidance.guidance_root() / 'cache.git'
+        if cache.exists() and not sync_guidance.ours(cache):
+            return
+        try:
+            sync_guidance.fetch()
+        except (sync_guidance.SyncError, OSError):
+            pass
+
     def _newest(self, install) -> dict | None:
-        """The newest release of the studio known here, as {'version', 'ref', 'from', 'pins'}: its
-        newest release tag once it has one, else the version on the source branch when
-        guidance was last fetched. `pins` are the companion versions it is pinned to, or
-        None when they cannot be read here."""
+        """The studio on its source branch, `main`, as last known here: {'version', 'commit',
+        'label', 'ref', 'from', 'pins'}. Its commit is where main was last found online, or in
+        the guidance cache when that was fetched since. Its version is main's VERSION, when
+        the guidance cache holds that commit, else None. `label` is how it is named: its
+        version, or its commit's first 12 characters when the version is unknown or the
+        same as this one. `pins` are the companion versions it is pinned to, or None when
+        they cannot be read here. None when main has not been found yet."""
+        branch = self._branch()
         online = (self._saved().get('found') or {}).get(SELF) or {}
-        branch = str(sync_guidance.source().get('branch', 'main'))
-        if online.get('latest'):
-            found = {'version': online['latest'], 'from': 'tag',
-                     'ref': f"refs/tags/{online.get('tag') or 'v' + online['latest']}",
-                     'commit': online.get('commit')}
-        elif (main := self._main()) is not None:
-            found = {'version': main['version'], 'from': branch,
-                     'ref': f'refs/heads/{branch}', 'commit': main['commit']}
+        head = online.get('commit') if online.get('branch') == branch \
+            and online.get('repository') == str(sync_guidance.source()['repository']) else None
+        head = head if isinstance(head, str) and COMMIT.fullmatch(head) else None
+        main = self._main()
+        if main is not None and (head is None or head == main['commit']
+                                 or self._on_main(head)):
+            commit, version = main['commit'], main['version']
+        elif head is not None:
+            commit, version = head, None
         else:
             return None
-        found['pins'] = self._pins_at(install, found.pop('commit'))
-        return found
+        label = version if version and version != self.version() else commit[:12]
+        return {'version': version, 'commit': commit, 'label': label, 'from': branch,
+                'ref': f'refs/heads/{branch}', 'pins': self._pins_at(install, commit)}
+
+    @staticmethod
+    def _on_main(commit: str) -> bool:
+        """Whether the guidance cache has `commit` on its main: then its main is as new."""
+        cache = sync_guidance.guidance_root() / 'cache.git'
+        try:
+            return sync_guidance.ours(cache) and sync_guidance.on_main(commit, cache)
+        except (sync_guidance.SyncError, OSError):
+            return False
+
+    def installed_commit(self) -> str | None:
+        """The commit of main this runner's copy came from: a checkout's own, or the one the
+        installer kept for the installed version. None when it is not known, as for a copy
+        installed from a download or by an older installer."""
+        if self.checkout():
+            return source_commit(self.folder)
+        try:
+            state = json.loads((self.root / 'installation.json').read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            return None
+        return kept_commit(state if isinstance(state, dict) else {}, self.folder.name)
+
+    def _ahead(self, newest: dict | None) -> bool:
+        """Whether main is not what this copy came from: its commit differs, or this copy's
+        commit is not known. Never when main says an older version than this one."""
+        if not newest:
+            return False
+        if newest['version'] and _version(newest['version']) < _version(self.version()):
+            return False
+        return self.installed_commit() != newest['commit']
 
     def _refuse_busy(self) -> None:
-        """Refuse a change while another is in hand, or while a newer release of the studio waits
-        for a restart: that one brings the companions it was made with. Under the lock."""
+        """Refuse a change while another is in hand, or while a newer studio waits for a
+        restart: that one brings the companions it was made with. Under the lock."""
         if self._update and self._update['state'] == 'running':
             raise WorkspaceError(UPDATING)
         if self._upgrade and self._upgrade['state'] == 'running':
@@ -621,9 +665,10 @@ class Upkeep:
                 return False
 
     def upgrade(self, working: bool, version: str) -> dict:
-        """Install the newest release of the studio, `version`, beside this one, in the background.
-        Refused, in a sentence, from a checkout, while an item is working, while anything
-        else is in hand, and when the newest known is not `version` or not newer."""
+        """Install the studio from main, as it was shown, beside this one, in the background.
+        `version` is what the person was shown: main's label, or its commit. Refused, in a
+        sentence, from a checkout, while an item is working, while anything else is in hand,
+        when main is what this copy came from, and when main is no longer what was shown."""
         if self.suite_managed():
             raise WorkspaceError('Update this studio with the Marketing Studio installer.')
         with self._lock:
@@ -635,30 +680,33 @@ class Upkeep:
             raise WorkspaceError(NO_INSTALLER)
         if self.checkout() or found['mode'] != 'managed':
             raise WorkspaceError(FROM_CHECKOUT)
-        newest, have = found.get('newest'), self.version()
-        if not newest or _version(newest['version']) <= _version(have):
+        newest = found.get('newest')
+        if not self._ahead(newest):
             raise WorkspaceError(NOTHING_NEWER)
-        if newest['version'] != str(version):
-            raise WorkspaceError(f"The newest {PRODUCT} is now {newest['version']}, not "
+        if str(version) not in (newest['label'], newest['commit'], newest['commit'][:12]):
+            raise WorkspaceError(f"The newest {PRODUCT} is now {newest['label']}, not "
                                  f'{version}. Look at it again before you upgrade.')
         if working:
             raise WorkspaceError(UPGRADE_WORKING)
         with self._lock:
             self._refuse_busy()
-            self._upgrade = {'state': 'running', 'since': _now(), 'version': newest['version'],
-                             'says': f"Fetching {PRODUCT} {newest['version']}, checking "
-                                     'it and installing it beside this one. This can take a '
-                                     'few minutes.'}
+            self._upgrade = {'state': 'running', 'since': _now(), 'version': newest['label'],
+                             'says': f"Fetching {PRODUCT} {newest['label']} from "
+                                     f"{newest['from']}, checking it and installing it beside "
+                                     'this one. This can take a few minutes.'}
         target = found.get('target')
         self._background(lambda: self._install(newest, target), f'upgrading {PRODUCT}')
         return self.report()
 
-    def _run_installer(self, tree: Path, version: str, target: str | None) -> tuple[str, str]:
-        """Run the fetched version's own installer, which checks it, lays it beside this one
-        and moves `current`: ('restart' or 'failed', what is said)."""
+    def _run_installer(self, tree: Path, version: str, target: str | None, commit: str,
+                       label: str | None = None) -> tuple[str, str]:
+        """Run the fetched version's own installer, which checks it, lays it beside this one,
+        keeps the commit it came from and moves `current`: ('restart' or 'failed', what is
+        said). `version` is the fetched VERSION, and `label` how the person was shown it."""
+        label = label or version
         command = [sys.executable, '-B', str(tree / 'installer' / 'install.py'), 'install',
                    '--yes', '--json', '--companions', 'skip', '--while-open',
-                   '--home', str(self.home), '--root', str(self.root),
+                   '--home', str(self.home), '--root', str(self.root), '--commit', commit,
                    *(['--target', target] if target else [])]
         printed: list[bytes] = []
         with tempfile.TemporaryFile() as errors:
@@ -679,19 +727,21 @@ class Upkeep:
             line = (complaint.splitlines() or ['it said nothing'])[-1][:300]
             return 'failed', f'Its installer did not answer as expected: {line}'
         if 'error' in result or code != 0:
-            return 'failed', (f'{PRODUCT} {version} was not installed: '
+            return 'failed', (f'{PRODUCT} {label} was not installed: '
                               f"{result.get('error', 'its installer failed')}")
         key = str(result.get('version', ''))
         current = self.root / 'current'
         if result.get('mode') != 'managed' or not key.startswith(f'{version}-') \
                 or not os.path.islink(current) \
                 or Path(os.readlink(current)) != self.root / 'versions' / key:
-            return 'failed', (f'Its installer finished, but {PRODUCT} {version} is not '
+            return 'failed', (f'Its installer finished, but {PRODUCT} {label} is not '
                               'the version in use. Run the installer again.')
-        return 'restart', (f'{PRODUCT} {version} is installed, checked and in place. '
+        with self._lock:
+            self._upgrade = {**(self._upgrade or {}), 'installs': key}
+        return 'restart', (f'{PRODUCT} {label} is installed, checked and in place. '
                            'Restart to use it. This page comes back by itself.'
                            if self._opener() else
-                           f'{PRODUCT} {version} is installed, checked and in place. '
+                           f'{PRODUCT} {label} is installed, checked and in place. '
                            f'Close {PRODUCT} and open it again to use it.')
 
     def _opener(self) -> Path | None:
@@ -727,8 +777,8 @@ class Upkeep:
         return self.report()
 
     def command(self) -> str | None:
-        """The command that brings a newer release of the studio to a checkout this runner runs
-        from, when it is a git checkout: the studio is then upgraded there."""
+        """The command that brings main to a checkout this runner runs from, when it is a git
+        checkout: the studio is then upgraded there."""
         if not self.checkout() or not any((folder / '.git').exists()
                                           for folder in (self.folder, *self.folder.parents)):
             return None
@@ -743,7 +793,7 @@ class Upkeep:
         online = kept.get('found') or {}
         have, newest = self.version(), (found or {}).get('newest')
         checkout = self.checkout() or (found or {}).get('mode') == 'link'
-        ahead = bool(newest and _version(newest['version']) > _version(have))
+        ahead = self._ahead(newest)
         waiting = bool(upgrade and upgrade['state'] in ('restart', 'restarting'))
         rows = [{**self._own_row(have, newest, ahead, checkout, upgrade),
                  'known_at': (online.get(SELF) or {}).get('known_at')}]
@@ -761,8 +811,10 @@ class Upkeep:
                 'command': self.command(),
                 'suite': 'marketing-studio' if self.suite_managed() else None,
                 'key': key or None, 'dismissed': bool(key) and kept.get('dismissed') == key,
-                'upgrade': {'offered': offered, 'version': newest['version'] if ahead else None,
+                'upgrade': {'offered': offered, 'version': newest['label'] if ahead else None,
                             'from': newest['from'] if ahead else None,
+                            'commit': newest['commit'][:12] if ahead else None,
+                            'installs': upgrade and upgrade.get('installs'),
                             'state': upgrade and upgrade['state'],
                             'since': upgrade and upgrade['since'],
                             'says': upgrade and upgrade['says'],
@@ -772,28 +824,31 @@ class Upkeep:
 
     def _own_row(self, have: str, newest: dict | None, ahead: bool, checkout: bool,
                  upgrade: dict | None) -> dict:
-        """The studio's own row."""
-        row = {'name': SELF, 'installed': have, 'newest': newest and newest['version'],
-               'pinned': None, 'next': None, 'target': None, 'beyond': None, 'reports': None}
+        """The studio's own row. It is current while this copy came from main as it is now;
+        a version number only names what is there."""
+        row = {'name': SELF, 'installed': have, 'newest': newest and newest['label'],
+               'pinned': None, 'next': None, 'target': None, 'beyond': None, 'reports': None,
+               'commit': newest and newest['commit'][:12]}
         if self.suite_managed():
             return {**row, 'newest': have, 'state': 'current', 'says': 'Updates are delivered by the Marketing Studio installer.'}
         if newest is None:
             return {**row, 'state': 'unknown', 'says': (
-                f'Whether a newer {PRODUCT} is out is not known yet. It is looked for '
-                'once a day, and when you check this computer again.')}
+                f'Whether {PRODUCT} has changed on {self._branch()} is not known yet. It is '
+                'looked for once a day, and when you check this computer again.')}
         if not ahead:
-            return {**row, 'state': 'current', 'says': f'{PRODUCT} {have} is the newest.'}
-        version = newest['version']
+            return {**row, 'newest': have, 'state': 'current', 'says': (
+                f'{PRODUCT} {have} is up to date with {newest["from"]}.')}
+        label = newest['label']
         if upgrade and upgrade['state'] in ('restart', 'restarting') \
-                and upgrade.get('version') == version:
-            says = f'{PRODUCT} {version} is installed. Restart to use it.'
+                and upgrade.get('version') == label:
+            says = f'{PRODUCT} {label} is installed. Restart to use it.'
         elif checkout:
-            says = (f'{PRODUCT} {version} is out, and this is {have}. This one runs '
+            says = (f'A newer {PRODUCT} is available ({have} → {label}). This one runs '
                     'from a copy of its repository, so it is upgraded there with git pull, '
                     'not from here.')
         else:
-            says = f'{PRODUCT} {version} is out, and this is {have}.'
-        return {**row, 'state': 'update', 'target': version, 'says': says}
+            says = f'A newer {PRODUCT} is available ({have} → {label}).'
+        return {**row, 'state': 'update', 'target': label, 'says': says}
 
     @staticmethod
     def guidance() -> dict:
@@ -820,14 +875,15 @@ class Upkeep:
                if last is not None else 'None has been fetched on this computer yet.'))}
 
 
-NAMES = ('SAVED', 'DAY', 'LOOK_SECONDS', 'UPDATE_SECONDS', 'TAG', 'UPDATING', 'NO_RESTART',
+NAMES = ('SAVED', 'DAY', 'LOOK_SECONDS', 'UPDATE_SECONDS', 'COMMIT', 'UPDATING', 'NO_RESTART',
          'BRAND', 'BRAND_SECONDS', 'BRAND_INSTALLING', '_floor', '_now', '_age', '_version',
-         'newest', 'fetch_tree', 'install_root', '_who', '_load')
+         'fetch_tree', 'install_root', '_who', '_load')
 METHODS = {'Upkeep': ('__init__', 'folder', 'checkout', 'version', 'start', 'again', '_first',
            '_background', 'close', 'module', 'check', '_blank', '_brands', '_tools', '_current',
            '_commands', '_main_version', 'saved_path', '_saved', 'due', '_brand_entry',
            '_installed_commit', '_main_moved',
            'remember_brand', 'look', '_bring', '_said', '_the_brand', '_brand_installed', '_moved',
-           'dismiss', 'releases', '_target', '_link', '_main', '_newest', '_refuse_busy',
+           'dismiss', 'releases', '_target', '_link', '_main', '_branch', '_fetch_main',
+           '_newest', '_on_main', 'installed_commit', '_ahead', '_refuse_busy',
            'suite_managed', 'upgrade', '_run_installer', '_opener', 'restart', 'command',
            'versions', '_own_row', 'guidance')}

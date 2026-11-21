@@ -10618,20 +10618,21 @@ def versions(own: dict | None = None, upgrade: dict | None = None, **changes) ->
     """The versions: by default Training Studio 0.19.0 is out, offered from the page, and
     harness-slides is missing for Codex."""
     own = own or row('training-studio', '0.18.0', '0.19.0', 'update',
-                     'Training Studio 0.19.0 is out, and this is 0.18.0.', target='0.19.0')
+                     'A newer Training Studio is available (0.18.0 → 0.19.0).', target='0.19.0')
     rows = [own, RESEARCH_CURRENT, SLIDES_MISSING]
     wanted = [one for one in rows if one['state'] in ('update', 'missing')]
     return {'rows': rows, 'at': '2026-10-14T09:00:00Z', 'checkout': False, 'command': None,
             'key': ', '.join(f"{one['name']} {one['target']}" for one in wanted) or None,
             'dismissed': False,
             'upgrade': upgrade or {'offered': own['state'] == 'update', 'version':
-                                   own['target'], 'from': 'tag', 'state': None,
+                                   own['target'], 'from': 'main', 'commit': 'abcdef012345',
+                                   'installs': None, 'state': None,
                                    'since': None, 'says': None, 'restart': False},
             **changes}
 
 
 CURRENT = row('training-studio', '0.18.0', '0.18.0', 'current',
-              'Training Studio 0.18.0 is the newest.')
+              'Training Studio 0.18.0 is up to date with main.')
 
 
 def kept(**changes) -> dict:
@@ -10752,7 +10753,7 @@ class UpkeepScreenTests(ScriptedPage, PageCase):
 
     def test_status_says_what_was_found_put_back_and_looked_for(self):
         self.started()
-        failed = 'The last look for newer releases did not reach harness-slides (Could not ' \
+        failed = 'The last look for updates did not reach harness-slides (Could not ' \
                  'resolve host: github.com). It is tried again in a day.'
         found = kept(releases={'on': True, 'at': '2026-10-14T09:00:00Z', 'problem': failed},
                      update={'offered': False, 'state': 'failed', 'since': None,
@@ -10785,16 +10786,15 @@ class UpkeepScreenTests(ScriptedPage, PageCase):
         result = self.run_page(self.answers(setup={**SET_UP, 'upkeep': off}),
                                [{'click': 'Status'}, {'snapshot': 'status'}])
         shot = result['snapshots']['status']
-        self.assertIn('Looking online for newer releases is turned off, in Settings.',
+        self.assertIn('Looking online for updates is turned off, in Settings.',
                       shot['text'])
         self.assertIn('Update the skills', shot['buttons'])
 
     def test_looking_online_is_switched_in_settings(self):
         self.started()
-        says = ('Once a day, Training Studio asks where it and its skills are kept which '
-                'releases there are, and says on Home when a newer one is out. It only reads '
-                'their names: nothing is downloaded or run, and nothing is installed without '
-                'your yes.')
+        says = ('Once a day, Training Studio asks where it and its skills are kept where each '
+                'one’s main branch is now, and says on Home when one has moved on. It only '
+                'reads where they are: nothing is installed without your yes.')
         on = {**SET_UP, 'updates': {'look': True}}
         answers = self.answers(**{
             'GET /api/setup': [ok(on)] * 3 + [ok({**on, 'updates': {'look': False}})],
@@ -10817,7 +10817,7 @@ class UpkeepScreenTests(ScriptedPage, PageCase):
         self.assertIn('Look for updates once a day', shots['on']['text'])
         self.assertIn('On', shots['on']['pressed'])
         self.assertIn('Off', shots['off']['pressed'])
-        self.assertIn('Off. Training Studio no longer looks online for newer releases.',
+        self.assertIn('Off. Training Studio no longer looks online for updates.',
                       shots['off']['toasts'])
         self.assertIn('The disk is full. Nothing was changed.', shots['refused']['text'])
         self.assertIn('Off', shots['refused']['pressed'])
@@ -10826,13 +10826,15 @@ class UpkeepScreenTests(ScriptedPage, PageCase):
         self.assertEqual(result['snapshots']['versions']['heading'], 'Status')
 
     def upgrade(self, state: str, says: str, restart: bool = False) -> dict:
-        return {'offered': False, 'version': '0.19.0', 'from': 'tag', 'state': state,
+        return {'offered': False, 'version': '0.19.0', 'from': 'main', 'commit': 'abcdef012345',
+                'installs': '0.19.0-0123456789ab' if state in ('restart', 'restarting')
+                else None, 'state': state,
                 'since': '2026-10-14T09:01:00Z', 'says': says, 'restart': restart}
 
     def test_home_offers_the_upgrade_asks_first_and_restarts_when_told(self):
         self.started()
-        installing = 'Fetching Training Studio 0.19.0, checking it and installing it beside ' \
-                     'this one. This can take a few minutes.'
+        installing = 'Fetching Training Studio 0.19.0 from main, checking it and installing ' \
+                     'it beside this one. This can take a few minutes.'
         installed = 'Training Studio 0.19.0 is installed, checked and in place. Restart to ' \
                     'use it. This page comes back by itself.'
         running = kept(versions=versions(upgrade=self.upgrade('running', installing)))
@@ -10842,9 +10844,13 @@ class UpkeepScreenTests(ScriptedPage, PageCase):
         down = 'A training on this computer is working now. Pause it, or wait until it stops ' \
                'for you, then upgrade.'
         answers = self.answers(**{
+            # The copy it was installed as is waited for: the same version from an older copy
+            # is not it.
             'GET /api/capabilities': [RUNNER, refused('Not yet.'),
-                                      ok({'runner': True, 'version': '0.18.0'}),
-                                      ok({'runner': True, 'version': '0.19.0'})],
+                                      ok({'runner': True, 'version': '0.19.0',
+                                          'install': '0.18.0-fedcba987654'}),
+                                      ok({'runner': True, 'version': '0.19.0',
+                                          'install': '0.19.0-0123456789ab'})],
             'GET /api/setup': [ok({**SET_UP, 'upkeep': kept()}),
                               ok({**SET_UP, 'upkeep': waiting})],
             'POST /api/upgrade': [refused(down), ok({'upkeep': running})],
@@ -10863,15 +10869,15 @@ class UpkeepScreenTests(ScriptedPage, PageCase):
         home = shots['home']
         for said in ('Newer versions are ready for this computer:',
                      'training-studio 0.18.0 → 0.19.0', 'harness-slides 0.13.1, which is missing',
-                     'Training Studio 0.19.0 is out, and this is 0.18.0.'):
+                     'A newer Training Studio is available (0.18.0 → 0.19.0).'):
             self.assertIn(said, home['text'])
         self.assertIn('Dismiss', home['buttons'])
         self.assertNotIn('Update the skills', home['buttons'], 'Training Studio comes first')
 
         asked = shots['asked']['sheet']
         for said in ('Upgrade Training Studio to 0.19.0?', 'What happens',
-                     'Training Studio 0.19.0 is fetched from its release in Training Studio’s '
-                     'own repository, and its own installer checks it.',
+                     'Training Studio 0.19.0 is fetched from main, at revision abcdef012345, in '
+                     'Training Studio’s own repository, and its own installer checks it.',
                      'It is installed beside 0.18.0. The version you have now is kept beside '
                      'it, so trainings carry on where they are, and nothing of yours is '
                      'touched.',
@@ -10902,11 +10908,9 @@ class UpkeepScreenTests(ScriptedPage, PageCase):
         missing = row('brand skill', None, '0.13.1', 'missing', 'No brand skill is installed, '
                       'so no deck is offered. v0.13.1 can be installed from '
                       'https://github.com/acme/brand.git.', kind='brand', target='0.13.1',
-                      repository='https://github.com/acme/brand.git', release='v0.13.1',
-                      commit='c3405eee0aad')
+                      repository='https://github.com/acme/brand.git', commit='c3405eee0aad')
         offer = {'offered': offered, 'action': 'Install',
-                 'repository': 'https://github.com/acme/brand.git', 'release': 'v0.13.1',
-                 'version': '0.13.1', 'commit': 'c3405eee0aad', 'installed': None,
+                 'repository': 'https://github.com/acme/brand.git', 'version': '0.13.1', 'commit': 'c3405eee0aad', 'installed': None,
                  'state': state, 'since': state and '2026-10-14T09:05:00Z', 'says': says}
         return kept(companions=[], update={'offered': False, 'state': None, 'since': None,
                                            'says': None},
@@ -10957,14 +10961,14 @@ class UpkeepScreenTests(ScriptedPage, PageCase):
                       done['toasts'])
         self.assertIn(running, done['text'])
         self.assertNotIn('Install the brand skill', done['buttons'], 'one install at a time')
-        self.assertEqual(self.posts(result), [('/api/brand/install', {'release': 'v0.13.1'})]
+        self.assertEqual(self.posts(result), [('/api/brand/install', {'commit': 'c3405eee0aad'})]
                          * 2)
 
     def test_a_newer_training_studio_with_a_brand_skill_to_install_is_upgraded_alone(self):
         self.started()
         found = self.brand()
         own = row('training-studio', '0.18.0', '0.19.0', 'update',
-                  'Training Studio 0.19.0 is out, and this is 0.18.0.', target='0.19.0')
+                  'A newer Training Studio is available (0.18.0 → 0.19.0).', target='0.19.0')
         rows = [own, *found['versions']['rows'][1:]]
         found = {**found, 'versions': versions(own, rows=rows, brand=found['versions']['brand'],
                                                key='training-studio 0.19.0, brand skill '
@@ -10986,31 +10990,32 @@ class UpkeepScreenTests(ScriptedPage, PageCase):
                   'terminal prompts disabled). Sign git in with an account that may read it, '
                   'through its credential helper for an https address or an ssh key for an '
                   'ssh one, then try again.')
-        saved = {**SET_UP, 'brand': {**BRAND, 'skills': [], 'repository': address,
-                                     'release': 'v0.13.1'}}
+        saved = {**SET_UP, 'brand': {**BRAND, 'skills': [], 'repository': address}}
         answers = self.answers(**{
             'GET /api/setup': [ok({**SET_UP, 'brand': {**BRAND, 'skills': [],
-                                                       'repository': None, 'release': None}})]
+                                                       'repository': None}})]
             * 3 + [ok(saved)],
             'POST /api/brand': [refused(cannot), ok(saved)]})
         result = self.run_page(answers, [
             {'click': 'Settings'}, {'snapshot': 'empty'},
             {'fill': 'Its repository', 'value': address},
-            {'fill': 'Which release', 'value': 'v0.13.1'},
             {'click': 'Check and save'}, {'snapshot': 'refused'},
             {'click': 'Check and save'}, {'snapshot': 'saved'},
         ])
         shots = result['snapshots']
-        for said in ('Brand skill', 'Your organisation’s brand skill is released from a '
-                     'repository of its own.', 'A brand skill you installed yourself is still '
-                     'found and used.', 'Empty for the newest'):
+        for said in ('Brand skill', 'Your organisation’s brand skill comes from a repository '
+                     'of its own.', 'installs and updates the brand skill from its main branch',
+                     'A brand skill you installed yourself is still found and used.'):
             self.assertIn(said, shots['empty']['text'])
+        # There is no release to choose: the brand skill is installed and updated from main.
+        for gone in ('Which release', 'Empty for the newest', 'release'):
+            self.assertNotIn(gone, shots['empty']['text'])
         self.assertIn(cannot + ' Nothing was changed.', shots['refused']['text'])
-        self.assertIn(f'Installed from {address}, release v0.13.1.', shots['saved']['text'])
-        self.assertIn('Saved. The Status screen shows which release can be installed.',
+        self.assertIn(f'Installed and updated from the main branch of {address}.',
+                      shots['saved']['text'])
+        self.assertIn('Saved. The Status screen shows its main branch, to install.',
                       shots['saved']['toasts'])
-        self.assertEqual(self.posts(result), [('/api/brand', {'repository': address,
-                                                              'release': 'v0.13.1'})] * 2)
+        self.assertEqual(self.posts(result), [('/api/brand', {'repository': address})] * 2)
 
     def test_the_brand_skills_repository_is_one_every_studio_shares(self):
         self.started()
@@ -11019,25 +11024,24 @@ class UpkeepScreenTests(ScriptedPage, PageCase):
         stale = ("The brand skill's repository was changed in another studio while this was "
                  'open, so nothing was saved. Look again, then save.')
         now = {**SET_UP, 'shared': shared, 'shared_problem': None,
-               'brand': {**BRAND, 'skills': [], 'repository': address, 'release': None}}
-        later = {**now, 'shared': {'brand': {'repository': address, 'release': 'v1.0.0'}}}
+               'brand': {**BRAND, 'skills': [], 'repository': address}}
+        other = 'https://github.com/acme/other-brand.git'
+        later = {**now, 'shared': {'brand': {'repository': address, 'brand': 'acme'}}}
         answers = self.answers(**{'GET /api/setup': [ok(now), ok(later)],
                                   'POST /api/brand': [refused(stale), ok(later)]})
         result = self.run_page(answers, [
             {'click': 'Settings'}, {'snapshot': 'settings'},
-            {'fill': 'Which release', 'value': 'v0.13.1'},
+            {'fill': 'Its repository', 'value': other},
             {'click': 'Check and save'}, {'snapshot': 'refused'},
             {'poll': True}, {'click': 'Check and save'}])
         shots = result['snapshots']
-        self.assertIn('Every studio on this computer shares the repository and release named '
-                      'here, so saving changes them for all of them.', shots['settings']['text'])
+        self.assertIn('Every studio on this computer shares the repository named here, so '
+                      'saving changes it for all of them.', shots['settings']['text'])
         self.assertIn(stale + ' Nothing was changed.', shots['refused']['text'])
         # What it was shown goes with it, and after a refusal, what it has been shown since.
         self.assertEqual(self.posts(result), [
-            ('/api/brand', {'repository': address, 'release': 'v0.13.1',
-                            'shared_seen': shared}),
-            ('/api/brand', {'repository': address, 'release': 'v0.13.1',
-                            'shared_seen': later['shared']})])
+            ('/api/brand', {'repository': other, 'shared_seen': shared}),
+            ('/api/brand', {'repository': other, 'shared_seen': later['shared']})])
 
     def test_a_suite_install_says_marketing_studio_updates_it(self):
         said = ('Marketing Studio installs and updates this studio. To update it, unpack a newer '
@@ -11097,8 +11101,8 @@ class UpkeepScreenTests(ScriptedPage, PageCase):
         found = versions()
         found['rows'] = [found['rows'][0], RESEARCH_CURRENT, slides]
         offline = kept(versions=found, releases={
-            'on': True, 'at': '2026-10-15T09:00:00Z', 'problem': 'The last look for newer '
-            'releases did not reach training-studio (Could not resolve host: github.com). It '
+            'on': True, 'at': '2026-10-15T09:00:00Z', 'problem': 'The last look for updates '
+            'did not reach training-studio (Could not resolve host: github.com). It '
             'is tried again in a day.'})
         answers = self.answers(setup={**SET_UP, 'upkeep': offline})
         result = self.run_page(answers, [{'click': 'Status'}, {'snapshot': 'status'}])

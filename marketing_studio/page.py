@@ -109,7 +109,7 @@ class Home(server.Page):
             # Read from each studio's own records: never started, never guessed from a folder's name.
             row['workspace'] = workspaces.connection(row['id'], values) if done and row['installed'] else None
         return {'studios': studios, 'work_overview': work_overview.snapshot(studios),
-                'shared': values, 'shared_problem': problem, 'setup': {**preferences, 'done': not problem and self.configured(values)},
+                'shared': shared_preferences.without_retired(values), 'shared_problem': problem, 'setup': {**preferences, 'done': not problem and self.configured(values)},
                 # Each kind of work as the form fills it in, with the kinds not yet saved.
                 'models_shown': None if problem else shared_preferences.model_profiles.shown(values),
                 'computer': self.computer(False), 'efforts': validation.EFFORTS,
