@@ -82,7 +82,8 @@ class SetUpTests(FirstTimeCase):
                          'the first brand the brand skill lists, and its first variant')
         self.assertEqual((settings.load().brand, settings.load().variant), (None, None),
                          'no brand is named by Presentation Studio itself')
-        self.assertEqual((said['brand']['repository'], said['brand']['release']), (None, None))
+        self.assertIsNone(said['brand']['repository'])
+        self.assertNotIn('release', said['brand'])
         self.assertEqual((said['shared'], said['shared_problem']), ({}, None))
         self.assertEqual((said['notify'], said['updates'], said['upkeep']),
                          ({'on': False, 'can': True, 'problem': None}, {'look': True}, None))
@@ -381,7 +382,8 @@ class SharedConfigTests(FirstTimeCase):
         said = self.get('setup')
         self.assertEqual(said['shared'], {'brand': {'variant': 'light'}})
         self.assertEqual(said['agent']['default'], 'claude')
-        self.assertEqual((said['brand']['repository'], said['brand']['release']), (None, None))
+        self.assertIsNone(said['brand']['repository'])
+        self.assertNotIn('release', said['brand'])
         self.post('setup', {'path': str(self.base / 'my-decks'), 'limits': {'parallel': 3}})
         self.assertEqual(self.config.read_text(), text)
 
@@ -533,15 +535,17 @@ class MigrationTests(FirstTimeCase):
                  variant='dark', output='pptx', brand_repository='https://example.com/b.git',
                  brand_release='v1.4.0')
         written = setup.migrate()
+        # A brand skill release this computer kept is not moved, and is dropped: the brand
+        # skill is installed and updated from its repository's main.
         self.assertEqual(sorted(written), [
-            'assistant.agent', 'assistant.model', 'brand.brand', 'brand.release',
+            'assistant.agent', 'assistant.model', 'brand.brand',
             'brand.repository', 'brand.variant', 'output', 'person.name', 'share',
             'team.branch', 'team.repository'])
         self.assertEqual(json.loads(self.config.read_text()), {
             'schema': 1, 'assistant': {'agent': 'codex', 'model': 'gpt-6-sol'},
             'person': {'name': 'Alex Example'},
             'brand': {'brand': 'example', 'variant': 'dark',
-                      'repository': 'https://example.com/b.git', 'release': 'v1.4.0'},
+                      'repository': 'https://example.com/b.git'},
             'output': 'pptx', 'share': 'asked',
             'team': {'repository': str(remote), 'branch': 'main'}})
         self.assertEqual(json.loads(settings.path().read_text()), {'schema': 1, 'parallel': 4})
@@ -567,7 +571,7 @@ class MigrationTests(FirstTimeCase):
         self.assertIsNone(self.get('setup')['shared_notice'])
         self.assertIn('seen', self.post('shared', {}, 400)['error'])
 
-    def test_a_model_moves_only_beside_its_agent_and_a_release_beside_its_repository(self):
+    def test_a_model_moves_only_beside_its_agent(self):
         self.write_config(json.dumps({'schema': 1, 'assistant': {'agent': 'claude'},
                                       'brand': {'repository': 'git@github.com:acme/x.git',
                                                 'brand': 'acme'}}))
@@ -580,7 +584,7 @@ class MigrationTests(FirstTimeCase):
                          ({'agent': 'claude'}, {'repository': 'git@github.com:acme/x.git',
                                                 'brand': 'acme'}))
         self.assertIn("otherwise for the agent, the model, the reasoning level, the brand, the "
-                      "variant, the brand skill's repository and the brand skill's release, so",
+                      "variant and the brand skill's repository, so",
                       self.get('setup')['shared_notice'])
 
     def test_nothing_moves_while_the_file_cannot_be_read(self):
@@ -600,12 +604,14 @@ class SharedValuesTests(StudioCase):
         self.assertNotEqual(studios_config.path(), studios_config.PATH)
         self.assertNotIn(Path.home() / '.config', studios_config.path().parents)
 
-    def test_the_brand_skills_repository_and_release_are_among_the_shared_values(self):
+    def test_the_brand_skills_repository_is_among_the_shared_values_and_no_release(self):
+        # A release an older version kept beside it is not read, and is left as it is.
         studios_config.update({'brand': {'repository': 'https://example.com/brand.git',
                                          'release': 'v1.4.0'}})
         self.assertEqual(setup.shared()[0]['brand'], {
-            'repository': 'https://example.com/brand.git', 'release': 'v1.4.0'})
-        self.assertEqual(settings.brand_source(), ('https://example.com/brand.git', 'v1.4.0'))
+            'repository': 'https://example.com/brand.git'})
+        self.assertEqual(settings.brand_source(), 'https://example.com/brand.git')
+        self.assertEqual(studios_config.read()[0]['brand']['release'], 'v1.4.0')
 
 
 class NoticeFileTests(unittest.TestCase):

@@ -179,7 +179,9 @@ class IntakeDraftTests(PageCase):
 
 class CapabilityTests(PageCase):
     def test_the_runner_says_it_is_here(self):
-        self.assertEqual(self.get('capabilities'), {'runner': True, 'version': VERSION})
+        # A checkout runs from no installed copy; an installed one names its version folder.
+        self.assertEqual(self.get('capabilities'),
+                         {'runner': True, 'version': VERSION, 'install': None})
 
     def test_the_plain_desk_answers_404_and_knows_none_of_the_runners_addresses(self):
         plain = desk.Page(self.PORT)
@@ -241,7 +243,7 @@ class RuleTests(PageCase):
                        '/api/upgrade': {'version': '99.0.0'},
                        '/api/versions': {'dismiss': 'training-studio 99.0.0'},
                        '/api/brand': {'repository': str(self.base / 'brand.git')},
-                       '/api/brand/install': {'release': 'v1.2.0'},
+                       '/api/brand/install': {'commit': 'abcdef012345'},
                        '/api/asset':{'path': self.path, 'asset': 'console_view',
                                       'content': 'iVBORw0KGgo=', 'alt': 'A console',
                                       'source': 'Course author'}}
@@ -335,7 +337,7 @@ class SetUpTests(FirstTimeCase):
             'notify': {'on': False, 'can': True, 'problem': None},
             'updates': {'look': True}, 'upkeep': None,
             'brand': {'found': False, 'name': None, 'brands': [], 'skills': [],
-                      'problem': NO_BRAND_SKILL, 'repository': None, 'release': None}})
+                      'problem': NO_BRAND_SKILL, 'repository': None}})
         said = self.post('trainings', {**FORM, 'flow': 'desk'}, 409)
         self.assertIn('No workspace is set up on this computer yet', said['error'])
         self.assertIn('No workspace is set up', self.post('share', {}, 409)['error'])
@@ -365,7 +367,7 @@ class SetUpTests(FirstTimeCase):
             'notify': {'on': False, 'can': True, 'problem': None},
             'updates': {'look': True}, 'upkeep': None,
             'brand': {'found': False, 'name': None, 'brands': [], 'skills': [],
-                      'problem': NO_BRAND_SKILL, 'repository': None, 'release': None}})
+                      'problem': NO_BRAND_SKILL, 'repository': None}})
         self.assertEqual(self.get('setup'), made)
         marker = json.loads((folder / 'courses' / 'hub.json').read_text())
         self.assertEqual((marker['tool'], marker['name'], marker['folder'], marker['branch']),
@@ -564,14 +566,14 @@ class SharedTests(FirstTimeCase):
         self.assertEqual(found['shared'], {
             'team': {'repository': str(remote), 'branch': 'main'},
             'assistant': {'agent': 'claude', 'model': 'opus', 'effort': 'high'},
-            'brand': {'repository': self.BRAND, 'release': 'v1.4.0', 'brand': 'tanzu',
-                      'variant': 'light'},
+            'brand': {'repository': self.BRAND, 'brand': 'tanzu', 'variant': 'light'},
             'output': 'google', 'share': 'decision'})
         # They are the settings, before anything is set up here, and the file is untouched.
-        self.assertEqual((found['configured'], found['agent'], found['brand']['repository'],
-                          found['brand']['release']),
+        # The brand skill release an older version kept there is not read.
+        self.assertEqual((found['configured'], found['agent'], found['brand']['repository']),
                          (False, {'default': 'claude', 'model': 'opus', 'effort': 'high'},
-                          self.BRAND, 'v1.4.0'))
+                          self.BRAND))
+        self.assertNotIn('release', found['brand'])
         self.assertEqual(self.file.read_text(), text)
         self.assertFalse(settings.path().exists())
 
@@ -902,20 +904,23 @@ class MigrationTests(FirstTimeCase):
     def test_they_move_into_a_file_that_has_none_and_are_used_from_there(self):
         self.assertEqual(self.get('setup')['agent']['default'], 'claude',
                          'what this computer kept is no longer read')
+        # A brand skill release this computer kept is not moved, and is dropped: the brand
+        # skill is installed and updated from its repository's main.
         self.assertEqual(setup.migrate(), [
             'assistant.agent', 'assistant.model', 'assistant.effort', 'brand.repository',
-            'brand.release', 'share', 'team.repository', 'team.branch'])
+            'share', 'team.repository', 'team.branch'])
         self.assertEqual(json.loads(self.file.read_text()), {
             'schema': 1, 'assistant': {'agent': 'codex', 'model': 'gpt-6-sol',
                                        'effort': 'high'},
-            'brand': {'repository': 'git@github.com:acme/brand.git', 'release': 'v2.0.0'},
+            'brand': {'repository': 'git@github.com:acme/brand.git'},
             'share': 'asked', 'team': {'repository': str(self.remote), 'branch': 'main'}})
         self.assertEqual(self.kept_here(), (self.mine, self.record))
         found = self.get('setup')
         self.assertEqual((found['agent'], found['workspace']['share_when'],
-                          found['brand']['release'], found['shared_notice']),
+                          found['brand']['repository'], found['shared_notice']),
                          ({'default': 'codex', 'model': 'gpt-6-sol', 'effort': 'high'},
-                          'when-asked', 'v2.0.0', None))
+                          'when-asked', 'git@github.com:acme/brand.git', None))
+        self.assertNotIn('release', found['brand'])
         self.assertEqual(setup.migrate(), [], 'once moved, there is nothing left to move')
 
     def test_a_value_the_file_holds_already_stays_and_the_person_is_told_once(self):
@@ -929,9 +934,8 @@ class MigrationTests(FirstTimeCase):
         self.assertEqual(self.file.read_text(), text, 'nothing in it was written over')
         self.assertEqual(self.kept_here(), (self.mine, self.record))
         told = (f'Training Studio now keeps the values every studio shares only in '
-                f'{self.file}, which said otherwise for the agent, the model, the brand '
-                "skill's release and when to share, so what this computer had chosen for "
-                'those is no longer used.')
+                f'{self.file}, which said otherwise for the agent, the model and when to '
+                'share, so what this computer had chosen for those is no longer used.')
         found = self.get('setup')
         self.assertEqual((found['shared_notice'], found['agent']['default']), (told, 'claude'))
         self.assertEqual(self.get('setup')['shared_notice'], told, 'until it is read')
@@ -943,15 +947,15 @@ class MigrationTests(FirstTimeCase):
         self.assertEqual(setup.migrate(), [])
         self.assertIsNone(self.get('setup')['shared_notice'], 'it is told once')
 
-    def test_a_model_moves_only_beside_its_agent_and_a_release_beside_its_repository(self):
+    def test_a_model_moves_only_beside_its_agent(self):
         self.file.write_text(json.dumps({'schema': 1, 'assistant': {'agent': 'claude'},
                                          'brand': {'repository': 'git@github.com:acme/x.git'}}))
         self.assertEqual(setup.migrate(), ['share', 'team.repository', 'team.branch'])
         self.assertEqual(json.loads(self.file.read_text())['assistant'], {'agent': 'claude'})
         self.assertEqual(json.loads(self.file.read_text())['brand'],
                          {'repository': 'git@github.com:acme/x.git'})
-        self.assertIn("otherwise for the agent, the model, the reasoning level, the brand "
-                      "skill's repository and the brand skill's release, so",
+        self.assertIn("otherwise for the agent, the model, the reasoning level and the brand "
+                      "skill's repository, so",
                       self.get('setup')['shared_notice'])
         self.assertEqual(self.kept_here(), (self.mine, self.record))
 
@@ -963,7 +967,7 @@ class MigrationTests(FirstTimeCase):
         self.assertIsNone(self.get('setup')['shared_notice'])
         # Once it can be read, they move at the next start.
         self.file.write_text('{"schema": 1}')
-        self.assertEqual(len(setup.migrate()), 8)
+        self.assertEqual(len(setup.migrate()), 7)
 
     def test_a_branch_is_not_moved_beside_another_teams_repository(self):
         self.file.write_text(json.dumps({'schema': 1, 'team': {
@@ -979,8 +983,8 @@ class MigrationTests(FirstTimeCase):
         theirs = {'schema': 1, 'assistant': {'agent': 'claude', 'model': 'opus'}}
         with meanwhile(lambda: self.file.write_text(json.dumps(theirs))):
             moved = setup.migrate()
-        self.assertEqual(moved, ['brand.repository', 'brand.release', 'share',
-                                 'team.repository', 'team.branch'])
+        self.assertEqual(moved, ['brand.repository', 'share', 'team.repository',
+                                 'team.branch'])
         self.assertEqual(json.loads(self.file.read_text())['assistant'], theirs['assistant'])
         self.assertIn('otherwise for the agent, the model and the reasoning level, so',
                       self.get('setup')['shared_notice'])
@@ -1484,9 +1488,9 @@ class UpkeepTests(PageCase):
         self.assertIsNone(settings.load().brand_repository, 'nothing was kept')
         # It is installed from main: a release sent by an older page is not kept or used.
         made = self.post('brand', {'repository': str(bare), 'release': '1.2.0'})
-        self.assertEqual((made['brand']['repository'], made['brand']['release']), (str(bare), None))
-        self.assertEqual((settings.load().brand_repository, settings.load().brand_release),
-                         (str(bare), None))
+        self.assertEqual(made['brand']['repository'], str(bare))
+        self.assertNotIn('release', made['brand'])
+        self.assertEqual(settings.load().brand_repository, str(bare))
         # It is kept for every studio, in the file they share, and nowhere else.
         self.assertEqual(json.loads(Path(os.environ['STUDIOS_CONFIG']).read_text())['brand'],
                          {'repository': str(bare)})
@@ -1497,31 +1501,30 @@ class UpkeepTests(PageCase):
         self.assertEqual(self.post('setup', {'limits': {'parallel': 3}})['brand']['repository'],
                          str(bare), 'a change to anything else leaves it as it was')
         cleared = self.post('brand', {'repository': ''})
-        self.assertEqual((cleared['brand']['repository'], cleared['brand']['release']),
-                         (None, None))
+        self.assertIsNone(cleared['brand']['repository'])
 
     def test_the_brand_skill_is_installed_only_when_asked_and_not_under_a_working_training(self):
         self.assertIn('does not look after the skills on this computer',
-                      self.post('brand/install', {'release': 'v1.2.0'}, 409)['error'])
+                      self.post('brand/install', {'commit': 'abcdef012345'}, 409)['error'])
         keeper = self.engine.upkeep = Keeper()
         self.assertEqual(self.post('brand/install', {}, 400)['error'],
-                         'Give release as text.')
-        self.assertEqual(self.post('brand/install', {'release': 'v1.2.0'}),
+                         'Give commit as text.')
+        self.assertEqual(self.post('brand/install', {'commit': 'abcdef012345'}),
                          {'upkeep': {'stand_in': True}})
         keeper.refuse = 'The brand skill is being installed already.'
-        self.assertEqual(self.post('brand/install', {'release': 'v1.2.0'}, 409)['error'],
+        self.assertEqual(self.post('brand/install', {'commit': 'abcdef012345'}, 409)['error'],
                          keeper.refuse)
         keeper.refuse, seen = None, []
 
         def looks(tools, job):
-            seen.append(self.post('brand/install', {'release': 'v1.2.0'}))
+            seen.append(self.post('brand/install', {'commit': 'abcdef012345'}))
             self.workers.research_plan(tools, job)
 
         self.workers.then('research-plan', looks)
         self.saved_started()
-        self.assertEqual(keeper.asked, [('install_brand', False, 'v1.2.0'),
-                                        ('install_brand', False, 'v1.2.0'),
-                                        ('install_brand', True, 'v1.2.0')],
+        self.assertEqual(keeper.asked, [('install_brand', False, 'abcdef012345'),
+                                        ('install_brand', False, 'abcdef012345'),
+                                        ('install_brand', True, 'abcdef012345')],
                          'a training working in the background is said to be working')
 
     def test_checking_this_computer_again_looks_at_the_skills_again(self):
@@ -1548,20 +1551,22 @@ class WholeUpgradeTests(PageCase):
                                'user.email=test@example.com', *args], cwd=cwd, check=True,
                               capture_output=True, text=True).stdout.strip()
 
-    def repository(self, version: str) -> Path:
-        """Training Studio's repository, released at `version`, with a tag and on main."""
+    def repository(self, version: str) -> tuple[Path, str]:
+        """Training Studio's repository with `version` on main, laid out as a repository of
+        its own: (the bare repository, main's commit). No tag is made: none is read."""
         work, bare = self.base / 'training-studio-work', self.base / 'training-studio.git'
         for part in self.PARTS:
             shutil.copytree(helpers.REPO / part, work / part,
                             ignore=shutil.ignore_patterns('__pycache__'))
         (work / 'skills' / 'training-studio' / 'VERSION').write_text(f'{version}\n')
+        (work / 'guidance' / 'manifest.json').write_text(json.dumps(
+            {'schema': 1, 'content_root': 'skills/training-studio', 'minimum_runtime': '0.1.0'}))
         self.git(self.base, 'init', '-q', '-b', 'main', str(work))
         self.git(work, 'add', '-A')
-        self.git(work, 'commit', '-q', '-m', f'Release {version}')
-        self.git(work, 'tag', f'v{version}')
+        self.git(work, 'commit', '-q', '-m', f'Version {version}')
         self.git(self.base, 'init', '-q', '--bare', str(bare))
-        self.git(work, 'push', '-q', '--tags', str(bare), 'main')
-        return bare
+        self.git(work, 'push', '-q', str(bare), 'main')
+        return bare, self.git(work, 'rev-parse', 'HEAD')
 
     def test_an_older_install_is_upgraded_from_the_page_and_asks_for_a_restart(self):
         from test_installer import install
@@ -1581,7 +1586,7 @@ class WholeUpgradeTests(PageCase):
                              0, printed.getvalue())
         first = json.loads(printed.getvalue())['version']
         running = root / 'versions' / first
-        source = self.repository('99.0.0')
+        source, main = self.repository('99.0.0')
         with mock.patch.dict(os.environ, {'TRAINING_STUDIO_SOURCE': str(source),
                                           'HOME': str(home_dir), 'PATH': '/usr/bin:/bin'}):
             keep = self.engine.upkeep = upkeep.Upkeep(
@@ -1617,6 +1622,8 @@ class WholeUpgradeTests(PageCase):
                             'the version this runner runs from is left whole')
             state = install.read_state(root)
             self.assertEqual(state['history'], [first, current.name])
+            # The commit of main it came from is kept beside it, so main is now current.
+            self.assertEqual(state['commits'], {current.name: main})
             self.assertEqual(os.readlink(home_dir / '.claude' / 'skills' / 'training-studio'),
                              str(root / 'current'))
             self.assertFalse((home_dir / '.agents').exists(), 'only the assistant it had')
@@ -2236,7 +2243,7 @@ class WireTests(WireCase):
         self.assertEqual(body, (desk.PAGE_DIR / 'index.html').read_bytes())
         status, headers, body = self.ask('/api/capabilities')
         self.assertEqual((status, json.loads(body)),
-                         (200, {'runner': True, 'version': VERSION}))
+                         (200, {'runner': True, 'version': VERSION, 'install': None}))
         self.assertEqual(headers['Content-Security-Policy'],
                          "default-src 'self'; img-src 'self' blob:")
         self.assertEqual(self.ask('/api/capabilities', token=False)[0], 403)
@@ -2434,9 +2441,11 @@ class SettingsTests(StudioCase):
         studios.write_text('{"schema": 1, "assistant": {"agent": "codex", "effort": "low"}, '
                            '"brand": {"repository": "git@github.com:acme/brand.git", '
                            '"release": "v1.4.0"}, "person": {"name": "Alex"}}')
+        # The brand skill release an older version kept beside the repository is not read.
         self.assertEqual(settings.load(), settings.Settings(
             agent='codex', effort='low', parallel=4,
-            brand_repository='git@github.com:acme/brand.git', brand_release='v1.4.0'))
+            brand_repository='git@github.com:acme/brand.git'))
+        self.assertFalse(hasattr(settings.load(), 'brand_release'))
 
     def test_saving_writes_a_shared_setting_to_the_studios_config_and_the_rest_here(self):
         studios = Path(os.environ['STUDIOS_CONFIG'])
@@ -2495,13 +2504,14 @@ class SettingsTests(StudioCase):
                                  ('claude', None, None))
                 settings.save(replace(shown, **changed), shown)
                 self.assertEqual(json.loads(studios.read_text())['assistant'], written)
-        # So is a release beside the brand skill's repository: another one goes with it.
+        # A brand skill release an older version kept beside the repository is not read,
+        # and a new repository leaves it as it is.
         studios.write_text('{"schema": 1, "brand": {"repository": '
                            '"https://pat:secret@github.com/acme/brand.git", "release": "v1"}}')
         shown = settings.load()
         settings.save(replace(shown, brand_repository='git@github.com:acme/brand.git'), shown)
         self.assertEqual(json.loads(studios.read_text())['brand'],
-                         {'repository': 'git@github.com:acme/brand.git', 'release': None})
+                         {'repository': 'git@github.com:acme/brand.git', 'release': 'v1'})
 
     def test_a_level_is_not_saved_beside_an_agent_another_studio_chose_meanwhile(self):
         studios = Path(os.environ['STUDIOS_CONFIG'])
@@ -2531,25 +2541,18 @@ class SettingsTests(StudioCase):
         studios = Path(os.environ['STUDIOS_CONFIG'])
         studios.write_text('{"schema": 1, "brand": {"brand": "acme", "variant": "dark"}}')
         kept = settings.save(replace(settings.load(),
-                                     brand_repository=' git@github.com:acme/brand.git ',
-                                     brand_release='v1.4.0'))
-        self.assertEqual((kept.brand_repository, kept.brand_release),
-                         ('git@github.com:acme/brand.git', 'v1.4.0'))
+                                     brand_repository=' git@github.com:acme/brand.git '))
+        self.assertEqual(kept.brand_repository, 'git@github.com:acme/brand.git')
         self.assertEqual(settings.load(), kept)
         self.assertEqual(studios.read_text(), '{"schema": 1, "brand": {"brand": "acme", '
-                         '"variant": "dark", "repository": "git@github.com:acme/brand.git", '
-                         '"release": "v1.4.0"}}')
-        for repository, release, says in (
-                ('-oProxyCommand=touch', None, 'as one address'),
-                ('https://github.com/acme/my brand', None, 'as one address'),
-                ('https://pat:secret@github.com/acme/brand.git', None, 'password or token'),
-                ('https://github.com/acme/brand.git', '-v1', 'as its tag'),
-                ('https://github.com/acme/brand.git', 'v1..2', 'as its tag'),
-                (None, 'v1.4.0', 'give the repository too')):
-            with self.subTest(repository=repository, release=release), \
+                         '"variant": "dark", "repository": "git@github.com:acme/brand.git"}}')
+        for repository, says in (
+                ('-oProxyCommand=touch', 'as one address'),
+                ('https://github.com/acme/my brand', 'as one address'),
+                ('https://pat:secret@github.com/acme/brand.git', 'password or token')):
+            with self.subTest(repository=repository), \
                     self.assertRaises(WorkspaceError) as refused:
-                settings.save(replace(settings.load(), brand_repository=repository,
-                                      brand_release=release))
+                settings.save(replace(settings.load(), brand_repository=repository))
             self.assertIn(says, str(refused.exception))
         self.assertEqual(settings.load(), kept, 'nothing that was refused was kept')
 

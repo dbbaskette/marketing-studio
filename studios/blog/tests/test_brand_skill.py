@@ -126,7 +126,7 @@ class BrandSkillTests(unittest.TestCase):
     def checked(self, bootstrap=False):
         folder = self.repository(bootstrap)
         found = management.dispatch(
-            self.root, 'brand-configure', {'repository': str(folder), 'release': ''}
+            self.root, 'brand-configure', {'repository': str(folder)}
         )
         # Installed from main, whatever tags there are.
         self.assertEqual(found['checked']['tag'], 'main')
@@ -380,18 +380,20 @@ class BrandSkillTests(unittest.TestCase):
         folder, found = self.checked()
         saved = brands._path().read_bytes()
         for values in (
-            {'repository': str(self.base / 'missing'), 'release': ''},
-            {'repository': 'https://token@example.invalid/private.git', 'release': ''},
+            {'repository': str(self.base / 'missing')},
+            {'repository': 'https://token@example.invalid/private.git'},
         ):
             with self.assertRaises(ValueError):
                 brands.configure(values)
             self.assertEqual(brands._path().read_bytes(), saved)
         self.assertFalse((self.home / 'brand-installer-ran').exists())
-        # A release sent by an older page is not kept: the brand skill comes from main.
+        # A release sent by a page an older version drew is not read, nor refused: the brand
+        # skill comes from main.
         pinned = brands.configure({'repository': str(folder), 'release': '1.1.0'})
-        self.assertEqual(pinned['release'], '')
-        self.assertEqual(found['checked']['commit'], self.git(folder, 'rev-parse', 'HEAD'))
-        brands.configure({'repository': '', 'release': ''})
+        self.assertNotIn('release', pinned)
+        self.assertNotIn('release', studio.read_json(brands._path()))
+        self.assertEqual(pinned['checked']['commit'], self.git(folder, 'rev-parse', 'HEAD'))
+        brands.configure({'repository': ''})
         self.assertIsNone(brands.status()['checked'])
 
     def test_only_listed_skills_and_brands_are_accepted(self):
@@ -412,19 +414,38 @@ class BrandSkillTests(unittest.TestCase):
         self.assertNotIn('repository', private)
         self.assertNotIn('release', private)
         self.assertEqual(studios_config.read()[0]['brand']['repository'], shown['repository'])
-        studios_config.update({'brand': {'release': 'v1.1.0'}})
+        self.assertEqual(shown['shared_before'], {'repository': shown['repository']})
+        elsewhere = str(self.base / 'elsewhere' / 'brand.git')
+        studios_config.update({'brand': {'repository': elsewhere}})
         fresh = brands.status()
-        self.assertEqual(fresh['release'], 'v1.1.0')
+        self.assertEqual(fresh['repository'], elsewhere)
         self.assertIsNone(fresh['checked'])
         with self.assertRaisesRegex(ValueError, 'changed in another studio'):
             brands.configure(
-                {
-                    'repository': shown['repository'],
-                    'release': '',
-                    'shared_before': shown['shared_before'],
-                }
+                {'repository': shown['repository'], 'shared_before': shown['shared_before']}
             )
-        self.assertEqual(studios_config.read()[0]['brand']['release'], 'v1.1.0')
+        self.assertEqual(studios_config.read()[0]['brand']['repository'], elsewhere)
+
+    def test_a_brand_release_an_older_version_saved_keeps_loading_and_is_dropped(self):
+        import studios_config
+
+        _, shown = self.checked()
+        # An older version saved a release beside the repository, and one that would have
+        # been refused then: the settings still load, the check made then still counts, and
+        # the release is neither shown nor rewritten.
+        saved = json.loads(self.config.read_text())
+        saved['brand']['release'] = '../not a tag'
+        self.config.write_text(json.dumps(saved))
+        values, problem = studios_config.read()
+        self.assertIsNone(problem)
+        self.assertEqual(values['brand']['repository'], shown['repository'])
+        fresh = brands.status()
+        self.assertNotIn('release', fresh)
+        self.assertEqual(fresh['shared_before'], {'repository': shown['repository']})
+        self.assertEqual(fresh['checked'], shown['checked'])
+        with self.assertRaises(ValueError):
+            studios_config.update({'brand': {'release': 'v1.1.0'}})
+        self.assertEqual(json.loads(self.config.read_text())['brand']['release'], '../not a tag')
 
     def test_shared_skill_choice_refuses_invalid_config_and_preserves_legacy_values(self):
         folder = self.skill()

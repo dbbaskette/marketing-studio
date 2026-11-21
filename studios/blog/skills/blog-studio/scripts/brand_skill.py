@@ -37,7 +37,7 @@ def _read():
         value = studio.read_json(_path()) if _path().is_file() else {}
         if not isinstance(value, dict):
             raise ValueError('Invalid local brand settings.')
-        # checked is an observation about a release, not another preference.
+        # checked is an observation about where main is, not another preference.
         preferences = shared.get('brand', {})
         value['skill_before'] = preferences.get('skill')
         if 'skill' in preferences:
@@ -48,10 +48,13 @@ def _read():
                 if preferences.get('skill')
                 else ''
             )
-        value['shared_before'] = {key: preferences.get(key) for key in ('repository', 'release')}
-        value.update({key: preferences.get(key) or '' for key in ('repository', 'release')})
+        # A release an older version kept, here or in the shared file, is not read: the brand
+        # skill is installed and updated from its repository's main.
+        value.pop('release', None)
+        value['shared_before'] = {'repository': preferences.get('repository')}
+        value['repository'] = preferences.get('repository') or ''
         checked = value.get('checked') or {}
-        selection = studio.digest(json.dumps([value['repository'], value['release']]).encode())
+        selection = _selection(value['repository'])
         if checked.get('selection') != selection:
             value.pop('checked', None)
         value['problem'] = problem or migration_problem
@@ -61,6 +64,12 @@ def _read():
         return {'problem': 'Brand settings could not be read. Check and save them again.'}
 
 
+def _selection(repository):
+    """What a check of the repository is kept for. The second member is the release an older
+    version kept beside it, always empty now, so a check made then still counts."""
+    return studio.digest(json.dumps([repository, '']).encode())
+
+
 def _save(value):
     private = {
         key: member
@@ -68,7 +77,6 @@ def _save(value):
         if key
         not in (
             'repository',
-            'release',
             'problem',
             'migration_notice',
             'shared_before',
@@ -82,7 +90,7 @@ def _save(value):
         {
             key: member
             for key, member in previous.items()
-            if key in ('repository', 'release', 'brand', 'variant')
+            if key in ('repository', 'brand', 'variant')
         }
     )
     studio.write_json(_path(), private)
@@ -112,7 +120,6 @@ def status(refresh=False):
     return {
         **kept,
         'repository': kept.get('repository', ''),
-        'release': kept.get('release', ''),
         'runtime': chosen['runtime'] if chosen else '',
         'skills': [{**row, 'chosen': row == chosen} for row in skills],
         'brands': chosen['brands'] if chosen else [],
@@ -121,7 +128,7 @@ def status(refresh=False):
         'problem': problem,
         'job': dict(_JOB or {}),
         'checked': kept.get('checked'),
-        'shared_before': kept.get('shared_before', {'repository': None, 'release': None}),
+        'shared_before': kept.get('shared_before', {'repository': None}),
     }
 
 
@@ -176,8 +183,10 @@ def _configure(data):
     data = dict(data)
     before = data.pop('shared_before', None)
     skill_before = data.pop('skill_before', ...)
-    if set(data) not in ({'repository', 'release'}, {'runtime'}):
-        raise ValueError('Save either the brand repository and release or an installed skill.')
+    # A release, sent by a page an older version drew, is not read: there is none to choose.
+    data.pop('release', None)
+    if set(data) not in ({'repository'}, {'runtime'}):
+        raise ValueError('Save either the brand repository or an installed skill.')
     with locked(_path().with_suffix('.lock')):
         previous = _read()
         previous.pop('problem', None)
@@ -192,18 +201,16 @@ def _configure(data):
             previous['runtime'] = runtime
         else:
             repository = settings.check_repository(data['repository'])
-            release = settings.check_release(data['release'], repository)
-            checked = source.check(repository, release, home()) if repository else {}
+            checked = source.check(repository, home()) if repository else {}
             current, _ = studios_config.read()
             previous_brand = current.get('brand', {})
             if before is None:
-                before = {key: previous_brand.get(key) for key in ('repository', 'release')}
-            if not isinstance(before, dict) or set(before) != {'repository', 'release'}:
+                before = {'repository': previous_brand.get('repository')}
+            if not isinstance(before, dict) or 'repository' not in before:
                 raise ValueError('Reload the brand settings before saving.')
-            values = {
-                'repository': checked.get('repository', ''),
-                'release': checked.get('release') or '',
-            }
+            # A page an older version drew also sends the release it was shown: not read.
+            before = {'repository': before['repository']}
+            values = {'repository': checked.get('repository', '')}
             changes = {
                 key: value for key, value in values.items() if (before.get(key) or '') != value
             }
@@ -211,9 +218,7 @@ def _configure(data):
             previous.update(
                 checked={
                     **checked['chosen'],
-                    'selection': studio.digest(
-                        json.dumps([values['repository'], values['release']]).encode()
-                    ),
+                    'selection': _selection(values['repository']),
                 }
                 if checked
                 else None,
@@ -287,7 +292,7 @@ def _install(kept, lease):
     try:
         chosen = kept['checked']
         # Installed from main, at the commit shown: one that moved since is looked at again.
-        checked = source.check(kept['repository'], None, home())
+        checked = source.check(kept['repository'], home())
         if checked['chosen']['commit'] != chosen['commit']:
             raise ValueError('The main branch moved. Check and save it again before installing.')
         before = _companions()

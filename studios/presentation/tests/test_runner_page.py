@@ -198,7 +198,8 @@ class PrivateSlideTextDraftTests(PageCase):
 
 class CapabilityTests(PageCase):
     def test_the_runner_says_it_is_here(self):
-        self.assertEqual(self.get('capabilities'), {'runner': True, 'version': VERSION})
+        self.assertEqual(self.get('capabilities'),
+                         {'runner': True, 'version': VERSION, 'install': None})
 
     def test_every_address_is_listed_once_with_its_methods(self):
         self.assertEqual(set(self.page.reads), set(GETS))
@@ -235,7 +236,7 @@ class RuleTests(PageCase):
             '/api/upgrade': {'version': '99.0.0'},
             '/api/versions': {'dismiss': 'presentation-studio 99.0.0'},
             '/api/brand': {'repository': str(self.base / 'brand.git')},
-            '/api/brand/install': {'release': 'v1.2.0'},
+            '/api/brand/install': {'commit': 'abcdef012345'},
             '/api/shared': {'seen': True}})
         self.reads = {target: target for target in GETS}
         self.reads.update({
@@ -1022,8 +1023,8 @@ class Keeper:
     def dismiss(self, key: str) -> dict:
         return self.answer('dismiss', key)
 
-    def install_brand(self, working: bool, release: str) -> dict:
-        return self.answer('install_brand', working, release)
+    def install_brand(self, working: bool, commit: str) -> dict:
+        return self.answer('install_brand', working, commit)
 
     def remember_brand(self, repository: str, commit: str) -> None:
         self.asked.append(('remember_brand', repository, commit))
@@ -1079,39 +1080,39 @@ class UpkeepTests(PageCase):
         self.assertIsNone(settings.load().brand_repository, 'nothing was kept')
         # It is installed from main: a release sent by an older page is not kept or used.
         made = self.post('brand', {'repository': str(bare), 'release': '1.2.0'})
-        self.assertEqual((made['brand']['repository'], made['brand']['release']), (str(bare), None))
-        self.assertEqual(settings.brand_source(), (str(bare), None))
+        self.assertEqual(made['brand']['repository'], str(bare))
+        self.assertNotIn('release', made['brand'])
+        self.assertEqual(settings.brand_source(), str(bare))
         main = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=work, check=True,
                               capture_output=True, text=True).stdout.strip()
         self.assertEqual(keeper.asked, [('remember_brand', str(bare), main)])
         self.assertEqual(self.post('setup', {'limits': {'parallel': 3}})['brand']['repository'],
                          str(bare), 'a change to anything else leaves it as it was')
         cleared = self.post('brand', {'repository': ''})
-        self.assertEqual((cleared['brand']['repository'], cleared['brand']['release']),
-                         (None, None))
+        self.assertIsNone(cleared['brand']['repository'])
 
     def test_the_brand_skill_is_installed_only_when_asked_and_not_under_a_working_deck(self):
-        self.assertEqual(self.post('brand/install', {'release': 'v1.2.0'}, 409)['error'],
+        self.assertEqual(self.post('brand/install', {'commit': 'abcdef012345'}, 409)['error'],
                          page.NO_KEEPER)
         keeper = self.engine.upkeep = Keeper()
         self.assertEqual(self.post('brand/install', {}, 400)['error'],
-                         'Give release as text.')
-        self.assertEqual(self.post('brand/install', {'release': 'v1.2.0'}),
+                         'Give commit as text.')
+        self.assertEqual(self.post('brand/install', {'commit': 'abcdef012345'}),
                          {'upkeep': {'stand_in': True}})
         keeper.refuse = 'The brand skill is being installed already.'
-        self.assertEqual(self.post('brand/install', {'release': 'v1.2.0'}, 409)['error'],
+        self.assertEqual(self.post('brand/install', {'commit': 'abcdef012345'}, 409)['error'],
                          keeper.refuse)
         keeper.refuse, seen = None, []
 
         def looks(tools, job):
-            seen.append(self.post('brand/install', {'release': 'v1.2.0'}))
+            seen.append(self.post('brand/install', {'commit': 'abcdef012345'}))
             self.workers.outline(tools, job)
 
         self.workers.then('outline', looks)
         self.saved_started()
-        self.assertEqual(keeper.asked, [('install_brand', False, 'v1.2.0'),
-                                        ('install_brand', False, 'v1.2.0'),
-                                        ('install_brand', True, 'v1.2.0')],
+        self.assertEqual(keeper.asked, [('install_brand', False, 'abcdef012345'),
+                                        ('install_brand', False, 'abcdef012345'),
+                                        ('install_brand', True, 'abcdef012345')],
                          'a deck working in the background is said to be working')
 
     def test_checking_this_computer_again_looks_at_the_skills_and_what_a_deck_needs(self):
@@ -1283,7 +1284,8 @@ class WireTests(WireCase):
         self.assertEqual(body, (self.page_dir / 'index.html').read_bytes())
         status, headers, body = self.ask('/api/capabilities')
         self.assertEqual((status, json.loads(body)), (200, {'runner': True,
-                                                            'version': VERSION}))
+                                                            'version': VERSION,
+                                                            'install': None}))
         self.assertEqual(headers['Content-Security-Policy'],
                          "default-src 'self'; img-src 'self' blob:")
         self.assertEqual(self.ask('/api/capabilities', token=False)[0], 403)

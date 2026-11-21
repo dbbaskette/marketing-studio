@@ -304,7 +304,7 @@ def readiness(root, harness='both', online=False):
         'guidance': {
             'status': 'installed',
             'version': runtime['version'],
-            'next_step': 'Guidance is the installed skill, and every article runs it. To update, run the installer from the latest release; the version a saved article records only says which guidance judged its completed reviews.',
+            'next_step': 'Guidance is the installed skill, and every article runs it. To update, pull main in your clone, or get a newer download, and run the installer again; the version a saved article records only says which guidance judged its completed reviews.',
         },
         'google': {
             'status': 'not-checked',

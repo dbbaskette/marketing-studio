@@ -46,7 +46,7 @@ class InstallerTests(Isolated):
         self.assertEqual((selected / 'keep').read_text(), 'Unrelated')
 
     GONE = ('The earlier version is no longer on this computer: an update keeps only the newest. '
-            'Install the release you want instead. Nothing was changed.')
+            'Install the version you want from its repository instead. Nothing was changed.')
 
     def later(self):
         """A copy of this studio standing in for a later release."""

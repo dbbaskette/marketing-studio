@@ -280,6 +280,14 @@ def installed() -> str:
     return sync_guidance.runtime_version()
 
 
+def installed_copy() -> str | None:
+    """The installed version folder the helper runs from, by its name (`versions/<id>`), or
+    None for a checkout. A runner that restarted into a newer copy says another one, even
+    when main's version did not change."""
+    runtime = Path(sync_guidance.RUNTIME)
+    return runtime.name if runtime.parent.name == 'versions' else None
+
+
 def marker(repo: Path, folder: str) -> dict | None:
     """The folder's hub.json when it is one this version can work with; None when the
     folder has none. Refuses any other."""

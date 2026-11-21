@@ -9,7 +9,7 @@ What a caller needs to know
 - Two places hold them. The values every studio on this computer shares are kept only in
   the studios config (`studios_config`), and read from it each time: the agent, its model
   and its level (`assistant.agent`, `.model`, `.effort`) and the brand skill's repository and
-  release and installed folder (`brand.repository`, `.release`, `.skill`), plus
+  installed folder (`brand.repository`, `.skill`), plus
   slide previews (`render.previews`). SHARED names them. A value there that would be
   refused here is the default, and so is every one of them while the file cannot be read.
   The rest belong to Training Studio on this computer alone, and are kept in the per-user
@@ -21,8 +21,8 @@ What a caller needs to know
   cannot be read or written, it refuses before anything is kept, and the file is left as it
   is. A value in the file that Training Studio cannot use is never written over by a save
   that did not change it.
-- An agent and its model and level are written as one, and so are the brand skill's
-  repository and its release: where a save writes a model or a level and the file names
+- An agent and its model and level are written as one: where a save writes a model or a
+  level and the file names
   another agent than the one saved, the agent, its model and its level are all written, as
   the form showed them. A model is never left beside another studio's agent. `writes` says
   what a save would write, from what the file holds, and refuses as `save` would; set-up
@@ -45,13 +45,14 @@ What a caller needs to know
 - `notify` is whether the runner tells the person, through the computer's own
   notifications, that a training needs a decision while no page is open. Off until they
   turn it on.
-- `look_for_updates` is whether the runner asks, at most once a day, which releases of
-  Training Studio, its companion skills and the brand skill exist. On until they turn it
-  off. See `upkeep`.
+- `look_for_updates` is whether the runner asks, at most once a day, where the main
+  branches of Training Studio, its companion skills and the brand skill are. On until they
+  turn it off. See `upkeep`.
 - `brand_repository` is the address of the brand skill's own repository, https, ssh or a
-  folder, from which the page installs and upgrades it; None until the person names one.
-  `brand_release` is the release tag to install from it, None for the newest. Neither is
-  needed to use a brand skill installed by hand. Whether the repository can be reached is
+  folder, whose `main` the page installs and updates it from; None until the person names
+  one. There is no release to choose: a `brand.release` or `brand_release` kept by an older
+  version is not read, and left as it is. A repository is not needed to use a brand skill
+  installed by hand. Whether the repository can be reached is
   `brand_source`'s to say; here only its shape is checked.
 - A value that makes no sense is refused with a sentence, not corrected silently.
 """
@@ -83,7 +84,6 @@ ADDRESS = 2000                  # characters in a repository's address
 # The settings every studio shares, each with where the studios config keeps it.
 SHARED = {'agent': ('assistant', 'agent'), 'model': ('assistant', 'model'),
           'effort': ('assistant', 'effort'), 'brand_repository': ('brand', 'repository'),
-          'brand_release': ('brand', 'release'),
           'previews': ('render', 'previews'), 'brand_skill': ('brand', 'skill')}
 
 
@@ -100,7 +100,6 @@ class Settings:
     notify: bool = False
     look_for_updates: bool = True
     brand_repository: str | None = None
-    brand_release: str | None = None
 
     @property
     def limits(self) -> dict:
@@ -126,8 +125,7 @@ def check(chosen: Settings) -> Settings:
         previews=check_previews(chosen.previews), brand_skill=check_place(chosen.brand_skill),
         notify=check_notify(chosen.notify),
         look_for_updates=check_look(chosen.look_for_updates),
-        brand_repository=repository,
-        brand_release=check_release(chosen.brand_release, repository))
+        brand_repository=repository)
 
 
 def _group(found, name):
@@ -148,12 +146,11 @@ def from_shared(found: dict) -> dict:
     effort = passes(check_effort, assistant.get('effort'), agent or Settings().agent,
                      model) if usable else None
     repository = brand.get('repository')
+    # A release an older version kept beside the repository is not read: the brand skill is
+    # installed and updated from its repository's main.
     repository = passes(check_repository, repository) if isinstance(repository, str) else None
-    release = brand.get('release')
-    release = passes(check_release, release, repository) \
-        if isinstance(release, str) and repository else None
     return {'agent': agent, 'model': model, 'effort': effort,
-            'brand_repository': repository, 'brand_release': release,
+            'brand_repository': repository,
             'previews': passes(check_previews, _group(found, 'render').get('previews')),
             # One saved inside a `versions/` folder is said through `current`: an update keeps
             # only the newest version, and the saved one may be gone.
@@ -181,11 +178,10 @@ def changes(before: Settings, after: Settings) -> dict:
 
 
 # The shared settings that belong to another, which they are written beside.
-OWNS = {'agent': ('model', 'effort'), 'brand_repository': ('brand_release',)}
+OWNS = {'agent': ('model', 'effort')}
 # Each shared setting as a sentence names it.
 NAMED = {'agent': 'The agent', 'model': 'The model', 'effort': 'The reasoning level',
          'brand_repository': "The brand skill's repository",
-         'brand_release': "The brand skill's release",
          'previews': 'Slide previews', 'brand_skill': 'The installed brand skill'}
 
 
@@ -201,8 +197,8 @@ class Stale(WorkspaceError):
 def writes(chosen: Settings, before: Settings, found: dict) -> dict:
     """What saving `chosen` writes into the studios config while it holds `found`, shaped
     as the file is, when the form was shown `before`: each shared setting the person
-    changed, with the agent beside its model and level, and the repository beside its
-    release, where the file names another. Refuses, in a sentence, a change to a value
+    changed, with the agent beside its model and level where the file names another.
+    Refuses, in a sentence, a change to a value
     another studio changed too."""
     changed = changes(before, chosen)
     for owner, owned in OWNS.items():
@@ -246,8 +242,7 @@ def own() -> dict:
     found = from_shared({
         'assistant': {'agent': kept.get('agent'), 'model': kept.get('model'),
                       'effort': kept.get('effort')},
-        'brand': {'repository': kept.get('brand_repository'),
-                  'release': kept.get('brand_release'), 'skill': kept.get('brand_skill')},
+        'brand': {'repository': kept.get('brand_repository'), 'skill': kept.get('brand_skill')},
         'render': {'previews': kept.get('previews')}})
     return {name: value for name, value in found.items() if value is not None}
 

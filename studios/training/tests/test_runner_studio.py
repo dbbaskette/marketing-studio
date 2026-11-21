@@ -446,7 +446,8 @@ class ProcessTests(StudioCase):
         request = urllib.request.Request(f'{address}api/capabilities', headers={
             'X-Training-Studio-Token': fragment.removeprefix('token=')})
         with DIRECT.open(request, timeout=20) as response:
-            self.assertEqual(json.loads(response.read()), {'runner': True, 'version': VERSION})
+            self.assertEqual(json.loads(response.read()),
+                             {'runner': True, 'version': VERSION, 'install': None})
         self.assertIsNone(process.poll())
         process.send_signal(signal.SIGTERM)
         rest, errors = process.communicate(timeout=30)

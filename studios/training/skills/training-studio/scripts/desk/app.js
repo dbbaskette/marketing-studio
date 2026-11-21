@@ -353,22 +353,22 @@ const UPDATE_SAYS = 'Each is fetched from its own repository at the one revision
   + 'its own installer is run with Node, and registers the skill for every assistant it knows.';
 const UPDATE_WAITS = 'It takes a few minutes, while you carry on. The Status screen says how '
   + 'it goes.';
-const LOOK_SAYS = 'Once a day, Training Studio asks where it and its skills are kept which '
-  + 'releases there are, and says on Home when a newer one is out. It only reads their names: '
-  + 'nothing is downloaded or run, and nothing is installed without your yes.';
-const BRAND_SAYS = 'Your organisation’s brand skill is released from a repository of its own. '
-  + 'Name it here, and Training Studio installs and upgrades the brand skill from it, with '
-  + 'your own git access and only after your yes. A brand skill you installed yourself is '
-  + 'still found and used. Every studio on this computer shares the repository and release '
-  + 'named here, so saving changes them for all of them.';
-const BRAND_STEPS = ['The release is fetched with your own access: its ZIP through gh, where '
-  + 'gh is signed in, or else the tag with git.',
+const LOOK_SAYS = 'Once a day, Training Studio asks where it and its skills are kept where each '
+  + 'one’s main branch is now, and says on Home when one has moved on. It only reads where '
+  + 'they are: nothing is installed without your yes.';
+const BRAND_SAYS = 'Your organisation’s brand skill comes from a repository of its own. Name it here, '
+  + 'and Training Studio installs and updates the brand skill from its main branch, with your '
+  + 'own git access and only after your yes. A brand skill you installed yourself is still '
+  + 'found and used. Every studio on this computer shares the repository named here, so '
+  + 'saving changes it for all of them.';
+const BRAND_STEPS = ['Its main branch is fetched with your own git access, at the revision '
+  + 'shown.',
 'Its own installer is run, and told to leave harness-research alone. Where it would put in '
   + 'its own harness-slides in place of the one Training Studio uses, nothing is run, and '
   + 'you are told.',
 'Then this computer is checked again, so that new decks can use it.'];
-const BRAND_TRUST = 'The repository is your choice, so the release is not checked against '
-  + 'anything Training Studio knows. Install only from a repository you trust.';
+const BRAND_TRUST = 'The repository is your choice, so what its main branch holds is not '
+  + 'checked against anything Training Studio knows. Install only from a repository you trust.';
 const BRAND_WAITS = 'It takes a few minutes, while you carry on. Nothing is changed while a '
   + 'training is working.';
 const UPGRADE_KEEPS = 'The version you have now is kept beside it, so trainings carry on where '
@@ -414,7 +414,7 @@ const view = {
   // would do, as the runner said when its sheet was opened, and the deck whose redesign the
   // sheet asks about.
   doomed: null, leaving: null, redesigning: null,
-  // Looking online for newer releases, while it is switched, and why switching it was refused.
+  // Looking online for updates, while it is switched, and why switching it was refused.
   turningLook: false, lookRefused: '',
   // The brand skill's repository as it is typed in Settings, while it is saved, and why
   // saving it was refused.
@@ -2377,7 +2377,7 @@ function computerItem(item) {
   for (const found of list(item.facts)) facts.append(fact(found, item.optional));
   add(node, facts);
   if (item.fix) add(node, make('p', item.optional ? 'fix fix-optional' : 'fix', item.fix));
-  // What a newer release would put right is updated from the versions, on this same screen.
+  // What a newer version would put right is updated from the versions, on this same screen.
   if (item.versions) {
     add(node, add(make('div', 'bar'), capsule('See the versions', 'quiet', () => {
       const found = byId('versions');
@@ -2542,13 +2542,12 @@ function drawSettings(fresh) {
         ['This training only', 'Each training keeps the brand, research sites and models it '
           + 'was started with.'],
         ['This studio', 'The cards below apply to Training Studio on this computer, except '
-          + 'Brand skill: its repository and release are shared, as Shared settings, Advanced, '
-          + 'Brand skill release shows them.']]),
+          + 'Brand skill: its repository is shared, as Shared settings, Brand, shows it.']]),
       capsule('Change shared settings', 'quiet', () => { location.href = settingsAddress(); }, 'shared-settings')) : null],
     ['workspace', around(), workspaceCard],
     ['decided', [decided, view.unmoved], decidedCard],
     ['brand-source', [view.setup && view.setup.brand && [view.setup.brand.repository,
-      view.setup.brand.release], view.brandRefused, view.savingBrand], brandSourceCard],
+      ], view.brandRefused, view.savingBrand], brandSourceCard],
     ['look', [view.setup && view.setup.updates, view.lookRefused], lookCard],
     ['alerts', [alerts()], alertsCard], ['notify', around(), notifyCard],
     ['left', around(), leftCard],
@@ -8775,9 +8774,9 @@ function notifyCard() {
 }
 
 // --- Training Studio and its skills --------------------------------------------------------
-// What the runner found when it last looked at its links, the companion skills and the
-// releases. It puts back by itself only what the installer placed. A companion is brought
-// only once the person says yes in the sheet, and a newer release is only ever said.
+// What the runner found when it last looked at its links, the companion skills and where
+// each main branch is. It puts back by itself only what the installer placed. A companion is
+// brought only once the person says yes in the sheet, and a newer one is only ever said.
 
 function upkeepOf() {
   return view.runner && view.setup ? view.setup.upkeep || null : null;
@@ -9007,8 +9006,8 @@ function upgradeSheet() {
     'send');
   const parts = [sheetTitle('Upgrade Training Studio to ' + upgrade.version + '?'),
     make('h3', 'sheet-part', 'What happens'),
-    bullets(['Training Studio ' + upgrade.version + ' is fetched from '
-      + (upgrade.from === 'tag' ? 'its release' : 'the newest version on ' + upgrade.from)
+    bullets(['Training Studio ' + upgrade.version + ' is fetched from ' + (upgrade.from || 'main')
+      + (upgrade.commit ? ', at revision ' + upgrade.commit + ',' : '')
       + ' in Training Studio’s own repository, and its own installer checks it.',
     'It is installed beside ' + (own.installed || 'this version') + '. ' + UPGRADE_KEEPS,
     'Then you restart Training Studio to use it. This page comes back by itself.'])];
@@ -9046,8 +9045,8 @@ async function settleUpgrade(problem, pressed) {
   draw(false);
 }
 
-// The sheet that asks before the brand skill is installed: the repository, the release and
-// its revision, and what happens. Nothing is fetched or run before the yes.
+// The sheet that asks before the brand skill is installed: the repository, its main branch
+// and its revision, and what happens. Nothing is fetched or run before the yes.
 function brandSheet() {
   const brand = brandOf(versionsOf());
   const cancel = capsule('Cancel', 'quiet', closeSheet, 'cancel');
@@ -9077,7 +9076,7 @@ async function settleBrand(problem, pressed) {
   pressed.disabled = true;
   let answered;
   try {
-    answered = await send('brand/install', { release: brandOf(versionsOf()).release });
+    answered = await send('brand/install', { commit: brandOf(versionsOf()).commit });
   } catch (failure) {
     view.busy = false;
     if (turn !== view.turn) return;
@@ -9111,7 +9110,7 @@ async function dismissVersions(key) {
 // same key, so this page waits for it and then loads the newer page.
 async function restartNow(pressed) {
   if (view.restarting) return;
-  const version = upgradeOf(versionsOf()).version;
+  const { version, installs } = upgradeOf(versionsOf());
   pressed.disabled = true;
   let answered;
   try {
@@ -9123,7 +9122,7 @@ async function restartNow(pressed) {
   }
   if (view.setup && answered) view.setup = { ...view.setup, upkeep: answered.upkeep };
   view.restarting = true;
-  view.comingBack = { version, tries: 0 };
+  view.comingBack = { version, installs, tries: 0 };
   toast('Restarting Training Studio. This page comes back by itself.');
   draw(false);
   window.setTimeout(comeBack, 1000);
@@ -9136,7 +9135,9 @@ async function comeBack() {
   if (!waiting) return;
   try {
     const found = await ask('capabilities');
-    if (found && found.version === waiting.version) {
+    // The copy it was installed as, when the runner said it: main's version may not change.
+    if (found && (waiting.installs ? found.install === waiting.installs
+      : found.version === waiting.version)) {
       window.location.reload();
       return;
     }
@@ -9187,13 +9188,13 @@ const COMPANION_BEADS = { ok: 'done', missing: 'late', older: 'late', unread: 'n
 function releasesLine(found) {
   const releases = (found && found.releases) || {};
   if (releases.on === false) {
-    return make('p', 'quiet', 'Looking online for newer releases is turned off, in Settings.');
+    return make('p', 'quiet', 'Looking online for updates is turned off, in Settings.');
   }
   if (releases.problem) return make('p', 'fix', releases.problem);
   if (!releases.at || Number.isNaN(Date.parse(releases.at))) {
-    return make('p', 'quiet', 'Newer releases have not been looked for yet.');
+    return make('p', 'quiet', 'Updates have not been looked for yet.');
   }
-  return add(make('p', 'quiet'), 'Newer releases were last looked for ', when(releases.at),
+  return add(make('p', 'quiet'), 'Updates were last looked for ', when(releases.at),
     list(releases.newer).length ? '.' : '. Nothing newer was found.');
 }
 
@@ -9278,8 +9279,8 @@ async function setLook(index, node) {
   slide(node, index);
   try {
     view.setup = await send('setup', { ...setupAsItIs(), look_for_updates: Boolean(index) });
-    toast(index ? 'On. Training Studio looks for newer releases once a day.'
-      : 'Off. Training Studio no longer looks online for newer releases.');
+    toast(index ? 'On. Training Studio looks for updates once a day.'
+      : 'Off. Training Studio no longer looks online for updates.');
   } catch (failure) {
     slide(node, index ? 0 : 1);
     view.lookRefused = failure.message + ' Nothing was changed.';
@@ -9288,7 +9289,7 @@ async function setLook(index, node) {
   if (view.screen === 'settings') draw(false);
 }
 
-// Settings, with the runner: whether it looks online for newer releases.
+// Settings, with the runner: whether it looks online for updates.
 function lookCard() {
   const found = view.runner && view.setup ? view.setup.updates : null;
   if (!found) return null;
@@ -9308,19 +9309,17 @@ function brandSourceCard() {
   const found = view.runner && view.setup ? view.setup.brand : null;
   if (!found) return null;
   if (!view.brandForm) {
-    view.brandForm = { repository: found.repository || '', release: found.release || '',
+    view.brandForm = { repository: found.repository || '',
       seen: 'shared' in view.setup ? sharedOf() : null };
   }
   const form = view.brandForm;
   const node = add(card('Brand skill'), make('p', '', BRAND_SAYS),
     field('brand-repository', 'Its repository', form, 'repository',
       { hint: 'An https or ssh address, as git clones it. Git reaches it as you, without '
-        + 'asking for anything.' }),
-    field('brand-release', 'Which release', form, 'release',
-      { short: true, hint: 'Empty for the newest, or a release’s tag, such as v1.4.0.' }));
+        + 'asking for anything.' }));
   if (found.repository) {
-    add(node, make('p', 'quiet', 'Installed from ' + found.repository + ', '
-      + (found.release ? 'release ' + found.release : 'the newest release') + '.'));
+    add(node, make('p', 'quiet', 'Installed and updated from the main branch of '
+      + found.repository + '.'));
   }
   const problem = alertLine('brand-problem');
   say(problem, view.brandRefused);
@@ -9338,11 +9337,11 @@ async function saveBrand(pressed) {
   view.brandRefused = '';
   pressed.disabled = true;
   try {
-    const body = { repository, release: form.release.trim() };
+    const body = { repository };
     if (form.seen) body.shared_seen = form.again ? sharedOf() : form.seen;
     view.setup = await send('brand', body);
     view.brandForm = null;
-    toast(repository ? 'Saved. The Status screen shows which release can be installed.'
+    toast(repository ? 'Saved. The Status screen shows its main branch, to install.'
       : 'Forgotten. A brand skill already installed is still used.');
   } catch (failure) {
     view.brandRefused = failure.message + ' Nothing was changed.';

@@ -1,11 +1,17 @@
 """Traverse approved checkout links and materialize self-contained studio bundles.
 
 Also the one rule every installer shares for its `versions` folder: one version stays,
-and everything written down names it through the `current` link beside that folder.
+and everything written down names it through the `current` link beside that folder. And
+which commit of `main` each installed version came from, so that a studio can say whether
+`main` has moved on since (`source_commit`, `remember_commit`, `installed_commit`).
 """
 import os
 from pathlib import Path
+import re
 import shutil
+import subprocess
+
+COMMIT = re.compile(r'[0-9a-f]{40}')
 
 
 def shared_link(path):
@@ -43,7 +49,7 @@ def files(root):
 
 
 GONE = ('The earlier version is no longer on this computer: an update keeps only the newest. '
-        'Install the release you want instead. Nothing was changed.')
+        'Install the version you want from its repository instead. Nothing was changed.')
 
 
 def prune(versions, keep, in_use=None):
@@ -130,3 +136,43 @@ def stable_place(place):
         return place
     stable = stable_address(resolved)
     return stable if stable != resolved else place
+
+
+def source_commit(folder):
+    """The commit a Git checkout holding `folder` is at, or None when it is not in one or
+    git cannot say. git is asked apart from the person's own setup, and only `rev-parse`
+    runs: no hook, no filter, nothing fetched."""
+    env = {key: value for key, value in os.environ.items() if not key.startswith('GIT_')}
+    env.update(GIT_CONFIG_NOSYSTEM='1', GIT_CONFIG_GLOBAL=os.devnull, GIT_TERMINAL_PROMPT='0')
+    try:
+        done = subprocess.run(['git', '-C', str(folder), '-c', f'core.hooksPath={os.devnull}',
+                               '-c', 'core.fsmonitor=false', 'rev-parse', '--verify', '--quiet',
+                               'HEAD^{commit}'], env=env, capture_output=True, text=True,
+                              stdin=subprocess.DEVNULL, timeout=20)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    commit = done.stdout.strip()
+    return commit if done.returncode == 0 and COMMIT.fullmatch(commit) else None
+
+
+def remember_commit(state, key, commit):
+    """Keep, in an installer's record, which commit the version `key` was installed from.
+    Only versions in its history are kept. Without a commit, one kept for the same `key`
+    stays: the same key is the same files."""
+    history = set(state.get('history') or ()) | {key}
+    kept = state.get('commits') if isinstance(state.get('commits'), dict) else {}
+    commits = {name: value for name, value in kept.items()
+               if name in history and isinstance(value, str) and COMMIT.fullmatch(value)}
+    if isinstance(commit, str) and COMMIT.fullmatch(commit):
+        commits[key] = commit
+    state['commits'] = commits
+    return state
+
+
+def installed_commit(state, key):
+    """The commit the installed version `key` came from, as `remember_commit` kept it, or
+    None when it is not known: installed from a download, or by an older installer."""
+    kept = (state or {}).get('commits') if isinstance((state or {}).get('commits'), dict) \
+        else {}
+    commit = kept.get(key)
+    return commit if isinstance(commit, str) and COMMIT.fullmatch(commit) else None

@@ -71,21 +71,23 @@ What a caller needs to know
   hand, and when there is nothing to bring. The page asks for it only after the person
   said yes in its confirmation.
 - `upkeep.versions` has a row each for Training Studio and its companions, with what is
-  installed, the newest, the pins and a state. `POST /api/upgrade` with {"version"}
-  installs that newer Training Studio beside this one, in the background, and answers
-  `upkeep`; it is 409 from a checkout, while a training is working, while anything else is
-  in hand, and when `version` is not the newest known. Once it is installed, `POST
-  /api/restart` with {} stops the runner, which then opens the newer version on the same
-  port with the same key; it is 409 while a training is working. `POST /api/versions` with
-  {"dismiss": key} stops Home showing the versions until a newer one is out. The page asks
-  for each only after the person said yes.
-- `POST /api/brand` with {"repository", "release"} keeps the brand skill's repository once
-  git can read it as this person, and answers the set-up; it is 400, with a sentence, when
-  it cannot be read or has no such release. An empty repository forgets it. `POST
-  /api/brand/install` with {"release"} installs that release of the brand skill with its own
-  installer, in the background, and answers `upkeep`; it is 409 while a training is working,
-  while anything else is in hand, while a companion waits for Update, and when `release`
-  is not the one shown in `upkeep.versions.brand`.
+  installed, the newest, the pins and a state. Training Studio is updated from its
+  repository's `main`: `POST /api/upgrade` with {"version"}, main's label or commit as
+  `upkeep.versions.upgrade` shows it, installs main beside this one, in the background, and
+  answers `upkeep`; it is 409 from a checkout, while a training is working, while anything
+  else is in hand, and when main is no longer what was shown. Once it is installed, `POST
+  /api/restart` with {} stops the runner, which then opens the newer copy on the same port
+  with the same key; it is 409 while a training is working. `GET /api/capabilities` says
+  the copy it runs from as `install`, which the page waits for. `POST /api/versions` with
+  {"dismiss": key} stops Home showing the versions until main moves on. The page asks for
+  each only after the person said yes.
+- `POST /api/brand` with {"repository"} keeps the brand skill's repository once git can
+  read its main branch as this person, and answers the set-up; it is 400, with a sentence,
+  when it cannot be read. An empty repository forgets it. A `release` sent by an older page
+  is not read. `POST /api/brand/install` with {"commit"} installs the brand skill from main
+  at that revision with its own installer, in the background, and answers `upkeep`; it is
+  409 while a training is working, while anything else is in hand, while a companion waits
+  for Update, and when main is no longer at the revision shown in `upkeep.versions.brand`.
 - The values every studio shares are kept only in the studios config, so `POST /api/setup`
   and `POST /api/brand` write the ones they change there, and are 409 and 400, with a
   sentence, when one changes while that file cannot be read, or when the form was opened
@@ -418,7 +420,8 @@ class RunnerPage(desk.Page):
             return desk.as_json(HTTPStatus.OK, {'published': self.engine.published()})
         if path == '/api/capabilities':
             return desk.as_json(HTTPStatus.OK, {'runner': True,
-                                                'version': gitstate.installed()})
+                                                'version': gitstate.installed(),
+                                                'install': gitstate.installed_copy()})
         if path == '/api/setup':
             return desk.as_json(HTTPStatus.OK, setup.describe(self.engine))
         if path == '/api/agents':
@@ -1027,9 +1030,9 @@ class RunnerPage(desk.Page):
             setup.notice_read()
             return desk.as_json(HTTPStatus.OK, setup.describe(self.engine))
         if path == '/api/brand/install':
-            release = desk.text(sent, 'release')
+            commit = desk.text(sent, 'commit')
             return desk.as_json(HTTPStatus.OK, {'upkeep': self.keeper().install_brand(
-                self.working(), release)})
+                self.working(), commit)})
         if path == '/api/delete':
             title = desk.text(sent, 'title')
             return desk.as_json(HTTPStatus.OK, self.engine.delete(

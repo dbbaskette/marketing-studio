@@ -501,7 +501,7 @@ def install(source: Path, home: Path, root: Path, harnesses: list[str], link_onl
             replace: bool, bootstrap: Path = BOOTSTRAP, runner: Path = RUNNER,
             pins: dict | None = None, agree=None, declined: str | None = None,
             pins_file: Path | None = None, while_open: bool = False,
-            cleanup: bool = True) -> dict:
+            cleanup: bool = True, commit: str | None = None) -> dict:
     """Install the skill and the runner, link the skill into each assistant's skill folder,
     write the ways to open the runner, and bring the companion skills the person agrees to.
     `pins_file` is where `pins` were read from, which the installed copy keeps.
@@ -549,6 +549,10 @@ def install(source: Path, home: Path, root: Path, harnesses: list[str], link_onl
         destination = root / 'current'
         if not state['history'] or state['history'][-1] != key:
             state['history'].append(key)
+        # Which commit of main this version came from, so the runner can say when main has
+        # moved on: the one the runner's upgrade fetched, else the checkout's own.
+        from studio_core.packaging import remember_commit, source_commit
+        remember_commit(state, key, commit or source_commit(source))
 
     links = {}
     for harness in harnesses:
@@ -952,6 +956,8 @@ def main(argv: list[str] | None = None) -> int:
     # From the Marketing Studio installer, which removes older versions itself once every
     # studio has installed: until then a failure of its own puts the old pointers back.
     parser.add_argument('--defer-cleanup', action='store_true', help=argparse.SUPPRESS)
+    # From the runner's own upgrade: the commit of main it fetched as plain files.
+    parser.add_argument('--commit', help=argparse.SUPPRESS)
     parser.add_argument('--home', type=Path, default=Path.home(), help=argparse.SUPPRESS)
     parser.add_argument('--root', type=Path, help=argparse.SUPPRESS)
     parser.add_argument('--source', type=Path, default=SOURCE, help=argparse.SUPPRESS)
@@ -964,6 +970,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.companion:
             raise InstallError(f'{args.companion} is one word too many.')
+        if args.commit is not None and not HEX['commit'].fullmatch(args.commit):
+            raise InstallError('--commit is a whole commit ID, 40 hexadecimal characters.')
         pins = read_pins(pins_path)
         if args.action == 'check':
             named = [args.target] if args.target in SKILL_ROOTS else None
@@ -997,7 +1005,7 @@ def main(argv: list[str] | None = None) -> int:
                 result = install(source, home, root, harnesses, args.link, args.replace,
                                  pins=pins, agree=agree, declined=declined,
                                  pins_file=pins_path, while_open=args.while_open,
-                                 cleanup=not args.defer_cleanup)
+                                 cleanup=not args.defer_cleanup, commit=args.commit)
             elif args.action == 'rollback':
                 result = rollback(root, home)
             else:

@@ -462,7 +462,7 @@ class InstallationTests(InstallationCase):
         self.assertEqual(
             str(refused.exception),
             'The earlier version is no longer on this computer: an update keeps only the '
-            'newest. Install the release you want instead. Nothing was changed.',
+            'newest. Install the version you want from its repository instead. Nothing was changed.',
         )
         self.assertEqual((self.root / 'installation.json').read_bytes(), record)
         self.assertEqual(os.readlink(self.root / 'current'), pointer)

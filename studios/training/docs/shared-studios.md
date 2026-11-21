@@ -53,7 +53,7 @@ This example contains no credentials:
   "person": { "name": "Example Author" },
   "assistant": { "agent": "claude", "model": "opus", "effort": "high" },
   "brand": {
-    "repository": "https://github.com/example/brand-skill.git", "release": "v1.4.0",
+    "repository": "https://github.com/example/brand-skill.git",
     "brand": "example", "variant": "light"
   },
   "output": "google",
@@ -84,12 +84,14 @@ saved.
 beside a different agent or repository than the one the form showed. Tokens,
 passwords, Google credentials and GitHub authentication stay in the tools'
 existing stores.
-Repository addresses carrying credentials are refused. Brand repository and
-release inputs use the same checks as the brand skill's Settings form.
+Repository addresses carrying credentials are refused. The brand repository input
+uses the same checks as the brand skill's Settings form. There is no brand release:
+the brand skill is installed and updated from its repository's `main`, and a
+`brand.release` an older version saved is not read, and is left as it is.
 
 Installing or upgrading a brand skill stays an explicit action in each studio's
-Versions/Status view, using the skill's own installer at the shared repository
-and release. Reading shared settings never installs software. A changed team
+Versions/Status view, using the skill's own installer from the shared
+repository's `main`. Reading shared settings never installs software. A changed team
 repository or branch never silently moves existing work: join it explicitly to
 use it in that studio. A clone's marker and Git origin describe its actual
 connection; they do not override the shared setting for a new join.

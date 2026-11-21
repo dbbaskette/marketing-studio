@@ -597,8 +597,9 @@ Open **Settings → Brand skill**, as in Training Studio. A brand skill belongs 
 your organisation and is supplied separately. You can write without one.
 
 - **Its repository** takes an https or ssh address that Git can access with your
-  existing sign-in. The brand skill is installed from its `main` branch: there is
-  no release to choose, and a release saved by an older version is not used.
+  existing sign-in. The brand skill is installed and updated from its `main`
+  branch: there is no release to choose, and a release saved by an older version
+  is not read.
   **Check and save** reads where `main` is before saving anything. A failed check
   preserves the previous settings. Clear the field to forget the repository;
   installed skills stay installed. A skill chosen here is kept by its stable
@@ -607,16 +608,16 @@ your organisation and is supplied separately. You can write without one.
   assistant skill folders, following Training Studio's discovery rules.
   `BRAND_SKILL_RUNTIME` can point to a particular installed skill folder.
   Choose one and press **Use this skill**. The choice stays on this computer.
-- **Install the brand skill** or **Install selected release** opens a sheet with
-  the repository, tag and commit. Nothing is downloaded or installed until you
+- **Install the brand skill** or **Update the brand skill** opens a sheet with
+  the repository and the commit `main` is at. Nothing is downloaded or installed until you
   choose **Install it now**. Only install from a repository you trust.
   Installation is refused while a blog is working and blocks new writing jobs until
   it finishes. Home and Status show its result. Use **Check and save** again to
-  check for another release.
+  see whether `main` has moved on.
 
-The install uses the release's own installer, with the same ZIP/checksum or
-tag-clone protocol as Training Studio. It rechecks that the tag still points to
-the commit shown. Research installation is skipped. If the release declares it
+The install clones `main` at the commit shown and runs its own installer, as
+Training Studio does. It rechecks that `main` is still at the commit shown.
+Research installation is skipped. If `main` declares it
 would install or replace another companion, Blog Studio refuses before running
 the installer; install a compatible companion yourself first.
 
@@ -629,8 +630,8 @@ that contract when settings or installed skills change, including when resumed
 on another computer. Brand naming rules and visual guidance stay separate from
 the author's voice; a logo or palette does not imply a company tone.
 
-The brand repository, release and identity live in the shared settings file.
-Installed skill paths and release-check observations stay in Blog Studio's local
+The brand repository and identity live in the shared settings file. Installed
+skill paths and the commit last checked stay in Blog Studio's local
 data folder. Only the selected contract travels with a blog.
 
 ## Voice guides

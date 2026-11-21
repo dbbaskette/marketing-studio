@@ -166,8 +166,9 @@ git pull --ff-only
 bash install.sh --studios blog
 ```
 
-For a ZIP install, download the installer ZIP from the newest release and run
-setup again.
+For a ZIP install, download a newer installer ZIP and run setup again. Blog
+Studio is updated from `main`: a clone pulls it, and a ZIP's version is only a
+label for the copy of `main` it holds.
 
 Close Blog Studio before updating, repairing, rolling back, or uninstalling; setup
 refuses to change an installation while its page is running. Both update methods

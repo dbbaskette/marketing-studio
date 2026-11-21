@@ -2295,8 +2295,9 @@ class ScreenTests(ScriptedPage, PageCase):
         self.saved_started()
         found = self.brand_upkeep()
         offer = found['versions']['brand']
-        self.assertEqual((offer['offered'], offer['action'], offer['release']),
-                         (True, 'Install', 'main'))
+        self.assertEqual((offer['offered'], offer['action'], offer['commit']),
+                         (True, 'Install', 'c3405eee0aad'))
+        self.assertNotIn('release', offer)
         running = f'Fetching main from {ADDRESS} and running its own installer. This can ' \
                   'take a few minutes.'
         busy = {**found, 'versions': {**found['versions'], 'brand': {
@@ -2337,13 +2338,12 @@ class ScreenTests(ScriptedPage, PageCase):
                       done['toasts'])
         self.assertIn(running, done['text'])
         self.assertNotIn('Install the brand skill', done['buttons'], 'one install at a time')
-        self.assertEqual(self.posts(result), [('/api/brand/install', {'release': 'main'})]
+        self.assertEqual(self.posts(result), [('/api/brand/install', {'commit': 'c3405eee0aad'})]
                          * 2, 'nothing before the yes')
 
     def test_the_brand_skills_repository_is_checked_and_saved_in_settings(self):
         described = self.get('setup')
-        saved = {**described, 'brand': {**described['brand'], 'repository': ADDRESS,
-                                         'release': 'v0.13.1'}}
+        saved = {**described, 'brand': {**described['brand'], 'repository': ADDRESS}}
         cannot = ("The brand skill's repository could not be read. git could not sign in to "
                   "it without asking (could not read Username for 'https://github.com': "
                   'terminal prompts disabled). Sign git in with an account that may read it, '
@@ -2355,21 +2355,23 @@ class ScreenTests(ScriptedPage, PageCase):
         result = self.run_page(answers, [
             {'click': 'Settings'}, {'snapshot': 'empty'},
             {'fill': 'Its repository', 'value': ADDRESS},
-            {'fill': 'Which release', 'value': 'v0.13.1'},
             {'click': 'Check and save'}, {'snapshot': 'refused'},
             {'click': 'Check and save'}, {'snapshot': 'saved'}])
         shots = result['snapshots']
-        for said in ('Brand skill', 'Your brand skill is released from a repository of its '
-                     'own.', 'A brand skill you installed yourself is still found and used.',
-                     'Empty for the newest'):
+        for said in ('Brand skill', 'Your brand skill comes from a repository of its own.',
+                     'installs and updates the brand skill from its main branch',
+                     'A brand skill you installed yourself is still found and used.'):
             self.assertIn(said, shots['empty']['text'])
+        # There is no release to choose: the brand skill is installed and updated from main.
+        for gone in ('Which release', 'Empty for the newest'):
+            self.assertNotIn(gone, shots['empty']['text'])
         self.assertIn(cannot + ' Nothing was changed.', shots['refused']['text'])
-        self.assertIn(f'Installed from {ADDRESS}, release v0.13.1.', shots['saved']['text'])
-        self.assertIn('Saved. The Status screen shows which release can be installed.',
+        self.assertIn(f'Installed and updated from the main branch of {ADDRESS}.',
+                      shots['saved']['text'])
+        self.assertIn('Saved. The Status screen shows its main branch, to install.',
                       shots['saved']['toasts'])
         self.assertEqual(self.posts(result), [('/api/brand', {
-            'repository': ADDRESS, 'release': 'v0.13.1',
-            'shared_seen': described['shared']})] * 2)
+            'repository': ADDRESS, 'shared_seen': described['shared']})] * 2)
 
     def test_the_brand_skills_repository_is_one_every_studio_shares(self):
         described = self.get('setup')
@@ -2377,26 +2379,25 @@ class ScreenTests(ScriptedPage, PageCase):
         stale = ("The brand skill's repository was changed in another studio while this was "
                  'open, so nothing was saved. Look again, then save.')
         now = {**described, 'shared': shared, 'shared_problem': None,
-               'brand': {**described['brand'], 'repository': ADDRESS, 'release': None}}
-        later = {**now, 'shared': {'brand': {'repository': ADDRESS, 'release': 'v1.0.0'}}}
+               'brand': {**described['brand'], 'repository': ADDRESS}}
+        other = 'https://github.com/acme/other-brand.git'
+        later = {**now, 'shared': {'brand': {'repository': ADDRESS, 'brand': 'acme'}}}
         answers = self.answers(**{'GET /api/setup': [ok(now), ok(later)],
                                   'POST /api/brand': [{'status': 400, 'body': {'error': stale}},
                                                       ok(later)]})
         result = self.run_page(answers, [
             {'click': 'Settings'}, {'snapshot': 'settings'},
-            {'fill': 'Which release', 'value': 'v0.13.1'},
+            {'fill': 'Its repository', 'value': other},
             {'click': 'Check and save'}, {'snapshot': 'refused'},
             {'poll': True}, {'click': 'Check and save'}])
         shots = result['snapshots']
-        self.assertIn('Every studio on this computer shares the repository and release named '
-                      'here, so saving changes them for all of them.', shots['settings']['text'])
+        self.assertIn('Every studio on this computer shares the repository named here, so '
+                      'saving changes it for all of them.', shots['settings']['text'])
         self.assertIn(stale + ' Nothing was changed.', shots['refused']['text'])
         # What it was shown goes with it, and after a refusal, what it has been shown since.
         self.assertEqual(self.posts(result), [
-            ('/api/brand', {'repository': ADDRESS, 'release': 'v0.13.1',
-                            'shared_seen': shared}),
-            ('/api/brand', {'repository': ADDRESS, 'release': 'v0.13.1',
-                            'shared_seen': later['shared']})])
+            ('/api/brand', {'repository': other, 'shared_seen': shared}),
+            ('/api/brand', {'repository': other, 'shared_seen': later['shared']})])
 
     def test_without_a_brand_skill_a_new_deck_can_still_be_started(self):
         self.brand = None

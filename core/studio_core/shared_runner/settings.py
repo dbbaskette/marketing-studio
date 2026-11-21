@@ -8,7 +8,6 @@ from __future__ import annotations
 # ruff: noqa: F821  these definitions read the names of the studio module they are
 # bound into; each studio's test_shared_runner_use checks every one resolves there.
 
-import re
 from pathlib import Path
 
 import studio_core
@@ -42,9 +41,6 @@ CLAUDE_MODELS = Path(studio_core.__file__).resolve().with_name('claude-code-mode
 
 
 PREVIEWS = ('drive', 'local')   # how previews are rendered
-
-
-RELEASE = re.compile(r'^[\w][\w.+-]{0,99}$')   # a release tag's name, as git takes it
 
 
 def path():
@@ -183,19 +179,6 @@ def check_repository(address) -> str | None:
     return address.strip()
 
 
-def check_release(release, repository: str | None = None) -> str | None:
-    """A release tag's name, or None for the newest. A release needs a repository."""
-    if release is None or release == '':
-        return None
-    if not isinstance(release, str) or not RELEASE.match(release) or '..' in release:
-        raise WorkspaceError('Give the release as its tag, such as v1.4.0, or nothing for '
-                             'the newest.')
-    if repository is None:
-        raise WorkspaceError("A release is chosen from the brand skill's repository: give "
-                             'the repository too.')
-    return release
-
-
 def number(value, label: str, least: float, most: float, whole: bool):
     """A limit a person typed, which must be a number in a sensible range."""
     plain = isinstance(value, (int, float)) and not isinstance(value, bool)
@@ -246,17 +229,24 @@ STALE = ('{} was changed in another studio while this was open, so nothing was s
          'again, then save.')
 
 
+# Kept in runner.json by an older version and never read now: the brand skill is installed
+# and updated from its repository's main, so there is no release to choose.
+RETIRED = ('brand_release',)
+
+
 def forget_own() -> None:
-    """Take the shared settings out of runner.json, and leave the rest as it is."""
+    """Take the shared settings, and those no version reads (RETIRED), out of runner.json,
+    and leave the rest as it is."""
     kept = _kept()
-    if any(name in kept for name in SHARED):
+    gone = {*SHARED, *RETIRED}
+    if any(name in kept for name in gone):
         home.write_json(path(), {name: value for name, value in kept.items()
-                                 if name not in SHARED})
+                                 if name not in gone})
 
 
 NAMES = ('SCHEMA', 'AGENTS', 'SECONDS', 'PARALLEL', 'MODEL', 'LEVELS', 'EFFORTS',
-         'CLAUDE_MODELS', 'PREVIEWS', 'RELEASE', 'path', 'check_agent', 'check_model',
+         'CLAUDE_MODELS', 'PREVIEWS', 'path', 'check_agent', 'check_model',
          'check_effort', 'takes', 'read_models', 'check_previews', 'check_place', 'check_notify',
-         'check_look', 'check_repository', 'check_release', 'number', 'passes', '_kept', 'load',
-         'seen', '_same', 'STALE', 'forget_own')
+         'check_look', 'check_repository', 'number', 'passes', '_kept', 'load',
+         'seen', '_same', 'STALE', 'RETIRED', 'forget_own')
 METHODS = {}

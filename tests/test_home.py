@@ -362,12 +362,26 @@ class SharedSettingsSaveTests(IsolatedHome):
     def test_an_outdated_form_cannot_replace_an_override_another_studio_changed(self):
         shared.path().write_text(self.OVERRIDES)
         seen = shared.read()[0]
-        shared.update({'brand': {'release': 'v2.0.0'}})
-        with self.assertRaisesRegex(WorkspaceError, '“Brand skill release” was changed in another tab or studio'):
-            self.write('/api/shared', {'changes': {'brand': {'release': None}}, 'seen': seen})
+        shared.update({'brand': {'repository': 'https://example.com/brand-2.git'}})
+        with self.assertRaisesRegex(WorkspaceError, '“Brand Git repository” was changed in another tab or studio'):
+            self.write('/api/shared', {'changes': {'brand': {'repository': None}}, 'seen': seen})
         # Changing only an everyday value from the same outdated form is still accepted.
         self.write('/api/shared', {'changes': {'person': {'name': 'Bea'}}, 'seen': seen})
         values = shared.read()[0]
-        self.assertEqual((values['brand']['release'], values['person']['name']), ('v2.0.0', 'Bea'))
+        self.assertEqual((values['brand']['repository'], values['person']['name']),
+                         ('https://example.com/brand-2.git', 'Bea'))
         self.assertEqual(values['models']['profiles']['quick']['model'], 'synthetic-small')
         self.assertEqual(values['kept'], {'by': 'another tool'})
+
+    def test_a_brand_release_kept_or_sent_by_an_older_version_is_dropped_silently(self):
+        # Saved by an older version: the settings still load, the release is not shown, and it
+        # is left in the file as it is.
+        shared.path().write_text(self.OVERRIDES)
+        shown = self.page.snapshot()
+        self.assertNotIn('release', shown['shared']['brand'])
+        self.assertEqual(shown['shared']['brand']['repository'], 'https://example.com/brand.git')
+        seen = shared.read()[0]
+        # Sent by a form an older version drew: dropped, never refused and never written.
+        self.write('/api/shared', {'changes': {'person': {'name': 'Bea'},
+                                               'brand': {'release': 'v9.9.9'}}, 'seen': seen})
+        self.assertEqual(shared.path().read_text(), self.OVERRIDES.replace('"Ana"', '"Bea"'))

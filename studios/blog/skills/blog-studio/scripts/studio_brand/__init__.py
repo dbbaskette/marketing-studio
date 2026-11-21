@@ -1,1 +1,1 @@
-"""Pinned Training Studio brand discovery, release and command protocols."""
+"""Pinned Training Studio brand discovery, install and command protocols."""

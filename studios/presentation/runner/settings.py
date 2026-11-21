@@ -10,8 +10,8 @@ What a caller needs to know
 - Two places hold them. The values every studio on this computer shares are kept only in
   the studios config (`studios_config`), and read from it each time: the agent, its model
   and its level (`assistant.agent`, `.model`, `.effort`), the person's name (`person.name`),
-  the brand skill's repository and release, the brand and its variant (`brand.repository`,
-  `.release`, `.brand`, `.variant`, `.skill`), the output (`output`) and slide
+  the brand skill's repository, the brand and its variant (`brand.repository`,
+  `.brand`, `.variant`, `.skill`), the output (`output`) and slide
   previews (`render.previews`). SHARED names them. A value
   there that would be refused here is the default, and so is every one of them while the
   file cannot be read. The rest belong to Presentation Studio on this computer alone, and
@@ -41,15 +41,16 @@ What a caller needs to know
 - `notify` is whether the runner tells the person, through the computer's own
   notifications, that a deck needs a decision while no page is open. Off until they
   turn it on.
-- `look_for_updates` is whether the runner asks, at most once a day, which releases of
-  Presentation Studio, its companion skills and the brand skill exist. On until they turn it
-  off. See `upkeep`.
+- `look_for_updates` is whether the runner asks, at most once a day, where the main
+  branches of Presentation Studio, its companion skills and the brand skill are. On until
+  they turn it off. See `upkeep`.
 - `brand_repository` is the address of the brand skill's own repository, https, ssh or a
-  folder, from which the page installs and upgrades it; None until the person names one.
-  `brand_release` is the release tag to install from it, None for the newest. Neither is
-  needed to use a brand skill installed by hand. Whether the repository can be reached is
-  `brand_source`'s to say; here only its shape is checked. `brand_source()` gives both, and
-  is how every other part reads them.
+  folder, whose `main` the page installs and updates it from; None until the person names
+  one. There is no release to choose: a `brand.release` or `brand_release` kept by an older
+  version is not read, and left as it is. A repository is not needed to use a brand skill
+  installed by hand. Whether the repository can be reached is `brand_source`'s to say;
+  here only its shape is checked. `brand_source()` gives it, and is how every other part
+  reads it.
 - `name` is the person's own name, as set-up shows it; None until they give it. git's own
   identity still signs each commit and each claim.
 - `brand` and `variant` are the brand a new deck is offered first, as the brand skill names
@@ -91,7 +92,6 @@ SHARED = {'agent': ('assistant', 'agent'), 'model': ('assistant', 'model'),
           'effort': ('assistant', 'effort'), 'name': ('person', 'name'),
           'brand': ('brand', 'brand'), 'variant': ('brand', 'variant'),
           'output': (None, 'output'), 'brand_repository': ('brand', 'repository'),
-          'brand_release': ('brand', 'release'),
           'previews': ('render', 'previews'), 'brand_skill': ('brand', 'skill')}
 
 
@@ -112,7 +112,6 @@ class Settings:
     variant: str | None = None
     output: str = 'google'
     brand_repository: str | None = None
-    brand_release: str | None = None
 
     @property
     def limits(self) -> dict:
@@ -147,11 +146,10 @@ def check_choice(value, label: str) -> str | None:
     return None if value is None or value == '' else check_word(value, label)
 
 
-def brand_source() -> tuple[str | None, str | None]:
-    """Where the brand skill is installed from: (its repository, the release chosen), each
-    None until the person names it."""
-    chosen = load()
-    return chosen.brand_repository, chosen.brand_release
+def brand_source() -> str | None:
+    """The repository whose main the brand skill is installed from, None until the person
+    names it."""
+    return load().brand_repository
 
 
 def check_output(output) -> str:
@@ -175,8 +173,7 @@ def check(chosen: Settings) -> Settings:
         look_for_updates=check_look(chosen.look_for_updates),
         name=check_name(chosen.name), brand=check_choice(chosen.brand, 'brand'),
         variant=check_choice(chosen.variant, 'variant'), output=check_output(chosen.output),
-        brand_repository=repository,
-        brand_release=check_release(chosen.brand_release, repository))
+        brand_repository=repository)
 
 
 def _group(found: dict, name: str) -> dict:
@@ -197,16 +194,15 @@ def from_shared(found: dict) -> dict:
     effort = passes(check_effort, assistant.get('effort'), agent or Settings().agent,
                     model) if usable else None
     repository = brand.get('repository')
+    # A release an older version kept beside the repository is not read: the brand skill is
+    # installed and updated from its repository's main.
     repository = passes(check_repository, repository) if isinstance(repository, str) else None
-    release = brand.get('release')
-    release = passes(check_release, release, repository) \
-        if isinstance(release, str) and repository else None
     return {'agent': agent, 'model': model, 'effort': effort,
             'name': passes(check_name, person.get('name')),
             'brand': passes(check_word, brand.get('brand'), 'brand'),
             'variant': passes(check_word, brand.get('variant'), 'variant'),
             'output': found.get('output') if found.get('output') in OUTPUTS else None,
-            'brand_repository': repository, 'brand_release': release,
+            'brand_repository': repository,
             'previews': passes(check_previews, _group(found, 'render').get('previews')),
             # One saved inside a `versions/` folder is said through `current`: an update keeps
             # only the newest version, and the saved one may be gone.
@@ -246,7 +242,6 @@ def changes(before: Settings, after: Settings) -> dict:
 NAMED = {'agent': 'The agent', 'model': 'The model', 'effort': 'The reasoning level',
          'name': 'Your name', 'brand': 'The brand', 'variant': 'The variant',
          'output': 'The output', 'brand_repository': "The brand skill's repository",
-         'brand_release': "The brand skill's release",
          'previews': 'Slide previews', 'brand_skill': 'The installed brand skill'}
 
 
@@ -284,7 +279,6 @@ def own() -> dict:
                       'effort': kept.get('effort')},
         'person': {'name': kept.get('name')},
         'brand': {'repository': kept.get('brand_repository'),
-                  'release': kept.get('brand_release'),
                   'brand': kept.get('brand'), 'variant': kept.get('variant'),
                   'skill': kept.get('brand_skill')},
         'render': {'previews': kept.get('previews')},

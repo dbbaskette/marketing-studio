@@ -66,7 +66,8 @@ class SettingsTests(SettingsCase):
     def test_no_brand_is_named_until_the_person_chooses_one(self):
         chosen = settings.Settings()
         self.assertEqual((chosen.brand, chosen.variant), (None, None))
-        self.assertEqual((chosen.brand_repository, chosen.brand_release), (None, None))
+        self.assertIsNone(chosen.brand_repository)
+        self.assertFalse(hasattr(chosen, 'brand_release'), 'there is no release to choose')
         kept = settings.save(replace(settings.Settings(), brand='', variant=''))
         self.assertEqual((kept.brand, kept.variant), (None, None))
         with self.assertRaises(WorkspaceError) as refused:
@@ -76,23 +77,17 @@ class SettingsTests(SettingsCase):
 
     def test_the_brand_skills_repository_is_kept_only_in_a_shape_git_takes(self):
         kept = settings.save(replace(settings.load(),
-                                     brand_repository=' git@github.com:acme/brand.git ',
-                                     brand_release='v1.4.0'))
-        self.assertEqual((kept.brand_repository, kept.brand_release),
-                         ('git@github.com:acme/brand.git', 'v1.4.0'))
+                                     brand_repository=' git@github.com:acme/brand.git '))
+        self.assertEqual(kept.brand_repository, 'git@github.com:acme/brand.git')
         self.assertEqual(settings.load(), kept)
-        self.assertEqual(settings.brand_source(), ('git@github.com:acme/brand.git', 'v1.4.0'))
-        for repository, release, says in (
-                ('-oProxyCommand=touch', None, 'as one address'),
-                ('https://github.com/acme/my brand', None, 'as one address'),
-                ('https://pat:secret@github.com/acme/brand.git', None, 'password or token'),
-                ('https://github.com/acme/brand.git', '-v1', 'as its tag'),
-                ('https://github.com/acme/brand.git', 'v1..2', 'as its tag'),
-                (None, 'v1.4.0', 'give the repository too')):
-            with self.subTest(repository=repository, release=release), \
+        self.assertEqual(settings.brand_source(), 'git@github.com:acme/brand.git')
+        for repository, says in (
+                ('-oProxyCommand=touch', 'as one address'),
+                ('https://github.com/acme/my brand', 'as one address'),
+                ('https://pat:secret@github.com/acme/brand.git', 'password or token')):
+            with self.subTest(repository=repository), \
                     self.assertRaises(WorkspaceError) as refused:
-                settings.save(replace(settings.load(), brand_repository=repository,
-                                      brand_release=release))
+                settings.save(replace(settings.load(), brand_repository=repository))
             self.assertIn(says, str(refused.exception))
         self.assertEqual(settings.load(), kept, 'nothing that was refused was kept')
 
@@ -104,12 +99,11 @@ class SharedTests(SettingsCase):
         self.write_config(THEIRS)
         loaded = settings.load()
         self.assertEqual((loaded.agent, loaded.model, loaded.effort, loaded.name, loaded.brand,
-                          loaded.variant, loaded.output, loaded.brand_repository,
-                          loaded.brand_release),
+                          loaded.variant, loaded.output, loaded.brand_repository),
                          ('codex', 'gpt-6-sol', 'high', 'Dan Baskette', 'acme', 'dark', 'pptx',
-                          'https://github.com/acme/brand.git', 'v1.4.0'))
-        self.assertEqual(settings.brand_source(),
-                         ('https://github.com/acme/brand.git', 'v1.4.0'))
+                          'https://github.com/acme/brand.git'))
+        # The brand skill release an older version kept beside the repository is not read.
+        self.assertEqual(settings.brand_source(), 'https://github.com/acme/brand.git')
         # Another studio changes the file: the next read sees it, with nothing to restart.
         self.write_config(THEIRS.replace('"pptx"', '"google"').replace('"codex"', '"claude"')
                           .replace('"gpt-6-sol"', '"opus"'))
@@ -128,14 +122,14 @@ class SharedTests(SettingsCase):
         settings.save(replace(settings.load(), agent='codex', model='gpt-6-luna',
                               name='Alex Example', brand='acme', variant='light',
                               output='pptx', brand_repository='https://github.com/acme/b.git',
-                              brand_release='v2.0.0', parallel=4, previews='local'))
+                              parallel=4, previews='local'))
         found, problem = studios_config.read()
         self.assertIsNone(problem)
         self.assertEqual(found, {
             'schema': 1, 'assistant': {'agent': 'codex', 'model': 'gpt-6-luna'},
             'person': {'name': 'Alex Example'},
             'brand': {'brand': 'acme', 'variant': 'light',
-                      'repository': 'https://github.com/acme/b.git', 'release': 'v2.0.0'},
+                      'repository': 'https://github.com/acme/b.git'},
             'output': 'pptx', 'render': {'previews': 'local'}})
         self.assertEqual(settings.load().agent, 'codex')
         own = self.own()
@@ -243,10 +237,10 @@ class SharedTests(SettingsCase):
             'schema': 1, 'agent': 'codex', 'model': None, 'name': 'Old Name', 'brand': None,
             'output': 'pptx', 'brand_repository': 'https://github.com/acme/b.git',
             'brand_release': 'v1', 'parallel': 5}))
+        # A brand skill release an older version kept here is not moved, and goes with them.
         self.assertEqual(settings.own(), {'agent': 'codex', 'name': 'Old Name',
                                           'output': 'pptx',
-                                          'brand_repository': 'https://github.com/acme/b.git',
-                                          'brand_release': 'v1'})
+                                          'brand_repository': 'https://github.com/acme/b.git'})
         settings.forget_own()
         self.assertEqual(self.own(), {'schema': 1, 'parallel': 5})
         self.assertEqual(settings.own(), {})
