@@ -4362,8 +4362,12 @@ class BriefTests(JobCase):
         plain, designed = briefs.guidance('deck-section'), briefs.guidance('deck-section',
                                                                             design=True)
         self.assertEqual(plain.count(briefs.LANGUAGE), 1)
+        from studio_core import critic
         self.assertEqual(plain.replace('\n' + briefs.LANGUAGE + '\n', '', 1),
-                         briefs.read('deck-section'), 'only the shared language guidance is added')
+                         briefs.read('deck-section') + '\n' + critic.ATTRIBUTION + '\n')
+        for job in ('deck-review', 'deck-section'):
+            for with_design in (True, False):
+                self.assertIn(critic.ATTRIBUTION, briefs.guidance(job, design=with_design))
         for gone in ('whether an icon helps', 'Lead with icons.'):
             self.assertIn(gone, plain)
             self.assertNotIn(gone, designed)

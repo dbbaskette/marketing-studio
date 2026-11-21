@@ -158,10 +158,9 @@ class AutomaticDecisionTests(CreatorDecisionTests):
         self.assertFalse((shown['problem'] or {}).get('creator_review'), shown['problem'])
         job, items = self.asked
         self.assertIsNone(job.limits.seconds)
-        for said in ('the newer and the more specific document wins most of the time',
-                     'directly contradicts', 'never by a learner', 'include-plain',
-                     'Never exclude a finding, a section or a passage because one detail in it '
-                     'is contradicted', 'the person\'s own position'):
+        for said in ('match the version, configuration and task', 'directly contradicts',
+                     'never by a learner', 'include-plain', 'could change the action',
+                     'Keep supported parts of a mixed finding', 'not evidence of product behavior'):
             self.assertIn(said, job.guidance)
         self.assertTrue(items and all(item['note'] for item in items))
         facts, manifest = rc.read_bundle(root / 'research')
