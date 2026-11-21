@@ -2,7 +2,7 @@
 
 Make an editable Google Slides or PowerPoint deck in your brand. Start with an idea, a document, or a deck that needs work. For a new deck, you can read exactly what each slide will say before it is drawn.
 
-![Presentation Studio turns a brief or an existing deck into branded slides for delivery.](docs/assets/presentation-studio-header.svg)
+![Presentation Studio with three slides showing a cover illustration, a bar chart, and a diagram.](docs/assets/presentation-studio-banner.jpg)
 
 ## Open Presentation Studio
 

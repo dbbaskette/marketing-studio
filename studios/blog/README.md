@@ -2,7 +2,7 @@
 
 Write a post from notes, polish a draft, or review a published article. You can work in your own voice, see proposed edits in the manuscript, and choose which ones to keep.
 
-![Blog Studio takes notes or a draft through an editorial pass to a post you can copy, download or send.](docs/assets/blog-studio-header.svg)
+![Blog Studio with a marked-up draft, a fountain pen, and the finished article.](docs/assets/blog-studio-banner.jpg)
 
 ## Open Blog Studio
 

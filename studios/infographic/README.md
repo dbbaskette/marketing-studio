@@ -2,7 +2,7 @@
 
 Turn a process, comparison or set of measurements into one visual page. You choose the takeaway and the evidence, edit the words beside a preview, then download the approved page as PNG, PDF, editable SVG or accessible text.
 
-![Infographic Studio takes source facts through story selection and preview to an approved page.](docs/assets/infographic-studio-header.svg)
+![Infographic Studio with a folded sheet showing a process diagram, a bar chart, and a ring chart.](docs/assets/infographic-studio-banner.jpg)
 
 ## Open Infographic Studio
 

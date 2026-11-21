@@ -2,7 +2,7 @@
 
 Turn a topic and reference documents into a session people can teach or a workshop learners can practice in. Start by naming what learners should be able to do afterward. That goal guides the research, teaching plan and materials you choose.
 
-![Training Studio turns a learner goal and sources into a teaching plan, guide, slides or practice.](docs/assets/training-studio-header.svg)
+![Training Studio with a spiral workbook, practice cards, and a pencil.](docs/assets/training-studio-banner.jpg)
 
 ## Open Training Studio
 
