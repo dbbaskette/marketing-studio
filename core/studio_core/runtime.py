@@ -106,8 +106,10 @@ def assistant_default(data=None):
 
 
 def shell_path():
-    executable = Path(sys.executable).absolute()
-    # Installed versions retain their own runtimes, including after rollback.
+    # The private runtime is named through its installation's `current` link: an update
+    # replaces the version folder, and a launcher written before it must still find Node.
+    from .packaging import stable_address
+    executable = stable_address(Path(sys.executable).absolute())
     if executable.parent.name == 'bin' and executable.parent.parent.name == 'python':
         root = executable.parent.parent.parent
         if (root / 'platform').is_file() and (root / 'node/bin/node').is_file():

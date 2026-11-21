@@ -61,12 +61,13 @@ def setUpModule():
         _made[name] = StandIn(base, name)
         commit = _made[name].release(version)
         tag(_made[name], f'v{version}')
-        pins[name] = {'repository': str(_made[name].bare), 'version': '0.0.0',
-                      'commit': '0' * 40, 'sha256': '0' * 64, 'stub': 'bootstrap/SKILL.md',
+        # Installed from its main branch, with this release as the oldest accepted.
+        pins[name] = {'repository': str(_made[name].bare), 'branch': 'main', 'version': version,
+                      'requirement': '>=' + version, 'stub': 'bootstrap/SKILL.md',
                       'installer': 'scripts/install.mjs'}
         write_pins(base / 'companions.json', pins)
-        install.pin(base / 'companions.json', name, commit)
         pins = install.read_pins(base / 'companions.json')
+        _made[name].commit = commit
     _made['pins'] = pins
 
 
@@ -239,9 +240,9 @@ class CompanionTests(UpkeepCase):
                          ('missing', {'Claude Code': '', 'Codex': None}))
         self.assertIn('harness-slides is not installed for Codex, and everything is built '
                       'except the slide deck without it.', slides['says'])
-        self.assertEqual((slides['repository'], slides['commit']),
-                         (str(_made['harness-slides'].bare.with_suffix('')),
-                          _made['pins']['harness-slides']['commit'][:12]))
+        # Nothing was installed from here, so no installed commit is known.
+        self.assertEqual((slides['repository'], slides['commit'], slides['branch']),
+                         (str(_made['harness-slides'].bare.with_suffix('')), None, 'main'))
         self.assertTrue(keep.report()['update']['offered'])
         self.assertTrue((self.claude / 'harness-slides' / 'SKILL.md').is_file(),
                         "a companion's own links are never touched here")
@@ -309,7 +310,7 @@ class CompanionTests(UpkeepCase):
         (command, seconds), = asked
         self.assertEqual(command[2:], [
             str(staged / 'installer' / 'install.py'), 'companions', '--companions', 'install',
-            '--while-open', '--json', '--home', str(self.home), '--root', str(self.root)])
+            '--update', '--while-open', '--json', '--home', str(self.home), '--root', str(self.root)])
         self.assertEqual(seconds, upkeep.UPDATE_SECONDS)
         done = keep.report()['update']
         self.assertEqual(done['state'], 'failed')
@@ -413,60 +414,42 @@ class ReleaseTests(ReleaseCase):
         self.assertEqual(kept['found']['training-studio']['commit'],
                          git(self.work, 'rev-parse', 'HEAD'))
 
-    def test_a_companion_released_beyond_the_pin_is_said_and_never_offered(self):
+    def test_a_companion_whose_main_moved_is_offered_main_and_tags_are_never_read(self):
         tag(_made['harness-slides'], 'v0.14.0')
         self.addCleanup(git, _made['harness-slides'].bare, 'tag', '-d', 'v0.14.0')
         self.addCleanup(git, _made['harness-slides'].work, 'tag', '-d', 'v0.14.0')
         for skills in (self.claude, self.codex):
             self.companion(skills, 'harness-research', '0.8.0')
             self.companion(skills, 'harness-slides', '0.13.1')
-        self.keep.check()
+        # Installed from here at the commit main is at: current.
+        self.root.mkdir(parents=True, exist_ok=True)
+        record = self.root / 'installation.json'
+        kept = json.loads(record.read_text()) if record.is_file() else {}
+        kept['companions'] = {name: {'commit': _made[name].commit} for name in ('harness-research', 'harness-slides')}
+        record.write_text(json.dumps(kept))
         self.release('v0.1.0')
         self.keep.look()
+        self.keep.check()
         rows = self.rows()
         slides = rows['harness-slides']
-        self.assertEqual((slides['installed'], slides['newest'], slides['pinned'],
-                          slides['state'], slides['target']),
-                         ('0.13.1', '0.14.0', '0.13.1', 'current', None))
-        self.assertEqual(slides['beyond'], 'harness-slides 0.14.0 is out, newer than Training '
-                         'Studio supports yet. It is offered once a Training Studio made with '
-                         'it is out.')
-        self.assertIsNone(rows['harness-research']['beyond'])
-        self.assertEqual(rows['training-studio']['state'], 'current')
-        shown = self.keep.report()
-        self.assertFalse(shown['update']['offered'])
-        self.assertFalse(shown['versions']['upgrade']['offered'])
-        self.assertIsNone(shown['versions']['key'], 'nothing for Home to say')
-
-    def test_it_looks_at_most_once_a_day_and_never_when_turned_off(self):
-        self.release('v99.0.0')
-        self.assertTrue(self.keep.look())
-        known = self.rows()['training-studio']['known_at']
-        shutil.rmtree(self.source)
-        self.assertFalse(self.keep.look(), 'within a day it is not asked again')
-        self.assertEqual(self.rows()['training-studio']['newest'], '99.0.0')
-        kept = json.loads((self.root / upkeep.SAVED).read_text())
-        kept['at'] = '2020-01-01T00:00:00Z'
-        (self.root / upkeep.SAVED).write_text(json.dumps(kept))
-        self.look_online(False)
-        self.assertFalse(self.keep.look())
-        self.assertFalse(self.keep.report()['releases']['on'])
-        self.look_online(True)
-        self.assertTrue(self.keep.look(), 'a day later it asks again')
-        found = self.keep.report()['releases']
-        self.assertIn('The last look for newer releases did not reach training-studio (',
-                      found['problem'])
-        self.assertTrue(found['problem'].endswith('It is tried again in a day.'))
-        # Offline, what was last known is still shown, with when it was known.
-        own = self.rows()['training-studio']
-        self.assertEqual((own['newest'], own['state'], own['known_at']),
-                         ('99.0.0', 'update', known))
-
-    def test_before_anything_is_known_the_newest_is_unknown(self):
-        own = self.rows()['training-studio']
-        self.assertEqual((own['newest'], own['state']), (None, 'unknown'))
-        self.assertIn('Whether a newer Training Studio is out is not known yet', own['says'])
-        self.assertFalse(self.keep.report()['versions']['upgrade']['offered'])
+        self.assertEqual((slides['installed'], slides['newest'], slides['state'], slides['target'],
+                          slides['beyond']), ('0.13.1', None, 'current', None, None))
+        saved = json.loads((self.root / upkeep.SAVED).read_text())['found']['harness-slides']
+        self.assertEqual((saved['commit'], saved['branch'], saved['tag']),
+                         (_made['harness-slides'].commit, 'main', None))
+        # main moves on: the row offers main, and Update brings it with --update.
+        moved = _made['harness-slides'].release('0.13.2')
+        self.addCleanup(git, _made['harness-slides'].bare, 'update-ref', 'refs/heads/main',
+                        _made['harness-slides'].commit)
+        self.addCleanup(git, _made['harness-slides'].work, 'reset', '-q', '--hard',
+                        _made['harness-slides'].commit)
+        (self.root / upkeep.SAVED).unlink()
+        self.keep.look()
+        self.keep.check()
+        slides = self.rows()['harness-slides']
+        self.assertEqual((slides['state'], slides['target']), ('update', 'main'))
+        self.assertIn(f'Its main branch is at {moved[:12]} now', slides['says'])
+        self.assertTrue(self.keep.report()['update']['offered'])
 
     def test_once_installed_a_release_is_no_longer_newer(self):
         self.release(f'v{VERSION}')
@@ -484,7 +467,10 @@ class ReleaseTests(ReleaseCase):
 
         with mock.patch.object(upkeep.hub, 'run', run):
             self.keep.look()
-        self.assertEqual([args[:3] for args, _ in asked], [('ls-remote', '--tags', '--')] * 3)
+        # Training Studio's own releases are its tags; each companion's main is where it is.
+        self.assertEqual([args[:3] for args, _ in asked][0], ('ls-remote', '--tags', '--'))
+        self.assertEqual([(args[:2], args[3:]) for args, _ in asked][1:],
+                         [(('ls-remote', '--'), ('refs/heads/main',))] * 2)
         self.assertEqual({timeout for _, timeout in asked}, {upkeep.LOOK_SECONDS})
 
     def test_starting_looks_on_this_computer_then_online_in_the_background(self):
@@ -761,10 +747,10 @@ class GuidanceTests(UpkeepCase):
         with mock.patch.dict(os.environ, {'TRAINING_STUDIO_SOURCE': str(remote)}):
             self.assertTrue(keep.look())
         rows = {row['name']: row for row in keep.report()['versions']['rows']}
+        # A companion's tags are never read: it is installed from main.
         self.assertEqual((rows['harness-slides']['next'], rows['harness-slides']['newest']),
-                         ('0.14.0', '0.15.0'))
-        self.assertIn('harness-slides 0.15.0 is out, newer than Training Studio supports yet',
-                      rows['harness-slides']['beyond'])
+                         ('0.14.0', None))
+        self.assertIsNone(rows['harness-slides']['beyond'])
         self.assertEqual(keep.report()['versions']['upgrade']['from'], 'tag')
 
         # A release whose commit was never fetched with main: its pins are not guessed.

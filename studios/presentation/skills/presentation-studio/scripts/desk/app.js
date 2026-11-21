@@ -7230,11 +7230,12 @@ function brandSheet() {
   const problem = problemLine();
   const confirm = capsule(brand.action + ' it now', 'filled', () => settleBrandInstall(problem,
     confirm), 'send');
+  // The brand skill is installed from its repository's main branch, at the commit shown.
   return [sheetTitle(brand.action === 'Upgrade'
-    ? 'Upgrade the brand skill from ' + brand.installed + ' to ' + brand.version + '?'
-    : 'Install the brand skill ' + brand.version + '?'),
+    ? 'Upgrade the brand skill from ' + brand.installed + ' to its main branch?'
+    : 'Install the brand skill from its main branch?'),
   make('h3', 'sheet-part', 'What is installed'),
-  bullets(['Release ' + brand.release + ', at revision ' + brand.commit + '.',
+  bullets(['Its main branch, at revision ' + brand.commit + '.',
     'From ' + brand.repository + '.']),
   make('h3', 'sheet-part', 'What happens'), bullets(BRAND_STEPS),
   make('p', '', BRAND_TRUST), make('p', 'quiet', BRAND_WAITS), problem,
@@ -7410,8 +7411,8 @@ function updateSheet() {
   const confirm = capsule('Update them now', 'filled', () => settleUpdate(problem, confirm),
     'send');
   return [head, make('h3', 'sheet-part', 'What is brought'),
-    bullets(wanted.map((one) => one.name + ' ' + one.wanted + ', from ' + one.repository
-      + ' at revision ' + one.commit + '.')),
+    bullets(wanted.map((one) => one.name + ' ' + one.wanted + ' or newer: the main branch of '
+      + one.repository + ', as it is now.')),
     make('p', '', UPDATE_SAYS),
     ...wanted.filter((one) => one.note).map((one) => make('p', '', one.note)),
     make('p', 'quiet', UPDATE_WAITS), problem,

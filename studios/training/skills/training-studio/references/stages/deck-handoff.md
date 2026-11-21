@@ -21,8 +21,8 @@ One page, with these headings:
 
 ## Run
 
-1. Load the `harness-slides` skill and follow its entrypoint with this directory as the project. Start a task the first time; on a later visit, continue the pinned task through that skill's resume entrypoint.
-2. `training.py pin harness-slides --task <id> --runtime <path>`. With levels, use the level's folder as the project and add `--level <level>`.
+1. Load the `harness-slides` skill and follow its entrypoint with this directory as the project. Start a task the first time; later, resume the recorded task. Run the skill from the runtime that answer names; never save a path.
+2. `training.py pin harness-slides --task <id>`. With levels, use the level's folder as the project and add `--level <level>`.
 3. Give it `deck-handoff.md` and the source files, and follow its own guidance. Ask for a deck worth looking at: slides drawn from their relation, figures large, brand icons for what is named, direct text only for a question or a quotation. Intake is settled: answer its intake questions from the handoff. Its own draft and review steps with the user still apply.
 4. Creating or changing a Google Slides deck follows that skill's authorisation rules.
 

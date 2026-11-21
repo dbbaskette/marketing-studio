@@ -3,28 +3,26 @@
   "companions": {
     "harness-research": {
       "repository": "https://github.com/dbbaskette/harness-research-skill.git",
-      "version": "1.2.0",
-      "commit": "e809e004f5e6dd7d224d818ff62272dfcb1896cb",
-      "sha256": "8fd552d480dec352deb8469b676fa93380860a34282481a774c56c9c0d55cab3",
+      "branch": "main",
+      "version": "1.3.1",
       "stub": "bootstrap/SKILL.md",
       "installer": "scripts/install.mjs",
-      "note": "One run takes up to 2,000 source entries; stable collection and unchanged-save review retention. Existing runs keep their saved runtime, context and revision policy.",
-      "requirement": ">=1.2.0"
+      "note": "Installed and updated from main. 1.3.1 is the oldest this works with: it is reached through its stable current address, and a run started on any version continues on the installed one.",
+      "requirement": ">=1.3.1"
     },
     "harness-slides": {
       "repository": "https://github.com/dbbaskette/harness-slides-skill.git",
-      "version": "0.17.0",
-      "commit": "fecfe2b63de0620e6c5cbad841d11cf37ecf3d61",
-      "sha256": "493048a6f3dade84e5c762e7d47288c5bb487fa1c1f6e9f9b954afd597b681fc",
+      "branch": "main",
+      "version": "0.19.0",
       "stub": "bootstrap/SKILL.md",
       "installer": "scripts/install.mjs",
-      "note": "Verified draft inspection reuse with an explicit exact-final consistency gate. Existing saved tasks retain their helper runtime and revision-based contract.",
-      "requirement": ">=0.17.0"
+      "note": "Installed and updated from main. 0.19.0 is the oldest this works with: it is reached through its stable current address, and a saved task resumes on the installed one.",
+      "requirement": ">=0.19.0"
     }
   },
   "brand_skill": {
-    "requirement": ">=0.14.0",
-    "tested": "1.1.0",
-    "note": "The brand skill is the person's own (Harness Brand, with the brands folder they chose); Marketing Studio never installs it. Decks need this version or newer."
+    "requirement": ">=1.4.0",
+    "tested": "1.4.0",
+    "note": "The brand skill is the person's own (Harness Brand, with the brands folder they chose), installed from its repository's main. Decks need this version or newer: it hands out its stable current address."
   }
 }

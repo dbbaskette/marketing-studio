@@ -83,6 +83,37 @@ class SuiteTests(unittest.TestCase):
         self.assertNotEqual(done.returncode, 0, done.stdout)
         return done
 
+    GONE = ('The earlier version is no longer on this computer: an update keeps only the newest. '
+            'Install the release you want instead. Nothing was changed.')
+    LATER = {'blog': 'skills/blog-studio/SKILL.md', 'presentation': 'skills/presentation-studio/VERSION',
+             'training': 'skills/training-studio/VERSION', 'infographic': 'VERSION'}
+
+    def later(self, source, *studios):
+        """Turn a source into a later release of the suite and of each studio named."""
+        (source / 'VERSION').write_text('9.9.9\n')
+        for identifier in studios:
+            path = source / 'studios' / identifier / self.LATER[identifier]
+            path.write_text(path.read_text() + '\nA later release.\n' if identifier == 'blog' else '9.9.9\n')
+
+    def versions(self, tool):
+        return sorted(path.name for path in (self.home / '.local/share' / tool / 'versions').iterdir())
+
+    def keep_from_removal(self, folder):
+        """Make a folder one that cannot be removed, and put that right when the test ends."""
+        folders = [folder, *(path for path in folder.rglob('*') if path.is_dir())]
+        for path in folders:
+            path.chmod(0o555)
+        self.addCleanup(lambda: [path.chmod(0o755) for path in folders if path.is_dir()])
+
+    def written(self):
+        """Every launcher, opener and command wrapper the installers wrote: {path: bytes}."""
+        share = self.home / '.local/share'
+        found = [path for folder in share.iterdir() if folder.name.endswith('-studio')
+                 for path in folder.iterdir() if path.is_file() and path.read_bytes().startswith(b'#!')]
+        for folder in (self.home / 'Applications', self.home / '.local/bin'):
+            found += [path for path in folder.iterdir()] if folder.is_dir() else []
+        return {path: path.read_bytes() for path in found}
+
     def unpack(self, product):
         destination = self.case / product
         with zipfile.ZipFile(self.archives / (product + '-installer.zip')) as archive:
@@ -144,7 +175,113 @@ class SuiteTests(unittest.TestCase):
             self.assertEqual(path.read_bytes(), b'{"synthetic": "keep this workspace"}\n')
             self.assertTrue((path.parent / 'current').is_dir())
 
-    def test_rollback_restores_the_previous_suite_and_native_pointers(self):
+    def test_an_update_keeps_one_version_of_everything_and_nothing_names_a_version_folder(self):
+        studios = ('blog', 'presentation', 'training', 'infographic')
+        tools = ['marketing-studio', *(identifier + '-studio' for identifier in studios)]
+        source = self.case / 'source'
+        bundles.materialize(ROOT, source, list(studios))
+        first = self.run_setup(source)
+        share = self.home.resolve() / '.local/share'   # the installers name the real home
+        before = self.written()
+        self.assertGreaterEqual(len(before), 2 + 2 * len(studios))
+        old = {tool: (share / tool / 'current').resolve() for tool in tools}
+        # What an interrupted install and someone's own link can leave beside the versions.
+        outside = self.case / 'kept elsewhere'
+        outside.mkdir()
+        (outside / 'mine.txt').write_text('Not the installer\'s.')
+        for tool in ('marketing-studio', 'training-studio'):
+            (share / tool / 'versions/linked').symlink_to(outside, target_is_directory=True)
+            (share / tool / 'versions/.pending-0123abcd').mkdir()
+        self.later(source, *studios)
+        second = self.run_setup(source)
+        # One folder each, the new one; every older one and every leftover went.
+        for tool in tools:
+            active = (share / tool / 'current').resolve()
+            self.assertNotEqual(active, old[tool], tool)
+            self.assertEqual(self.versions(tool), [active.name], tool)
+            self.assertFalse(old[tool].exists(), tool)
+        self.assertEqual((outside / 'mine.txt').read_text(), "Not the installer's.", 'a link is never followed')
+        self.assertEqual(sorted(second['removed']), sorted(
+            str(share / 'marketing-studio/versions' / name) for name in (first['id'], 'linked', '.pending-0123abcd')))
+        self.assertEqual(second['retained'], [])
+        self.assertEqual((second['runtime'], second['versionDirectory']),
+                         (str(share / 'marketing-studio/current'), str(share / 'marketing-studio/versions' / second['id'])))
+        for identifier in studios:
+            cleaned = second['results'][identifier]
+            self.assertIn(str(old[identifier + '-studio']), cleaned['removed'], identifier)
+            self.assertEqual(cleaned['retained'], [], identifier)
+            self.assertEqual(cleaned['runtime'], str(share / (identifier + '-studio') / 'current'), identifier)
+        self.assertEqual(len(second['results']['training']['removed']), 3)
+        # Nothing the installers wrote names a version folder, so the update rewrote nothing
+        # that an earlier launcher, link or record depends on.
+        after = self.written()
+        self.assertEqual(after, before, 'launchers and command wrappers are the same bytes')
+        for path, data in after.items():
+            self.assertNotIn(b'versions/', data, str(path))
+        self.assertEqual(os.readlink(self.home / '.local/bin/marketing-studio'), str(share / 'marketing-studio/marketing-studio'))
+        linked = [path for folder in ('.claude/skills', '.agents/skills') if (self.home / folder).is_dir()
+                  for path in (self.home / folder).iterdir()]
+        self.assertEqual(len(linked), len(studios))
+        for path in linked:
+            self.assertEqual(os.readlink(path), str(share / path.name / 'current'))
+            self.assertTrue((path / 'SKILL.md').is_file(), str(path))
+        for tool in tools:
+            state = json.loads((share / tool / 'installation.json').read_text())
+            # A rollback record holds the pointer it would put back, and nothing else names a folder.
+            kept = {key: value for key, value in state.items() if key not in ('previous', 'original')}
+            self.assertNotIn('versions/', json.dumps(kept), tool)
+        # And all of it still opens what was installed.
+        command = self.home / '.local/bin/marketing-studio'
+        done = subprocess.run([str(command), 'status', '--json'], env=self.env, capture_output=True, text=True, timeout=20)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertTrue(all(studio['installed'] for studio in json.loads(done.stdout)['studios']))
+        for identifier in studios:
+            helper = share / (identifier + '-studio') / identifier
+            done = subprocess.run(['/bin/sh', str(helper), '--help'], env=self.env, capture_output=True, text=True, timeout=30)
+            self.assertEqual(done.returncode, 0, identifier + ': ' + done.stderr)
+
+    def test_a_version_a_studio_not_renewed_still_opens_with_is_kept_until_it_is_installed(self):
+        source = self.case / 'source'
+        bundles.materialize(ROOT, source, ['presentation', 'infographic'])
+        first = self.run_setup(source)
+        share = self.home.resolve() / '.local/share'
+        old = share / 'marketing-studio/versions' / first['id']
+        # As an earlier installer left it: the launcher names the Python inside the suite's version.
+        opener = share / 'infographic-studio/studio'
+        opener.write_text(opener.read_text().replace('exec ', 'exec ' + str(old / 'runtime/python/bin/python3') + ' # ', 1))
+        self.later(source, 'presentation')
+        second = self.run_setup(source, '--studios', 'presentation')
+        self.assertEqual(second['removed'], [])
+        self.assertEqual([kept['path'] for kept in second['retained']], [str(old)])
+        self.assertIn('Infographic Studio still opens with the Python inside it', second['retained'][0]['reason'])
+        self.assertTrue((old / 'marketing-studio').is_file())
+        self.assertEqual(len(self.versions('presentation-studio')), 1)
+        # Installing that studio renews its launcher, and the older version then goes.
+        third = self.run_setup(source)
+        self.assertIn(str(old), third['removed'])
+        self.assertEqual(self.versions('marketing-studio'), [third['id']])
+        self.assertNotIn('versions/', opener.read_text())
+
+    def test_rollback_after_an_update_refuses_and_changes_nothing(self):
+        source = self.case / 'source'
+        bundles.materialize(ROOT, source, ['presentation'])
+        self.run_setup(source)
+        data = self.home / '.local/share/marketing-studio'
+        self.later(source, 'presentation')
+        self.run_setup(source)
+        native = self.home / '.local/share/presentation-studio'
+        pointers = {path: os.readlink(path) for path in (data / 'current', native / 'current')}
+        records = {path: path.read_bytes() for path in (data / 'installation.json', native / 'installation.json')}
+        launchers = self.written()
+        refused = self.run_setup(source, 'rollback', success=False)
+        self.assertEqual(json.loads(refused.stderr.splitlines()[-1]), {'error': self.GONE})
+        self.assertEqual({path: os.readlink(path) for path in pointers}, pointers)
+        self.assertEqual({path: path.read_bytes() for path in records}, records)
+        self.assertEqual(self.written(), launchers)
+        self.assertEqual(len(self.versions('marketing-studio')), 1)
+        self.assertEqual(len(self.versions('presentation-studio')), 1)
+
+    def test_rollback_restores_the_previous_suite_and_native_pointers_that_are_still_there(self):
         source = self.case / 'source'
         bundles.materialize(ROOT, source, ['presentation'])
         self.run_setup(source)
@@ -152,9 +289,14 @@ class SuiteTests(unittest.TestCase):
         before = (data / 'installation.json').read_bytes()
         previous = os.readlink(data / 'current')
         native = os.readlink(self.home / '.local/share/presentation-studio/current')
-        (source / 'VERSION').write_text('4.0.1\n')
-        self.run_setup(source)
+        for folder in (previous, native):
+            self.keep_from_removal(Path(folder))
+        self.later(source, 'presentation')
+        updated = self.run_setup(source)
+        self.assertEqual([kept['path'] for kept in updated['retained']], [previous])
+        self.assertEqual([kept['path'] for kept in updated['results']['presentation']['retained']], [native])
         self.assertNotEqual(os.readlink(data / 'current'), previous)
+        self.assertNotEqual(os.readlink(self.home / '.local/share/presentation-studio/current'), native)
         self.run_setup(source, 'rollback')
         self.assertEqual((data / 'installation.json').read_bytes(), before)
         self.assertEqual(os.readlink(data / 'current'), previous)
@@ -179,11 +321,30 @@ class SuiteTests(unittest.TestCase):
         data = self.home / '.local/share/marketing-studio'
         previous = (data / 'installation.json').read_bytes()
         pointer = os.readlink(data / 'current')
+        native = self.home / '.local/share/presentation-studio'
+        record, active, launchers = (native / 'installation.json').read_bytes(), os.readlink(native / 'current'), self.written()
+        # A later release whose first studio installs, moving its pointer, before the second fails.
+        self.later(source, 'presentation')
         (source / 'studios/training/installer/install.py').write_text('raise SystemExit(9)\n')
         self.run_setup(source, '--studios', 'presentation', 'training', success=False)
         self.assertEqual((data / 'installation.json').read_bytes(), previous)
         self.assertEqual(os.readlink(data / 'current'), pointer)
         self.assertFalse((self.home / '.local/share/training-studio/current').exists())
+        # Nothing was removed by the install that failed: every pointer that was put back
+        # names a version that is still whole, and still opens.
+        self.assertEqual(os.readlink(native / 'current'), active)
+        self.assertEqual((native / 'installation.json').read_bytes(), record)
+        self.assertTrue((Path(pointer) / 'marketing-studio').is_file())
+        self.assertTrue((Path(active) / 'runner/studio.py').is_file())
+        self.assertIn(Path(active).name, self.versions('presentation-studio'))
+        self.assertEqual(len(self.versions('presentation-studio')), 2, 'the staged newer one is still beside it')
+        self.assertEqual(self.written(), launchers)
+        done = subprocess.run(['/bin/sh', str(native / 'presentation'), '--help'], env=self.env,
+                              capture_output=True, text=True, timeout=30)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        done = subprocess.run([str(self.home / '.local/bin/marketing-studio'), 'status', '--json'], env=self.env,
+                              capture_output=True, text=True, timeout=20)
+        self.assertEqual(done.returncode, 0, done.stderr)
 
 
 if __name__ == '__main__':

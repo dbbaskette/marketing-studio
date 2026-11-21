@@ -67,16 +67,24 @@ class FindingTheRuntimeTests(unittest.TestCase):
         shared = installed(self.home / '.local' / 'share' / 'harness-research' / 'current')
         self.assertEqual(research.find_runtime(), shared)
 
-    def test_links_are_followed_so_one_version_is_used_throughout(self):
-        version = installed(self.home / 'Library' / 'Application Support' / 'Harness Research'
-                            / 'versions' / '0.8.0')
-        (version.parent.parent / 'current').symlink_to(Path('versions') / '0.8.0')
+    def test_the_stable_address_is_used_so_an_update_keeps_working(self):
+        # Said through `current`, never its version folder, which the next update removes.
+        shared = self.home / 'Library' / 'Application Support' / 'Harness Research'
+        version = installed(shared / 'versions' / '0.8.0')
+        (shared / 'current').symlink_to(Path('versions') / '0.8.0')
         skill = self.home / '.claude' / 'skills'
         skill.mkdir(parents=True)
-        (skill / 'harness-research').symlink_to(version.parent.parent / 'current')
-        self.assertEqual(research.find_runtime(), version)
+        (skill / 'harness-research').symlink_to(shared / 'current')
+        self.assertEqual(research.find_runtime(), shared / 'current')
         self.assertEqual(research.Research(run=lambda command, cwd=None: (0, '{}', '')).runtime,
-                         version)
+                         shared / 'current')
+        newer = installed(shared / 'versions' / '1.3.1')
+        (shared / 'current').unlink()
+        (shared / 'current').symlink_to(Path('versions') / '1.3.1')
+        shutil.rmtree(version)
+        kept = research.Research(runtime=version, run=lambda command, cwd=None: (0, '{}', ''))
+        self.assertEqual(kept.runtime, shared / 'current')
+        self.assertEqual(kept.runtime.resolve(), newer.resolve())
 
     def test_the_real_command_needs_node(self):
         os.environ[research.VARIABLE] = str(installed(self.home / 'runtime'))
@@ -564,8 +572,11 @@ class SynthesisStandInTests(unittest.TestCase):
         self.assertEqual(pin['schema'], 2)
         self.assertIs(contract.matching(self.tool, pin), self.tool)
         (self.tool.runtime / 'references/synthesize.md').write_text('Changed synthetic guidance')
+        # The digest is a label of what is installed. A run started on another version goes on
+        # with the installed helper, and the stable identity is the same.
         self.assertNotEqual(contract.snapshot(self.tool), pin)
-        self.assertIsNone(contract.matching(self.tool, pin))
+        self.assertEqual(contract.stable(contract.snapshot(self.tool)), contract.stable(pin))
+        self.assertIs(contract.matching(self.tool, pin), self.tool)
 
     def test_separate_review_exports_validated_state_and_retains_rejected_draft(self):
         from studio_core import research_contract as contract

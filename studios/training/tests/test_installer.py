@@ -97,12 +97,13 @@ def setUpModule():
     for name, version in zip(COMPANIONS, ('0.8.0', '0.13.1')):
         _made[name] = StandIn(base, name)
         commit = _made[name].release(version)
-        pins[name] = {'repository': str(_made[name].bare), 'version': '0.0.0',
-                      'commit': '0' * 40, 'sha256': '0' * 64, 'stub': 'bootstrap/SKILL.md',
+        # Installed from its main branch, with this release as the oldest accepted.
+        pins[name] = {'repository': str(_made[name].bare), 'branch': 'main', 'version': version,
+                      'requirement': '>=' + version, 'stub': 'bootstrap/SKILL.md',
                       'installer': 'scripts/install.mjs'}
         write_pins(base / 'companions.json', pins)
-        install.pin(base / 'companions.json', name, commit)
         pins = install.read_pins(base / 'companions.json')
+        _made[name].commit = commit
     _made['pins'] = pins
 
 
@@ -120,6 +121,11 @@ class InstallerCase(unittest.TestCase):
         self.codex.mkdir(parents=True)
         self.pins_file = self.base / 'companions.json'
         self.pins = json.loads(json.dumps(_made['pins']))
+        # Each test starts with every stand-in's main at its first release: a test that
+        # moves main moves it for itself only.
+        for name in COMPANIONS:
+            git(_made[name].work, 'reset', '-q', '--hard', _made[name].commit)
+            git(_made[name].work, 'push', '-q', '--force', str(_made[name].bare), 'HEAD:refs/heads/main')
         write_pins(self.pins_file, self.pins)
         # What this computer answers when asked: everything in place, until a test says not.
         self.answers = {('git', '--version'): (0, 'git version 2.50.0'),
@@ -153,13 +159,25 @@ class InstallerCase(unittest.TestCase):
         return source
 
     def repin(self, name: str, commit: str) -> None:
-        install.pin(self.pins_file, name, commit)
-        self.pins = install.read_pins(self.pins_file)
+        """Make the release at `commit`, now on main, the oldest this version accepts."""
+        version = json.loads(git(_made[name].work, 'show', f'{commit}:package.json'))['version']
+        self.pins[name] = {**self.pins[name], 'version': version, 'requirement': '>=' + version}
+        write_pins(self.pins_file, self.pins)
 
     def a_stopped_process(self) -> int:
         done = subprocess.Popen([sys.executable, '-c', 'pass'])
         done.wait()
         return done.pid
+
+    def versions(self) -> list[str]:
+        return sorted(path.name for path in (self.root / 'versions').iterdir())
+
+    def keep_from_removal(self, folder: Path) -> None:
+        """Make a folder one that cannot be removed, and put that right when the test ends."""
+        folders = [folder, *(path for path in folder.rglob('*') if path.is_dir())]
+        for path in folders:
+            path.chmod(0o555)
+        self.addCleanup(lambda: [path.chmod(0o755) for path in folders if path.is_dir()])
 
 
 class InstallTests(InstallerCase):
@@ -277,9 +295,112 @@ class LinkModeTests(InstallerCase):
         self.assertIn('no managed installation', refusal['error'])
 
 
-class RollbackTests(InstallerCase):
-    def test_rollback_returns_to_the_version_before(self):
+class OneVersionTests(InstallerCase):
+    """An update keeps one version, and everything written down names it through `current`."""
+
+    def test_an_update_leaves_one_version_and_nothing_names_its_folder(self):
+        with mock.patch.object(install, 'PLATFORM', 'darwin'):
+            first = self.run_installer('install', '--yes')
+            written = {path: path.read_text() for path in (
+                self.root / 'studio', self.root / 'training',
+                self.home / 'Applications' / 'Open Training Studio.command')}
+            # What an interrupted install and someone's own link can leave beside the versions.
+            outside = self.base / 'kept elsewhere'
+            outside.mkdir()
+            (outside / 'mine.txt').write_text('Not the installer\'s.')
+            (self.root / 'versions' / 'linked').symlink_to(outside, target_is_directory=True)
+            stale = self.root / 'versions' / '.pending-0123abcd'
+            stale.mkdir()
+            (stale / 'SKILL.md').write_text('Half staged.')
+            second = self.run_installer('install', '--yes', '--source',
+                                        str(self.copy_of_the_skill('9.9.9')))
+        self.assertTrue(second['version'].startswith('9.9.9-'))
+        self.assertEqual(self.versions(), [second['version']])
+        self.assertEqual(sorted(second['removed']),
+                         sorted(str(self.root / 'versions' / name)
+                                for name in (first['version'], 'linked', '.pending-0123abcd')))
+        self.assertEqual(second['retained'], [])
+        self.assertEqual((outside / 'mine.txt').read_text(), "Not the installer's.",
+                         'a link is unlinked and never followed')
+        # The answer names the stable address, and the folder only as where the files are.
+        self.assertEqual(second['runtime'], str(self.root / 'current'))
+        self.assertEqual(second['id'], second['version'])
+        self.assertEqual(second['versionDirectory'],
+                         str(self.root / 'versions' / second['version']))
+        # Every link, launcher and recorded path goes through `current`: none was rewritten.
+        for link in (self.claude / 'training-studio', self.codex / 'training-studio'):
+            self.assertEqual(os.readlink(link), str(self.root / 'current'))
+            self.assertEqual((link / 'VERSION').read_text(), '9.9.9\n')
+        for path, before in written.items():
+            self.assertEqual(path.read_text(), before, f'{path.name} follows the version')
+            self.assertNotIn('versions/', before)
+        state = json.loads((self.root / 'installation.json').read_text())
+        self.assertEqual(state['current'], second['version'])
+        self.assertNotIn('versions/', json.dumps(state))
+        asked = subprocess.run(['sh', str(self.root / 'studio'), 'serve', '--help'],
+                               capture_output=True, text=True)
+        self.assertEqual(asked.returncode, 0, asked.stderr)
+        self.assertIn('usage: studio serve', asked.stdout)
+        checked = self.run_installer('check')
+        self.assertEqual(checked['links'], {'claude': 'ok', 'codex': 'ok'})
+        self.assertEqual(checked['earlier_versions'], [], 'none is on this computer any more')
+
+    def test_a_version_that_cannot_be_removed_is_reported_and_the_install_succeeds(self):
         first = self.run_installer('install', '--yes')
+        old = self.root / 'versions' / first['version']
+        self.keep_from_removal(old)
+        second = self.run_installer('install', '--yes', '--source',
+                                    str(self.copy_of_the_skill('9.9.9')))
+        self.assertEqual(second['removed'], [])
+        self.assertEqual([kept['path'] for kept in second['retained']], [str(old)])
+        self.assertTrue(second['retained'][0]['reason'])
+        self.assertEqual((self.claude / 'training-studio' / 'VERSION').read_text(), '9.9.9\n')
+        self.assertEqual(self.run_installer('check')['earlier_versions'], [first['version']])
+        self.assertIn('Still on disk: ' + str(old), install.describe(second))
+
+    def test_a_private_python_inside_an_installed_version_is_named_through_current(self):
+        suite = self.home / '.local' / 'share' / 'marketing-studio'
+        private = suite / 'versions' / '4.0.0-abcdef012345' / 'runtime' / 'python' / 'bin' / 'python3'
+        private.parent.mkdir(parents=True)
+        private.write_text('')
+        (suite / 'current').symlink_to(suite / 'versions' / '4.0.0-abcdef012345')
+        stable = suite / 'current' / 'runtime' / 'python' / 'bin' / 'python3'
+        # However the interpreter says where it is: through the link, or resolved past it.
+        for executable in (private, stable):
+            with self.subTest(executable=executable), \
+                    mock.patch.object(install.sys, 'executable', str(executable)):
+                search = install.python_search('exec "$candidate" "$runner" "$@"')
+            self.assertIn(f'for candidate in {stable} python3 ', search)
+            self.assertNotIn('versions/', search)
+
+    def test_the_marketing_studio_installer_removes_older_versions_itself(self):
+        first = self.run_installer('install', '--yes')
+        second = self.run_installer('install', '--yes', '--defer-cleanup', '--source',
+                                    str(self.copy_of_the_skill('9.9.9')))
+        self.assertEqual((second['removed'], second['retained']), ([], []))
+        self.assertEqual(self.versions(), sorted([first['version'], second['version']]))
+
+
+class RollbackTests(InstallerCase):
+    GONE = ('The earlier version is no longer on this computer: an update keeps only the '
+            'newest. Install the release you want instead. Nothing was changed.')
+
+    def test_rollback_after_an_update_refuses_and_changes_nothing(self):
+        self.run_installer('install', '--yes')
+        second = self.run_installer('install', '--yes', '--source',
+                                    str(self.copy_of_the_skill('9.9.9')))
+        record = (self.root / 'installation.json').read_bytes()
+        refusal = self.run_installer('rollback', '--yes', expect=1)
+        self.assertEqual(refusal['error'], self.GONE)
+        self.assertEqual((self.root / 'installation.json').read_bytes(), record)
+        self.assertEqual(os.readlink(self.root / 'current'),
+                         str(self.root / 'versions' / second['version']))
+        self.assertEqual((self.claude / 'training-studio' / 'VERSION').read_text(), '9.9.9\n')
+        self.assertEqual(self.versions(), [second['version']])
+
+    def test_rollback_returns_to_a_version_that_is_still_there(self):
+        first = self.run_installer('install', '--yes')
+        self.keep_from_removal(self.root / 'versions' / first['version'])
         second = self.run_installer('install', '--yes', '--source',
                                     str(self.copy_of_the_skill('9.9.9')))
         self.assertTrue(second['version'].startswith('9.9.9-'))
@@ -442,8 +563,11 @@ class RunnerTests(InstallerCase):
         shared = self.home / '.local' / 'share'
         self.assertEqual(found['core'], str(installed.resolve() / 'scripts'))
         for name, version in zip(COMPANIONS, ('0.8.0', '0.13.1')):
+            # Through its stable `current` link, never the version folder an update removes.
             self.assertEqual(found[name.removeprefix('harness-')],
-                             str(shared / name / 'versions' / version), name)
+                             str(shared / name / 'current'), name)
+            self.assertEqual(Path(found[name.removeprefix('harness-')]).resolve(),
+                             (shared / name / 'versions' / version).resolve(), name)
         # A brand skill is looked for among the skills each assistant has, where the
         # companions were just registered and where an organisation's own would be.
         self.assertIn(str(brand), found['brand'])
@@ -460,6 +584,18 @@ class RunnerTests(InstallerCase):
         self.assertIn('The installed runner did not start', str(refused.exception))
         self.assertEqual(os.readlink(self.root / 'current'),
                          str(self.root / 'versions' / first['version']))
+        # An install that failed removes nothing: the version in use is whole, and so are
+        # the links and the command that open it.
+        self.assertIn(first['version'], self.versions())
+        self.assertEqual(install.package_key(self.root / 'versions' / first['version']),
+                         first['version'])
+        self.assertTrue((self.claude / 'training-studio' / 'SKILL.md').is_file())
+        asked = subprocess.run(['sh', str(self.root / 'studio'), 'serve', '--help'],
+                               capture_output=True, text=True)
+        self.assertEqual(asked.returncode, 0, asked.stderr)
+        # The next install that succeeds clears away what the failed one staged.
+        again = self.run_installer('install', '--yes')
+        self.assertEqual(self.versions(), [again['version']])
 
     def test_the_one_line_command_opens_the_runner_that_was_installed(self):
         result = self.run_installer('install', '--yes')
@@ -507,6 +643,7 @@ class RunnerTests(InstallerCase):
 
     def test_an_update_and_a_rollback_take_the_runner_with_them(self):
         first = self.run_installer('install', '--yes')
+        self.keep_from_removal(self.root / 'versions' / first['version'])
         opener = (self.root / 'studio').read_text()
         second = self.run_installer('install', '--yes', '--source',
                                     str(self.copy_of_the_skill('9.9.9')))
@@ -532,7 +669,7 @@ class RunnerTests(InstallerCase):
                           refusal)
             self.assertIn('Close it first', refusal)
         self.assertEqual(os.readlink(self.root / 'current'), before)
-        self.assertEqual(len(list((self.root / 'versions').iterdir())), 2)
+        self.assertEqual(self.versions(), [Path(before).name])
         self.assertTrue((self.claude / 'training-studio').is_symlink())
         self.assertEqual(self.run_installer('check')['runner']['serving'], os.getpid())
         self.assertNotEqual(first['version'], Path(before).name)
@@ -550,8 +687,18 @@ class RunnerTests(InstallerCase):
                          str(self.root / 'versions' / second['version']))
         self.assertTrue((running / 'runner' / 'studio.py').is_file(),
                         'the version the runner runs from is still whole')
+        self.assertEqual(install.package_key(running), first['version'])
+        # Nothing is removed underneath a runner that is open, and the answer says so.
+        self.assertEqual(second['removed'], [])
+        self.assertEqual([kept['path'] for kept in second['retained']], [str(running)])
+        self.assertIn('Training Studio is open', second['retained'][0]['reason'])
         self.assertEqual(install.read_state(self.root)['history'],
                          [first['version'], second['version']])
+        # Once it is closed, the next install leaves the one version.
+        (self.root / 'runner.pid').unlink()
+        third = self.run_installer('install', '--yes', '--source', str(later))
+        self.assertEqual(third['removed'], [str(running)])
+        self.assertEqual(self.versions(), [second['version']])
 
     def test_a_runner_that_ended_without_saying_so_is_not_counted(self):
         self.run_installer('install', '--yes')
@@ -666,8 +813,9 @@ class HelperTests(InstallerCase):
 
 class CompanionTests(InstallerCase):
     def fetched(self, name: str) -> list[Path]:
+        """The copies of a companion's main fetched here, one folder for each commit."""
         folder = self.root / 'companions' / name
-        return sorted(folder.iterdir()) if folder.is_dir() else []
+        return sorted(path for path in folder.iterdir() if path.is_dir()) if folder.is_dir() else []
 
     def test_nobody_to_ask_means_nothing_is_fetched_and_the_report_says_how(self):
         os.chdir(helpers.REPO)   # the installer's folder, as when it is run as the docs say
@@ -722,8 +870,7 @@ class CompanionTests(InstallerCase):
         self.assertEqual(asked, ['Fetch harness-research and run its installer? [y/N]: ',
                                  'Fetch harness-slides and run its installer? [y/N]: '])
         said = printed.getvalue()
-        self.assertIn(f"(revision {self.pins['harness-slides']['commit'][:12]} when the newest cannot",
-                      said)
+        self.assertIn('Its main branch would be fetched from', said)
         self.assertIn('Then its own installer would be run with Node.', said)
         self.assertEqual(self.fetched('harness-research') + self.fetched('harness-slides'), [])
         self.assertTrue((self.claude / 'training-studio' / 'SKILL.md').is_file())
@@ -742,16 +889,18 @@ class CompanionTests(InstallerCase):
         self.assertFalse(self.root.exists())
 
     @unittest.skipUnless(NODE, 'a companion installs itself with Node')
-    def test_each_companion_is_installed_by_its_own_installer_from_its_pinned_revision(self):
+    def test_each_companion_is_installed_by_its_own_installer_from_its_main_branch(self):
         result = self.run_installer('install', '--yes', '--companions', 'install')
         for name, version in zip(COMPANIONS, ('0.8.0', '0.13.1')):
             self.assertEqual(result['companions'][name]['state'], 'installed', result['notes'])
             self.assertEqual(result['companions'][name]['found'],
                              {'claude': version, 'codex': version})
             (kept,) = self.fetched(name)
-            self.assertEqual(kept.name, self.pins[name]['commit'][:12])
+            self.assertEqual(kept.name, _made[name].commit[:12])
             self.assertFalse((kept / '.git').exists())
-            self.assertEqual(install.tree_digest(kept), self.pins[name]['sha256'])
+            self.assertEqual(install.tree_digest(kept), result['companions'][name].get('sha256')
+                             or json.loads((self.root / 'installation.json').read_text())
+                             ['companions'][name]['sha256'])
             for skills in (self.claude, self.codex):
                 self.assertEqual((skills / name / 'SKILL.md').read_text(),
                                  f'---\nname: {name}\n---\n\nThe small entry of {version}.\n')
@@ -759,7 +908,7 @@ class CompanionTests(InstallerCase):
         self.assertFalse(any(note.startswith('harness-') for note in result['notes']))
         state = json.loads((self.root / 'installation.json').read_text())
         self.assertEqual({name: one['commit'] for name, one in state['companions'].items()},
-                         {name: self.pins[name]['commit'] for name in COMPANIONS})
+                         {name: _made[name].commit for name in COMPANIONS})
         again = self.run_installer('install', '--yes', '--companions', 'install')
         self.assertEqual([one['state'] for one in again['companions'].values()],
                          ['left alone', 'left alone'])
@@ -811,7 +960,7 @@ class CompanionTests(InstallerCase):
             install.offer('harness-research', {**pin, 'requirement': '>=0.7.0'}, {'claude': '0.6.0'})
         self.assertNotIn('stable tags', printed.getvalue())
         self.assertIn(f"harness-research {pin['version']} or newer is newer than the 0.6.0", printed.getvalue())
-        self.assertIn(f"(revision {pin['commit'][:12]} when the newest cannot", printed.getvalue())
+        self.assertIn('Its main branch would be fetched from', printed.getvalue())
 
     def test_a_companion_whose_version_cannot_be_read_is_left_alone_and_named(self):
         (self.claude / 'harness-research').mkdir()
@@ -836,24 +985,38 @@ class CompanionTests(InstallerCase):
         self.assertIn('was not installed', note)
         return outcome['detail']
 
-    def test_a_companion_that_is_not_file_for_file_what_was_pinned_is_refused(self):
-        self.pins['harness-research']['sha256'] = 'ab' * 32
-        self.assertIn('is not what this installer expects, file for file', self.refused())
+    def test_a_main_older_than_this_version_needs_is_refused(self):
+        self.pins['harness-research'] = {**self.pins['harness-research'], 'version': '0.9.0',
+                                         'requirement': '>=0.9.0'}
+        self.assertIn('holds 0.8.0, older than the 0.9.0 this version needs', self.refused())
 
-    def test_a_revision_other_than_the_pinned_one_is_refused(self):
-        expected = self.pins['harness-research']['sha256']
-        self.repin('harness-research', _made['harness-research'].release('0.8.1'))
-        self.pins['harness-research']['sha256'] = expected
-        self.assertIn('is not what this installer expects', self.refused())
+    def test_a_repository_without_a_main_branch_is_refused(self):
+        empty = self.base / 'empty.git'
+        git(self.base, 'init', '-q', '--bare', str(empty))
+        self.pins['harness-research'] = {**self.pins['harness-research'], 'repository': str(empty)}
+        self.assertIn('could not be read', self.refused())
 
-    def test_a_revision_the_repository_does_not_have_is_refused(self):
-        self.pins['harness-research']['commit'] = 'c' * 40
-        self.assertIn('could not be fetched from', self.refused())
+    @unittest.skipUnless(NODE, 'a companion installs itself with Node')
+    def test_an_update_installs_main_once_it_has_moved_and_leaves_the_rest(self):
+        self.run_installer('install', '--yes', '--companions', 'install', '--target', 'claude')
+        same = self.run_installer('companions', '--companions', 'install', '--update')
+        self.assertEqual([one['state'] for one in same['companions'].values()],
+                         ['left alone', 'left alone'])
+        moved = _made['harness-research'].release('0.8.1')
+        result = self.run_installer('companions', '--companions', 'install', '--update')
+        self.assertEqual(result['companions']['harness-research']['state'], 'installed')
+        self.assertEqual(result['companions']['harness-research']['found'], {'claude': '0.8.1'})
+        self.assertEqual(result['companions']['harness-slides']['state'], 'left alone')
+        state = json.loads((self.root / 'installation.json').read_text())
+        self.assertEqual(state['companions']['harness-research']['commit'], moved)
+        plain = self.run_installer('install', '--yes', '--companions', 'install', '--target', 'claude')
+        self.assertEqual(plain['companions']['harness-research']['state'], 'left alone',
+                         'without --update a copy that meets the floor is kept')
 
     def test_an_entry_that_names_another_skill_is_refused(self):
         self.repin('harness-research',
                    _made['harness-research'].release('0.8.2', stub_names='something-else'))
-        self.assertIn('does not hold the entry and the installer', self.refused())
+        self.assertIn('does not hold the entry, the installer', self.refused())
 
     @unittest.skipUnless(NODE, 'a companion installs itself with Node')
     def test_a_kept_copy_that_was_changed_is_never_run(self):
@@ -891,7 +1054,7 @@ class CompanionTests(InstallerCase):
             self.assertEqual(result['companions'][name]['found'], {'claude': version})
         state = json.loads((self.root / 'installation.json').read_text())
         self.assertEqual({name: one['commit'] for name, one in state['companions'].items()},
-                         {name: self.pins[name]['commit'] for name in COMPANIONS})
+                         {name: _made[name].commit for name in COMPANIONS})
         self.assertEqual(os.readlink(self.root / 'current'), before[0])
         self.assertEqual({key: value for key, value in state.items() if key != 'companions'},
                          json.loads(before[1]))
@@ -924,21 +1087,12 @@ class CompanionTests(InstallerCase):
                                                    Path.home().resolve()),
                          ['node', str(checkout / 'scripts' / 'install.mjs')])
 
-    def test_pinning_records_the_revision_and_every_file_of_it(self):
-        commit = _made['harness-slides'].release('0.15.0')
+    def test_there_is_no_pinning_since_companions_come_from_main(self):
         printed = io.StringIO()
-        with contextlib.redirect_stdout(printed):
-            code = install.main(['pin', 'harness-slides', '--revision', 'main', '--yes',
-                                 '--json', '--pins', str(self.pins_file)])
-        self.assertEqual(code, 0, printed.getvalue())
-        result = json.loads(printed.getvalue())
-        self.assertEqual((result['version'], result['commit'], result['was']['version']),
-                         ('0.15.0', commit, '0.13.1'))
-        kept = install.read_pins(self.pins_file)['harness-slides']
-        self.assertEqual((kept['version'], kept['commit']), ('0.15.0', commit))
-        self.assertNotEqual(kept['sha256'], self.pins['harness-slides']['sha256'])
-        self.assertEqual(install.read_pins(self.pins_file)['harness-research'],
-                         self.pins['harness-research'])
+        with contextlib.redirect_stderr(printed), self.assertRaises(SystemExit):
+            install.main(['pin', 'harness-slides', '--revision', 'main', '--yes', '--json',
+                          '--pins', str(self.pins_file)])
+        self.assertFalse(hasattr(install, 'pin'))
 
     def test_pins_this_installer_cannot_read_are_refused(self):
         self.pins['harness-slides']['installer'] = '../elsewhere/install.mjs'
@@ -957,11 +1111,14 @@ class CompanionTests(InstallerCase):
         self.assertEqual(install.read_pins(self.pins_file), plain)
         self.assertEqual(sorted(plain), sorted(COMPANIONS))
 
-    def test_the_pins_that_ship_name_a_whole_commit_and_nothing_of_a_companion_is_here(self):
+    def test_the_pins_that_ship_name_main_and_a_floor_and_nothing_of_a_companion_is_here(self):
         pins = install.read_pins(helpers.REPO / 'installer' / 'companions.json')
         self.assertEqual(sorted(pins), sorted(COMPANIONS))
         for name, pin in pins.items():
             self.assertTrue(pin['repository'].startswith('https://github.com/'), name)
+            self.assertEqual(pin['branch'], 'main', name)
+            self.assertNotIn('commit', pin, name)
+            self.assertEqual(pin['requirement'], '>=' + pin['version'], name)
             self.assertFalse((helpers.REPO / 'bootstrap' / name).exists(), name)
 
 

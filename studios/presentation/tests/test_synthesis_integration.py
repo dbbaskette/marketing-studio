@@ -14,23 +14,28 @@ RUNTIME = os.environ.get('STUDIO_TEST_RESEARCH_RUNTIME')
 
 
 def updated_helper(folder: Path) -> tuple[Path, Path]:
-    """Harness Research as its installer leaves it after an update: `current` names a
-    newer version, which must not run here, and the version a run started with is retained."""
+    """Harness Research as its installer leaves it, with a newer version laid beside the one
+    `current` names: (the shared folder, the version a run starts with)."""
     shared = folder / 'Harness Research'
     version = json.loads((Path(RUNTIME) / 'package.json').read_text())['version']
-    old = shared / 'versions' / (version + '-' + 'a' * 20)
-    newer = shared / 'versions' / ('9.9.9-' + 'b' * 20)
+    old = shared / 'versions' / (version + '-' + 'a' * 8)
+    newer = shared / 'versions' / ('9.9.9-' + 'b' * 8)
     for kept in (old, newer):
-        shutil.copytree(RUNTIME, kept, ignore=shutil.ignore_patterns('tests', 'docs'))
-    (newer / 'scripts/harness-research.mjs').write_text(
-        "console.error('This updated helper must not be used.'); process.exit(3);\n")
+        shutil.copytree(RUNTIME, kept, ignore=shutil.ignore_patterns('tests', 'docs', '.git'))
+    package = json.loads((newer / 'package.json').read_text())
+    (newer / 'package.json').write_text(json.dumps({**package, 'version': '9.9.9'}))
     (shared / 'current').symlink_to('versions/' + old.name)
     return shared, old
 
 
 def update(shared: Path) -> None:
+    """What its installer does on an update: `current` moves to the newer version and every
+    other version folder is removed."""
     (shared / 'current').unlink()
-    (shared / 'current').symlink_to('versions/' + '9.9.9-' + 'b' * 20)
+    (shared / 'current').symlink_to('versions/' + '9.9.9-' + 'b' * 8)
+    for folder in (shared / 'versions').iterdir():
+        if folder.name != '9.9.9-' + 'b' * 8:
+            shutil.rmtree(folder)
 
 @unittest.skipUnless(RUNTIME, 'Set STUDIO_TEST_RESEARCH_RUNTIME for the real helper integration.')
 class SynthesisIntegrationTests(StudioCase):
@@ -142,7 +147,9 @@ class SynthesisIntegrationTests(StudioCase):
         self.assertEqual(self.engine._load(root)['research']['left_out'], ['finding-second'])
         self.assertEqual(self.engine._marked_ids(root, 'gate:research', {}), ['finding-first', 'finding-second'])
 
-    def test_unfinished_research_continues_with_the_retained_helper_after_an_update(self):
+    def test_unfinished_research_continues_with_the_installed_helper_after_an_update(self):
+        # Research started on one version goes on with the version an update installs, the
+        # folder it started from removed, and its saved work kept.
         holder = tempfile.TemporaryDirectory()
         self.addCleanup(holder.cleanup)
         shared, old = updated_helper(Path(holder.name).resolve())
@@ -152,14 +159,15 @@ class SynthesisIntegrationTests(StudioCase):
         self.research = research.Research(shared / 'current')
         root = self.saved_start(research=True, saved_contract=research_contract.snapshot(self.research))
         update(shared)
+        self.assertFalse(old.exists())
         self.decide(root)  # research plan
         self.assertIsNone(self.view(root)['problem'], self.view(root))
         self.assertEqual(self.waiting(root), 'gate:research')
         research_contract.read_bundle(root / 'research')
-        shutil.rmtree(old)
         self.workers.then('research-result', self.author, self.checker)
         self.decide(root, decision='changes', note='Explain this boundary.')
-        self.assertIn('Restore it before continuing', str(self.view(root)['problem']))
+        self.assertIsNone(self.view(root)['problem'], self.view(root))
+        research_contract.read_bundle(root / 'research')
 
 
 @unittest.skipUnless(RUNTIME, 'Set STUDIO_TEST_RESEARCH_RUNTIME for the real helper integration.')

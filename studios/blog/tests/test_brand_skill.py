@@ -13,7 +13,6 @@ import threading
 import time
 import unittest
 from unittest.mock import patch
-import zipfile
 from urllib.parse import urlsplit
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'skills/blog-studio/scripts'))
@@ -129,7 +128,9 @@ class BrandSkillTests(unittest.TestCase):
         found = management.dispatch(
             self.root, 'brand-configure', {'repository': str(folder), 'release': ''}
         )
-        self.assertEqual(found['checked']['tag'], 'v1.2.0')
+        # Installed from main, whatever tags there are.
+        self.assertEqual(found['checked']['tag'], 'main')
+        self.assertEqual(found['checked']['commit'], self.git(folder, 'rev-parse', 'HEAD'))
         return folder, found
 
     def confirm(self, found):
@@ -379,7 +380,6 @@ class BrandSkillTests(unittest.TestCase):
         folder, found = self.checked()
         saved = brands._path().read_bytes()
         for values in (
-            {'repository': str(folder), 'release': 'v9.9.9'},
             {'repository': str(self.base / 'missing'), 'release': ''},
             {'repository': 'https://token@example.invalid/private.git', 'release': ''},
         ):
@@ -387,8 +387,9 @@ class BrandSkillTests(unittest.TestCase):
                 brands.configure(values)
             self.assertEqual(brands._path().read_bytes(), saved)
         self.assertFalse((self.home / 'brand-installer-ran').exists())
+        # A release sent by an older page is not kept: the brand skill comes from main.
         pinned = brands.configure({'repository': str(folder), 'release': '1.1.0'})
-        self.assertEqual(pinned['release'], 'v1.1.0')
+        self.assertEqual(pinned['release'], '')
         self.assertEqual(found['checked']['commit'], self.git(folder, 'rev-parse', 'HEAD'))
         brands.configure({'repository': '', 'release': ''})
         self.assertIsNone(brands.status()['checked'])
@@ -467,12 +468,11 @@ class BrandSkillTests(unittest.TestCase):
         self.assertEqual(self.wait()['status'], 'failed')
         self.assertIn('harness-slides', brands._JOB['message'])
         self.assertFalse((self.home / 'brand-installer-ran').exists())
-        (folder / 'change.txt').write_text('Synthetic tag movement')
+        (folder / 'change.txt').write_text('Synthetic main movement')
         self.git(folder, 'add', '.')
-        self.git(folder, 'commit', '-m', 'Synthetic tag movement')
-        self.git(folder, 'tag', '-f', 'v1.2.0')
+        self.git(folder, 'commit', '-m', 'Synthetic main movement')
         brands.install(self.confirm(found))
-        self.assertIn('tag moved', self.wait()['message'])
+        self.assertIn('main branch moved', self.wait()['message'])
         self.assertFalse((self.home / 'brand-installer-ran').exists())
 
     def test_installation_blocks_new_writing_until_finished(self):
@@ -516,13 +516,18 @@ class BrandSkillTests(unittest.TestCase):
         engine.once(run['id'])
         worker.assert_called_once()
 
-    def test_zip_paths_cannot_escape_release_folder(self):
-        archive = self.base / 'bad.zip'
-        with zipfile.ZipFile(archive, 'w') as packed:
-            packed.writestr('../escaped.txt', 'Synthetic malicious path')
-        with self.assertRaisesRegex(ValueError, 'cannot be placed'):
-            source.unpack(archive, self.base / 'unpacked')
-        self.assertFalse((self.base / 'escaped.txt').exists())
+    def test_main_is_cloned_only_at_the_commit_shown(self):
+        folder = self.repository()
+        commit = self.git(folder, 'rev-parse', 'HEAD')
+        into = self.base / 'into'
+        into.mkdir()
+        tree, how = source.fetch(str(folder), commit, into)
+        self.assertEqual((how, source.version_of(tree)), ('main', None))   # its package says none
+        self.assertEqual(self.git(tree, 'rev-parse', 'HEAD'), commit)
+        again = self.base / 'again'
+        again.mkdir()
+        with self.assertRaisesRegex(ValueError, 'another commit than the 000000000000'):
+            source.fetch(str(folder), '0' * 40, again)
 
     def test_authenticated_page_brand_inputs_use_local_state(self):
         self.skill()

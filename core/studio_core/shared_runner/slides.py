@@ -20,8 +20,9 @@ import time
 from pathlib import Path
 
 
+
 VARIABLE = 'HARNESS_SLIDES_RUNTIME'
-MINIMUM = '0.17.0'      # the oldest runtime taken: the one the installer pins
+MINIMUM = '0.19.0'      # the oldest runtime taken: the installer's floor, the first with a stable address
 RENDERERS = ('drive', 'local')
 SCRIPT = Path('scripts') / 'harness-slides.mjs'
 TIMEOUT = 300    # a local preview may wait two minutes for LibreOffice, then draw each slide
@@ -206,7 +207,10 @@ class Slides:
     def __init__(self, runtime: Path | None = None, run=None, read=None):
         self.run = run or run_command
         self.read = read or read_guidance
-        self.runtime = Path(runtime) if runtime else find_runtime()
+        # A folder named earlier, such as one a job was given before an update, is said
+        # through `current` when it was a version folder: an update removes that folder.
+        from studio_core.packaging import stable_address   # bound parts import their own
+        self.runtime = stable_address(runtime, saved=True) if runtime else find_runtime()
         self.node = 'node' if run else shutil.which('node')
         self._designs: bool | None = None
         self._sections: bool | None = None

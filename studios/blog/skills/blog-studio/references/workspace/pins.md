@@ -1,12 +1,12 @@
 # Guidance version of an article
 
-Read only when the author asks which guidance an article used, or asks to move
-an article to the installed version. Routine resume uses [resume](resume.md).
+Read only when the author asks which guidance an article used, or asks to
+re-judge an article under the installed version. Routine resume uses [resume](resume.md).
 
-Guidance is the installed skill. A new article records that version as
-`guidance.revision` automatically; nothing is downloaded or bound by hand. The
-record lets reviews be judged against the guidance that produced them, so
-installing an update does not change it.
+Guidance is the installed skill, and every article always runs it. A new article
+records that version as `guidance.revision` automatically; nothing is downloaded
+or bound by hand. The record only says which guidance judged its completed
+reviews, so installing an update changes neither it nor them.
 
 When the author asks to use the current guidance for an existing article:
 

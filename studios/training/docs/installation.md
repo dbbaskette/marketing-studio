@@ -19,7 +19,7 @@ A teammate who only wants to make trainings needs nothing else: install, open Tr
 ## What it does
 
 1. Checks that the skill package is whole.
-2. Copies it, the runner with it, and this installer with the companion pins it used, to `~/.local/share/training-studio/versions/<version>`. The runner uses that copy of the installer to [keep things current](runner.md#keeping-it-current).
+2. Copies it, the runner with it, and this installer with the companion list it used, to a folder of its own in `~/.local/share/training-studio/versions`. The runner uses that copy of the installer to [keep things current](runner.md#keeping-it-current).
 3. Runs the copy's own checks, and starts the copied runner far enough to see that it loads.
 4. Points `~/.local/share/training-studio/current` at that copy.
 5. Links the skill into each assistant it finds:
@@ -119,9 +119,9 @@ This fetches that tag or commit, and writes its commit, its version and the SHA-
 
 The skill has two parts. The **scripts** and the **runner** change files on your computer, so they only change when you run the installer. The **guidance**, the instructions your assistant follows, is fetched from this repository when you start a new training, so improvements reach you without reinstalling.
 
-Each training stays on the guidance it started with, so a training does not change under you halfway through. To move one to the newest guidance, ask your assistant to update the guidance for that training.
+A training in progress keeps the instructions it was saved with, so it does not change under you halfway through. It always runs the installed scripts, and an update never leaves it behind: nothing has to be moved or converted afterwards. Moving one to the newest guidance is optional; if you want that, ask your assistant to update the guidance for that training.
 
-Guidance only ever comes from this repository's `main` branch, fetched by the skill itself. A training copied from someone else keeps the guidance version it names, but the files come from `main`, never from the training. If it names a version that was never on `main`, the skill says so and stops until you update it.
+Guidance only ever comes from this repository's `main` branch, fetched by the skill itself. A training copied from someone else keeps the guidance version it names, but the files come from `main`, never from the training. If it names a version that was never on `main`, or its saved guidance cannot be read, it carries on with the current guidance and says so once. Only instructions that need a newer Training Studio than the one installed stop a training, and the skill then says which version to update to.
 
 If the newest guidance cannot be fetched, for example with no network, the assistant uses the guidance that was installed with the scripts and tells you it may be older.
 
@@ -141,7 +141,9 @@ sh installer/install.sh install --dry-run
 
 ## Update
 
-Once a day the runner checks whether a newer Training Studio is out. If one is, Home says so with an "Upgrade" button; see [keeping it current](runner.md#keeping-it-current). After your yes, the runner fetches that version and runs its own installer, then asks you to restart. The new copy is installed beside the old one, the runner with it, and the links move to it. Trainings you have already made are not touched; they live in your own folders.
+Once a day the runner checks whether a newer Training Studio is out. If one is, Home says so with an "Upgrade" button; see [keeping it current](runner.md#keeping-it-current). After your yes, the runner fetches that version and runs its own installer, then asks you to restart. The new copy is installed beside the one that is running, the runner with it, and `current` moves to it. Trainings you have already made are not touched; they live in your own folders.
+
+One version is kept. Every link, launcher and saved path names `~/.local/share/training-studio/current`, never the folder it points at, so an update changes that one link. When an install has fully succeeded with Training Studio closed, every other folder in `versions` is removed, and the installer says what it removed and anything it could not. An upgrade made from the open runner removes nothing, since the runner is still working from the older copy; that copy goes with the next install made while Training Studio is closed.
 
 You can also update by hand: close Training Studio, get the newer version of this repository and run the installer again. An install made before version 0.21.0 has to be updated this way once, since its runner cannot upgrade itself yet. One made before 0.19.0 also shows no versions at all, since it has no installer beside its runner to ask.
 
@@ -153,7 +155,7 @@ The installer never changes anything while the runner is working. It says so and
 sh installer/install.sh rollback
 ```
 
-This points the links at the version that was installed before the current one, and its runner with it. The companion skills are not changed: each keeps its own versions, and its own installer is the way to go back.
+An update keeps only the newest version, so there is normally nothing to go back to, and the installer says so and changes nothing: "The earlier version is no longer on this computer: an update keeps only the newest. Install the release you want instead." To go back, get the release you want and install it. Rollback still works when the earlier folder is on disk, which happens only when it could not be removed or the upgrade was made from the open runner: it then points `current` at that version, and its runner with it. The companion skills are not changed: each has its own installer, which is the way to go back.
 
 ## Remove
 
@@ -161,7 +163,7 @@ This points the links at the version that was installed before the current one, 
 sh installer/install.sh uninstall
 ```
 
-This removes the links, the launchers and the helper's command the installer placed. It leaves alone any link that has since been pointed somewhere else. The installed copies stay in `~/.local/share/training-studio/versions`, and the fetched copies of the companions in `~/.local/share/training-studio/companions`; delete those folders yourself if you no longer want them.
+This removes the links, the launchers and the helper's command the installer placed. It leaves alone any link that has since been pointed somewhere else. The installed copy stays in `~/.local/share/training-studio/versions`, and the fetched copies of the companions in `~/.local/share/training-studio/companions`; delete those folders yourself if you no longer want them.
 
 The companion skills stay installed, because other tools may use them. Each one's own README says how it is managed.
 

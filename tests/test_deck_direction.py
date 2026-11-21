@@ -119,9 +119,17 @@ class GuidanceTests(unittest.TestCase):
                       'secret': {'x': 1},
                       'brand': {'worker': '# Tanzu slides: worker guidance\n',
                                 'checkpoints': ['Draft approval.', 'Look.', 7]}}
+            # Never the runtime: each start or resume names the installed tool afresh, and a
+            # kept folder may be a version an update has removed since.
             self.assertEqual(guidance.recorded(answer), {
-                'task': 'abc', 'revision': 'r1', 'runtime': '/opt/slides',
-                'freshness': 'current-at-start'})
+                'task': 'abc', 'revision': 'r1', 'freshness': 'current-at-start'})
+            told = Path(folder) / 'project'
+            self.assertIsNone(guidance.tell(told, answer))
+            self.assertEqual(guidance.tell(told, {**answer, 'notice': 'Started on 0.18.0; resumed on 0.19.0.'}),
+                             'Started on 0.18.0; resumed on 0.19.0.')
+            from studio_core import activity_log
+            logged = activity_log.read(told / 'work' / activity_log.FILE)
+            self.assertEqual([line['text'] for line in logged[-1]['lines']], ['Started on 0.18.0; resumed on 0.19.0.'])
             texts = guidance.snapshot(answer)
             self.assertEqual(texts['drafting guidance'], 'Choose the look from real slides.')
             self.assertEqual(texts['slides guidance'], '# Slides')

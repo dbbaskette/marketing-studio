@@ -217,18 +217,17 @@ class SynthesisIntegrationTests(Fixture):
         self.assertFalse(kept.exists())
         research_contract.read_bundle(directory / 'research')
 
-    def test_unfinished_research_continues_with_the_retained_helper_after_an_update(self):
+    def test_unfinished_research_continues_with_the_installed_helper_after_an_update(self):
         holder = tempfile.TemporaryDirectory()
         self.addCleanup(holder.cleanup)
         shared = Path(holder.name).resolve() / 'Harness Research'
         version = json.loads((Path(RUNTIME) / 'package.json').read_text())['version']
-        old = shared / 'versions' / (version + '-' + 'a' * 20)
-        newer = shared / 'versions' / ('9.9.9-' + 'b' * 20)
+        old = shared / 'versions' / (version + '-' + 'a' * 8)
+        newer = shared / 'versions' / ('9.9.9-' + 'b' * 8)
         for folder in (old, newer):
-            shutil.copytree(RUNTIME, folder, ignore=shutil.ignore_patterns('tests', 'docs'))
-        (newer / 'scripts/harness-research.mjs').write_text(
-            "console.error('This updated helper must not be used.'); process.exit(3);\n"
-        )
+            shutil.copytree(RUNTIME, folder, ignore=shutil.ignore_patterns('tests', 'docs', '.git'))
+        package = json.loads((newer / 'package.json').read_text())
+        (newer / 'package.json').write_text(json.dumps({**package, 'version': '9.9.9'}))
         (shared / 'current').symlink_to('versions/' + old.name)
         os.environ['HARNESS_RESEARCH_RUNTIME'] = str(shared / 'current')
         source = self.source(TEXT)
@@ -252,9 +251,11 @@ class SynthesisIntegrationTests(Fixture):
             shown['expected'],
             page=True,
         )
-        # The helper is updated before research runs; the old version stays retained.
+        # The helper is updated before research runs, and the version it started on is
+        # removed, as its installer does: research goes on with the installed one.
         (shared / 'current').unlink()
         (shared / 'current').symlink_to('versions/' + newer.name)
+        shutil.rmtree(old)
         directory, _, run = blog_runner.load(self.root, ident)
         _, payload, _ = blog_runner.job(self.root, ident)
 
@@ -274,11 +275,11 @@ class SynthesisIntegrationTests(Fixture):
         self.assertIn(research_view.CHECKED, result['notes'])
         self.assertIn('Explicit synthetic scope and usable brief.', result['notes'])
         research_contract.read_bundle(directory / 'research')
-        shutil.rmtree(old)
-        with self.assertRaisesRegex(ValueError, 'Restore the saved Harness Research version'):
-            synthesis_research.generate(
-                directory, run, payload, worker, seconds=60, stop=threading.Event()
-            )
+        self.assertEqual(run['research_contract']['version'], '9.9.9')
+        again = synthesis_research.generate(
+            directory, run, payload, worker, seconds=60, stop=threading.Event()
+        )
+        self.assertIn(research_view.CHECKED, again['notes'])
 
     def test_malformed_sections_are_repaired_using_real_helper_validation(self):
         for repair in (True, False):

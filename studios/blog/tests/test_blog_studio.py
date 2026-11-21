@@ -629,6 +629,43 @@ class StudioTests(unittest.TestCase):
         self.assertEqual(result['reviews']['proofread']['status'], 'stale')
         self.assertEqual((self.root / 'articles' / aid / 'DRAFT.md').read_text(), 'Edited draft.')
 
+    def test_an_update_changes_no_review_and_stops_no_work_on_a_blog_started_earlier(self):
+        installed = (PACKAGE / 'VERSION').read_text().strip()
+        earlier = {'revision': '2.0.0', 'source': 'installed'}  # recorded by an earlier 2.x
+        self.assertNotEqual(installed, earlier['revision'])
+        aid = self.article()
+        self.save(aid, 'draft', 'Existing draft.')
+        path = self.root / 'articles' / aid / 'session.json'
+        record = json.loads(path.read_text())
+        record['guidance'] = earlier
+        path.write_text(json.dumps(record))
+        self.review(aid, 'proofread')
+        # It opens, shows its status and resumes on the installed version, reviews as judged.
+        shown = self.cli('article', 'show', '--id', aid)
+        self.assertEqual(shown['guidance'], earlier)
+        self.assertEqual(shown['reviews']['proofread']['status'], 'current')
+        self.assertEqual(
+            self.cli('status', '--id', aid, '--details')['details']['guidance'], earlier
+        )
+        self.assertEqual(
+            self.cli('resume', '--id', aid)['context']['pins']['guidance'], earlier
+        )
+        # Saving and reviewing carry on, and the record is not moved to the installed version.
+        self.save(aid, 'draft', 'Edited draft.')
+        self.review(aid, 'proofread')
+        shown = self.cli('article', 'show', '--id', aid)
+        self.assertEqual(shown['guidance'], earlier)
+        self.assertNotIn('guidance_history', shown)
+        self.assertEqual(shown['reviews']['proofread']['status'], 'current')
+        # Only the author's own request re-judges it, and the answer says nothing is wrong.
+        answer = self.cli('article', 'guidance', '--id', aid, ok=False)
+        self.assertIn('already runs the installed Blog Studio ' + installed, answer)
+        self.assertIn('nothing needs changing', answer)
+        self.assertIn('--adopt', answer)
+        shown = self.cli('article', 'show', '--id', aid)
+        self.assertEqual(shown['guidance'], earlier)
+        self.assertEqual(shown['reviews']['proofread']['status'], 'current')
+
     def test_package_integrity(self):
         self.assertEqual(validator.validate(), [])
 

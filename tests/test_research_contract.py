@@ -1,6 +1,7 @@
 import copy
 import json
 import os
+import shutil
 from pathlib import Path
 import subprocess
 import tempfile
@@ -538,16 +539,17 @@ def fake_runtime(folder, version, text):
     return folder
 
 
-class RetainedVersionTests(unittest.TestCase):
-    """The Harness Research installer keeps each version in versions/<version>-<digest>."""
+class InstalledVersionTests(unittest.TestCase):
+    """Every run uses the installed Harness Research, through its stable `current` address,
+    whichever version it started on. Its installer keeps one version in versions/<id>."""
 
     def setUp(self):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
         self.home = Path(temp.name).resolve()
         self.shared = self.home / 'Library/Application Support/Harness Research'
-        self.old = fake_runtime(self.shared / 'versions/1.0.0-aaaaaaaaaaaaaaaaaaaa', '1.0.0', 'old')
-        self.new = fake_runtime(self.shared / 'versions/1.0.1-bbbbbbbbbbbbbbbbbbbb', '1.0.1', 'new')
+        self.old = fake_runtime(self.shared / 'versions/1.0.0-aaaaaaaa', '1.0.0', 'old')
+        self.new = fake_runtime(self.shared / 'versions/1.3.1-bbbbbbbb', '1.3.1', 'new')
         (self.shared / 'current').symlink_to('versions/' + self.new.name)
         self.saved = contract.snapshot(SimpleNamespace(runtime=self.old))
         for patch in (mock.patch.dict(os.environ, {'HARNESS_RESEARCH_RUNTIME': str(self.shared / 'current')}),
@@ -555,36 +557,35 @@ class RetainedVersionTests(unittest.TestCase):
             patch.start()
             self.addCleanup(patch.stop)
 
-    def test_the_current_helper_is_used_while_it_matches(self):
+    def test_the_installed_helper_is_used_through_its_stable_address(self):
         current = contract.snapshot(SimpleNamespace(runtime=self.new))
-        self.assertEqual(contract.runtime_for(current), self.new)
+        for saved in (current, self.saved, None, {}):
+            with self.subTest(saved=saved):
+                self.assertEqual(contract.runtime_for(saved), self.shared / 'current')
+        self.assertEqual(contract.find_runtime(), self.shared / 'current')
         tool = SimpleNamespace(runtime=self.shared / 'current', node='node')
         self.assertIs(contract.matching(tool, current), tool)
+        self.assertIs(contract.matching(tool, self.saved), tool)
 
-    def test_unfinished_research_uses_the_retained_version_with_its_saved_digest(self):
-        self.assertEqual(contract.runtime_for(self.saved), self.old)
+    def test_research_started_on_a_removed_version_goes_on_with_the_installed_one(self):
+        shutil.rmtree(self.old)   # what the installer does after an update
         tool = SimpleNamespace(runtime=self.shared / 'current', node='node')
-        kept = contract.matching(tool, self.saved)
-        self.assertEqual((kept.runtime, kept.node), (self.old, 'node'))
-        self.assertEqual(tool.runtime, self.shared / 'current')
-        # A helper found elsewhere still finds the shared installer's retained versions.
-        os.environ.pop('HARNESS_RESEARCH_RUNTIME')
-        elsewhere = fake_runtime(self.home / 'checkout', '1.0.1', 'checkout')
-        self.assertEqual(contract.runtime_for(self.saved, elsewhere), self.old)
+        self.assertIs(contract.matching(tool, self.saved), tool)
+        self.assertEqual(contract.runtime_for(self.saved), self.shared / 'current')
+        # What decides whether research is still current names no version and no digest.
+        installed = contract.snapshot(tool)
+        self.assertNotEqual(installed, self.saved)
+        self.assertEqual(contract.stable(installed), contract.stable(self.saved))
+        self.assertEqual(contract.stable(installed), {'schema': 2})
 
-    def test_a_changed_linked_or_unknown_version_is_never_used(self):
-        for saved in (None, {}, {**self.saved, 'version': '../1.0.0'}, {**self.saved, 'version': '1.0.2'},
-                      {**self.saved, 'digest': '0' * 64}):
-            with self.subTest(saved=saved):
-                self.assertIsNone(contract.runtime_for(saved))
-                self.assertIsNone(contract.matching(SimpleNamespace(runtime=self.new), saved))
-        (self.old / 'references/synthesize.md').write_text('changed')
+    def test_nothing_is_used_when_no_helper_is_installed(self):
+        os.environ['HARNESS_RESEARCH_RUNTIME'] = str(self.home / 'nowhere')
         self.assertIsNone(contract.runtime_for(self.saved))
-        (self.old / 'references/synthesize.md').write_text('old')
-        moved = self.home / 'moved'
-        self.old.rename(moved)
-        self.old.symlink_to(moved, target_is_directory=True)
-        self.assertIsNone(contract.runtime_for(self.saved))
+        no_synthesis = self.home / 'plain'
+        (no_synthesis / 'scripts').mkdir(parents=True)
+        (no_synthesis / 'package.json').write_text('{"version": "0.9.0"}')
+        self.assertIsNone(contract.matching(SimpleNamespace(runtime=no_synthesis), self.saved))
+        self.assertIn('not installed', contract.NOT_INSTALLED)
 
 
 @unittest.skipUnless(RUNTIME, 'Set STUDIO_TEST_RESEARCH_RUNTIME to the exact locked release source for helper integration.')

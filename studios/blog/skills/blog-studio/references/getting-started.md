@@ -15,8 +15,8 @@ ready/action-needed summary and the specific next action; keep raw diagnostics
 and identities out of chat. For `repair-needed`, ask the author to run the
 installer again; do not edit installed files. Updates work the same way: the
 author downloads the installer from the latest release and runs it. Nothing
-updates in the background, and saved articles keep their recorded guidance
-version. CLI sign-in and file integrity do not prove live skill discovery. The
+updates in the background. Saved articles then run the installed version; the
+guidance version each records is only a record. CLI sign-in and file integrity do not prove live skill discovery. The
 current successful invocation is discovery evidence for this session only. Never
 start a login, install, repair, or account change just to check readiness.
 

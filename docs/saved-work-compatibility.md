@@ -15,6 +15,18 @@ To migrate eligible saved work, explicitly request a preview. Blog Studio uses `
 
 Blog Studio's manuscript editor remains a narrow exception: an existing registered historical non-desk manuscript with no run can create the review/check run internally. The editor refuses desk records. Migration requires a saved run and does not replace this check. Remove that helper only when equivalent adoption, checking and Google continuation for those eligible manuscripts are proven.
 
+## Saved paths into a removed version
+
+An update keeps one version of each studio and companion. A path saved earlier that names a
+`versions/<id>` folder (a brand skill chosen in Settings, a job's slides or brand folder, a
+companion task pin's `runtime`, slide guidance kept with a deck) is said through the `current`
+link beside it when it is read, and nothing is rewritten. Research identities an older
+Marketing Studio kept with a helper's digest (a case's name, section and final keys, the
+unchanged-save context, the global research identity) are recognised as the same research
+after an update and keyed anew as they are met; a run's record keeps what it held before, once,
+as `research_execution.earlier`. A brand contract an older Harness Brand exported still holds,
+with a notice to export it again.
+
 ## Retained paths and exits
 
 - **Gated screens and pipelines:** absent flow denotes older saved work. Continue supported runs or explicitly migrate eligible ones. Early work without a usable manuscript or outline, missing dependencies and unknown or unreadable recovery retain their path. Retire only after every supported saved state has proven lossless continuation or migration, with regression coverage.

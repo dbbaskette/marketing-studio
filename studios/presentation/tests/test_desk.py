@@ -2264,10 +2264,7 @@ class ScreenTests(ScriptedPage, PageCase):
         settings.save(replace(settings.load(), brand_repository=ADDRESS))
         keep = upkeep.Upkeep(home_dir=self.base / 'home', root=self.base / 'root',
                              installer=self.base / 'no-installer' / 'install.py')
-        keep.remember_brand(ADDRESS, {
-            'v2026.6.0': {'tag': 'v2026.6.0', 'version': '2026.6.0', 'commit': 'b' * 40},
-            'v0.13.1': {'tag': 'v0.13.1', 'version': '0.13.1',
-                        'commit': 'c3405eee0aad' + 'a' * 28}})
+        keep.remember_brand(ADDRESS, 'c3405eee0aad' + 'a' * 28)   # where its main branch is
         installed, self.brand = self.brand, None
         try:
             keep.check(repair=False)
@@ -2299,8 +2296,8 @@ class ScreenTests(ScriptedPage, PageCase):
         found = self.brand_upkeep()
         offer = found['versions']['brand']
         self.assertEqual((offer['offered'], offer['action'], offer['release']),
-                         (True, 'Install', 'v0.13.1'))
-        running = f'Fetching v0.13.1 from {ADDRESS} and running its own installer. This can ' \
+                         (True, 'Install', 'main'))
+        running = f'Fetching main from {ADDRESS} and running its own installer. This can ' \
                   'take a few minutes.'
         busy = {**found, 'versions': {**found['versions'], 'brand': {
             **offer, 'offered': False, 'state': 'running', 'since': '2026-10-14T09:05:00Z',
@@ -2321,13 +2318,13 @@ class ScreenTests(ScriptedPage, PageCase):
             {'click': 'Install it now'}, {'snapshot': 'installing'}])
         shots = result['snapshots']
         for said in ('Newer versions are ready for this computer:',
-                     'brand skill 0.13.1, which is missing',
+                     'brand skill main, which is missing',
                      'No brand skill is installed, so a deck stops where it first needs '
                      'your brand.'):
             self.assertIn(said, shots['home']['text'])
         asked = shots['asked']['sheet']
-        for said in ('Install the brand skill 0.13.1?', 'What is installed',
-                     'Release v0.13.1, at revision c3405eee0aad.', f'From {ADDRESS}.',
+        for said in ('Install the brand skill from its main branch?', 'What is installed',
+                     'Its main branch, at revision c3405eee0aad.', f'From {ADDRESS}.',
                      'Its own installer is run, and told to leave harness-research alone.',
                      'Where it would put in its own harness-slides in place of the one '
                      'Presentation Studio uses, nothing is run, and you are told.',
@@ -2340,7 +2337,7 @@ class ScreenTests(ScriptedPage, PageCase):
                       done['toasts'])
         self.assertIn(running, done['text'])
         self.assertNotIn('Install the brand skill', done['buttons'], 'one install at a time')
-        self.assertEqual(self.posts(result), [('/api/brand/install', {'release': 'v0.13.1'})]
+        self.assertEqual(self.posts(result), [('/api/brand/install', {'release': 'main'})]
                          * 2, 'nothing before the yes')
 
     def test_the_brand_skills_repository_is_checked_and_saved_in_settings(self):

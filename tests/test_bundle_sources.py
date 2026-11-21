@@ -172,7 +172,7 @@ class BundleSourceTests(unittest.TestCase):
         (destination / 'pins').mkdir(parents=True)
         shutil.copy2(ROOT / 'pins/companions.json', destination / 'pins/companions.json')
         with mock.patch.object(distribution, 'download', side_effect=AssertionError('Downloaded tools')), \
-                mock.patch.object(distribution, 'fetch_companion', side_effect=AssertionError('Fetched companion')):
+                mock.patch.object(distribution, 'fetch_main', side_effect=AssertionError('Fetched companion')):
             with self.assertRaisesRegex(ValueError, 'checksum'):
                 distribution.prepare(ROOT, destination, 'macos-arm64', self.root / 'cache', ['presentation'],
                                      companion_sources={'harness-slides': self.source})

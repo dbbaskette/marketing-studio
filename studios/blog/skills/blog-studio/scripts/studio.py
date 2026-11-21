@@ -839,7 +839,9 @@ def checked_author(value):
 
 
 def installed_guidance():
-    """The guidance an article is written with is the installed skill version."""
+    """The guidance every article is written with is the installed skill version. What an
+    article records of it is only the version its completed reviews were judged under: it
+    selects no scripts or instructions, and a different installed version stops nothing."""
     from hub_store import VERSION
 
     return {'revision': VERSION, 'source': 'installed'}
@@ -1046,12 +1048,15 @@ def article_command(root, args):
         previous = record.get('guidance')
         if previous and previous.get('revision') != selected['revision']:
             if not args.adopt:
+                # Not a block on the article: it runs the installed version whatever it
+                # records. Only the record, which its completed reviews are tied to, is kept.
                 raise ValueError(
-                    'This article records guidance '
-                    + str(previous.get('revision'))
-                    + '; installed is '
+                    'This article already runs the installed Blog Studio '
                     + selected['revision']
-                    + '. Use --adopt only when the author asks to re-record it; reviews become stale.'
+                    + '; its completed reviews were judged under guidance '
+                    + str(previous.get('revision'))
+                    + ', and nothing needs changing. Use --adopt only when the author asks to '
+                    're-judge it under the installed version; reviews become stale.'
                 )
             record.setdefault('guidance_history', []).append(previous)
         if not previous or previous.get('revision') != selected['revision']:

@@ -209,7 +209,9 @@ def install(home, base, env, target, manifest, config, agent, selected=None):
     print(run([python, ROOT / 'studio/installer/install.py', 'install', '--source', ROOT / 'studio',
                '--home', home, '--studios', *selected, '--target', target,
                '--companions', 'install', '--yes'], env), flush=True)
-    suite = (home / '.local/share/marketing-studio/current').resolve()
+    # The stable address: a later Marketing Studio update replaces the version folder this
+    # link names, and the private tools written here must go on finding its runtime.
+    suite = home / '.local/share/marketing-studio/current'
     installed_node = suite / 'runtime/node/bin/node'
     atomic(binaries / 'gcloud', '#!/bin/sh\nexport CLOUDSDK_PYTHON=' + shlex.quote(str(suite / 'runtime/python/bin/python3')) + '\nexec ' + shlex.quote(str(version / 'google-cloud-sdk/bin/gcloud')) + ' "$@"\n')
     brand = json.loads(run([installed_node, brand_script, ROOT / 'brand', home, target, 'install'], env))

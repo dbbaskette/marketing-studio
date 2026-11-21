@@ -135,8 +135,10 @@ def canonical(value, area):
 
 
 def combine(case, task, areas, registry, base, offered, invoke, *, round, guidance, policy,
-            require, notify, context=None):
-    """Keep completed units; a failed peer never causes their author to run again."""
+            require, notify, context=None, earlier=None):
+    """Keep completed units; a failed peer never causes their author to run again.
+    `earlier` is the context an older Marketing Studio keyed contributions with, naming the
+    helper's digest: one kept under it is the same contribution, and is keyed anew."""
     path = rc.inside(case, '.harness-research/studio-combining.json')
     saved = json.loads(path.read_bytes()) if path.exists() else {'schema': 1, 'sections': {}, 'final': None}
     if not isinstance(saved, dict) or saved.get('schema') != 1 or not isinstance(saved.get('sections'), dict):
@@ -191,12 +193,19 @@ def combine(case, task, areas, registry, base, offered, invoke, *, round, guidan
         for source in bound['sources']:
             if source['permission'] == 'selected' and source.get('original_file') and not source['origin'].startswith(('https://', 'http://')):
                 source['origin'] = 'retained-original:' + source['original_file']
-        identity = fingerprint([PROTOCOL, {key: (area['questions'] if key == 'planning_questions' else (context or {}).get('scope_identity', task[key]) if key == 'scope' else task[key]) for key in rc.TASK_FIELDS}, area,
-            bound, [[source['file'], hashlib.sha256(rc.inside(case, source['file']).read_bytes()).hexdigest(),
+        files = [[source['file'], hashlib.sha256(rc.inside(case, source['file']).read_bytes()).hexdigest(),
                 hashlib.sha256(rc.inside(case, source['original']).read_bytes()).hexdigest() if source.get('original') else None]
-                for source in captures], context, *([task['research_policy']] if task.get('research_policy') else [])])
+                for source in captures]
+        def keyed(value):
+            return fingerprint([PROTOCOL, {key: (area['questions'] if key == 'planning_questions' else (value or {}).get('scope_identity', task[key]) if key == 'scope' else task[key]) for key in rc.TASK_FIELDS}, area,
+                bound, files, value, *([task['research_policy']] if task.get('research_policy') else [])])
+        identity = keyed(context)
         with lock:
             receipt = saved['sections'].get(area['id'])
+            if earlier is not None and receipt and receipt.get('basis') != identity \
+                    and receipt.get('basis') == keyed(earlier):
+                receipt['basis'] = identity
+                store()
             if kept(receipt, identity):
                 publish(area['id'], 'kept'); return
         publish(area['id'], 'working')
@@ -246,6 +255,11 @@ def combine(case, task, areas, registry, base, offered, invoke, *, round, guidan
     contributions = {key: [part for area in areas for part in saved['sections'][area['id']]['content'][key]]
                      for key in ('findings', 'sections')}
     key = fingerprint([PROTOCOL, task, contributions, base, context])
+    if earlier is not None and saved.get('final') and saved['final'].get('basis') != key \
+            and saved['final'].get('basis') == fingerprint([PROTOCOL, task, contributions, base, earlier]):
+        with lock:
+            saved['final']['basis'] = key
+            store()
     if kept(saved.get('final'), key):
         return copy.deepcopy(saved['final']['content']), saved['final']['worker']
     worker = 'final-writer-' + secrets.token_hex(12)

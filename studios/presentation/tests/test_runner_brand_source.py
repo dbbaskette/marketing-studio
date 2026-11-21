@@ -1,5 +1,5 @@
-"""The brand skill's own repository, and installing it from the page: which releases it has,
-fetching one, and running its own installer without letting it move the companions.
+"""The brand skill's own repository, and installing it from the page: where its main branch
+is, fetching main, and running its own installer without letting it move the companions.
 
 The brand repository is a bare one made here, with its release tags. Its installer is a
 stand-in that records how it was run, lays the brand skill out as a shared install with a
@@ -187,38 +187,29 @@ class ReleaseTests(SourceCase):
                            'a number before 2000 is a version, not a year')
         self.assertEqual(brand_source.order('not.a.version'), ())
 
-    def test_the_newest_release_is_the_newest_version_and_not_the_newest_year(self):
-        first = self.brand.release('2026.6.0')
+    def test_main_is_what_is_installed_whatever_tags_there_are(self):
+        self.brand.release('2026.6.0')
         newer = self.brand.release('0.13.1')
-        git(self.brand.work, 'tag', '-a', '-m', 'Older', 'v0.10.2', first)
         git(self.brand.work, 'tag', 'not-a-release')
         git(self.brand.work, 'push', '-q', '--tags', str(self.brand.bare))
         found = brand_source.check(self.address, None, self.place)
-        self.assertEqual(found['chosen'], {'tag': 'v0.13.1', 'version': '0.13.1',
-                                           'commit': newer})
-        self.assertEqual([entry['tag'] for entry in found['releases']],
-                         ['v0.13.1', 'v0.10.2', 'v2026.6.0'])
-        self.assertEqual(found['releases'][1]['commit'], first,
-                         'an annotated tag is the commit it points at')
-        self.assertIsNone(found['release'])
+        self.assertEqual(found['chosen'], {'tag': 'main', 'version': None, 'commit': newer})
+        self.assertEqual((found['commit'], found['branch'], found['releases'], found['release']),
+                         (newer, 'main', [], None))
+        self.assertEqual(brand_source.head(self.address, self.place), newer)
 
-    def test_a_release_can_be_chosen_by_its_tag_or_its_version(self):
-        older = self.brand.release('0.10.2')
-        self.brand.release('0.13.1')
-        for asked in ('v0.10.2', '0.10.2'):
+    def test_a_release_named_by_an_older_version_is_not_used(self):
+        self.brand.release('0.10.2')
+        newer = self.brand.release('0.13.1')
+        for asked in ('v0.10.2', '0.10.2', 'v9.9.9'):
             found = brand_source.check(self.address, asked, self.place)
-            self.assertEqual((found['release'], found['chosen']['commit']), ('v0.10.2', older))
-        with self.assertRaises(WorkspaceError) as refused:
-            brand_source.check(self.address, 'v9.9.9', self.place)
-        self.assertEqual(str(refused.exception), f'{self.address} has no release v9.9.9. Its '
-                         'newest is v0.13.1. Leave the release empty for the newest.')
+            self.assertEqual((found['release'], found['chosen']['commit']), (None, newer))
 
     def test_a_repository_that_cannot_be_used_is_refused_in_a_plain_sentence(self):
         with self.assertRaises(WorkspaceError) as refused:
             brand_source.check(self.address, None, self.place)
-        self.assertEqual(str(refused.exception), f'{self.address} has no releases: no tag '
-                         'such as v1.0.0. Check the address, or ask whoever keeps it to tag '
-                         'a release.')
+        self.assertEqual(str(refused.exception), f'{self.address} has no main branch, which '
+                         'the brand skill is installed from. Check the address.')
         with self.assertRaises(WorkspaceError) as refused:
             brand_source.check(str(self.base / 'nowhere.git'), None, self.place)
         self.assertTrue(str(refused.exception).startswith(
@@ -246,101 +237,38 @@ class ReleaseTests(SourceCase):
 
 
 class FetchTests(SourceCase):
-    def test_a_tag_is_cloned_with_its_commit_checked(self):
+    def test_main_is_cloned_with_its_commit_checked(self):
         commit = self.brand.release('0.13.1')
         into = self.base / 'into'
         into.mkdir()
-        folder, how = brand_source.fetch(self.address, 'v0.13.1', commit, into)
-        self.assertEqual(how, 'tag')
+        folder, how = brand_source.fetch(self.address, commit, into)
+        self.assertEqual(how, 'main')
         self.assertEqual(json.loads((folder / 'package.json').read_text())['version'], '0.13.1')
+        self.assertEqual(brand_source.version_of(folder), '0.13.1')
         self.assertTrue((folder / '.git').is_dir(), 'its installer may ask git which commit')
         again = self.base / 'again'
         again.mkdir()
         with self.assertRaises(WorkspaceError) as refused:
-            brand_source.fetch(self.address, 'v0.13.1', '0' * 40, again)
-        self.assertIn('was fetched at another commit than the 000000000000 you were shown',
+            brand_source.fetch(self.address, '0' * 40, again)
+        self.assertIn('main was fetched at another commit than the 000000000000 you were shown',
                       str(refused.exception))
 
-    def test_with_gh_signed_in_the_release_zip_is_fetched_and_checked(self):
+    def test_it_is_cloned_with_the_persons_own_git_and_no_hook_runs(self):
         commit = self.brand.release('0.13.1')
-        stand_in = self.gh()
-        release = stand_in / 'releases' / 'v0.13.1'
-        release.mkdir(parents=True)
-        mac = self.brand.archive(release, '0.13.1', prefix='acme-brand/')
-        plain = self.brand.archive(release, '0.13.1')
-        for archive in (mac, plain):
-            digest = hashlib.sha256(archive.read_bytes()).hexdigest()
-            (release / f'{archive.name}.sha256').write_text(f'{digest}  {archive.name}\n')
-        for platform, chosen in (('darwin', mac.name), ('linux', plain.name)):
-            into = self.base / f'into-{platform}'
-            into.mkdir()
-            with mock.patch.object(brand_source, 'PLATFORM', platform):
-                folder, how = brand_source.fetch(GITHUB, 'v0.13.1', commit, into)
-            self.assertEqual(how, 'zip')
-            self.assertTrue((folder / 'scripts' / 'install-mac.mjs').is_file())
-            self.assertEqual(json.loads((folder / 'package.json').read_text())['version'],
-                             '0.13.1')
-            self.assertIn(['release', 'download', 'v0.13.1', '--repo', 'acme/acme-brand',
-                           '--dir', str(into / 'download'), '--pattern', chosen,
-                           '--pattern', f'{chosen}.sha256'], self.asked(stand_in))
-
-        (release / f'{plain.name}.sha256').write_text(f'{"0" * 64}  {plain.name}\n')
-        into = self.base / 'into-wrong'
-        into.mkdir()
-        with mock.patch.object(brand_source, 'PLATFORM', 'linux'), \
-                self.assertRaises(WorkspaceError) as refused:
-            brand_source.fetch(GITHUB, 'v0.13.1', commit, into)
-        self.assertIn('does not match the checksum published beside it',
-                      str(refused.exception))
-
-    def test_without_gh_signed_in_the_tag_is_cloned_with_the_persons_own_git(self):
-        commit = self.brand.release('0.13.1')
-        stand_in = self.gh(signed_in=False)
+        hooks = self.base / 'hooks'
+        hooks.mkdir()
+        (hooks / 'post-checkout').write_text('#!/bin/sh\ntouch "$0.ran"\n')
+        (hooks / 'post-checkout').chmod(0o755)
         config = helpers.gitconfig(self.base / 'gitconfig',
-                                   f'[url "{self.address}"]\n\tinsteadOf = {GITHUB}\n')
+                                   f'[url "{self.address}"]\n\tinsteadOf = {GITHUB}\n'
+                                   f'[core]\n\thooksPath = {hooks}\n')
         into = self.base / 'into'
         into.mkdir()
         with mock.patch.dict(os.environ, {'GIT_CONFIG_GLOBAL': str(config)}):
-            folder, how = brand_source.fetch(GITHUB, 'v0.13.1', commit, into)
-        self.assertEqual(how, 'tag')
+            folder, how = brand_source.fetch(GITHUB, commit, into)
+        self.assertEqual(how, 'main')
         self.assertTrue((folder / 'scripts' / 'install-skill.mjs').is_file())
-        self.assertEqual(self.asked(stand_in), [['auth', 'status', '--hostname', 'github.com']])
-
-    def test_a_zip_with_a_link_or_a_path_outside_it_is_refused(self):
-        for name, entry in (('outside.zip', ('../outside.txt', 0o100644)),
-                            ('linked.zip', ('skill/SKILL.md', 0o120777))):
-            archive = self.base / name
-            with zipfile.ZipFile(archive, 'w') as packed:
-                info = zipfile.ZipInfo(entry[0])
-                info.external_attr = entry[1] << 16
-                packed.writestr(info, '/etc/passwd')
-            into = self.base / f'into-{name}'
-            into.mkdir()
-            with self.subTest(name=name), self.assertRaises(WorkspaceError):
-                brand_source.unpack(archive, into)
-            self.assertFalse((self.base / 'outside.txt').exists())
-
-    def gh(self, signed_in: bool = True) -> Path:
-        """A stand-in gh, first on PATH for this test."""
-        folder = self.base / 'gh'
-        (folder / 'bin').mkdir(parents=True)
-        command = folder / 'bin' / 'gh'
-        command.write_text(GH.replace('@PYTHON@', sys.executable))
-        command.chmod(0o755)
-        if signed_in:
-            (folder / 'signed-in').write_text('yes\n')
-        patch = mock.patch.dict(os.environ, {
-            'GH_STAND_IN': str(folder),
-            'PATH': f"{folder / 'bin'}{os.pathsep}{os.environ['PATH']}"})
-        patch.start()
-        self.addCleanup(patch.stop)
-        return folder
-
-    @staticmethod
-    def asked(folder: Path) -> list:
-        kept = folder / 'asked.jsonl'
-        return [json.loads(line) for line in kept.read_text().splitlines()] \
-            if kept.is_file() else []
+        self.assertFalse((hooks / 'post-checkout.ran').exists())
 
 
 class InstallerTests(SourceCase):
@@ -371,6 +299,11 @@ class InstallerTests(SourceCase):
             '../odd': {'version': '1.0.0'}, 'other': {'version': 'soon'}}))
         self.assertEqual(brand_source.bootstraps(folder),
                          {'harness-slides': '0.13.1', 'harness-research': '0.8.0'})
+        # Harness Brand 1.4.0 and newer name a branch and the oldest version they accept.
+        (folder / brand_source.SOURCES).write_text(json.dumps({'slides': {
+            'repository': 'https://example.invalid/slides.git', 'branch': 'main',
+            'package': 'harness-slides', 'minimumVersion': '0.15.1'}}))
+        self.assertEqual(brand_source.bootstraps(folder), {'harness-slides': '0.15.1'})
 
 
 @unittest.skipUnless(NODE, 'the brand skill and its installer run on Node')
@@ -402,8 +335,7 @@ class BrandInstallCase(UpkeepCase):
         found = brand_source.check(self.address, release, self.base)
         settings.save(settings.Settings(brand_repository=found['repository'],
                                         brand_release=found['release']))
-        self.keep.remember_brand(found['repository'],
-                                 {entry['tag']: entry for entry in found['releases']})
+        self.keep.remember_brand(found['repository'], found['commit'])
         return found
 
     def row(self, report: dict | None = None) -> dict:
@@ -428,7 +360,7 @@ class BrandRowTests(BrandInstallCase):
                          ('brand skill', 'brand', 'unknown', None))
         self.assertEqual(row['says'], 'No brand skill is installed, so a deck stops where it '
                          'first needs your brand. Name its repository in Settings to install '
-                         'and upgrade it from here.')
+                         'and update it from here.')
         self.brand.release('0.13.1')
         folder = self.base / 'by-hand'
         # By its tag: the bare repository's HEAD is whatever branch git makes by default here.
@@ -439,11 +371,11 @@ class BrandRowTests(BrandInstallCase):
         shown = self.keep.report()['versions']
         self.assertEqual((self.row()['installed'], self.row()['state']), ('0.13.1', 'unknown'))
         self.assertEqual(self.row()['says'], 'Acme Brand 0.13.1 is installed. Name its '
-                         'repository in Settings to install and upgrade it from here.')
+                         'repository in Settings to install and update it from here.')
         self.assertFalse(shown['brand']['offered'])
         self.assertIsNone(shown['key'], 'Home says nothing of it')
 
-    def test_with_a_repository_named_home_tells_of_a_missing_or_newer_brand_skill(self):
+    def test_with_a_repository_named_home_tells_of_a_missing_brand_skill_or_a_moved_main(self):
         self.brand.release('2026.6.0')
         commit = self.brand.release('0.13.1')
         self.choose()
@@ -451,17 +383,21 @@ class BrandRowTests(BrandInstallCase):
         shown = self.keep.report()['versions']
         row = shown['rows'][-1]
         self.assertEqual((row['state'], row['newest'], row['target'], row['release'],
-                          row['commit']), ('missing', '0.13.1', '0.13.1', 'v0.13.1',
-                                           commit[:12]))
-        self.assertEqual(row['says'], 'No brand skill is installed, so a deck stops where it '
-                         f'first needs your brand. v0.13.1 can be installed from {self.address}.')
-        self.assertEqual(shown['key'], 'brand skill 0.13.1')
+                          row['commit']), ('missing', None, 'main', 'main', commit[:12]))
+        self.assertEqual(row['says'], 'No brand skill is installed, so a deck stops where it first needs your brand. '
+                         f'Its main branch, at {commit[:12]}, can be installed from {self.address}.')
+        self.assertEqual(shown['key'], 'brand skill main')
         self.assertEqual(shown['brand'], {
             'offered': True, 'action': 'Install', 'repository': self.address,
-            'release': 'v0.13.1', 'version': '0.13.1', 'commit': commit[:12],
+            'release': 'main', 'version': 'main', 'commit': commit[:12],
             'installed': None, 'state': None, 'since': None, 'says': None})
 
-        self.install('v0.13.1')
+        self.install('main')
+        self.keep.check(repair=False)
+        row = self.row()
+        self.assertEqual((row['state'], row['installed'], row['target']), ('current', '0.13.1', None))
+        self.assertEqual(row['says'], 'Acme Brand 0.13.1 is installed from main, as it is now.')
+        self.assertFalse(self.keep.report()['versions']['brand']['offered'])
         newer = self.brand.release('0.14.0')
         with mock.patch.object(upkeep.Upkeep, 'due', return_value=True):
             self.keep.look()
@@ -469,23 +405,22 @@ class BrandRowTests(BrandInstallCase):
         shown = self.keep.report()['versions']
         row = shown['rows'][-1]
         self.assertEqual((row['state'], row['installed'], row['target'], row['commit']),
-                         ('update', '0.13.1', '0.14.0', newer[:12]))
-        self.assertEqual(row['says'], 'Acme Brand 0.14.0 is out, and this computer has 0.13.1.')
-        self.assertEqual((shown['brand']['action'], shown['key']),
-                         ('Upgrade', 'brand skill 0.14.0'))
+                         ('update', '0.13.1', 'main', newer[:12]))
+        self.assertEqual(row['says'], 'The main branch of Acme Brand has moved on, to '
+                         f'{newer[:12]}, since it was installed here.')
+        self.assertEqual((shown['brand']['action'], shown['key']), ('Upgrade', 'brand skill main'))
 
-    def test_a_release_chosen_in_settings_is_the_one_offered(self):
-        older = self.brand.release('0.10.2')
-        self.brand.release('0.13.1')
-        self.choose('0.10.2')
+    def test_one_installed_by_hand_with_a_repository_named_can_take_main(self):
+        commit = self.brand.release('0.13.1')
+        folder = self.base / 'by-hand'
+        git(self.base, 'clone', '-q', '--branch', 'v0.13.1', self.address, str(folder))
+        (self.claude / 'acme-brand').symlink_to(folder)
+        self.choose()
         self.keep.check(repair=False)
-        shown = self.keep.report()['versions']
-        self.assertEqual((shown['brand']['release'], shown['brand']['commit']),
-                         ('v0.10.2', older[:12]))
-        self.install('v0.10.2')
-        self.assertEqual(self.row()['says'], 'Acme Brand 0.10.2 is the release chosen in '
-                         'Settings.')
-        self.assertFalse(self.keep.report()['versions']['brand']['offered'])
+        row = self.row()
+        self.assertEqual((row['state'], row['target']), ('current', 'main'))
+        self.assertEqual(row['says'], 'Acme Brand 0.13.1 is installed. Its main branch, at '
+                         f'{commit[:12]}, can be installed from here.')
 
 
 class BrandInstallTests(BrandInstallCase):
@@ -495,13 +430,13 @@ class BrandInstallTests(BrandInstallCase):
         self.keep.check(repair=False)
         going = self.base / 'go'
         with mock.patch.dict(os.environ, {'BRAND_STAND_IN_HOLD': str(going)}):
-            shown = self.keep.install_brand(False, 'v0.13.1')
+            shown = self.keep.install_brand(False, 'main')
             brand = shown['versions']['brand']
             self.assertEqual((brand['state'], brand['offered']), ('running', False))
-            self.assertEqual(brand['says'], f'Fetching v0.13.1 from {self.address} and running '
+            self.assertEqual(brand['says'], f'Fetching main from {self.address} and running '
                              'its own installer. This can take a few minutes.')
             self.wait_for(going.with_name('go.running'))
-            for refused, says in ((lambda: self.keep.install_brand(False, 'v0.13.1'),
+            for refused, says in ((lambda: self.keep.install_brand(False, 'main'),
                                    upkeep.BRAND_INSTALLING),
                                   (lambda: self.keep.update(False), upkeep.BRAND_INSTALLING)):
                 with self.assertRaises(WorkspaceError) as caught:
@@ -519,7 +454,7 @@ class BrandInstallTests(BrandInstallCase):
         brand = self.keep.report()['versions']['brand']
         self.assertEqual(brand['state'], 'done')
         self.assertEqual(brand['says'], f'Acme Brand 0.13.1 is installed, from {self.address} '
-                         f'at v0.13.1 (revision {commit[:12]}). New decks can use it.')
+                         f'at main (revision {commit[:12]}). New decks can use it.')
         self.assertEqual(self.after, ['looked'], 'the computer is looked at again')
         self.assertEqual((self.row()['state'], self.row()['installed']), ('current', '0.13.1'))
         self.assertTrue((self.claude / 'acme-brand' / 'SKILL.md').is_file())
@@ -528,9 +463,9 @@ class BrandInstallTests(BrandInstallCase):
                                         .read_text())['version'], '0.14.1')
 
     def test_it_is_refused_before_anything_is_fetched_or_run(self):
-        self.brand.release('0.13.1')
+        commit = self.brand.release('0.13.1')
         self.keep.check(repair=False)
-        cases = [(lambda: self.keep.install_brand(False, 'v0.13.1'),
+        cases = [(lambda: self.keep.install_brand(False, 'main'),
                   upkeep.NO_BRAND_REPOSITORY)]
         for refused, says in cases:
             with self.assertRaises(WorkspaceError) as caught:
@@ -538,16 +473,16 @@ class BrandInstallTests(BrandInstallCase):
             self.assertEqual(str(caught.exception), says)
         self.choose()
         for release, working, says in (
-                ('v0.10.0', False, 'The release to install is now v0.13.1, not v0.10.0. Look '
+                ('v0.10.0', False, f'The main branch is now at {commit[:12]}, not v0.10.0. Look '
                                    'at it again before you install.'),
-                ('v0.13.1', True, upkeep.BRAND_WORKING)):
+                ('main', True, upkeep.BRAND_WORKING)):
             with self.assertRaises(WorkspaceError) as caught:
                 self.keep.install_brand(working, release)
             self.assertEqual(str(caught.exception), says)
         shutil.rmtree(self.codex / 'harness-slides')
         self.keep.check(repair=False)
         with self.assertRaises(WorkspaceError) as caught:
-            self.keep.install_brand(False, 'v0.13.1')
+            self.keep.install_brand(False, 'main')
         self.assertEqual(str(caught.exception), 'Update the companion skills first '
                          "(harness-slides). The brand skill's installer brings its own "
                          'harness-slides when it finds none it can use, and Presentation '
@@ -558,14 +493,13 @@ class BrandInstallTests(BrandInstallCase):
         self.brand.release('0.13.1', slides='0.15.0')
         self.choose()
         self.keep.check(repair=False)
-        self.install('v0.13.1')
+        self.install('main')
         brand = self.keep.report()['versions']['brand']
         self.assertEqual(brand['state'], 'failed')
-        self.assertEqual(brand['says'], 'The brand skill v0.13.1 was not installed: its '
+        self.assertEqual(brand['says'], 'The brand skill main was not installed: its '
                          'installer would replace harness-slides 0.14.1 with its own 0.15.0 for '
                          'Claude Code and Codex, in place of the one Presentation Studio is '
-                         'made with. Choose an older release in Settings, or upgrade '
-                         'Presentation Studio first. Nothing was run.')
+                         'made with. Upgrade Presentation Studio first. Nothing was run.')
         self.assertEqual(self.ran(), [], 'its installer was never run')
         self.assertFalse(os.path.lexists(self.claude / 'acme-brand'))
 
@@ -583,7 +517,7 @@ class BrandInstallTests(BrandInstallCase):
         self.brand.release('0.13.1', meddles=True)
         self.choose()
         self.keep.check(repair=False)
-        self.install('v0.13.1')
+        self.install('main')
         brand = self.keep.report()['versions']['brand']
         self.assertEqual(brand['state'], 'changed')
         self.assertIn('Its installer also changed harness-slides at '
@@ -596,38 +530,37 @@ class BrandInstallTests(BrandInstallCase):
         self.brand.release('0.13.1', refuses='Existing skill folders need migration.')
         self.choose()
         self.keep.check(repair=False)
-        self.install('v0.13.1')
+        self.install('main')
         brand = self.keep.report()['versions']['brand']
         self.assertEqual((brand['state'], brand['says']), (
-            'failed', 'The brand skill v0.13.1 was not installed: Setup could not finish: '
+            'failed', 'The brand skill main was not installed: Setup could not finish: '
                       'Existing skill folders need migration.'))
         self.assertEqual(self.after, ['looked'])
 
-    def test_a_tag_moved_since_it_was_shown_is_not_installed(self):
+    def test_main_moved_since_it_was_shown_is_not_installed(self):
         self.brand.release('0.13.1')
         self.choose()
         self.keep.check(repair=False)
-        moved = self.brand.release('0.13.1', note='moved')   # the tag is moved on
-        self.install('v0.13.1')
+        moved = self.brand.release('0.13.2')   # main moves on
+        self.install('main')
         brand = self.keep.report()['versions']['brand']
         self.assertEqual(brand['state'], 'failed')
-        self.assertIn(f'v0.13.1 now points at {moved[:12]}, not the', brand['says'])
+        self.assertIn(f'main now points at {moved[:12]}, not the', brand['says'])
         self.assertEqual(self.ran(), [])
 
-    def test_an_upgrade_moves_a_chosen_brand_skill_to_its_new_version(self):
+    def test_a_chosen_brand_skill_is_kept_by_its_stable_address_through_an_update(self):
         self.brand.release('0.13.1')
         self.choose()
         self.keep.check(repair=False)
-        self.install('v0.13.1')
+        self.install('main')
         installed = self.keep.check(repair=False)['brands'][0]['runtime']
+        self.assertTrue(installed.endswith('current'), installed)
         self.brand.release('0.14.0')
         self.choose()
         settings.save(dataclasses.replace(settings.load(), brand_skill=installed))
         self.keep.check(repair=False)
-        self.install('v0.14.0')
-        now = settings.load().brand_skill
-        self.assertNotEqual(now, installed)
-        self.assertTrue(now.endswith('0.14.0'), now)
+        self.install('main')
+        self.assertEqual(settings.load().brand_skill, installed)
         self.assertEqual(self.row()['installed'], '0.14.0')
 
     def test_closing_ends_an_install_in_hand(self):
@@ -636,7 +569,7 @@ class BrandInstallTests(BrandInstallCase):
         self.keep.check(repair=False)
         going = self.base / 'go'
         with mock.patch.dict(os.environ, {'BRAND_STAND_IN_HOLD': str(going)}):
-            self.keep.install_brand(False, 'v0.13.1')
+            self.keep.install_brand(False, 'main')
             self.wait_for(going.with_name('go.running'))
             self.keep.close()
         brand = self.keep.report()['versions']['brand']

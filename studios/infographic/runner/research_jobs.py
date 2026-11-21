@@ -92,8 +92,10 @@ class Jobs:
                 execution = research_session.execution(runtime, prepared['workers']) if runtime else None
                 require(execution is not None, 'Install the pinned complete Harness Research 1.1 runtime before starting optional research.')
                 # Idempotent retries/taps of the same explicit start never create another request.
+                # The helper counts by its protocol only: an update of it is the same request.
                 key = research_session.digest([self.store.owner, ident, project['revision'], task,
-                    prepared['id'], prepared['revision'], contract, execution])
+                    prepared['id'], prepared['revision'], rc.stable(contract),
+                    {**execution, 'capability': rc.stable(execution['capability'])}])
                 base = self.folder(ident); rc.write(base, '.gitignore', '*\n')
                 root = rc.inside(base, key)
                 if (root / 'state.json').exists():
@@ -106,7 +108,14 @@ class Jobs:
                     'state': 'working', 'progress': {'phase': 'investigate', 'streams': []},
                     'problem': '', 'started': time.time(), 'ended': None}
                 rc.write(base, 'current.json', json.dumps({'request': key}))
-            require(runtime is not None and research_session.capability(runtime) == state['execution']['capability'], 'Restore the saved research runtime before retrying.')
+            installed = research_session.capability(runtime) if runtime is not None else None
+            require(installed is not None, rc.NOT_INSTALLED)
+            # A retry goes on with the installed helper, whichever version research started
+            # on. What the state held before is kept once: an older case is named by it.
+            if installed != state['execution']['capability']:
+                state['execution'].setdefault('earlier', {'capability': state['execution']['capability']})
+                state['execution']['capability'] = installed
+                state['contract'] = rc.capability(Path(runtime)) or state['contract']
             stop, paused = threading.Event(), threading.Event()
             state.update(state='working', problem='', ended=None)
             rc.write(root, 'state.json', json.dumps(state))
@@ -199,7 +208,8 @@ class Jobs:
             transport = research_text.Transport(runtime, call)
             research_session.Workflow(runtime).run(root, state['task'], transport, offered,
                 limit=state['execution']['workers'], progress=lambda value: save(progress=value),
-                allowed=lambda: not paused.is_set() and current(), cancelled=cancelled, restart_stopped=True)
+                allowed=lambda: not paused.is_set() and current(), cancelled=cancelled, restart_stopped=True,
+                earlier=state['execution'].get('earlier') or {'capability': state['execution']['capability']})
             require(current() and not stop.is_set(), 'The infographic changed before research could be used. Checked research is kept.')
             save(state='complete', ended=time.time())
         except BaseException as error:

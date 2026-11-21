@@ -106,11 +106,13 @@ Every version of every file that was saved or approved is kept under `.training-
 
 What your assistant follows is guidance: instructions, templates and the Yoodli field data. What changes files is a small set of scripts.
 
-- Scripts are installed and never fetched.
-- Guidance is fetched from this repository's `main` branch when a new training starts, and that training is pinned to it. The pin records the exact commit.
-- Guidance is only ever what the helper fetched from `main` itself. It is kept in the per-user data folder, by commit, and checked against that commit's own files each time it is used. Of a training's pin, only the commit is read: a training copied or brought from elsewhere cannot bring guidance with it. A pin naming a commit that is not on `main` is refused, and nothing is fetched by commit.
+- Scripts are installed and never fetched. Every training runs the installed scripts, whichever version it was started on.
+- A new training takes the newest guidance from this repository's `main` branch. A training in progress keeps the instructions it was saved with, so it does not change halfway through. What is saved is their exact commit and nothing else: no folder and no installed version. The version a training started on is kept only to show.
+- Guidance is only ever what the helper fetched from `main` itself. It is kept in the per-user data folder, by commit, and checked against that commit's own files each time it is used. Of a training's pin, only the commit is read: a training copied or brought from elsewhere cannot bring guidance with it, and nothing is fetched by commit.
+- Nothing stops because an update happened or a folder was cleaned up. A training whose saved instructions cannot be read, or name a commit that is not on `main`, carries on with the current guidance, saves that, and says so once. If its saved instructions cannot be had for now, the installed guidance is used for that visit.
+- One thing stops a training: saved instructions that need a newer Training Studio than the one installed. The helper says which version; update Training Studio and the training continues.
 - git runs apart from your own setup: no system or global config, no `GIT_*` variables, no hooks, no replaced history, and only `https` or a local folder to fetch from. The helper's copy of `main` is used only as it made it; anything else is deleted and fetched again.
-- A pinned training needs no network to resume.
+- A training in progress needs no network to resume.
 - If guidance cannot be fetched, the guidance installed with the scripts is used, and you are told it may be older.
 
 See the [phase 2 design](superpowers/specs/2026-10-12-phase-2-packaging.md).

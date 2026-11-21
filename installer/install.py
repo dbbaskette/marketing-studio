@@ -22,6 +22,7 @@ ensure_python(ROOT)
 
 from studio_core.bundles import content_key, inventory, materialize
 from studio_core import offline_install
+from studio_core.packaging import GONE, prune, version_target
 from studio_core.runtime import assistant_target, shell_path
 
 STUDIOS = ('blog', 'presentation', 'training', 'infographic')
@@ -132,6 +133,59 @@ def snapshot(paths):
     return saved
 
 
+def still_here(saved):
+    """Refuse a rollback, before anything changes, when a link it would restore names a
+    version folder that an update has since removed."""
+    for name, entry in saved.items():
+        text = entry.get('link') if isinstance(entry, dict) else None
+        target = version_target(name, text) if isinstance(text, str) else None
+        if target is not None and not target.is_dir():
+            raise InstallError(GONE)
+
+
+def launcher_text(home, identifier):
+    """What a studio's own installer wrote that can name Marketing Studio's private Python
+    and Node: its launchers, and the interpreter Blog Studio records."""
+    base = home / '.local/share' / (identifier + '-studio')
+    found = []
+    for path in (base / 'studio', base / identifier, base / 'current/config.json',
+                 home / 'Applications' / ('Open ' + identifier.title() + ' Studio.command')):
+        try:
+            if path.is_file():
+                found.append(path.read_text(errors='replace'))
+        except OSError:
+            pass
+    return '\n'.join(found)
+
+
+def still_opened_from(home, waiting, versions):
+    """Older suite versions that a studio this install did not renew still opens with: its
+    launcher was written by an earlier installer and names the private Python inside one.
+    {folder name: the reason it stays}. It goes when that studio is next installed."""
+    held = {}
+    try:
+        names = [name for name in os.listdir(versions) if not (versions / name).is_symlink()]
+    except OSError:
+        return held
+    for identifier in waiting:
+        text = launcher_text(home, identifier)
+        for name in names:
+            if any(str(folder) + '/' in text for folder in {versions / name, (versions / name).resolve()}):
+                held.setdefault(name, identifier.title() + ' Studio still opens with the Python inside it. '
+                                'It is removed when that studio is next installed.')
+    return held
+
+
+def native_cleanup(home, identifier):
+    """Remove a studio's older versions once the whole suite has installed. The studio's own
+    installer left them, so that a later failure could still restore its old pointer."""
+    base = home / '.local/share' / (identifier + '-studio')
+    active = (base / 'current').resolve()
+    if active.parent != (base / 'versions').resolve():
+        return {'removed': [], 'retained': []}
+    return prune(base / 'versions', active.name)
+
+
 def restore(saved, allowed):
     # A damaged or edited metadata file must never turn rollback into arbitrary writes.
     if set(saved) - {str(path) for path in allowed}:
@@ -168,11 +222,14 @@ def verify_bundle(source):
 
 
 def run_native(source, identifier, home, action, target, companions='skip'):
+    # `source` is the suite's stable `current` address. A studio installer writes the
+    # interpreter it was run with into its launchers, so that path must outlive this version.
     python = source / 'runtime/python/bin/python3'
     command = [str(python) if python.is_file() else sys.executable, str(source / 'studios' / identifier / 'installer/install.py'),
                action, '--home', str(home), '--yes', '--json']
     if action == 'install':
-        command += ['--target', target]
+        # Older versions go once every studio has installed: a failure restores the old pointers.
+        command += ['--target', target, '--defer-cleanup']
         if identifier != 'blog':
             command += ['--companions', 'skip', '--pins', str(source / 'pins/companions.json')]
         else:
@@ -210,6 +267,19 @@ def install_locked(source, home, data, studios, target, companions, distribution
     saved = snapshot([*managed_paths(home, available, data), *companion_paths])
     key = content_key(source, studios)
     versions = data / 'versions'
+    # Studios recorded here that this install does not renew keep the launchers they have.
+    waiting = [identifier for identifier in selected if identifier not in studios]
+    if not distribution:
+        if Path(sys.executable).resolve().is_relative_to(versions.resolve()):
+            # Launchers name the Python that ran this installer; this one goes with its version.
+            raise InstallError('Run this installer with your own Python 3.11 or newer. The private Python '
+                               'inside an installed Marketing Studio version is removed by an update.')
+        stranded = [identifier.title() + ' Studio' for identifier in waiting
+                    if str(data / 'current/runtime') + '/' in launcher_text(home, identifier)]
+        if stranded:
+            raise InstallError(' and '.join(stranded) + ' open with the private Python and Node of the installed '
+                               'Marketing Studio download. This install has none and would leave them without. '
+                               'Install them in the same run, or update with a download for this computer.')
     versions.mkdir(parents=True, exist_ok=True)
     destination = versions / key
     pending = versions / ('.pending-' + secrets.token_hex(6))
@@ -220,9 +290,12 @@ def install_locked(source, home, data, studios, target, companions, distribution
         if content_key(destination, studios) != key:
             raise InstallError('The saved suite version has changed. Keep it for diagnosis and restore a verified copy.')
         prepared = offline_install.plan(destination, home, studios, target) if distribution and companions != 'skip' else []
+        # Everything written from here names this version through `current`, never its folder.
+        stable = data / 'current'
+        link(stable, destination)
         results = {}
         for identifier in studios:
-            results[identifier] = run_native(destination, identifier, home, 'install', target)
+            results[identifier] = run_native(stable, identifier, home, 'install', target)
         # One explicitly agreed companion step uses the canonical pin set once.
         if prepared:
             results['companions'] = offline_install.install(prepared, link)
@@ -236,13 +309,12 @@ def install_locked(source, home, data, studios, target, companions, distribution
             if any(item.get('state') in ('failed', 'refused') for item in outcomes.values()):
                 raise InstallError('A shared companion could not be installed. Existing content was preserved.')
             results['companions'] = outcomes
-        python = destination / 'runtime/python/bin/python3'
-        environment = ('export PATH=' + shlex.quote(str(destination / 'runtime/python/bin') + ':' + str(destination / 'runtime/node/bin')) + ':"$PATH"\n') if distribution else shell_path()
+        python = stable / 'runtime/python/bin/python3'
+        environment = ('export PATH=' + shlex.quote(str(stable / 'runtime/python/bin') + ':' + str(stable / 'runtime/node/bin')) + ':"$PATH"\n') if distribution else shell_path()
         opener = '#!/bin/sh\n# Written by the Marketing Studio installer.\nexport PATH="$HOME/.local/bin:$PATH:/opt/homebrew/bin:/usr/local/bin"\n' + environment + 'exec ' + shlex.quote(str(python) if distribution else sys.executable) + ' ' + shlex.quote(str(data / 'current/marketing-studio')) + ' --open "$@"\n'
         atomic(data / 'marketing-studio', opener.replace(' --open', '').encode(), 0o755)
         link(home / '.local/bin/marketing-studio', data / 'marketing-studio')
         atomic(home / 'Applications/Open Marketing Studio.command', opener.encode(), 0o755)
-        link(data / 'current', destination)
         # Do not grow rollback records on an identical repeat install.
         same = old and old.get('current') == key and old.get('studios') == selected
         record = {'schema': 1, 'version': (source / 'VERSION').read_text().strip(),
@@ -250,13 +322,24 @@ def install_locked(source, home, data, studios, target, companions, distribution
                   'previous': old.get('previous') if same else {'paths': saved, 'studios': available,
                                                               'companions': [str(p) for p in companion_paths]}}
         atomic(data / 'installation.json', (json.dumps(record, indent=2) + '\n').encode())
-        return {'action': 'install', 'version': record['version'], 'studios': selected,
-                'launcher': str(data / 'marketing-studio'), 'results': results}
+        result = {'action': 'install', 'version': record['version'], 'studios': selected,
+                  'launcher': str(data / 'marketing-studio'), 'runtime': str(stable), 'id': key,
+                  'versionDirectory': str(destination), 'results': results}
     except BaseException:
         restore(saved, [*managed_paths(home, available, data), *companion_paths])
         raise
     finally:
         shutil.rmtree(pending, ignore_errors=True)
+    # Only now, with every pointer switched and the record written, do older versions go.
+    # Nothing below can fail the installation or undo it.
+    for identifier in studios:
+        if isinstance(results.get(identifier), dict):
+            results[identifier].update(native_cleanup(home, identifier))
+    if prepared:
+        for name, cleaned in offline_install.prune(prepared).items():
+            results['companions'][name].update(cleaned)
+    result.update(prune(versions, key, still_opened_from(home, waiting, versions)))
+    return result
 
 
 def main(argv=None):
@@ -312,15 +395,20 @@ def main(argv=None):
                         # Older records have no companion entries; derive the allowlist
                         # from fixed installation locations, never from saved path text.
                         has_companions = any(str(path) in previous['paths'] for path in permitted)
+                        still_here(previous['paths'])
                         with offline_install.locked(home, previous['studios']) if has_companions else nullcontext():
                             restore(previous['paths'], [*managed_paths(home, previous['studios'], data), *permitted])
                         result = {'action': 'rollback', 'restored': True}
                     else:
                         # Independent studio installations, work, settings and versions stay available.
-                        for path in (data / 'current', data / 'marketing-studio',
+                        # Studios installed from a download open with its private Python and Node,
+                        # which their launchers name through `current`: that link stays for them.
+                        private = (data / 'current/runtime/python/bin/python3').is_file()
+                        for path in (*(() if private else (data / 'current',)), data / 'marketing-studio',
                                      home / 'Applications/Open Marketing Studio.command', home / '.local/bin/marketing-studio', data / 'installation.json'):
                             path.unlink(missing_ok=True)
-                        result = {'action': 'uninstall', 'studios_kept': state['studios']}
+                        result = {'action': 'uninstall', 'studios_kept': state['studios'],
+                                  **({'runtime_kept': str(data / 'current')} if private else {})}
         if args.json:
             print(json.dumps(result, indent=2))
         elif result.get('action') == 'install':
@@ -328,6 +416,14 @@ def main(argv=None):
             print('Studios: ' + ', '.join(name.title() + ' Studio' for name in result['studios']))
             print('Open: ' + str(home / 'Applications/Open Marketing Studio.command'))
             print('CLI: ' + str(home / '.local/bin/marketing-studio'))
+            cleaned = [result, *(item for item in result['results'].values() if isinstance(item, dict)),
+                       *(item for item in (result['results'].get('companions') or {}).values() if isinstance(item, dict))]
+            gone = [path for item in cleaned for path in item.get('removed', [])]
+            if gone:
+                print('Older versions removed: ' + str(len(gone)) + '. Only the newest is kept.')
+            for item in cleaned:
+                for kept in item.get('retained', []):
+                    print('Could not be removed, and can be deleted by hand: ' + kept['path'] + ' (' + kept['reason'] + ')')
             print('Next: marketing-studio setup')
         else:
             print(json.dumps(result, indent=2))

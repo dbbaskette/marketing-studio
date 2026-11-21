@@ -258,7 +258,9 @@ class CommandTests(Flow):
         self.cli('checkpoint', '--stage', 'blueprint', '--level', '101', '--next', 'Draft it',
                  '--question', 'Approve?', '--brand', 'Acme', '--deck-target', 'google',
                  '--levels', '101,201')
-        self.cli('pin', 'harness-research', '--task', 't-1', '--runtime', '/opt/r')
+        # The runtime is still taken, for guidance saved with a training, and is not kept.
+        self.assertEqual(self.cli('pin', 'harness-research', '--task', 't-1', '--runtime',
+                                  '/opt/r'), {'harness-research': {'task': 't-1'}})
         report = self.cli('status')
         self.assertEqual((report['stage'], report['level'], report['levels']),
                          ('blueprint', '101', ['101', '201']))
@@ -266,7 +268,10 @@ class CommandTests(Flow):
         self.assertEqual(report['settings']['brand'], 'Acme')
         self.assertEqual(report['files']['deck@201'], '201/deck-link.md')
         self.assertEqual(report['artifacts']['deck@101'], 'skipped')
-        self.assertEqual(report['pins']['harness-research']['task'], 't-1')
+        self.assertEqual(report['pins'], {'harness-research': {'task': 't-1'}})
+        self.assertEqual(self.cli('pin', 'harness-research', '--task', 't-1', '--run', 'r-1'),
+                         {'harness-research': {'task': 't-1', 'run': 'r-1'}})
+        self.assertNotIn('/opt/r', (self.root / '.training-studio' / 'session.json').read_text())
         self.assertIn('Only these stages', self.cli('skip', 'research', '--reason', 'x',
                                                     expect=2)['error'])
 
@@ -635,11 +640,11 @@ class DryRunFindingTests(Flow):
 
     def test_row_55_each_level_pins_its_own_deck_task(self):
         helpers.saved_init(self.root, '--title', 'Topic', '--levels', '101,201')
-        self.cli('pin', 'harness-slides', '--task', 'a', '--runtime', '/r', '--level', '101')
+        self.cli('pin', 'harness-slides', '--task', 'a', '--level', '101')
         pins = self.cli('pin', 'harness-slides', '--task', 'b', '--runtime', '/r',
                         '--level', '201')
-        self.assertEqual((pins['harness-slides@101']['task'], pins['harness-slides@201']['task']),
-                         ('a', 'b'))
+        self.assertEqual(pins, {'harness-slides@101': {'task': 'a'},
+                                'harness-slides@201': {'task': 'b'}})
         self.assertIn('The level is one of', self.cli(
             'pin', 'harness-slides', '--task', 'c', '--runtime', '/r', '--level', '301',
             expect=2)['error'])

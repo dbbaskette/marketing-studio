@@ -75,6 +75,7 @@ import re
 import shutil
 from pathlib import Path
 
+
 from workspace import WorkspaceError
 
 from runner import companion as companions
@@ -243,9 +244,13 @@ def _installed(run=None, home: Path | None = None):
     seen = set()
     for place in locations(home) if node else []:
         try:
-            runtime = place.resolve()
+            place.resolve(strict=True)
         except (OSError, RuntimeError):
             continue   # a link that leads nowhere
+        # Said through its `current` link, never the version folder behind it: a setting or
+        # a job that names it goes on working after the next update removes that folder.
+        from studio_core.packaging import stable_place   # bound parts import their own
+        runtime = stable_place(place)
         hints = [name for name in (place.name, place.parent.name)
                  if name != 'current'] or ['brand']
         script = None if runtime in seen else companion(runtime, *hints)
@@ -288,10 +293,13 @@ class Brand:
                                      'cannot be made. Install one, or name its folder in '
                                      f'{VARIABLE}, then try again.')
             return
-        self.runtime = Path(runtime)
+        # A folder saved earlier inside `versions/` is said through `current`: an update
+        # keeps only the newest version, so the saved one may be gone.
+        from studio_core.packaging import stable_address   # bound parts import their own
+        self.runtime = stable_address(runtime, saved=True)
         hints = [name for name in (self.runtime.name, self.runtime.parent.name)
                  if name != 'current'] or ['brand']
-        self.script = companion(self.runtime.resolve(), *hints)
+        self.script = companion(self.runtime, *hints)
         if self.script is None and not run:
             raise WorkspaceError(f'{runtime} does not hold a brand skill: a skill whose own '
                                  'command lists its brands. Name the folder of an installed '
@@ -346,7 +354,10 @@ class Brand:
 
     def check(self, contract: Path) -> dict:
         """Check an exported contract against the brand as it is now. A brand that changed
-        since the export is refused, with a line that says what changed."""
+        since the export is refused, with a line that says what changed. A contract that an
+        older Harness Brand exported, whose commands name a version folder since removed,
+        still holds: the answer carries a `notice` that says how to export it again, for the
+        caller to show (`brand_guidance.tell`)."""
         return self._answer('contract', 'check', '--file', str(contract))
 
     def contracts(self) -> bool:

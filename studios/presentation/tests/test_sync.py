@@ -1,4 +1,5 @@
 """Guidance sync, against a local git repository standing in for the public one."""
+import hashlib
 import json
 import os
 import shutil
@@ -69,6 +70,15 @@ class SyncCase(unittest.TestCase):
     def make_deck(self) -> None:
         (self.project / 'run.json').write_text('{}')
 
+    def pin_file(self) -> Path:
+        return self.project / '.presentation-studio' / 'guidance.json'
+
+    def pin(self) -> dict:
+        return json.loads(self.pin_file().read_text())
+
+    def installed(self) -> str:
+        return (helpers.SKILL / 'VERSION').read_text().strip()
+
 
 class StartTests(SyncCase):
     def test_start_fetches_the_newest_guidance_and_names_the_helper(self):
@@ -109,9 +119,11 @@ class StartTests(SyncCase):
 class PinTests(SyncCase):
     def test_a_new_deck_is_pinned_to_the_guidance_it_started_with(self):
         self.start_deck()
-        pin = json.loads((self.project / '.presentation-studio' / 'guidance.json').read_text())
+        pin = self.pin()
         self.assertEqual(pin['commit'], self.first)
-        self.assertIn('SKILL.md', pin['files'])
+        # Only the commit, and the version it started on to show: no folder, no file digests.
+        self.assertEqual(sorted(pin), ['commit', 'pinned_at', 'runtime', 'schema'])
+        self.assertEqual(pin['runtime'], self.installed())
         result = sync_guidance.start(self.project)
         self.assertEqual((result['freshness'], result['pinned'], result['commit']),
                          ('pinned', True, self.first))
@@ -140,6 +152,35 @@ class PinTests(SyncCase):
     def test_update_needs_a_deck(self):
         with self.assertRaisesRegex(sync_guidance.SyncError, 'No deck'):
             sync_guidance.update(self.project)
+
+    def test_no_pin_this_version_writes_names_a_folder_or_files(self):
+        with mock.patch.dict(os.environ, {'PRESENTATION_STUDIO_SOURCE': str(self.remote / 'gone')}):
+            self.start_deck()                               # the installed guidance
+        self.assertEqual((self.pin()['commit'], sorted(self.pin())),
+                         (None, ['commit', 'pinned_at', 'runtime', 'schema']))
+        sync_guidance.update(self.project)                  # moved to the newest
+        self.assertEqual((self.pin()['commit'], sorted(self.pin())),
+                         (self.first, ['commit', 'pinned_at', 'runtime', 'schema']))
+        self.pin_file().unlink()
+        sync_guidance.start(self.project)                   # a deck that had none
+        self.assertEqual(sorted(self.pin()), ['commit', 'pinned_at', 'runtime', 'schema'])
+        self.assertNotIn(str(self.project.parent), json.dumps(self.pin()))
+
+    def test_the_version_a_deck_started_on_is_shown_and_never_compared(self):
+        self.start_deck()
+        for started in ('0.0.1', '999.0.0', 'not a version', None, 7):
+            self.pin_file().write_text(json.dumps({**self.pin(), 'runtime': started}))
+            result = sync_guidance.start(self.project)
+            self.assertEqual((result['freshness'], result['commit'], result['notice']),
+                             ('pinned', self.first, None), started)
+            self.assertEqual(sync_guidance.summary(self.project)['runtime'], started)
+            self.assertEqual(self.pin()['runtime'], started, 'the pin is left as it was')
+
+    def test_resume_where_nothing_is_saved_takes_the_newest_and_writes_nothing(self):
+        result = sync_guidance.resume(self.project)
+        self.assertEqual((result['commit'], result['pinned'], result['notice']),
+                         (self.first, False, None))
+        self.assertEqual(list(self.project.iterdir()), [])
 
     def test_a_deck_started_without_a_pin_gets_one_on_the_next_start(self):
         self.make_deck()
@@ -206,6 +247,84 @@ class CommandLineTests(SyncCase):
                          {'error': 'No deck in this directory.'})
 
 
+class InstalledAddressTests(SyncCase):
+    """An installed copy is in `versions/<id>` and reached through the `current` link, which
+    an update moves. Nothing the helper hands out names the version's own folder."""
+
+    def setUp(self):
+        super().setUp()
+        self.root = self.project.parent / 'share' / 'presentation-studio'
+        self.lay('first-version')
+        (self.root / 'current').symlink_to(self.root / 'versions' / 'first-version')
+
+    def lay(self, name: str) -> Path:
+        """An installed version, as the installer lays one out: the scripts, their version,
+        the guidance and the runner beside them."""
+        version = self.root / 'versions' / name
+        (version / 'scripts').mkdir(parents=True)
+        (version / 'guidance').mkdir()
+        (version / 'runner').mkdir()
+        for script in ('sync_guidance.py', 'home.py'):
+            shutil.copy2(helpers.SCRIPTS / script, version / 'scripts' / script)
+        shutil.copy2(helpers.SKILL / 'VERSION', version / 'VERSION')
+        (version / 'guidance' / 'SKILL.md').write_text(f'Guidance installed with {name}.\n')
+        (version / 'runner' / 'studio.py').write_text('')
+        return version
+
+    def ask(self, script: Path, action: str = 'start', **environment) -> dict:
+        env = {key: value for key, value in os.environ.items()
+               if key != 'PRESENTATION_STUDIO_HELPER'}
+        done = subprocess.run([sys.executable, '-B', str(script), action], cwd=self.project,
+                              env={**env, **environment}, capture_output=True, text=True)
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        return json.loads(done.stdout)
+
+    def offline(self) -> dict:
+        return {'PRESENTATION_STUDIO_SOURCE': str(self.remote / 'gone')}
+
+    def test_the_installed_guidance_and_the_helper_are_named_by_the_current_link(self):
+        script = self.root / 'current' / 'scripts' / 'sync_guidance.py'
+        result = self.ask(script, **self.offline())
+        self.assertEqual(result['freshness'], 'installed')
+        self.assertEqual(result['entry'], str(self.root / 'current' / 'guidance' / 'SKILL.md'))
+        self.assertEqual(result['helper'], str(self.root / 'current' / 'runner' / 'studio.py'))
+        # The installer's own command stands beside `current`, and is the helper when it is there.
+        command = self.root / 'presentation'
+        command.write_text('#!/bin/sh\n')
+        self.assertEqual(self.ask(script, **self.offline())['helper'], str(command))
+        self.assertEqual(self.ask(script, PRESENTATION_STUDIO_HELPER=str(command))['helper'],
+                         str(command))
+
+    def test_run_from_the_version_folder_itself_it_still_names_the_current_link(self):
+        script = self.root / 'versions' / 'first-version' / 'scripts' / 'sync_guidance.py'
+        result = self.ask(script, **self.offline())
+        for said in (result['entry'], result['helper']):
+            self.assertNotIn('versions', Path(said).parts)
+            self.assertTrue(said.startswith(str(self.root / 'current')), said)
+
+    def test_what_a_deck_was_given_still_stands_after_an_update_removes_the_old_version(self):
+        script = self.root / 'current' / 'scripts' / 'sync_guidance.py'
+        self.make_deck()
+        before = self.ask(script, **self.offline())
+        self.assertNotIn('versions', self.pin_file().read_text())
+        self.lay('second-version')
+        (self.root / 'current').unlink()
+        (self.root / 'current').symlink_to(self.root / 'versions' / 'second-version')
+        shutil.rmtree(self.root / 'versions' / 'first-version')
+        self.assertEqual(Path(before['entry']).read_text(),
+                         'Guidance installed with second-version.\n')
+        after = self.ask(script, **self.offline())
+        self.assertEqual((after['entry'], after['helper'], after['pinned'], after['notice']),
+                         (before['entry'], before['helper'], True, None))
+
+    def test_a_checkout_is_its_own_address(self):
+        self.assertEqual(sync_guidance.address(), helpers.SKILL)
+        with mock.patch.dict(os.environ, self.offline()):
+            result = sync_guidance.start(self.project)
+        self.assertEqual(Path(result['entry']), helpers.SKILL / 'SKILL.md')
+        self.assertEqual(Path(result['helper']), helpers.REPO / 'runner' / 'studio.py')
+
+
 class TrustCase(SyncCase):
     """A deck, a cache or an environment someone else set up, and a marker file that any
     command planted there would create."""
@@ -245,11 +364,24 @@ class TrustCase(SyncCase):
             folder = self.project / 'brought-guidance'
             folder.mkdir(parents=True, exist_ok=True)
             (folder / 'SKILL.md').write_text('Planted guidance.\n')
-        pin = {'schema': 1, 'commit': commit, 'path': str(folder),
-               'files': sync_guidance.hashes(folder), 'runtime': '0.1.0',
-               'pinned_at': '2026-01-01T00:00:00Z'}
+        # The shape versions before this one wrote: the folder, and a digest of every file.
+        files = {path.relative_to(folder).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
+                 for path in sorted(folder.rglob('*')) if path.is_file()}
+        pin = {'schema': 1, 'commit': commit, 'path': str(folder), 'files': files,
+               'runtime': '0.1.0', 'pinned_at': '2026-01-01T00:00:00Z'}
         (self.project / '.presentation-studio').mkdir(exist_ok=True)
-        (self.project / '.presentation-studio' / 'guidance.json').write_text(json.dumps(pin))
+        self.pin_file().write_text(json.dumps(pin))
+
+    def assertContinues(self, result: dict, commit: str) -> None:
+        """The deck carries on with the current guidance of main, says so once, and its pin
+        is saved again to that."""
+        self.assertTrusted(result, commit)
+        self.assertTrue(result['pinned'])
+        self.assertEqual(result['notice'], 'The instructions saved with this deck could not '
+                         'be used, so it continues on the current ones.')
+        self.assertNotIn('\n', result['notice'])
+        self.assertEqual((self.pin()['commit'], sorted(self.pin())),
+                         (commit, ['commit', 'pinned_at', 'runtime', 'schema']))
 
     def assertTrusted(self, result: dict, commit: str) -> None:
         entry = Path(result['entry'])
@@ -272,20 +404,103 @@ class BroughtPinTests(TrustCase):
         self.plant_pin(self.first, served)          # the pin's hashes now agree with the folder
         self.assertTrusted(sync_guidance.resume(self.project), self.first)
 
-    def test_a_pin_naming_a_commit_that_was_never_on_main_is_refused(self):
+    def test_a_pin_naming_a_commit_that_was_never_on_main_continues_on_the_current_guidance(self):
         fork = self.fork()
-        self.plant_pin(fork)
         for action in (sync_guidance.start, sync_guidance.resume):
-            with self.assertRaisesRegex(sync_guidance.SyncError, 'not on the main branch'):
-                action(self.project)
-        self.assertFalse((self.cache.parent / fork).exists())
+            self.plant_pin(fork)
+            self.assertContinues(action(self.project), self.first)
+            self.assertFalse((self.cache.parent / fork).exists(), 'the fork is never used')
+        # Saved again, so the next visit is an ordinary one, with nothing more to say.
+        again = sync_guidance.start(self.project)
+        self.assertEqual((again['freshness'], again['commit'], again['notice']),
+                         ('pinned', self.first, None))
 
-    def test_a_pin_whose_commit_is_not_a_commit_id_cannot_be_read(self):
+    def test_a_pin_whose_commit_is_not_a_commit_id_continues_on_the_current_guidance(self):
         for commit in ('../../brought-guidance', self.first[:12], 42):
             self.plant_pin(commit)
-            with self.assertRaisesRegex(sync_guidance.SyncError, 'cannot be read'):
-                sync_guidance.start(self.project)
-    
+            self.assertContinues(sync_guidance.start(self.project), self.first)
+
+    def test_a_pin_that_cannot_be_read_continues_on_the_current_guidance(self):
+        self.make_deck()
+        self.pin_file().parent.mkdir()
+        for content in ('', 'not json {', '[]', '"a string"', json.dumps({'commit': self.first}),
+                        json.dumps({'schema': 2, 'commit': self.first})):
+            for action in (sync_guidance.start, sync_guidance.resume):
+                self.pin_file().write_text(content)
+                self.assertContinues(action(self.project), self.first)
+
+    def test_a_pin_that_cannot_be_read_continues_on_the_installed_guidance_with_no_network(self):
+        self.make_deck()
+        self.pin_file().parent.mkdir()
+        self.pin_file().write_text('not json {')
+        with mock.patch.dict(os.environ, {'PRESENTATION_STUDIO_SOURCE': str(self.remote / 'gone')}):
+            result = sync_guidance.start(self.project)
+        self.assertEqual((result['freshness'], result['commit'], result['pinned']),
+                         ('installed', None, True))
+        self.assertEqual(Path(result['entry']), helpers.SKILL / 'SKILL.md')
+        self.assertTrue(result['notice'].startswith('The instructions saved with this deck '
+                                                    'could not be used, so it continues'))
+        self.assertIn('Could not get the newest guidance', result['notice'])
+        self.assertNotIn('\n', result['notice'])
+        self.assertIsNone(self.pin()['commit'])
+
+    def test_saved_instructions_that_need_a_newer_studio_are_refused_with_the_update_sentence(self):
+        self.manifest(minimum_runtime='99.0.0')
+        needs = self.commit('needs a newer Presentation Studio')
+        self.manifest(minimum_runtime='0.1.0')
+        newest = self.change_remote()
+        self.plant_pin(needs)
+        before = self.pin_file().read_bytes()
+        said = ("This deck's instructions need Presentation Studio 99.0.0 or later; "
+                f'{self.installed()} is installed. Update Presentation Studio to continue it.')
+        for action in (sync_guidance.start, sync_guidance.resume):
+            with self.assertRaises(sync_guidance.SyncError) as refused:
+                action(self.project)
+            self.assertEqual(str(refused.exception), said)
+        # Nothing was swapped in for it, and the pin is as it was for after the update.
+        self.assertEqual(self.pin_file().read_bytes(), before)
+        self.assertFalse((self.cache.parent / needs).exists())
+        done = subprocess.run([sys.executable, str(helpers.SCRIPTS / 'sync_guidance.py'),
+                               'start'], cwd=self.project, capture_output=True, text=True)
+        self.assertEqual(done.returncode, 2, done.stdout + done.stderr)
+        self.assertEqual(json.loads(done.stdout), {'error': said})
+        # New work is not held up by it: it takes the newest, which this studio can follow.
+        elsewhere = self.project.parent / 'another-deck'
+        elsewhere.mkdir()
+        self.assertEqual(sync_guidance.start(elsewhere)['commit'], newest)
+
+    def test_saved_instructions_this_studio_can_follow_resume_after_the_studio_moves_on(self):
+        # The pin says an older Presentation Studio started it. That is shown, never compared.
+        self.plant_pin(self.first)
+        with mock.patch.object(sync_guidance, 'runtime_version', lambda: '999.0.0'):
+            result = sync_guidance.start(self.project)
+        self.assertTrusted(result, self.first)
+        self.assertEqual((result['freshness'], result['notice']), ('pinned', None))
+
+    def test_a_pin_of_the_old_shape_whose_folder_is_gone_resumes_as_it_was(self):
+        gone = self.project.parent / 'presentation-studio' / 'versions' / 'abc123' / 'guidance'
+        self.make_deck()
+        self.pin_file().parent.mkdir()
+        old = {'schema': 1, 'commit': self.first, 'path': str(gone),
+               'files': {'SKILL.md': 'ab' * 32, 'references/gates.md': 'cd' * 32},
+               'runtime': '0.1.0', 'pinned_at': '2026-01-01T00:00:00Z'}
+        self.pin_file().write_text(json.dumps(old))
+        self.assertFalse(gone.exists())
+        for action in (sync_guidance.start, sync_guidance.resume):
+            result = action(self.project)
+            self.assertTrusted(result, self.first)
+            self.assertEqual((result['freshness'], result['pinned'], result['notice']),
+                             ('pinned', True, None))
+        self.assertEqual(self.pin(), old, 'an old pin is read, not rewritten')
+        self.assertEqual(sync_guidance.summary(self.project),
+                         {'commit': self.first, 'pinned_at': '2026-01-01T00:00:00Z',
+                          'runtime': '0.1.0'})
+        # The installed guidance, pinned by a version that kept its folder under versions/.
+        self.pin_file().write_text(json.dumps({**old, 'commit': None, 'files': {}}))
+        result = sync_guidance.start(self.project)
+        self.assertEqual((result['freshness'], result['pinned'], result['notice']),
+                         ('installed', True, None))
+        self.assertEqual(Path(result['entry']), helpers.SKILL / 'SKILL.md')
 
     def test_a_pin_from_an_older_version_resumes_on_the_same_commit(self):
         # What an older version left: a shallow cache with git's default config, a folder named
@@ -302,14 +517,14 @@ class BroughtPinTests(TrustCase):
         self.assertTrusted(result, self.first)
         self.assertEqual(result['freshness'], 'pinned')
 
-    def test_a_commit_an_older_version_fetched_by_id_is_refused(self):
+    def test_a_commit_an_older_version_fetched_by_id_is_never_used(self):
         fork = self.fork()
         self.cache.mkdir(parents=True)
         git(self.cache, 'init', '--quiet', '--bare')
         git(self.cache, 'fetch', '--quiet', str(self.remote), fork)
         self.plant_pin(fork)
-        with self.assertRaisesRegex(sync_guidance.SyncError, 'not on the main branch'):
-            sync_guidance.start(self.project)
+        self.assertContinues(sync_guidance.start(self.project), self.first)
+        self.assertFalse((self.cache.parent / fork).exists())
 
     def test_a_pinned_deck_resumes_with_no_network(self):
         self.start_deck()
@@ -320,19 +535,37 @@ class BroughtPinTests(TrustCase):
         self.assertIsNone(result['notice'])
 
     def test_a_brought_pin_falls_back_to_the_installed_guidance_when_main_is_out_of_reach(self):
-        self.plant_pin(self.fork())
+        fork = self.fork()
+        self.plant_pin(fork)
         with mock.patch.dict(os.environ, {'PRESENTATION_STUDIO_SOURCE': str(self.remote / 'gone')}):
             result = sync_guidance.start(self.project)
         self.assertEqual((result['freshness'], result['commit']), ('installed', None))
         self.assertEqual(Path(result['entry']), helpers.SKILL / 'SKILL.md')
         self.assertIn('could not be fetched', result['notice'])
+        # Whether main has it is not known yet, so the pin is kept for when it can be asked.
+        self.assertEqual(self.pin()['commit'], fork)
 
-    def test_the_refusal_is_a_json_error_on_the_command_line(self):
+    def test_saved_instructions_whose_files_are_damaged_use_the_installed_ones_and_keep_the_pin(self):
+        self.manifest(schema=2)
+        damaged = self.commit('a manifest this version cannot read')
+        self.manifest(minimum_runtime='0.1.0')
+        self.change_remote()
+        self.plant_pin(damaged)
+        result = sync_guidance.start(self.project)
+        self.assertEqual((result['freshness'], result['commit'], result['pinned']),
+                         ('installed', None, True))
+        self.assertIn('cannot be used', result['notice'])
+        self.assertEqual(self.pin()['commit'], damaged)
+
+    def test_a_pin_that_cannot_be_used_is_not_an_error_on_the_command_line(self):
         self.plant_pin(self.fork())
         done = subprocess.run([sys.executable, str(helpers.SCRIPTS / 'sync_guidance.py'),
                                'start'], cwd=self.project, capture_output=True, text=True)
-        self.assertEqual(done.returncode, 2, done.stdout + done.stderr)
-        self.assertIn('not on the main branch', json.loads(done.stdout)['error'])
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        result = json.loads(done.stdout)
+        self.assertNotIn('error', result)
+        self.assertEqual((result['commit'], result['pinned']), (self.first, True))
+        self.assertIn('continues on the current ones', result['notice'])
 
 
 class PlantedCacheTests(TrustCase):

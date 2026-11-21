@@ -100,7 +100,7 @@ Drop `--dry-run` to run it. The clone is deleted afterwards; its logs are kept.
 | `tests/test_package.py` | The validator, on a small synthetic package and on the real one |
 | `tests/test_disclosure.py` | Every loading set against its budget |
 | `tests/test_installer.py` | The installer, against a temporary home directory and a stand-in repository for each companion |
-| `tests/test_sync.py` | Guidance sync, against a local git repository: pins, fallbacks, and planted pins, caches and git settings that must be refused or ignored without running anything |
+| `tests/test_sync.py` | Guidance sync, against a local git repository: pins, fallbacks, the address of an installed copy, saved pins that carry on or are refused, and planted pins, caches and git settings that must never be used or run |
 | `tests/test_google.py` | The Google Docs round-trip, against an in-memory transport and a stubbed HTTP layer |
 | `tests/test_desk.py` | The page: what it reads and records, everything it refuses, the command, the check of this computer with its commands stubbed, and the page's scripts and colours |
 | `tests/test_hub.py` | The team hub, against bare git repositories in temporary directories |
@@ -126,6 +126,8 @@ Bump `skills/training-studio/VERSION` when you release a change. The installed v
 New trainings fetch their guidance from `main`. Keep it usable at every commit. If guidance needs a script change, raise `minimum_runtime` in `guidance/manifest.json` and `skills/training-studio/VERSION` in the same change; older installs then keep their installed guidance and tell the user to update.
 
 Guidance is trusted only as `sync_guidance.py` fetched it from `main`. Never read a guidance folder from a training or its pin, and never fetch a commit by ID. Run git for guidance through `sync_guidance.git`, which leaves out the user's config, environment and hooks.
+
+Saved work is never pinned to an installed version. A training's guidance pin holds the commit of its instructions and, to show, the version it started on; no path and no file digests, and nothing compares that version. A pin from an older release that has them is read without them. `resume` never refuses because of an update or a cleaned folder: an unreadable pin, or a commit that is not on `main`, carries on with the current guidance, is saved again and returns a `notice`. Its one refusal is a saved commit whose `minimum_runtime` is newer than the installed scripts. Any path the helper hands out or saves comes from `sync_guidance.address()`, the `current` link, never a `versions/<id>` folder. A helper pin (`training.py pin`) records a companion's task and run, never where the companion is installed: its own start or resume answer says that each time.
 
 ## Adding a command
 

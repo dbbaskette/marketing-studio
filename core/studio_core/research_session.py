@@ -241,6 +241,22 @@ def case_for(root):
     return rc.inside(base, value['basis'] + '/topic')
 
 
+def case_basis(root, task, inputs, helper, areas, earlier=None):
+    """The name of the case research is kept in: what it is made from and the helper's
+    protocol, never the helper's version or digest, so an update of Harness Research goes on
+    with the same case. A case an older Marketing Studio saved was named with the capability
+    it ran on, digest and all: `earlier` is that capability, and its case is used when it is
+    there and the stable one is not."""
+    basis = digest([task, inputs, rc.stable(helper), areas])
+    if not isinstance(earlier, dict):
+        return basis
+    older = digest([task, inputs, earlier, areas])
+    base = rc.inside(root, str(rc.CASE))
+    if not (base / basis / 'topic').exists() and (base / older / 'topic').is_dir():
+        return older
+    return basis
+
+
 def unresolved(root):
     """Capacity remains occupied across changed inputs until host termination is confirmed."""
     base = rc.inside(root, str(rc.CASE))
@@ -363,9 +379,14 @@ class Workflow:
     def run(self, root, task, invoke, sources=(), *, limit=3, progress=lambda state: None,
             allowed=lambda: True, cancelled=lambda: False, readable=None, restart_stopped=False,
             section_policy=None, section_context=None, impact=None, input_snapshot=None,
-            creator_review=False, reading=False, **_):
-        if capability(self.runtime) is None:
+            creator_review=False, reading=False, earlier=None, **_):
+        """`earlier` is what the run's record held of the helper before it moved to the
+        installed one ({'capability', 'reuse', 'section_context'}). A case an older Marketing
+        Studio saved is named and checked by those; it goes on as the same research."""
+        helper = capability(self.runtime)
+        if helper is None:
             raise ValueError('This workflow needs the complete Harness Research 1.1 collection runtime.')
+        earlier = earlier if isinstance(earlier, dict) else {}
         if task.get('research_policy') and not research_quality.valid_policy(task['research_policy']):
             raise ValueError('Restore the saved focused research policy before continuing.')
         if unresolved(root):
@@ -374,10 +395,14 @@ class Workflow:
             from studio_core import research_impact
             research_impact.context_current(root, task, impact)
         areas = section_streams(task) if section_policy else streams(task, limit)
-        basis = digest([task, [[s.get('file'), s.get('origin'), s.get('permission'),
+        inputs = [[s.get('file'), s.get('origin'), s.get('permission'),
             hashlib.sha256(s['text'].encode()).hexdigest(),
             hashlib.sha256(bytes_of(s['original_path'])).hexdigest() if s.get('original_path') else None]
-            for s in sources], capability(self.runtime), areas])
+            for s in sources]
+        basis = case_basis(root, task, inputs, helper, areas, earlier.get('capability'))
+        # What an older Marketing Studio keyed sections and reviews with counts as the same, and
+        # each is keyed anew as it is met.
+        earlier_context = earlier.get('section_context')
         # Said here, before anything is registered, and never after the work has begun.
         chosen_count = sum(source.get('permission', 'selected' if source.get('offered', True) else 'public') == 'selected'
                            for source in sources)
@@ -491,18 +516,27 @@ class Workflow:
         reuse_context = None
         context_unchanged = True
         if section_policy and section_policy.get('reuse'):
-            if research_sections.reuse_capability(self.runtime) != section_policy['reuse']:
-                raise ValueError('Restore the saved unchanged-save capability before continuing.')
+            # Unchanged-save review is the installed helper's: an update keeps a review that
+            # passed, since what it reviewed is unchanged. The context names protocols only.
             reuse_context = '.harness-research/studio-review-context.json'
-            context = {'schema': 1, 'protocol': research_sections.fingerprint([capability(self.runtime), section_policy['reuse']]),
-                'guidance': research_sections.fingerprint([research_sections.PROTOCOL, section_context]),
-                'independence': research_sections.fingerprint((section_context or {}).get('checking'))}
+            def review_context(helper_value, reuse_value, section_value):
+                return {'schema': 1, 'protocol': research_sections.fingerprint([helper_value, reuse_value]),
+                    'guidance': research_sections.fingerprint([research_sections.PROTOCOL, section_value]),
+                    'independence': research_sections.fingerprint((section_value or {}).get('checking'))}
+            context = review_context(rc.stable(helper), rc.stable(research_sections.reuse_capability(self.runtime)
+                                                                  or section_policy['reuse']), section_context)
+            accepted_contexts = [context]
+            if isinstance(earlier.get('capability'), dict):
+                accepted_contexts += [review_context(earlier['capability'], earlier.get('reuse'), value)
+                                      for value in (section_context, earlier_context) if value is not None]
             context_file = rc.inside(case, reuse_context)
-            context_unchanged = context_file.exists() and json.loads(context_file.read_bytes()) == context
+            context_unchanged = context_file.exists() and json.loads(context_file.read_bytes()) in accepted_contexts
             rc.write(case, reuse_context, json.dumps(context))
         if section_policy:
             from studio_core import research_impact
-            research_impact.reuse(self, root, case, task, areas, impact, section_context, require)
+            research_impact.reuse(self, root, case, task, areas, impact, section_context, require,
+                                  earlier_context, tuple(value.get('scope_identity')
+                                                         for value in (section_context, earlier_context) if value))
             if input_snapshot:
                 rc.write(case, '.harness-research/studio-inputs.json', json.dumps(input_snapshot))
                 rc.write(case, '.harness-research/studio-task-context.json', json.dumps({key: task[key] for key in rc.TASK_FIELDS if key != 'planning_questions'}))
@@ -731,7 +765,7 @@ class Workflow:
                     offered_final, invoke, round=number,
                     guidance=(self.runtime / 'references/synthesize.md').read_text(),
                     policy={**section_policy, 'workers': limit}, require=require,
-                    notify=section_progress, context=section_context)
+                    notify=section_progress, context=section_context, earlier=earlier_context)
                 require()
             elif (number == 1 and not pending and context_unchanged
                   and research_quality.coverage(review)['unread']

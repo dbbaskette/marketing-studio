@@ -24,14 +24,11 @@ BRANCH = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$')   # a branch a file 
 
 
 def save_brand(engine, sent: dict) -> dict:
-    """Keep the brand skill's repository, and the release to install from it, once this
-    person's own git access can read it and the release is one it has. An empty address
-    forgets both. What the check found is kept for the versions, and the set-up described."""
+    """Keep the brand skill's repository, once this person's own git access can read its
+    main branch, which it is installed from. A release, sent by an older page, is not kept:
+    there are none to choose from. An empty address forgets the repository. Where main is,
+    is kept for the versions, and the set-up described."""
     repository = _text(sent, 'repository')
-    release = _text(sent, 'release')
-    if repository is None and release is not None:
-        raise WorkspaceError("A release is chosen from the brand skill's repository: give the "
-                             'repository too.')
     told = seen(sent)
     shown = None if told is None else settings.seen(told)
     kept = settings.load()
@@ -39,13 +36,12 @@ def save_brand(engine, sent: dict) -> dict:
         settings.save(replace(kept, brand_repository=None, brand_release=None), shown)
         return describe(engine)
     studios_config.writable()   # before git is asked anything
-    found = brand_source.check(repository, release, _anywhere())
-    settings.save(replace(kept, brand_repository=found['repository'],
-                          brand_release=found['release']), shown)
+    found = brand_source.check(repository, None, _anywhere())
+    settings.save(replace(kept, brand_repository=found['repository'], brand_release=None),
+                  shown)
     keeping = getattr(engine, 'upkeep', None)
     if keeping is not None:
-        keeping.remember_brand(found['repository'], {entry['tag']: entry
-                                                     for entry in found['releases']})
+        keeping.remember_brand(found['repository'], found['commit'])
     return describe(engine)
 
 

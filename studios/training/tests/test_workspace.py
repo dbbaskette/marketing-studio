@@ -779,12 +779,41 @@ class CheckpointTests(PlainCase):
         with self.assertRaisesRegex(WorkspaceError, 'The stage is one of'):
             workspace.checkpoint(self.root, stage='printing')
 
-    def test_pin_records_the_task_to_resume(self):
-        pins = workspace.pin(self.root, 'harness-research', task='t-1',
-                             runtime='/opt/runtime', run='run-1')
-        self.assertEqual(pins['harness-research'],
-                         {'task': 't-1', 'runtime': '/opt/runtime', 'run': 'run-1'})
+    def test_row_238_a_pin_records_the_task_to_resume_and_never_a_runtime(self):
+        pins = workspace.pin(self.root, 'harness-research', task='t-1', run='run-1')
+        self.assertEqual(pins['harness-research'], {'task': 't-1', 'run': 'run-1'})
         self.assertEqual(workspace.status(self.root)['pins'], pins)
+        # Guidance a training in progress was saved with still passes a runtime: it is taken
+        # without complaint and not kept.
+        pins = workspace.pin(self.root, 'harness-slides', task='t-2',
+                             runtime='/opt/harness-slides/versions/0.17.0')
+        self.assertEqual(pins['harness-slides'], {'task': 't-2'})
+        saved = (self.root / '.training-studio' / 'session.json').read_text()
+        self.assertNotIn('runtime', saved)
+        self.assertNotIn('versions', saved)
+        self.assertEqual(json.loads(saved)['pins'], pins)
+
+    def test_row_239_a_runtime_an_older_version_saved_is_kept_and_never_shown_or_used(self):
+        path = self.root / '.training-studio' / 'session.json'
+        session = json.loads(path.read_text())
+        gone = str(self.root.parent / 'harness-research' / 'versions' / '0.9.0')
+        session['pins'] = {'harness-research': {'task': 't-1', 'runtime': gone, 'run': 'run-1'},
+                           'harness-slides': {'task': 't-2', 'runtime': gone}}
+        path.write_text(json.dumps(session))
+        self.assertFalse(Path(gone).exists())
+        before = workspace.status(self.root)
+        self.assertEqual(before['pins'], {'harness-research': {'task': 't-1', 'run': 'run-1'},
+                                          'harness-slides': {'task': 't-2'}})
+        self.assertNotIn(gone, json.dumps(before))
+        # It loads, saves and carries on; what was saved stays in the record as it was.
+        workspace.checkpoint(self.root, next_step='Carry on with the research')
+        self.assertEqual(json.loads(path.read_text())['pins'], session['pins'])
+        self.assertEqual(workspace.status(self.root)['next_step'], 'Carry on with the research')
+        shown = workspace.pin(self.root, 'harness-research', task='t-1', run='run-2')
+        self.assertEqual(shown['harness-research'], {'task': 't-1', 'run': 'run-2'})
+        self.assertEqual(json.loads(path.read_text())['pins'], {
+            'harness-research': {'task': 't-1', 'runtime': gone, 'run': 'run-2'},
+            'harness-slides': {'task': 't-2', 'runtime': gone}})
 
     def test_row_54_a_text_file_is_not_a_deck(self):
         self.build(*CHAIN)

@@ -77,6 +77,7 @@ import studios_config
 from workspace import WorkspaceError
 
 from studio_core import modules
+from studio_core.packaging import stable_address
 from studio_core.shared_runner import settings as _shared
 modules.bind(globals(), _shared, _shared.NAMES)
 
@@ -207,7 +208,9 @@ def from_shared(found: dict) -> dict:
             'output': found.get('output') if found.get('output') in OUTPUTS else None,
             'brand_repository': repository, 'brand_release': release,
             'previews': passes(check_previews, _group(found, 'render').get('previews')),
-            'brand_skill': (str(Path(brand['skill']).expanduser())
+            # One saved inside a `versions/` folder is said through `current`: an update keeps
+            # only the newest version, and the saved one may be gone.
+            'brand_skill': (str(stable_address(Path(brand['skill']).expanduser(), saved=True))
                             if passes(check_place, brand.get('skill')) else None)}
 
 

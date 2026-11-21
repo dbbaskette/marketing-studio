@@ -288,8 +288,12 @@ def not_while_serving(home: Path) -> None:
 def python_search(run: str, pythons: tuple | None = None) -> str:
     """The loop both commands use: `run` with the first Python new enough. The Python that
     ran this installer is tried first, then the places install.sh tries."""
-    names = ' '.join(shlex.quote(name) for name in (pythons or (sys.executable, *PYTHONS)))
+    from studio_core.packaging import stable_address
     from studio_core.runtime import shell_path
+    # A private Python inside an installed version is named through `current`, which the
+    # next update moves: the version folder itself is removed by it.
+    names = ' '.join(shlex.quote(name) for name in (
+        pythons or (str(stable_address(sys.executable)), *PYTHONS)))
     return shell_path() + f"""for candidate in {names}; do
   if command -v "$candidate" >/dev/null 2>&1 && "$candidate" -c 'import sys; sys.exit(0 if sys.version_info >= (3,11) else 1)' >/dev/null 2>&1; then
     {run}
@@ -450,8 +454,9 @@ def helper_command(state: dict) -> str | None:
 
 
 def companions(home: Path, root: Path, target: str | None, pins: dict, agree,
-               declined: str | None = None) -> dict:
-    """Bring each companion skill that is missing or older than its pin, and nothing else.
+               declined: str | None = None, update: bool = False) -> dict:
+    """Bring each companion skill that is missing or older than this version needs, from
+    its main branch; with `update`, also each whose installed commit is not main's now.
     It is brought for the assistants named, else those Training Studio was installed for,
     else every one found. What was brought is recorded with the installation, when there is
     one. The runner's Update asks for this."""
@@ -459,7 +464,7 @@ def companions(home: Path, root: Path, target: str | None, pins: dict, agree,
     named = list(SKILL_ROOTS) if target == 'both' else [target] if target else None
     harnesses = named or list((state or {}).get('links', {})) or chosen_harnesses(home, None)
     outcomes = bring_companions(home, root, harnesses, pins, agree,
-                                state if state is not None else {}, declined)
+                                state if state is not None else {}, declined, update=update)
     if state is not None:
         write_state(root, state)
     notes = [said_of(name, pins[name], outcome, harnesses) for name, outcome in outcomes.items()]
@@ -467,49 +472,41 @@ def companions(home: Path, root: Path, target: str | None, pins: dict, agree,
             'notes': [note for note in notes if note]}
 
 
-def pin(path: Path, name: str, revision: str) -> dict:
-    """For whoever keeps this repository: pin a companion to a tag or commit of its own
-    repository, and write what that revision holds into companions.json."""
-    pins = read_pins(path)
-    if name not in pins:
-        raise InstallError(f'{name} is not a companion skill. Those are: '
-                           + ', '.join(pins) + '.')
-    entry = pins[name]
-    with tempfile.TemporaryDirectory() as holder:
-        commit = fetch_revision(entry['repository'], revision, Path(holder))
-        try:
-            version = json.loads((Path(holder) / 'package.json').read_text(
-                encoding='utf-8'))['version']
-        except (OSError, ValueError, KeyError, TypeError):
-            version = None
-        if not isinstance(version, str) or not VERSION.match(version) \
-                or not all((Path(holder) / entry[key]).is_file()
-                           for key in ('stub', 'installer')):
-            raise InstallError(f'{revision} of {name} does not hold a version, its entry '
-                               f"({entry['stub']}) and its installer ({entry['installer']}).")
-        was = (entry['version'], entry['commit'])
-        entry.update({'version': version, 'commit': commit,
-                      'sha256': tree_digest(Path(holder))})
-    pending = path.with_name(f'.{path.name}.pending-{secrets.token_hex(4)}')
-    try:
-        pending.write_text(json.dumps({'schema': 1, 'companions': pins}, indent=2) + '\n',
-                           encoding='utf-8')
-        os.replace(pending, path)
-    finally:
-        pending.unlink(missing_ok=True)
-    return {'action': 'pin', 'companion': name, 'version': version, 'commit': commit,
-            'was': {'version': was[0], 'commit': was[1]}, 'written': str(path)}
-
-
 # --- actions ----------------------------------------------------------------------
+
+def older_versions(root: Path, key: str, while_open: bool, cleanup: bool) -> dict:
+    """Remove every version but the one just installed, and say what went and what stayed.
+    One version is kept, so nothing can go on using an older copy. Nothing is removed
+    underneath a runner that is open, which may be running from one of them, nor when the
+    Marketing Studio installer asked to do this itself once all its studios are in."""
+    if not cleanup:
+        return {'removed': [], 'retained': []}
+    versions = root / 'versions'
+    if while_open:
+        try:
+            others = sorted(name for name in os.listdir(versions) if name != key)
+        except OSError:
+            others = []
+        why = ('Training Studio is open and may be running from it. It is removed the next '
+               'time Training Studio is installed while it is closed.')
+        return {'removed': [], 'retained': [{'path': str(versions / name), 'reason': why}
+                                            for name in others]}
+    from studio_core.packaging import prune
+    return prune(versions, key)
+
 
 def install(source: Path, home: Path, root: Path, harnesses: list[str], link_only: bool,
             replace: bool, bootstrap: Path = BOOTSTRAP, runner: Path = RUNNER,
             pins: dict | None = None, agree=None, declined: str | None = None,
-            pins_file: Path | None = None, while_open: bool = False) -> dict:
+            pins_file: Path | None = None, while_open: bool = False,
+            cleanup: bool = True) -> dict:
     """Install the skill and the runner, link the skill into each assistant's skill folder,
     write the ways to open the runner, and bring the companion skills the person agrees to.
     `pins_file` is where `pins` were read from, which the installed copy keeps.
+
+    Every link, launcher and recorded path names the installed copy through `current`, so
+    the next update needs to rewrite none of them. Once all of it has succeeded, every
+    other folder in `versions` is removed: see `older_versions`.
 
     `while_open` is for the runner's own upgrade: a new version is laid beside the one it
     runs from, which is left whole, and `current` moves. A link to a checkout is never made
@@ -566,21 +563,31 @@ def install(source: Path, home: Path, root: Path, harnesses: list[str], link_onl
         links[harness] = entry
     studio = (runner if link_only else root / 'current' / 'runner') / 'studio.py'
     scripts = (source if link_only else root / 'current') / 'scripts'
+    from studio_core.packaging import stable_address
     state.update({'mode': 'link' if link_only else 'managed', 'current': key,
-                  'source': str(source), 'installed_at': now(), 'runner': str(studio),
+                  'source': str(stable_address(source)), 'installed_at': now(),
+                  'runner': str(studio),
                   'launchers': write_launchers(home, root, studio, scripts),
                   'links': {**state.get('links', {}), **links}})
     write_state(root, state)
     outcomes = bring_companions(home, root, harnesses, pins or {},
                                 agree or (lambda *asked: False), state, declined)
     write_state(root, state)
-    return {'action': 'install', 'mode': state['mode'], 'version': key, 'links': links,
-            'runner': runner_report(home, root, state), 'helper': helper_command(state),
-            **prerequisites(home, root, harnesses, pins, outcomes)}
+    result = {'action': 'install', 'mode': state['mode'], 'version': key, 'links': links,
+              'runtime': str(destination), 'id': key,
+              'runner': runner_report(home, root, state), 'helper': helper_command(state),
+              **prerequisites(home, root, harnesses, pins, outcomes)}
+    if link_only:   # a checkout has no version folder, and `current` was not moved
+        return {**result, 'removed': [], 'retained': []}
+    # Last, when nothing more can fail: the older versions go.
+    return {**result, 'versionDirectory': str(root / 'versions' / key),
+            **older_versions(root, key, while_open, cleanup)}
 
 
 def rollback(root: Path, home: Path) -> dict:
-    """Go back to the version installed before the current one, the runner with it."""
+    """Go back to the version installed before the current one, the runner with it, when
+    that version is still on this computer. An update removes it, so this is refused,
+    with nothing changed, unless its folder could not be removed then."""
     state = read_state(root)
     if state is None or state.get('mode') != 'managed':
         raise InstallError('Nothing to roll back: there is no managed installation here.')
@@ -589,8 +596,9 @@ def rollback(root: Path, home: Path) -> dict:
     not_while_serving(home)
     previous = state['history'][-2]
     staged = root / 'versions' / previous
-    if not staged.is_dir():
-        raise InstallError(f'The earlier version is no longer on disk: {staged}')
+    if not staged.is_dir():   # an update keeps one version, so this is the usual answer
+        from studio_core.packaging import GONE
+        raise InstallError(GONE)
     smoke(staged)
     replace_link(root / 'current', staged)
     left = state['history'].pop()
@@ -601,7 +609,7 @@ def rollback(root: Path, home: Path) -> dict:
 
 
 def uninstall(root: Path, home: Path) -> dict:
-    """Remove the links and launchers this installer placed. Installed versions are left on
+    """Remove the links and launchers this installer placed. The installed version is left on
     disk, and so are the companion skills, which belong to their own installers."""
     state = read_state(root)
     if state is None:
@@ -633,7 +641,10 @@ def uninstall(root: Path, home: Path) -> dict:
 def again(*args: str) -> str:
     """The command that runs this installer again with these arguments, as it would be typed
     in the folder the person is in."""
-    script = REPO / 'installer' / 'install.sh'
+    from studio_core.packaging import stable_address
+    # Said through `current` when this installer is inside an installed version, so the
+    # command still works after the update that replaces that version's folder.
+    script = stable_address(REPO / 'installer' / 'install.sh')
     try:
         script = script.relative_to(Path.cwd().resolve())
     except (OSError, ValueError):
@@ -769,7 +780,8 @@ def check(home: Path, root: Path, harnesses: list[str], pins: dict | None = None
             links[harness] = 'points somewhere this installer did not put it'
     return {'action': 'check', 'installed': bool(state), 'mode': state.get('mode'),
             'version': state.get('current'),
-            'earlier_versions': state.get('history', [])[:-1], 'links': links,
+            'earlier_versions': [key for key in state.get('history', [])[:-1]
+                                 if (root / 'versions' / key).is_dir()], 'links': links,
             'runner': runner_report(home, root, state), 'helper': helper_command(state),
             **prerequisites(home, root, harnesses, pins)}
 
@@ -782,7 +794,7 @@ def plan(source: Path, home: Path, root: Path, harnesses: list[str], link_only: 
         found = companion_found(home, harnesses, name)
         companions[name] = {'wanted': pin['version'], 'found': found,
                             'would_offer': bool(wanting(found, minimum_version(pin))),
-                            'from': pin['repository'], 'commit': pin['commit']}
+                            'from': pin['repository'], 'branch': pin.get('branch', 'main')}
     return {'action': 'plan',
             'version': (source / 'VERSION').read_text(encoding='utf-8').strip(),
             'mode': 'link' if link_only else 'managed', 'harnesses': harnesses,
@@ -822,6 +834,11 @@ def describe(result: dict) -> str:
             elif outcome['state'] == 'left alone' and not wanting(outcome['found'],
                                                                  outcome['wanted']):
                 lines.append(f'  {name} was already there, and was left alone.')
+        if result.get('removed'):
+            lines.append(f"  Older versions removed: {len(result['removed'])}. Only the "
+                         'newest is kept.')
+        lines += [f"  Still on disk: {kept['path']} ({kept['reason']})"
+                  for kept in result.get('retained', [])]
     elif action == 'rollback':
         lines.append(f"Rolled back to {result['version']} (from {result['left']}).")
         if not result['runner']['installed']:
@@ -835,8 +852,8 @@ def describe(result: dict) -> str:
             lines.append('  Left in place, for anything else that uses them: '
                          + ', '.join(result['companions_left']))
         if result['versions_kept_in']:
-            lines.append(f"  Installed versions are still in {result['versions_kept_in']}; "
-                         'delete that folder if you no longer want them.')
+            lines.append(f"  The installed version is still in {result['versions_kept_in']}; "
+                         'delete that folder if you no longer want it.')
     elif action == 'check':
         if result['installed']:
             lines.append(f"Training Studio {result['version']} is installed "
@@ -859,8 +876,8 @@ def describe(result: dict) -> str:
                   for kind, path in result['launchers'].items()]
         for name, companion in result['companions'].items():
             lines.append(f"  {name} {companion['wanted']}: " + (
-                f"would be offered, from {companion['from']} at revision "
-                f"{companion['commit'][:12]}" if companion['would_offer']
+                f"would be offered, from the {companion['branch']} branch of "
+                f"{companion['from']}" if companion['would_offer']
                 else 'already there; would be left alone'))
     elif action == 'companions':
         for name, outcome in result['companions'].items():
@@ -871,12 +888,6 @@ def describe(result: dict) -> str:
                 lines.append(f"{name} is already as new as {outcome['wanted']}, and was left "
                              'alone.')
         lines = lines or ['No companion skill was brought.']
-    elif action == 'pin':
-        lines.append(f"{result['companion']} is now pinned to {result['version']} "
-                     f"({result['commit'][:12]}); it was {result['was']['version']} "
-                     f"({result['was']['commit'][:12]}).")
-        lines.append(f"  Written to {result['written']}. Read what changed between the two "
-                     'revisions before you commit it.')
     if action in ('install', 'check', 'rollback') and how_to_open(result['runner']):
         lines += ['', 'To open Training Studio:'] + how_to_open(result['runner'])
     notes = result.get('notes', [])
@@ -901,11 +912,9 @@ def offer(name: str, pin: dict, found: dict) -> bool:
           + (f'is newer than the {having[0]} on this computer' if having
              else 'is not on this computer')
           + f": {NEEDS.get(name, 'part of a training cannot be made without it')}.")
-    print(f"  Its newest release would be looked up at {source}, fetched and checked, file for "
-          f"file\n  (revision {pin['commit'][:12]} when the newest cannot be looked up). Then its "
-          'own installer '
-          'would be run with Node.\n  That installer registers the skill for every assistant '
-          'it knows, not only those above.')
+    print(f"  Its main branch would be fetched from {source} and checked, file for file, as\n"
+          'it is now. Then its own installer would be run with Node.\n  That installer '
+          'registers the skill for every assistant it knows, not only those above.')
     if pin.get('note'):
         print(f"  {pin['note']}")
     return input(f'Fetch {name} and run its installer? [y/N]: ').strip().lower() in ('y', 'yes')
@@ -922,8 +931,7 @@ def agreement(choice: str) -> tuple:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('action', nargs='?', default='install',
-                        choices=('install', 'check', 'rollback', 'uninstall', 'companions',
-                                 'pin'))
+                        choices=('install', 'check', 'rollback', 'uninstall', 'companions'))
     parser.add_argument('companion', nargs='?', help=argparse.SUPPRESS)
     parser.add_argument('--target', choices=('claude', 'codex', 'both'),
                         help='which assistant to install for (default: every one found)')
@@ -938,10 +946,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument('--dry-run', action='store_true',
                         help='say what an install would do; change nothing')
     parser.add_argument('--json', action='store_true', help='print the result as JSON')
-    parser.add_argument('--revision', help=argparse.SUPPRESS)   # with pin: a tag or commit
+    # With companions: also bring each whose installed commit is not its main branch's now.
+    parser.add_argument('--update', action='store_true', help=argparse.SUPPRESS)
     # With companions, or install of a new version: the runner asks, while it is open,
     # having seen no training working.
     parser.add_argument('--while-open', action='store_true', help=argparse.SUPPRESS)
+    # From the Marketing Studio installer, which removes older versions itself once every
+    # studio has installed: until then a failure of its own puts the old pointers back.
+    parser.add_argument('--defer-cleanup', action='store_true', help=argparse.SUPPRESS)
     parser.add_argument('--home', type=Path, default=Path.home(), help=argparse.SUPPRESS)
     parser.add_argument('--root', type=Path, help=argparse.SUPPRESS)
     parser.add_argument('--source', type=Path, default=SOURCE, help=argparse.SUPPRESS)
@@ -952,10 +964,7 @@ def main(argv: list[str] | None = None) -> int:
     source = args.source.expanduser().resolve()
     pins_path = (args.pins or PINS).expanduser().resolve()
     try:
-        if args.action == 'pin' and not (args.companion and args.revision):
-            raise InstallError('Name the companion and its revision: '
-                               'pin harness-slides --revision v0.14.1')
-        if args.action != 'pin' and args.companion:
+        if args.companion:
             raise InstallError(f'{args.companion} is one word too many.')
         pins = read_pins(pins_path)
         if args.action == 'check':
@@ -972,7 +981,8 @@ def main(argv: list[str] | None = None) -> int:
             # Each companion is its own question, so there is no question before them.
             if not args.while_open:
                 not_while_serving(home)
-            result = companions(home, root, args.target, pins, *agreement(args.companions))
+            result = companions(home, root, args.target, pins, *agreement(args.companions),
+                                update=args.update)
         else:
             harnesses = chosen_harnesses(home, args.target) if args.action == 'install' else []
             if not args.yes:
@@ -988,11 +998,10 @@ def main(argv: list[str] | None = None) -> int:
                 agree, declined = agreement(args.companions)
                 result = install(source, home, root, harnesses, args.link, args.replace,
                                  pins=pins, agree=agree, declined=declined,
-                                 pins_file=pins_path, while_open=args.while_open)
+                                 pins_file=pins_path, while_open=args.while_open,
+                                 cleanup=not args.defer_cleanup)
             elif args.action == 'rollback':
                 result = rollback(root, home)
-            elif args.action == 'pin':
-                result = pin(pins_path, args.companion, args.revision)
             else:
                 result = uninstall(root, home)
     except InstallError as refusal:

@@ -273,6 +273,24 @@ desk_chat.migrate(engine.Engine(background=False), Path(sys.argv[1]), sys.argv[2
         (root / RUN).write_text(json.dumps(value))
         self.assertTrue(self.preview(root)['blockers'])
 
+    def test_a_companion_task_pin_needs_no_runtime_and_an_old_one_is_not_read(self):
+        from studio_core import training_migration
+        root = self.saved()
+        session = json.loads((root / SESSION).read_text())
+        self.assertTrue(training_migration.session_supported(session))
+        for pins in ({'harness-research': {'task': 't-1'}},
+                     {'harness-research': {'task': 't-1', 'run': 'r-1'}},
+                     {'harness-slides@101': {'task': 't-2', 'runtime': '/gone/versions/0.9.0'}},
+                     {'harness-research': {'task': 't-1', 'runtime': ''}}):
+            self.assertTrue(training_migration.session_supported({**session, 'pins': pins}), pins)
+        for pins in ({'harness-research': {}}, {'harness-research': {'task': ''}},
+                     {'harness-research': 't-1'}, {'harness-research': {'runtime': '/opt/r'}}):
+            self.assertFalse(training_migration.session_supported({**session, 'pins': pins}), pins)
+        # As the helper saves one now, in a saved training that is then previewed.
+        workspace.pin(root, 'harness-research', task='t-1', run='r-1')
+        gitstate.commit(self.space, 'a companion task', [root])
+        self.assertEqual(self.preview(root)['blockers'], [])
+
     def test_cli_preview_and_migrate_json(self):
         root = self.saved()
         out = io.StringIO()

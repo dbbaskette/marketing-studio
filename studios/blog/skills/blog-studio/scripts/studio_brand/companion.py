@@ -99,11 +99,14 @@ def locations(
 
 
 def find_runtime(places: list[Path], script: Path, variable: str, name: str, unable: str) -> Path:
-    """The first place that holds `script`, with links followed so one version is used
-    throughout. Refuses when there is none; `unable` says what cannot be done then."""
+    """The first place that holds `script`, said by its stable address: the `current` link
+    its installer keeps, never the version folder behind it, which the next update removes.
+    A run or a job that spans an update goes on with the new version. Refuses when there is
+    none; `unable` says what cannot be done then."""
+    from studio_core.packaging import stable_place
     for place in places:
         if (place / script).is_file():
-            return place.resolve()
+            return stable_place(place)
     if os.environ.get(variable):
         raise WorkspaceError(
             f'{variable} names {os.environ[variable]}, which does not hold '

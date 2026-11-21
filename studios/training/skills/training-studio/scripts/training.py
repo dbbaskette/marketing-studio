@@ -184,7 +184,8 @@ def parser() -> argparse.ArgumentParser:
     pin = commands.add_parser('pin', help='record a harness skill task to resume with')
     pin.add_argument('skill', choices=workspace.PINNABLE, help='the skill the task belongs to')
     pin.add_argument('--task', required=True, help="the task's ID in that skill")
-    pin.add_argument('--runtime', required=True, help="the skill's runtime folder")
+    pin.add_argument('--runtime', help='accepted and ignored: the skill says where it runs '
+                     'from each time it is started or resumed, and no path is saved')
     pin.add_argument('--run', help="the run's ID, if the skill gives one")
     pin.add_argument('--level', choices=workspace.LEVELS,
                      help='the level this task belongs to, for a per-level deck')
@@ -254,8 +255,7 @@ def _dispatch(args: argparse.Namespace, root: Path) -> dict:
                                     args.approval, args.gate, add_levels=args.add_levels,
                                     delivery=args.delivery)
     if args.command == 'pin':
-        return workspace.pin(root, args.skill, args.task, args.runtime, args.run,
-                             args.level)
+        return workspace.pin(root, args.skill, args.task, run=args.run, level=args.level)
     return run_checks(root, args.all)
 
 

@@ -454,6 +454,9 @@ def export_brand(root, run: dict, brand_skill) -> Path:
             checked = brand_skill.check(contract)
         except WorkspaceError as refusal:
             _halt(root, run, ' '.join(getattr(refusal, 'problems', None) or [str(refusal)]))
+        # A contract an older Harness Brand exported still holds, with a notice that says how
+        # to export it again: shown, and the deck goes on with the revision it was made with.
+        brand_guidance.tell(root, checked, "The deck's brand")
         try:
             kept = (root / VERSION).read_text(encoding='utf-8').strip()
         except OSError:
@@ -522,6 +525,7 @@ def guide(root, run: dict, brand_skill) -> dict:
                 (root / WORKER).unlink(missing_ok=True)
             kept.update(brand_guidance.recorded(answer),
                         checkpoints=brand_guidance.checkpoints(answer), worker=bool(worker))
+            brand_guidance.tell(root, answer)   # such as a task started on another version
     home.write_json(root / ENTRY, kept)
     return kept
 

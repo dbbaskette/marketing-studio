@@ -3448,16 +3448,18 @@ function guidanceCard(status) {
   const node = card('Guidance');
   const pin = status.guidance;
   if (!pin) {
-    return add(node, make('p', 'quiet', 'This training is not pinned to any guidance yet.'));
+    return add(node, make('p', 'quiet', 'This training has saved no guidance yet. It takes the newest.'));
   }
+  // What is saved is which instructions it follows. The scripts are always the installed ones,
+  // so the version is only where it started.
   const line = make('p', '');
   if (pin.commit) {
-    add(line, 'Pinned to commit ', make('code', '', String(pin.commit).slice(0, 12)));
+    add(line, 'Follows the guidance of commit ', make('code', '', String(pin.commit).slice(0, 12)));
   } else {
-    add(line, 'Pinned to the guidance installed with the scripts');
+    add(line, 'Follows the guidance installed with Training Studio');
   }
-  if (pin.pinned_at) add(line, ', ', when(pin.pinned_at));
-  if (pin.runtime) add(line, ', by scripts version ', make('code', '', pin.runtime));
+  if (pin.pinned_at) add(line, ', saved ', when(pin.pinned_at));
+  if (pin.runtime) add(line, ', started on Training Studio ', make('code', '', String(pin.runtime)));
   return add(node, add(line, '.'));
 }
 
@@ -9056,11 +9058,12 @@ function brandSheet() {
   const problem = problemLine();
   const confirm = capsule(brand.action + ' it now', 'filled', () => settleBrand(problem,
     confirm), 'send');
+  // The brand skill is installed from its repository's main branch, at the commit shown.
   return [sheetTitle(brand.action === 'Upgrade'
-    ? 'Upgrade the brand skill from ' + brand.installed + ' to ' + brand.version + '?'
-    : 'Install the brand skill ' + brand.version + '?'),
+    ? 'Upgrade the brand skill from ' + brand.installed + ' to its main branch?'
+    : 'Install the brand skill from its main branch?'),
   make('h3', 'sheet-part', 'What is installed'),
-  bullets(['Release ' + brand.release + ', at revision ' + brand.commit + '.',
+  bullets(['Its main branch, at revision ' + brand.commit + '.',
     'From ' + brand.repository + '.']),
   make('h3', 'sheet-part', 'What happens'), bullets(BRAND_STEPS),
   make('p', '', BRAND_TRUST), make('p', 'quiet', BRAND_WAITS), problem,
@@ -9236,8 +9239,8 @@ function updateSheet() {
   const confirm = capsule('Update them now', 'filled', () => settleUpdate(problem, confirm),
     'send');
   return [head, make('h3', 'sheet-part', 'What is brought'),
-    bullets(wanted.map((one) => one.name + ' ' + one.wanted + ', from ' + one.repository
-      + ' at revision ' + one.commit + '.')),
+    bullets(wanted.map((one) => one.name + ' ' + one.wanted + ' or newer: the main branch of '
+      + one.repository + ', as it is now.')),
     make('p', '', UPDATE_SAYS),
     ...wanted.filter((one) => one.note).map((one) => make('p', '', one.note)),
     make('p', 'quiet', UPDATE_WAITS), problem,

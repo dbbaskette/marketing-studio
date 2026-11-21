@@ -1,6 +1,11 @@
-"""Traverse approved checkout links and materialize self-contained studio bundles."""
+"""Traverse approved checkout links and materialize self-contained studio bundles.
+
+Also the one rule every installer shares for its `versions` folder: one version stays,
+and everything written down names it through the `current` link beside that folder.
+"""
 import os
 from pathlib import Path
+import shutil
 
 
 def shared_link(path):
@@ -35,3 +40,93 @@ def files(root):
                 raise ValueError('Package files and folders must be regular, not links.')
         result.extend(Path(directory) / name for name in sorted(names))
     return sorted(result)
+
+
+GONE = ('The earlier version is no longer on this computer: an update keeps only the newest. '
+        'Install the release you want instead. Nothing was changed.')
+
+
+def prune(versions, keep, in_use=None):
+    """Remove every direct child of an installer's own `versions` folder except `keep`.
+
+    Called only after an install has fully succeeded, so no saved work, launcher or caller
+    can stay on an older copy. A link is unlinked and never followed, and a real folder is
+    removed without following the links inside it. Nothing is removed when `versions` is
+    itself a link, or does not hold `keep`. An entry that cannot be removed is reported and
+    never raised: {'removed': [path], 'retained': [{'path', 'reason'}]}. `in_use` names
+    children that something still runs from, each with the reason to report: they stay.
+    """
+    versions = Path(versions)
+    removed, retained = [], []
+    in_use = in_use or {}
+    try:
+        if versions.is_symlink():
+            raise OSError('The versions folder is a link, so older versions were left in place.')
+        names = sorted(os.listdir(versions))
+        if keep not in names:
+            raise OSError('The installed version is not in this folder, so nothing was removed.')
+    except FileNotFoundError:
+        return {'removed': removed, 'retained': retained}
+    except OSError as failure:
+        return {'removed': removed,
+                'retained': [{'path': str(versions), 'reason': failure.strerror or str(failure)}]}
+    for name in names:
+        if name == keep:
+            continue
+        path = versions / name
+        if name in in_use:
+            retained.append({'path': str(path), 'reason': in_use[name]})
+            continue
+        try:
+            if path.is_symlink() or not path.is_dir():
+                path.unlink()
+            else:
+                shutil.rmtree(path)
+            removed.append(str(path))
+        except OSError as failure:
+            retained.append({'path': str(path), 'reason': failure.strerror or str(failure)})
+    return {'removed': removed, 'retained': retained}
+
+
+def version_target(link, text):
+    """The version folder a link with this text names, or None when it names anything else:
+    `current` itself points into `versions`, and every other link points at `current`."""
+    target = Path(os.path.normpath(Path(link).parent / text))
+    return target if target.parent.name == 'versions' else None
+
+
+def stable_address(path, saved=False):
+    """The same place said through its installer's `current` link, when `path` is inside
+    the version folder that link names. A later update replaces that folder, and the
+    address through `current` goes on working.
+
+    `saved` is for a path written down earlier, by this or an older version: one inside any
+    `versions/<id>` folder is said through `current` while that link is there, whichever
+    version it names now, since an update keeps only the newest and that folder may be
+    gone."""
+    path = Path(path)
+    parts = path.parts
+    for index in range(len(parts) - 1):
+        if parts[index] != 'versions' or index + 1 >= len(parts):
+            continue
+        current = Path(*parts[:index]) / 'current'
+        folder = Path(*parts[:index + 2])
+        try:
+            if current.is_symlink() and (saved or current.resolve() == folder.resolve()):
+                return current.joinpath(*parts[index + 2:])
+        except OSError:
+            pass
+    return path
+
+
+def stable_place(place):
+    """Where an installed companion is, said so that it outlives an update: through its
+    `current` link when it lives in a version folder, whatever link led to it; otherwise
+    the place as it was named, unresolved."""
+    place = Path(place).absolute()
+    try:
+        resolved = place.resolve()
+    except (OSError, RuntimeError):
+        return place
+    stable = stable_address(resolved)
+    return stable if stable != resolved else place

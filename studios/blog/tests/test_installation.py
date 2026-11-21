@@ -59,6 +59,16 @@ class InstallationCase(unittest.TestCase):
     def state(self):
         return json.loads((self.root / 'installation.json').read_text())
 
+    def versions(self):
+        return sorted(path.name for path in (self.root / 'versions').iterdir())
+
+    def keep_from_removal(self, folder):
+        """Make a folder one that cannot be removed, and put that right when the test ends."""
+        folders = [folder, *(path for path in folder.rglob('*') if path.is_dir())]
+        for path in folders:
+            path.chmod(0o555)
+        self.addCleanup(lambda: [path.chmod(0o755) for path in folders if path.is_dir()])
+
     def main(self, *arguments):
         """Run the command line in-process against the disposable home; returns (exit code, stdout, stderr)."""
         out, err = io.StringIO(), io.StringIO()
@@ -159,7 +169,7 @@ class InstallationTests(InstallationCase):
         )
         self.assertEqual(self.install()['status'], 'already-installed')
 
-    def test_installing_over_a_damaged_runtime_stages_a_replacement_and_keeps_the_damaged_copy(
+    def test_installing_over_a_damaged_runtime_stages_a_replacement_and_then_removes_the_damaged_copy(
         self,
     ):
         self.install()
@@ -167,16 +177,19 @@ class InstallationTests(InstallationCase):
         (damaged / 'scripts/studio.py').write_text('damaged runtime')
         self.assertIn('hash', installer.inspect(self.root, self.targets)['runtime_integrity'])
         # A plain install is enough; the download is intact and is not blamed.
-        self.assertEqual(self.install()['status'], 'installed')
+        result = self.install()
+        self.assertEqual(result['status'], 'installed')
         replacement = self.targets['codex'].resolve()
         self.assertNotEqual(replacement, damaged)
-        self.assertEqual((damaged / 'scripts/studio.py').read_text(), 'damaged runtime')
+        # The damaged copy was beside the replacement until the install succeeded, then went.
+        self.assertEqual(result['removed'], [str(damaged)])
+        self.assertEqual(self.versions(), [replacement.name])
         self.assertEqual(
             installer.inspect(self.root, self.targets)['runtime_integrity'], 'verified'
         )
         self.assertEqual(self.install()['status'], 'already-installed')
         self.assertEqual(self.targets['codex'].resolve(), replacement)
-        self.assertNotIn(str(damaged), self.state()['history'])
+        self.assertNotIn(damaged.name, self.state()['history'])
 
     def test_corrupt_runtime_configuration_is_detected_and_rewritten(self):
         self.install()
@@ -227,6 +240,17 @@ class InstallationTests(InstallationCase):
         self.install()
         recorded = json.loads((self.targets['codex'] / 'config.json').read_text())['python']
         self.assertEqual(recorded, str(installer.stable_interpreter(sys.executable)))
+
+    def test_a_private_python_inside_an_installed_version_is_named_through_current(self):
+        suite = self.home / '.local/share/marketing-studio'
+        private = suite / 'versions/4.0.0-abcdef012345/runtime/python/bin/python3'
+        private.parent.mkdir(parents=True)
+        private.write_text('')
+        (suite / 'current').symlink_to(suite / 'versions/4.0.0-abcdef012345')
+        stable = suite / 'current/runtime/python/bin/python3'
+        # However the interpreter says where it is, an update's removal of the folder is survived.
+        self.assertEqual(installer.stable_interpreter(private), stable)
+        self.assertEqual(installer.stable_interpreter(stable), stable)
 
     def test_removed_interpreter_is_reported_by_check_and_replaced_by_the_next_setup(self):
         old = self.home / 'old-python/bin/python3'
@@ -280,6 +304,11 @@ class InstallationTests(InstallationCase):
         first = self.install()
         self.change_package()
         previous = self.targets['codex'].resolve()
+        self.addCleanup(
+            lambda: self.assertTrue(
+                (previous / 'SKILL.md').is_file(), 'a failed install keeps the version in use'
+            )
+        )
         # A newly selected third location exercises failure after the shared switch.
         extra = self.home / 'extra/skills/blog-studio'
         chosen = {'codex': self.targets['codex'], 'claude': extra}
@@ -294,7 +323,12 @@ class InstallationTests(InstallationCase):
         self.assertEqual(self.targets['codex'].resolve(), previous)
         self.assertEqual(self.targets['claude'].resolve(), previous)
         self.assertFalse(extra.is_symlink())
-        self.assertIn(first['version'], (self.root / 'installation.json').read_text())
+        self.assertEqual(self.state()['version'], first['version'])
+        # Nothing is removed by an install that failed: the old version is whole and in use.
+        self.assertIn(previous.name, self.versions())
+        self.assertEqual(
+            installer.inspect(self.root, self.targets)['runtime_integrity'], 'verified'
+        )
 
     def test_interrupt_after_the_switch_is_undone_and_setup_can_run_again(self):
         first = self.install()
@@ -308,21 +342,25 @@ class InstallationTests(InstallationCase):
         with self.assertRaises(KeyboardInterrupt):
             self.install(activate=interrupted)
         self.assertEqual(self.targets['codex'].resolve(), previous)
-        self.assertEqual(Path(self.state()['version']).name, first['version'])
+        self.assertEqual(self.state()['version'], first['version'])
+        self.assertTrue((previous / 'SKILL.md').is_file(), 'the version in use is kept')
         self.assertEqual(
             installer.inspect(self.root, self.targets)['runtime_integrity'], 'verified'
         )
         second = self.install()
         self.assertEqual(second['status'], 'installed')
         self.assertNotEqual(second['version'], first['version'])
+        self.assertEqual(self.versions(), [second['version']])
 
     def test_setup_killed_between_switch_and_record_is_completed_by_the_next_run(self):
         first = self.install()
         record = (self.root / 'installation.json').read_bytes()
         self.change_package()
-        second = self.install()
-        # The process died after `current` moved but before the record was written.
+        # The process died after `current` moved but before the record was written, and so
+        # before the version it replaced was removed.
+        second = self.install(cleanup=False)
         (self.root / 'installation.json').write_bytes(record)
+        self.assertEqual(self.versions(), sorted([first['version'], second['version']]))
         self.assertIn(
             'interrupted', installer.inspect(self.root, self.targets)['runtime_integrity']
         )
@@ -331,11 +369,15 @@ class InstallationTests(InstallationCase):
             result = self.install(repair=repair)
             self.assertEqual(result['status'], 'installed')
             self.assertIn('recovered', result)
-            self.assertEqual(Path(self.state()['version']).name, second['version'])
+            self.assertEqual(self.state()['version'], second['version'])
             self.assertEqual(
                 installer.inspect(self.root, self.targets)['runtime_integrity'], 'verified'
             )
-        self.assertEqual(installer.rollback(self.root)['version'], first['version'])
+            # Completing the setup also completes its cleanup: one version is kept.
+            self.assertEqual(self.versions(), [second['version']])
+            if repair:
+                with self.assertRaisesRegex(installer.InstallError, 'no longer on this computer'):
+                    installer.rollback(self.root)
         # The same holds when the very first setup lost its record.
         (self.root / 'installation.json').unlink()
         self.assertEqual(self.install()['status'], 'installed')
@@ -343,28 +385,110 @@ class InstallationTests(InstallationCase):
             installer.inspect(self.root, self.targets)['runtime_integrity'], 'verified'
         )
 
-    def test_update_and_rollback_keep_old_versions_and_author_work(self):
-        first = self.install()
-        old = self.targets['codex'].resolve()
-        draft = self.home / 'blogs/.blog-studio/articles/example/DRAFT.md'
-        other = self.home / '.codex/skills/research/SKILL.md'
+    def test_an_update_keeps_one_version_and_everything_still_works_through_current(self):
+        with patch.object(sys, 'platform', 'darwin'):
+            first = self.install()
+            old = self.targets['codex'].resolve()
+            draft = self.home / 'blogs/.blog-studio/articles/example/DRAFT.md'
+            other = self.home / '.codex/skills/research/SKILL.md'
+            for path in (draft, other):
+                path.parent.mkdir(parents=True)
+                path.write_text('User-owned content.')
+            launchers = {
+                path: path.read_bytes()
+                for path in (
+                    self.root / 'studio',
+                    self.root / 'blog',
+                    self.home / 'Applications/Open Blog Studio.command',
+                )
+            }
+            # What an interrupted setup and someone's own link can leave beside the versions.
+            outside = self.home / 'kept elsewhere'
+            outside.mkdir()
+            (outside / 'mine.txt').write_text("Not the installer's.")
+            (self.root / 'versions/linked').symlink_to(outside, target_is_directory=True)
+            stale = self.root / 'versions/.0123456789abcdef'
+            stale.mkdir()
+            (stale / 'SKILL.md').write_text('Half staged.')
+            self.change_package()
+            second = self.install()
+        self.assertNotEqual(first['version'], second['version'])
+        self.assertEqual(self.versions(), [second['version']])
+        self.assertEqual(
+            sorted(second['removed']),
+            sorted(
+                str(self.root / 'versions' / name)
+                for name in (first['version'], 'linked', '.0123456789abcdef')
+            ),
+        )
+        self.assertEqual(second['retained'], [])
+        self.assertEqual((outside / 'mine.txt').read_text(), "Not the installer's.")
+        self.assertFalse(old.exists())
+        # The answer names the stable address, and the folder only as where the files are.
+        self.assertEqual(second['runtime'], str(self.root / 'current'))
+        self.assertEqual(second['id'], second['version'])
+        self.assertEqual(
+            second['versionDirectory'], str(self.root / 'versions' / second['version'])
+        )
+        # Nothing that was written down names a version folder, so nothing needed rewriting.
+        for target in self.targets.values():
+            self.assertEqual(os.readlink(target), str(self.root / 'current'))
+            self.assertIn('A tested guidance update.', (target / 'SKILL.md').read_text())
+        for path, before in launchers.items():
+            self.assertEqual(path.read_bytes(), before, 'an update rewrites no launcher')
+            self.assertNotIn('versions/', path.read_text())
+        state = self.state()
+        self.assertEqual(state['version'], second['version'])
+        self.assertEqual(state['history'], [first['version']])
+        self.assertNotIn('versions/', json.dumps(state))
+        done = subprocess.run(
+            ['sh', str(self.root / 'blog'), '--help'], capture_output=True, text=True, timeout=30
+        )
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(
+            installer.inspect(self.root, self.targets)['runtime_integrity'], 'verified'
+        )
         for path in (draft, other):
-            path.parent.mkdir(parents=True)
-            path.write_text('User-owned content.')
+            self.assertEqual(path.read_text(), 'User-owned content.')
+
+    def test_rollback_after_an_update_refuses_and_changes_nothing(self):
+        self.install()
         self.change_package()
         second = self.install()
-        self.assertNotEqual(first['version'], second['version'])
-        for target in self.targets.values():
-            self.assertIn('A tested guidance update.', (target / 'SKILL.md').read_text())
-        self.assertNotIn('A tested guidance update.', (old / 'SKILL.md').read_text())
+        record = (self.root / 'installation.json').read_bytes()
+        pointer = os.readlink(self.root / 'current')
+        with self.assertRaises(installer.InstallError) as refused:
+            installer.rollback(self.root)
+        self.assertEqual(
+            str(refused.exception),
+            'The earlier version is no longer on this computer: an update keeps only the '
+            'newest. Install the release you want instead. Nothing was changed.',
+        )
+        self.assertEqual((self.root / 'installation.json').read_bytes(), record)
+        self.assertEqual(os.readlink(self.root / 'current'), pointer)
+        self.assertEqual(self.versions(), [second['version']])
+        code, _, said = self.main('rollback', '--yes')
+        self.assertEqual(code, 1)
+        self.assertIn('no longer on this computer', said)
+
+    def test_a_version_that_cannot_be_removed_is_reported_and_can_still_be_rolled_back_to(self):
+        first = self.install()
+        old = self.targets['codex'].resolve()
+        self.keep_from_removal(old)
+        self.change_package()
+        second = self.install()
+        self.assertEqual(second['status'], 'installed')
+        self.assertEqual(second['removed'], [])
+        self.assertEqual([kept['path'] for kept in second['retained']], [str(old)])
+        self.assertTrue(second['retained'][0]['reason'])
+        self.assertEqual(self.targets['codex'].resolve().name, second['version'])
         rolled = installer.rollback(self.root)
         self.assertEqual(rolled['version'], first['version'])
         self.assertEqual(self.targets['codex'].resolve(), old)
         self.assertEqual(self.targets['claude'].resolve(), old)
-        for path in (draft, other):
-            self.assertEqual(path.read_text(), 'User-owned content.')
+        self.assertEqual(self.state()['history'], [second['version']])
 
-    def test_existing_1x_installation_upgrades_in_place_and_can_roll_back(self):
+    def test_existing_1x_installation_upgrades_in_place_and_can_roll_back_when_it_was_kept(self):
         # The layout written by the 1.x installer: a bootstrap folder, its own manifest and config.
         old = self.root / 'versions/1.12.3-0123456789ab'
         files = {
@@ -411,11 +535,18 @@ class InstallationTests(InstallationCase):
             )
         )
         self.assertEqual(installer.verify_package(old)['version'], '1.12.3')
+        # An earlier installer recorded whole paths; they are read and rewritten as names.
+        self.keep_from_removal(old)
         upgraded = self.install()
         self.assertEqual(upgraded['status'], 'installed')
         self.assertTrue(upgraded['version'].startswith(VERSION + '-'))
-        self.assertEqual(self.state()['history'], [str(old)])
+        self.assertEqual(self.state()['version'], upgraded['version'])
+        self.assertEqual(self.state()['history'], [old.name])
         self.assertTrue((self.targets['claude'] / 'references/entry-flows.md').is_file())
+        for path in old.rglob('*'):
+            if path.is_dir():
+                path.chmod(0o755)
+        old.chmod(0o755)
         self.assertEqual(installer.rollback(self.root)['version'], old.name)
         self.assertEqual(self.targets['codex'].resolve(), old.resolve())
         config = json.loads((old / 'config.json').read_text())
@@ -453,7 +584,7 @@ class InstallationTests(InstallationCase):
         self.install()
         previous = self.targets['codex'].resolve()
         self.change_package()
-        self.install()
+        self.install(cleanup=False)  # as when the earlier version could not be removed
         (previous / 'SKILL.md').write_text('Damaged old runtime.')
         with self.assertRaises(installer.InstallError):
             installer.rollback(self.root)
@@ -774,7 +905,7 @@ class StartupInstallationTests(InstallationCase):
             helper = self.root / 'blog'
             helper.write_text('# My own helper\n')
             self.change_package()
-            result = self.install()
+            result = self.install(cleanup=False)  # the earlier version is still there
             self.assertIn(str(helper), result['preserved_launchers'])
             self.assertEqual(helper.read_text(), '# My own helper\n')
             installer.rollback(self.root)

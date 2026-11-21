@@ -303,23 +303,41 @@ class Upkeep:
         return age is None or age >= DAY or age < 0
 
     @staticmethod
-    def _brand_entry(listed: dict) -> dict:
-        """What is kept of the brand skill's releases: the newest, and every release with
-        its commit, so that one chosen in Settings can be shown."""
-        latest = brand_source.newest(listed) or {}
-        return {'latest': latest.get('version'), 'tag': latest.get('tag'),
-                'commit': latest.get('commit'),
-                'releases': {tag: entry['commit'] for tag, entry in listed.items()}}
+    def _brand_entry(commit: str) -> dict:
+        """What is kept of the brand skill's repository: the commit its main branch is at."""
+        return {'latest': None, 'tag': None, 'commit': commit, 'branch': 'main'}
 
-    def remember_brand(self, repository: str, listed: dict) -> None:
-        """Keep the brand skill's releases, as Settings' check of its repository found them,
-        so its row is shown at once. When the next look is due does not change."""
+    def remember_brand(self, repository: str, commit: str) -> None:
+        """Keep the commit the brand skill's main branch is at, as Settings' check of its
+        repository found it, so its row is shown at once. When the next look is due does
+        not change."""
         kept = self._saved()
         found = dict(kept.get('found') or {})
         found[BRAND] = {'repository': repository, 'problem': None, 'known_at': _now(),
-                        **self._brand_entry(listed)}
+                        **self._brand_entry(commit)}
         home.data_root().mkdir(parents=True, exist_ok=True)
         home.write_json(self.saved_path(), {'schema': 1, **kept, 'found': found})
+
+    def _installed_commit(self, name: str) -> str | None:
+        """The commit of its main branch the studio's installer last installed of a
+        companion, from the installation record; None when it did not install it."""
+        kept = home.read_json(self.root / 'installation.json', None)
+        entry = ((kept.get('companions') if isinstance(kept, dict) else None) or {}).get(name)
+        commit = entry.get('commit') if isinstance(entry, dict) else None
+        return commit if isinstance(commit, str) and re.fullmatch('[0-9a-f]{40}', commit) \
+            else None
+
+    def _main_moved(self, name: str) -> str | None:
+        """The commit a companion's main branch was at when it was last looked at, when that
+        is not the one the studio's installer installed: an update installs it. None
+        otherwise, and for a copy not installed from here, whose commit is not known: that
+        one is updated only when the person asks."""
+        online = (self._saved().get('found') or {}).get(name) or {}
+        head = online.get('commit') if online.get('branch') == 'main' else None
+        here = self._installed_commit(name)
+        if not isinstance(head, str) or not re.fullmatch('[0-9a-f]{40}', head) or here is None:
+            return None
+        return head if head != here else None
 
     def look(self) -> bool:
         """Ask each repository which releases it has, when that is due. Only the tags are
@@ -333,18 +351,26 @@ class Upkeep:
             # What was known last is kept when it cannot be asked now, with when it was.
             known = before.get(name) if isinstance(before.get(name), dict) \
                 and before[name].get('repository') == repository else {}
+            # A companion and the brand skill are installed from their main branch: only the
+            # commit it is at is read. The studio's own releases are its tags.
+            on_main = name != SELF
             entry = {'repository': repository, 'problem': None,
                      **{key: known.get(key) for key in ('latest', 'tag', 'commit', 'known_at',
-                                                        *(('releases',) if name == BRAND
-                                                          else ()))}}
+                                                        *(('branch',) if on_main else ()))}}
             try:
-                done = hub.run(place, 'ls-remote', '--tags', '--', repository,
+                done = hub.run(place, 'ls-remote', *(('--', repository, 'refs/heads/main')
+                                                     if on_main else ('--tags', '--', repository)),
                                timeout=LOOK_SECONDS)
             except WorkspaceError as refusal:
                 entry['problem'] = str(refusal).rstrip('.')
             else:
-                if done.returncode == 0 and name == BRAND:
-                    entry.update(**self._brand_entry(brand_source.listed(done.stdout)),
+                head = (done.stdout.split() or [''])[0] if done.returncode == 0 else ''
+                if done.returncode == 0 and on_main and not re.fullmatch('[0-9a-f]{40}', head):
+                    entry['problem'] = 'it has no main branch'
+                elif done.returncode == 0 and name == BRAND:
+                    entry.update(**self._brand_entry(head), known_at=_now())
+                elif done.returncode == 0 and on_main:
+                    entry.update(latest=None, tag=None, commit=head, branch='main',
                                  known_at=_now())
                 elif done.returncode == 0:
                     latest = newest(done.stdout) or {}
@@ -353,8 +379,11 @@ class Upkeep:
                 else:
                     entry['problem'] = hub.reason(done)
             found[name] = entry
+        kept = self._saved()
         home.write_json(self.saved_path(), {'schema': 1, 'at': _now(), 'found': found,
-                                            'dismissed': self._saved().get('dismissed')})
+                                            'dismissed': kept.get('dismissed'),
+                                            **({'brand_installed': kept['brand_installed']}
+                                               if kept.get('brand_installed') else {})})
         fresh = self._newest(self.module())
         with self._lock:
             if self._found is not None:
@@ -362,9 +391,11 @@ class Upkeep:
         return True
 
     def _bring(self, names: list[str]) -> None:
+        # `--update`: a companion whose installed commit is not its main branch's now is
+        # installed from main again, as well as one that is missing or too old.
         command = [sys.executable, '-B', str(self.installer), 'companions', '--companions',
-                   'install', '--while-open', '--json', '--home', str(self.home), '--root',
-                   str(self.root)]
+                   'install', '--update', '--while-open', '--json', '--home', str(self.home),
+                   '--root', str(self.root)]
         printed: list[bytes] = []
         state, says = 'failed', None
         try:
@@ -795,6 +826,7 @@ NAMES = ('SAVED', 'DAY', 'LOOK_SECONDS', 'UPDATE_SECONDS', 'TAG', 'UPDATING', 'N
 METHODS = {'Upkeep': ('__init__', 'folder', 'checkout', 'version', 'start', 'again', '_first',
            '_background', 'close', 'module', 'check', '_blank', '_brands', '_tools', '_current',
            '_commands', '_main_version', 'saved_path', '_saved', 'due', '_brand_entry',
+           '_installed_commit', '_main_moved',
            'remember_brand', 'look', '_bring', '_said', '_the_brand', '_brand_installed', '_moved',
            'dismiss', 'releases', '_target', '_link', '_main', '_newest', '_refuse_busy',
            'suite_managed', 'upgrade', '_run_installer', '_opener', 'restart', 'command',
