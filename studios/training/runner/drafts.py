@@ -969,7 +969,8 @@ def view(engine, root) -> dict:
     from runner import pipeline, progress_map
     root = Path(root)
     record = engine._load(root)
-    found = engine._survey(root, record, engine._wanted(root, record))
+    listed = engine._document_entries(root, record) if record.get('documents') else ()
+    found = engine._survey(root, record, engine._wanted(root, record), supplied=listed)
     session = found.session
     state, sentence = engine._state(record, found, engine._run(root))
     mine, who, state, sentence, last = engine._whose(root, record, found, state, sentence)
@@ -1007,7 +1008,6 @@ def view(engine, root) -> dict:
                  if found.next.kind == 'gate' else sentence)
     plan = desk.document(root, session, 'research-plan')
     questions = plan.get('questions') or []
-    listed = engine._document_entries(root, record) if record.get('documents') else ()
     jobs = (record.get('drafts') or {}).get('jobs') or ()
     return {
         # How it is worked on: by the runner, or in a conversation, whose desk offers only

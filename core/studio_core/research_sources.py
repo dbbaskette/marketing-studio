@@ -676,27 +676,46 @@ def install(prepared, root):
             'workers': prepared['workers'], 'focus': prepared['focus']}
 
 
-def sources(root, saved=None):
+def _manifest_sources(root, saved):
     root = Path(root)
     file = root / 'sources/research-inputs/manifest.json'
     if not file.exists():
         require(not saved, 'This computer does not have the selected research inputs. Add their permitted copies before resuming.')
-        return [], []
+        return []
     value = json.loads(rc.inside(root, 'sources/research-inputs/manifest.json').read_text())
     require(value.get('schema') == 1 and value.get('owner') == 'studio-research-inputs'
             and (not saved or saved.get('digest') == digest(value)), 'The saved research inputs changed; reload them before starting.')
+    return value['sources']
+
+
+def _verified_sources(root, saved, *, include_text):
+    for source in _manifest_sources(root, saved):
+        # Text-mode reads preserve the original newline normalization used for these hashes.
+        text_digest = hashlib.sha256()
+        parts = []
+        with rc.inside(root, source['file']).open('r') as stream:
+            for chunk in iter(lambda: stream.read(64 * 1024), ''):
+                text_digest.update(chunk.encode())
+                if include_text:
+                    parts.append(chunk)
+        original = rc.inside(root, source['original'])
+        with original.open('rb') as stream:
+            original_digest = hashlib.file_digest(stream, 'sha256').hexdigest()
+            size = os.fstat(stream.fileno()).st_size
+        require(text_digest.hexdigest() == source['sha256'] and original_digest == source['original_sha256'],
+                'A saved source capture changed; read it again.')
+        yield source, original, size, ''.join(parts)
+
+
+def sources(root, saved=None):
     plan, offered = [], []
-    for source in value['sources']:
-        text = rc.inside(root, source['file']).read_text()
-        original = rc.inside(root, source['original']).read_bytes()
-        require(hashlib.sha256(text.encode()).hexdigest() == source['sha256']
-                and hashlib.sha256(original).hexdigest() == source['original_sha256'], 'A saved source capture changed; read it again.')
+    for source, original, _, text in _verified_sources(root, saved, include_text=True):
         plan.append({'id': source['id'], 'title': source['name'], 'origin': source['origin'],
             'original_file': source['original'], 'file': source['file'],
             'limits': '; '.join(source['warnings']) or 'none'})
         offered.append({'title': source['name'], 'origin': source['origin'], 'permission': 'selected',
             'text': text, 'file': source['file'], 'original': source['original'],
-            'original_path': rc.inside(root, source['original']), 'supplied': source['id'],
+            'original_path': original, 'supplied': source['id'],
             'accessed_at': source['captured_at']})
     return plan, offered
 
@@ -710,10 +729,9 @@ def document_entries(root, saved):
     if not saved:
         return []
     try:
-        _, offered = sources(root, saved)
-        return [{'name': source['title'], 'bytes': source['original_path'].stat().st_size,
+        return [{'name': source['name'], 'bytes': size,
                  'readable': True, 'problem': None, 'research_input': True}
-                for source in offered]
+                for source, _, size, _ in _verified_sources(root, saved, include_text=False)]
     except (OSError, ValueError) as error:
         return [{'name': 'Previously selected sources', 'readable': False,
                  'problem': str(error), 'research_input_missing': True}]

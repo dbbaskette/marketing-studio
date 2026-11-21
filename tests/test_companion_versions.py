@@ -226,7 +226,10 @@ class FloorTests(unittest.TestCase):
         path = ROOT / 'pins/companions.json'
         pins = json.loads(path.read_text(encoding='utf-8'))
         floor = pins['brand_skill']
-        self.assertEqual((floor['requirement'], floor['tested']), ('>=1.4.0', '1.4.0'))
+        self.assertEqual(floor['requirement'], '>=1.4.0')
+        for companion in pins['companions'].values():
+            self.assertEqual(companion['tested'], floor['tested'])
+            self.assertGreaterEqual(companions.as_tuple(companion['tested']), companions.as_tuple(companion['version']))
         self.assertTrue(floor['note'])
         self.assertNotIn('brand_skill', pins['companions'])
         self.assertEqual(sorted(companions.read_pins(path)), ['harness-research', 'harness-slides'])

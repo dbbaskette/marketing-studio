@@ -161,7 +161,7 @@ def reuse(workflow, root, case, task, areas, intent, context, require, earlier_c
                 if source['permission'] == 'public':
                     workflow.command(case, 'asset', 'source', {'id': 'source-' + secrets.token_hex(12), 'role': 'discovered',
                         'origin': source['origin'], 'permission': 'public', 'outcome': 'captured', 'capture_file': source['file'], 'accessed_at': session.now()})
-                workflow.command(case, 'collection', 'capture', {**terminal, 'source': source})
+            workflow.capture_sources(case, terminal, packet['sources'], registration)
             workflow.command(case, 'collection', 'finish', {**terminal, 'outcome': 'completed', 'note': 'Host revalidated retained immutable evidence; no provider invocation.'})
             workflow.command(case, 'collection', 'accept', {**packet, **terminal,
                 'request_digest': registration['request_digest'], 'generation': registration['generation']})

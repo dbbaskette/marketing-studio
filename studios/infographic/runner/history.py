@@ -226,7 +226,7 @@ def restore(store, ident, revision, *, expected_revision, fingerprint=None):
         previous = version(store, ident, revision, fingerprint)
         made = deepcopy(previous)
         made.update(revision=current['revision'] + 1, approval=None, checks=[], attempts=[], exports=[])
-        saved = store.commit_locked(current, made)
+        saved = store.commit_locked(current, made, restored=True)
         store.write_blob(ident, _marker(saved['revision']),
                          canonical({'schema': 1, 'restored_from': revision, 'sha256': digest(saved)}))
         return saved

@@ -4358,13 +4358,6 @@ def attention(root, ident, draft, directory, record):
     return {'needs': said, 'sent': ((state or {}).get('last') or {}).get('at')}
 
 
-def _seen(text):
-    """A part's words as the Doc shows them: each line's visible text, blank lines left out,
-    so the same words written with other Markdown read the same."""
-    lines = (_visible(line) for line in (text or '').split('\n'))
-    return '\n'.join(line.strip() for line in lines if line and line.strip())
-
-
 def _merge3(base, ours, theirs):
     """A three-way merge of key lists, by place: [(kind, (b0, b1), (o0, o1), (t0, t1))],
     each kind 'same', 'ours' (only the desk changed), 'theirs' (only the Doc changed) or

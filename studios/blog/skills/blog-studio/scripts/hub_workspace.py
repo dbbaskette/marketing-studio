@@ -964,11 +964,6 @@ class Workspace:
         stack.remove(pair)
         return local_id
 
-    def _set_projection_fingerprint(self, group, local_id):
-        request, _, _ = self._payload(group, local_id, read_only=True)
-        self.state['items'][self.key(group, local_id)]['fingerprint'] = sha(encoded(request))
-        self.persist()
-
     def _bound_ref(self, group, local_id, **extra):
         value = self.state['items'][
             (group + '/' + local_id)

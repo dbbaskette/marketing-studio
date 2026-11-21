@@ -47,13 +47,6 @@ def describe(progress):
                 phase, 'Preparing the research areas.')
 
 
-def kept_nothing(root):
-    """Whether research has registered nothing with Harness Research yet: no topic asset and
-    no current case. Captured inputs alone are the studio's own copies."""
-    base = Path(root) / rc.CASE
-    return not (base / 'current.json').exists() and not any(base.glob('*/topic'))
-
-
 def move_to_installed(engine, root, record, product='training'):
     """Every run goes on with the installed Harness Research, whichever version it started
     on, and gets that helper's limits: the record is moved to the installed helper's

@@ -113,8 +113,9 @@ block output. No font, brand or companion is automatically installed.
 renderer preflight, precise art direction and selected-provider generation when the
 story calls for artwork. This can consume the selected assistant/provider allowance;
 read `computer` and disclose that boundary first. Artwork-free stories make no image
-call. Shared Codex uses its built-in image generation; shared Claude Code uses the
-Gemini API with an explicit model and adapter-only environment key.
+call. Document graphics selects the image provider independently of the writing
+assistant. The `computer` command names the effective provider, the Gemini model
+when configured, and which account or key an image action will use.
 
 `edit-text ID --element-id ELEMENT --text 'Replacement' --expected-revision N` changes
 one named editable label and preserves every other element. It refuses unreadable

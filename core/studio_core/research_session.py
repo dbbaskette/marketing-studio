@@ -309,6 +309,13 @@ class Workflow:
                 raise ValueError((result.stderr.strip().splitlines() or ['Harness Research did not finish.'])[-1])
             return json.loads(result.stdout)
 
+    def capture_sources(self, case, terminal, sources, registration):
+        if sources and registration.get('batch_capture'):
+            self.command(case, 'collection', 'capture', {**terminal, 'sources': sources})
+        else:
+            for source in sources:
+                self.command(case, 'collection', 'capture', {**terminal, 'source': source})
+
     def asset(self, root, task, sources, basis):
         base = rc.inside(root, str(rc.CASE))
         base.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -707,7 +714,7 @@ class Workflow:
                                 self.command(case, 'asset', 'source', {'id': 'source-' + secrets.token_hex(12),
                                     'role': 'discovered', 'origin': source['origin'], 'permission': 'public',
                                     'outcome': 'captured', 'capture_file': source['file'], 'accessed_at': now()})
-                            self.command(case, 'collection', 'capture', {**terminal, 'source': source})
+                    self.capture_sources(case, terminal, value['sources'], registered)
                     gaps = evidence_gaps(value)
                     packet = {'schema': 1, 'request_digest': registered['request_digest'],
                         'generation': registered['generation'], **terminal, 'sources': value['sources'],
