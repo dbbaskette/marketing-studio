@@ -647,9 +647,7 @@ class StudioTests(unittest.TestCase):
         self.assertEqual(
             self.cli('status', '--id', aid, '--details')['details']['guidance'], earlier
         )
-        self.assertEqual(
-            self.cli('resume', '--id', aid)['context']['pins']['guidance'], earlier
-        )
+        self.assertEqual(self.cli('resume', '--id', aid)['context']['pins']['guidance'], earlier)
         # Saving and reviewing carry on, and the record is not moved to the installed version.
         self.save(aid, 'draft', 'Edited draft.')
         self.review(aid, 'proofread')

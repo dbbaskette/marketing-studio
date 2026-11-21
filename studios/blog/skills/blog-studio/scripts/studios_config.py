@@ -222,9 +222,7 @@ def migrate(root=None):
                 data_root() / 'brand.json',
                 None,
                 {
-                    **{
-                        key: ('brand', key) for key in ('repository', 'brand', 'variant')
-                    },
+                    **{key: ('brand', key) for key in ('repository', 'brand', 'variant')},
                     'runtime': ('brand', 'skill'),
                 },
             ),
@@ -307,7 +305,7 @@ def migrate(root=None):
                         + ', '.join(sorted(set(kept)))
                         + '.'
                     )
-                if changes or kept:   # not when only a retired value went
+                if changes or kept:  # not when only a retired value went
                     studio.write_json(notice_path, {'notice': message})
             except (OSError, ValueError):
                 problem = 'Shared settings migration could not finish. Existing shared values were kept; correct studios-config.json and retry.'

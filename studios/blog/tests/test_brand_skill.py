@@ -125,9 +125,7 @@ class BrandSkillTests(unittest.TestCase):
 
     def checked(self, bootstrap=False):
         folder = self.repository(bootstrap)
-        found = management.dispatch(
-            self.root, 'brand-configure', {'repository': str(folder)}
-        )
+        found = management.dispatch(self.root, 'brand-configure', {'repository': str(folder)})
         # Installed from main, whatever tags there are.
         self.assertEqual(found['checked']['tag'], 'main')
         self.assertEqual(found['checked']['commit'], self.git(folder, 'rev-parse', 'HEAD'))
@@ -543,7 +541,7 @@ class BrandSkillTests(unittest.TestCase):
         into = self.base / 'into'
         into.mkdir()
         tree, how = source.fetch(str(folder), commit, into)
-        self.assertEqual((how, source.version_of(tree)), ('main', None))   # its package says none
+        self.assertEqual((how, source.version_of(tree)), ('main', None))  # its package says none
         self.assertEqual(self.git(tree, 'rev-parse', 'HEAD'), commit)
         again = self.base / 'again'
         again.mkdir()

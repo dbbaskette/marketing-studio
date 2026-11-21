@@ -155,14 +155,23 @@ def move_to_installed(run, runtime):
             run['research_contract'] = installed
         return None
     kept = execution.get('earlier')
-    earlier = kept if isinstance(kept, dict) else {'research_contract': run.get('research_contract'),
-                                                   'capability': execution.get('capability')}
+    earlier = (
+        kept
+        if isinstance(kept, dict)
+        else {
+            'research_contract': run.get('research_contract'),
+            'capability': execution.get('capability'),
+        }
+    )
     try:
         supported = research_session.capability(runtime)
     except (OSError, ValueError, KeyError, TypeError):
         supported = None
-    if installed and supported and (installed != run.get('research_contract')
-                                    or supported != execution.get('capability')):
+    if (
+        installed
+        and supported
+        and (installed != run.get('research_contract') or supported != execution.get('capability'))
+    ):
         execution.setdefault('earlier', earlier)
         run['research_contract'], execution['capability'] = installed, supported
     return {'capability': earlier.get('capability')}
@@ -467,7 +476,7 @@ def generate(
             return answer['content'], sources
 
         # Every blog goes on with the installed Harness Research, whichever version it started on.
-        runtime = research_contract.runtime_for(run.get('research_contract'))   # not compared
+        runtime = research_contract.runtime_for(run.get('research_contract'))  # not compared
         if runtime is None:
             raise ValueError(research_contract.NOT_INSTALLED)
         earlier = move_to_installed(run, runtime)

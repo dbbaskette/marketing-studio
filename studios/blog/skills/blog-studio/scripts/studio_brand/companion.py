@@ -104,6 +104,7 @@ def find_runtime(places: list[Path], script: Path, variable: str, name: str, una
     A run or a job that spans an update goes on with the new version. Refuses when there is
     none; `unable` says what cannot be done then."""
     from studio_core.packaging import stable_place
+
     for place in places:
         if (place / script).is_file():
             return stable_place(place)
