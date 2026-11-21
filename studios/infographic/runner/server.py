@@ -212,7 +212,7 @@ class Page(shared.Page):
             return shared.as_json(200,result)
         if path in ('/api/handoff-inventory','/api/handoff-preview'):
             from . import handoffs
-            require(isinstance(sent,dict) and set(sent)<=({'root','studio'} if path.endswith('inventory') else {'root','studio','file','expected_sha256'}),'Select one studio material from its inventory.')
+            require(isinstance(sent,dict) and set(sent)<=({'root','studio'} if path.endswith('inventory') else {'root','studio','file','expected_sha256','view'}),'Select one studio material from its inventory.')
             return shared.as_json(200,(handoffs.inventory if path.endswith('inventory') else handoffs.prepare)(**sent))
         if path == '/api/research-preview':
             from . import research

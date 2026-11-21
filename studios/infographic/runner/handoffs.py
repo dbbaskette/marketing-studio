@@ -4,6 +4,8 @@ from pathlib import Path
 import hashlib
 import json
 import os
+from studio_core import teaching_plan
+from studio_core.document_library import training_existing
 from . import documents, intake, sources
 from .validation import require, relative_path
 from .workspace import _read
@@ -44,6 +46,25 @@ def folder(root, studio):
     return root
 
 
+def _approved_aid(root, relative, raw, digest):
+    parts = Path(relative).parts
+    if parts[-1] != 'blueprint.md' or b'## Job aid' not in raw:
+        return None
+    if len(parts) == 2:
+        name = 'blueprint'
+    elif len(parts) == 3 and parts[1] in training_existing.LEVELS:
+        name = 'blueprint@' + parts[1]
+    else:
+        return None
+    project = root / parts[0]
+    if not training_existing.approved_blueprint(project, name, digest):
+        return None
+    try:
+        return teaching_plan.job_aid(raw.decode('utf-8'))
+    except UnicodeDecodeError:
+        return None
+
+
 def inventory(root, studio):
     root = folder(root, studio)
     found = []
@@ -76,6 +97,8 @@ def inventory(root, studio):
                     "sha256": hashlib.sha256(raw).hexdigest(),
                 }
             )
+            if studio == 'training' and _approved_aid(root, relative, raw, found[-1]['sha256']):
+                found.append({**found[-1], 'view': 'job-aid'})
             require(
                 len(found) <= 1000,
                 "This workspace has too many candidate files. Select a smaller owned folder.",
@@ -83,7 +106,7 @@ def inventory(root, studio):
     return {"studio": studio, "root": str(root), "files": found}
 
 
-def prepare(root, studio, file, expected_sha256):
+def prepare(root, studio, file, expected_sha256, view=None):
     root = folder(root, studio)
     require(
         relative_path(file)
@@ -101,6 +124,15 @@ def prepare(root, studio, file, expected_sha256):
         hashlib.sha256(raw).hexdigest() == expected_sha256,
         "The originating studio material changed. Review its fresh inventory before import.",
     )
+    require(view in (None, 'job-aid'), 'Choose a listed handoff.')
+    if view == 'job-aid':
+        aid = _approved_aid(root, file, raw, expected_sha256) if studio == 'training' else None
+        require(aid, 'The one-page job aid needs a current, person-approved training blueprint.')
+        return intake.prepare(aid.encode(), kind='handoff', name='One-page job aid.md',
+            extracted={'text': aid, 'readable': True, 'extractor': 'training-job-aid-v1',
+                       'warnings': [], 'locations': []},
+            provenance={'studio': PRODUCTS[studio][0], 'file': file, 'view': view,
+                        'item': Path(file).parts[0], 'origin_sha256': expected_sha256})
     kind = sources.KINDS[suffix]
     require(
         kind != "csv",

@@ -11,7 +11,7 @@ Scenario: Hypothetical service restart during a busy period.
 Task: Explain whether the proposed restart preserves serving capacity.
 
 ## Sizing
-Lesson. The research supports three objectives that fit in 25 minutes. Rollback behaviour was cut: its research question is still pending.
+One lesson. Rollback is outside scope.
 
 ## Objectives
 ### O1 — Describe what a rolling restart does [recall]
@@ -29,7 +29,28 @@ Hook: A customer wants to restart during a busy period. What must remain availab
 Example: A three-instance web app restarted one instance at a time while it serves traffic. Show a simulated status line: A serving, B restarting, C serving.
 Ask: Which instances can serve this request? What changes if B is the only instance? Listen for: A and C remain available in the example. A sole restarting instance leaves no serving capacity.
 Activity: 5 min. In pairs, change the service to one instance and draft a customer response. Output: a capacity prediction and its condition. Good answer: identifies the missing serving instance and avoids promising uptime.
-Presenter handoff: Show the status line before asking. Allow a minute for answers, then use the single-instance case to debrief the zero-downtime objection.
+Presenter handoff: Show status, ask, then debrief the single-instance case.
+
+## Starting point
+Prerequisite: Read status.
+Likely mistake: Count B as serving.
+Opening check: Which instances can serve now?
+If missed: Trace one request to a serving instance before continuing.
+
+## Shared case
+Basis: K1.1, K1.2
+Situation: Simulated restart during a busy period.
+Observations: A serving, B restarting, C serving.
+Decision: A and C retain capacity in this example.
+Feedback: B is restarting. Trace the request again using only serving instances.
+Variation: B is now the only instance.
+
+## Job aid
+Use when: Assess serving capacity during a restart.
+Step: Identify the batch restarting. [K1.1]
+Step: Count the instances still serving. [K1.2]
+Evidence: Inspect current instance status. [K1.2]
+Exception: A sole restarting instance leaves no serving capacity. [K1.2]
 
 ## Assessment plan
 - O1: Check: What happens to an app's instances during a rolling restart? | Observe: States that instances are replaced in batches.

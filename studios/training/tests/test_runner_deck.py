@@ -549,7 +549,9 @@ class RuleTests(JobCase):
         self.assertEqual([line for line in text.splitlines() if line.startswith('#')], [
             '# Deck handoff: Rolling restarts, level 301', '## Goal',
             '## Audience and duration', '## Use', '## Required elements', '## Sources',
-            '## Research', '## Output', '## Teaching and assessment'])
+            '## Research', '## Output', '## Teaching and assessment', '### Starting point', '### Shared case'])
+        self.assertIn('Opening check: Which instances can serve now?', text)
+        self.assertIn('Observations: A serving, B restarting, C serving.', text)
         for told in ('- Describe what a rolling restart does (O1)', 'Duration: 25 min',
                      'no slide may depend on its speaker notes', 'M1, Rolling restarts',
                      'says what to practice next: main, then a closing slide.',
@@ -1167,6 +1169,15 @@ class ReviewToolTests(ToolCase):
         self.assertEqual(worker_tools.collect(self.job)['coverage'], {
             'objectives': {'O1': [2, 3], 'O2': [3], 'O3': []}, 'reasons': 'As titled.'})
 
+    def test_assessed_slides_need_a_reviewed_learner_attempt(self):
+        tools = self.looked()
+        covered = {'O1': [2, 3], 'O2': [3], 'O3': []}
+        assessed = {'O1': [3], 'O2': [], 'O3': []}
+        self.assertIn('reviewed coverage', self.refused(tools.submit_coverage(
+            covered, assessed={**assessed, 'O3': [3]})))
+        self.ok(tools.submit_coverage(covered, assessed=assessed))
+        self.assertEqual(worker_tools.collect(self.job)['coverage']['assessed'], assessed)
+
     def test_a_picture_reaches_an_agent_as_an_image_after_the_text(self):
         tools = self.reviewer()
         reply = worker_tools.answer(tools, {'jsonrpc': '2.0', 'id': 7, 'method': 'tools/call',
@@ -1779,7 +1790,7 @@ class FlowTests(DeckCase):
         job, spec = jobs['outline']
         self.assertEqual([entry['name'] for entry in spec['inputs']], [
             'handoff', 'outline contract', 'drafting guidance', 'brand design', 'blueprint',
-            'learner guide', 'research findings', 'naming rules'])
+            'Shared case for all materials', 'learner guide', 'research findings', 'naming rules'])
         self.assertEqual(job.guidance, briefs.guidance('deck-outline'))
         job, spec = jobs['section']
         self.assertEqual(([entry['name'] for entry in spec['inputs']], spec['ask']),
@@ -1887,7 +1898,7 @@ class BrandEntryTests(DeckCase):
         work = pipeline.review_work(root, self.engine._survey(root, self.record(root)),
                                     pipeline.gate_for('deck'), None)
         inputs = work.prepared['inputs']
-        self.assertEqual(list(inputs), ['the review', 'review guidance',
+        self.assertEqual(list(inputs), ['Assessment map', 'Reader view of the export', 'the review', 'review guidance',
                                         'brand review checklist'])
         self.assertEqual(inputs['review guidance'], 'Pinned review guidance.\n')
         self.assertIn('Use the Brand checklist.', inputs['brand review checklist'])
@@ -1898,7 +1909,7 @@ class BrandEntryTests(DeckCase):
         self.drawn(root)
         work = pipeline.review_work(root, self.engine._survey(root, self.record(root)),
                                     pipeline.gate_for('deck'), None)
-        self.assertEqual(list(work.prepared['inputs']), ['the review'])
+        self.assertEqual(list(work.prepared['inputs']), ['Assessment map', 'Reader view of the export', 'the review'])
 
     def test_a_brand_without_the_entry_keeps_the_installed_tools_guidance(self):
         root = self.saved_begin()

@@ -424,3 +424,17 @@ def scan(root, content: bool = False) -> dict:
     if more:
         gaps.append(f'Only the first {ENTRIES} training folders were looked at.')
     return {'candidates': candidates, 'gaps': gaps, 'more': more, 'readable': True}
+
+
+def approved_blueprint(root, name, digest):
+    """Does the person still approve these exact bytes and their current dependencies?"""
+    try:
+        session, _ = _records(root)
+        level = name.partition('@')[2]
+        if not _shaped(session) or name.partition('@')[0] != 'blueprint' or (
+                level not in session['levels'] if level else bool(session['levels'])):
+            return False
+        approved = _Training(root, session).marked_ready(name)
+        return bool(approved and approved.get('sha256') == digest)
+    except (OSError, ValueError, TypeError, KeyError, AttributeError):
+        return False

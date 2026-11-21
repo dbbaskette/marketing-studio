@@ -125,7 +125,10 @@ class FinishedTests(Indexed):
                          'No Google Docs or Word files were asked for.')
 
     def test_coverage_has_a_row_for_each_objective_and_the_basis_of_each_column(self):
-        self.assertEqual(self.section('Coverage').strip().splitlines(), [
+        coverage, assessment = self.section('Coverage').split('\n\nPlanned assessment\n')
+        self.assertIn('What earns credit', assessment)
+        self.assertIn('O2 — Explain when', assessment)
+        self.assertEqual(coverage.strip().splitlines(), [
             '| Objective | Guide (declared) | Deck (reviewed) | Practice (exercised, from the '
             'practice plan) |',
             '| --- | --- | --- | --- |',

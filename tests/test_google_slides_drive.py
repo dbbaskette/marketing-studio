@@ -58,6 +58,22 @@ def capture(drive, **options):
 
 
 class DriveExportTests(unittest.TestCase):
+    def test_self_paced_review_reads_order_and_alt_text_without_the_notes(self):
+        pictured = pptx_fixture.PICTURE.replace('name="Picture"', 'name="Picture" descr="Revision B: 4 errors"')
+        hidden = pptx_fixture.shape(40, ['hidden answer']).replace('id="40"', 'id="40" hidden="1"')
+        deck = pptx_fixture.deck([{'title': 'Choose a revision', 'raw': [pictured, hidden],
+                                   'notes': 'private solution'}, {'title': 'Feedback: choose B'}])
+        with tempfile.TemporaryDirectory() as directory:
+            export = Path(directory) / 'review.pptx'
+            export.write_bytes(deck)
+            view = pptx_slides.reader_review(export)
+            self.assertLess(view.index('Choose a revision'), view.index('Revision B: 4 errors'))
+            self.assertLess(view.index('Revision B: 4 errors'), view.index('Feedback: choose B'))
+            self.assertNotIn('private solution', view)
+            self.assertNotIn('hidden answer', view)
+            export.write_bytes(b'unreadable')
+            self.assertIn('unavailable', pptx_slides.reader_review(export))
+
     def test_slides_link_reads_through_drive_in_presentation_order(self):
         drive = FakeDrive(pptx_fixture.deck(pptx_fixture.SAMPLE))
         found = capture(drive)

@@ -32,6 +32,8 @@ Name up to three weakest slides. Put misleading evidence or an incorrect action 
 
 ## The coverage
 
+In submit_coverage give a separate assessed map for every objective. A slide earns assessment credit only if the learner must perform the named behavior on the evidence given. Record an empty list when the deck only explains it or asks for recall in place of performance. Report the mismatch as a content finding with a concrete correction.
+
 Then say which slides address each objective, from what the slides visibly say: a title or a body that teaches it or tests it. Give slide numbers for each objective, and an empty list where no slide addresses it. A slide that only lists the objectives counts for none of them unless it also teaches one.
 
 ## Hand back

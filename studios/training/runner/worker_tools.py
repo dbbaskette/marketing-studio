@@ -1347,7 +1347,7 @@ class WorkerTools:
         return []
 
     @tool
-    def submit_coverage(self, coverage, reasons=''):
+    def submit_coverage(self, coverage, reasons='', assessed=None):
         """Say which slides address each objective, from what the slides show."""
         review = self._review()
         self._allowed('coverage', 'The coverage')
@@ -1365,11 +1365,22 @@ class WorkerTools:
                          if not isinstance(numbers, list) or any(
                              type(number) is not int or number not in allowed
                              for number in numbers)]
+        if assessed is not None:
+            assessed = as_json(assessed, 'assessed')[0]
+            if not isinstance(assessed, dict) or sorted(assessed) != sorted(wanted):
+                problems.append('For assessed slides, give every objective, using [] for none.')
+            elif not problems:
+                for ident, numbers in assessed.items():
+                    if not isinstance(numbers, list) or any(type(n) is not int or n not in given[ident]
+                                                           for n in numbers):
+                        problems.append(f'{ident}: assessed slides must be in its reviewed coverage.')
         left = self._count('coverage', problems)
         if problems:
             return self._refused(problems, left)
         home.write_json(self.folder / 'accepted' / 'coverage.json', {
             'objectives': {objective: sorted(set(given[objective])) for objective in wanted},
+            **({'assessed': {ident: sorted(set(numbers)) for ident, numbers in assessed.items()}}
+               if assessed is not None else {}),
             'reasons': str(reasons or '').strip()[:NOTES]})
         return True, 'Kept.'
 
@@ -1646,7 +1657,8 @@ TOOLS = [
     _described('submit_coverage', 'Say which slides address each objective, from what the '
                'slides show: slide numbers for each objective, and an empty list where no '
                'slide addresses it.',
-               {'coverage': {'type': 'object'}, 'reasons': TEXT}, ['coverage']),
+               {'coverage': {'type': 'object'}, 'reasons': TEXT,
+                'assessed': {'type': 'object', 'description': 'Slides where the learner performs each objective; [] for no attempt.'}}, ['coverage']),
     _described('save_source', 'Fetch a public web page or PDF, keep it, and return the '
                'start of its text. Only sources saved this way count as evidence.',
                {'url': TEXT}, ['url']),

@@ -148,11 +148,11 @@ class ToTheEndTests(FlowCase):
         self.assertIn('Write the level 101 learner guide for this training.', first.task)
         self.assertIn('This guide is for level 101.', first.task)
         self.assertEqual(first.guidance, pipeline.briefs.guidance('document', level='101'))
-        self.assertIn('Your inputs are "intake", "blueprint" and "research findings".',
+        self.assertIn('Your inputs are "intake", "blueprint", "research findings" and "Shared case for all materials".',
                       first.task)
-        self.assertIn('Your inputs are "intake", "blueprint", "research findings" and '
-                      '"earlier levels".', second.task)
-        self.assertEqual(self.workers.jobs[-3][2]['inputs'][3]['name'], 'earlier levels')
+        self.assertIn('Your inputs are "intake", "blueprint", "research findings", '
+                      '"Shared case for all materials" and "earlier levels".', second.task)
+        self.assertEqual(self.workers.jobs[-3][2]['inputs'][-1]['name'], 'earlier levels')
         self.assertEqual(self.workers.of('brief')[1].guidance,
                          pipeline.briefs.guidance('brief', level='201', kind='product'))
         for name in ('document.md', 'product-brief.md', 'scenario.md', 'blueprint.md'):
@@ -206,7 +206,8 @@ class WorkerTests(FlowCase):
 
     def test_the_guide_is_written_from_the_blueprint_and_the_research(self):
         job, spec = self.jobs['document']
-        self.assertEqual(self.given('document'), ['intake', 'blueprint', 'research findings'])
+        self.assertEqual(self.given('document'), ['intake', 'blueprint', 'research findings',
+                                                 'Shared case for all materials'])
         self.assertEqual(spec['artifacts']['document'], {'kind': 'document',
                                                          'blueprint': BLUEPRINT})
         self.assertEqual(job.guidance, pipeline.briefs.guidance('document'))
@@ -224,7 +225,7 @@ class WorkerTests(FlowCase):
 
     def test_a_scenario_is_drafted_from_the_practice_plan_the_brief_and_its_mode(self):
         job, spec = self.jobs['scenario']
-        self.assertEqual(self.given('scenario'), ['intake', 'blueprint', 'brief',
+        self.assertEqual(self.given('scenario'), ['intake', 'blueprint', 'Shared case for all materials', 'brief',
                                                   'mode reference'])
         self.assertEqual(spec['artifacts']['scenario'],
                          {'kind': 'scenario', 'label': 'scenario:main', 'mode': 'roleplay'})
@@ -569,7 +570,7 @@ class LeftOutTests(FlowCase):
         self.to_gate(root, 'scenario:main')
         job, spec = self.workers.jobs[-1][1:]
         self.assertEqual([entry['name'] for entry in spec['inputs']],
-                         ['intake', 'blueprint', 'mode reference'])
+                         ['intake', 'blueprint', 'Shared case for all materials', 'mode reference'])
         self.assertIn("This training has no brief. Keep product facts to what the "
                       "blueprint's key points say.", job.task)
 

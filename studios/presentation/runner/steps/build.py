@@ -1823,6 +1823,10 @@ def review_work(root, run: dict) -> Work:
               'recorded': str(root / last['folder'] / 'assessment.json'), 'inspect': inspect,
               'reused': reused, 'sheet': str(root / last['sheet']) if last.get('sheet') else None}
     inputs = {'the review': asked(slides, earlier, questions, last.get('audit_warnings'))}
+    if delivery(run) == 'reading' and last.get('file'):
+        from studio_core import pptx_slides
+        inputs['Reader view of the export'] = pptx_slides.reader_review(root / last['file'])
+        task += ' Check the reader view in sequence against the pictures, including accessibility descriptions.'
     for name in REVIEW_READING:   # as the deck's start kept them, when it did
         text = _read(root / TOLD / reading_file(name))
         if text.strip():

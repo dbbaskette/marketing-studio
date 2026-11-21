@@ -1360,7 +1360,7 @@ async function handoffSheet(done){
   studio.input.addEventListener('change',()=>{root.input.value=preferences.material_folders[studio.input.value];results.replaceChildren();});
   const scan=button('List available materials',async()=>{scan.disabled=true;problem.textContent='';try{
     const found=await request('/api/handoff-inventory',{root:root.input.value,studio:studio.input.value});
-    results.replaceChildren(...found.files.map(file=>button(file.file+' · '+file.bytes+' bytes',async()=>{try{scan.disabled=true;const preview=await request('/api/handoff-preview',{root:found.root,studio:found.studio,file:file.file,expected_sha256:file.sha256});done(preview);}catch(f){problem.textContent=f.message;}finally{scan.disabled=false;}})));
+    results.replaceChildren(...found.files.map(file=>button(file.view==='job-aid'?'One-page job aid · '+file.file:file.file+' · '+file.bytes+' bytes',async()=>{try{scan.disabled=true;const preview=await request('/api/handoff-preview',{root:found.root,studio:found.studio,file:file.file,expected_sha256:file.sha256,view:file.view});done(preview);}catch(f){problem.textContent=f.message;}finally{scan.disabled=false;}})));
     if(!found.files.length)problem.textContent='No supported materials are available in this studio folder.';
   }catch(f){problem.textContent=f.message;}finally{scan.disabled=false;}});
   sheet('Import a selected studio material',make('p','','Lists readable materials from the studio-owned folder. Select one file to preview; nothing else is imported or shared.'),studio.wrap,root.wrap,scan,problem,results,button('Cancel',()=>{closeSheet();if(!held)newSheet();}));

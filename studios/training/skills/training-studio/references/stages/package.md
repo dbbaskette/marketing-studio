@@ -40,3 +40,5 @@ Then `training.py checkpoint --stage done --next "Nothing pending"`.
 If Yoodli was used: when the user reports how a paste into Yoodli went, note each field name or limit that differed. A successful paste confirms the fields were accepted. It says nothing about factual grounding or the quality of the goals.
 
 Corrections belong in the skill's `assets/profiles/yoodli.json` and its Yoodli profile reference, which are changed in the skill's repository, not from a training directory. Tell the user what to change there.
+
+Offer the blueprint's one-page job aid for a repeatable task. After personal approval, select it in Infographic Studio under Import selected studio material. Review steps, evidence and exceptions, then choose print or accessible text.

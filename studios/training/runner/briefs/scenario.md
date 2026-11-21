@@ -34,6 +34,8 @@ Your task may say that the person wrote this scenario themselves and asked for i
 - If something a scenario needs is missing, such as the opening line, ask for it with `ask_person`, naming everything that is missing in the one question. Their answer will be in your task when the work starts again.
 - If what they wrote asks for something the brief cannot support, do not correct it. Say so in your notes, and let them decide.
 
+Use the blueprint's Starting point to adapt the opening if the prerequisite is missing. Use the Shared case's exact identifiers, values, assumptions and decision in each worked example based on it. Label the separate transfer attempt and change only its named variable. Give targeted feedback for the tempting alternative and let the learner try again.
+
 ## Hand back
 
 1. Call `submit_artifact` with the name your task gives and the whole scenario as its text.

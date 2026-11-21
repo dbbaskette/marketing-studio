@@ -367,6 +367,20 @@ def _coverage(found: _Training, level) -> list[str]:
               'against the blueprint.']
     if means:
         lines.append(f'- Exercised: {means}.')
+    lines += ['', 'Planned assessment', *checks.teaching_plan.alignment_table(parsed)]
+    if isinstance(deck, dict):
+        name = workspace.qualify('deck', level)
+        assessed = found.session['artifacts'][name]['reviewed_coverage'].get('assessed')
+        if assessed is None:
+            lines += ['', 'Learner attempts were not recorded in this deck review.']
+        else:
+            lines += ['', 'Learner attempts in the reviewed deck']
+            for ident in parsed['objectives']:
+                where = _slides(assessed.get(ident))
+                lines.append(f"- {ident}: " + (where if where != 'no' else 'no assessed slide'))
+    if parsed.get('teaching', {}).get('Job aid'):
+        lines += ['', 'After approving this blueprint, choose its one-page job aid under '
+                  'Import selected studio material in Infographic Studio.']
     return lines
 
 

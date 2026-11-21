@@ -6,7 +6,7 @@ import subprocess
 from unittest import mock
 from helpers import Isolated
 import test_desk_engine as desk
-from runner import handoffs,intake,sources,team
+from runner import handoffs,intake,server,sources,team
 from runner.contracts import Invalid
 from runner.workspace import Store
 
@@ -27,6 +27,59 @@ class HandoffTests(Isolated):
         fresh=next(x for x in handoffs.inventory(root,'blog')['files'] if x['file'].endswith('DRAFT.md'))
         update=handoffs.prepare(root,'blog',fresh['file'],fresh['sha256']);p=intake.adopt(store,p['id'],update['id'],replace_id=p['sources'][0]['id'],expected_revision=1)
         self.assertEqual(p['revision'],2);self.assertEqual(len(p['sources']),1);self.assertEqual(sources.read(store,p,p['sources'][0]),'Changed origin.')
+
+    def test_job_aid_requires_current_person_approval_and_imports_only_learner_text(self):
+        root = self.temp / 'trainings'
+        project = root / '201'  # A training can have the same name as a level.
+        records = project / '.training-studio'
+        records.mkdir(parents=True)
+        (root / 'hub.json').write_text(json.dumps({'tool':'training-studio','schema':1,'folder':'trainings'}))
+        blueprint = project / 'blueprint.md'
+        blueprint.write_text('Instructor notes\n## M1 — Capacity (5 min)\n- K1.1: Check revision status. [stated]\n'
+                             '## Job aid\nUse when: Releasing.\nStep: Inspect revision B. [K1.1]\n'
+                             'Evidence: Compare counts. [K1.1]\nException: A missing sample. [K1.1]\n')
+        digest = hashlib.sha256(blueprint.read_bytes()).hexdigest()
+        intake_file = project / 'intake.md'
+        intake_file.write_text('Synthetic workshop')
+        inputs = {'intake': hashlib.sha256(intake_file.read_bytes()).hexdigest(), 'research': None}
+        record = {'schema':1, 'levels':[], 'title':'Restart', 'unavailable':{}, 'flow':'desk',
+                  'settings':{'brief_kind':'product','stages':[]}, 'artifacts':{'blueprint':{
+                  'built_from':inputs, 'approved':{'inputs':inputs,'sha256':digest,'by':'desk'}}}}
+        session = records / 'session.json'
+        session.write_text(json.dumps(record))
+        def offered():
+            return [row for row in handoffs.inventory(root, 'training')['files'] if row.get('view')]
+        self.assertEqual(offered(), [])
+        record['desk_ready'] = {'blueprint': digest}
+        session.write_text(json.dumps(record))
+        row, = offered()
+        store = Store.setup(self.workspace)
+        page = mock.Mock(store=store)
+        with mock.patch.object(server.shared, 'as_json', side_effect=lambda status, payload: payload):
+            preview = server.Page.write(page, '/api/handoff-preview', {
+                'root': str(root), 'studio': 'training', 'file': row['file'],
+                'expected_sha256': row['sha256'], 'view': row['view']})
+        project_record = store.create('Release aid')
+        adopted = intake.adopt(store, project_record['id'], preview['id'], expected_revision=0)
+        source = adopted['sources'][0]
+        body = sources.read(store, adopted, source)
+        self.assertIn('1. Inspect revision B.', body)
+        self.assertNotIn('Instructor notes', body)
+        self.assertNotIn('K1.1', body)
+        self.assertEqual(source['provenance']['origin_sha256'], digest)
+        level = project / '301'
+        level.mkdir()
+        (level / 'blueprint.md').write_bytes(blueprint.read_bytes())
+        record['levels'] = ['301']
+        record['artifacts']['blueprint@301'] = record['artifacts']['blueprint']
+        record['desk_ready']['blueprint@301'] = digest
+        session.write_text(json.dumps(record))
+        row, = offered()
+        self.assertEqual(row['file'], '201/301/blueprint.md')
+        intake_file.write_text('Changed workshop')
+        self.assertEqual(offered(), [])
+        with self.assertRaisesRegex(Invalid, 'approved'):
+            handoffs.prepare(root, 'training', row['file'], digest, row['view'])
 
     def test_hidden_link_and_wrong_studio_refused(self):
         root=self.temp/'blogs';root.mkdir();(root/'hub.json').write_text(json.dumps({'tool':'blog-studio','schema':1,'folder':'blogs'}));(root/'entry').mkdir()

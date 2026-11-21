@@ -54,7 +54,7 @@ def parser():
         if name == 'action':
             command.add_argument('--file', required=True, type=Path, help='JSON action with expected_revision and stage data.')
     extra=commands.add_parser('handoff-inventory');extra.add_argument('--root',type=Path,required=True);extra.add_argument('--studio',required=True)
-    extra=commands.add_parser('handoff-preview');extra.add_argument('--root',type=Path,required=True);extra.add_argument('--studio',required=True);extra.add_argument('--file',required=True);extra.add_argument('--expected-sha256',required=True)
+    extra=commands.add_parser('handoff-preview');extra.add_argument('--root',type=Path,required=True);extra.add_argument('--studio',required=True);extra.add_argument('--file',required=True);extra.add_argument('--expected-sha256',required=True);extra.add_argument('--view',choices=('job-aid',))
     extra=commands.add_parser('research-task');extra.add_argument('id');extra.add_argument('--source-mode',choices=('selected','mixed','public'),default='selected')
     extra=commands.add_parser('research-preview');extra.add_argument('id');extra.add_argument('--case',type=Path,required=True);extra.add_argument('--source-mode',choices=('selected','mixed','public'),default='selected')
     extra=commands.add_parser('team');extra.add_argument('--operation',choices=('status','connect','sync','claim','take','retry'),default='status');extra.add_argument('--file',type=Path,help='Exact JSON claim/head arguments for explicit operations.')
@@ -122,7 +122,7 @@ def main(argv=None):
     try:
         if args.command.startswith('handoff-'):
             from runner import handoffs
-            value=handoffs.inventory(args.root,args.studio) if args.command=='handoff-inventory' else handoffs.prepare(args.root,args.studio,args.file,args.expected_sha256)
+            value=handoffs.inventory(args.root,args.studio) if args.command=='handoff-inventory' else handoffs.prepare(args.root,args.studio,args.file,args.expected_sha256,args.view)
         elif args.command in ('research-task','research-preview'):
             from runner import research
             store=Store.current()
