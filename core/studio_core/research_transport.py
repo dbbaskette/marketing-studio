@@ -1,6 +1,5 @@
 """Shared confined native transport for the opted-in collection protocol."""
 import copy
-import re
 import json
 from pathlib import Path
 import secrets
