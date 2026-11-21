@@ -166,8 +166,10 @@ Choose supplied material only, or explicitly enable outside research and approve
 sites. [Harness Research](docs/research-synthesis.md) handles evidence gathering,
 synthesis and independent checks; existing projects retain their saved contracts.
 
-The **Document Library** on Marketing Studio’s home keeps local uploads and finished
-studio material for reuse. **Add from library** captures a chosen revision for one
+The **Document Library** on Marketing Studio’s home keeps local uploads of any file
+type and finished studio material for reuse. Files whose text can be read (text,
+Markdown, HTML, Word, PowerPoint, Excel and PDF) can be used as sources; any other
+file is kept to download. **Add from library** captures a chosen revision for one
 project, so later library changes cannot silently change it. Ready training guides
 and briefs, finished blogs, delivered deck text and available PDFs, and approved
 infographic text/PDF can be kept there. **Add existing work to library** previews

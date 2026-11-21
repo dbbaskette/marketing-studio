@@ -33,7 +33,7 @@ import os
 import re
 from pathlib import Path
 
-from .store import ENDINGS, LIMITS, TITLE, _plain
+from .store import LIMITS, TITLE, _plain
 
 NAME = re.compile(r'^[a-z0-9][a-z0-9-]{0,79}$')
 RECORD = 256_000
@@ -147,9 +147,8 @@ def _original(folder: Path, record: dict) -> tuple[bytes | None, str | None, str
     name = record.get('original_path')
     if not name:
         return None, None, None
-    if not isinstance(name, str) or '/' in name or name.startswith('.') \
-            or Path(name).suffix.lower() not in ENDINGS:
-        return None, None, 'Its original file is of a kind the library does not keep, so only its text is added.'
+    if not isinstance(name, str) or '/' in name or name.startswith('.'):
+        return None, None, 'Its original file has a name the library does not keep, so only its text is added.'
     data = _bounded(folder / name, LIMITS['bytes'])
     if data is None:
         return None, None, ('Its original file is missing or larger than 8 MB, so only its '

@@ -9,9 +9,8 @@ What a caller needs to know
   True (Keep in library, the editor's default) the file is also kept in the Document
   Library on this computer once the draft accepted it as readable; with False (Only this
   project) nothing more happens. `library-keep` tries again for one source.
-- The answer then carries `library_kept`: {'state': 'kept', 'id', 'revision', 'source'},
-  {'state': 'failed', 'problem', 'source'}, or {'state': 'not-taken', 'problem', 'source'}
-  for a type the library does not keep (a PowerPoint file, a spreadsheet). The draft keeps the source whatever the library
+- The answer then carries `library_kept`: {'state': 'kept', 'id', 'revision', 'source'} or
+  {'state': 'failed', 'problem', 'source'}. The library keeps a file of any type. The draft keeps the source whatever the library
   does, and nothing is shared with anyone either way.
 - The library document is the one Keep in library on the desk makes of the same file
   (desk_actions.library_upload): keeping it at the start and again on the desk adds no
@@ -24,7 +23,7 @@ import hashlib
 import runner  # noqa: F401  puts the core on the import path
 from runner.desk_actions import library_upload
 from studio_core import research_contract as rc
-from studio_core.document_library import NOT_TAKEN, LibraryError, takes
+from studio_core.document_library import LibraryError
 
 READABLE_ONLY = 'Only a readable uploaded file is kept in the library.'
 CHANGED = 'This file changed after it was read. Add it again.'
@@ -40,10 +39,6 @@ def _kept(store, ident, source) -> dict:
             found = next((one for one in value['sources'] if one.get('id') == source), None)
             if found is None or found.get('kind') != 'file' or found.get('status') != 'ready':
                 raise LibraryError(READABLE_ONLY)
-            if not takes(found['name']):
-                # A PowerPoint file or a spreadsheet: read as a source, not a type the library
-                # keeps. Said once, plainly; trying again would change nothing.
-                return {'state': 'not-taken', 'problem': NOT_TAKEN, 'source': source}
             data = rc.inside(store.folder(ident), found['original']).read_bytes()
             if hashlib.sha256(data).hexdigest() != found.get('original_sha256'):
                 raise LibraryError(CHANGED)

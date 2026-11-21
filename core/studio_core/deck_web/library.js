@@ -32,6 +32,12 @@
     return node;
   };
   const add = (parent, ...children) => { for (const child of children) if (child) parent.append(child); return parent; };
+  // A kept file's size and what it is, as a person reads them: `photo.png · PNG file · 1.2 MB`.
+  const size = (bytes) => typeof bytes !== 'number' ? '' : bytes < 1000 ? bytes + ' bytes'
+    : bytes < 1000000 ? Math.round(bytes / 1000) + ' KB' : (bytes / 1000000).toFixed(1) + ' MB';
+  const fileFacts = (row) => [row.original_name, row.type, size(row.bytes)].filter(Boolean).join(' · ');
+  // A row's short note; the preview says the whole of it.
+  const KEPT_NOTE = 'Kept to download. It has no text the library can read, so it is not a source.';
   const button = (label, cls, run, key) => {
     const node = make('button', cls || 'button button-quiet', label);
     node.type = 'button';
@@ -301,7 +307,10 @@
         (row.format_labels || []).join(', ')].filter(Boolean).join(' · ');
       const text = add(make('div', 'library-row-text'), make('span', 'row-title', row.title), make('span', 'quiet', meta));
       if (row.revision > 1) text.append(make('span', 'quiet', 'Revision ' + row.revision));
-      if (!row.readable) text.append(add(make('span', 'problem'), make('span', 'tag', row.state_label), ' ' + (row.problem || '')));
+      // A file of a type with no text to read is kept on purpose: its name, type and size, and
+      // a plain note, never an error. Anything else that cannot be read says its problem.
+      if (row.state === 'kept') text.append(add(make('span', 'quiet'), make('span', 'tag', row.state_label), ' ' + fileFacts(row)), make('span', 'quiet', KEPT_NOTE));
+      else if (!row.readable) text.append(add(make('span', 'problem'), make('span', 'tag', row.state_label), ' ' + (row.problem || '')));
       if (row.pdf === 'needs-export') text.append(make('span', 'quiet', 'PDF needs export. ' + (row.pdf_note || '')));
       if (row.hidden) text.append(add(make('span', 'quiet'), make('span', 'tag', 'Hidden'), ' Not listed or offered in Add from library.'));
       const unavailable = this.unavailable(row);
@@ -358,7 +367,8 @@
       if (loading) part.append(make('p', 'quiet', 'Reading the document…'));
       if (problem) part.append(make('p', 'problem', problem));
       if (found) {
-        if (!found.readable) part.append(make('p', 'problem', found.problem || 'It has no readable text.'));
+        if (found.state === 'kept') add(part, make('p', '', fileFacts(found)), make('p', 'quiet', found.problem || ''));
+        else if (!found.readable) part.append(make('p', 'problem', found.problem || 'It has no readable text.'));
         for (const gap of found.gaps || []) part.append(make('p', 'quiet', gap));
         if (found.text) {
           const passage = make('pre', 'library-preview-text', found.text);

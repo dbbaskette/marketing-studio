@@ -235,10 +235,6 @@ def _kept_capture(store, ident, source) -> dict:
             found = next((one for one in value['sources'] if one.get('id') == source), None)
             if found is None or found.get('kind') != 'file' or found.get('status') != 'ready':
                 raise LibraryError('Only a readable uploaded file is kept in the library.')
-            if not document_library.takes(found['name']):
-                # A PowerPoint file or a spreadsheet: read as a source, not a type the library
-                # keeps. Said once, plainly; trying again would change nothing.
-                return {'state': 'not-taken', 'problem': document_library.NOT_TAKEN, 'source': source}
             data = rc.inside(store.folder(ident), found['original']).read_bytes()
             if hashlib.sha256(data).hexdigest() != found.get('original_sha256'):
                 raise LibraryError('This file changed after it was read. Add it again.')
