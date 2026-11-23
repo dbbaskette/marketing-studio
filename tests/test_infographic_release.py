@@ -28,6 +28,15 @@ class InfographicReleaseTests(unittest.TestCase):
         self.assertEqual(manifest['version'], version)
         self.assertEqual(manifest['files']['SKILL.md'], hashlib.sha256((entry / 'SKILL.md').read_bytes()).hexdigest())
 
+    def test_shipped_skill_copies_match_the_source_of_truth(self):
+        studio = ROOT / 'studios/infographic'
+        source = (studio / 'skills/infographic-studio/SKILL.md').read_bytes()
+        for copy in ('guidance/SKILL.md', 'bootstrap/infographic-studio/SKILL.md'):
+            self.assertEqual((studio / copy).read_bytes(), source,
+                             f'studios/infographic/{copy} differs from skills/infographic-studio/SKILL.md; copy it over')
+        manifest = json.loads((studio / 'guidance/manifest.json').read_text())
+        self.assertEqual(manifest['files'], {'SKILL.md': hashlib.sha256(source).hexdigest()})
+
     def test_catalog_control_flags_and_minimal_companion_subsets(self):
         self.assertEqual(catalog.STUDIOS['infographic'][0], 'Infographic Studio')
         self.assertTrue(control.valid({'command': 'start', 'studio': 'infographic'}))

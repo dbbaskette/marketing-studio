@@ -302,12 +302,14 @@ def _install(kept, lease):
         with tempfile.TemporaryDirectory(prefix='blog-brand-install-') as temporary:
             folder, _ = source.fetch(kept['repository'], chosen['commit'], Path(temporary))
             version = source.version_of(folder)
-            for name, version in source.bootstraps(folder).items():
+            # Each companion's version is its own: `version` stays the brand skill's, which
+            # is how the newly installed skill is found below.
+            for name, wanted in source.bootstraps(folder).items():
                 if name in source.SKIPPED:
                     continue
-                if source.order(before.get(name)) < source.order(version):
+                if source.order(before.get(name)) < source.order(wanted):
                     raise ValueError(
-                        f'This installer would install or replace {name} with {version}. '
+                        f'This installer would install or replace {name} with {wanted}. '
                         'Install a compatible companion yourself, then try again. Nothing was run.'
                     )
             code, late, _ = source.install(folder, home(), 900)

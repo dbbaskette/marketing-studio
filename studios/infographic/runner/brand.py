@@ -9,7 +9,7 @@ import shutil
 import subprocess
 import tempfile
 
-from studio_core import brand_catalog
+from studio_core import brand_catalog, brand_skills
 
 from .contracts import Invalid, canonical, digest
 from .provider_capabilities import private_child_environment
@@ -72,8 +72,9 @@ def export_selected(*, skill: Path, brand_id: str, variant: str | None = None,
             command += ['--variant', variant]
         import os
         try:
+            # The brands the shared settings name (`brand.brands`), not a folder recorded earlier.
             done = run(command, capture_output=True, text=True, timeout=60,
-                       env=private_child_environment(os.environ))
+                       env=brand_skills.environment(private_child_environment(os.environ)))
             require(done.returncode == 0, 'The installed brand could not export its shared visual contract. Check its local compatibility.')
             path = output / 'brand-contract.json'
             require(path.is_file() and not path.is_symlink() and path.stat().st_size <= 1_000_000,

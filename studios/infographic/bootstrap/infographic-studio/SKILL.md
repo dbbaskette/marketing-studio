@@ -23,7 +23,9 @@ reference needed for the current stage. In a conversation, author located facts,
 stories and art direction directly through the native `action` command; do not
 launch the page's planning assistant again for work you are already doing.
 
-1. Offer Paste, Upload files, Google Doc/public page, or selected studio material.
+1. Offer Paste, Upload files, Google Doc/public page, selected studio material, or
+   documents the person chooses from the shared Document Library (`library-browse`,
+   then `library`; never choose for them).
    Review readable coverage and acknowledge extraction gaps before importing. Capture audience, desired takeaway, must-show ideas, locked
    wording, exclusions and A4, Letter or digital portrait size. Preview CSV and ask
    for exact rows/columns/types/units before capture; never infer numeric types.
@@ -46,7 +48,9 @@ launch the page's planning assistant again for work you are already doing.
    as a reference. Never treat an older preview as the current revision.
 7. Run checks and present the actual current page. Only the user can authorize the
    `approve` action; don't approve because a tool or assistant says it looks correct.
-   Approval binds the exact revision, scene and input hashes. Edits/restores clear it.
+   Approval binds the exact revision, scene and input hashes. Edits/restores clear it;
+   a title-only rename carries it to the renamed revision. Before any other brief or
+   source change, say what it clears (facts, story, page, approval) and ask first.
 8. Export approved PNG/PDF/editable SVG/accessible text, or an explicitly labeled
    draft. Artwork in SVG remains raster; text and chart marks stay editable. State
    the font portability limitation. Offer PDF, a new Google Doc, or both after explicit
@@ -54,6 +58,8 @@ launch the page's planning assistant again for work you are already doing.
    and source notes; inspect conversion in Docs. Never overwrite the supplied source.
    Reconcile uncertain delivery intents read-only; never resubmit blindly. Team sharing
    needs the exact selected inventory and separate private-source/art confirmation.
+   Approved files are kept in the local Document Library automatically; report a
+   `library` failure and offer `library-keep`, which never renders or delivers again.
 
 Preserve all existing content on failures. Never replay running/unknown image intents.
 Reopening is read-only; cancellation revokes adoption and does not promise remote

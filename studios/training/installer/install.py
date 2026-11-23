@@ -672,23 +672,28 @@ def said_of(name: str, pin: dict, outcome: dict, harnesses: list[str]) -> str | 
     need = NEEDS.get(name, 'part of a training cannot be made without it')
     source = pin['repository'].removesuffix('.git')
     command = again('--companions', 'install')
+    # A copy whose package.json is missing or broken is wanting: it is installed again.
+    unread = [HARNESS[harness] for harness in harnesses if found.get(harness) == '']
+    broken = (f"{name} is there for {' and '.join(unread)}, but not as its own installer "
+              'leaves it: its version could not be read, so it is to be installed again.'
+              if unread else None)
     if outcome['state'] in ('refused', 'failed'):
-        return (f"{name} {wanted} was not installed, and {need}: {outcome['detail']} When that "
-                f'is put right, run: {command}')
-    short = wanting(found, minimum_version(pin))
-    if short:
-        who = ' and '.join(HARNESS[harness] for harness in short)
-        what = 'is not installed' if all(found[harness] is None for harness in short) \
-            else f'is older than the {wanted} Training Studio was made with'
+        return ' '.join(filter(None, (
+            broken, f"{name} {wanted} was not installed, and {need}: {outcome['detail']}",
+            'If that copy is your own, move it away first.' if broken else None,
+            f'When that is put right, run: {command}')))
+    short = [harness for harness in wanting(found, minimum_version(pin)) if found[harness] != '']
+    if short or broken:
+        said = None
+        if short:
+            who = ' and '.join(HARNESS[harness] for harness in short)
+            what = 'is not installed' if all(found[harness] is None for harness in short) \
+                else f'is older than the {wanted} Training Studio was made with'
+            said = f'{name} {what} for {who}: {need}.'
         why = WHY.get(outcome.get('why'))
-        return ' '.join(filter(None, (f'{name} {what} for {who}: {need}.', why,
+        return ' '.join(filter(None, (broken, said, why,
                                       f'To fetch it from {source} and install it, run: '
                                       f'{command}')))
-    unread = [HARNESS[harness] for harness in harnesses if found[harness] == '']
-    if unread:
-        return (f"{name} is there for {' and '.join(unread)}, but not as its own installer "
-                f'leaves it, so its version could not be read. It was left alone. If {need}, '
-                f'move it away and run this again. It comes from {source}')
     return outcome.get('next') and f"{name} says there is more to do: {outcome['next']}"
 
 
@@ -914,7 +919,8 @@ def offer(name: str, pin: dict, found: dict) -> bool:
     having = sorted({version for version in found.values() if version})
     print(f"\n{name} {pin['version']} or newer "
           + (f'is newer than the {having[0]} on this computer' if having
-             else 'is not on this computer')
+             else 'is on this computer, but its version could not be read'
+             if '' in found.values() else 'is not on this computer')
           + f": {NEEDS.get(name, 'part of a training cannot be made without it')}.")
     print(f"  Its main branch would be fetched from {source} and checked, file for file, as\n"
           'it is now. Then its own installer would be run with Node.\n  That installer '
