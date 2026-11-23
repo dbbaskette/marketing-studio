@@ -199,7 +199,10 @@ class Upkeep:
         """One companion, for each assistant Training Studio is installed for."""
         found = install.companion_found(self.home, chosen, name)
         wanted = pin['version']
-        short = install.wanting(found, _floor(pin))
+        # A copy whose version cannot be read is wanting too (the installer brings it
+        # again), and is said as `unread` here rather than as older.
+        short = [harness for harness in install.wanting(found, _floor(pin))
+                 if found[harness] != '']
         unread = [install.HARNESS[harness] for harness, version in found.items()
                   if version == '']
         need = install.NEEDS.get(

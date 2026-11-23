@@ -190,7 +190,10 @@ from studio_core import modules
 from studio_core.shared_runner import slides as _shared
 modules.bind(globals(), _shared, _shared.NAMES)
 
-RELEASE = '0.19.0'      # what a person is told to update to: the installer's floor
+# The oldest Harness Slides taken, and what a person is told to update to: the floor of
+# the pins this studio's installer uses (installer/companions.json).
+MINIMUM = RELEASE = _shared.pinned_floor(
+    Path(runner.__file__).resolve().parents[1] / 'installer' / 'companions.json')
 # What a new deck needs of the slides tool, by the names its `version` lists: NEEDED for a
 # deck approved on its words and its look, as the brand's checkpoints are, and DESIGN_NEEDED
 # besides for one whose slides' designs are walked through first, when the person asks.

@@ -962,14 +962,19 @@ class CompanionTests(InstallerCase):
         self.assertIn(f"harness-research {pin['version']} or newer is newer than the 0.6.0", printed.getvalue())
         self.assertIn('Its main branch would be fetched from', printed.getvalue())
 
-    def test_a_companion_whose_version_cannot_be_read_is_left_alone_and_named(self):
+    def test_a_companion_whose_version_cannot_be_read_is_installed_again(self):
+        # A folder with no readable package.json is a broken copy, not one that is in place
+        # (#506): it is offered again, and said plainly when its installer leaves it as it is.
         (self.claude / 'harness-research').mkdir()
+        plan = self.run_installer('install', '--dry-run', '--target', 'claude')
+        self.assertTrue(plan['companions']['harness-research']['would_offer'])
         result = self.run_installer('install', '--yes', '--companions', 'install',
                                     '--target', 'claude')
-        self.assertEqual(result['companions']['harness-research']['state'], 'left alone')
-        self.assertEqual(self.fetched('harness-research'), [])
+        outcome = result['companions']['harness-research']
+        self.assertEqual((outcome['state'], outcome['found']), ('failed', {'claude': ''}))
         (note,) = [note for note in result['notes'] if note.startswith('harness-research')]
-        self.assertIn('its version could not be read. It was left alone', note)
+        self.assertIn('its version could not be read, so it is to be installed again', note)
+        self.assertIn('If that copy is your own, move it away first.', note)
 
     def refused(self, name: str = 'harness-research') -> str:
         """Install with the pins as they stand, and return why the companion was refused."""

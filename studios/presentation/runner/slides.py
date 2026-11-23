@@ -190,6 +190,9 @@ from runner import companion  # noqa: F401  read by the shared parts
 from studio_core import modules
 from studio_core.shared_runner import slides as _shared
 modules.bind(globals(), _shared, _shared.NAMES)
+# The oldest Harness Slides taken: the floor of the pins this studio's installer uses.
+MINIMUM = _shared.pinned_floor(
+    Path(runner.__file__).resolve().parents[1] / 'installer' / 'companions.json')
 
 DRAWERS = ('local', 'google')   # how `review --file` draws a deck's pictures
 LEFT = re.compile(r'The preview deck is in Drive \((\S+)\); retry with --file-id (\S+?)\.$')

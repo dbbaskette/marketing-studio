@@ -14,7 +14,6 @@ from pathlib import Path
 import re
 import secrets
 import shutil
-import subprocess
 import threading
 from datetime import datetime, timezone
 from urllib.parse import urlsplit
@@ -290,6 +289,7 @@ class Workflow:
         self.runtime, self.call = Path(runtime), call
         self.lock = threading.RLock()
         self.helper = rc.Workflow(runtime, call)
+        self.cancelled = None   # the run's Stop, for helper commands run here (rc.run_helper)
 
     def command(self, root, group, action, value=None, **flags):
         with self.lock:
@@ -302,9 +302,10 @@ class Workflow:
                 args += ['--' + key.replace('_', '-'), str(val)]
             if self.call:
                 return self.call(*args)
-            result = subprocess.run([shutil.which('node') or 'node',
+            # Without a studio's call, Stop ends a command still running (rc.run_helper).
+            result = rc.run_helper([shutil.which('node') or 'node',
                 str(self.runtime / 'scripts/harness-research.mjs'), *args],
-                capture_output=True, text=True, timeout=120, stdin=subprocess.DEVNULL)
+                rc.HELPER_SECONDS, self.cancelled)
             if result.returncode:
                 raise ValueError((result.stderr.strip().splitlines() or ['Harness Research did not finish.'])[-1])
             return json.loads(result.stdout)
@@ -393,6 +394,8 @@ class Workflow:
         helper = capability(self.runtime)
         if helper is None:
             raise ValueError('This workflow needs the complete Harness Research 1.1 collection runtime.')
+        # Stop ends a helper command this run starts itself while it is running.
+        self.cancelled = self.helper.cancelled = cancelled
         earlier = earlier if isinstance(earlier, dict) else {}
         if task.get('research_policy') and not research_quality.valid_policy(task['research_policy']):
             raise ValueError('Restore the saved focused research policy before continuing.')
@@ -724,17 +727,22 @@ class Workflow:
                         for row in tracked['streams']:
                             if row['id'] == area['id']: row['evidence'] = research_preview.evidence(packet, basis)
                         if 'first_finding_seconds' not in tracked:
-                            tracked['first_finding_seconds'] = research_timing.account(host['started'], host['attempts']).get('elapsed_seconds')
+                            with host_lock:   # sibling workers append attempts
+                                timing = research_timing.account(host['started'], host['attempts'])
+                            tracked['first_finding_seconds'] = timing.get('elapsed_seconds')
                     report(stream=area['id'], state='kept')
                 except BaseException as error:
                     # invoke returns/raises only after the transport confirms termination.
                     # Completed observations must not be overwritten by a conflicting outcome.
-                    state = json.loads(bytes_of(state_file))
-                    attempt = next(s for s in state['workstreams'] if s['id'] == area['id'])['attempts'][-1]
-                    if not attempt.get('ended_at') and getattr(error, 'terminal_confirmed', True):
-                        self.command(case, 'collection', 'finish', {**terminal,
-                            'outcome': 'cancelled' if cancelled() else 'failed',
-                            'note': 'The host transport ended before a checked packet was accepted.'})
+                    # Read under the helper lock: a sibling worker's helper command may be
+                    # rewriting the collection state at this moment.
+                    with self.lock:
+                        state = json.loads(bytes_of(state_file))
+                        attempt = next(s for s in state['workstreams'] if s['id'] == area['id'])['attempts'][-1]
+                        if not attempt.get('ended_at') and getattr(error, 'terminal_confirmed', True):
+                            self.command(case, 'collection', 'finish', {**terminal,
+                                'outcome': 'cancelled' if cancelled() else 'failed',
+                                'note': 'The host transport ended before a checked packet was accepted.'})
                     report(stream=area['id'], state='failed' if getattr(error, 'terminal_confirmed', True) else 'termination-unconfirmed')
                     raise
 
@@ -765,7 +773,9 @@ class Workflow:
                     with state_lock:
                         tracked['combining'] = values
                         if any(row.get('preview') for row in values) and 'first_readable_seconds' not in tracked:
-                            tracked['first_readable_seconds'] = research_timing.account(host['started'], host['attempts']).get('elapsed_seconds')
+                            with host_lock:   # section workers append attempts
+                                timing = research_timing.account(host['started'], host['attempts'])
+                            tracked['first_readable_seconds'] = timing.get('elapsed_seconds')
                     report('synthesize')
                 dossier, worker = research_sections.combine(case, task, areas, registry, base,
                     offered_final, invoke, round=number,

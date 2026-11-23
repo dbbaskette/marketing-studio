@@ -12,6 +12,7 @@ from pathlib import Path
 import re
 import secrets
 import shutil
+import signal
 import subprocess
 import tempfile
 import time
@@ -109,6 +110,54 @@ def answered(args, code, out):
         return isinstance(json.loads(out), dict)
     except (TypeError, ValueError):
         return False
+
+
+HELPER_SECONDS = 120   # the longest one helper command may take
+HELPER_TICK = 0.2      # seconds between looks at whether a running helper command was stopped
+HELPER_STOPPED = 'Research stopped; accepted evidence is kept.'
+
+
+def run_helper(command, seconds=HELPER_SECONDS, cancelled=None):
+    """Run one Harness Research helper command where no studio call runs it (a studio's own
+    call runs it through its companion.run_command): a CompletedProcess with text output.
+
+    `cancelled` is the research run's Stop, asked while the command runs. A command running
+    when Stop comes is ended with everything it started (its process group), and
+    InterruptedError is raised, as a stopped research run raises. A command started once
+    Stop has come, such as the one that records the stop, runs to its end. A command that
+    takes longer than `seconds` is ended and TimeoutExpired raised, as before."""
+    if cancelled is None or cancelled():
+        return subprocess.run(command, capture_output=True, text=True, timeout=seconds,
+                              stdin=subprocess.DEVNULL)
+    grouped = hasattr(os, 'killpg')   # elsewhere only the command itself can be ended
+    process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                               stderr=subprocess.PIPE, text=True, start_new_session=grouped)
+    finished = False
+    deadline = time.monotonic() + seconds
+    try:
+        while True:
+            try:
+                out, err = process.communicate(
+                    timeout=max(0.0, min(HELPER_TICK, deadline - time.monotonic())))
+                finished = True
+                return subprocess.CompletedProcess(command, process.returncode, out, err)
+            except subprocess.TimeoutExpired:
+                if cancelled():
+                    raise InterruptedError(HELPER_STOPPED) from None
+                if time.monotonic() >= deadline:
+                    raise subprocess.TimeoutExpired(command, seconds) from None
+    finally:
+        # A command that did not finish (stopped, late or failed) leaves nothing running:
+        # it is ended with everything it started. One that finished is left as it ended.
+        if not finished:
+            try:
+                if grouped:
+                    os.killpg(process.pid, signal.SIGKILL)
+                elif process.poll() is None:
+                    process.kill()
+            except (ProcessLookupError, PermissionError):
+                pass
+            process.communicate()
 
 
 def inside(root, name):
@@ -215,6 +264,7 @@ def find_runtime():
         *(Path.home() / root / 'current' for root in SHARED),
         Path.home() / '.agents/skills/harness-research',
         Path.home() / '.claude/skills/harness-research',
+        Path.home() / '.cursor/skills/harness-research',
     ]
     for root in roots:
         if (root / 'scripts/harness-research.mjs').is_file():
@@ -405,6 +455,9 @@ class Workflow:
     def __init__(self, runtime=None, call=None):
         self.runtime = Path(runtime) if runtime else find_runtime()
         self.call = call
+        # The research run's Stop, when one is set: a helper command this runs itself (with
+        # no `call`) and that is running when it comes is ended (`run_helper`).
+        self.cancelled = None
 
     def command(self, case, action, file=None, worker=None, *, reuse_context=None):
         args = ['synthesis', action, '--project', str(case)]
@@ -418,9 +471,8 @@ class Workflow:
         node = shutil.which('node')
         if not node:
             raise ValueError('Harness Research needs the bundled Node.js runtime.')
-        result = subprocess.run([node, str(self.runtime / 'scripts/harness-research.mjs'), *args],
-                                capture_output=True, text=True, timeout=120,
-                                stdin=subprocess.DEVNULL)
+        result = run_helper([node, str(self.runtime / 'scripts/harness-research.mjs'), *args],
+                            HELPER_SECONDS, self.cancelled)
         if result.returncode and not answered(args, result.returncode, result.stdout):
             raise ValueError((result.stderr.strip().splitlines() or ['Harness Research failed.'])[-1])
         return json.loads(result.stdout)
@@ -1728,8 +1780,13 @@ def collection_preflight(case, dossier, spec):
                                      'invocation': 'local-preflight-' + secrets.token_hex(12)})
     identity = {'workstream': stream, 'investigator': worker,
                 'attempt': registered['registration']['number']}
-    for source in dossier['sources']:
-        command('capture', {**identity, 'source': source})
+    # One capture for every source when the helper takes them together, as the research
+    # run does (research_session.Workflow.capture_sources); one each from an older helper.
+    if dossier['sources'] and registered.get('batch_capture'):
+        command('capture', {**identity, 'sources': dossier['sources']})
+    else:
+        for source in dossier['sources']:
+            command('capture', {**identity, 'source': source})
     command('finish', {**identity, 'outcome': 'completed',
                        'note': 'Local submission preflight completed; not a production invocation observation.'})
     command('accept', {'schema': 1, 'request_digest': registered['request_digest'],
