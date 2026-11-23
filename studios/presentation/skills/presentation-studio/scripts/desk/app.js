@@ -10,6 +10,14 @@ const EDITED_LOOKS = 'You edited the outline, so the looks will be drawn again f
 const TOKEN_HEADER = 'X-Presentation-Studio-Token';
 // The shell kit saves the appearance through this page's own key.
 if (typeof StudioShell !== 'undefined') StudioShell.connect({ header: TOKEN_HEADER, token: () => view.token });
+// Search and jump finds each deck this page lists by its name and opens it as its card on
+// Decks does. New deck is always there.
+function deckCommands() {
+  return [...every().map((brief) => ({ title: brief.title || 'Untitled', group: 'Decks',
+    hint: standingOf(brief)[1], keywords: 'deck presentation slides work', run: openDeck(brief) })),
+  { title: 'New deck', group: 'Start', keywords: 'create start presentation slides', run: () => openNew() }];
+}
+if (typeof StudioShell !== 'undefined') StudioShell.commands(deckCommands);
 const POLL_SHOWN = 5000;
 const POLL_HIDDEN = 20000;
 const POLL_RUN = 2500; // show new slide previews while a deck is working, without asking every second

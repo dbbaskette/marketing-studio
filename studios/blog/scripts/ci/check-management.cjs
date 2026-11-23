@@ -112,6 +112,7 @@ async function check(){
   await authorClarify();
   await createVoiceSources();
   await movedControls();
+  await paletteCommands();
   await libraryPicker();
   await deskLength();
   await voicesAndStyles();
@@ -1153,6 +1154,22 @@ async function createVoiceSources(){
   // Links to their posts open with the author named.
   f.run('sVoiceLinks=(found,profile)=>{window.linksAuthor=sVoiceLinksHeld(profile).author;}');
   await find('Add links to posts').listeners.click();assert.equal(f.run('window.linksAuthor'),'Avery Quinn');
+}
+
+// Search and jump finds each blog the Blogs screen lists, by its name, and opens it as its card
+// there does; New blog is offered only while this page may edit.
+async function paletteCommands(){
+  const app=fs.readFileSync('skills/blog-studio/assets/management/app.js','utf8');
+  assert.match(app,/StudioShell\.commands\(blogCommands\)/,'the page hands its blogs to Search and jump');
+  const f=fixture();f.loadRunner();
+  f.run("window.routed=[];sRoute=(...to)=>{window.routed.push(to);};sInterview=id=>{window.routed.push(['interview',id]);};sDeskBegin=start=>{window.routed.push(['new',start.step]);};sDeskRowWords=()=>'On the desk'");
+  f.run("studio.listing=[{id:'launch-notes',title:'Launch notes',flow:'desk',status:'desk'},{id:'gateway-retries',title:'Gateway retries',mode:'draft',status:'waiting-for-approval',next:'draft'}];studio.ordinary=[{id:'older-post',title:'An older post',author:'Avery Quinn'},{id:'talk',title:'A talk',mode:'interview'}]");
+  const listed=f.run('blogCommands()');
+  assert.deepEqual(JSON.parse(JSON.stringify(listed.map(c=>[c.group,c.title,c.hint||'']))),[['Blogs','Launch notes','On the desk'],['Blogs','Gateway retries','Waiting for your review'],['Blogs','An older post','Avery Quinn'],['Blogs','A talk','Saved draft'],['Start','New blog','']]);
+  for(const command of listed)command.run();
+  assert.deepEqual(JSON.parse(f.run('JSON.stringify(window.routed)')),[['desk','launch-notes'],['gate','gateway-retries','draft'],['editor','older-post'],['interview','talk'],['new',0]]);
+  f.run('access.actions.edit=false');
+  assert.equal(f.run('blogCommands()').some(c=>c.title==='New blog'),false,'nothing is offered that this page cannot do');
 }
 
 // Every control that moved can still be reached.

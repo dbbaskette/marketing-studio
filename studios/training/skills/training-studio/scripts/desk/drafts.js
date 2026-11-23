@@ -3780,27 +3780,40 @@ function workbenchPhase(found, run, { preparingPlan, waitingPlan }) {
   return { at, yours: yours || Boolean(waitingPlan), finished };
 }
 
+// The shared arc (StudioShell.arc), as Blog Studio's and Presentation Studio's desks draw it:
+// numbered marks, the wash as far as the work has come, and a light that travels the line
+// while the assistant works. Its note says whose turn the phase in hand is.
 function workbenchArc(found, run, flags) {
   if (typeof StudioShell === 'undefined') return null;
   const { at, yours, finished } = workbenchPhase(found, run, flags);
   const notes = ['', yours && at === 1 ? 'yours to approve' : '', yours && at === 2 ? 'yours to review' : '',
     'ready to send'];
-  const line = StudioShell.track(['Brief', 'Plan', 'Make', 'Ship'].map((label, index) => ({ label,
-    state: finished || index < at ? 'done' : index > at ? 'todo' : yours ? 'yours' : 'current',
-    note: index === at && !finished ? notes[index] : '' })), 'Where this training is');
-  line.classList.add('track-arc');
-  line.dataset.key = 'workbench-arc';
+  const line = StudioShell.arc({ at, yours, finished, note: finished ? '' : notes[at] },
+    'Where this training is');
+  // The light travels only while the assistant is at work, never under "ready to send".
+  line.dataset.live = String(Boolean(found.progress?.running) && !yours && !finished);
   return line;
 }
 
 // A line of light across the top of the desk: moving in the studio's colour while the
 // assistant works, amber while something waits for the person, still otherwise.
 function workbenchPulse(found, run) {
-  const node = make('div', 'workbench-pulse');
-  node.setAttribute('aria-hidden', 'true');
-  node.dataset.state = found.standing?.state === 'needs-you' ? 'yours'
-    : found.progress?.running ? 'working' : 'still';
-  return node;
+  if (typeof StudioShell === 'undefined') return null;
+  return StudioShell.pulse(found.standing?.state === 'needs-you' ? 'yours'
+    : found.progress?.running ? 'working' : 'still');
+}
+
+// The move card is the shared one (StudioShell.move); the desk adds its own controls under
+// it, so their keys keep the focus where it was. Without the shell kit the same card is
+// drawn plainly.
+function moveCard({ title, text = '', calm = false }) {
+  if (typeof StudioShell !== 'undefined') return StudioShell.move({ title, text, calm });
+  const card = add(make('section', 'move-card' + (calm ? ' move-card-calm' : '')),
+    calm ? null : make('p', 'move-label', 'Your move'), make('h2', 'move-title', title),
+    text ? make('p', calm ? 'quiet' : '', text) : null);
+  card.dataset.zone = 'rail'; card.dataset.key = 'workbench-move';
+  if (!calm) card.setAttribute('aria-label', 'Your move');
+  return card;
 }
 
 // The one thing that waits for the person, said as a question with its one action. With
@@ -3824,17 +3837,16 @@ function workbenchMove(found, held, run) {
     const act = !offer || !deskOurs() ? null : offer.kind === 'resume'
       ? capsule(offer.label, '', (event) => steer('resume', event.currentTarget), 'workbench-move-resume')
       : capsule(offer.label, 'quiet', () => open(offer), 'workbench-move-offer');
-    const calm = add(make('section', 'move-card move-card-calm'),
-      make('h2', 'move-title', standing.phase === 'ready' ? 'Everything here is ready'
+    const calm = moveCard({ calm: true,
+      title: standing.phase === 'ready' ? 'Everything here is ready'
         : offer?.kind === 'resume' ? standing.words + ': resume when you are ready'
         : offer ? 'Drafts are ready to mark while work continues'
-        : 'Nothing is yours right now'),
-      make('p', 'quiet', standing.phase === 'ready' ? 'Send it where it goes from Export & share.'
+        : 'Nothing is yours right now',
+      text: standing.phase === 'ready' ? 'Send it where it goes from Export & share.'
         : offer ? offer.says
         : found.progress?.running ? 'Read what is finished while the rest is made.'
-          : standing.sentence || ''),
-      act ? add(make('div', 'bar'), act) : null);
-    calm.dataset.key = 'workbench-move';
+          : standing.sentence || '' });
+    if (act) calm.append(add(make('div', 'bar'), act));
     return calm;
   }
   const go = capsule(next.label || 'Open it', '', () => open(next), 'workbench-move-go');
@@ -3842,13 +3854,8 @@ function workbenchMove(found, held, run) {
   const levels = Object.keys(standing.levels || {}).filter(Boolean);
   const across = levels.length > 1 ? ' That is across levels '
     + levels.slice(0, -1).join(', ') + ' and ' + levels.at(-1) + '.' : '';
-  const card = add(make('section', 'move-card'),
-    make('p', 'move-label', 'Your move'),
-    make('h2', 'move-title', standing.words),
-    standing.sentence ? make('p', '', standing.sentence + across) : null,
-    add(make('div', 'bar'), go));
-  card.dataset.key = 'workbench-move';
-  card.setAttribute('aria-label', 'Your move');
+  const card = moveCard({ title: standing.words, text: standing.sentence ? standing.sentence + across : '' });
+  card.append(add(make('div', 'bar'), go));
   return card;
 }
 
