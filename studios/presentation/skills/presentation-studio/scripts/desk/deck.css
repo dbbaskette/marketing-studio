@@ -340,25 +340,14 @@
   margin-top: 0.6rem;
 }
 
-/* Toasts never cover the page's own controls: on a desktop they sit over the sidebar's
-   empty foot, under its screens; on a phone, over the bar of screens along the foot, one at
-   a time (app.js), where a tap still goes through to the bar. */
-@media (min-width: 52.01rem) {
-  .toasts {
-    left: 0.75rem;
-    right: auto;
-    bottom: calc(1rem + env(safe-area-inset-bottom));
-    justify-items: stretch;
-    width: 13rem;
-    max-width: 13rem;
-  }
-}
-
+/* Toasts never cover the shell's own controls. On a desktop they keep the kit's place at the
+   bottom right, clear of the sidebar's Search and jump and Appearance. On a phone they take
+   the screen's width just above the bar of screens (--tab-bar-room), one at a time (app.js). */
 @media (max-width: 52rem) {
   .toasts {
     left: 0.6rem;
     right: 0.6rem;
-    bottom: calc(0.35rem + env(safe-area-inset-bottom));
+    bottom: calc(var(--tab-bar-room) + 0.6rem + var(--foot-lift));
     justify-items: stretch;
     max-width: none;
   }
@@ -382,6 +371,14 @@
 
 .desk-review-notes[open] > summary {
   margin-bottom: 8px;
+}
+
+/* A touch target on a phone, as every control there is. */
+@media (max-width: 52rem) {
+  .desk-review-notes > summary {
+    min-height: 2.75rem;
+    padding-block: 0.65rem;
+  }
 }
 
 /* Why Deliver cannot be pressed now, beside it. */
