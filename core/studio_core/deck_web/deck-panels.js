@@ -19,8 +19,13 @@
   // It is one stop for Tab: the arrow keys, Home and End move the choice within it, and Space
   // or Enter picks the look that has the focus. With `preselect`, the brand's default is
   // chosen until the person picks another, and the studio is told so at once.
+  // Each picker's ids carry its own number, so two pickers for one deck (a sheet over a
+  // panel, or two levels of one training) never share an id.
+  let pickers = 0;
   function lookPicker(spec) {
     const node = make('div', 'deck-looks');
+    pickers += 1;
+    const scope = String(spec.name || 'deck').replace(/[^a-z0-9]+/gi, '-') + '-' + pickers;
     const held = { choice: (spec.picked && spec.picked.choice) || '',
       words: (spec.picked && spec.picked.words) || '' };
     const tell = () => { if (spec.changed) spec.changed({ choice: held.choice, words: held.words }); };
@@ -69,7 +74,7 @@
       if (look.id === spec.defaultId) {
         // Said with the look's name, which its label alone would leave out.
         const marked = make('span', 'quiet', ' · the brand’s default');
-        marked.id = 'look-default-' + String(spec.name || 'deck').replace(/[^a-z0-9]+/gi, '-');
+        marked.id = 'look-default-' + scope;
         option.setAttribute('aria-describedby', marked.id);
         named.append(marked);
       }
@@ -94,7 +99,7 @@
     node.append(group);
     const said = spec.wordsLabel || 'Your words, kept with your choice (optional)';
     const words = make('textarea', 'input deck-looks-words');
-    words.id = 'look-words-' + String(spec.name || 'deck').replace(/[^a-z0-9]+/gi, '-');
+    words.id = 'look-words-' + scope;
     words.rows = 2;
     words.maxLength = 2000;
     words.value = held.words;

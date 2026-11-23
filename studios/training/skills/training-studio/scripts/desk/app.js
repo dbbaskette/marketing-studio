@@ -10,6 +10,16 @@
 const TOKEN_HEADER = 'X-Training-Studio-Token';
 // The shell kit saves the appearance through this page's own key.
 if (typeof StudioShell !== 'undefined') StudioShell.connect({ header: TOKEN_HEADER, token: () => view.token });
+// Search and jump finds each training this page lists by its name and opens it as its card
+// on Trainings does. New training is there wherever the runner can start one.
+function trainingCommands() {
+  return [...list(view.listing).map((training) => ({ title: training.title || 'Untitled',
+    group: 'Trainings', hint: training.error ? 'Cannot be read' : standingOf(training)[1],
+    keywords: 'training course lesson work', run: openTraining(training) })),
+  ...(view.runner ? [{ title: 'New training', group: 'Start', keywords: 'create start course lesson',
+    run: () => openNew() }] : [])];
+}
+if (typeof StudioShell !== 'undefined') StudioShell.commands(trainingCommands);
 const POLL_SHOWN = 5000;
 const POLL_HIDDEN = 20000;
 const POLL_RUN = 2000; // while a run is working and its own screen is open

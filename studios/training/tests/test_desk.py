@@ -7433,6 +7433,46 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
                                 [{'snapshot': 'calm'}])
         self.assertIn('Nothing is yours right now', result['snapshots']['calm']['text'])
 
+    def test_the_desk_draws_the_shared_arc_pulse_and_move(self):
+        # The same Brief, Plan, Make, Ship arc as Blog Studio's and Presentation Studio's
+        # desks, from the shell kit: its numbered marks, wash and travelling light are the
+        # kit's. The light travels while the assistant works, never under "ready to send".
+        result = self.open_desk(self.on_desk(a_desk(standing=self.standing())),
+                                [{'snapshot': 'working'}], shell=True)
+        asked = result['shell']
+        self.assertIn(['arc', 'Where this training is',
+                       {'at': 2, 'yours': False, 'finished': False, 'note': '', 'live': 'true'}],
+                      asked)
+        self.assertIn(['pulse', 'working'], asked)
+        self.assertIn(['move', 'Nothing is yours right now', True], asked)
+        self.assertNotIn('track', [one[0] for one in asked], 'the arc is not drawn by hand')
+        self.assertIn('Nothing is yours right now', result['snapshots']['working']['text'])
+        told = self.standing(state='needs-you', phase='review', words='Review the learner guide',
+                             sentence='The level 101 learner guide is ready to read.',
+                             next={'kind': 'material', 'label': 'Open it', 'material': 'document@101',
+                                   'level': '101', 'slide': None},
+                             counts={'drafts': 1})
+        answers = self.answers(**{'GET /api/run': [a_desk_run('waiting', 'Waiting.')],
+                                  'GET /api/drafts': [a_desk(running=False, standing=told)]})
+        result = self.open_desk(answers, [{'snapshot': 'yours'}], shell=True)
+        self.assertIn(['arc', 'Where this training is',
+                       {'at': 2, 'yours': True, 'finished': False, 'note': 'yours to review',
+                        'live': 'false'}], result['shell'])
+        self.assertIn(['pulse', 'yours'], result['shell'])
+        self.assertIn(['move', 'Review the learner guide', False], result['shell'])
+        self.assertIn('Open it', result['snapshots']['yours']['buttons'])
+
+    def test_search_and_jump_finds_a_training_by_name_and_opens_it(self):
+        answers = self.on_desk(a_desk(standing=self.standing()))
+        result = self.run_page(answers, [{'snapshot': 'home'}, {'command': 'Rolling restarts'},
+                                         {'snapshot': 'opened'}], shell=True)
+        listed = result['commands']
+        self.assertEqual([row[:2] for row in listed if row[0] == 'Trainings'],
+                         [['Trainings', 'Rolling restarts']])
+        self.assertIn(['Start', 'New training', ''], listed)
+        self.assertEqual(result['snapshots']['opened']['heading'], 'Rolling restarts')
+        self.assertNotEqual(result['snapshots']['home']['heading'], 'Rolling restarts')
+
     def test_the_move_card_of_a_paused_run_offers_resume(self):
         offer = {'kind': 'resume', 'label': 'Resume training', 'material': None, 'level': '',
                  'slide': None, 'says': 'Paused. Nothing more is made until you resume.'}
