@@ -1,22 +1,22 @@
 """Read installed brand choices on explicit request; never install or update a skill."""
 import json
 import os
-from pathlib import Path
 import re
 import shutil
 import subprocess
 
-from studio_core.packaging import stable_address, stable_place
+from studio_core import brand_skills
+from studio_core.packaging import stable_place
 
 
 def choices(skill=None, home=None, run=subprocess.run, which=shutil.which):
-    home = Path(home) if home is not None else Path.home()
     selected = skill or os.environ.get('BRAND_SKILL_RUNTIME')
     # A folder saved inside `versions/` is said through `current`; so is each one found. An
-    # update keeps only the newest version, and the saved folder may be gone.
-    roots = [stable_address(Path(selected).expanduser(), saved=True)] if selected else [
-        path for folder in (home / '.agents/skills', home / '.codex/skills', home / '.claude/skills')
-        if folder.is_dir() for path in sorted(folder.iterdir())]
+    # update keeps only the newest version, and the saved folder may be gone. Every studio
+    # looks in the same places (studio_core.brand_skills).
+    roots = brand_skills.locations(selected, home=home)
+    # The brands the shared settings name (`brand.brands`), not a folder recorded earlier.
+    env = brand_skills.environment()
     node = which('node')
     if not node:
         return {'skills': [], 'problem': 'Node.js is needed to list installed brands. You can keep the saved IDs or leave them blank.'}
@@ -45,7 +45,7 @@ def choices(skill=None, home=None, run=subprocess.run, which=shutil.which):
                     if 'brands' not in source.read(200_000):
                         continue
                 done = run([node, str(script), 'brands', '--json'], capture_output=True,
-                           text=True, timeout=10)
+                           text=True, timeout=10, env=env)
                 if done.returncode or len(done.stdout) > 1_000_000:
                     raise ValueError('The brand command did not return a readable list.')
                 data = json.loads(done.stdout)

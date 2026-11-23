@@ -105,6 +105,21 @@ class FindingABrandSkillTests(unittest.TestCase):
         os.environ[brand.VARIABLE] = str(mine)
         self.assertEqual(brand.locations(other), [mine], 'the override is still the only place')
 
+    def test_every_studio_looks_in_the_same_places_and_tells_the_brands_repository(self):
+        # One list for every studio (#505): the Codex skills folder too.
+        codex = skill(self.home / '.codex' / 'skills' / 'codex-brand', 'codex-brand')
+        cursor = skill(self.home / '.cursor' / 'skills' / 'cursor-brand', 'cursor-brand')
+        self.assertEqual(brand.locations(), [codex, cursor])
+        brands = self.home / 'brands'
+        brands.mkdir()
+        config = self.home / 'studios-config.json'
+        config.write_text(json.dumps({'schema': 1, 'brand': {'brands': str(brands)}}))
+        os.environ['STUDIOS_CONFIG'] = str(config)
+        os.environ['HARNESS_BRAND_DATA'] = str(self.home / 'recorded-earlier')
+        self.assertEqual(brand.told()['HARNESS_BRAND_DATA'], str(brands))
+        config.write_text(json.dumps({'schema': 1, 'brand': {}}))
+        self.assertEqual(brand.told()['HARNESS_BRAND_DATA'], str(self.home / 'recorded-earlier'))
+
     def test_nothing_is_run_that_does_not_look_like_a_brand_skills_command(self):
         skill(self.claude / 'video-tool', 'video-tool', '// cuts a video\n')
         nameless = skill(self.claude / 'nameless', 'nameless')

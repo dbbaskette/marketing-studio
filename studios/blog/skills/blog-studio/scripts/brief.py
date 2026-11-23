@@ -17,7 +17,8 @@ import sys
 import time
 from pathlib import Path
 
-from studio_core.packaging import stable_address, stable_place
+from studio_core import brand_skills
+from studio_core.packaging import stable_place
 
 import desk
 import studio
@@ -182,19 +183,20 @@ def read(markdown):
 
 
 def runtime():
-    """Harness Brand's folder on this computer, with the layout option; else a refusal."""
-    given = os.environ.get('HARNESS_BRAND_RUNTIME')
-    home = Path.home()
-    places = (
-        [stable_address(Path(given).expanduser(), saved=True)]
-        if given
-        else [
-            home / 'Library/Application Support/Harness Brand/current',
-            home / '.local/share/harness-brand/current',
-            home / '.claude/skills/harness-brand',
-            home / '.agents/skills/harness-brand',
-        ]
-    )
+    """Harness Brand's folder on this computer, with the layout option; else a refusal.
+
+    It is looked for where every studio looks for a brand skill (studio_core.brand_skills).
+    BRAND_SKILL_RUNTIME, then HARNESS_BRAND_RUNTIME (the name an older Blog Studio read),
+    are the only places looked when either is set. Otherwise the `brand.skill` shared
+    setting comes first, then every usual place. The first that holds Harness Brand's
+    rebranding command is used."""
+    given = [os.environ.get(name) for name in (brand_skills.VARIABLE, 'HARNESS_BRAND_RUNTIME')]
+    given = [one for one in given if one]
+    if given:
+        places = [place for one in given for place in brand_skills.locations(one)]
+    else:
+        chosen = brand_skills.setting('skill')
+        places = (brand_skills.locations(chosen) if chosen else []) + brand_skills.installed()
     found = next((p for p in places if (p / 'rebrand/scripts/brand.py').is_file()), None)
     if found is None:
         raise ValueError(NOT_INSTALLED)
@@ -210,7 +212,8 @@ def _python(folder):
 
 
 def _run(folder, arguments, brand, home=None):
-    env = {**os.environ, 'HARNESS_REBRAND_BRAND': brand}
+    # The brands the shared settings name (`brand.brands`), not a folder recorded earlier.
+    env = brand_skills.environment({**os.environ, 'HARNESS_REBRAND_BRAND': brand})
     try:
         return subprocess.run(
             [_python(folder), *arguments],

@@ -24,13 +24,11 @@ import json
 import os
 import re
 import subprocess
-import sys
 from pathlib import Path
 
 from workspace import WorkspaceError
 
 VARIABLE = 'TRAINING_STUDIO_REBRAND_HOME'
-HOMES = ('.claude/skills', '.codex/skills', '.agents/skills')
 FINISHED = ('branded', 'branded_with_exceptions')
 MINUTES = 20
 NO_SKILL = ('No rebranding skill is on this computer. Install one, such as true-source-brand '
@@ -56,22 +54,27 @@ def _name(folder: Path) -> str:
 
 
 def skills(home: Path | None = None) -> list[dict]:
-    """Every rebranding skill installed for an assistant on this computer, once each."""
+    """Every rebranding skill installed on this computer, once each. It is looked for where
+    every studio looks for a brand skill (studio_core.brand_skills): each installer's own
+    folder, then the Claude Code, `~/.agents`, Codex and Cursor skills folders."""
+    from studio_core import brand_skills
     # A test names an empty folder here, so no run of the tests reads this person's skills.
     named = os.environ.get(VARIABLE)
     home, found, seen = home or (Path(named) if named else Path.home()), [], set()
-    for place in HOMES:
-        try:
-            folders = sorted((home / place).iterdir())
-        except OSError:
+    for folder in brand_skills.installed(home):
+        # An installer's folder is `<id>/current`; a skills folder's is `<id>`.
+        ident = folder.parent.name if folder.name == 'current' else folder.name
+        if not ident.endswith('-brand') or ident in seen \
+                or not (folder / 'scripts' / 'brand.py').is_file():
             continue
-        for folder in folders:
-            if not folder.name.endswith('-brand') or folder.name in seen \
-                    or not (folder / 'scripts' / 'brand.py').is_file():
-                continue
-            seen.add(folder.name)
-            found.append({'id': folder.name, 'name': _name(folder), 'path': str(folder)})
+        seen.add(ident)
+        found.append({'id': ident, 'name': _name(folder), 'path': str(folder)})
     return sorted(found, key=lambda one: one['name'].lower())
+
+
+def python(folder: Path) -> Path:
+    """The Python a set-up rebranding skill runs with: its own, in `.venv`."""
+    return folder / '.venv' / 'bin' / 'python3'
 
 
 def source_id(text: str) -> str | None:
@@ -85,11 +88,14 @@ def run(skill: dict, source: str, name: str, run_dir: Path, execute=None) -> dic
     folder = Path(skill['path'])
     if not (folder / '.venv').is_dir():
         raise WorkspaceError(NOT_SET_UP.format(name=skill['id'], path=folder))
-    command = [sys.executable, str(folder / 'scripts' / 'brand.py'), source,
+    # The skill's own Python, which its setup filled; this studio's has none of its packages.
+    command = [str(python(folder)), str(folder / 'scripts' / 'brand.py'), source,
                '--name', name, '--run-dir', str(run_dir)]
+    from studio_core import brand_skills
+    # The brands the shared settings name (`brand.brands`), not a folder recorded earlier.
     execute = execute or (lambda command: subprocess.run(
         command, cwd=folder, stdin=subprocess.DEVNULL, capture_output=True, text=True,
-        timeout=MINUTES * 60))
+        timeout=MINUTES * 60, env=brand_skills.environment()))
     try:
         done = execute(command)
     except subprocess.TimeoutExpired:

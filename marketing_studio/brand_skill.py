@@ -9,7 +9,8 @@ What a caller needs to know
 - The brand skill in use is found as the studios find it: the folder Shared settings name
   (`brand.skill`), else BRAND_SKILL_RUNTIME, else the first installed skill whose command
   lists brands (in `~/Library/Application Support/*/current`, `~/.local/share/*/current`,
-  and the Claude Code, `~/.agents` and Cursor skills folders), else an installed Harness
+  and the Claude Code, `~/.agents`, Codex and Cursor skills folders: the places every
+  studio looks, studio_core.brand_skills), else an installed Harness
   Brand, which lists no brands until it has a pack. Its command is the script in its
   `scripts` folder named for the skill, run only when the folder holds a SKILL.md and the
   script mentions brands, and then with Node.
@@ -33,7 +34,8 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from studio_core.packaging import stable_address, stable_place
+from studio_core import brand_skills
+from studio_core.packaging import stable_place
 
 from .errors import WorkspaceError
 
@@ -44,8 +46,6 @@ NAMED = re.compile(r'^[\w.-]{1,80}$')
 NUMBER = re.compile(r'^\d+\.\d+\.\d+$')
 ASK_SECONDS = 20
 OUTPUT_LIMIT = 4_000_000
-SHARED = (('Library', 'Application Support'), ('.local', 'share'))
-SKILLS = (('.claude', 'skills'), ('.agents', 'skills'), ('.cursor', 'skills'))
 GET = (f'Brands are made with {SKILL}: install it from {WHERE}, choose it under Shared '
        'settings, Brand, if another brand skill is installed too, and open Brands again.')
 
@@ -183,19 +183,9 @@ def answer(found: Found, args, env=None, seconds=120, stop=None, each=None):
 # --- finding the brand skill -----------------------------------------------------------
 
 def locations(home=None):
-    """Every folder that may be an installed brand skill. BRAND_SKILL_RUNTIME, when set, is
-    the only place looked."""
-    if os.environ.get(VARIABLE):
-        return [Path(os.environ[VARIABLE]).expanduser()]
-    user = Path(home) if home else Path.home()
-
-    def inside(folder):
-        try:
-            return sorted(folder.iterdir())
-        except OSError:
-            return []
-    return [place / 'current' for parts in SHARED for place in inside(user.joinpath(*parts))] \
-        + [place for parts in SKILLS for place in inside(user.joinpath(*parts))]
+    """Every folder that may be an installed brand skill, where every studio looks
+    (studio_core.brand_skills). BRAND_SKILL_RUNTIME, when set, is the only place looked."""
+    return brand_skills.locations(home=home)
 
 
 def companion(folder: Path, *names):
@@ -247,7 +237,7 @@ def find(chosen=None, data=None, home=None, which=shutil.which):
     env = environment(data)
     # A folder saved inside `versions/` is said through `current`: an update keeps only the
     # newest version. What is found is said the same way, never by its version folder.
-    places = [stable_address(Path(chosen).expanduser(), saved=True)] if chosen else locations(home)
+    places = brand_skills.locations(chosen, home=home)
     candidates, seen = [], set()
     for place in places:
         try:

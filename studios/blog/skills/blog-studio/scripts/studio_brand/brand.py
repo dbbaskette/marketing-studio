@@ -123,8 +123,14 @@ def companion(folder: Path, *names: str) -> Path | None:
 
 
 def run_command(command: list[str], cwd: Path | None = None) -> tuple[int, str, str]:
-    """Run the command line once: (exit code, standard output, standard error)."""
-    return companions.run_command(command, cwd, TIMEOUT, 'The brand skill')
+    """Run the command line once: (exit code, standard output, standard error). The skill
+    is told the brands folder the `brand.brands` shared setting names, in
+    HARNESS_BRAND_DATA, so it reads the brands every studio reads."""
+    from studio_core import brand_skills
+
+    return companions.run_command(
+        command, cwd, TIMEOUT, 'The brand skill', brand_skills.environment()
+    )
 
 
 def _lines(err: str, code: int) -> list[str]:

@@ -167,3 +167,36 @@ class CompositionTests(Isolated):
             from runner import render
             render.render(encoded, preset='digital', fonts=['Arial'], executable=TEST_RENDERER, destination=self.temp / 'signed-numbers')
         with self.assertRaises(Invalid): self.prepare('comparison')
+
+
+class BrandExportTests(Isolated):
+    def test_the_brands_repository_setting_is_told_to_the_brand_export(self):
+        # Every studio reads the brands the shared settings name, not a folder recorded
+        # earlier (#505). A stand-in command; no brand skill is installed or run.
+        import json
+        import subprocess
+        from pathlib import Path
+        skill = self.temp / 'skills' / 'example-brand'
+        (skill / 'scripts').mkdir(parents=True)
+        (skill / 'SKILL.md').write_text('Synthetic brand')
+        (skill / 'package.json').write_text('{"name": "example-brand"}')
+        (skill / 'scripts' / 'example-brand.mjs').write_text('// brands')
+        brands = self.temp / 'brands'
+        brands.mkdir()
+        self.settings.write_text(json.dumps({'schema': 1, 'brand': {'brands': str(brands)}}))
+        told = []
+
+        def run(command, **kwargs):
+            told.append(kwargs['env'].get('HARNESS_BRAND_DATA'))
+            if command[2:4] == ['brands', '--json']:
+                return subprocess.CompletedProcess(command, 0, json.dumps([
+                    {'brand': 'example', 'name': 'Example', 'variants': ['light']}]), '')
+            output = Path(command[command.index('--output') + 1])
+            output.mkdir(parents=True)
+            (output / 'brand-contract.json').write_text(json.dumps(contract()))
+            return subprocess.CompletedProcess(command, 0, '{}', '')
+
+        pinned = brand.export_selected(skill=skill, brand_id='example', variant='light',
+                                       run=run, which=lambda _: '/synthetic/node')
+        self.assertEqual(pinned['identity']['id'], 'example')
+        self.assertEqual(told, [str(brands), str(brands)])

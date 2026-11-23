@@ -498,6 +498,28 @@ class BrandSkillTests(unittest.TestCase):
         self.assertEqual(brands.status()['version'], '1.2.0')
         self.assertEqual(brands.snapshot('fictional', 'light')['version'], '1.2.0')
 
+    def test_the_newly_installed_skill_is_chosen_by_its_own_version_not_a_companions(self):
+        # A companion the installer brings records a version of its own (#505): the skill
+        # that was installed is still found by the brand skill's version, and chosen.
+        folder = self.skill(self.base / 'release')
+        (folder / 'package.json').write_text('{"name":"synthetic-brand","version":"1.2.0"}')
+        (folder / 'scripts/install-skill.mjs').write_text(INSTALLER)
+        (folder / 'scripts/lib').mkdir()
+        (folder / 'scripts/lib/harness-install-sources.json').write_text(
+            '{"research":{"version":"9.9.9"}}'
+        )
+        self.git(folder, 'init', '-b', 'main')
+        self.git(folder, 'config', 'user.name', 'Synthetic Fixture')
+        self.git(folder, 'config', 'user.email', 'fixture@example.invalid')
+        self.git(folder, 'add', '.')
+        self.git(folder, 'commit', '-m', 'Synthetic brand fixture')
+        found = management.dispatch(self.root, 'brand-configure', {'repository': str(folder)})
+        brands.install(self.confirm(found))
+        self.assertEqual(self.wait()['status'], 'complete')
+        installed = self.home / '.agents/skills/synthetic-brand'
+        self.assertEqual(json.loads(self.config.read_text())['brand']['skill'], str(installed))
+        self.assertEqual(brands.status()['runtime'], str(installed))
+
     def test_moved_tag_and_companion_bootstrap_are_refused_before_installer_runs(self):
         folder, found = self.checked(bootstrap=True)
         brands.install(self.confirm(found))
