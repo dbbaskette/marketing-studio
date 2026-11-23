@@ -81,7 +81,7 @@ Training Studio's installer therefore does not lay a companion out itself. A cop
 3. The companion's installer is run with Node from that checked copy.
 4. What it left is checked: each assistant you chose must now have the skill, at that version, with exactly the entry that was checked.
 
-A companion that is already there at the pinned version or newer is left alone and not fetched. One that is there some other way, so that its version cannot be read, is also left alone, and the report says so.
+A companion that is already there at the pinned version or newer is left alone and not fetched. One whose version cannot be read, because its `package.json` is missing or broken, is a broken copy: it is offered again like a missing one, and the report says so. A prerelease, such as 1.3.1-alpha.1, does not meet the release it comes before.
 
 A companion you said no to, skipped, or were not there to be asked about is named in the report, with why it was not fetched and the command that brings it. From this repository's folder that is:
 

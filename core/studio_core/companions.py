@@ -79,7 +79,7 @@ def read_pins(path: Path) -> dict:
                            for key, pattern in HEX.items()) \
                     or any(part.is_absolute() or '..' in part.parts for part in inside):
                 raise ValueError
-            if as_tuple(pin['version']) < as_tuple(minimum_version(pin)):
+            if version_key(pin['version']) < version_key(minimum_version(pin)):
                 raise ValueError
     except (OSError, ValueError, KeyError, TypeError, AttributeError):
         raise InstallError(f'{path} does not say which companion skills to install, or says '
@@ -189,7 +189,7 @@ def _checked(name: str, pin: dict, folder: Path) -> str:
         raise InstallError(f'{name} on its main branch does not hold the entry, the installer '
                            'and the version this installer expects. None of it was run.')
     floor = minimum_version(pin)
-    if as_tuple(version) < as_tuple(floor):
+    if version_key(version) < version_key(floor):
         raise InstallError(f'The main branch of {name} holds {version}, older than the {floor} '
                            'this version needs. None of it was run. Try again once it is updated.')
     return version
@@ -277,9 +277,24 @@ def companion_found(home: Path, harnesses: list[str], name: str) -> dict:
 
 
 def wanting(found: dict, wanted: str) -> list[str]:
-    """The assistants that have no copy of a companion, or one older than `wanted`."""
+    """The assistants that have no copy of a companion, one older than `wanted`, or one
+    whose version cannot be read (`''`: its package.json is missing or broken), which is
+    repaired by installing it again. A prerelease comes before its release: 1.3.1-alpha.1
+    does not meet 1.3.1."""
     return [harness for harness, version in found.items()
-            if version is None or (version and as_tuple(version) < as_tuple(wanted))]
+            if not version or version_key(version) < version_key(wanted)]
+
+
+def stub_text(data: bytes) -> str | bytes:
+    """A companion's entry (SKILL.md) as it is compared once its installer has run: the
+    same words, whatever line endings, byte order mark, trailing spaces or blank lines at
+    its end an installer left. Bytes that are not text are compared as they are."""
+    try:
+        text = data.decode('utf-8-sig')
+    except UnicodeDecodeError:
+        return data
+    lines = text.replace('\r\n', '\n').replace('\r', '\n').split('\n')
+    return '\n'.join(line.rstrip() for line in lines).strip('\n')
 
 
 def companion_command(node: str, checkout: Path, pin: dict, home: Path) -> list[str]:
@@ -318,12 +333,12 @@ def run_companion(name: str, pin: dict, checkout: Path, home: Path,
     outcome = {'state': 'installed'}
     if isinstance(said, dict) and isinstance(said.get('next'), str):
         outcome['next'] = said['next'][:300]   # what its installer says is still to do
-    stub = (checkout / pin['stub']).read_bytes()
+    stub = stub_text((checkout / pin['stub']).read_bytes())
     found = companion_found(home, harnesses, name)
     for harness in harnesses:
         entry = skill_link(home, harness).parent / name / 'SKILL.md'
         if wanting({harness: found[harness]}, pin['version']) or not entry.is_file() \
-                or entry.read_bytes() != stub:
+                or stub_text(entry.read_bytes()) != stub:
             return {'state': 'failed', 'detail': 'its installer finished, but did not leave '
                     f'the entry this installer checked for {HARNESS[harness]}.'}
     return outcome
@@ -385,7 +400,7 @@ def bring_companions(home: Path, root: Path, harnesses: list[str], pins: dict, a
         outcomes[name] = outcome
     return outcomes
 
-SHARED = ('minimum_version', 'main_commit', 'read_pins', 'as_tuple', 'tree_digest', 'git', 'fetch_revision', '_checked', 'fetch_main', 'fetch_companion', 'companion_found', 'wanting', 'companion_command', 'run_companion', 'installed_commit', 'bring_companions')
+SHARED = ('minimum_version', 'main_commit', 'read_pins', 'as_tuple', 'version_key', 'stub_text', 'tree_digest', 'git', 'fetch_revision', '_checked', 'fetch_main', 'fetch_companion', 'companion_found', 'wanting', 'companion_command', 'run_companion', 'installed_commit', 'bring_companions')
 
 
 def bind(namespace):

@@ -210,7 +210,24 @@ class FindingTheRuntimeTests(unittest.TestCase):
         pins = json.loads((Path(__file__).resolve().parents[1] / 'installer'
                            / 'companions.json').read_text(encoding='utf-8'))
         self.assertEqual(slides.RELEASE, pins['companions']['harness-slides']['version'])
-        self.assertEqual((slides.RELEASE, slides.MINIMUM), ('0.19.0', '0.19.0'))
+        self.assertEqual(slides.MINIMUM, slides.RELEASE)
+        self.assertEqual('>=' + slides.MINIMUM, pins['companions']['harness-slides']['requirement'])
+
+    def test_the_floor_is_read_from_the_pins_not_written_twice(self):
+        from studio_core.shared_runner import slides as shared
+        with tempfile.TemporaryDirectory(prefix='slides-pins-') as temp:
+            pins = Path(temp) / 'companions.json'
+            pins.write_text(json.dumps({'schema': 1, 'companions': {'harness-slides': {
+                'version': '0.21.0', 'requirement': '>=0.21.0'}}}), encoding='utf-8')
+            self.assertEqual(shared.pinned_floor(pins), '0.21.0')
+            broken = Path(temp) / 'broken.json'
+            broken.write_text('{', encoding='utf-8')
+            # Pins this studio cannot read fall back to the suite checkout's own.
+            self.assertEqual(shared.pinned_floor(broken), shared.pinned_floor())
+        for source in (Path(__file__).resolve().parents[1] / 'runner' / 'slides.py',
+                       Path(shared.__file__)):
+            self.assertNotRegex(source.read_text(encoding='utf-8'),
+                                r"(?:MINIMUM|RELEASE) = '\d")
 
     def test_every_capability_has_a_plain_name(self):
         listed = ('assets', 'assets-approved-candidates',

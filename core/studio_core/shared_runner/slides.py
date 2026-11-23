@@ -22,7 +22,26 @@ from pathlib import Path
 
 
 VARIABLE = 'HARNESS_SLIDES_RUNTIME'
-MINIMUM = '0.19.0'      # the oldest runtime taken: the installer's floor, the first with a stable address
+PINS = Path(__file__).resolve().parents[3] / 'pins' / 'companions.json'   # in the suite's checkout
+
+
+def pinned_floor(*places: Path) -> str:
+    """The oldest Harness Slides a deck takes: the floor the companion pins set for
+    harness-slides, from the first of `places` that says it (a studio names its own
+    `installer/companions.json` first), else the suite checkout's `pins/companions.json`.
+    The installer's floor is read from the same pins, so the two never differ. Pins that
+    cannot be read anywhere set no floor: upkeep reports them as a problem."""
+    from studio_core.companions import minimum_version
+    for place in (*places, PINS):
+        try:
+            return minimum_version(json.loads(Path(place).read_text(encoding='utf-8'))
+                                   ['companions']['harness-slides'])
+        except (OSError, ValueError, KeyError, TypeError):
+            continue
+    return '0.0.0'
+
+
+# MINIMUM, the oldest runtime taken, is each studio's own: `pinned_floor` of its pins.
 RENDERERS = ('drive', 'local')
 SCRIPT = Path('scripts') / 'harness-slides.mjs'
 TIMEOUT = 300    # a local preview may wait two minutes for LibreOffice, then draw each slide
@@ -527,7 +546,7 @@ class Slides:
         return self._json('drive', 'import', '--file', str(deck), '--name', name)
 
 
-NAMES = ('VARIABLE', 'MINIMUM', 'RENDERERS', 'CHANGED', 'PREVIEW_TRIES', 'PREVIEW_PAUSE', 'SCRIPT', 'TIMEOUT', 'LEAD', 'PROGRAMS', 'COUNTED',
+NAMES = ('VARIABLE', 'RENDERERS', 'CHANGED', 'PREVIEW_TRIES', 'PREVIEW_PAUSE', 'SCRIPT', 'TIMEOUT', 'LEAD', 'PROGRAMS', 'COUNTED',
          'NOISE', 'PREVIEWING', 'GUIDES', 'REFERENCES', 'GALLERY', 'READ_MOST', 'RELATIONS',
          'POOL', '_POOLS', '_POOLS_HELD', 'pool_size', '_pooled', 'locations', 'find_runtime',
          'run_command', '_numbers', '_blocked', '_bound', 'example', 'read_guidance', 'ready')

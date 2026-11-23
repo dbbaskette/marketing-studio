@@ -6,6 +6,7 @@ repository's `main`, checked file for file, with the pin's version as a floor on
 import importlib.util
 import json
 import os
+import shutil
 from pathlib import Path
 import subprocess
 import tempfile
@@ -205,6 +206,95 @@ class CompanionMainTests(unittest.TestCase):
         self.assertEqual((fetched['commit'], fetched['version']), (self.first, '1.0.0'))
         with self.assertRaisesRegex(ValueError, 'not what this installer expects'):
             companions.fetch_main('harness-research', {**exact, 'sha256': '0' * 64}, self.root / 'other')
+
+
+class BrokenInstallTests(unittest.TestCase):
+    """What an installed companion is judged by: a version that cannot be read, a prerelease
+    below the floor, and the entry its installer leaves, whatever its line endings."""
+
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory(prefix='studio-companion-installed-')
+        self.addCleanup(temp.cleanup)
+        self.home = Path(temp.name).resolve() / 'home'
+        self.checkout = Path(temp.name).resolve() / 'checkout'
+        (self.checkout / 'bootstrap').mkdir(parents=True)
+        self.stub = '---\nname: harness-research\n---\n\nUse the research helper.\n'
+        (self.checkout / 'bootstrap/SKILL.md').write_text(self.stub, encoding='utf-8')
+        self.pin = {'repository': 'unused', 'branch': 'main', 'version': '1.3.1',
+                    'stub': 'bootstrap/SKILL.md', 'installer': 'scripts/install.mjs',
+                    'requirement': '>=1.3.1'}
+
+    def installed(self, package, entry=None):
+        skill = companions.skill_link(self.home, 'claude').parent / 'harness-research'
+        skill.mkdir(parents=True, exist_ok=True)
+        if package is not None:
+            (skill / 'package.json').write_bytes(package.encode())
+        (skill / 'SKILL.md').write_bytes((self.stub if entry is None else entry).encode())
+        return skill
+
+    def test_a_missing_or_corrupt_package_json_is_wanting(self):
+        for package in (None, '', '{', '[]', '{"name": "x"}', '{"version": 3}',
+                        '{"version": "not a version"}'):
+            with self.subTest(package=package):
+                self.installed(package)
+                found = companions.companion_found(self.home, ['claude'], 'harness-research')
+                self.assertEqual(found, {'claude': ''})
+                self.assertEqual(companions.wanting(found, '1.3.1'), ['claude'])
+                shutil.rmtree(self.home)
+        self.installed('{"version": "1.3.1"}')
+        found = companions.companion_found(self.home, ['claude'], 'harness-research')
+        self.assertEqual(companions.wanting(found, '1.3.1'), [])
+
+    def test_a_broken_copy_is_offered_again_rather_than_left_alone(self):
+        asked = []
+        with mock.patch.object(companions, 'companion_found', return_value={'claude': ''}), \
+                mock.patch.object(companions, 'node_version', return_value='v24.0.0'):
+            result = companions.bring_companions(self.home, self.home / 'install', ['claude'],
+                                                 {'harness-research': self.pin},
+                                                 lambda *args: asked.append(args) or False, {},
+                                                 'declined')['harness-research']
+        self.assertEqual((result['state'], len(asked)), ('waiting', 1))
+
+    def test_a_prerelease_does_not_meet_its_release(self):
+        self.assertEqual(companions.wanting({'claude': '1.3.1-alpha.1'}, '1.3.1'), ['claude'])
+        self.assertEqual(companions.wanting({'claude': '1.3.1-rc.2'}, '1.3.1'), ['claude'])
+        self.assertEqual(companions.wanting({'claude': '1.3.2-alpha.1'}, '1.3.1'), [])
+        self.assertEqual(companions.wanting({'claude': '1.3.1'}, '1.3.1'), [])
+        folder = self.checkout
+        (folder / 'scripts').mkdir()
+        (folder / 'scripts/install.mjs').write_text('// Synthetic installer; never execute.\n')
+        (folder / 'package.json').write_text(json.dumps({'version': '1.3.1-alpha.1'}))
+        with self.assertRaisesRegex(ValueError, 'holds 1.3.1-alpha.1, older than the 1.3.1'):
+            companions._checked('harness-research', self.pin, folder)
+        path = Path(self.home.parent) / 'companions.json'
+        path.write_text(json.dumps({'schema': 1, 'companions': {'harness-research': {
+            **self.pin, 'version': '1.3.1-alpha.1'}}}))
+        with self.assertRaises(ValueError):
+            companions.read_pins(path)
+
+    def run_installer(self):
+        done = subprocess.CompletedProcess([], 0, '{}', '')
+        with mock.patch.object(companions.shutil, 'which', return_value='/synthetic/node'), \
+                mock.patch.object(companions.subprocess, 'run', return_value=done) as ran:
+            outcome = companions.run_companion('harness-research', self.pin, self.checkout,
+                                               self.home, ['claude'])
+        self.assertEqual(ran.call_count, 1)   # the stand-in, never Node
+        return outcome
+
+    def test_the_entry_check_tolerates_line_endings_and_trailing_space(self):
+        for entry in (self.stub, self.stub.replace('\n', '\r\n'), '﻿' + self.stub,
+                      self.stub.replace('---\n', '---  \n') + '\n\n'):
+            with self.subTest(entry=entry):
+                self.installed('{"version": "1.3.1"}', entry)
+                self.assertEqual(self.run_installer()['state'], 'installed')
+
+    def test_a_different_or_missing_entry_still_fails(self):
+        self.installed('{"version": "1.3.1"}', self.stub.replace('research helper', 'other helper'))
+        self.assertEqual(self.run_installer()['state'], 'failed')
+        (self.installed('{"version": "1.3.1"}') / 'SKILL.md').unlink()
+        self.assertEqual(self.run_installer()['state'], 'failed')
+        self.installed('{"version": "1.3.1-alpha.1"}')
+        self.assertEqual(self.run_installer()['state'], 'failed')
 
 
 class FloorTests(unittest.TestCase):

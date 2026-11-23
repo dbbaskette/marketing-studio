@@ -4,7 +4,10 @@ import os
 import shutil
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
+import threading
+import time
 from types import SimpleNamespace
 import unittest
 from unittest import mock
@@ -57,6 +60,149 @@ class SourceMetadataTests(unittest.TestCase):
         problems, _, _, _ = contract.check_json(json.dumps(value), {
             'runtime': self.runtime, 'research_mode': 'evidence', 'task': {}, 'captures': []})
         self.assertIn('Return each source as an object.', problems)
+
+
+# A stand-in for the helper, run by this Python, never Node: it notes its own process and a
+# child it starts, then answers at once for `stop`, or waits a minute for anything else.
+STAND_IN = '''import json, os, subprocess, sys, time
+from pathlib import Path
+here = Path(__file__).resolve().parents[1]
+if 'stop' in sys.argv:
+    print(json.dumps({'status': 'stopped'}))
+    raise SystemExit(0)
+child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])
+(here / 'pids').write_text(f'{os.getpid()} {child.pid}')
+time.sleep(60)
+'''
+
+
+def running(pid):
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    # A child of this process that ended but was not yet waited for is no longer running.
+    try:
+        done, _ = os.waitpid(pid, os.WNOHANG)
+        return done == 0
+    except ChildProcessError:
+        return True
+
+
+class HelperStopTests(unittest.TestCase):
+    """Stop ends a helper command that is running, with what it started (#506)."""
+
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory(prefix='research-helper-stop-')
+        self.addCleanup(folder.cleanup)
+        self.runtime = Path(folder.name)
+        (self.runtime / 'scripts').mkdir()
+        (self.runtime / 'scripts/harness-research.mjs').write_text(STAND_IN)
+        self.stop = threading.Event()
+
+    def stop_once_started(self):
+        def watch():
+            deadline = time.monotonic() + 20
+            while not (self.runtime / 'pids').exists() and time.monotonic() < deadline:
+                time.sleep(0.05)
+            time.sleep(0.2)
+            self.stop.set()
+        threading.Thread(target=watch, daemon=True).start()
+
+    def assert_stopped(self, call):
+        self.stop_once_started()
+        started = time.monotonic()
+        with mock.patch.object(contract.shutil, 'which', return_value=sys.executable):
+            with self.assertRaisesRegex(InterruptedError, 'Research stopped'):
+                call()
+        self.assertLess(time.monotonic() - started, 15)
+        helper, child = (int(pid) for pid in (self.runtime / 'pids').read_text().split())
+        deadline = time.monotonic() + 5
+        while (running(helper) or running(child)) and time.monotonic() < deadline:
+            time.sleep(0.05)
+        self.assertFalse(running(helper), 'the helper command is still running')
+        self.assertFalse(running(child), 'what the helper started is still running')
+
+    def test_stop_ends_a_running_synthesis_command(self):
+        workflow = contract.Workflow(self.runtime)
+        workflow.cancelled = self.stop.is_set
+        self.assert_stopped(lambda: workflow.command(self.runtime / 'case', 'verify'))
+
+    def test_stop_ends_a_running_collection_command_of_a_research_run(self):
+        from studio_core import research_session
+        workflow = research_session.Workflow(self.runtime)
+        workflow.cancelled = self.stop.is_set
+        self.assert_stopped(lambda: workflow.command(self.runtime, 'collection', 'status'))
+
+    def test_a_command_started_after_stop_records_it_to_its_end(self):
+        from studio_core import research_session
+        self.stop.set()
+        workflow = research_session.Workflow(self.runtime)
+        workflow.cancelled = self.stop.is_set
+        with mock.patch.object(contract.shutil, 'which', return_value=sys.executable):
+            self.assertEqual(workflow.command(self.runtime, 'collection', 'stop'), {'status': 'stopped'})
+
+    def test_a_run_hands_its_stop_to_the_helper_commands(self):
+        from studio_core import research_session
+        workflow = research_session.Workflow(self.runtime)
+        with mock.patch.object(research_session, 'capability', return_value={'protocol': 'x'}), \
+                mock.patch.object(research_session, 'unresolved', side_effect=RuntimeError('looked')):
+            with self.assertRaisesRegex(RuntimeError, 'looked'):
+                workflow.run(self.runtime, {}, None, cancelled=self.stop.is_set)
+        self.assertIs(workflow.cancelled, workflow.helper.cancelled)
+        self.assertEqual(workflow.cancelled, self.stop.is_set)
+
+
+class RuntimePlaceTests(unittest.TestCase):
+    def test_a_runtime_in_cursor_skills_is_found(self):
+        with tempfile.TemporaryDirectory(prefix='research-home-') as home:
+            place = Path(home) / '.cursor/skills/harness-research'
+            (place / 'scripts').mkdir(parents=True)
+            (place / 'scripts/harness-research.mjs').write_text('// Synthetic; never run.\n')
+            environment = {key: value for key, value in os.environ.items()
+                           if key != 'HARNESS_RESEARCH_RUNTIME'}
+            with mock.patch.dict(os.environ, environment, clear=True), \
+                    mock.patch.object(contract.Path, 'home', return_value=Path(home)):
+                self.assertEqual(contract.find_runtime(), place.absolute())
+
+
+class PreflightBatchTests(unittest.TestCase):
+    """The submission preflight captures every source in one helper call when it can."""
+
+    def preflight(self, batch):
+        actions = []
+
+        def run(command, **_):
+            action = command[command.index('collection') + 1]
+            given = json.loads((case / command[command.index('--file') + 1]).read_text())
+            actions.append((action, given))
+            answer = {'registration': {'number': 1}, 'request_digest': 'synthetic',
+                      'generation': 1, **({'batch_capture': True} if batch else {})} \
+                if action == 'register' else {}
+            return subprocess.CompletedProcess(command, 0, json.dumps(answer), '')
+
+        with tempfile.TemporaryDirectory(prefix='research-preflight-') as folder:
+            case = Path(folder)
+            value = dossier('author-1')
+            value['sources'] += [dict(value['sources'][0], id=f'source-{n}') for n in 'bc']
+            with mock.patch.object(contract.subprocess, 'run', side_effect=run):
+                contract.collection_preflight(case, value, {'worker': 'author-1',
+                                                            'runtime': folder, 'node': 'node'})
+        return actions, value['sources']
+
+    def test_one_capture_for_every_source_when_the_helper_batches(self):
+        actions, sources = self.preflight(batch=True)
+        captures = [given for action, given in actions if action == 'capture']
+        self.assertEqual(len(captures), 1)
+        self.assertEqual(captures[0]['sources'], sources)
+        self.assertNotIn('source', captures[0])
+        self.assertEqual([action for action, _ in actions],
+                         ['init', 'register', 'capture', 'finish', 'accept'])
+
+    def test_one_capture_each_from_a_helper_that_does_not(self):
+        actions, sources = self.preflight(batch=False)
+        captures = [given for action, given in actions if action == 'capture']
+        self.assertEqual([given['source'] for given in captures], sources)
 
 
 class HelperAnswerTests(unittest.TestCase):
