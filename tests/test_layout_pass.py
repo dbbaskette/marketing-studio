@@ -610,5 +610,29 @@ class SharedSetupJourneyTests(PageLayoutTests):
                          'Missing: Git identity. This computer says how to fix it.')
 
 
+    def test_an_unanswered_refresh_draws_each_readiness_line_once(self):
+        # Home refreshes every few seconds. While Marketing Studio does not answer, the first
+        # failed read marks each card Not checked; later ones leave the card as it is, so a
+        # focused control in it keeps its focus.
+        probe = (
+            "globalThis.swaps = 0; const card = document.createElement('div'); card.dataset.studio = 'blog';"
+            "let current = document.createElement('div');"
+            "const wire = line => { line.closest = () => card; line.replaceWith = next => { swaps += 1; wire(next); current = next; }; };"
+            "wire(current); document.querySelectorAll = selector => selector === '.studio-readiness' ? [current] : [];"
+            "globalThis.lineNow = () => current;")
+        shots = self.page([{'home': self.SHOWN}, {'run': probe}, {'responses': {'home': {'error': 'Not answering.'}}},
+                           {'run': 'refreshHomeStatus()'}, {'wait': True},
+                           {'run': "globalThis.after = [swaps, JSON.parse(lineNow().dataset.ready).label]"},
+                           {'run': 'refreshHomeStatus()'}, {'wait': True},
+                           {'run': 'refreshHomeStatus()'}, {'wait': True},
+                           {'run': 
+                                   "globalThis.result = JSON.stringify([after, swaps]);"
+                                   "document.querySelector('#readiness-probe').textContent = result;"},
+                           {'snapshot': 'probe', 'read': ['#readiness-probe']}])
+        first, total = json.loads(shots['probe']['read']['#readiness-probe']['text'])
+        self.assertEqual(first, [1, 'Not checked'])
+        self.assertEqual(total, 1, 'later failed reads leave the readiness line as it is')
+
+
 if __name__ == '__main__':
     unittest.main()

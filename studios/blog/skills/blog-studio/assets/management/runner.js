@@ -307,20 +307,28 @@ function sConfirm(action,found){const final=!['ideas','outline'].includes(found.
 function sChanges(found,stage){const held={stage,request:''},choices=found.next?found.stages.slice(0,found.stages.findIndex(row=>row.stage===found.next)+1):found.stages,options=choices.map(row=>[row.stage,row.label]);if(found.existing&&!options.some(([value])=>value==='draft'))options.unshift(['draft','Revise the draft']);const form=sNode('form','note'),problem=sNode('p','sheet-error');problem.setAttribute('role','alert');const submit=sNode('button','button button-filled','Send for changes');submit.type='submit';const price=sNode('p','quiet change-price',held.stage==='research'&&found.research_price?found.research_price.words:found.redo?.[held.stage]?.says||'');held.refresh=false;const refresh=sCheck('change-refresh','Bring the evidence up to date',held,'refresh',found.research_price?.refresh||'Re-reads the sources and checks the report again: about as long and as costly as the research was.');refresh.hidden=!(held.stage==='research'&&found.research_price);form.append(sField('change-stage','Which stage should change?',held,'stage',{options,changed:value=>{price.textContent=value==='research'&&found.research_price?found.research_price.words:found.redo?.[value]?.says||'';refresh.hidden=!(value==='research'&&found.research_price);if(refresh.hidden)held.refresh=false;}}),price,refresh,sField('change-request','What should change?',held,'request',{long:true,required:true,max:8000,hint:'Ask for changes writes this stage again with your words. Later stages are made again after it.'}),problem,sAdd(sNode('div','bar'),submit,sButton('Cancel',sCloseSheet)));form.addEventListener('submit',async event=>{event.preventDefault();await busy(submit,'Saving…',async()=>{try{const updated=await runAction('changes',found,held,true);sCloseSheet();sToast(updated.enabled?sChangedSays(updated,held.stage):'Changes saved. Choose Resume when you are ready.');}catch(error){problem.textContent=error.message;}});});sOpenSheet('Ask for changes',form);}
 async function runAction(action,found,extra={},propagate=false){studio.busy=true;const turn=studio.turn;try{const updated=await api('run-'+action,{id:found.id,expected:found.expected,...extra});if(turn!==studio.turn)return updated;studio.found=updated;if(action==='approve'&&updated.complete){await sRoute(['ideas','outline'].includes(updated.mode)?'gate':'run',found.id,['ideas','outline'].includes(updated.mode)?'outline':'status');return updated;}await sRoute(action==='adopt'?'gate':'run',found.id,action==='adopt'?updated.next:null);return updated;}catch(error){if(propagate)throw error;notice(error.message,true);}finally{studio.busy=false;}}
 function sLegacy(name,push=true){sTop();if(!['board','inbox','library','memory'].includes(name))name='board';if(push)history.pushState(null,'',location.pathname+'?'+new URLSearchParams({screen:'editorial',id:name}));sCloseSheet();studio.screen='editorial';studio.turn++;view=name;offset=0;sFrame({board:'All blogs',inbox:'Review findings',library:'Team library',memory:'Team memory'}[name],[],'',()=>sRoute('blogs'));$('studio-page').hidden=true;$('editorial-screen').hidden=false;$('editorial-screen').dataset.view=name;legacyToolbar();$('go-blogs').setAttribute('aria-current','page');return load().catch(error=>notice(error.message,true));}
+// Resolves at once while the page is shown, else as soon as it is shown again: a follow loop
+// that awaits it before each request asks nothing from a background tab.
+function sShown(){return document.hidden?new Promise(resolve=>{const back=()=>{if(document.hidden)return;document.removeEventListener('visibilitychange',back);resolve();};document.addEventListener('visibilitychange',back);}):Promise.resolve();}
+// A failed read is said once; the next ones wait twice as long each time, up to a minute,
+// and the first answer (or the page being shown again) resets the wait.
+const S_POLL=3000,S_POLL_MOST=60000;
 async function sPoll(){
-  if(document.hidden||studio.polling||studio.busy||studio.sheet||['settings','setup','editorial','voices','guides','desk','desk-start'].includes(studio.screen))return;studio.polling=true;const turn=studio.turn;
+  if(document.hidden||studio.polling||studio.busy||studio.sheet||['settings','setup','editorial','voices','guides','desk','desk-start'].includes(studio.screen))return;
+  if(Date.now()<(studio.pollAfter||0))return;
+  studio.polling=true;const turn=studio.turn;let failed=false;
   try{if(studio.screen==='editor'){
     if(!studio.editorWatching)return;
     const found=await api('run?id='+encodeURIComponent(studio.id));if(turn!==studio.turn)return;
     const summary={};for(const key of ['id','expected','status','error','enabled','next','editor_check'])summary[key]=found[key]??null;
     if(JSON.stringify(summary)!==studio.editorSignature&&studio.editorDraft?.content===studio.editorDraft?.baseContent)await sEditor(studio.id);
     return;
-  }if(studio.screen==='status'){const brand=await api('brand');if(turn!==studio.turn)return;if(JSON.stringify(brand)!==JSON.stringify(studio.brand)){studio.brand=brand;sStatusPage();}}if(['run','gate'].includes(studio.screen)&&studio.id){const found=await api('run?id='+encodeURIComponent(studio.id));if(turn!==studio.turn)return;if(studio.screen==='gate'){if(found.expected!==studio.found.expected){const alert=$('newer-version');if(alert&&alert.dataset.version!==found.expected){alert.dataset.version=found.expected;alert.hidden=false;alert.replaceChildren(sNode('p','','This blog changed while you were reading. Look at the new version before deciding.'),sButton('Read the new version',()=>studioNavigate('gate',found.id,studio.stage)));for(const node of $('actions').querySelectorAll('button'))if(['Use this outline','Use this draft','Finish this review','Finish','Develop an idea','Write from this outline','Save ideas for later'].includes(node.textContent))node.disabled=true;}}}else if(sRunSignature(found)!==studio.signature){if(studio.stage!=='status'&&sWritingReady(found))await sRoute('gate',found.id,found.next,true);else sRun(found);}else{const line=$('studio-page').querySelector('.now-line'),fresh=sNowLine(found);if(line&&fresh)line.textContent=fresh.textContent;studio.found=found;sActivityUpdate($('studio-page'),found.activity,{id:found.id});}}else{const list=await api('runs');if(turn!==studio.turn)return;if(JSON.stringify([studio.listing,studio.deleted||[]])!==JSON.stringify([list.items,list.deleted||[]])){studio.listing=list.items;studio.deleted=list.deleted||[];if(studio.screen==='home')sHome();else if(studio.screen==='blogs')sBlogs();else sStatusPage();}}}catch(error){notice(error.message,true);}finally{studio.polling=false;}
+  }if(studio.screen==='status'){const brand=await api('brand');if(turn!==studio.turn)return;if(JSON.stringify(brand)!==JSON.stringify(studio.brand)){studio.brand=brand;sStatusPage();}}if(['run','gate'].includes(studio.screen)&&studio.id){const found=await api('run?id='+encodeURIComponent(studio.id));if(turn!==studio.turn)return;if(studio.screen==='gate'){if(found.expected!==studio.found.expected){const alert=$('newer-version');if(alert&&alert.dataset.version!==found.expected){alert.dataset.version=found.expected;alert.hidden=false;alert.replaceChildren(sNode('p','','This blog changed while you were reading. Look at the new version before deciding.'),sButton('Read the new version',()=>studioNavigate('gate',found.id,studio.stage)));for(const node of $('actions').querySelectorAll('button'))if(['Use this outline','Use this draft','Finish this review','Finish','Develop an idea','Write from this outline','Save ideas for later'].includes(node.textContent))node.disabled=true;}}}else if(sRunSignature(found)!==studio.signature){if(studio.stage!=='status'&&sWritingReady(found))await sRoute('gate',found.id,found.next,true);else sRun(found);}else{const line=$('studio-page').querySelector('.now-line'),fresh=sNowLine(found);if(line&&fresh)line.textContent=fresh.textContent;studio.found=found;sActivityUpdate($('studio-page'),found.activity,{id:found.id});}}else{const list=await api('runs');if(turn!==studio.turn)return;if(JSON.stringify([studio.listing,studio.deleted||[]])!==JSON.stringify([list.items,list.deleted||[]])){studio.listing=list.items;studio.deleted=list.deleted||[];if(studio.screen==='home')sHome();else if(studio.screen==='blogs')sBlogs();else sStatusPage();}}}catch(error){failed=true;studio.pollFailures=(studio.pollFailures||0)+1;studio.pollAfter=Date.now()+Math.min(S_POLL_MOST,S_POLL*2**(studio.pollFailures-1));if(studio.pollFailures===1)notice(error.message,true);}finally{studio.polling=false;if(!failed){studio.pollFailures=0;studio.pollAfter=0;}}
 }
 
 function sVisibilityChanged(){
   if(document.hidden){if(studio.screen==='desk')return sDeskShare(studio.desk);}
-  else return sPoll();
+  else{studio.pollAfter=0;return sPoll();}
 }
 
 function sBrandCard(){
@@ -688,12 +696,12 @@ function sGuideDraw(held){
 }
 function sGuideFollow(held){
   if(held.following)return;held.following=true;
-  setTimeout(async()=>{held.following=false;if(studio.guideDraft!==held||!held.job||studio.sheet!==held.sheet)return;
-    try{held.job=await api('tool-job?job='+encodeURIComponent(held.job.id));}catch(error){held.problem=error.message;}
+  setTimeout(async()=>{await sShown();held.following=false;if(studio.guideDraft!==held||!held.job||studio.sheet!==held.sheet)return;
+    try{held.job=await api('tool-job?job='+encodeURIComponent(held.job.id));held.failures=0;}catch(error){held.problem=error.message;held.failures=(held.failures||0)+1;}
     if(['queued','working'].includes(held.job?.status))return sGuideFollow(held);
     if(held.job?.status==='ready'&&!held.guide.trim())held.guide=held.job.result?.content||'';
     if(studio.guideDraft===held&&studio.sheet===held.sheet)sGuideDraw(held);
-  },2000);
+  },2000*Math.min(16,2**(held.failures||0)));
 }
 function sGuideEdit(found){
   const held={name:found.name,guide:found.guide},form=sNode('form','create-flow'),problem=sNode('p','problem');problem.setAttribute('role','alert');
@@ -917,7 +925,7 @@ async function sToolJob(initial){
     }else if(['queued','working'].includes(job.status))body.append(sButton('Cancel task',async()=>paint(await api('tool-action',{action:'job-control',job:job.id,control:'cancel'}))));
     if(['failed','cancelled'].includes(job.status)&&job.attempts<3)body.append(sButton('Retry task',async()=>paint(await api('tool-action',{action:'job-control',job:job.id,control:'retry'}))));
     body.append(problem);sOpenSheet({repurpose:'Prepared channel copy','voice-learn':'Learn an author voice','style-learn':'Learn this kind of post','voice-audition':'Voice audition','interview-question':'Next interview question','interview-outline':'Interview outline'}[job.kind],body,sInBatch(job.id)?sButton('Back to every author',()=>sVoicesBatch()):null,sButton('Close',sCloseSheet));
-    if(['queued','working'].includes(job.status)){const owner=studio.sheet;setTimeout(async()=>{if(studio.sheet!==owner)return;try{const next=await api('tool-job?job='+job.id);if(studio.sheet===owner)paint(next);}catch(error){if(studio.sheet===owner)problem.textContent=error.message+' Close and reopen the saved task to resume.';}},1000);}
+    if(['queued','working'].includes(job.status)){const owner=studio.sheet;setTimeout(async()=>{await sShown();if(studio.sheet!==owner)return;try{const next=await api('tool-job?job='+job.id);if(studio.sheet===owner)paint(next);}catch(error){if(studio.sheet===owner)problem.textContent=error.message+' Close and reopen the saved task to resume.';}},1000);}
   };paint(initial);
 }
 // Interview me: the interview's blog is written as the voice chosen here, with the same Write
@@ -1211,7 +1219,7 @@ async function sVoicesBatch(){
     sNode('p','quiet','You can close this sheet; the jobs keep their place in the queue. Reopen it from Create voices for every author.'),
     sAdd(sNode('div','bar create-foot'),sButton('Start another batch',()=>{const batch=studio.voiceBatch;studio.voiceBatch=null;studio.voicesQueued=batch;return sVoicesForAuthors(null);}),sButton('Close',sCloseSheet)));
   // Follow the jobs in place while this sheet stays open.
-  const owner=studio.sheet,follow=async()=>{if(studio.sheet!==owner||!batch.jobs.some(row=>['queued','working'].includes(row.job.status)))return;try{for(const row of batch.jobs)if(['queued','working'].includes(row.job.status))row.job=await api('tool-job?job='+row.job.id);if(studio.sheet===owner){paint();setTimeout(follow,2000);}}catch(error){}};
+  const owner=studio.sheet,follow=async()=>{await sShown();if(studio.sheet!==owner||!batch.jobs.some(row=>['queued','working'].includes(row.job.status)))return;try{for(const row of batch.jobs)if(['queued','working'].includes(row.job.status))row.job=await api('tool-job?job='+row.job.id);if(studio.sheet===owner){paint();setTimeout(follow,2000);}}catch(error){}};
   setTimeout(follow,2000);
 }
 // The headings of a saved ideas document, each with the line that follows it.

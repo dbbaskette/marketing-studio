@@ -755,7 +755,9 @@ async function refreshHomeStatus(){
   }catch(failure){
     workOverviewStale=true;renderWorkOverview();
     // Retain the last readable state while reconnecting, but never show stale green lights.
-    for(const line of document.querySelectorAll('.studio-readiness')){const card=line.closest('[data-studio]'),studio=snapshot.studios.find(s=>s.id===card?.dataset.studio)||{installed:true};readinessDetails(card?.querySelector('.studio-repository'),{state:'review'});line.replaceWith(readinessBlock({...studio,readiness:{state:'review',label:'Not checked',detail:'Marketing Studio did not answer, so this was not checked. If it was restarted, open the new private link from its terminal.',action:null}}));}
+    // Drawn again only when it changes, so each later failed read leaves the cards (and a
+    // focused control in them) as they are.
+    for(const line of document.querySelectorAll('.studio-readiness')){const card=line.closest('[data-studio]'),studio=snapshot.studios.find(s=>s.id===card?.dataset.studio)||{installed:true};const offline={...studio,readiness:{state:'review',label:'Not checked',detail:'Marketing Studio did not answer, so this was not checked. If it was restarted, open the new private link from its terminal.',action:null}};if(line.dataset.ready===JSON.stringify(studioReadiness(offline)))continue;readinessDetails(card?.querySelector('.studio-repository'),{state:'review'});line.replaceWith(readinessBlock(offline));}
   }finally{homeRefreshing=false;}
 }
 async function resumeWork(studio, item, button) {

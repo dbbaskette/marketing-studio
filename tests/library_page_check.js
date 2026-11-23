@@ -4,6 +4,7 @@
 const assert = require('node:assert/strict'), fs = require('node:fs'), vm = require('node:vm'), path = require('node:path');
 
 let document;
+const drawn = [];   // the class of every node redrawn whole, in order
 class Node {
   constructor(tag) {
     this.tagName = tag; this.children = []; this.parent = null; this.dataset = {}; this.listeners = {};
@@ -17,7 +18,7 @@ class Node {
   prepend(n) { this.append(n); this.children.unshift(this.children.pop()); }
   setAttribute(k, v) { this.attributes[k] = String(v); }
   addEventListener(k, fn) { this.listeners[k] = fn; }
-  replaceChildren(...nodes) { for (const c of this.children) c.parent = null; this.children = []; this.append(...nodes); }
+  replaceChildren(...nodes) { drawn.push(this.className); for (const c of this.children) c.parent = null; this.children = []; this.append(...nodes); }
   remove() { if (this.parent) this.parent.children = this.parent.children.filter((c) => c !== this); this.parent = null; }
   contains(n) { return this === n || this.children.some((c) => c.contains(n)); }
   focus() { document.activeElement = this; }
@@ -93,9 +94,27 @@ async function post(route, body) {
   const browse = new kit.Catalog({ studio: 'marketing', post, manage: true, said: (text) => said.push(text),
     download: (row, format) => downloads.push([row.id, format]) });
   await settle();
+  // A server that does not say which filters it applied is asked again, with them.
   assert.deepEqual(requests.map((r) => r[0]), ['library', 'library']);
+  assert.equal(requests[0][1].remembered, true, 'the first load asks for the remembered filters');
   assert.deepEqual(requests[1][1].filters, { kind: 'upload' });
   assert.equal(browse.ticked.size, 0);
+  // A server that applies the remembered filters itself answers the first load: one fetch.
+  {
+    const asked = [];
+    const applying = async (route, body) => {
+      asked.push(JSON.parse(JSON.stringify(body)));
+      const kind = body.remembered ? 'upload' : (body.filters || {}).kind;
+      const rows = docs.filter((d) => !kind || d.kind === kind);
+      return { available: true, items: rows.slice(0, 25), total: rows.length, offset: 0, limit: 25,
+        remembered: { kind: 'upload' }, applied: body.remembered ? { kind: 'upload' } : undefined, kinds: { upload: 'Uploaded document' }, studios: {}, origins: {}, states: {} };
+    };
+    const once = new kit.Catalog({ studio: 'blog', post: applying, download: () => {} });
+    await settle();
+    assert.equal(asked.length, 1, 'opening with remembered filters is one fetch');
+    assert.equal(find(once.node, 'library-kind').value, 'upload', 'the remembered filter shows as set');
+    assert.ok(once.shownIds().every((id) => docs.find((d) => d.id === id).kind === 'upload'));
+  }
   assert.equal(all(browse.node).filter((n) => n.type === 'checkbox').length, 0, 'browsing has no ticks, and nothing is hidden yet');
   // One action a row: Preview. The downloads are in the preview, two activations away.
   const rows = all(browse.node).filter((n) => n.className === 'library-row');
@@ -243,8 +262,13 @@ async function post(route, body) {
     assert.ok(box.disabled, 'its own export cannot be ticked');
     assert.equal(box.attributes['aria-label'], 'Synthetic <b>document</b> 1 is unavailable: This infographic');
     assert.ok(all(open).some((n) => n.textContent === 'This infographic'));
-    // Select all on this page leaves it out too.
+    // Select all on this page leaves it out too, and draws the page once, with one change.
+    const before = { fetched: requests.length, drawn: drawn.length };
     await tick(find(open, 'library-select-page'), true);
+    const since = drawn.slice(before.drawn);
+    assert.equal(since.filter((c) => c === 'library-catalog stack').length, 1, 'Select all on this page draws the list once');
+    assert.equal(since.filter((c) => c === 'library-selection').length, 1, 'and changes the selection bar once');
+    assert.equal(requests.length, before.fetched, 'and fetches nothing');
     assert.ok(!find(open, 'library-tick-doc-1').checked, 'select page skips its own export');
     assert.ok(find(open, 'library-tick-doc-5').checked);
     await tick(find(open, 'library-select-page'), false);
