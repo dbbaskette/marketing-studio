@@ -16,7 +16,8 @@
 // another or brought back, {timer: a function's name} for the last timer the page set to
 // call it, {tick: the name of a check box} for a click on that box, {select: the label of a
 // box, start, end} for words selected in it, {press: a key, on: the name of a control} for
-// that key pressed on it, and {hold: the name of
+// that key pressed on it, {command: a title} to choose that title in Search and jump (with a
+// plan of {shell: true}), and {hold: the name of
 // a control} to follow that very node: each
 // snapshot then says, in `still`, which of those held are still on the page, and in `asked`
 // how many requests had been made by then. A box that is filled is left as a
@@ -926,6 +927,28 @@ async function app(file) {
       return panel;
     } };
   }
+  // The shell kit is the shared core's, checked on its own by the repository's
+  // tests/shell_page_check.js. A plan with {shell: true} stands it in, as Training Studio's
+  // harness does: it keeps the lists the page hands Search and jump, for a {command: a title}
+  // step to choose from, and the report says what was listed (`commands`: group, title, hint).
+  // Its workbench parts are plain placeholders here.
+  const commandLists = [];
+  if (plan.shell) {
+    const part = (tag, className, key) => {
+      const node = document.createElement(tag);
+      node.className = className;
+      if (key) node.dataset.key = key;
+      return node;
+    };
+    window.StudioShell = {
+      connect() {},
+      commands(provide) { if (typeof provide === 'function') commandLists.push(provide); },
+      track: () => part('ol', 'track'),
+      arc: () => part('ol', 'track track-arc', 'workbench-arc'),
+      pulse: () => part('div', 'workbench-pulse'),
+      move: () => part('section', 'move-card', 'workbench-move'),
+    };
+  }
   // The shared desk kit (drafting.js, linked from ui-kit), then the page, then the deck desk,
   // in the order index.html loads them. A plan with {research: true} loads the shared source
   // editor (research.js) first, as the page does: Research the approved story then offers it, and asks
@@ -992,6 +1015,13 @@ async function app(file) {
         }
       }
       if (step.hold !== undefined) followed.push([control(step.hold), step.hold]);
+      if (step.command !== undefined) {
+        const listed = commandLists.flatMap((provide) => provide() || []);
+        report.commands = listed.map((one) => [one.group || '', one.title, one.hint || '']);
+        const chosen = listed.find((one) => one.title === step.command);
+        if (!chosen) throw new Error('Search and jump lists no ' + step.command);
+        chosen.run();
+      }
       // The browser's own Back.
       if (step.back) window.history.back();
       if (step.key) for (const listener of documentListeners.keydown || []) listener({ key: step.key });

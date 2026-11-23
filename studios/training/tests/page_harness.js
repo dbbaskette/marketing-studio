@@ -13,7 +13,8 @@
 // refresh asked for that many times at once, {hidden: true or false} for the tab put behind
 // another or brought back, {timer: a function's name} for the last timer the page set to
 // call it, {tick: the name of a check box} for a click on that box, and {hold: the name of
-// a control} to follow that very node, and {edit: a material's Edit control} to open it for
+// a control} to follow that very node, {command: a title} to choose that title in Search and
+// jump (with a plan of {shell: true}), and {edit: a material's Edit control} to open it for
 // editing where it is not open already: each
 // snapshot then says, in `still`, which of those held are still on the page, and in `asked`
 // how many requests had been made by then. A box that is filled is left as a
@@ -874,6 +875,73 @@ async function app(file) {
       return true;
     } };
   }
+  // The shell kit is the shared core's, checked on its own by the repository's
+  // tests/shell_page_check.js. A plan with {shell: true} stands it in: it keeps the lists the
+  // page hands Search and jump, for a {command: a title} step to choose from, and the report
+  // says which workbench parts the desk asked it for (`shell`) and what was listed
+  // (`commands`: group, title and hint).
+  const commandLists = [];
+  const shellAsked = [];
+  if (plan.shell) {
+    const part = (tag, className, key) => {
+      const node = document.createElement(tag);
+      node.className = className;
+      if (key) node.dataset.key = key;
+      return node;
+    };
+    window.StudioShell = {
+      connect() {},
+      commands(provide) { if (typeof provide === 'function') commandLists.push(provide); },
+      track(stages, label) {
+        const line = part('ol', 'track');
+        line.setAttribute('aria-label', label || 'Progress');
+        for (const stage of stages || []) {
+          const item = part('li', 'track-stage');
+          item.dataset.state = stage.state;
+          item.append(stage.label);
+          line.append(item);
+        }
+        return line;
+      },
+      arc(spec, label) {
+        const line = part('ol', 'track track-arc', 'workbench-arc');
+        line.dataset.zone = 'rail';
+        line.dataset.live = String(Boolean(spec.note && !spec.yours && !spec.finished));
+        line.setAttribute('aria-label', label);
+        shellAsked.push(['arc', label, { at: spec.at, yours: Boolean(spec.yours),
+          finished: Boolean(spec.finished), note: spec.note || '' }, line]);
+        return line;
+      },
+      pulse(state) {
+        shellAsked.push(['pulse', state]);
+        const node = part('div', 'workbench-pulse');
+        node.setAttribute('aria-hidden', 'true');
+        node.dataset.state = state;
+        node.dataset.zone = 'top';
+        return node;
+      },
+      move(spec) {
+        shellAsked.push(['move', spec.title, Boolean(spec.calm)]);
+        const card = part('section', 'move-card' + (spec.calm ? ' move-card-calm' : ''), 'workbench-move');
+        card.dataset.zone = 'rail';
+        if (!spec.calm) {
+          card.setAttribute('aria-label', 'Your move');
+          const label = part('p', 'move-label');
+          label.append('Your move');
+          card.append(label);
+        }
+        const title = part('h2', 'move-title');
+        title.append(spec.title);
+        card.append(title);
+        if (spec.text) {
+          const said = part('p', spec.calm ? 'quiet' : '');
+          said.append(spec.text);
+          card.append(said);
+        }
+        return card;
+      },
+    };
+  }
   // The shared desk kit before app.js, and the training desk, built on both, after it. The
   // shared activity lines (activity.js) come first, as index.html loads them; a plan with
   // {activity: false} leaves them out, as a page without them would be. A plan with
@@ -964,11 +1032,22 @@ async function app(file) {
         }
       }
       if (step.hold !== undefined) followed.push([control(step.hold), step.hold]);
+      if (step.command !== undefined) {
+        const listed = commandLists.flatMap((provide) => provide() || []);
+        report.commands = listed.map((one) => [one.group || '', one.title, one.hint || '']);
+        const chosen = listed.find((one) => one.title === step.command);
+        if (!chosen) throw new Error('Search and jump lists no ' + step.command);
+        chosen.run();
+      }
       if (step.key) for (const listener of documentListeners.keydown || []) listener({ key: step.key });
     } catch (failure) {
       report.errors.push(String(failure && failure.stack ? failure.stack : failure));
     }
     await settle();
+  }
+  if (plan.shell) {
+    report.shell = shellAsked.map((one) => one[0] === 'arc'
+      ? ['arc', one[1], { ...one[2], live: one[3].dataset.live }] : one);
   }
   console.log(JSON.stringify({ ...report, snapshots: shots }));
 }

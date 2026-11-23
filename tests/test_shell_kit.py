@@ -78,19 +78,21 @@ class LoadedTests(unittest.TestCase):
         styles = (ROOT / 'ui-kit/style.css').read_text(encoding='utf-8')
         kit = styles[styles.index('/* The shell kit ('):]
         for part in ('.track-stage[data-state="yours"]', '.shell-palette-row[aria-selected="true"]',
-                     '.appearance-switch', '.finish-card', '.track-compact'):
+                     '.appearance-switch', '.track-compact'):
             self.assertIn(part, kit)
         reduced = ''.join(block.split('}\n}')[0] for block
                           in kit.split('@media (prefers-reduced-motion: reduce)')[1:])
-        for moving in ('.track-stage[data-state="yours"] .track-mark', '.finish-card', '.finish-seal',
+        for moving in ('.track-stage[data-state="yours"] .track-mark',
                        '.workbench-pulse', '.move-card', '[data-making="true"]'):
             self.assertIn(moving, reduced)
         for part in ('.workbench-pulse[data-state="working"]', '.move-card', '[data-zone="work"]',
                      '[data-zone="rail"]', '.workbench-head'):
             self.assertIn(part, kit)
         script = (ROOT / 'core/studio_core/deck_web/shell.js').read_text(encoding='utf-8')
-        for name in ('connect', 'commands', 'palette', 'track', 'finish', 'setAppearance', 'arc', 'pulse', 'move'):
+        for name in ('connect', 'commands', 'palette', 'track', 'setAppearance', 'arc', 'pulse', 'move'):
             self.assertRegex(script, rf'\b{name}\b')
+        # The finish card was never shown by any studio, so it is no longer offered.
+        self.assertNotIn('function finish', script)
         self.assertNotIn('localStorage', script, 'a page address changes with each launch')
 
 
