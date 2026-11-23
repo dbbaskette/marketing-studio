@@ -23,6 +23,8 @@
   --yours: #944a00;
   --yours-fill: #f6a623;
   --yours-wash: #fff1d6;
+  /* Words and marks drawn on the amber fill: dark in both appearances, as the fill is light. */
+  --on-yours: #241a05;
   --late: #b3261e;
   --late-wash: #fde9e7;
   --focus: #0a55c2;
@@ -66,10 +68,19 @@
   --gutter: clamp(0.75rem, 3vw, 2rem);
   --card-round: 18px;
   --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+  /* How far toasts and the finish card rise to clear a control fixed at the foot. */
+  --foot-lift: 0rem;
 }
 
+/* The appearance is one shared setting. The server writes a choice on <body
+   data-appearance> as the page is served and StudioShell keeps it there, so these rules,
+   not a script, switch the tokens: Auto follows this computer, Light stands this
+   computer's dark aside, and Dark applies the same dark tokens below. Each keeps the
+   specificity of a plain :root, so a later :root rule (AccentColor) still applies. */
+:root:where(:has(> body[data-appearance="light"])) { color-scheme: light; }
+
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:where(:not(:has(> body[data-appearance="light"]))) {
     --ground: #11151c;
     --wash-1: #1b2636;
     --wash-2: #292432;
@@ -87,6 +98,7 @@
     --yours: #ffc56b;
     --yours-fill: #ffb340;
     --yours-wash: #3b2c10;
+    --on-yours: #241a05;
     --late: #ff9d92;
     --late-wash: #3d1f1c;
     --focus: #9cc4ff;
@@ -124,6 +136,66 @@
     --material-light: rgb(255 255 255 / 0.07);
     --material-tint: rgb(103 147 213 / 0.06);
   }
+}
+
+/* Dark, chosen: the same tokens as above, whatever this computer's appearance
+   (tests/test_css_tokens.py keeps the two the same). */
+:root:where(:has(> body[data-appearance="dark"])) {
+  color-scheme: dark;
+  --ground: #11151c;
+  --wash-1: #1b2636;
+  --wash-2: #292432;
+  --wash-3: #1a2a2b;
+  --wash-4: #30262d;
+  --wash-5: #22293b;
+
+  --ink: #f3f4f8;
+  --quiet: #abb0c0;
+  --link: #9cc4ff;
+  --accent: #6aa9ff;
+  --on-accent: #051330;
+  --done: #5fdc8a;
+  --done-fill: #1f9a48;
+  --yours: #ffc56b;
+  --yours-fill: #ffb340;
+  --yours-wash: #3b2c10;
+  --on-yours: #241a05;
+  --late: #ff9d92;
+  --late-wash: #3d1f1c;
+  --focus: #9cc4ff;
+  --focus-halo: rgb(0 0 0 / 0.75);
+
+  --selection: #253e60;
+  --selection-line: #3b5a81;
+  --blog: #9cc4ff;
+  --blog-wash: #213653;
+  --presentation: #ffb493;
+  --presentation-wash: #452c24;
+  --training: #d2b1ff;
+  --training-wash: #342947;
+  --infographic: #8cdedb;
+  --infographic-wash: #1c383b;
+  --on-studio: #151c29;
+
+  --glass: rgb(30 36 46 / 0.86);
+  --card: #1c222d;
+  --sheet-fill: rgb(32 39 50 / 0.97);
+  --scrim: rgb(0 0 0 / 0.6);
+  --solid: #202732;
+  --paper: #191f29;
+  --paper-line: rgb(255 255 255 / 0.12);
+  --glass-line: rgb(206 221 244 / 0.16);
+  --hair: rgb(255 255 255 / 0.1);
+  --well: rgb(0 0 0 / 0.3);
+  --thumb: rgb(104 108 128 / 0.75);
+  --control-fill: #303b4f;
+  --control-line: #8895ab;
+  --shine: rgb(255 255 255 / 0.09);
+  --edge: inset 0 1px 0 rgb(255 255 255 / 0.12);
+  --lift: 0 10px 28px rgb(0 0 0 / 0.35), 0 1px 5px rgb(0 0 0 / 0.2);
+  --rest: none;
+  --material-light: rgb(255 255 255 / 0.07);
+  --material-tint: rgb(103 147 213 / 0.06);
 }
 
 /* The colour the person chose for their Mac, where the browser will say what it is. */
@@ -2036,7 +2108,7 @@ body[data-product="Training Studio"]:has(#sheet:not([hidden])) {
 .toasts {
   position: fixed;
   right: 1rem;
-  bottom: calc(1rem + env(safe-area-inset-bottom));
+  bottom: calc(1rem + env(safe-area-inset-bottom) + var(--foot-lift));
   z-index: 20;
   display: grid;
   justify-items: end;
@@ -2468,7 +2540,7 @@ body[data-product="Training Studio"]:has(#sheet:not([hidden])) {
   /* Above the bar of screens along the foot. */
   .toasts {
     right: 0.6rem;
-    bottom: calc(5rem + env(safe-area-inset-bottom));
+    bottom: calc(var(--tab-bar-room) + 0.6rem + var(--foot-lift));
   }
 
   .field > .segmented,
@@ -3781,8 +3853,10 @@ body[data-pilot="liquid"] .ig-outline-link { stroke: var(--studio-color); stroke
 body[data-pilot="liquid"] .ig-outline-node { fill: var(--paper); stroke: var(--studio-color); stroke-width: 1; }
 body[data-pilot="liquid"] .ig-outline-dot { fill: var(--studio-color); }
 body[data-pilot="liquid"] .ig-outline-value { fill: var(--studio-color); font: 20px var(--plain); }
+/* Its dark tokens follow the one appearance setting as the kit's do: this computer's dark
+   unless Light is chosen, and the same tokens again when Dark is chosen. */
 @media (prefers-color-scheme: dark) {
-  body[data-pilot="liquid"] {
+  body[data-pilot="liquid"]:where(:not([data-appearance="light"])) {
     --ground: #141519;
     --solid: #141519;
     --card: #202227;
@@ -3800,6 +3874,24 @@ body[data-pilot="liquid"] .ig-outline-value { fill: var(--studio-color); font: 2
     --pilot-shadow: 0 2px 8px rgb(0 0 0 / .08);
     --pilot-preview: #191b20;
   }
+}
+body[data-pilot="liquid"]:where([data-appearance="dark"]) {
+  --ground: #141519;
+  --solid: #141519;
+  --card: #202227;
+  --paper: #202227;
+  --ink: #f4f5f7;
+  --quiet: #b3b7c2;
+  --glass: rgb(31 33 39 / .85);
+  --material-light: rgb(255 255 255 / .025);
+  --material-tint: rgb(135 156 187 / .025);
+  --paper-line: rgb(255 255 255 / .08);
+  --glass-line: rgb(255 255 255 / .14);
+  --pilot-selection: #30333b;
+  --pilot-control: #30333b;
+  --pilot-edge: inset 0 1px 0 rgb(255 255 255 / .08);
+  --pilot-shadow: 0 2px 8px rgb(0 0 0 / .08);
+  --pilot-preview: #191b20;
 }
 @media (max-width: 52rem) {
   body[data-pilot="liquid"] .sidebar { padding: .5rem .5rem calc(.5rem + env(safe-area-inset-bottom)); border-radius: 22px 22px 0 0; gap: .4rem; }
@@ -3891,9 +3983,9 @@ body[data-pilot="liquid"] .ig-outline-value { fill: var(--studio-color); font: 2
 @media (max-width:40rem){.research-link-entry{grid-template-columns:1fr}.research-stages{gap:.5rem}.research-stages>li{font-size:.8rem}.research-sources,.research-captured,.research-progress{padding:1rem}}
 
 /* Shared opaque slide-text checkpoint; no previews are requested here. */
-.slide-text-review { padding: var(--space-5, 24px); min-width: 0; }
+.slide-text-review { padding: 1.5rem; min-width: 0; }
 .slide-text-list { padding-left: 1.5rem; }
-.slide-text-item { padding: 1rem 0; border-bottom: 1px solid var(--line, #d5d9df); overflow-wrap: anywhere; }
+.slide-text-item { padding: 1rem 0; border-bottom: 1px solid var(--hair); overflow-wrap: anywhere; }
 .slide-text-review .input { width: 100%; max-width: 100%; box-sizing: border-box; }
 .slide-text-review .bar { flex-wrap: wrap; }
 
@@ -3916,8 +4008,11 @@ body[data-pilot="liquid"] .ig-outline-value { fill: var(--studio-color); font: 2
 .dialog>.create-foot{flex:none;margin:0;padding:.8rem 1.3rem;border-top:1px solid var(--hair);background:var(--solid)}
 
 /* Creation is one centered decision surface. The scrim dims competing headlines;
-   the form itself is opaque. Side inspectors keep their existing placement. */
-.sheet:has(.create-flow){position:fixed;top:50%;left:50%;right:auto;bottom:auto;transform:translate(-50%,-50%);width:min(46rem,calc(100% - 1.5rem));max-height:calc(100dvh - 2rem);display:flex;flex-direction:column;overflow:hidden;border-radius:22px;background:var(--solid);backdrop-filter:none;box-shadow:0 0 0 100vmax var(--scrim),var(--lift);animation:none}
+   the form itself is opaque. Side inspectors keep their existing placement. The scrim is a
+   layer of the toolbar's own, under the sheet and over the toolbar and the page, so it
+   covers the window at any size without a shadow larger than the screen. */
+.sheet:has(.create-flow){position:fixed;top:50%;left:50%;right:auto;bottom:auto;z-index:1;transform:translate(-50%,-50%);width:min(46rem,calc(100% - 1.5rem));max-height:calc(100dvh - 2rem);display:flex;flex-direction:column;overflow:hidden;border-radius:22px;background:var(--solid);backdrop-filter:none;box-shadow:var(--lift);animation:none}
+.toolbar-wrap:has(> .sheet:not([hidden]) .create-flow)::after{content:'';position:fixed;inset:0;z-index:0;background:var(--scrim);pointer-events:none}
 .sheet:has(.create-flow)>.sheet-heading{flex:none;margin:0 0 .75rem;padding:0 0 .75rem;background:var(--solid)}
 .sheet>.create-flow:has(.intake-body){display:flex;flex-direction:column;min-height:0;overflow:hidden;gap:.65rem}
 /* Change settings is a long form, not the stepped intake. It must own scrolling
@@ -4094,7 +4189,7 @@ body[data-product="Training Studio"] .cult-tab-rail > [role="tab"] {
 }
 /* Minimal Card's layered frame adapted to the four launch surfaces. */
 .cult-launch-card { border-radius:24px; background:var(--solid); box-shadow:0 1px 1px rgb(0 0 0 / .05),inset 0 1px rgb(255 255 255 / .18),0 2px 4px rgb(17 24 28 / .06); transition:transform .2s ease,box-shadow .2s ease,border-color .2s ease; }
-.cult-launch-card:is(:hover,:focus-within) { transform:translateY(-2px); border-color:var(--studio-accent,var(--accent)); box-shadow:0 2px 4px rgb(0 0 0 / .08),0 8px 18px -4px rgb(0 0 0 / .12); }
+.cult-launch-card:is(:hover,:focus-within) { transform:translateY(-2px); border-color:var(--studio-color,var(--accent)); box-shadow:0 2px 4px rgb(0 0 0 / .08),0 8px 18px -4px rgb(0 0 0 / .12); }
 @media (prefers-reduced-motion:reduce) {
   .cult-tab-rail::before,.cult-expandable::details-content,.cult-expandable > summary::before,.cult-launch-card { transition:none !important; }
   .cult-launch-card:is(:hover,:focus-within) { transform:none; }
@@ -4109,8 +4204,12 @@ body[data-product="Training Studio"] .cult-tab-rail > [role="tab"] {
    palette and the finish card are transient, so they take the sheet material; the track
    is content and stays flat. */
 
-/* The headline of a Home screen speaks in the system serif; nothing else in the shell does. */
-.large-title {
+/* The headline of a Home screen speaks in the system serif; nothing else in the shell does.
+   A Home headline is Marketing Studio's launch question, a studio's greeting (the page's
+   first part) and Infographic Studio's Home; every other screen's title keeps the plain
+   face. :where() keeps the weight of a plain .large-title rule. */
+:where(.launch-intro, [data-home] > .intro) > .large-title,
+:where(.page, .stack) > .large-title:where(p:first-child) {
   font-family: ui-serif, "New York", "Iowan Old Style", Georgia, serif;
   font-weight: 600;
   letter-spacing: -0.02em;
@@ -4296,7 +4395,7 @@ body[data-product="Training Studio"] .cult-tab-rail > [role="tab"] {
 .finish-card {
   position: fixed;
   right: 1.25rem;
-  bottom: 1.25rem;
+  bottom: calc(1.25rem + var(--foot-lift));
   z-index: 40;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
@@ -4324,7 +4423,7 @@ body[data-product="Training Studio"] .cult-tab-rail > [role="tab"] {
 @keyframes finish-rises { from { opacity: 0; transform: translateY(1rem); } }
 @keyframes finish-seals { from { transform: scale(0.3); opacity: 0; } }
 @media (max-width: 52rem) {
-  .finish-card { bottom: calc(5.5rem + env(safe-area-inset-bottom)); }
+  .finish-card { bottom: calc(5.5rem + env(safe-area-inset-bottom) + var(--foot-lift)); }
 }
 @media (prefers-reduced-motion: reduce) {
   .track-stage[data-state="yours"] .track-mark, .finish-card, .finish-seal { animation: none; }
@@ -4401,7 +4500,7 @@ body[data-product="Training Studio"] .cult-tab-rail > [role="tab"] {
   box-shadow: 0 0 0 0.28rem color-mix(in srgb, var(--track-color) 18%, transparent);
 }
 .track-arc[data-live="true"] .track-stage[data-state="current"] .track-mark { animation: arc-works 2.2s ease-in-out infinite; }
-.track-arc .track-stage[data-state="yours"] .track-mark { color: var(--on-yours, #201400); font-weight: 800; }
+.track-arc .track-stage[data-state="yours"] .track-mark { color: var(--on-yours); font-weight: 800; }
 @keyframes arc-works {
   50% { box-shadow: 0 0 0 0.5rem color-mix(in srgb, var(--track-color) 6%, transparent); }
 }
@@ -4435,7 +4534,7 @@ body[data-product="Training Studio"] .cult-tab-rail > [role="tab"] {
 @keyframes move-works { 50% { opacity: 0.3; transform: scale(0.7); } }
 .move-label { color: var(--yours); font-size: 0.78rem; font-weight: 700; }
 /* The move's own action is amber, not filled: a screen keeps its one filled button. */
-.move-card > .bar > .button { background: var(--yours-fill); border-color: transparent; color: #241a05; font-weight: 700; }
+.move-card > .bar > .button { background: var(--yours-fill); border-color: transparent; color: var(--on-yours); font-weight: 700; }
 .move-title { font-size: 1.1rem; font-weight: 700; line-height: 1.25; text-wrap: balance; }
 @keyframes move-arrives {
   from { opacity: 0; transform: translateY(0.6rem) scale(0.98); box-shadow: 0 0 0 0.9rem transparent; }
@@ -4492,12 +4591,40 @@ body[data-product="Training Studio"] .cult-tab-rail > [role="tab"] {
   animation: part-is-made 2.2s linear infinite;
 }
 @keyframes part-is-made { from { background-position: 120% 0; } to { background-position: -120% 0; } }
-/* Reading alone: the parts and the rail step aside until Escape or the button is pressed again. */
+/* Reading alone (F): at every width the parts and the rail step aside, and the work reads in
+   one column, until F, Escape or the Show everything button brings them back. */
+body[data-focus="reading"] :is(.page, .stack) > :is([data-zone="parts"], [data-zone="rail"], .workbench-parts, .workbench-rail) { display: none; }
+body[data-focus="reading"] { --foot-lift: 3.6rem; }
 @media (min-width: 72rem) {
   body[data-focus="reading"] :is(.page, .stack):has(> [data-zone="work"]) { grid-template-columns: [parts work rail] minmax(0, 52rem); justify-content: center; }
-  body[data-focus="reading"] :is(.page, .stack) > [data-zone="parts"],
-  body[data-focus="reading"] :is(.page, .stack) > [data-zone="rail"] { display: none; }
+}
+/* The way out, while reading alone: one quiet button closing the content, held at the foot
+   of the window under the work's own column, clear of the sidebar's foot and above a
+   phone's bar of screens. Toasts and the finish card rise over it (--foot-lift). */
+.reading-exit {
+  position: sticky;
+  bottom: calc(1rem + env(safe-area-inset-bottom));
+  z-index: 15;
+  display: flex;
+  width: fit-content;
+  margin: 1rem auto 0;
+  gap: 0.6rem;
+  font-size: 0.86rem;
+  animation: reading-exit-shows 0.24s var(--ease);
+}
+.reading-exit kbd {
+  padding: 0.05rem 0.4rem;
+  border: 1px solid var(--control-line);
+  border-radius: 0.4rem;
+  color: var(--quiet);
+  font: inherit;
+  font-size: 0.74rem;
+}
+@keyframes reading-exit-shows { from { opacity: 0; transform: translateY(0.5rem); } }
+@media (max-width: 52rem) {
+  .reading-exit { bottom: calc(var(--tab-bar-room) + 0.6rem); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .workbench-pulse, .move-card-new, .move-working-mark, .desk-workspace-tabs [role="tab"][data-making="true"] { animation: none; }
+  .workbench-pulse, .move-card-new, .move-working-mark, .desk-workspace-tabs [role="tab"][data-making="true"],
+  .reading-exit { animation: none; }
 }

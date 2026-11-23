@@ -27,7 +27,7 @@
 .ig-notice-text { flex: 1 1 18rem; min-width: 0; overflow-wrap: anywhere; }
 /* The page's scroll region takes keyboard focus; its ring sits inside its edge. */
 .ig-preview-scroll:focus-visible { outline-offset: -3px; }
-@media (max-width: 700px) {
+@media (max-width: 52rem) {
   .ig-page-tools > * { flex: 1 1 auto; }
 }
 .ig-outline-block { fill: var(--solid); stroke: var(--hair); }
@@ -70,12 +70,14 @@
 .ig-standing[data-move="yours"] .ig-needs > strong { color: var(--yours); }
 .ig-roadmap .bead { margin-right: .35rem; }
 .ig-finish-step + .ig-finish-step { padding-top: .9rem; border-top: 1px solid var(--hair); }
+/* The editor and its inspector sit side by side from the kit's own desk width (1100px, as
+   .desk-layout); narrower than the shared phone width (52rem) the page is the phone's. */
 @media (min-width: 1100px) {
   .ig-workbench { grid-template-columns: minmax(0, 1fr) 22rem; align-items: start; }
   .ig-ledger { grid-column: 1 / -1; }
   .ig-inspector { position: sticky; top: 5rem; }
 }
-@media (max-width: 700px) {
+@media (max-width: 52rem) {
   .ig-preview-scroll { max-height: 60vh; }
   /* Three compact revision states on a phone; the page card says what each means. */
   .ig-ledger { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .4rem; }

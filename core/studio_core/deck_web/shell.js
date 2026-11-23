@@ -23,9 +23,7 @@
        run: () => openProject(project.id) })));  */
 const StudioShell = (() => {
   const APPEARANCES = [['light', 'Light'], ['dark', 'Dark'], ['', 'Auto']];
-  const SCHEME = /\(\s*prefers-color-scheme\s*:\s*(dark|light)\s*\)/g;
   const providers = [];
-  const original = new WeakMap();   // each colour-scheme media rule's own condition
   let link = null, chosen = document.body.dataset.appearance || '', opened = null;
 
   function make(tag, className, text) {
@@ -37,28 +35,9 @@ const StudioShell = (() => {
 
   // --- appearance -------------------------------------------------------------------
 
-  // Every rule written for one colour scheme, wherever it is: the kit's and each page's.
-  function schemeRules(rules, found) {
-    for (const rule of Array.from(rules || [])) {
-      if (rule.media && /prefers-color-scheme/.test(original.get(rule) || rule.media.mediaText)) found.push(rule);
-      if (rule.cssRules && !(rule.media && found.includes(rule))) schemeRules(rule.cssRules, found);
-    }
-    return found;
-  }
-
-  // A forced appearance answers each colour-scheme condition itself: `all` where it matches
-  // the one chosen, `not all` where it does not. Auto puts every condition back.
+  // The stylesheet switches the tokens from <body data-appearance>: `light` and `dark` are a
+  // choice, and no value follows this computer. Nothing here reads or rewrites a stylesheet.
   function paint() {
-    for (const sheet of Array.from(document.styleSheets)) {
-      let rules;
-      try { rules = sheet.cssRules; } catch (_) { continue; }   // not this page's own
-      for (const rule of schemeRules(rules, [])) {
-        if (!original.has(rule)) original.set(rule, rule.media.mediaText);
-        const own = original.get(rule);
-        rule.media.mediaText = chosen
-          ? own.replace(SCHEME, (_, scheme) => scheme === chosen ? 'all' : 'not all') : own;
-      }
-    }
     document.documentElement.style.colorScheme = chosen || 'light dark';
     if (chosen) document.body.dataset.appearance = chosen;
     else delete document.body.dataset.appearance;
@@ -290,11 +269,28 @@ const StudioShell = (() => {
     close.focus();
   }
 
-  // Reading alone: on a workbench, its parts and its rail step aside for the work itself.
+  // Reading alone: on a workbench, its parts and its rail step aside for the work itself, at
+  // every width. While it lasts one quiet button closes the content and brings them back, so
+  // the way out is in view and in the keyboard's order, not only F and Escape.
   const reading = () => document.body.dataset.focus === 'reading';
+  let exit = null;
   function toggleReading() {
     if (reading()) delete document.body.dataset.focus; else document.body.dataset.focus = 'reading';
-    say(reading() ? 'Reading alone. Press F or Escape to bring everything back.' : 'Everything is back.');
+    if (reading() && !exit) {
+      exit = make('button', 'button glass reading-exit'); exit.type = 'button';
+      exit.setAttribute('aria-keyshortcuts', 'F Escape');
+      const key = make('kbd', '', 'F'); key.setAttribute('aria-hidden', 'true');
+      exit.append(make('span', '', 'Show everything'), key);
+      exit.addEventListener('click', toggleReading);
+      (document.querySelector('.content') || document.body).append(exit);
+    } else if (!reading() && exit) {
+      const held = document.activeElement === exit;
+      exit.remove(); exit = null;
+      // Focus never falls to the page's start: it goes to the work the person was reading.
+      const work = document.querySelector('#main, [data-zone="work"]');
+      if (held && work) { if (!work.hasAttribute('tabindex')) work.setAttribute('tabindex', '-1'); work.focus({ preventScroll: true }); }
+    }
+    say(reading() ? 'Reading alone. Press F or Escape, or Show everything, to bring everything back.' : 'Everything is back.');
   }
 
   const typing = node => Boolean(node && (node.isContentEditable
@@ -437,8 +433,6 @@ const StudioShell = (() => {
 
   paint();
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount); else mount();
-  // A page stylesheet that loads late is painted too.
-  window.addEventListener('load', paint);
 
   return {
     connect(found) {

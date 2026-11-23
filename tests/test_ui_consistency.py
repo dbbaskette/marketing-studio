@@ -474,6 +474,24 @@ class SharedLookTests(unittest.TestCase):
         self.assertGreater(tab_bar, int(phone['.review-bar']['z-index']))
         self.assertGreater(tab_bar, int(phone['.selection-bar']['z-index']))
 
+    def test_toasts_clear_the_shell_and_the_tab_bar(self):
+        kit = declared(KIT.read_text())
+        self.assertEqual(kit[PHONE]['.toasts'].get('bottom'),
+                         'calc(var(--tab-bar-room) + .6rem + var(--foot-lift))')
+        # Presentation Studio widens its toasts on a phone; a desktop keeps the kit's place,
+        # clear of the sidebar's foot.
+        deck = declared(PAGE_STYLES[2].read_text())
+        self.assertEqual([context for context, found in deck.items() if '.toasts' in found], [PHONE])
+        self.assertIn('var(--tab-bar-room)', deck[PHONE]['.toasts'].get('bottom', ''))
+
+    def test_studio_stylesheets_take_the_kits_narrow_breakpoints(self):
+        for sheet in (PAGE_STYLES[2], PAGE_STYLES[4]):
+            with self.subTest(sheet=sheet.relative_to(ROOT).as_posix()):
+                narrow = re.findall(r'max-width:\s*([\d.]+(?:rem|px))\)', uncommented(sheet.read_text()))
+                self.assertTrue(narrow)
+                self.assertEqual(sorted(set(narrow) - {'52rem', '37.5rem'}), [])
+                self.assertNotIn('52.01rem', sheet.read_text())
+
     def test_studio_pages_link_the_kit(self):
         found = []
         for folder in LINKED:
