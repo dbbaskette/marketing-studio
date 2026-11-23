@@ -6,7 +6,7 @@
 // own helpers (open).
 (() => {
   const $ = selector => document.querySelector(selector);
-  let ctx = null, key = null, timer = null, pictures = [], listed = null, pending = null, pictureEpoch = 0, lastBasis = null;
+  let ctx = null, key = null, timer = null, pictures = [], listed = null, pending = null, pictureEpoch = 0, lastBasis = null, waiting = false;
   const words = {brand: 'brand pack', library: 'icon library'};
 
   function el(tag, text, className, attributes = {}) {
@@ -73,7 +73,7 @@
         text.append(el('span', work.name, 'row-title'),
           el('span', `${work.update ? 'Updating the' : 'New'} ${words[work.kind]} ${work.id}${work.task === 'running' ? ', working now' : ''}`, 'quiet'));
         row.append(text, bar(button('Continue', '', () => openWork(work.key)),
-          button('Discard', 'button-quiet', () => discard(work))));
+          button('Discard', 'button-quiet', node => discard(work, node))));
         list.append(row);
       }
       parts.push(card('In progress', list));
@@ -132,8 +132,28 @@
       return row;
     }), 'No icon libraries yet. A brand can use any library kept here.');
   }
-  async function discard(work) {
-    if (!confirm(`Discard the working copy of ${work.name}? Its sources and proposals go; storage stays as it is.`)) return;
+  // A question asked in place after the control's row, as the Document Library and the
+  // shared desk kit ask (Drafting.confirmInPlace, which this page does not load): what will
+  // happen, the action, and Keep it, which has the focus and gives it back to the control.
+  function ask(control, message, action) {
+    return new Promise(resolve => {
+      const row = control.closest('.bar') || control;
+      const box = el('div', '', 'paper callout confirm-in-place');
+      box.dataset.kind = 'yours';
+      const go = el('button', action, 'button button-danger', {type: 'button'}), out = el('button', 'Keep it', 'button button-quiet', {type: 'button'});
+      box.append(el('p', message, '', {role: 'status'}), bar(go, out));
+      const done = answer => { box.remove(); control.hidden = false; if (!answer) control.focus({preventScroll: true}); resolve(answer); };
+      go.addEventListener('click', () => done(true));
+      out.addEventListener('click', () => done(false));
+      box.addEventListener('keydown', event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); done(false); } });
+      row.after(box);
+      control.hidden = true;
+      out.focus({preventScroll: true});
+    });
+  }
+  async function discard(work, control) {
+    const message = `Discard the working copy of ${work.name}? Its sources and proposals go; storage stays as it is.`;
+    if (!await ask(control, message, 'Discard working copy')) return;
     await ctx.api('brand-discard', {key: work.key});
     ctx.inform(`Discarded the working copy of ${work.name}.`);
     await showList();
@@ -175,11 +195,19 @@
     clearTimeout(timer);
     const basis = JSON.stringify({...work, task: null, ready: null});
     if (!savedPart && lastBasis === basis && body().dataset.work === work.key && body().querySelector('.brand-task')) {
-      body().querySelector('.brand-task').replaceWith(taskCard(work));
-      body().querySelector('.brand-save')?.replaceWith(saveCard(work));
+      // Only the task and save cards change: drawn again only when what they say changed,
+      // keeping Show activity open or shut, its scroll and the focus as the person left them.
+      const said = JSON.stringify([work.task, work.ready]);
+      if (body().dataset.said !== said) {
+        body().dataset.said = said;
+        swap(body().querySelector('.brand-task'), taskCard(work));
+        const save = body().querySelector('.brand-save');
+        if (save) swap(save, saveCard(work));
+      }
       if (work.task?.state === 'running') timer = setTimeout(() => refresh(work.key), 1500);
       return;
     }
+    delete body().dataset.said;
     lastBasis = basis;
     forget();
     const scroll = window.scrollY;
@@ -227,8 +255,31 @@
     window.scrollTo(0, scroll);
     if (work.task?.state === 'running') timer = setTimeout(() => refresh(work.key), 1500);
   }
+  // `old` gives way to `next`, which keeps each disclosure open or shut (by its summary), how
+  // far its lists were scrolled, and the focused button (by its action).
+  function swap(old, next) {
+    const named = node => node.querySelector('summary')?.textContent || '';
+    const shut = new Map([...old.querySelectorAll('details')].map(node => [named(node), node.open]));
+    const scrolled = new Map([...old.querySelectorAll('details')].map(node => [named(node), node.querySelector('ol')?.scrollTop || 0]));
+    const active = old.contains(document.activeElement) ? document.activeElement.dataset.action : null;
+    for (const node of next.querySelectorAll('details')) {
+      const name = named(node);
+      if (shut.has(name)) node.open = shut.get(name);
+    }
+    old.replaceWith(next);
+    for (const node of next.querySelectorAll('details')) { const list = node.querySelector('ol'); if (list && scrolled.get(named(node))) list.scrollTop = scrolled.get(named(node)); }
+    if (active) [...next.querySelectorAll('button')].find(node => node.dataset.action === active)?.focus({preventScroll: true});
+  }
+  // A hidden tab asks nothing: the working copy is read again as soon as it is shown.
   async function refresh(which) {
     if (key !== which || !ctx.here()) return;
+    if (document.hidden) {
+      if (waiting) return;
+      waiting = true;
+      const back = () => { if (document.hidden) return; document.removeEventListener('visibilitychange', back); waiting = false; refresh(which); };
+      document.addEventListener('visibilitychange', back);
+      return;
+    }
     try { render(await ctx.api('brand-work', {key: which})); } catch (error) { ctx.problem(error); }
   }
   function taskCard(work) {
@@ -557,7 +608,7 @@
       pending = saved.push || null;
       await showList();
       if (pending && pending.commits) body().prepend(card('Push to the brands repository?', el('p', pushWords(pending)), pushOffer(pending)));
-    }), button('Discard', 'button-quiet', () => discard(work))));
+    }), button('Discard', 'button-quiet', node => discard(work, node))));
     return node;
   }
   function pushWords(push) {

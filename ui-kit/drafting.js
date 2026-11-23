@@ -11,7 +11,7 @@
 'use strict';
 const Drafting = (() => {
   'use strict';
-  const DIFF_LIMIT = 4000, SAVE_WAIT = 1000, POLL = 3000;
+  const DIFF_LIMIT = 4000, SAVE_WAIT = 1000, POLL = 3000, DIFF_WAIT = 150;
   // The selection bar's actions, as studio_core.drafting.prompts.ACTIONS names them.
   const SELECTION = [['rephrase', 'Rephrase'], ['shorten', 'Shorten'], ['expand', 'Expand'], ['fix', 'Fix']];
 
@@ -19,6 +19,93 @@ const Drafting = (() => {
   // (null and undefined left out).
   function make(tag, cls, text) { const node = document.createElement(tag); if (text !== undefined) node.textContent = text; if (cls) node.className = cls; return node; }
   function add(parent, ...children) { parent.append(...children.filter(child => child !== null && child !== undefined)); return parent; }
+
+  // A page in a background tab asks nothing. `shown()` resolves at once while the page is
+  // shown, else as soon as it is shown again, so a polling loop that awaits it before each
+  // request pauses while hidden and resumes promptly, without a second timer.
+  function hidden() { return typeof document === 'object' && document !== null && document.hidden === true; }
+  function shown() {
+    if (!hidden()) return Promise.resolve();
+    return new Promise(resolve => {
+      const back = () => { if (hidden()) return; document.removeEventListener('visibilitychange', back); resolve(); };
+      document.addEventListener('visibilitychange', back);
+    });
+  }
+
+  // Draws `nodes` into `holder` in place of what it held, keeping what the person had there,
+  // for a part a poll draws again: each disclosure left open or shut (matched by its data-key,
+  // else its summary's words, in order), the focused control (by its data-key, else its
+  // place) with its caret, and how far each part was scrolled. Nothing scrolls the page.
+  function redraw(holder, ...nodes) {
+    const kids = node => Array.from(node.children || []);
+    const up = node => node.parentNode || node.parent || null;
+    const tag = node => String(node.tagName || '').toLowerCase();
+    const every = (node, out = []) => { for (const child of kids(node)) { out.push(child); every(child, out); } return out; };
+    const path = node => { const at = []; for (let n = node; n && n !== holder; n = up(n)) { const parent = up(n); if (!parent) return null; at.unshift(kids(parent).indexOf(n)); } return at; };
+    const walk = at => { let n = holder; for (const i of at) { n = n && kids(n)[i]; } return n || null; };
+    const named = details => { if (details.dataset && details.dataset.key) return 'key:' + details.dataset.key; const head = kids(details).find(c => tag(c) === 'summary'); return 'says:' + (head ? head.textContent : ''); };
+    const before = every(holder), disclosures = new Map(), scrolled = [];
+    for (const node of before) {
+      if (tag(node) === 'details') { const name = named(node); if (!disclosures.has(name)) disclosures.set(name, []); disclosures.get(name).push(!!node.open); }
+      if (node.scrollTop > 0) scrolled.push([path(node), tag(node), node.scrollTop]);
+    }
+    const active = typeof document === 'object' && document ? document.activeElement : null;
+    const focus = active && active !== holder && before.includes(active)
+      ? { key: active.dataset && active.dataset.key, at: path(active), tag: tag(active), caret: typeof active.selectionStart === 'number' ? [active.selectionStart, active.selectionEnd, active.selectionDirection || 'none'] : null } : null;
+    const top = holder.scrollTop || 0;
+    holder.replaceChildren(...nodes.filter(node => node !== null && node !== undefined));
+    const after = every(holder), seen = new Map();
+    for (const node of after) if (tag(node) === 'details') {
+      const name = named(node), at = seen.get(name) || 0; seen.set(name, at + 1);
+      const was = (disclosures.get(name) || [])[at];
+      if (was !== undefined && !!node.open !== was) node.open = was;
+    }
+    for (const [at, kind, value] of scrolled) { const node = at && walk(at); if (node && tag(node) === kind) node.scrollTop = value; }
+    if (top) holder.scrollTop = top;
+    if (focus) {
+      const target = (focus.key && after.find(node => node.dataset && node.dataset.key === focus.key)) || (focus.at && walk(focus.at));
+      if (target && tag(target) === focus.tag && !target.disabled && target.focus) {
+        target.focus({ preventScroll: true });
+        if (focus.caret && typeof target.setSelectionRange === 'function') {
+          const end = String(target.value || '').length;
+          try { target.setSelectionRange(Math.min(focus.caret[0], end), Math.min(focus.caret[1], end), focus.caret[2]); } catch (error) { /* a control with no caret */ }
+        }
+      }
+    }
+    return holder;
+  }
+
+  // A question asked in place, beside the control that asked it, instead of a blocking
+  // window.confirm(): what will happen, then the action and a safe way out, which has the
+  // focus, as the Document Library's Remove from library asks. Resolves true once the action
+  // is pressed, false on the way out or Escape. The control that asked is hidden meanwhile
+  // and shown again after; the way out gives it the focus back. The question sits after the
+  // control's `.bar` (or after the control itself), or at the top of `place` when the control
+  // is somewhere a question cannot sit, such as the toolbar.
+  //   await Drafting.confirmInPlace(control, {message, action, keep, danger, place})
+  function confirmInPlace(control, {message = 'Are you sure?', action = 'Confirm', keep = 'Keep it', danger = true, place = null} = {}) {
+    return new Promise(resolve => {
+      const parent = control && (control.parentNode || control.parent);
+      const row = parent && String(parent.className || '').split(' ').includes('bar') ? parent : control;
+      const box = make('div', 'paper callout confirm-in-place'); box.dataset.kind = 'yours'; box.dataset.key = 'confirm-in-place';
+      const said = make('p', '', message); said.setAttribute('role', 'status');
+      const go = make('button', 'button ' + (danger ? 'button-danger' : 'button-filled'), action); go.type = 'button'; go.dataset.key = 'confirm-yes';
+      const out = make('button', 'button button-quiet', keep); out.type = 'button'; out.dataset.key = 'confirm-keep';
+      add(box, said, add(make('div', 'bar'), go, out));
+      const wasHidden = control ? control.hidden : false;
+      const done = answer => {
+        box.remove();
+        if (control) { control.hidden = wasHidden; if (!answer && control.focus) control.focus({ preventScroll: true }); }
+        resolve(answer);
+      };
+      go.addEventListener('click', () => done(true));
+      out.addEventListener('click', () => done(false));
+      box.addEventListener('keydown', event => { if (event.key === 'Escape') { event.preventDefault?.(); event.stopPropagation?.(); done(false); } });
+      if (place) place.prepend(box); else if (row && row.after) row.after(box);
+      if (control) control.hidden = true;
+      out.focus({ preventScroll: true });
+    });
+  }
 
   // Unfinished creation forms belong to private local storage, never a project or a job.
   // Coalesce changes behind one revision-checked write. Large upload bytes are sent only
@@ -132,9 +219,17 @@ const Drafting = (() => {
       discard.addEventListener('click',async()=>{if(!confirming){confirming=true;status.textContent='Discard this unfinished form? Existing projects and captured sources are kept.';discard.textContent='Confirm discard';return;}discard.disabled=true;if(await this.discard())discarded();else{status.textContent=this.problem;discard.disabled=false;}});
       return add(box,add(actions,resumeButton,start,discard),status);
     }
-    async startFresh(){
+    // Start new over a saved form asks first, in place beside `control` (the button that
+    // started it), or at the top of `place` (Drafting.confirmInPlace). A caller that passes no
+    // control is still asked in a window.confirm() until it passes one.
+    async startFresh(control = null, place = null){
       await this.load();
-      if(this.saved&&!confirm('This studio keeps one unfinished form. Discard it and start new? Existing projects and captured sources are kept.'))return false;
+      if(this.saved){
+        const message='This studio keeps one unfinished form. Discard it and start new? Existing projects and captured sources are kept.';
+        const anchor=control&&control.tagName&&(control.parentNode||control.parent)?control:null;
+        const yes=anchor?await confirmInPlace(anchor,{message,action:'Discard and start new',place}):(typeof confirm==='function'?confirm(message):false);
+        if(!yes)return false;
+      }
       return !this.saved||this.discard();
     }
     // The guided step row of every studio's start, as the items of an `ol.intake-progress
@@ -217,8 +312,10 @@ const Drafting = (() => {
         if(!confirming && !draft.starting)this.queue(draft);
       });
       form.append(progress,body,status,confirmation,add(make('div','bar create-foot'),back,go,keep,discard));
-      for(const control of form.querySelectorAll('button, summary'))control.addEventListener('click',() => {
-        if(['cancel','continue','intake-discard'].includes(control.dataset.key))return;
+      // A press that changes the form without an input or change event is saved at once.
+      // Back saves through show(), and opening a summary changes nothing that is kept.
+      for(const control of form.querySelectorAll('button'))control.addEventListener('click',() => {
+        if(['cancel','continue','intake-discard','intake-back'].includes(control.dataset.key))return;
         if(!confirming && !draft.starting)this.keep(draft);
       });
       show(current(),false);
@@ -501,14 +598,14 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
             const differences=[];for(let i=0;i<Math.max(left.length,right.length);i++)if(JSON.stringify(left[i])!==JSON.stringify(right[i]))differences.push(String(i+1));
             recovery.append(make('p','', 'Different slides: '+(differences.join(', ')||'none')+'. Feedback '+((persistence.recovery.note||'')===(remote.note||'')?'matches.':'differs.')+(remote.basis&&remote.basis!==persistence.basis?' The saved version belongs to an earlier outline.':'')));
             const latest=make('textarea','input');latest.readOnly=true;latest.rows=6;latest.setAttribute('aria-label','Latest saved corrections');latest.value=JSON.stringify(remote,null,2);recovery.append(latest);
-            const use=make('button','button','Use latest corrections');use.type='button';use.addEventListener('click',()=>{if(!confirm('Load the latest saved corrections into this review? Your local recovery copy stays below. No corrections will be overwritten on the server.'))return;persistence.useLatest();hydrate();problem.textContent='';show();});recovery.append(use);
+            const use=make('button','button','Use latest corrections');use.type='button';use.addEventListener('click',async()=>{if(!await confirmInPlace(use,{message:'Load the latest saved corrections into this review? Your local recovery copy stays below. No corrections will be overwritten on the server.',action:'Use latest corrections',keep:'Keep mine',danger:false}))return;persistence.useLatest();hydrate();problem.textContent='';show();});recovery.append(use);
           }
         }
         if(persistence.conflict){const value=persistence.conflict;const content=make('textarea','input');content.readOnly=true;content.rows=6;content.setAttribute('aria-label','Earlier saved corrections');content.value=(value.edits||[]).map((slide,i)=>(i+1)+'. '+slide.title+'\n'+(slide.points||[]).map(p=>typeof p==='string'?p:[p.label,p.text].filter(Boolean).join(': ')).join('\n')+'\n'+(slide.notes||'')).join('\n\n')+'\nFeedback: '+(value.note||'');earlier.replaceChildren(make('p','','The outline changed after these corrections were saved. Copy the corrections you need, then discard this earlier draft to review the current outline.'),content);}
       };
       persistence.notify=show;
       save.addEventListener('click',async()=>{remember();await persistence.keep(persistence.state);problem.textContent='';show();});
-      discard.addEventListener('click',async()=>{if(!confirm('Discard these saved corrections and use the current outline? The outline and approved files are kept.'))return;if(await persistence.discardReview()){hydrate();problem.textContent='';}show();});
+      discard.addEventListener('click',async()=>{if(!await confirmInPlace(discard,{message:'Discard these saved corrections and use the current outline? The outline and approved files are kept.',action:'Discard corrections'}))return;if(await persistence.discardReview()){hydrate();problem.textContent='';}show();});
       if(persistence.restored){hydrate();show();}
       else {off(true);persistence.load().then(()=>{if(!box.isConnected)return;hydrate();off(false);show();}).catch(error=>{problem.textContent=error.message;off(false);});}
     }
@@ -811,16 +908,20 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       return { stop, above: problem ? 'Stopped' : 'Writing on its own', lede, stopped: problem ? a.progress.stopped(held) : null, card: a.ui.card('Progress', steps, make('p', 'quiet desk-clock', k.clock(start))) };
     };
     // Followed until the draft (or the outline) opens, then the studio's ready line.
+    // A hidden page asks nothing until it is shown again. A failed read is said once and
+    // asked again later each time (up to eight times as long); the first answer resets it.
     k.followStart = held => {
       if (held.startWatching) return; held.startWatching = true;
+      const failures = held.startFailures || 0;
       setTimeout(async () => {
+        await shown();
         held.startWatching = false; if (!a.current(held)) return;
         try {
-          const view = await a.api(a.routes.view + '?id=' + encodeURIComponent(held.id)); if (!a.current(held)) return; held.view = view;
+          const view = await a.api(a.routes.view + '?id=' + encodeURIComponent(held.id)); held.startFailures = 0; if (!a.current(held)) return; held.view = view;
           if (k.starting(view)) return a.progress.show(held);
           a.hooks.started(held, view); a.hooks.render(held); k.watch(held); a.ui.toast(a.words().ready(held.tab));
-        } catch (error) { a.ui.notice(error.message, true); k.followStart(held); }
-      }, POLL);
+        } catch (error) { held.startFailures = failures + 1; if (!failures) a.ui.notice(error.message, true); k.followStart(held); }
+      }, POLL * Math.min(8, 2 ** failures));
     };
 
     // Finishing: an optional side panel of tools that propose. Each proposal is previewed
@@ -966,7 +1067,12 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       const editable = a.canEdit(held) && !held.view.working;
       if (editing !== undefined) {
         const box = make('textarea', 'input desk-edit'); box.id = 'desk-edit-' + item.id; box.rows = Math.min(12, Math.max(3, Math.ceil(editing.length / 60))); box.value = editing; box.setAttribute('aria-label', 'Your wording');
-        box.addEventListener('input', () => { f.editing[item.id] = box.value; const next = k.sides(item.before, box.value); if (sides) sides.replaceWith(next); sides = next; });
+        // The comparison follows the typing once it pauses, so a key never waits for it.
+        let compare = null;
+        box.addEventListener('input', () => {
+          f.editing[item.id] = box.value; clearTimeout(compare);
+          compare = setTimeout(() => { compare = null; const next = k.sides(item.before, f.editing[item.id] ?? box.value); if (sides) sides.replaceWith(next); sides = next; }, DIFF_WAIT);
+        });
         const use = a.ui.button('Apply this', control => k.apply(held, set, [{ id: item.id, after: f.editing[item.id] }], control), 'filled'); use.disabled = !editable;
         card.append(box, add(make('div', 'bar'), use, a.ui.button('Cancel', () => { delete f.editing[item.id]; k.panelShow(held); })));
         return card;
@@ -1090,6 +1196,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     return k;
   }
 
-  return { DIFF_LIMIT, SAVE_WAIT, POLL, SELECTION, make, add, words, diffWords, age, kit, slideContent, ReviewDraft, Intake, trapSheet, cultTabs, cultExpandable };
+  return { DIFF_LIMIT, SAVE_WAIT, POLL, DIFF_WAIT, SELECTION, make, add, hidden, shown, redraw, confirmInPlace, words, diffWords, age, kit, slideContent, ReviewDraft, Intake, trapSheet, cultTabs, cultExpandable };
 })();
 if (typeof module === 'object' && module.exports) module.exports = Drafting;

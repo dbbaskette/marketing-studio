@@ -87,6 +87,17 @@ class PollingTests(unittest.TestCase):
                             capture_output=True,text=True,timeout=30)
         self.assertEqual(done.returncode,0,done.stderr or done.stdout)
 
+    def test_pages_ask_nothing_while_hidden_and_keep_what_is_open(self):
+        # Infographic Studio's research sheet and activity recovery, and Marketing Studio's
+        # Brands working copy, over a disposable stand-in page.
+        import shutil
+        import subprocess
+        if not shutil.which('node'):
+            self.skipTest('Node.js required for the page polling check')
+        done=subprocess.run(['node',str(Path(__file__).with_name('page_polling_check.js'))],
+                            capture_output=True,text=True,timeout=30)
+        self.assertEqual(done.returncode,0,done.stderr or done.stdout)
+
     def test_overlapping_roots_do_not_cancel_metadata_changes(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp);settings=root/'settings.json';settings.write_text('{}')

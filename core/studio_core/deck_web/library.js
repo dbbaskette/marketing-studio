@@ -112,12 +112,20 @@
       try {
         const sent = { filters: this.sent(), offset: this.offset, limit: PAGE };
         if (this.showHidden) sent.hidden = true;
+        // The first load asks the server to apply this studio's remembered filters itself, so
+        // opening the library is one fetch. A server that says which filters it applied
+        // (`applied`) answers with the filtered page; one that does not is asked again.
+        if (this.first) sent.remembered = true;
         const answer = await this.a.post('library', sent);
         if (turn !== this.turn) return;           // a newer load answers instead
         if (this.first && answer.remembered && Object.keys(answer.remembered).length) {
           this.first = false;
-          Object.assign(this.filters, answer.remembered);    // a filter, never a selection
-          return this.load();
+          if (answer.applied && typeof answer.applied === 'object') {
+            Object.assign(this.filters, answer.applied);      // a filter, never a selection
+          } else {
+            Object.assign(this.filters, answer.remembered);    // a filter, never a selection
+            return this.load();
+          }
         }
         this.first = false;
         this.answer = answer;
@@ -210,9 +218,21 @@
       await this.load();
     }
 
-    tick(row, on) {
-      if (on) this.ticked.set(row.id, { id: row.id, revision: row.revision, title: row.title, role: (this.a.roles || [[null]])[0][0] });
+    // One row's tick, without drawing: Select all on this page marks every row, then draws once.
+    mark(row, on) {
+      if (on) { if (!this.ticked.has(row.id)) this.ticked.set(row.id, { id: row.id, revision: row.revision, title: row.title, role: (this.a.roles || [[null]])[0][0] }); }
       else this.ticked.delete(row.id);
+    }
+
+    tick(row, on) {
+      this.mark(row, on);
+      this.onChange();
+      this.render();
+    }
+
+    // Select all on this page (or none of it): one change and one drawing for the whole page.
+    tickAll(rows, on) {
+      for (const row of rows) this.mark(row, on);
       this.onChange();
       this.render();
     }
@@ -454,7 +474,7 @@
         box.checked = shown.length > 0 && some === shown.length;
         box.indeterminate = some > 0 && some < shown.length;
         box.disabled = !shown.length;
-        box.addEventListener('change', () => { for (const row of shown) { if (box.checked) { if (!this.ticked.has(row.id)) this.tick(row, true); } else this.ticked.delete(row.id); } this.onChange(); this.render(); });
+        box.addEventListener('change', () => this.tickAll(shown, box.checked));
         heading.append(add(tick, box, make('span', '', 'Select all on this page')));
       }
       parts.push(heading);
@@ -479,7 +499,7 @@
         parts[parts.length - 1].querySelector('[data-key="library-next"]').disabled = end >= total;
       }
       this.node.replaceChildren(...parts);
-      if (focused) { const again = this.node.querySelector('[data-key="' + focused + '"]'); if (again) again.focus(); }
+      if (focused) { const again = this.node.querySelector('[data-key="' + focused + '"]'); if (again) again.focus({ preventScroll: true }); }
     }
 
     shownIds() { return ((this.answer && this.answer.items) || []).map((row) => row.id); }

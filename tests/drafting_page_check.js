@@ -30,6 +30,7 @@ class Element {
   after(...nodes) { this.place(nodes, 1); }
   place(nodes, offset) { const parent = this.parent; if (!parent) return; for (const node of nodes) if (node.parent) node.remove(); parent.children.splice(parent.children.indexOf(this) + offset, 0, ...nodes); for (const node of nodes) node.parent = parent; }
   contains(node) { return node === this || all(this).includes(node); }
+  get parentNode() { return this.parent; }
   setAttribute(key, value) { this.attributes[key] = String(value); }
   getAttribute(key) { return key in this.attributes ? this.attributes[key] : null; }
   removeAttribute(key) { delete this.attributes[key]; }
@@ -53,7 +54,10 @@ function matches(node, selector) {
 const same = (actual, expected, message) => assert.deepEqual(JSON.parse(JSON.stringify(actual)), expected, message);
 const timers = new Map();
 const document = {
-  activeElement: null,
+  activeElement: null, hidden: false, seen: {},
+  addEventListener(kind, fn) { (this.seen[kind] ||= []).push(fn); },
+  removeEventListener(kind, fn) { this.seen[kind] = (this.seen[kind] || []).filter(f => f !== fn); },
+  show() { this.hidden = false; for (const fn of [...(this.seen.visibilitychange || [])]) fn(); },
   createElement: tag => new Element(tag),
   createTextNode: text => { const node = new Element('#text'); node.textContent = text; return node; },
 };
@@ -74,6 +78,24 @@ async function settle() { for (let i = 0; i < 20; i++) await Promise.resolve(); 
 const texts = node => all(node).map(n => n.textContent);
 const find = (node, test) => all(node).find(test);
 const button = (node, label) => find(node, n => n.tagName === 'button' && n.textContent === label);
+// A press that asks in place (Drafting.confirmInPlace): press, then answer the question that
+// appears beside the control, `yes` for its action and otherwise its way out.
+async function answer(control, yes = true) {
+  const pressing = control.fire('click'); await settle();
+  let top = control; while (top.parent) top = top.parent;
+  const asked = find(top, n => n.dataset.key === 'confirm-in-place');
+  assert.ok(asked, 'the question is asked in place');
+  assert.equal(asked.dataset.kind, 'yours');
+  assert.equal(asked.querySelector('p').getAttribute('role'), 'status');
+  assert.equal(control.hidden, true, 'the control that asked waits behind its question');
+  const keep = find(asked, n => n.dataset.key === 'confirm-keep');
+  assert.equal(context.document.activeElement, keep, 'the safe way out has the focus');
+  await find(asked, n => n.dataset.key === (yes ? 'confirm-yes' : 'confirm-keep')).fire('click');
+  await pressing; await settle();
+  assert.ok(!find(top, n => n.dataset.key === 'confirm-in-place'), 'the question goes once answered');
+  assert.equal(control.hidden, false);
+  if (!yes) assert.equal(context.document.activeElement, control, 'the way out returns the focus');
+}
 
 // A studio that is not Blog Studio: its own controls, requests, words and tools.
 function studio(answers = {}) {
@@ -149,9 +171,35 @@ const groups = {
     await button('Discard draft').fire('click');assert(held.draft);assert(button('Confirm discard'));
     held={...held,revision:2};await button('Confirm discard').fire('click');assert.match(card.textContent,/Newer draft/);assert.equal(discarded,0);assert(held.draft);
     store.revision=2;await button('Confirm discard').fire('click');assert.equal(discarded,1);assert.equal(store.resumeCard({}),null);
+    // Start new over a saved form asks in place beside the control that started it.
+    context.confirm=()=>{throw Error('A blocking window.confirm() was used.');};
+    held={revision:3,draft:{title:'Kept title',step:0}};
+    const again=new Drafting.Intake(async sent=>{if(sent.action==='read')return held;held={revision:held.revision+1,draft:null};return held;});again.status=()=>{};
+    const wrap=Drafting.make('div','card'),bar=Drafting.make('div','bar'),startNew=Drafting.make('button','button','Start new');bar.append(startNew);wrap.append(bar);
+    let result=null;startNew.addEventListener('click',async()=>{result=await again.startFresh(startNew);});
+    const pressing=startNew.fire('click');await settle();
+    assert.equal(wrap.children[1].dataset.key,'confirm-in-place','the question follows the control\'s row');
+    assert.match(wrap.children[1].textContent,/keeps one unfinished form/);
+    await find(wrap,n=>n.dataset.key==='confirm-keep').fire('click');await pressing;
+    assert.equal(result,false);assert(held.draft,'Keep it keeps the saved form');
+    await answer(startNew);assert.equal(result,true);assert.equal(held.draft,null,'Discard and start new discards it');
+  },
+  // Intake.pages saves a press once: Back saves through its own step change, a summary that
+  // only opens saves nothing, and any other press in a step saves at once.
+  async intakePages(){
+    const store=new Drafting.Intake(async sent=>sent.action==='read'?{revision:1,draft:null}:{revision:2,draft:sent.patch});store.status=()=>{};
+    await store.load();
+    let kept=0;const keep=store.keep.bind(store);store.keep=(...args)=>{kept++;return keep(...args);};
+    const step=(name)=>{const node=Drafting.make('section','create-step');const more=Drafting.make('details');more.append(Drafting.make('summary','','More'));const pick=Drafting.make('button','button','Choose');pick.type='button';node.append(Drafting.make('h3','sheet-part',name),more,pick);return node;};
+    const steps=[step('One'),step('Two')],form=Drafting.make('form');
+    store.pages(form,{draft:{step:1,title:'Synthetic'},steps,names:['One','Two'],validate:()=>true,start:()=>{},close:()=>{},discarded:()=>{}});
+    kept=0;
+    await form.querySelector('summary').fire('click');assert.equal(kept,0,'opening a summary saves nothing');
+    await button(steps[1],'Choose').fire('click');assert.equal(kept,1,'a press in a step saves once');
+    kept=0;await button(form,'Back').fire('click');assert.equal(kept,1,'Back saves once');
   },
   async correctionRecovery() {
-    context.confirm=()=>true;
+    context.confirm=()=>{throw Error('A blocking window.confirm() was used.');};
     const original=Array.from({length:30},(_,i)=>({title:'Slide '+(i+1),points:['Point'],notes:'Notes'}));
     let held={revision:1,draft:{basis:'outline',edits:null,note:''}},failRead=false,failSave=false;
     const calls=[];
@@ -180,12 +228,16 @@ const groups = {
     page=panel();assert.equal(JSON.parse(field('All local corrections').value).edits[1].title,'Local second');
     failRead=true;await button('Compare latest corrections').fire('click');assert.match(page.textContent,/Read unavailable/);assert(draft.stale);
     failRead=false;await button('Compare latest corrections').fire('click');assert.match(page.textContent,/Different slides: 1, 2, 30/);assert.match(page.textContent,/Feedback differs/);
-    const before=JSON.stringify(held);await button('Use latest corrections').fire('click');assert.equal(JSON.stringify(held),before,'loading latest performs no writes');assert(!draft.stale);assert.equal(draft.state.edits[29].title,'Remote thirtieth');assert.equal(JSON.parse(field('All local corrections').value).edits[0].title,'Local first');
+    const before=JSON.stringify(held);await answer(button('Use latest corrections'),false);assert(draft.stale,'Keep mine changes nothing');await answer(button('Use latest corrections'));assert.equal(JSON.stringify(held),before,'loading latest performs no writes');assert(!draft.stale);assert.equal(draft.state.edits[29].title,'Remote thirtieth');assert.equal(JSON.parse(field('All local corrections').value).edits[0].title,'Local first');
     held={...held,revision:3};title().value='Another correction';await title().fire('input');await button('Save corrections').fire('click');assert(draft.stale,'new remote race is refused again');
-    await button('Compare latest corrections').fire('click');await button('Use latest corrections').fire('click');
+    await button('Compare latest corrections').fire('click');await answer(button('Use latest corrections'));
     failSave=true;title().value='Keep on error';await title().fire('input');await button('Save corrections').fire('click');assert.match(page.textContent,/Disk unavailable/);assert.equal(draft.state.edits[0].title,'Keep on error');
     failSave=false;await button('Save corrections').fire('click');assert.equal(held.draft.edits[0].title,'Keep on error');assert.equal(decisions,0);
     const reloaded=new Drafting.ReviewDraft(async()=>JSON.parse(JSON.stringify(held)),'outline');await reloaded.load();assert.equal(reloaded.state.edits[0].title,'Keep on error');
+    // Discard corrections asks in place: Keep it keeps them; Discard corrections discards.
+    const holder=Drafting.make('div','card');holder.append(page);
+    await answer(button('Discard corrections'),false);assert.equal(held.draft.edits[0].title,'Keep on error','Keep it discards nothing');
+    await answer(button('Discard corrections'));assert.equal(held.draft,null,'the saved corrections are discarded');
   },
   async slideContent() {
     const decisions = [], notes = [];
@@ -284,8 +336,10 @@ const groups = {
     // A second edit while a save is under way is sent after it, against the revision it saw.
     let release; answer = () => new Promise(done => { release = () => done(view({ revision: 5 })); });
     said.requests.length = 0;
-    kit.typed(held, 'opening', 'One.'); await tick();
-    kit.typed(held, 'opening', 'Two.'); await tick();
+    // The save waits for `release`, so its timers run without being waited for.
+    const start = async () => { const due = [...timers.entries()]; for (const [id] of due) timers.delete(id); for (const [, timer] of due) timer.fn(); await settle(); };
+    kit.typed(held, 'opening', 'One.'); await start();
+    kit.typed(held, 'opening', 'Two.'); await start();
     assert.equal(said.requests.length, 1);
     answer = () => view({ revision: 6 });
     release(); await settle(); await settle();
@@ -551,10 +605,30 @@ Object.assign(groups, {
     assert.ok(button(stopped.stopped, 'Try again'));
     same(stopped.card.querySelector('ol').children.map(row => row.children[0].dataset.state), ['done', 'late']);
     assert.equal(stopped.card.querySelector('p.row-says'), null);
-    // Followed until the piece opens, then the studio's ready line.
+    // A hidden page asks nothing while it follows a start, and asks at once when shown again.
+    const asked = () => said.requests.filter(r => r.route.startsWith('piece?')).length;
+    let refusing = 2;
+    a.api = (base => async (route, data) => { if (route.startsWith('piece?') && refusing > 0) { refusing--; said.requests.push({ route, data }); throw Error('Offline'); } return base(route, data); })(a.api);
+    document.hidden = true;
     kit.followStart(held); kit.followStart(held);
     same(waiting(), [3000]);
+    // Its timer runs, then waits to be shown: run it without waiting for it.
+    for (const [id, timer] of [...timers.entries()]) { timers.delete(id); timer.fn(); }
+    await settle();
+    assert.equal(asked(), 0, 'no request while the page is hidden');
+    same(waiting(), [], 'and no second timer while it waits');
+    kit.followStart(held); same(waiting(), [], 'a second follow while it waits starts nothing');
+    document.show(); await settle();
+    assert.equal(asked(), 1, 'shown again, it asks at once');
+    // A failure is said once, then asked again later each time; the first answer resets it.
+    same(said.notices.filter(n => n[0] === 'Offline'), [['Offline', true]]);
+    same(waiting(), [6000]);
+    await tick(); assert.equal(asked(), 2);
+    same(said.notices.filter(n => n[0] === 'Offline').length, 1, 'the same failure is not said again');
+    same(waiting(), [12000]);
+    // Followed until the piece opens, then the studio's ready line.
     await tick();
+    assert.equal(held.startFailures, 0, 'an answer resets the wait');
     same(said.started, ['plan']); assert.equal(said.renders, 1);
     same(said.toasts, ['The plan is ready.']);
   },
@@ -665,7 +739,15 @@ Object.assign(groups, {
     await button(held.panel.querySelectorAll('section.desk-proposal')[0], 'Edit').fire('click');
     const box = held.panel.querySelector('textarea.desk-edit');
     assert.equal(box.id, 'desk-edit-p1'); assert.equal(box.value, 'one 2'); assert.equal(box.getAttribute('aria-label'), 'Your wording');
-    box.value = 'one, two'; await box.fire('input');
+    // The comparison waits for the typing to pause: one comparison for a burst of keys.
+    const sidesBefore = held.panel.querySelector('.desk-sides');
+    for (const typed of ['one,', 'one, t', 'one, two']) { box.value = typed; await box.fire('input'); }
+    assert.equal(held.panel.querySelector('.desk-sides'), sidesBefore, 'no comparison on each key');
+    same(waiting().filter(ms => ms === Drafting.DIFF_WAIT), [150], 'one comparison waits');
+    const due = [...timers.entries()].filter(([, timer]) => timer.ms === Drafting.DIFF_WAIT);
+    for (const [id, timer] of due) { timers.delete(id); timer.fn(); }
+    assert.notEqual(held.panel.querySelector('.desk-sides'), sidesBefore, 'the comparison follows the pause');
+    assert.ok(texts(held.panel.querySelector('.desk-sides')).some(text => text.includes('two')));
     await button(held.panel, 'Apply this').fire('click'); await settle();
     same(said.requests.at(-1).data.items, [{ id: 'p1', after: 'one, two' }]);
     held.view.finishing = { humanize: set }; kit.panelShow(held);
@@ -777,8 +859,12 @@ function desk(kit, extra = {}) {
   return { id: 'p1', view: view(), pending: {}, session: 'a'.repeat(16), status, ...extra };
 }
 
+// A group left waiting on a promise that never settles fails rather than passing silently.
+let finished = false;
+process.on('exit', code => { if (!finished && code === 0) { console.error('The group did not finish.'); process.exitCode = 1; } });
 (async () => {
   const name = process.argv[2];
   if (!groups[name]) { console.error('Unknown group: ' + name); process.exit(2); }
   await groups[name]();
+  finished = true;
 })().catch(error => { console.error(error && error.stack || error); process.exit(1); });

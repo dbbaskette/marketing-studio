@@ -21,6 +21,9 @@ class DraftingPageTests(unittest.TestCase):
     def test_unfinished_intake_discovery(self):
         self.group('intakeDiscovery')
 
+    def test_intake_pages_save_a_press_once(self):
+        self.group('intakePages')
+
     def test_slide_correction_conflict_recovery(self):
         self.group('correctionRecovery')
 
