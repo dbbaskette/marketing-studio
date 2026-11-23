@@ -14,7 +14,8 @@ What a caller needs to know
 
 - `locations` lists where a companion may be installed: the folder its variable names,
   when that is set, and nothing else; otherwise the folder its own installer uses and each
-  assistant's skills folder. With no name, every folder in those places is listed, which
+  assistant's skills folder. With no name, every folder in the places a brand skill is
+  installed is listed (studio_core.brand_skills, which adds the Codex skills folder), which
   is how a brand skill, whose name is not known, is looked for. `home` stands in for the
   person's home folder.
 - `find_runtime` is the first of those places that holds the script, with links followed
@@ -85,6 +86,10 @@ def locations(variable: str, name: str | None = None, title: str | None = None,
     override = os.environ.get(variable)
     if override:
         return [Path(override).expanduser()]
+    if name is None:
+        # A brand skill, whose name is not known: looked for where every studio looks.
+        from studio_core import brand_skills
+        return brand_skills.installed(home)
 
     def inside(folder: Path, named: str | None) -> list[Path]:
         if named:

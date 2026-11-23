@@ -25,7 +25,9 @@ What a caller needs to know
   A warning is not a refusal; the caller shows it.
 - The skill's command is told the harness-slides and harness-research this runner uses, in
   HARNESS_SLIDES_ROOT and HARNESS_RESEARCH_ROOT, as harness-slides tells a brand adapter to
-  be told, so that the skill draws with the same copy wherever it was found.
+  be told, so that the skill draws with the same copy wherever it was found. It is told the
+  brands folder the `brand.brands` shared setting names in HARNESS_BRAND_DATA.
+- A brand skill is looked for where every studio looks (studio_core.brand_skills).
 - When the skill says no, Refused is raised: a WorkspaceError that carries its lines.
 - Only `guidance` start uses the network: the brand fetches the slides tool's public
   guidance, as its own handoff says. Nothing a brand skill prints is ever run.
@@ -171,9 +173,12 @@ ROOTS = {'HARNESS_SLIDES_ROOT': 'slides', 'HARNESS_RESEARCH_ROOT': 'research'}
 def told() -> dict:
     """This process's environment, with the harness-slides and harness-research this
     runner uses named the way harness-slides tells a brand adapter to find them, unless
-    they are named already. A companion not found is not named."""
+    they are named already. A companion not found is not named. HARNESS_BRAND_DATA names
+    the brands folder of the `brand.brands` shared setting, when it is there."""
     from runner import research, slides   # the companions; neither needs a brand skill
-    env = dict(os.environ)
+    from studio_core import brand_skills   # bound parts import their own
+    # The brands the shared settings name (`brand.brands`), not a folder recorded earlier.
+    env = brand_skills.environment()
     for name, module in ROOTS.items():
         if env.get(name):
             continue

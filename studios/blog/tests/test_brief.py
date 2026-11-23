@@ -250,6 +250,86 @@ class ReadTests(unittest.TestCase):
         self.assertIn('Who it is for', failed['Nothing internal'])
 
 
+class RuntimeTests(unittest.TestCase):
+    """Harness Brand is found where every studio looks for a brand skill (#505)."""
+
+    def setUp(self):
+        import tempfile
+        from pathlib import Path
+
+        self.temp = tempfile.TemporaryDirectory(prefix='blog-brief-runtime-')
+        self.addCleanup(self.temp.cleanup)
+        self.base = Path(self.temp.name).resolve()
+        self.home = self.base / 'home'
+        self.config = self.base / 'studios-config.json'
+        environment = patch.dict(
+            os.environ,
+            {
+                'HOME': str(self.home),
+                'STUDIOS_CONFIG': str(self.config),
+                'BRAND_SKILL_RUNTIME': '',
+                'HARNESS_BRAND_RUNTIME': '',
+            },
+        )
+        environment.start()
+        self.addCleanup(environment.stop)
+
+    def harness(self, folder):
+        (folder / 'rebrand/scripts').mkdir(parents=True)
+        (folder / 'rebrand/scripts/brand.py').write_text("options = ['--layout']\n")
+        return folder
+
+    def shared(self, **brand):
+        self.config.write_text(json.dumps({'schema': 1, 'brand': brand}))
+
+    def test_brand_skill_runtime_comes_before_the_older_variable(self):
+        first, older = self.harness(self.base / 'first'), self.harness(self.base / 'older')
+        with patch.dict(
+            os.environ, {'BRAND_SKILL_RUNTIME': str(first), 'HARNESS_BRAND_RUNTIME': str(older)}
+        ):
+            self.assertEqual(brief.runtime(), first)
+        with patch.dict(os.environ, {'HARNESS_BRAND_RUNTIME': str(older)}):
+            self.assertEqual(brief.runtime(), older)
+        # One that holds no Harness Brand leaves the older variable to answer.
+        with patch.dict(
+            os.environ,
+            {
+                'BRAND_SKILL_RUNTIME': str(self.base / 'nowhere'),
+                'HARNESS_BRAND_RUNTIME': str(older),
+            },
+        ):
+            self.assertEqual(brief.runtime(), older)
+
+    def test_the_chosen_brand_skill_comes_before_the_usual_places(self):
+        usual = self.harness(self.home / '.agents/skills/harness-brand')
+        chosen = self.harness(self.base / 'chosen-harness-brand')
+        self.assertEqual(brief.runtime(), usual)
+        self.shared(skill=str(chosen))
+        self.assertEqual(brief.runtime(), chosen)
+
+    def test_codex_and_cursor_skills_folders_are_looked_in(self):
+        for assistant in ('.codex', '.cursor'):
+            folder = self.harness(self.home / assistant / 'skills/harness-brand')
+            self.assertEqual(brief.runtime(), folder)
+            import shutil
+
+            shutil.rmtree(folder)
+        with self.assertRaisesRegex(ValueError, 'Harness Brand is not installed'):
+            brief.runtime()
+
+    def test_the_brands_repository_setting_is_told_to_harness_brand(self):
+        brands = self.base / 'brands'
+        brands.mkdir()
+        folder = self.harness(self.base / 'harness-brand')
+        self.shared(brands=str(brands))
+        with patch.object(brief.subprocess, 'run') as ran:
+            brief._run(folder, ['brand.py'], 'acme')
+        env = ran.call_args.kwargs['env']
+        self.assertEqual(
+            (env['HARNESS_BRAND_DATA'], env['HARNESS_REBRAND_BRAND']), (str(brands), 'acme')
+        )
+
+
 class MakeTests(BriefCase):
     def test_the_brief_is_laid_out_with_library_icons_and_kept_with_the_blog(self):
         ident = self.written()

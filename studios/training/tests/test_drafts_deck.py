@@ -1980,6 +1980,45 @@ class RebrandSkillTests(unittest.TestCase):
                 rebrand.run(found[1], 'source', 'Name', home_folder / 'run')
             (Path(found[1]['path']) / '.venv').mkdir()
             done = mock.Mock(stdout='{"status": "branded", "url": "https://example.invalid/d"}', stderr='')
-            result = rebrand.run(found[1], 'source', 'Name', home_folder / 'run', execute=lambda command: done)
+            ran = []
+            result = rebrand.run(found[1], 'source', 'Name', home_folder / 'run',
+                                 execute=lambda command: ran.append(command) or done)
             self.assertEqual(rebrand.says(found[1], result),
                              {'state': 'done', 'url': 'https://example.invalid/d', 'exceptions': False})
+            # It runs with the Python its own setup made, never this studio's (#505).
+            self.assertEqual(ran[0][0], str(Path(found[1]['path']) / '.venv/bin/python3'))
+
+    def test_skills_are_found_where_every_studio_looks_for_a_brand_skill(self):
+        import tempfile
+        from runner import rebrand
+        with tempfile.TemporaryDirectory() as folder:
+            home_folder = Path(folder)
+            for place in ('.cursor/skills/cursor-brand', '.codex/skills/codex-brand',
+                          '.local/share/managed-brand/current', '.agents/skills/agents-brand'):
+                (home_folder / place / 'scripts').mkdir(parents=True)
+                (home_folder / place / 'scripts' / 'brand.py').write_text('')
+            found = rebrand.skills(home_folder)
+            self.assertEqual({one['id']: one['path'] for one in found}, {
+                'agents-brand': str(home_folder / '.agents/skills/agents-brand'),
+                'codex-brand': str(home_folder / '.codex/skills/codex-brand'),
+                'cursor-brand': str(home_folder / '.cursor/skills/cursor-brand'),
+                'managed-brand': str(home_folder / '.local/share/managed-brand/current')})
+
+    def test_the_brands_repository_setting_is_told_to_the_rebranding_skill(self):
+        import os
+        import subprocess
+        import tempfile
+        from runner import rebrand
+        with tempfile.TemporaryDirectory() as folder:
+            base = Path(folder)
+            skill = base / 'skills/example-brand'
+            (skill / '.venv').mkdir(parents=True)
+            (base / 'brands').mkdir()
+            config = base / 'studios-config.json'
+            config.write_text(json.dumps({'schema': 1, 'brand': {'brands': str(base / 'brands')}}))
+            done = subprocess.CompletedProcess([], 0, '{"status": "branded", "url": "u"}', '')
+            with mock.patch.dict(os.environ, {'STUDIOS_CONFIG': str(config)}), \
+                    mock.patch.object(rebrand.subprocess, 'run', return_value=done) as ran:
+                rebrand.run({'id': 'example-brand', 'name': 'Example', 'path': str(skill)},
+                            'source', 'Name', base / 'run')
+            self.assertEqual(ran.call_args.kwargs['env']['HARNESS_BRAND_DATA'], str(base / 'brands'))
