@@ -49,6 +49,16 @@ const resumeBlogId = new URLSearchParams(location.hash.slice(1)).get('resume');
 const token = location.hash.slice(1).split('&')[0] || sessionStorage.getItem('blog-studio-session') || '';
 // The shell kit saves the appearance through this page's own key.
 if(typeof StudioShell!=='undefined')StudioShell.connect({header:'X-Blog-Studio-Token',token});
+// Search and jump finds each blog the Blogs screen lists by its name and opens it as its card
+// there does (runner.js reads the list). New blog is there while this page may edit.
+function blogCommands(){
+  if(typeof studio==='undefined')return [];
+  const said=found=>{const words=sWords(found);return typeof words==='string'?words:'';};
+  return [...(studio.listing||[]).map(found=>({title:found.title||'Untitled blog',group:'Blogs',hint:said(found),keywords:'blog post draft work',run:sReview(found)})),
+    ...(studio.ordinary||[]).map(found=>({title:found.title||'Untitled blog',group:'Blogs',hint:found.author||'Saved draft',keywords:'blog post draft work',run:()=>found.mode==='interview'?sInterview(found.id):sRoute('editor',found.id)})),
+    ...(access.actions.edit?[{title:'New blog',group:'Start',keywords:'create start write post',run:()=>sDeskBegin({step:0})}]:[])];
+}
+if(typeof StudioShell!=='undefined')StudioShell.commands(blogCommands);
 // The port the server names belongs to the Marketing Studio that started it, so it is preferred
 // to one kept from an earlier session.
 const suite = suiteHome(location.hash, location) || rememberedSuiteHome(location) || suitePort(document.body?.dataset?.suitePort, location)

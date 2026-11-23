@@ -29,8 +29,10 @@ These rules put each screen in the order a person works. Every studio follows th
 | Sheets | Center creation sheets over a dimmed backdrop. Keep forms opaque with consistent rounded edges. Creation uses numbered pages with one current step, Back/Next, and a final Start. The footer stays outside the scrolling form body with one filled action, Save and close, and explicit confirmed discard. Nested sources return focus to their opener with choices kept. |
 | Spacing | Cards and sections `1.1rem` apart; a step or field group `0.6rem` inside; one heading level per card (`.card-title`), `.sheet-part` for a section inside a sheet. |
 | Long forms and editors | Use named sections or task tabs when a person works on one part at a time. Retain local edits, selection and focus across switches and refreshes. Reveal a hidden invalid field before focusing it. Keep status and the next action visible; put secondary explanations in disclosures. |
-| Phone | Toolbar actions wrap under the title; long labels wrap inside their button; every control is at least 44px tall; fixed bars sit above the tab bar and the page leaves room for them. |
+| Phone | Toolbar actions wrap under the title; long labels wrap inside their button; every control is at least 44px tall; fixed bars and toasts sit above the tab bar (`--tab-bar-room`) and the page leaves room for them. A page stylesheet uses the kit's breakpoints, `52rem` for the phone and `37.5rem` for a narrow phone. |
+| Toasts | Bottom right on a desktop, clear of the sidebar's Search and jump and Appearance; just above the tab bar on a phone. A page may widen them, never move them over the shell. |
 | Material | Sidebar, toolbar, sheets, selection bars, Shared settings' save bar and toasts only. Forms, lists, documents and reviews stay opaque, and so does a `.dialog` that holds form fields. |
+| Page markup | Every app page reaches under a phone's notch (`viewport-fit=cover`), declares `color-scheme: light dark`, lets the skip link's `<main tabindex="-1">` take the focus, hides `.backdrop` from screen readers, gives every `<button>` a `type`, and (each studio) says in `<noscript>` what it needs. A live region announces a short summary, such as a count, never a whole list or table. |
 
 ## The shell kit
 
@@ -38,19 +40,25 @@ One signature, kept to one place: the **progress track**, a project's stages as 
 line in its studio's colour, filled where done, larger where the work is now, and amber
 where it waits for the person. Around it the shell stays quiet. `StudioShell`
 (`studio_core/deck_web/shell.js`) gives every page the track, Search and jump (Cmd or
-Ctrl+K), the Light, Dark and Auto appearance (one shared setting), and the finish card.
-The Home headline is the one place the shell uses the system serif. See the
+Ctrl+K) and the Light, Dark and Auto appearance (one shared setting).
+The Home headline is the one place the shell uses the system serif: Marketing Studio's launch
+question (`.launch-intro`), a studio's greeting (a `p.large-title` first on its page) and
+Infographic Studio's Home (`[data-home]`); every other `.large-title` keeps the plain face.
+The appearance is switched by the stylesheet from `<body data-appearance>`, which the server
+writes and the shell keeps: Auto follows `prefers-color-scheme`, Light stands it aside, and
+Dark applies the same dark tokens. No script reads or rewrites a stylesheet to switch it,
+and every `var()` a stylesheet reads names a token one defines (`tests/test_css_tokens.py`).
+See the
 [design it was built from](../superpowers/specs/2026-11-10-golden-gate-3-design.md).
 
 | Need | Component |
 | --- | --- |
 | A project's stages | `.track`, `.track-stage[data-state]` (`done`, `current`, `yours`, `todo`, `skipped`), `.track-compact` in a list |
-| Search and jump | `.shell-palette`, opened by `StudioShell.palette()`; a page adds commands with `StudioShell.commands` |
+| Search and jump | `.shell-palette`, opened by `StudioShell.palette()`. Each studio hands it the work its own page lists with `StudioShell.commands(() => [{title, group, hint, keywords, run}])`, asked again each time it opens: group Blogs, Decks, Trainings or Infographics, the state as the hint, `run` opening the work as its card does, and a Start command for new work. Put away, it gives the focus back to its opener; a pointer marks a row without scrolling; past 40 results it says how many more there are (`.shell-palette-more`) |
 | Appearance | `.appearance-switch` in `.shell-foot`; never a second copy of a token |
-| Work finished | `.finish-card`, from `StudioShell.finish` |
 | A desk as a workbench | A page part says its zone in `data-zone`: `top`, `parts`, `work-top`, `work`, `rail` or `foot`. From 72rem the page is three columns, the work in the middle, and a part with no zone joins the rail. Narrower, parts follow one another |
 | A rail as tall as its own parts | `.workbench-rail` and `.workbench-parts` gather a zone's parts into one. The work and its parts then share a row, `foot` parts follow directly under them, and the rail runs beside all of it (Training Studio) |
-| The one arc | `StudioShell.arc({at, yours, finished})`: Brief, Plan, Make, Ship, the same four in every studio |
+| The one arc | `StudioShell.arc({at, yours, finished})`: Brief, Plan, Make, Ship, the same four in every studio; Blog Studio, Presentation Studio and Training Studio draw it from the kit, never by hand |
 | A line of light | `.workbench-pulse`, from `StudioShell.pulse('working' \| 'yours' \| 'still')` |
 | The one move | `.move-card`, from `StudioShell.move`: the question, what it sets going, one amber action; `calm` where nothing waits. It animates (`.move-card-new`) only when it is a different move, never when it is drawn again |
 | A band instead of a rail | `.workbench-top` holding `.workbench-head`, where a desk already pairs its work with a side panel (Blog Studio, a deck's slides) |
@@ -62,7 +70,9 @@ four phases, **Brief, Plan, Make, Ship**; a studio's own steps sit one press bel
 work itself is the middle of the screen from the first moment. Everything about the
 assistant, and the one thing it may need from the person, is in the rail (or the band).
 A screen still has one filled button: the move's own action is amber. **F** on a desk reads
-the work alone.
+the work alone at every width: the parts and the rail step aside, and a quiet
+**Show everything** button (`.reading-exit`) held at the foot of the content brings them back,
+as F and Escape do. Toasts and the finish card rise over it (`--foot-lift`).
 
 - **The arc is drawn as a route.** It is the one signature, so it carries the flair: a flat
   band tinted in the studio's colour as far as the work has come (`--arc-reach`), a numbered

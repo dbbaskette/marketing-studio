@@ -313,7 +313,7 @@ body:has(#settings:not([hidden]) .save-bar) .toasts { bottom: calc(5.5rem + env(
 .brand-text { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85rem; line-height: 1.5; min-height: 10rem; }
 .brand-part > * + *, .brand-task > * + * { margin-top: 0.6rem; }
 
-.brand-table { max-width: 100%; overflow-x: auto; border-radius: var(--radius); }
+.brand-table { max-width: 100%; overflow-x: auto; border-radius: 8px; }
 .brand-table:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 @media (max-width:52rem) {
   .brand-colours { grid-template-columns: 1fr; }

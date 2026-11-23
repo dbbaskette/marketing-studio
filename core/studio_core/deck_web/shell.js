@@ -1,11 +1,10 @@
 /* The shell kit every studio page shows, in plain JavaScript with no build step:
 
      StudioShell.connect({header, token, home})   the page's key, so a choice can be saved
-     StudioShell.commands(() => [...])            more commands for the palette
+     StudioShell.commands(() => [...])            the page's own work and actions, for the palette
      StudioShell.palette()                        open the command palette (also Cmd or Ctrl+K)
      StudioShell.track(stages, label, compact)    a project's stages as one drawn line
      StudioShell.arc(), .pulse(), .move()         a workbench's phases, its line of light, its one move
-     StudioShell.finish({title, lines, action})   the card shown once when work is finished
      StudioShell.appearance(), .setAppearance()   light, dark, or this computer's own
 
    Appearance is one shared setting, `appearance` in the studios config. The server writes
@@ -14,12 +13,17 @@
    settings route; where it cannot be saved it holds for this page and says so.
 
    A command is {title, hint, group, keywords, run}. Nothing here starts an assistant, and
-   every command does only what a control already on the page does. */
+   every command does only what a control already on the page does. A page's list is asked
+   for each time the palette opens, so it holds what the page holds then: a studio names the
+   work its own page lists (group Blogs, Decks, Trainings or Infographics, the state as the
+   hint) and `run` opens it as that work's own card does. For example:
+
+     StudioShell.commands(() => projects.map(project => ({ title: project.title,
+       group: 'Infographics', hint: project.state, keywords: 'infographic work',
+       run: () => openProject(project.id) })));  */
 const StudioShell = (() => {
   const APPEARANCES = [['light', 'Light'], ['dark', 'Dark'], ['', 'Auto']];
-  const SCHEME = /\(\s*prefers-color-scheme\s*:\s*(dark|light)\s*\)/g;
   const providers = [];
-  const original = new WeakMap();   // each colour-scheme media rule's own condition
   let link = null, chosen = document.body.dataset.appearance || '', opened = null;
 
   function make(tag, className, text) {
@@ -31,28 +35,9 @@ const StudioShell = (() => {
 
   // --- appearance -------------------------------------------------------------------
 
-  // Every rule written for one colour scheme, wherever it is: the kit's and each page's.
-  function schemeRules(rules, found) {
-    for (const rule of Array.from(rules || [])) {
-      if (rule.media && /prefers-color-scheme/.test(original.get(rule) || rule.media.mediaText)) found.push(rule);
-      if (rule.cssRules && !(rule.media && found.includes(rule))) schemeRules(rule.cssRules, found);
-    }
-    return found;
-  }
-
-  // A forced appearance answers each colour-scheme condition itself: `all` where it matches
-  // the one chosen, `not all` where it does not. Auto puts every condition back.
+  // The stylesheet switches the tokens from <body data-appearance>: `light` and `dark` are a
+  // choice, and no value follows this computer. Nothing here reads or rewrites a stylesheet.
   function paint() {
-    for (const sheet of Array.from(document.styleSheets)) {
-      let rules;
-      try { rules = sheet.cssRules; } catch (_) { continue; }   // not this page's own
-      for (const rule of schemeRules(rules, [])) {
-        if (!original.has(rule)) original.set(rule, rule.media.mediaText);
-        const own = original.get(rule);
-        rule.media.mediaText = chosen
-          ? own.replace(SCHEME, (_, scheme) => scheme === chosen ? 'all' : 'not all') : own;
-      }
-    }
     document.documentElement.style.colorScheme = chosen || 'light dark';
     if (chosen) document.body.dataset.appearance = chosen;
     else delete document.body.dataset.appearance;
@@ -183,10 +168,19 @@ const StudioShell = (() => {
     }).filter(Boolean).sort((a, b) => a.rank - b.rank || a.order - b.order).map(found => found.command);
   }
 
+  // Put away (Escape, a press outside it, Cmd or Ctrl+K again), a sheet gives the focus back
+  // to what opened it. A chosen command takes the person on and places the focus itself, so
+  // then nothing is given back; a sheet opened from another gives it to the first one's opener.
   function sheet(className, label) {
+    const opener = opened ? opened.opener : document.activeElement;
     const dialog = make('dialog', 'dialog ' + className);
+    dialog.opener = opener; dialog.ran = false;
     dialog.setAttribute('aria-label', label);
-    dialog.addEventListener('close', () => { dialog.remove(); if (opened === dialog) opened = null; });
+    dialog.addEventListener('close', () => {
+      dialog.remove(); if (opened === dialog) opened = null;
+      if (!dialog.ran && !opened && opener && opener !== document.body && opener.isConnected !== false
+          && typeof opener.focus === 'function') opener.focus();
+    });
     // A press on the dimmed page around it closes it, as Escape does.
     dialog.addEventListener('click', event => { if (event.target === dialog) dialog.close(); });
     document.body.append(dialog);
@@ -194,6 +188,7 @@ const StudioShell = (() => {
     return dialog;
   }
 
+  const SHOWN = 40;
   function palette() {
     if (opened) return;
     const all = gathered();
@@ -207,18 +202,29 @@ const StudioShell = (() => {
     const list = make('ul', 'shell-palette-list'); list.id = 'shell-palette-list';
     list.setAttribute('role', 'listbox');
     const none = make('p', 'quiet shell-palette-none', 'Nothing matches. Try a screen or project name.');
+    // Past the first SHOWN results the palette says how many more there are, never cuts silently.
+    const more = make('p', 'quiet shell-palette-none shell-palette-more'); more.setAttribute('role', 'status');
     let shown = [], at = 0;
 
-    const mark = () => {
+    // The keyboard brings the chosen row into view; a pointer resting on a row only marks it,
+    // so the list never moves under the pointer.
+    const mark = scroll => {
       Array.from(list.children).forEach((row, index) => {
         row.setAttribute('aria-selected', String(index === at));
-        if (index === at) { input.setAttribute('aria-activedescendant', row.id); row.scrollIntoView({ block: 'nearest' }); }
+        if (index === at) {
+          input.setAttribute('aria-activedescendant', row.id);
+          if (scroll) row.scrollIntoView({ block: 'nearest' });
+        }
       });
       if (!shown.length) input.removeAttribute('aria-activedescendant');
     };
-    const run = command => { dialog.close(); command.run(); };
+    const run = command => { dialog.ran = true; dialog.close(); command.run(); };
     const draw = () => {
-      shown = matching(all, input.value).slice(0, 40); at = 0;
+      const found = matching(all, input.value);
+      shown = found.slice(0, SHOWN); at = 0;
+      more.hidden = found.length <= SHOWN;
+      more.textContent = more.hidden ? '' : 'Showing ' + SHOWN + ' of ' + found.length
+        + '. Type more of a name to find the rest.';
       list.replaceChildren(...shown.map((command, index) => {
         const row = make('li', 'shell-palette-row'); row.id = 'shell-palette-' + index;
         row.setAttribute('role', 'option');
@@ -226,23 +232,23 @@ const StudioShell = (() => {
           make('span', 'shell-palette-title', command.title),
           make('span', 'shell-palette-hint', command.hint || ''));
         row.addEventListener('click', () => run(command));
-        row.addEventListener('mousemove', () => { if (at !== index) { at = index; mark(); } });
+        row.addEventListener('mousemove', () => { if (at !== index) { at = index; mark(false); } });
         return row;
       }));
       none.hidden = shown.length > 0;
-      mark();
+      mark(true);
     };
     input.addEventListener('input', draw);
     input.addEventListener('keydown', event => {
       const move = { ArrowDown: 1, ArrowUp: -1 }[event.key];
       if (move && shown.length) {
-        event.preventDefault(); at = (at + move + shown.length) % shown.length; mark();
+        event.preventDefault(); at = (at + move + shown.length) % shown.length; mark(true);
       } else if (event.key === 'Enter' && shown[at]) {
         event.preventDefault(); run(shown[at]);
       }
     });
     const foot = make('p', 'quiet shell-palette-foot', '↑ ↓ to choose · Return to go · Esc to close');
-    dialog.append(input, list, none, foot);
+    dialog.append(input, list, more, none, foot);
     draw();
     dialog.showModal();
     input.focus();
@@ -263,11 +269,28 @@ const StudioShell = (() => {
     close.focus();
   }
 
-  // Reading alone: on a workbench, its parts and its rail step aside for the work itself.
+  // Reading alone: on a workbench, its parts and its rail step aside for the work itself, at
+  // every width. While it lasts one quiet button closes the content and brings them back, so
+  // the way out is in view and in the keyboard's order, not only F and Escape.
   const reading = () => document.body.dataset.focus === 'reading';
+  let exit = null;
   function toggleReading() {
     if (reading()) delete document.body.dataset.focus; else document.body.dataset.focus = 'reading';
-    say(reading() ? 'Reading alone. Press F or Escape to bring everything back.' : 'Everything is back.');
+    if (reading() && !exit) {
+      exit = make('button', 'button glass reading-exit'); exit.type = 'button';
+      exit.setAttribute('aria-keyshortcuts', 'F Escape');
+      const key = make('kbd', '', 'F'); key.setAttribute('aria-hidden', 'true');
+      exit.append(make('span', '', 'Show everything'), key);
+      exit.addEventListener('click', toggleReading);
+      (document.querySelector('.content') || document.body).append(exit);
+    } else if (!reading() && exit) {
+      const held = document.activeElement === exit;
+      exit.remove(); exit = null;
+      // Focus never falls to the page's start: it goes to the work the person was reading.
+      const work = document.querySelector('#main, [data-zone="work"]');
+      if (held && work) { if (!work.hasAttribute('tabindex')) work.setAttribute('tabindex', '-1'); work.focus({ preventScroll: true }); }
+    }
+    say(reading() ? 'Reading alone. Press F or Escape, or Show everything, to bring everything back.' : 'Everything is back.');
   }
 
   const typing = node => Boolean(node && (node.isContentEditable
@@ -383,31 +406,6 @@ const StudioShell = (() => {
     return card;
   }
 
-  // --- the finish card -------------------------------------------------------------------
-
-  // Shown once when work is marked ready, delivered or published: what was made, where it
-  // went, and one thing to do next. It leaves on Dismiss, on its action, or after a while.
-  function finish({ title, lines = [], action = null, seconds = 14 } = {}) {
-    document.querySelector('.finish-card')?.remove();
-    const card = make('section', 'finish-card glass'); card.setAttribute('role', 'status');
-    const seal = make('span', 'finish-seal', '✓'); seal.setAttribute('aria-hidden', 'true');
-    const text = make('div', 'finish-text');
-    text.append(make('h2', 'finish-title', title || 'Finished'), ...lines.filter(Boolean).map(line => make('p', 'quiet', line)));
-    const bar = make('div', 'bar');
-    const leave = () => card.remove();
-    if (action && action.label && typeof action.run === 'function') {
-      const go = make('button', 'button button-filled', action.label); go.type = 'button';
-      go.addEventListener('click', () => { leave(); action.run(); }); bar.append(go);
-    }
-    const dismiss = make('button', 'button button-quiet', 'Dismiss'); dismiss.type = 'button';
-    dismiss.addEventListener('click', leave); bar.append(dismiss);
-    card.append(seal, text, bar);
-    document.body.append(card);
-    let timer = setTimeout(leave, seconds * 1000);
-    for (const name of ['pointerenter', 'focusin']) card.addEventListener(name, () => clearTimeout(timer));
-    return card;
-  }
-
   // --- in the sidebar --------------------------------------------------------------------
 
   function mount() {
@@ -435,8 +433,6 @@ const StudioShell = (() => {
 
   paint();
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount); else mount();
-  // A page stylesheet that loads late is painted too.
-  window.addEventListener('load', paint);
 
   return {
     connect(found) {
@@ -444,6 +440,6 @@ const StudioShell = (() => {
     },
     commands(provide) { if (typeof provide === 'function') providers.push(provide); },
     appearance: () => chosen,
-    setAppearance, appearanceSwitch, palette, shortcuts, track, finish, arc, pulse, move,
+    setAppearance, appearanceSwitch, palette, shortcuts, track, arc, pulse, move,
   };
 })();

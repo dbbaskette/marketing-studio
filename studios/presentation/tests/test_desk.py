@@ -2145,6 +2145,19 @@ class ScreenTests(ScriptedPage, PageCase):
             self.assertIn(shown, shots['settings']['text'])
         self.assertEqual(self.posts(result), [])
 
+    def test_search_and_jump_finds_a_deck_by_name_and_opens_it(self):
+        path = self.saved_started(title='Capacity planning')
+        self.saved_started(title='Rolling restarts')
+        answers = self.answers(**{'GET /api/run': [ok(self.run_of(path))]})
+        result = self.run_page(answers, [{'snapshot': 'home'}, {'command': 'Capacity planning'},
+                                         {'snapshot': 'deck'}], shell=True)
+        listed = result['commands']
+        self.assertEqual(sorted(row[1] for row in listed if row[0] == 'Decks'),
+                         ['Capacity planning', 'Rolling restarts'])
+        self.assertIn(['Start', 'New deck', ''], listed)
+        self.assertEqual(result['snapshots']['deck']['heading'], 'Capacity planning')
+        self.assertNotEqual(result['snapshots']['home']['heading'], 'Capacity planning')
+
     def test_a_deck_is_deleted_from_the_decks_list_through_its_own_sheet(self):
         path = self.saved_started(title='Rolling restarts')
         self.saved_started(title='Capacity planning')

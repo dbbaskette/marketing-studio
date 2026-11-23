@@ -302,6 +302,34 @@ class SharedLookTests(unittest.TestCase):
                 self.assertEqual((page.parent / 'style.css').resolve(), KIT.resolve())
                 self.assertEqual(missing_classes(html, SHELL), [])
 
+    def test_app_pages_open_ready_for_a_phone_and_a_screen_reader(self):
+        # Under a phone's notch and home bar, in either appearance, with the skip link's
+        # target able to take the focus, the backdrop out of the reading order, and no button
+        # that submits by accident. Each studio's page says what it needs without JavaScript;
+        # shared setup (the first page) does not say so yet.
+        for page in APP_PAGES:
+            html = page.read_text()
+            with self.subTest(page=page.relative_to(ROOT).as_posix()):
+                viewport = re.search(r'<meta name="viewport" content="([^"]*)"', html)
+                self.assertIn('viewport-fit=cover', viewport.group(1))
+                self.assertIn('<meta name="color-scheme" content="light dark">', html)
+                self.assertRegex(re.search(r'<main\b[^>]*>', html).group(0), r'\btabindex="-1"')
+                backdrop = re.search(r'<div\b[^>]*\bclass="backdrop"[^>]*>', html).group(0)
+                self.assertIn('aria-hidden="true"', backdrop)
+                untyped = [tag for tag in re.findall(r'<button\b[^>]*>', html) if 'type=' not in tag]
+                self.assertEqual(untyped, [])
+                if page != APP_PAGES[0]:
+                    self.assertIn('<noscript>', html)
+
+    def test_blog_studio_announces_a_summary_not_its_whole_table(self):
+        # A live region around the whole results table read every row again on each change.
+        # The count beside the list's heading is the line that is announced instead.
+        html = APP_PAGES[1].read_text()
+        self.assertEqual(re.search(r'<div id="results"[^>]*>', html).group(0), '<div id="results">')
+        count = re.search(r'<span id="count"[^>]*>', html).group(0)
+        self.assertIn('role="status"', count)
+        self.assertIn('aria-live="polite"', count)
+
     def test_static_pages_use_the_kit(self):
         for page, served in STATIC_PAGES.items():
             html = page.read_text()
@@ -445,6 +473,24 @@ class SharedLookTests(unittest.TestCase):
         self.assertEqual(tab_bar, 6)
         self.assertGreater(tab_bar, int(phone['.review-bar']['z-index']))
         self.assertGreater(tab_bar, int(phone['.selection-bar']['z-index']))
+
+    def test_toasts_clear_the_shell_and_the_tab_bar(self):
+        kit = declared(KIT.read_text())
+        self.assertEqual(kit[PHONE]['.toasts'].get('bottom'),
+                         'calc(var(--tab-bar-room) + .6rem + var(--foot-lift))')
+        # Presentation Studio widens its toasts on a phone; a desktop keeps the kit's place,
+        # clear of the sidebar's foot.
+        deck = declared(PAGE_STYLES[2].read_text())
+        self.assertEqual([context for context, found in deck.items() if '.toasts' in found], [PHONE])
+        self.assertIn('var(--tab-bar-room)', deck[PHONE]['.toasts'].get('bottom', ''))
+
+    def test_studio_stylesheets_take_the_kits_narrow_breakpoints(self):
+        for sheet in (PAGE_STYLES[2], PAGE_STYLES[4]):
+            with self.subTest(sheet=sheet.relative_to(ROOT).as_posix()):
+                narrow = re.findall(r'max-width:\s*([\d.]+(?:rem|px))\)', uncommented(sheet.read_text()))
+                self.assertTrue(narrow)
+                self.assertEqual(sorted(set(narrow) - {'52rem', '37.5rem'}), [])
+                self.assertNotIn('52.01rem', sheet.read_text())
 
     def test_studio_pages_link_the_kit(self):
         found = []
