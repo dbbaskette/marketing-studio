@@ -132,12 +132,14 @@ def run_helper(command, seconds=HELPER_SECONDS, cancelled=None):
     grouped = hasattr(os, 'killpg')   # elsewhere only the command itself can be ended
     process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                stderr=subprocess.PIPE, text=True, start_new_session=grouped)
+    finished = False
     deadline = time.monotonic() + seconds
     try:
         while True:
             try:
                 out, err = process.communicate(
                     timeout=max(0.0, min(HELPER_TICK, deadline - time.monotonic())))
+                finished = True
                 return subprocess.CompletedProcess(command, process.returncode, out, err)
             except subprocess.TimeoutExpired:
                 if cancelled():
@@ -145,15 +147,17 @@ def run_helper(command, seconds=HELPER_SECONDS, cancelled=None):
                 if time.monotonic() >= deadline:
                     raise subprocess.TimeoutExpired(command, seconds) from None
     finally:
-        # Nothing it started is left running, whether it finished, was stopped or ran late.
-        try:
-            if grouped:
-                os.killpg(process.pid, signal.SIGKILL)
-            elif process.poll() is None:
-                process.kill()
-        except (ProcessLookupError, PermissionError):
-            pass
-        process.communicate()
+        # A command that did not finish (stopped, late or failed) leaves nothing running:
+        # it is ended with everything it started. One that finished is left as it ended.
+        if not finished:
+            try:
+                if grouped:
+                    os.killpg(process.pid, signal.SIGKILL)
+                elif process.poll() is None:
+                    process.kill()
+            except (ProcessLookupError, PermissionError):
+                pass
+            process.communicate()
 
 
 def inside(root, name):
