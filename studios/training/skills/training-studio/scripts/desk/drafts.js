@@ -3997,8 +3997,10 @@ function savedHistory(saved) {
   const said = [];
   if (saved.halt) said.push('The earlier runner was ' + saved.halt + '.');
   if (saved.problem && saved.problem.what) {
-    said.push('The earlier runner stopped on a failure: ' + saved.problem.what
-      + ' That step stays unfinished and is not tried again.');
+    // The saved words end their sentence, with or without the full stop they were kept with.
+    const what = String(saved.problem.what).trim();
+    said.push('The earlier runner stopped on a failure: ' + what
+      + (/[.!?…”"')]$/.test(what) ? '' : '.') + ' That step stays unfinished and is not tried again.');
   }
   if (saved.question && saved.question.text) {
     said.push('A worker asked: “' + saved.question.text + '” It was not answered, and that '

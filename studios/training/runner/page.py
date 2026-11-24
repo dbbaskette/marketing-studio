@@ -809,12 +809,17 @@ class RunnerPage(desk.Page):
         record lists, only inside the training's folder, and only as text. Writes nothing."""
         desk.registered(path)
         root = self.engine.driven(path)
-        shown = self.engine.saved_record(root) if root is not None else None
-        if shown is None:
+        # Asked of the two small records and the one file only, never the whole folder.
+        if root is None or self.engine.refused(root) is None:
             raise desk.Refusal(HTTPStatus.NOT_FOUND, 'This training is not a read-only record.')
-        if name not in shown['saved_record']['files']:
+        if name not in self.engine._saved_files(root):
             raise desk.Refusal(HTTPStatus.FORBIDDEN, 'That is not one of its saved files.')
-        found = desk.text_of(desk.inside(root, name))
+        try:
+            found = desk.text_of(desk.inside(root, name))
+        except OSError:
+            # Removed or changed between being listed and being read.
+            raise desk.Refusal(HTTPStatus.NOT_FOUND, f'{name} can no longer be read. '
+                               'Open the training again.') from None
         if found is None:
             raise desk.Refusal(HTTPStatus.CONFLICT, f'{name} is not text, so it is not shown here.')
         return {'name': name, 'text': found[0], 'truncated': found[1]}
@@ -843,8 +848,9 @@ class RunnerPage(desk.Page):
         if found and found.get('read_only'):
             # A read-only record: it opens on its run, which says why; nothing else is read.
             item['run']['read_only'] = True
-            item.update(driver=None, mine=True, notice=None, last_shared=None,
-                        state='saved', sentence=found['sentence'], waiting=None)
+            item.update(driver=found['driver'], mine=found['mine'], notice=None,
+                        last_shared=None, state='saved', sentence=found['sentence'],
+                        waiting=None)
             return item
         if found and (found.get('flow') == 'desk' or found['state'] == 'done'):
             item['run'].update(flow=found.get('flow'),

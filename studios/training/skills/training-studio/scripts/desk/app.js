@@ -7057,8 +7057,8 @@ const SAVED_FILES = { 'intake.md': 'Read intake', 'research-report.md': 'Read re
 function paintSavedRecord(run, fresh) {
   const saved = run.saved_record;
   const title = run.title || 'Untitled';
-  placeParts({ title, above: [make('span', '', 'Read-only')], back: true, actions: [],
-    mark: [title, saved.why, saved.next] }, [
+  // What it is is said once, by the shared state bead with its words in the intro.
+  placeParts({ title, back: true, actions: [], mark: [title, saved.why, saved.next] }, [
     ['saved-intro', [run.sentence, saved.next], () => savedRecordIntro(run)],
     ['saved-why', [saved.why, saved.refusal], () => add(card('Why it cannot be continued'),
       make('p', '', saved.why),

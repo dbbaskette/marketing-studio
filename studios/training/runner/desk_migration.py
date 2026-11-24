@@ -44,6 +44,8 @@ NOTHING_MADE = ('It stopped before its teaching plan was written, so nothing was
                 'could be opened on the desk.')
 UNREADABLE = ('Its saved run or session record cannot be read, or is in a form this version '
               'does not understand.')
+# A run record that is not even a JSON object: nobody can tell which flow wrote it.
+UNREAD = 'Its run record cannot be read at all, so how this training was made cannot be told.'
 MISSING = 'A saved file it depends on is missing or cannot be read.'
 BRING = ('A conversation keeps it outside the workspace. Bring it in first; it is then '
          'classed like any other saved training.')
@@ -144,13 +146,24 @@ def materials(session, record, files):
     return list(dict.fromkeys(retained)), sorted(set(required))
 
 
-class ReadOnly(ValueError):
-    """Saved-flow work that can be neither continued on the desk nor moved to it: `str()` is
-    what the migration preview says (unchanged), `reason` what its read-only record says."""
-
-    def __init__(self, said: str, reason: str, next_action: str):
-        super().__init__(said)
-        self.reason, self.next = reason, next_action
+def record_kind(root: Path) -> str:
+    """Which kind of training a folder holds, from its two small records alone, as lists and
+    polling ask it: 'desk' (its run record says flow desk, or it has desk metadata or an
+    interrupted opening), 'unread' (its run record is not a JSON object, so which flow made
+    it cannot be told) or 'saved' (a readable run record without flow: the earlier gated
+    flow's). Reads at most the run record."""
+    if any((root / name).exists() or (root / name).is_symlink()
+           for name in (*format.WRITES, format.PENDING)):
+        return 'desk'
+    try:
+        with (root / format.RUN).open('rb') as stream:
+            data = stream.read(1_000_001)
+        raw = json.loads(data) if len(data) <= 1_000_000 else None
+    except (OSError, ValueError, UnicodeError):
+        raw = None
+    if not isinstance(raw, dict):
+        return 'unread'
+    return 'desk' if drafts.on_desk(raw) else 'saved'
 
 
 def _start_form(files) -> bool:
@@ -166,7 +179,8 @@ def _start_form(files) -> bool:
 
 
 def _read_only(files, said, reason):
-    return ReadOnly(said, reason, 'copy' if _start_form(files) else 'new')
+    return {'outcome': 'read-only', 'said': said, 'reason': reason,
+            'next': 'copy' if _start_form(files) else 'new'}
 
 
 def classify(files) -> dict:
@@ -183,14 +197,21 @@ def classify(files) -> dict:
       recovery.
     Only reads. The read-only outcome is work stopped before its teaching plan, and records
     or dependencies that cannot be read or understood."""
+    # Desk work first, whatever its records hold: desk metadata, an interrupted opening, or
+    # a run record that says flow desk (a newer version's desk work among it).
+    if any(name in files for name in (*format.WRITES, format.PENDING)):
+        return {'outcome': 'desk', 'said': DESK_WORK}
+    try:
+        raw = json.loads(files[format.RUN])
+    except (KeyError, TypeError, ValueError, UnicodeError):
+        raw = None
+    if isinstance(raw, dict) and drafts.on_desk(raw):
+        return {'outcome': 'desk', 'said': DESK_WORK}
     try:
         session, record = format.originals(files.get(format.SESSION), files.get(format.RUN))
     except (ValueError, KeyError, TypeError, UnicodeError) as error:
-        if any(name in files for name in (*format.WRITES, format.PENDING)):
-            return {'outcome': 'desk', 'said': DESK_WORK}
-        return _outcome(_read_only(files, str(error), UNREADABLE))
-    if any(name in files for name in (*format.WRITES, format.PENDING)) or drafts.on_desk(record):
-        return {'outcome': 'desk', 'said': DESK_WORK}
+        # A run record that is not even an object: which flow made it cannot be told.
+        return _read_only(files, str(error), UNREADABLE if isinstance(raw, dict) else UNREAD)
     if session['stage'] == 'done':
         return {'outcome': 'finished', 'said': FINISHED}
     try:
@@ -199,18 +220,13 @@ def classify(files) -> dict:
         if str(error) == EARLY:
             # A failure or question before any plan keeps its own refusal sentence.
             said = FAILED if record.get('problem') or record.get('question') else EARLY
-            return _outcome(_read_only(files, said, NOTHING_MADE))
+            return _read_only(files, said, NOTHING_MADE)
         # Missing or unreadable dependencies. A sentence that points at the saved flow is
         # not repeated on a record that can no longer be continued.
         detail = str(error) if 'saved flow' not in str(error) else ''
-        return _outcome(_read_only(files, str(error), (MISSING + ' ' + detail).strip()))
+        return _read_only(files, str(error), (MISSING + ' ' + detail).strip())
     return {'outcome': 'migrates', 'session': session, 'record': record,
             'targets': targets, 'required': required}
-
-
-def _outcome(read_only: ReadOnly) -> dict:
-    return {'outcome': 'read-only', 'said': str(read_only), 'reason': read_only.reason,
-            'next': read_only.next}
 
 
 def outcome(engine, path) -> dict | None:
@@ -224,6 +240,8 @@ def outcome(engine, path) -> dict | None:
         if (folder / format.SESSION).is_file() and not (folder / format.RUN).exists():
             return {'outcome': 'bring', 'said': 'There is no saved training there.', 'reason': BRING}
         return None
+    if record_kind(root) == 'desk':
+        return {'outcome': 'desk', 'said': DESK_WORK}
     try:
         files = _files(root)
     except (OSError, WorkspaceError) as error:
