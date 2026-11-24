@@ -1,5 +1,5 @@
-"""Brief and source changes on finished work (issue #249): a rename clears nothing, any other
-brief change clears the story, page and approval and says so, and an infographic's own kept
+"""Brief and source changes on finished work (issue #249, #515): a rename marks nothing, any other
+brief change keeps the story and page out of date, clears the approval and says so, and an infographic's own kept
 export is never a source for itself.
 
 Every test uses a disposable library (STUDIOS_LIBRARY), studios config and workspace. The
@@ -86,24 +86,31 @@ class FinishedWorkTests(LibraryCase):
             self.store._rename_locked(pending, 'Another title', project['revision'])
         self.assertEqual(self.current(), project)
 
-    def test_changing_the_audience_clears_the_story_page_and_approval_and_says_so(self):
+    def test_changing_the_audience_keeps_the_story_and_page_out_of_date_and_says_so(self):
         done = self.approved()
         before, files = self.current(), self.files(done['export']['id'])
         edited = self.brief(audience='Site reliability engineers')
         self.assertEqual(edited['facts'], before['facts'], 'Captured facts stay.')
-        self.assertEqual((edited['stories'], edited['scene'], edited['approval']), ([], None, None))
+        self.assertEqual((edited['stories'], edited['scene'], edited['approval']),
+                         (before['stories'], before['scene'], None))
+        self.assertEqual(set(edited['stale']), {'stories', 'page'})
         self.assertEqual(history.entries(self.store, self.ident)[0]['summary'],
-                         'Edited the brief: audience; cleared the story, page and approval')
-        self.assertEqual(progress.roadmap(edited, self.engine.deliveries(self.ident))['stage'], 'story')
+                         'Edited the brief: audience; kept the story and page and marked them out of date; '
+                         'cleared the approval')
+        shown = progress.roadmap(edited, self.engine.deliveries(self.ident))
+        self.assertEqual((shown['stage'], shown['action']), ('updates', 'Update or keep'))
+        self.assertIn('the story and the page: made before the brief changed', shown['needs'])
         self.assertEqual(self.files(done['export']['id']), files)
 
     def test_a_source_change_names_what_it_cleared(self):
+        # A replaced source that the facts cite cannot keep them: they are cleared, as before.
         self.approved()
         source = self.current()['sources'][0]
         self.act('source', data='VXBkYXRlZCBzdXBwbGllZCB0ZXh0Lg==', kind='text', name='Pasted notes',
                  replace_id=source['id'])
         self.assertEqual(history.entries(self.store, self.ident)[0]['summary'],
                          'Added or updated sources; cleared the facts, story, page and approval')
+        self.assertNotIn('stale', self.current())
 
     def test_its_own_kept_export_is_refused_as_a_source(self):
         done = self.approved()

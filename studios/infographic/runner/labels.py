@@ -140,6 +140,14 @@ def change(previous, current, earlier=(), fingerprint=None):
             'Edited the brief: ' + joined([words for key, words in _BRIEF
                                            if previous['brief'].get(key) != current['brief'].get(key)]
                                           or ['its details']))
+        # Work held out of date by this change is named as such (contracts.advance): kept,
+        # with an Update and a Keep as it is on the page.
+        from .contracts import STALE_PARTS, stale_parts
+        before, after = stale_parts(previous), stale_parts(current)
+        marked = [{'facts': 'facts', 'stories': 'story', 'page': 'page', 'artwork': 'artwork'}[part]
+                  for part in STALE_PARTS if part in after and after[part] != before.get(part)]
+        if marked:
+            summary += '; kept the ' + joined(marked) + ' and marked ' + ('it' if len(marked) == 1 else 'them') + ' out of date'
         gone = cleared(previous, current)
         if gone:
             summary += '; cleared the ' + joined(gone)

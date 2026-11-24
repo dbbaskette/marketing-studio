@@ -68,6 +68,9 @@ def build(store, ident, *, expected_revision, executable, draft=False, renderer=
         project = store.read(ident)
         store.expect(project, expected_revision)
         validate_project(project)
+        if not draft:
+            from .contracts import require_current
+            require_current(project, 'Preparing the approved files')
         require(draft or project['approval'] is not None, 'Approve this exact checked page before creating final exports.')
         require(draft or visual_review.checked(store, project),
                 'The visual review changed. Run checks and approve the latest review before final export.')

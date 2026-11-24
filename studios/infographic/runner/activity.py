@@ -26,6 +26,7 @@ LABELS = {
     'visual-layout': 'Building the visual diagram layout',
     'approve': 'Approving and preparing your files',
     'review': 'Recording your review and running checks',
+    'refresh-page': 'Updating the page',
 }
 
 

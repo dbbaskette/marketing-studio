@@ -82,6 +82,7 @@ FIELDS = {
     'compare': {'before', 'after'}, 'repair': {'request_id'}, 'revise-story': {'story_id', 'block_id', 'instruction'},
     'library': {'picks', 'acknowledge_warnings'}, 'library-update': {'document', 'revision', 'acknowledge_warnings'},
     'library-keep': {'export_id'},
+    'keep-stale': {'part'}, 'refresh-page': set(),
 }
 
 
@@ -160,6 +161,11 @@ def action(found, sent):
     if verb == 'revise-art': return found.revise_art(ident, sent.get('change'), sent.get('preserve'),
                             expected_revision=revision, request_id=sent.get('request_id'))
     if verb == 'compare': return history.compare(store, ident, sent.get('before'), sent.get('after'))
+    if verb in ('keep-stale', 'refresh-page'):
+        # Out-of-date work after a brief or source change: keep it as it is, or lay the page out again.
+        from . import stale
+        if verb == 'keep-stale': return stale.keep(store, ident, sent.get('part'), expected_revision=revision)
+        return stale.refresh_page(found, ident, expected_revision=revision)
     if verb == 'build': return found.build(ident, expected_revision=revision, request_id=sent.get('request_id'))
     if verb == 'image-brief': return found.image_direction(ident, sent.get('data'), edit=sent.get('edit'), expected_revision=revision)
     if verb == 'image-start':

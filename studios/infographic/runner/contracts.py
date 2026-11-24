@@ -36,6 +36,19 @@ INVALIDATES = {
 }
 
 
+# Held work: what a brief or source edit keeps rather than clears (HOLDS), the parts of it the
+# page names (STALE_PARTS, with the fields whose change makes a part current again), and which
+# parts each edit marks out of date (STALE_BY). Checks are still cleared: they are run again.
+HOLDS = {
+    'brief': ('stories', 'selected_story', 'scene', 'image_briefs', 'attempts'),
+    'sources': ('facts', 'stories', 'selected_story', 'scene', 'image_briefs', 'attempts'),
+}
+STALE_PARTS = {'facts': ('facts',), 'stories': ('stories', 'selected_story'), 'page': ('scene',),
+               'artwork': ('image_briefs', 'assets')}
+STALE_BY = {'brief': ('stories', 'page', 'artwork'), 'sources': ('facts', 'stories', 'page', 'artwork')}
+STALE_WORDS = {'facts': 'the facts', 'stories': 'the story', 'page': 'the page', 'artwork': 'the artwork'}
+
+
 class Invalid(ValueError):
     """An invalid or incompatible Infographic Studio record."""
 
@@ -90,15 +103,91 @@ def advance(project: dict, changes: dict, *, expected_revision: int, owner: str)
     if not changed:
         return deepcopy(project)
     result = deepcopy(project)
+    # A brief or source edit holds the work built from the earlier inputs rather than clearing
+    # it, and marks it out of date (Training Studio's held materials): the person updates each
+    # part or keeps it as it is. A change to the working title alone marks nothing.
+    marking = {key for key in changed & set(HOLDS)
+               if not (key == 'brief' and renaming(project, changes['brief']))}
+    held = {field for key in marking for field in HOLDS[key]} - {
+        field for key in changed - marking for field in INVALIDATES.get(key, ())}
     invalidated = {field for key in changed for field in INVALIDATES.get(key, ())}
-    for field in invalidated - set(changes):
+    for field in invalidated - set(changes) - held:
         result[field] = [] if field in COLLECTIONS else None
     result.update(deepcopy(changes))
     result['revision'] += 1
     result['approval'] = None
+    if 'attempts' in held:
+        # An image request still running was made for the earlier inputs: it can never land.
+        result['attempts'] = [a for a in result['attempts'] if a['state'] not in ('queued', 'running')]
+    stale = dict(project.get('stale') or {})
+    for part, fields in STALE_PARTS.items():
+        # A part made again is current; a part that no longer exists is not out of date.
+        if part in stale and (any(key in changed for key in fields) or not _holds(result, part)):
+            del stale[part]
+    because = ' and '.join(key for key in ('brief', 'sources') if key in marking)
+    for key in marking:
+        for part in STALE_BY[key]:
+            if _holds(result, part):
+                earlier = stale.get(part, {}).get('because', because)
+                both = earlier if earlier == because else 'brief and sources'
+                stale[part] = {'because': both, 'revision': result['revision']}
+    _set_stale(result, stale)
     # Old exports are immutable references to older revisions, never current approval.
-    validate_project(result)
+    try:
+        validate_project(result)
+    except Invalid:
+        if not held:
+            raise
+        # Held work that no longer fits the new inputs (a fact citing a replaced source) is
+        # cleared as before, from the page down, until the record is whole again.
+        for fields in (('scene', 'image_briefs', 'attempts'), ('stories', 'selected_story'), ('facts',)):
+            for field in set(fields) & held:
+                result[field] = [] if field in COLLECTIONS else None
+            _set_stale(result, {part: value for part, value in stale.items() if _holds(result, part)})
+            try:
+                validate_project(result)
+                break
+            except Invalid:
+                continue
+        else:
+            raise
     return result
+
+
+def _holds(project: dict, part: str) -> bool:
+    """Whether a part of the work exists to be out of date."""
+    if part == 'facts':
+        return bool(project['facts'])
+    if part == 'stories':
+        return bool(project['stories'])
+    if part == 'page':
+        return project['scene'] is not None
+    return bool(project['image_briefs']) or any(
+        e.get('kind') == 'artwork' for e in (project['scene'] or {}).get('elements', []))
+
+
+def _set_stale(project: dict, stale: dict):
+    if stale:
+        project['stale'] = stale
+    else:
+        project.pop('stale', None)
+
+
+def stale_parts(project: dict) -> dict:
+    """The parts of an infographic held out of date after a brief or source change."""
+    return dict(project.get('stale') or {})
+
+
+def require_current(project: dict, doing: str):
+    """Refuse approval, export or delivery while work it depends on is out of date."""
+    held = stale_parts(project)
+    if held:
+        named = [STALE_WORDS[part] for part in STALE_PARTS if part in held]
+        listed = named[0] if len(named) == 1 else ', '.join(named[:-1]) + ' and ' + named[-1]
+        because = {held[p]['because'] for p in held}
+        earlier = 'the brief and sources' if len(because) > 1 or 'brief and sources' in because else 'the ' + because.pop()
+        raise Invalid(f'{doing} waits for out-of-date work: {listed} {"was" if len(named) == 1 else "were"} '
+                      f'made before {earlier} changed. Update each, or keep it as it is, first.')
 
 
 def renaming(project: dict, brief) -> bool:

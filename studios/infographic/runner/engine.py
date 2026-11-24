@@ -483,6 +483,8 @@ class Engine:
         with self.store.locked():
             project = self.store.read(ident)
             self.store.expect(project, expected_revision)
+            from .contracts import require_current
+            require_current(project, 'Approval')
             require(visual_review.checked(self.store, project),
                     'The visual review changed or is incomplete. Run checks against the latest review before approval.')
             require(REQUIRED_CHECKS <= {c['kind'] for c in project['checks']}

@@ -167,6 +167,7 @@ workLabels['image-recover']='Recovering saved artwork locally';
 workLabels['visual-layout']='Building the visual diagram layout';
 workLabels['approve']='Approving and preparing your files';
 workLabels['review']='Recording your review and running checks';
+workLabels['refresh-page']='Updating the page';
 const WAITING='This can take a few minutes. You can stop waiting and come back: the work keeps running on this computer, and your saved work is kept.';
 // What the line of light shows when nothing is working: `yours` or, once delivered, `still`.
 let benchRest='yours';
@@ -243,6 +244,26 @@ function guard() {
   }
 }
 function free(node){node.dataset.free='';return node;}
+// Work kept after a brief or source change, out of date until the person updates it or keeps
+// it as it is (stale.py). Approval, prepared files and delivery wait for every part.
+const STALE_ORDER=['facts','stories','page','artwork'];
+const STALE_WHAT={facts:'The facts',stories:'The story',page:'The page',artwork:'The artwork'};
+function staleCard(p){
+  const held=p.stale||{},parts=STALE_ORDER.filter(part=>held[part]);
+  if(!parts.length)return null;
+  const update={facts:['Update facts and stories',()=>action('suggest',{fresh:true}),'Your assistant reads the current sources again and proposes facts and stories. Choosing a new story replaces the page built from the earlier one.'],
+    stories:['Update the story',()=>action('suggest',{fresh:true}),'Your assistant proposes stories for the current brief and sources. You choose one; the page follows the story you choose.'],
+    page:['Update the page',()=>action('refresh-page'),'Lays the page out again on this computer from the current brief and story, with its artwork. No assistant or image request.'],
+    artwork:['Update the art direction',()=>action('art-direct'),'Your assistant writes art direction for the current page. Generating artwork from it is a separate step.']};
+  const rows=parts.map(part=>{
+    const [label,run,help]=update[part];
+    const keep=button('Keep as it is',()=>action('keep-stale',{part}));keep.setAttribute('aria-label','Keep '+STALE_WHAT[part].toLowerCase()+' as it is');
+    const go=button(label,run);
+    return add(make('div','ig-stale-row stack'),stateLine('review',STALE_WHAT[part]+' was made before the '+held[part].because+' changed.'),make('p','quiet',help),add(make('div','bar'),go,keep));
+  });
+  const node=card('Out of date after your change',make('p','','Your work is kept. Update each part, or keep it as it is. Approval, prepared files and delivery wait until nothing is out of date.'),...rows);
+  node.id='ig-stale';node.classList.add('ig-stale');return node;
+}
 // Work an earlier run of Infographic Studio left unfinished: never shown as running.
 function interruptedCard(found){
   const id=held.project.id;
@@ -357,7 +378,7 @@ function finished(verb){
     'review':'Review recorded and checks ran for revision '+n+'.','inspect-images':'Your assistant inspected revision '+n+' and the checks ran.',
     'export':'Approved files are ready for revision '+n+'.','approve':'You approved revision '+n+'.','build':'Page built: revision '+n+'.',
     'visual-layout':'Visual layout rebuilt: revision '+n+'.','layout':'Layout changed: revision '+n+'.',
-    'select':'Story chosen. Build the page when you are ready.','suggest':'Stories proposed. Choose one to build.',
+    'select':'Story chosen. Build the page when you are ready.','keep-stale':'Kept as it is. Nothing else changed.','refresh-page':'Page updated: revision '+n+'.','suggest':'Stories proposed. Choose one to build.',
     'restore':'Restored as revision '+n+'. Approval is not restored.','image-cancel':'The image request was cancelled on this computer. Remote charges may remain unknown.'}[verb]||'Saved.';
 }
 async function action(verb, values={}, revision=null, options={}) {
@@ -648,7 +669,8 @@ function renderProject() {
     choose:()=>document.querySelector('#story-choice').scrollIntoView({behavior:'smooth'}),
     build:compose, preview:()=>action('preview'), review:()=>reviewSheet(currentDelivery),
     check:()=>action('check'), approve:approveRevision, export:()=>action('export',{draft:false}),
-    deliver:()=>approvedFiles&&deliverySheet(approvedFiles)};
+    deliver:()=>approvedFiles&&deliverySheet(approvedFiles),
+    updates:()=>{const node=$('ig-stale');if(node){node.scrollIntoView({behavior:calm()?'auto':'smooth',block:'start'});node.querySelector('button')?.focus({preventScroll:true});}}};
   let next=[held.roadmap?.action||'Find the story',run[stage]||run.story],needs=held.roadmap?.needs||'Find the story: your assistant proposes source-backed explanations.';
   if(savedPlan&&(!stage||stage==='story')){next=['Check saved proposal',()=>action('suggest')];needs='Check saved proposal: it is checked on this computer, without using assistant allowance.';}
   if(p.scene&&needsArtwork){next=['Build page',compose];needs='Build page: this page still needs its artwork.';}
@@ -668,6 +690,7 @@ function renderProject() {
   const doing=make('section','card ig-doing');doing.id='ig-doing';doing.hidden=true;doing.setAttribute('aria-label','What the assistant is doing');
   const parts=[make('p','lede','Choose the explanation, review the actual page, then approve its exact revision.'),doing,standing(held.roadmap,p,delivery,needs)];
   if(held.activity?.state==='interrupted')parts.push(interruptedCard(held.activity));
+  parts.push(staleCard(p));
   if(held.workflow_recovery?.state==='failed') parts.push(card('Work kept after a failed step',recoveryContent(held.workflow_recovery)));
   if(held.recovery.length) parts.push(card('Image work needs attention',...held.recovery.map(r=>add(make('div','stack'),make('p','',r.message),r.local_artwork_available?button('Recover saved artwork',()=>action('image-recover',{request_id:r.attempt_id})):button('Cancel uncertain request',()=>action('image-cancel',{request_id:r.attempt_id}))))));
   if(selected&&((p.scene&&!p.scene.visual_version)||!nativeReady)){
@@ -941,28 +964,35 @@ async function draftLibrary(picks){
   if(picks.some(pick=>draft.library.some(one=>one.id===pick.id)))throw Error('A chosen document is already listed for this infographic.');
   draft.library.push(...(await libraryRows(picks)).map(row=>({...row,acknowledged:false})));
 }
-const LIBRARY_CLEARS='Adding or updating a source clears the facts, story, page and approval built from the earlier sources. Earlier work stays in History, and nothing starts by itself.';
+const LIBRARY_CLEARS='Adding or updating a source keeps the facts, story, page and artwork built from the earlier sources and marks them out of date: you update each or keep it as it is. The approval is cleared. Earlier work stays in History, and nothing starts by itself.';
 // 'a', 'a and b', 'a, b and c'.
 function joined(words){return words.length<3?words.join(' and '):words.slice(0,-1).join(', ')+' and '+words.at(-1);}
-// What a source change clears: everything built from the earlier sources.
-function libraryClears(){
-  const p=held.project;
-  return [p.facts.length?'facts':'',p.stories.length?'story':'',p.scene?'page':'',p.approval?'approval':''].filter(Boolean);
+// What a source change clears: the approval, and, when it replaces a source the facts cite,
+// the facts and everything built on them (they cannot point at text that is gone).
+function libraryClears(replacing=''){
+  const p=held.project,cited=replacing&&p.facts.some(f=>(f.evidence||[]).some(e=>e.source_id===replacing));
+  return [cited&&p.facts.length?'facts':'',cited&&p.stories.length?'story':'',cited&&p.scene?'page':'',p.approval?'approval':''].filter(Boolean);
 }
-// What a brief change clears. Captured facts come from the sources, so they stay.
-function briefClears(){
-  const p=held.project;
-  return [p.stories.length?'story':'',p.scene?'page':'',p.approval?'approval':''].filter(Boolean);
+// What a source change keeps and marks out of date.
+function libraryMarks(replacing=''){
+  const p=held.project;if(libraryClears(replacing).includes('facts'))return [];
+  return [p.facts.length?'facts':'',p.stories.length?'story':'',p.scene?'page':''].filter(Boolean);
 }
+// What a brief change clears: the approval. Captured facts come from the sources, so they stay.
+function briefClears(){return held.project.approval?['approval']:[];}
+// What a brief change keeps and marks out of date.
+function briefMarks(){const p=held.project;return [p.stories.length?'story':'',p.scene?'page':''].filter(Boolean);}
 // Back to the control that started an action, opening its section, once the page is drawn.
 function refocus(key){const found=key&&document.querySelector('[data-key="'+key+'"]');if(found){found.closest('details')?.setAttribute('open','');found.focus();}return found;}
 // Says what an action will clear and asks first; with nothing to clear, it simply runs.
 // Cancel changes nothing: `cancel` returns to the sheet that asked, with what was typed;
 // otherwise focus returns to `back`, the control that started the action.
-function clearsConfirm(title,label,{clears,kept='',run,back,parts=[],check=()=>true,cancel=null}){
-  if(!clears.length&&!parts.length){run();return;}
+function clearsConfirm(title,label,{clears,marks=[],kept='',run,back,parts=[],check=()=>true,cancel=null}){
+  if(!clears.length&&!marks.length&&!parts.length){run();return;}
   const problem=make('p','problem');problem.setAttribute('role','alert');
-  const said=clears.length?[make('p','','This clears this infographic’s '+joined(clears)+'.'+(kept?' '+kept:'')+' Earlier work stays in History. Nothing starts by itself; find the story again when you are ready.')]:[];
+  const said=[];
+  if(marks.length)said.push(make('p','','This keeps this infographic’s '+joined(marks)+' and marks '+(marks.length>1?'them':'it')+' out of date: you update each or keep it as it is.'+(kept?' '+kept:'')));
+  if(clears.length)said.push(make('p','','This clears this infographic’s '+joined(clears)+'.'+(marks.length||!kept?'':' '+kept)+' Earlier work stays in History. Nothing starts by itself.'));
   const go=button(label,async()=>{
     if(go.disabled)return;
     const refused=check();if(refused!==true){problem.textContent=refused;return;}
@@ -975,18 +1005,18 @@ function clearsConfirm(title,label,{clears,kept='',run,back,parts=[],check=()=>t
 function libraryConfirm(title,label,rows,run,back='ig-library-add'){
   const gaps=rows.some(row=>row.gaps.length);
   const ack=make('input');ack.type='checkbox';
-  const clears=libraryClears();
-  if(!clears.length&&!gaps){run(false);return;}
+  const clears=libraryClears(),marks=libraryMarks();
+  if(!clears.length&&!marks.length&&!gaps){run(false);return;}
   const parts=rows.map(row=>card(row.title,make('p','quiet','Revision '+row.revision+' · '+row.characters+' readable characters'),row.gaps.length?list(row.gaps):make('p','quiet','No extraction gaps.')));
   if(gaps)parts.push(add(make('label','check'),ack,document.createTextNode('I reviewed these gaps. Use only the readable text.')));
-  clearsConfirm(title,label,{clears,parts,back,run:()=>run(gaps),
+  clearsConfirm(title,label,{clears,marks,parts,back,run:()=>run(gaps),
     check:()=>!gaps||ack.checked||'Review the gaps and confirm using only the readable text first.'});
 }
 // Every route that changes sources asks first when facts, a story, a page or an approval exist.
 function sourceConfirm(name,replacing,run,back,cancel){
   const label=replacing?'Replace source':'Add as a source';
   clearsConfirm(replacing?'Replace '+(held.project.sources.find(s=>s.id===replacing)?.name||'this source'):'Add '+name,label,
-    {clears:libraryClears(),back,cancel,run:async()=>{await run();refocus(back);}});
+    {clears:libraryClears(replacing),marks:libraryMarks(replacing),back,cancel,run:async()=>{await run();refocus(back);}});
 }
 function libraryAddButton(){
   let rows=null;
@@ -1320,8 +1350,9 @@ function storyThumbnail(story){
 async function imageRequestSheet(id){try{const saved=await request('/api/image-request?id='+encodeURIComponent(held.project.id)+'&request='+encodeURIComponent(id));sheet('Saved image request',make('p','',saved.provider+' · '+saved.operation),make('pre','ig-csv-preview',saved.brief.prompt),make('p','quiet','Remote cancellation and cost remain unknown unless the provider reported them.'),button('Done',closeSheet));}catch(f){error(f.message);}}
 async function olderHistory(){try{const last=held.history.at(-1);const result=await request('/api/history-before?id='+encodeURIComponent(held.project.id)+'&before='+last.revision);held.history.push(...result.history);renderProject();document.querySelectorAll('details').forEach(d=>{if(d.firstChild.textContent==='History')d.open=true;});}catch(f){error(f.message);}}
 
-// The working title alone is a rename that clears nothing. Any other change clears the story,
-// page and approval built from the earlier brief, so it asks first when they exist.
+// The working title alone is a rename that marks nothing. Any other change keeps the story and
+// page built from the earlier brief, marks them out of date and clears the approval, so it
+// asks first when they exist.
 // `typed` brings back what was typed when the confirmation is cancelled.
 function briefSheet(typed=null){
   const p=held.project,fields={};
@@ -1330,9 +1361,9 @@ function briefSheet(typed=null){
     const brief={...p.brief,title:fields.title.input.value,audience:fields.audience.input.value,purpose:fields.purpose.input.value,must_show:lines(fields.must.input.value).map((text,i)=>({id:p.brief.must_show[i]?.id||'r_'+requestId().slice(0,12),text})),locked_words:lines(fields.locked.input.value),exclusions:lines(fields.exclusions.input.value)};
     const rest=b=>JSON.stringify({...b,title:undefined}),story=rest(brief)!==rest(p.brief),renamed=brief.title!==p.brief.title;
     if(!story&&!renamed){closeSheet();refocus('ig-edit-brief');toast('Nothing changed, so no revision was made.');return;}
-    const clears=story?briefClears():[];
+    const clears=story?briefClears():[],marks=story?briefMarks():[];
     const said=!story?(p.approval?'Renamed. The story, page and approval are kept. Prepare the approved files again so they carry the new title.':p.stories.length||p.scene?'Renamed. The story and page are kept.':'Renamed.')
-      :clears.length?'Brief saved. Find the story again when you’re ready.':'Brief saved.';
+      :marks.length?'Brief saved. The '+joined(marks)+' '+(marks.length>1?'are':'is')+' kept and marked out of date: update each or keep it as it is.':'Brief saved.';
     // One save at a time: a second click would only meet the revision the first one made.
     const send=async()=>{
       if(busy)return;busy=true;const unlock=lockControls();
@@ -1341,7 +1372,7 @@ function briefSheet(typed=null){
       finally{if(busy){unlock();busy=false;}}
     };
     const typedNow=Object.fromEntries(Object.entries(fields).map(([key,f])=>[key,f.input.value]));
-    clearsConfirm('Save the brief','Save brief',{clears,kept:p.facts.length?'Captured facts stay.':'',run:send,back:'ig-edit-brief',cancel:()=>briefSheet(typedNow)});
+    clearsConfirm('Save the brief','Save brief',{clears,marks,kept:p.facts.length?'Captured facts stay.':'',run:send,back:'ig-edit-brief',cancel:()=>briefSheet(typedNow)});
   };
   sheet('Edit brief and requirements',make('p','','Renaming keeps the story, page and approval. Changing anything else clears the story, page and approval built from the earlier brief, and asks first. Captured facts, earlier versions and saved files are kept.'),...Object.values(fields).map(f=>f.wrap),add(make('div','bar'),button('Save brief',save,true),button('Cancel',()=>{closeSheet();refocus('ig-edit-brief');})));
 }

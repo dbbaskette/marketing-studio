@@ -196,9 +196,21 @@ def validate_project(project: dict) -> dict:
     _secrets(project)
     require(type(project.get('schema')) is int and project['schema'] == SCHEMA,
             'This infographic needs a supported record version.')
-    require(set(project) == {'schema', 'product', 'id', 'owner', 'revision', 'brief',
+    require(set(project) - {'stale'} == {'schema', 'product', 'id', 'owner', 'revision', 'brief',
                             'selected_story', 'brand', 'scene', 'approval', *COLLECTIONS},
             'The infographic record has missing or unsupported fields.')
+    # Work held after a brief or source change (contracts.STALE_PARTS); absent on every record
+    # saved before held work existed, and whenever nothing is held.
+    if 'stale' in project:
+        from .contracts import STALE_PARTS
+        held = project['stale']
+        require(isinstance(held, dict) and held and set(held) <= set(STALE_PARTS)
+                and all(isinstance(v, dict) and set(v) == {'because', 'revision'}
+                        and v['because'] in ('brief', 'sources', 'brief and sources')
+                        and type(v['revision']) is int and type(project.get('revision')) is int
+                        and 0 <= v['revision'] <= project['revision']
+                        for v in held.values()),
+                'The record of out-of-date work is unreadable.')
     require(project['product'] == PRODUCT and identifier(project['id']) and identifier(project['owner']),
             'Record the full product name, infographic ID, and workspace owner.')
     require(type(project['revision']) is int and project['revision'] >= 0, 'Record a valid revision.')

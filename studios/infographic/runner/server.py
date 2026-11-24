@@ -182,7 +182,7 @@ class Page(shared.Page):
             return shared.as_json(HTTPStatus.OK, control(sent['id']))
         if path == '/api/action':
             try:
-                configured = not self.injected and isinstance(sent, dict) and sent.get('action') in ('visual-layout', 'image-recover', 'suggest', 'art-direct', 'build', 'image-start', 'preview', 'export', 'inspect-images', 'revise-art', 'repair', 'revise-story', 'approve', 'review')
+                configured = not self.injected and isinstance(sent, dict) and sent.get('action') in ('visual-layout', 'image-recover', 'suggest', 'art-direct', 'build', 'image-start', 'preview', 'export', 'inspect-images', 'revise-art', 'repair', 'revise-story', 'approve', 'review', 'refresh-page')
                 verb = sent.get('action') if isinstance(sent, dict) else None
                 if isinstance(verb, str) and verb in action_jobs.BACKGROUND:
                     # Answered at once: the work runs on, and the page follows it in Activity.

@@ -354,9 +354,10 @@ class Store:
             return project
 
     def edit_brief(self, ident: str, brief: dict, *, expected_revision: int) -> dict:
-        """Save the brief. A change to the working title alone is a rename that clears
-        nothing (`contracts.renamed`); any other change clears the story, page and approval
-        built from the earlier brief, under the input rules. Captured facts stay either way."""
+        """Save the brief. A change to the working title alone is a rename that marks
+        nothing (`contracts.renamed`); any other change keeps the story, page and artwork built
+        from the earlier brief and marks them out of date (`contracts.advance`, stale.py), and
+        clears the approval. Captured facts stay either way."""
         with self.locked():
             current = self.read(ident)
             if renaming(current, brief):
