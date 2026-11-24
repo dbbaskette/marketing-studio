@@ -629,6 +629,15 @@ class GuidelineTests(AdditionCase):
             SKILL / 'assets/management/desk.js',
             SKILL / 'assets/management/runner.js',
             SKILL / 'scripts/desk_finish.py',
+            # desk_finish's code, split into the modules beside it.
+            SKILL / 'scripts/desk_proposals.py',
+            SKILL / 'scripts/desk_proofreading.py',
+            SKILL / 'scripts/desk_finishing.py',
+            SKILL / 'scripts/desk_additions.py',
+            SKILL / 'scripts/desk_google_changes.py',
+            SKILL / 'scripts/desk_google.py',
+            SKILL / 'scripts/desk_google_pull.py',
+            SKILL / 'scripts/desk_repurpose.py',
             SKILL / 'scripts/geo_report.py',
         ):
             found = [m.group(0) for m in PROMISE.finditer(path.read_text())]
