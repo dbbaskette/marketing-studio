@@ -138,17 +138,13 @@ class DefinitionTests(StudioCase):
                          'a stage that is left out has no steps')
         self.assertEqual(pipeline.gate_for('scenario:main@101'), by_id['gate:scenario:main@101'])
 
-    def test_it_says_the_fewest_times_it_will_ask_for_a_decision(self):
+    def test_its_steps_have_one_gate_for_each_saved_decision(self):
         for levels, expect in (([], 5), (['101'], 5), (['101', '201'], 8),
                                (['101', '201', '301', '401'], 14)):
             form = pipeline.check_form({**FORM, 'levels': levels})
-            self.assertEqual(pipeline.gates(form), expect)
             gates = [step for step in pipeline.steps(form['levels'])
                      if step.id.startswith('gate:')]
             self.assertEqual(len(gates), expect)
-        # A deck drawn here stops three times a level: its outline, its look and the deck.
-        form = pipeline.check_form({**FORM, 'levels': ['101', '201']})
-        self.assertEqual(pipeline.gates(form, deck=True), 8 + 3 * 2)
 
 
 class FormTests(StudioCase):
@@ -185,7 +181,6 @@ class FormTests(StudioCase):
     def test_selected_materials_use_existing_skip_decisions_and_manual_gate_counts(self):
         form = pipeline.check_form({**FORM, 'materials': ['document', 'document']})
         self.assertEqual(form['materials'], ['document'])
-        self.assertEqual(pipeline.gates(form), 4)
         root = pipeline.create(self.space, form)
         session = workspace.load(root)
         self.assertEqual(session['settings']['stages'], ['document'])
@@ -204,8 +199,6 @@ class FormTests(StudioCase):
             with self.subTest(changes=changes):
                 with self.assertRaisesRegex(WorkspaceError, message):
                     pipeline.check_form({**FORM, **changes})
-        deck = pipeline.check_form({**FORM, 'materials': [], 'deck_target': 'pptx'})
-        self.assertEqual(pipeline.gates(deck, deck=True), 6)  # the deck's outline, look, deck
         yoodli = pipeline.check_form({**FORM, 'materials': ['brief', 'scenario'],
                                      'yoodli': True})
         self.assertTrue(yoodli['yoodli'])

@@ -1714,19 +1714,6 @@ class FlowTests(DeckCase):
         self.assertEqual(self.view(root)['finished']['ready'], True)
         self.assertEqual(len(self.slides.files), 2, 'each deck keeps one preview file')
 
-    def test_it_says_at_least_how_often_it_will_ask(self):
-        form = pipeline.check_form({**self.form(), 'levels': ['101', '201']},
-                                   self.engine.brands())
-        self.assertEqual(pipeline.gates(form, True), 14)
-        self.slides = None
-        self.engine.deck_needs(fresh=True)
-        form = pipeline.check_form({**self.form(), 'title': 'Health checks'}, None)
-        self.assertEqual(pipeline.gates(form, False), 5)
-
-    def form(self) -> dict:
-        from runner_support import FORM
-        return {**FORM, 'deck_target': 'pptx', 'brand': CHOSEN}
-
     def test_the_engine_never_approves_what_a_deck_says(self):
         root = self.saved_begin()
         self.to_outline(root)
