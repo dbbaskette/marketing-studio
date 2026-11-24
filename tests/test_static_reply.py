@@ -115,6 +115,18 @@ class StaticFileTests(unittest.TestCase):
         status, _, body, _ = server.static_file(KIND, self.path, {'If-None-Match': extra['ETag']})
         self.assertEqual((int(status), body), (200, same_size))
 
+    def test_a_same_size_rewrite_with_its_old_mtime_is_served_fresh(self):
+        before = self.path.stat()
+        tag = server.static_file(KIND, self.path, {})[3]['ETag']
+        rewritten = BODY.replace(b'42', b'24')
+        self.path.write_bytes(rewritten)
+        os.utime(self.path, ns=(before.st_atime_ns, before.st_mtime_ns))   # the same mtime tick
+        after = self.path.stat()
+        self.assertEqual((after.st_size, after.st_mtime_ns, after.st_ino),
+                         (before.st_size, before.st_mtime_ns, before.st_ino))
+        status, _, body, _ = server.static_file(KIND, self.path, {'If-None-Match': tag})
+        self.assertEqual((int(status), body), (200, rewritten))
+
     def test_at_most_static_files_are_held(self):
         for number in range(server.STATIC_FILES + 10):
             path = self.path.with_name(f'kit-{number}.js')
@@ -131,16 +143,19 @@ class StaticFileTests(unittest.TestCase):
 
 
 class ServerBoundTests(unittest.TestCase):
-    """The page's server answers at most SLOTS requests at once and closes one past that."""
+    """The page's server answers at most SLOTS requests at once. One past that waits up to
+    SLOT_WAIT for a slot and is otherwise answered 503 with Retry-After, never dropped."""
 
-    def test_a_request_past_the_bound_is_closed_and_the_next_is_answered(self):
-        release = threading.Event()
-        entered = threading.Semaphore(0)
+    def serve(self, slots):
+        self.release = threading.Event()
+        self.entered = threading.Semaphore(0)
+        self.waiting = threading.Event()
+        test = self
 
         class Held(BaseHTTPRequestHandler):
             def do_GET(self):
-                entered.release()
-                release.wait(20)
+                test.entered.release()
+                test.release.wait(20)
                 self.send_response(200)
                 self.send_header('Content-Length', '2')
                 self.end_headers()
@@ -149,43 +164,70 @@ class ServerBoundTests(unittest.TestCase):
             def log_message(self, *args):
                 pass
 
-        with mock.patch.object(server, 'SLOTS', 2):
+        class Watched(threading.BoundedSemaphore):
+            def acquire(self, blocking=True, timeout=None):
+                if super().acquire(blocking=False):
+                    return True
+                test.waiting.set()
+                return super().acquire(blocking, timeout)
+
+        with mock.patch.object(server, 'SLOTS', slots):
             made = server.Server(('127.0.0.1', 0), Held)
+        made.slots = Watched(slots)
         self.addCleanup(made.server_close)
         serving = threading.Thread(target=made.serve_forever, args=(0.05,), daemon=True)
         serving.start()
         self.addCleanup(serving.join, 10)
         self.addCleanup(made.shutdown)
-        self.addCleanup(release.set)
-        port = made.server_address[1]
+        self.addCleanup(self.release.set)
+        self.port = made.server_address[1]
+        return made
 
-        def ask():
-            line = socket.create_connection(('127.0.0.1', port), timeout=20)
-            line.sendall(b'GET / HTTP/1.0\r\nHost: 127.0.0.1\r\n\r\n')
-            return line
+    def ask(self):
+        line = socket.create_connection(('127.0.0.1', self.port), timeout=20)
+        line.sendall(b'GET / HTTP/1.0\r\nHost: 127.0.0.1\r\n\r\n')
+        return line
 
-        held = [ask(), ask()]
-        for _ in held:
-            self.assertTrue(entered.acquire(timeout=20))
-        refused = ask()
-        try:
-            said = refused.recv(64)
-        except ConnectionResetError:
-            said = b''          # closed with the request unread: the same refusal
-        finally:
-            refused.close()
-        self.assertEqual(said, b'', 'a request past the bound was answered')
-        release.set()
-        for line in held:
+    def all_slots_free(self, made, slots):
+        for _ in range(slots):          # each slot let go exactly once: all free, no more
+            self.assertTrue(made.slots.acquire(timeout=20))
+        self.assertFalse(made.slots.acquire(blocking=False))
+        for _ in range(slots):
+            made.slots.release()
+
+    def test_a_request_past_the_bound_waits_for_a_slot_and_is_answered(self):
+        made = self.serve(1)
+        first = self.ask()
+        self.assertTrue(self.entered.acquire(timeout=20))
+        second = self.ask()
+        self.assertTrue(self.waiting.wait(20), 'the second request did not wait for a slot')
+        self.release.set()
+        for line in (first, second):
             with line:
                 self.assertIn(b'ok', line.makefile('rb').read())
-        for _ in range(2):      # both slots are let go once their threads end
-            self.assertTrue(made.slots.acquire(timeout=20))
-        for _ in range(2):
-            made.slots.release()
-        later = ask()
+        self.assertTrue(self.entered.acquire(timeout=20))
+        self.all_slots_free(made, 1)
+
+    def test_no_slot_in_time_is_answered_503_with_retry_after(self):
+        made = self.serve(1)
+        first = self.ask()
+        self.assertTrue(self.entered.acquire(timeout=20))
+        with mock.patch.object(server, 'SLOT_WAIT', 0.1):
+            refused = self.ask()
+            with refused:
+                said = refused.makefile('rb').read()
+        head, _, body = said.partition(b'\r\n\r\n')
+        self.assertTrue(head.startswith(b'HTTP/1.0 503 Service Unavailable'), said)
+        self.assertIn(b'\r\nRetry-After: 1', head)
+        self.assertIn(b'Content-Length: %d' % len(body), head)
+        self.assertEqual(body, b'The page is busy. Try again in a moment.\n')
+        self.release.set()
+        with first:
+            self.assertIn(b'ok', first.makefile('rb').read())
+        self.all_slots_free(made, 1)
+        later = self.ask()
         with later:
-            self.assertTrue(entered.acquire(timeout=20))
+            self.assertTrue(self.entered.acquire(timeout=20))
             self.assertIn(b'200', later.makefile('rb').read())
 
 

@@ -33,6 +33,7 @@ What a caller needs to know
 from __future__ import annotations
 
 import base64
+import errno
 import hashlib
 import json
 import os
@@ -89,6 +90,22 @@ LINE_WRITES = 0.25
 # while Harness Brand checks and seals the pack, without LOCK; another Save, an edit, a new
 # task or Discard of that working copy is refused meanwhile. Other brands are not held up.
 SAVING: set[str] = set()
+# Lock order, the same everywhere: a brands repository's lock in this process (repo_lock),
+# then the repository's lock shared with other processes and Get brands (write_lock), then
+# LOCK. None of them is held while Harness Brand's Node.js commands run. The first makes a
+# second Save or Push in this process wait for the one before it, however long that takes,
+# instead of giving up on write_lock's timeout.
+_REPOS: dict[str, threading.Lock] = {}
+_REPOS_GUARD = threading.Lock()
+# Brands folders this process made a repository in with its own git init (a first Save).
+# Another Save that began before it may commit there; any other repository that appears
+# is refused, as before.
+INITIALIZED: set[str] = set()
+
+
+def repo_lock(folder: Path) -> threading.Lock:
+    with _REPOS_GUARD:
+        return _REPOS.setdefault(str(Path(folder).resolve()), threading.Lock())
 
 
 def _clock() -> float:
@@ -184,37 +201,90 @@ def no_links(path: Path) -> Path:
     return path
 
 
+LINKED = 'Brand files cannot use symbolic links. Copy the actual file into the brands folder.'
+FOLDER = os.O_RDONLY | getattr(os, 'O_DIRECTORY', 0)
+NOFOLLOW = getattr(os, 'O_NOFOLLOW', 0)
+
+
+def open_folder(name, dir_fd=None, expected=None) -> int | None:
+    """A descriptor of the folder `name` (inside `dir_fd` when given), opened without
+    following a link; None when it is gone or cannot be listed, as os.walk passed such a
+    folder over. `expected` is (st_dev, st_ino) of the entry as it was listed: a folder
+    that is not that one any more (swapped for a link, or for another folder) is refused,
+    which also holds where the platform has no O_NOFOLLOW."""
+    try:
+        handle = os.open(name, FOLDER | NOFOLLOW, dir_fd=dir_fd)
+    except OSError as failure:
+        if failure.errno == errno.ELOOP:
+            raise WorkspaceError(LINKED) from None
+        if failure.errno == errno.ENOTDIR:
+            # macOS says ENOTDIR, not ELOOP, for a link opened as a folder without following.
+            try:
+                if stat.S_ISLNK(os.lstat(name, dir_fd=dir_fd).st_mode):
+                    raise WorkspaceError(LINKED) from None
+            except FileNotFoundError:
+                pass
+            return None
+        if failure.errno in (errno.ENOENT, errno.EACCES):
+            return None
+        raise
+    seen = os.fstat(handle)
+    if not stat.S_ISDIR(seen.st_mode) or (expected is not None
+                                         and (seen.st_dev, seen.st_ino) != expected):
+        os.close(handle)
+        raise WorkspaceError(LINKED)
+    return handle
+
+
 def walk(folder: Path) -> list[tuple[Path, int]]:
     """Every file in `folder` with its size, sorted, each path validated before it is
-    followed or written. The folder and its ancestors are checked for links once; inside
-    it, each entry is checked as it is listed and only a real folder is entered, so a link
-    anywhere is refused and nothing outside the folder is ever followed."""
+    followed or written. The folder and its ancestors are checked for links once. Inside
+    it, each folder is opened from its parent's descriptor without following a link and
+    checked to be the very folder that was listed, so a folder swapped for a link while
+    the walk runs is refused and nothing outside the brand folder is ever listed. A file
+    that is gone by the time it is looked at (one a running command just renamed) is
+    passed over."""
     folder = no_links(folder)
     if not folder.exists():
         return []
     if not folder.is_dir():
         raise WorkspaceError('A brand or library must be a folder.')
-    files, total = [], 0
-    folders = [folder]
-    while folders:
-        try:
-            listing = os.scandir(folders.pop())
-        except OSError:
-            continue        # as os.walk did: a folder that cannot be listed is passed over
-        with listing as entries:
-            for entry in entries:
-                if entry.is_symlink():
-                    raise WorkspaceError('Brand files cannot use symbolic links. Copy the actual file into the brands folder.')
+    files: list[tuple[Path, int]] = []
+    total = 0
+
+    def scan(handle: int, base: Path) -> None:
+        nonlocal total
+        with os.scandir(handle) as listing:
+            entries = list(listing)
+        for entry in entries:
+            if entry.is_symlink():
+                raise WorkspaceError(LINKED)
+            try:
                 found = entry.stat(follow_symlinks=False)
-                if entry.name == '.git' or not (stat.S_ISREG(found.st_mode) or stat.S_ISDIR(found.st_mode)):
-                    raise WorkspaceError('Brand folders cannot contain Git metadata or special files.')
-                if stat.S_ISDIR(found.st_mode):
-                    folders.append(Path(entry.path))
-                    continue
-                total += found.st_size
-                files.append((Path(entry.path), found.st_size))
-                if found.st_size > SOURCE_LIMIT or total > TREE_LIMIT or len(files) > FILE_LIMIT:
-                    raise WorkspaceError('This brand exceeds the file or working-copy size limit.')
+            except FileNotFoundError:
+                continue
+            if entry.name == '.git' or not (stat.S_ISREG(found.st_mode) or stat.S_ISDIR(found.st_mode)):
+                raise WorkspaceError('Brand folders cannot contain Git metadata or special files.')
+            if stat.S_ISDIR(found.st_mode):
+                inner = open_folder(entry.name, handle, (found.st_dev, found.st_ino))
+                if inner is not None:
+                    try:
+                        scan(inner, base / entry.name)
+                    finally:
+                        os.close(inner)
+                continue
+            total += found.st_size
+            files.append((base / entry.name, found.st_size))
+            if found.st_size > SOURCE_LIMIT or total > TREE_LIMIT or len(files) > FILE_LIMIT:
+                raise WorkspaceError('This brand exceeds the file or working-copy size limit.')
+
+    top = open_folder(str(folder))
+    if top is None:
+        return []
+    try:
+        scan(top, folder)
+    finally:
+        os.close(top)
     return sorted(files)
 
 
@@ -321,9 +391,10 @@ def library_summary(archive: Path) -> dict:
 def listing(found, place: Storage) -> dict:
     folder = place.folder
     packs, libraries = [], []
-    # Each pack's and library's unshared commits (on this checkout, not yet on the remote
-    # branch) are counted from the one reading of the outgoing commits the push preview makes.
-    push, unshared = _outgoing(place) if place.team else (None, {})
+    # Each pack's and library's unshared commits (on this checkout, not on its upstream),
+    # counted for all of them at once: the upstream's commit, then one Git log.
+    push = outgoing_commits(place) if place.team else None
+    unshared = unshared_counts(place) if place.team else {}
     if folder.is_dir():
         for entry in sorted(folder.iterdir()):
             no_links(entry)
@@ -429,13 +500,23 @@ def working_copies() -> list[dict]:
     found = []
     folder = root()
     for entry in sorted(folder.iterdir()) if folder.is_dir() else ():
+        key = entry.name
         try:
-            work = record(entry.name)
-        except WorkspaceError:
+            if key in SAVING:
+                # Harness Brand may be writing it: shown as it was last recorded, unwalked.
+                with LOCK:
+                    work = _read(key)
+            else:
+                try:
+                    work = record(key)
+                except OSError:
+                    with LOCK:      # it changed while it was walked: as last recorded
+                        work = _read(key)
+        except (WorkspaceError, OSError):
             continue
         found.append({'key': work['key'], 'kind': work['kind'], 'id': work['id'],
                       'name': work['name'], 'update': work['update'],
-                      'task': (work.get('task') or {}).get('state')})
+                      'task': (work.get('task') or {}).get('state'), 'saving': key in SAVING})
     return found
 
 
@@ -627,31 +708,35 @@ def begin(key: str, kind: str, job, part=None) -> dict:
                         return
 
         def run():
-            ending, detail = 'done', ''
+            # Anything that ends the job, even SystemExit, still writes how it ended.
+            ending, detail = 'failed', 'It ended unexpectedly, so nothing was kept from it. Run it again.'
             try:
-                job(line, stop)
-            except brand_skill.Stopped:
-                ending, detail = 'stopped', 'It was stopped before it finished, so nothing was kept from it.'
-            except WorkspaceError as failure:
-                ending, detail = 'failed', str(failure)
-            except Exception as failure:   # reported to the person, never lost
-                ending, detail = 'failed', f'{type(failure).__name__}: {failure}'
-            if stop.is_set() and ending == 'done':
-                ending, detail = 'stopped', 'It was stopped before it finished, so nothing was kept from it.'
-            with LOCK:
                 try:
-                    # Every line is in it, as it was read while the task still ran.
-                    current = _read(key)
-                    if LIVE.get(key) is live and isinstance(current.get('task'), dict):
-                        current['task'].update(state=ending, detail=detail, ended=time.time())
-                        keep(current)
-                except WorkspaceError:
-                    pass   # discarded meanwhile
-                finally:
-                    if LIVE.get(key) is live:
-                        del LIVE[key]
-                    if TASKS.get(key) is entry:
-                        del TASKS[key]
+                    job(line, stop)
+                    ending, detail = 'done', ''
+                except brand_skill.Stopped:
+                    ending, detail = 'stopped', 'It was stopped before it finished, so nothing was kept from it.'
+                except WorkspaceError as failure:
+                    ending, detail = 'failed', str(failure)
+                except Exception as failure:   # reported to the person, never lost
+                    ending, detail = 'failed', f'{type(failure).__name__}: {failure}'
+            finally:
+                if stop.is_set() and ending == 'done':
+                    ending, detail = 'stopped', 'It was stopped before it finished, so nothing was kept from it.'
+                with LOCK:
+                    try:
+                        # Every line is in it, as it was read while the task still ran.
+                        current = _read(key)
+                        if LIVE.get(key) is live and isinstance(current.get('task'), dict):
+                            current['task'].update(state=ending, detail=detail, ended=time.time())
+                            keep(current)
+                    except (WorkspaceError, OSError):
+                        pass   # discarded meanwhile
+                    finally:
+                        if LIVE.get(key) is live:
+                            del LIVE[key]
+                        if TASKS.get(key) is entry:
+                            del TASKS[key]
 
         thread = threading.Thread(target=run, daemon=True, name=f'brands-{key}')
         entry = TASKS[key] = (thread, stop)
@@ -1119,7 +1204,7 @@ def _save(found, place: Storage, key: str, work: dict, here: Path, folder: Path)
     verified = fingerprint(here, digests)
     # The entire Save owns the repository lock; task files remain available after a failure.
     repo = place.folder
-    with write_lock(Storage(place.folder, place.team, repo, place.address)), LOCK:
+    with repo_lock(repo), write_lock(Storage(place.folder, place.team, repo, place.address)), LOCK:
         work = record(key)
         running = TASKS.get(key)
         if running and running[0].is_alive():
@@ -1132,13 +1217,20 @@ def _save(found, place: Storage, key: str, work: dict, here: Path, folder: Path)
         if place.repo is None:
             place.folder.mkdir(parents=True, exist_ok=True)
             parent = git(repo, 'rev-parse', '--show-toplevel')
-            if parent.returncode == 0 and Path(parent.stdout.strip()).resolve() != place.folder.resolve():
-                raise WorkspaceError('The brands folder is now inside another repository. Review Shared settings, Brand.')
-            if parent.returncode:
+            if parent.returncode == 0:
+                # Only a repository this process made here with its own git init, during a
+                # Save that began alongside this one, and with no remote, is taken; any
+                # other is refused, as before.
+                ours = (Path(parent.stdout.strip()).resolve() == place.folder.resolve()
+                        and str(place.folder.resolve()) in INITIALIZED
+                        and not git(repo, 'remote').stdout.strip())
+                if not ours:
+                    raise WorkspaceError('The brands folder is now inside another repository. Review Shared settings, Brand.')
+            else:
                 made = git(repo, 'init', '--quiet', '-b', 'main')
                 if made.returncode:
                     raise WorkspaceError(f'Could not initialize the brands repository ({reason(made)}).')
-            # else: another Save made the brands repository here first; this one commits to it.
+                INITIALIZED.add(str(place.folder.resolve()))
             place = Storage(repo, False, repo, None)
         identity(repo)
         scope = [stored.relative_to(repo).as_posix()]
@@ -1205,15 +1297,100 @@ def _save(found, place: Storage, key: str, work: dict, here: Path, folder: Path)
     return answer
 
 
+def _owner(path: str) -> str:
+    """What `git rev-list -- <pack id>` or `-- icon-libraries/<id>` would match a path by."""
+    if path.startswith('"'):        # a quoted unusual name: its first folder is plain
+        path = path[1:]
+    bits = path.split('/')
+    return '/'.join(bits[:2]) if bits[0] == LIBRARIES and len(bits) >= 2 else bits[0]
+
+
+def unshared_counts(place: Storage) -> dict[str, int]:
+    """{pack id or icon-libraries/<id>: what `git rev-list --count @{u}..HEAD -- <it>`
+    says}, for every pack and library at once, from one Git run.
+
+    `git log -m --boundary` gives each commit's changed paths against each parent (a parent
+    with the same tree prints no block) and each commit's and boundary commit's tree. The
+    path-limited walk is then followed as rev-list's default history simplification does it:
+    a commit is counted when it changes the path against its parent; a merge the same as an
+    interesting parent for the path is not counted and only that parent is followed; a merge
+    whose parents are all upstream is counted when it differs from one of them. The
+    upstream's own commit counts as interesting there, as rev-list's "bottom" does, so it is
+    resolved first: two Git runs for the whole listing, whatever the number of packs. No
+    upstream, or a Git failure, counts nothing, as before."""
+    if not place.team or place.repo is None:
+        return {}
+    upstream = git(place.repo, 'rev-parse', '--verify', '--quiet', '@{u}^{commit}')
+    bottom = upstream.stdout.strip()
+    if upstream.returncode or not bottom:
+        return {}
+    done = git(place.repo, '-c', 'core.quotePath=false', 'log', '-m', '--boundary', '--no-renames',
+               '--name-only', '--format=%x01%m %H %T %P', f'{bottom}..HEAD')
+    if done.returncode:
+        return {}
+    trees, parents, blocks, head = {}, {}, {}, None
+    for block in done.stdout.split('\x01')[1:]:
+        line, _, paths = block.partition('\n')
+        fields = line.split()
+        if len(fields) < 3:
+            return {}
+        mark, commit, tree, its = fields[0], fields[1], fields[2], fields[3:]
+        trees[commit] = tree
+        if mark == '-':
+            continue
+        head = head or commit
+        parents[commit] = its
+        owners = {_owner(path) for path in paths.splitlines() if path.strip()}
+        if owners:
+            blocks.setdefault(commit, []).append(owners)
+    against = {}
+    for commit, its in parents.items():
+        given = blocks.get(commit, [])
+        if not its:
+            against[commit] = [given[0] if given else set()]
+            continue
+        differing = [p for p in its if trees.get(p) != trees[commit]]
+        if len(given) == len(differing):
+            placed = dict(zip(differing, given))
+            against[commit] = [placed.get(p, set()) for p in its]
+        else:   # not expected from Git: take the merge as changing all it shows against each
+            every = set().union(*given) if given else set()
+            against[commit] = [every for _ in its]
+    counts = {}
+    for name in set().union(*(o for each in against.values() for o in each)) if against else ():
+        seen, shown, todo = set(), 0, [head]
+        while todo:
+            commit = todo.pop()
+            if commit in seen or commit not in parents:
+                continue
+            seen.add(commit)
+            its, diffs = parents[commit], against[commit]
+            if not its:
+                shown += name in diffs[0]
+                continue
+            relevant = changed = irrelevant = False
+            same = None
+            for parent, diff in zip(its, diffs):
+                if parent in parents or parent == bottom:
+                    relevant = True
+                    if name not in diff:
+                        same = parent
+                        break
+                    changed = True
+                elif name in diff:
+                    irrelevant = True
+            if same is not None:
+                todo.append(same)
+                continue
+            shown += changed if relevant else irrelevant
+            todo.extend(its)
+        if shown:
+            counts[name] = shown
+    return counts
+
+
 def outgoing_commits(place: Storage) -> dict:
     """Read-only disclosure, bound to the exact head and configured destination."""
-    return _outgoing(place)[0]
-
-
-def _outgoing(place: Storage) -> tuple[dict, dict]:
-    """The push preview, and {pack id or icon-libraries/<id>: how many outgoing commits
-    touch it} from the same reading of the outgoing commits."""
-    touched: dict[str, int] = {}
     branch = git(place.repo, 'symbolic-ref', '--quiet', '--short', 'HEAD').stdout.strip()
     head = git(place.repo, 'rev-parse', '--verify', 'HEAD').stdout.strip()
     base = git(place.repo, 'rev-parse', '--verify', f'refs/remotes/origin/{branch}')
@@ -1244,11 +1421,8 @@ def _outgoing(place: Storage) -> tuple[dict, dict]:
                 # diff-tree omits empty commits and merges under its default merge policy.
                 paths = paths_by_commit.get(commit, [])
                 owned = set()
-                counted = set()
                 for path in paths:
                     bits = path.split('/')
-                    # Counted as `git rev-list -- <pack id>` or `-- icon-libraries/<id>` would.
-                    counted.add('/'.join(bits[:2]) if bits[0] == LIBRARIES and len(bits) >= 2 else bits[0])
                     if path == '.gitattributes':
                         continue
                     if bits[0] == LIBRARIES and len(bits) >= 3 and SLUG.fullmatch(bits[1]):
@@ -1260,18 +1434,16 @@ def _outgoing(place: Storage) -> tuple[dict, dict]:
                 if len(owned) != 1:
                     preview['blocked'] = 'Each outgoing commit must contain exactly one brand or icon library. Review and push it with Git.'
                 items.update(owned)
-                for name in counted:
-                    touched[name] = touched.get(name, 0) + 1
             preview['brands'] = len(ids)
             preview['items'] = sorted(items)
     preview['expected'] = hashlib.sha256(canonical({**preview, 'base': base.stdout.strip()}).encode()).hexdigest()
-    return preview, touched
+    return preview
 
 
 def push(place: Storage, expected=None) -> dict:
     if not place.team:
         raise WorkspaceError('This local brands repository has no configured remote push. The commit is the save.')
-    with write_lock(place):
+    with repo_lock(place.folder), write_lock(place):
         preview = outgoing_commits(place)
         if not isinstance(expected, str) or expected != preview['expected']:
             raise WorkspaceError('The push preview changed. Review the saved commits and say yes again.')

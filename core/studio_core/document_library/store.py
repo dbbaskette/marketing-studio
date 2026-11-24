@@ -57,6 +57,7 @@ OCR or a model, installs a reader, or shares anything with a team.
 """
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import os
@@ -605,11 +606,6 @@ class Library:
             row['hidden'] = self._hidden(folder)
             row['search'] = ' '.join((row['title'], row.get('author') or '',
                                       row.get('original_name') or '', excerpt)).casefold()
-            # What keyed() and uploaded() need of the head revision, so they read no record
-            # again: a revision is never changed once kept.
-            row['held'] = {'title': record.get('title'),
-                           **{part: record.get(part) if isinstance(record.get(part), dict) else None
-                              for part in ('markdown', 'original', 'pdf')}}
             entries.append(row)
         try:
             self._state().mkdir(exist_ok=True, mode=0o700)
@@ -641,22 +637,9 @@ class Library:
 
     @staticmethod
     def _public(row: dict) -> dict:
-        return {key: value for key, value in row.items()
-                if key not in ('search', 'key', 'operation', 'fingerprint', 'adopted', 'held')}
-
-    def _held(self, row: dict) -> tuple[Path, dict] | None:
-        """A catalog row's head revision as kept in the index: (its folder, the parts of its
-        record keyed() and uploaded() read), or None for a row from an index written before
-        rows held them."""
-        held = row.get('held')
-        ident, number = row.get('id'), row.get('revision')
-        if not isinstance(held, dict) or not isinstance(ident, str) or not IDENT.match(ident) \
-                or type(number) is not int or number < 1:
-            return None
-        return (self._documents() / ident / 'revisions' / str(number),
-                {'id': ident, 'revision': number, 'title': held.get('title'),
-                 **{part: held.get(part) if isinstance(held.get(part), dict) else None
-                    for part in ('markdown', 'original', 'pdf')}})
+        # A row may be the one this process keeps of catalog.json: nothing inside it leaves.
+        return {key: copy.deepcopy(value) for key, value in row.items()
+                if key not in ('search', 'key', 'operation', 'fingerprint', 'adopted')}
 
     def _matches(self, query='', kind=None, studio=None, origin=None, author=None, state=None,
                  hidden=False, rows=None):
@@ -1071,13 +1054,10 @@ class Library:
             key = row.get('key')
             if key not in wanted or key in found:
                 continue
-            loaded = self._held(row)
-            if loaded is None:
-                try:
-                    loaded = self._record(row['id'])
-                except LibraryError:
-                    continue
-            place, head = loaded
+            try:
+                place, head = self._record(row['id'])
+            except LibraryError:
+                continue
             found[key] = {'id': head['id'], 'revision': head['revision'],
                           'title': head.get('title'),
                           'markdown': (head.get('markdown') or {}).get('sha256'),
@@ -1095,13 +1075,10 @@ class Library:
         for row in self._index():
             if row.get('studio') != studio or row.get('kind') != 'upload' or row.get('key'):
                 continue
-            loaded = self._held(row)
-            if loaded is None:
-                try:
-                    loaded = self._record(row['id'])
-                except LibraryError:
-                    continue
-            head = loaded[1]
+            try:
+                _, head = self._record(row['id'])
+            except LibraryError:
+                continue
             digest = (head.get('original') or {}).get('sha256')
             if isinstance(digest, str):
                 found.setdefault(digest, {'id': head['id'], 'revision': head['revision']})

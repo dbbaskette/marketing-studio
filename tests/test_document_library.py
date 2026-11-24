@@ -858,26 +858,51 @@ class DoingEachJobOnceTests(LibraryCase):
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertEqual({row['title'] for row in made.catalog()['items']}, {'one', 'Other'})
 
-    def test_keyed_uploaded_and_preview_reuse_what_is_already_read(self):
+    def test_keyed_and_uploaded_decide_from_revision_json_never_from_the_catalog(self):
         made = self.made()
         made.retain('blog:one', 'blog', 'blog', 'One', 'Words of one')
         row = made.add_upload('kept.txt', b'kept words', studio='blog')
         made.catalog()
-        with mock.patch.object(store.Library, '_record', autospec=True,
-                               side_effect=store.Library._record) as read:
-            held = made.keyed(['blog:one', 'blog:missing'])
-            uploads = made.uploaded('blog')
-        self.assertEqual(read.call_count, 0)
-        self.assertEqual(set(held), {'blog:one'})
-        self.assertEqual((held['blog:one']['revision'], held['blog:one']['title'],
-                          held['blog:one']['markdown'], held['blog:one']['whole']),
+        # A hand-edited catalog.json whose signature still matches the documents on disk.
+        cache = made._state() / 'catalog.json'
+        held = json.loads(cache.read_text())
+        for entry in held['entries']:
+            entry.update(title='Edited by hand', revision=7, held={'title': 'Forged', 'original': {
+                'sha256': '0' * 64}, 'markdown': {'sha256': '0' * 64}})
+        cache.write_text(json.dumps(held))
+        self.assertEqual({item['title'] for item in made.catalog()['items']}, {'Edited by hand'})
+        found = made.keyed(['blog:one', 'blog:missing'])
+        uploads = made.uploaded('blog')
+        self.assertEqual(set(found), {'blog:one'})
+        self.assertEqual((found['blog:one']['revision'], found['blog:one']['title'],
+                          found['blog:one']['markdown'], found['blog:one']['whole']),
                          (1, 'One', hashlib.sha256(b'Words of one').hexdigest(), True))
         self.assertEqual(uploads, {hashlib.sha256(b'kept words').hexdigest():
                                    {'id': row['id'], 'revision': 1}})
+
+    def test_preview_reads_its_revision_once(self):
+        made = self.made()
+        row = made.add_upload('kept.txt', b'kept words', studio='blog')
         with mock.patch.object(store.Library, '_record', autospec=True,
                                side_effect=store.Library._record) as read:
             self.assertEqual(made.preview(row['id'])['text'].strip(), 'kept words')
         self.assertEqual(read.call_count, 1)
+
+    def test_a_changed_answer_never_changes_the_next_one(self):
+        made = self.made()
+        made.retain('blog:one', 'blog', 'blog', 'One', 'Words of one', project={'id': 'one', 'title': 'One'})
+        made.add_upload('kept.txt', b'kept words')
+        made.catalog()
+        first = made.catalog()          # from the catalog this process keeps in memory
+        expected = json.loads(json.dumps(first))
+        for item in first['items']:
+            item['formats'].append('forged')
+            item['format_labels'].clear()
+            item['gaps'].append('forged')
+            if item['project']:
+                item['project']['title'] = 'Forged'
+        self.assertEqual(made.catalog(), expected)
+        self.assertEqual(library.opened().catalog(), expected)
 
     def test_half_made_revisions_are_cleared_at_most_once_per_stale_interval(self):
         made = self.made()

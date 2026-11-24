@@ -89,9 +89,9 @@ def static_reply(kind: str, body: bytes, headers) -> tuple:
 
 
 # A page's scripts and styles as read from disk, by path: {path: (the file's (st_mtime_ns,
-# st_size, st_ino), mark, bytes, gzip of them or None)}. A browser asking again is answered
-# with one stat() and no read or hash while the file is as it was; a changed file is read
-# again at once. A page has a few dozen of them, so at most STATIC_FILES are held; past
+# st_ctime_ns, st_size, st_ino), mark, bytes, gzip of them or None)}. A browser asking again
+# is answered with one stat() and no read or hash while the file is as it was; a changed
+# file, even one rewritten in place within one mtime tick, is read again at once. A page has a few dozen of them, so at most STATIC_FILES are held; past
 # that, the one used longest ago is dropped.
 STATIC_FILES = 64
 _FILES: dict = {}
@@ -104,7 +104,7 @@ def static_file(kind: str, path, headers) -> tuple:
     Raises OSError when it cannot be read."""
     path = str(path)
     seen = os.stat(path)
-    key = (seen.st_mtime_ns, seen.st_size, seen.st_ino)
+    key = (seen.st_mtime_ns, seen.st_ctime_ns, seen.st_size, seen.st_ino)
     with _FILES_LOCK:
         held = _FILES.pop(path, None)
         if held is not None and held[0] == key:
@@ -250,7 +250,12 @@ def announce(desk, to_a_person: bool, opener=show) -> dict:
 
 # --- the server ------------------------------------------------------------------------
 
-SLOTS = 24      # requests answered at once, as Marketing Studio's network bridge allows
+SLOTS = 24          # requests answered at once, as Marketing Studio's network bridge allows
+SLOT_WAIT = 2.0     # seconds a request past that waits for one to come free
+BUSY = (b'HTTP/1.0 503 Service Unavailable\r\nContent-Type: text/plain; charset=utf-8\r\n'
+        b'Retry-After: 1\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\n'
+        b'Content-Length: 41\r\nConnection: close\r\n\r\n'
+        b'The page is busy. Try again in a moment.\n')
 
 
 class Server(ThreadingHTTPServer):
@@ -261,14 +266,29 @@ class Server(ThreadingHTTPServer):
     request_queue_size = 32
 
     def __init__(self, *args, **kwargs):
-        # One thread per request and never more than SLOTS of them: a request past that is
-        # closed unanswered, as the network bridge closes it, and the browser asks again.
+        # One thread per request and never more than SLOTS of them. A request past that
+        # waits up to SLOT_WAIT seconds for one, and is otherwise answered 503 with
+        # Retry-After: never closed without an answer. Each slot is let go exactly once.
         self.slots = threading.BoundedSemaphore(SLOTS)
         super().__init__(*args, **kwargs)
 
-    def process_request(self, request, client_address):
-        if not self.slots.acquire(blocking=False):
+    def busy(self, request) -> None:
+        """Answer a request no slot came free for: 503, then close."""
+        try:
+            request.settimeout(1.0)
+            try:
+                request.recv(65536)     # what the request sent, so closing does not reset it
+            except OSError:
+                pass
+            request.sendall(BUSY)
+        except OSError:
+            pass
+        finally:
             self.shutdown_request(request)
+
+    def process_request(self, request, client_address):
+        if not self.slots.acquire(timeout=SLOT_WAIT):
+            self.busy(request)
             return
         try:
             super().process_request(request, client_address)

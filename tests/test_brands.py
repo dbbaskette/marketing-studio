@@ -7,6 +7,7 @@ job is started: the job's assistant is a function, or a stand-in `claude` on PAT
 prints events.
 """
 import base64
+import contextlib
 import io
 import json
 import os
@@ -786,7 +787,6 @@ class RemoteRepository(BrandsCase):
         self.made('two')
         listed, after = runs()
         self.assertEqual({p['id']: p['unshared'] for p in listed['packs']}, {'one': 1, 'two': 1})
-        self.assertFalse([args for args in after if '--count' in args])
         self.assertEqual(len(after), len(before), 'a pack added a Git run to the listing')
 
     def test_non_fast_forward_push_keeps_the_local_commit(self):
@@ -965,6 +965,307 @@ class DoingEachJobOnce(BrandsCase):
             self.call('save', key=key)
         self.assertEqual(brand_store.SAVING, set())
         self.assertTrue(self.call('save', key=key)['committed'])
+
+
+class UnderConcurrentUse(BrandsCase):
+    """Saves, jobs and page reads that overlap, ordered by events rather than by time."""
+
+    def ready(self, ident):
+        key = self.new_brand(ident)
+        self.extract(key)
+        self.interpret(key, proposal(ident))
+        self.accept_all(key)
+        return key
+
+    def test_a_file_that_vanishes_while_walked_is_passed_over(self):
+        key = self.new_brand()
+        sources = brand_store.inside(brand_store.record(key)) / 'sources'
+        (sources / 'gone.md').write_text('a file a running command renames away')
+        real = os.scandir
+
+        def vanishing(target):
+            with real(target) as listing:
+                entries = list(listing)
+            if any(entry.name == 'gone.md' for entry in entries):
+                (sources / 'gone.md').unlink(missing_ok=True)   # listed, then gone before its stat
+            return contextlib.nullcontext(entries)
+
+        with mock.patch.object(brand_store.os, 'scandir', vanishing):
+            shown = brand_store.view(key)
+        self.assertNotIn('gone.md', {s['name'] for s in shown['sources']})
+        self.assertIn('export.zip', {s['name'] for s in shown['sources']})
+
+    def test_the_listing_shows_a_brand_being_saved_or_changing_as_last_recorded(self):
+        saving, changing = self.new_brand('saving'), self.new_brand('changing')
+        with brand_store.LOCK:
+            brand_store.SAVING.add(saving)
+        self.addCleanup(brand_store.SAVING.discard, saving)
+
+        def changing_walk(folder):
+            raise FileNotFoundError(2, 'renamed while it was walked', str(folder))
+
+        with mock.patch.object(brand_store, 'walk', changing_walk):
+            listed = {work['key']: work for work in self.call('list')['work']}
+        self.assertEqual(set(listed), {saving, changing})
+        self.assertTrue(listed[saving]['saving'])
+        self.assertFalse(listed[changing]['saving'])
+        self.assertEqual(listed[changing]['name'], 'Example Co')
+
+    def test_a_second_save_to_one_repository_waits_for_the_first_however_long_it_takes(self):
+        first, second = self.ready('first'), self.ready('second')
+        sealing, release_seal = threading.Event(), threading.Event()
+        committing, release_commit, waiting = threading.Event(), threading.Event(), threading.Event()
+        real_answer, real_git, held = brand_skill.answer, brand_store.git, threading.Lock()
+        commits, outcome = [], {}
+
+        def answer(found, args, *rest, **given):
+            if args[:2] == ['pack', 'seal'] and 'brand-second' in args[2]:
+                sealing.set()
+                release_seal.wait(30)
+            return real_answer(found, args, *rest, **given)
+
+        def git(repo, *args, **given):
+            if 'commit' in args and not commits:
+                commits.append(args)
+                committing.set()
+                release_commit.wait(30)
+            return real_git(repo, *args, **given)
+
+        class Watched:
+            def __enter__(self):
+                if not held.acquire(blocking=False):
+                    waiting.set()
+                    held.acquire()
+                return self
+
+            def __exit__(self, *args):
+                held.release()
+
+        def save(key):
+            try:
+                outcome[key] = self.call('save', key=key)
+            except BaseException as failure:
+                outcome[key] = failure
+
+        # write_lock gives up after 0.2 s here: a Save that reached it while the other
+        # committed would fail, so passing shows the second one waited before it.
+        quick = lambda place: brand_store.ProcessRLock(
+            lambda: brand_store.brand_data.lock_path(place.folder), timeout=0.2, refusal=WorkspaceError)
+        with mock.patch.object(brand_skill, 'answer', answer), \
+                mock.patch.object(brand_store, 'git', git), \
+                mock.patch.object(brand_store, 'repo_lock', lambda folder: Watched()), \
+                mock.patch.object(brand_store, 'write_lock', quick):
+            later = threading.Thread(target=save, args=(second,))
+            later.start()
+            sooner = None
+            try:
+                self.assertTrue(sealing.wait(60))
+                sooner = threading.Thread(target=save, args=(first,))
+                sooner.start()
+                self.assertTrue(committing.wait(60))
+                release_seal.set()
+                self.assertTrue(waiting.wait(60), 'the second Save never reached the repository')
+            finally:
+                release_seal.set()
+                release_commit.set()
+                later.join(60)
+                if sooner is not None:
+                    sooner.join(60)
+        for key in (first, second):
+            self.assertNotIsInstance(outcome[key], BaseException, outcome[key])
+            self.assertTrue(outcome[key]['committed'])
+        # Both were first saves: the second committed into the repository the first made.
+        self.assertEqual(self.log(self.brands, 'rev-list', '--count', 'HEAD').strip(), '2')
+        self.assertEqual(self.log(self.brands, 'ls-tree', '--name-only', 'HEAD').split(),
+                         ['.gitattributes', 'first', 'second'])
+
+    def test_a_repository_made_by_hand_during_a_first_save_is_refused_as_before(self):
+        key = self.ready('example')
+        real = brand_store.checked
+
+        def made_by_hand(found, folder, env=None):
+            if not (self.brands / '.git').exists():
+                self.brands.mkdir(exist_ok=True)
+                subprocess.run(['git', 'init', '--quiet', '-b', 'main', str(self.brands)], check=True)
+            return real(found, folder, env=env)
+
+        with mock.patch.object(brand_store, 'checked', made_by_hand), \
+                self.assertRaisesRegex(WorkspaceError, 'inside another repository'):
+            self.call('save', key=key)
+        self.assertTrue(brand_store.folder_of(key).is_dir())
+        self.assertEqual(subprocess.run(['git', '-C', str(self.brands), 'rev-parse', '--verify', 'HEAD'],
+                                        capture_output=True).returncode, 128)
+        self.assertEqual(brand_store.SAVING, set())
+
+    def test_a_job_ended_by_system_exit_still_writes_its_lines_and_how_it_ended(self):
+        key = self.new_brand()
+
+        def job(line, stop):
+            line('One')
+            line('Two')
+            raise SystemExit(3)
+
+        brand_store.begin(key, 'extract', job)
+        brand_store.wait(key, 30)
+        on_disk = json.loads((brand_store.folder_of(key) / 'work.json').read_text())
+        self.assertEqual((on_disk['task']['state'], on_disk['task']['lines']), ('failed', ['One', 'Two']))
+        self.assertIn('ended unexpectedly', on_disk['task']['detail'])
+        self.assertEqual((brand_store.TASKS, brand_store.LIVE), ({}, {}))
+
+
+class WalkBoundaries(unittest.TestCase):
+    """A folder swapped for a link while it waits to be walked is refused, never followed."""
+
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.root = Path(temp.name).resolve()
+        self.brand = self.root / 'brand'
+        (self.brand / 'inner').mkdir(parents=True)
+        (self.brand / 'inner/kept.md').write_text('inside')
+        (self.brand / 'top.md').write_text('inside')
+        self.outside = self.root / 'outside'
+        self.outside.mkdir()
+        (self.outside / 'secret.md').write_text('outside the brand')
+
+    def swapped(self, into):
+        real, done = os.open, []
+
+        def opening(name, flags, *args, dir_fd=None, **given):
+            if name == 'inner' and dir_fd is not None and not done:
+                done.append(name)
+                os.rename(self.brand / 'inner', self.root / 'moved-inner')
+                into()
+            return real(name, flags, *args, dir_fd=dir_fd, **given)
+        return mock.patch.object(brand_store.os, 'open', opening)
+
+    def test_the_tree_is_walked_whole_when_nothing_changes(self):
+        self.assertEqual([path.relative_to(self.brand).as_posix() for path, _ in brand_store.walk(self.brand)],
+                         ['inner/kept.md', 'top.md'])
+
+    def test_a_folder_swapped_for_a_link_mid_walk_is_refused(self):
+        for nofollow in (brand_store.NOFOLLOW, 0):       # 0: as on a platform without O_NOFOLLOW
+            with self.subTest(nofollow=nofollow):
+                if (self.brand / 'inner').is_symlink():
+                    (self.brand / 'inner').unlink()
+                    os.rename(self.root / 'moved-inner', self.brand / 'inner')
+                link = lambda: (self.brand / 'inner').symlink_to(self.outside, target_is_directory=True)
+                with self.swapped(link), mock.patch.object(brand_store, 'NOFOLLOW', nofollow), \
+                        self.assertRaisesRegex(WorkspaceError, 'symbolic links'):
+                    brand_store.walk(self.brand)
+
+    def test_a_folder_swapped_for_another_folder_mid_walk_is_refused(self):
+        other = lambda: os.rename(self.outside, self.brand / 'inner')
+        with self.swapped(other), self.assertRaisesRegex(WorkspaceError, 'symbolic links'):
+            brand_store.walk(self.brand)
+
+
+@unittest.skipUnless(shutil.which('git'), 'needs Git')
+class UnsharedCounts(unittest.TestCase):
+    """One Git run gives what `git rev-list --count @{u}..HEAD -- <path>` gave for each path."""
+
+    PATHS = ('a', 'b', 'c', 'icon-libraries/lib')
+
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.root = Path(temp.name).resolve()
+        config = self.root / 'gitconfig'
+        config.write_text('[user]\n\tname = Test Person\n\temail = test@example.com\n')
+        patcher = mock.patch.dict(os.environ, {'GIT_CONFIG_GLOBAL': str(config), 'GIT_CONFIG_NOSYSTEM': '1',
+                                               'HOME': str(self.root)})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def git(self, repo, *args):
+        return subprocess.run(['git', '-C', str(repo), *args], capture_output=True, text=True, check=True).stdout
+
+    def put(self, repo, path, text, message=None):
+        (repo / path).parent.mkdir(parents=True, exist_ok=True)
+        (repo / path).write_text(text)
+        self.git(repo, 'add', path)
+        if message:
+            self.git(repo, 'commit', '--quiet', '-m', message)
+
+    def old(self, repo):
+        counts = {}
+        for path in self.PATHS:
+            done = subprocess.run(['git', '-C', str(repo), 'rev-list', '--count', '@{u}..HEAD', '--', path],
+                                  capture_output=True, text=True)
+            number = int(done.stdout.strip() or 0) if done.returncode == 0 else 0
+            if number:
+                counts[path] = number
+        return counts
+
+    def new(self, repo):
+        place = brand_store.Storage(repo, True, repo, 'https://example.invalid/brands.git')
+        with mock.patch.object(brand_store, 'git', wraps=brand_store.git) as run:
+            counts = brand_store.unshared_counts(place)
+        self.assertLessEqual(run.call_count, 2)     # the upstream's commit, then one log
+        return {path: number for path, number in counts.items() if path in self.PATHS}
+
+    def test_the_counts_are_what_path_limited_rev_list_gave(self):
+        upstream = self.root / 'upstream.git'
+        subprocess.run(['git', 'init', '--quiet', '--bare', '-b', 'main', str(upstream)], check=True)
+        repo = self.root / 'brands'
+        subprocess.run(['git', 'init', '--quiet', '-b', 'main', str(repo)], check=True)
+        for path in ('a/x', 'b/x', 'c/x', 'icon-libraries/lib/library.zip'):
+            self.put(repo, path, 'base\n')
+        self.git(repo, 'commit', '--quiet', '-m', 'Base')
+        # The upstream is not origin/<branch>: a remote named upstream.
+        self.git(repo, 'remote', 'add', 'upstream', str(upstream))
+        self.git(repo, 'push', '--quiet', '-u', 'upstream', 'main')
+        self.put(repo, 'a/x', 'main\n', 'Main changes a')
+        self.git(repo, 'checkout', '--quiet', '-b', 'side', 'upstream/main')
+        self.put(repo, 'a/y', 'side\n')
+        self.put(repo, 'b/y', 'side\n', 'Side changes a and b')
+        self.put(repo, 'icon-libraries/lib/library.zip', 'side\n', 'Side changes the library')
+        self.git(repo, 'checkout', '--quiet', 'main')
+        self.git(repo, 'merge', '--quiet', '--no-ff', '--no-edit', 'side')
+        # A merge that keeps its first parent's tree: the side's change to b is hidden.
+        self.git(repo, 'checkout', '--quiet', '-b', 'kept-out', 'upstream/main')
+        self.put(repo, 'b/z', 'dropped\n', 'Kept out of b')
+        self.git(repo, 'checkout', '--quiet', 'main')
+        self.git(repo, 'merge', '--quiet', '-s', 'ours', '--no-edit', 'kept-out')
+        self.put(repo, 'b/x', 'later\n', 'Main changes b')
+        # A conflicting merge resolved by hand.
+        self.git(repo, 'checkout', '--quiet', '-b', 'conflict', 'HEAD~1')
+        self.put(repo, 'a/x', 'theirs\n', 'Conflict side changes a')
+        self.git(repo, 'checkout', '--quiet', 'main')
+        self.put(repo, 'a/x', 'ours\n', 'Main changes a again')
+        subprocess.run(['git', '-C', str(repo), 'merge', '--quiet', '--no-edit', 'conflict'],
+                       capture_output=True, text=True)
+        self.put(repo, 'a/x', 'resolved\n', 'Resolve the conflict')
+        # An empty commit, and a merge whose parents have the same tree.
+        self.git(repo, 'commit', '--quiet', '--allow-empty', '-m', 'Empty')
+        self.git(repo, 'checkout', '--quiet', '-b', 'same', 'HEAD')
+        self.git(repo, 'commit', '--quiet', '--allow-empty', '-m', 'Empty side')
+        self.git(repo, 'checkout', '--quiet', 'main')
+        self.git(repo, 'merge', '--quiet', '--no-ff', '--no-edit', 'same')
+        # A merge of the upstream itself after it moved on.
+        other = self.root / 'other'
+        subprocess.run(['git', 'clone', '--quiet', str(upstream), str(other)], check=True, capture_output=True)
+        self.put(other, 'c/x', 'theirs\n', 'Upstream changes c')
+        self.git(other, 'push', '--quiet', 'origin', 'main')
+        self.git(repo, 'fetch', '--quiet', 'upstream')
+        self.git(repo, 'merge', '--quiet', '--no-edit', 'upstream/main')
+        # The merged upstream commit is the upstream itself: its change to c is not ours.
+        expected = self.old(repo)
+        self.assertEqual(set(expected), {'a', 'b', 'icon-libraries/lib'})
+        self.assertEqual(self.new(repo), expected)
+        # The upstream moves on: the commit merged before is now only one of its ancestors.
+        self.put(other, 'c/y', 'more\n', 'Upstream changes c again')
+        self.git(other, 'push', '--quiet', 'origin', 'main')
+        self.git(repo, 'fetch', '--quiet', 'upstream')
+        expected = self.old(repo)
+        self.assertEqual(self.new(repo), expected)
+
+    def test_no_upstream_counts_nothing_as_before(self):
+        repo = self.root / 'brands'
+        subprocess.run(['git', 'init', '--quiet', '-b', 'main', str(repo)], check=True)
+        self.put(repo, 'a/x', 'one\n', 'One')
+        self.assertEqual(self.old(repo), {})
+        self.assertEqual(self.new(repo), {})
 
 
 class CommandBounds(unittest.TestCase):
