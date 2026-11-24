@@ -5,7 +5,7 @@ What a caller needs to know
 ---------------------------
     keep = upkeep.Upkeep(after=engine.look_again)   # this computer's home and installation
     keep.start()                 # in the background: put back what is safe, then look online
-    keep.again()                 # "Check again": the part on this computer now, online after
+    keep.again()                 # "Check again": as start, unless a look is in hand already
     keep.check(repair=False)     # the part on this computer only, changing nothing
     keep.report()                # what was found, for the page; never waits, starts nothing
     keep.update(working)         # bring missing, older or moved companions from main; refuses

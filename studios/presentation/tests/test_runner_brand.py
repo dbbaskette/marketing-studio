@@ -230,7 +230,8 @@ class FindingABrandSkillTests(unittest.TestCase):
                 brand.Brand()
         self.run.knows(mine, 'acme-brand')
         with mock.patch.object(brand.shutil, 'which', return_value='/usr/bin/node'), \
-                mock.patch.object(brand, 'run_command', self.run):
+                mock.patch.object(brand, 'run_command', self.run), \
+                mock.patch.object(brand, 'ask_command', self.run):
             self.assertEqual(brand.Brand().node, '/usr/bin/node')
             self.assertEqual(self.run.ran[0][0], '/usr/bin/node')
 

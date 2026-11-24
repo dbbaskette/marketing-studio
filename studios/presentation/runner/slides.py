@@ -79,8 +79,12 @@ What a caller needs to know
 
 Added to the above
 ------------------
-- `Slides()` asks the tool for its version and refuses one older than MINIMUM with
-  TooOld, a WorkspaceError that keeps the `version` it found.
+- `Slides()` runs nothing. The first command asks the tool for its version and refuses one
+  older than MINIMUM with TooOld, a WorkspaceError that keeps the `version` it found.
+  The version and what the tool can do (`capabilities()`) are each asked once, as a
+  quick question with no watcher (`ask_command`), and asked again only when the tool's
+  folder, command or package.json has changed since (`_stamp`): an update is seen
+  without a restart.
 - Paths in what a call returns are text, as the tool printed them. Where the tool leaves
   something out, `preview` gives None: `contactSheet` for one slide, `fileId` and `url` for
   a local render. What else the tool said is still there, `critic` among them.

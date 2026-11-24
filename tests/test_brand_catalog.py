@@ -55,6 +55,52 @@ class BrandCatalogTests(unittest.TestCase):
         self.assertEqual(found['skills'], [])
 
 
+class KeptListingTests(unittest.TestCase):
+    """A listing is used again for a short while, until a place it was read from changes
+    (#513): counted by how often a brand skill is asked, never timed."""
+
+    def setUp(self):
+        BrandCatalogTests.setUp(self)
+        self.asked, self.node = [], (lambda _: '/synthetic/node')
+
+    def run_brand(self, *args, **kwargs):
+        self.asked.append(args[0][1])
+        return BrandCatalogTests.run_brand(self, *args, **kwargs)
+
+    def listed(self):
+        return brand_catalog.choices(home=self.home, run=self.run_brand, which=self.node)
+
+    def test_a_listing_asked_again_soon_runs_nothing_again(self):
+        first = self.listed()
+        first['skills'].clear()
+        self.assertEqual(len(self.listed()['skills']), 1, 'what was handed out is a copy')
+        self.assertEqual(len(self.asked), 1)
+
+    def test_a_skill_installed_or_removed_shows_at_once(self):
+        self.listed()
+        other = self.home / '.claude/skills/other-brand'
+        (other / 'scripts').mkdir(parents=True)
+        (other / 'SKILL.md').write_text('Another synthetic brand')
+        (other / 'scripts/other-brand.mjs').write_text('// brands')
+        self.assertEqual(len(self.listed()['skills']), 2)
+        self.assertEqual(len(self.asked), 3, 'both are asked again')
+        for path in sorted(other.rglob('*'), reverse=True):
+            path.rmdir() if path.is_dir() else path.unlink()
+        other.rmdir()
+        self.assertEqual(len(self.listed()['skills']), 1)
+
+    def test_an_updated_skill_or_the_time_running_out_asks_again(self):
+        self.listed()
+        (self.folder / 'scripts/new.mjs').write_text('// a file an update added')
+        self.listed()
+        self.assertEqual(len(self.asked), 2)
+        now = brand_catalog.time.monotonic()
+        with mock.patch.object(brand_catalog.time, 'monotonic',
+                               return_value=now + brand_catalog.KEPT_FOR + 1):
+            self.listed()
+        self.assertEqual(len(self.asked), 3)
+
+
 class OneDiscoveryTests(unittest.TestCase):
     """Every studio looks for a brand skill in the same places (#505)."""
 

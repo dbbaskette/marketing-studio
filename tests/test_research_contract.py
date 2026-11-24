@@ -997,3 +997,81 @@ class PlanningQuestionTests(WorkflowCase):
                     return json.dumps(review(payload['review_template'])), []
                 self.run_with(invoke)
                 self.assertEqual('Planning questions have IDs.' in seen[0], bool(questions))
+
+
+class ProblemOrderTests(unittest.TestCase):
+    """Repeated IDs, criteria and subjects are counted once for a whole list (#513), and the
+    problems are said in the same words and order as when each was counted again for every
+    item. problem_order_expected.json is what the earlier counting said of these cases."""
+
+    def test_the_same_problems_are_said_in_the_same_order(self):
+        import problem_order_cases
+        expected = json.loads((Path(__file__).with_name('problem_order_expected.json'))
+                              .read_text(encoding='utf-8'))
+        with tempfile.TemporaryDirectory() as holder:
+            found = problem_order_cases.said(contract,
+                                             problem_order_cases.runtime(Path(holder)))
+        self.assertEqual(json.loads(json.dumps(found)), expected)
+        self.assertEqual(len(expected['synthesis everything shaped=False']), 17)
+
+    def test_counting_matches_count_and_membership_for_any_value(self):
+        values = ['a', 'b', 'a', ['a'], ['a'], {'k': 1}, None, None, 1, True, 1.0, 'c']
+        twice = contract.repeated(values)
+        among = contract.within(values)
+        for value in (*values, 'z', ['z'], {'k': 2}, 2, False):
+            self.assertEqual(twice(value), values.count(value) > 1, value)
+            self.assertEqual(among(value), value in values, value)
+
+
+class SchemaParsedOnceTests(unittest.TestCase):
+    """The pinned synthesis schema is read and parsed once for each version of its file
+    (#513): counted by reads, never timed."""
+
+    def setUp(self):
+        import problem_order_cases
+        holder = tempfile.TemporaryDirectory()
+        self.addCleanup(holder.cleanup)
+        self.runtime = problem_order_cases.runtime(Path(holder.name).resolve())
+        self.file = self.runtime / 'references' / 'synthesis.schema.json'
+        self.reads = []
+        real = Path.read_text
+
+        def counted(path, *given, **named):
+            if path.name == 'synthesis.schema.json':
+                self.reads.append(path)
+            return real(path, *given, **named)
+
+        patch = mock.patch.object(Path, 'read_text', counted)
+        patch.start()
+        self.addCleanup(patch.stop)
+
+    def test_every_check_of_one_schema_parses_it_once(self):
+        value = dossier('synthesizer-1')
+        for _ in range(5):
+            contract.synthesis_problems(value, self.runtime)
+            contract.packet_problems(value, {'sources/source.txt': TEXT}, self.runtime,
+                                     'synthesizer-1')
+            contract.pinned_schema(self.runtime)
+            contract.pinned(self.runtime)
+        self.assertEqual(len(self.reads), 1)
+
+    def test_a_changed_schema_is_read_again(self):
+        contract.pinned(self.runtime)
+        schema = json.loads(self.file.read_text())
+        self.reads.clear()
+        schema['$defs']['statement']['properties']['kind']['enum'].append('aside')
+        self.file.write_text(json.dumps(schema))
+        stamp = self.file.stat().st_mtime_ns + 5_000_000_000
+        os.utime(self.file, ns=(stamp, stamp))
+        self.assertIn('aside', contract.pinned(self.runtime)['statement']['properties']['kind']
+                      ['enum'])
+        self.assertEqual(len(self.reads), 1, 'the changed file is read again')
+
+    def test_a_schema_that_cannot_be_read_is_refused_as_before(self):
+        self.file.unlink()
+        with self.assertRaises(OSError):
+            contract.pinned(self.runtime)
+        self.assertEqual(contract.synthesis_problems(dossier('synthesizer-1'), self.runtime), [])
+        self.file.write_text('{not json')
+        with self.assertRaises(ValueError):
+            contract.pinned_schema(self.runtime)

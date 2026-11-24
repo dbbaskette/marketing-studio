@@ -210,6 +210,7 @@ What a caller needs to know
 from __future__ import annotations
 
 import contextvars
+import inspect
 import json
 import os
 import re
@@ -659,6 +660,15 @@ class _Run:
 
 from runner import reviews as review_layout  # noqa: E402  engine helpers precede the mixin
 from runner.reviews import Reviewing  # noqa: E402
+
+
+def _takes_found(make) -> bool:
+    """Whether `make`, the brand skill's maker, takes the skills a look listed (`found=`):
+    the runner's own Brand does; a stand-in may not, and is then asked as before."""
+    try:
+        return 'found' in inspect.signature(make).parameters
+    except (TypeError, ValueError):
+        return False
 
 
 class Engine(Reviewing):
@@ -2119,8 +2129,11 @@ class Engine(Reviewing):
                      'runtimes': {'slides': None, 'brand': None},
                      'brand': {'found': False, 'name': None, 'brands': [], 'problem': None},
                      'contracts': None, 'skills': []}
+            # One slides tool and one brand skill, each asked each question once, and the
+            # skill folders scanned once, for the whole look.
             try:
                 tool = self.slides()
+                tool.version()   # a tool too old is the slides tool's own problem
                 ready = slides_tool.ready(tool, drive=settings.load().previews != 'local')
                 found.update(version=ready['version'], local=ready['local'],
                              drive=ready['drive'], pictures=ready['pictures'],
@@ -2133,8 +2146,14 @@ class Engine(Reviewing):
             except (WorkspaceError, OSError) as refusal:
                 found['tool'] = str(refusal)
                 found['version'] = getattr(refusal, 'version', None)
+            listed = None
             try:
-                skill = self._skill()
+                listed = [entry for entry in brand_skill.found()
+                          if isinstance(entry, dict) and entry.get('runtime')]
+            except (WorkspaceError, OSError):
+                pass
+            try:
+                skill = self._skill(listed)
                 found['runtimes']['brand'] = str(skill.runtime)
                 found['brings'] = brand_source.bootstraps(Path(skill.runtime)).get(
                     'harness-slides')
@@ -2150,11 +2169,7 @@ class Engine(Reviewing):
                 found['contracts'] = bool(skill.contracts())
             except (WorkspaceError, OSError) as refusal:
                 found['brand']['problem'] = str(refusal)
-            try:
-                found['skills'] = [entry for entry in brand_skill.found()
-                                   if isinstance(entry, dict) and entry.get('runtime')]
-            except (WorkspaceError, OSError):
-                pass
+            found['skills'] = listed or []
             self._looked = (time.monotonic(), found)
             return found
 
@@ -2253,10 +2268,14 @@ class Engine(Reviewing):
                 'lacks': lacks, 'update': update, 'design_lacks': designing,
                 'design_update': design_update}
 
-    def _skill(self):
+    def _skill(self, listed: list | None = None):
         """The brand skill to use: the one the person named at set-up, else the first
-        that is found."""
+        that is found. `listed` is what `brand_skill.found()` listed just now: the skill is
+        then taken from it, with no folder scanned or question asked again."""
         named = settings.load().brand_skill
+        if listed is not None and _takes_found(self.brand):
+            return self.brand(runtime=named, found=listed) if named \
+                else self.brand(found=listed)
         return self.brand(runtime=named) if named else self.brand()
 
     def brand_skills(self) -> list[dict]:

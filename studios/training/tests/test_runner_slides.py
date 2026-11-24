@@ -186,22 +186,29 @@ class FindingTheRuntimeTests(unittest.TestCase):
                 mock.patch.object(slides, 'run_command', says()):
             self.assertEqual(slides.Slides().node, '/usr/bin/node')
 
-    def test_a_tool_that_is_too_old_is_refused_when_it_is_found(self):
+    def test_a_tool_that_is_too_old_is_refused_when_it_is_first_asked(self):
         os.environ[slides.VARIABLE] = str(installed(self.home / 'runtime'))
         for version in (slides.MINIMUM, '0.19.1-beta.2', '1.0.0'):
             self.assertEqual(slides.Slides(run=says(version)).version(), version)
         for version in ('0.12.9', '0.9.0'):
-            with self.assertRaisesRegex(WorkspaceError, f'harness-slides {version} is '
-                                        f'installed, and a deck needs {slides.MINIMUM} or '
-                                        'newer. Update Harness Slides, then try again.'):
-                slides.Slides(run=says(version))
+            ran = []
+            old = slides.Slides(run=lambda command, cwd=None, version=version: (
+                ran.append(command[2:]) or says(version)(command)))
+            self.assertEqual(ran, [], 'nothing is run when it is made')
+            for asking in (old.version, lambda: old.layouts(Path('/d/brand.json'))):
+                with self.assertRaisesRegex(WorkspaceError, f'harness-slides {version} is '
+                                            f'installed, and a deck needs {slides.MINIMUM} or '
+                                            'newer. Update Harness Slides, then try again.'):
+                    asking()
+            self.assertNotIn(['compose', 'layouts', '--brand', '/d/brand.json'], ran,
+                             'a tool too old is asked nothing else')
         with self.assertRaisesRegex(WorkspaceError, 'did not say which version it is'):
-            slides.Slides(run=lambda command, cwd=None: (0, 'Usage: ...\n', ''))
+            slides.Slides(run=lambda command, cwd=None: (0, 'Usage: ...\n', '')).version()
 
     def test_older_tool_is_refused(self):
         os.environ[slides.VARIABLE] = str(installed(self.home / 'runtime'))
         with self.assertRaises(WorkspaceError) as refused:
-            slides.Slides(run=says('0.15.1'))
+            slides.Slides(run=says('0.15.1')).version()
         self.assertEqual(str(refused.exception), 'harness-slides 0.15.1 is installed, and a '
                          'deck needs 0.19.0 or newer. Update Harness Slides, then try again.')
         self.assertEqual(refused.exception.version, '0.15.1')
@@ -251,6 +258,7 @@ class CommandTests(unittest.TestCase):
     def setUp(self):
         self.ran, self.answers = [], []
         self.slides = slides.Slides(runtime=Path('/opt/harness-slides'), run=self.pretend)
+        self.slides.version()   # asked once, by the first command
         self.ran.clear()
 
     def pretend(self, command, cwd=None):
@@ -261,12 +269,17 @@ class CommandTests(unittest.TestCase):
             return 0, f'Harness Slides {slides.MINIMUM}\n', ''
         return self.answers.pop(0) if self.answers else (0, '{"status": "sound"}\n', '')
 
-    def test_asking_for_the_version_is_all_that_happens_when_it_is_made(self):
+    def test_nothing_is_run_when_it_is_made_and_the_version_is_asked_once(self):
         ran = []
-        slides.Slides(runtime=Path('/opt/harness-slides'),
-                      run=lambda command, cwd=None: ran.append(command) or says()(command))
+        tool = slides.Slides(runtime=Path('/opt/harness-slides'),
+                             run=lambda command, cwd=None: ran.append(command) or says()(command))
+        self.assertEqual(ran, [])
+        self.assertEqual((tool.version(), tool.version()), (slides.MINIMUM, slides.MINIMUM))
+        tool.outline_contract('/d/brand.json')
         self.assertEqual(ran, [['node', '/opt/harness-slides/scripts/harness-slides.mjs',
-                                '--version']])
+                                '--version'],
+                               ['node', '/opt/harness-slides/scripts/harness-slides.mjs',
+                                'outline', 'contract', '--brand', '/d/brand.json']])
 
     def test_each_command_is_run_as_the_command_line_takes_it(self):
         deck = self.slides
@@ -486,7 +499,8 @@ class CommandTests(unittest.TestCase):
                 self.slides.layouts('/d/brand.json')
 
     def test_the_version_is_read_from_what_the_command_prints(self):
-        self.assertEqual(self.slides.version(), slides.MINIMUM)
+        tool = slides.Slides(runtime=Path('/opt/harness-slides'), run=self.pretend)
+        self.assertEqual(tool.version(), slides.MINIMUM)
         self.assertEqual(self.ran[0][2:], ['--version'])
 
     def test_drive_is_reached_or_it_is_not(self):
@@ -774,7 +788,8 @@ class ReadyTests(Deck):
                          {'tool': True, 'version': slides.MINIMUM, 'pictures': True,
                           'local': True, 'drive': True, 'missing': []})
         self.assertEqual(asked, ['python3', 'pdftoppm', 'pdfinfo', 'soffice'])
-        self.assertEqual(self.tool.calls, [['--version'], ['--version'], ['drive', 'check']])
+        self.assertEqual(self.tool.calls, [['--version'], ['drive', 'check']],
+                         'the version is asked once')
 
     def test_each_missing_thing_is_a_sentence_for_a_person(self):
         self.tool.drive = False
@@ -1585,7 +1600,7 @@ class StandInCompositionTests(Deck):
     def test_it_says_which_version_it_is_and_lists_its_calls(self):
         self.assertEqual(self.slides.version(), slides.MINIMUM)
         self.slides.layouts(self.contract)
-        self.assertEqual(self.tool.calls, [['--version'], ['--version'],
+        self.assertEqual(self.tool.calls, [['--version'],
                                            ['compose', 'layouts', '--brand', self.contract]])
         self.assertEqual(self.tool(['node', 'script', 'studio']),
                          (1, '', 'Unknown command/action; run --help\n'))

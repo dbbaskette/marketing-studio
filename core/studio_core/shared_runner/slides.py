@@ -101,6 +101,31 @@ def run_command(command: list[str], cwd: Path | None = None) -> tuple[int, str, 
     return companion.run_command(command, cwd, TIMEOUT, 'The slides tool')
 
 
+def ask_command(command: list[str], cwd: Path | None = None) -> tuple[int, str, str]:
+    """Ask the tool a quick question that writes nothing, such as its version: one process,
+    with no watcher, and companion.QUICK seconds to answer (companion.ask)."""
+    return companion.ask(command, cwd, 'The slides tool')
+
+
+def _stamp(runtime: Path) -> tuple:
+    """What tells one installed copy of the tool from another: the folder it resolves to,
+    and the (modification time, size) of its command and of its package.json, which states
+    its version. An update moves `current` or rewrites one of them, so what was asked of the
+    copy before is asked again. Reading it runs nothing."""
+    try:
+        folder = Path(runtime).resolve()
+    except (OSError, RuntimeError):
+        folder = Path(runtime)
+    marks = []
+    for part in (SCRIPT, Path('package.json')):
+        try:
+            found = (folder / part).stat()
+            marks.append((found.st_mtime_ns, found.st_size))
+        except OSError:
+            marks.append(None)
+    return (str(folder), *marks)
+
+
 def _numbers(version: str) -> tuple:
     return tuple(int(part) for part in re.findall(r'\d+', version)[:3])
 
@@ -225,6 +250,9 @@ class Slides:
 
     def __init__(self, runtime: Path | None = None, run=None, read=None):
         self.run = run or run_command
+        # A quick question (its version, what it can do) is one process with no watcher;
+        # a `run` given in place of the command line is asked those too.
+        self.ask = None if run else ask_command
         self.read = read or read_guidance
         # A folder named earlier, such as one a job was given before an update, is said
         # through `current` when it was a version folder: an update removes that folder.
@@ -237,17 +265,29 @@ class Slides:
         self._reviews: bool | None = None
         self._capabilities: frozenset | None = None
         self._asked_capabilities = False
+        self._version: str | None = None
+        self._copy = _stamp(self.runtime)   # the copy what is kept was asked of
         if self.node is None:
             raise WorkspaceError('harness-slides needs Node.js 20 or newer, which was not '
                                  'found on this computer. Install it, then try again.')
-        found = self.version()
-        if not _numbers(found):
-            raise WorkspaceError('harness-slides did not say which version it is. Check '
-                                 'that it is installed whole.')
-        if _numbers(found) < _numbers(MINIMUM):
-            raise TooOld(found)
+        # Nothing is run yet: the first command asks the version, and a tool older than
+        # MINIMUM is refused then, with TooOld.
+
+    def _fresh(self) -> None:
+        """Forget what was asked of the tool when its copy has changed since (_stamp): an
+        updated or replaced tool is seen without a restart."""
+        now = _stamp(self.runtime)
+        if now != self._copy:
+            self._copy, self._version = now, None
+            self._designs = self._sections = self._assets = self._reviews = None
+            self._capabilities, self._asked_capabilities = None, False
+
+    def _ask(self, *args: str) -> tuple[int, str, str]:
+        """A quick question to the tool, as `ask_command` asks it."""
+        return (self.ask or self.run)([self.node, str(self.runtime / SCRIPT), *args])
 
     def _call(self, *args: str) -> str:
+        self.version()   # a tool older than MINIMUM is refused before it is asked anything
         code, out, err = self.run([self.node, str(self.runtime / SCRIPT), *args])
         if code != 0:
             found = _blocked(out) if '--json' in args else None
@@ -268,8 +308,21 @@ class Slides:
         return found
 
     def version(self) -> str:
-        """The runtime's version, as it states it."""
-        return self._call('--version').strip().rpartition(' ')[2]
+        """The runtime's version, as it states it. A tool older than MINIMUM is refused with
+        TooOld. Asked once for each copy of the tool (_stamp)."""
+        self._fresh()
+        if self._version is None:
+            code, out, err = self._ask('--version')
+            if code != 0:
+                raise Refused(_problems(err, code))
+            found = out.strip().rpartition(' ')[2]
+            if not _numbers(found):
+                raise WorkspaceError('harness-slides did not say which version it is. Check '
+                                     'that it is installed whole.')
+            if _numbers(found) < _numbers(MINIMUM):
+                raise TooOld(found)
+            self._version = found
+        return self._version
 
     def outline_contract(self, brand: Path) -> str:
         """What an outline holds and how much a slide of this brand carries, as text."""
@@ -382,10 +435,10 @@ class Slides:
         if self._designs is None:
             try:
                 with tempfile.TemporaryDirectory() as folder:
-                    code, out, _ = self.run([
-                        self.node, str(self.runtime / SCRIPT), 'design', 'propose',
-                        '--project', str(Path(folder) / 'project'), '--file',
-                        str(Path(folder) / 'none.json'), '--mode', 'batch', '--json'])
+                    code, out, _ = self._ask(
+                        'design', 'propose', '--project', str(Path(folder) / 'project'),
+                        '--file', str(Path(folder) / 'none.json'), '--mode', 'batch',
+                        '--json')
             except (WorkspaceError, OSError):
                 code, out = 0, ''
             self._designs = code != 0 and _blocked(out) is not None
@@ -402,9 +455,9 @@ class Slides:
         if self._sections is None:
             try:
                 with tempfile.TemporaryDirectory() as folder:
-                    code, out, _ = self.run([
-                        self.node, str(self.runtime / SCRIPT), 'compose', 'compile', '--file',
-                        str(Path(folder) / 'none.json'), '--section', '--json'])
+                    code, out, _ = self._ask(
+                        'compose', 'compile', '--file', str(Path(folder) / 'none.json'),
+                        '--section', '--json')
             except (WorkspaceError, OSError):
                 code, out = 0, ''
             found = _blocked(out) if code != 0 else None
@@ -420,10 +473,15 @@ class Slides:
     def capabilities(self) -> frozenset | None:
         """What the tool says it has, as `version` lists it, or None when it lists nothing,
         as 0.13.1 and the builds before the list do not. Asked once."""
+        self._fresh()
         if not self._asked_capabilities:
             self._asked_capabilities = True
             try:
-                found = json.loads(self._call('version'))
+                self.version()
+                code, out, err = self._ask('version')
+                if code != 0:
+                    raise Refused(_problems(err, code))
+                found = json.loads(out)
             except (WorkspaceError, OSError, ValueError):
                 found = None
             listed = found.get('capabilities') if isinstance(found, dict) else None
@@ -435,6 +493,7 @@ class Slides:
         """Whether this tool keeps an asset manifest a deck's pictures and icons are recorded
         in: its capability `assets`, or for a tool that lists none, whether `assets status` of
         an empty folder, thrown away after, answers as JSON. Nothing is written. Kept."""
+        self._fresh()
         if self._assets is None:
             listed = self.capabilities()
             if listed is not None:
@@ -442,9 +501,8 @@ class Slides:
             else:
                 try:
                     with tempfile.TemporaryDirectory() as folder:
-                        code, out, _ = self.run([
-                            self.node, str(self.runtime / SCRIPT), 'assets', 'status',
-                            '--project', folder, '--json'])
+                        code, out, _ = self._ask('assets', 'status', '--project', folder,
+                                                 '--json')
                     found = json.loads(out) if code == 0 else None
                 except (WorkspaceError, OSError, ValueError):
                     found = None
@@ -499,6 +557,7 @@ class Slides:
         """Whether this tool reviews a whole compiled deck against its approved design and
         renders the deck it reviews: its capability `compose-review`. A tool that lists no
         capabilities has none, so it is not asked by a refusal."""
+        self._fresh()
         if self._reviews is None:
             self._reviews = 'compose-review' in (self.capabilities() or ())
         return self._reviews
@@ -549,9 +608,10 @@ class Slides:
 NAMES = ('VARIABLE', 'RENDERERS', 'CHANGED', 'PREVIEW_TRIES', 'PREVIEW_PAUSE', 'SCRIPT', 'TIMEOUT', 'LEAD', 'PROGRAMS', 'COUNTED',
          'NOISE', 'PREVIEWING', 'GUIDES', 'REFERENCES', 'GALLERY', 'READ_MOST', 'RELATIONS',
          'POOL', '_POOLS', '_POOLS_HELD', 'pool_size', '_pooled', 'locations', 'find_runtime',
-         'run_command', '_numbers', '_blocked', '_bound', 'example', 'read_guidance', 'ready')
+         'run_command', 'ask_command', '_stamp', '_numbers', '_blocked', '_bound', 'example',
+         'read_guidance', 'ready')
 METHODS = {'TooOld': ('__init__',), 'Refused': ('__init__', 'codes', 'left'), 'Slides':
-           ('__init__', '_call', '_json', 'version', 'outline_contract', 'outline_check',
+           ('__init__', '_fresh', '_ask', '_call', '_json', 'version', 'outline_contract', 'outline_check',
            'outline_start', 'compose_contract', 'layouts', 'merge', 'preview', 'critique',
            'render', 'designs', 'sections', 'has', 'capabilities', 'assets', 'design_status',
            'design_check', 'design_respond', 'asset_icon', 'images_status', 'generate_image',

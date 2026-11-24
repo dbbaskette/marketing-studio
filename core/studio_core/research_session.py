@@ -10,11 +10,14 @@ import contextvars
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
 import secrets
 import shutil
+import stat
 import threading
+import time
 from datetime import datetime, timezone
 from urllib.parse import urlsplit
 
@@ -196,6 +199,64 @@ def bytes_of(path):
     if path.is_symlink() or not path.is_file():
         raise ValueError('Research captures must be ordinary files, not links.')
     return path.read_bytes()
+
+
+# A file whose modification or change time is this close to when it was hashed may still
+# change within the same tick of a coarse file system clock without its times moving, so it
+# is hashed again at the next check ("racy" in Git's sense). Two seconds covers the coarsest.
+RACY_NS = 2_000_000_000
+
+
+def _mark(path):
+    """What changes whenever a file's bytes do: its modification and change times, size,
+    inode and device, from lstat. None when it is not an ordinary file, or is gone."""
+    try:
+        found = os.lstat(path)
+    except OSError:
+        return None
+    if not stat.S_ISREG(found.st_mode):
+        return None
+    return (found.st_mtime_ns, found.st_ctime_ns, found.st_size, found.st_ino, found.st_dev)
+
+
+class Originals:
+    """The selected originals of one research run, each with the SHA-256 it had when the
+    run began, so that a check before each worker call can say whether any changed.
+
+    An original is hashed again whenever its mark (_mark) differs from the mark it had when
+    it was last hashed in this process, and whenever that hash was taken within RACY_NS of
+    its last change. Otherwise it is unchanged since: a write moves its change time, which
+    nothing but the system clock can set back, so its bytes are not read again. A changed,
+    replaced, linked or missing original is read, and refused, exactly as before."""
+
+    def __init__(self, paths):
+        self.held = []           # [path, its hash when the run began, mark of that hash]
+        for path in paths:
+            mark, sha = self._read(path)
+            self.held.append([path, sha, mark])
+
+    @staticmethod
+    def _read(path):
+        """(mark, SHA-256) of the original now; the mark is None when the hash may not be
+        trusted to stand for the file later."""
+        began = time.time_ns()
+        before = _mark(path)
+        sha = hashlib.sha256(bytes_of(path)).hexdigest()
+        if before is None or before[0] >= began - RACY_NS or before[1] >= began - RACY_NS:
+            return None, sha
+        return before, sha
+
+    def changed(self) -> bool:
+        """Whether any original differs from what it was when the run began."""
+        for entry in self.held:
+            path, expected, mark = entry
+            if mark is not None and _mark(path) == mark:
+                continue
+            mark, sha = self._read(path)
+            if sha != expected:
+                return True
+            entry[2] = mark
+        return False
 
 
 def kept_copies(target, file):
@@ -506,11 +567,11 @@ class Workflow:
                 if phase == 'complete': tracked['checked_result_seconds'] = timing.get('elapsed_seconds')
                 progress(copy.deepcopy(tracked))
 
-        original_hashes = [(s['original_path'], hashlib.sha256(bytes_of(s['original_path'])).hexdigest())
-                           for s in sources if s.get('original_path')]
+        # Each check reads an original again only when it may have changed (Originals).
+        originals = Originals([s['original_path'] for s in sources if s.get('original_path')])
 
         def require():
-            if any(hashlib.sha256(bytes_of(path)).hexdigest() != expected for path, expected in original_hashes):
+            if originals.changed():
                 self.command(case, 'collection', 'stop')
                 report('invalidated')
                 raise ValueError('A selected original changed during research. Earlier evidence is kept; capture and approve its new revision.')

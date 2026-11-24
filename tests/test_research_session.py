@@ -499,3 +499,82 @@ class CaptureTextTests(unittest.TestCase):
                              'Once the tidied text is kept, it is the one registered')
             self.assertEqual(session.capture_text(UNTIDY, session.kept_copies(target, 'sources/selected/new.txt')),
                              tidy(UNTIDY))
+
+
+class OriginalsTests(unittest.TestCase):
+    """The check before each worker call reads a selected original again only when it may
+    have changed (#513): counted by how often an original is read, never timed. Whether a
+    change is found is exactly as before."""
+
+    def setUp(self):
+        holder = tempfile.TemporaryDirectory()
+        self.addCleanup(holder.cleanup)
+        self.folder = Path(holder.name).resolve()
+        self.first, self.second = self.folder / 'first.txt', self.folder / 'second.txt'
+        self.first.write_text('A selected original.')
+        self.second.write_text('Another selected original.')
+        self.read = []
+        real = session.bytes_of
+        patch = mock.patch.object(session, 'bytes_of',
+                                  lambda path: self.read.append(Path(path).name) or real(path))
+        patch.start()
+        self.addCleanup(patch.stop)
+
+    def settled(self):
+        """As if each file was last written long before it was hashed."""
+        return mock.patch.object(session, 'RACY_NS', 0)
+
+    def test_an_unchanged_original_is_hashed_once_across_worker_calls(self):
+        with self.settled():
+            originals = session.Originals([self.first, self.second])
+            for _ in range(20):
+                self.assertFalse(originals.changed())
+        self.assertEqual(self.read, ['first.txt', 'second.txt'])
+
+    def test_a_changed_original_is_read_again_and_found(self):
+        with self.settled():
+            originals = session.Originals([self.first, self.second])
+            self.assertFalse(originals.changed())
+            self.second.write_text('Changed outside a decision.')
+            self.assertTrue(originals.changed())
+        self.assertEqual(self.read, ['first.txt', 'second.txt', 'second.txt'])
+
+    def test_a_same_size_change_with_its_time_put_back_is_found(self):
+        with self.settled():
+            originals = session.Originals([self.first])
+            before = self.first.stat()
+            self.first.write_text('A selected originaL.')
+            os.utime(self.first, ns=(before.st_atime_ns, before.st_mtime_ns))
+            self.assertEqual(self.first.stat().st_size, before.st_size)
+            self.assertTrue(originals.changed(), 'its change time moved')
+
+    def test_a_file_written_just_before_it_was_hashed_is_read_every_time(self):
+        originals = session.Originals([self.first])
+        for _ in range(3):
+            self.assertFalse(originals.changed())
+        self.assertEqual(self.read, ['first.txt'] * 4, 'a write in the same tick could hide')
+
+    def test_an_original_replaced_by_a_link_or_removed_is_refused_as_before(self):
+        with self.settled():
+            originals = session.Originals([self.first])
+            self.first.unlink()
+            self.first.symlink_to(self.second)
+            with self.assertRaisesRegex(ValueError, 'ordinary files, not links'):
+                originals.changed()
+            self.first.unlink()
+            with self.assertRaises(ValueError):
+                originals.changed()
+
+    def test_an_original_selected_twice_that_changed_between_its_hashes_is_found(self):
+        real, reads = session.bytes_of, []
+
+        def changing(path):
+            data = real(path)
+            if not reads:
+                Path(path).write_text('Changed while the run began, to a new length.')
+            reads.append(1)
+            return data
+
+        with self.settled(), mock.patch.object(session, 'bytes_of', changing):
+            originals = session.Originals([self.first, self.first])
+            self.assertTrue(originals.changed())

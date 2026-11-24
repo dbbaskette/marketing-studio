@@ -78,9 +78,13 @@ What a caller needs to know
 
 Added to the above
 ------------------
-- `Slides()` asks the tool for its version and refuses one older than MINIMUM with
-  TooOld, a WorkspaceError that keeps the `version` it found. What a new deck needs is said
-  by capability and never by version: `lacks()` names each of NEEDED the tool lacks, in
+- `Slides()` runs nothing. The first command asks the tool for its version and refuses one
+  older than MINIMUM with TooOld, a WorkspaceError that keeps the `version` it found.
+  The version and what the tool can do (`capabilities()`) are each asked once, as a
+  quick question with no watcher (`ask_command`), and asked again only when the tool's
+  folder, command or package.json has changed since (`_stamp`): an update is seen
+  without a restart.
+- What a new deck needs is said by capability and never by version: `lacks()` names each of NEEDED the tool lacks, in
   order, and NAMES says each as a person reads it. RELEASE is the release a person is told
   to update to, the one `pins/companions.json` pins.
 - Paths in what a call returns are text, as the tool printed them. Where the tool leaves

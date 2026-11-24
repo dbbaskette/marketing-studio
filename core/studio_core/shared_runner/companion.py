@@ -8,6 +8,7 @@ What a caller needs to know
     runtime = companion.find_runtime(places, SCRIPT, VARIABLE, 'harness-slides',
                                      'a deck cannot be made')
     code, out, err = companion.run_command(command, cwd, 300, 'The slides tool')
+    code, out, err = companion.ask(command, cwd, 'The slides tool')   # a quick question
     with companion.stopping(run.stop):
         ...                                   # every command run here ends on Stop
     code, late = companion.supervise(command, cwd, env, stdin, seconds, errors, each, stop)
@@ -25,6 +26,11 @@ What a caller needs to know
   WorkspaceError whose sentence begins with `said`. Within `stopping(stop)`, a command
   still running when `stop` is set is ended and Stopped is raised. Stopped is not a
   WorkspaceError: a step ended on purpose has nothing to say to a person.
+- `ask` is `run_command` for a quick, read-only question a companion answers at once, such
+  as its version, what it can do or its usage: one process, no watcher (see `supervise`),
+  and QUICK seconds to answer, after which it is ended with everything it started. Use it
+  only for a question that writes nothing and outlives no request; a job that can run long
+  or be stopped by the person goes through `run_command`, which keeps the watcher.
 - `stopping` holds for the thread it is entered in. A thread started inside it, such as
   one of a pool, needs `contextvars.copy_context().run` to carry it.
 - `supervise` is what both an agent and a companion command run under. The command gets a
@@ -36,7 +42,10 @@ What a caller needs to know
   inside an agent ends when that agent is stopped. A process
   that started a session of its own is out of reach, so reading stops GRACE seconds after
   the rest has been ended. The command is always waited for. Where there are no process
-  groups, only the command itself is ended.
+  groups, only the command itself is ended. With `watch` False there is no watcher: the
+  command leads a process group of its own, which is killed in all the cases above except
+  the caller being killed. That is for `ask` alone, whose commands end by themselves within
+  QUICK seconds.
 """
 from __future__ import annotations
 
@@ -62,6 +71,7 @@ SKILLS = (('.claude', 'skills'), ('.agents', 'skills'), ('.cursor', 'skills'))
 GROUPS = hasattr(os, 'killpg')   # elsewhere only the command itself can be ended
 TICK = 0.05     # seconds between looks at whether a command should be ended
 GRACE = 2       # seconds to read what is left once a command has been ended
+QUICK = 30      # seconds a quick, read-only question (`ask`) has to answer
 # The watcher leads the process group a command joins. It kills its own group when the
 # pipe from the caller closes, which happens only when the caller is killed: a caller that
 # ends a command itself kills the group first.
@@ -140,14 +150,16 @@ def _text(data: bytes) -> str:
 
 
 def run_command(command: list[str], cwd: Path | None, seconds: float,
-                said: str, env: dict | None = None) -> tuple[int, str, str]:
+                said: str, env: dict | None = None, watch: bool = True
+                ) -> tuple[int, str, str]:
     """Run a command line once: (exit code, standard output, standard error). `env` is
-    the whole environment it is given; None is this process's own."""
+    the whole environment it is given; None is this process's own. `watch` False is for
+    `ask` alone."""
     stop, printed = STOP.get(), []
     with tempfile.TemporaryFile() as errors:
         try:
             code, late = supervise(command, cwd, env, '', seconds, errors, printed.append,
-                                   stop)
+                                   stop, watch=watch)
         except OSError as failure:
             raise WorkspaceError(f'{said} could not be started ({failure}).')
         errors.seek(0)
@@ -157,6 +169,13 @@ def run_command(command: list[str], cwd: Path | None, seconds: float,
     if late:
         raise WorkspaceError(f'{said} did not answer in {seconds:g} seconds.')
     return code, _text(b''.join(printed)), _text(complaint)
+
+
+def ask(command: list[str], cwd: Path | None, said: str, env: dict | None = None,
+        seconds: float = QUICK) -> tuple[int, str, str]:
+    """A quick, read-only question to a companion, run as `run_command` runs a command
+    but as one process, with no watcher, and `seconds` to answer."""
+    return run_command(command, cwd, seconds, said, env, watch=False)
 
 
 def _watcher() -> subprocess.Popen | None:
@@ -181,20 +200,22 @@ def _dismiss(watcher: subprocess.Popen | None) -> None:
 
 
 def supervise(command: list[str], cwd: Path | None, env: dict | None, stdin: str,
-              seconds: float, errors, each, stop: threading.Event | None = None
-              ) -> tuple[int, bool]:
+              seconds: float, errors, each, stop: threading.Event | None = None,
+              watch: bool = True) -> tuple[int, bool]:
     """Run a command to its end or to its time limit, passing each line it prints to
     `each` as bytes. Returns its exit code and whether it was stopped for taking too long.
     `errors` is a file, or the path of one, that standard error is written to. With
     `seconds` None there is no time limit: the command runs until it ends or is stopped.
+    `watch` False starts no watcher, for a quick question that ends by itself (`ask`).
 
     The whole process group is killed once the command ends, when time runs out, when
     `stop` is set or when the caller fails; see the module docstring.
     """
     if isinstance(errors, (str, os.PathLike)):
         with open(errors, 'wb') as complaints:
-            return supervise(command, cwd, env, stdin, seconds, complaints, each, stop)
-    watcher = _watcher() if GROUPS else None
+            return supervise(command, cwd, env, stdin, seconds, complaints, each, stop,
+                             watch)
+    watcher = _watcher() if GROUPS and watch else None
     grouped = ({'process_group': watcher.pid} if watcher is not None
                else {'start_new_session': GROUPS})
     try:
