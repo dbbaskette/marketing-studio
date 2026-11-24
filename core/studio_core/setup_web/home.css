@@ -335,3 +335,5 @@ body:has(#settings:not([hidden]) .save-bar) .toasts { bottom: calc(5.5rem + env(
 .library-continue { scroll-margin-top: 5rem; scroll-margin-bottom: calc(var(--tab-bar-room, 0px) + 1rem); }
 .library-continue > * + * { margin-top: .6rem; }
 .library-continue .bar { flex-wrap: wrap; margin-bottom: 0; }
+/* A studio that cannot open now: its state's tag sits at the start of its card. */
+.library-continue .pick-card .tag { align-self: flex-start; }

@@ -10,8 +10,8 @@ const HOME = 'http://127.0.0.1:8790';
 const KEY = 'home-fixture-token';
 
 // A shell loaded on a studio page at `hash`, with `saved` in this tab's memory.
-function shellAt(hash, saved = null, here = { protocol: 'http:', hostname: '127.0.0.1', port: '8791' }) {
-  const memory = new Map(saved ? [['marketing-studio-return', JSON.stringify(saved)]] : []);
+function shellAt(hash, saved = null, here = { protocol: 'http:', hostname: '127.0.0.1', port: '8791' }, memory = new Map()) {
+  if (saved) memory.set('marketing-studio-return', JSON.stringify(saved));
   const body = { dataset: {}, append() {}, querySelectorAll: () => [] };
   const document = { readyState: 'complete', body, documentElement: { style: {} }, activeElement: null,
     querySelector: () => null, querySelectorAll: () => [], addEventListener() {}, createElement: () => ({}) };
@@ -47,6 +47,19 @@ for (const hash of ['#home=' + encodeURIComponent('http://elsewhere.example:8790
   assert.equal(shellAt(hash).continueLink(doc), null, hash);
 }
 assert.equal(shellAt('', { home: 'http://elsewhere.example:8790', token: KEY }).continueLink(doc), null);
+// The shell keeps the pair in this tab's memory as it loads, as every studio's way back does,
+// so the link still works after the page clears its fragment or reloads, whichever studio it is.
+{
+  const memory = new Map();
+  shellAt(launched, null, undefined, memory);
+  assert.deepEqual(JSON.parse(memory.get('marketing-studio-return')), { home: HOME, token: KEY });
+  assert.equal(shellAt('', null, undefined, memory).continueLink(doc), HOME + '/#token=' + KEY + '&continue=launch-0a1b2c3d4e@2');
+  // Only a valid pair is kept: a home elsewhere or a malformed key leaves the memory as it was.
+  const other = new Map();
+  shellAt('#home=' + encodeURIComponent('http://elsewhere.example:8790') + '&homeToken=' + KEY, null, undefined, other);
+  shellAt('#home=' + encodeURIComponent(HOME) + '&homeToken=short', null, undefined, other);
+  assert.equal(other.size, 0);
+}
 
 // The home page reads `continue=<id>@<revision>` and nothing else of it.
 const app = fs.readFileSync(path.join(ROOT, 'core/studio_core/setup_web/app.js'), 'utf8');
@@ -64,4 +77,21 @@ assert.match(app, /continueWanted \? 'library' : 'home'/);
 assert.match(app, /await libraryCatalog\.continueWith\(id, revision\)/);
 assert.match(app, /continueIn: \{studios: continueStudios, open: continueInStudio\}/);
 assert.match(app, /api\('open', \{studio: studio\.id, library: \{id: doc\.id, revision: doc\.revision\}\}\)/);
+// A `continue=` that reached this tab before its first snapshot opens the Library on load;
+// setup, which has no Library, drops it.
+{
+  const first = /function firstView\(\) \{[\s\S]*?\n\}/.exec(app);
+  assert.ok(first, 'the home page chooses its first screen with firstView');
+  const run = (state) => {
+    const context = vm.createContext({ ...state });
+    vm.runInContext(first[0] + '\nthis.view = firstView();', context);
+    return [context.view, context.continueWanted];
+  };
+  const wanted = { id: 'launch-0a1b2c3d4e', revision: 2 };
+  assert.deepEqual(JSON.parse(JSON.stringify(run({ setup: false, standalone: false, continueWanted: wanted, requestedView: 'home' }))),
+    ['library', wanted]);
+  assert.deepEqual(run({ setup: false, standalone: false, continueWanted: null, requestedView: 'home' }), ['home', null]);
+  assert.deepEqual(run({ setup: true, standalone: false, continueWanted: wanted, requestedView: 'library' }), ['settings', null]);
+  assert.match(app, /show\(firstView\(\)\)/);
+}
 console.log('continue link check passed');

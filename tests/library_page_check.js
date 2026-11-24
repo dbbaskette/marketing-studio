@@ -356,14 +356,15 @@ async function post(route, body) {
   find(chooser, 'library-cancel').listeners.click(); await settle(); await choosing;
 
   // Continue in another studio (Marketing Studio's Library): in a readable document's preview,
-  // never on the row, a chooser of the installed studios; one that cannot open says why.
+  // never on the row, one card for each installed studio, shown at once: Preview, then a
+  // studio. One that cannot open is a card that says why, in words not dimmed away.
   {
     remembered = {};
     const opened = [];
     let settleOpen = null;
-    const studios = [{ id: 'presentation', name: 'Presentation Studio', ready: true, note: '' },
-      { id: 'training', name: 'Training Studio', ready: true, note: '' },
-      { id: 'blog', name: 'Blog Studio', ready: false, note: 'Needs setup: Git was not found on this computer.' }];
+    const studios = [{ id: 'presentation', name: 'Presentation Studio', ready: true },
+      { id: 'training', name: 'Training Studio', ready: true },
+      { id: 'blog', name: 'Blog Studio', ready: false, label: 'Needs setup', note: 'Git was not found on this computer.' }];
     const onward = new kit.Catalog({ studio: 'marketing', post, manage: true, download: () => {},
       continueIn: { studios: () => studios, open: (doc, studio) => { opened.push([JSON.parse(JSON.stringify(doc)), studio.id]); return new Promise((resolve, reject) => { settleOpen = { resolve, reject }; }); } } });
     await settle();
@@ -371,39 +372,44 @@ async function post(route, body) {
       assert.deepEqual(all(row).filter((n) => n.tagName === 'button').map((n) => n.textContent), ['Preview'], 'still one action a row');
     }
     await click(find(onward.node, 'library-preview-doc-3'));
-    assert.ok(!find(onward.node, 'library-continue-doc-3'), 'a document with no readable text is not offered');
+    assert.ok(!find(onward.node, 'library-continue-heading'), 'a document with no readable text is not offered');
     await click(find(onward.node, 'library-preview-doc-0'));
-    const offer = find(onward.node, 'library-continue-doc-0');
-    assert.equal(offer.textContent, 'Continue in another studio…');
-    assert.ok(offer.className.includes('button-quiet'), 'the screen keeps its one filled action');
-    await click(offer);
-    assert.equal(document.activeElement.dataset.key, 'library-continue-heading', 'the chooser takes the focus');
+    // No button to reveal them: the studios are there with the preview.
+    assert.ok(find(onward.node, 'library-continue-heading'), 'the studio choices show with the preview');
+    assert.equal(find(onward.node, 'library-continue-heading').textContent, 'Continue in another studio');
     const cards = () => all(onward.node).filter((n) => (n.dataset.key || '').startsWith('library-continue-to-'));
-    assert.deepEqual(cards().map((n) => [n.dataset.studio, n.disabled]), [['presentation', false], ['training', false], ['blog', true]]);
-    assert.ok(cards()[2].text.includes('Needs setup: Git was not found'), 'a studio that cannot open says why');
+    assert.deepEqual(cards().map((n) => [n.dataset.studio, n.className, n.disabled, n.attributes['aria-disabled'] || null]),
+      [['presentation', 'pick-card', false, null], ['training', 'pick-card', false, null], ['blog', 'pick-card', false, 'true']]);
+    assert.ok(!all(onward.node).some((n) => n.tagName === 'button' && /button-filled/.test(n.className)), 'the screen keeps its one filled action');
+    // The unavailable card names its state in a tag and says why in full-strength words.
+    const blog = cards()[2];
+    assert.equal(all(blog).find((n) => n.className === 'tag').textContent, 'Needs setup');
+    assert.equal(all(blog).find((n) => /library-continue-why/.test(n.className)).textContent, 'Git was not found on this computer.');
+    assert.equal(blog.attributes['aria-label'], 'Blog Studio, cannot open now: Needs setup. Git was not found on this computer.');
+    blog.listeners.click(); await settle();
+    assert.equal(opened.length, 0, 'pressing a studio that cannot open does nothing');
     assert.ok(all(onward.node).some((n) => /^Choose a studio\. It opens with “Synthetic <b>document<\/b> 0” ready to use in new work\. Nothing is created until you confirm there\.$/.test(n.textContent)));
-    // Cancel gives the focus back to the offer.
-    await click(find(onward.node, 'library-continue-cancel'));
-    assert.equal(document.activeElement.dataset.key, 'library-continue-doc-0');
-    await click(find(onward.node, 'library-continue-doc-0'));
     // A chosen studio opens with the document; every card waits meanwhile and the chosen one says so.
     find(onward.node, 'library-continue-to-training').listeners.click(); await settle();
     assert.deepEqual(opened, [[{ id: 'doc-0', revision: 1, title: 'Synthetic <b>document</b> 0' }, 'training']]);
-    assert.ok(cards().every((n) => n.disabled), 'one studio at a time');
+    assert.ok(cards().every((n) => n.attributes['aria-disabled'] === 'true' && !n.disabled), 'one studio at a time, nothing dimmed');
+    find(onward.node, 'library-continue-to-presentation').listeners.click(); await settle();
+    assert.equal(opened.length, 1, 'a second press while one opens does nothing');
     assert.ok(find(onward.node, 'library-continue-to-training').text.includes('Opening Training Studio…'));
     assert.ok(all(onward.node).some((n) => n.attributes.role === 'status' && n.textContent === 'Opening Training Studio…'));
-    // A refusal is said in the chooser, which stays open with every card back.
+    // A refusal is said in the group, which stays, every card back.
     settleOpen.reject(new Error('This studio was not found. Install it or set its folder in Settings.')); await settle();
     assert.ok(all(onward.node).some((n) => n.className === 'problem' && n.attributes.role === 'alert' && /was not found/.test(n.textContent)));
-    assert.deepEqual(cards().map((n) => n.disabled), [false, false, true]);
-    assert.equal(document.activeElement.dataset.key, 'library-continue-heading');
+    assert.deepEqual(cards().map((n) => n.attributes['aria-disabled'] || null), [null, null, 'true']);
+    assert.equal(document.activeElement.dataset.key, 'library-continue-problem');
     find(onward.node, 'library-continue-to-presentation').listeners.click(); await settle();
     settleOpen.resolve(); await settle();
-    assert.ok(!find(onward.node, 'library-continue-heading'), 'the chooser closes once the studio opened');
     assert.equal(document.activeElement.dataset.key, 'library-continued');
     assert.match(find(onward.node, 'library-continued').textContent, /^Presentation Studio opened with “Synthetic <b>document<\/b> 0”\. Nothing starts there until you confirm it\.$/);
-    // A studio's link (continue=<id>@<revision>) opens that revision with the chooser showing,
-    // first in the list when the filters or the page leave it out.
+    assert.ok(find(onward.node, 'library-continue-heading'), 'the studios stay, to open another');
+    // A studio's link (continue=<id>@<revision>) opens that revision's preview with the studios
+    // in view and focused: one press on a studio. It is first in the list when the filters or
+    // the page leave it out.
     requests.length = 0;
     await onward.continueWith('doc-29', 2);
     assert.deepEqual(requests.at(-1), ['library-document', { id: 'doc-29', revision: 2 }]);
@@ -417,22 +423,22 @@ async function post(route, body) {
     await click(find(onward.node, 'library-preview-close'));
     assert.ok(!find(onward.node, 'library-row-doc-29'), 'closed, it leaves a page that does not hold it');
     assert.equal(document.activeElement.dataset.key, 'library-count');
-    // A document that is gone says so where the chooser would be.
+    // A document that is gone says so above the list, and nothing is pinned.
     await onward.continueWith('missing-doc', 1);
     assert.ok(!find(onward.node, 'library-continue-heading'));
     assert.ok(all(onward.node).some((n) => n.className === 'notice problem' && n.text.includes('That document is not in the library.')), 'said above the list');
     assert.ok(!all(onward.node).some((n) => n.className === 'library-preview-item'), 'nothing is pinned');
-    // No studio installed: the chooser says so plainly.
+    // No studio installed: the group says so plainly.
     studios.length = 0;
     await click(find(onward.node, 'library-preview-doc-2'));
-    await click(find(onward.node, 'library-continue-doc-2'));
     assert.ok(all(onward.node).some((n) => n.textContent === 'No studio is installed on this computer. Install one yourself, then come back.'));
+    assert.equal(cards().length, 0);
     // The Add from library sheet only chooses: it never offers Continue in another studio.
     const sheetOnward = kit.pick({ studio: 'training', post, use: async () => true, continueIn: { studios: () => [], open: () => {} } });
     await settle();
     const onwardSheet = document.body.children.filter((n) => n.tagName === 'dialog').at(-1);
     await click(find(onwardSheet, 'library-preview-doc-0'));
-    assert.ok(!find(onwardSheet, 'library-continue-doc-0'));
+    assert.ok(!find(onwardSheet, 'library-continue-heading'));
     find(onwardSheet, 'library-cancel').listeners.click(); await settle(); await sheetOnward;
   }
   console.log('library page check passed');

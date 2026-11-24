@@ -14,6 +14,14 @@ function libraryContinue(options) {
 }
 let continueWanted = libraryContinue(launchOptions);
 const requestedView = launchOptions.get('view') === 'settings' ? 'settings' : continueWanted ? 'library' : 'home';
+// The screen the page opens on once its first snapshot arrives. A Continue in another studio
+// asked for meanwhile (a `continue=` link to this tab before it had loaded) opens the Library
+// then, rather than waiting for the next time the person opens it; setup, which has no
+// Library, drops it.
+function firstView() {
+  if (setup || standalone) { continueWanted = null; return 'settings'; }
+  return continueWanted ? 'library' : requestedView;
+}
 // A studio can open one part of Shared settings, such as the workspace repository a Team
 // library uses. Only a part this page lists is accepted, and only after first-run setup.
 function launchPart(options, known) {
@@ -1393,8 +1401,8 @@ async function openLibrary() {
 function continueStudios() {
   return (snapshot?.studios || []).filter(studio => studio.installed).map(studio => {
     const ready = studioReadiness(studio);
-    return {id: studio.id, name: studio.name, ready: ready.state === 'done',
-      note: ready.state === 'done' ? '' : [ready.label, ready.detail].filter(Boolean).join(': ')};
+    const can = ready.state === 'done';
+    return {id: studio.id, name: studio.name, ready: can, label: can ? '' : ready.label, note: can ? '' : ready.detail};
   });
 }
 // Opens a studio with a library document, as Open on its card does: in its own named tab on
@@ -1625,7 +1633,7 @@ $('#refresh-models').addEventListener('click', () => loadModels(true));
 (async () => {
   try {
     if (!token) { $('#loading').hidden = true; inform(`This page needs its private link. Run ${standalone ? 'the studio command' : 'marketing-studio'} in your terminal to open it again.`, true); return; }
-    snapshot = await api('home'); setup = !snapshot.setup.done; step = setup ? resumeStep(snapshot.shared) : 0; rememberStep(); fill(); renderHome(); markSaved(); show(setup || standalone ? 'settings' : requestedView); if (snapshot.shared_problem) inform(snapshot.shared_problem, true);
+    snapshot = await api('home'); setup = !snapshot.setup.done; step = setup ? resumeStep(snapshot.shared) : 0; rememberStep(); fill(); renderHome(); markSaved(); show(firstView()); if (snapshot.shared_problem) inform(snapshot.shared_problem, true);
     const part = setup ? '' : launchPart(launchOptions, [...document.querySelectorAll('[data-part]')].map(button => button.dataset.part));
     if (part) { if (view !== 'settings') show('settings'); goToPart(part); }
   }

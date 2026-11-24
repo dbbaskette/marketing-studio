@@ -107,8 +107,13 @@ const StudioShell = (() => {
   // --- Continue in another studio ------------------------------------------------------
 
   // Marketing Studio opens a studio with `home=<its origin>&homeToken=<its key>` in the link's
-  // fragment. Read here as the shell loads, before a page clears its fragment; a page that
-  // cleared it first still has what its way back kept in this tab (`marketing-studio-return`).
+  // fragment. The shell reads it as it loads and, when both are valid, keeps them in this
+  // tab's memory at once (`marketing-studio-return`, {home, token}: what each studio's way
+  // back keeps there too), so continueLink still works after the page clears its fragment or
+  // is reloaded. For that, a studio page loads shell.js before any script that clears the
+  // fragment (an earlier `<script defer>`, as every studio page does now), or it keeps
+  // `marketing-studio-return` in sessionStorage itself before clearing it. A page that does
+  // neither gets null.
   const here = () => (typeof location !== 'undefined' && location) || { hash: '', protocol: '', hostname: '', port: '' };
   const launchHash = String(here().hash || '').replace(/^#/, '');   // read once, parsed when asked
   const KEY = /^[A-Za-z0-9_-]{8,256}$/;
@@ -120,6 +125,13 @@ const StudioShell = (() => {
       && found[3] !== page.port && Number(found[3]) > 0 && Number(found[3]) < 65536
       ? found[1] + '//' + found[2] + ':' + found[3] : '';
   }
+  (function remember() {
+    try {
+      const launched = new URLSearchParams(launchHash);
+      const home = homeOrigin(launched.get('home')), key = launched.get('homeToken') || '';
+      if (home && KEY.test(key)) sessionStorage.setItem('marketing-studio-return', JSON.stringify({ home, token: key }));
+    } catch (_) { /* no tab memory here: the fragment read above still serves this page */ }
+  })();
   // The home page's link that opens its Library on a document with Continue in another
   // studio showing: `<home>/#token=<home key>&continue=<id>@<revision>`. Null when this studio
   // runs alone (Marketing Studio did not open it), or the document is not named as the

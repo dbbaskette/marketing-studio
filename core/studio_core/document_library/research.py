@@ -17,17 +17,21 @@ What is kept
 A studio keeps research only once Harness Research verified it: `case` must pass
 `research_contract.read_bundle` (every file's hash, the review of that exact digest). The
 item's readable text is the bundle's `report.md`, so every studio's Add from library can
-already take it as a source through `snapshot`. Its original is the bundle itself, one
-archive (`original.zip`): `output.json` and every file its manifest names (report, brief,
-evidence, facts and the source captures), and nothing else. The archive is made the same way
-every time, so the same bundle is the same original and keeping it again adds no revision.
+already take it as a source through `snapshot`, which gives a research item as that report
+alone (`name` `<title>.md`, no original). Its bundle is kept beside it as one archive
+(`original.zip`, at most LIMITS['research'], 16 MB zipped): `output.json` and every file its
+manifest names (report, brief, evidence, facts and the source captures), each checked against
+its manifest hash as it is archived, and nothing else. Keeping the same research again (the
+same title, report and output.json) adds no revision.
 
 Its key is `<studio>:<project>:research`. Finished work's key (`<studio>:<project>`) never has
 a second colon, so a project's research and its finished work are two documents.
 
-Given back, the archive is written into a folder the caller names, which must be empty or not
-there yet: each name is checked to stay inside it, no link is written, and the folder is then
-read with `read_bundle` again, so a changed bundle is refused and what was written is cleared.
+Given back (`Library.research_archive`, then `research_bundle`), the archive is written into a
+folder the caller names, which must be empty, or not there yet inside a folder that is: only
+output.json and the files its manifest names are written, each name is checked to stay inside
+it, no link is written, and the folder is then read with `read_bundle` again, so a changed
+bundle is refused and what was written is cleared.
 Nothing here starts research, an assistant or a provider, or uses the network.
 """
 from __future__ import annotations
@@ -43,7 +47,7 @@ from pathlib import Path
 
 from studio_core import research_contract as contract
 
-from .store import LIMITS, Library, LibraryError, opened
+from .store import IDENT, LIMITS, Library, LibraryError, opened
 
 PROJECT = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,159}$')
 STUDIOS = ('blog', 'presentation', 'training', 'infographic')
@@ -53,6 +57,8 @@ STAMP = (1980, 1, 1, 0, 0, 0)   # every archived file's time: the same bundle, t
 REFUSED = ('This research was not kept in the Document Library because it has not passed '
            'verification: {why}')
 NOT_KEPT = 'The Document Library could not keep this research. It is still saved in the project.'
+UNREAD = ('The research files could not be read, so the Document Library did not keep them. '
+          'The research is still saved in the project.')
 NOT_RESEARCH = ('That document is not research the library kept, so it has no research bundle '
                 'to import.')
 CHANGED = 'The research bundle in the library changed after it was kept, so it was not imported.'
@@ -84,31 +90,47 @@ def _title(given, report: str) -> str:
     return 'Research'
 
 
-def archive(folder) -> tuple[bytes, str, dict, dict]:
-    """(the bundle as one archive, its report's text, facts, manifest) of a verified bundle.
-    Refused with ValueError when it does not pass read_bundle or is too large."""
+def _plain_file(folder: Path, name: str) -> bytes:
+    path = contract.inside(folder, name)
+    if path.is_symlink() or not path.is_file():
+        raise ValueError('The research bundle is missing a file it names.')
+    return path.read_bytes()
+
+
+def archive(folder) -> tuple[bytes, str, dict, dict, str]:
+    """(the bundle as one archive, its report's text, facts, manifest, the SHA-256 of its
+    output.json) of a verified bundle. read_bundle checks it first; then the exact
+    output.json bytes archived are the ones parsed here, and every file archived is checked
+    against its manifest entry as it is read, so nothing that changed in between is kept.
+    Refused with ValueError when it does not pass, or is too large."""
     folder = Path(folder)
-    facts, manifest = contract.read_bundle(folder)
-    names = sorted({'output.json', *(entry['file'] for entry in manifest['artifacts'])})
-    if len(names) > FILES:
+    facts, verified = contract.read_bundle(folder)
+    raw = _plain_file(folder, 'output.json')
+    manifest = json.loads(raw.decode('utf-8'))
+    if manifest != verified:
+        raise ValueError('Research evidence or output changed. Revise and review it again.')
+    wanted = {entry['file']: entry['sha256'] for entry in manifest['artifacts']}
+    if len(wanted) + 1 > FILES:
         raise ValueError('The research bundle has more files than the library keeps.')
-    buffer, total = io.BytesIO(), 0
+    buffer, total, report = io.BytesIO(), len(raw), None
     with zipfile.ZipFile(buffer, 'w') as packed:
-        for name in names:
-            path = contract.inside(folder, name)
-            if path.is_symlink() or not path.is_file():
-                raise ValueError('The research bundle is missing a file it names.')
-            data = path.read_bytes()
-            total += len(data)
+        for name in sorted({'output.json', *wanted}):
+            data = raw if name == 'output.json' else _plain_file(folder, name)
+            if name != 'output.json' and hashlib.sha256(data).hexdigest() != wanted[name]:
+                raise ValueError('Research evidence or output changed. Revise and review it again.')
+            total += len(data) if name != 'output.json' else 0
             if total > UNPACKED:
                 raise ValueError('The research bundle is larger than the library keeps.')
+            if name == 'report.md':
+                report = data.decode('utf-8')
             info = zipfile.ZipInfo(name, date_time=STAMP)
             info.compress_type = zipfile.ZIP_DEFLATED
             info.create_system = 3
             info.external_attr = (stat.S_IFREG | 0o600) << 16
             packed.writestr(info, data)
-    report = contract.inside(folder, 'report.md').read_bytes().decode('utf-8')
-    return buffer.getvalue(), report, facts, manifest
+    if report is None:
+        raise ValueError('The research bundle is incomplete.')
+    return buffer.getvalue(), report, facts, manifest, hashlib.sha256(raw).hexdigest()
 
 
 def keep_research(library=None, *, studio, project, case, title=None, author=None) -> dict:
@@ -123,17 +145,22 @@ def keep_research(library=None, *, studio, project, case, title=None, author=Non
 
     Returns {'state': 'kept', 'key', 'document', 'revision', 'changed'}; {'state':
     'refused', 'key', 'problem'} when the bundle does not pass verification (nothing is kept);
-    or {'state': 'failed', 'key', 'problem'} when the library could not keep it."""
+    or {'state': 'failed', 'key', 'problem'} when its files could not be read or the library
+    could not keep it."""
     done = {'key': None}
     try:
         done['key'] = research_key(studio, project)
     except LibraryError as failure:
         return {**done, 'state': 'failed', 'problem': str(failure)}
     try:
-        bundle, report, _facts, manifest = archive(_folder(case))
-    except (ValueError, OSError, KeyError, TypeError, AttributeError, UnicodeDecodeError) as failure:
-        why = str(failure)[:300] if isinstance(failure, (ValueError, OSError)) and str(failure) \
-            else 'it could not be read.'
+        bundle, report, _facts, manifest, manifest_sha = archive(_folder(case))
+    except OSError as failure:
+        # The files could not be read (missing, permissions, a disk error): not a verdict on
+        # the research, so it is a failure to keep, not a refusal.
+        said = str(failure.strerror or failure).lower() if failure.strerror or str(failure) else ''
+        return {**done, 'state': 'failed', 'problem': UNREAD + (f' ({said})' if said else '')}
+    except (ValueError, KeyError, TypeError, AttributeError, UnicodeDecodeError) as failure:
+        why = str(failure)[:300] if isinstance(failure, ValueError) and str(failure) else 'it could not be read.'
         return {**done, 'state': 'refused', 'problem': REFUSED.format(why=why)}
     except Exception:       # research stands whatever happens here
         return {**done, 'state': 'refused', 'problem': REFUSED.format(why='it could not be read.')}
@@ -144,7 +171,8 @@ def keep_research(library=None, *, studio, project, case, title=None, author=Non
             key=done['key'], studio=studio, title=_title(title, report), text=report, bundle=bundle,
             project=held, author=author,
             research={'owner': manifest.get('owner'), 'digest': manifest.get('digest'),
-                      'status': manifest.get('status'), 'files': 1 + len(manifest['artifacts'])})
+                      'status': manifest.get('status'), 'files': 1 + len(manifest['artifacts']),
+                      'manifest_sha256': manifest_sha})
         return {**done, 'state': 'kept', 'document': kept['document'], 'revision': kept['revision'],
                 'changed': kept['changed']}
     except Exception as failure:     # research stands whatever the library does
@@ -153,7 +181,8 @@ def keep_research(library=None, *, studio, project, case, title=None, author=Non
 
 
 def _members(packed: zipfile.ZipFile) -> list:
-    """The archive's files, each checked to be a plain file with a confined name."""
+    """The archive's files, each a plain file with a confined name, and only output.json and
+    the files its manifest names: anything else in the archive refuses the whole of it."""
     infos, seen, total = packed.infolist(), set(), 0
     if len(infos) > FILES + 1:
         raise LibraryError(CHANGED)
@@ -171,38 +200,52 @@ def _members(packed: zipfile.ZipFile) -> list:
             raise LibraryError(CHANGED)
     if 'output.json' not in seen or 'report.md' not in seen:
         raise LibraryError(CHANGED)
+    try:
+        manifest = json.loads(packed.read('output.json').decode('utf-8'))
+        listed = {'output.json', *(entry['file'] for entry in manifest['artifacts'])}
+    except (ValueError, KeyError, TypeError, AttributeError, zipfile.BadZipFile):
+        raise LibraryError(CHANGED) from None
+    if seen != listed:
+        raise LibraryError(CHANGED)
     return infos
 
 
 def research_bundle(library, ident, revision, destination) -> dict:
     """Write one research revision's bundle into `destination` and check it, for a studio
-    importing it. `library` is an opened Library, or None for the shared one. `destination`
-    is an absolute folder that is empty or not there yet; it is made when missing.
+    importing it. `library` is an opened Library, or None for the shared one. `ident` is a
+    library document ID and `revision` a whole number. `destination` is an absolute folder
+    that is empty, or not there yet in a folder that is: only `destination` itself is made.
 
-    Every kept file is checked against its hash first (as `snapshot` checks them), then the
-    archive's names, and then the written folder passes read_bundle, so every file the
-    manifest names matches its hash and its review. On any refusal, what was written is
-    removed and LibraryError says why. Returns {'id', 'revision', 'title', 'studio', 'folder',
-    'files', 'digest'}."""
+    The kept archive and report are checked against their hashes first
+    (`Library.research_archive`), then every name in the archive (only output.json and the
+    files its manifest names), and then the written folder passes read_bundle, so every file
+    matches its manifest hash and its review. On any refusal, what was written is removed and
+    LibraryError says why. Returns {'id', 'revision', 'title', 'studio', 'folder', 'files',
+    'digest'}."""
+    if not isinstance(ident, str) or not IDENT.match(ident) or type(revision) is not int \
+            or not 1 <= revision <= LIMITS['revisions']:
+        raise LibraryError('Choose a research document in the library by its ID and revision.')
     if library is None:
         library = opened()
         if library is None:
             raise LibraryError('The Document Library has not been made on this computer yet.')
     if not isinstance(library, Library):
         raise LibraryError('Open the Document Library first.')
-    found = library.snapshot(ident, revision)
-    if found['kind'] != 'research' or found['original'] is None:
-        raise LibraryError(NOT_RESEARCH)
     target = Path(destination) if isinstance(destination, (str, Path)) else None
     if target is None or not target.is_absolute():
         raise LibraryError('Name an absolute folder to import the research into.')
+    found = library.research_archive(ident, revision)
     if target.is_symlink() or (target.exists() and (not target.is_dir() or any(target.iterdir()))):
         raise LibraryError('Import research into a new or empty folder; nothing was written.')
+    if not target.exists() and (target.parent.is_symlink() or not target.parent.is_dir()):
+        raise LibraryError('Import research into a folder whose parent folder is already there; '
+                           'nothing was written.')
     made = not target.exists()
     try:
-        with zipfile.ZipFile(io.BytesIO(found['original'])) as packed:
+        with zipfile.ZipFile(io.BytesIO(found['archive'])) as packed:
             infos = _members(packed)
-            target.mkdir(parents=True, exist_ok=True, mode=0o700)
+            if made:
+                target.mkdir(mode=0o700)
             for info in infos:
                 data = packed.read(info)     # its CRC is checked as it is read
                 if len(data) != info.file_size:

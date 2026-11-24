@@ -3,7 +3,7 @@
 What a caller needs to know
 ---------------------------
     from studio_core import source_intake
-    found = source_intake.take(given, accepts={'.md', '.txt', '.pdf', '.docx'},
+    found = source_intake.take(given, local=not remote, accepts={'.md', '.txt', '.pdf', '.docx'},
                                room=20, spare=40_000_000, taken=('brief.md',))
 
 - `given` is what the person gave the picker, on purpose:
@@ -23,6 +23,10 @@ What a caller needs to know
   and every document left out is listed.
 - `name_limit` bounds a document's name; `seconds` is the reading time of one folder
   (source_folders.FOLDER_SECONDS by default, inside the phone bridge's wait).
+- `local` says whether the person is at this computer. A folder path on this computer is
+  read only when it is True: a page reached over the network (a phone) could otherwise read
+  any folder here. A page passes `local=not remote` (its request's own remote flag); with
+  False a Google Drive folder link and an uploaded file are still taken. It must be given.
 
 It returns
     {'uploads':   {name: bytes},       # ordinary uploads, in the order found
@@ -47,12 +51,15 @@ conversation; it keeps its own limits and words.
 from __future__ import annotations
 
 from pathlib import Path
+import shutil
 import tempfile
 import unicodedata
 
 from studio_core import research_contract as rc, research_sources, source_folders, xlsx_sheets
 
 NAME = 120              # characters in a document's name, as the studios' supplied documents take
+REMOTE = ('A folder on this computer can be added only on this computer. From a phone, add a '
+          'Google Drive folder link or upload the files.')
 REORDERING = '‪‫‬‭‮⁦⁧⁨⁩'
 SPREADSHEET = '.xlsx'
 
@@ -157,47 +164,64 @@ def _file(given, accepts, room, spare, used, name_limit):
     return _answer({shown: kept}, [{'name': shown, 'from': name, 'origin': 'upload', 'notes': notes}], report)
 
 
-def take(given, *, accepts, room, spare, taken=(), name_limit=NAME, seconds=None, store=None) -> dict:
+def take(given, *, local, accepts, room, spare, taken=(), name_limit=NAME, seconds=None,
+         store=None) -> dict:
     """What the person gave a studio's source picker, as ordinary uploads and a report.
-    See the module's own description for every argument and the answer's shape."""
+    See the module's own description for every argument and the answer's shape. `store`
+    is a research_sources.Sources to read in (tests); the draft made in it is removed."""
+    if type(local) is not bool:
+        raise ValueError('Say whether the person is at this computer (local=not remote).')
     accepts = {ending.lower() for ending in accepts}
     used = {name.casefold() for name in taken}
     room, spare = max(0, int(room)), max(0, int(spare))
     if isinstance(given, dict):
         return _file(given, accepts, room, spare, used, name_limit)
+    # Which folder was given is decided before anything is read: never a path here from afar.
+    if source_folders.location(given)[0] == 'local' and not local:
+        raise ValueError(REMOTE)
     seconds = source_folders.FOLDER_SECONDS if seconds is None else seconds
     full = f'There is room for {_plural(room, "more document")}. Give a smaller folder for the rest.'
     heavy = 'There is no room for this document: the documents added already use the space left.'
     with tempfile.TemporaryDirectory(prefix='studio-source-folder-') as scratch:
         store = store or research_sources.Sources(Path(scratch) / 'sources')
         draft = store.create()
-        answer = store.add_folder(draft['id'], draft['revision'], {'location': given},
-                                  most=room, full=full, seconds=seconds)
-        report = answer['folder']
-        folder = store.folder(draft['id'])
-        uploads, documents, short = {}, [], False
-        for source in store.load(draft['id'])['sources']:
-            if source['kind'] == 'file' and Path(source['name']).suffix.lower() in accepts:
-                name, data = flat(source['name'], used, name_limit), rc.inside(folder, source['original']).read_bytes()
-            else:   # kept as the text read from it: a workbook's sheets, a Google file, a deck
-                name = flat(source['name'] + '.md', used, name_limit)
-                data = rc.inside(folder, source['file']).read_bytes()
-            if len(data) > spare:
-                report['skipped'].append(source_folders.skip(source['name'], 'over-limit', heavy))
-                report['skipped_count'] += 1
-                report['reasons']['over-limit'] = report['reasons'].get('over-limit', 0) + 1
-                short = True
-                continue
-            spare -= len(data)
-            used.add(name.casefold())
-            uploads[name] = data
-            documents.append({'name': name, 'from': source['name'], 'origin': source['origin'],
-                              'notes': list(source.get('warnings') or [])})
-        report.update(added=len(uploads), documents=documents, again=False,
-                      next='Not every document was read in time. Give the same folder again to read the rest.'
-                      if report['reasons'].get('out-of-time') else
-                      'Give a smaller folder for the rest.' if short or report['reasons'].get('over-limit') else None)
-        return _answer(uploads, documents, report)
+        try:
+            return _folder(store, draft, given, accepts, room, spare, used, name_limit, seconds, full, heavy)
+        finally:
+            # The draft is only a way to read the folder: it never outlives this call, in a
+            # store the caller gave as in the scratch one.
+            shutil.rmtree(store.folder(draft['id']), ignore_errors=True)
 
 
-__all__ = ['NAME', 'flat', 'said', 'spreadsheet', 'take']
+def _folder(store, draft, given, accepts, room, spare, used, name_limit, seconds, full, heavy):
+    """Read one folder in the draft and turn what it found into uploads and a report."""
+    answer = store.add_folder(draft['id'], draft['revision'], {'location': given},
+                              most=room, full=full, seconds=seconds)
+    report = answer['folder']
+    folder = store.folder(draft['id'])
+    uploads, documents, short = {}, [], False
+    for source in store.load(draft['id'])['sources']:
+        if source['kind'] == 'file' and Path(source['name']).suffix.lower() in accepts:
+            name, data = flat(source['name'], used, name_limit), rc.inside(folder, source['original']).read_bytes()
+        else:   # kept as the text read from it: a workbook's sheets, a Google file, a deck
+            name = flat(source['name'] + '.md', used, name_limit)
+            data = rc.inside(folder, source['file']).read_bytes()
+        if len(data) > spare:
+            report['skipped'].append(source_folders.skip(source['name'], 'over-limit', heavy))
+            report['skipped_count'] += 1
+            report['reasons']['over-limit'] = report['reasons'].get('over-limit', 0) + 1
+            short = True
+            continue
+        spare -= len(data)
+        used.add(name.casefold())
+        uploads[name] = data
+        documents.append({'name': name, 'from': source['name'], 'origin': source['origin'],
+                          'notes': list(source.get('warnings') or [])})
+    report.update(added=len(uploads), documents=documents, again=False,
+                  next='Not every document was read in time. Give the same folder again to read the rest.'
+                  if report['reasons'].get('out-of-time') else
+                  'Give a smaller folder for the rest.' if short or report['reasons'].get('over-limit') else None)
+    return _answer(uploads, documents, report)
+
+
+__all__ = ['NAME', 'REMOTE', 'flat', 'said', 'spreadsheet', 'take']
