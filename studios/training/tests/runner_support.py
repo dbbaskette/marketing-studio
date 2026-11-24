@@ -1773,6 +1773,18 @@ class StudioCase(unittest.TestCase):
             return act(tools, job)
         queued.insert(at, pausing)
 
+    def hold_before(self, kind: str, title: str = 'rolling-restarts', engine=None) -> None:
+        """Hold desk work before the next job of `kind` does anything: that job pauses its
+        training and ends as stopped, handing nothing back, as a job ended by Stop does. What
+        ran before it is all kept; on resume the job is started again."""
+        from runner.agents import Outcome
+        engine = engine or self.engine
+
+        def holding(tools, job):
+            engine.act(engine.space().training(title), 'pause')
+            return Outcome(False, 'stopped', 'Stopped')
+        self.workers.queued.setdefault(kind, []).insert(0, holding)
+
     def all_ready(self, root: Path, engine=None) -> list[dict]:
         """Desk work's own end: mark every card of each level ready, as the person does on
         the desk, each in the version it is now. Says what each level's batch answered."""

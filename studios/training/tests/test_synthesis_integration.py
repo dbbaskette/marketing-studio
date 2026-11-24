@@ -198,11 +198,10 @@ class SuppliedOriginalTests(StudioCase):
         self.assertTrue(accepted[0], accepted)
 
     def researched(self):
-        root = self.saved_start(source_scope='supplied-only',
-                                saved_contract=research_contract.snapshot(self.research))
+        self.hold_before('blueprint')   # the research done, where a saved run waited
+        root = self.start(source_scope='supplied-only')
         self.send(root, 'handbook.md', TEXT)
         self.engine.supply(root, 'done')
-        self.to_gate(root, 'research')
         self.assertIsNone(self.view(root)['problem'], self.view(root))
         return research_contract.read_bundle(root / 'research')[0]
 
