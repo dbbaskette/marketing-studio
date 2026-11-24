@@ -77,6 +77,26 @@
   .ig-ledger { grid-column: 1 / -1; }
   .ig-inspector { position: sticky; top: 5rem; }
 }
+/* From 72rem the list of the infographic's parts takes the left column (StudioShell.parts), so
+   the page keeps its full width and the inspector follows it, until there is room beside it
+   again. A part chosen in the list comes into view clear of the toolbar. */
+@media (min-width: 72rem) {
+  .ig-workbench { grid-template-columns: minmax(0, 1fr); }
+  .ig-inspector { position: static; }
+  /* Until 90rem the list, the page and a rail do not fit beside the sidebar: what would sit
+     in the rail follows the page in its one column, the list held beside them all. */
+  #main:has(> .parts):has(> [data-zone="work"]) { grid-template-columns: [parts] 13rem [work rail] minmax(0, 1fr); }
+  #main:has(> .parts) > [data-zone="work"] { grid-row: 2; }
+}
+@media (min-width: 90rem) {
+  #main:has(> .parts):has(> [data-zone="work"]) { grid-template-columns: [parts] 13rem [work] minmax(0, 1fr) [rail] 20rem; }
+  #main:has(> .parts) > [data-zone="work"] { grid-row: 2 / -1; }
+}
+@media (min-width: 112rem) {
+  .ig-workbench { grid-template-columns: minmax(0, 1fr) 22rem; }
+  .ig-inspector { position: sticky; }
+}
+[data-ig-part] { scroll-margin-top: 6rem; }
 @media (max-width: 52rem) {
   .ig-preview-scroll { max-height: 60vh; }
   /* Three compact revision states on a phone; the page card says what each means. */
