@@ -5,24 +5,33 @@ never its link), so a later Marketing Studio can find a studio left behind by on
 that stopped abruptly. Only processes recorded there, and still running this
 data root's studio bridge, are ever stopped.
 """
-import hashlib
+
 import json
 import os
 import queue
-import re
 import secrets
 import signal
 import subprocess
-import sys
 import threading
 import time
-from collections import namedtuple
-from contextlib import contextmanager
 from pathlib import Path
-from urllib.parse import urlsplit
 
-from . import catalog, state
+from . import bridge_protocol as protocol, catalog, state
 from .errors import WorkspaceError
+
+# Moved into focused modules beside this one. Every name stays importable from here, and
+# moved code reads the names callers and tests replace (ps, started, stop_group, ...)
+# from here when it runs.
+from .processes import (
+    ASSISTANTS, INTERPRETERS, WAIT, ps, Row, LISTING, _inspecting, _Listing, listing,
+    inspection, _live, _inspected, _OUTSIDE, listed, waited_out, started, command_of, alive,
+    group_alive, seconds, assistant, label, descendant_jobs, duration, end_jobs, stop_one,
+    describe_job, stop_group)
+from .bridge_protocol import marker
+from .run_records import (
+    home_key, records, record, forget)
+from .studio_links import (
+    local_link, LIBRARY_ID, LIBRARY_REVISIONS, library_item, with_library)
 
 ROOT = Path(__file__).resolve().parent.parent
 TIMEOUT = 90
@@ -44,419 +53,6 @@ def launch_problem(message, log):
     lines = [line if len(line) <= 300 else line[:299] + '…' for line in lines]
     ending = ('Last lines:\n' + '\n'.join(lines)) if any(lines) else 'The launch log is empty.'
     return f'{message} Launch log: {log}\n{ending}'
-
-
-ASSISTANTS = {'codex': 'codex', 'claude': 'claude', 'claude-code': 'claude', 'gemini': 'gemini'}
-INTERPRETERS = ('node', 'bun', 'deno', 'sh', 'bash', 'zsh')
-WAIT = 8           # seconds a studio has to stop before it is killed
-
-
-def ps(*arguments):
-    """The process list's output, or None where ps is missing or refused.
-
-    Start times are read in one locale and time zone, so a record written by one
-    terminal still matches when another reads it."""
-    try:
-        done = subprocess.run(['ps', *arguments], capture_output=True, text=True, timeout=10,
-                              env={**os.environ, 'LC_ALL': 'C', 'TZ': 'UTC'})
-    except (OSError, subprocess.SubprocessError):
-        return None
-    return done.stdout if done.returncode == 0 else None
-
-
-# --- one process list per inspection --------------------------------------------------
-#
-# A look at the studios (is a recorded studio still ours, which jobs run under it) asks
-# several questions of the process list. Inside `inspection()` they are all answered from
-# one `ps` run, read the first time one is asked. Nothing is signalled inside one: every
-# signal and every wait for a process to end looks at the processes as they are now.
-
-Row = namedtuple('Row', 'ppid pgid stat seconds started command')
-LISTING = ('-axww', '-o', 'pid=,ppid=,pgid=,stat=,etime=,lstart=,command=')
-_inspecting = threading.local()
-
-
-class _Listing:
-    def __init__(self):
-        self.asked = False
-        self.rows = None
-
-    def read(self):
-        if not self.asked:
-            self.asked = True
-            self.rows = listing(ps(*LISTING))
-        return self.rows
-
-
-def listing(output):
-    """{pid: Row} from the full process list, or None when there is none."""
-    if output is None:
-        return None
-    rows = {}
-    for line in output.splitlines():
-        parts = line.split(None, 10)
-        if len(parts) < 10:
-            continue
-        try:
-            number, parent, group, elapsed = int(parts[0]), int(parts[1]), int(parts[2]), seconds(parts[4])
-        except ValueError:
-            continue
-        # lstart as `ps -o lstart=` prints it on its own: the day of the month padded to two.
-        began = f'{parts[5]} {parts[6]} {parts[7]:>2} {parts[8]} {parts[9]}'
-        rows[number] = Row(parent, group, parts[3], elapsed, began, parts[10] if len(parts) > 10 else '')
-    return rows
-
-
-@contextmanager
-def inspection():
-    """Answer every process question asked inside from one process list. Nested
-    inspections share the outer one's list."""
-    if getattr(_inspecting, 'listing', None) is not None:
-        yield
-        return
-    _inspecting.listing = _Listing()
-    try:
-        yield
-    finally:
-        _inspecting.listing = None
-
-
-@contextmanager
-def _live():
-    """Signals and waits look at the processes as they are now, never at an inspection's list."""
-    kept = getattr(_inspecting, 'listing', None)
-    _inspecting.listing = None
-    try:
-        yield
-    finally:
-        _inspecting.listing = kept
-
-
-def _inspected():
-    found = getattr(_inspecting, 'listing', None)
-    return found.read() if found is not None else _OUTSIDE
-
-
-_OUTSIDE = object()
-
-
-def listed():
-    """Whether this computer's process list can be read."""
-    rows = _inspected()
-    if rows is _OUTSIDE:
-        return ps('-o', 'pid=', '-p', str(os.getpid())) is not None
-    return rows is not None
-
-
-def waited_out(running, seconds):
-    """Wait up to `seconds` for `running()` to turn false, looking less often as it goes on:
-    an ending process is usually gone at the first or second look. True when it did."""
-    deadline = time.monotonic() + seconds
-    pause = .05
-    while True:
-        if not running():
-            return True
-        left = deadline - time.monotonic()
-        if left <= 0:
-            return False
-        time.sleep(min(pause, left))
-        pause = min(pause * 2, .5)
-
-
-def home_key():
-    """Names this data root on each studio bridge's command line, so a bridge started
-    for another data root can never be taken for one of these."""
-    return hashlib.sha256(str(state.data_root().expanduser().resolve()).encode()).hexdigest()[:16]
-
-
-def marker(identifier):
-    return f'marketing_studio/bridge.py {identifier} '
-
-
-def started(pid):
-    rows = _inspected()
-    if rows is not _OUTSIDE:
-        row = rows.get(pid) if rows else None
-        return row.started if row else None
-    found = ps('-o', 'lstart=', '-p', str(pid))
-    return found.strip() or None if found else None
-
-
-def command_of(pid):
-    rows = _inspected()
-    if rows is not _OUTSIDE:
-        row = rows.get(pid) if rows else None
-        return row.command.strip() or None if row else None
-    found = ps('-ww', '-o', 'command=', '-p', str(pid))
-    return found.strip() or None if found else None
-
-
-def alive(pid):
-    try:
-        os.kill(pid, 0)
-    except (ProcessLookupError, PermissionError):
-        return False
-    # A finished process its parent has not collected yet is not running.
-    rows = _inspected()
-    if rows is _OUTSIDE:
-        status = ps('-o', 'stat=', '-p', str(pid))
-    else:
-        # Not listed reads as ps does for a missing process: confirmed by a second probe.
-        status = None if rows is None else rows[pid].stat if pid in rows else ''
-    if not (status or '').strip():
-        # It can exit between the first PID probe and ps. Missing process-list
-        # access still means unknown/alive when a second PID probe succeeds.
-        try:
-            os.kill(pid, 0)
-        except (ProcessLookupError, PermissionError):
-            return False
-    return not (status or '').strip().startswith('Z')
-
-
-def group_alive(group):
-    """Whether any process of the group is still running."""
-    try:
-        os.killpg(group, 0)
-    except (ProcessLookupError, PermissionError):
-        return False
-    table = ps('-axo', 'pgid=,stat=')
-    if table is None:
-        return True
-    return any(fields[0] == str(group) and not fields[1].startswith('Z')
-               for fields in (line.split() for line in table.splitlines()) if len(fields) == 2)
-
-
-def seconds(elapsed):
-    """ps's elapsed time, [[dd-]hh:]mm:ss, in seconds."""
-    days, _, clock = elapsed.rpartition('-')
-    parts = [int(part) for part in clock.split(':')]
-    while len(parts) < 3:
-        parts.insert(0, 0)
-    return int(days or 0) * 86400 + parts[0] * 3600 + parts[1] * 60 + parts[2]
-
-
-def assistant(command):
-    """codex, claude or gemini when the command runs one, directly or through node.
-
-    Only the program, before its first option, is read. A folder name with a space
-    splits its path into words, which are followed while they continue the path."""
-    words = command.split(' -', 1)[0].split()
-    for index, word in enumerate(words[:3]):
-        if index:
-            continues = words[index - 1].startswith('/') and '/' in word
-            through = index == 1 and os.path.basename(words[0]) in INTERPRETERS
-            if not (continues or through):
-                return None
-        name = os.path.basename(word)
-        for suffix in ('.js', '.mjs', '.cjs'):
-            name = name.removesuffix(suffix)
-        if name in ASSISTANTS:
-            return ASSISTANTS[name]
-    return None
-
-
-def label(command):
-    """The job's name, from a job folder (…/jobs/<name>/…) on its command line."""
-    folder = re.search(r'--cd[= ](.+?)(?= --|$)', command)
-    if folder:
-        found = re.search(r'/jobs/([^/]+)', folder.group(1))
-        if found:
-            return found.group(1).strip()
-    found = re.search(r'/jobs/([^/\s]+)/', command)
-    return found.group(1) if found else None
-
-
-def descendant_jobs(pid, table=None):
-    """Assistant jobs started, at any depth, under the studio process `pid`.
-
-    A job may run in its own session; it is still a descendant. With no `table` (pid,
-    ppid, etime, command per line), the inspection's process list is read, with each
-    job's start time from the same list."""
-    live = table is None
-    if live:
-        with inspection():
-            rows = _inspected()
-        if not rows:
-            return []
-    else:
-        rows = {}
-        for line in table.splitlines():
-            parts = line.split(None, 3)
-            if len(parts) < 4:
-                continue
-            try:
-                number, parent, elapsed = int(parts[0]), int(parts[1]), seconds(parts[2])
-            except ValueError:
-                continue
-            rows[number] = Row(parent, None, '', elapsed, None, parts[3])
-    children = {}
-    for number, row in rows.items():
-        children.setdefault(row.ppid, []).append(number)
-    jobs, pending, seen = [], list(children.get(pid, ())), set()
-    while pending:
-        number = pending.pop(0)
-        if number in seen:
-            continue
-        seen.add(number)
-        row = rows[number]
-        name = assistant(row.command)
-        if name:
-            # One job is the outermost assistant process; its own helpers are part of it.
-            jobs.append({'assistant': name, 'label': label(row.command), 'pid': number, 'seconds': row.seconds,
-                         **({'started': row.started} if live else {})})
-            continue
-        pending.extend(children.get(number, ()))
-    return jobs
-
-
-def duration(elapsed):
-    minutes = elapsed // 60
-    if minutes < 1:
-        return 'under 1 min'
-    if minutes < 60:
-        return f'{minutes} min'
-    return f'{minutes // 60} h {minutes % 60} min'
-
-
-def end_jobs(jobs):
-    """End assistant jobs found earlier, each with its process group when it leads one.
-
-    A job is signalled only while it is still the same process: same start time and
-    still an assistant. Returns the jobs that are gone."""
-    gone = []
-    own = os.getpgrp()
-    for job in jobs:
-        pid = job.get('pid')
-        if type(pid) is not int or pid <= 1:
-            continue
-        # Who it is now, from one process list, just before it would be signalled.
-        with _live(), inspection():
-            running = alive(pid)
-            same = running and bool(job.get('started')) and started(pid) == job['started'] \
-                and assistant(command_of(pid) or '') == job['assistant']
-        if running:
-            if not same:
-                continue
-            try:
-                group = os.getpgid(pid)
-            except ProcessLookupError:
-                group = None
-            if group == pid and group != own:
-                stop_group(pid)
-            elif group is not None:
-                stop_one(pid)
-        with _live():
-            if not alive(pid):
-                gone.append(job)
-    return gone
-
-
-def stop_one(pid):
-    with _live():
-        for signalled, wait in ((signal.SIGTERM, WAIT), (signal.SIGKILL, 5)):
-            try:
-                os.kill(pid, signalled)
-            except (ProcessLookupError, PermissionError):
-                return
-            if waited_out(lambda: alive(pid), wait):
-                return
-
-
-def describe_job(job):
-    name = job['assistant'] + (' job ' + job['label'] if job.get('label') else '')
-    return f"{name} ({duration(job['seconds'])})"
-
-
-def records():
-    return state.data_root() / 'run'
-
-
-def record(identifier, pid):
-    """Note a running studio's process (never its link) for a later cleanup."""
-    folder = records()
-    folder.mkdir(mode=0o700, parents=True, exist_ok=True)
-    target = folder / (identifier + '.json')
-    pending = folder / ('.' + identifier + '-' + secrets.token_hex(6))
-    try:
-        with pending.open('x') as stream:
-            os.chmod(pending, 0o600)
-            json.dump({'pid': pid, 'started': started(pid),
-                       'command': marker(identifier) + '… --home-data ' + home_key()}, stream)
-        os.replace(pending, target)
-    finally:
-        pending.unlink(missing_ok=True)
-
-
-def forget(identifier):
-    (records() / (identifier + '.json')).unlink(missing_ok=True)
-
-
-def stop_group(pid):
-    """Stop a recorded process group, led by `pid`, until none of it is running."""
-    if pid == os.getpgrp():
-        return
-    with _live():
-        for signalled, wait in ((signal.SIGTERM, WAIT), (signal.SIGKILL, 5)):
-            try:
-                os.killpg(pid, signalled)
-            except (ProcessLookupError, PermissionError):
-                return
-            if waited_out(lambda: group_alive(pid), wait):
-                return
-
-
-def local_link(link):
-    try:
-        url = urlsplit(link)
-        return (url.scheme == 'http' and url.hostname == '127.0.0.1' and url.port
-                and url.path == '/' and not url.query and not url.username and not url.password
-                and re.fullmatch(r'(?:token=)?[A-Za-z0-9_-]{32,128}', url.fragment))
-    except (ValueError, TypeError):
-        return False
-
-
-# A Document Library item a studio is opened with (Continue in another studio): the library's
-# own document ID and a revision number, nothing else.
-LIBRARY_ID = re.compile(r'[a-z0-9][a-z0-9-]{0,63}')
-LIBRARY_REVISIONS = 1_000      # the most revisions one document keeps (document_library.LIMITS)
-
-
-def library_item(value):
-    """(id, revision) of `{'id', 'revision'}` sent to /api/open, refused unless the id is in
-    the Document Library's own format, the revision is a whole number it can hold, and that
-    revision is in the library, readable and not removed from it. Nothing is written."""
-    if not isinstance(value, dict) or set(value) - {'id', 'revision'}:
-        raise WorkspaceError('Choose a document shown in the Library.')
-    ident, revision = value.get('id'), value.get('revision')
-    if not isinstance(ident, str) or not LIBRARY_ID.fullmatch(ident) \
-            or type(revision) is not int or not 1 <= revision <= LIBRARY_REVISIONS:
-        raise WorkspaceError('Choose a document shown in the Library.')
-    from studio_core import document_library
-    found = document_library.opened()
-    if found is None:
-        raise WorkspaceError('The Document Library has not been made on this computer yet.')
-    try:
-        row = found.describe(ident, revision)
-    except document_library.LibraryError as failure:
-        raise WorkspaceError(str(failure)) from None
-    if row.get('hidden'):
-        raise WorkspaceError(f'“{row["title"]}” was removed from the library. Restore it first.')
-    if not row.get('readable'):
-        raise WorkspaceError(f'“{row["title"]}” has no text a studio can use: {row.get("problem") or ""}'.strip())
-    return ident, revision
-
-
-def with_library(link, ident, revision):
-    """`link` with `library=<id>@<revision>` added to its fragment, built here from a checked
-    id and revision: no text from a request reaches the link. Any earlier `library=` is
-    replaced; everything else in the fragment (the token above all) is kept as it was."""
-    if not isinstance(ident, str) or not LIBRARY_ID.fullmatch(ident) \
-            or type(revision) is not int or not 1 <= revision <= LIBRARY_REVISIONS:
-        raise WorkspaceError('Choose a document shown in the Library.')
-    parsed = urlsplit(link)
-    fragment = [part for part in parsed.fragment.split('&') if part and part.partition('=')[0] != 'library']
-    fragment.append(f'library={ident}@{revision}')
-    return parsed._replace(fragment='&'.join(fragment)).geturl()
 
 
 class Launcher:
@@ -522,7 +118,7 @@ class Launcher:
             command, began = command_of(pid), started(pid)
         if command is None or began is None:
             return None  # Unverifiable without ps: never signal it, keep the record.
-        if marker(identifier) not in command or ' --home-data ' + home_key() not in command \
+        if marker(identifier) not in command or f' {protocol.HOME_DATA} ' + home_key() not in command \
                 or began != found['started']:
             target.unlink(missing_ok=True)
             return None
@@ -615,58 +211,65 @@ class Launcher:
                         f'marketing-studio stop --{identifier[0]}s --force')
                 stop_group(left)
                 forget(identifier)
-            token = secrets.token_urlsafe(32)
-            env = {**self.environment(), 'MARKETING_STUDIO_HANDOFF': json.dumps({'token': token, 'shared': shared}),
-                   'PYTHONUNBUFFERED': '1'}
-            log = state.data_root() / 'logs' / (identifier + '.log')
-            log.parent.mkdir(parents=True, exist_ok=True)
-            if log.exists():
-                # One earlier launch is kept to compare with.
-                os.replace(log, log.with_name(identifier + '.previous.log'))
-            with log.open('w') as errors:
-                os.chmod(log, 0o600)
-                process = subprocess.Popen([sys.executable, str(ROOT / 'marketing_studio/bridge.py'),
-                                            identifier, str(root), '--home-data', home_key()], env=env, cwd=root,
-                                           stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                                           stderr=errors, text=True, start_new_session=True)
-            announced = queue.Queue()
-
-            def collect():
-                try:
-                    for line in process.stdout:
-                        if len(line) > 64000:
-                            continue
-                        try:
-                            found = json.loads(line)
-                        except ValueError:
-                            continue
-                        if isinstance(found, dict) and any(key in found for key in ('address', 'link', 'error')):
-                            announced.put(found)
-                    announced.put({'stopped': True})
-                finally:
-                    process.stdout.close()
-            reader = threading.Thread(target=collect, daemon=True)
-            reader.start()
-            try:
-                result = announced.get(timeout=TIMEOUT)
-                if result.get('stopped'):
-                    raise WorkspaceError(launch_problem(name + ' stopped before opening.', log))
-                if result.get('error'):
-                    raise WorkspaceError(result['error'])
-                link = result.get('link') or (result.get('address', '') + '#token=' + token)
-                if not local_link(link):
-                    raise WorkspaceError('The studio returned an invalid local address.')
-            except BaseException as failure:
-                self.stop_process(process)
-                reader.join(timeout=2)
-                if isinstance(failure, queue.Empty):
-                    raise WorkspaceError(launch_problem(name + ' took too long to open. Try again.', log)) from failure
-                raise
+            process, link = self.launch(identifier, root, name, shared)
             with self.state:
                 # Closing waits for this studio's lock, so it stops this child next.
                 self.children[identifier] = (process, link)
             record(identifier, process.pid)
             return self.link(identifier, link, remote)
+
+    def launch(self, identifier, root, name, shared):
+        """Start the studio's bridge and wait for the link it announces: (its process, the
+        link). A bridge that stops, fails or takes too long to open is stopped, and the
+        failure says why, with the end of its launch log."""
+        token = secrets.token_urlsafe(32)
+        env = {**self.environment(), protocol.HANDOFF: protocol.handoff(token, shared),
+               'PYTHONUNBUFFERED': '1'}
+        log = state.data_root() / 'logs' / (identifier + '.log')
+        log.parent.mkdir(parents=True, exist_ok=True)
+        if log.exists():
+            # One earlier launch is kept to compare with.
+            os.replace(log, log.with_name(identifier + '.previous.log'))
+        with log.open('w') as errors:
+            os.chmod(log, 0o600)
+            process = subprocess.Popen(protocol.command(ROOT, identifier, root, protocol.HOME_DATA, home_key()),
+                                       env=env, cwd=root,
+                                       stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                       stderr=errors, text=True, start_new_session=True)
+        announced = queue.Queue()
+
+        def collect():
+            try:
+                for line in process.stdout:
+                    if len(line) > 64000:
+                        continue
+                    try:
+                        found = json.loads(line)
+                    except ValueError:
+                        continue
+                    if isinstance(found, dict) and any(key in found for key in ('address', 'link', 'error')):
+                        announced.put(found)
+                announced.put({'stopped': True})
+            finally:
+                process.stdout.close()
+        reader = threading.Thread(target=collect, daemon=True)
+        reader.start()
+        try:
+            result = announced.get(timeout=TIMEOUT)
+            if result.get('stopped'):
+                raise WorkspaceError(launch_problem(name + ' stopped before opening.', log))
+            if result.get('error'):
+                raise WorkspaceError(result['error'])
+            link = result.get('link') or (result.get('address', '') + '#token=' + token)
+            if not local_link(link):
+                raise WorkspaceError('The studio returned an invalid local address.')
+        except BaseException as failure:
+            self.stop_process(process)
+            reader.join(timeout=2)
+            if isinstance(failure, queue.Empty):
+                raise WorkspaceError(launch_problem(name + ' took too long to open. Try again.', log)) from failure
+            raise
+        return process, link
 
     def environment(self):
         """This process's environment for a studio, naming the home port only when it is known.
@@ -698,7 +301,7 @@ class Launcher:
             if root is None:
                 continue
             with self.studio_lock(identifier):
-                result = self.bridge(identifier, root, shared, '--prepare', TIMEOUT,
+                result = self.bridge(identifier, root, shared, protocol.PREPARE, TIMEOUT,
                                      'Workspace setup took too long. Check the repository connection and try again.')
             if result.get('prepared') is not True:
                 raise WorkspaceError(catalog.STUDIOS[identifier][0] + ': ' + (
@@ -732,7 +335,7 @@ class Launcher:
                     raise WorkspaceError(f'{name} is working: ' + ', '.join(map(describe_job, jobs))
                                          + '. Wait for it to finish, then connect.')
                 stopped = self.stop(identifier)
-            result = self.bridge(identifier, root, shared, '--connect', CONNECT_TIMEOUT,
+            result = self.bridge(identifier, root, shared, protocol.CONNECT, CONNECT_TIMEOUT,
                                  'Connecting took too long. Check the repository connection and try again.')
             if result.get('connected') is not True:
                 raise WorkspaceError(name + ': ' + (
@@ -742,10 +345,9 @@ class Launcher:
     def bridge(self, identifier, root, shared, flag, timeout, slow):
         """Run the studio's bridge once for `flag` and read the report it prints last.
         Returns {} when it printed none; the caller reads 'error' from a failed one."""
-        env = {**self.environment(), 'MARKETING_STUDIO_HANDOFF': json.dumps(
-            {'token': secrets.token_urlsafe(32), 'shared': shared})}
+        env = {**self.environment(), protocol.HANDOFF: protocol.handoff(secrets.token_urlsafe(32), shared)}
         process = subprocess.Popen(
-            [sys.executable, str(ROOT / 'marketing_studio/bridge.py'), identifier, str(root), flag],
+            protocol.command(ROOT, identifier, root, flag),
             cwd=root, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
             stderr=subprocess.PIPE, text=True, start_new_session=True)
         try:
