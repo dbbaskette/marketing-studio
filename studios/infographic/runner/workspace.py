@@ -6,6 +6,7 @@ connection and complete native installation remain their own later issues.
 from __future__ import annotations
 
 from contextlib import contextmanager
+from contextvars import ContextVar
 from copy import deepcopy
 import fcntl
 import hashlib
@@ -21,11 +22,14 @@ import time
 
 from studio_core import activity_log, studios_config, workspace_setup
 
-from .contracts import (MAX_ASSET_BYTES, MAX_RECORD_BYTES, PRODUCT, Invalid,
+from .contracts import (MAX_ASSET_BYTES, MAX_RECORD_BYTES, PRODUCT, Invalid, Stopped,
                         advance, basis, canonical, new_project, renamed, renaming)
 from .validation import identifier, image_size, relative_path, require, sha, validate_project
 
 NOFOLLOW = getattr(os, 'O_NOFOLLOW', 0)
+# The stop signal of this thread's background operation (action_jobs), or None. Once it is
+# set, nothing more of that operation is saved: every revision it would publish is refused.
+STOPPING = ContextVar('infographic_stopping', default=None)
 DIRECTORY = getattr(os, 'O_DIRECTORY', 0)
 
 
@@ -308,6 +312,9 @@ class Store:
     def _publish(self, project: dict, *, previous=None, restored=False):
         if not getattr(self._held, 'active', False):
             raise Invalid('Infographic Studio saves must hold the workspace lock.')
+        stop = STOPPING.get()
+        if stop is not None and stop.is_set():
+            raise Stopped()
         validate_project(project)
         if project['owner'] != self.owner:
             raise Invalid('This infographic belongs to another workspace owner.')
@@ -354,9 +361,10 @@ class Store:
             return project
 
     def edit_brief(self, ident: str, brief: dict, *, expected_revision: int) -> dict:
-        """Save the brief. A change to the working title alone is a rename that clears
-        nothing (`contracts.renamed`); any other change clears the story, page and approval
-        built from the earlier brief, under the input rules. Captured facts stay either way."""
+        """Save the brief. A change to the working title alone is a rename that marks
+        nothing (`contracts.renamed`); any other change keeps the story, page and artwork built
+        from the earlier brief and marks them out of date (`contracts.advance`, stale.py), and
+        clears the approval. Captured facts stay either way."""
         with self.locked():
             current = self.read(ident)
             if renaming(current, brief):
@@ -389,12 +397,14 @@ class Store:
                 'This infographic changed. Reload it before saving.')
         require(project['owner'] == self.owner, 'This infographic belongs to another workspace owner.')
 
-    def change_locked(self, project: dict, changes: dict) -> dict:
-        """Only native validated content mutations call this under the workspace lock."""
+    def change_locked(self, project: dict, changes: dict, *, remade=()) -> dict:
+        """Only native validated content mutations call this under the workspace lock.
+        `remade` names parts laid out again (contracts.advance)."""
         require(getattr(self._held, 'active', False), 'Hold the workspace lock before saving.')
         current = self.read(project['id'])
         self.expect(current, project['revision'])
-        result = advance(current, changes, expected_revision=current['revision'], owner=self.owner)
+        result = advance(current, changes, expected_revision=current['revision'], owner=self.owner,
+                         remade=remade)
         self._publish(result, previous=current)
         return result
 

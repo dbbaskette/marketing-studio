@@ -26,13 +26,19 @@ LABELS = {
     'visual-layout': 'Building the visual diagram layout',
     'approve': 'Approving and preparing your files',
     'review': 'Recording your review and running checks',
+    'refresh-page': 'Updating the page',
+    'desk-submit': 'Saving work from the conversation',
 }
 
 
 # How an operation ended, in the Activity log's words. A failure says more: see `ending`. An
 # uncertain outcome (`unknown`) is not called out of time: it ended without a confirmed result.
-ENDED = {'complete': 'finished', 'cancelled': 'stopped', 'unknown': 'failed', 'outdated': 'failed'}
+ENDED = {'complete': 'finished', 'cancelled': 'stopped', 'stopped': 'stopped', 'unknown': 'failed', 'outdated': 'failed'}
 UNCERTAIN = 'It ended without a confirmed result. Check the saved work before trying again.'
+STOPPED = 'Stopped on request. Nothing is running for it now, and your saved work is kept.'
+
+
+from .contracts import Stopped  # noqa: E402  (raised at a step or a save once Stop is asked)
 
 
 def ending(item):
@@ -53,6 +59,18 @@ class Activity:
 
     @contextmanager
     def track(self, ident, action):
+        item, report = self.begin(ident, action)
+        try:
+            yield report
+        except BaseException as failure:
+            self.end(ident, item, failure)
+            raise
+        else:
+            self.end(ident, item)
+
+    def begin(self, ident, action, *, stop=None, stoppable=True):
+        """Claim the one operation slot of an infographic. Returns (item, report): `report`
+        names each step as it starts and, when `stop` is set, ends the work at that step."""
         with self.lock:
             previous = self.items.get(ident)
             require(not previous or previous['state'] != 'running',
@@ -67,42 +85,73 @@ class Activity:
             item = {'id': secrets.token_hex(16), 'action': action, 'label': LABELS[action],
                     'state': 'running', 'started': self.clock(), 'ended': None,
                     'started_at': activity_log.now(), 'lines': activity_log.Lines()}
+            if stop is not None:
+                item['stop'] = stop
+                item['stoppable'] = stoppable
             self.items[ident] = item
-
-        def checkpoint(event):
-            if self.checkpoint is not None:
-                try:
-                    self.checkpoint(ident, {'checkpoint': event, 'unit': action, 'at': activity_log.now()})
-                except Exception:
-                    pass
-        checkpoint('accepted')
-        checkpoint('working')
+        self._checkpoint(ident, action, 'accepted')
+        self._checkpoint(ident, action, 'working')
 
         def report(label):
+            if stop is not None and stop.is_set():
+                raise Stopped()
             with self.lock:
-                item['label'] = label
+                if not item.get('stopping'):
+                    item['label'] = label
             if label == 'Running the local checks':
-                checkpoint('checking')
+                self._checkpoint(ident, action, 'checking')
         # What the assistant is doing, line by line: give it to the author (author.watching).
         report.said = item['lines'].append
+        return item, report
 
+    def end(self, ident, item, failure=None, *, interrupted=False, **shown):
+        """End a claimed operation: with `failure`, as failed (or stopped, when it was asked
+        to stop); `shown` adds what the page reads of its outcome (result, problem, recovery)."""
         assisted = False
-        try:
-            yield report
-        except BaseException as failure:
-            with self.lock:
-                item.update(state='failed', ended=self.clock())
-                if isinstance(failure, AssistantFailure):
+        with self.lock:
+            item.update({key: value for key, value in shown.items() if value is not None})
+            if failure is not None:
+                stopped = isinstance(failure, Stopped) or (item.get('stop') is not None and item['stop'].is_set())
+                item.update(state='interrupted' if interrupted else 'stopped' if stopped else 'failed',
+                            ended=self.clock())
+                if interrupted:
+                    # Ended by the server stopping, not by the person: never "Stopped on request".
+                    item.pop('outcome', None)
+                elif stopped:
+                    item.pop('outcome', None)
+                    item['problem'] = STOPPED
+                elif isinstance(failure, AssistantFailure):
                     item.update(reason=failure.reason, problem=str(failure))
+                if isinstance(failure, AssistantFailure):
                     assisted = True
-            self._kept(ident, item, assisted)
-            checkpoint('stopped')
-            raise
-        else:
-            with self.lock:
-                item.update(state=item.pop('outcome', 'complete'), ended=self.clock())
-            self._kept(ident, item, assisted)
-            checkpoint('ready' if item['state'] == 'complete' else 'stopped')
+            else:
+                state = item.pop('outcome', 'complete')
+                if state == 'cancelled' and item.get('stop') is not None and item['stop'].is_set():
+                    state, item['problem'] = 'stopped', STOPPED
+                item.update(state=state, ended=self.clock())
+            item.pop('stopping', None)
+        self._kept(ident, item, assisted)
+        self._checkpoint(ident, item['action'], 'ready' if item['state'] == 'complete' else 'stopped')
+
+    def stop(self, ident, *, force=False):
+        """Ask the running operation of one infographic to stop. True when one was asked."""
+        with self.lock:
+            item = self.items.get(ident)
+            if item is None or item['state'] != 'running' or item.get('stop') is None:
+                return False
+            if not item.get('stoppable', True) and not force:
+                return False
+            item['stop'].set()
+            item['stopping'] = True
+            item['label'] = 'Stopping ' + LABELS[item['action']][0].lower() + LABELS[item['action']][1:]
+            return True
+
+    def _checkpoint(self, ident, action, event):
+        if self.checkpoint is not None:
+            try:
+                self.checkpoint(ident, {'checkpoint': event, 'unit': action, 'at': activity_log.now()})
+            except Exception:
+                pass
 
     def _kept(self, ident, item, assisted):
         """Give an operation in which an assistant worked to the Activity log. Best effort:
@@ -139,7 +188,8 @@ class Activity:
             item = self.items.get(ident)
             if item is None:
                 return None
-            shown = {key: item[key] for key in ('id', 'action', 'label', 'state', 'reason', 'problem') if key in item} | {
+            shown = {key: item[key] for key in ('id', 'action', 'label', 'state', 'reason', 'problem', 'result', 'recovery', 'stopping') if key in item} | {
+                'stoppable': item.get('stop') is not None and item.get('stoppable', True) and item['state'] == 'running',
                 'elapsed_seconds': max(0, int((self.clock() if item['ended'] is None else item['ended']) - item['started']))}
             if item['state'] == 'running' and len(item['lines']):
                 # What its assistant is doing now, as every studio shows a running job.

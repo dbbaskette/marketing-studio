@@ -41,9 +41,55 @@ the new revision, and `approval.carried` names the revision the person approved.
 earlier approved files keep the old title and stay unchanged; `export ID --expected-revision REV`
 prepares files with the new title on this computer. After a rename, export; don't run
 `check` first: no rendered page matches the renamed revision yet, so the checks would come
-back incomplete and the approval would be cleared. Any other change clears the story,
-page and approval built from the earlier brief (captured facts stay), so tell the person
-what will be cleared and ask before saving when they exist. Earlier revisions remain.
+back incomplete and the approval would be cleared. Any other change keeps the story, page
+and artwork built from the earlier brief and marks each out of date in `stale`
+(`{"stories": {"because": "brief", "revision": N}, ...}`; captured facts stay current),
+and clears the approval, so tell the person and ask before saving when they exist. Each
+out-of-date part is then updated (`suggest --fresh` for facts and stories,
+`refresh-page` lays the page out again locally, `art-direct` writes new art direction) or
+kept as it is (`keep-stale` with `{"part"}`, only when the person chooses it). A mark is
+cleared only explicitly (runner/stale.py): by Keep as it is; by making the whole part again
+(a new set of facts or stories, from Find the story or the native `facts`/`stories` actions;
+the page laid out again by `refresh-page`, `layout` or `visual-layout`; new artwork made
+after the mark and placed on the page); or when nothing of the part is left. Revising one
+story, choosing a story, a new art direction, editing a text element, placing the same image
+again, restoring a revision and every desk operation from this conversation leave it. Approve,
+export and Google delivery are refused, naming what is out of date, until no part is. A
+replaced or removed source drops only the facts that quote it, named with why under
+`stale.facts.dropped`, and the stories and page built on those facts; every other fact is
+kept and marked. Earlier revisions remain.
+
+Page sizes come from one table (`contracts.PRESETS`, served to the page by `/api/status`
+as `sizes`): `a4`, `letter` and `digital` (1080 × 1350) are portrait; `widescreen`
+(1920 × 1080, 16:9) and `social` (1200 × 628) are landscape and laid out across the page.
+A social card suits one or two short blocks at the brand's smallest readable type; the page
+says so where the size is chosen, and a longer story is refused as too dense.
+
+## Desk operations for this conversation
+
+The checked way to save work written here (`runner/desk_chat.py`), as Presentation Studio's
+desk works: `desk show ID` reads the desk and lists `targets` (`facts`, `stories`,
+`story:<id>`, `art-direction`), what is `stale` and the newest conversation `submissions`.
+`desk context ID --target TARGET` answers the exact `inputs`, the native `instructions`,
+what to `return` and an `expected_basis`. `desk submit ID --file submit.json` takes
+`{"kind", "target", "expected_basis", "payload"}` (kinds `facts`, `stories`, `story` and
+`art-direction`); payloads are `{"facts": [...]}`, `{"stories": [...]}`, `{"story": {...}}`
+keeping its id, or `{"direction": {...}}`. Only the person keeps out-of-date work as it is,
+on the page; the conversation never clears that mark. The same native checks
+as the actions below apply, and a save lands only on the inputs its context named: any
+change since is refused (read context again). Saving never approves, chooses a story,
+builds, renders, delivers or starts an assistant, research or image provider, and it is
+refused while the page's own work runs (it takes the same one-at-a-time slot). The page answers the same at `GET /api/desk-show`,
+`POST /api/desk-context` and `POST /api/desk-submit`.
+
+Long page actions (`suggest`, `build`, `art-direct`, `image-start`, `inspect-images`,
+`revise-story`, `revise-art`, `repair`, `refresh-page`, `approve`, `review`, `export`,
+`google-deliver`) answer the page at once and run in the background, one at a time per
+infographic, with progress; a restart shows interrupted work and what to do next. Stop is
+offered only where stopping leaves nothing half-done: approval with its files, a review with
+its checks, preparing approved files and a Google delivery finish once started (a delivery
+reports what was sent; reconcile checks it read-only). Once Stop is asked nothing more of
+that work is saved. The CLI runs them in its own process as before.
 
 ## Author directly in this conversation
 
@@ -244,8 +290,9 @@ python3 runner/studio.py research-preview ID --case /absolute/reviewed-case --so
 When a preview names extraction gaps, inspect them before adding
 `--acknowledge-warnings` to `source-import`. Use `--replace-id SOURCE` for an explicit
 refresh. The raw and normalized capture, locations and origin revision are immutable;
-adding or replacing a source clears the facts, story, page and approval built from the
-earlier sources, so tell the person and ask first when they exist. Google Docs and Slides links use the existing default Google sign-in. `--account` is optional for a deliberate override; import and delivery do not ask for email. Shared Marketing Studio output selects the initial delivery choice. Google tab/slide selection uses repeated
+adding or replacing a source keeps the facts, story, page and artwork built from the
+earlier sources, marks them out of date and clears the approval, so tell the person and ask
+first when they exist. Google Docs and Slides links use the existing default Google sign-in. `--account` is optional for a deliberate override; import and delivery do not ask for email. Shared Marketing Studio output selects the initial delivery choice. Google tab/slide selection uses repeated
 `--tab TAB_ID`, or `--tab slide-2` for the second slide of a deck; leaving it empty includes all tabs or slides. Pasted links do not trigger a fetch.
 Google Slides decks are read through Google Drive as a PowerPoint export (titles, text,
 tables, groups and speaker notes, in presentation order), never through the Google
@@ -260,8 +307,9 @@ matching its hashes) before the infographic changes, then all are captured as `h
 sources in one new revision, or none are. The source keeps the library's readable
 Markdown and an upload's original bytes, with `provenance.library` naming the ID,
 revision and hashes, so the infographic keeps working if the library changes. Like any
-source change it clears the facts, story, page and approval built from earlier sources,
-so tell the person before adding to work that has them. A revision with extraction gaps
+source change it keeps the facts, story, page and artwork built from earlier sources,
+marks them out of date and clears the approval, so tell the person before adding to work
+that has them. A revision with extraction gaps
 is refused until the person has reviewed them and you add `--acknowledge-warnings`; the
 gaps stay with the source. A document already chosen is refused, and so is this
 infographic's own kept export (`inspect ID` names it as `library.own`): its approved

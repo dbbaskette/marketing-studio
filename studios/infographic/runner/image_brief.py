@@ -62,7 +62,8 @@ def make(project: dict, direction: dict, *, edit=None) -> dict:
     framing = ('Fill the illustration canvas with the requested explanatory subjects. '
                'Return a tightly framed high-resolution PNG for this illustration alone; the compositor places it on the page. '
                'Do not create a mostly blank page or reproduce the page layout. ') if placement else (
-               'Create explanatory artwork for this one-page composition. Return a high-resolution portrait PNG, artwork only. '
+               'Create explanatory artwork for this one-page composition. Return a high-resolution '
+               + ('landscape' if width > height else 'portrait') + ' PNG, artwork only. '
                'Keep every compositor-owned region empty. ')
     prompt = (framing + 'Do not draw words, numbers, chart marks, '
               'logos or identity artwork. Counts indicate illustrative composition, not measured '

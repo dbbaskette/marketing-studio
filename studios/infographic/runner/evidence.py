@@ -293,8 +293,11 @@ def comparable(facts: list[dict]):
             'Resolve conflicting measurements before charting them.')
 
 
-def adopt(store, ident: str, facts: list[dict], *, expected_revision: int) -> dict:
+def adopt(store, ident: str, facts: list[dict], *, expected_revision: int, remade=True) -> dict:
+    """Adopt a new set of facts. As the native facts action it makes the facts again (stale.py
+    (b)); the conversation's desk operation passes remade=False and clears no mark."""
     with store.locked():
         project = store.read(ident)
         store.expect(project, expected_revision)
-        return store.change_locked(project, {'facts': verify(store, project, facts)})
+        return store.change_locked(project, {'facts': verify(store, project, facts)},
+                                   remade=('facts',) if remade else ())

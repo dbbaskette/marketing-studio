@@ -21,7 +21,7 @@ For a Training Studio job aid, choose **Import selected studio material**, selec
 Suppose you have an onboarding checklist and need a handout. Try *“Show new partners the steps from invitation to first login. Use the order and role names in this checklist. Make it fit on one printed page.”*
 
 1. **Capture the information.** Choose **New infographic → Add information**. Paste the checklist or upload it. You can also use CSV data, a public link, a Google Doc or Google Slides. Read the captured text before continuing.
-2. **Pick the story.** Give the audience, takeaway and anything the page must show. Choose A4, US Letter or a digital portrait. **Find the story** proposes ways to use the evidence. Pick one with **Use this story**.
+2. **Pick the story.** Give the audience, takeaway and anything the page must show. Choose A4, US Letter or a digital portrait, or a landscape widescreen 16:9 or social size. **Find the story** proposes ways to use the evidence. Pick one with **Use this story**.
 3. **Build the page.** Choose **Build page** and inspect the preview at its intended size. Use **Edit words** to fix a heading or label, then **Update preview**. For a chart, check that its values, units and comparison period match your source.
 4. **Approve what you see.** Open **Review page**, record your review and run the local checks. Resolve any findings, then choose **Approve revision N** to prepare files for that version. If preparation is interrupted, **Prepare approved files** retries it.
 5. **Choose a file or destination.** Download a file for local use, or choose **Deliver approved page** for the available PDF and Google Doc delivery options.

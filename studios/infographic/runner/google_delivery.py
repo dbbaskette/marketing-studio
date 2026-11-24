@@ -129,6 +129,9 @@ def execute(
                 }
         else:
             require(not reconcile, "There is no saved Google delivery to reconcile.")
+            # Nothing is delivered while work it shows is out of date (contracts.require_current).
+            from .contracts import require_current
+            require_current(store.read(ident), "Delivery")
             if folder is None:
                 folder = defaults["folder"]
             if not account:

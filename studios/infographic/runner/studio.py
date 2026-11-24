@@ -15,7 +15,7 @@ from pathlib import Path
 import signal
 import threading
 
-from runner.contracts import PRODUCT, Invalid
+from runner.contracts import PRESETS, PRODUCT, Invalid
 from runner.workspace import Store, data_root, file_lock
 
 
@@ -31,7 +31,7 @@ def parser():
             command.add_argument('--open', action='store_true', help='Open the foundation page in your default browser.')
     create = commands.add_parser('create', help='Save a new brief in an already configured workspace.')
     create.add_argument('title')
-    create.add_argument('--preset', choices=('a4', 'letter', 'digital'), default='a4')
+    create.add_argument('--preset', choices=tuple(PRESETS), default='a4')
     create.add_argument('--direction', choices=('direct', 'suggest', 'hybrid'), default='suggest')
     show = commands.add_parser('show')
     show.add_argument('id')
@@ -53,6 +53,11 @@ def parser():
         if name == 'history': command.add_argument('--before', type=int, help='Read an earlier page of immutable revisions.')
         if name == 'action':
             command.add_argument('--file', required=True, type=Path, help='JSON action with expected_revision and stage data.')
+    desk = commands.add_parser('desk', help='Checked conversation operations: show, context and submit (desk_chat.py).')
+    desk.add_argument('desk_action', choices=('show', 'context', 'submit'))
+    desk.add_argument('id')
+    desk.add_argument('--target', help='facts, stories, story:<id> or art-direction (context).')
+    desk.add_argument('--file', type=Path, help='JSON {"kind", "target", "expected_basis", "payload"} (submit).')
     extra=commands.add_parser('handoff-inventory');extra.add_argument('--root',type=Path,required=True);extra.add_argument('--studio',required=True)
     extra=commands.add_parser('handoff-preview');extra.add_argument('--root',type=Path,required=True);extra.add_argument('--studio',required=True);extra.add_argument('--file',required=True);extra.add_argument('--expected-sha256',required=True);extra.add_argument('--view',choices=('job-aid',))
     extra=commands.add_parser('research-task');extra.add_argument('id');extra.add_argument('--source-mode',choices=('selected','mixed','public'),default='selected')
@@ -75,7 +80,7 @@ def parser():
     for name in ('source', 'source-import', 'facts', 'stories', 'brand', 'image-brief', 'select', 'layout', 'suggest',
                  'build', 'preview', 'check', 'inspect-images', 'approve', 'export', 'restore',
                  'google-deliver', 'edit-text', 'review', 'image-start', 'image-cancel', 'image-recover', 'visual-layout', 'revise-art', 'revise-story', 'repair',
-                 'library', 'library-update', 'library-keep'):
+                 'library', 'library-update', 'library-keep', 'refresh-page', 'keep-stale'):
         operation = commands.add_parser(name, help='Checked ' + name + ' action; existing work is preserved on failure.')
         operation.add_argument('id')
         operation.add_argument('--expected-revision', required=True, type=int)
@@ -96,7 +101,8 @@ def parser():
                   'restore': ('revision',), 'edit-text': ('element-id', 'text'),
                   'image-start': ('brief-id', 'provider', 'request-id'), 'image-cancel': ('request-id',), 'image-recover': ('request-id',),
                   'revise-art': ('change', 'preserve', 'request-id'), 'revise-story': ('story-id', 'instruction'),
-                  'library-update': ('document', 'revision'), 'library-keep': ('export-id',)}
+                  'library-update': ('document', 'revision'), 'library-keep': ('export-id',),
+                  'keep-stale': ('part',)}
         for field in fields.get(name, ()):
             operation.add_argument('--' + field, required=True, type=int if field == 'revision' else str)
         if name == 'google-deliver':
@@ -123,6 +129,17 @@ def main(argv=None):
         if args.command.startswith('handoff-'):
             from runner import handoffs
             value=handoffs.inventory(args.root,args.studio) if args.command=='handoff-inventory' else handoffs.prepare(args.root,args.studio,args.file,args.expected_sha256,args.view)
+        elif args.command == 'desk':
+            from runner import api, desk_chat
+            store = Store.current()
+            if store is None: raise Invalid('Configure Infographic Studio before using the desk.')
+            if args.desk_action == 'show': value = desk_chat.show(store, args.id)
+            elif args.desk_action == 'context':
+                if not args.target: raise Invalid('Name the desk target with --target.')
+                value = desk_chat.context(store, args.id, args.target)
+            else:
+                if not args.file: raise Invalid('Give the submission with --file.')
+                value = desk_chat.submit(api.engine(store), args.id, api.load_json(args.file))
         elif args.command in ('research-task','research-preview'):
             from runner import research
             store=Store.current()
@@ -222,7 +239,7 @@ def main(argv=None):
                 sent = api.load_json(args.file)
                 if not isinstance(sent, dict) or sent.get('id', args.id) != args.id:
                     raise Invalid('The action belongs to another infographic.')
-                costly = sent.get('action') in ('visual-layout', 'image-recover', 'suggest', 'build', 'art-direct', 'image-start', 'preview', 'export', 'inspect-images', 'revise-art', 'revise-story', 'repair')
+                costly = sent.get('action') in ('visual-layout', 'image-recover', 'suggest', 'build', 'art-direct', 'image-start', 'preview', 'export', 'inspect-images', 'revise-art', 'revise-story', 'repair', 'refresh-page')
                 from runner.engine import Engine
                 value = api.action(api.engine(store) if costly else Engine(store), {**sent, 'id': args.id})
             elif args.command != 'edit-brief':
@@ -238,7 +255,7 @@ def main(argv=None):
                         if args.selection: sent['selection'] = api.load_json(args.selection)
                     elif args.command == 'library': sent['picks'] = api.load_json(args.file)
                     else: sent['data'] = api.load_json(args.file)
-                costly = args.command in ('visual-layout', 'image-recover', 'suggest', 'build', 'image-start', 'preview', 'export', 'inspect-images', 'revise-art', 'revise-story', 'repair')
+                costly = args.command in ('visual-layout', 'image-recover', 'suggest', 'build', 'image-start', 'preview', 'export', 'inspect-images', 'revise-art', 'revise-story', 'repair', 'refresh-page')
                 value = api.action(api.engine(store) if costly else Engine(store), sent)
             else:
                 with args.file.open('rb') as stream:

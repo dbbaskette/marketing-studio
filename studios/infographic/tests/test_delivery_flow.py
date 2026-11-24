@@ -229,17 +229,24 @@ class DeliveryFlowTests(Isolated):
         configured = mock.Mock(side_effect=lambda store: Engine(store, renderer=desk.fake_renderer))
         page = server.Page(0, self.store)
         manifest = self.engine.preview(self.ident, expected_revision=self.current()['revision'])
+        def finished():
+            # Review and approval run in the background; their outcome is read when they end.
+            for _, (_, _, thread) in list(page.actions.active.items()):
+                thread.join(20)
+            return page.doing(self.ident)
+        self.addCleanup(page.actions.shutdown)
         with mock.patch.object(server.api, 'engine', configured):
             status, _, raw = page.write('/api/action', {
                 'action': 'review', 'id': self.ident, 'expected_revision': self.current()['revision'],
                 'export_id': manifest['id'], 'observations': REVIEW, 'then_check': True})
-            self.assertEqual(status, 200)
-            self.assertEqual(page.activity.snapshot(self.ident)['state'], 'complete')
+            self.assertEqual(status, 202)
+            self.assertFalse(json.loads(raw)['job']['stoppable'], 'A review with its checks has no Stop.')
+            self.assertEqual(finished()['state'], 'complete')
             status, _, raw = page.write('/api/action', {
                 'action': 'approve', 'id': self.ident, 'expected_revision': self.current()['revision'],
                 'then_export': True})
-        result = json.loads(raw)['result']
-        self.assertEqual(status, 200)
+            self.assertEqual(status, 202)
+            result = finished()['result']
         self.assertEqual((result['approved'], result['problem']), (True, None))
         self.assertEqual([call.args[0] for call in configured.call_args_list], [self.store, self.store])
         self.assertTrue(any(d['approved_current'] for d in self.engine.deliveries(self.ident)))

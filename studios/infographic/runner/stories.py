@@ -108,11 +108,14 @@ def generated_scope_notes(project, proposal):
     return result
 
 
-def adopt(store, ident: str, proposals: list[dict], *, expected_revision: int) -> dict:
+def adopt(store, ident: str, proposals: list[dict], *, expected_revision: int, remade=True) -> dict:
+    """Adopt a whole new set of stories. As the native stories action it makes the stories
+    again (stale.py (b)); the conversation's desk operation passes remade=False."""
     with store.locked():
         project = store.read(ident)
         store.expect(project, expected_revision)
-        return store.change_locked(project, {'stories': verify(project, proposals)})
+        return store.change_locked(project, {'stories': verify(project, proposals)},
+                                   remade=('stories',) if remade else ())
 
 
 def select(store, ident: str, story_id: str, *, expected_revision: int) -> dict:

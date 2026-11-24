@@ -73,7 +73,7 @@ class CompositionTests(Isolated):
                     self.assertEqual((d['width'], d['height']), (PRESETS[preset]['width'], PRESETS[preset]['height']))
                     for element in d['elements']:
                         if element['kind'] == 'text':
-                            floor = (18 if element['role'] == 'source' else 24) if preset == 'digital' else (9 if element['role'] == 'source' else 12)
+                            floor = (18 if element['role'] == 'source' else 24) if PRESETS[preset]['unit'] == 'px' else (9 if element['role'] == 'source' else 12)
                             self.assertGreaterEqual(element['font_size'], floor)
                     root = ET.fromstring(svg.compose(self.store, p))
                     self.assertGreater(len(root.findall('.//{*}text')), 2)

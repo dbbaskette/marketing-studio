@@ -3,6 +3,13 @@
 const {make, add} = Drafting;
 const launch = new URLSearchParams(location.hash.slice(1));
 let token = launch.get('token') || '';
+// Continue in another studio: Marketing Studio names a Document Library revision to start from,
+// `library=<id>@<revision>`. Read and checked here, before the fragment is cleared.
+function libraryLink(value) {
+  const found = /^([a-z0-9][a-z0-9-]{0,63})@([1-9][0-9]{0,3})$/.exec(String(value || ''));
+  return found && Number(found[2]) <= 1000 ? {id: found[1], revision: Number(found[2])} : {invalid: true};
+}
+const libraryStart = launch.has('library') ? libraryLink(launch.get('library')) : null;
 try { if(token)sessionStorage.setItem('infographic-studio-token',token); else token=sessionStorage.getItem('infographic-studio-token')||''; }catch(f){}
 // The shell kit saves the appearance through this page's own key.
 if(typeof StudioShell!=='undefined')StudioShell.connect({header:'X-Infographic-Studio-Token',token:()=>token});
@@ -72,6 +79,13 @@ const $ = id => document.getElementById(id);
 let held = null, busy = false, picture = null, preferences = null;
 // The open infographic's toolbar primary action: the page shows that control at most once more.
 let primary = '';
+// The page sizes, as the server's one table (contracts.PRESETS) names them: [id, label,
+// dimensions, what it suits]. Read once from /api/status before the New sheet draws them.
+let PAGE_SIZES=[];
+async function pageSizes(){
+  if(!PAGE_SIZES.length){const found=await request('/api/status');PAGE_SIZES=(found.sizes||[]).map(s=>[s.id,s.label,s.detail,s.suits||'']);}
+  return PAGE_SIZES;
+}
 const emptyIntake = () => ({research_first:false, materials: [], library: [], imported: [], step: 0, title: '', text: '', direction: 'suggest', audience: '', purpose: '', must: '', locked: '', exclusions: '', preset: 'a4'});
 const draft = emptyIntake();
 let intakeLoaded=false, missingCaptures=[];
@@ -124,6 +138,14 @@ function invalid(f, message) {
   f.wrap.append(note); f.input.setAttribute('aria-invalid', 'true'); f.input.setAttribute('aria-describedby', [...described, note.id].join(' '));
   f.input.focus(); return false;
 }
+// Document text as it reads: a Markdown document, research report or Document Library item is
+// drawn by the shared ui-kit/markdown.js (text is never parsed as markup); anything else, and
+// any page without the kit, keeps its plain text.
+const MARKDOWN_KINDS=new Set(['markdown','research','handoff','google-doc']);
+function documentText(text,kind){
+  if(MARKDOWN_KINDS.has(kind)&&window.StudioMarkdown){const node=window.StudioMarkdown.render(text);node.classList.add('ig-document');return node;}
+  return make('pre','ig-csv-preview',text);
+}
 function card(title, ...parts) { return add(make('section', 'card stack'), make('h2', 'card-title', title), ...parts); }
 function detail(title, ...parts) {
   const node = add(make('details'), make('summary', '', title), ...parts);
@@ -167,6 +189,7 @@ workLabels['image-recover']='Recovering saved artwork locally';
 workLabels['visual-layout']='Building the visual diagram layout';
 workLabels['approve']='Approving and preparing your files';
 workLabels['review']='Recording your review and running checks';
+workLabels['refresh-page']='Updating the page';
 const WAITING='This can take a few minutes. You can stop waiting and come back: the work keeps running on this computer, and your saved work is kept.';
 // What the line of light shows when nothing is working: `yours` or, once delivered, `still`.
 let benchRest='yours';
@@ -184,7 +207,7 @@ function paintWork() {
     // It is built again only when the work, its pending image, quiet or Cancel changes, so
     // the handlers made here stay right: Stop waiting holds nothing, and Cancel calls the
     // `cancel` of the work it was made for, which stays the same while that shape does.
-    const shape=(work.id||'')+'|'+(work.pending||'')+'|'+(work.quiet?'q':'')+'|'+(work.cancel?'c':'');
+    const shape=(work.id||'')+'|'+(work.pending||'')+'|'+(work.quiet?'q':'')+'|'+(work.cancel?'c':'')+'|'+(work.stoppable?'s':'');
     if(surface.dataset.shape!==shape) {
       surface.dataset.shape=shape;
       const bead=make('span','bead');bead.dataset.workBead='';bead.setAttribute('aria-hidden','true');
@@ -198,6 +221,8 @@ function paintWork() {
       const controls=make('div','bar');
       // Stop waiting leaves the work running; nothing is cancelled or repeated.
       if(work.id&&!work.quiet){const stop=button('Stop waiting',()=>{closeSheet();void home();});stop.dataset.free='';stop.dataset.key='ig-work-stop-waiting';controls.append(stop);}
+      // Stop ends the work itself: its assistant or image worker ends on this computer.
+      if(work.id&&work.stoppable){const end=button('Stop',async()=>{if(!await Drafting.confirmInPlace(end,{message:'Stop '+work.label.charAt(0).toLowerCase()+work.label.slice(1)+'? Its assistant or image worker ends now. Saved work is kept; this step is not.',action:'Stop',keep:'Keep working'}))return;stopWork(work);});end.dataset.free='';end.dataset.key='ig-work-stop';end.classList.add('ig-work-end');controls.append(end);}
       if(work.cancel){const cancel=button('Cancel this request',()=>work.cancel());cancel.dataset.free='';cancel.dataset.key='ig-work-cancel';controls.append(cancel);}
       if(controls.childElementCount)surface.append(controls);
     }
@@ -241,6 +266,45 @@ function guard() {
   }
 }
 function free(node){node.dataset.free='';return node;}
+// Work kept after a brief or source change, out of date until the person updates it or keeps
+// it as it is (stale.py). Approval, prepared files and delivery wait for every part.
+const STALE_ORDER=['facts','stories','page','artwork'];
+const STALE_WHAT={facts:'The facts',stories:'The story',page:'The page',artwork:'The artwork'};
+function staleCard(p){
+  const held=p.stale||{},parts=STALE_ORDER.filter(part=>held[part]);
+  if(!parts.length)return null;
+  const update={facts:['Update facts and stories',()=>action('suggest',{fresh:true}),'Your assistant reads the current sources again and proposes facts and stories. Choosing a new story replaces the page built from the earlier one.'],
+    stories:['Update the story',()=>action('suggest',{fresh:true}),'Your assistant proposes stories for the current brief and sources. You choose one; the page follows the story you choose.'],
+    page:['Update the page',()=>action('refresh-page'),'Lays the page out again on this computer from the current brief and story, with its artwork. No assistant or image request.'],
+    artwork:['Update the art direction',()=>action('art-direct'),'Your assistant writes art direction for the current page. The artwork is current once new artwork from it is made and placed on the page; a new direction alone does not change it.']};
+  const rows=parts.map(part=>{
+    const [label,run,help]=update[part];
+    const keep=button('Keep as it is',()=>action('keep-stale',{part}));keep.setAttribute('aria-label','Keep '+STALE_WHAT[part].toLowerCase()+' as it is');
+    const go=button(label,run);
+    // Facts whose source was replaced or removed could not be kept: each is named, with why.
+    // Stories that used a dropped fact were removed: they are named too. The newest hundred of
+    // each are named; any more are counted.
+    const named=key=>{const items=held[part][key]||[],more=held[part][key+'_more']||0;if(!items.length)return null;
+      const total=items.length+more,noun=key==='dropped'?['One fact was dropped',total+' facts were dropped']:['One story was removed',total+' stories were removed'];
+      return add(make('div','stack'),make('p','',(total===1?noun[0]:noun[1])+': '+items[0].why),list([...items.map(d=>d.statement),...(more?['and '+more+' more']:[])]));};
+    const dropped=add(make('div','stack'),named('dropped'),named('removed'));
+    return add(make('div','ig-stale-row stack'),stateLine('review',STALE_WHAT[part]+' was made before the '+held[part].because+' changed.'),dropped,make('p','quiet',help),add(make('div','bar'),go,keep));
+  });
+  const node=card('Out of date after your change',make('p','','Your work is kept. Update each part, or keep it as it is. Approval, prepared files and delivery wait until nothing is out of date.'),...rows);
+  node.id='ig-stale';node.classList.add('ig-stale');return node;
+}
+// Work an earlier run of Infographic Studio left unfinished: never shown as running.
+function interruptedCard(found){
+  const id=held.project.id;
+  const node=card('Work was interrupted',stateLine('review',found.problem),make('p','',found.next),
+    add(make('div','bar'),button('Clear this notice',async()=>{try{await request('/api/action-control',{id,action:'dismiss'});await openProject(id);}catch(f){error(f.message);}})));
+  node.classList.add('ig-interrupted');return node;
+}
+async function stopWork(owner){
+  owner.stoppable=false;owner.label='Stopping';owner.detail='Stopping now. Saved work is kept.';paintWork();
+  try{await request('/api/action-control',{id:owner.id,action:'stop'});}
+  catch(f){error(f.message);}
+}
 // `id` names the infographic the work belongs to; without one it is a sheet's own read.
 function beginWork(label, elapsed=0, id=null) {
   const owner={label,id,started:Date.now()-elapsed*1000,connected:true,detail:id?WAITING:'This can take a few minutes. Your saved work is kept.',title:held?.project.id===id?held.project.brief.title:''};
@@ -272,7 +336,7 @@ function elsewhere(owner,problem) {
 function progressNotice(progress,owner,id) {
   if(running.get(id)!==owner)return;
   const current=progress.activity;
-  if(current?.state==='running'){owner.label=current.label;owner.started=Date.now()-current.elapsed_seconds*1000;owner.connected=true;owner.detail=WAITING;owner.worker=current.worker||null;paintWork();}
+  if(current?.state==='running'){owner.label=current.label;owner.started=Date.now()-current.elapsed_seconds*1000;owner.connected=true;owner.detail=current.stopping?'Stopping now. Saved work is kept.':WAITING;owner.worker=current.worker||null;owner.stoppable=!!current.stoppable&&!current.stopping;paintWork();}
   const pending=progress.recovery?.find(r=>!r.local_artwork_available&&['queued','running','unknown'].includes(r.state));
   if(pending&&owner.pending!==pending.attempt_id){owner.pending=pending.attempt_id;
     owner.cancel=async()=>{try{const latest=await request('/api/activity?id='+encodeURIComponent(id));await request('/api/action',{action:'image-cancel',id,expected_revision:latest.revision,request_id:pending.attempt_id});toast('Local adoption cancelled. Remote charges may remain unknown.');}catch(f){error(f.message);}};
@@ -289,7 +353,10 @@ async function recoverActivity(id,owner) {
     await new Promise(resolve=>setTimeout(resolve,2000));
   }
 }
+const stoppedWords='Stopped. Nothing is running for it now, and your saved work is kept.';
 function recoveredNotice(result) {
+  if(result?.state==='stopped'){toast(stoppedWords);return;}
+  if(result?.state==='interrupted'){error(result.problem+' '+result.next);return;}
   if(result?.state==='complete')toast('Finished. Your saved work is ready to review.');
   else if(result?.state==='outdated')toast('The earlier result was kept and did not replace newer work.');
   else error(result?.state==='failed'?(result.problem||'The operation could not finish. Your saved work is kept.'):result?.state==='cancelled'?'The image request was cancelled. Remote charges may remain unknown.':'The earlier outcome could not be confirmed. Check the saved work and recovery controls before retrying.');
@@ -297,16 +364,18 @@ function recoveredNotice(result) {
 function here(id){return screen==='project'&&held?.project.id===id;}
 async function resumeActivity(id,current) {
   if(running.has(id))return;
-  const owner=beginWork(current.label,current.elapsed_seconds,id);
+  const owner=beginWork(current.label,current.elapsed_seconds,id);owner.stoppable=!!current.stoppable&&!current.stopping;paintWork();
   try{const result=await recoverActivity(id,owner);
     if(here(id)){await openProject(id);recoveredNotice(result);}
     else elsewhere(owner,['complete','outdated'].includes(result?.state)?'':(result?.problem||'The earlier outcome could not be confirmed. Open it to check the saved work.'));
   }catch(f){if(here(id))error(f.message);else elsewhere(owner,f.message);}finally{endWork(owner);}
 }
+// A page opened on this computer (not through the network link) may add a folder here.
+const here_local = ['127.0.0.1', 'localhost', '[::1]'].includes(location.hostname);
 async function request(route, data) {
   const labels={'/api/remote-preview':'Reading the linked document','/api/source-preview':'Reading the uploaded file','/api/research-preview':'Reading the selected research'};
   const owner=!shownWork()&&data!==undefined&&labels[route]?beginWork(labels[route]):null;
-  try{const response = await fetch(route, {method: data === undefined ? 'GET' : 'POST', headers: {'X-Infographic-Studio-Token': token, ...(data === undefined ? {} : {'Content-Type': 'application/json'})}, ...(data === undefined ? {} : {body: JSON.stringify(data)})});
+  try{const response = await fetch(route, {method: data === undefined ? 'GET' : 'POST', headers: {'X-Infographic-Studio-Token': token, ...(here_local ? {'X-Infographic-Studio-Local': '1'} : {}), ...(data === undefined ? {} : {'Content-Type': 'application/json'})}, ...(data === undefined ? {} : {body: JSON.stringify(data)})});
     const answer = await response.json(); if (!response.ok){const failure=Error(answer.error || 'This request could not be completed.');failure.status=response.status;failure.recovery=answer.recovery;throw failure;}return answer;
   }finally{if(owner)endWork(owner);}
 }
@@ -340,7 +409,7 @@ function finished(verb){
     'review':'Review recorded and checks ran for revision '+n+'.','inspect-images':'Your assistant inspected revision '+n+' and the checks ran.',
     'export':'Approved files are ready for revision '+n+'.','approve':'You approved revision '+n+'.','build':'Page built: revision '+n+'.',
     'visual-layout':'Visual layout rebuilt: revision '+n+'.','layout':'Layout changed: revision '+n+'.',
-    'select':'Story chosen. Build the page when you are ready.','suggest':'Stories proposed. Choose one to build.',
+    'select':'Story chosen. Build the page when you are ready.','keep-stale':'Kept as it is. Nothing else changed.','refresh-page':'Page updated: revision '+n+'.','suggest':'Stories proposed. Choose one to build.',
     'restore':'Restored as revision '+n+'. Approval is not restored.','image-cancel':'The image request was cancelled on this computer. Remote charges may remain unknown.'}[verb]||'Saved.';
 }
 async function action(verb, values={}, revision=null, options={}) {
@@ -353,7 +422,22 @@ async function action(verb, values={}, revision=null, options={}) {
   let checking=false;
   const polling=setInterval(async()=>{if(checking||document.hidden)return;checking=true;try{progressNotice(await request('/api/activity?id='+encodeURIComponent(id)),owner,id);}catch(f){connectionUncertain(owner);}finally{checking=false;}},2000);
   try {
-    const answer = await request('/api/action', {action:verb, id, expected_revision:revision??held.project.revision, ...values});
+    let answer = await request('/api/action', {action:verb, id, expected_revision:revision??held.project.revision, ...values});
+    if(answer.job){
+      // A long action answers at once and runs on in the background: follow it until it
+      // ends, with Stop, then read its outcome as the request used to return it.
+      clearInterval(polling);owner.stoppable=!!answer.job.stoppable;paintWork();
+      const ended=await recoverActivity(id,owner);
+      if(ended?.state!=='complete'){
+        if(!options.quiet&&!here(id)){elsewhere(owner,ended?.state==='stopped'?'':(ended?.problem||'The earlier outcome could not be confirmed. Open it to check the saved work.'));return;}
+        closeSheet();await openProject(id);
+        if(ended?.state==='stopped')toast(stoppedWords);
+        else if(ended?.recovery)recoverySheet(ended.recovery);
+        else if(ended)recoveredNotice(ended);
+        return;
+      }
+      answer={result:ended.result};
+    }
     if(!options.quiet&&!here(id)){const result=answer.result,state=result?.state;elsewhere(owner,['unknown','failed'].includes(state)?(imageProblems[result.reason]||imageUncertain):'');return result;}
     clearInterval(polling);
     closeSheet(); await openProject(id); if(options.quiet)return answer.result;
@@ -428,7 +512,7 @@ async function drawHome() {
     listedProjects = data.projects;
     const cards = data.projects.map(p => {
       const working=workingNow(p);
-      const state=working?stateLine('current','Working now: '+(p.activity?.label||running.get(p.id)?.label||'Working')):stateLine(p.readiness?.state||'current',p.readiness?.summary||'Saved');
+      const state=working?stateLine('current','Working now: '+(p.activity?.label||running.get(p.id)?.label||'Working')):p.activity?.state==='interrupted'?stateLine('review','Interrupted: '+p.activity.label+'. Open it to see what to do next.'):stateLine(p.readiness?.state||'current',p.readiness?.summary||'Saved');
       const node=card(p.title || 'Unreadable infographic', ...(p.problem?[make('p','problem',p.problem)]:[state,make('p','quiet','Revision '+pageOf(p))]), button('Open ' + (p.title || p.id), () => openProject(p.id)));
       node.classList.add('ig-project-card'); if(working)node.dataset.working=''; return node;
     });
@@ -443,9 +527,24 @@ async function bytes(file) { if (file.size > 16_000_000) throw Error('Choose a s
 // In pieces, so a large source does not hold the page still while it is prepared.
 function encoded(raw) { let binary=''; for (let at=0; at<raw.length; at+=0x8000) binary += String.fromCharCode.apply(null, raw.subarray(at, at+0x8000)); return btoa(binary); }
 function retain(input, key) { input.addEventListener('input', () => { draft[key] = input.value; }); }
+// Opens New infographic with the Document Library revision from the link already picked, and
+// says so. Nothing is created until the person saves the brief.
+let startingFrom='';
+async function startFromLibrary(pick){
+  if(!await privateIntake.startFresh(null,$('main')))return;
+  resetIntake();intakeLoaded=true;startingFrom='';
+  let problem='';
+  if(pick.invalid)problem='The link to the Document Library could not be read, so nothing was picked.';
+  else{
+    try{const [row]=await libraryRows([pick]);draft.library.push({...row,acknowledged:false});startingFrom=row.title;}
+    catch(f){problem='The Document Library item could not be used: '+f.message+' It may be hidden or no longer there.';}
+  }
+  await newSheet();
+  if(problem)error(problem+' The New infographic sheet is open without it.');
+}
 async function startNewIntake(control=null,place=null){if(!await privateIntake.startFresh(control,place))return;resetIntake();intakeLoaded=true;await newSheet();}
 async function newSheet() {
-  try{if(!intakeLoaded){const saved=await privateIntake.load();if(saved)Object.assign(draft,saved);intakeLoaded=true;}await keepIntake();}catch(failure){error(failure.message);return;}
+  try{await pageSizes();if(!intakeLoaded){const saved=await privateIntake.load();if(saved)Object.assign(draft,saved);intakeLoaded=true;}await keepIntake();}catch(failure){error(failure.message);return;}
   error('');
   // Two steps, each headed as a part of the sheet. The studio says what is missing beside the
   // field itself, rather than leaving it to the browser's own check.
@@ -455,7 +554,7 @@ async function newSheet() {
   // The same guided step row as the other studios' starts: what each step holds so far, and a
   // press that opens it. Going on to the second step is checked as Continue checks it.
   const says=index=>index===0?(draft.title.trim()||'Title and information')
-    :({a4:'A4 portrait',letter:'US Letter portrait',digital:'Digital portrait'}[draft.preset]||'Page')+(draft.audience.trim()?' · '+draft.audience.trim():'');
+    :(PAGE_SIZES.find(([value])=>value===draft.preset)?.[1]||'Page')+(draft.audience.trim()?' · '+draft.audience.trim():'');
   const stepRow=make('ol','intake-progress intake-guided');stepRow.setAttribute('aria-label','Creation progress');
   stepRow.append(...Drafting.Intake.steps(['Information','Direction and page'],draft.step,new Set(draft.step?[0]:[]),says,async index=>{
     if(index===draft.step)return;
@@ -465,14 +564,15 @@ async function newSheet() {
   const retell=()=>stepRow.querySelectorAll('.intake-step-summary').forEach((node,index)=>{node.textContent=says(index);});
   form.addEventListener('input',retell);form.addEventListener('change',retell);
   add(form, stepRow, make('h3','sheet-part',names[draft.step]));
+  if(startingFrom&&draft.library.some(one=>one.title===startingFrom))form.append(add(make('p','callout ig-starting'),make('strong','','Starting from: '),document.createTextNode(startingFrom+', from the Document Library. Nothing is made until you save the brief.')));
   const problem = make('p', 'problem'); problem.setAttribute('role','alert');
   let title = null;
   if (draft.step === 0) {
     title = field('Working title',draft.title); const text = field('Notes or text',draft.text,'textarea'); text.input.classList.add('ig-source-input');
     retain(title.input,'title'); retain(text.input,'text'); add(form,title.wrap,text.wrap);
     title.input.addEventListener('input',()=>{if(title.input.value.trim())invalid(title,'');});
-    const upload = field('Upload files — text, Markdown, CSV, PDF, Word or HTML');
-    upload.input.type = 'file'; upload.input.accept = '.txt,.md,.csv,.pdf,application/pdf,.docx,.html,.htm'; upload.input.multiple = true;
+    const upload = field('Upload files — text, Markdown, CSV, PDF, Word, HTML or Excel');
+    upload.input.type = 'file'; upload.input.accept = '.txt,.md,.csv,.pdf,application/pdf,.docx,.html,.htm,.xlsx'; upload.input.multiple = true;
     upload.input.addEventListener('change', async () => {
       problem.textContent = '';
       try {
@@ -483,8 +583,8 @@ async function newSheet() {
         const prepared = [];
         for (const file of files) {
           const raw = await bytes(file), suffix = file.name.toLowerCase().split('.').pop();
-          const kinds = {txt:'text', md:'markdown', csv:'csv', pdf:'pdf', docx:'docx', html:'html', htm:'html'};
-          if (!kinds[suffix]) throw Error('Choose text, Markdown, CSV, PDF, Word (.docx) or HTML.');
+          const kinds = {txt:'text', md:'markdown', csv:'csv', pdf:'pdf', docx:'docx', html:'html', htm:'html', xlsx:'xlsx'};
+          if (!kinds[suffix]) throw Error('Choose text, Markdown, CSV, PDF, Word (.docx), HTML or Excel (.xlsx).');
           if (suffix === 'csv') {
             new TextDecoder('utf-8',{fatal:true}).decode(raw);
             draft.upload = {data:encoded(raw),kind:'csv',name:file.name}; draft.selection = null;draft.upload_added=false;
@@ -500,6 +600,7 @@ async function newSheet() {
     add(form,upload.wrap,make('p','quiet',draft.upload?'Selected: '+draft.upload.name:'Files are read locally. No OCR, linked-resource fetch or assistant work starts during this preview.'));
     const researchFirst=make('input');researchFirst.type='checkbox';researchFirst.checked=!!draft.research_first;researchFirst.addEventListener('change',()=>{draft.research_first=researchFirst.checked;});
     form.append(add(make('label','check'),researchFirst,document.createTextNode('Research this topic first')),make('p','quiet','You can save a topic and brief without source material, then choose references and optional external search.'));
+    form.append(button('Add a folder',()=>folderSheet(found=>{draft.materials.push(...found.map(preview=>({preview,acknowledged:false})));newSheet();})));
     form.append(button('Import selected studio material',()=>handoffSheet(preview=>{draft.materials.push({preview,acknowledged:false});newSheet();})));
     const fromLibrary=button('Add from Document Library',()=>libraryPick(draftLibrary).then(done=>{if(done){closeSheet();newSheet();}}));fromLibrary.dataset.key='ig-new-library';form.append(fromLibrary);
     for(const chosen of draft.library){
@@ -513,7 +614,7 @@ async function newSheet() {
     for (const material of draft.materials) {
       const preview = material.preview;
       const coverage = card(preview.name,make('p','quiet',preview.characters+' readable characters · '+preview.locations.length+' located parts'),
-        detail('Preview readable text',make('pre','ig-csv-preview',preview.excerpt)),list(preview.warnings));
+        detail('Preview readable text',documentText(preview.excerpt,preview.kind)),list(preview.warnings));
       if(missingCaptures.includes(preview.id))coverage.append(make('p','problem','This saved source capture is unavailable. Remove it and add the source again; your other answers are kept.'));
       if (!preview.readable) coverage.append(make('p','problem','No readable text was found. Remove this file and supply an accessible text or Word version.'));
       if (preview.warnings.length && preview.readable) {
@@ -529,7 +630,11 @@ async function newSheet() {
     for(const [value,label] of [['direct','I know what to show'],['suggest','Suggest the story'],['hybrid','Build on my ideas']]) { const option=make('option','',label); option.value=value; direction.input.append(option); } direction.input.value=draft.direction; retain(direction.input,'direction'); add(form,direction.wrap);
     for(const [key,label] of [['audience','Audience and prior knowledge'],['purpose','Desired takeaway or purpose'],['must','Must-show ideas — one per line']]) { const f=field(label,draft[key],key==='must'?'textarea':'input');retain(f.input,key);add(form,f.wrap); }
     const locked=field('Exact wording to preserve — one phrase per line',draft.locked,'textarea'), excluded=field('Leave out — one item per line',draft.exclusions,'textarea'); retain(locked.input,'locked');retain(excluded.input,'exclusions'); add(form,detail('Wording and exclusions',locked.wrap,excluded.wrap));
-    const preset=field('Page size',draft.preset,'select');for(const [value,label] of [['a4','A4 portrait — 210 × 297 mm'],['letter','US Letter portrait — 8.5 × 11 in'],['digital','Digital portrait — 1080 × 1350 px']]) { const option=make('option','',label);option.value=value;preset.input.append(option); }preset.input.value=draft.preset;retain(preset.input,'preset');add(form,preset.wrap);
+    const preset=field('Page size',draft.preset,'select');for(const [value,label,size] of PAGE_SIZES) { const option=make('option','',label+' — '+size);option.value=value;preset.input.append(option); }preset.input.value=draft.preset;retain(preset.input,'preset');add(form,preset.wrap);
+    // What the chosen size holds, said at the point of choosing it, so a refusal later is no surprise.
+    const suits=make('p','field-hint ig-size-suits');suits.id='ig-size-suits';suits.setAttribute('aria-live','polite');
+    const tell=()=>{const found=PAGE_SIZES.find(([value])=>value===preset.input.value);suits.textContent=found?.[3]||'';suits.hidden=!suits.textContent;};
+    preset.input.setAttribute('aria-describedby',suits.id);preset.input.addEventListener('change',tell);tell();form.append(suits);
     try { preferences=await request('/api/preferences'); const capability=await request('/api/computer'); add(form,make('p','',capability.disclosure),make('p','quiet','Brand: '+(preferences.brand.brand || 'Choose in shared settings before composing.')),make('p','quiet','Saving this brief starts no assistant, image generation or installation.')); } catch(failure) {problem.textContent=failure.message;}
   }
   const go=button(draft.step===1?'Save brief':'Continue',()=>{},true);go.type='submit';
@@ -578,6 +683,25 @@ async function newSheet() {
   sheet('New infographic',form);privateIntake.status();
 
 }
+// A folder on this computer (only from a page opened here) or a Google Drive folder link: every
+// readable document in it becomes a preview to review, as an uploaded file does.
+function folderSheet(use){
+  const where=field(here_local?'Folder on this computer or Google Drive folder link':'Google Drive folder link');
+  where.input.placeholder=here_local?'~/Documents/Launch notes or https://drive.google.com/drive/folders/…':'https://drive.google.com/drive/folders/…';
+  const problem=make('p','problem');problem.setAttribute('role','alert');
+  const go=button('Read the folder',async()=>{
+    if(!where.input.value.trim()){invalid(where,'Give a folder.');return;}
+    go.disabled=true;problem.textContent='';
+    try{
+      const taken=[...draft.materials.map(m=>m.preview.name),...draft.library.map(one=>one.title)];
+      const found=await request('/api/source-folder',{folder:where.input.value.trim(),taken});
+      closeSheet();use(found.previews);
+      const words=[found.said,found.next].filter(Boolean).join(' ');
+      if(words)toast(words);
+    }catch(f){problem.textContent=f.message;}finally{go.disabled=false;}
+  },true);
+  sheet('Add a folder',make('p','',here_local?'Every readable document in the folder is read on this computer and shown for review before anything is saved. A Google Drive folder is read with your Google sign-in.':'From a phone, give a Google Drive folder link, or upload the files. A folder on the computer can be added only on the computer.'),where.wrap,problem,add(make('div','bar'),go,button('Cancel',()=>{closeSheet();newSheet();})));
+}
 function csvSheet() {
   const data=draft.csv, form=make('form','ig-fields'); const rows=field('Data-row numbers, separated by commas',Array.from({length:data.row_count},(_,i)=>i+1).join(','));
   add(form,make('p','',data.row_count+' data rows. Choose exact rows and column types; numbers are never inferred.'),detail('CSV preview',make('pre','ig-csv-preview',JSON.stringify({columns:data.columns,rows:data.rows.slice(0,20)},null,2)),make('p','quiet','Preview shows at most 20 rows; selected row numbers control capture.')),rows.wrap);
@@ -616,7 +740,8 @@ function renderProject() {
     choose:()=>document.querySelector('#story-choice').scrollIntoView({behavior:'smooth'}),
     build:compose, preview:()=>action('preview'), review:()=>reviewSheet(currentDelivery),
     check:()=>action('check'), approve:approveRevision, export:()=>action('export',{draft:false}),
-    deliver:()=>approvedFiles&&deliverySheet(approvedFiles)};
+    deliver:()=>approvedFiles&&deliverySheet(approvedFiles),
+    updates:()=>{const node=$('ig-stale');if(node){node.scrollIntoView({behavior:calm()?'auto':'smooth',block:'start'});node.querySelector('button')?.focus({preventScroll:true});}}};
   let next=[held.roadmap?.action||'Find the story',run[stage]||run.story],needs=held.roadmap?.needs||'Find the story: your assistant proposes source-backed explanations.';
   if(savedPlan&&(!stage||stage==='story')){next=['Check saved proposal',()=>action('suggest')];needs='Check saved proposal: it is checked on this computer, without using assistant allowance.';}
   if(p.scene&&needsArtwork){next=['Build page',compose];needs='Build page: this page still needs its artwork.';}
@@ -635,6 +760,8 @@ function renderProject() {
   const delivery=held.deliveries.find(d=>d.current) || held.deliveries[0];
   const doing=make('section','card ig-doing');doing.id='ig-doing';doing.hidden=true;doing.setAttribute('aria-label','What the assistant is doing');
   const parts=[make('p','lede','Choose the explanation, review the actual page, then approve its exact revision.'),doing,standing(held.roadmap,p,delivery,needs)];
+  if(held.activity?.state==='interrupted')parts.push(interruptedCard(held.activity));
+  parts.push(staleCard(p));
   if(held.workflow_recovery?.state==='failed') parts.push(card('Work kept after a failed step',recoveryContent(held.workflow_recovery)));
   if(held.recovery.length) parts.push(card('Image work needs attention',...held.recovery.map(r=>add(make('div','stack'),make('p','',r.message),r.local_artwork_available?button('Recover saved artwork',()=>action('image-recover',{request_id:r.attempt_id})):button('Cancel uncertain request',()=>action('image-cancel',{request_id:r.attempt_id}))))));
   if(selected&&((p.scene&&!p.scene.visual_version)||!nativeReady)){
@@ -731,7 +858,7 @@ function workbench(p,delivery){
     if(!p.scene)view.append(make('p','','Your current work, revision '+n+', has no page yet. '+again),make('p','quiet','This is revision '+pageOf(delivery)+(delivery.draft?', a draft.':'. Its approved files stay downloadable and unchanged.')));
     else if(kept)add(view,make('p','quiet','Shows approved revision '+pageOf(delivery)+'. Prepare the approved files for revision '+n+' on this computer so they carry its title. Nothing is sent anywhere.'),primary==='Prepare approved files'?null:button('Prepare approved files',()=>action('export',{draft:false}),true));
     else view.append(make('p','quiet',delivery.current?'Shows revision '+pageOf(delivery)+'. Select words on the page to edit them.':'Shows revision '+pageOf(delivery)+'. Your current work is revision '+n+'.'));
-    if(!delivery.current&&p.scene&&!kept&&primary!=='Update preview')view.append(button('Update preview',()=>action('preview'),true));
+    if(!delivery.current&&p.scene&&!kept&&primary!=='Update preview')view.append(button('Update preview',()=>action('preview'),!p.stale));
     view.append(zooming,scroll,tools);
     if(library)view.append(library);
     showPicture(delivery,img,p.id);
@@ -908,28 +1035,33 @@ async function draftLibrary(picks){
   if(picks.some(pick=>draft.library.some(one=>one.id===pick.id)))throw Error('A chosen document is already listed for this infographic.');
   draft.library.push(...(await libraryRows(picks)).map(row=>({...row,acknowledged:false})));
 }
-const LIBRARY_CLEARS='Adding or updating a source clears the facts, story, page and approval built from the earlier sources. Earlier work stays in History, and nothing starts by itself.';
+const LIBRARY_CLEARS='Adding or updating a source keeps the facts, story, page and artwork built from the earlier sources and marks them out of date: you update each or keep it as it is. The approval is cleared. Earlier work stays in History, and nothing starts by itself.';
 // 'a', 'a and b', 'a, b and c'.
 function joined(words){return words.length<3?words.join(' and '):words.slice(0,-1).join(', ')+' and '+words.at(-1);}
-// What a source change clears: everything built from the earlier sources.
-function libraryClears(){
+// What a source change clears: the approval. Facts that quote a source being replaced cannot
+// point at text that is gone, so those facts alone are dropped (and named afterwards).
+function libraryClears(){return held.project.approval?['approval']:[];}
+function citing(replacing){return replacing?held.project.facts.filter(f=>(f.evidence||[]).some(e=>e.source_id===replacing)).length:0;}
+// What a source change keeps and marks out of date.
+function libraryMarks(){
   const p=held.project;
-  return [p.facts.length?'facts':'',p.stories.length?'story':'',p.scene?'page':'',p.approval?'approval':''].filter(Boolean);
+  return [p.facts.length?'facts':'',p.stories.length?'story':'',p.scene?'page':''].filter(Boolean);
 }
-// What a brief change clears. Captured facts come from the sources, so they stay.
-function briefClears(){
-  const p=held.project;
-  return [p.stories.length?'story':'',p.scene?'page':'',p.approval?'approval':''].filter(Boolean);
-}
+// What a brief change clears: the approval. Captured facts come from the sources, so they stay.
+function briefClears(){return held.project.approval?['approval']:[];}
+// What a brief change keeps and marks out of date.
+function briefMarks(){const p=held.project;return [p.stories.length?'story':'',p.scene?'page':''].filter(Boolean);}
 // Back to the control that started an action, opening its section, once the page is drawn.
 function refocus(key){const found=key&&document.querySelector('[data-key="'+key+'"]');if(found){found.closest('details')?.setAttribute('open','');found.focus();}return found;}
 // Says what an action will clear and asks first; with nothing to clear, it simply runs.
 // Cancel changes nothing: `cancel` returns to the sheet that asked, with what was typed;
 // otherwise focus returns to `back`, the control that started the action.
-function clearsConfirm(title,label,{clears,kept='',run,back,parts=[],check=()=>true,cancel=null}){
-  if(!clears.length&&!parts.length){run();return;}
+function clearsConfirm(title,label,{clears,marks=[],kept='',run,back,parts=[],check=()=>true,cancel=null}){
+  if(!clears.length&&!marks.length&&!parts.length){run();return;}
   const problem=make('p','problem');problem.setAttribute('role','alert');
-  const said=clears.length?[make('p','','This clears this infographic’s '+joined(clears)+'.'+(kept?' '+kept:'')+' Earlier work stays in History. Nothing starts by itself; find the story again when you are ready.')]:[];
+  const said=[];
+  if(marks.length)said.push(make('p','','This keeps this infographic’s '+joined(marks)+' and marks '+(marks.length>1?'them':'it')+' out of date: you update each or keep it as it is.'+(kept?' '+kept:'')));
+  if(clears.length)said.push(make('p','','This clears this infographic’s '+joined(clears)+'.'+(marks.length||!kept?'':' '+kept)+' Earlier work stays in History. Nothing starts by itself.'));
   const go=button(label,async()=>{
     if(go.disabled)return;
     const refused=check();if(refused!==true){problem.textContent=refused;return;}
@@ -942,18 +1074,18 @@ function clearsConfirm(title,label,{clears,kept='',run,back,parts=[],check=()=>t
 function libraryConfirm(title,label,rows,run,back='ig-library-add'){
   const gaps=rows.some(row=>row.gaps.length);
   const ack=make('input');ack.type='checkbox';
-  const clears=libraryClears();
-  if(!clears.length&&!gaps){run(false);return;}
+  const clears=libraryClears(),marks=libraryMarks();
+  if(!clears.length&&!marks.length&&!gaps){run(false);return;}
   const parts=rows.map(row=>card(row.title,make('p','quiet','Revision '+row.revision+' · '+row.characters+' readable characters'),row.gaps.length?list(row.gaps):make('p','quiet','No extraction gaps.')));
   if(gaps)parts.push(add(make('label','check'),ack,document.createTextNode('I reviewed these gaps. Use only the readable text.')));
-  clearsConfirm(title,label,{clears,parts,back,run:()=>run(gaps),
+  clearsConfirm(title,label,{clears,marks,parts,back,run:()=>run(gaps),
     check:()=>!gaps||ack.checked||'Review the gaps and confirm using only the readable text first.'});
 }
 // Every route that changes sources asks first when facts, a story, a page or an approval exist.
 function sourceConfirm(name,replacing,run,back,cancel){
   const label=replacing?'Replace source':'Add as a source';
   clearsConfirm(replacing?'Replace '+(held.project.sources.find(s=>s.id===replacing)?.name||'this source'):'Add '+name,label,
-    {clears:libraryClears(),back,cancel,run:async()=>{await run();refocus(back);}});
+    {clears:libraryClears(),marks:libraryMarks(),kept:citing(replacing)?(citing(replacing)===1?'One fact quotes this source; it is dropped and named.':citing(replacing)+' facts quote this source; they are dropped and named.'):'',back,cancel,run:async()=>{await run();refocus(back);}});
 }
 function libraryAddButton(){
   let rows=null;
@@ -994,7 +1126,14 @@ function libraryNote(s){
 }
 function keptPart(delivery){
   const kept=held.library?.kept;
-  if(kept&&kept.export===delivery.id&&kept.state==='kept')return make('p','quiet','Kept in the Document Library: approved revision '+pageOf(kept)+', with its text and PDF (library revision '+kept.library_revision+').');
+  if(kept&&kept.export===delivery.id&&kept.state==='kept'){
+    const said=make('p','quiet','Kept in the Document Library: approved revision '+pageOf(kept)+', with its text and PDF (library revision '+kept.library_revision+').');
+    // Shown only when Marketing Studio opened this page: it opens the Library on this item.
+    const link=typeof StudioShell!=='undefined'&&StudioShell.continueLink?StudioShell.continueLink({document:kept.document,revision:kept.library_revision}):null;
+    if(!link)return said;
+    const go=make('a','button','Continue in another studio');go.href=link;go.dataset.free='';if(!sameTab)go.target='marketing-studio';
+    return add(make('div','stack'),said,go);
+  }
   const again=button(kept&&kept.export===delivery.id?'Keep in Document Library again':'Keep in Document Library',async()=>{
     const result=await action('library-keep',{export_id:delivery.id},null,{quiet:true});
     if(result?.state==='kept')toast('Kept in the Document Library.');else if(result?.problem)error('Not kept in the Document Library: '+result.problem);
@@ -1054,11 +1193,9 @@ async function compose(){
     if(!capability.renderer_available){rendererSheet();return;}
     sheet('Build this page',make('p','',capability.disclosure),make('p','','The selected story is composed with your pinned brand. If artwork helps explain the story, your assistant writes detailed art direction and the selected image provider generates it. Fonts and layout are checked first. Nothing is approved or published.'),add(make('div','bar'),button('Build page',async()=>{
       if(!held.project.brand){try{await request('/api/brand-current',{id:held.project.id,expected_revision:held.project.revision});await openProject(held.project.id);}catch(f){error(f.message);return;}}
-      const before=held.project.revision,building=held.project.id;
+      // A build draws its page itself (once, after any artwork is placed) and shows it: there
+      // is no second preview to ask for.
       await action('build',{request_id:requestId()});
-      // A built page is drawn straight away: the preview is local and starts no assistant or
-      // image request, so there is nothing to ask before showing what was made.
-      if(here(building)&&held.project.scene&&held.project.revision!==before)await action('preview');
     },true),button('Cancel',closeSheet)));
   }catch(f){error(f.message);}
 }
@@ -1153,6 +1290,7 @@ if (homeLink) {
   if (sameTab) $('go-suite').removeAttribute('target');
 }
 async function startDesk() {
+  if(libraryStart){await home();await startFromLibrary(libraryStart);return;}
   if(launch.get('resume-intake')==='1'){await home();await newSheet();return;}
   const resumeId=launch.get('resume');
   if(resumeId&&/^[A-Za-z0-9_-]{1,64}$/.test(resumeId)){await openProject(resumeId);return;}
@@ -1253,7 +1391,7 @@ function sourceSheet(kept=null) {
 async function sourceTextSheet(source,start=0){
   try{
     const found=await request('/api/source?id='+encodeURIComponent(held.project.id)+'&source='+encodeURIComponent(source.id)+'&start='+start);
-    sheet('Captured source: '+source.name,make('p','quiet','Saved text '+found.start+'–'+found.end+' of '+found.total+' characters. This view does not fetch a newer source.'),list(source.coverage?.warnings||[]),make('pre','ig-csv-preview',found.text),add(make('div','bar'),start?button('Previous text',()=>sourceTextSheet(source,Math.max(0,start-20000))):null,found.end<found.total?button('More text',()=>sourceTextSheet(source,found.end)):null,button('Done',closeSheet)));
+    sheet('Captured source: '+source.name,make('p','quiet','Saved text '+found.start+'–'+found.end+' of '+found.total+' characters. This view does not fetch a newer source.'),list(source.coverage?.warnings||[]),documentText(found.text,source.kind),add(make('div','bar'),start?button('Previous text',()=>sourceTextSheet(source,Math.max(0,start-20000))):null,found.end<found.total?button('More text',()=>sourceTextSheet(source,found.end)):null,button('Done',closeSheet)));
   }catch(failure){error(failure.message);}
 }
 
@@ -1289,8 +1427,9 @@ function storyThumbnail(story){
 async function imageRequestSheet(id){try{const saved=await request('/api/image-request?id='+encodeURIComponent(held.project.id)+'&request='+encodeURIComponent(id));sheet('Saved image request',make('p','',saved.provider+' · '+saved.operation),make('pre','ig-csv-preview',saved.brief.prompt),make('p','quiet','Remote cancellation and cost remain unknown unless the provider reported them.'),button('Done',closeSheet));}catch(f){error(f.message);}}
 async function olderHistory(){try{const last=held.history.at(-1);const result=await request('/api/history-before?id='+encodeURIComponent(held.project.id)+'&before='+last.revision);held.history.push(...result.history);renderProject();document.querySelectorAll('details').forEach(d=>{if(d.firstChild.textContent==='History')d.open=true;});}catch(f){error(f.message);}}
 
-// The working title alone is a rename that clears nothing. Any other change clears the story,
-// page and approval built from the earlier brief, so it asks first when they exist.
+// The working title alone is a rename that marks nothing. Any other change keeps the story and
+// page built from the earlier brief, marks them out of date and clears the approval, so it
+// asks first when they exist.
 // `typed` brings back what was typed when the confirmation is cancelled.
 function briefSheet(typed=null){
   const p=held.project,fields={};
@@ -1299,9 +1438,9 @@ function briefSheet(typed=null){
     const brief={...p.brief,title:fields.title.input.value,audience:fields.audience.input.value,purpose:fields.purpose.input.value,must_show:lines(fields.must.input.value).map((text,i)=>({id:p.brief.must_show[i]?.id||'r_'+requestId().slice(0,12),text})),locked_words:lines(fields.locked.input.value),exclusions:lines(fields.exclusions.input.value)};
     const rest=b=>JSON.stringify({...b,title:undefined}),story=rest(brief)!==rest(p.brief),renamed=brief.title!==p.brief.title;
     if(!story&&!renamed){closeSheet();refocus('ig-edit-brief');toast('Nothing changed, so no revision was made.');return;}
-    const clears=story?briefClears():[];
+    const clears=story?briefClears():[],marks=story?briefMarks():[];
     const said=!story?(p.approval?'Renamed. The story, page and approval are kept. Prepare the approved files again so they carry the new title.':p.stories.length||p.scene?'Renamed. The story and page are kept.':'Renamed.')
-      :clears.length?'Brief saved. Find the story again when you’re ready.':'Brief saved.';
+      :marks.length?'Brief saved. The '+joined(marks)+' '+(marks.length>1?'are':'is')+' kept and marked out of date: update each or keep it as it is.':'Brief saved.';
     // One save at a time: a second click would only meet the revision the first one made.
     const send=async()=>{
       if(busy)return;busy=true;const unlock=lockControls();
@@ -1310,7 +1449,7 @@ function briefSheet(typed=null){
       finally{if(busy){unlock();busy=false;}}
     };
     const typedNow=Object.fromEntries(Object.entries(fields).map(([key,f])=>[key,f.input.value]));
-    clearsConfirm('Save the brief','Save brief',{clears,kept:p.facts.length?'Captured facts stay.':'',run:send,back:'ig-edit-brief',cancel:()=>briefSheet(typedNow)});
+    clearsConfirm('Save the brief','Save brief',{clears,marks,kept:p.facts.length?'Captured facts stay.':'',run:send,back:'ig-edit-brief',cancel:()=>briefSheet(typedNow)});
   };
   sheet('Edit brief and requirements',make('p','','Renaming keeps the story, page and approval. Changing anything else clears the story, page and approval built from the earlier brief, and asks first. Captured facts, earlier versions and saved files are kept.'),...Object.values(fields).map(f=>f.wrap),add(make('div','bar'),button('Save brief',save,true),button('Cancel',()=>{closeSheet();refocus('ig-edit-brief');})));
 }
@@ -1356,7 +1495,9 @@ async function remoteSheet(done,many){
 
 function sourceImportSheet(preview,replaceId,back='ig-research',acknowledgedBefore=false){
   let acknowledged=acknowledgedBefore;const problem=make('p','problem'),ack=make('input');ack.type='checkbox';ack.checked=acknowledged;ack.addEventListener('change',()=>{acknowledged=ack.checked;});
-  sheet('Review captured information',make('p','',preview.name+' · '+preview.characters+' readable characters'),make('pre','ig-csv-preview',preview.excerpt),list(preview.warnings),preview.warnings.length?add(make('label','check'),ack,document.createTextNode('I reviewed these gaps. Use only readable text.')):make('p','quiet','Captured text is stored locally; import does not read the remote document again.'),problem,add(make('div','bar'),button('Import this capture',()=>{if(!preview.readable||(preview.warnings.length&&!acknowledged)){problem.textContent='Review readable coverage and acknowledge gaps before import.';return;}const sent={capture_id:preview.id,acknowledge_warnings:acknowledged,...(replaceId?{replace_id:replaceId}:{})};sourceConfirm(preview.name,replaceId||'',()=>action('source-import',sent),back,()=>sourceImportSheet(preview,replaceId,back,acknowledged));},true),button('Cancel',()=>{closeSheet();refocus(back);})));
+  const madeFor=preview.made_for&&preview.different?add(make('section','callout stack ig-made-for'),make('strong','','This research was made for something else'),
+    make('p','','It was made for '+(preview.made_for.purpose||'another purpose')+(preview.made_for.audience?', for '+preview.made_for.audience:'')+'. Its findings are used as they are; check they fit this infographic.')):null;
+  sheet('Review captured information',make('p','',preview.name+' · '+preview.characters+' readable characters'),madeFor,documentText(preview.excerpt,preview.kind),list(preview.warnings),preview.warnings.length?add(make('label','check'),ack,document.createTextNode('I reviewed these gaps. Use only readable text.')):make('p','quiet','Captured text is stored locally; import does not read the remote document again.'),problem,add(make('div','bar'),button('Import this capture',()=>{if(!preview.readable||(preview.warnings.length&&!acknowledged)){problem.textContent='Review readable coverage and acknowledge gaps before import.';return;}const sent={capture_id:preview.id,acknowledge_warnings:acknowledged,...(replaceId?{replace_id:replaceId}:{})};sourceConfirm(preview.name,replaceId||'',()=>action('source-import',sent),back,()=>sourceImportSheet(preview,replaceId,back,acknowledged));},true),button('Cancel',()=>{closeSheet();refocus(back);})));
 }
 async function deliverySheet(delivery){
   try{preferences=await request('/api/preferences');}catch(f){error(f.message);return;}
@@ -1392,6 +1533,17 @@ async function researchSheet(){
   const primary=held.project.sources.length>0;
   const editor=new StudioResearch.Editor({request:sent=>request('/api/research-sources',sent),primarySummary:primary?'Your captured infographic material is included. Add any additional references here.':''});
   const control=async action=>{try{const result=await request('/api/research-control',{id:ident,action});if(action==='preview'){sourceImportSheet(result);return;}await poll();}catch(f){problem.textContent=f.message;}};
+  // Use research: its checked findings become a source and your assistant suggests a story
+  // from them, in one action. Nothing is used until it is chosen.
+  const useResearch=async()=>{
+    try{const used=await request('/api/research-control',{id:ident,action:'use'});
+      // Gaps in its readable text are reviewed and acknowledged first, as for any source.
+      if(used.needs_acknowledgement){sourceImportSheet(used.preview);return;}
+      closeSheet();await openProject(ident);
+      toast('Research added as a source. Your assistant is suggesting a story from it.');
+      if(here(ident))await action('suggest',{fresh:true});}
+    catch(f){problem.textContent=f.message;}
+  };
   // One read at a time, and none while the tab is hidden: it reads again as soon as it is
   // shown. Each answer is drawn in place, keeping what the person opened, focused or scrolled.
   let pollTimer=null,pollWaiting=false;
@@ -1409,11 +1561,13 @@ async function researchSheet(){
         if(['working','pausing','stopping'].includes(state.state)){
           if(state.state==='working')hooks.pause=()=>control('pause');
           if(state.state!=='stopping')hooks.stop=()=>control('stop');
-        }else if(state.state==='complete')hooks.use=()=>control('preview');
+        }else if(state.state==='complete')hooks.use=useResearch;
         else if(state.state==='paused')hooks.resume=()=>control('resume');
         else if(['failed','stopped'].includes(state.state))hooks.retry=()=>control('retry');
         parts.push(StudioResearch.progress({...state.progress,phase:state.state==='complete'?'complete':state.state==='working'?state.progress.phase:state.state,timing:{...state.progress.timing,elapsed_seconds:state.elapsed_seconds}},hooks));
         if(state.problem)parts.push(make('p','problem',state.problem));
+        if(state.state==='complete')parts.push(make('p','quiet','Use research adds its checked findings as a source and asks your assistant for a story from them.'));
+        if(state.kept)parts.push(make('p',state.kept.state==='kept'?'quiet':'problem',state.kept.state==='kept'?'Kept in the Document Library too, for other projects.':'Not kept in the Document Library: '+(state.kept.problem||'it could not be kept.')+' The research itself is complete.'));
       }
       Drafting.redraw(status,...parts);
       if(state&&['working','pausing','stopping'].includes(state.state)){clearTimeout(pollTimer);pollTimer=setTimeout(poll,1500);}
@@ -1434,7 +1588,18 @@ async function researchImportSheet(){
   async function show(){try{task.textContent=JSON.stringify(await request('/api/research-task?id='+encodeURIComponent(held.project.id)+'&source_mode='+mode.input.value),null,2);}catch(f){problem.textContent=f.message;}}
   mode.input.addEventListener('change',show);await show();
   const go=button('Verify and preview reviewed research',async()=>{go.disabled=true;try{const preview=await request('/api/research-preview',{id:held.project.id,expected_revision:held.project.revision,case:path.input.value,source_mode:mode.input.value});sourceImportSheet(preview);}catch(f){problem.textContent=f.message;}finally{go.disabled=false;}},true);
-  sheet('Use reviewed research',make('p','','Optional: give this purpose-led task to Harness Research, then import its complete independently reviewed case. This screen starts no research or public search.'),mode.wrap,detail('Infographic research task',task),path.wrap,problem,add(make('div','bar'),go,button('Cancel',closeSheet)));
+  // Research kept in the Document Library can be chosen too, even when it was made for
+  // something else: the preview says what it was made for.
+  const fromLibrary=button('Choose research from the Document Library',()=>{
+    if(!window.StudioLibrary){error('The library could not be loaded. Reload the page.');return;}
+    let preview=null;
+    window.StudioLibrary.pick({title:'Choose research',studio:'infographic',noun:'infographic',max:1,post:(route,body)=>request('/api/'+route,body),
+      unavailable:row=>row.kind==='research'?null:{label:'Not research',detail:'Choose a research item.'},
+      use:async picks=>{preview=await request('/api/research-library-preview',{id:held.project.id,expected_revision:held.project.revision,document:picks[0].id,revision:picks[0].revision,source_mode:mode.input.value});},
+      refocus:()=>null}).then(done=>{if(done&&preview)sourceImportSheet(preview);});
+  });
+  fromLibrary.dataset.key='ig-research-library';
+  sheet('Use reviewed research',make('p','','Optional: give this purpose-led task to Harness Research, then import its complete independently reviewed case. This screen starts no research or public search.'),mode.wrap,detail('Infographic research task',task),path.wrap,problem,fromLibrary,add(make('div','bar'),go,button('Cancel',closeSheet)));
 }
 // Shared settings own the team repository. Going there keeps this infographic and this
 // sheet to come back to; nothing connects until the person asks again.

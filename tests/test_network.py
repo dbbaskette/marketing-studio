@@ -311,6 +311,37 @@ class BridgeLimitTests(unittest.TestCase):
             response = connection.getresponse()
             return response.status, json.loads(response.read() or b'{}')
 
+    def test_every_studio_is_told_a_request_came_over_the_network_and_cannot_be_told_otherwise(self):
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+        import threading
+        seen = []
+
+        class Echo(BaseHTTPRequestHandler):
+            def do_POST(self):
+                self.rfile.read(int(self.headers.get('Content-Length') or 0))
+                seen.append((self.headers.get_all(network.VIA_HEADER), self.headers.get('X-Studio-Local')))
+                self.send_response(200); self.send_header('Content-Length', '2'); self.end_headers()
+                self.wfile.write(b'{}')
+
+            def log_message(self, *args):
+                pass
+        native = ThreadingHTTPServer(('127.0.0.1', 0), Echo)
+        threading.Thread(target=native.serve_forever, daemon=True).start()
+        self.addCleanup(lambda: (native.shutdown(), native.server_close()))
+        native.target = f'127.0.0.1:{native.server_port}'
+        for identifier in network.TOKEN_HEADERS:
+            with self.subTest(studio=identifier):
+                seen.clear()
+                bridge, token = self.bridge(identifier, native)
+                with contextlib.closing(http.client.HTTPConnection('127.0.0.1', bridge.server_port, timeout=10)) as client:
+                    # A phone that claims to be local, or forges the bridge's own header, is not believed.
+                    client.request('POST', '/api/anything', body=b'{}', headers={
+                        'Host': bridge.authority, 'Origin': 'http://' + bridge.authority,
+                        network.TOKEN_HEADERS[identifier]: token, 'Content-Type': 'application/json',
+                        network.VIA_HEADER: 'local', 'X-Studio-Local': '1'})
+                    self.assertEqual(client.getresponse().status, 200)
+                self.assertEqual(seen, [(['network'], None)])
+
     def test_every_bridge_limit_matches_the_studios_own(self):
         studios = {'training': ('studios/training', 'runner.page', 'RunnerPage'),
                    'presentation': ('studios/presentation', 'runner.page', 'RunnerPage'),

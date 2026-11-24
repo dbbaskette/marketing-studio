@@ -28,16 +28,20 @@ def plan(project: dict, *, arrangement='stack') -> dict:
     require(arrangement in ('stack', 'columns'), 'Choose stacked blocks or two columns.')
     p = PRESETS[project['brief']['preset']]
     width, height, digital = p['width'], p['height'], p['unit'] == 'px'
+    # A landscape page is laid out across: its blocks sit side by side, its margins follow its
+    # short side, and its type follows its height, never below the brand's floors.
+    wide = width > height
+    scale = min(1, height / 1080) if digital and wide else 1
     body, foot = brand.type_floors(project['brand'], digital)
     visible_words = len((' '.join([story['headline'], story['takeaway'],
                                   *(b['title'] + ' ' + b['text'] for b in story['blocks'])])).split())
     density = visible_words + len(story['blocks']) * 25 + sum(b['illustration'] for b in story['blocks']) * 30
-    preferred = (40 if density < 110 else 32 if density < 220 else 24) if digital else (
+    preferred = round((40 if density < 110 else 32 if density < 220 else 24) * scale) if digital else (
                  16 if density < 110 else 14 if density < 220 else 12)
     body = max(body, preferred)
-    title_size = max(body * 2, 48 if digital else 25)
+    title_size = max(body * 2, round((48 if digital else 25) * scale))
     font, colors = project['brand']['font'], project['brand']['colors']
-    margin = width * .06
+    margin = (height if wide else width) * .06
     gap = body * 1.2
     usable = width - 2 * margin
     elements, regions, reading_order = [], [], []
@@ -66,7 +70,13 @@ def plan(project: dict, *, arrangement='stack') -> dict:
     footer_lines = wrapped(footer, usable, foot)
     footer_height = len(footer_lines) * foot * 1.4
     bottom = height - margin - footer_height - gap
-    columns = 2 if arrangement == 'columns' and len(blocks) > 1 else 1
+    if wide:
+        # Across the page: up to four blocks in one row, more in two rows; Two columns stays
+        # the alternative layout.
+        columns = 2 if arrangement == 'columns' and len(blocks) > 1 else (
+            len(blocks) if len(blocks) <= 4 else math.ceil(len(blocks) / 2))
+    else:
+        columns = 2 if arrangement == 'columns' and len(blocks) > 1 else 1
     rows = math.ceil(len(blocks) / columns)
     block_width = (usable - gap * (columns - 1)) / columns
     block_height = (bottom - y - gap * (rows - 1)) / rows
@@ -127,7 +137,8 @@ def adopt(store, ident, *, expected_revision, arrangement='stack'):
     with store.locked():
         project = store.read(ident)
         store.expect(project, expected_revision)
-        return store.change_locked(project, {'scene': plan(project, arrangement=arrangement)})
+        # Laying the page out again makes an out-of-date page current (contracts.advance).
+        return store.change_locked(project, {'scene': plan(project, arrangement=arrangement)}, remade=('page',))
 
 
 def adopt_best(store, ident, *, expected_revision):
@@ -136,4 +147,4 @@ def adopt_best(store, ident, *, expected_revision):
         project = store.read(ident)
         store.expect(project, expected_revision)
         planned = plan(project, arrangement='infographic')
-        return store.change_locked(project, {'scene': planned})
+        return store.change_locked(project, {'scene': planned}, remade=('page',))
