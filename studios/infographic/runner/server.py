@@ -118,9 +118,19 @@ class Page(shared.Page):
             mime, raw = exports.read(self.store, one('id'), one('export'), one('format'))
             return HTTPStatus.OK, mime, raw
         if path == '/api/status':
+            # What provider_capabilities finds on this computer (computer.inspect): whether the
+            # chosen assistant is installed, a Gemini key saved, a model chosen. It contacts no
+            # provider and starts nothing, so it never claims account access or a live check.
+            try:
+                found = computer.inspect()
+                providers = {'providers': found['state'], 'provider_problems': found['problems'],
+                             'provider_unknown': found['unknown'], 'image_provider': found['image_provider'],
+                             'generation_available': found['state'] != 'unavailable',
+                             'renderer_available': found['renderer_available']}
+            except Exception:   # unreadable settings: say it was not checked, as before
+                providers = {'providers': 'not-checked', 'generation_available': False}
             return shared.as_json(HTTPStatus.OK, {'product': PRODUCT, 'foundation': False,
-                                  'configured': self.store is not None, 'providers': 'not-checked',
-                                  'generation_available': False})
+                                  'configured': self.store is not None, **providers})
         if path == '/api/projects':
             # Home shows the work each infographic is doing now; observing starts nothing.
             return shared.as_json(HTTPStatus.OK, {'projects': [
