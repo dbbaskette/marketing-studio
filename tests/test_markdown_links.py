@@ -26,6 +26,14 @@ SKIPPED = {
     # point into the upstream repositories, not into this one.
     'studios/blog/skills/blog-studio/references/upstream/':
         'vendored upstream pages, kept unchanged; their links name the upstream repository',
+    # Saved-work fixtures, kept byte for byte as the saved flow wrote them: a research page
+    # copied beside a draft still links into the research bundle it came from.
+    'studios/blog/tests/fixtures/saved/':
+        'saved-work fixtures, kept unchanged; their research pages link inside the research bundle',
+    'studios/presentation/tests/fixtures/saved/':
+        'saved-work fixtures, kept unchanged; their pages link as the saved flow wrote them',
+    'studios/training/tests/fixtures/saved/':
+        'saved-work fixtures, kept unchanged; their pages link as the saved flow wrote them',
 }
 
 # Archived pages whose broken links are kept as written (history is not rewritten), with
