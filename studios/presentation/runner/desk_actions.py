@@ -233,6 +233,9 @@ class DeskActions:
                 # At Selected changes, the one way to what it locks; and once upgraded, how.
                 'upgrade': self._upgrade_view(root, record),
                 'upgraded': desk.upgraded(record),
+                # Stopped while it waits for Start: what to do first.
+                'redesign_stopped': desk.REDESIGN_STOPPED if record.get('halted') and getattr(
+                    stages.survey(record).next, 'name', None) == 'gate:redesign' else None,
                 # Each source pinned from the Document Library says whether a newer revision
                 # is there; the deck keeps reading its own copy either way.
                 # Research's sources supplied at the start are listed with them: each one
@@ -1252,15 +1255,22 @@ class DeskActions:
         Selected changes deck run here on the desk, resting there or delivered, with no job
         running, no change waiting and its copy drawn on this computer."""
         from studio_core import presentation_migration
+        if isinstance(record.get('upgraded'), dict):
+            return desk.UPGRADE_DONE
         if not desk.selected(record):
             return desk.UPGRADE_LEVEL
         if decks.in_conversation(record) or (Path(root) / presentation_migration.RECORD).exists():
             return desk.UPGRADE_SAVED
         run = self._run(root)
-        if run.busy or run.workers or record.get('halted') or record.get('question') \
-                or record.get('desk_jobs') or desk.opened(record) \
-                or (record.get('desk') or {}).get('edits') \
-                or not (desk.resting(record) or decks.delivered(root) is not None):
+        if run.busy or run.workers or record.get('desk_jobs'):
+            return desk.UPGRADE_BUSY
+        if record.get('halted'):
+            return desk.UPGRADE_HALTED
+        if record.get('question'):
+            return desk.UPGRADE_QUESTION
+        if desk.opened(record) or (record.get('desk') or {}).get('edits'):
+            return desk.UPGRADE_WAITING
+        if not (desk.resting(record) or decks.delivered(root) is not None):
             return desk.UPGRADE_BUSY
         if not self._drawn_here(root, record):
             return desk.UPGRADE_ELSEWHERE
@@ -1307,8 +1317,6 @@ class DeskActions:
             finally:
                 part.unlink(missing_ok=True)
             delivered = decks.delivered(root) is not None
-            if delivered:
-                delivering.set_aside(root, record, space)
             at = home.now()
             held = record.get('desk') or {}
             record['upgraded'] = {
@@ -1317,7 +1325,8 @@ class DeskActions:
                 # desk's own revision and arrival then.
                 'revision': len(record.get('revisions') or ()),
                 'desk_revision': desk.revision(record), 'arrived_at': held.get('arrived_at'),
-                'input': existing.UPGRADED, 'sha256': sha256_of(target)}
+                'input': existing.UPGRADED, 'sha256': sha256_of(target),
+                'original_sha256': sha256_of(root / existing.SOURCE)}
             form = record['form']
             # As a deck started at Redesign, keep content on the desk has it (decks._desk_form);
             # the changes asked for at the start stay in the form, as they were asked.
@@ -1337,14 +1346,29 @@ class DeskActions:
             gate = record['gates'].get('gate:redesign') or {}
             record['gates']['gate:redesign'] = {'state': 'waiting',
                                                 'round': int(gate.get('round') or 0) + 1}
+            # The record is stored first: until it is, nothing else of the deck has changed (the
+            # input kept beside it is taken away again), so a failure leaves the deck as it was.
+            try:
+                self._store(root, record)
+            except BaseException:
+                target.unlink(missing_ok=True)
+                raise
+            if delivered:
+                delivering.set_aside(root, record, space)
             # The copy's build is this computer's only: the redesign builds its own.
             build.write_state(root, dict(build.EMPTY))
             write_atomic(root / 'intake.md', decks.intake(form))
-            self._store(root, record)
             self._commit(root, 'upgrade to Redesign, keep content: nothing is spent until '
                          'the redesign is started', self._listed(space) if delivered else ())
         self._desk_shared()
         return self.view(root)
+
+    @staticmethod
+    def _redesign_here(root, record: dict) -> bool:
+        """Whether this computer has the deck as it was kept when it was upgraded."""
+        from runner.steps import existing
+        kept = Path(root) / existing.UPGRADED
+        return kept.is_file() and sha256_of(kept) == (record.get('upgraded') or {}).get('sha256')
 
     def desk_redesign_start(self, path) -> dict:
         """Start the redesign of a deck upgraded from Selected changes: the person's decision
@@ -1354,8 +1378,17 @@ class DeskActions:
             record = self._load(root)
             nxt = stages.survey(record).next
             if nxt is None or nxt.name != 'gate:redesign' \
-                    or gate_state(record, 'gate:redesign') != 'waiting' or record.get('halted'):
+                    or gate_state(record, 'gate:redesign') != 'waiting':
                 raise WorkspaceError(desk.REDESIGN_NOT_WAITING)
+            if record.get('halted'):
+                raise WorkspaceError(desk.REDESIGN_STOPPED)
+            # Nothing is approved, written or started on a computer that lacks the deck as it
+            # was at the upgrade (sources/ is never shared): it is started where that is.
+            if not self._redesign_here(root, record):
+                raise WorkspaceError(desk.REDESIGN_ELSEWHERE)
+            if decks.delivered(root) is not None:
+                # An upgrade cut short before its delivery was set aside: set aside now.
+                delivering.set_aside(root, record, space)
             at = home.now()
             gate = record['gates']['gate:redesign']
             record['gates']['gate:redesign'] = {**gate, 'state': 'approved', 'by': by,

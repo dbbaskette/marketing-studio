@@ -186,15 +186,19 @@ def _build():
     return build
 
 
-def given_deck(root, run: dict) -> Path:
-    """The deck the inventory and the Before pictures are read from: the deck given, or for
-    a deck upgraded from Selected changes whose redesign has started, the deck as it was
-    when it was upgraded (UPGRADED)."""
-    root = Path(root)
+def given_name(run: dict) -> str:
+    """The deck folder's own path of the deck the inventory and the Before pictures are read
+    from: the deck given, or for a deck upgraded from Selected changes whose redesign has
+    started, the deck as it was when it was upgraded (UPGRADED)."""
     upgraded = run.get('upgraded') if isinstance(run, dict) else None
     began = ((run.get('steps') or {}).get('reinventory') or {}).get('done') \
         if isinstance(run, dict) else False
-    return root / UPGRADED if isinstance(upgraded, dict) and began else root / SOURCE
+    return UPGRADED if isinstance(upgraded, dict) and began else SOURCE
+
+
+def given_deck(root, run: dict) -> Path:
+    """`given_name` as a path in the deck's folder."""
+    return Path(root) / given_name(run)
 
 
 def draw_original(root, run: dict, slides, renderer, deck=None) -> None:

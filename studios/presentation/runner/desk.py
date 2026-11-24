@@ -1015,15 +1015,22 @@ UPGRADE_LOCKED = ('Selected changes changes only the words on the slides of your
                   'whole deck and going back to an earlier version of a slide are not offered. '
                   'Redesign, keep content draws every slide again in your brand, from your deck '
                   'as it is now, and offers all of them.')
-UPGRADE_CONFIRM = ('Upgrade this deck to Redesign, keep content? Its level changes now, and every '
-                   'slide will be drawn again from your deck as it is now, with every change made '
-                   'so far. The next step shows what that costs: nothing is spent until you press '
-                   'Start there. This cannot be undone.')
+UPGRADE_CONFIRM = ('Upgrade this deck to Redesign, keep content? Its level changes now, and your '
+                   'assistant will draw every slide again from your deck as it is now, with every '
+                   'change made so far. The next step says what that involves and how long it has '
+                   'taken on this computer: nothing is spent until you press Start there. This '
+                   'cannot be undone.')
 UPGRADE_DELIVERED = (' Revision {revision} stays delivered as it is; the redesign is delivered as '
                      'revision {next}.')
 UPGRADE_LEVEL = 'Only a deck at Selected changes is upgraded to Redesign, keep content.'
 UPGRADE_BUSY = ('A change to this deck is under way. Upgrade it once that is done, or once you '
                 'stop it.')
+UPGRADE_HALTED = ('This deck has stopped. Resume it, or give up what stopped with Stop, then '
+                  'upgrade it.')
+UPGRADE_WAITING = ('A note or an edit of yours is still waiting to be made to the copy of your '
+                   'deck. Upgrade it once that is done.')
+UPGRADE_QUESTION = 'A question about this deck waits for your answer. Answer it, then upgrade it.'
+UPGRADE_DONE = 'This deck was upgraded already.'
 UPGRADE_SAVED = ('This deck was opened on the desk from a saved record, so its level stays as it '
                  'is. Start a new deck at Redesign, keep content instead.')
 UPGRADE_ELSEWHERE = ('The changes made to your deck so far are on the computer that made them. '
@@ -1032,12 +1039,21 @@ UPGRADE_FINAL = 'Upgrading to Redesign, keep content cannot be undone.'
 REDESIGN_NOT_WAITING = 'The redesign is not waiting to be started now.'
 REDESIGN_ELSEWHERE = ('Your deck as it was when it was upgraded is on the computer that upgraded '
                       'it. Start the redesign there.')
-REDESIGN_SAYS = ('Reads your deck as it is now ({slides}) into an outline that keeps its words, '
-                 '{look}, then draws every slide again in the brand with assistant jobs and '
-                 'checks the deck.')
+REDESIGN_STOPPED = 'This deck is stopped. Resume it, then start the redesign.'
+REDESIGN_SAYS = ('Your assistant reads your deck as it is now ({slides}) into an outline that '
+                 'keeps its words, {look}, then draws every slide again in the brand and checks '
+                 'the deck.')
 REDESIGN_PICK = "draws a slide in each of the brand's looks for you to pick from"
 REDESIGN_DEFAULT = "uses the brand's default look"
-REDESIGN_TOOK = ' Usually about {minutes} here, before the deck opens on the desk.'
+# Said as Redraw every section's price says it (deck_price): this deck has no redesign of its
+# own yet, so its own record of time and cost is empty, and what this computer keeps of how
+# long each step took (`estimate`) is the record there is.
+REDESIGN_TOOK = (' This deck has no record yet of what a redesign costs. On this computer its '
+                 'steps have usually taken about {minutes} in all, before the deck opens on the '
+                 'desk.')
+REDESIGN_NO_RECORD = (' This computer has no record yet of how long that takes or what it costs: '
+                      'every slide is drawn again by your assistant, so expect minutes, not '
+                      'seconds.')
 UPGRADED_SAYS = 'Upgraded from Selected changes to Redesign, keep content.'
 UPGRADED_AFTER = (' Revision {revision} was delivered at Selected changes and is kept as it '
                   'was.')
@@ -1045,14 +1061,17 @@ UPGRADED_BEFORE = ' Nothing was delivered at Selected changes.'
 
 
 def redesign_price(run: dict, slides: int) -> dict:
-    """What the redesign of an upgraded deck costs, said before Start: what it does, and how
-    long the steps left took here before (`estimate`), or that there is no record yet."""
+    """What the redesign of an upgraded deck involves, said before Start: what it does, and
+    how long the steps left took on this computer before (`estimate`, from the step times every
+    desk price's "usually" reads), or that there is no record yet. This deck has no redesign of
+    its own yet, so no time or cost of its own is said, as `deck_price` says none without one."""
     look = (run.get('form') or {}).get('look')
     says = REDESIGN_SAYS.format(
         slides=f"{slides} slide{'' if slides == 1 else 's'}",
         look=REDESIGN_DEFAULT if look == 'default' else REDESIGN_PICK)
     minutes = estimate(run)
-    took = REDESIGN_TOOK.format(minutes=stops.lasted(minutes * 60)) if minutes else NO_RECORD
+    took = REDESIGN_TOOK.format(minutes=stops.lasted(minutes * 60)) if minutes \
+        else REDESIGN_NO_RECORD
     return {'says': says + took, 'minutes': minutes, 'slides': slides}
 
 

@@ -570,7 +570,7 @@
     if (move === 'answer') return to('#answer-run', 'Answer it');
     if (move === 'problem') return to('[data-key="problem-action"]', 'See what happened');
     if (move === 'look') return to('.card-needs', 'Pick the look');
-    if (move === 'start') return to('#redesign-start', 'See what it costs');
+    if (move === 'start') return to('#redesign-start', 'See what it involves');
     if (move === 'text') return to('.slide-text-review', 'Read the slide text');
     if (move === 'story') return to('.slide-text-review', 'Read the slide story');
     if (move === 'deliver') {
@@ -701,9 +701,11 @@
   }
 
   // A deck upgraded from Selected changes waits for Start on its own priced step.
+  // Stopped there, the step still shows, with what to do first.
   function redesignWaits(run) {
     const gate = run.gate;
-    return Boolean(gate && gate.name === 'gate:redesign');
+    return Boolean(gate && gate.name === 'gate:redesign')
+      || Boolean(run.desk && run.desk.redesign_stopped);
   }
 
   function progress(run, fresh) {
@@ -712,7 +714,8 @@
     const pause = pausedAtLook(run);
     const start = redesignWaits(run);
     const lead = h.view.sheet || read ? '' : run.question ? 'answer'
-      : run.problem && run.problem.action ? 'problem' : pause ? 'look' : start ? 'start'
+      : run.problem && run.problem.action ? 'problem' : pause ? 'look'
+        : start && run.gate ? 'start'
         : ['paused', 'stopped'].includes(run.state) ? 'resume' : '';
     h.view.lead = lead;
     const title = run.title || 'Untitled';
@@ -731,10 +734,13 @@
       zoned('work', !text && gate?.name === 'gate:story' ? ['slide-story', [gate, read], () => storyReview(run, read)] : null),
       pause ? zoned(text || gate?.name === 'gate:story' ? 'rail' : 'work',
         ['look-pause', [gate, lead, h.brandsFound()], () => lookPause(run, lead === 'look')])
-        : start ? zoned('work', ['redesign-start', [gate, lead, read],
+        : start ? zoned('work', ['redesign-start', [gate, lead, read, desk.redesign_stopped],
           () => redesignStart(run, lead === 'start')])
         : zoned('rail', ['progress', [run.state, run.sentence, desk.progress, Boolean(run.question),
           run.problem], () => progressPart(run)]),
+      // An upgraded deck's earlier deliveries, kept while it is redrawn.
+      zoned('rail', desk.upgraded && h.list(desk.receipts).length ? ['upgraded-receipts',
+        [desk.upgraded, desk.receipts], () => upgradedReceipts(run)] : null),
       zoned(text || pause || gate?.name === 'gate:story' ? 'rail' : 'work', previews ? ['previews', [run.build_progress, read, run.mine],
         () => previewsCard(run)] : null),
       // What each assistant working now is doing, and the deck's Activity log.
@@ -983,6 +989,9 @@
       heading.id = 'redesign-start-title';
       heading.tabIndex = -1;
     }
+    const desk = run.desk || {};
+    // Stopped while it waits: the view has no gate then, only what to do first.
+    if (!gate) return h.add(node, make('p', '', desk.redesign_stopped || ''));
     const price = gate.price || {};
     const upgraded = gate.upgraded || {};
     h.add(node, make('p', '', 'This deck is now at Redesign, keep content. Nothing has been '
@@ -991,11 +1000,20 @@
     upgraded.says ? make('p', 'quiet', upgraded.says) : null);
     if (read) return h.add(node, make('p', 'quiet', 'It waits to be started on its owner’s '
       + 'computer.'));
+    // This computer lacks the deck as it was at the upgrade: it says where to start it.
+    if (gate.elsewhere) return h.add(node, h.callout('', make('p', '', gate.elsewhere)));
     const problem = h.alertLine('redesign-start-problem');
     const go = h.capsule('Start the redesign', lead ? 'filled' : '', () => act(
       'desk-redesign-start', { path }, go, 'The redesign has started. Your deck is read as it is '
         + 'now, then drawn again.', problem), 'redesign-start');
     return h.add(node, problem, bar(go));
+  }
+
+  // While an upgraded deck is redrawn, the revisions it delivered at Selected changes, each
+  // with its receipt, as the Delivered card lists them.
+  function upgradedReceipts(run) {
+    return h.add(h.card('Delivered before'), make('p', 'quiet', run.desk.upgraded.says),
+      receiptsPart(run));
   }
 
   // The slides as they are drawn, each with one box for a note to its section.
@@ -1961,8 +1979,13 @@
     const said = make('p', 'quiet', found.notes_locked || '');
     if (!editing || !found.upgrade || run.execution === 'conversation') return said;
     const go = upgradeButton(run, 'desk-upgrade-notes');
-    if (found.upgrade.refused) go.title = found.upgrade.refused;
-    return h.add(make('div', 'desk-notes-locked'), said, bar(go));
+    // Refused, the reason is said beside it, where a touch screen shows it too.
+    const why = found.upgrade.refused ? make('p', 'quiet', found.upgrade.refused) : null;
+    if (why) {
+      why.id = 'desk-upgrade-notes-why';
+      go.setAttribute('aria-describedby', why.id);
+    }
+    return h.add(make('div', 'desk-notes-locked'), said, bar(go), why);
   }
 
   // What the brand check and the review found on the slide, in their words, blockers first,

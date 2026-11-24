@@ -71,7 +71,19 @@ def materials(record, files):
                 not isinstance(s, dict) or type(s.get('number')) is not int
                 or not isinstance(s.get('objects'), list) for s in slides):
             raise ValueError('The saved original-deck inventory cannot be read.')
-        if inventory.get('sha256') != hashlib.sha256(files[existing.SOURCE]).hexdigest():
+        read = existing.given_name(record)
+        if read != existing.SOURCE:
+            # Upgraded from Selected changes and redrawn: the inventory is of the deck as it was
+            # at the upgrade. That deck must be here as it was kept, and the deck given as it was.
+            upgraded = record['upgraded']
+            if read not in files or not files[read].startswith(b'PK\x03\x04') \
+                    or hashlib.sha256(files[read]).hexdigest() != upgraded.get('sha256'):
+                raise ValueError('The deck the redesign started from is missing or changed. '
+                                 'Continue on the computer that upgraded it.')
+            kept = upgraded.get('original_sha256')
+            if kept and hashlib.sha256(files[existing.SOURCE]).hexdigest() != kept:
+                raise ValueError('The original deck differs from the one that was upgraded.')
+        if inventory.get('sha256') != hashlib.sha256(files[read]).hexdigest():
             raise ValueError('The original deck differs from its saved inventory.')
     if not desk.selected(record):
         if 'outline.json' not in files:

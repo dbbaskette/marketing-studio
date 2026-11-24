@@ -12,6 +12,7 @@ from pathlib import Path
 
 import helpers  # noqa: F401  sets PRESENTATION_STUDIO_DATA to a temporary folder
 
+import runner_support
 from runner_support import DeskCase
 from test_desk_words import planned
 from workspace import WorkspaceError
@@ -20,14 +21,15 @@ from runner import desk, stages
 from runner.jobs import spent
 from runner.steps import existing
 from runner.steps import outline as outlines
-from studio_core import presentation_migration
+from studio_core import presentation_migration, stops
 
 
 def digest(path: Path) -> str:
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
-class UpgradeTests(DeskCase):
+class Upgrading(DeskCase):
+    """A Selected changes deck on the desk, and its upgrade."""
 
     def deck(self, engine=None, **more) -> Path:
         self.workers.then('patch', planned(2, '3', [(1, 'in minutes.')]))
@@ -41,6 +43,36 @@ class UpgradeTests(DeskCase):
 
     def upgrade(self, root: Path) -> dict:
         return self.engine.desk_upgrade(root, self.expected(root))
+
+    def read_whole(self, root: Path):
+        """An extract job that reads the deck word for word, as `read_word_for_word` does,
+        into an outline with every field a saved outline carries (its delivery and each
+        slide's speaker notes), so a conversation can read it."""
+        from test_flow_routes import read_in
+
+        def extract(tools, job):
+            said = read_in(json.loads((root / outlines.INVENTORY).read_text(encoding='utf-8')))
+            said['delivery'] = 'reading'
+            for slide in said['slides']:
+                slide.setdefault('notes', 'Say what this slide shows.')
+            self.workers.outline_said = said
+            self.workers._ok(tools.submit_outline(json.dumps(said)))
+        return extract
+
+    def redrawn(self, whole=False) -> Path:
+        """Upgraded, started, its look picked, and back on the desk. `whole` reads it into an
+        outline a conversation can read."""
+        root = self.deck()
+        self.upgrade(root)
+        if whole:
+            self.workers.queued['outline'] = [self.read_whole(root)]
+        self.engine.desk_redesign_start(root)
+        self.pick_look(root)
+        self.on_desk(root)
+        return root
+
+
+class UpgradeTests(Upgrading):
 
     def test_a_selected_changes_deck_offers_the_upgrade_with_what_it_locks(self):
         root = self.deck()
@@ -82,9 +114,12 @@ class UpgradeTests(DeskCase):
         self.assertEqual(view['sentence'], 'Waiting for you to start the redesign.')
         gate = view['gate']
         self.assertEqual(gate['name'], 'gate:redesign')
-        self.assertIn('Reads your deck as it is now (3 slides)', gate['price']['says'])
-        self.assertTrue(gate['price']['says'].endswith(desk.NO_RECORD)
-                        or 'Usually about' in gate['price']['says'])
+        self.assertIn('Your assistant reads your deck as it is now (3 slides)',
+                      gate['price']['says'])
+        # No redesign has run on this computer yet: it says so, and no cost it lacks.
+        self.assertTrue(gate['price']['says'].endswith(desk.REDESIGN_NO_RECORD),
+                        gate['price']['says'])
+        self.assertIsNone(gate['elsewhere'])
         self.assertEqual(gate['upgraded']['says'], desk.UPGRADED_SAYS + desk.UPGRADED_BEFORE)
         names = [step.name for step in stages.steps(after)]
         self.assertEqual(names[names.index('gate:classify') + 1:names.index('extract') + 1],
@@ -179,10 +214,22 @@ class UpgradeTests(DeskCase):
         finally:
             run.busy = False
         record = self.record(root)
-        record['desk_jobs'] = [{'kind': 'speaker-notes'}]
+        # Each refusal says the one thing to do first.
+        for change, said in (
+                ({'desk_jobs': [{'kind': 'speaker-notes'}]}, desk.UPGRADE_BUSY),
+                ({'halted': {'state': 'stopped', 'step': None, 'action': 'resume',
+                             'why': 'Stopped on the page.'}}, desk.UPGRADE_HALTED),
+                ({'question': {'id': 'q', 'text': 'Which slide?', 'from': 'patch'}},
+                 desk.UPGRADE_QUESTION),
+                ({'desk_notes': [{'id': 'n', 'number': 2, 'note': 'Shorter',
+                                  'status': 'waiting'}]}, desk.UPGRADE_WAITING),
+                ({'desk': {**record['desk'], 'edits': ['an edit']}}, desk.UPGRADE_WAITING)):
+            with self.subTest(said=said):
+                (root / 'run.json').write_text(json.dumps({**record, **change}))
+                self.assertEqual(self.desk_view(root)['upgrade']['refused'], said)
+                with self.assertRaisesRegex(WorkspaceError, said):
+                    self.engine.desk_upgrade(root, expected)
         (root / 'run.json').write_text(json.dumps(record))
-        with self.assertRaisesRegex(WorkspaceError, desk.UPGRADE_BUSY):
-            self.engine.desk_upgrade(root, expected)
         self.assertEqual(self.record(root)['form']['level'], 'selected')
         self.assertFalse((root / existing.UPGRADED).exists())
 
@@ -195,7 +242,7 @@ class UpgradeTests(DeskCase):
     def test_one_way_only(self):
         root = self.deck()
         self.upgrade(root)
-        with self.assertRaisesRegex(WorkspaceError, desk.UPGRADE_LEVEL):
+        with self.assertRaisesRegex(WorkspaceError, desk.UPGRADE_DONE):
             self.engine.desk_upgrade(root, 'anything')
         self.assertFalse(self.view(root)['undo'])
         with self.assertRaisesRegex(WorkspaceError, desk.UPGRADE_FINAL):
@@ -248,6 +295,124 @@ class UpgradeTests(DeskCase):
                 after = self.record(root)
                 self.assertEqual(after['schema'], before['schema'])
                 self.assertTrue(presentation_migration.supported(after))
+
+
+class UpgradeFixTests(Upgrading):
+    """Start only where the deck kept at the upgrade is; a deck stopped at the priced step; an
+    upgrade cut short; the price once this computer has a record; and an upgraded deck
+    continued in conversation."""
+
+    def test_start_is_refused_where_the_deck_kept_at_the_upgrade_is_not(self):
+        # A teammate's computer that took the deck over has no sources/, which is never
+        # shared. Standing in for it, the kept deck is moved away here, then brought back.
+        root = self.deck()
+        self.upgrade(root)
+        kept = root / existing.UPGRADED
+        away = root.parent / 'kept-elsewhere.pptx'
+        kept.rename(away)
+        jobs, record = len(self.workers.jobs), self.record(root)
+        self.assertEqual(self.view(root)['gate']['elsewhere'], desk.REDESIGN_ELSEWHERE)
+        with self.assertRaisesRegex(WorkspaceError, desk.REDESIGN_ELSEWHERE):
+            self.engine.desk_redesign_start(root)
+        # Nothing approved, written or started.
+        self.assertEqual(self.record(root), record)
+        self.assertEqual(self.waiting(root), 'gate:redesign')
+        self.assertEqual(len(self.workers.jobs), jobs)
+        # Back on the computer that upgraded it, Start works.
+        away.rename(kept)
+        self.assertIsNone(self.view(root)['gate']['elsewhere'])
+        self.assertEqual(self.engine.desk_redesign_start(root)['gate']['name'], 'gate:look')
+
+    def test_a_deck_stopped_at_the_priced_step_says_to_resume_it_first(self):
+        root = self.deck()
+        self.upgrade(root)
+        self.engine.act(root, 'stop')
+        self.assertEqual(self.desk_view(root)['redesign_stopped'], desk.REDESIGN_STOPPED)
+        with self.assertRaisesRegex(WorkspaceError, desk.REDESIGN_STOPPED):
+            self.engine.desk_redesign_start(root)
+        self.engine.act(root, 'resume')
+        self.assertIsNone(self.desk_view(root)['redesign_stopped'])
+        self.assertEqual(self.waiting(root), 'gate:redesign')
+        self.assertEqual(self.engine.desk_redesign_start(root)['gate']['name'], 'gate:look')
+
+    def test_an_upgrade_cut_short_leaves_the_deck_as_it_was(self):
+        from unittest import mock
+
+        from runner.steps import build
+        root = self.deck()
+        self.engine.desk_deliver(root, self.expected(root))
+        expected = self.expected(root)
+        names = ('run.json', 'intake.md', 'deliver.json', 'README.md', str(build.STATE))
+        before = {name: (root / name).read_bytes() for name in names}
+        with mock.patch.object(self.engine, '_store', side_effect=OSError('disk full')):
+            with self.assertRaisesRegex(OSError, 'disk full'):
+                self.engine.desk_upgrade(root, expected)
+        self.assertEqual({name: (root / name).read_bytes() for name in names}, before)
+        self.assertFalse((root / existing.UPGRADED).exists())
+        view = self.view(root)
+        self.assertEqual(view['desk']['level'], 'selected')
+        self.assertTrue(view['desk']['drawn_here'])
+        self.assertIsNone(view['desk']['upgrade']['refused'])
+
+    def test_the_price_says_how_long_the_steps_took_here_once_they_have(self):
+        self.redrawn()
+        self.workers.queued['outline'] = [runner_support.read_word_for_word(self)] * 4
+        root = self.deck()
+        says = self.upgrade(root)['gate']['price']['says']
+        minutes = desk.estimate(self.record(root))
+        self.assertTrue(minutes)
+        self.assertTrue(says.endswith(desk.REDESIGN_TOOK.format(
+            minutes=stops.lasted(minutes * 60))), says)
+        # No cost is said that this deck has no record of, and no minutes are called a cost.
+        self.assertNotIn('$', says)
+        self.assertIn('no record yet of what a redesign costs', says)
+
+    def test_an_upgraded_deck_continued_in_conversation_can_be_marked_ready(self):
+        from runner import desk_chat
+        root = self.redrawn(whole=True)
+        context = desk_chat.context(self.engine, root, 'ownership')
+        desk_chat.take(self.engine, root, context['expected_basis'], ['part'])
+        shown = self.desk_view(root)
+        self.assertTrue(shown['can_mark_ready'], shown['ready_problem'])
+        context = desk_chat.context(self.engine, root, 'ready')
+        request = {'expected_basis': context['expected_basis'],
+                   'seen': context['requirements']['seen'],
+                   'response': 'I looked at the redrawn deck and it is ready.'}
+        self.assertTrue(desk_chat.ready(self.engine, root, request)['desk']['ready'])
+
+    def test_conversation_checks_the_deck_kept_and_the_deck_given(self):
+        from runner import desk_chat, desk_migration
+        root = self.redrawn(whole=True)
+        record = self.record(root)
+        desk_migration.materials(record, desk_chat._files(root))
+        for name in (existing.UPGRADED, existing.SOURCE):
+            with self.subTest(name=name):
+                kept = (root / name).read_bytes()
+                (root / name).write_bytes(kept + b'changed')
+                with self.assertRaises(ValueError):
+                    desk_migration.materials(record, desk_chat._files(root))
+                (root / name).write_bytes(kept)
+
+    def test_a_deck_not_upgraded_is_checked_as_before(self):
+        from runner import desk_chat, desk_migration
+        root = self.existing_deck('automatic', 'redesign', flow='desk', look='default')
+        self.on_desk(root)
+        # The stand-in's outline as a saved one carries it, so the inventory check is reached.
+        outline = json.loads((root / outlines.OUTLINE).read_text())
+        outline['delivery'] = 'reading'
+        for slide in outline['slides']:
+            slide.setdefault('notes', 'Say what this slide shows.')
+        (root / outlines.OUTLINE).write_text(json.dumps(outline))
+        record = self.record(root)
+        self.assertEqual(existing.given_name(record), existing.SOURCE)
+        desk_migration.materials(record, desk_chat._files(root))
+        # A file at the upgrade's name is never read for a deck that was not upgraded.
+        (root / existing.UPGRADED).write_bytes(b'PK\x03\x04 not read')
+        desk_migration.materials(record, desk_chat._files(root))
+        (root / existing.SOURCE).write_bytes((root / existing.SOURCE).read_bytes() + b'x')
+        with self.assertRaisesRegex(ValueError, 'The original deck differs from its saved '
+                                                'inventory.'):
+            desk_migration.materials(record, desk_chat._files(root))
 
 
 class StagesTests(unittest.TestCase):

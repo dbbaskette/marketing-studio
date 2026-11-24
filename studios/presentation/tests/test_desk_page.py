@@ -2163,11 +2163,13 @@ class UpgradePageTests(DeskPageCase):
         from runner import desk as desks
         path, view = self.existing('selected')
         view = copy.deepcopy(view)
-        view['desk']['upgrade']['refused'] = desks.UPGRADE_BUSY
-        result = self.open_deck(path, view, [{'snapshot': 'desk'}])
-        shot = result['snapshots']['desk']
-        self.assertIn(desks.UPGRADE_BUSY, shot['text'])
-        self.assertIn(self.UPGRADE, shot['off'])
+        view['desk']['upgrade']['refused'] = desks.UPGRADE_HALTED
+        result = self.open_deck(path, view, [{'snapshot': 'desk'}, to(2), {'snapshot': 'card'}])
+        shot = result['snapshots']['card']
+        # Said in the head and beside the locked speaker notes, as text a touch screen shows,
+        # and both buttons are off.
+        self.assertEqual(shot['text'].count(desks.UPGRADE_HALTED), 2)
+        self.assertEqual(shot['off'].count(self.UPGRADE), 2)
 
     def test_no_other_level_offers_the_upgrade(self):
         from runner import desk as desks
@@ -2200,6 +2202,38 @@ class UpgradePageTests(DeskPageCase):
         started = self.post('desk-redesign-start', {'path': path})
         self.assertEqual(started['gate']['name'], 'gate:build', started['sentence'])
         self.assertEqual(started['desk']['level'], 'redesign')
+
+    def test_the_priced_step_on_another_computer_says_where_to_start_it(self):
+        from runner import desk as desks
+        path, view = self.existing('selected')
+        upgraded = copy.deepcopy(self.post('desk-upgrade', {
+            'path': path, 'expected': view['desk']['expected']}))
+        upgraded['gate']['elsewhere'] = desks.REDESIGN_ELSEWHERE
+        shot = self.open_deck(path, upgraded, [{'snapshot': 'step'}])['snapshots']['step']
+        self.assertIn(desks.REDESIGN_ELSEWHERE, shot['text'])
+        self.assertNotIn('Start the redesign', shot['buttons'])
+
+    def test_a_deck_stopped_at_the_priced_step_says_to_resume_it_first(self):
+        from runner import desk as desks
+        path, view = self.existing('selected')
+        self.post('desk-upgrade', {'path': path, 'expected': view['desk']['expected']})
+        stopped = self.post('run', {'path': path, 'action': 'stop'})
+        self.assertIsNone(stopped['gate'])
+        self.assertEqual(stopped['desk']['redesign_stopped'], desks.REDESIGN_STOPPED)
+        shot = self.open_deck(path, stopped, [{'snapshot': 'step'}])['snapshots']['step']
+        self.assertIn(desks.REDESIGN_STOPPED, shot['text'])
+        self.assertNotIn('Start the redesign', shot['buttons'])
+        self.assertIn('Resume', shot['buttons'])
+
+    def test_earlier_deliveries_are_listed_while_the_deck_is_redrawn(self):
+        path, view = self.existing('selected')
+        delivered = self.post('desk-deliver', {'path': path, 'expected': view['desk']['expected']})
+        upgraded = self.post('desk-upgrade', {'path': path,
+                                              'expected': delivered['desk']['expected']})
+        shot = self.open_deck(path, upgraded, [{'snapshot': 'step'}])['snapshots']['step']
+        self.assertIn('Delivered before', shot['text'])
+        self.assertIn('Revision 1 · Google Slides', shot['text'])
+        self.assertIn(upgraded['desk']['upgraded']['says'], shot['text'])
 
 
 BLOCKED = {'status': 'BLOCKED', 'warnings': [],

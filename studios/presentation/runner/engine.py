@@ -1796,7 +1796,11 @@ class Engine(Jobs, Researching, DeskActions):
         """What the priced step of an upgraded deck shows before Start: what the redesign does
         and what it costs, and how the deck was upgraded."""
         slides = len((outlines.inventory_of(root) or {}).get('slides') or ())
-        return {'price': desk.redesign_price(record, slides), 'upgraded': desk.upgraded(record)}
+        # On a computer without the deck as it was at the upgrade, Start is not offered: it is
+        # started on the computer that has it.
+        return {'price': desk.redesign_price(record, slides), 'upgraded': desk.upgraded(record),
+                'elsewhere': None if self._redesign_here(root, record)
+                else desk.REDESIGN_ELSEWHERE}
 
     def _brand_step(self, root: Path, run: _Run, step: stages.Step) -> None:
         clock = time.monotonic()
