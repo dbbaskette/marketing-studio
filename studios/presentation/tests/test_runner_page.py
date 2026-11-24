@@ -59,7 +59,7 @@ POSTS = ('/api/research-note', '/api/slide-text-draft', '/api/intake-draft', '/a
          '/api/shared', '/api/deliver', '/api/storyboard', '/api/review-draft', '/api/build-feedback', '/api/progress-seen',
          '/api/note', '/api/research-site', '/api/picture',
          '/api/picture-remove', '/api/desk-outline-price', '/api/deck-copy', *DESK_POSTS,
-         *LIBRARY_POSTS)
+         *LIBRARY_POSTS, '/api/document-intake')
 BOTH = ('/api/research-note', '/api/slide-text-draft', '/api/intake-draft', '/api/setup', '/api/decks', '/api/run', '/api/delete', '/api/computer', '/api/storyboard',
         '/api/desk-outline-price')
 LISTED = [{'name': 'gpt-6-sol', 'label': 'GPT-6-Sol (gpt-6-sol)', 'family': None,
@@ -325,7 +325,10 @@ class RuleTests(PageCase):
         self.assertEqual(self.page.body_limit('/api/intake-draft', without), server.BODY_LIMIT)
         self.assertEqual(self.page.body_limit('/api/decide', with_key), 512_000)
         self.assertEqual(self.page.body_limit('/api/decide', without), server.BODY_LIMIT)
-        for target in set(POSTS) - {'/api/slide-text-draft', '/api/decide', '/api/intake-draft', '/api/decks', '/api/picture', '/api/desk-source', '/api/research-sources'}:
+        # A spreadsheet read for a deck from a document is as large as a source's file.
+        self.assertEqual(self.page.body_limit('/api/document-intake', with_key), 12_000_000)
+        self.assertEqual(self.page.body_limit('/api/document-intake', without), server.BODY_LIMIT)
+        for target in set(POSTS) - {'/api/slide-text-draft', '/api/decide', '/api/intake-draft', '/api/decks', '/api/picture', '/api/desk-source', '/api/research-sources', '/api/document-intake'}:
             self.assertEqual(self.page.body_limit(target, with_key), server.BODY_LIMIT, target)
 
     def test_a_source_added_on_the_desk_may_be_large_only_with_the_key(self):

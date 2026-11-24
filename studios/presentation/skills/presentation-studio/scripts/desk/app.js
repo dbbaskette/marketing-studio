@@ -3180,7 +3180,9 @@ function folderFields(draft, done) {
         refuse('new-folder', failure.message);
         return;
       }
-      use({ file: { name: file.name, data: encoded } }, read);
+      const sheet = { name: file.name };
+      sheet.data = encoded;   // its contents, in base64
+      use({ file: sheet }, read);
     } });
   return [field('new-folder', 'A folder on this computer, or a Google Drive folder link', draft,
     'folder', { hint: 'It must hold one document: a text, Markdown, Word, web page or PDF file. '
