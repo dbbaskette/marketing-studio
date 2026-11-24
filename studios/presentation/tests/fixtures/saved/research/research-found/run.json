@@ -22,14 +22,14 @@
     },
     "research_questions": []
   },
-  "created": "2026-11-24T23:00:31Z",
+  "created": "2026-11-24T23:12:41Z",
   "driver": null,
   "gates": {
     "gate:research-plan": {
       "state": "approved",
       "round": 1,
       "note": null,
-      "at": "2026-11-24T23:00:32Z",
+      "at": "2026-11-24T23:12:42Z",
       "by": "Alex"
     },
     "gate:research": {
@@ -42,8 +42,8 @@
       "failed": 0,
       "tries": [
         {
-          "started_at": "2026-11-24T23:00:31Z",
-          "ended_at": "2026-11-24T23:00:31Z",
+          "started_at": "2026-11-24T23:12:41Z",
+          "ended_at": "2026-11-24T23:12:41Z",
           "seconds": 0.0,
           "dollars": null,
           "tokens": null,
@@ -52,14 +52,14 @@
         }
       ],
       "done": true,
-      "at": "2026-11-24T23:00:31Z"
+      "at": "2026-11-24T23:12:41Z"
     },
     "research-plan": {
       "failed": 0,
       "tries": [
         {
-          "started_at": "2026-11-24T23:00:31Z",
-          "ended_at": "2026-11-24T23:00:31Z",
+          "started_at": "2026-11-24T23:12:41Z",
+          "ended_at": "2026-11-24T23:12:41Z",
           "seconds": 0.0,
           "dollars": null,
           "tokens": null,
@@ -68,14 +68,14 @@
         }
       ],
       "done": true,
-      "at": "2026-11-24T23:00:31Z"
+      "at": "2026-11-24T23:12:41Z"
     },
     "research:instance-min": {
       "failed": 0,
       "tries": [
         {
-          "started_at": "2026-11-24T23:00:32Z",
-          "ended_at": "2026-11-24T23:00:32Z",
+          "started_at": "2026-11-24T23:12:42Z",
+          "ended_at": "2026-11-24T23:12:42Z",
           "seconds": 0.0,
           "dollars": null,
           "tokens": null,
@@ -89,8 +89,8 @@
       "failed": 0,
       "tries": [
         {
-          "started_at": "2026-11-24T23:00:32Z",
-          "ended_at": "2026-11-24T23:00:32Z",
+          "started_at": "2026-11-24T23:12:42Z",
+          "ended_at": "2026-11-24T23:12:42Z",
           "seconds": 0.0,
           "dollars": null,
           "tokens": null,
@@ -104,8 +104,8 @@
       "failed": 0,
       "tries": [
         {
-          "started_at": "2026-11-24T23:00:32Z",
-          "ended_at": "2026-11-24T23:00:32Z",
+          "started_at": "2026-11-24T23:12:42Z",
+          "ended_at": "2026-11-24T23:12:42Z",
           "seconds": 0.0,
           "dollars": null,
           "tokens": null,
@@ -115,14 +115,14 @@
         }
       ],
       "done": true,
-      "at": "2026-11-24T23:00:32Z"
+      "at": "2026-11-24T23:12:42Z"
     },
     "research-report": {
       "failed": 0,
       "tries": [
         {
-          "started_at": "2026-11-24T23:00:32Z",
-          "ended_at": "2026-11-24T23:00:32Z",
+          "started_at": "2026-11-24T23:12:42Z",
+          "ended_at": "2026-11-24T23:12:42Z",
           "seconds": 0.0,
           "dollars": null,
           "tokens": null,
@@ -131,7 +131,7 @@
         }
       ],
       "done": true,
-      "at": "2026-11-24T23:00:32Z"
+      "at": "2026-11-24T23:12:42Z"
     }
   },
   "classified": null,

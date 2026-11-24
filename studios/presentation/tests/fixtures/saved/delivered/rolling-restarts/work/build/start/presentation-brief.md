@@ -2,11 +2,11 @@
 
 Delivered live. 8 slides.
 
-Outline: `outline.json`, SHA-256 `a197ec37006edf63c0d50d56608f615a14a0f822c6a9924884203bae8ecc456d`.
+Outline: `outline.json`, SHA-256 `956c6f06a8b0a4a3ec0f74dbb47c43ec07379e4078e13347b31647d019c7c9e8`.
 
 ## Approval
 
-> Approved on the page, 2026-11-24T23:00:18Z, in example (light).
+> Approved on the page, 2026-11-24T23:12:27Z, in example (light).
 >
 > Look chosen: Clear (example-clear). In their words: "Picked Clear on the page, with no comment."
 

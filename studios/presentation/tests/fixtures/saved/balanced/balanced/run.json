@@ -17,7 +17,7 @@
     "notes": "",
     "research_questions": []
   },
-  "created": "2026-11-24T23:00:14Z",
+  "created": "2026-11-24T23:12:24Z",
   "driver": null,
   "gates": {
     "gate:outline": {
@@ -34,8 +34,8 @@
       "failed": 0,
       "tries": [
         {
-          "started_at": "2026-11-24T23:00:14Z",
-          "ended_at": "2026-11-24T23:00:14Z",
+          "started_at": "2026-11-24T23:12:24Z",
+          "ended_at": "2026-11-24T23:12:24Z",
           "seconds": 0.0,
           "dollars": null,
           "tokens": null,
@@ -44,14 +44,14 @@
         }
       ],
       "done": true,
-      "at": "2026-11-24T23:00:14Z"
+      "at": "2026-11-24T23:12:24Z"
     },
     "outline": {
       "failed": 0,
       "tries": [
         {
-          "started_at": "2026-11-24T23:00:15Z",
-          "ended_at": "2026-11-24T23:00:15Z",
+          "started_at": "2026-11-24T23:12:24Z",
+          "ended_at": "2026-11-24T23:12:24Z",
           "seconds": 0.0,
           "dollars": null,
           "tokens": null,
@@ -60,14 +60,14 @@
         }
       ],
       "done": true,
-      "at": "2026-11-24T23:00:15Z"
+      "at": "2026-11-24T23:12:24Z"
     },
     "brand": {
       "failed": 0,
       "tries": [
         {
-          "started_at": "2026-11-24T23:00:15Z",
-          "ended_at": "2026-11-24T23:00:15Z",
+          "started_at": "2026-11-24T23:12:25Z",
+          "ended_at": "2026-11-24T23:12:25Z",
           "seconds": 0.0,
           "dollars": null,
           "tokens": null,
@@ -76,14 +76,14 @@
         }
       ],
       "done": true,
-      "at": "2026-11-24T23:00:15Z"
+      "at": "2026-11-24T23:12:25Z"
     },
     "look-preview": {
       "failed": 0,
       "tries": [
         {
-          "started_at": "2026-11-24T23:00:15Z",
-          "ended_at": "2026-11-24T23:00:15Z",
+          "started_at": "2026-11-24T23:12:25Z",
+          "ended_at": "2026-11-24T23:12:25Z",
           "seconds": 0.0,
           "dollars": null,
           "tokens": null,
@@ -92,7 +92,7 @@
         }
       ],
       "done": true,
-      "at": "2026-11-24T23:00:15Z"
+      "at": "2026-11-24T23:12:25Z"
     }
   },
   "classified": null,

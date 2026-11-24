@@ -1,5 +1,5 @@
-{"checkpoint":"accepted","unit":"","at":"2026-11-24T23:00:32Z"}
-{"checkpoint":"output-saved","unit":"intake-source","at":"2026-11-24T23:00:32Z"}
-{"checkpoint":"working","unit":"classify","at":"2026-11-24T23:00:32Z"}
-{"id":"1f66ef77c7e6","label":"Working out whether your document is a finished script or raw material","step":"classify","started_at":"2026-11-24T23:00:32Z","ended_at":"2026-11-24T23:00:32Z","outcome":"finished","lines":[{"at":"2026-11-24T23:00:32Z","text":"Handing back classification"},{"at":"2026-11-24T23:00:32Z","text":"The draft was accepted"},{"at":"2026-11-24T23:00:32Z","text":"Writing its own notes on the draft"}],"dropped":0}
-{"checkpoint":"output-saved","unit":"classify","at":"2026-11-24T23:00:32Z"}
+{"checkpoint":"accepted","unit":"","at":"2026-11-24T23:12:42Z"}
+{"checkpoint":"output-saved","unit":"intake-source","at":"2026-11-24T23:12:42Z"}
+{"checkpoint":"working","unit":"classify","at":"2026-11-24T23:12:42Z"}
+{"id":"2b119f767aa6","label":"Working out whether your document is a finished script or raw material","step":"classify","started_at":"2026-11-24T23:12:42Z","ended_at":"2026-11-24T23:12:42Z","outcome":"finished","lines":[{"at":"2026-11-24T23:12:42Z","text":"Handing back classification"},{"at":"2026-11-24T23:12:42Z","text":"The draft was accepted"},{"at":"2026-11-24T23:12:42Z","text":"Writing its own notes on the draft"}],"dropped":0}
+{"checkpoint":"output-saved","unit":"classify","at":"2026-11-24T23:12:42Z"}

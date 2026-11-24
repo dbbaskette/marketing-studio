@@ -17,7 +17,7 @@
     "notes": "",
     "research_questions": []
   },
-  "created": "2026-11-24T23:00:28Z",
+  "created": "2026-11-24T23:12:38Z",
   "driver": null,
   "gates": {
     "gate:outline": {
@@ -30,8 +30,8 @@
       "failed": 0,
       "tries": [
         {
-          "started_at": "2026-11-24T23:00:28Z",
-          "ended_at": "2026-11-24T23:00:28Z",
+          "started_at": "2026-11-24T23:12:38Z",
+          "ended_at": "2026-11-24T23:12:38Z",
           "seconds": 0.0,
           "dollars": null,
           "tokens": null,
@@ -40,14 +40,14 @@
         }
       ],
       "done": true,
-      "at": "2026-11-24T23:00:28Z"
+      "at": "2026-11-24T23:12:38Z"
     },
     "outline": {
       "failed": 0,
       "tries": [
         {
-          "started_at": "2026-11-24T23:00:28Z",
-          "ended_at": "2026-11-24T23:00:28Z",
+          "started_at": "2026-11-24T23:12:38Z",
+          "ended_at": "2026-11-24T23:12:38Z",
           "seconds": 0.0,
           "dollars": null,
           "tokens": null,
@@ -56,7 +56,7 @@
         }
       ],
       "done": true,
-      "at": "2026-11-24T23:00:28Z"
+      "at": "2026-11-24T23:12:38Z"
     }
   },
   "classified": null,
@@ -68,7 +68,7 @@
     "action": "resume",
     "why": "Paused on the page.",
     "kept": "Everything kept so far is still here.",
-    "at": "2026-11-24T23:00:28Z"
+    "at": "2026-11-24T23:12:38Z"
   },
   "agent": "claude",
   "model": null,

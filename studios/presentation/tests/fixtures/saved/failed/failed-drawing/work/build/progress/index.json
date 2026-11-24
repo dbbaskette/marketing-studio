@@ -3,7 +3,7 @@
   "parts": {
     "section-1": {
       "images": {},
-      "owner": "23aeb54a0b1a858afacf99db2b5f86cc",
+      "owner": "7a9adbc5e728c1017d62b471af64f0fd",
       "slides": [
         {
           "id": "what-it-does",
@@ -21,12 +21,12 @@
           "title": "Rolling does not always mean zero downtime"
         }
       ],
-      "started_at": "2026-11-24T23:00:30Z",
+      "started_at": "2026-11-24T23:12:39Z",
       "status": "drawing"
     },
     "section-2": {
       "images": {},
-      "owner": "8ca32f9dfabc1d473b0180c20517c9be",
+      "owner": "f7cbd93dae8edccaf2a973cdcf35203b",
       "slides": [
         {
           "id": "check-yourself",
@@ -44,7 +44,7 @@
           "title": "A failed batch is rolled back, not pushed on"
         }
       ],
-      "started_at": "2026-11-24T23:00:30Z",
+      "started_at": "2026-11-24T23:12:39Z",
       "status": "drawing"
     }
   }

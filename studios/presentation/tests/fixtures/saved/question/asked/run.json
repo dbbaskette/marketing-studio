@@ -17,14 +17,14 @@
     "notes": "",
     "research_questions": []
   },
-  "created": "2026-11-24T23:00:30Z",
+  "created": "2026-11-24T23:12:40Z",
   "driver": null,
   "gates": {
     "gate:outline": {
       "state": "changes",
       "round": 1,
       "note": "Fewer slides on the batches.",
-      "at": "2026-11-24T23:00:30Z",
+      "at": "2026-11-24T23:12:40Z",
       "by": "Alex",
       "saying": null
     },
@@ -40,8 +40,8 @@
       "failed": 0,
       "tries": [
         {
-          "started_at": "2026-11-24T23:00:30Z",
-          "ended_at": "2026-11-24T23:00:30Z",
+          "started_at": "2026-11-24T23:12:40Z",
+          "ended_at": "2026-11-24T23:12:40Z",
           "seconds": 0.0,
           "dollars": null,
           "tokens": null,
@@ -50,14 +50,14 @@
         }
       ],
       "done": true,
-      "at": "2026-11-24T23:00:30Z"
+      "at": "2026-11-24T23:12:40Z"
     },
     "outline": {
       "failed": 0,
       "tries": [
         {
-          "started_at": "2026-11-24T23:00:30Z",
-          "ended_at": "2026-11-24T23:00:30Z",
+          "started_at": "2026-11-24T23:12:40Z",
+          "ended_at": "2026-11-24T23:12:40Z",
           "seconds": 0.0,
           "dollars": null,
           "tokens": null,
@@ -65,8 +65,8 @@
           "error": null
         },
         {
-          "started_at": "2026-11-24T23:00:30Z",
-          "ended_at": "2026-11-24T23:00:30Z",
+          "started_at": "2026-11-24T23:12:40Z",
+          "ended_at": "2026-11-24T23:12:40Z",
           "seconds": 0.0,
           "dollars": null,
           "tokens": null,
@@ -75,7 +75,7 @@
         }
       ],
       "done": false,
-      "at": "2026-11-24T23:00:30Z"
+      "at": "2026-11-24T23:12:40Z"
     },
     "brand": {
       "done": false,
@@ -171,11 +171,11 @@
     "outline": "Six slides. The check slide is the one I am least sure of."
   },
   "question": {
-    "id": "62bd68fb807a",
+    "id": "ba456152a15f",
     "step": "outline",
     "text": "Which diagram style should the restart batches use?",
     "from": "The assistant drafting the outline of your deck",
-    "at": "2026-11-24T23:00:30Z"
+    "at": "2026-11-24T23:12:40Z"
   },
   "research": null,
   "model_jobs": [

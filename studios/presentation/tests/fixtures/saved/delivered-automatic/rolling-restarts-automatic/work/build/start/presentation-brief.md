@@ -2,11 +2,11 @@
 
 Delivered live. 8 slides.
 
-Outline: `outline.json`, SHA-256 `f169e8f5f9a6a6013c710c3df5097e60cb127eb8f1511c3ab8ff6763263cf5a3`.
+Outline: `outline.json`, SHA-256 `5e3ad3ae2ccbfd4e62bd78796948de51ae34421136e7d3395ec1de2bed355aa6`.
 
 ## Approval
 
-> Continued automatically, 2026-11-24T23:00:24Z, in example (light).
+> Continued automatically, 2026-11-24T23:12:33Z, in example (light).
 >
 > Look chosen: Clear (example-clear). Recorded: "Automatic draft: the brand's default look, Clear, was used."
 >

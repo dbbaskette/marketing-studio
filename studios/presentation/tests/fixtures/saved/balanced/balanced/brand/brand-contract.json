@@ -28,7 +28,7 @@
     {
       "path": "@BRAND@/assets/template.pptx",
       "kind": "native template",
-      "sha256": "ca0d59c05d408e90dc432795ae170a7b317fb6b1db1750593714d36ad28fc610"
+      "sha256": "def93b41d74d26b01dda8e97418a45abe44835db43f7f51d55e707c7ec13d955"
     },
     {
       "path": "@BRAND@/assets/icons.pptx",
@@ -137,7 +137,7 @@
     },
     "nativeTemplate": {
       "path": "@BRAND@/assets/template.pptx",
-      "sha256": "ca0d59c05d408e90dc432795ae170a7b317fb6b1db1750593714d36ad28fc610",
+      "sha256": "def93b41d74d26b01dda8e97418a45abe44835db43f7f51d55e707c7ec13d955",
       "layoutPart": "ppt/slideLayouts/slideLayout2.xml",
       "masterPart": "ppt/slideMasters/slideMaster1.xml"
     }
@@ -158,5 +158,5 @@
       "status": "unselected"
     }
   },
-  "revision": "b2a08fad33eb04b9a4e9f06c7f44a6521e2f35e49e36cd3b122f1d3a8c376153"
+  "revision": "cb04639c084703e36542f8dd89b4b658e34836ad862a58e0168beb3bb6bfa826"
 }

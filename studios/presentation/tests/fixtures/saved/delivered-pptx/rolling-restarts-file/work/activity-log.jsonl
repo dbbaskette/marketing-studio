@@ -1,24 +1,24 @@
-{"checkpoint":"accepted","unit":"","at":"2026-11-24T23:00:20Z"}
-{"checkpoint":"output-saved","unit":"intake-source","at":"2026-11-24T23:00:20Z"}
-{"checkpoint":"working","unit":"outline","at":"2026-11-24T23:00:20Z"}
-{"id":"ea35a174fb63","label":"Drafting the outline of your deck","step":"outline","started_at":"2026-11-24T23:00:20Z","ended_at":"2026-11-24T23:00:20Z","outcome":"finished","lines":[{"at":"2026-11-24T23:00:20Z","text":"Checking what the slides say"},{"at":"2026-11-24T23:00:20Z","text":"Handing in what the slides say"},{"at":"2026-11-24T23:00:20Z","text":"The outline was accepted"},{"at":"2026-11-24T23:00:20Z","text":"Writing its own notes on the draft"}],"dropped":0}
-{"checkpoint":"output-saved","unit":"outline","at":"2026-11-24T23:00:20Z"}
-{"checkpoint":"output-saved","unit":"brand","at":"2026-11-24T23:00:20Z"}
-{"checkpoint":"output-saved","unit":"look-preview","at":"2026-11-24T23:00:20Z"}
-{"checkpoint":"output-saved","unit":"build-start","at":"2026-11-24T23:00:21Z"}
-{"checkpoint":"working","unit":"build-sections:section-1","at":"2026-11-24T23:00:21Z"}
-{"id":"dde3efa9f9f2","label":"Draw section 1","step":"build-sections:section-1","started_at":"2026-11-24T23:00:21Z","ended_at":"2026-11-24T23:00:21Z","outcome":"finished","lines":[{"at":"2026-11-24T23:00:21Z","text":"Rendering its slides to look at them"},{"at":"2026-11-24T23:00:21Z","text":"Handing in its slides"},{"at":"2026-11-24T23:00:21Z","text":"The section was accepted"}],"dropped":0}
-{"checkpoint":"output-saved","unit":"build-sections:section-1","at":"2026-11-24T23:00:21Z"}
-{"checkpoint":"working","unit":"build-sections:section-2","at":"2026-11-24T23:00:21Z"}
-{"id":"cd178d08849c","label":"Draw section 2","step":"build-sections:section-2","started_at":"2026-11-24T23:00:21Z","ended_at":"2026-11-24T23:00:21Z","outcome":"finished","lines":[{"at":"2026-11-24T23:00:21Z","text":"Rendering its slides to look at them"},{"at":"2026-11-24T23:00:21Z","text":"Handing in its slides"},{"at":"2026-11-24T23:00:21Z","text":"The section was accepted"}],"dropped":0}
-{"checkpoint":"output-saved","unit":"build-sections:section-2","at":"2026-11-24T23:00:21Z"}
-{"checkpoint":"output-saved","unit":"build-sections","at":"2026-11-24T23:00:21Z"}
-{"checkpoint":"output-saved","unit":"build-whole","at":"2026-11-24T23:00:21Z"}
-{"checkpoint":"checking","unit":"build-review","at":"2026-11-24T23:00:21Z"}
-{"id":"581670ef9b3a","label":"Reviewing the whole deck for problems","step":"build-review","started_at":"2026-11-24T23:00:21Z","ended_at":"2026-11-24T23:00:21Z","outcome":"finished","lines":[{"at":"2026-11-24T23:00:21Z","text":"Using look_at_deck"},{"at":"2026-11-24T23:00:21Z","text":"Looking at slide 1"},{"at":"2026-11-24T23:00:21Z","text":"Looking at slide 2"},{"at":"2026-11-24T23:00:21Z","text":"Looking at slide 3"},{"at":"2026-11-24T23:00:21Z","text":"Looking at slide 4"},{"at":"2026-11-24T23:00:21Z","text":"Looking at slide 5"},{"at":"2026-11-24T23:00:21Z","text":"Looking at slide 6"},{"at":"2026-11-24T23:00:21Z","text":"Looking at slide 7"},{"at":"2026-11-24T23:00:21Z","text":"Looking at slide 8"},{"at":"2026-11-24T23:00:21Z","text":"Handing in what it found on the slides"},{"at":"2026-11-24T23:00:21Z","text":"The review was accepted"}],"dropped":0}
-{"checkpoint":"output-saved","unit":"build-review","at":"2026-11-24T23:00:21Z"}
-{"checkpoint":"output-saved","unit":"build-repair","at":"2026-11-24T23:00:21Z"}
-{"checkpoint":"output-saved","unit":"build-render","at":"2026-11-24T23:00:21Z"}
-{"checkpoint":"ready","unit":"gate:build","at":"2026-11-24T23:00:21Z"}
-{"checkpoint":"output-saved","unit":"deliver","at":"2026-11-24T23:00:22Z"}
-{"checkpoint":"ready","unit":"","at":"2026-11-24T23:00:22Z"}
+{"checkpoint":"accepted","unit":"","at":"2026-11-24T23:12:28Z"}
+{"checkpoint":"output-saved","unit":"intake-source","at":"2026-11-24T23:12:29Z"}
+{"checkpoint":"working","unit":"outline","at":"2026-11-24T23:12:29Z"}
+{"id":"d23f7f65d3a9","label":"Drafting the outline of your deck","step":"outline","started_at":"2026-11-24T23:12:29Z","ended_at":"2026-11-24T23:12:29Z","outcome":"finished","lines":[{"at":"2026-11-24T23:12:29Z","text":"Checking what the slides say"},{"at":"2026-11-24T23:12:29Z","text":"Handing in what the slides say"},{"at":"2026-11-24T23:12:29Z","text":"The outline was accepted"},{"at":"2026-11-24T23:12:29Z","text":"Writing its own notes on the draft"}],"dropped":0}
+{"checkpoint":"output-saved","unit":"outline","at":"2026-11-24T23:12:29Z"}
+{"checkpoint":"output-saved","unit":"brand","at":"2026-11-24T23:12:29Z"}
+{"checkpoint":"output-saved","unit":"look-preview","at":"2026-11-24T23:12:29Z"}
+{"checkpoint":"output-saved","unit":"build-start","at":"2026-11-24T23:12:29Z"}
+{"checkpoint":"working","unit":"build-sections:section-1","at":"2026-11-24T23:12:30Z"}
+{"id":"3491de973180","label":"Draw section 1","step":"build-sections:section-1","started_at":"2026-11-24T23:12:30Z","ended_at":"2026-11-24T23:12:30Z","outcome":"finished","lines":[{"at":"2026-11-24T23:12:30Z","text":"Rendering its slides to look at them"},{"at":"2026-11-24T23:12:30Z","text":"Handing in its slides"},{"at":"2026-11-24T23:12:30Z","text":"The section was accepted"}],"dropped":0}
+{"checkpoint":"output-saved","unit":"build-sections:section-1","at":"2026-11-24T23:12:30Z"}
+{"checkpoint":"working","unit":"build-sections:section-2","at":"2026-11-24T23:12:30Z"}
+{"id":"c47f7dc136ee","label":"Draw section 2","step":"build-sections:section-2","started_at":"2026-11-24T23:12:30Z","ended_at":"2026-11-24T23:12:30Z","outcome":"finished","lines":[{"at":"2026-11-24T23:12:30Z","text":"Rendering its slides to look at them"},{"at":"2026-11-24T23:12:30Z","text":"Handing in its slides"},{"at":"2026-11-24T23:12:30Z","text":"The section was accepted"}],"dropped":0}
+{"checkpoint":"output-saved","unit":"build-sections:section-2","at":"2026-11-24T23:12:30Z"}
+{"checkpoint":"output-saved","unit":"build-sections","at":"2026-11-24T23:12:30Z"}
+{"checkpoint":"output-saved","unit":"build-whole","at":"2026-11-24T23:12:30Z"}
+{"checkpoint":"checking","unit":"build-review","at":"2026-11-24T23:12:30Z"}
+{"id":"4d8400291404","label":"Reviewing the whole deck for problems","step":"build-review","started_at":"2026-11-24T23:12:30Z","ended_at":"2026-11-24T23:12:30Z","outcome":"finished","lines":[{"at":"2026-11-24T23:12:30Z","text":"Using look_at_deck"},{"at":"2026-11-24T23:12:30Z","text":"Looking at slide 1"},{"at":"2026-11-24T23:12:30Z","text":"Looking at slide 2"},{"at":"2026-11-24T23:12:30Z","text":"Looking at slide 3"},{"at":"2026-11-24T23:12:30Z","text":"Looking at slide 4"},{"at":"2026-11-24T23:12:30Z","text":"Looking at slide 5"},{"at":"2026-11-24T23:12:30Z","text":"Looking at slide 6"},{"at":"2026-11-24T23:12:30Z","text":"Looking at slide 7"},{"at":"2026-11-24T23:12:30Z","text":"Looking at slide 8"},{"at":"2026-11-24T23:12:30Z","text":"Handing in what it found on the slides"},{"at":"2026-11-24T23:12:30Z","text":"The review was accepted"}],"dropped":0}
+{"checkpoint":"output-saved","unit":"build-review","at":"2026-11-24T23:12:30Z"}
+{"checkpoint":"output-saved","unit":"build-repair","at":"2026-11-24T23:12:30Z"}
+{"checkpoint":"output-saved","unit":"build-render","at":"2026-11-24T23:12:30Z"}
+{"checkpoint":"ready","unit":"gate:build","at":"2026-11-24T23:12:30Z"}
+{"checkpoint":"output-saved","unit":"deliver","at":"2026-11-24T23:12:30Z"}
+{"checkpoint":"ready","unit":"","at":"2026-11-24T23:12:31Z"}

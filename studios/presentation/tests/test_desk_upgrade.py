@@ -280,7 +280,9 @@ class UpgradeTests(Upgrading):
     def test_the_record_keeps_a_schema_the_shared_check_accepts(self):
         # The tests' engine, and the engine as the page builds it, start a Selected changes
         # deck with no research: its schema is one the shared worker check accepts, and the
-        # upgrade does not change that (issue #541 is about decks started with research).
+        # upgrade does not change that. Decks started with research (schemas 4 to 6) are
+        # known to the check too since GitHub issue #541 was fixed; test_running_check_records
+        # covers them.
         for engine in (self.engine, self.make(parallel_research=True, content_first=True,
                                               story_first=True, section_synthesis=True)):
             with self.subTest(production=engine is not self.engine):

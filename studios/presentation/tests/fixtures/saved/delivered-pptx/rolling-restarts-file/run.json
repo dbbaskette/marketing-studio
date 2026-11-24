@@ -17,21 +17,21 @@
     "notes": "",
     "research_questions": []
   },
-  "created": "2026-11-24T23:00:20Z",
+  "created": "2026-11-24T23:12:28Z",
   "driver": null,
   "gates": {
     "gate:outline": {
       "state": "approved",
       "round": 1,
       "note": null,
-      "at": "2026-11-24T23:00:20Z",
+      "at": "2026-11-24T23:12:29Z",
       "by": "Alex",
       "saying": null
     },
     "gate:look": {
       "state": "approved",
       "round": 1,
-      "at": "2026-11-24T23:00:21Z",
+      "at": "2026-11-24T23:12:29Z",
       "by": "Alex",
       "note": null
     },
@@ -39,7 +39,7 @@
       "state": "approved",
       "round": 1,
       "note": null,
-      "at": "2026-11-24T23:00:22Z",
+      "at": "2026-11-24T23:12:30Z",
       "by": "Alex"
     }
   },
@@ -48,8 +48,8 @@
       "failed": 0,
       "tries": [
         {
-          "started_at": "2026-11-24T23:00:20Z",
-          "ended_at": "2026-11-24T23:00:20Z",
+          "started_at": "2026-11-24T23:12:29Z",
+          "ended_at": "2026-11-24T23:12:29Z",
           "seconds": 0.0,
           "dollars": null,
           "tokens": null,
@@ -58,14 +58,14 @@
         }
       ],
       "done": true,
-      "at": "2026-11-24T23:00:20Z"
+      "at": "2026-11-24T23:12:29Z"
     },
     "outline": {
       "failed": 0,
       "tries": [
         {
-          "started_at": "2026-11-24T23:00:20Z",
-          "ended_at": "2026-11-24T23:00:20Z",
+          "started_at": "2026-11-24T23:12:29Z",
+          "ended_at": "2026-11-24T23:12:29Z",
           "seconds": 0.0,
           "dollars": null,
           "tokens": null,
@@ -74,14 +74,14 @@
         }
       ],
       "done": true,
-      "at": "2026-11-24T23:00:20Z"
+      "at": "2026-11-24T23:12:29Z"
     },
     "brand": {
       "failed": 0,
       "tries": [
         {
-          "started_at": "2026-11-24T23:00:20Z",
-          "ended_at": "2026-11-24T23:00:20Z",
+          "started_at": "2026-11-24T23:12:29Z",
+          "ended_at": "2026-11-24T23:12:29Z",
           "seconds": 0.0,
           "dollars": null,
           "tokens": null,
@@ -90,14 +90,14 @@
         }
       ],
       "done": true,
-      "at": "2026-11-24T23:00:20Z"
+      "at": "2026-11-24T23:12:29Z"
     },
     "look-preview": {
       "failed": 0,
       "tries": [
         {
-          "started_at": "2026-11-24T23:00:20Z",
-          "ended_at": "2026-11-24T23:00:20Z",
+          "started_at": "2026-11-24T23:12:29Z",
+          "ended_at": "2026-11-24T23:12:29Z",
           "seconds": 0.0,
           "dollars": null,
           "tokens": null,
@@ -106,14 +106,14 @@
         }
       ],
       "done": true,
-      "at": "2026-11-24T23:00:20Z"
+      "at": "2026-11-24T23:12:29Z"
     },
     "build-start": {
       "failed": 0,
       "tries": [
         {
-          "started_at": "2026-11-24T23:00:21Z",
-          "ended_at": "2026-11-24T23:00:21Z",
+          "started_at": "2026-11-24T23:12:29Z",
+          "ended_at": "2026-11-24T23:12:29Z",
           "seconds": 0.0,
           "dollars": null,
           "tokens": null,
@@ -122,14 +122,14 @@
         }
       ],
       "done": true,
-      "at": "2026-11-24T23:00:21Z"
+      "at": "2026-11-24T23:12:29Z"
     },
     "build-sections:section-1": {
       "failed": 0,
       "tries": [
         {
-          "started_at": "2026-11-24T23:00:21Z",
-          "ended_at": "2026-11-24T23:00:21Z",
+          "started_at": "2026-11-24T23:12:30Z",
+          "ended_at": "2026-11-24T23:12:30Z",
           "seconds": 0.0,
           "dollars": null,
           "tokens": null,
@@ -143,8 +143,8 @@
       "failed": 0,
       "tries": [
         {
-          "started_at": "2026-11-24T23:00:21Z",
-          "ended_at": "2026-11-24T23:00:21Z",
+          "started_at": "2026-11-24T23:12:30Z",
+          "ended_at": "2026-11-24T23:12:30Z",
           "seconds": 0.0,
           "dollars": null,
           "tokens": null,
@@ -158,8 +158,8 @@
       "failed": 0,
       "tries": [
         {
-          "started_at": "2026-11-24T23:00:21Z",
-          "ended_at": "2026-11-24T23:00:21Z",
+          "started_at": "2026-11-24T23:12:30Z",
+          "ended_at": "2026-11-24T23:12:30Z",
           "seconds": 0.0,
           "dollars": null,
           "tokens": null,
@@ -169,14 +169,14 @@
         }
       ],
       "done": true,
-      "at": "2026-11-24T23:00:21Z"
+      "at": "2026-11-24T23:12:30Z"
     },
     "build-whole": {
       "failed": 0,
       "tries": [
         {
-          "started_at": "2026-11-24T23:00:21Z",
-          "ended_at": "2026-11-24T23:00:21Z",
+          "started_at": "2026-11-24T23:12:30Z",
+          "ended_at": "2026-11-24T23:12:30Z",
           "seconds": 0.1,
           "dollars": null,
           "tokens": null,
@@ -185,14 +185,14 @@
         }
       ],
       "done": true,
-      "at": "2026-11-24T23:00:21Z"
+      "at": "2026-11-24T23:12:30Z"
     },
     "build-review": {
       "failed": 0,
       "tries": [
         {
-          "started_at": "2026-11-24T23:00:21Z",
-          "ended_at": "2026-11-24T23:00:21Z",
+          "started_at": "2026-11-24T23:12:30Z",
+          "ended_at": "2026-11-24T23:12:30Z",
           "seconds": 0.0,
           "dollars": null,
           "tokens": null,
@@ -201,14 +201,14 @@
         }
       ],
       "done": true,
-      "at": "2026-11-24T23:00:21Z"
+      "at": "2026-11-24T23:12:30Z"
     },
     "build-repair": {
       "failed": 0,
       "tries": [
         {
-          "started_at": "2026-11-24T23:00:21Z",
-          "ended_at": "2026-11-24T23:00:21Z",
+          "started_at": "2026-11-24T23:12:30Z",
+          "ended_at": "2026-11-24T23:12:30Z",
           "seconds": 0.0,
           "dollars": null,
           "tokens": null,
@@ -218,14 +218,14 @@
         }
       ],
       "done": true,
-      "at": "2026-11-24T23:00:21Z"
+      "at": "2026-11-24T23:12:30Z"
     },
     "build-render": {
       "failed": 0,
       "tries": [
         {
-          "started_at": "2026-11-24T23:00:21Z",
-          "ended_at": "2026-11-24T23:00:21Z",
+          "started_at": "2026-11-24T23:12:30Z",
+          "ended_at": "2026-11-24T23:12:30Z",
           "seconds": 0.0,
           "dollars": null,
           "tokens": null,
@@ -234,14 +234,14 @@
         }
       ],
       "done": true,
-      "at": "2026-11-24T23:00:21Z"
+      "at": "2026-11-24T23:12:30Z"
     },
     "deliver": {
       "failed": 0,
       "tries": [
         {
-          "started_at": "2026-11-24T23:00:22Z",
-          "ended_at": "2026-11-24T23:00:22Z",
+          "started_at": "2026-11-24T23:12:30Z",
+          "ended_at": "2026-11-24T23:12:30Z",
           "seconds": 0.0,
           "dollars": null,
           "tokens": null,
@@ -250,7 +250,7 @@
         }
       ],
       "done": true,
-      "at": "2026-11-24T23:00:22Z"
+      "at": "2026-11-24T23:12:30Z"
     }
   },
   "classified": null,
@@ -258,7 +258,7 @@
   "revisions": [
     {
       "revision": 1,
-      "at": "2026-11-24T23:00:22Z",
+      "at": "2026-11-24T23:12:30Z",
       "pptx": "deck.pptx",
       "sha256": "5b9cfff98d755664f6aa64fd3ca7ad292725f8bbd5063a8e131eca5c760f7ea9"
     }

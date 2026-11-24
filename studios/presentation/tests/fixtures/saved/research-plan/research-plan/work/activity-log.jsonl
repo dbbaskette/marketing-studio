@@ -1,6 +1,6 @@
-{"checkpoint":"accepted","unit":"","at":"2026-11-24T23:00:31Z"}
-{"checkpoint":"output-saved","unit":"intake-source","at":"2026-11-24T23:00:31Z"}
-{"checkpoint":"working","unit":"research-plan","at":"2026-11-24T23:00:31Z"}
-{"id":"ba8f40475a21","label":"Deciding what to look up","step":"research-plan","started_at":"2026-11-24T23:00:31Z","ended_at":"2026-11-24T23:00:31Z","outcome":"finished","lines":[{"at":"2026-11-24T23:00:31Z","text":"Handing back research-plan"},{"at":"2026-11-24T23:00:31Z","text":"The draft was accepted"},{"at":"2026-11-24T23:00:31Z","text":"Writing its own notes on the draft"}],"dropped":0}
-{"checkpoint":"output-saved","unit":"research-plan","at":"2026-11-24T23:00:31Z"}
-{"checkpoint":"ready","unit":"gate:research-plan","at":"2026-11-24T23:00:31Z"}
+{"checkpoint":"accepted","unit":"","at":"2026-11-24T23:12:41Z"}
+{"checkpoint":"output-saved","unit":"intake-source","at":"2026-11-24T23:12:41Z"}
+{"checkpoint":"working","unit":"research-plan","at":"2026-11-24T23:12:41Z"}
+{"id":"b39981c23187","label":"Deciding what to look up","step":"research-plan","started_at":"2026-11-24T23:12:41Z","ended_at":"2026-11-24T23:12:41Z","outcome":"finished","lines":[{"at":"2026-11-24T23:12:41Z","text":"Handing back research-plan"},{"at":"2026-11-24T23:12:41Z","text":"The draft was accepted"},{"at":"2026-11-24T23:12:41Z","text":"Writing its own notes on the draft"}],"dropped":0}
+{"checkpoint":"output-saved","unit":"research-plan","at":"2026-11-24T23:12:41Z"}
+{"checkpoint":"ready","unit":"gate:research-plan","at":"2026-11-24T23:12:41Z"}

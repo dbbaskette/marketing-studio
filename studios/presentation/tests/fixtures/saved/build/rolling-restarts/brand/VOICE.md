@@ -1,6 +1,6 @@
 # Language and author voice
 
-Contract revision: 083a5fd68e70ae798e0d5c6e5e0aba4f155bc7c060628f2d50023b0ca9615b44
+Contract revision: 0d09167ae04e02a6edd3f05db3ead0be8002750240bb0a8035e84755c9d58a37
 
 Organization language: {"rules": {"headlineCase": "sentence", "preserveProductNamesAndAcronyms": true, "names": ["Write Example Co in full, never ExCo.", "Example Platform is a product: keep its capitals."]}, "toneStatus": "unspecified; the brand sets names, not tone"}.
 

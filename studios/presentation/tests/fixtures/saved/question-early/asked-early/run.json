@@ -17,7 +17,7 @@
     "notes": "",
     "research_questions": []
   },
-  "created": "2026-11-24T23:00:31Z",
+  "created": "2026-11-24T23:12:40Z",
   "driver": null,
   "gates": {},
   "steps": {
@@ -25,8 +25,8 @@
       "failed": 0,
       "tries": [
         {
-          "started_at": "2026-11-24T23:00:31Z",
-          "ended_at": "2026-11-24T23:00:31Z",
+          "started_at": "2026-11-24T23:12:40Z",
+          "ended_at": "2026-11-24T23:12:40Z",
           "seconds": 0.0,
           "dollars": null,
           "tokens": null,
@@ -35,14 +35,14 @@
         }
       ],
       "done": true,
-      "at": "2026-11-24T23:00:31Z"
+      "at": "2026-11-24T23:12:40Z"
     },
     "outline": {
       "failed": 0,
       "tries": [
         {
-          "started_at": "2026-11-24T23:00:31Z",
-          "ended_at": "2026-11-24T23:00:31Z",
+          "started_at": "2026-11-24T23:12:41Z",
+          "ended_at": "2026-11-24T23:12:41Z",
           "seconds": 0.0,
           "dollars": null,
           "tokens": null,
@@ -108,11 +108,11 @@
   "answers": {},
   "said": {},
   "question": {
-    "id": "0bc24d47c445",
+    "id": "ed982d07de7a",
     "step": "outline",
     "text": "Which diagram style should the restart batches use?",
     "from": "The assistant drafting the outline of your deck",
-    "at": "2026-11-24T23:00:31Z"
+    "at": "2026-11-24T23:12:41Z"
   },
   "research": null,
   "model_jobs": [

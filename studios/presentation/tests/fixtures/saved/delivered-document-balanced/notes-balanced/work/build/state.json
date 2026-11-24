@@ -16,7 +16,7 @@
   "repaired": 0,
   "rounds": [
     {
-      "at": "2026-11-24T23:00:26Z",
+      "at": "2026-11-24T23:12:35Z",
       "audit": {
         "errors": 0,
         "messages": [
@@ -32,16 +32,16 @@
         "Slide 3: Make the text larger, or move the detail to the notes."
       ],
       "changed": [],
-      "compiled": "work/build/whole-027514/compiled",
+      "compiled": "work/build/whole-43e83e/compiled",
       "deck": "530b5f265e1a85e8dbda1164d6cb0fc1c794e53f487ff20d32802ee737732731",
-      "file": "work/build/whole-027514/preview/deck.pptx",
-      "folder": "work/build/whole-027514",
+      "file": "work/build/whole-43e83e/preview/deck.pptx",
+      "folder": "work/build/whole-43e83e",
       "made_from": {
-        "section-1": "work/build/drawn/section-1-0-c79672.json",
-        "section-2": "work/build/drawn/section-2-0-c79672.json"
+        "section-1": "work/build/drawn/section-1-0-f4b315.json",
+        "section-2": "work/build/drawn/section-2-0-f4b315.json"
       },
       "pdf": "99890c753e7a6e73bf4a94733a8f32dd9c31caebff8ee6bfaa276d596258d69d",
-      "preview": "work/build/whole-027514/preview",
+      "preview": "work/build/whole-43e83e/preview",
       "preview_repair": [],
       "questions": [
         "After three seconds, is the main point clear, and is it the claim in the title?",
@@ -55,7 +55,7 @@
       ],
       "render_evidence": null,
       "review": {
-        "at": "2026-11-24T23:00:26Z",
+        "at": "2026-11-24T23:12:35Z",
         "coverage": {
           "questions": [
             "After three seconds, is the main point clear, and is it the claim in the title?",
@@ -201,7 +201,7 @@
         "findings": [],
         "weakest": []
       },
-      "sheet": "work/build/whole-027514/preview/contact-sheet.png",
+      "sheet": "work/build/whole-43e83e/preview/contact-sheet.png",
       "slides": [
         {
           "findings": [],
@@ -264,23 +264,23 @@
   ],
   "sections": {
     "section-1": {
-      "at": "2026-11-24T23:00:25Z",
-      "file": "work/build/drawn/section-1-0-c79672.json",
+      "at": "2026-11-24T23:12:35Z",
+      "file": "work/build/drawn/section-1-0-f4b315.json",
       "notes": "What I changed after looking: Nothing: it read well at once.",
       "round": 0
     },
     "section-2": {
-      "at": "2026-11-24T23:00:25Z",
-      "file": "work/build/drawn/section-2-0-c79672.json",
+      "at": "2026-11-24T23:12:35Z",
+      "file": "work/build/drawn/section-2-0-f4b315.json",
       "notes": "What I changed after looking: Nothing: it read well at once.",
       "round": 0
     }
   },
   "start": {
-    "at": "2026-11-24T23:00:25Z",
+    "at": "2026-11-24T23:12:35Z",
     "brand": "@DECK@/brand/brand-contract.json",
-    "contract": "0f5680fa94e0318573de9a11de8faca6866e7a2fec5a4e5abedbd2bb2f3df7b2",
-    "drawn": "c79672",
+    "contract": "826dfc021772ae0f5baf809899d37626a06b4140f046aa3e75dd7717985d72c7",
+    "drawn": "f4b315",
     "folder": "work/build/start",
     "pictures": {},
     "sections": [

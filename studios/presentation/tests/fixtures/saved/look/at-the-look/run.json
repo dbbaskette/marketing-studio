@@ -17,14 +17,14 @@
     "notes": "",
     "research_questions": []
   },
-  "created": "2026-11-24T23:00:08Z",
+  "created": "2026-11-24T23:12:21Z",
   "driver": null,
   "gates": {
     "gate:outline": {
       "state": "approved",
       "round": 1,
       "note": null,
-      "at": "2026-11-24T23:00:09Z",
+      "at": "2026-11-24T23:12:21Z",
       "by": "Alex",
       "saying": null
     },
@@ -38,8 +38,8 @@
       "failed": 0,
       "tries": [
         {
-          "started_at": "2026-11-24T23:00:08Z",
-          "ended_at": "2026-11-24T23:00:08Z",
+          "started_at": "2026-11-24T23:12:21Z",
+          "ended_at": "2026-11-24T23:12:21Z",
           "seconds": 0.0,
           "dollars": null,
           "tokens": null,
@@ -48,14 +48,14 @@
         }
       ],
       "done": true,
-      "at": "2026-11-24T23:00:08Z"
+      "at": "2026-11-24T23:12:21Z"
     },
     "outline": {
       "failed": 0,
       "tries": [
         {
-          "started_at": "2026-11-24T23:00:08Z",
-          "ended_at": "2026-11-24T23:00:08Z",
+          "started_at": "2026-11-24T23:12:21Z",
+          "ended_at": "2026-11-24T23:12:21Z",
           "seconds": 0.0,
           "dollars": null,
           "tokens": null,
@@ -64,14 +64,14 @@
         }
       ],
       "done": true,
-      "at": "2026-11-24T23:00:08Z"
+      "at": "2026-11-24T23:12:21Z"
     },
     "brand": {
       "failed": 0,
       "tries": [
         {
-          "started_at": "2026-11-24T23:00:09Z",
-          "ended_at": "2026-11-24T23:00:09Z",
+          "started_at": "2026-11-24T23:12:22Z",
+          "ended_at": "2026-11-24T23:12:22Z",
           "seconds": 0.0,
           "dollars": null,
           "tokens": null,
@@ -80,14 +80,14 @@
         }
       ],
       "done": true,
-      "at": "2026-11-24T23:00:09Z"
+      "at": "2026-11-24T23:12:22Z"
     },
     "look-preview": {
       "failed": 0,
       "tries": [
         {
-          "started_at": "2026-11-24T23:00:09Z",
-          "ended_at": "2026-11-24T23:00:09Z",
+          "started_at": "2026-11-24T23:12:22Z",
+          "ended_at": "2026-11-24T23:12:22Z",
           "seconds": 0.0,
           "dollars": null,
           "tokens": null,
@@ -96,7 +96,7 @@
         }
       ],
       "done": true,
-      "at": "2026-11-24T23:00:09Z"
+      "at": "2026-11-24T23:12:22Z"
     }
   },
   "classified": null,

@@ -1,6 +1,6 @@
 # Example Co design · slides
 
-Contract revision: aedf60ab61a9afa4b960fceef89c6b143138ead3a47257a0a5f6138415f33f49
+Contract revision: 9eed5c2a7e42f0bf177ff6fff4ee83733f235f18ab4d4bd36b1c6aed6c28277e
 
 Font: Arial. Color roles: {"canvasPrimary": "#FFFFFF", "canvasSecondary": "#E6E8EB", "inkDeep": "#1F2430", "inkSecondary": "#5A6170", "headingPrimary": "#1F4E8C", "accentAqua": "#0B7A75", "statusAttention": "#B3261E"}.
 

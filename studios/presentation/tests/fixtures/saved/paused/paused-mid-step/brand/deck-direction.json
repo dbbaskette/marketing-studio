@@ -5,7 +5,7 @@
     "name": "Example Co",
     "variant": "light"
   },
-  "contractRevision": "56e47e28d50ef21001f2e84fc1c57034ef6d87fc7e575eda034761914cace8a7",
+  "contractRevision": "39fa080f6d2104563c594174eec64ec8a6029e7b4b096c24237fd44d262bb9ca",
   "default": "example-clear",
   "direction": {
     "focal": "headingPrimary",

@@ -20,10 +20,14 @@ class SavedFixtureFidelityTests(runner_support.DeskCase):
         self.assertEqual(sorted(path.name for path in saved_fixtures.STORE.iterdir()),
                          sorted(saved_fixtures.STATES))
         for state in saved_fixtures.STATES:
+            # What each scrubbed file held as written is a digest, nothing more.
+            for relative, digest in saved_fixtures.scrubbed(state).items():
+                self.assertRegex(digest, '^[0-9a-f]{64}$', f'{state}: {relative}')
+        for state in saved_fixtures.STATES:
             with self.subTest(state):
                 case = saved_fixtures._case()
                 try:
-                    name, made = saved_fixtures.capture(case, state)
+                    name, made, _ = saved_fixtures.capture(case, state)
                 finally:
                     case.doCleanups()
                 kept_name, kept = saved_fixtures.stored(state)
