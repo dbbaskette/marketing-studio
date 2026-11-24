@@ -285,11 +285,6 @@
   padding: 0;
 }
 
-/* The desk's two tabs sit beside its one sentence, and wrap under it on a phone. */
-.deck-desk-tabs {
-  min-width: 14rem;
-}
-
 /* Finishing beside the slides takes the place of the Sources aside, at its width, so the
    slide chosen keeps its own width; on a wide screen it may be a little wider. On a phone it
    is a sheet over the desk: its heading is on the screen when it opens, and Close or Escape
@@ -303,6 +298,34 @@
 @media (min-width: 1600px) {
   .desk-layout.desk-finishing {
     grid-template-columns: minmax(0, 1fr) 24rem;
+  }
+}
+
+/* With the deck's parts down the left (StudioShell.parts, a column from 72rem), the slide
+   chosen keeps its room: Sources and research, and Finishing, sit beside the slides only from
+   1600px. Narrower, Finishing comes first, where it opens, and the aside follows the slides. */
+@media (min-width: 1100px) {
+  .page:has(> .parts) .desk-layout,
+  .page:has(> .parts) .desk-layout.desk-finishing {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .page:has(> .parts) .desk-layout > .desk-finish {
+    order: -1;
+  }
+}
+
+@media (min-width: 1600px) {
+  .page:has(> .parts) .desk-layout {
+    grid-template-columns: minmax(0, 1fr) 18rem;
+  }
+
+  .page:has(> .parts) .desk-layout.desk-finishing {
+    grid-template-columns: minmax(0, 1fr) 24rem;
+  }
+
+  .page:has(> .parts) .desk-layout > .desk-finish {
+    order: 0;
   }
 }
 

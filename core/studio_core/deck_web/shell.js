@@ -513,8 +513,12 @@ const StudioShell = (() => {
     const toggle = make('button', 'parts-toggle'); toggle.type = 'button';
     toggle.dataset.key = named + ' toggle';
     toggle.setAttribute('aria-controls', listId);
-    // Said before the part: "Showing Guide, Draft".
-    toggle.append(make('span', 'parts-toggle-label', current ? 'Showing ' : 'Parts'));
+    // Said before the part: where several groups could hold a part of that name, its group
+    // ("Level 201: Guide, Draft"), otherwise "Showing: Section 2, 3 slides".
+    const holder = current && filled.find(group => group.parts.includes(current));
+    toggle.append(make('span', 'parts-toggle-label', !current ? 'Parts'
+      : filled.length > 1 ? holder.title || label : 'Showing'));
+    if (current) toggle.append(make('span', 'offscreen', ': '));
     if (current) partWords(toggle, current);
     const mark = make('span', 'parts-toggle-mark'); mark.setAttribute('aria-hidden', 'true');
     toggle.append(mark);

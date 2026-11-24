@@ -236,7 +236,7 @@ async function check() {
     ['done', 'draft', 'working', 'count']);
   const toggle = nav.querySelector('.parts-toggle');
   assert.equal(toggle.type, 'button');
-  assert.equal(named(toggle), 'Showing Guide, Draft', 'narrower, one control names the part shown and its state');
+  assert.equal(named(toggle), 'Level 101: Guide, Draft', 'narrower, one control names the part shown, its group and its state');
   assert.equal(toggle.getAttribute('aria-expanded'), 'false');
   assert.equal(toggle.getAttribute('aria-controls'), nav.querySelector('.parts-list').id);
   const keyOn = (node, name) => nav.querySelector('.parts-list').dispatch('keydown', { key: name, target: node, preventDefault() {} });
@@ -283,6 +283,7 @@ async function check() {
   const elsewhere = shell.parts({ label: 'Parts of this infographic', chosen: 'brief', choose: () => heading.focus(),
     groups: [{ title: 'Infographic', parts: [{ id: 'brief', name: 'Brief' }, { id: 'page', name: 'Page', state: 'Out of date' }] }] });
   place.replaceChildren(elsewhere);
+  assert.equal(named(elsewhere.querySelector('.parts-toggle')), 'Showing: Brief', 'with one group, the control says what it shows');
   elsewhere.querySelectorAll('.parts-item')[1].click();
   assert.equal(document.activeElement, heading);
   assert.equal(elsewhere.querySelector('.parts-list').querySelectorAll('.parts-state')[0].dataset.state, 'stale');

@@ -8013,7 +8013,7 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
             ['Level 101', ['> Plan, Draft', 'Guide, Draft', 'Brief, Draft', 'Deck, Draft', 'Practice, Draft']],
             ['Level 201', ['Plan, Draft', 'Guide, Draft', 'Brief, Draft', 'Deck, Draft', 'Practice, Draft']],
             ['Behind it', ['Research & sources']]])
-        self.assertEqual(shot['partsControl'], [['Showing Plan, Draft', 'false']])
+        self.assertEqual(shot['partsControl'], [['Level 101: Plan, Draft', 'false']])
         self.assertEqual(shot['parts'][:2], ['Researching', 'Plan'])
         self.assertIn('Guide, Draft', shot['buttons'])
         self.assertNotIn('Guide', shot['parts'])
@@ -9378,8 +9378,8 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         self.assertEqual(cards['parts'][:2], ['Researching', 'Plan'])
         self.assertNotIn('Sources', cards['parts'])
         self.assertEqual(sources['partsList'][-1], ['Behind it', ['> Research & sources']])
-        # On a phone the list is one control above the work, naming the part shown.
-        self.assertEqual(sources['partsControl'], [['Showing Research & sources', 'false']])
+        # On a phone the list is one control above the work, naming the part shown and its group.
+        self.assertEqual(sources['partsControl'], [['Behind it: Research & sources', 'false']])
         self.assertIn('Sources', sources['parts'])
         self.assertNotIn('Plan', sources['parts'])
         # Every control is the browser's own: the harness refuses a click on anything else.

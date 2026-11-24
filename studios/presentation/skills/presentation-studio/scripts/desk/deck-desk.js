@@ -602,7 +602,7 @@
   // The slide desk already pairs the slides with a side panel, so there the arc and the move
   // sit in one band above them instead of in a rail.
   function workbenchBand(run, lead) {
-    if (typeof StudioShell === 'undefined') return null;
+    if (typeof StudioShell === 'undefined' || !StudioShell.arc) return null;
     const { at, move, finished, working } = standing(run, lead);
     const said = MOVES[move];
     return ['workbench-band', [at, move, finished, working, (run.desk.working || {}).what,
@@ -620,7 +620,7 @@
   }
 
   function workbench(run, lead) {
-    if (typeof StudioShell === 'undefined') return [];
+    if (typeof StudioShell === 'undefined' || !StudioShell.arc) return [];
     const { at, move, finished, working } = standing(run, lead);
     const said = MOVES[move];
     return [
@@ -1039,14 +1039,30 @@
           : found.delivered || found.deliverable === false ? '' : 'deliver';
     h.view.lead = lead;
     const own = found.level === 'selected';
+    // Opened from the history (a reload, Back or Forward): at the part it was showing.
+    if (!held.tabs[path] && window.history.state && window.history.state.path === path
+        && window.history.state.deskTab) held.tabs[path] = window.history.state.deskTab;
     const tab = !own && held.tabs[path] === 'outline' ? 'outline' : 'slides';
     const can = !read && found.drawn_here && run.execution !== 'conversation';
     const finish = can && !own && kit && finishing();
     const outlineEditable = Boolean(can && found.outline && found.outline.editable);
+    const parts = partsList(run, tab, own);
+    address(path, false);
+    // A workbench (ui-kit, "The workbench"): the band across the top, the deck's parts down the
+    // left, and everything else in the middle, as it was before there was a list of parts.
+    const middle = (inner) => {
+      if (!parts) return inner;
+      return [['desk-work', [], () => make('div', 'stack desk-work'), (node) => {
+        node.dataset.zone = 'work';
+        h.fit(node, inner, fresh);
+      }]];
+    };
     h.placeParts({ title, above: above(run), back: true, compact: h.narrow(), actions: deskActions(run, lead),
       mark: ['desk', title, run.state, lead, read, run.driver, working, found.drawn_here,
         Boolean(found.delivered), found.expected, h.view.downloading, finish] }, [
-      workbenchBand(run, lead),
+      parts ? zoned('top', workbenchBand(run, lead)) : workbenchBand(run, lead),
+      parts,
+      ...middle([
       ...interruptions(run, lead, title),
       pause ? ['look-pause', [run.gate, lead, h.brandsFound()], () => lookPause(run, lead === 'look')]
         : null,
@@ -1075,6 +1091,7 @@
         () => selectionBar()] : null,
       layoutPart(run, tab, own, can, working, finish, fresh),
       ['activity-log', [path], () => h.activityLogCard(path)],
+      ]),
     ], fresh);
     h.tidyPictures();
     if (found.delivered) landOnDelivered(path);
@@ -1341,21 +1358,101 @@
   function headPart(tab, own, conversation, editable) {
     if (conversation) return h.pageHead('Inspect saved slide parts and edit through checked conversation commands, then explicitly mark the checked deck ready.', []);
     if (own) return h.pageHead(OWN_LEDE, []);
-    const tabs = h.segmented('The desk', ['Slides', 'Outline'], tab === 'outline' ? 1 : 0,
-      (index) => {
-        held.tabs[h.view.path] = index ? 'outline' : 'slides';
+    // The Outline and the slides are parts in the list down the left (partsList). Under the
+    // band, the move already says what the slides are for.
+    const banded = typeof StudioShell !== 'undefined' && Boolean(StudioShell.arc);
+    if (tab !== 'outline' && banded) return null;
+    return h.pageHead(tab !== 'outline' ? DESK_LEDE : editable ? OUTLINE_LEDE
+      : OUTLINE_READ_LEDE, []);
+  }
+
+  // --- the deck's parts -------------------------------------------------------------------------
+  // Down the left, the shared list of a project's parts (StudioShell.parts): the Outline, where
+  // the deck has one, then each section, its slides shown in the middle. A section says
+  // Writing while a slide of it is drawn again and Needs you while one waits on the person,
+  // else how many slides it has: the desk has no approval of its own to call Ready. Sources and
+  // research stay beside the slides, and the look in the Outline, where they are today.
+
+  // A section's name: its number; for the deck's opening or closing slides, their kind; and for
+  // your own deck's slides at Selected changes, which are one run, Slides.
+  function sectionName(part) {
+    if (part.number) return 'Section ' + part.number;
+    const kinds = [...new Set(h.list(part.slides).map((one) => one.kind).filter(Boolean))];
+    if (part.lead && kinds.length) return h.capital(kinds.map((kind) => h.spoken(kind)).join(' and '));
+    const numbers = h.list(part.slides).map((one) => one.number).filter(Boolean);
+    return part.lead && numbers.length ? 'Slides ' + numbers[0]
+      + (numbers.length > 1 ? ' to ' + numbers[numbers.length - 1] : '') : 'Slides';
+  }
+
+  function partsList(run, tab, own) {
+    if (typeof StudioShell === 'undefined' || !StudioShell.parts) return null;
+    const found = run.desk;
+    const path = h.view.path;
+    const read = h.theirs(run);
+    const sections = h.list(found.sections).filter((part) => h.list(part.slides).length);
+    const active = tab === 'slides' ? activeOf(run, deckCards(run)) : null;
+    const parts = [];
+    if (!own && found.outline) {
+      parts.push({ id: 'outline', name: 'Outline',
+        state: !read && outlineChanges(run).length ? 'Needs you' : '' });
+    }
+    sections.forEach((part, index) => {
+      const marked = part.slides.map((one) => marksOf(run, one));
+      parts.push({ id: 'section ' + index, name: sectionName(part),
+        state: marked.some((marks) => marks.busy) ? 'Writing'
+          : marked.some((marks) => marks.blocks.length || marks.waits.length) ? 'Needs you' : '',
+        count: h.count(part.slides.length, 'slide', 'slides') });
+    });
+    const shown = tab === 'outline' ? 'outline'
+      : active ? 'section ' + sections.indexOf(active.part) : null;
+    // A page part (see fit): drawn again only when a part, its state or the part shown changed.
+    return ['desk-parts', [parts, shown], () => StudioShell.parts({ label: 'Parts of this deck',
+      key: 'desk-parts', chosen: shown, groups: [{ title: 'Deck', parts }],
+      choose: (id) => {
+        if (id === 'outline') {
+          held.tabs[path] = 'outline';
+        } else {
+          const part = sections[Number(id.split(' ')[1])];
+          if (!part) return;
+          held.tabs[path] = 'slides';
+          // The slide kept stays shown when it is in this section; otherwise its first slide.
+          const kept = held.slide[path];
+          const one = part.slides.find((slide) => kept && slide.id === kept.id) || part.slides[0];
+          held.slide[path] = { id: one.id, number: one.number };
+        }
+        address(path, true);
         h.paintDeck(false);
-      }, 'desk-tab');
-    tabs.classList.add('deck-desk-tabs');
-    held.cultTabs ||= {};
-    const selected = tab === 'outline' ? 1 : 0;
-    Drafting.cultTabs(tabs, selected, held.cultTabs[h.view.path] ?? selected);
-    held.cultTabs[h.view.path] = selected;
-    // Under the band, the move already says what the Slides tab is for: the tabs sit alone,
-    // at the start of the row and next to the slides they change.
-    const banded = typeof StudioShell !== 'undefined';
-    return h.pageHead(tab !== 'outline' ? (banded ? null : DESK_LEDE) : editable ? OUTLINE_LEDE
-      : OUTLINE_READ_LEDE, [tabs]);
+      } })];
+  }
+
+  // The part shown is kept with the screen in the browser's history (`deskTab`, and the slide
+  // kept as before, `deskSlide`): choosing a part adds an entry, so Back returns to the part
+  // before, and a reload opens the same one. Anything else only says again what is shown.
+  function address(path, push) {
+    try {
+      const now = window.history.state;
+      if (!now || now.path !== path) return;
+      const tab = held.tabs[path] === 'outline' ? 'outline' : 'slides';
+      const slide = held.slide[path] || {};
+      if (now.deskTab === tab && (!slide.id || now.deskSlide === slide.id)) return;
+      const next = { ...now, deskTab: tab, ...(slide.id ? { deskSlide: slide.id, deskNumber: slide.number } : {}) };
+      if (push && now.deskTab) window.history.pushState({ ...next, deskStep: (now.deskStep || 0) + 1 }, '');
+      else window.history.replaceState(next, '');
+    } catch (failure) {
+      // A browser that keeps nothing with the screen keeps the part for this page only.
+    }
+  }
+
+  // Back or Forward between two parts of the deck on screen: shown at once, the screen kept.
+  function returnTo(state) {
+    const path = h.view.path;
+    const run = h.view.run;
+    if (!state || !state.deskTab || state.path !== path || !run || !run.desk || !opens(run)
+        || !(run.desk.arrived || run.desk.migrated)) return false;
+    held.tabs[path] = state.deskTab === 'outline' ? 'outline' : 'slides';
+    if (state.deskSlide) held.slide[path] = { id: state.deskSlide, number: state.deskNumber };
+    h.paintDeck(false);
+    return true;
   }
 
   // --- the Slides tab: the workbench -----------------------------------------------------------
@@ -3315,7 +3412,7 @@
   }
 
   window.deckDesk = { init, opens, start, progress, desk, deliverSheet, historySheet,
-    googleSheet };
+    googleSheet, returnTo };
   // The page waits for this script before it begins; it begins now.
   if (typeof window.deckDeskWaits === 'function') window.deckDeskWaits();
 }());
