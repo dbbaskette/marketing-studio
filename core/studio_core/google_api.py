@@ -2,6 +2,13 @@
 
 Google Slides decks are read as a Drive PowerPoint export, never through the Slides
 API, which a gcloud sign-in cannot call without a quota project.
+
+Every studio's Google requests are sent from here, so the safety rules live in one
+place: a studio names the routes its token may go to (`Route`, `allowed`), the token
+comes from gcloud (`print_access_token`), a request is sent once and never follows a
+redirect (`send`, `exchange`, `opener`), an HTTP error answer arrives as `Refused` for
+the studio to word, and only a read is ever repeated (`read_retried`). Each studio
+keeps its own sentences and error type.
 """
 
 from __future__ import annotations
@@ -13,6 +20,7 @@ import re
 import shutil
 import subprocess
 import threading
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -102,6 +110,31 @@ def active_account(*, run=subprocess.run, which=shutil.which):
         ) from None
 
 
+def print_access_token(gcloud, *, run, account=None, quiet=True, timeout=30, **options):
+    """Ask gcloud for the signed-in account's access token, once, on an explicit action.
+
+    Returns (the token, or None when gcloud gave no usable one, the finished process).
+    A failure to run gcloud at all (OSError, subprocess errors) is raised for the caller
+    to word. Nothing gcloud printed is ever repeated: its output is where the token is.
+    """
+    done = run(
+        [
+            gcloud,
+            "auth",
+            "print-access-token",
+            *(["--quiet"] if quiet else []),
+            *(["--account", account] if account else []),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        **options,
+    )
+    value = (done.stdout or "").strip() if done.returncode == 0 else ""
+    usable = bool(value) and not any(c.isspace() for c in value)
+    return (value if usable else None), done
+
+
 def access_token(selected=None, *, run=subprocess.run, which=shutil.which):
     if selected:
         account(selected)
@@ -111,16 +144,10 @@ def access_token(selected=None, *, run=subprocess.run, which=shutil.which):
             "Google access needs an explicitly installed gcloud CLI. Local PDF delivery remains available."
         )
     try:
-        done = run(
-            [
-                selected_executable,
-                "auth",
-                "print-access-token",
-                "--quiet",
-                *(["--account", selected] if selected else []),
-            ],
-            capture_output=True,
-            text=True,
+        value, _ = print_access_token(
+            selected_executable,
+            run=run,
+            account=selected,
             timeout=30,
             stdin=subprocess.DEVNULL,
         )
@@ -128,13 +155,7 @@ def access_token(selected=None, *, run=subprocess.run, which=shutil.which):
         raise GoogleError(
             "The local Google sign-in could not be read. Check gcloud access for the selected account."
         ) from None
-    value = done.stdout.strip()
-    if (
-        done.returncode
-        or not value
-        or len(value) > 8192
-        or any(c.isspace() for c in value)
-    ):
+    if value is None or len(value) > 8192:
         raise GoogleError(
             "Google authentication is unavailable for the selected account. Sign in explicitly with Drive access; no write was sent."
         )
@@ -261,6 +282,135 @@ def fixed_url(value):
     return value
 
 
+# --- sending, for every studio ---------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Route:
+    """One destination a studio sends to: a host and a path pattern, each matched whole
+    (the path as sent, before any decoding), and the methods it uses there."""
+
+    host: str
+    path: str
+    methods: tuple
+
+
+class Disallowed(GoogleError):
+    """A destination outside the routes a studio named. Nothing was sent, no token read."""
+
+
+class Refused(Exception):
+    """Google answered with an HTTP error. `body` is the bounded part of its answer read,
+    `reason` the HTTP reason phrase. The studio words what it means."""
+
+    def __init__(self, status, reason, body):
+        super().__init__("Google answered HTTP " + str(status) + ".")
+        self.status, self.reason, self.body = status, reason, body
+
+
+def allowed(url, method, routes):
+    """True when `url` is plain https to one of `routes` with a method used there.
+
+    No user information, port, fragment, whitespace, control character, backslash or
+    dot segment is ever allowed, whatever a route's pattern says.
+    """
+    if (
+        not isinstance(url, str)
+        or len(url) > 4096
+        or any(c.isspace() or ord(c) < 32 or ord(c) == 127 for c in url)
+    ):
+        return False
+    try:
+        parsed = urllib.parse.urlsplit(url)
+        port = parsed.port
+    except ValueError:
+        return False
+    if (
+        parsed.scheme != "https"
+        or parsed.username is not None
+        or parsed.password is not None
+        or port is not None
+        or parsed.fragment
+        or "\\" in parsed.path
+        or any(part in (".", "..") for part in parsed.path.split("/"))
+    ):
+        return False
+    return any(
+        method in route.methods
+        and re.fullmatch(route.host, parsed.netloc)
+        and re.fullmatch(route.path, parsed.path)
+        for route in routes
+    )
+
+
+def opener():
+    """An opener that never follows a redirect: a request goes only where it was sent."""
+    return urllib.request.build_opener(NoRedirect())
+
+
+def urlopen(request, timeout):
+    """Open one request with `opener()`. The default for a studio without its own."""
+    return opener().open(request, timeout=timeout)
+
+
+def exchange(opening, method, url, headers, payload=None, *, timeout, limit=None,
+             error_limit=ERROR_LIMIT):
+    """Send one request through `opening(request, timeout=...)` and read the answer.
+
+    Returns a Response holding at most `limit` + 1 bytes (all of it when `limit` is
+    None); the caller says what more than `limit` means. An HTTP error answer is raised
+    as Refused with at most `error_limit` bytes of its body. Other failures (OSError,
+    http.client errors) are raised as they are, for the caller to word.
+    """
+    request = urllib.request.Request(url, data=payload, method=method, headers=headers or {})
+    try:
+        with opening(request, timeout=timeout) as handle:
+            data = handle.read() if limit is None else handle.read(limit + 1)
+            answered = getattr(handle, "headers", None)
+            return Response(
+                getattr(handle, "status", 200),
+                {k.lower(): v for k, v in answered.items()} if answered is not None else {},
+                data,
+            )
+    except urllib.error.HTTPError as failure:
+        try:
+            body = failure.read() if error_limit is None else failure.read(error_limit)
+        except (OSError, ValueError):
+            body = b""
+        finally:
+            failure.close()
+        raise Refused(failure.code, failure.reason, body if isinstance(body, bytes) else b"") from None
+
+
+def send(method, url, *, routes, token=None, headers=None, payload=None, opening=None,
+         timeout, limit=None, error_limit=ERROR_LIMIT):
+    """Send one request to a route a studio named, with its token, never following a
+    redirect, and never more than once.
+
+    The destination is checked before `token()` is called, so a token never goes
+    anywhere else. `opening` defaults to `urlopen`. See `exchange` for the answer.
+    """
+    if not allowed(url, method, routes):
+        raise Disallowed("Google credentials may go only to the fixed Google APIs this studio uses.")
+    sent = dict(headers or {})
+    if token is not None:
+        sent["Authorization"] = "Bearer " + token()
+    return exchange(opening or urlopen, method, url, sent, payload, timeout=timeout,
+                    limit=limit, error_limit=error_limit)
+
+
+def read_retried(attempt, *, method, delays, transient, sleep=time.sleep):
+    """`attempt()`, repeated after each of `delays` while it fails in a way `transient`
+    says is worth repeating, but only for a read: any other method is sent exactly once."""
+    for delay in (*(delays if method == "GET" else ()), None):
+        try:
+            return attempt()
+        except Exception as failure:
+            if delay is None or not transient(failure):
+                raise
+            sleep(delay)
+
+
 class Client:
     def __init__(
         self,
@@ -279,7 +429,7 @@ class Client:
             transport,
             None,
         )
-        self.opener = urllib.request.build_opener(NoRedirect())
+        self.opener = opener()
         self._signing = threading.Lock()
 
     def selected_account(self):
@@ -317,15 +467,8 @@ class Client:
             if self.transport:
                 response = self.transport(method, url, sent, payload)
             else:
-                request = urllib.request.Request(
-                    url, data=payload, method=method, headers=sent
-                )
-                with self.opener.open(request, timeout=45) as handle:
-                    response = Response(
-                        handle.status,
-                        {k.lower(): v for k, v in handle.headers.items()},
-                        handle.read(LIMIT + 1),
-                    )
+                response = exchange(self.opener.open, method, url, sent, payload,
+                                    timeout=45, limit=LIMIT)
             if len(response.data) > LIMIT:
                 raise GoogleError(
                     "Google response exceeded its transfer limit.",
@@ -339,6 +482,8 @@ class Client:
             if not isinstance(value, dict):
                 raise ValueError("shape")
             return value
+        except Refused as failure:
+            self.refuse(failure.status, method, failure.body, account=self.account)
         except urllib.error.HTTPError as failure:
             try:
                 body = failure.read(ERROR_LIMIT)

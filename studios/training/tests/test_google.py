@@ -43,7 +43,9 @@ def setUpModule():
         return really_run(command, *args, **options)
 
     blocked = mock.Mock(side_effect=AssertionError('A test tried to reach the network.'))
-    for owner, name, stand_in in ((subprocess, 'run', run), (urllib.request, 'urlopen', blocked)):
+    # Google requests are sent through studio_core.google_api, so its opener is blocked too.
+    for owner, name, stand_in in ((subprocess, 'run', run), (urllib.request, 'urlopen', blocked),
+                                  (gdocs.google_api, 'urlopen', blocked)):
         patcher = mock.patch.object(owner, name, stand_in)
         patcher.start()
         unittest.addModuleCleanup(patcher.stop)
