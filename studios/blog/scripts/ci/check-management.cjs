@@ -766,7 +766,12 @@ async function diffOnlyForms(){
   fields.curation.value='retired';let saving=form.listeners.submit({preventDefault(){}});await new Promise(r=>setImmediate(r));
   assert.match(descendants(asked()).map(e=>e.textContent).join(' '),/Retire this reference from active search\?/);
   assert.equal(descendants(asked()).find(e=>e.textContent==='Retire reference').className,'button button-danger');
+  // Save is not disabled while it asks, so Keep it active gives the focus back to a Save
+  // that can take it, not to the page behind the dialog.
+  const saveButton=descendants(form).find(e=>e.tagName==='button'&&e.textContent==='Save curation');
+  assert.equal(saveButton.disabled,false,'Save is disabled only once the answer is yes');
   press('Keep it active');await saving;assert.equal(curations.length,0);assert.equal(asked(),undefined);
+  assert.equal(saveButton.disabled,false);assert.equal(saveButton.hidden,false);assert.equal(saveButton.focused,true,'Keep it active gives the focus back to Save');
   saving=form.listeners.submit({preventDefault(){}});await new Promise(r=>setImmediate(r));
   press('Retire reference');await saving;
   assert.deepEqual(curations.pop(),{id:'source',location:'local',expected:'token',curation:'retired',confirmed:true});

@@ -175,6 +175,9 @@ async function brandsTask() {
     body: () => holder,
     saveCard: () => make('section', 'Save', 'card brand-save'),
   });
+  // The one question the page has open (ask): declared beside it in the page's own words.
+  assert.match(source, /\n  let asking = null;\n  function ask\(/);
+  vm.runInContext('var asking = null;', page);
   for (const name of ['el', 'button', 'card', 'bar', 'taskCard', 'swap', 'refresh', 'render', 'ask', 'discard']) vm.runInContext(cut(source, name), page);
   // The working copy as already drawn: the task card with Show activity and the save card.
   page.lastBasis = JSON.stringify({ ...work, task: null, ready: null });
@@ -226,6 +229,21 @@ async function brandsTask() {
   const again = discard.fire('click'); await settle();
   await list.children[1].querySelector('button').fire('click'); await again;
   assert.equal(JSON.stringify(asked.at(-1)), JSON.stringify(['brand-discard', { key: 'k' }]), 'its action discards');
+  // One question at a time: a second ask answers the first with Keep it, which discards
+  // nothing and shows its control again; only the second question is on the page.
+  const otherRow = make('div', '', 'bar'), other = vm.runInContext('button', page)('Discard', 'button-quiet', node => vm.runInContext('discard', page)({ ...work, key: 'other' }, node));
+  const otherList = make('li'); otherRow.append(other); otherList.append(otherRow);
+  const discards = () => asked.filter(([route]) => route === 'brand-discard').length, made = discards();
+  const first = discard.fire('click'); await settle();
+  const second = other.fire('click'); await settle(); await first;
+  assert.equal(list.children.length, 1, 'the first question is answered');
+  assert.equal(discard.hidden, false, 'and its control shown again');
+  assert.equal(otherList.children.length, 2, 'the second is asked');
+  assert.equal(other.hidden, true);
+  assert.equal(document.activeElement.textContent, 'Keep it', 'its Keep it has the focus');
+  assert.equal(discards(), made, 'the first discarded nothing');
+  await document.activeElement.fire('click'); await second;
+  assert.equal(discards(), made, 'Keep it discards nothing');
 }
 
 // Blog Studio's runner: the page's poll says a failure once and waits longer each time, and a

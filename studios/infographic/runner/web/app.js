@@ -7,10 +7,11 @@ try { if(token)sessionStorage.setItem('infographic-studio-token',token); else to
 // The shell kit saves the appearance through this page's own key.
 if(typeof StudioShell!=='undefined')StudioShell.connect({header:'X-Infographic-Studio-Token',token:()=>token});
 // Search and jump finds each infographic Home lists by its name and opens it as its card
-// does, with what its card says of it. New infographic is always there.
+// does, with what its card says of it, while Home is the screen shown. New infographic is
+// always there.
 let listedProjects=[];
 function infographicCommands(){
-  return [...listedProjects.map(p=>({title:p.title||'Unreadable infographic',group:'Infographics',hint:p.problem?'Needs attention':p.activity?.state==='running'?'Working now':p.readiness?.summary||'Saved',keywords:'infographic project work',run:()=>openProject(p.id)})),
+  return [...(screen==='home'?listedProjects:[]).map(p=>({title:p.title||'Unreadable infographic',group:'Infographics',hint:p.problem?'Needs attention':workingNow(p)?'Working now':p.readiness?.summary||'Saved',keywords:'infographic project work',run:()=>openProject(p.id)})),
     {title:'New infographic',group:'Start',keywords:'create start new infographic',run:()=>startNewIntake(null,$('main'))}];
 }
 if(typeof StudioShell!=='undefined')StudioShell.commands(infographicCommands);
@@ -400,6 +401,9 @@ function returnToPlace(id){
   if(typeof place.y==='number')requestAnimationFrame(()=>requestAnimationFrame(()=>scrollTo(0,place.y)));
 }
 let homeTimer=null,homeWaiting=false;
+// Whether an infographic is working now: its saved activity says so, or this page started it.
+// Home's card and Search and jump both ask this.
+function workingNow(p){return p.activity?.state==='running'||running.has(p.id);}
 async function home() {
   resetPicture(); held = null; error(''); remember('home');
   heading('Infographics', button('New infographic', event => startNewIntake(event.currentTarget,$('main')), true),button('Team repository',teamSheet));
@@ -423,7 +427,7 @@ async function drawHome() {
     $('main').dataset.home = said;
     listedProjects = data.projects;
     const cards = data.projects.map(p => {
-      const working=p.activity?.state==='running'||running.has(p.id);
+      const working=workingNow(p);
       const state=working?stateLine('current','Working now: '+(p.activity?.label||running.get(p.id)?.label||'Working')):stateLine(p.readiness?.state||'current',p.readiness?.summary||'Saved');
       const node=card(p.title || 'Unreadable infographic', ...(p.problem?[make('p','problem',p.problem)]:[state,make('p','quiet','Revision '+pageOf(p))]), button('Open ' + (p.title || p.id), () => openProject(p.id)));
       node.classList.add('ig-project-card'); if(working)node.dataset.working=''; return node;

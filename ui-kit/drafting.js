@@ -83,7 +83,16 @@ const Drafting = (() => {
   // control's `.bar` (or after the control itself), or at the top of `place` when the control
   // is somewhere a question cannot sit, such as the toolbar.
   //   await Drafting.confirmInPlace(control, {message, action, keep, danger, place})
+  // A page has at most one question open: asking another first answers the open one as its
+  // way out (its control shown again), so a stale question can never discard what was changed
+  // after it was asked. A question taken off the page unanswered, by a redraw or a change of
+  // screen, is answered the same way: nothing is discarded and its control is shown again.
+  // The question is brought into view (without smooth scrolling) before its way out takes
+  // the focus, so a question at the top of a scrolled page is seen.
+  let asking = null;
   function confirmInPlace(control, {message = 'Are you sure?', action = 'Confirm', keep = 'Keep it', danger = true, place = null} = {}) {
+    const superseded = Boolean(asking);
+    if (asking) asking();
     return new Promise(resolve => {
       const parent = control && (control.parentNode || control.parent);
       const row = parent && String(parent.className || '').split(' ').includes('bar') ? parent : control;
@@ -93,18 +102,57 @@ const Drafting = (() => {
       const out = make('button', 'button button-quiet', keep); out.type = 'button'; out.dataset.key = 'confirm-keep';
       add(box, said, add(make('div', 'bar'), go, out));
       const wasHidden = control ? control.hidden : false;
-      const done = answer => {
+      let answered = false, watch = null;
+      // `refocus` false when another question takes over: the focus is that one's.
+      const done = (answer, refocus = true) => {
+        if (answered) return;
+        answered = true;
+        if (asking === stale) asking = null;
+        if (watch) { watch.disconnect(); watch = null; }
         box.remove();
-        if (control) { control.hidden = wasHidden; if (!answer && control.focus) control.focus({ preventScroll: true }); }
+        if (control) {
+          control.hidden = wasHidden;
+          if (!answer && refocus) giveBack(control);
+        }
         resolve(answer);
       };
+      const stale = () => done(false, false);
+      asking = stale;
       go.addEventListener('click', () => done(true));
       out.addEventListener('click', () => done(false));
       box.addEventListener('keydown', event => { if (event.key === 'Escape') { event.preventDefault?.(); event.stopPropagation?.(); done(false); } });
       if (place) place.prepend(box); else if (row && row.after) row.after(box);
       if (control) control.hidden = true;
+      // Watched only once it is on the page: a mutation that leaves it detached answers it.
+      if (box.isConnected === true && typeof MutationObserver === 'function' && typeof document === 'object' && document) {
+        watch = new MutationObserver(() => { if (!box.isConnected) done(false, focusLost()); });
+        watch.observe(document, { childList: true, subtree: true });
+      }
+      if (typeof box.scrollIntoView === 'function') box.scrollIntoView({ block: 'nearest', behavior: calm() ? 'instant' : 'auto' });
       out.focus({ preventScroll: true });
+      // A question this one took over may hand the focus elsewhere as it ends (its page's
+      // <main>, say); the way out keeps it.
+      if (superseded && typeof setTimeout === 'function') setTimeout(() => { if (!answered && focusLost(box)) out.focus({ preventScroll: true }); }, 0);
     });
+  }
+  // Reduced motion asks for no smooth scrolling.
+  function calm() {
+    try { return typeof window === 'object' && window && typeof window.matchMedia === 'function' && Boolean(window.matchMedia('(prefers-reduced-motion: reduce)').matches); } catch (error) { return false; }
+  }
+  // Whether the focus has left `within` (when given) or has nowhere to be.
+  function focusLost(within = null) {
+    const active = typeof document === 'object' && document ? document.activeElement : null;
+    if (!active || active === document.body || active.isConnected === false) return true;
+    return Boolean(within && within.contains && !within.contains(active));
+  }
+  // The way out gives the focus back to the control that asked, or, where a redraw has built
+  // that control again, to the one with its data-key.
+  function giveBack(control) {
+    let target = control;
+    if (control.isConnected === false && control.dataset && control.dataset.key && typeof document === 'object' && document && document.querySelectorAll) {
+      try { target = Array.from(document.querySelectorAll('[data-key]')).find(node => node.dataset.key === control.dataset.key && !node.disabled && !node.hidden) || control; } catch (error) { target = control; }
+    }
+    if (target.focus) target.focus({ preventScroll: true });
   }
 
   // Unfinished creation forms belong to private local storage, never a project or a job.
@@ -222,8 +270,8 @@ const Drafting = (() => {
     // Start new over a saved form asks first, in place beside `control` (the button that
     // started it), or at the top of `place` (Drafting.confirmInPlace). A start with no control
     // to sit beside, such as Search and jump's, asks at the top of the page's <main>, and
-    // Keep gives the focus to it. Never a blocking window.confirm(); with nowhere to ask,
-    // nothing is discarded.
+    // Keep gives the focus to it (unless another question took this one's place: the focus is
+    // that one's). Never a blocking window.confirm(); with nowhere to ask, nothing is discarded.
     async startFresh(control = null, place = null){
       await this.load();
       if(this.saved){
@@ -232,7 +280,7 @@ const Drafting = (() => {
         const where=place||(anchor||typeof document==='undefined'||!document.querySelector?null:document.querySelector('main'));
         if(!anchor&&!where)return false;
         const yes=await confirmInPlace(anchor,{message,action:'Discard and start new',keep:'Keep the saved form',place:where});
-        if(!yes){if(!anchor&&where.focus)where.focus({preventScroll:true});return false;}
+        if(!yes){if(!anchor&&where.focus&&!asking)where.focus({preventScroll:true});return false;}
       }
       return !this.saved||this.discard();
     }

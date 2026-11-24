@@ -225,6 +225,9 @@ class PageLayoutTests(unittest.TestCase):
             'blog': {'items': [item('b1', 'Synthetic post', 'needs-you', 'Review')]},
             'presentation': {'items': [item('p1', 'Synthetic deck', 'recent', 'Open')]}}}
         shots = self.page([{'snapshot': 'empty'}, {'home': shown}, {'snapshot': 'home'},
+                           {'show': 'settings'}, {'snapshot': 'settings'},
+                           {'show': 'library'}, {'snapshot': 'library'},
+                           {'show': 'brands'}, {'snapshot': 'brands'}, {'show': 'home'},
                            {'command': 'Synthetic deck'}, {'snapshot': 'opened', 'read': ['#message']}],
                           responses={'open': {'link': 'http://127.0.0.1:2/#token=x'}})
         self.assertEqual(shots['empty']['commands'], [])
@@ -232,6 +235,9 @@ class PageLayoutTests(unittest.TestCase):
         self.assertEqual(sorted(shots['home']['commands']), [
             ['Blog Studio', 'Synthetic post', 'Review', 'work project needs-you'],
             ['Presentation Studio', 'Synthetic deck', 'Open', 'work project recent']])
+        # A page lists only what it shows: none of Home's work while another view is shown.
+        for name in ('settings', 'library', 'brands'):
+            self.assertEqual(shots[name]['commands'], [], name)
         # Run as the row's own button runs: it asks Marketing Studio to open that work.
         opened = [request['sent'] for request in shots['opened']['requests'] if request['url'].endswith('/open')]
         self.assertEqual(opened, [{'studio': 'presentation', 'resume': 'p1'}])

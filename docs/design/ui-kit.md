@@ -146,7 +146,7 @@ shared setup, Blog Studio, Presentation Studio, Training Studio and Infographic 
 | Headings | `.large-title`, `.lede`, `.card-title`, `.sheet-part` |
 | Status | `.state` with `.bead`, `.tag`, `.toasts`/`.toast`, `.notice` |
 | Transient | `.sheet`, `.dialog`, `.menu` |
-| A question before an action | `Drafting.confirmInPlace(control, {message, action, keep, danger, place})`: asked beside the control (hidden meanwhile), or at the top of `place` or the page's `<main>` where it has no row; the way out has the focus and gives it back, and a destructive action takes `.button-danger`. Never a blocking `window.confirm()`, `alert()` or `prompt()` (`tests/test_ui_consistency.py`) |
+| A question before an action | `Drafting.confirmInPlace(control, {message, action, keep, danger, place})`: asked beside the control (hidden meanwhile), or at the top of `place` or the page's `<main>` where it has no row; the way out has the focus and gives it back, and a destructive action takes `.button-danger`. One question at a time: asking another answers the open one with its way out. A redraw keeps an open question where it was; one taken off the page unanswered is answered with its way out, so Keep, Escape and anything unanswered never discard. Never a blocking `window.confirm()`, `alert()` or `prompt()` (`tests/test_ui_consistency.py`) |
 | Studio mark | `.studio-symbol`, the rounded tile that carries a studio's drawing in its accent colour |
 | Studio identity | `[data-studio]` sets `--studio-color` and `--studio-wash`; `.card[data-studio]` takes that studio's colour for its accent, link, focus and hover border |
 | Way back | `.suite-link`, the "Marketing Studio" sidebar item a studio shows when Marketing Studio opened it |

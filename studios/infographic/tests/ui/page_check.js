@@ -53,9 +53,11 @@ Object.assign(page, {
   startNewIntake: (control, place) => done.push(['new', control, place === main]),
   action: (name, values) => done.push([name, values]),
   listedProjects: [],
+  screen: 'home',
+  running: new Map(),
 });
 vm.runInContext('const {make, add} = Drafting;', page);
-for (const name of ['button', 'chosenMark', 'useStory', 'infographicCommands']) vm.runInContext(cut(source, name), page);
+for (const name of ['button', 'chosenMark', 'useStory', 'workingNow', 'infographicCommands']) vm.runInContext(cut(source, name), page);
 
 // The page hands its list to the shell kit, which asks for it each time the palette opens.
 assert.match(source, /StudioShell\.commands\(infographicCommands\)/);
@@ -80,6 +82,19 @@ assert.ok(listed.every(one => typeof one.keywords === 'string' && typeof one.run
 // Run as its card's Open runs, and New infographic as Home's button does (asked over <main>).
 listed[0].run(); listed[4].run();
 assert.deepEqual(done.splice(0), [['open', 'one'], ['new', null, true]]);
+
+// Work this page started is working now, as its card says, though its saved state is not yet.
+assert.match(source, /const working=workingNow\(p\);/, 'the card asks the same question');
+page.running.set('one', { label: 'Building the page' });
+same(vm.runInContext('infographicCommands()', page).map(one => one.hint || ''),
+  ['Working now', 'Working now', 'Needs attention', 'Saved', '']);
+page.running.clear();
+
+// A page lists only what it shows: on an infographic's own screen, Home's list is not shown,
+// so only the way to start is there.
+page.screen = 'project';
+same(vm.runInContext('infographicCommands()', page).map(one => [one.group, one.title]), [['Start', 'New infographic']]);
+page.screen = 'home';
 
 // A story is one choice among peers: Use this story is a quiet button named for its story,
 // never a second filled one; the story in use is a Selected tag, not a button.

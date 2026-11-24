@@ -514,23 +514,25 @@ async function curate(item) {
     comparison.replaceChildren(element('h3','Latest saved values'),element('pre',JSON.stringify(current,null,2),'source-excerpt'),element('h3','Your proposed values'),element('pre',JSON.stringify(proposed,null,2),'source-excerpt'),button('Keep my proposal for resubmission',()=>{result=latest;blocked=false;save.disabled=false;conflict.hidden=true;notice('Latest version selected. Review your retained proposal, then choose Save curation to submit it.');}),button('Use latest saved values',()=>{for(const [key,value]of Object.entries(current))fields[key].value=value;result=latest;blocked=false;save.disabled=false;conflict.hidden=true;notice('Latest saved values loaded. Edit them and choose Save curation when ready.');}));
   }),comparison);
   form.addEventListener('submit',async e=>{
-    e.preventDefault();if(blocked)return;save.disabled=true;
+    e.preventDefault();if(blocked||save.disabled)return;
+    // Compare what the form holds now with what it would show for the saved reference, in the same shape.
+    const data=Object.fromEntries(new FormData(form));
+    const tags=text=>text.split(',').map(v=>v.trim()).filter(Boolean),library=result.record.library||{};
+    const proposed={curation:data.curation,author:(data.author||'').trim(),topics:tags(data.topics),products:tags(data.products),note:data.note};
+    const changes=changedFields(proposed,{
+      curation:['active','pending','retired'].includes(library.curation)?library.curation:'active',
+      author:(result.record.author||'').trim(),
+      topics:tags((library.topics||[]).join(', ')),products:tags((library.products||[]).join(', ')),
+      note:(result.record.note||'').replace(/\r\n?/g,'\n')});
+    if(!Object.keys(changes).length){notice('No changes to save.');return;}
+    if(changes.curation==='retired'){
+      // Asked in place beside Save (Drafting.confirmInPlace), never in a blocking dialog, and
+      // before Save is disabled, so Keep it active gives the focus back to a Save that takes it.
+      if(!await Drafting.confirmInPlace(save,{message:'Retire this reference from active search? Earlier snapshots remain in Git history.',action:'Retire reference',keep:'Keep it active'}))return;
+      changes.confirmed=true;
+    }
+    save.disabled=true;
     try {
-      const data=Object.fromEntries(new FormData(form));
-      // Compare what the form holds now with what it would show for the saved reference, in the same shape.
-      const tags=text=>text.split(',').map(v=>v.trim()).filter(Boolean),library=result.record.library||{};
-      const proposed={curation:data.curation,author:(data.author||'').trim(),topics:tags(data.topics),products:tags(data.products),note:data.note};
-      const changes=changedFields(proposed,{
-        curation:['active','pending','retired'].includes(library.curation)?library.curation:'active',
-        author:(result.record.author||'').trim(),
-        topics:tags((library.topics||[]).join(', ')),products:tags((library.products||[]).join(', ')),
-        note:(result.record.note||'').replace(/\r\n?/g,'\n')});
-      if(!Object.keys(changes).length){notice('No changes to save.');return;}
-      if(changes.curation==='retired'){
-        // Asked in place beside Save (Drafting.confirmInPlace), never in a blocking dialog.
-        if(!await Drafting.confirmInPlace(save,{message:'Retire this reference from active search? Earlier snapshots remain in Git history.',action:'Retire reference',keep:'Keep it active'}))return;
-        changes.confirmed=true;
-      }
       const saved=await api('curate',{id:result.id,location:result.location,expected:result.expected,...changes});
       $('detail-dialog').close();await load();savedNotice(saved);
       if(changes.curation==='retired'){const current=await api('source?'+new URLSearchParams({id:result.id,location:result.location}));const undo=button('Undo retirement',async()=>{const restored=await api('curate',{id:result.id,location:result.location,expected:current.expected,curation:library.curation||'active'});await load();savedNotice(restored);});$('notice').append(undo);}

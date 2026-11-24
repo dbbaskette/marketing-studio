@@ -135,14 +135,29 @@
   // A question asked in place after the control's row, as the Document Library and the
   // shared desk kit ask (Drafting.confirmInPlace, which this page does not load): what will
   // happen, the action, and Keep it, which has the focus and gives it back to the control.
+  // One question at a time: asking another first answers the open one with Keep it.
+  let asking = null;
   function ask(control, message, action) {
+    if (asking) asking();
     return new Promise(resolve => {
       const row = control.closest('.bar') || control;
       const box = el('div', '', 'paper callout confirm-in-place');
       box.dataset.kind = 'yours';
       const go = el('button', action, 'button button-danger', {type: 'button'}), out = el('button', 'Keep it', 'button button-quiet', {type: 'button'});
       box.append(el('p', message, '', {role: 'status'}), bar(go, out));
-      const done = answer => { box.remove(); control.hidden = false; if (!answer) control.focus({preventScroll: true}); resolve(answer); };
+      const wasHidden = control.hidden;
+      let answered = false;
+      // `refocus` false when another question takes over: the focus is that one's.
+      const done = (answer, refocus = true) => {
+        if (answered) return;
+        answered = true;
+        if (asking === stale) asking = null;
+        box.remove(); control.hidden = wasHidden;
+        if (!answer && refocus) control.focus({preventScroll: true});
+        resolve(answer);
+      };
+      const stale = () => done(false, false);
+      asking = stale;
       go.addEventListener('click', () => done(true));
       out.addEventListener('click', () => done(false));
       box.addEventListener('keydown', event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); done(false); } });

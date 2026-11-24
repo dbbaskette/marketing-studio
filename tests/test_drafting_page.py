@@ -21,6 +21,9 @@ class DraftingPageTests(unittest.TestCase):
     def test_unfinished_intake_discovery(self):
         self.group('intakeDiscovery')
 
+    def test_a_question_asked_in_place_is_one_at_a_time_and_never_lost(self):
+        self.group('confirmInPlace')
+
     def test_intake_pages_save_a_press_once(self):
         self.group('intakePages')
 

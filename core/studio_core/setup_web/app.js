@@ -24,8 +24,10 @@ const token = tokenInLink || sessionStorage.getItem(sessionKey) || '';
 // The shell kit saves the appearance through this page's own key.
 if (typeof StudioShell !== 'undefined') StudioShell.connect({ header: tokenHeader, token, home: standalone ? '/onboarding/api/' : '/api/' });
 // Search and jump finds the work Home lists (#work-overview) by its name, in its studio's
-// group with what its row's button says, and opens it as that button does. Nothing else.
+// group with what its row's button says, and opens it as that button does. Nothing else, and
+// nothing while Home is not the view shown (Settings, Library or Brands).
 function homeCommands() {
+  if (view !== 'home' || $('#home')?.hidden) return [];
   return [...document.querySelectorAll('#work-overview .work-summary')].filter(row => row.resumeItem && row.resumeStudio)
     .map(row => ({ title: row.resumeItem.title, group: row.resumeStudio.name, hint: row.resumeItem.action,
       keywords: 'work project ' + (row.dataset.state || ''), run: () => row.querySelector('button')?.click() }));

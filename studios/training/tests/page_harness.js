@@ -79,6 +79,8 @@ class FakeNode {
     return false;
   }
 
+  get isConnected() { return Boolean(document.body?.contains(this)); }
+
   get nextSibling() {
     if (!this.parentNode) return null;
     const held = this.parentNode.childNodes;

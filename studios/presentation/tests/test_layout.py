@@ -425,6 +425,83 @@ class LayoutTests(test_desk.ScriptedPage, test_runner_page.PageCase):
         self.assertEqual(len(discards), 1)
         self.assertEqual(self.posts(result), [])
 
+    def changing(self, times: int = 12) -> list:
+        """Every kind of deck, read again with the working deck and the one waiting one step
+        further each time, so each refresh draws Home again."""
+        decks = self.every_kind()
+        found = []
+        for at in range(times):
+            moved = {**decks, 'working': [{**decks['working'][0],
+                                           'sentence': f'Drafting the outline, part {at}.'}],
+                     'needs': [{**decks['needs'][0], 'sentence': f'Waiting, read {at} times.'}]}
+            found.append(ok(moved))
+        return found
+
+    def test_a_question_asked_in_place_stays_through_a_redraw_until_it_is_answered(self):
+        # A deck working redraws Home on every refresh. Copy as new's question under its row,
+        # and New deck's at the top of the page, stay through it with their control behind
+        # them; Keep sends nothing. A second question answers the first with its way out.
+        asked = 'This studio keeps one unfinished form. Discard it and copy this deck'
+        started = 'This studio keeps one unfinished form. Discard it and start new?'
+        result = self.run_page(self.answers(**{'GET /api/decks': self.changing()}), [
+            {'click': 'New deck'}, {'click': 'An idea'},
+            {'fill': 'A short title', 'value': 'Saved title'}, {'click': 'Cancel'},
+            {'click': 'Copy as new: Working deck'}, {'snapshot': 'asked'},
+            {'poll': True}, {'poll': True}, {'snapshot': 'redrawn'},
+            {'click': 'Keep the saved form'}, {'snapshot': 'kept'},
+            {'click': 'New deck'}, {'poll': True}, {'snapshot': 'top'},
+            {'click': 'Copy as new: Working deck'}, {'snapshot': 'second'},
+            {'click': 'Keep the saved form'}, {'snapshot': 'none'}])
+        shots = result['snapshots']
+        copy = 'Copy as new: Working deck'
+        names = lambda shot: [name for name in shot['buttons'] if name.startswith(copy)]
+        self.assertEqual(shots['asked']['text'].count(asked), 1)
+        self.assertEqual(names(shots['asked']), [], 'Copy as new waits behind its question')
+        # Home was drawn again; the row the question sits under is held as it was.
+        self.assertNotEqual(shots['asked']['text'], shots['redrawn']['text'])
+        self.assertIn('Drafting the outline, part 0.', shots['redrawn']['text'])
+        self.assertEqual(shots['redrawn']['text'].count(asked), 1, 'the redraw keeps the question')
+        self.assertEqual(names(shots['redrawn']), [], 'and its control behind it')
+        self.assertIn('Keep the saved form', shots['redrawn']['buttons'])
+        # Under its row: the working deck's words come just before it.
+        before = shots['redrawn']['text'].split(asked)[0]
+        self.assertLess(before.rindex('Working deck'), len(before))
+        self.assertGreater(before.rindex('Working deck'), before.rfind('Waiting deck'))
+        self.assertEqual(shots['kept']['text'].count(asked), 0)
+        self.assertEqual(len(names(shots['kept'])), 1, 'Keep shows Copy as new again')
+        self.assertEqual(shots['kept']['focusKey'], 'copy /elsewhere/working', 'and gives it the focus')
+        # Answered, its row is drawn as it is now.
+        self.assertNotIn('Drafting the outline, part 0.', shots['kept']['text'])
+        # New deck's question is at the top of the page, and stays through a redraw.
+        self.assertEqual(shots['top']['text'].count(started), 1)
+        self.assertNotIn('New deck', [control['name'] for control in shots['top']['toolbar']])
+        # A second question answers the first: one question on the page, New deck back.
+        second = shots['second']
+        self.assertEqual(second['text'].count(started), 0)
+        self.assertEqual(second['text'].count(asked), 1)
+        self.assertIn('New deck', [control['name'] for control in second['toolbar']])
+        self.assertEqual(shots['none']['text'].count(asked) + shots['none']['text'].count(started), 0)
+        self.assertEqual(len(names(shots['none'])), 1)
+        # Keep and a question answered by another discard and copy nothing.
+        self.assertEqual(self.posts(result), [])
+        self.assertFalse([call for call in result['requests']
+                          if call['address'] == '/api/intake-draft'
+                          and (call.get('body') or {}).get('action') == 'discard'])
+        self.assertIn('Saved title', shots['none']['text'])
+
+    def test_a_copy_that_fails_gives_the_focus_back_to_copy_as_new(self):
+        result = self.run_page(self.answers(**{
+            'GET /api/decks': [ok(self.every_kind())],
+            'POST /api/deck-copy': [{'status': 409, 'body': {'error': 'Its setup cannot be read.'}}]}), [
+            {'click': 'New deck'}, {'click': 'An idea'},
+            {'fill': 'A short title', 'value': 'Saved title'}, {'click': 'Cancel'},
+            {'click': 'Copy as new: Working deck'}, {'click': 'Discard and copy'},
+            {'snapshot': 'failed'}])
+        failed = result['snapshots']['failed']
+        self.assertEqual(failed['focusKey'], 'copy /elsewhere/working')
+        self.assertIn('Saved title', failed['text'], 'nothing was discarded')
+        self.assertEqual([address for address, _ in self.posts(result)], ['/api/deck-copy'])
+
     def test_screen_new_still_opens_the_form(self):
         result = self.run_page(self.answers(), [{'snapshot': 'opened'}],
                                state={'screen': 'new', 'path': None})
