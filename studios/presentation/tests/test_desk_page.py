@@ -1850,108 +1850,72 @@ OWN_NOTES = ('Speaker notes in your own deck are kept as they are. Selected chan
 
 
 class LeadCardTests(DeskPageCase):
-    """#516: a cover, section or closing slide's words are edited on its own card, and saved and
-    checked as the Outline tab saves and checks them: the same unsaved outline, the same
-    price first, the same save (`desk-outline`) and the same limit on a title."""
-
-    PRICED = {'says': 'No section changes: the deck is put together again from what is '
-                      'drawn, and rendered and checked.', 'sections': []}
-
-    def test_a_cover_s_title_is_saved_on_its_card_through_the_outline_tab_s_save(self):
-        path = self.desk_deck()
-        view = self.run_of(path)
-        title = 'Rolling restarts, plainly'
-        slides = copy.deepcopy(view['desk']['outline']['slides'])
-        slides[0]['title'] = title
-        after = self.post('desk-outline', {'path': path, 'slides': slides,
-                                           'expected': view['desk']['outline']['expected']})
-        result = self.open_deck(path, view, [
-            to(1), {'snapshot': 'card'},
-            {'fill': 'Title of slide 1', 'value': title}, {'snapshot': 'priced'},
-            {'click': 'Outline'}, {'snapshot': 'outline'},
-            {'click': 'Slides'}, {'snapshot': 'back'},
-            {'click': 'Save'}, {'snapshot': 'saved'}],
-            **{'POST /api/desk-outline-price': [ok(self.PRICED)],
-               'POST /api/desk-outline': [ok(after)]})
-        shots = result['snapshots']
-        card = shots['card']
-        # Its words are boxes on its card, with the Outline tab's limit on a title.
-        self.assertEqual(card['fields']['Title of slide 1'], 'Rolling restarts')
-        self.assertEqual(card['limits']['Title of slide 1'], 300)
-        self.assertIn('Subtitle of slide 1', card['fields'])
-        self.assertIn('Saving puts the deck together again with its new words, as the Outline '
-                      'tab saves them.', card['text'])
-        # Typed here, it is the Outline tab's unsaved title too, priced before Save.
-        self.assertIn(self.PRICED['says'], shots['priced']['text'])
-        self.assertEqual(shots['outline']['fields']['Title of slide 1'], title)
-        self.assertEqual(shots['back']['fields']['Title of slide 1'], title)
-        self.assertEqual(self.posts(result), [
-            ('/api/desk-outline-price', {'path': path, 'slides': slides}),
-            ('/api/desk-outline', {'path': path, 'slides': slides,
-                                   'expected': view['desk']['outline']['expected']})])
-        # Saved, the card and the Outline tab read the same words from the outline.
-        cover = self.card_of(after, 1)
-        self.assertEqual(cover['words']['title'], title)
-        self.assertEqual(after['desk']['outline']['slides'][0]['title'], title)
-        self.assertIn('Saved. Only the sections whose slides changed are redrawn.',
-                      shots['saved']['toasts'])
-        # Opened again as saved: the card and the Outline tab show the same words.
-        again = self.open_deck(path, after, [to(1), {'snapshot': 'card'}, {'click': 'Outline'},
-                                             {'snapshot': 'outline'}])['snapshots']
-        self.assertEqual(again['card']['fields']['Title of slide 1'], title)
-        self.assertEqual(again['outline']['fields']['Title of slide 1'], title)
-        self.assertNotIn('Its price is worked out', again['card']['text'])
-
-    def test_a_refusal_of_the_outline_s_check_is_said_on_the_card(self):
-        path = self.desk_deck()
-        view = self.run_of(path)
-        said = 'The outline cannot be saved. cover: the title is too long for a cover.'
-        result = self.open_deck(path, view, [
-            to(1), {'fill': 'Title of slide 1', 'value': 'A cover title'},
-            {'click': 'Save'}, {'snapshot': 'refused'}],
-            **{'POST /api/desk-outline-price': [ok(self.PRICED)],
-               'POST /api/desk-outline': [{'status': 409, 'body': {'error': said}}]})
-        self.assertIn(said + ' Nothing was changed.', result['snapshots']['refused']['text'])
-
-    def test_other_unsaved_outline_changes_are_named_before_the_card_saves_them(self):
-        path = self.desk_deck()
-        view = self.run_of(path)
-        result = self.open_deck(path, view, [
-            {'click': 'Outline'}, {'fill': 'Title of slide 3', 'value': 'Batches in turn'},
-            {'click': 'Slides'}, to(1), {'fill': 'Title of slide 1', 'value': 'A cover'},
-            {'snapshot': 'card'}],
-            **{'POST /api/desk-outline-price': [ok(self.PRICED), ok(self.PRICED)]})
-        self.assertIn('Saving also saves your other changes on the Outline tab: the title of '
-                      'slide 3, now “Batches in turn”.', result['snapshots']['card']['text'])
-
-    def test_a_content_slide_keeps_its_own_typed_save(self):
-        path = self.desk_deck()
-        view = self.run_of(path)
-        result = self.open_deck(path, view, [to(3), {'snapshot': 'card'}])
-        card = result['snapshots']['card']
-        self.assertEqual(card['limits']['Title of slide 3'], 2000)
-        self.assertNotIn('Saving puts the deck together again', card['text'])
-
-    def test_the_server_saves_a_lead_slide_s_words_as_the_outline_tab_does(self):
-        path = self.desk_deck()
-        view = self.run_of(path)
-        slides = copy.deepcopy(view['desk']['outline']['slides'])
-        closing = next(index for index, slide in enumerate(slides)
-                       if slide.get('kind') == 'closing')
-        slides[closing]['title'] = 'Next: try it yourself'
-        after = self.post('desk-outline', {'path': path, 'slides': slides,
-                                           'expected': view['desk']['outline']['expected']})
-        number = closing + 1
-        self.assertEqual(self.card_of(after, number)['words']['title'], 'Next: try it yourself')
-        # An outline that changed since the card read it is refused, as on the Outline tab.
-        refused = self.post('desk-outline', {'path': path, 'slides': slides,
-                                             'expected': view['desk']['outline']['expected']},
-                            expect=400)
-        self.assertIn('The outline changed since this page read it', refused['error'])
+    """#516: a cover, section or closing slide's words are typed on its own card and saved a
+    second after the last key, as any card's words are (`desk-words`, with its limit and its
+    "does not fit" refusal), with no price; the Outline tab then shows the same words."""
 
     @staticmethod
     def card_of(view: dict, number: int) -> dict:
         return next(card for card in cards_of(view['desk']) if card['number'] == number)
+
+    def test_a_cover_s_title_is_saved_as_it_is_typed_and_the_outline_tab_agrees(self):
+        path = self.desk_deck()
+        view = self.run_of(path)
+        title = 'Rolling restarts, plainly'
+        result = self.open_deck(path, view, [
+            to(1), {'snapshot': 'card'}, {'fill': 'Title of slide 1', 'value': title},
+            {'snapshot': 'typed'}, {'timer': 'flush'}, {'snapshot': 'saved'}],
+            **{'POST /api/desk-words': [ok(view)]})
+        card = result['snapshots']['card']
+        self.assertEqual(card['fields']['Title of slide 1'], 'Rolling restarts')
+        self.assertEqual(card['limits']['Title of slide 1'], 2000)
+        self.assertIn('Subtitle of slide 1', card['fields'])
+        # No price: a lead slide's words are put in its drawing with no assistant.
+        lead = card['text'][card['text'].index('Slide 1 · Cover'):card['text'].index('History')]
+        for priced in ('Last time', 'Its price is worked out', 'Redraw slide 1', 'Save'):
+            self.assertNotIn(priced, lead)
+        self.assertEqual(result['snapshots']['typed']['posts'], 0, 'nothing is sent while typing')
+        (address, body), = self.posts(result)
+        self.assertEqual(address, '/api/desk-words')
+        self.assertRegex(body.pop('session'), SESSION_SHAPE)
+        self.assertEqual(body, {'path': path, 'number': 1, 'field': 'title', 'text': title,
+                                'seen': view['desk']['seen']})
+        self.assertIn('Saved.', result['snapshots']['saved']['text'])
+        # What the page sends is what the server takes, and both views read the same words.
+        after = self.post('desk-words', {**body, 'session': 'a' * 16})
+        self.assertEqual(self.card_of(after, 1)['words']['title'], title)
+        self.assertEqual(after['desk']['outline']['slides'][0]['title'], title)
+        again = self.open_deck(path, after, [to(1), {'snapshot': 'card'}, {'click': 'Outline'},
+                                             {'snapshot': 'outline'}])['snapshots']
+        self.assertEqual(again['card']['fields']['Title of slide 1'], title)
+        self.assertEqual(again['outline']['fields']['Title of slide 1'], title)
+
+    def test_a_lead_slide_s_detail_is_a_box_on_its_card_saved_the_same_way(self):
+        # The slides tool's lead layouts take one line under the title, so no deck here has a
+        # lead slide with a detail: the card is shown one to see its box and what it sends.
+        path = self.desk_deck()
+        view = self.run_of(path)
+        shown = copy.deepcopy(view)
+        self.card_of(shown, 1)['words']['detail'] = 'Thirty minutes.'
+        result = self.open_deck(path, shown, [
+            to(1), {'snapshot': 'card'}, {'fill': 'Detail of slide 1', 'value': 'Twenty minutes.'},
+            {'timer': 'flush'}], **{'POST /api/desk-words': [ok(view)]})
+        self.assertEqual(result['snapshots']['card']['fields']['Detail of slide 1'],
+                         'Thirty minutes.')
+        (address, body), = self.posts(result)
+        self.assertEqual((address, body['number'], body['field'], body['text']),
+                         ('/api/desk-words', 1, 'detail', 'Twenty minutes.'))
+
+    def test_an_unsaved_outline_title_is_said_on_the_lead_card(self):
+        path = self.desk_deck()
+        view = self.run_of(path)
+        result = self.open_deck(path, view, [
+            {'click': 'Outline'}, {'fill': 'Title of slide 1', 'value': 'A cover'},
+            {'click': 'Slides'}, to(1), {'snapshot': 'card'}],
+            **{'POST /api/desk-outline-price': [ok({'says': 'No section changes.',
+                                                    'sections': []})]})
+        self.assertIn('On the Outline tab its title is “A cover”, not saved yet.',
+                      result['snapshots']['card']['text'])
 
 
 class ExistingDeskTests(DeskPageCase):

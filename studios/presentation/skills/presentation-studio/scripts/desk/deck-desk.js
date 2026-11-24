@@ -44,10 +44,6 @@
   // runner names it by, and what its box is called.
   const WORD_FIELDS = [['title', 'Title'], ['subtitle', 'Subtitle'], ['detail', 'Detail'],
     ['caveat', 'Caveat'], ['source', 'Source']];
-  // The words of a cover, section or closing slide, edited on its card as the Outline tab
-  // edits them: a title has the Outline tab's limit.
-  const LEAD_FIELDS = [['title', 'Title', 300], ['subtitle', 'Subtitle', 300],
-    ['detail', 'Detail', 2000]];
   const SAVE_WAIT = 1000;   // a typed edit is saved one second after the last key
   // What each kept version of a slide's words was kept before.
   const VERSION_SOURCES = {
@@ -1521,8 +1517,7 @@
             () => navigatorPart(run, cards, active)],
           ['slide', [active.one, active.part.slides.map((one) => one.number), found.expected,
             can, working, found.words_locked, found.notes_locked, proposals,
-            held.confirm[path] || '', h.theirs(run), pendingTitle(run, active.one),
-            active.one.lead && found.outline ? found.outline.expected : null],
+            held.confirm[path] || '', h.theirs(run), pendingTitle(run, active.one)],
           () => slideCard(run, active.one, active.part, can)],
         ], false)] : null,
       can && found.level !== 'selected' ? ['whole', [found.expected, found.deck_price, working,
@@ -1752,12 +1747,8 @@
     heading.id = 'desk-slide-title';
     heading.tabIndex = -1;
     node.setAttribute('aria-labelledby', heading.id);
-    // A cover, section or closing slide's words are the Outline tab's, saved as it saves them.
-    const outlined = one.lead && editing && !locked && !own && run.desk.outline
-      && run.desk.outline.editable;
     // A title changed on the Outline tab and not saved: the slide is drawn with its old one.
-    // On a lead slide's own card it is in its box, with the Outline tab's Save under it.
-    const pending = h.theirs(run) || outlined ? '' : pendingTitle(run, one);
+    const pending = h.theirs(run) ? '' : pendingTitle(run, one);
     h.add(node, heading,
       pending ? h.callout('', h.add(make('p', ''), 'On the Outline tab its title is “' + pending
         + '”, not saved yet. It is drawn with its title as it is here until you save the '
@@ -1770,8 +1761,7 @@
       foundPart(run, one),
       editing && one.unfit ? unfitPart(run, one) : null,
       own ? (editing ? objectBoxes(one) : objectWords(one))
-        : outlined ? leadBoxes(run, one, Boolean(found.working))
-          : editing && !locked ? wordBoxes(one)
+        : editing && !locked ? wordBoxes(one)
           : wordsPart(one.lead ? words : { ...words, caveat: null, source: null }),
       locked ? make('p', 'quiet', found.words_locked) : null,
       own ? make('p', 'quiet', found.notes_locked || '')
@@ -2982,13 +2972,7 @@
       const kept = copied(one);
       const was = before.get(one.id);
       const now = mine.get(one.id);
-      // A title changed on the Outline tab, and a lead slide's words changed on its card.
-      for (const field of ['title', 'subtitle', 'detail']) {
-        if (was && now && (was[field] || '') !== (now[field] || '')) {
-          if (now[field]) kept[field] = now[field];
-          else delete kept[field];
-        }
-      }
+      if (was && now && (was.title || '') !== (now.title || '')) kept.title = now.title;
       return kept;
     });
     // The outline as it is now keeps its order unless the person reordered the slides. When
@@ -3020,10 +3004,6 @@
       if (was && (was.one.title || '') !== (one.title || '')) {
         said.push('the title of slide ' + was.number + ', now “' + (one.title || '') + '”');
       }
-      const under = ['subtitle', 'detail'];
-      if (was && under.some((field) => (was.one[field] || '') !== (one[field] || ''))) {
-        said.push('the words of slide ' + was.number + ', under its title');
-      }
     }
     for (const one of from) {
       if (!edit.work.some((other) => other.id === one.id)) {
@@ -3052,34 +3032,31 @@
     h.focusKey('desk-outline-save') || h.focusKey('desk-outline-back');
   }
 
-  // Save on the Outline tab, and on a cover, section or closing slide's own card: what saving
-  // the outline as edited redraws is asked of the server first, then Save sends the whole
-  // edited outline to the one save path (desk-outline), checked by the slides tool. Both
-  // edit the same unsaved outline, so both show the same words. `keys` name the controls.
-  function outlineSaving(run, edit, working, keys) {
+  function outlinePart(run, editable, working) {
     const outline = run.desk.outline;
     const path = h.view.path;
+    const edit = outlineEdit(outline);
+    const node = h.card('The outline');
+    const rows = make('ol', 'plain deck-desk-outline');
+    rows.id = 'desk-outline';
     const said = make('p', 'quiet');
     said.setAttribute('role', 'status');
-    if (keys.said) said.id = keys.said;
-    const now = () => JSON.stringify(edit.work);
-    const edited = () => now() !== JSON.stringify(h.list(outline.slides));
-    const save = h.capsule('Save', '', () => saveOutline(), keys.save);
+    const save = h.capsule('Save', '', () => saveOutline(), 'desk-outline-save');
     const back = h.capsule('Put it back as it was', 'quiet', () => {
       edit.work = JSON.parse(JSON.stringify(h.list(outline.slides)));
       edit.priced = '';
       edit.says = '';
       edit.asking = '';
-      if (keys.reset) keys.reset();
-      tell();
-      h.focusKey(keys.save);
-    }, keys.back);
+      paint();
+      h.focusKey('desk-outline-save');
+    }, 'desk-outline-back');
+    const now = () => JSON.stringify(edit.work);
+    const edited = () => now() !== JSON.stringify(h.list(outline.slides));
     const tell = () => {
       const changed = edited();
       said.textContent = working ? OUTLINE_BUSY
-        : !changed ? keys.resting || 'Saving redraws only the sections whose slides change.'
-          : edit.priced === now() ? (keys.also ? keys.also() : '') + edit.says
-            : 'Its price is worked out when you leave the box.';
+        : !changed ? 'Saving redraws only the sections whose slides change.'
+          : edit.priced === now() ? edit.says : 'Its price is worked out when you leave the box.';
       save.disabled = working || !changed || edit.priced !== now();
       back.hidden = !changed;
     };
@@ -3117,18 +3094,6 @@
         + 'redrawn.', said);
       if (done) delete held.outlines[path];
     };
-    return { said, save, back, tell, price, edited, now };
-  }
-
-  function outlinePart(run, editable, working) {
-    const outline = run.desk.outline;
-    const edit = outlineEdit(outline);
-    const node = h.card('The outline');
-    const rows = make('ol', 'plain deck-desk-outline');
-    rows.id = 'desk-outline';
-    const saving = outlineSaving(run, edit, working, { save: 'desk-outline-save',
-      back: 'desk-outline-back', reset: () => paint() });
-    const { said, save, back, tell, price, edited, now } = saving;
     const paint = () => {
       rows.replaceChildren(...edit.work.map((one, index) => outlineRow(edit, one, index,
         editable, { typed: tell, changed: price, moved: () => {
@@ -3147,62 +3112,6 @@
       + 'whose slides changed; the rest stay as they are drawn.'), rows);
     if (editable) h.add(node, said, bar(save, back));
     return node;
-  }
-
-  // The words of a cover, section or closing slide, on its own card: the same words as the
-  // Outline tab's, in its unsaved outline, with its limit on a title, saved as it saves them.
-  // A box for each word the slide has, as on any card. Other unsaved changes on the Outline
-  // tab are saved with them, and the price line says so first.
-  function leadBoxes(run, one, working) {
-    const outline = run.desk.outline;
-    const edit = outlineEdit(outline);
-    const mine = () => edit.work.find((each) => each.id === one.id);
-    const slide = mine();
-    if (!slide) return wordsPart(one.words || {});   // removed on the Outline tab, not saved
-    const from = h.list(outline.slides).find((each) => each.id === one.id) || {};
-    const node = make('div', 'fields deck-desk-words');
-    const others = () => outlineChanges(run).filter((line) => !line.startsWith(
-      'the title of slide ' + one.number + ',') && !line.startsWith('the words of slide '
-      + one.number + ',') && line !== 'the outline');
-    const saving = outlineSaving(run, edit, working, { save: 'desk-lead-save ' + one.id,
-      back: 'desk-lead-back ' + one.id, said: 'desk-lead-said-' + one.number,
-      resting: 'Saving puts the deck together again with its new words, as the Outline tab '
-        + 'saves them.',
-      reset: () => {
-        const now = mine();
-        for (const [field] of LEAD_FIELDS) {
-          const input = h.byId('desk-lead-' + field + '-' + one.number);
-          if (input && now) input.value = now[field] || '';
-        }
-      },
-      also: () => {
-        const more = others();
-        return more.length ? 'Saving also saves your other changes on the Outline tab: '
-          + more.join('; ') + '. ' : '';
-      } });
-    const typed = { ...slide };
-    for (const [field, label, limit] of LEAD_FIELDS) {
-      if (!from[field] && !slide[field]) continue;
-      const box = h.field('desk-lead-' + field + '-' + one.number, label, typed, field, {
-        limit, long: field === 'detail', rows: 2,
-        // Into the Outline tab's unsaved outline: a box emptied is a word taken away.
-        typed: () => {
-          const live = mine();
-          if (live) {
-            if (typed[field]) live[field] = typed[field];
-            else delete live[field];
-          }
-          saving.tell();
-        },
-        changed: saving.price });
-      box.querySelector('label').append(make('span', 'offscreen', ' of slide ' + one.number));
-      h.add(node, box);
-    }
-    if (!working && saving.edited() && edit.priced !== saving.now()
-        && edit.asking !== saving.now()) {
-      saving.price();
-    } else saving.tell();
-    return h.add(node, saving.said, bar(saving.save, saving.back));
   }
 
   function outlineRow(edit, one, index, editable, on) {
