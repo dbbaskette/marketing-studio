@@ -1525,8 +1525,8 @@ class PageFileTests(unittest.TestCase):
         # The deck panels are the shared core's, served beside the page from its own origin.
         self.assertEqual(sorted(re.findall(r'(?:src|href)="([^"]*)"', page)),
                          ['#main', 'activity.js', 'app.js', 'deck-panels.css', 'deck-panels.js',
-                          'drafting.js', 'drafts.js', 'library.js', 'lists.js', 'markdown.js', 'research.js',
-                          'shell.js', 'style.css'])
+                          'desk-base.js', 'drafting.js', 'drafts.js', 'library.js', 'lists.js', 'markdown.js',
+                          'research.js', 'shell.js', 'style.css'])
         # The list kit is the shared core's, loaded after the deck panels and before app.js,
         # and so is the Document Library's sheet.
         scripts = re.findall(r'<script src="([^"]+)"', page)
@@ -1535,6 +1535,10 @@ class PageFileTests(unittest.TestCase):
         self.assertLess(scripts.index('library.js'), scripts.index('app.js'))
         self.assertIn('/lists.js', desk._security.PAGE)
         self.assertIn('/library.js', desk._security.PAGE)
+        # The desk base, the parts app.js draws with, is the shared core's, after the shell kit.
+        self.assertLess(scripts.index('shell.js'), scripts.index('desk-base.js'))
+        self.assertLess(scripts.index('desk-base.js'), scripts.index('app.js'))
+        self.assertIn('/desk-base.js', desk._security.PAGE)
         # The shared desk kit comes before app.js, and the training desk, built on both, after.
         self.assertLess(scripts.index('drafting.js'), scripts.index('app.js'))
         self.assertLess(scripts.index('app.js'), scripts.index('drafts.js'))
@@ -1546,13 +1550,14 @@ class PageFileTests(unittest.TestCase):
         for risky in ('innerHTML', 'outerHTML', 'insertAdjacentHTML', 'eval('):
             self.assertNotIn(risky, self.read('drafts.js'))
         panels = Path(desk.__file__).resolve().parent / 'studio_core' / 'deck_web'
-        for name in ('deck-panels.js', 'deck-panels.css', 'lists.js', 'library.js'):
+        for name in ('deck-panels.js', 'deck-panels.css', 'lists.js', 'library.js', 'desk-base.js'):
             self.assertNotRegex((panels / name).read_text(),
                                 r'(?i)\b(?:https?|wss?|ftp|data|blob):')
         for risky in ('innerHTML', 'outerHTML', 'insertAdjacentHTML', 'eval(', 'cssText',
                       'srcdoc', 'allow-scripts', 'allow-same-origin', '<script'):
             self.assertNotIn(risky, (panels / 'deck-panels.js').read_text())
             self.assertNotIn(risky, (panels / 'lists.js').read_text())
+            self.assertNotIn(risky, (panels / 'desk-base.js').read_text())
         # The one frame there is: the deck's draft, sandboxed with nothing allowed, opened at
         # the one framed address with a ticket the page asked for with its key.
         frames = (panels / 'deck-panels.js').read_text()
@@ -1585,7 +1590,7 @@ class PageFileTests(unittest.TestCase):
         self.assertNotRegex(page, r'\son[a-z]+\s*=')
         self.assertNotRegex(page, r'<svg\b')
         self.assertEqual(re.findall(r'<script\b[^>]*>(.*?)</script>', page, re.DOTALL),
-                         ['', '', '', '', '', '', '', '', '', ''])
+                         ['', '', '', '', '', '', '', '', '', '', ''])
 
     def test_the_scripts_never_treat_a_value_as_markup(self):
         for name in ('app.js', 'markdown.js', 'drafts.js', 'drafting.js'):

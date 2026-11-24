@@ -636,7 +636,10 @@ DECK_PAGES = {'/deck-panels.js': (str(DECK_WEB / 'deck-panels.js'),
               '/lists.js': (str(DECK_WEB / 'lists.js'), 'text/javascript; charset=utf-8'),
               '/library.js': (str(DECK_WEB / 'library.js'), 'text/javascript; charset=utf-8'),
               # The shell kit: the appearance switch, the command palette, the progress track.
-              '/shell.js': (str(DECK_WEB / 'shell.js'), 'text/javascript; charset=utf-8')}
+              '/shell.js': (str(DECK_WEB / 'shell.js'), 'text/javascript; charset=utf-8'),
+              # The desk base: the small parts Presentation Studio's and Training Studio's
+              # pages both draw with.
+              '/desk-base.js': (str(DECK_WEB / 'desk-base.js'), 'text/javascript; charset=utf-8')}
 
 
 def for_product(name, product, token_header, page_dir, pages, computer, error,

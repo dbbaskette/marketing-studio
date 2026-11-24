@@ -13,6 +13,7 @@ import test_no_brand_named
 from runner import page
 
 PAGE = helpers.SCRIPTS / 'desk'
+DESK_BASE = Path(__file__).resolve().parents[3] / 'core' / 'studio_core' / 'deck_web' / 'desk-base.js'
 FORBIDDEN_WORDS = re.compile(r'\b(artifacts?|stale|lineage)\b', re.IGNORECASE)
 TRAINING_WORDS = re.compile(r'\btrainings?\b', re.IGNORECASE)
 SVG = 'http://www.w3.org/2000/svg'
@@ -26,8 +27,9 @@ class ApiTests(unittest.TestCase):
     """Every address the page asks for is one the server answers, in the way it answers it."""
 
     def setUp(self):
-        # The deck desk's script asks the server only through app.js's own helpers.
-        self.script = read('app.js') + read('deck-desk.js')
+        # The deck desk's script asks the server only through app.js's own helpers. The shared
+        # desk base app.js draws with (an upload read in base64, for one) is the page's too.
+        self.script = read('app.js') + read('deck-desk.js') + DESK_BASE.read_text(encoding='utf-8')
         self.reads = set(page.RunnerPage.reads)
         self.writes = set(page.RunnerPage.writes)
 
@@ -90,6 +92,7 @@ class LinkTests(unittest.TestCase):
             with self.subTest(name):
                 text = read(name).replace(f"'{SVG}'", "''")
                 self.assertNotRegex(text, r'(?i)\b(?:https?|wss?|ftp|data|blob):')
+        self.assertNotRegex(DESK_BASE.read_text(encoding='utf-8'), r'(?i)\b(?:https?|wss?|ftp|data|blob):')
         self.assertEqual(read('app.js').count(SVG), 1)
 
     def test_a_link_out_is_only_a_web_address_the_server_returned(self):
@@ -121,11 +124,15 @@ class LinkTests(unittest.TestCase):
         shell = read('index.html')
         self.assertEqual(sorted(re.findall(r'(?:src|href)="([^"]*)"', shell)),
                          ['#main', 'activity.js', 'app.js', 'deck-desk.js', 'deck-panels.css', 'deck-panels.js',
-                          'deck.css', 'drafting.js', 'library.js', 'lists.js', 'markdown.js', 'research.js',
-                          'shell.js', 'style.css'])
+                          'deck.css', 'desk-base.js', 'drafting.js', 'library.js', 'lists.js', 'markdown.js',
+                          'research.js', 'shell.js', 'style.css'])
         # The list kit is the shared core's, loaded after the deck panels and before app.js.
         # The desk kit comes before app.js, and the deck desk after it, which hands it its parts.
+        # The desk base, the parts app.js draws with, is the shared core's, after the shell kit.
         scripts = re.findall(r'<script src="([^"]+)"', shell)
+        self.assertLess(scripts.index('shell.js'), scripts.index('desk-base.js'))
+        self.assertLess(scripts.index('desk-base.js'), scripts.index('app.js'))
+        self.assertIn('/desk-base.js', server.PAGE)
         self.assertLess(scripts.index('deck-panels.js'), scripts.index('lists.js'))
         self.assertLess(scripts.index('lists.js'), scripts.index('app.js'))
         self.assertLess(scripts.index('drafting.js'), scripts.index('app.js'))
@@ -140,8 +147,8 @@ class LinkTests(unittest.TestCase):
 
 class MarkupTests(unittest.TestCase):
     def test_no_value_is_ever_treated_as_markup(self):
-        for name in ('app.js', 'deck-desk.js', 'markdown.js'):
-            script = read(name)
+        for name in ('app.js', 'deck-desk.js', 'markdown.js', 'desk-base.js'):
+            script = DESK_BASE.read_text(encoding='utf-8') if name == 'desk-base.js' else read(name)
             for risky in ('innerHTML', 'outerHTML', 'insertAdjacentHTML', 'document.write',
                           'createContextualFragment', 'DOMParser', 'srcdoc', 'eval(',
                           'Function(', "setAttribute('style'", "setAttribute('href'",
