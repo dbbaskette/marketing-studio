@@ -297,15 +297,11 @@ class SharedLookTests(unittest.TestCase):
     def test_all_five_apps_have_one_look(self):
         # The liquid pilot is the kit's own look now: no stylesheet, page or script opts a
         # page into it, or out of it.
-        # Exempt: one line in Marketing Studio's setup page script that still sets
-        # `document.body.dataset.pilot`. Nothing reads it any more, so it is a no-op; it is
-        # deleted with that script's next change.
-        exempt = {ROOT / 'core/studio_core/setup_web/app.js'}
         found = []
         for suffix in ('*.css', '*.html', '*.js'):
             for path in ROOT.rglob(suffix):
                 parts = path.relative_to(ROOT).parts
-                if path in exempt or {'.git', 'node_modules', 'tests'} & set(parts):
+                if {'.git', 'node_modules', 'tests'} & set(parts):
                     continue
                 if path.is_symlink():
                     continue
