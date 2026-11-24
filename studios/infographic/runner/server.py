@@ -25,7 +25,7 @@ shared = core.for_product(
      '/activity.js': ('activity.js', 'text/javascript; charset=utf-8')},
     None, Invalid, reads=('/api/intake-draft', '/api/status', '/api/projects', '/api/project', '/api/asset',
                          '/api/desk', '/api/activity', '/api/activity-log', '/api/source', '/api/preferences', '/api/computer', '/api/download', '/api/history', '/api/history-before', '/api/image-request', '/api/team', '/api/team-download', '/api/research-task', '/api/research-status'),
-    writes=('/api/intake-draft', '/api/action-control', '/api/research-job', '/api/research-control', '/api/research-sources', '/api/projects', '/api/project', '/api/action', '/api/preferences', '/api/csv-preview', '/api/csv-selection', '/api/source-preview', '/api/remote-preview', '/api/handoff-inventory', '/api/handoff-preview', '/api/research-preview', '/api/team', '/api/brand-current', *library_context.ROUTES))
+    writes=('/api/intake-draft', '/api/action-control', '/api/research-job', '/api/research-control', '/api/research-sources', '/api/projects', '/api/project', '/api/action', '/api/preferences', '/api/csv-preview', '/api/csv-selection', '/api/source-preview', '/api/remote-preview', '/api/handoff-inventory', '/api/handoff-preview', '/api/research-preview', '/api/research-library-preview', '/api/team', '/api/brand-current', *library_context.ROUTES))
 
 
 class Page(shared.Page):
@@ -237,6 +237,15 @@ class Page(shared.Page):
             require(isinstance(sent,dict) and set(sent)=={'id','expected_revision','case','source_mode'},'Choose a research case for this exact infographic task.')
             project=self.store.read(sent['id']);self.store.expect(project,sent['expected_revision'])
             return shared.as_json(200,research.prepare(sent['case'],expected_task=research.task(project,sent['source_mode'])))
+        if path == '/api/research-library-preview':
+            # Research kept in the Document Library, chosen explicitly: it may have been made for
+            # another purpose; its own task is recorded and the preview says so.
+            from . import research
+            require(isinstance(sent, dict) and set(sent) == {'id', 'expected_revision', 'document', 'revision', 'source_mode'},
+                    'Choose one research item from the Document Library for this infographic.')
+            project = self.store.read(sent['id']); self.store.expect(project, sent['expected_revision'])
+            return shared.as_json(200, research.from_library(sent['document'], sent['revision'],
+                                                             expected_task=research.task(project, sent['source_mode'])))
         if path == '/api/remote-preview':
             from . import remote_sources
             require(isinstance(sent, dict) and set(sent) <= {'kind', 'url', 'account', 'tabs'}, 'Preview one explicitly selected remote source.')

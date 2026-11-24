@@ -1418,7 +1418,9 @@ async function remoteSheet(done,many){
 
 function sourceImportSheet(preview,replaceId,back='ig-research',acknowledgedBefore=false){
   let acknowledged=acknowledgedBefore;const problem=make('p','problem'),ack=make('input');ack.type='checkbox';ack.checked=acknowledged;ack.addEventListener('change',()=>{acknowledged=ack.checked;});
-  sheet('Review captured information',make('p','',preview.name+' · '+preview.characters+' readable characters'),make('pre','ig-csv-preview',preview.excerpt),list(preview.warnings),preview.warnings.length?add(make('label','check'),ack,document.createTextNode('I reviewed these gaps. Use only readable text.')):make('p','quiet','Captured text is stored locally; import does not read the remote document again.'),problem,add(make('div','bar'),button('Import this capture',()=>{if(!preview.readable||(preview.warnings.length&&!acknowledged)){problem.textContent='Review readable coverage and acknowledge gaps before import.';return;}const sent={capture_id:preview.id,acknowledge_warnings:acknowledged,...(replaceId?{replace_id:replaceId}:{})};sourceConfirm(preview.name,replaceId||'',()=>action('source-import',sent),back,()=>sourceImportSheet(preview,replaceId,back,acknowledged));},true),button('Cancel',()=>{closeSheet();refocus(back);})));
+  const madeFor=preview.made_for&&preview.different?add(make('section','callout stack ig-made-for'),make('strong','','This research was made for something else'),
+    make('p','','It was made for '+(preview.made_for.purpose||'another purpose')+(preview.made_for.audience?', for '+preview.made_for.audience:'')+'. Its findings are used as they are; check they fit this infographic.')):null;
+  sheet('Review captured information',make('p','',preview.name+' · '+preview.characters+' readable characters'),madeFor,make('pre','ig-csv-preview',preview.excerpt),list(preview.warnings),preview.warnings.length?add(make('label','check'),ack,document.createTextNode('I reviewed these gaps. Use only readable text.')):make('p','quiet','Captured text is stored locally; import does not read the remote document again.'),problem,add(make('div','bar'),button('Import this capture',()=>{if(!preview.readable||(preview.warnings.length&&!acknowledged)){problem.textContent='Review readable coverage and acknowledge gaps before import.';return;}const sent={capture_id:preview.id,acknowledge_warnings:acknowledged,...(replaceId?{replace_id:replaceId}:{})};sourceConfirm(preview.name,replaceId||'',()=>action('source-import',sent),back,()=>sourceImportSheet(preview,replaceId,back,acknowledged));},true),button('Cancel',()=>{closeSheet();refocus(back);})));
 }
 async function deliverySheet(delivery){
   try{preferences=await request('/api/preferences');}catch(f){error(f.message);return;}
@@ -1454,6 +1456,14 @@ async function researchSheet(){
   const primary=held.project.sources.length>0;
   const editor=new StudioResearch.Editor({request:sent=>request('/api/research-sources',sent),primarySummary:primary?'Your captured infographic material is included. Add any additional references here.':''});
   const control=async action=>{try{const result=await request('/api/research-control',{id:ident,action});if(action==='preview'){sourceImportSheet(result);return;}await poll();}catch(f){problem.textContent=f.message;}};
+  // Use research: its checked findings become a source and your assistant suggests a story
+  // from them, in one action. Nothing is used until it is chosen.
+  const useResearch=async()=>{
+    try{await request('/api/research-control',{id:ident,action:'use'});closeSheet();await openProject(ident);
+      toast('Research added as a source. Your assistant is suggesting a story from it.');
+      if(here(ident))await action('suggest',{fresh:true});}
+    catch(f){problem.textContent=f.message;}
+  };
   // One read at a time, and none while the tab is hidden: it reads again as soon as it is
   // shown. Each answer is drawn in place, keeping what the person opened, focused or scrolled.
   let pollTimer=null,pollWaiting=false;
@@ -1471,11 +1481,13 @@ async function researchSheet(){
         if(['working','pausing','stopping'].includes(state.state)){
           if(state.state==='working')hooks.pause=()=>control('pause');
           if(state.state!=='stopping')hooks.stop=()=>control('stop');
-        }else if(state.state==='complete')hooks.use=()=>control('preview');
+        }else if(state.state==='complete')hooks.use=useResearch;
         else if(state.state==='paused')hooks.resume=()=>control('resume');
         else if(['failed','stopped'].includes(state.state))hooks.retry=()=>control('retry');
         parts.push(StudioResearch.progress({...state.progress,phase:state.state==='complete'?'complete':state.state==='working'?state.progress.phase:state.state,timing:{...state.progress.timing,elapsed_seconds:state.elapsed_seconds}},hooks));
         if(state.problem)parts.push(make('p','problem',state.problem));
+        if(state.state==='complete')parts.push(make('p','quiet','Use research adds its checked findings as a source and asks your assistant for a story from them.'));
+        if(state.kept)parts.push(make('p',state.kept.state==='kept'?'quiet':'problem',state.kept.state==='kept'?'Kept in the Document Library too, for other projects.':'Not kept in the Document Library: '+(state.kept.problem||'it could not be kept.')+' The research itself is complete.'));
       }
       Drafting.redraw(status,...parts);
       if(state&&['working','pausing','stopping'].includes(state.state)){clearTimeout(pollTimer);pollTimer=setTimeout(poll,1500);}
@@ -1496,7 +1508,18 @@ async function researchImportSheet(){
   async function show(){try{task.textContent=JSON.stringify(await request('/api/research-task?id='+encodeURIComponent(held.project.id)+'&source_mode='+mode.input.value),null,2);}catch(f){problem.textContent=f.message;}}
   mode.input.addEventListener('change',show);await show();
   const go=button('Verify and preview reviewed research',async()=>{go.disabled=true;try{const preview=await request('/api/research-preview',{id:held.project.id,expected_revision:held.project.revision,case:path.input.value,source_mode:mode.input.value});sourceImportSheet(preview);}catch(f){problem.textContent=f.message;}finally{go.disabled=false;}},true);
-  sheet('Use reviewed research',make('p','','Optional: give this purpose-led task to Harness Research, then import its complete independently reviewed case. This screen starts no research or public search.'),mode.wrap,detail('Infographic research task',task),path.wrap,problem,add(make('div','bar'),go,button('Cancel',closeSheet)));
+  // Research kept in the Document Library can be chosen too, even when it was made for
+  // something else: the preview says what it was made for.
+  const fromLibrary=button('Choose research from the Document Library',()=>{
+    if(!window.StudioLibrary){error('The library could not be loaded. Reload the page.');return;}
+    let preview=null;
+    window.StudioLibrary.pick({title:'Choose research',studio:'infographic',noun:'infographic',max:1,post:(route,body)=>request('/api/'+route,body),
+      unavailable:row=>row.kind==='research'?null:{label:'Not research',detail:'Choose a research item.'},
+      use:async picks=>{preview=await request('/api/research-library-preview',{id:held.project.id,expected_revision:held.project.revision,document:picks[0].id,revision:picks[0].revision,source_mode:mode.input.value});},
+      refocus:()=>null}).then(done=>{if(done&&preview)sourceImportSheet(preview);});
+  });
+  fromLibrary.dataset.key='ig-research-library';
+  sheet('Use reviewed research',make('p','','Optional: give this purpose-led task to Harness Research, then import its complete independently reviewed case. This screen starts no research or public search.'),mode.wrap,detail('Infographic research task',task),path.wrap,problem,fromLibrary,add(make('div','bar'),go,button('Cancel',closeSheet)));
 }
 // Shared settings own the team repository. Going there keeps this infographic and this
 // sheet to come back to; nothing connects until the person asks again.

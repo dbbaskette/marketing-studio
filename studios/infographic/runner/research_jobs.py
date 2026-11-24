@@ -17,6 +17,21 @@ from .contracts import Invalid
 from .validation import identifier, require
 
 
+def reads(project, source_mode):
+    """What research reads of an infographic: its task, apart from the working title, and its
+    captured sources. An edit that leaves this alone (a rename) leaves running research be."""
+    from .contracts import digest
+    task = {key: value for key, value in research.task(project, source_mode).items() if key != 'topic'}
+    return digest({'task': task, 'sources': sorted((s['id'], s['sha256']) for s in project['sources'])})
+
+
+def unchanged(project, state):
+    """Whether the infographic still asks research what this saved research was made for."""
+    if 'reads' in state:
+        return reads(project, state['task']['source_mode']) == state['reads']
+    return project['revision'] == state['project_revision']
+
+
 class Jobs:
     def __init__(self, store, *, author=None, runtime=None, fetch=None):
         self.store, self.author, self.runtime = store, author, runtime
@@ -59,7 +74,7 @@ class Jobs:
         with self.lock:
             _, state = self._state(ident)
             if not state: return None
-            shown = {k: state[k] for k in ('state', 'request', 'project_revision', 'progress', 'problem') if k in state}
+            shown = {k: state[k] for k in ('state', 'request', 'project_revision', 'progress', 'problem', 'kept') if k in state}
             shown['elapsed_seconds'] = round((state.get('ended') or time.time()) - state['started'])
             shown['workers'] = self.workers(ident)
             if state['state'] in ('working', 'pausing', 'paused', 'stopping') and state.get('ended') is None and ident not in self.active:
@@ -77,7 +92,7 @@ class Jobs:
             require(not saved or saved.get('ended') is not None, 'An earlier research host has no confirmed terminal outcome. Do not start another request until it is recovered.')
             require(previous is None or not research_session.unresolved(previous), 'An earlier research invocation has no confirmed terminal observation. Recover it before starting another request.')
             if retry:
-                require(saved is not None and saved['project_revision'] == project['revision'], 'The infographic changed. Start research for its current brief.')
+                require(saved is not None and unchanged(project, saved), 'The infographic changed. Start research for its current brief.')
                 require(saved['state'] not in ('working', 'pausing', 'paused', 'stopping'), 'An earlier host invocation needs terminal recovery before retrying.')
                 root, state = previous, saved
                 runtime = Path(self.runtime) if self.runtime else rc.runtime_for(state['contract'])
@@ -104,6 +119,7 @@ class Jobs:
                 inputs = research_sources.install(prepared, root)
                 state = {'schema': 1, 'owner': self.store.owner, 'project': ident, 'project_revision': project['revision'],
                     'request': key, 'contract': contract, 'execution': execution, 'task': task,
+                    'reads': reads(project, research_sites.source_mode(choice)),
                     'inputs': inputs, 'choice': choice, 'configuration': settings.snapshot()['assistant'],
                     'state': 'working', 'progress': {'phase': 'investigate', 'streams': []},
                     'problem': '', 'started': time.time(), 'ended': None}
@@ -132,7 +148,8 @@ class Jobs:
                 state.update(values); rc.write(root, 'state.json', json.dumps(state))
         def current():
             project = self.store.read(ident)
-            if project['revision'] != state['project_revision'] or self.store.owner != state['owner']: return False
+            # Only an edit to what research reads stops it: a rename leaves it running.
+            if not unchanged(project, state) or self.store.owner != state['owner']: return False
             # Validate current local originals without refetching Google or a website.
             for source in project['sources']:
                 project_sources.read(self.store, project, source)
@@ -212,11 +229,29 @@ class Jobs:
                 earlier=state['execution'].get('earlier') or {'capability': state['execution']['capability']})
             require(current() and not stop.is_set(), 'The infographic changed before research could be used. Checked research is kept.')
             save(state='complete', ended=time.time())
+            # Verified research is kept in the Document Library for other projects. Keeping it
+            # never fails or delays the research: the research above is already complete.
+            save(kept=self._keep(ident, root))
         except BaseException as error:
             save(state='paused' if paused.is_set() and not stop.is_set() else 'stopped' if stop.is_set() else 'failed',
                 problem=str(error), ended=time.time())
         finally:
             with self.lock: self.active.pop(ident, None)
+
+    def _keep(self, ident, root):
+        try:
+            from studio_core.document_library.research import keep_research
+            project = self.store.read(ident)
+            done = keep_research(studio='infographic', case=research_session.case_for(root), project={
+                'id': ident, 'title': project['brief']['title'], 'revision': project['revision']})
+        except Exception:   # never raised into the research
+            return {'state': 'failed', 'problem': 'The research could not be kept in the Document Library.'}
+        shown = {'state': done.get('state')}
+        if done.get('state') == 'kept':
+            shown.update(document=done.get('document'), revision=done.get('revision'))
+        else:
+            shown['problem'] = str(done.get('problem') or 'It could not be kept.')[:500]
+        return shown
 
     def control(self, ident, action):
         with self.lock:
@@ -229,15 +264,23 @@ class Jobs:
                 state['state'] = 'stopping' if action == 'stop' else 'pausing'
                 rc.write(root, 'state.json', json.dumps(state))
                 return self.read(ident)
-            if action == 'preview':
+            if action in ('preview', 'use'):
                 require(state['state'] == 'complete', 'Wait for independently reviewed research before using it.')
-                project = self.store.read(ident); self.store.expect(project, state['project_revision'])
+                project = self.store.read(ident)
+                require(unchanged(project, state), 'This infographic changed. Reload it before saving.')
                 runtime = Path(self.runtime) if self.runtime else rc.runtime_for(state['contract'])
-                return research.prepare(research_session.case_for(root), expected_task=state['task'], runtime=runtime)
+                preview = research.prepare(research_session.case_for(root), expected_task=state['task'], runtime=runtime)
+                if action == 'preview':
+                    return preview
+                # Use research: its findings are added as a source in one step; the page then
+                # asks for facts and a story from them.
+                from . import intake
+                return {'project': intake.adopt(self.store, ident, preview['id'], expected_revision=project['revision'],
+                                                acknowledge_warnings=bool(preview.get('warnings')))}
             if action in ('retry', 'resume'):
                 require(active is None, 'Wait for current research invocations to finish before resuming.')
                 return self.start(ident, state['project_revision'], None, retry=True)
-            raise Invalid('Choose pause, stop, resume, retry or preview research.')
+            raise Invalid('Choose pause, stop, resume, retry, preview or use research.')
 
     def stop(self):
         with self.lock:
