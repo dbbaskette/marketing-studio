@@ -1,0 +1,296 @@
+{
+  "agent": "claude",
+  "answers": {},
+  "copies": {
+    "problems": {},
+    "tried": {}
+  },
+  "deck": {},
+  "documents": null,
+  "drafted": [],
+  "driver": null,
+  "effort": null,
+  "halt": null,
+  "last_decision": {
+    "at": "2026-11-24T22:36:10Z",
+    "decision": "approve",
+    "label": "the research report",
+    "next": "Drafting the blueprint now."
+  },
+  "last_decision_stop": "2026-11-24T22:36:10Z",
+  "limits": {
+    "step_seconds": 1350
+  },
+  "model": null,
+  "model_jobs": [
+    {
+      "actual_effort": null,
+      "actual_model": null,
+      "attempt": 1,
+      "effort": null,
+      "model": null,
+      "permission": "write",
+      "policy": 3,
+      "product": "Training Studio",
+      "profile": "research",
+      "purpose": "research-plan",
+      "source": "inherit",
+      "step": "research-plan"
+    },
+    {
+      "actual_effort": null,
+      "actual_model": null,
+      "attempt": 1,
+      "effort": null,
+      "model": null,
+      "permission": "research",
+      "policy": 3,
+      "product": "Training Studio",
+      "profile": "research",
+      "purpose": "research",
+      "source": "inherit",
+      "step": "research:instance-min"
+    },
+    {
+      "actual_effort": null,
+      "actual_model": null,
+      "attempt": 1,
+      "effort": null,
+      "model": null,
+      "permission": "research",
+      "policy": 3,
+      "product": "Training Studio",
+      "profile": "research",
+      "purpose": "research",
+      "source": "inherit",
+      "step": "research:availability"
+    },
+    {
+      "actual_effort": null,
+      "actual_model": null,
+      "attempt": 1,
+      "effort": null,
+      "model": null,
+      "permission": "research",
+      "policy": 3,
+      "product": "Training Studio",
+      "profile": "research",
+      "purpose": "research",
+      "source": "inherit",
+      "step": "research:health-checks"
+    },
+    {
+      "actual_effort": null,
+      "actual_model": null,
+      "attempt": 1,
+      "effort": null,
+      "model": null,
+      "permission": "research",
+      "policy": 3,
+      "product": "Training Studio",
+      "profile": "research",
+      "purpose": "research",
+      "source": "inherit",
+      "step": "research:zero-downtime"
+    },
+    {
+      "actual_effort": null,
+      "actual_model": null,
+      "attempt": 1,
+      "effort": null,
+      "model": null,
+      "permission": "write",
+      "policy": 3,
+      "product": "Training Studio",
+      "profile": "writing",
+      "purpose": "blueprint",
+      "source": "inherit",
+      "step": "blueprint"
+    }
+  ],
+  "model_profiles": {
+    "agent": "claude",
+    "mode": "single",
+    "policy": 3,
+    "profiles": {
+      "checking": {
+        "effort": null,
+        "model": null,
+        "source": "inherit"
+      },
+      "combining": {
+        "effort": null,
+        "model": null,
+        "source": "inherit"
+      },
+      "fixing": {
+        "effort": null,
+        "model": null,
+        "source": "inherit"
+      },
+      "quick": {
+        "effort": null,
+        "model": null,
+        "source": "inherit"
+      },
+      "research": {
+        "effort": null,
+        "model": null,
+        "source": "inherit"
+      },
+      "writing": {
+        "effort": null,
+        "model": null,
+        "source": "inherit"
+      }
+    },
+    "schema": 1
+  },
+  "problem": null,
+  "question": null,
+  "research": {
+    "plan": "2e689b88ec9abc30ad1e943bedc69c5ae6fc5302cae2dfbf67db878e322ab3ce",
+    "run": "ff9756cae86d84f6e6672ea4"
+  },
+  "research_from": {
+    "documents": false,
+    "sites": [],
+    "web": true
+  },
+  "research_questions": [],
+  "review_layout": 2,
+  "review_policy": {
+    "level": "step_by_step",
+    "schema": 1
+  },
+  "schema": 1,
+  "started_at": "2026-11-24T22:36:08Z",
+  "steps": {
+    "blueprint": {
+      "attempts": [
+        {
+          "dollars": null,
+          "ended_at": "2026-11-24T22:36:10Z",
+          "error": null,
+          "outcome": "kept",
+          "seconds": 0.0,
+          "started_at": "2026-11-24T22:36:10Z",
+          "tokens": null
+        }
+      ],
+      "failed": 0
+    },
+    "intake": {
+      "attempts": [
+        {
+          "dollars": null,
+          "ended_at": "2026-11-24T22:36:08Z",
+          "error": null,
+          "outcome": "kept",
+          "seconds": 0.0,
+          "started_at": "2026-11-24T22:36:08Z",
+          "tokens": null
+        }
+      ],
+      "failed": 0
+    },
+    "research-plan": {
+      "attempts": [
+        {
+          "dollars": null,
+          "ended_at": "2026-11-24T22:36:09Z",
+          "error": null,
+          "outcome": "kept",
+          "seconds": 0.0,
+          "started_at": "2026-11-24T22:36:09Z",
+          "tokens": null
+        }
+      ],
+      "failed": 0
+    },
+    "research-report": {
+      "attempts": [
+        {
+          "dollars": null,
+          "ended_at": "2026-11-24T22:36:10Z",
+          "error": null,
+          "outcome": "kept",
+          "seconds": 0.0,
+          "started_at": "2026-11-24T22:36:10Z",
+          "tokens": null
+        }
+      ],
+      "failed": 0
+    },
+    "research-start": {
+      "attempts": [
+        {
+          "dollars": null,
+          "ended_at": "2026-11-24T22:36:09Z",
+          "error": null,
+          "outcome": "kept",
+          "seconds": 0.0,
+          "started_at": "2026-11-24T22:36:09Z",
+          "tokens": null
+        }
+      ],
+      "failed": 0
+    },
+    "research:availability": {
+      "attempts": [
+        {
+          "dollars": null,
+          "ended_at": "2026-11-24T22:36:09Z",
+          "error": null,
+          "outcome": "kept",
+          "seconds": 0.0,
+          "started_at": "2026-11-24T22:36:09Z",
+          "tokens": null
+        }
+      ],
+      "failed": 0
+    },
+    "research:health-checks": {
+      "attempts": [
+        {
+          "dollars": null,
+          "ended_at": "2026-11-24T22:36:09Z",
+          "error": null,
+          "outcome": "kept",
+          "seconds": 0.0,
+          "started_at": "2026-11-24T22:36:09Z",
+          "tokens": null
+        }
+      ],
+      "failed": 0
+    },
+    "research:instance-min": {
+      "attempts": [
+        {
+          "dollars": null,
+          "ended_at": "2026-11-24T22:36:09Z",
+          "error": null,
+          "outcome": "kept",
+          "seconds": 0.0,
+          "started_at": "2026-11-24T22:36:09Z",
+          "tokens": null
+        }
+      ],
+      "failed": 0
+    },
+    "research:zero-downtime": {
+      "attempts": [
+        {
+          "dollars": null,
+          "ended_at": "2026-11-24T22:36:09Z",
+          "error": null,
+          "outcome": "kept",
+          "seconds": 0.0,
+          "started_at": "2026-11-24T22:36:09Z",
+          "tokens": null
+        }
+      ],
+      "failed": 0
+    }
+  }
+}

@@ -1,6 +1,8 @@
 """Every stop the saved gated flow leaves on disk, in its original format, against the
-explicit migration (#519). Each training here is made by the saved flow itself, with
-scripted workers, and stopped where a person would find it. For each stop the preview is
+explicit migration (#519, #542). Each training here was made by the saved flow itself, with
+scripted workers, and stopped where a person would find it; it is loaded from its stored
+copy (saved_fixtures.py, proved against the flow by test_saved_fixtures.py), so these tests
+need no saved-flow continuation. For each stop the preview is
 pure (nothing in the workspace changes), and it either opens the work on the desk with
 every original byte, pin and approval kept and none invented, or refuses with the reason
 the person is shown and leaves the saved flow as it was.
@@ -9,7 +11,8 @@ import json
 import shutil
 
 import helpers
-from runner_support import StudioCase, asks, fails
+import saved_fixtures
+from runner_support import StudioCase
 import home
 import workspace
 from runner import desk_chat, desk_migration, engine as engines, gitstate, page
@@ -20,6 +23,10 @@ EARLY = 'No usable teaching plan or supported deck outline is saved yet. Continu
 FAILED = 'Resolve the saved failure or question in its saved flow before opening it on the desk.'
 FINISHED = 'Use the existing finished Open on the desk action.'
 EVERY = ['document', 'brief', 'scenario']
+# The stored state for each gate a saved training waits at (made with EVERY material).
+GATES = {'research-plan': 'research-plan-gate', 'research': 'research-gate',
+         'blueprint': 'blueprint-gate', 'document': 'document-gate', 'brief': 'brief-gate',
+         'scenario:main': 'scenario-gate'}
 
 
 class SavedStopTests(StudioCase):
@@ -40,10 +47,15 @@ class SavedStopTests(StudioCase):
         self.assertEqual(len(self.workers.jobs), jobs)
         return shown
 
-    def stopped_at(self, gate, **form):
-        """A saved training run by the saved flow until `gate` waits for the person."""
-        root = self.saved_start(title='Stop ' + gate.replace(':', ' '), **form)
-        self.to_gate(root, gate)
+    def saved(self, state):
+        """A saved training as the saved flow left it (a stored fixture, see
+        saved_fixtures.py), in this test's workspace."""
+        return saved_fixtures.load(self, state)
+
+    def stopped_at(self, gate):
+        """A saved training the saved flow ran until `gate` waits for the person."""
+        root = self.saved(GATES[gate])
+        self.assertEqual(workspace.status(root)['gate'], gate)
         self.assertEqual(self.view(root)['state'], 'waiting')
         self.assertIsNone(self.view(root)['flow'])
         return root
@@ -90,36 +102,32 @@ class EarlyStopTests(SavedStopTests):
         self.assert_refused(self.stopped_at('research'), EARLY)
 
     def test_worker_question_before_a_plan_keeps_its_saved_flow(self):
-        self.workers.then('research-plan', asks('Which platform is this about?'))
-        root = self.saved_start(title='Asked early')
+        root = self.saved('question-before-plan')
         self.assertTrue(self.view(root)['question'])
         self.assert_refused(root, FAILED)
 
     def test_failure_before_a_plan_keeps_its_saved_flow(self):
-        self.workers.then('research-plan', fails(), fails(), fails())
-        root = self.saved_start(title='Failed early')
+        root = self.saved('failure-before-plan')
         self.assertEqual(self.view(root)['state'], 'failed')
         self.assert_refused(root, FAILED)
 
 
 class MaterialStopTests(SavedStopTests):
     def test_blueprint_gate_migrates_with_its_plan(self):
-        self.assert_migrates(self.stopped_at('blueprint', materials=EVERY), ['blueprint'])
+        self.assert_migrates(self.stopped_at('blueprint'), ['blueprint'])
 
     def test_document_gate_migrates_with_the_plan_and_the_guide(self):
-        self.assert_migrates(self.stopped_at('document', materials=EVERY), ['blueprint', 'document'])
+        self.assert_migrates(self.stopped_at('document'), ['blueprint', 'document'])
 
     def test_brief_gate_migrates_with_every_material_made(self):
-        self.assert_migrates(self.stopped_at('brief', materials=EVERY), ['blueprint', 'document', 'brief'])
+        self.assert_migrates(self.stopped_at('brief'), ['blueprint', 'document', 'brief'])
 
     def test_scenario_gate_migrates_with_every_material_made(self):
-        self.assert_migrates(self.stopped_at('scenario:main', materials=EVERY),
+        self.assert_migrates(self.stopped_at('scenario:main'),
                              ['blueprint', 'document', 'brief', 'scenario:main'])
 
     def test_failure_after_the_plan_migrates_and_keeps_the_failure_in_history(self):
-        self.workers.then('document', fails(), fails(), fails())
-        root = self.stopped_at('blueprint', materials=EVERY)
-        self.decide(root, 'blueprint')
+        root = self.saved('failure-after-plan')
         self.assertEqual(self.view(root)['state'], 'failed')
         before = self.record(root)
         shown = self.assert_migrates(root, ['blueprint'])
@@ -127,9 +135,7 @@ class MaterialStopTests(SavedStopTests):
         self.assert_kept_in_history(root, before, 'problem', 'document')
 
     def test_worker_question_after_the_plan_migrates_and_keeps_the_question_in_history(self):
-        self.workers.then('document', asks('Which platform is this about?'))
-        root = self.stopped_at('blueprint', materials=EVERY)
-        self.decide(root, 'blueprint')
+        root = self.saved('question-after-plan')
         self.assertTrue(self.view(root)['question'])
         before = self.record(root)
         shown = self.assert_migrates(root, ['blueprint'])
@@ -151,7 +157,7 @@ class MaterialStopTests(SavedStopTests):
         self.assertIsNone(shown['question'])
 
     def test_paused_after_the_plan_migrates_and_keeps_the_pause_in_history(self):
-        root = self.stopped_at('blueprint', materials=EVERY)
+        root = self.stopped_at('blueprint')
         record = self.record(root)
         record['halt'] = 'paused'
         (root / RUN).write_text(json.dumps(record))
@@ -160,7 +166,7 @@ class MaterialStopTests(SavedStopTests):
         self.assertEqual(self.engine._load(root)['migration_saved_status']['halt'], 'paused')
 
     def test_review_layout_1_run_migrates_with_its_record_unchanged(self):
-        root = self.stopped_at('blueprint', materials=EVERY)
+        root = self.stopped_at('blueprint')
         record = self.record(root)
         record.pop('review_layout', None)
         (root / RUN).write_text(json.dumps(record))
@@ -169,8 +175,7 @@ class MaterialStopTests(SavedStopTests):
         self.assertNotIn('review_layout', json.loads((root / RUN).read_text()))
 
     def test_finished_training_keeps_the_finished_open_on_the_desk_action(self):
-        root = self.saved_start(title='Finished saved', materials=['document'])
-        self.to_end(root)
+        root = self.saved('finished')
         self.assertEqual(self.view(root)['state'], 'done')
         self.assertFalse(self.view(root)['can_migrate_desk'])
         self.assertTrue(self.view(root)['can_open_desk'])
@@ -179,14 +184,14 @@ class MaterialStopTests(SavedStopTests):
 
 class UnreadableStopTests(SavedStopTests):
     def test_unreadable_session_keeps_every_file_and_is_refused(self):
-        root = self.stopped_at('blueprint', materials=EVERY)
+        root = self.stopped_at('blueprint')
         (root / SESSION).write_text('{not a saved session')
         shown = self.preview(root)
         self.assertTrue(shown['blockers'])
         self.assertEqual(shown['writes'], [])
 
     def test_unreadable_run_record_keeps_every_file_and_is_refused(self):
-        root = self.stopped_at('blueprint', materials=EVERY)
+        root = self.stopped_at('blueprint')
         (root / RUN).write_text('{not a run record')
         shown = self.preview(root)
         self.assertTrue(shown['blockers'])
@@ -195,7 +200,7 @@ class UnreadableStopTests(SavedStopTests):
     def test_unreadable_record_says_why_and_its_files_stay_readable(self):
         """The record the runner refuses opens as a read-only record: it is named, says
         why, lists its saved files readable in place, and changes nothing."""
-        root = self.stopped_at('blueprint', materials=EVERY)
+        root = self.stopped_at('blueprint')
         (root / RUN).write_text('{not a run record')
         before, jobs = self.workspace_state(root), len(self.workers.jobs)
         native = page.RunnerPage(8765, self.engine)
@@ -257,32 +262,24 @@ class ClassificationTests(SavedStopTests):
                           desk_migration.NOTHING_MADE, 'copy')
         self.assert_class(self.stopped_at('research'), 'read-only',
                           desk_migration.NOTHING_MADE, 'copy')
-        self.workers.then('research-plan', asks('Which platform is this about?'))
-        asked = self.saved_start(title='Asked early')
+        asked = self.saved('question-before-plan')
         self.assertEqual(self.assert_class(asked, 'read-only', desk_migration.NOTHING_MADE,
                                            'copy')['said'], FAILED)
 
     def test_failure_before_a_plan_is_a_read_only_record(self):
-        self.workers.then('research-plan', fails(), fails(), fails())
-        root = self.saved_start(title='Failed early')
+        root = self.saved('failure-before-plan')
         self.assert_class(root, 'read-only', desk_migration.NOTHING_MADE, 'copy')
 
     def test_stops_with_material_migrate(self):
-        self.assert_class(self.stopped_at('blueprint', materials=EVERY), 'migrates')
-        self.assert_class(self.stopped_at('scenario:main', materials=EVERY), 'migrates')
-        self.workers.then('document', fails(), fails(), fails())
-        failed = self.saved_start(title='Failed later', materials=['document'])
-        self.to_gate(failed, 'blueprint')
-        self.decide(failed, 'blueprint')
-        self.assert_class(failed, 'migrates')
+        self.assert_class(self.stopped_at('blueprint'), 'migrates')
+        self.assert_class(self.stopped_at('scenario:main'), 'migrates')
+        self.assert_class(self.saved('failure-after-plan'), 'migrates')
 
     def test_finished_work_keeps_its_own_open_on_the_desk(self):
-        root = self.saved_start(title='Finished saved', materials=['document'])
-        self.to_end(root)
-        self.assert_class(root, 'finished')
+        self.assert_class(self.saved('finished'), 'finished')
 
     def test_records_and_dependencies_that_cannot_be_read_are_read_only(self):
-        root = self.stopped_at('blueprint', materials=EVERY)
+        root = self.stopped_at('blueprint')
         original = {name: (root / name).read_bytes() for name in (RUN, SESSION)}
         record = json.loads(original[RUN])
         for change, next_action in (({'halt': 'unknown'}, 'copy'), ({'schema': 99}, 'copy'),
@@ -307,13 +304,13 @@ class ClassificationTests(SavedStopTests):
 
     def test_a_worker_in_hand_still_migrates_once_it_is_done(self):
         from runner import engine as engines_module
-        root = self.stopped_at('blueprint', materials=EVERY)
+        root = self.stopped_at('blueprint')
         (root / engines_module.IN_HAND).write_text('blueprint')
         self.assertEqual(self.outcome(root)['outcome'], 'migrates')
         self.assertTrue(self.preview(root)['blockers'])
 
     def test_desk_work_and_an_opening_s_recovery_are_not_saved_flow_work(self):
-        root = self.stopped_at('blueprint', materials=EVERY)
+        root = self.stopped_at('blueprint')
         shown = self.preview(root)
         desk_chat.migrate(self.engine, root, shown['expected'])
         self.assertEqual(self.outcome(root)['outcome'], 'desk')
@@ -335,7 +332,7 @@ class ReadOnlyRecordTests(SavedStopTests):
             native.read('/api/saved-file', lambda key: {'path': str(root), 'name': 'intake.md'}[key])
 
     def test_an_unsupported_record_starts_new_work_from_its_start_form(self):
-        root = self.stopped_at('blueprint', materials=EVERY)
+        root = self.stopped_at('blueprint')
         record = self.record(root)
         record['schema'] = 99
         (root / RUN).write_text(json.dumps(record))
@@ -350,7 +347,7 @@ class ReadOnlyRecordTests(SavedStopTests):
 
     def test_a_record_whose_start_form_cannot_be_read_starts_a_new_training(self):
         from runner import copy_setup
-        root = self.stopped_at('blueprint', materials=EVERY)
+        root = self.stopped_at('blueprint')
         (root / SESSION).write_text('{not a saved session')
         before = self.workspace_state(root)
         shown = self.engine.view(root)
@@ -361,7 +358,7 @@ class ReadOnlyRecordTests(SavedStopTests):
         self.assertEqual(self.workspace_state(root), before)
 
     def test_a_linked_file_is_never_listed_or_read(self):
-        root = self.stopped_at('blueprint', materials=EVERY)
+        root = self.stopped_at('blueprint')
         (root / RUN).write_text('{not a run record')
         outside = self.base / 'outside.md'
         outside.write_text('Not the training’s own file.')
@@ -438,6 +435,7 @@ class DeckStopTests(DeckCase):
     assert_migrates = SavedStopTests.assert_migrates
 
     MADE = ['blueprint', 'document', 'brief']
+    saved = SavedStopTests.saved
 
     def migrated_deck_record(self, root, before):
         """The deck's saved run entry is kept as it was: nothing of it is approved or
@@ -447,8 +445,8 @@ class DeckStopTests(DeckCase):
         self.assertEqual(record['execution'], 'conversation')
 
     def test_what_the_deck_says_waiting_migrates_with_the_outline_kept_undecided(self):
-        root = self.saved_begin(title='Deck outline waits')
-        self.to_outline(root)
+        root = self.saved('deck-outline-waiting')
+        self.assertTrue(self.view(root)['outline']['waiting'])
         self.assertIsNone(self.view(root)['flow'])
         before = self.record(root)
         shown = self.assert_migrates(root, self.MADE)
@@ -457,24 +455,21 @@ class DeckStopTests(DeckCase):
 
     def test_deck_look_waiting_migrates_with_no_look_chosen(self):
         self.brand.offers_looks = True
-        root = self.saved_begin(title='Deck look waits')
-        self.drawn(root)
+        root = self.saved('deck-look-waiting')
         self.assertTrue(self.view(root)['look']['waiting'])
         before = self.record(root)
         self.assert_migrates(root, self.MADE)
         self.migrated_deck_record(root, before)
 
     def test_deck_gate_migrates_with_the_saved_deck(self):
-        root = self.saved_begin(title='Deck gate waits')
-        self.drawn(root)
-        self.to_gate(root, 'deck')
+        root = self.saved('deck-gate-waiting')
+        self.assertEqual(workspace.status(root)['gate'], 'deck')
         before = self.record(root)
         self.assert_migrates(root, [*self.MADE, 'deck'])
         self.migrated_deck_record(root, before)
 
     def test_deck_outline_without_its_plan_keeps_its_saved_flow(self):
-        root = self.saved_begin(title='Deck outline alone')
-        self.to_outline(root)
+        root = self.saved('deck-outline-waiting')
         (root / 'blueprint.md').unlink()
         said = 'blueprint.md is required to interpret the saved deck outline. Restore it first.'
         shown = self.assert_refused(root, said)
@@ -482,8 +477,7 @@ class DeckStopTests(DeckCase):
                                             'reason': desk_migration.MISSING + ' ' + said})
 
     def test_unreadable_deck_outline_keeps_its_saved_flow(self):
-        root = self.saved_begin(title='Deck outline unreadable')
-        self.to_outline(root)
+        root = self.saved('deck-outline-waiting')
         outline = json.loads((root / pipeline.OUTLINE).read_text())
         outline['slides'][0]['title'] = 7
         (root / pipeline.OUTLINE).write_text(json.dumps(outline))
@@ -504,9 +498,8 @@ class ReadOnlyPageTests(ScriptedPage, PageCase):
     files read in place, and one filled action. Nothing on it continues the training or
     opens it on the desk, and opening it sends nothing."""
 
-    def fixture(self, title, damage):
-        root = self.saved_start(title=title, materials=EVERY)
-        self.to_gate(root, 'blueprint')
+    def fixture(self, state, damage):
+        root = saved_fixtures.load(self, state)
         damage(root)
         self.root = root   # the page plan is written beside it
         path = str(root)
@@ -527,9 +520,12 @@ class ReadOnlyPageTests(ScriptedPage, PageCase):
         unreadable = lambda root: (root / RUN).write_text('{not a run record')  # noqa: E731
         unsupported = lambda root: (root / RUN).write_text(  # noqa: E731
             json.dumps({**self.record(root), 'schema': 99}))
-        for title, damage, action in (('Unreadable record', unreadable, 'Start a new training'),
-                                      ('Unsupported record', unsupported, 'Start new work from this')):
-            fixture = self.fixture(title, damage)
+        made = ['Read intake', 'Read research report', 'Read teaching plan']
+        for state, title, damage, action, reads in (
+                ('blueprint-gate', 'Stop blueprint', unreadable, 'Start a new training', made),
+                ('document-gate', 'Stop document', unsupported, 'Start new work from this',
+                 [*made, 'Read learner guide'])):
+            fixture = self.fixture(state, damage)
             listed = next(item for item in fixture['listing']['trainings']
                           if item['path'] == fixture['path'])
             self.assertEqual(listed['run']['read_only'], True)
@@ -549,6 +545,6 @@ class ReadOnlyPageTests(ScriptedPage, PageCase):
                     for word in ('Continue', 'Open on the desk', 'Try again', 'Answer'):
                         self.assertNotIn(word, shot['buttons'])
                     self.assertEqual([name for name in shot['buttons'] if name.startswith('Read ')],
-                                     ['Read intake', 'Read research report', 'Read teaching plan'])
+                                     reads)
                     self.assertIn('Rolling restarts', result['snapshots']['read']['text'])
                     self.assertEqual([r for r in result['requests'] if r['method'] == 'POST'], [])

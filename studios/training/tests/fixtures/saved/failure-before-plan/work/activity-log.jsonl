@@ -1,0 +1,8 @@
+{"checkpoint":"accepted","unit":"","at":"2026-11-24T22:36:19Z"}
+{"checkpoint":"working","unit":"research-plan","at":"2026-11-24T22:36:19Z"}
+{"id":"191d9708d232","label":"Drafting the research plan","step":"research-plan","started_at":"2026-11-24T22:36:19Z","ended_at":"2026-11-24T22:36:19Z","outcome":"failed","lines":[],"dropped":0,"detail":"It stopped without finishing: the model gave up."}
+{"checkpoint":"working","unit":"research-plan","at":"2026-11-24T22:36:19Z"}
+{"id":"e5809098b75e","label":"Drafting the research plan","step":"research-plan","started_at":"2026-11-24T22:36:19Z","ended_at":"2026-11-24T22:36:19Z","outcome":"failed","lines":[],"dropped":0,"detail":"It stopped without finishing: the model gave up."}
+{"checkpoint":"working","unit":"research-plan","at":"2026-11-24T22:36:19Z"}
+{"id":"acb0e6d50975","label":"Drafting the research plan","step":"research-plan","started_at":"2026-11-24T22:36:19Z","ended_at":"2026-11-24T22:36:19Z","outcome":"failed","lines":[],"dropped":0,"detail":"It stopped without finishing: the model gave up."}
+{"checkpoint":"stopped","unit":"research-plan","at":"2026-11-24T22:36:19Z"}

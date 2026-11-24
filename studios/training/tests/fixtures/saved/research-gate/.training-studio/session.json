@@ -1,0 +1,137 @@
+{
+  "artifacts": {
+    "intake": {
+      "approved": {
+        "at": "2026-11-24T22:36:25Z",
+        "by": "page",
+        "inputs": {},
+        "sha256": "7794e02389a6302b84337519676757af879a323efe010e825c86f10c25bf3eec"
+      },
+      "built_from": {},
+      "file": "intake.md",
+      "sha256": "7794e02389a6302b84337519676757af879a323efe010e825c86f10c25bf3eec"
+    },
+    "research": {
+      "built_from": {
+        "research-plan": "2e689b88ec9abc30ad1e943bedc69c5ae6fc5302cae2dfbf67db878e322ab3ce"
+      },
+      "file": ".harness-research/research-report.md",
+      "sha256": "289203ef5d8cbd1129cbe750bd218c4fdc8a35ed582df8e740162326b94bd35f"
+    },
+    "research-plan": {
+      "approved": {
+        "at": "2026-11-24T22:36:25Z",
+        "by": "page",
+        "inputs": {
+          "intake": "7794e02389a6302b84337519676757af879a323efe010e825c86f10c25bf3eec"
+        },
+        "sha256": "2e689b88ec9abc30ad1e943bedc69c5ae6fc5302cae2dfbf67db878e322ab3ce"
+      },
+      "built_from": {
+        "intake": "7794e02389a6302b84337519676757af879a323efe010e825c86f10c25bf3eec"
+      },
+      "file": ".training-studio/research-plan.json",
+      "sha256": "2e689b88ec9abc30ad1e943bedc69c5ae6fc5302cae2dfbf67db878e322ab3ce"
+    }
+  },
+  "decisions": [],
+  "events": [
+    {
+      "at": "2026-11-24T22:36:25Z",
+      "event": "init"
+    },
+    {
+      "at": "2026-11-24T22:36:25Z",
+      "by": "page",
+      "event": "skip",
+      "reason": "No deck was chosen when this training was started.",
+      "stage": "deck"
+    },
+    {
+      "artifact": "intake",
+      "at": "2026-11-24T22:36:25Z",
+      "event": "save",
+      "sha256": "7794e02389a6302b84337519676757af879a323efe010e825c86f10c25bf3eec"
+    },
+    {
+      "artifact": "intake",
+      "at": "2026-11-24T22:36:25Z",
+      "by": "page",
+      "event": "approve",
+      "sha256": "7794e02389a6302b84337519676757af879a323efe010e825c86f10c25bf3eec"
+    },
+    {
+      "at": "2026-11-24T22:36:25Z",
+      "event": "checkpoint",
+      "stage": "research-plan"
+    },
+    {
+      "artifact": "research-plan",
+      "at": "2026-11-24T22:36:25Z",
+      "event": "save",
+      "sha256": "2e689b88ec9abc30ad1e943bedc69c5ae6fc5302cae2dfbf67db878e322ab3ce"
+    },
+    {
+      "at": "2026-11-24T22:36:25Z",
+      "event": "checkpoint",
+      "stage": "research-plan"
+    },
+    {
+      "artifact": "research-plan",
+      "at": "2026-11-24T22:36:25Z",
+      "by": "page",
+      "event": "approve",
+      "sha256": "2e689b88ec9abc30ad1e943bedc69c5ae6fc5302cae2dfbf67db878e322ab3ce"
+    },
+    {
+      "at": "2026-11-24T22:36:25Z",
+      "event": "checkpoint",
+      "stage": "research"
+    },
+    {
+      "artifact": "research",
+      "at": "2026-11-24T22:36:26Z",
+      "event": "save",
+      "sha256": "289203ef5d8cbd1129cbe750bd218c4fdc8a35ed582df8e740162326b94bd35f"
+    },
+    {
+      "at": "2026-11-24T22:36:26Z",
+      "event": "checkpoint",
+      "stage": "research"
+    }
+  ],
+  "exports": {},
+  "findings": null,
+  "gate": "research",
+  "id": "stop-research",
+  "level": null,
+  "levels": [],
+  "next_step": "Waiting for your review of the research report",
+  "pending_question": "Approve the research report?",
+  "pins": {},
+  "requests": [],
+  "research": null,
+  "review_policy": {
+    "level": "step_by_step",
+    "schema": 1
+  },
+  "schema": 1,
+  "settings": {
+    "approval": "page",
+    "brand": null,
+    "brief_kind": "product",
+    "copies": [],
+    "deck_target": null,
+    "delivery": "reading",
+    "stages": [
+      "document",
+      "brief",
+      "scenario"
+    ],
+    "walkthrough": false
+  },
+  "sizing": {},
+  "stage": "research",
+  "title": "Stop research",
+  "unavailable": {}
+}

@@ -1,0 +1,1 @@
+An outline is one JSON object. A slide holds at most 90 words.

@@ -7,6 +7,7 @@ from unittest import mock
 
 import helpers
 import home
+import saved_fixtures
 import workspace
 from runner import desk_chat, engine as engines, gitstate, pipeline, settings, studio, team
 from runner_support import StudioCase, TeamCase, FORM, BLUEPRINT
@@ -1018,8 +1019,8 @@ class MigrationGoogleTests(DeckCase):
         return engines.read_record(root)
 
     def test_checked_conversation_repeated_local_edits_preserve_delivered_state(self):
-        root = self.saved_begin(deck_target='google')
-        self.drawn(root)
+        # A Google deck the saved flow drew (a stored fixture, see saved_fixtures.py).
+        root = saved_fixtures.load(self, 'google-deck-drawn')
         self.assertNotEqual(workspace.load(root)['stage'], 'done')
         (root / '.training-studio/google-baseline.json').write_text('{"revision":"synthetic-existing-google-revision"}\n')
         original = self.snapshot(root)

@@ -1,0 +1,108 @@
+{
+  "schema": 1,
+  "owner": "harness-research",
+  "run": "ff9756cae86d84f6e6672ea4",
+  "topic": "Rolling restarts",
+  "purpose": "planning",
+  "scope": "public-web",
+  "input_files": [],
+  "items": [
+    {
+      "id": "availability",
+      "question": "When does a rolling restart keep capacity?",
+      "public_query": "rolling restart availability",
+      "claim": null
+    },
+    {
+      "id": "instance-min",
+      "question": "How many instances keep capacity during a restart?",
+      "public_query": "rolling restart instance-min",
+      "claim": null
+    },
+    {
+      "id": "health-checks",
+      "question": "What starts the next batch?",
+      "public_query": "rolling restart health-checks",
+      "claim": null
+    },
+    {
+      "id": "zero-downtime",
+      "question": "Do rolling restarts guarantee zero downtime?",
+      "public_query": "rolling restart zero-downtime",
+      "claim": null
+    }
+  ],
+  "sources": [],
+  "inputs": {},
+  "results": {
+    "availability": {
+      "status": "supported",
+      "summary": "What the page says about availability.",
+      "limits": "none",
+      "evidence": [
+        {
+          "file": "sources/docs-example-com-c911fa490d04.txt",
+          "locator": "characters 129 to 188",
+          "origin": "https://docs.example.com/restarts",
+          "quote": "Capacity holds only when more than one instance is running.",
+          "start": 129,
+          "title": "Rolling restarts",
+          "sha256": "c3222e92cb2c37bc420259ff3ab2b5939a7dcf871af01e88ddc893052c6446fe"
+        }
+      ],
+      "checked_at": "2026-11-24T22:36:26.000Z"
+    },
+    "instance-min": {
+      "status": "supported",
+      "summary": "What the page says about instance-min.",
+      "limits": "none",
+      "evidence": [
+        {
+          "file": "sources/docs-example-com-c911fa490d04.txt",
+          "locator": "characters 129 to 188",
+          "origin": "https://docs.example.com/restarts",
+          "quote": "Capacity holds only when more than one instance is running.",
+          "start": 129,
+          "title": "Rolling restarts",
+          "sha256": "c3222e92cb2c37bc420259ff3ab2b5939a7dcf871af01e88ddc893052c6446fe"
+        }
+      ],
+      "checked_at": "2026-11-24T22:36:26.000Z"
+    },
+    "health-checks": {
+      "status": "supported",
+      "summary": "What the page says about health-checks.",
+      "limits": "none",
+      "evidence": [
+        {
+          "file": "sources/docs-example-com-c911fa490d04.txt",
+          "locator": "characters 129 to 188",
+          "origin": "https://docs.example.com/restarts",
+          "quote": "Capacity holds only when more than one instance is running.",
+          "start": 129,
+          "title": "Rolling restarts",
+          "sha256": "c3222e92cb2c37bc420259ff3ab2b5939a7dcf871af01e88ddc893052c6446fe"
+        }
+      ],
+      "checked_at": "2026-11-24T22:36:26.000Z"
+    },
+    "zero-downtime": {
+      "status": "contradicted",
+      "summary": "What the page says about zero-downtime.",
+      "limits": "none",
+      "evidence": [
+        {
+          "file": "sources/docs-example-com-c911fa490d04.txt",
+          "locator": "characters 129 to 188",
+          "origin": "https://docs.example.com/restarts",
+          "quote": "Capacity holds only when more than one instance is running.",
+          "start": 129,
+          "title": "Rolling restarts",
+          "sha256": "c3222e92cb2c37bc420259ff3ab2b5939a7dcf871af01e88ddc893052c6446fe"
+        }
+      ],
+      "checked_at": "2026-11-24T22:36:26.000Z"
+    }
+  },
+  "created_at": "2026-11-24T22:36:26.000Z"
+}

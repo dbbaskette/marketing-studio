@@ -1,0 +1,38 @@
+{"checkpoint":"accepted","unit":"","at":"2026-11-24T22:36:18Z"}
+{"checkpoint":"working","unit":"research-plan","at":"2026-11-24T22:36:19Z"}
+{"id":"35f617b0e3f1","label":"Drafting the research plan","step":"research-plan","started_at":"2026-11-24T22:36:19Z","ended_at":"2026-11-24T22:36:19Z","outcome":"finished","lines":[{"at":"2026-11-24T22:36:19Z","text":"Handing back research-plan"},{"at":"2026-11-24T22:36:19Z","text":"The draft was accepted"},{"at":"2026-11-24T22:36:19Z","text":"Writing its own notes on the draft"}],"dropped":0}
+{"checkpoint":"output-saved","unit":"research-plan","at":"2026-11-24T22:36:19Z"}
+{"checkpoint":"ready","unit":"gate:research-plan","at":"2026-11-24T22:36:19Z"}
+{"checkpoint":"output-saved","unit":"research-start","at":"2026-11-24T22:36:19Z"}
+{"checkpoint":"working","unit":"research:availability","at":"2026-11-24T22:36:19Z"}
+{"checkpoint":"working","unit":"research:instance-min","at":"2026-11-24T22:36:19Z"}
+{"checkpoint":"working","unit":"research:health-checks","at":"2026-11-24T22:36:19Z"}
+{"id":"e41fcbcdc983","label":"Researching the question instance-min","step":"research:instance-min","started_at":"2026-11-24T22:36:19Z","ended_at":"2026-11-24T22:36:19Z","outcome":"finished","lines":[{"at":"2026-11-24T22:36:19Z","text":"Saving a source: https://docs.example.com/restarts"},{"at":"2026-11-24T22:36:19Z","text":"Handing back the finding for instance-min"},{"at":"2026-11-24T22:36:19Z","text":"The finding was accepted"}],"dropped":0}
+{"id":"5fdb1756737f","label":"Researching the question availability","step":"research:availability","started_at":"2026-11-24T22:36:19Z","ended_at":"2026-11-24T22:36:19Z","outcome":"finished","lines":[{"at":"2026-11-24T22:36:19Z","text":"Saving a source: https://docs.example.com/restarts"},{"at":"2026-11-24T22:36:19Z","text":"Handing back the finding for availability"},{"at":"2026-11-24T22:36:19Z","text":"The finding was accepted"}],"dropped":0}
+{"checkpoint":"output-saved","unit":"research:instance-min","at":"2026-11-24T22:36:19Z"}
+{"id":"f3f3d2521fa0","label":"Researching the question health-checks","step":"research:health-checks","started_at":"2026-11-24T22:36:19Z","ended_at":"2026-11-24T22:36:19Z","outcome":"finished","lines":[{"at":"2026-11-24T22:36:19Z","text":"Saving a source: https://docs.example.com/restarts"},{"at":"2026-11-24T22:36:19Z","text":"Handing back the finding for health-checks"},{"at":"2026-11-24T22:36:19Z","text":"The finding was accepted"}],"dropped":0}
+{"checkpoint":"output-saved","unit":"research:availability","at":"2026-11-24T22:36:19Z"}
+{"checkpoint":"output-saved","unit":"research:health-checks","at":"2026-11-24T22:36:19Z"}
+{"checkpoint":"working","unit":"research:zero-downtime","at":"2026-11-24T22:36:19Z"}
+{"id":"bf2e0fa9f887","label":"Researching the question zero-downtime","step":"research:zero-downtime","started_at":"2026-11-24T22:36:19Z","ended_at":"2026-11-24T22:36:19Z","outcome":"finished","lines":[{"at":"2026-11-24T22:36:19Z","text":"Saving a source: https://docs.example.com/restarts"},{"at":"2026-11-24T22:36:19Z","text":"Handing back the finding for zero-downtime"},{"at":"2026-11-24T22:36:19Z","text":"The finding was accepted"}],"dropped":0}
+{"checkpoint":"output-saved","unit":"research:zero-downtime","at":"2026-11-24T22:36:19Z"}
+{"checkpoint":"output-saved","unit":"research-report","at":"2026-11-24T22:36:19Z"}
+{"checkpoint":"ready","unit":"gate:research","at":"2026-11-24T22:36:20Z"}
+{"checkpoint":"working","unit":"blueprint","at":"2026-11-24T22:36:20Z"}
+{"id":"7e3aee78bcd6","label":"Drafting the blueprint","step":"blueprint","started_at":"2026-11-24T22:36:20Z","ended_at":"2026-11-24T22:36:20Z","outcome":"finished","lines":[{"at":"2026-11-24T22:36:20Z","text":"Handing back blueprint"},{"at":"2026-11-24T22:36:20Z","text":"The draft was accepted"},{"at":"2026-11-24T22:36:20Z","text":"Writing its own notes on the draft"}],"dropped":0}
+{"checkpoint":"output-saved","unit":"blueprint","at":"2026-11-24T22:36:20Z"}
+{"checkpoint":"ready","unit":"gate:blueprint","at":"2026-11-24T22:36:20Z"}
+{"checkpoint":"working","unit":"document","at":"2026-11-24T22:36:20Z"}
+{"id":"7bbde66d5a9a","label":"Writing the learner guide","step":"document","started_at":"2026-11-24T22:36:20Z","ended_at":"2026-11-24T22:36:20Z","outcome":"finished","lines":[{"at":"2026-11-24T22:36:20Z","text":"Handing back document"},{"at":"2026-11-24T22:36:20Z","text":"The draft was accepted"},{"at":"2026-11-24T22:36:20Z","text":"Writing its own notes on the draft"}],"dropped":0}
+{"checkpoint":"output-saved","unit":"document","at":"2026-11-24T22:36:20Z"}
+{"checkpoint":"ready","unit":"gate:document","at":"2026-11-24T22:36:21Z"}
+{"checkpoint":"working","unit":"brief","at":"2026-11-24T22:36:21Z"}
+{"id":"8bc17e7e3f10","label":"Writing the brief","step":"brief","started_at":"2026-11-24T22:36:21Z","ended_at":"2026-11-24T22:36:21Z","outcome":"finished","lines":[{"at":"2026-11-24T22:36:21Z","text":"Handing back brief"},{"at":"2026-11-24T22:36:21Z","text":"The draft was accepted"},{"at":"2026-11-24T22:36:21Z","text":"Writing its own notes on the draft"}],"dropped":0}
+{"checkpoint":"output-saved","unit":"brief","at":"2026-11-24T22:36:21Z"}
+{"checkpoint":"ready","unit":"gate:brief","at":"2026-11-24T22:36:21Z"}
+{"checkpoint":"output-saved","unit":"deck-handoff","at":"2026-11-24T22:36:21Z"}
+{"checkpoint":"output-saved","unit":"deck-brand","at":"2026-11-24T22:36:21Z"}
+{"checkpoint":"working","unit":"deck-outline","at":"2026-11-24T22:36:22Z"}
+{"id":"57107934ed21","label":"Writing what the slide deck says","step":"deck-outline","started_at":"2026-11-24T22:36:22Z","ended_at":"2026-11-24T22:36:22Z","outcome":"finished","lines":[{"at":"2026-11-24T22:36:22Z","text":"Checking what the slides say"},{"at":"2026-11-24T22:36:22Z","text":"Handing in what the slides say"},{"at":"2026-11-24T22:36:22Z","text":"The outline was accepted"},{"at":"2026-11-24T22:36:22Z","text":"Writing its own notes on the draft"}],"dropped":0}
+{"checkpoint":"output-saved","unit":"deck-outline","at":"2026-11-24T22:36:22Z"}
+{"checkpoint":"ready","unit":"gate:deck-outline","at":"2026-11-24T22:36:22Z"}

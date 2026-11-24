@@ -1,0 +1,35 @@
+{
+  "default": "canvas",
+  "layouts": [
+    {
+      "name": "Closing words",
+      "pictures": 0,
+      "subtitles": 0,
+      "title": false
+    },
+    {
+      "name": "Picture and title",
+      "pictures": 1,
+      "subtitles": 1,
+      "title": true
+    },
+    {
+      "name": "Title slide",
+      "pictures": 0,
+      "subtitles": 1,
+      "title": true
+    },
+    {
+      "name": "Section divider",
+      "pictures": 0,
+      "subtitles": 0,
+      "title": true
+    },
+    {
+      "name": "Closing with title",
+      "pictures": 0,
+      "subtitles": 0,
+      "title": true
+    }
+  ]
+}
