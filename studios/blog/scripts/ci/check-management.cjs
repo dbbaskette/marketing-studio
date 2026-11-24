@@ -2090,13 +2090,33 @@ async function libraryWordsAndBatches(){
   f.run("studio.team={joined:false};globalThis.sourcesDraft={files:[]};document.getElementById('studio-page').replaceChildren(sFilesCard(sourcesDraft,document.createElement('p'),()=>{},()=>{},{empty:'No sources yet. Later rewrites will read what you add.'}))");
   const card=descendants(f.get('studio-page'));
   const group=card.find(n=>n.attributes?.['aria-label']==='Add a source');
-  assert.equal(group.dataset.count,'5');assert.equal(group.children.filter(n=>n.attributes?.['aria-pressed']==='true').length,1,'exactly one option is chosen');
+  // One clear picker: This computer, Team library and Upload as tabs, then pasting, a Doc or a link.
+  assert.equal(group.dataset.count,'4');assert.equal(group.children.filter(n=>n.attributes?.['aria-pressed']==='true').length,1,'exactly one option is chosen');
+  assert.deepEqual(group.children.filter(n=>n.tagName==='button').map(n=>n.textContent),['This computer','Team library','Upload','Paste or link']);
+  assert.equal(group.children.find(n=>n.attributes?.['aria-pressed']==='true').textContent,'Upload','Upload stays the first choice shown');
   assert.ok(!group.children.some(n=>n.textContent==='Library'),'no bare library');
   assert.ok(card.some(n=>n.textContent==='No sources yet. Later rewrites will read what you add.'),'the desk sheet says desk words');
-  f.run("sourcesDraft.fileMethod='library';document.getElementById('studio-page').replaceChildren(sFilesCard(sourcesDraft,document.createElement('p'),()=>{},()=>{}))");
-  const labels=descendants(f.get('studio-page')).filter(n=>n.tagName==='button').map(n=>n.textContent);
-  assert.ok(labels.includes('From the team library')&&labels.includes('From the Document Library (this computer)'));
-  assert.ok(descendants(f.get('studio-page')).some(n=>/until you join a Team Hub it is on this computer only/.test(n.textContent||'')),'what team means without a Hub');
+  // Each tab says in one short line what is there; no long paragraph about both libraries.
+  const tabs=card.filter(n=>/\bsource-tab\b/.test(n.className||''));
+  assert.equal(tabs.length,4,'one panel per tab');assert.equal(tabs.filter(n=>!n.hidden).length,1,'only the chosen one shows');
+  for(const tab of tabs){const line=tab.children[0];assert.match(line.className,/field-hint/);assert.ok(line.textContent.length<=120,'one short line: '+line.textContent);}
+  assert.ok(!card.some(n=>/The team library holds posts your team writes from/.test(n.textContent||'')),'the long paragraph is gone');
+  // Nothing a person could add before is lost: every way is still there.
+  const ids=card.map(n=>n.id);
+  for(const id of ['files-input','files-text','files-google','files-google-add','files-link','files-link-add','files-links-file','files-document-library','files-team-library'])assert.ok(ids.includes(id),'still offered: '+id);
+  // An older choice (the libraries were one tab; paste, Doc and link three) opens its new tab.
+  for(const [was,now] of [['library','This computer'],['paste','Paste or link'],['google','Paste or link'],['link','Paste or link']]){
+    f.run("sourcesDraft.fileMethod='"+was+"';document.getElementById('studio-page').replaceChildren(sFilesCard(sourcesDraft,document.createElement('p'),()=>{},()=>{}))");
+    const chosen=descendants(f.get('studio-page')).find(n=>n.attributes?.['aria-label']==='Add a source').children.find(n=>n.attributes?.['aria-pressed']==='true');
+    assert.equal(chosen.textContent,now,was+' opens '+now);
+  }
+  f.run("sourcesDraft.fileMethod='computer';document.getElementById('studio-page').replaceChildren(sFilesCard(sourcesDraft,document.createElement('p'),()=>{},()=>{}))");
+  const shownTab=()=>descendants(f.get('studio-page')).find(n=>/\bsource-tab\b/.test(n.className||'')&&!n.hidden);
+  assert.deepEqual(descendants(shownTab()).filter(n=>n.tagName==='button').map(n=>n.textContent),['Choose from the Document Library']);
+  assert.match(shownTab().children[0].textContent,/every studio on this computer\. Not shared with your team/);
+  f.run("sourcesDraft.fileMethod='team';document.getElementById('studio-page').replaceChildren(sFilesCard(sourcesDraft,document.createElement('p'),()=>{},()=>{}))");
+  assert.deepEqual(descendants(shownTab()).filter(n=>n.tagName==='button').map(n=>n.textContent),['Choose from the team library']);
+  assert.ok(/On this computer only until you join a Team Hub/.test(shownTab().children[0].textContent),'what team means without a Hub');
   const keep=descendants(f.get('studio-page')).find(n=>n.id==='files-document-keep');
   assert.deepEqual(descendants(keep).filter(n=>n.tagName==='button').map(n=>n.textContent),['Keep a copy in the Document Library','Only this blog']);
   // Team library rows: one status in words, never a raw state.
@@ -2229,7 +2249,7 @@ async function libraryPicker(){
   await nodes().find(e=>e.attributes['aria-label']==='Remove Sample s8').listeners.click();
   assert.equal(files().length,7,'unticking removes it');assert.equal(files().some(([id])=>id==='s8'),false);
   const sheet=()=>descendants(f.get('sheet')),inSheet=id=>sheet().find(e=>e.id===id);
-  await nodes().find(e=>e.textContent==='From the team library'&&e.tagName==='button').listeners.click();
+  await nodes().find(e=>e.textContent==='Choose from the team library'&&e.tagName==='button').listeners.click();
   assert.equal(f.get('sheet').children[0].children[0].textContent,'From the team library');
   assert.ok(inSheet('pick-role')&&inSheet('pick-kind')&&inSheet('pick-author')&&inSheet('pick-query'),'role, kind and author filters and a search box');
   assert.deepEqual(inSheet('pick-kind').children.map(o=>o.textContent),['Any kind','Product announcement','Field notes']);

@@ -1279,8 +1279,10 @@ function sFilesCard(draft,problem,again,lock,about={}){
       if(added)sToast('Added '+added+' of '+fresh.length+(fresh.length===1?' link':' links')+' from '+chosen.name+'.');
       draft.problem=said.join(' ');again();});
     linkField=sAdd(sNode('div','field'),linkLabel,sAdd(sNode('div','bar'),linkInput,linkAdd),sNode('p','quiet field-hint','A public page, read once.'),manyLabel,many,manyHint);}
-  const fromLibrary=sAdd(sNode('div','field'),sAdd(sNode('div','bar'),sButton('From the team library',()=>sLibraryPicker(draft,again)),(()=>{const node=sButton('From the Document Library (this computer)',()=>sDocumentLibrary(draft,again,problem));node.id='files-document-library';return node;})()),sNode('p','quiet field-hint','The team library holds posts your team writes from, each with its role'+(studio.team?.joined?'':'; until you join a Team Hub it is on this computer only')+'. The Document Library holds uploads and finished work from every studio on this computer, and is not shared with your team; what you choose there stays with this blog.'));
-  if(draft.sourceEditor)fromLibrary.append(sButton('Use saved research',()=>sSavedResearchPicker(draft,again)));
+  // Where a source comes from, one tab each, with one short line that says what is there.
+  const computer=sAdd(sNode('div','field source-tab'),sNode('p','quiet field-hint','Uploads and finished work from every studio on this computer. Not shared with your team.'),sAdd(sNode('div','bar'),(()=>{const node=sButton('Choose from the Document Library',()=>sDocumentLibrary(draft,again,problem));node.id='files-document-library';return node;})()));
+  const team=sAdd(sNode('div','field source-tab'),sNode('p','quiet field-hint',studio.team?.joined?'Posts your team writes from, each with its role.':'Posts your team writes from, each with its role. On this computer only until you join a Team Hub.'),sAdd(sNode('div','bar'),(()=>{const node=sButton('Choose from the team library',()=>sLibraryPicker(draft,again));node.id='files-team-library';return node;})()));
+  if(draft.sourceEditor)team.append(sButton('Use saved research',()=>sSavedResearchPicker(draft,again)));
   // Keep comes before the picker: it applies to the files added next, and each row says where its file went.
   const keep=sCheck('files-keep','Keep in the team library',draft,'keep',about.keepWhen||'Ticked ones go to the team library when you start.');
   const pasted=sNode('div','stack'),notes=sField('files-text','Source text',draft,'sourceText',{long:true,max:200000}),addText=sButton('Add pasted text',async button=>{
@@ -1288,14 +1290,18 @@ function sFilesCard(draft,problem,again,lock,about={}){
     await busy(button,'Saving source…',async()=>{studio.busy=true;try{remember(await api('upload',{operation:operationId(),files:[{filename:(draft.sourceName||'Pasted notes').replace(/[^a-zA-Z0-9 _-]/g,'').slice(0,100)+'.txt',content:await encodeImportFile(new Blob([text])),purpose:draft.role}],purpose:'material',keep:false,analyze:false}));draft.sourceText='';problem.textContent='';studio.busy=false;again();}catch(error){problem.textContent=error.message;}finally{studio.busy=false;}});
   });
   pasted.append(sField('files-name','Source name',draft,'sourceName',{max:100}),notes,addText);
-  draft.fileMethod=draft.fileMethod||'files';
-  const methods=[['files','Upload files'],['paste','Paste notes'],['google','Google Doc source'],['link','Web link'],['library','Team or Document Library']];
+  // Older names for the tabs (the libraries were one tab, and pasting, a Doc and a link three).
+  draft.fileMethod={library:'computer',paste:'other',google:'other',link:'other'}[draft.fileMethod]||draft.fileMethod||'files';
+  const methods=[['computer','This computer'],['team','Team library'],['files','Upload'],['other','Paste or link']];
   // Keep in library (the default) also keeps each file sent from here in the shared Document
   // Library on this computer, for any studio; Only this blog keeps it with this blog alone.
   // Either way the file is shared exactly as chosen for it, never more.
   const docKeep=sChoice('Uploaded files',[['library','Keep a copy in the Document Library'],['blog','Only this blog']],draft,'docKeep',()=>{});docKeep.id='files-document-keep';
   docKeep.append(sNode('p','quiet field-hint','The Document Library is on this computer, for any studio to use. It is not shared with your team. Links and Google Docs stay with this blog.'));
-  const inputs={files:sAdd(sNode('div','field'),docKeep,label,picker),paste:pasted,google:docField,link:linkField,library:fromLibrary};
+  const upload=sAdd(sNode('div','field source-tab'),sNode('p','quiet field-hint','Files from your computer: Markdown, text, web pages, Word or PDF, up to 10 MiB each.'),docKeep,label,picker);
+  // Paste or link: notes typed or pasted here, a Google Doc, or a public page.
+  const other=sAdd(sNode('div','stack source-tab'),sNode('p','quiet field-hint','Pasted notes, a Google Doc or a public page, saved with this blog.'),pasted,docField,linkField);
+  const inputs={computer,team,files:upload,other};
   for(const [key,input]of Object.entries(inputs))input.hidden=key!==draft.fileMethod;
   let preview=null;if(draft.sourcePreview){const shown=draft.sourcePreview;preview=sCard(shown.name,sNode('p','quiet',shown.note),sNode('pre','source-excerpt',shown.text),sButton('Close source preview',()=>{draft.sourcePreview=null;again();}));}
   return sCard('Sources for this blog',sNode('p','quiet','Add each source once. Readable sources are used by the writing and, when requested, research. Examples guide style and are never factual evidence.'),draft.files.length||reviewed.length?list:sNode('p','quiet',about.empty||'No sources yet. You can write from your idea or outline alone.'),preview,sChoice('Add a source',methods,draft,'fileMethod',again),disclosure('Role and team library options for new sources',roleField,sNode('p','quiet',meaning),keep),...Object.values(inputs));
