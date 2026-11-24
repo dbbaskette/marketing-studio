@@ -11,8 +11,12 @@ What a caller needs to know
   sandbox and its shell and every extra switched off, in an empty folder of the job's own.
 - Everything it needs is in its prompt: Harness Brand's `references/building-a-pack.md` and
   `docs/brand-pack-format.md`, the extracted tokens and measured layouts, the drafts, the
-  icon libraries there are, and the text of the sources (text files, and text files inside
-  archives, within a budget; others are named only). It answers one JSON object.
+  icon libraries there are, and the text of the sources (text files and PDF brand books,
+  and the same inside archives, within a budget; others are named only). A PDF is read with
+  the extraction every studio uses (studio_core.source_documents, pdftotext); one that cannot
+  be read, because the reader is not installed or the PDF has no text layer, is named with
+  that reason. The sources are read in the job, not in the request that starts it. It
+  answers one JSON object.
 - From that answer only the judgement files are written, through `brand_store.apply_part`:
   `brand.json` (no seal fields, its own id), the judgement fields of `layouts.json`,
   `guide.md`, `directions.json`, `audit.json`, and copies into `assets/` of files from the
@@ -32,7 +36,7 @@ import shutil
 import zipfile
 from pathlib import Path
 
-from studio_core import model_profiles, runtime
+from studio_core import model_profiles, runtime, source_documents
 from studio_core.agent_events import ClaudeEvents, CodexEvents
 
 from . import brand_skill, brand_store, state
@@ -42,6 +46,8 @@ SECONDS = 2250
 SOURCE_BUDGET = 400_000      # characters of source text in one prompt
 ONE_SOURCE = 120_000         # characters of one source file
 TEXT = ('.md', '.markdown', '.txt', '.json', '.css', '.csv', '.html', '.htm', '.xml', '.yaml', '.yml')
+PDF = '.pdf'
+PDF_LIMIT = 40_000_000       # bytes of one PDF read, as one source file may be (brand_store.SOURCE_LIMIT)
 ASSET = ('.svg', '.png', '.jpg', '.jpeg')
 ASSET_LIMIT = 10_000_000
 SOMEONE_ELSES = ('CLAUDE', 'ANTHROPIC')
@@ -80,6 +86,15 @@ def choice(shared) -> tuple[str, str | None, str | None]:
 
 # --- the prompt ------------------------------------------------------------------------
 
+def pdf_text(raw: bytes) -> str:
+    """A PDF's text, read as every studio reads one. ValueError says, in a sentence, why it
+    cannot be: no reader installed, a damaged or locked file, or no text layer at all."""
+    text = source_documents.pdf_text(raw)
+    if not text.replace('\f', '').strip():
+        raise ValueError('It has no text layer, only pictures of pages; no OCR is attempted.')
+    return text.replace('\f', '\n\n')
+
+
 def source_texts(sources: Path) -> tuple[list[dict], list[str]]:
     """The text of the sources within the budget, and the names of those not given."""
     given, named, left = [], [], SOURCE_BUDGET
@@ -93,12 +108,28 @@ def source_texts(sources: Path) -> tuple[list[dict], list[str]]:
         given.append({'source': name, 'text': cut, 'whole': len(cut) == len(text)})
         left -= len(cut)
 
+    def take_pdf(name, size, read):
+        """A PDF, read only when the prompt has room for it: its text, or its name and why not."""
+        if left <= 0:
+            return take(name, '')
+        if size > PDF_LIMIT:
+            named.append(f'{name} (not readable: it is larger than 40 MB)')
+            return
+        try:
+            text = pdf_text(read())
+        except ValueError as failure:
+            named.append(f"{name} (not readable: {str(failure).rstrip('.')})")
+            return
+        take(name, text)
+
     for item in brand_store.files_in(sources):
         path = sources / item['name']
         lower = item['name'].lower()
         if lower.endswith(TEXT):
             with path.open(encoding='utf-8', errors='replace') as stream:
                 take(item['name'], stream.read(min(ONE_SOURCE, max(left, 0)) + 1))
+        elif lower.endswith(PDF):
+            take_pdf(item['name'], item['size'], path.read_bytes)
         elif lower.endswith('.zip'):
             try:
                 with zipfile.ZipFile(path) as opened:
@@ -111,6 +142,8 @@ def source_texts(sources: Path) -> tuple[list[dict], list[str]]:
                         if member.filename.lower().endswith(TEXT) and member.file_size < 2_000_000:
                             with opened.open(member) as stream:
                                 take(inner, stream.read(min(ONE_SOURCE, max(left, 0)) + 1).decode('utf-8', 'replace'))
+                        elif member.filename.lower().endswith(PDF):
+                            take_pdf(inner, member.file_size, lambda member=member: opened.read(member))
                         else:
                             named.append(inner)
             except (OSError, zipfile.BadZipFile):
@@ -324,7 +357,9 @@ def interpret(found, key: str, shared, part=None, note=None):
         raise WorkspaceError('Say in a note of at most 4,000 characters what should change.')
     wanted = [part] if part else present
     agent, model, effort = choice(shared)
-    guidance, task = prompt(found, work, wanted, note)
+    # The skill's guides are read now, so a skill without them is refused before anything runs.
+    for name in ('references/building-a-pack.md', 'docs/brand-pack-format.md'):
+        found.guide(name)
 
     def job(line, stop):
         folder = brand_store.folder_of(key) / 'job'
@@ -333,6 +368,11 @@ def interpret(found, key: str, shared, part=None, note=None):
         with brand_store.LOCK:
             shutil.rmtree(folder, ignore_errors=True)
             folder.mkdir(parents=True)
+        # Reading PDF brand books takes a while: it is done here, never in the request.
+        line('Reading the sources')
+        guidance, task = prompt(found, work, wanted, note)
+        if stop.is_set():
+            raise brand_skill.Stopped()
         line(f'Asking {runtime.ASSISTANTS.get(agent, agent)} for ' + ', '.join(
             brand_store.PARTS[p][1].lower() for p in wanted))
         said = answer_of(run_assistant(agent, guidance, task, folder, model, effort, line, stop))

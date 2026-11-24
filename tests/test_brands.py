@@ -504,6 +504,100 @@ class Interpret(BrandsCase):
         self.assertEqual(found, brand_job.CODEX_OFF)
 
 
+def made_pdf(words=b'BT /F1 12 Tf 72 720 Td (Example Co brand book: titles are blue.) Tj ET'):
+    """A one-page PDF of made-up words; with no words, a page with no text layer at all."""
+    objects = [b'<< /Type /Catalog /Pages 2 0 R >>', b'<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+               b'<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>',
+               b'<< /Length ' + str(len(words)).encode() + b' >>\nstream\n' + words + b'\nendstream',
+               b'<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>']
+    raw, offsets = b'%PDF-1.4\n', []
+    for number, value in enumerate(objects, 1):
+        offsets.append(len(raw))
+        raw += str(number).encode() + b' 0 obj\n' + value + b'\nendobj\n'
+    at = len(raw)
+    raw += b'xref\n0 6\n0000000000 65535 f \n' + b''.join(f'{offset:010d} 00000 n \n'.encode() for offset in offsets)
+    return raw + b'trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n' + str(at).encode() + b'\n%%EOF\n'
+
+
+def zipped(members):
+    data = io.BytesIO()
+    with zipfile.ZipFile(data, 'w') as made:
+        for name, content in members.items():
+            made.writestr(name, content)
+    return data.getvalue()
+
+
+class PdfBrandBooks(BrandsCase):
+    """An uploaded PDF brand book, alone or in a ZIP archive, reaches the assistant as text."""
+
+    def sources(self, **files):
+        folder = self.root / 'sources'
+        folder.mkdir()
+        for name, data in files.items():
+            (folder / name.replace('__', '.')).write_bytes(data)
+        return brand_job.source_texts(folder)
+
+    @unittest.skipUnless(shutil.which('pdftotext'), 'needs the pdftotext reader')
+    def test_a_pdf_and_a_pdf_in_a_zip_are_read_as_text_and_reach_the_assistant(self):
+        given, named = self.sources(book__pdf=made_pdf(), kit__zip=zipped({'guide/rules.pdf': made_pdf()}))
+        texts = {item['source']: item for item in given}
+        self.assertEqual(sorted(texts), ['book.pdf', 'kit.zip!guide/rules.pdf'])
+        for item in texts.values():
+            self.assertIn('Example Co brand book: titles are blue.', item['text'])
+            self.assertTrue(item['whole'])
+        self.assertEqual(named, [])
+        # And through the real job: the assistant is told the PDF's words.
+        key = self.new_brand()
+        self.add(key, 'brand-book.pdf', made_pdf())
+        self.extract(key)
+        seen = []
+        work = self.interpret(key, seen=seen)
+        self.assertEqual(work['task']['state'], 'done', work['task'])
+        self.assertIn('Example Co brand book: titles are blue.', seen[0]['task'])
+        self.assertIn('Reading the sources', work['task']['lines'])
+
+    @unittest.skipUnless(shutil.which('pdftotext'), 'needs the pdftotext reader')
+    def test_a_pdf_with_no_text_layer_is_named_as_unreadable_with_why(self):
+        given, named = self.sources(scan__pdf=made_pdf(b''), kit__zip=zipped({'scan.pdf': made_pdf(b'')}))
+        self.assertEqual(given, [])
+        reason = 'not readable: It has no text layer, only pictures of pages; no OCR is attempted'
+        self.assertEqual(sorted(named), [f'kit.zip!scan.pdf ({reason})', f'scan.pdf ({reason})'])
+
+    def test_without_the_reader_a_pdf_is_named_as_unreadable_with_why(self):
+        with mock.patch.object(brand_job.source_documents.shutil, 'which', return_value=None):
+            given, named = self.sources(book__pdf=made_pdf())
+        self.assertEqual(given, [])
+        self.assertEqual(len(named), 1)
+        self.assertTrue(named[0].startswith('book.pdf (not readable: PDF reading needs an explicitly installed '
+                                            'pdftotext reader'), named)
+
+    def test_a_pdf_is_held_to_the_same_per_source_and_total_budgets(self):
+        long = 'Rule. ' * 40_000                                   # 240,000 characters
+        with mock.patch.object(brand_job.source_documents, 'pdf_text', return_value=long) as read, \
+                mock.patch.object(brand_job, 'SOURCE_BUDGET', 150_000):
+            given, named = self.sources(a__pdf=made_pdf(), b__pdf=made_pdf(), c__pdf=made_pdf())
+        self.assertEqual([(item['source'], len(item['text']), item['whole']) for item in given],
+                         [('a.pdf', brand_job.ONE_SOURCE, False), ('b.pdf', 150_000 - brand_job.ONE_SOURCE, False)])
+        self.assertEqual(named, ['c.pdf (left out: the prompt had no room)'])
+        self.assertEqual(read.call_count, 2, 'a PDF with no room left is not read at all')
+
+    def test_starting_the_job_reads_no_pdf_in_the_request(self):
+        key = self.new_brand()
+        self.extract(key)
+        started = threading.Event()
+        def assistant(*args, **kwargs):
+            started.wait(10)
+            return json.dumps(proposal())
+        with mock.patch.object(brand_job, 'source_texts', wraps=brand_job.source_texts) as read, \
+                mock.patch.object(brand_job, 'run_assistant', assistant):
+            self.call('interpret', key=key)
+            requested = read.call_count
+            started.set()
+            self.settle(key)
+        self.assertLessEqual(requested, 1)
+        self.assertEqual(read.call_count, 1)
+
+
 class Save(BrandsCase):
     def test_save_waits_for_every_part_and_is_refused_until_pack_check_passes(self):
         key = self.new_brand()
