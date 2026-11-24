@@ -14,9 +14,10 @@ import sys
 import time
 import urllib.error
 import urllib.parse
-import urllib.request
 import uuid
 import zipfile
+
+from studio_core import google_api
 
 DRIVE = 'https://www.googleapis.com/drive/v3/'
 DOCS = 'https://docs.googleapis.com/v1/documents/'
@@ -33,6 +34,16 @@ ACCOUNT_FILE = '.google-account.json'
 EMAIL = re.compile(r'[^@\s/]{1,64}@[^@\s/]{1,180}\.[^@\s/]{1,60}')
 RATE_LABELS = frozenset({'RATE_LIMIT_EXCEEDED', 'rateLimitExceeded', 'userRateLimitExceeded'})
 READ_RETRY_DELAYS = (0.5, 2.0)
+# Where the token may go, and how: the Drive and Docs APIs this file calls, nothing else.
+ROUTES = (
+    google_api.Route('www.googleapis.com', r'/drive/v3/.+', ('GET', 'POST')),
+    google_api.Route('www.googleapis.com', r'/upload/drive/v3/files', ('POST',)),
+    google_api.Route('docs.googleapis.com', r'/v1/documents/.+', ('GET', 'POST')),
+)
+# A Doc's image, at the address a Docs read gives it: Google's image host, no token.
+IMAGE_ROUTES = (
+    google_api.Route('*.googleusercontent.com', r'/.*', ('GET',)),
+)
 
 
 class GoogleError(Exception):
@@ -83,27 +94,20 @@ def digest(value):
 
 
 def gcloud():
-    found = shutil.which('gcloud')
-    if found:
-        return found
-    for path in (
-        '/opt/homebrew/share/google-cloud-sdk/bin/gcloud',
-        '/usr/local/share/google-cloud-sdk/bin/gcloud',
-        str(Path.home() / 'google-cloud-sdk/bin/gcloud'),
-    ):
-        if Path(path).is_file() and os.access(path, os.X_OK):
-            return path
-    raise GoogleError(
-        'gcloud is missing. Run installer/google-setup.sh --install-cli, or use an organization-approved Google Cloud CLI installation.'
-    )
+    # Found where studio_core.google_api finds it: on the PATH, then the usual install places.
+    try:
+        return google_api.executable(shutil.which)
+    except google_api.GoogleError:
+        raise GoogleError(
+            'gcloud is missing. Run installer/google-setup.sh --install-cli, or use an organization-approved Google Cloud CLI installation.'
+        ) from None
 
 
 def token(account=None):
-    args = [gcloud(), 'auth', 'print-access-token', '--quiet']
-    if account:
-        args += ['--account', account]
     try:
-        result = subprocess.run(args, capture_output=True, text=True, timeout=30)
+        value, result = google_api.print_access_token(
+            gcloud(), run=subprocess.run, account=account, timeout=30
+        )
     except PermissionError:
         raise GoogleError(
             'Local gcloud execution or credential access was denied. Check sandbox/filesystem access; signing in again will not fix a local access denial.'
@@ -132,21 +136,19 @@ def token(account=None):
         raise GoogleError(
             'Local gcloud credential access was denied. Check sandbox/filesystem access to the gcloud configuration; do not repeat login to fix a local access denial.'
         )
-    value = result.stdout.strip()
-    if result.returncode or not value or any(c.isspace() for c in value):
+    if value is None:
         raise GoogleError('Google authentication is unavailable. ' + SIGN_IN)
     return value
 
 
-class NoRedirect(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
-        return None
+NoRedirect = google_api.NoRedirect
 
 
 class Client:
     def __init__(self, account=None):
         self.account = account
-        self.opener = urllib.request.build_opener(NoRedirect())
+        # Every request is sent through studio_core.google_api, which never follows a redirect.
+        self.opener = google_api.opener()
 
     def authorize(self):
         """Fetch the access token once per process and keep it only in memory."""
@@ -158,33 +160,32 @@ class Client:
 
     def request(self, url, *, method='GET', body=None, mime='application/json', binary=False):
         # Tokens may only go to these fixed Google APIs; never follow a redirect.
-        parsed = urllib.parse.urlsplit(url)
-        if parsed.scheme != 'https' or parsed.netloc not in (
-            'www.googleapis.com',
-            'docs.googleapis.com',
-        ):
+        if not google_api.allowed(url, method, ROUTES):
             raise GoogleError('Unsupported Google API destination.')
         payload = encoded(body) if isinstance(body, dict) else body
         # Only idempotent reads are repeated. A write is sent exactly once.
-        delays = READ_RETRY_DELAYS if method == 'GET' else ()
-        for delay in (*delays, None):
-            try:
-                return self._send(url, method, payload, mime, binary)
-            except GoogleError as exc:
-                if delay is None or not exc.transient:
-                    raise
-                getattr(self, 'sleep', time.sleep)(delay)
+        return google_api.read_retried(
+            lambda: self._send(url, method, payload, mime, binary),
+            method=method,
+            delays=READ_RETRY_DELAYS,
+            transient=lambda exc: isinstance(exc, GoogleError) and exc.transient,
+            sleep=lambda delay: getattr(self, 'sleep', time.sleep)(delay),
+        )
 
     def _send(self, url, method, payload, mime, binary):
-        req = urllib.request.Request(
-            url,
-            data=payload,
-            method=method,
-            headers={'Authorization': 'Bearer ' + self.authorize(), 'Content-Type': mime},
-        )
         try:
-            with self.opener.open(req, timeout=60) as response:
-                data = response.read(LIMIT + 1)
+            data = google_api.send(
+                method,
+                url,
+                routes=ROUTES,
+                token=self.authorize,
+                headers={'Content-Type': mime},
+                payload=payload,
+                opening=self.opener.open,
+                timeout=60,
+                limit=LIMIT,
+                error_limit=16384,
+            ).data
             if len(data) > LIMIT:
                 raise GoogleError('Google response exceeded the transfer size limit.')
             if binary:
@@ -195,7 +196,7 @@ class Client:
                     'Google returned an unexpected response; reconcile any write before retrying.'
                 )
             return value
-        except urllib.error.HTTPError as exc:
+        except google_api.Refused as exc:
             raise self._http_error(exc, method) from None
         except (OSError, ValueError):
             if method == 'GET':
@@ -211,10 +212,11 @@ class Client:
             ) from None
 
     def _http_error(self, exc, method):
-        """Parse only bounded diagnostics and expose fixed allowlisted labels."""
+        """Parse only bounded diagnostics and expose fixed allowlisted labels. `exc` is the
+        google_api.Refused answer, holding at most 16 KB of its body."""
         error = {}
         try:
-            payload = json.loads(exc.read(16384))
+            payload = json.loads(exc.body)
             if isinstance(payload, dict) and isinstance(payload.get('error'), dict):
                 error = payload['error']
         except (OSError, ValueError):
@@ -252,10 +254,10 @@ class Client:
                 'the intended account with gcloud auth login --enable-gdrive-access --force --no-activate. '
                 'Do not switch to comments or broaden consent automatically.'
             )
-        elif exc.code == 401:
+        elif exc.status == 401:
             self._token = None
             message = 'Google sign-in expired. ' + SIGN_IN
-        elif exc.code == 404:
+        elif exc.status == 404:
             who = getattr(self, 'account', None) or 'the signed-in Google account'
             message = (
                 'Google could not find this file, or it is not shared with '
@@ -263,24 +265,24 @@ class Client:
                 + '. Check the link '
                 'and the Doc’s sharing; nothing was written.'
             )
-        elif exc.code == 403:
+        elif exc.status == 403:
             message = (
                 'Google denied this operation. Check file permission, API access and organization policy. '
                 'This alone does not establish review unavailability.'
             )
-        elif exc.code in (400, 409, 412) and method != 'GET':
+        elif exc.status in (400, 409, 412) and method != 'GET':
             message = 'Google rejected the write. Reread the document and revision before making another request.'
-        elif exc.code == 429:
+        elif exc.status == 429:
             message = 'Google is limiting requests right now (HTTP 429). Wait a moment before trying again.'
         else:
-            message = 'Google request failed (HTTP ' + str(exc.code) + ').'
+            message = 'Google request failed (HTTP ' + str(exc.status) + ').'
         if labels:
             message += ' [' + ', '.join(sorted(labels)) + ']'
         unknown_reason = any(
             isinstance(row, dict) and row.get('reason') not in allowed for row in rows
         )
         unsupported = (
-            exc.code in (400, 403)
+            exc.status in (400, 403)
             and not (labels - {'INVALID_ARGUMENT', 'PERMISSION_DENIED'})
             and not unknown_reason
             and any(k in detail for k in ('writemode', 'commentsviewmode', 'insertcomment'))
@@ -289,7 +291,7 @@ class Client:
                 for k in ('unknown name', 'not supported', 'unsupported', 'not available')
             )
         )
-        return GoogleError(message, status=exc.code, review_unavailable=unsupported, labels=labels)
+        return GoogleError(message, status=exc.status, review_unavailable=unsupported, labels=labels)
 
     def drive(self, path, **query):
         return self.request(DRIVE + path + '?' + urllib.parse.urlencode(query))
@@ -517,13 +519,14 @@ class Client:
         if parsed.scheme != 'https' or not (
             parsed.netloc == 'googleusercontent.com'
             or parsed.netloc.endswith('.googleusercontent.com')
-        ):
+        ) or not google_api.allowed(uri, 'GET', IMAGE_ROUTES):
             raise GoogleError('This image is not at a Google image address.')
-        req = urllib.request.Request(uri, method='GET')
         try:
-            with self.opener.open(req, timeout=60) as response:
-                data = response.read(IMAGE_LIMIT + 1)
-        except (urllib.error.URLError, OSError, ValueError) as exc:
+            data = google_api.send(
+                'GET', uri, routes=IMAGE_ROUTES, opening=self.opener.open, timeout=60,
+                limit=IMAGE_LIMIT,
+            ).data
+        except (google_api.Refused, urllib.error.URLError, OSError, ValueError) as exc:
             raise GoogleError('Google did not send this image.', network=True) from exc
         if len(data) > IMAGE_LIMIT:
             raise GoogleError('This image is larger than a blog keeps.')

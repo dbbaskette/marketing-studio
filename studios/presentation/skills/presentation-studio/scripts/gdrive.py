@@ -8,9 +8,10 @@ What a caller needs to know
 - `file_id` takes a bare ID or an address of the form https://docs.google.com/.../d/<id>/...
   and refuses anything else with WorkspaceError and a sentence.
 - `Drive(run=None, urlopen=None)` asks `gcloud auth print-access-token` once for an access
-  token and uses the Drive v3 API: `files/<id>/export?mimeType=text/plain`. The token is held
-  in memory for the life of the object and goes only into the Authorization header. It is
-  never written, printed or put in a refusal.
+  token and uses the Drive v3 API: `files/<id>/export?mimeType=text/plain`, sent through
+  `studio_core.google_api`, which never follows a redirect. The token is held in memory
+  for the life of the object and goes only into the Authorization header. It is never
+  written, printed or put in a refusal.
 - Every failure is a WorkspaceError with a sentence for a person: gcloud missing or not
   signed in, the Doc not found, Drive refusing, or the network.
 """
@@ -20,10 +21,9 @@ import http.client
 import json
 import re
 import subprocess
-import urllib.error
 import urllib.parse
-import urllib.request
 
+from studio_core import google_api
 from workspace import WorkspaceError
 
 FILE_ID = re.compile(r'^[A-Za-z0-9_-]+$')
@@ -31,6 +31,8 @@ LINK = re.compile(r'^https://docs\.google\.com/(?:[\w.-]+/)*d/([A-Za-z0-9_-]+)(?
 FILES = 'https://www.googleapis.com/drive/v3/files'
 SIGN_IN = 'gcloud auth login --enable-gdrive-access'
 TIMEOUT = 60
+# Where the token may go, and how: a Doc's export as text, read only.
+ROUTES = (google_api.Route('www.googleapis.com', r'/drive/v3/files/[^/]+/export', ('GET',)),)
 
 
 def file_id(link: str) -> str:
@@ -46,11 +48,12 @@ def file_id(link: str) -> str:
 
 
 class Drive:
-    """The Drive v3 REST API over urllib, signed in through the gcloud command."""
+    """The Drive v3 REST API, signed in through the gcloud command and sent through
+    `studio_core.google_api`."""
 
     def __init__(self, run=None, urlopen=None):
         self._run = run or subprocess.run
-        self._urlopen = urlopen or urllib.request.urlopen
+        self._urlopen = urlopen or google_api.urlopen
         self._token = None
 
     def export_text(self, file_id: str) -> str:
@@ -68,30 +71,30 @@ class Drive:
     def _access_token(self) -> str:
         if self._token is None:
             try:
-                done = self._run(['gcloud', 'auth', 'print-access-token'], capture_output=True,
-                                 text=True, timeout=TIMEOUT)
+                token, _ = google_api.print_access_token('gcloud', run=self._run, quiet=False,
+                                                         timeout=TIMEOUT)
             except FileNotFoundError:
                 raise WorkspaceError('The gcloud command was not found. Install the Google '
                                      f'Cloud CLI and run `{SIGN_IN}`.') from None
             except (OSError, subprocess.SubprocessError):
                 raise WorkspaceError(f'The gcloud command did not answer. Run `{SIGN_IN}` '
                                      'and try again.') from None
-            # Nothing gcloud printed is repeated: its output is where the token is.
-            token = (done.stdout or '').strip() if done.returncode == 0 else ''
-            if not token or len(token.split()) != 1:
+            if token is None:
                 raise WorkspaceError('gcloud has no signed-in account it can give access '
                                      f'for. Run `{SIGN_IN}` and try again.')
             self._token = token
         return self._token
 
     def _send(self, url: str) -> bytes:
+        if not google_api.allowed(url, 'GET', ROUTES):
+            raise WorkspaceError('Presentation Studio reads from Google Drive only a Doc '
+                                 'exported as text.')
         token = self._access_token()
-        request = urllib.request.Request(url, method='GET')
-        request.add_header('Authorization', f'Bearer {token}')
         try:
-            with self._urlopen(request, timeout=TIMEOUT) as response:
-                return response.read()
-        except urllib.error.HTTPError as failure:
+            return google_api.send('GET', url, routes=ROUTES, token=lambda: token,
+                                   opening=self._urlopen, timeout=TIMEOUT,
+                                   error_limit=None).data
+        except google_api.Refused as failure:
             refusal = self._explain(failure)
         except (OSError, http.client.HTTPException) as failure:
             reason = getattr(failure, 'reason', None) or failure
@@ -100,24 +103,22 @@ class Drive:
         raise WorkspaceError(refusal.replace(token, '[token]')) from None
 
     @staticmethod
-    def _explain(failure: urllib.error.HTTPError) -> str:
+    def _explain(failure: google_api.Refused) -> str:
         """What an HTTP error from Drive means and what to do about it."""
         try:
-            detail = json.loads(failure.read().decode('utf-8', 'replace'))['error']['message']
-        except (OSError, ValueError, KeyError, TypeError, AttributeError):
+            detail = json.loads(failure.body.decode('utf-8', 'replace'))['error']['message']
+        except (ValueError, KeyError, TypeError, AttributeError):
             detail = failure.reason
-        finally:
-            failure.close()
         detail = ' '.join(str(detail or '').split())[:300].rstrip('.')
-        if failure.code == 401:
+        if failure.status == 401:
             return f'Google did not accept the gcloud sign-in. Run `{SIGN_IN}` and try again.'
-        if failure.code == 403 and 'scope' in detail.lower():
+        if failure.status == 403 and 'scope' in detail.lower():
             return ('The gcloud sign-in does not include Google Drive. '
                     f'Run `{SIGN_IN}` and try again.')
-        if failure.code == 404:
+        if failure.status == 404:
             return ('Google could not find the Doc. It may have been deleted, or the signed-in '
                     'account cannot open it.')
-        if failure.code == 403:
+        if failure.status == 403:
             return (f'Google Drive refused the request (HTTP 403: {detail}). Check that the '
                     f'signed-in account may open the Doc, or run `{SIGN_IN}`.')
-        return f'Google Drive answered HTTP {failure.code} ({detail}). Try again shortly.'
+        return f'Google Drive answered HTTP {failure.status} ({detail}). Try again shortly.'

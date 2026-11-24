@@ -14,6 +14,8 @@ from __future__ import annotations
 import re
 import urllib.request
 
+from studio_core import source_documents
+
 
 SCHEMA = 1
 PART = 20_000           # characters of an input in one read
@@ -154,10 +156,10 @@ def page_text(data: bytes, content_type: str) -> tuple[str, str]:
     kind = content_type.partition(';')[0].strip().lower()
     if kind == 'application/json' or (kind.startswith('text/') and kind != 'text/html'):
         return tidy(text), ''
-    parser = _Page()
+    parser = _Page()     # the studio's source_documents.PageText, with its own tags
     parser.feed(text)
     parser.close()
-    return tidy(''.join(parser.parts)), ' '.join(parser.title.split())
+    return tidy(parser.joined()), ' '.join(parser.title.split())
 
 
 def pdf_text(path: Path) -> str | None:
@@ -166,13 +168,10 @@ def pdf_text(path: Path) -> str | None:
     if program is None:
         return None
     try:
-        done = subprocess.run([program, '-layout', str(path), '-'], capture_output=True,
-                              stdin=subprocess.DEVNULL, timeout=120)
-    except (OSError, subprocess.TimeoutExpired):
+        data = source_documents.pdftotext(path, program=program, timeout=120)
+    except (OSError, subprocess.SubprocessError):
         raise Refusal('That PDF could not be read. It was not saved.')
-    if done.returncode != 0:
-        raise Refusal('That PDF could not be read. It was not saved.')
-    return done.stdout.decode('utf-8', 'replace')
+    return data.decode('utf-8', 'replace')
 
 
 def public(address: str) -> bool:
@@ -529,36 +528,6 @@ def check_plan(text: str, spec: dict) -> tuple[list[str], list[dict], list[str],
             json.dumps(plan, indent=2, ensure_ascii=False) + '\n')
 
 
-class _Page:
-    """The shared methods of the studio's _Page."""
-
-    def __init__(self):
-        super(_Page, self).__init__(convert_charrefs=True)
-        self.parts, self.depth, self.title, self.in_title = [], 0, '', False
-
-    def handle_starttag(self, tag, attrs):
-        if tag in self.SKIP:
-            self.depth += 1
-        if tag == 'title':
-            self.in_title = True
-        if tag in self.BREAK:
-            self.parts.append('\n')
-
-    def handle_endtag(self, tag):
-        if tag in self.SKIP and self.depth:
-            self.depth -= 1
-        if tag == 'title':
-            self.in_title = False
-        if tag in self.BREAK:
-            self.parts.append('\n')
-
-    def handle_data(self, data):
-        if self.in_title:
-            self.title += data
-        if not self.depth:
-            self.parts.append(data)
-
-
 class _NoRedirect:
     """The shared methods of the studio's _NoRedirect."""
 
@@ -888,8 +857,7 @@ NAMES = ('SCHEMA', 'PART', 'WINDOW', 'MAX_BYTES', 'MAX_SOURCES', 'MAX_HOPS', 'TI
          '_draft', 'DRAWN', 'EXTENSIONS', 'picture', 'one_at_a_time', 'turn_file', 'slots',
          'pictures', 'the_slides', 'the_brand', '_write', '_offered', '_job', 'tool', '_described',
          'TEXT', 'NUMBER', 'FLAG', 'EMPTY', 'shown', 'answer', 'serve', 'main', 'check_plan')
-METHODS = {'_Page': ('__init__', 'handle_starttag', 'handle_endtag', 'handle_data'), '_NoRedirect':
-           ('redirect_request',), 'WorkerTools': ('__init__', 'slides', 'brand', '_state',
+METHODS = {'_NoRedirect': ('redirect_request',), 'WorkerTools': ('__init__', 'slides', 'brand', '_state',
            '_count', '_allowed', '_log', '_index', '_source', '_original_path', '_original',
            '_file_text', '_refused', 'call', '_original_named', '_input', '_hand_in', '_spec',
            '_tried', '_digest', '_review', '_shown', '_ask', '_keep', '_pdf', '_passages',

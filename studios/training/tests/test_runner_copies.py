@@ -33,7 +33,9 @@ REFUSAL = ('Google Drive refused the request (HTTP 403: The caller does not have
 
 def setUpModule():
     """A slip in a test must fail here. It must never start a program or reach Google."""
-    for owner, name in ((subprocess, 'run'), (urllib.request, 'urlopen')):
+    # Google requests are sent through studio_core.google_api, so its opener is blocked too.
+    for owner, name in ((subprocess, 'run'), (urllib.request, 'urlopen'),
+                        (gdocs.google_api, 'urlopen')):
         blocked = mock.Mock(side_effect=AssertionError(f'A test tried to use {name}.'))
         patcher = mock.patch.object(owner, name, blocked)
         patcher.start()
@@ -338,7 +340,7 @@ class GoogleTests(Built):
         down = urllib.error.URLError(f'no route, Authorization: Bearer {TOKEN}')
         with mock.patch.object(copies.shutil, 'which', lambda name: f'/opt/tools/{name}'), \
                 mock.patch.object(subprocess, 'run', mock.Mock(return_value=signed_in)), \
-                mock.patch.object(urllib.request, 'urlopen', mock.Mock(side_effect=down)):
+                mock.patch.object(gdocs.google_api, 'urlopen', mock.Mock(side_effect=down)):
             made, problems = copies.make(self.root)
         self.assertEqual((made, set(problems)), ([], {'document', 'brief'}))
         self.assertIn('Could not reach Google Drive', problems['document'])
