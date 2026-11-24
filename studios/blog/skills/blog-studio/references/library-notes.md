@@ -52,9 +52,9 @@ are source snapshots, not live evidence.
 
 A higher-level skill can state:
 
-> Resolve `<toolkit-root>` to the installed `blog-writing-toolkit` folder. For
+> Resolve `<skill-root>` to the installed `blog-studio` folder. For
 > an existing draft that needs polishing, read
-> `<toolkit-root>/references/modules/copy-editing.md`, supply the draft and voice
+> `<skill-root>/references/modules/copy-editing.md`, supply the draft and voice
 > instructions, and use its guidance. Load only its relevant supporting files.
 > Return the revision and material change notes to this workflow.
 

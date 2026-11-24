@@ -30,10 +30,7 @@ class BundleTests(unittest.TestCase):
     def test_two_builds_are_byte_identical_and_match_their_checksums(self):
         version, digests = build.build(self.base / 'build two')
         self.assertEqual((version, digests), (VERSION, self.digests))
-        self.assertEqual(
-            set(digests),
-            {'blog-studio-installer.zip', 'blog-studio.zip', 'blog-writing-toolkit.zip'},
-        )
+        self.assertEqual(set(digests), {'blog-studio-installer.zip', 'blog-studio.zip'})
         for name, digest in digests.items():
             first = (self.base / 'build one' / name).read_bytes()
             self.assertEqual(first, (self.base / 'build two' / name).read_bytes(), name)
