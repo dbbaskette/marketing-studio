@@ -146,40 +146,53 @@ class BrandSkillTests(unittest.TestCase):
         self.assertNotEqual(brands._JOB['status'], 'working', 'synthetic install timed out')
         return brands._JOB
 
+    def desk(self, **data):
+        """A blog started on the writing desk through the page route."""
+        import uuid
+
+        return management.dispatch(
+            self.root,
+            'desk-create',
+            {
+                'operation': uuid.uuid4().hex,
+                'manuscript': 'An opening.\n\n## One\n\nFictional text.\n',
+                **data,
+            },
+        )
+
+    def context(self, root, ident):
+        """What a desk job of the blog is given: its payload extras and guidance."""
+        import desk
+        import desk_jobs
+
+        return desk_jobs._context(root, desk.read(root, ident))[0]
+
     def test_select_installed_skill_and_pin_blog_contract_separately_from_author_voice(self):
         first = self.skill(version='1.1.0')
         second = self.skill(self.home / '.claude/skills/another-brand')
         found = brands.status()
         self.assertEqual(len(found['skills']), 2)
         brands.configure({'runtime': str(second)})
-        run = blog_runner.create(
-            self.root,
-            {
-                'title': 'Synthetic article',
-                'goal': 'Explain a fictional system',
-                'audience': 'Authors',
-                'research': 'none',
-                'tone': 'Plain and personal',
-                'brand': 'fictional',
-                'variant': 'dark',
-            },
+        run = self.desk(
+            title='Synthetic article', tone='Plain and personal', brand='fictional', variant='dark'
         )
-        self.assertEqual(run['brand']['version'], '1.2.0')
-        directory, record, kept = blog_runner.load(self.root, run['id'])
-        saved = (directory / blog_runner.STATE).read_bytes()
-        self.assertNotIn(str(self.home), json.dumps(kept['brand']))
-        _, payload, _ = blog_runner.job(self.root, run['id'])
+        directory, record = studio.item(self.root, 'articles', run['id'])
+        self.assertEqual(record['brand']['version'], '1.2.0')
+        saved = (directory / 'session.json').read_bytes()
+        self.assertNotIn(str(self.home), json.dumps(record['brand']))
+        payload = self.context(self.root, run['id'])
         self.assertEqual(payload['brand']['voice'], 'Name the organisation Fictional Labs.')
-        self.assertEqual(payload['voice'], record['voice'])
-        self.assertIn('Plain and personal', json.dumps(payload['voice']))
+        self.assertEqual(record['voice'], {'mode': 'tone', 'tone': 'Plain and personal'})
+        self.assertEqual(payload['tone'], 'Plain and personal')
+        expected = management.detail(self.root, run['id'])['expected']
         brands.configure({'runtime': str(first)})
         shutil.rmtree(second)
-        self.assertEqual((directory / blog_runner.STATE).read_bytes(), saved)
-        self.assertEqual(blog_runner.survey(self.root, run['id'])['expected'], run['expected'])
-        self.assertEqual(blog_runner.job(self.root, run['id'])[1]['brand'], payload['brand'])
+        self.assertEqual((directory / 'session.json').read_bytes(), saved)
+        self.assertEqual(management.detail(self.root, run['id'])['expected'], expected)
+        self.assertEqual(self.context(self.root, run['id'])['brand'], payload['brand'])
         other = self.base / 'another-computer'
         shutil.copytree(self.root, other)
-        self.assertEqual(blog_runner.job(other, run['id'])[1]['brand'], payload['brand'])
+        self.assertEqual(self.context(other, run['id'])['brand'], payload['brand'])
 
     def profile(self, guide='Short direct sentences.', status='confirmed'):
         file = self.base / f'guide-{status}.md'
@@ -316,27 +329,12 @@ class BrandSkillTests(unittest.TestCase):
         self.skill()
         brands.installed(refresh=True)
         self.assertEqual(brands.defaults(), {'brand': 'fictional', 'variant': 'dark'})
-        run = blog_runner.create(
-            self.root,
-            {
-                'title': 'Shared brand',
-                'goal': 'A fixture',
-                'audience': 'Authors',
-                'research': 'none',
-            },
+        run = self.desk(title='Shared brand')
+        self.assertEqual(
+            studio.item(self.root, 'articles', run['id'])[1]['brand']['variant'], 'dark'
         )
-        self.assertEqual(run['brand']['variant'], 'dark')
-        plain = blog_runner.create(
-            self.root,
-            {
-                'title': 'Plain',
-                'goal': 'A fixture',
-                'audience': 'Authors',
-                'research': 'none',
-                'brand': '',
-            },
-        )
-        self.assertIsNone(plain['brand'])
+        plain = self.desk(title='Plain', brand='')
+        self.assertIsNone(studio.item(self.root, 'articles', plain['id'])[1].get('brand'))
 
     def test_real_skill_cli_accepts_the_brand_input(self):
         folder = self.skill()

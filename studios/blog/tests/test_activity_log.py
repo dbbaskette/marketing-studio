@@ -330,7 +330,7 @@ class EngineTests(Case):
         self.assertNotIn('activity', engine.describe(found['id'], listing=True))
 
     def test_a_tool_job_is_a_job_of_its_blog_and_its_own_owner(self):
-        found = self.create(page=True)
+        found = self.desk()
         ident = 'a' * 32
         tool_jobs.create(
             self.root,

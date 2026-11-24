@@ -335,8 +335,21 @@ class ToneWhileOffTests(EnforcementCase):
             {'title': 'T', 'audience': 'A', 'goal': 'G', 'research': 'none', 'tone': 'Warm'},
         )
 
+    def desk(self):
+        """A blog started on the writing desk through the page route, with a tone."""
+        return management.dispatch(
+            self.root,
+            'desk-create',
+            {
+                'operation': 'b' * 32,
+                'title': 'T',
+                'manuscript': 'An opening.\n\n## One\n\nText.\n',
+                'tone': 'Warm',
+            },
+        )
+
     def test_a_new_run_writes_with_tone_and_no_default_voice(self):
-        found = self.create()
+        found = self.desk()
         _, record = studio.item(self.root, 'articles', found['id'])
         self.assertEqual(record['voice'], {'mode': 'tone', 'tone': 'Warm'})
         self.assertIsNone(blog_runner.options(self.root)['default_voice'])

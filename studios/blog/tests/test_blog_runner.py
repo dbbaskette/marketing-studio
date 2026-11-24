@@ -75,6 +75,31 @@ class RunnerCase(Fixture):
     def approve(self, found, page=False):
         return runner.decide(self.root, found['id'], found['expected'], 'approve', page=page)
 
+    DESK_DRAFT = 'An opening paragraph.\n\n## First part\n\nFirst text.\n'
+
+    def desk(self, manuscript=None, **extra):
+        """A blog on the writing desk, started through the page route as a person starts
+        one now. Returns its ID, title and the version its detail shows, which the delete,
+        schedule and Google routes take."""
+        import uuid
+
+        made = management.dispatch(
+            self.root,
+            'desk-create',
+            {
+                'operation': uuid.uuid4().hex,
+                'title': 'Synthetic gateway guide',
+                'manuscript': manuscript or self.DESK_DRAFT,
+                **extra,
+            },
+        )
+        return self.shown(made['id'])
+
+    def shown(self, ident):
+        """A blog as its detail shows it now: ID, title and version."""
+        found = management.detail(self.root, ident)
+        return {'id': ident, 'title': found['title'], 'expected': found['expected']}
+
     def profiles(self, agent='codex'):
         from studio_core import studios_config
 
@@ -1395,11 +1420,18 @@ class SharedPatternTests(RunnerCase):
         )
 
     def test_the_listing_puts_the_blog_that_changed_last_first(self):
-        first = self.create(page=True)
-        second = self.create(page=True, title='A later synthetic blog')
+        import desk
+
+        first = self.desk()
+        second = self.desk(title='A later synthetic blog')
         listed = [row['id'] for row in runner.catalog(self.root)['items']]
         self.assertEqual(listed, [second['id'], first['id']])
-        self.approve(self.submit(first, page=True), page=True)
+        part = desk.read(self.root, first['id'])['sections'][0]['id']
+        management.dispatch(
+            self.root,
+            'desk-save',
+            {'id': first['id'], 'seen': 1, 'part': part, 'text': 'Typed.', 'session': 'b' * 16},
+        )
         listed = [row['id'] for row in runner.catalog(self.root)['items']]
         self.assertEqual(listed, [first['id'], second['id']])
         self.assertTrue(all(row['touched'] for row in runner.catalog(self.root)['items']))
@@ -1587,6 +1619,28 @@ class DeleteTests(RunnerCase):
                 },
             )
 
+    def job_for(self, ident, job, created_at=None):
+        """A queued desk tool job of the blog, with what a worker needs to run it."""
+        import tool_jobs
+
+        tool_jobs.write(
+            self.root,
+            {
+                'id': job,
+                'kind': 'repurpose',
+                'status': 'queued',
+                'attempts': 0,
+                'created_at': created_at or studio.now(),
+                'metadata': {'article': ident},
+                'result': None,
+                'error': '',
+                'engine': 'codex',
+                'payload': {},
+                'guidance': '',
+                'seconds': 5,
+            },
+        )
+
     def delete(self, found, **changes):
         return management.dispatch(
             self.root,
@@ -1595,7 +1649,7 @@ class DeleteTests(RunnerCase):
         )
 
     def test_delete_needs_the_shown_version_and_the_typed_title(self):
-        found = self.create(page=True)
+        found = self.desk()
         with self.assertRaisesRegex(ValueError, 'changed'):
             self.delete(found, expected='stale')
         with self.assertRaisesRegex(ValueError, 'title'):
@@ -1607,7 +1661,8 @@ class DeleteTests(RunnerCase):
 
     def test_delete_accepts_the_title_as_a_person_types_it(self):
         # Curly quotes, an en dash and a double space in the stored title; plain typing deletes it.
-        found = self.create(page=True, title='From agent “pilots” to governed  production – 2026')
+        found = self.desk(title='From agent “pilots” to governed  production – 2026')
+        self.assertEqual(found['title'], 'From agent “pilots” to governed  production – 2026')
         with self.assertRaisesRegex(ValueError, 'title'):
             self.delete(found, title='From agent pilots to production')
         result = self.delete(found, title='  from agent "pilots" to governed production - 2026 ')
@@ -1616,31 +1671,33 @@ class DeleteTests(RunnerCase):
 
     def test_delete_ignores_a_byte_order_mark_at_the_start_of_the_stored_title(self):
         # The page's \s counts U+FEFF as a space, so the server must agree.
-        found = self.create(page=True, title='\ufeffMarked gateway guide')
+        found = self.desk(title='\ufeffMarked gateway guide')
+        self.assertEqual(found['title'], '\ufeffMarked gateway guide')
         result = self.delete(found, title='Marked gateway guide')
         self.assertTrue(result['deleted'])
 
     def test_delete_stops_the_worker_and_removes_what_this_computer_kept(self):
+        import tool_jobs
+
         entered = threading.Event()
 
         def worker(*args, **kwargs):
             entered.set()
-            engine.stop.wait(5)  # the worker ends once the delete asks it to stop
-            return {'content': 'A late outline', 'notes': ''}
+            kwargs['stop'].wait(5)  # the worker ends once the delete asks it to stop
+            return {'content': 'A late section', 'notes': ''}
 
-        found = self.create(page=True)
+        found = self.desk()
         ident = found['id']
+        self.job_for(ident, 'f' * 32, created_at='2001-01-01T00:00:00+00:00')  # runs first
         self.plant(ident)
         engine = runner.Engine(self.root, worker)
         runner.ENGINES[str(self.root)] = engine
-        engine.control(ident, 'resume')
-        thread = threading.Thread(target=engine.once, args=(ident,))
+        thread = threading.Thread(target=tool_jobs.once, args=(engine,))
         thread.start()
         try:
             self.assertTrue(entered.wait(2))
-            shown = engine.describe(ident)
-            self.assertEqual(shown['status'], 'working')
-            result = self.delete(shown)
+            self.assertEqual(engine.current, 'tool:' + 'f' * 32)
+            result = self.delete(self.shown(ident))
         finally:
             engine.stop.set()
             thread.join(5)
@@ -1655,12 +1712,11 @@ class DeleteTests(RunnerCase):
         )
         receipts = sorted(p.name for p in studio.inside(self.root, '.desk-receipts').glob('*'))
         self.assertEqual(receipts, ['b' * 64 + '.json'])
-        import tool_jobs
-
         self.assertEqual(tool_jobs.read(self.root, 'd' * 32)['status'], 'queued')
         self.assertFalse(
             studio.inside(self.root, '.blog-runs', 'tools', 'c' * 32 + '.json').exists()
         )
+        self.assertFalse(tool_jobs.path(self.root, 'f' * 32).exists(), 'its working job too')
         self.assertIsNone(engine.current)
         listing = runner.catalog(self.root)
         self.assertEqual([row['id'] for row in listing['items']], [])
@@ -1672,27 +1728,32 @@ class DeleteTests(RunnerCase):
             studio.item(self.root, 'articles', ident)
 
     def test_a_deleted_blog_can_be_restored_for_thirty_days(self):
-        found = self.create(page=True)
+        import blog_delete
+        import desk
+
+        found = self.desk()
         ident = found['id']
-        found = self.approve(self.submit(found, page=True), page=True)
-        self.delete(found)
+        part = desk.read(self.root, ident)['sections'][0]['id']
+        management.dispatch(
+            self.root,
+            'desk-save',
+            {'id': ident, 'seen': 1, 'part': part, 'text': 'Kept text.', 'session': 'b' * 16},
+        )
+        self.delete(self.shown(ident))
         restored = management.dispatch(self.root, 'blog-restore', {'id': ident})
         self.assertEqual(restored['id'], ident)
         self.assertTrue(restored['restored'])
+        self.assertTrue(restored['on_desk'])
         directory, record = studio.item(self.root, 'articles', ident)
         self.assertEqual(record['title'], 'Synthetic gateway guide')
-        self.assertTrue((directory / 'OUTLINE.md').is_file())
-        shown = runner.engine(self.root).describe(ident)
-        self.assertEqual(shown['status'], 'stopped', 'nothing starts by itself after a restore')
-        self.assertFalse(shown['enabled'])
-        self.assertEqual(shown['stages'][0]['status'], 'approved')
+        self.assertIn('Kept text.', (directory / 'DRAFT.md').read_text())
+        self.assertEqual(desk.read(self.root, ident)['sections'][0]['text'], 'Kept text.')
+        self.assertEqual(blog_delete._jobs(self.root, ident), [], 'nothing starts by itself')
         self.assertEqual(runner.catalog(self.root)['deleted'], [])
         with self.assertRaisesRegex(ValueError, 'recently deleted'):
             management.dispatch(self.root, 'blog-restore', {'id': ident})
         # An old record and whatever it kept are let go of when the list is read.
-        import blog_delete
-
-        self.delete(runner.engine(self.root).describe(ident))
+        self.delete(self.shown(ident))
         record_path = studio.inside(self.root, '.blog-runs', 'deleted', ident + '.json')
         old = studio.read_json(record_path)
         old['deleted_at'] = '2020-01-01T00:00:00+00:00'
@@ -1712,7 +1773,7 @@ class DeleteTests(RunnerCase):
             kwargs['stop'].wait(5)  # the tool job ends once the delete cancels it
             return {'content': 'late copy', 'notes': ''}
 
-        found = self.create(page=True)
+        found = self.desk()
         ident = found['id']
         engine = runner.Engine(self.root, worker)
         runner.ENGINES[str(self.root)] = engine
@@ -1747,7 +1808,7 @@ class DeleteTests(RunnerCase):
         try:
             self.assertTrue(entered.wait(3))
             self.assertEqual(engine.current, 'tool:' + 'c' * 32)
-            result = self.delete(engine.describe(ident))
+            result = self.delete(self.shown(ident))
         finally:
             engine.stop.set()
             thread.join(5)
@@ -1784,6 +1845,7 @@ class DeleteTests(RunnerCase):
 
     def test_a_worker_that_does_not_end_in_time_leaves_the_blog_stopped_and_kept(self):
         import blog_delete
+        import tool_jobs
 
         entered, release = threading.Event(), threading.Event()
 
@@ -1792,18 +1854,19 @@ class DeleteTests(RunnerCase):
             release.wait(5)  # ignores the stop
             return {'content': 'late', 'notes': ''}
 
-        found = self.create(page=True)
+        found = self.desk()
         ident = found['id']
         engine = runner.Engine(self.root, worker)
         runner.ENGINES[str(self.root)] = engine
-        engine.control(ident, 'resume')
-        thread = threading.Thread(target=engine.once, args=(ident,))
+        self.job_for(ident, 'c' * 32)
+        thread = threading.Thread(target=tool_jobs.once, args=(engine,))
         thread.start()
         try:
             self.assertTrue(entered.wait(2))
+            self.assertEqual(engine.current, 'tool:' + 'c' * 32)
             with patch.object(blog_delete, 'STOP_WAIT', 0.2):
                 with self.assertRaisesRegex(ValueError, 'not ended yet'):
-                    self.delete(engine.describe(ident))
+                    self.delete(self.shown(ident))
         finally:
             release.set()
             thread.join(5)
@@ -1814,7 +1877,7 @@ class DeleteTests(RunnerCase):
     def test_restore_finds_the_blog_already_back_and_drops_the_record(self):
         import blog_delete
 
-        found = self.create(page=True)
+        found = self.desk()
         ident = found['id']
         self.delete(found)
         kept = studio.inside(self.root, '.blog-runs', 'deleted', ident)
@@ -1824,7 +1887,7 @@ class DeleteTests(RunnerCase):
         self.assertFalse(kept.exists())
         self.assertEqual(runner.catalog(self.root)['deleted'], [])
         # A different blog under the same ID is never overwritten.
-        other = self.create(page=True)
+        other = self.desk()
         self.delete(other)
         session = studio.inside(self.root, 'articles', other['id'], 'session.json')
         studio.write_json(session, {'id': other['id'], 'title': 'Another blog'})
@@ -1832,7 +1895,7 @@ class DeleteTests(RunnerCase):
             management.dispatch(self.root, 'blog-restore', {'id': other['id']})
 
     def test_a_kept_copy_refuses_a_second_delete_and_a_bad_record_is_left_out(self):
-        found = self.create(page=True)
+        found = self.desk()
         studio.inside(self.root, '.blog-runs', 'deleted', found['id'], 'blog').mkdir(parents=True)
         with self.assertRaisesRegex(ValueError, 'still kept'):
             self.delete(found)
@@ -1860,11 +1923,9 @@ class DeleteTests(RunnerCase):
         self.assertEqual(runner.catalog(self.root)['deleted'][0]['title'], 'Gateway guide')
 
     def test_the_finished_run_says_where_it_was_published(self):
-        found = self.create(page=True)
-        for _ in range(4):
-            found = self.approve(self.submit(found, page=True), page=True)
-        self.assertTrue(found['complete'])
-        self.assertIsNone(runner.engine(self.root).describe(found['id'])['publication'])
+        found = self.desk()
+        shown = management.view(self.root, 'desk', {'id': [found['id']]})
+        self.assertIsNone(shown['publication'])
         detail = management.detail(self.root, found['id'])
         management.dispatch(
             self.root,
@@ -1878,7 +1939,7 @@ class DeleteTests(RunnerCase):
             },
         )
         self.assertEqual(
-            runner.engine(self.root).describe(found['id'])['publication'],
+            management.view(self.root, 'desk', {'id': [found['id']]})['publication'],
             'https://example.com/post',
         )
 
@@ -2644,14 +2705,10 @@ class FromFilesReviewTests(FilesCase):
                 'analyze': False,
             },
         )['source']['id']
-        found = runner.create(
-            self.root,
-            {'mode': 'from-files', 'sources': [ours, shared, single], 'goal': 'A post'},
-            'page',
-        )
-        _, record, _ = runner.load(self.root, found['id'])
+        found = self.desk(sources=[ours, shared, single])
+        _, record = studio.item(self.root, 'articles', found['id'])
         self.assertEqual(record['material'], [ours, shared, single])
-        self.create(page=True, sources=[shared])  # another blog pins the second file
+        self.desk(title='Another blog', sources=[shared])  # another blog pins the second file
         material = self.root / '.uploads' / 'material'
         ledgers = sorted((self.root / '.uploads').glob('*.json'))
         self.assertEqual(len(ledgers), 2)
@@ -2669,7 +2726,10 @@ class FromFilesReviewTests(FilesCase):
         self.assertTrue(kept.is_dir(), 'kept for restore')
         management.dispatch(self.root, 'blog-restore', {'id': found['id']})
         self.assertTrue((material / ours / 'content.md').is_file())
-        _, payload, _ = runner.job(self.root, found['id'])
+        import desk
+        import desk_jobs
+
+        payload, _ = desk_jobs._context(self.root, desk.read(self.root, found['id']))
         self.assertEqual(len(payload['sources']), 3)
 
 
