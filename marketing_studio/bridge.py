@@ -20,7 +20,6 @@ import argparse
 import json
 import os
 import shutil
-import signal
 import sys
 from pathlib import Path
 
@@ -36,7 +35,15 @@ ensure_python(Path(__file__).resolve().parents[1])
 from studio_core import workspace_setup  # noqa: E402
 from studio_core.workspace_setup import configure  # noqa: E402
 
-NAMES = {'blog': 'Blog Studio', 'training': 'Training Studio', 'presentation': 'Presentation Studio'}
+# What this bridge and the launcher that starts it agree on, and the studios' names, from
+# Marketing Studio's own package. Its folder goes last on the path, after any studio's own.
+_HOME = Path(__file__).resolve().parents[1]
+if str(_HOME) not in sys.path:
+    sys.path.append(str(_HOME))
+from marketing_studio import bridge_protocol as protocol  # noqa: E402
+from marketing_studio.catalog import STUDIOS  # noqa: E402
+
+NAMES = {identifier: STUDIOS[identifier][0] for identifier in ('blog', 'training', 'presentation')}
 NOUNS = {'blog': 'blogs', 'training': 'trainings', 'presentation': 'decks'}
 # Blog Studio's kinds of work: the group, the file that marks one, and what the report calls them.
 BLOG_GROUPS = (('articles', 'session.json', 'blogs'), ('sources', 'record.json', 'references'),
@@ -81,7 +88,7 @@ def serve_blog(root):
             runner = blog_runner.engine(root)
             httpd, url = management.server(root, shared_setup=True)
             # Blog Studio generates its own key. It travels only over the private pipe.
-            print(json.dumps({'link': url}), flush=True)
+            protocol.report({'link': url})
             runner.start()
             httpd.serve_forever()
         except KeyboardInterrupt:
@@ -489,76 +496,91 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('studio', choices=('blog', 'presentation', 'training', 'infographic'))
     parser.add_argument('root', type=Path)
-    parser.add_argument('--prepare', action='store_true')
-    parser.add_argument('--connect', action='store_true')
+    parser.add_argument(protocol.PREPARE, action='store_true')
+    parser.add_argument(protocol.CONNECT, action='store_true')
     # Names the Marketing Studio data root that started this bridge; read only from outside.
-    parser.add_argument('--home-data', help=argparse.SUPPRESS)
+    parser.add_argument(protocol.HOME_DATA, help=argparse.SUPPRESS)
     args = parser.parse_args()
-    handoff = json.loads(os.environ.pop('MARKETING_STUDIO_HANDOFF'))
-    shared = handoff['shared']
+    handoff = protocol.received()
     if args.studio == 'infographic':
-        sys.path.insert(0, str(args.root))
-        from runner.workspace import Store, data_root, file_lock
-        from runner import server as infographic_server
-        current = Store.current()
-        if args.connect:
-            raise ValueError('Infographic Studio keeps supplied material locally in this release. Team connection is a follow-up; the existing workspace is kept.')
-        notice = None
-        if current is None:
-            target = workspace_setup.target(shared, 'infographic')
-            if 'repository' in target:
-                # Launch is explicit setup, but does not grant a repository write.
-                local = Path((shared.get('local') or {}).get('root') or '~/Studios').expanduser()
-                current = Store.setup(local / 'infographic-workspace')
-                notice = 'Infographic Studio uses local storage in this release. Shared team settings were kept.'
-            else:
-                current = Store.setup(Path(target['root']))
-        if args.prepare:
-            print(json.dumps({'prepared': True, 'workspace': {'root': str(current.root),
-                  'repository': None, 'branch': 'main'}, **({'notice': notice} if notice else {})}), flush=True)
-            return 0
-        with file_lock(data_root() / '.studio-running.lock'):
-            page = infographic_server.desk(current, standalone=True)
-            try:
-                page.start()
-                print(json.dumps({'link': page.url}), flush=True)
-                signal.signal(signal.SIGTERM, lambda *_: (_ for _ in ()).throw(KeyboardInterrupt()))
-                import threading
-                threading.Event().wait()
-            except KeyboardInterrupt:
-                pass
-            finally:
-                page.stop()
-        return 0
+        return infographic_main(args, handoff['shared'])
     if args.studio == 'blog':
-        scripts = args.root / 'skills/blog-studio/scripts'
-        sys.path.insert(0, str(scripts if scripts.is_dir() else args.root / 'scripts'))
-        from studio_sync import gitstate
-        if args.connect:
-            print(json.dumps(connect_blog(gitstate, shared)), flush=True)
-            return 0
-        result, root = prepare_blog_workspace(gitstate, shared)
-        if args.prepare:
-            print(json.dumps(result), flush=True)
-            return 0
-        signal.signal(signal.SIGTERM, lambda *_: (_ for _ in ()).throw(KeyboardInterrupt()))
-        return serve_blog(root) or 0
+        return blog_main(args, handoff['shared'])
+    return runner_main(args, handoff)
+
+
+def infographic_main(args, shared):
+    """Infographic Studio: set a missing workspace up, report it, or serve its desk."""
+    sys.path.insert(0, str(args.root))
+    from runner.workspace import Store, data_root, file_lock
+    from runner import server as infographic_server
+    current = Store.current()
+    if args.connect:
+        raise ValueError('Infographic Studio keeps supplied material locally in this release. Team connection is a follow-up; the existing workspace is kept.')
+    notice = None
+    if current is None:
+        target = workspace_setup.target(shared, 'infographic')
+        if 'repository' in target:
+            # Launch is explicit setup, but does not grant a repository write.
+            local = Path((shared.get('local') or {}).get('root') or '~/Studios').expanduser()
+            current = Store.setup(local / 'infographic-workspace')
+            notice = 'Infographic Studio uses local storage in this release. Shared team settings were kept.'
+        else:
+            current = Store.setup(Path(target['root']))
+    if args.prepare:
+        protocol.report({'prepared': True, 'workspace': {'root': str(current.root),
+                        'repository': None, 'branch': 'main'}, **({'notice': notice} if notice else {})})
+        return 0
+    with file_lock(data_root() / '.studio-running.lock'):
+        page = infographic_server.desk(current, standalone=True)
+        try:
+            page.start()
+            protocol.report({'link': page.url})
+            protocol.interrupt_on_terminate()
+            import threading
+            threading.Event().wait()
+        except KeyboardInterrupt:
+            pass
+        finally:
+            page.stop()
+    return 0
+
+
+def blog_main(args, shared):
+    """Blog Studio: connect it, report its workspace, or serve it."""
+    scripts = args.root / 'skills/blog-studio/scripts'
+    sys.path.insert(0, str(scripts if scripts.is_dir() else args.root / 'scripts'))
+    from studio_sync import gitstate
+    if args.connect:
+        protocol.report(connect_blog(gitstate, shared))
+        return 0
+    result, root = prepare_blog_workspace(gitstate, shared)
+    if args.prepare:
+        protocol.report(result)
+        return 0
+    protocol.interrupt_on_terminate()
+    return serve_blog(root) or 0
+
+
+def runner_main(args, handoff):
+    """Presentation Studio and Training Studio, through the runner: connect, prepare or serve."""
+    shared = handoff['shared']
     sys.path.insert(0, str(args.root))
     from runner import gitstate, setup, studio
     if args.connect:
-        print(json.dumps(connect_runner(args.studio, shared)), flush=True)
+        protocol.report(connect_runner(args.studio, shared))
         return 0
     if args.prepare and gitstate.current() is not None:
-        print(json.dumps(workspace_setup.prepare(gitstate, shared, args.studio,
-                                                 runner_carry(args.studio))), flush=True)
+        protocol.report(workspace_setup.prepare(gitstate, shared, args.studio,
+                                                runner_carry(args.studio)))
         return 0
     # The native startup takes its singleton lock before serving. Setup needs the same
     # lease, so a launch cannot change an already-running studio's workspace.
     with studio.only_runner():
         setup.migrate()
         if args.prepare:
-            print(json.dumps(workspace_setup.prepare(gitstate, shared, args.studio,
-                                                     runner_carry(args.studio))), flush=True)
+            protocol.report(workspace_setup.prepare(gitstate, shared, args.studio,
+                                                    runner_carry(args.studio)))
             return 0
         configure(gitstate, shared, args.studio)
     os.environ[studio.RESTART] = json.dumps({'token': handoff['token']})
@@ -569,5 +591,5 @@ if __name__ == '__main__':
     try:
         raise SystemExit(main())
     except Exception as failure:
-        print(json.dumps({'error': str(failure)}), flush=True)
+        protocol.report({'error': str(failure)})
         raise SystemExit(2)
