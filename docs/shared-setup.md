@@ -1,7 +1,7 @@
 # Shared studio setup
 
-Marketing Studio, Blog Studio, Presentation Studio and Training Studio read the
-same settings file and use the same setup page. Completion means choices were
+Marketing Studio, Blog Studio, Presentation Studio, Training Studio and Infographic
+Studio read the same settings file and use the same setup page. Completion means choices were
 saved and the requested workspace preparation succeeded, not that provider sign-in
 or every optional tool is available.
 
@@ -132,8 +132,10 @@ choose an explicit or shared model before applying a reasoning override.
 The main panel keeps the current choice and controls together; **How this choice
 works** expands the explanation of routing and existing work.
 
-The editable-outline target is 60 seconds, separate from the scan's 180-second and
-$0.25 caps. These are workflow targets and limits, not measured provider promises.
+The editable-outline target is 60 seconds, separate from the scan's 270-second (4.5
+minute) limit; the scan has no spending cap ([cost is reported, never
+limited](#cost-is-reported-never-limited)). These are workflow targets and limits, not
+measured provider promises.
 A lower reasoning choice does not guarantee a faster response. An incomplete scan
 can still leave a starting outline to refine before approving deeper research.
 New work pins its resolved choices; existing work changes only through its explicit
@@ -457,10 +459,14 @@ they recorded. See [saved-work compatibility](saved-work-compatibility.md).
 
 ### Everyday choices, Advanced, and who owns a value
 
-First-run setup asks only the four everyday choices, in three steps: you and your
+First-run setup asks only four everyday choices, in three steps: you and your
 assistant, your workspace, and brand and delivery. Shared settings shows one section
-at a time. Desktop section buttons group **Everyday** (Assistant, Workspace, Brand,
-Delivery) and **Advanced** (Models, Research sites, Installations). On a phone, use the **Settings section** selector. Changing sections
+at a time. Desktop section buttons group the five **Everyday** sections (Assistant,
+Workspace, Brand, Delivery, Document graphics) and **Advanced** (Models, Research
+sites, Installations). **Document graphics** is only in Shared settings: who draws the
+pictures a document needs, such as an infographic's artwork (follow your assistant,
+Gemini or Codex), the Gemini picture model, and a Gemini API key kept in a private
+file beside the settings file, never in it and never shared with your team. On a phone, use the **Settings section** selector. Changing sections
 keeps unsaved values; an invalid field or conflicting edit opens its section before
 taking focus. **About shared and project settings** expands the ownership explanation.
 A new person can make the four everyday choices, save, and return to Studios without

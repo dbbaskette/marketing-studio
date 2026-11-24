@@ -136,7 +136,7 @@ To release:
 2. Merge to `main`.
 3. From a clean checkout of the current `main`, run `bash scripts/release.sh`.
    It refuses if tag `v<version>` already exists; otherwise it runs the checks,
-   builds, and publishes the GitHub Release with the three archives, their
+   builds, and publishes the GitHub Release with the two archives, their
    checksums and that changelog section. `--dry-run` does everything except
    publish.
 

@@ -14,8 +14,6 @@ marketing-studio open infographic
 
 For a first install, download the suite or Infographic Studio, unzip it, and run `bash install.sh` in the unpacked folder. Bring Git and a signed-in Codex or Claude Code assistant. For an independent installation, launch with `sh ~/.local/share/infographic-studio/studio`. Keep the terminal open and choose your work folder. A supported platform bundle includes the renderer used for the local preview. [Downloads](https://github.com/dbbaskette/marketing-studio/releases) · [Installation](../../docs/installation.md) · [Renderer guide](docs/rendering-decision.md)
 
-For a Training Studio job aid, choose **Import selected studio material**, select the Training Studio materials folder, then select **One-page job aid** for the approved blueprint. The preview carries the approved steps, evidence and exceptions. Choose A4 or Letter and keep the accessible text alongside the print version.
-
 ## Your first infographic
 
 Suppose you have an onboarding checklist and need a handout. Try *“Show new partners the steps from invitation to first login. Use the order and role names in this checklist. Make it fit on one printed page.”*
@@ -25,6 +23,8 @@ Suppose you have an onboarding checklist and need a handout. Try *“Show new pa
 3. **Build the page.** Choose **Build page** and inspect the preview at its intended size. Use **Edit words** to fix a heading or label, then **Update preview**. For a chart, check that its values, units and comparison period match your source.
 4. **Approve what you see.** Open **Review page**, record your review and run the local checks. Resolve any findings, then choose **Approve revision N** to prepare files for that version. If preparation is interrupted, **Prepare approved files** retries it.
 5. **Choose a file or destination.** Download a file for local use, or choose **Deliver approved page** for the available PDF and Google Doc delivery options.
+
+For a Training Studio job aid, choose **Import selected studio material**, select the Training Studio materials folder, then select **One-page job aid** for the approved blueprint. The preview carries the approved steps, evidence and exceptions. Choose A4 or Letter and keep the accessible text alongside the print version.
 
 ## Pick the right file
 

@@ -11,20 +11,25 @@ skills/presentation-studio/
   VERSION
   scripts/                  the core the runner stands on
     workspace.py            the refusal a person reads, and safe writes
-    home.py                 the per-user data folder and its JSON files
+    home.py                 the per-user data folder and its JSON files (thin: the shared
+                            part is core/studio_core/studio_home.py)
     hub.py                  git for a shared workspace
-    sync_guidance.py        fetches, pins and verifies guidance
+    sync_guidance.py        fetches, pins and verifies guidance (thin: the shared part is
+                            core/studio_core/guidance_sync.py)
     studios_config.py       the values every studio shares
-    computer.py             what this computer has for making a deck
-    gdrive.py               Google Drive through gcloud
+    computer.py             what this computer has for making a deck (thin: the check is
+                            core/studio_core/computer_check.py)
+    gdrive.py               Google Drive through gcloud, sent through core/studio_core/google_api.py
     server.py               the page's local server and its rules
     validate_package.py     package and progressive-disclosure checks
-    desk/                   the page: index.html, app.js, markdown.js and its styles
+    desk/                   the page: index.html, app.js, markdown.js and its styles; the helpers
+                            both deck desks share are core/studio_core/deck_web/desk-base.js
 runner/                     the runner: studio.py, the engine, its steps and the workers' briefs
 bootstrap/presentation-studio/  the small entry an installed copy uses
 guidance/manifest.json      which runtime version the guidance needs
 installer/                  install.sh, install.py and a double-click launcher;
-                            companions.json pins harness-slides and harness-research
+                            companions.json links pins/companions.json: harness-slides and
+                            harness-research, from main, with the oldest version accepted
 tests/                      unit tests; temporary directories only
   stand_ins/                harness-slides, harness-research and a brand skill, played in Python
   fixtures/                 a companion's own contract fixtures, copied unchanged

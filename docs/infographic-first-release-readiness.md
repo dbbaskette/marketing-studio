@@ -1,8 +1,10 @@
 # Infographic Studio first-release readiness
 
-The current source candidate is **Marketing Studio 4.12.0 / Infographic Studio 0.5.0**.
+Infographic Studio ships with every Marketing Studio release, at the suite's version in
+[`VERSION`](../VERSION) (before 4.17.0 it had its own numbers; 0.5.0 came with 4.12.0).
 Implementation is merged through PRs #183, #186, #231 and the audit follow-ups;
-this is not first-release sign-off or publication. [#224](https://github.com/dbbaskette/marketing-studio/issues/224)
+this is not first-release sign-off or publication. The verification below was recorded
+for Marketing Studio 4.12.0. [#224](https://github.com/dbbaskette/marketing-studio/issues/224)
 is the single remaining release/acceptance gate. #152 and #223 are consolidated
 tracking; their unfulfilled provider, visual/accessibility and owner criteria are
 preserved in #224 and the [concrete acceptance packet](infographic-live-acceptance.md).

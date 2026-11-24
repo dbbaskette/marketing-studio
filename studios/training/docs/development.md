@@ -15,23 +15,29 @@ skills/training-studio/
     assess.py               a training's checks and readiness, its status, and decisions
     workspace.py            the session record, status, approval, exports
     checks.py               format checks and readiness
-    home.py                 the per-user data folder and the registry of trainings
-    sync_guidance.py        fetches, pins and verifies guidance
+    home.py                 the per-user data folder and the registry of trainings (thin: the
+                            shared part is core/studio_core/studio_home.py)
+    sync_guidance.py        fetches, pins and verifies guidance (thin: the shared part is
+                            core/studio_core/guidance_sync.py)
     cmd_*.py                optional command modules, discovered automatically
     cmd_google.py           the `google` commands
     gdocs.py                the Google Docs round-trip: sync rules, comment anchors, transports
+                            (requests go through core/studio_core/google_api.py)
     cmd_hub.py              the hub commands
     hub.py                  the team hub: publish, find, get, share, sync
     cmd_desk.py             the desk command, which prints the link only to a terminal
     desk.py                 the page's local server: what it reads and the decisions it records
-    computer.py             the check of this computer that the status screen asks for
-    desk/                   the page: index.html, app.js, markdown.js and style.css
+    computer.py             the check of this computer that the status screen asks for (thin:
+                            the check is core/studio_core/computer_check.py)
+    desk/                   the page: index.html, app.js, markdown.js and style.css; the helpers
+                            both deck desks share are core/studio_core/deck_web/desk-base.js
     validate_package.py     package and disclosure checks
 runner/                     the runner: see its own section below
 bootstrap/training-studio/  the small entry an installed copy uses
 guidance/manifest.json      which script version the guidance needs
 installer/                  install.sh, install.py and a double-click launcher
-                            companions.json pins each companion skill to one revision
+                            companions.json links pins/companions.json: each companion's
+                            repository, its main branch and the oldest version accepted
 tests/                      unit tests; temporary directories only
   stand_ins/                the companion tools the runner calls, played in Python
   fixtures/                 a companion's own contract fixtures, copied unchanged
