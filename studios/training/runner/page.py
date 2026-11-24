@@ -271,8 +271,9 @@ SETTINGS_SOURCES = f'{SETTINGS}/sources'   # a source draft holding what researc
 COPY = '/api/training-copy'   # a training's setup, for the start form to make a new one from
 MODELS = '/api/training-models'   # Use the current model settings: what changes, and its save
 CARD = f'{DRAFTS}/card'   # one card with its parts, as the shared kit reads it
+SAVED_FILE = '/api/saved-file'   # one saved file a read-only record lists, read in place
 PART_LIMIT = 1_000_000   # bytes: one part of the largest size, as JSON
-READS = ('/api/research-note', '/api/updates', '/api/slide-text-draft', '/api/outline-flow', '/api/intake-draft', '/api/capabilities', '/api/setup', '/api/agents', '/api/models', '/api/run',
+READS = ('/api/research-note', '/api/updates', '/api/slide-text-draft', '/api/outline-flow', '/api/intake-draft', '/api/capabilities', '/api/setup', '/api/agents', '/api/models', '/api/run', SAVED_FILE,
          '/api/activity', SETTINGS, MODELS,
          '/api/download', '/api/slide', '/api/status', '/api/published', '/api/delete', '/api/deck-draft-ticket',
          DRAFTS, CARD, VERSIONS, f'{DRAFTS}/update-preview', f'{DRAFTS}/slide-versions', f'{DRAFTS}/source-price',
@@ -445,6 +446,8 @@ class RunnerPage(desk.Page):
             return desk.as_json(HTTPStatus.OK, desk_chat.migration_preview(self.engine, training))
         if path == '/api/run':
             return desk.as_json(HTTPStatus.OK, self.run(one('path')))
+        if path == SAVED_FILE:
+            return desk.as_json(HTTPStatus.OK, self.saved_file(one('path'), one('name')))
         if path == SETTINGS:
             training = self.driving(one('path'))
             return desk.as_json(HTTPStatus.OK, self.typed(
@@ -801,6 +804,21 @@ class RunnerPage(desk.Page):
         except WorkspaceError as refusal:
             raise desk.Refusal(HTTPStatus.CONFLICT, str(refusal))
 
+    def saved_file(self, path: str, name: str) -> dict:
+        """One of the saved files a read-only record lists, read in place: only a name the
+        record lists, only inside the training's folder, and only as text. Writes nothing."""
+        desk.registered(path)
+        root = self.engine.driven(path)
+        shown = self.engine.saved_record(root) if root is not None else None
+        if shown is None:
+            raise desk.Refusal(HTTPStatus.NOT_FOUND, 'This training is not a read-only record.')
+        if name not in shown['saved_record']['files']:
+            raise desk.Refusal(HTTPStatus.FORBIDDEN, 'That is not one of its saved files.')
+        found = desk.text_of(desk.inside(root, name))
+        if found is None:
+            raise desk.Refusal(HTTPStatus.CONFLICT, f'{name} is not text, so it is not shown here.')
+        return {'name': name, 'text': found[0], 'truncated': found[1]}
+
     def run(self, path: str) -> dict:
         """One training's run, for a training this computer knows."""
         desk.registered(path)
@@ -822,6 +840,12 @@ class RunnerPage(desk.Page):
         a problem makes the training one that needs the person."""
         found = self.engine.brief(item['path'])
         item['run'] = found and {'state': found['state'], 'sentence': found['sentence']}
+        if found and found.get('read_only'):
+            # A read-only record: it opens on its run, which says why; nothing else is read.
+            item['run']['read_only'] = True
+            item.update(driver=None, mine=True, notice=None, last_shared=None,
+                        state='saved', sentence=found['sentence'], waiting=None)
+            return item
         if found and (found.get('flow') == 'desk' or found['state'] == 'done'):
             item['run'].update(flow=found.get('flow'),
                                can_open_desk=found.get('can_open_desk', False))
