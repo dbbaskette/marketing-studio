@@ -1,0 +1,6 @@
+{"checkpoint":"accepted","unit":"","at":"2026-11-24T23:35:38Z"}
+{"checkpoint":"output-saved","unit":"intake-source","at":"2026-11-24T23:35:38Z"}
+{"checkpoint":"working","unit":"research-plan","at":"2026-11-24T23:35:38Z"}
+{"id":"1d8981c3c5c8","label":"Deciding what to look up","step":"research-plan","started_at":"2026-11-24T23:35:38Z","ended_at":"2026-11-24T23:35:38Z","outcome":"finished","lines":[{"at":"2026-11-24T23:35:38Z","text":"Handing back research-plan"},{"at":"2026-11-24T23:35:38Z","text":"The draft was accepted"},{"at":"2026-11-24T23:35:38Z","text":"Writing its own notes on the draft"}],"dropped":0}
+{"checkpoint":"output-saved","unit":"research-plan","at":"2026-11-24T23:35:38Z"}
+{"checkpoint":"ready","unit":"gate:research-plan","at":"2026-11-24T23:35:38Z"}

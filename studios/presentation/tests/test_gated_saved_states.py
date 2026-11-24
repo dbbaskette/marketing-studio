@@ -3,8 +3,8 @@ explicit migration says of each: opened on the desk, kept in its saved flow for 
 as a read-only record. Each deck is loaded from tests/fixtures/saved/ (`load_saved`): the
 files the real saved-run dispatch wrote for that state, captured by tests/saved_fixtures.py
 and checked against the flow by tests/test_saved_fixtures.py. Where the stand-ins cannot
-reach a saved shape (schema 4, an unreadable record), the capture edited the record the
-dispatch saved, and saved_fixtures.EDITED names those states. Only the pause taken while a
+reach a saved shape (an unreadable record), the capture edited the record the dispatch
+saved, and saved_fixtures.EDITED names those states. Only the pause taken while a
 step works runs the saved flow here: what it tests is the running step itself."""
 import copy
 import json
@@ -20,23 +20,27 @@ from studio_core import research_session, sync_guard
 import test_running_check_records as running_check
 
 LEVELS = ('brand-only', 'polish', 'redesign', 'rework', 'selected')
-NOTHING = ('research-plan', 'research', 'document-classify', 'question-early',
+NOTHING = ('research-plan', 'research', 'document-classify', 'question-early', 'parallel-research',
            *('existing-' + level for level in LEVELS[:-1]))
+MIGRATES = ('outline', 'document-outline', 'look', 'build', 'balanced', 'selected',
+            'selected-automatic', 'paused', 'failed', 'question', 'researched',
+            'researched-parallel')
+# What the migration adds to the effective record, or changes in it: everything else of the
+# original record is kept exactly.
+MIGRATION_KEYS = {'flow', 'execution', 'conversation_scope', 'unfinished_migration',
+                  'halted', 'migration_saved_status', 'question', 'migration_saved_question'}
+USE_DESK = 'Use this deck’s existing desk or finished Open on the desk action.'
+METADATA = 'This deck already has desk metadata or pending recovery.'
 UNSUPPORTED = 'This saved run format is not supported. Keep using its saved flow.'
 
 # What becomes of each stored state (`desk_migration.outcome`): migrates through the
 # migration or the finished Open on the desk, or a read-only record with its reason.
 OUTCOMES = {
-    **dict.fromkeys(('outline', 'document-outline', 'look', 'build', 'balanced', 'selected',
-                     'selected-automatic', 'paused', 'failed', 'question'), 'migration'),
+    **dict.fromkeys(MIGRATES, 'migration'),
     **dict.fromkeys(('delivered', 'delivered-pptx', 'delivered-balanced', 'delivered-automatic',
                      'delivered-document-balanced', 'delivered-document-automatic',
                      'delivered-selected'), 'finished'),
     **dict.fromkeys(NOTHING, desk_migration.NOTHING_MADE),
-    # Schema 4 (parallel research) stays out of the migration until the shared reader in
-    # core accepts it (presentation_migration.supported; see the report of GitHub issue #542).
-    'parallel-research': desk_migration.UNSUPPORTED,
-    'parallel-outline': desk_migration.UNSUPPORTED,
     'unleveled': desk_migration.UNSUPPORTED,
     'corrupt': desk_migration.UNREAD,
 }
@@ -95,18 +99,82 @@ class GatedSavedStateTests(runner_support.DeskCase):
         with self.assertRaises(desk_chat.WorkspaceError) as refused:
             self.engine._load(root)
         found = desk_migration.outcome(self.record(root), desk_chat._files(root), refused.exception)
-        self.assertEqual(found, {'outcome': 'read-only', 'why': str(refused.exception),
-                                 'next': 'copy', 'preview': str(refused.exception)})
+        self.assertEqual((found['outcome'], found['why'], found['next']),
+                         ('read-only', str(refused.exception), 'copy'))
         self.assertEqual(self.view(root)['saved_record']['why'], found['why'])
 
-    def test_a_missing_dependency_is_a_read_only_reason(self):
+    def test_desk_work_is_never_a_saved_flow_outcome(self):
+        # Defect 1: desk work, at any schema (a newer version's too), and a deck with desk
+        # metadata, a receipt or a pending opening, is desk work, whatever else is said.
+        root = self.load_saved('build')
+        files = desk_chat._files(root)
+        record = self.record(root)
+        refusal = desk_chat.WorkspaceError('The runner will not drive this deck.')
+        for schema in (3, 6, 99):
+            on_desk = {**record, 'flow': 'desk', 'schema': schema}
+            shaped = {**files, 'run.json': json.dumps(on_desk).encode()}
+            for given in (None, refusal):
+                with self.subTest(schema=schema, refusal=given is not None):
+                    self.assertEqual(desk_migration.outcome(on_desk, shaped, given)['outcome'], 'desk')
+        for name in (desk_migration.format.RECORD, desk_migration.format.ORIGIN,
+                     desk_migration.format.PENDING):
+            for given in (None, refusal):
+                with self.subTest(name=name, refusal=given is not None):
+                    found = desk_migration.outcome(record, {**files, name: b'{}'}, given)
+                    self.assertEqual(found['outcome'], 'desk')
+        # A record nobody can read: the neutral reason, which names no flow, and a new deck.
+        for given in (None, refusal):
+            with self.subTest(unreadable=True, refusal=given is not None):
+                found = desk_migration.outcome(None, {**files, 'run.json': b'{oops'})
+                self.assertEqual((found['outcome'], found['why'], found['next']),
+                                 ('read-only', desk_migration.UNREAD, 'new'))
+                self.assertNotIn('step-by-step', found['why'])
+                self.assertNotIn('earlier', found['why'])
+
+    def test_finished_and_opened_decks_keep_their_preview_sentences(self):
+        # Defect 2: a delivered deck or one with desk metadata is told what it always was,
+        # even when its saved runner stop cannot be read; the finished Open on the desk
+        # reads no stop, so the delivered deck still opens through it.
+        delivered = self.load_saved('delivered')
+        record = {**self.record(delivered), 'halted': 'not a stop'}
+        files = {**desk_chat._files(delivered), 'run.json': json.dumps(record).encode()}
+        self.assertEqual(desk_chat.prepare_migration(record, files)['blockers'], [USE_DESK])
+        found = desk_migration.outcome(record, files)
+        self.assertEqual((found['outcome'], found['by']), ('migrates', 'finished'))
+        build = self.load_saved('build')
+        record = {**self.record(build), 'halted': 'not a stop'}
+        files = {**desk_chat._files(build), 'run.json': json.dumps(record).encode(),
+                 desk_migration.format.PENDING: b'{}'}
+        self.assertEqual(desk_chat.prepare_migration(record, files)['blockers'], [METADATA])
+        self.assertEqual(desk_migration.outcome(record, files)['outcome'], 'desk')
+
+    def test_a_missing_dependency_is_a_read_only_reason_in_plain_words(self):
+        # Defect 8: what is missing, and where it can be opened, without internal names.
         root = self.load_saved('selected')
+        original = (root / 'sources/original.pptx').read_bytes()
         (root / 'sources/original.pptx').unlink()
         found = self.outcome_of(root)
-        self.assertEqual((found['outcome'], found['why']),
-                         ('read-only', 'The original deck is missing or unreadable.'))
+        self.assertEqual((found['outcome'], found['why']), ('read-only', desk_migration.NOT_HERE))
         self.assertEqual(found['preview'], 'The original deck is missing or unreadable. '
                                            'Continue with its saved flow first.')
+        (root / 'sources/original.pptx').write_bytes(b'not a deck')
+        self.assertEqual(self.outcome_of(root)['why'], desk_migration.UNREADABLE_DECK)
+        (root / 'sources/original.pptx').write_bytes(original)
+        inventory = (root / 'classify.json').read_bytes()
+        (root / 'classify.json').unlink()    # stopped before the deck given was read
+        found = self.outcome_of(root)
+        self.assertEqual(found['why'], desk_migration.NOTHING_READ)
+        self.assertEqual(found['preview'], 'classify.json is missing. Continue with its saved flow first.')
+        (root / 'classify.json').write_bytes(inventory)
+        build = self.load_saved('build', title='Unreadable drawing')
+        (build / 'work/build/state.json').write_text('[]')
+        found = self.outcome_of(build)
+        self.assertEqual(found['why'], desk_migration.UNREADABLE_DRAWING)
+        self.assertEqual(found['preview'], 'work/build/state.json cannot be read.')
+        for said in (desk_migration.NOT_HERE, desk_migration.UNREADABLE_DECK,
+                     desk_migration.NOTHING_READ, desk_migration.UNREADABLE_DRAWING):
+            self.assertNotIn('.json', said)
+            self.assertNotIn('.pptx', said)
 
     # --- states that open on the desk ------------------------------------------------------
 
@@ -129,8 +197,9 @@ class GatedSavedStateTests(runner_support.DeskCase):
         self.assertEqual(self.preview(root)['blockers'], [])
 
     def opened_losslessly(self, root):
-        """Open `root` on the desk; assert every original byte, every gate and every step
-        are as the saved flow left them, and nothing is approved, ready or delivered."""
+        """Open `root` on the desk; assert every original byte is kept, the effective record
+        is the original one but for exactly the keys the migration adds or changes
+        (MIGRATION_KEYS), and nothing is approved, marked ready or delivered."""
         before, record = self.snapshot(root), self.record(root)
         found = self.preview(root)
         self.assertEqual(found['blockers'], [])
@@ -140,12 +209,51 @@ class GatedSavedStateTests(runner_support.DeskCase):
         for name, data in before.items():
             self.assertEqual((root / name).read_bytes(), data, name)
         effective = decks.read_run(root)
-        self.assertEqual(effective['gates'], record['gates'])
-        self.assertEqual(effective['steps'], record['steps'])
+        self.assertEqual({key: value for key, value in effective.items() if key not in MIGRATION_KEYS},
+                         {key: value for key, value in record.items() if key not in MIGRATION_KEYS})
+        self.assertEqual((effective['flow'], effective['execution'], effective['conversation_scope'],
+                          effective['unfinished_migration']), ('desk', 'conversation', ['part'], True))
+        self.assertEqual(effective.get('migration_saved_status'), record.get('halted') or None)
+        self.assertEqual(effective.get('migration_saved_question'), record.get('question') or None)
+        self.assertFalse(effective.get('halted'))
+        self.assertFalse(effective.get('question'))
+        # Nothing invented: no approval, no Ready mark, no delivery.
         self.assertEqual(shown['execution'], 'conversation')
         self.assertFalse(shown['desk']['ready'])
+        self.assertIsNone(shown['deliver'])
         self.assertFalse((root / 'deliver.json').exists())
+        self.assertNotIn('ready', effective.get('desk') or {})
         return found, record, effective, shown
+
+    def test_every_migrating_state_opens_losslessly(self):
+        # Defect 5: the whole record, for every state that migrates.
+        for state in MIGRATES:
+            with self.subTest(state):
+                self.opened_losslessly(self.load_saved(state))
+
+    def test_researched_decks_open_with_their_research_byte_for_byte(self):
+        from studio_core import research_contract
+        for state, schema in (('researched', 3), ('researched-parallel', 4)):
+            with self.subTest(state):
+                root = self.load_saved(state)
+                record = self.record(root)
+                self.assertEqual(record['schema'], schema)
+                self.assertTrue(record['steps']['research-report']['done'])
+                self.assertEqual(record['research_contract']['schema'], 2)
+                if schema == 4:
+                    self.assertTrue(research_session.protocol(record))
+                research = {name: data for name, data in self.snapshot(root).items()
+                            if name.startswith(('research/', '.studio-research/', 'sources/'))}
+                self.assertIn('research/output.json', research)
+                pinned = research_contract.read_bundle(root / 'research')
+                found, record, effective, shown = self.opened_losslessly(root)
+                # The bundle, its sources and the helper's own records are as the run left them,
+                # and the contract and the execution record are the ones it pinned.
+                for name, data in research.items():
+                    self.assertEqual((root / name).read_bytes(), data, name)
+                self.assertEqual(research_contract.read_bundle(root / 'research'), pinned)
+                self.assertEqual(effective['research_contract'], record['research_contract'])
+                self.assertEqual(effective.get('research_execution'), record.get('research_execution'))
 
     def test_a_failure_after_the_outline_opens_with_the_failure_kept_in_history(self):
         root = self.load_saved('failed')
@@ -263,22 +371,16 @@ class GatedSavedStateTests(runner_support.DeskCase):
         self.assertEqual(self.preview(ready)['blockers'], [self.refused(refused)])
         self.waits_at(ready, 'gate:outline')    # it still continues in its saved flow
 
-    def test_parallel_research_records_keep_their_saved_flow(self):
+    def test_parallel_research_opens_once_its_outline_is_drafted(self):
+        # Schema 4: at its research plan nothing is made yet, and it keeps its saved flow;
+        # with its research done and its outline drafted it opens on the desk.
         root = self.load_saved('parallel-research')
-        record = self.record(root)
-        self.assertEqual(record['schema'], 4)
-        # Its own reason: the migration's reader does not support schema 4.
-        files = self.snapshot(root)
-        self.assertEqual(desk_chat.prepare_migration(record, files)['blockers'], [UNSUPPORTED])
-        # The engine writes schema 4, so the shared running-step check knows the deck and the
-        # preview gives that reason alone (GitHub issue #541).
-        self.assertEqual(self.preview(root)['blockers'], [UNSUPPORTED])
+        self.assertEqual(self.record(root)['schema'], 4)
+        self.assertEqual(self.preview(root)['blockers'], [desk_migration.NO_OUTLINE])
         self.waits_at(root, 'gate:research-plan')
-        # With its outline drafted it is still refused, until the shared reader in core
-        # accepts schema 4.
-        drafted = self.load_saved('parallel-outline')
-        self.assertEqual(self.preview(drafted)['blockers'], [UNSUPPORTED])
+        drafted = self.load_saved('researched-parallel')
         self.waits_at(drafted, 'gate:outline')
+        self.assertEqual(self.preview(drafted)['blockers'], [])
 
     def test_a_missing_pinned_research_bundle_keeps_its_saved_flow(self):
         root = self.load_saved('build', title='Research pinned')

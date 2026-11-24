@@ -17,8 +17,16 @@ WRITTEN = (1, 2, 3, 4, 5, 6)
 def supported(record):
     """Whether a saved run record may be opened on the desk by the explicit migration.
 
-    Only schemas 1 to 3 may. Whether the engine wrote a record at all is `written`."""
-    return _shaped(record, (1, 2, 3))
+    Schemas 1 to 3 may, and schema 4, the saved flow's parallel research, when it holds the
+    research collection protocol its loader (`Engine._load`) requires of it as well as its
+    research contract. Schemas 5 and 6 exist only on the desk. Whether the engine wrote a
+    record at all is `written`."""
+    if not _shaped(record, (1, 2, 3, 4)):
+        return False
+    if record['schema'] < 4:
+        return True
+    from studio_core import research_session
+    return bool(research_session.protocol(record))
 
 
 def written(record):

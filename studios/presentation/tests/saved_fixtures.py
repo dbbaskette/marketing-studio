@@ -23,6 +23,9 @@ What a caller needs to know
 - `load(..., title=)` gives the copy another title and folder name, as two decks of the
   same kind in one workspace have; in a shared workspace the copy is claimed by this
   computer, as `saved_start` claims the deck it constructs.
+- Captured with the engine option `at_once=1` (one section, or one research question, at
+  a time) where the engine's default is 3: side-by-side jobs otherwise record in whichever
+  order they finish, and stable stored bytes matter more here than the default.
 - tests/test_saved_fixtures.py makes each state again from the saved flow and compares it
   with the stored tree. It is the proof that the stored files are what the flow writes,
   and it goes when the saved flow does (GitHub issue #542).
@@ -32,6 +35,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import os
 import re
 import shutil
 import sys
@@ -228,36 +232,123 @@ def existing_rework(case):
     return _waits(case, _existing(case, 'rework'), 'gate:classify')
 
 
+RUNTIME = os.environ.get('STUDIO_TEST_RESEARCH_RUNTIME')
+
+
+def _author(tools, job):
+    """A research author: saves the case's synthetic page and hands in a dossier of it."""
+    from runner_support import URL
+    from synthesis_fixture import dossier
+    payload = json.loads(tools.read_input('research-task')[1])
+    assert tools.save_source(URL)[0]
+    source = tools._index()[0]
+    accepted = tools.submit_artifact('research-result', json.dumps(
+        dossier(payload['worker'], source['file'], source['url'])))
+    assert accepted[0], accepted
+
+
+def _checker(tools, job):
+    """The independent research reviewer: reads the source and accepts the dossier."""
+    from synthesis_fixture import review
+    payload = json.loads(tools.read_input('research-task')[1])
+    assert tools.read_source('s1')[0]
+    accepted = tools.submit_artifact('research-result', json.dumps(review(payload['review_template'])))
+    assert accepted[0], accepted
+
+
+def _collector(tools, job):
+    """A parallel research worker: investigates, combines or reviews, as its task says."""
+    import copy
+    from runner_support import URL
+    from synthesis_fixture import dossier, review
+    payload = json.loads(tools.read_input('research-task')[1])
+    if 'questions' in payload:
+        assert tools.save_source(URL)[0]
+        source = tools._index()[0]
+        value = dossier(payload['worker'], source['file'], source['url'])
+        value = {**{key: value[key] for key in ('schema', 'sources', 'facts')}, 'gaps': []}
+    elif 'evidence' in payload and 'review_template' not in payload:
+        first = payload['evidence']['facts'][0]['id']
+        value = dossier(payload['worker'])
+        value['findings'] = [{**copy.deepcopy(value['findings'][0]), 'id': question['id'],
+                              'summary': {'text': 'More than one instance keeps capacity.',
+                                          'kind': 'summary', 'refs': [first]},
+                              'support': [first], 'conditions': []}
+                             for question in payload['task']['planning_questions']]
+        value['sections'][0]['blocks'][0]['refs'] = [first]
+        value['brief'][0]['blocks'][0]['refs'] = [value['findings'][0]['id']]
+        value = {key: value[key] for key in ('schema', 'findings', 'sections', 'brief')}
+    else:
+        for source in tools._index():
+            assert tools.read_source(source['id'])[0]
+        value = review(payload['review_template'])
+    accepted = tools.submit_artifact('research-result', json.dumps(value))
+    assert accepted[0], accepted
+
+
+def _researching(case):
+    """The case's research is the pinned Harness Research stand-in the suites name in
+    STUDIO_TEST_RESEARCH_RUNTIME, reading the case's synthetic page."""
+    from runner import research as research_cli
+    from runner_support import URL
+    from synthesis_fixture import TEXT
+    assert RUNTIME, 'Set STUDIO_TEST_RESEARCH_RUNTIME to capture a researched state.'
+    case.research = research_cli.Research(Path(RUNTIME))
+    case.web.page(URL, TEXT, 'text/plain')
+
+
+def researched(case):
+    """Schema 3: research asked for at the start, its plan and findings approved at their
+    stops, the research run by the pinned helper, the deck waiting at its drafted outline."""
+    from studio_core import research_contract
+    _researching(case)
+    case.workers.then('research-result', _author, _checker)
+    root = case.saved_start(title='Researched', research=True,
+                            saved_contract=research_contract.snapshot(case.research))
+    _waits(case, root, 'gate:research-plan')
+    case.decide(root, 'gate:research-plan')
+    _waits(case, root, 'gate:research')
+    case.decide(root, 'gate:research')
+    return _waits(case, root, 'gate:outline')
+
+
+def _parallel_start(case, title):
+    """A saved start of schema 4: as `researched`'s, with the parallel research collection
+    the engine pins when its helper offers one. `saved_start` builds a saved record of
+    schema 1 to 3, so the record is given the execution pin the engine writes
+    (`research_session.execution`) before the saved flow is woken for it."""
+    from unittest import mock
+    from runner import decks
+    from studio_core import research_contract, research_session
+    _researching(case)
+    case.engine.parallel_research = True
+    case.workers.then('research-result', *[_collector] * 12)
+    with mock.patch.object(case.engine, 'wake'):
+        root = case.saved_start(title=title, research=True,
+                                saved_contract=research_contract.snapshot(case.research))
+    record = decks.read_run(root)
+    execution = research_session.execution(case.research.runtime)
+    assert execution, 'The pinned helper offers no parallel research collection.'
+    record.update(schema=4, research_execution=execution)
+    decks.write_run(root, record)
+    case.engine._commit(root, 'pin its parallel research collection')
+    case.engine.wake(root)
+    return _waits(case, root, 'gate:research-plan')
+
+
 def parallel_research(case):
-    """EDITED: a deck at its research plan, its record then given the parallel research
-    collection schema 4 writes (the saved start the stand-ins drive writes schema 1 to 3)."""
-    from runner import decks
-    from studio_core import research_session
-    root = research_plan(case)
-    record = case.record(root)
-    record.update(schema=4, research_contract={'schema': 2, 'version': '1.0.0', 'digest': '1' * 64},
-                  research_execution={'schema': 1, 'protocol': research_session.PROTOCOL,
-                                      'workers': 2, 'capability': {
-                                          'protocol': research_session.PROTOCOL}})
-    decks.write_run(root, record)
-    return root
+    """Schema 4 at its research plan: nothing researched or drafted yet."""
+    return _parallel_start(case, 'Parallel research plan')
 
 
-def parallel_outline(case):
-    """EDITED: a deck at its drafted outline, its record then given the parallel research
-    collection schema 4 writes, with the research contract and collection protocol the
-    runner requires of it, and no research done (as `parallel_research`)."""
-    from runner import decks
-    from studio_core import research_session
-    root = case.saved_start(title='Parallel outline')
-    _waits(case, root, 'gate:outline')
-    record = case.record(root)
-    record.update(schema=4, research_contract={'schema': 2, 'version': '1.0.0', 'digest': '1' * 64},
-                  research_execution={'schema': 1, 'protocol': research_session.PROTOCOL,
-                                      'workers': 2, 'capability': {
-                                          'protocol': research_session.PROTOCOL}})
-    decks.write_run(root, record)
-    return root
+def researched_parallel(case):
+    """Schema 4: its plan and findings approved, the research collected in parallel by the
+    pinned helper, the deck waiting at its drafted outline."""
+    root = _parallel_start(case, 'Researched in parallel')
+    case.decide(root, 'gate:research-plan')
+    _waits(case, root, 'gate:research')
+    case.decide(root, 'gate:research')
+    return _waits(case, root, 'gate:outline')
 
 
 def unleveled(case):
@@ -293,8 +384,12 @@ STATES = {name.replace('_', '-'): maker for name, maker in (
     ('document_classify', document_classify), ('existing_brand_only', existing_brand_only),
     ('existing_polish', existing_polish), ('existing_redesign', existing_redesign),
     ('existing_rework', existing_rework), ('parallel_research', parallel_research),
-    ('parallel_outline', parallel_outline), ('unleveled', unleveled), ('corrupt', corrupt))}
-EDITED = ('parallel-research', 'parallel-outline', 'unleveled', 'corrupt')
+    ('researched', researched),
+    ('researched_parallel', researched_parallel), ('unleveled', unleveled), ('corrupt', corrupt))}
+EDITED = ('unleveled', 'corrupt')
+# States made with the pinned Harness Research helper the suites name in
+# STUDIO_TEST_RESEARCH_RUNTIME: captured, and compared again, only where it is set.
+RESEARCHED = ('parallel-research', 'researched', 'researched-parallel')
 
 
 # --- capture, compare and load ----------------------------------------------------------------
@@ -354,61 +449,63 @@ def write(state: str, name: str, files: dict, digests: dict) -> None:
     (folder / SCRUBBED).write_text(json.dumps(digests, indent=1, sort_keys=True) + '\n')
 
 
-# Values that differ on every run of the same flow: when, and for how long; and every
-# digest and random name, since what is hashed holds a time (the brand contract's export,
-# the outline, a drawing round) or is picked at random (a round's folder, a job's ID).
-VOLATILE = [(re.compile(rb'\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?(?:Z|[+-]\d\d:\d\d)?'), b'<when>'),
-            (re.compile(rb'"(seconds|elapsed|duration|took)": ?[0-9.]+'), rb'"\1": <seconds>'),
-            (re.compile(rb'(?<![0-9A-Za-z])[0-9a-f]{6,64}(?![0-9A-Za-z])'), b'<hex>'),
-            # The slides stand-in numbers the Google decks it makes in one process.
-            (re.compile(rb"stand-in-deck-\d+"), b"stand-in-deck-<n>")]
+# What differs between two runs of the same flow, each named. Everything else must match.
+# 1. When: every time a record keeps (a run's start, a step's tries, an answer, a commit).
+TIMES = re.compile(rb'\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?(?:Z|[+-]\d\d:\d\d)?')
+# 2. For how long: the seconds a step, a research attempt or the run's own clock measured
+#    ("seconds", "active_seconds", "elapsed_seconds" and the like).
+DURATIONS = re.compile(rb'"(\w*seconds|elapsed|duration|took)": ?[0-9.]+(?:e-?\d+)?')
+# 3. The slides stand-in's numbering of the Google decks it makes in one process.
+GOOGLE = re.compile(rb'stand-in-deck-\d+')
+# 4. Digests and random names. What is hashed holds a time (the stand-in brand contract's
+#    export, the outline, a drawing round), and some names are picked at random (a round's
+#    folder, a job's or a research worker's ID). They are not masked: each distinct value is
+#    named by the order it first appears in, the same on both sides, so a pin must still
+#    name the same thing as on the other side. A digest is a run of 6 to 64 lowercase hex
+#    characters with a letter in it; the random round names of 6 and the job IDs of 12 may
+#    be digits alone, so those are matched by where they stand.
+TOKENS = re.compile(rb'(?<![0-9A-Za-z])(?=[0-9]*[a-f])[0-9a-f]{6,64}(?![0-9A-Za-z])'
+                    rb'|(?:(?<=whole-)|(?<=-0-)|(?<=outline-)|(?<="drawn": "))[0-9a-f]{6}(?![0-9A-Za-z])'
+                    rb'|(?<="id":")[0-9a-f]{12}(?![0-9A-Za-z])')
 
 
 def _unzipped(data: bytes) -> bytes:
-    """A zip's members and their contents, without the times it keeps."""
+    """A zip's members and their contents, in the order it holds them, without the times
+    it keeps for each."""
     if not data.startswith(b'PK\x03\x04'):
         return data
     try:
         with zipfile.ZipFile(io.BytesIO(data)) as kept:
-            return b'\n'.join(sorted(member.encode() + b'\0' + kept.read(member)
-                                     for member in kept.namelist()))
+            return b'\n'.join(member.encode() + b'\0' + kept.read(member)
+                              for member in kept.namelist())
     except zipfile.BadZipFile:
         return data
 
 
-def _sorted(value):
-    if isinstance(value, dict):
-        return {key: _sorted(item) for key, item in value.items()}
-    if isinstance(value, list):
-        return sorted((_sorted(item) for item in value), key=lambda item: json.dumps(item, sort_keys=True))
-    return value
-
-
-def _ordered(name: str, data: bytes) -> bytes:
-    """The same content whatever order it was written in: sections drawn and questions
-    researched side by side finish in either order."""
-    if name.endswith('.json'):
-        try:
-            return json.dumps(_sorted(json.loads(data)), sort_keys=True, indent=1).encode()
-        except ValueError:
-            return data
-    if name.endswith('.jsonl'):
-        return b'\n'.join(sorted(data.splitlines()))
-    return data
-
-
 def normal(files: dict) -> list:
-    """The files with what differs on every run put aside, to compare two captures: each
-    (name, data), in order. Names may repeat once their digests are put aside."""
-    shown = []
+    """The files, each (name, data), with what differs between runs put aside as TIMES,
+    DURATIONS, GOOGLE and TOKENS name it, in an order that does not depend on those values.
+    Nothing is re-ordered inside a file: lists, slides and history keep their order."""
+    timed = {}
     for name, data in files.items():
         data = _unzipped(data)
-        name = name.encode()
-        for pattern, said in VOLATILE:
+        for pattern, said in ((TIMES, b'<when>'), (DURATIONS, rb'"\1": <seconds>'),
+                              (GOOGLE, b'stand-in-deck-<n>')):
             data = pattern.sub(said, data)
-            name = pattern.sub(said, name)
-        shown.append((name.decode(), _ordered(name.decode(), data)))
-    return sorted(shown)
+        timed[name] = data
+    blind = {name: (TOKENS.sub(b'*', name.encode()), TOKENS.sub(b'*', data))
+             for name, data in timed.items()}
+    named = {}
+
+    def rename(found):
+        return named.setdefault(found.group(), b'<%d>' % len(named))
+
+    # Contents first, in an order that does not depend on the values: a value is named by
+    # where a record first mentions it, never by the order of files that differ only by it
+    # (the drawing progress pictures, named by their own digests).
+    order = sorted(timed, key=lambda name: blind[name])
+    contents = {name: TOKENS.sub(rename, timed[name]) for name in order}
+    return sorted((TOKENS.sub(rename, name.encode()).decode(), contents[name]) for name in order)
 
 
 def _replace(placed: dict, old: str, new: str) -> None:

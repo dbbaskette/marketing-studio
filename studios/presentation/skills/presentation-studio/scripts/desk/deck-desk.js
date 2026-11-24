@@ -1142,7 +1142,9 @@
         found.saved_status ? make('p', '', found.saved_status.why || ({ paused: 'The previous runner was paused.', failed: 'The previous runner failed.' }[found.saved_status.state] || 'The previous runner stopped.')) : null,
         found.saved_status ? make('p', 'quiet', 'That ' + ({ paused: 'pause', failed: 'failure' }[found.saved_status.state] || 'stop') + ' is retained in History. Conversation editing will not resume that runner.') : null,
         // A worker's question the earlier flow left unanswered (GitHub issue #542).
-        found.saved_question ? make('p', '', 'A worker asked: ' + (found.saved_question.text || 'a question')) : null,
+        // The question in quotation marks, so the line ends cleanly whatever its own mark.
+        found.saved_question ? make('p', '', found.saved_question.text
+          ? 'A worker asked: “' + found.saved_question.text + '”' : 'A worker asked a question.') : null,
         found.saved_question ? make('p', 'quiet', 'That question is retained in History, unanswered. Conversation editing will not answer it, and its step stays unfinished.') : null)] : null,
       found.revision ? ['revision', [found.revision], () => make('p', 'quiet', found.revision)]
         : null,

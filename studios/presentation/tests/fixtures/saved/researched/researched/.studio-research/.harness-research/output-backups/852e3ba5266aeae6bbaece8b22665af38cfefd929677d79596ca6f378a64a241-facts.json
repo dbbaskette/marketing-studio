@@ -1,0 +1,123 @@
+{
+  "owner": "harness-research-synthesis",
+  "schema": 2,
+  "digest": "3526642a78b50adc33b4fcf81cff288773938631d554015c061ea74b3083e3fa",
+  "status": "draft",
+  "topic": "Researched",
+  "audience": "Platform teams",
+  "purpose": "Inform a presentation: Show when capacity holds. Prioritize key messages, evidence worth explaining visually, and counterarguments.",
+  "scope": "Evidence, limitations and alternatives for the presentation goal: Show when capacity holds. Any public page may be used.",
+  "source_mode": "public",
+  "sources": [
+    {
+      "id": "source-a",
+      "file": "sources/docs-example-com-ed83f5c41b25.txt",
+      "origin": "https://docs.example.com/restarts",
+      "title": "Synthetic source",
+      "publisher": "Synthetic publisher",
+      "permission": "public",
+      "context": "full",
+      "sha256": "46e5b26f67fc83898fec80fea2367a69091362c924b2bfba3559fd4ec5451adc",
+      "snapshot": "research/sources/revisions/46e5b26f67fc83898fec80fea2367a69091362c924b2bfba3559fd4ec5451adc.txt"
+    }
+  ],
+  "facts": [
+    {
+      "id": "fact-a",
+      "statement": "More than one instance keeps capacity.",
+      "author": "author-0ca2a32199d01e049186a9f4",
+      "citations": [
+        {
+          "source": "source-a",
+          "quote": "More than one instance keeps capacity."
+        }
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "id": "instance-min",
+      "title": "A conditional choice",
+      "summary": {
+        "text": "More than one instance keeps capacity.",
+        "refs": [
+          "fact-a"
+        ],
+        "kind": "summary"
+      },
+      "support": [
+        "fact-a"
+      ],
+      "counter": [],
+      "implications": [],
+      "conditions": [
+        {
+          "text": "Only within this synthetic example.",
+          "refs": [
+            "fact-a"
+          ],
+          "kind": "inference"
+        }
+      ],
+      "gaps": []
+    },
+    {
+      "id": "health-checks",
+      "title": "A conditional choice",
+      "summary": {
+        "text": "More than one instance keeps capacity.",
+        "refs": [
+          "fact-a"
+        ],
+        "kind": "summary"
+      },
+      "support": [
+        "fact-a"
+      ],
+      "counter": [],
+      "implications": [],
+      "conditions": [
+        {
+          "text": "Only within this synthetic example.",
+          "refs": [
+            "fact-a"
+          ],
+          "kind": "inference"
+        }
+      ],
+      "gaps": []
+    }
+  ],
+  "sections": [
+    {
+      "id": "explain",
+      "title": "Explanation",
+      "blocks": [
+        {
+          "text": "More than one instance keeps capacity.",
+          "refs": [
+            "fact-a"
+          ],
+          "kind": "summary"
+        }
+      ]
+    }
+  ],
+  "brief": [
+    {
+      "id": "teaching",
+      "title": "What to explain first",
+      "blocks": [
+        {
+          "text": "Use the synthetic example within its stated bounds.",
+          "refs": [
+            "instance-min"
+          ],
+          "kind": "recommendation"
+        }
+      ]
+    }
+  ],
+  "comparisons": [],
+  "review": null
+}

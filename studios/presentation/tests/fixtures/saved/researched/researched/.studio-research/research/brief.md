@@ -1,0 +1,10 @@
+# Researched
+
+> Reviewed synthesis.
+
+Audience: Platform teams. Purpose: Inform a presentation: Show when capacity holds. Prioritize key messages, evidence worth explaining visually, and counterarguments..
+
+## What to explain first
+
+Use the synthetic example within its stated bounds. ([instance-min](evidence.md#instance-min))
+
