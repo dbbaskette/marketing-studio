@@ -6,7 +6,7 @@ import json
 import os
 from studio_core import teaching_plan
 from studio_core.document_library import training_existing
-from . import documents, intake, sources
+from . import intake, sources
 from .validation import require, relative_path
 from .workspace import _read
 
@@ -139,7 +139,7 @@ def prepare(root, studio, file, expected_sha256, view=None):
         "Import CSV with explicit row/column selection through file upload.",
     )
     extracted = (
-        documents.extract(raw, kind)
+        sources.extract_document(raw, kind)
         if kind in ("pdf", "docx", "html")
         else {
             "text": sources.decoded(raw),

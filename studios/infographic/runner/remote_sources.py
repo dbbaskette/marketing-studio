@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from studio_core import public_fetch, google_reference as shared_google
 from studio_core.google_api import Client, DOC_MIME, SLIDES_MIME, GoogleError
-from . import documents, intake
+from . import intake, sources
 from .contracts import Invalid, digest
 
 
@@ -52,7 +52,7 @@ def public(url, *, fetcher=public_fetch.fetch):
         found["mime"]
     ]
     extracted = (
-        documents.extract(found["raw"], kind)
+        sources.extract_document(found["raw"], kind)
         if kind != "text"
         else {
             "text": found["raw"].decode("utf-8-sig"),
