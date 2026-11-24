@@ -15,7 +15,7 @@ from studio_core import document_library
 from studio_core.document_library import adopt as library_adopt
 from studio_core.document_library import context as library_context
 
-from . import brand_job, brand_skill, brand_store, catalog, server, shared, state, validation, workspaces, work_overview
+from . import brand_job, brand_rebrand, brand_skill, brand_store, catalog, server, shared, state, validation, workspaces, work_overview
 from .errors import WorkspaceError
 from .launcher import library_item, with_library
 from .network import VIA_HEADER
@@ -23,7 +23,8 @@ from .network import VIA_HEADER
 
 # The Brands section's routes, each /api/brand-<name>.
 BRAND_ROUTES = ('list', 'start', 'work', 'source', 'keep', 'extract', 'interpret', 'stop', 'part',
-                'save', 'push', 'discard', 'file')
+                'save', 'push', 'discard', 'file', 'documents', 'document', 'rebrand', 'rebrand-check',
+                'rebrand-start', 'rebrand-stop', 'rebrand-clear')
 REMOTE_BRANDS = ('Brands are made on the computer Marketing Studio runs on, where the sources, '
                  'your assistant and Git are. Open Marketing Studio there.')
 CHANGED_WHILE_PREPARING = ('The settings changed while the studios were being prepared, so that '
@@ -251,6 +252,13 @@ class Home(server.Page):
             else:
                 raise WorkspaceError('Accept the part, or save your edit of it.')
             return server.as_json(200, brand_store.view(key))
+        # Rebrand a Google file: one job at a time, read again by a reloaded page.
+        if name == 'rebrand-stop':
+            brand_rebrand.stop()
+            return server.as_json(200, brand_rebrand.view())
+        if name == 'rebrand-clear':
+            brand_rebrand.clear()
+            return server.as_json(200, brand_rebrand.view())
         values, problem = shared.read()
         if problem:
             raise WorkspaceError(problem)
@@ -260,6 +268,8 @@ class Home(server.Page):
             if name == 'list':
                 return server.as_json(200, {'unavailable': str(failure), 'where': 'Shared settings, Brand'})
             raise
+        if name == 'rebrand':
+            return server.as_json(200, brand_rebrand.view(place))
         if name == 'push':
             if sent.get('confirm') is not True:
                 raise WorkspaceError('Say yes to the push first.')
@@ -273,7 +283,19 @@ class Home(server.Page):
                 return server.as_json(200, {'unavailable': str(failure), 'where': place.where})
             raise
         if name == 'list':
-            return server.as_json(200, brand_store.listing(found, place))
+            return server.as_json(200, {**brand_store.listing(found, place), 'rebrand': brand_rebrand.view(place)})
+        if name == 'rebrand-check':
+            return server.as_json(200, brand_rebrand.check(found, place, sent.get('source'), sent.get('brand')))
+        if name == 'rebrand-start':
+            if sent.get('confirm') is not True:
+                raise WorkspaceError('Say yes to making the copy first.')
+            return server.as_json(200, brand_rebrand.start(found, place, sent.get('source'), sent.get('brand'),
+                                                           sent.get('review') is True, brand_job.choice(values)[0]))
+        if name == 'documents':
+            return server.as_json(200, brand_store.documents(found, place, sent.get('id')))
+        if name == 'document':
+            _, media, data = brand_store.document_file(found, place, sent.get('id'), sent.get('template'))
+            return 200, media, data
         if name == 'start':
             work = brand_store.start(place, sent.get('kind'), sent.get('id'), sent.get('name'),
                                      sent.get('libraryKind'), sent.get('update') is True)
@@ -323,7 +345,18 @@ class Home(server.Page):
             if skill is not None and (not isinstance(skill, str) or len(skill) > 2000
                                      or not Path(skill).expanduser().is_absolute()):
                 raise WorkspaceError('Choose an absolute installed brand skill folder, or leave it blank.')
-            return server.as_json(200, brand_catalog.choices(skill))
+            # The installed brands, and what the saved brands folder holds: the Brand card
+            # in Shared settings asks for both when it is shown and after a save.
+            # A failure of either lookup leaves the other standing. A phone, through the
+            # network bridge, is told states and counts, not this computer's folders.
+            values, problem = shared.read()
+            store = brand_data.lookup(None if problem else (values.get('brand') or {}).get('brands'),
+                                      remote=getattr(self.caller, 'remote', False))
+            try:
+                found = brand_catalog.choices(skill)
+            except (ValueError, OSError) as failure:
+                found = {'skills': [], 'problem': f'The installed brands could not be listed: {failure}'}
+            return server.as_json(200, {**found, 'store': store})
         if path == '/api/graphics':
             try:
                 return server.as_json(200, graphics.act(
@@ -384,6 +417,7 @@ class Home(server.Page):
         # finish in hand (taken before `changes`, never while holding it), so the same
         # request sent twice reads what the first one saved and succeeds again.
         finishing = self.finishing if path == '/api/setup' else nullcontext()
+        extra = {}   # what a save did beside the settings, for the page to say
         with finishing, self.changes:
             if path == '/api/shared':
                 before = shared.read()[0]
@@ -397,6 +431,10 @@ class Home(server.Page):
                 except ValueError as failure:
                     raise WorkspaceError(str(failure)) from failure
                 values, problem = shared.read()
+                # A brands folder on this computer is read by Harness Brand from this save on.
+                brands_saved = None if problem else brand_data.saved(before, values)
+                if brands_saved is not None:
+                    extra['brands_saved'] = brands_saved
                 kept = state.read()
                 if kept.get('done') and not problem and self.configured(values) \
                         and self.storage(values) != self.storage(before):
@@ -413,7 +451,7 @@ class Home(server.Page):
                             or state.read().get('paths', {}) != kept.get('paths', {}):
                         # A newer save is shown instead, and prepares for itself.
                         outcome = {'prepare_problem': CHANGED_WHILE_PREPARING}
-                    return server.as_json(200, {**self.snapshot(fresh=True), **outcome})
+                    return server.as_json(200, {**self.snapshot(fresh=True), **outcome, **extra})
             elif path == '/api/setup':
                 if type(sent.get('done')) is not bool:
                     raise WorkspaceError('Choose whether setup is complete.')
@@ -453,4 +491,4 @@ class Home(server.Page):
                         raise WorkspaceError('That folder does not contain the studio launcher.')
                 kept = state.read()
                 state.save({**kept, 'paths': {**kept.get('paths', {}), **paths}})
-            return server.as_json(200, self.snapshot(fresh=True))
+            return server.as_json(200, {**self.snapshot(fresh=True), **extra})

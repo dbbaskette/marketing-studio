@@ -1670,8 +1670,17 @@ def dispatch(root, action, data):
         desk_jobs.first_pass(root, ident, seen, data.get('choice'))
     elif action == 'brief':
         import brief
+        import shared_library
 
-        return {**desk_jobs.view(root, ident), 'brief_made': brief.make(root, ident)}
+        made = brief.make(root, ident)
+        # Made: kept in the Document Library too, its text and PDF, with no address needed.
+        kept = shared_library.keep_brief(root, ident, made)
+        return {
+            **desk_jobs.view(root, ident),
+            'brief_made': made,
+            # How keeping went; the view's own `document_library` says what is kept now.
+            **({'library_copy': kept} if kept else {}),
+        }
     elif action == 'outline-save':
         outline_save(root, ident, seen, data.get('sections'))
     elif action == 'unremove':

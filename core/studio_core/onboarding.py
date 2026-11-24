@@ -60,14 +60,27 @@ class Controller:
                     if skill is not None and (not isinstance(skill, str) or len(skill) > 2000
                                              or not Path(skill).expanduser().is_absolute()):
                         raise ValueError('Choose an absolute installed brand skill folder, or leave it blank.')
-                    return protocol.as_json(200, brand_catalog.choices(skill))
+                    # A failure of either lookup leaves the other standing.
+                    values, problem = owner.store.read()
+                    store = brand_data.lookup(None if problem else (values.get('brand') or {}).get('brands'))
+                    try:
+                        found = brand_catalog.choices(skill)
+                    except (ValueError, OSError) as failure:
+                        found = {'skills': [], 'problem': f'The installed brands could not be listed: {failure}'}
+                    return protocol.as_json(200, {**found, 'store': store})
                 if path.endswith('/graphics'):
                     return protocol.as_json(200, graphics.act(sent))
                 if path.endswith('/models'):
                     return protocol.as_json(200, owner.models.get(sent.get('agent'), refresh=True))
                 with owner.lock:
                     if path.endswith('/shared'):
+                        before = owner.store.read()[0]
                         preferences.save(owner.store, sent.get('changes'), sent.get('seen'))
+                        after, problem = owner.store.read()
+                        # A brands folder on this computer is read by Harness Brand from this save on.
+                        done = None if problem else brand_data.saved(before, after)
+                        if done is not None:
+                            return protocol.as_json(200, {**owner.snapshot(), 'brands_saved': done})
                     else:
                         if sent.get('done') is not True:
                             raise ValueError('Finish shared setup before opening the studio.')

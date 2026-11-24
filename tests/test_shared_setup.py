@@ -55,10 +55,13 @@ class SharedSetupTests(IsolatedHome):
         for product in ('Blog Studio', 'Presentation Studio', 'Training Studio'):
             page = onboarding.Controller(8000, 'a' * 40, product, 'X-Test-Token', lambda _: None, shared)
             before = shared.read()[0]
-            with mock.patch('studio_core.brand_catalog.choices', return_value=expected) as lookup:
+            store = {'state': 'none', 'said': 'Synthetic: no brands folder.'}
+            # The brands folder's state is pinned: this computer's own Harness Brand folder is never read.
+            with mock.patch('studio_core.brand_catalog.choices', return_value=expected) as lookup, \
+                    mock.patch('studio_core.brand_data.status', return_value=store):
                 self.assertEqual(self.request(page, 'brands', {}, self.headers('wrong'))[0], 403)
                 lookup.assert_not_called()
-                self.assertEqual(self.request(page, 'brands', {})[1], expected)
+                self.assertEqual(self.request(page, 'brands', {})[1], {**expected, 'store': store})
                 self.assertEqual(self.request(page, 'brands', {'skill': 'relative-folder'})[0], 409)
                 self.assertEqual(self.request(page, 'brands', {'skill': str(self.root / 'brand')})[0], 200)
             self.assertEqual(shared.read()[0], before)

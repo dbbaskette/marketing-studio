@@ -250,6 +250,81 @@ def brands(args):
     print(json.dumps(listed))
 
 
+def documents(args):
+    """`documents --brand B --json`, as Harness Brand answers it: the pack's document templates
+    with the path of each. STAND_IN_DOCUMENT_PATH lists that path for every template instead."""
+    data, brand = os.environ.get('HARNESS_BRAND_DATA'), option(args, '--brand')
+    pack = Path(data or '.') / str(brand) / 'pack'
+    listed = read(pack / 'brand.json')
+    if not data or not isinstance(listed, dict):
+        fail(f'Unknown brand: {brand}.')
+    found = [{**{k: entry[k] for k in ('id', 'name', 'useWhen', 'page', 'notes') if k in entry},
+              'file': entry['file'], 'path': os.environ.get('STAND_IN_DOCUMENT_PATH') or str(pack / entry['file'])}
+             for entry in listed.get('documents') or []]
+    print(json.dumps({'brand': brand, 'documents': found}, indent=2))
+
+
+REBRAND_FAILED = ('Rebranding command failed (exit 1). Existing source files are unchanged; inspect any '
+                  'reported output URL before retrying.')
+
+
+def rebrand_status(args):
+    """`rebrand status --brand B`: set up when the brands folder has B/rebrand/manifest.json."""
+    brand, data = option(args, '--brand'), os.environ.get('HARNESS_BRAND_DATA') or '.'
+    if not (Path(data) / str(brand) / 'rebrand' / 'manifest.json').is_file():
+        print(f'Brand assets: {brand} is not set up for rebranding in this version of Harness Brand. '
+              'Set it up with: node "/stand-in/harness-brand/scripts/harness-brand.mjs" rebrand setup', file=sys.stderr)
+        fail(REBRAND_FAILED)
+    say({'schema': 1, 'brand': brand, 'sha256': '0' * 64, 'manifest': f'{brand}/rebrand/manifest.json',
+         'snapshot': '/stand-in/snapshot', 'rules': f'/stand-in/snapshot/assets/{brand}/rules.md',
+         'references': '/stand-in/snapshot/references/brand'})
+
+
+def rebrand_run(args):
+    """`rebrand run SOURCE --brand B --run-dir D [--review] [--reviewer R] [--name N]`, made up
+    from start to end: it reaches no Google service and no assistant. It prints its progress
+    events on standard error, as Harness Brand does, STAND_IN_REBRAND_PAUSE seconds apart, and
+    writes report.md and result.json into the run folder. STAND_IN_REBRAND_FAIL makes it end
+    incomplete with that error, after the copy was made."""
+    import time
+    if os.environ.get('STAND_IN_PIDS'):   # this process and the one that started it (Node)
+        Path(os.environ['STAND_IN_PIDS']).write_text(json.dumps([os.getpid(), os.getppid()]))
+    source, brand, run_dir = args[0], option(args, '--brand'), Path(option(args, '--run-dir'))
+    review, pause = '--review' in args, float(os.environ.get('STAND_IN_REBRAND_PAUSE') or 0)
+    if run_dir.exists() and any(run_dir.iterdir()):
+        fail('Use a new empty run directory; existing runs are never overwritten or republished.')
+    run_dir.mkdir(parents=True, exist_ok=True)
+    slides = '/presentation/' in source
+    url = f"https://docs.google.com/{'presentation' if slides else 'document'}/d/stand-in-copy-1234567890/edit"
+    stages = ['exporting_source', 'applying_brand', *(['reviewing_original_and_branded'] if review else []),
+              'creating_native_copy', 'copy_created', 'verifying_native_copy']
+    for number, stage in enumerate(stages):
+        event = ({'status': 'copy_created', 'file_id': 'stand-in-copy-1234567890', 'url': url} if stage == 'copy_created'
+                 else {'status': 'progress', 'stage': stage, 'elapsed_seconds': number * pause})
+        if stage == 'copy_created':   # as Harness Brand keeps it, should the run end early
+            (run_dir / 'checkpoint.json').write_text(json.dumps(event))
+        print(json.dumps(event), file=sys.stderr, flush=True)
+        time.sleep(pause)
+    failure = os.environ.get('STAND_IN_REBRAND_FAIL')
+    result = {'status': 'incomplete' if failure else 'branded_with_exceptions' if review else 'branded',
+              'name': option(args, '--name') or 'Synthetic deck-branded', 'format': 'slides' if slides else 'docs',
+              'brand': f'Stand-in {brand}', 'file_id': 'stand-in-copy-1234567890', 'url': url,
+              'visual_review': {'status': 'passed_with_findings'} if review else 'required',
+              'report_files': {'markdown': str(run_dir / 'report.md'), 'json': str(run_dir / 'result.json')},
+              'next_action': ('Inspect the copy before using it.' if failure else
+                              'Read the review findings, then decide.' if review else
+                              'Open the native file and inspect every page before calling it done.')}
+    if failure:
+        result['error'] = failure
+    (run_dir / 'report.md').write_text(f"# Stand-in {brand} branding report\n\nResult: **{result['status']}**\n\n"
+                                       f"{result['next_action']}\n\n[Open native file]({url})\n")
+    write(run_dir / 'result.json', result)
+    if failure:
+        print(json.dumps(result), file=sys.stderr)
+        raise SystemExit(1)
+    print(json.dumps(result, indent=2))
+
+
 def main(args):
     if os.environ.get('STAND_IN_CALLS'):
         with open(os.environ['STAND_IN_CALLS'], 'a') as calls:
@@ -259,6 +334,10 @@ def main(args):
         return
     if args[:1] == ['brands']:
         return brands(args[1:])
+    if args[:1] == ['documents']:
+        return documents(args[1:])
+    if args[:1] == ['rebrand'] and len(args) > 1 and args[1] in ('status', 'run'):
+        return (rebrand_status if args[1] == 'status' else rebrand_run)(args[2:])
     if args[:1] == ['pack'] and len(args) > 1:
         commands = {'tokens': tokens, 'measure': measure, 'previews': previews, 'scaffold': scaffold,
                     'check': check, 'seal': seal, 'icons': icons}

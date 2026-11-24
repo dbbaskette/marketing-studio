@@ -78,6 +78,7 @@
       }
       parts.push(card('In progress', list));
     }
+    if (listed.rebrand) parts.push(rebrandCard(listed.rebrand));
     parts.push(card('Brand packs', packTable(listed.packs)), card('Icon libraries', libraryTable(listed.libraries)));
     const unshared = [...listed.packs, ...listed.libraries].filter(item => item.unshared).length;
     if (listed.team && listed.push?.commits) {
@@ -112,12 +113,206 @@
     return table('Brand packs', ['Brand', 'Variants', 'Slides', 'Check', 'Action'], packs.map(pack => {
       const row = el('tr');
       const name = el('th', '', '', {scope: 'row'});
-      name.append(el('span', pack.name, 'row-title'), el('span', ` ${pack.id}`, 'quiet'));
+      name.append(el('span', pack.name, 'row-title'), el('span', ` ${pack.id}`, 'quiet'), templates(pack));
       const action = el('td');
       action.append(button('Update', '', () => start({kind: 'brand', id: pack.id, update: true})));
       row.append(name, el('td', pack.variants.join(', ') || 'None'), el('td', pack.slides ? 'Yes' : 'Writing only'), checkCell(pack.check), action);
       return row;
     }), 'No brand packs yet. New brand makes one from its sources.');
+  }
+  // A brand's Word document templates, under its name: Harness Brand is asked only when the
+  // person opens them, and each one downloads from the page server, which offers exactly the
+  // files Harness Brand listed for that brand.
+  function templates(pack) {
+    const more = el('details', '', 'brand-lines brand-documents');
+    const summary = el('summary', 'Document templates');
+    const holder = el('div', '', 'brand-document-list', {'aria-live': 'polite'});
+    more.append(summary, holder);
+    let asked = false;
+    more.addEventListener('toggle', async () => {
+      if (!more.open || asked) return;
+      asked = true;
+      holder.replaceChildren(el('p', 'Asking Harness Brand for the templates…', 'field-hint quiet'));
+      try {
+        const found = await ctx.api('brand-documents', {id: pack.id});
+        const left = found.left ? el('p', `${found.left === 1 ? 'One template' : `${found.left} templates`} could not be shown: Harness Brand listed ${found.left === 1 ? 'it' : 'them'} without saying what ${found.left === 1 ? 'it is' : 'they are'}.`, 'field-hint quiet') : null;
+        if (!found.documents.length) { holder.replaceChildren(...(left ? [left] : [el('p', `${pack.name} has no document templates.`, 'field-hint quiet')])); return; }
+        const list = el('ul', '', 'brand-document-rows');
+        for (const template of found.documents) list.append(templateRow(pack, template));
+        holder.replaceChildren(...[list, left].filter(Boolean));
+      } catch (error) {
+        asked = false;
+        holder.replaceChildren(el('p', `${error.message} Close and open this again to retry.`, 'field-hint'));
+      }
+    });
+    return more;
+  }
+  function templateRow(pack, template) {
+    const item = el('li', '', 'brand-document');
+    const text = el('div', '', 'brand-row-text');
+    text.append(el('span', `${template.name}${template.page ? `, ${template.page}` : ''}`, 'row-title'));
+    if (template.useWhen) text.append(el('span', template.useWhen, 'quiet'));
+    if (template.notes) text.append(el('span', template.notes, 'field-hint quiet'));
+    text.append(el('span', template.file, 'field-hint quiet'));
+    const get = button('Download', '', async () => {
+      const url = await ctx.file({id: pack.id, template: template.id}, 'brand-document');
+      const link = el('a', '', '', {href: url, download: template.file});
+      document.body.append(link); link.click(); link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      ctx.inform(`Downloaded ${template.file}.`);
+    });
+    get.setAttribute('aria-label', `Download ${template.name}`);
+    item.append(text, bar(get));
+    return item;
+  }
+  // --- Rebrand a Google file -----------------------------------------------------------
+  // Harness Brand's rebrand run, one at a time: the person pastes a Google Slides or Docs
+  // link and chooses a brand; Harness Brand is asked whether it can, the page says what will
+  // happen, and only then does the copy start. The job runs on the computer, so a reload or
+  // another screen finds it where it was. The card polls only while it runs.
+  let rebrandTimer = null, rebrandDraft = null;
+  const kindWords = {slides: 'Google Slides deck', docs: 'Google Doc'};
+  function rebrandCard(state) {
+    clearTimeout(rebrandTimer);
+    const node = card('Rebrand a Google file');
+    node.classList.add('brand-rebrand');
+    const job = state.job;
+    if (job) node.append(...rebrandJob(job));
+    if (!job || job.state !== 'running') node.append(...rebrandForm(state, Boolean(job)));
+    if (job?.state === 'running') rebrandTimer = setTimeout(() => refreshRebrand(node), 1500);
+    return node;
+  }
+  async function refreshRebrand(node) {
+    if (key || !ctx.here() || !node.isConnected) return;
+    if (document.hidden) { rebrandTimer = setTimeout(() => refreshRebrand(node), 1500); return; }
+    try { swap(node, rebrandCard(await ctx.api('brand-rebrand', {}))); }
+    catch (error) { ctx.problem(error); }
+  }
+  function rebrandJob(job) {
+    const shown = [];
+    const words = {running: 'Working', done: 'Finished', failed: 'Did not finish', stopped: 'Stopped'}[job.state];
+    const top = el('div', '', 'part-head');
+    top.append(el('p', `${job.brandName} copy of a ${kindWords[job.kind] || 'Google file'}`, 'row-title'),
+      ctx.stateLine(job.state === 'done' ? 'done' : job.state === 'running' ? 'current' : 'review', words));
+    shown.push(top);
+    if (job.state === 'running') {
+      shown.push(el('p', 'Harness Brand is making a new copy in your Google Drive; the original stays as it is. You can leave this page: it keeps running.', 'quiet'));
+      const last = job.lines[job.lines.length - 1];
+      if (last) shown.push(el('p', `Now: ${last}`, 'activity-now'));
+    }
+    const result = job.result;
+    const copy = result?.url || job.copy;
+    if (job.state === 'done') {
+      shown.push(el('p', `Harness Brand’s verdict: ${result.verdict}.${result.next ? ` ${result.next}` : ''}`));
+      shown.push(el('p', job.review
+        ? `${ctx.agent()} reviewed the pages: ${result.review || 'no review was reported'}. Look at the copy before you use it.`
+        : 'Awaiting your visual check: open the copy and look at every page before you use it. Harness Brand checked that every word was kept, not how it looks.', 'paper callout'));
+    } else if (job.state !== 'running') {
+      shown.push(el('p', job.detail, job.state === 'failed' ? 'paper callout' : 'quiet'));
+      if (result) shown.push(el('p', `Harness Brand’s verdict: ${result.verdict}.${result.next ? ` ${result.next}` : ''}`, 'quiet'));
+    }
+    if (copy) {
+      const link = el('a', 'Open the new copy in Google Drive', 'button', {href: copy, target: '_blank', rel: 'noreferrer'});
+      shown.push(bar(link));
+    }
+    if (result?.report) {
+      const more = el('details', '', 'brand-lines');
+      more.append(el('summary', 'Show the report'), el('pre', result.report, 'brand-code'));
+      if (result.reportPath) more.append(el('p', `Kept on this computer at ${result.reportPath}${result.reportWhole ? '' : ', where it is longer than shown here'}.`, 'field-hint quiet'));
+      shown.push(more);
+    }
+    if (job.lines.length > 1) {
+      const more = el('details', '', 'brand-lines');
+      more.append(el('summary', 'Show activity'));
+      const list = el('ol', '', 'quiet');
+      for (const line of job.lines) list.append(el('li', line));
+      more.append(list);
+      shown.push(more);
+    }
+    if (job.state === 'running') shown.push(bar(button('Stop', 'button-quiet', async () => {
+      const node = body().querySelector('.brand-rebrand');
+      const state = await ctx.api('brand-rebrand-stop', {});
+      if (node) swap(node, rebrandCard({...state, brands: rebrandDraft?.brands || []}));
+      ctx.inform('Stopping the rebrand.');
+    })));
+    else shown.push(bar(button('Put this result away', 'button-quiet', async () => {
+      const node = body().querySelector('.brand-rebrand');
+      const state = await ctx.api('brand-rebrand-clear', {});
+      if (node) swap(node, rebrandCard({...state, brands: rebrandDraft?.brands || []}));
+    })));
+    return shown;
+  }
+  function rebrandForm(state, another) {
+    rebrandDraft = {...(rebrandDraft || {}), brands: state.brands || []};
+    const shown = [el('p', another ? 'Rebrand another file:' : 'Make a copy of an existing Google Slides deck or Google Doc in one of your brands. Harness Brand makes the copy; the original stays as it is.', 'quiet')];
+    if (!state.brands?.length) { shown.push(el('p', 'There are no brands in the brands folder yet.', 'field-hint quiet')); return shown; }
+    const grid = el('div', '', 'field-grid');
+    const linkField = el('div', '', 'field full');
+    const link = el('input', '', 'input', {id: 'brand-rebrand-link', type: 'url', inputmode: 'url', autocomplete: 'off', spellcheck: 'false',
+      placeholder: 'https://docs.google.com/presentation/d/…', 'aria-describedby': 'brand-rebrand-link-hint'});
+    link.value = rebrandDraft.link || '';
+    link.addEventListener('input', () => { rebrandDraft.link = link.value; });
+    linkField.append(el('label', 'Google Slides or Google Docs link', 'field-label', {for: 'brand-rebrand-link'}), link,
+      el('p', 'Only a Google Slides or Google Docs file. You need to be able to open and copy it.', 'field-hint quiet', {id: 'brand-rebrand-link-hint'}));
+    const brandField = el('div', '', 'field');
+    const select = el('select', '', 'input', {id: 'brand-rebrand-brand'});
+    for (const brand of state.brands) select.append(new Option(brand.name === brand.id ? brand.id : `${brand.name} (${brand.id})`, brand.id));
+    if (rebrandDraft.brand && state.brands.some(brand => brand.id === rebrandDraft.brand)) select.value = rebrandDraft.brand;
+    select.addEventListener('change', () => { rebrandDraft.brand = select.value; });
+    brandField.append(el('label', 'Brand', 'field-label', {for: 'brand-rebrand-brand'}), select);
+    grid.append(linkField, brandField);
+    const review = el('input', '', '', {type: 'checkbox', id: 'brand-rebrand-review', 'aria-describedby': 'brand-rebrand-review-hint'});
+    review.checked = rebrandDraft.review === true;
+    review.addEventListener('change', () => { rebrandDraft.review = review.checked; });
+    const tick = el('label', '', 'check');
+    tick.append(review, el('span', `Ask ${ctx.agent()} to review the pages`));
+    const reviewField = el('div', '', 'field');
+    reviewField.append(tick, el('p', `Off unless you tick it. A review sends the pages and their text to ${ctx.agent()}’s provider.`, 'field-hint quiet', {id: 'brand-rebrand-review-hint'}));
+    const said = el('div', '', 'brand-rebrand-said', {'aria-live': 'polite'});
+    const go = button('Check and rebrand', '', async () => {
+      said.replaceChildren();
+      if (!link.value.trim()) { link.focus(); throw new Error('Paste the link of the Google Slides or Google Docs file first.'); }
+      let checked;
+      try { checked = await ctx.api('brand-rebrand-check', {source: link.value.trim(), brand: select.value}); }
+      catch (error) {
+        // Harness Brand's own reason, kept beside the form, and what to do.
+        said.replaceChildren(el('p', error.message, 'paper callout', {role: 'alert'}));
+        return;
+      }
+      confirmRebrand(said, go, checked, review.checked);
+    });
+    shown.push(grid, reviewField, bar(go), said);
+    return shown;
+  }
+  // What will happen, stated before anything runs; Cancel has the focus.
+  function confirmRebrand(said, control, checked, review) {
+    const box = el('div', '', 'paper callout confirm-in-place', {role: 'group', 'aria-label': 'Before the copy is made'});
+    box.dataset.kind = 'yours';
+    const points = el('ul', '', 'brand-rebrand-points');
+    for (const point of [
+      `A new copy of this ${checked.what}, in ${checked.name}, is made in your Google Drive.`,
+      'The original is not changed.',
+      'This computer’s Google sign-in (gcloud) is used to read the original and make the copy.',
+      review ? `The pages and their text are sent to ${ctx.agent()}’s provider for review.`
+        : 'Nothing is sent to an assistant provider: you look at the copy yourself afterwards.']) points.append(el('li', point));
+    const make = el('button', 'Make the copy', 'button', {type: 'button'}), keep = el('button', 'Cancel', 'button button-quiet', {type: 'button'});
+    box.append(el('p', 'Before it starts:', 'row-title'), points, bar(make, keep));
+    const done = () => { box.remove(); control.hidden = false; };
+    keep.addEventListener('click', () => { done(); control.focus({preventScroll: true}); });
+    box.addEventListener('keydown', event => { if (event.key === 'Escape') { event.preventDefault(); done(); control.focus({preventScroll: true}); } });
+    make.addEventListener('click', async () => {
+      if (ctx.isBusy(make)) return;
+      const finish = ctx.busy(make, 'Starting…');
+      try {
+        const state = await ctx.api('brand-rebrand-start', {source: checked.source, brand: checked.brand, review, confirm: true});
+        rebrandDraft = {brands: state.brands};
+        const node = body().querySelector('.brand-rebrand');
+        if (node) swap(node, rebrandCard(state));
+      } catch (error) { finish(); done(); said.replaceChildren(el('p', error.message, 'paper callout', {role: 'alert'})); }
+    });
+    said.replaceChildren(box);
+    control.hidden = true;
+    keep.focus({preventScroll: true});
   }
   function libraryTable(libraries) {
     return table('Icon libraries', ['Library', 'Kind', 'Icons', 'Used by', 'Check', 'Action'], libraries.map(library => {
@@ -676,6 +871,6 @@
       const again = key ? openWork(key) : showList();
       again.catch(error => { ctx.problem(error); if (key) { key = null; showList().catch(() => {}); } });
     },
-    leave() { clearTimeout(timer); forget(); lastBasis = null; },
+    leave() { clearTimeout(timer); clearTimeout(rebrandTimer); forget(); lastBasis = null; },
   };
 })();

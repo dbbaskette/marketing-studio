@@ -46,6 +46,15 @@ function suitePort(port, here) {
     ? suiteHome('#home=' + encodeURIComponent(here.protocol + '//' + here.hostname + ':' + port), here) : '';
 }
 const resumeBlogId = new URLSearchParams(location.hash.slice(1)).get('resume');
+// Continue in another studio: Marketing Studio opens this page with library=<id>@<revision>, a
+// Document Library revision to start a new blog from. Read here, before the fragment is cleared,
+// and checked again as the Document Library names its documents; New blog opens with it.
+function libraryPick(hash){
+  const value=new URLSearchParams(String(hash||'').replace(/^#/,'')).get('library');if(value===null)return null;
+  const found=/^([a-z0-9][a-z0-9-]{0,63})@([1-9][0-9]{0,3})$/.exec(value);
+  return found&&Number(found[2])<=1000?{id:found[1],revision:Number(found[2])}:{invalid:true};
+}
+const libraryStart = libraryPick(location.hash);
 const token = location.hash.slice(1).split('&')[0] || sessionStorage.getItem('blog-studio-session') || '';
 // The shell kit saves the appearance through this page's own key.
 if(typeof StudioShell!=='undefined')StudioShell.connect({header:'X-Blog-Studio-Token',token});
@@ -92,7 +101,9 @@ function notice(message, error=false) {
   if(dialog){target=dialog.querySelector('.dialog-notice');if(!target){target=element('p',undefined,'dialog-notice');target.setAttribute('role','alert');dialog.append(target);}}
   target.textContent=message;target.className=error?'dialog-notice error':'dialog-notice';target.hidden=false;
 }
-function savedNotice(result) {if(result.team_sync){notice(result.team_sync.shared?'Saved and shared with the team repository.':result.team_sync.notice||'Saved on this computer; sharing is pending.');return;}notice((result.receipts||[]).map(r=>r.label+': '+r.message).join(' ')||result.next_step||'Saved.');}
+// A blog marked ready (or published) says where its copy went: the Document Library on this computer.
+function keptWords(result) {const copy=result?.document_library;return copy?.state==='kept'?' Kept in the Document Library on this computer (revision '+copy.revision+'), for any studio.':copy?.state==='failed'?' Not kept in the Document Library: '+copy.reason:'';}
+function savedNotice(result) {const kept=keptWords(result);if(result.team_sync){notice((result.team_sync.shared?'Saved and shared with the team repository.':result.team_sync.notice||'Saved on this computer; sharing is pending.')+kept);return;}notice(((result.receipts||[]).map(r=>r.label+': '+r.message).join(' ')||result.next_step||'Saved.')+kept);}
 // Each view's toolbar: its one primary action, then the way to the other views. The buttons
 // are made again whenever the view or the access changes, so they always follow both.
 function legacyActions() {
@@ -189,9 +200,11 @@ async function loadReceipts(signal, current=()=>true) {
   for(const receipt of pending){const row=element('div');row.append(element('p',receipt.label+': '+receipt.message));if(receipt.retry&&access.actions.edit){const retry=button('Retry sync',()=>busy(retry,'Retrying…',async()=>{const saved=await api('retry-sync',{id:receipt.id});savedNotice(saved);await loadReceipts();}));row.append(retry);}$('sync-status').append(row);}
 }
 
-async function api(route, data, signal) {
+async function api(route, data, signal, options) {
   if(data)document.querySelectorAll('.dialog-notice').forEach(e=>e.hidden=true);
-  const headers={'X-Blog-Studio-Token':token,...(data?{'Content-Type':'application/json'}:{})};
+  // A folder on this computer is read only for a request from this computer: this header never
+  // passes Marketing Studio's phone link, so the page server knows one from afar (files_intake).
+  const headers={'X-Blog-Studio-Token':token,...(data?{'Content-Type':'application/json'}:{}),...(route==='files-intake'?{'X-Blog-Studio-Local':'1'}:{})};
   let response,result;
   try {
     response=await fetch('/api/'+route,{method:data?'POST':'GET',headers,body:data?JSON.stringify(data):undefined,signal});
@@ -202,7 +215,55 @@ async function api(route, data, signal) {
   try {result=await response.json();}
   catch(error) {throw new Error('Blog Studio’s page sent a reply it could not read. Reload the page.');}
   if(!response.ok){const error=new Error(result.error||'The operation could not be completed.');error.status=response.status;error.code=result.code;error.reply=result;throw error;}
+  if(data&&result&&result.background===true&&result.job)return apiJob(result.job,options||{});
   return result;
+}
+// A slow import or Google call answers at once with a job (import_jobs.py). Its answer, or its
+// refusal with the same status and words, is what the caller gets when the job ends; until
+// then a toast says what it is doing, for how long, with Stop where stopping is safe.
+// `options.progress(job)` hears each poll (adding links says how many are in).
+async function apiJob(job, options={}) {
+  const strip=jobStrip(job);let wait=600,lost=0;
+  try {
+    while(job.status==='working') {
+      await new Promise(resolve=>setTimeout(resolve,wait));wait=Math.min(2000,wait+400);
+      try{job=await api('tool-job?job='+encodeURIComponent(job.id));lost=0;}
+      catch(error){if(error.status&&error.status<500||++lost>=5)throw error;continue;}
+      strip.show(job);if(options.progress)options.progress(job);
+    }
+  } finally {strip.done();}
+  if(job.status==='ready')return job.result;
+  const error=new Error(job.error||(job.status==='cancelled'?'Stopped. Nothing was changed.':'The operation could not be completed.'));
+  error.status=job.status==='cancelled'?409:job.error_status||400;error.code=job.status==='cancelled'?'stopped':job.error_reply?.code;error.reply=job.error_reply||{error:error.message};error.stopped=job.status==='cancelled';
+  throw error;
+}
+// The toast an import shows while it runs: what it is doing and how long it has taken, and
+// Stop when stopping is safe. It goes when the job ends.
+function jobStrip(job) {
+  const holder=document.getElementById('toasts'),strip=element('div',undefined,'toast glass toast-action job-strip'),said=element('span',undefined,'job-strip-said'),clock=element('span',undefined,'quiet job-strip-clock'),started=Date.now();
+  said.setAttribute('role','status');clock.setAttribute('aria-hidden','true');
+  const stop=button('Stop',async()=>{stop.disabled=true;stop.textContent='Stopping…';try{show(await api('import-stop',{job:job.id}));}catch(error){said.textContent=error.message;}});
+  const tick=()=>{const seconds=Math.round((Date.now()-started)/1000);clock.textContent=seconds<60?seconds+' s':Math.floor(seconds/60)+' min '+String(seconds%60).padStart(2,'0')+' s';};
+  const show=found=>{job=found||job;const words=job.progress||job.label+'…';if(said.textContent!==words)said.textContent=words;stop.hidden=!job.stoppable;if(job.stopping){stop.disabled=true;stop.textContent='Stopping…';}};
+  show(job);tick();strip.append(said,clock,stop);if(holder)holder.append(strip);jobStrips.add(strip);jobLift();
+  const timer=setInterval(()=>{tick();jobLift();},1000);
+  return {show,done(){clearInterval(timer);strip.remove();jobStrips.delete(strip);jobLift();}};
+}
+// While an import's toast shows over an open sheet, the toasts rise above the sheet's actions at
+// its foot, through the ui-kit's own --foot-lift (the toasts' lift over a foot bar), so Stop and
+// the sheet's buttons never cover each other. With no toast or no sheet the lift goes.
+const jobStrips=new Set();
+function jobLift() {
+  const body=document.body,sheet=document.getElementById('sheet');if(!body?.style)return;
+  let lift=0;const tall=typeof window.innerHeight==='number'?window.innerHeight:0;
+  if(jobStrips.size&&sheet&&!sheet.hidden&&tall&&typeof sheet.querySelectorAll==='function'){
+    for(const node of sheet.querySelectorAll('button')){
+      if(typeof node.getBoundingClientRect!=='function')continue;
+      const box=node.getBoundingClientRect();
+      if(box.height&&box.bottom>tall-160&&box.top<tall)lift=Math.max(lift,tall-box.top+8);
+    }
+  }
+  if(lift)body.style.setProperty('--foot-lift',Math.round(lift)+'px');else body.style.removeProperty('--foot-lift');
 }
 function link(url, text) {if(!/^https:\/\//.test(url||''))return element('span',text);const a=element('a',text);a.href=url;a.target='_blank';a.rel='noopener noreferrer';return a;}
 const BADGE_LABELS={'not-run':'Not run','not-checked-live':'Not checked live','local-saved-not-shared':'Saved locally','pending-review':'Awaiting review','queued-unavailable':'Waiting to sync','needs-local-check':'Needs local check'};
@@ -403,7 +464,10 @@ function editorialForm(item, result) {
     const stage=select.value,needed=(stage==='ready'||stage==='published')&&(stage!==saved.stage||stale);
     confirmRow.hidden=!needed;
     if(!needed)confirmBox.checked=false;
-    confirmText.textContent=stage===saved.stage?'The draft changed after this decision. Record “'+stage+'” again for the current saved draft.':'Record “'+stage+'” for the current saved draft.';
+    // A desk blog marked ready is kept in the Document Library: said before it is recorded.
+    const written=result.view.preview?.kind==='draft'&&String(result.view.preview?.text||'').trim();
+    const kept=stage==='ready'&&result.view.on_desk&&written?' It is kept in the Document Library on this computer, for any studio.':'';
+    confirmText.textContent=(stage===saved.stage?'The draft changed after this decision. Record “'+stage+'” again for the current saved draft.':'Record “'+stage+'” for the current saved draft.')+kept;
     return needed;
   };
   select.addEventListener('change',needsConfirmation);needsConfirmation();
@@ -777,4 +841,4 @@ $('import-reload').addEventListener('click',async()=>{if(importBusy||!importStat
 
 $('upload-form').addEventListener('submit',e=>{e.preventDefault();saveUpload(e.target.querySelector('[type=submit]'));});
 $('memory-form').addEventListener('submit',e=>{e.preventDefault();saveMemory(e.target.querySelector('[type=submit]'));});
-applyCapabilities();loadCapabilities().then(async()=>{await load();if(new URLSearchParams(location.hash.slice(1)).get('resume-intake')==='1'){await sRoute('desk-start');return;}const id=resumeBlogId;if(id&&/^[a-f0-9]{32}$/.test(id))await showBlog({id,location:'local'});}).catch(e=>notice(e.message,true));
+applyCapabilities();loadCapabilities().then(async()=>{await load();if(libraryStart)return;if(new URLSearchParams(location.hash.slice(1)).get('resume-intake')==='1'){await sRoute('desk-start');return;}const id=resumeBlogId;if(id&&/^[a-f0-9]{32}$/.test(id))await showBlog({id,location:'local'});}).catch(e=>notice(e.message,true));

@@ -210,10 +210,19 @@ def _conversation_start(root, job):
 
 
 def recover(root):
+    # An import job (import_jobs) is saved here too, never queued, so the worker below never
+    # picks one up; one still working when Blog Studio stopped is said to be interrupted.
     folder = studio.inside(root, '.blog-runs', 'tools')
     for target in folder.glob('*.json'):
         try:
             value = read(root, target.stem)
+            if value.get('kind') == 'import':
+                import import_jobs
+
+                # Its own words (nothing of an import's request is kept), under its own lock,
+                # and never for one a thread here still runs.
+                import_jobs.interrupted(root, value['id'])
+                continue
             if _conversation_start(root, value):
                 continue
             if value['status'] == 'working':
@@ -228,6 +237,9 @@ def recover(root):
                     desk_jobs.interrupted(root, value)  # A check's next step still goes ahead.
         except (ValueError, OSError, KeyError):
             continue
+    import import_jobs
+
+    import_jobs.prune(root)  # Finished imports go KEEP seconds after they ended.
 
 
 def once(engine):
@@ -420,8 +432,10 @@ def listing(root, article=None):
     for target in folder.glob('*.json'):
         try:
             value = read(root, target.stem)
-            if value['kind'] in ('desk-angles', 'find-text'):
-                continue  # Work for a blog not yet made belongs to the page that asked.
+            if value['kind'] in ('desk-angles', 'find-text', 'import'):
+                # Work for a blog not yet made belongs to the page that asked, and an import
+                # (import_jobs) to the page that is following it.
+                continue
             if value['metadata'].get('article') == article:
                 values.append(
                     {key: value.get(key) for key in ('id', 'kind', 'status', 'created_at')}
