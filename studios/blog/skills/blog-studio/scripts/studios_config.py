@@ -1,10 +1,31 @@
-"""The single source of shared studios settings, with lossless writes and local migration."""
+"""The single source of shared studios settings, with lossless writes and local migration.
+
+Blog Studio's face over the shared settings module (core/studio_core/studios_config.py),
+made for Blog Studio with `for_product`: the file, its place and the lossless writer are
+the shared ones. Blog Studio keeps here what is its own: which settings it writes and the
+sentences it refuses them with, a refusal for a form that is out of date (`expected`),
+moving legacy local settings in (`migrate`), and its own reentrant lock on the file every
+studio locks to write it.
+"""
 
 import json
-import os
 from pathlib import Path
 import re
 from urllib.parse import urlsplit
+
+from studio_core.studios_config import for_product
+
+
+def _lock():
+    """The lock beside the file, taken as every Blog Studio write takes it: reentrant in a
+    thread, waiting as long as Blog Studio waits for any of its locks."""
+    from studio_sync.support import locked
+
+    return locked(_shared.lock_path())
+
+
+_shared = for_product(__name__ + '_shared', 'Blog Studio', ValueError, None, lock=_lock)
+path = _shared.path
 
 KEYS = {
     'team': {'repository', 'branch'},
@@ -29,12 +50,6 @@ def check_brand_repository(value):
         if not Path(value).expanduser().is_absolute():
             raise ValueError('Use an https or ssh repository address, or an absolute folder path.')
     return value
-
-
-def path():
-    return Path(
-        os.environ.get('STUDIOS_CONFIG', Path.home() / '.config/studios-config.json')
-    ).expanduser()
 
 
 def repository(value):
@@ -99,13 +114,11 @@ def read():
         )
 
 
-from studio_core.studios_config import patch_json as _patch
-
-
 def update(changes, missing_only=False, expected=None, guard=None):
     """Saving Settings is consent. Merge only changed members, or absent legacy values.
     `guard`, when given, is called with what the file holds under the lock, before anything
-    is written, and refuses by raising."""
+    is written, and refuses by raising. `expected` is what the form was shown; a member the
+    file holds otherwise now is refused as changed in another studio."""
     if not isinstance(changes, dict) or set(changes) - KEYS.keys():
         raise ValueError('Only shared settings belong in studios config.')
     leaves = []
@@ -148,25 +161,22 @@ def update(changes, missing_only=False, expected=None, guard=None):
                 leaves.append(([section, key], text))
     target = path()
     target.parent.mkdir(parents=True, exist_ok=True)
-    from studio_sync.support import locked
-    import studio
-
-    with locked(target.with_name(target.name + '.lock')):
+    # Blog Studio's own checks run first, under the lock, so their refusals are its own; the
+    # shared writer then takes the same lock again (it is reentrant) and finds the file as
+    # these checks found it.
+    with _lock():
         if target.is_symlink():
             raise ValueError(
                 'Shared settings are a link; keep that file and choose a regular config file.'
             )
         try:
-            raw = target.read_text(encoding='utf-8')
-            existing = _decode(raw)
+            existing = _decode(target.read_text(encoding='utf-8'))
         except FileNotFoundError:
-            raw = '{"schema": 1}\n'
             existing = {}
         except (OSError, ValueError, UnicodeError) as exc:
             raise ValueError(
                 'Shared settings could not be updated; keep the existing file and correct it first.'
             ) from exc
-        original = raw
         if guard is not None:
             guard(existing)
         for section, value in (expected or {}).items():
@@ -180,16 +190,22 @@ def update(changes, missing_only=False, expected=None, guard=None):
                 matches = current == value
             if not matches:
                 raise ValueError('Shared settings changed in another studio. Reload before saving.')
+        wanted = {}
         for keys, value in leaves:
             current = existing
             for key in keys[:-1]:
                 current = current.get(key, {})
             if keys[-1] in current and (missing_only or current[keys[-1]] == value):
                 continue
-            raw = _patch(raw, keys, value)
-        _decode(raw)
-        if raw != original:
-            studio.atomic(target, raw.encode('utf-8'))
+            if len(keys) == 1:
+                wanted[keys[0]] = value
+            else:
+                wanted.setdefault(keys[0], {})[keys[1]] = value
+        # What is written must read back as Blog Studio reads the file: a brand address with
+        # credentials or a remote helper is never written.
+        check_brand_repository((wanted.get('brand') or {}).get('repository'))
+        if wanted:
+            _shared.update(wanted)
             target.chmod(0o600)
     return read()[0]
 
