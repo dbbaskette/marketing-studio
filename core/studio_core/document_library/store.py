@@ -63,6 +63,7 @@ import os
 import re
 import secrets
 import shutil
+import threading
 import time
 import unicodedata
 from datetime import datetime, timezone
@@ -132,6 +133,22 @@ CHANGED = ('Its files in the library changed after they were kept, so it cannot 
 MISSING = 'Its files are missing from the library folder. Upload it again.'
 HIDDEN = ('"{title}" was removed from the library, so it cannot be added. Restore it in '
           'Marketing Studio’s Library first.')
+# What this process last parsed of each library's .state/catalog.json:
+# {library root: ((st_mtime_ns, st_size, st_ino) of the file, what it held)}. It saves only
+# the read and parse of an unchanged file. Whatever it holds is still checked against the
+# documents' heads read from disk, so a revision another process (a studio) kept is seen at
+# once, and a catalog.json another process wrote has another stat and is read again. A write
+# this process makes to a library drops its entry.
+_CATALOGS: dict = {}
+# When this process last cleared away half-made revisions, by library root: at most once
+# every STALE seconds, since nothing younger than that is cleared.
+_TIDIED: dict = {}
+_REMEMBERING = threading.Lock()
+
+
+def _forget(root: Path) -> None:
+    with _REMEMBERING:
+        _CATALOGS.pop(str(root), None)
 
 
 # --- where the library is ------------------------------------------------------------------
@@ -472,6 +489,7 @@ class Library:
 
     def _set_hidden(self, folder: Path, hidden: bool) -> None:
         """Write the document's own record whole. Hold the lock."""
+        _forget(self.root)
         try:
             _atomic(folder / 'document.json', json.dumps(
                 {'schema': SCHEMA, 'id': folder.name, 'hidden': hidden, 'changed_at': _now()},
@@ -558,7 +576,7 @@ class Library:
         cache = self._state() / 'catalog.json'
         # Rows contain bounded display metadata and a case-folded search excerpt.
         # Scale the read budget with the actual catalog; revision files retain their own cap.
-        found = _json(cache, 1024 + len(heads) * 128_000)
+        found = self._parsed_catalog(cache, 1024 + len(heads) * 128_000)
         if isinstance(found, dict) and found.get('schema') == SCHEMA and found.get('index') == INDEX \
                 and found.get('signature') == heads and isinstance(found.get('entries'), list):
             return found['entries']
@@ -587,6 +605,11 @@ class Library:
             row['hidden'] = self._hidden(folder)
             row['search'] = ' '.join((row['title'], row.get('author') or '',
                                       row.get('original_name') or '', excerpt)).casefold()
+            # What keyed() and uploaded() need of the head revision, so they read no record
+            # again: a revision is never changed once kept.
+            row['held'] = {'title': record.get('title'),
+                           **{part: record.get(part) if isinstance(record.get(part), dict) else None
+                              for part in ('markdown', 'original', 'pdf')}}
             entries.append(row)
         try:
             self._state().mkdir(exist_ok=True, mode=0o700)
@@ -594,15 +617,49 @@ class Library:
                                        'entries': entries}, ensure_ascii=False).encode())
         except OSError:
             pass    # the index is only a convenience: it is rebuilt from the records
+        _forget(self.root)
         return entries
+
+    def _parsed_catalog(self, cache: Path, budget: int):
+        """catalog.json as parsed, from memory while the file's stat is as it was when this
+        process last read it. Its signature is checked by the caller either way."""
+        try:
+            seen = os.stat(cache, follow_symlinks=False)
+        except OSError:
+            return None
+        key = (seen.st_mtime_ns, seen.st_size, seen.st_ino)
+        with _REMEMBERING:
+            held = _CATALOGS.get(str(self.root))
+        if held is not None and held[0] == key and seen.st_size <= budget:
+            return held[1]
+        # The stat is taken before the read: a file replaced in between is read again next time.
+        found = _json(cache, budget)
+        if isinstance(found, dict):
+            with _REMEMBERING:
+                _CATALOGS[str(self.root)] = (key, found)
+        return found
 
     @staticmethod
     def _public(row: dict) -> dict:
         return {key: value for key, value in row.items()
-                if key not in ('search', 'key', 'operation', 'fingerprint', 'adopted')}
+                if key not in ('search', 'key', 'operation', 'fingerprint', 'adopted', 'held')}
+
+    def _held(self, row: dict) -> tuple[Path, dict] | None:
+        """A catalog row's head revision as kept in the index: (its folder, the parts of its
+        record keyed() and uploaded() read), or None for a row from an index written before
+        rows held them."""
+        held = row.get('held')
+        ident, number = row.get('id'), row.get('revision')
+        if not isinstance(held, dict) or not isinstance(ident, str) or not IDENT.match(ident) \
+                or type(number) is not int or number < 1:
+            return None
+        return (self._documents() / ident / 'revisions' / str(number),
+                {'id': ident, 'revision': number, 'title': held.get('title'),
+                 **{part: held.get(part) if isinstance(held.get(part), dict) else None
+                    for part in ('markdown', 'original', 'pdf')}})
 
     def _matches(self, query='', kind=None, studio=None, origin=None, author=None, state=None,
-                 hidden=False):
+                 hidden=False, rows=None):
         if kind not in (None, '', *KINDS) or studio not in (None, '', *STUDIOS) \
                 or origin not in (None, '', *ORIGINS) or state not in (None, '', *STATES):
             raise LibraryError('Choose the filters this page offers.')
@@ -611,7 +668,7 @@ class Library:
             raise LibraryError('Search with at most 200 characters.')
         words = (query or '').casefold().split()
         who = (author or '').casefold().strip()
-        rows = [row for row in self._index()
+        rows = [row for row in (self._index() if rows is None else rows)
                 if (hidden or not row.get('hidden')) and (not kind or row['kind'] == kind) and (not studio or row['studio'] == studio)
                 and (not origin or row['origin'] == origin) and (not state or row['state'] == state)
                 and (not who or who in (row.get('author') or '').casefold())
@@ -620,16 +677,19 @@ class Library:
         return rows
 
     def catalog(self, query='', kind=None, studio=None, origin=None, author=None, state=None,
-                offset=0, limit=25, hidden=False) -> dict:
+                offset=0, limit=25, hidden=False, summary=False) -> dict:
         """One page of documents that match, newest first: {'items', 'total', 'offset',
         'limit'}. Each item is a document's newest revision; no local path is given. A
-        hidden document is left out unless `hidden` (Marketing Studio's Show hidden)."""
+        hidden document is left out unless `hidden` (Marketing Studio's Show hidden). With
+        `summary`, what summary() says is added from the same reading of the index."""
         if type(offset) is not int or offset < 0 or type(limit) is not int \
                 or not 1 <= limit <= LIMITS['page']:
             raise LibraryError(f"Ask for at most {LIMITS['page']} documents at a time.")
-        rows = self._matches(query, kind, studio, origin, author, state, hidden)
+        every = self._index()
+        rows = self._matches(query, kind, studio, origin, author, state, hidden, rows=every)
         return {'items': [self._public(row) for row in rows[offset:offset + limit]],
-                'total': len(rows), 'offset': offset, 'limit': limit}
+                'total': len(rows), 'offset': offset, 'limit': limit,
+                **(self._summary(every) if summary else {})}
 
     def matching(self, readable_only=True, **filters) -> list[dict]:
         """Every readable document the filters match, as {'id', 'revision'}: what "Select all
@@ -641,8 +701,10 @@ class Library:
                                f"{LIMITS['matching']} before selecting all of them.")
         return [{'id': row['id'], 'revision': row['revision']} for row in rows]
 
-    def describe(self, ident, revision=None) -> dict:
-        place, record = self._record(ident, revision)
+    def describe(self, ident, revision=None, loaded=None) -> dict:
+        """A revision's row with its document's head and revisions. `loaded` is the
+        (folder, record) of that revision when the caller has already read it."""
+        place, record = loaded if loaded is not None else self._record(ident, revision)
         folder = place.parent.parent
         first = self._revision(folder, 1)
         row = self._row(place, record, (first or {}).get('created_at'))
@@ -670,14 +732,17 @@ class Library:
     def summary(self) -> dict:
         """{'hidden': how many documents are hidden, 'imported': whether any was added as
         existing work}. Nothing is written but the search index."""
-        rows = self._index()
+        return self._summary(self._index())
+
+    @staticmethod
+    def _summary(rows) -> dict:
         return {'hidden': sum(1 for row in rows if row.get('hidden')),
                 'imported': any(row.get('adopted') for row in rows)}
 
     def preview(self, ident, revision=None) -> dict:
         """A revision's readable Markdown, as plain text and bounded. Its hash is checked."""
         place, record = self._record(ident, revision)
-        row = self.describe(ident, record['revision'])
+        row = self.describe(ident, record['revision'], loaded=(place, record))
         text = ''
         if row['state'] == 'readable':
             data = self._checked(place, record.get('markdown'))
@@ -778,19 +843,29 @@ class Library:
 
     # writing
     def _tidy(self) -> None:
-        """Clear away hidden half-made revisions an interrupted write left long ago."""
+        """Clear away hidden half-made revisions an interrupted write left long ago. Only
+        one older than STALE seconds is cleared, so this process looks at most once every
+        STALE seconds per library, not on every write."""
+        now = time.monotonic()
+        with _REMEMBERING:
+            last = _TIDIED.get(str(self.root))
+            if last is not None and now - last < STALE:
+                return
+            _TIDIED[str(self.root)] = now
         cutoff = time.time() - STALE
         for parent in [self._documents(), *(self._documents() / ident / 'revisions'
                                              for ident in self._ids())]:
             if not parent.is_dir() or parent.is_symlink():
                 continue
-            for entry in os.scandir(parent):
-                if entry.name.startswith('.pending-') and entry.is_dir(follow_symlinks=False) \
-                        and entry.stat(follow_symlinks=False).st_mtime < cutoff:
-                    shutil.rmtree(entry.path, ignore_errors=True)
+            with os.scandir(parent) as entries:
+                for entry in entries:
+                    if entry.name.startswith('.pending-') and entry.is_dir(follow_symlinks=False) \
+                            and entry.stat(follow_symlinks=False).st_mtime < cutoff:
+                        shutil.rmtree(entry.path, ignore_errors=True)
 
     def _write(self, ident: str | None, record: dict, files: dict) -> dict:
         """Keep one revision whole: as a new document when `ident` is None. Hold the lock."""
+        _forget(self.root)
         documents = self._documents()
         documents.mkdir(exist_ok=True, mode=0o700)
         if ident is None:
@@ -996,10 +1071,13 @@ class Library:
             key = row.get('key')
             if key not in wanted or key in found:
                 continue
-            try:
-                place, head = self._record(row['id'])
-            except LibraryError:
-                continue
+            loaded = self._held(row)
+            if loaded is None:
+                try:
+                    loaded = self._record(row['id'])
+                except LibraryError:
+                    continue
+            place, head = loaded
             found[key] = {'id': head['id'], 'revision': head['revision'],
                           'title': head.get('title'),
                           'markdown': (head.get('markdown') or {}).get('sha256'),
@@ -1017,10 +1095,13 @@ class Library:
         for row in self._index():
             if row.get('studio') != studio or row.get('kind') != 'upload' or row.get('key'):
                 continue
-            try:
-                _, head = self._record(row['id'])
-            except LibraryError:
-                continue
+            loaded = self._held(row)
+            if loaded is None:
+                try:
+                    loaded = self._record(row['id'])
+                except LibraryError:
+                    continue
+            head = loaded[1]
             digest = (head.get('original') or {}).get('sha256')
             if isinstance(digest, str):
                 found.setdefault(digest, {'id': head['id'], 'revision': head['revision']})

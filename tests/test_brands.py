@@ -765,6 +765,30 @@ class RemoteRepository(BrandsCase):
             self.call('push', confirm=True, expected=fresh['expected'])
         self.assertEqual(self.pushes, [])
 
+    def test_listing_counts_unshared_commits_with_no_git_run_per_pack(self):
+        self.made('one')
+        shelf = self.brands / 'icon-libraries/shapes'
+        shelf.mkdir(parents=True)
+        with zipfile.ZipFile(shelf / 'library.zip', 'w') as made:
+            made.writestr('library.json', json.dumps({'name': 'Shapes', 'kind': 'glyph'}))
+            made.writestr('icons.json', json.dumps({'icons': []}))
+        self.log(self.brands, 'add', 'icon-libraries')
+        self.log(self.brands, 'commit', '--quiet', '-m', 'Shapes')
+
+        def runs():
+            with mock.patch.object(brand_store, 'git', wraps=brand_store.git) as run:
+                listed = self.call('list')
+            return listed, [call.args[1:] for call in run.call_args_list]
+
+        listed, before = runs()
+        self.assertEqual({p['id']: p['unshared'] for p in listed['packs']}, {'one': 1})
+        self.assertEqual({l['id']: l['unshared'] for l in listed['libraries']}, {'shapes': 1})
+        self.made('two')
+        listed, after = runs()
+        self.assertEqual({p['id']: p['unshared'] for p in listed['packs']}, {'one': 1, 'two': 1})
+        self.assertFalse([args for args in after if '--count' in args])
+        self.assertEqual(len(after), len(before), 'a pack added a Git run to the listing')
+
     def test_non_fast_forward_push_keeps_the_local_commit(self):
         preview = self.made()['push']
         other = self.root / 'other'
@@ -776,6 +800,171 @@ class RemoteRepository(BrandsCase):
         with self.assertRaisesRegex(WorkspaceError, 'stays committed on this computer'):
             self.call('push', confirm=True, expected=preview['expected'])
         self.assertIn('Add the Example Co brand pack', self.log(self.brands, 'log', '--format=%s'))
+
+
+class DoingEachJobOnce(BrandsCase):
+    """Counted, never timed: walks of a working copy, work.json writes, hashes and Git runs."""
+
+    def test_a_burst_of_lines_walks_nothing_and_work_json_is_written_a_bounded_number_of_times(self):
+        key = self.new_brand()
+        now = [1000.0]
+        go, paused, resume = threading.Event(), threading.Event(), threading.Event()
+        writes, during = [], {}
+        real_write = brand_store.write_json
+
+        def counted(path, value):
+            if Path(path).name == 'work.json':
+                writes.append(json.loads(json.dumps(value)))
+            return real_write(path, value)
+
+        def job(line, stop):
+            go.wait(10)
+            for number in range(500):
+                line(f'Line {number}')
+            during.update(walks=walked.call_count, writes=len(writes))
+            paused.set()
+            resume.wait(10)
+            now[0] += brand_store.LINE_WRITES
+            line('After a pause')
+            line('The last line')
+
+        with mock.patch.object(brand_store, '_clock', lambda: now[0]):
+            brand_store.begin(key, 'extract', job)
+            with mock.patch.object(brand_store, 'walk', wraps=brand_store.walk) as walked, \
+                    mock.patch.object(brand_store, 'write_json', counted):
+                go.set()
+                self.assertTrue(paused.wait(10))
+                self.assertEqual(during, {'walks': 0, 'writes': 0})
+                on_disk = json.loads((brand_store.folder_of(key) / 'work.json').read_text())
+                self.assertEqual(on_disk['task']['lines'], [])
+                # A reader is shown every line at once, from memory.
+                shown = brand_store.view(key)['task']['lines']
+                self.assertEqual((len(shown), shown[-1]), (brand_store.LINES, 'Line 499'))
+                resume.set()
+                brand_store.wait(key, 30)
+        # One write once LINE_WRITES had passed, and one as the task ended; nothing per line.
+        self.assertEqual(len(writes), 2)
+        self.assertEqual(writes[0]['task']['lines'][-1], 'After a pause')
+        on_disk = json.loads((brand_store.folder_of(key) / 'work.json').read_text())
+        self.assertEqual(on_disk['task']['state'], 'done')
+        self.assertEqual(on_disk['task']['lines'][-2:], ['After a pause', 'The last line'])
+        self.assertEqual(len(on_disk['task']['lines']), brand_store.LINES)
+        self.assertEqual((brand_store.TASKS, brand_store.LIVE), ({}, {}))
+
+    def test_tasks_do_not_grow_after_jobs_finish_and_the_last_outcome_is_still_shown(self):
+        key = self.new_brand()
+        other = self.new_brand('other')
+
+        def failing(line, stop):
+            line('Trying')
+            raise WorkspaceError('It did not work.')
+
+        for number in range(4):
+            brand_store.begin(key, 'extract', lambda line, stop: line(f'Ran {number}'))
+            brand_store.wait(key, 30)
+            self.assertEqual(brand_store.TASKS, {})
+        brand_store.begin(other, 'extract', failing)
+        brand_store.wait(other, 30)
+        self.assertEqual((brand_store.TASKS, brand_store.LIVE), ({}, {}))
+        shown = self.call('work', key=key)['task']
+        self.assertEqual((shown['state'], shown['lines']), ('done', ['Ran 3']))
+        shown = self.call('work', key=other)['task']
+        self.assertEqual((shown['state'], shown['detail']), ('failed', 'It did not work.'))
+        self.call('discard', key=other)
+        self.assertEqual(brand_store.TASKS, {})
+
+    def test_view_walks_the_working_copy_once_and_hashes_each_part_once(self):
+        key = self.new_brand()
+        self.extract(key)
+        self.interpret(key)
+        with mock.patch.object(brand_store, 'walk', wraps=brand_store.walk) as walked, \
+                mock.patch.object(brand_store, 'digest', wraps=brand_store.digest) as hashed:
+            shown = brand_store.view(key)
+        self.assertEqual(len(shown['parts']), len(brand_store.PARTS))
+        self.assertEqual(hashed.call_count, len(shown['parts']))
+        self.assertEqual(walked.call_count, 1)
+        self.assertEqual({s['name'] for s in shown['sources']},
+                         {'export.zip', 'example-light.pptx', 'brand-book.md'})
+        self.assertTrue(shown['ready'].startswith('Accept or edit each part first'))
+
+    def test_two_saves_of_one_brand_cannot_both_run_while_another_brand_saves(self):
+        first, second = self.new_brand('first'), self.new_brand('second')
+        for key, ident in ((first, 'first'), (second, 'second')):
+            self.extract(key)
+            self.interpret(key, proposal(ident))
+            self.accept_all(key)
+        entered, release = threading.Event(), threading.Event()
+        real = brand_store.checked
+        outcome = {}
+
+        def held(found, folder, env=None):
+            if 'brand-first' in str(folder):
+                entered.set()
+                release.wait(30)
+            return real(found, folder, env=env)
+
+        def save_first():
+            try:
+                outcome['first'] = self.call('save', key=first)
+            except BaseException as failure:
+                outcome['first'] = failure
+
+        with mock.patch.object(brand_store, 'checked', held):
+            saving = threading.Thread(target=save_first)
+            saving.start()
+            try:
+                self.assertTrue(entered.wait(30))
+                # Harness Brand is checking the first brand: nothing else of it may start.
+                with self.assertRaisesRegex(WorkspaceError, 'already being saved'):
+                    self.call('save', key=first)
+                with self.assertRaisesRegex(WorkspaceError, 'being saved'):
+                    self.call('part', key=first, part='guide', action='edit', content='## Brand rules\n\nMine.\n')
+                with self.assertRaisesRegex(WorkspaceError, 'being saved'):
+                    self.call('discard', key=first)
+                # Another brand is saved meanwhile: LOCK is not held across the checks.
+                self.assertTrue(self.call('save', key=second)['committed'])
+                self.assertTrue(saving.is_alive())
+                self.assertEqual(self.call('work', key=first)['key'], first)
+            finally:
+                release.set()
+                saving.join(60)
+        self.assertNotIsInstance(outcome['first'], BaseException, outcome['first'])
+        self.assertTrue(outcome['first']['committed'])
+        self.assertEqual(brand_store.SAVING, set())
+        self.assertEqual(self.log(self.brands, 'log', '--format=%s').split('\n')[:2],
+                         ['Add the Example Co brand pack', 'Add the Example Co brand pack'])
+        self.assertTrue((self.brands / 'first/pack/brand.json').is_file())
+        self.assertTrue((self.brands / 'second/pack/brand.json').is_file())
+
+    def test_save_reads_and_hashes_each_working_copy_file_once(self):
+        key = self.new_brand()
+        self.extract(key)
+        self.interpret(key)
+        self.accept_all(key)
+        here = brand_store.folder_of(key)
+        real = brand_store.hashlib.file_digest
+        read = []
+
+        def counted(stream, name):
+            read.append(Path(stream.name))
+            return real(stream, name)
+
+        with mock.patch.object(brand_store.hashlib, 'file_digest', counted):
+            self.assertTrue(self.call('save', key=key)['committed'])
+        mine = [path for path in read if here in path.parents]
+        self.assertTrue(mine)
+        self.assertEqual(len(mine), len(set(mine)), 'a working-copy file was hashed twice')
+
+    def test_a_refused_save_lets_go_of_its_mark(self):
+        key = self.new_brand()
+        self.extract(key)
+        self.interpret(key)
+        self.accept_all(key)
+        with mock.patch.dict(os.environ, {'STAND_IN_PROBLEM': 'Too little contrast.'}), \
+                self.assertRaisesRegex(WorkspaceError, 'pack check does not pass yet'):
+            self.call('save', key=key)
+        self.assertEqual(brand_store.SAVING, set())
+        self.assertTrue(self.call('save', key=key)['committed'])
 
 
 class CommandBounds(unittest.TestCase):
