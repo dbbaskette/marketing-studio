@@ -205,11 +205,13 @@ def validate_project(project: dict) -> dict:
         from .contracts import STALE_PARTS
         held = project['stale']
         require(isinstance(held, dict) and held and set(held) <= set(STALE_PARTS)
-                and all(isinstance(v, dict) and set(v) - {'dropped'} == {'because', 'revision'}
-                        and (isinstance(v.get('dropped', []), list) and len(v.get('dropped', [])) <= 100
-                             and all(isinstance(d, dict) and set(d) == {'id', 'statement', 'why'}
-                                     and all(isinstance(d[k], str) and len(d[k]) <= 400 for k in d)
-                                     for d in v.get('dropped', [])))
+                and all(isinstance(v, dict) and set(v) - {'dropped', 'dropped_more', 'removed', 'removed_more'} == {'because', 'revision'}
+                        and all(type(v.get(k + '_more', 0)) is int and v.get(k + '_more', 0) >= 0
+                                and isinstance(v.get(k, []), list) and len(v.get(k, [])) <= 100
+                                and all(isinstance(d, dict) and set(d) == {'id', 'statement', 'why'}
+                                        and all(isinstance(d[x], str) and len(d[x]) <= 400 for x in d)
+                                        for d in v.get(k, []))
+                                for k in ('dropped', 'removed'))
                         and v['because'] in ('brief', 'sources', 'brief and sources')
                         and type(v['revision']) is int and type(project.get('revision')) is int
                         and 0 <= v['revision'] <= project['revision']

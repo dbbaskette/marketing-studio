@@ -1,5 +1,20 @@
 """Work held out of date after a brief or source change: update it, or keep it as it is.
 
+THE RULE. A mark is cleared only explicitly, in exactly these cases and no other, and
+contracts.advance (with _cleared) is the one place that enforces (b) and (c):
+ (a) the person chooses Keep as it is for that part on the page (keep / clear below);
+ (b) an operation that makes that WHOLE part again says so by name (`remade`): facts and
+     stories by adopting a newly suggested set from Find the story (engine._propose); the
+     page by being laid out again (scene.adopt / adopt_best: layout, visual layout, Update
+     the page); artwork by new artwork, made after the mark, being placed on the page
+     (engine.compose_asset);
+ (c) nothing of the part is left anywhere in the record (artwork: no asset and no artwork
+     element on the page; page: no scene; stories: no stories; facts: no facts). A notice
+     naming dropped facts or removed stories stays until (a) or (b).
+Editing or revising one story, choosing a story, saving an art direction, editing a text
+element, placing the same image again, restoring a revision and every conversation operation
+never clear a mark. A revised story still shows as out of date until the person keeps it.
+
 A brief or source edit keeps the facts, stories, page and artwork built from the earlier
 inputs and names each as out of date (contracts.advance). Every part has two actions:
 Update makes it again from the current inputs, and Keep as it is clears the mark without

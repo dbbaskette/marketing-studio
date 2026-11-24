@@ -107,7 +107,8 @@ class StaleWorkTests(Isolated):
         # Probe from the review, at the record itself.
         p = synthetic()
         edited = advance(p, {'brief': {**p['brief'], 'audience': 'Operators'}}, expected_revision=0, owner='owner1')
-        self.assertEqual(set(edited['stale']), {'stories', 'page', 'artwork'})
+        # The synthetic record has an art direction but no image: there is no artwork to mark.
+        self.assertEqual(set(edited['stale']), {'stories', 'page'})
         again = advance(edited, {'selected_story': None}, expected_revision=edited['revision'], owner='owner1')
         self.assertIn('stories', again['stale'])
 
@@ -191,7 +192,7 @@ class StaleWorkTests(Isolated):
                          for name, state in (('running1', 'running'), ('done1', 'failed'))]
         changed = advance(p, {'brief': {**p['brief'], 'audience': 'Operators'}}, expected_revision=0, owner='owner1')
         self.assertEqual([a['id'] for a in changed['attempts']], ['done1'])
-        self.assertIn('artwork', changed['stale'])
+        self.assertEqual(set(changed['stale']), {'stories', 'page'})
 
     def test_projects_saved_before_held_work_open_unchanged(self):
         saved = self.current()

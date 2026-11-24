@@ -151,10 +151,10 @@ def submit(engine, ident, request):
     payload, revision = request['payload'], project['revision']
     if head == 'facts':
         require(set(payload) == {'facts'}, 'Submit {"facts": [...]}.')
-        saved = evidence.adopt(store, ident, payload['facts'], expected_revision=revision)
+        saved = evidence.adopt(store, ident, payload['facts'], expected_revision=revision, remade=False)
     elif head == 'stories':
         require(set(payload) == {'stories'}, 'Submit {"stories": [...]}.')
-        saved = stories.adopt(store, ident, payload['stories'], expected_revision=revision)
+        saved = stories.adopt(store, ident, payload['stories'], expected_revision=revision, remade=False)
     elif head == 'story':
         require(set(payload) == {'story'} and isinstance(payload['story'], dict)
                 and payload['story'].get('id') == subject, 'Submit {"story": {...}} keeping its id.')

@@ -160,15 +160,24 @@ class Actions:
         except BaseException as caught:     # every ending is said, never raised into the thread
             failure = caught
             shown = self._problem(ident, caught, stop)
+        # Work that finishes once started has no Stop: if it ended because the server stopped,
+        # it was interrupted, and is shown so here and by the next server, with what to do next.
+        interrupted = failure is not None and stop.is_set() and sent['action'] not in STOPPABLE
+        if interrupted:
+            label = LABELS[sent['action']]
+            shown = {'problem': INTERRUPTED.format(label=label) + ' ' + NEXT[sent['action']]}
         try:
-            self.activity.end(ident, item, failure, result=_shown(result) if failure is None else None, **shown)
+            self.activity.end(ident, item, failure, interrupted=interrupted,
+                              result=_shown(result) if failure is None else None, **shown)
         finally:
             with self.lock:
                 if self.active.get(ident, (None,))[0] == item['id']:
                     self.active.pop(ident, None)
-                state = {'complete': 'complete', 'stopped': 'stopped'}.get(item['state'], 'failed')
+                # An interrupted job's record is left saying it was running: interrupted() reads it.
+                state = 'running' if interrupted else {'complete': 'complete', 'stopped': 'stopped'}.get(item['state'], 'failed')
                 try:
-                    self._save(ident, {**record, 'state': state, 'ended_at': activity_log.now()})
+                    self._save(ident, {**record, 'state': state,
+                                       'ended_at': None if interrupted else activity_log.now()})
                 except (Invalid, OSError):
                     pass
 

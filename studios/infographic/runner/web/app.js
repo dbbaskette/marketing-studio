@@ -282,7 +282,12 @@ function staleCard(p){
     const keep=button('Keep as it is',()=>action('keep-stale',{part}));keep.setAttribute('aria-label','Keep '+STALE_WHAT[part].toLowerCase()+' as it is');
     const go=button(label,run);
     // Facts whose source was replaced or removed could not be kept: each is named, with why.
-    const dropped=part==='facts'&&(held.facts.dropped||[]).length?add(make('div','stack'),make('p','',(held.facts.dropped.length===1?'One fact was dropped':held.facts.dropped.length+' facts were dropped')+': '+held.facts.dropped[0].why),list(held.facts.dropped.map(d=>d.statement))):null;
+    // Stories that used a dropped fact were removed: they are named too. The newest hundred of
+    // each are named; any more are counted.
+    const named=key=>{const items=held[part][key]||[],more=held[part][key+'_more']||0;if(!items.length)return null;
+      const total=items.length+more,noun=key==='dropped'?['One fact was dropped',total+' facts were dropped']:['One story was removed',total+' stories were removed'];
+      return add(make('div','stack'),make('p','',(total===1?noun[0]:noun[1])+': '+items[0].why),list([...items.map(d=>d.statement),...(more?['and '+more+' more']:[])]));};
+    const dropped=add(make('div','stack'),named('dropped'),named('removed'));
     return add(make('div','ig-stale-row stack'),stateLine('review',STALE_WHAT[part]+' was made before the '+held[part].because+' changed.'),dropped,make('p','quiet',help),add(make('div','bar'),go,keep));
   });
   const node=card('Out of date after your change',make('p','','Your work is kept. Update each part, or keep it as it is. Approval, prepared files and delivery wait until nothing is out of date.'),...rows);

@@ -226,6 +226,11 @@ def restore(store, ident, revision, *, expected_revision, fingerprint=None):
         previous = version(store, ident, revision, fingerprint)
         made = deepcopy(previous)
         made.update(revision=current['revision'] + 1, approval=None, checks=[], attempts=[], exports=[])
+        # Restoring clears no out-of-date mark (stale.py): the marks of now and of the restored
+        # revision are both kept, for whatever of each part the restored record holds.
+        from .contracts import _cleared, _set_stale
+        marks = {**(previous.get('stale') or {}), **(current.get('stale') or {})}
+        _set_stale(made, _cleared(made, marks, ()))
         saved = store.commit_locked(current, made, restored=True)
         store.write_blob(ident, _marker(saved['revision']),
                          canonical({'schema': 1, 'restored_from': revision, 'sha256': digest(saved)}))

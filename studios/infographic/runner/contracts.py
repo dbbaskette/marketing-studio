@@ -62,15 +62,18 @@ INVALIDATES = {
 
 
 # Held work: what a brief or source edit keeps rather than clears (HOLDS), the parts of it the
-# page names (STALE_PARTS, with the fields whose new content makes a part current again; the
-# page only by being laid out again, `advance(remade=('page',))`), and which
-# parts each edit marks out of date (STALE_BY). Checks are still cleared: they are run again.
+# page names (STALE_PARTS, with the one operation that makes each whole part again and so says
+# `remade`), and which parts each edit marks out of date (STALE_BY). Checks are still cleared:
+# they are run again. When a mark is cleared is stale.py's rule, enforced in advance() alone.
 HOLDS = {
     'brief': ('stories', 'selected_story', 'scene', 'image_briefs', 'attempts'),
     'sources': ('facts', 'stories', 'selected_story', 'scene', 'image_briefs', 'attempts'),
 }
-STALE_PARTS = {'facts': ('facts',), 'stories': ('stories',), 'page': (),
-               'artwork': ('image_briefs', 'assets')}
+STALE_PARTS = {'facts': 'a newly suggested set of facts (Find the story)',
+               'stories': 'a newly suggested set of stories (Find the story)',
+               'page': 'laying the page out again (layout, visual layout, Update the page)',
+               'artwork': 'new artwork made after the mark and placed on the page'}
+DROPPED_KEPT = 100      # dropped facts named; any more are counted
 STALE_BY = {'brief': ('stories', 'page', 'artwork'), 'sources': ('facts', 'stories', 'page', 'artwork')}
 STALE_WORDS = {'facts': 'the facts', 'stories': 'the story', 'page': 'the page', 'artwork': 'the artwork'}
 
@@ -133,8 +136,11 @@ def advance(project: dict, changes: dict, *, expected_revision: int, owner: str,
         raise Invalid('This infographic belongs to another workspace owner.')
     if not isinstance(changes, dict) or not changes or set(changes) - set(EDITABLE):
         raise Invalid('Change only the supported infographic content fields.')
+    require_parts = set(remade) - set(STALE_PARTS)
+    if require_parts:
+        raise Invalid('Name only facts, stories, page or artwork as made again.')
     changed = {key for key, value in changes.items() if value != project[key]}
-    stale = dict(project.get('stale') or {})
+    stale = deepcopy(project.get('stale') or {})
     if not changed and not set(remade) & set(stale):
         return deepcopy(project)
     result = deepcopy(project)
@@ -159,23 +165,20 @@ def advance(project: dict, changes: dict, *, expected_revision: int, owner: str,
     dropped = []
     if 'sources' in marking and 'facts' in held:
         result['facts'], dropped = _cited(result)
-    for part, fields in STALE_PARTS.items():
-        # A part is current again only when its content is made again (or laid out again, for
-        # the page), or the person keeps it; choosing another story or editing the page is
-        # neither. A part that no longer exists is not out of date.
-        if part in stale and (part in remade or any(key in changed for key in fields)
-                              or not _holds(result, part) and not stale[part].get('dropped')):
-            del stale[part]
+    # The one place a mark is cleared (stale.py's rule): (b) the operation made that whole part
+    # again and says so (`remade`), or (c) nothing of the part is left in the record. (a), the
+    # person's Keep as it is, is stale.clear. Nothing is inferred from which fields changed.
+    stale = _cleared(result, stale, remade)
     because = ' and '.join(key for key in ('brief', 'sources') if key in marking)
     for key in marking:
         for part in STALE_BY[key]:
-            if _holds(result, part) or part == 'facts' and dropped:
+            if _exists(result, part) or part == 'facts' and dropped:
                 earlier = stale.get(part, {})
                 both = earlier.get('because', because)
                 both = both if both == because else 'brief and sources'
                 stale[part] = {**earlier, 'because': both, 'revision': result['revision']}
     if dropped:
-        stale['facts']['dropped'] = (stale['facts'].get('dropped', []) + dropped)[:100]
+        _named(stale['facts'], 'dropped', dropped)
     _set_stale(result, stale)
     # Old exports are immutable references to older revisions, never current approval.
     try:
@@ -189,6 +192,11 @@ def advance(project: dict, changes: dict, *, expected_revision: int, owner: str,
 
         def citing():
             keep = [s for s in result['stories'] if not any(set(b.get('fact_ids', [])) & gone for b in s['blocks'])]
+            removed = [{'id': s['id'], 'statement': str(s.get('headline', ''))[:300],
+                        'why': 'It used a fact whose source was replaced or removed.'}
+                       for s in result['stories'] if s not in keep]
+            if removed and 'stories' in stale:
+                _named(stale['stories'], 'removed', removed)
             result['stories'] = keep
             if result['selected_story'] not in {s['id'] for s in keep}:
                 result.update(selected_story=None, scene=None, image_briefs=[])
@@ -203,8 +211,7 @@ def advance(project: dict, changes: dict, *, expected_revision: int, owner: str,
             result['facts'] = []
         for step in (citing, page, stories_too, facts_too):
             step()
-            _set_stale(result, {part: value for part, value in stale.items()
-                                if _holds(result, part) or value.get('dropped')})
+            _set_stale(result, _cleared(result, stale, ()))
             try:
                 validate_project(result)
                 break
@@ -239,16 +246,42 @@ def _cited(project: dict):
     return [f for f in facts if f['id'] in kept], dropped
 
 
-def _holds(project: dict, part: str) -> bool:
-    """Whether a part of the work exists to be out of date."""
+def _exists(project: dict, part: str) -> bool:
+    """Whether anything of a part is left anywhere in the record (rule (c)): facts, stories,
+    a page; artwork is any saved asset or artwork element on the page."""
     if part == 'facts':
         return bool(project['facts'])
     if part == 'stories':
         return bool(project['stories'])
     if part == 'page':
         return project['scene'] is not None
-    return bool(project['image_briefs']) or any(
+    return bool(project['assets']) or any(
         e.get('kind') == 'artwork' for e in (project['scene'] or {}).get('elements', []))
+
+
+_holds = _exists
+
+
+def _cleared(project: dict, stale: dict, remade) -> dict:
+    """The marks left after (b) `remade` and (c) gone. A notice naming dropped facts or removed
+    stories stays (it says what was lost) until the person keeps it or the part is made again."""
+    return {part: value for part, value in stale.items()
+            if part not in remade and (_exists(project, part) or value.get('dropped') or value.get('removed'))}
+
+
+def _named(entry: dict, key: str, items: list):
+    """Add items to a mark's list of what was lost: the newest DROPPED_KEPT are named, the
+    rest counted in `<key>_more`."""
+    names = entry.get(key, []) + items
+    if len(names) > DROPPED_KEPT:
+        entry[key + '_more'] = entry.get(key + '_more', 0) + len(names) - DROPPED_KEPT
+        names = names[-DROPPED_KEPT:]
+    entry[key] = names
+
+
+def lost(entry: dict, key: str) -> int:
+    """How many dropped facts (or removed stories) a mark has recorded in all."""
+    return len(entry.get(key, [])) + entry.get(key + '_more', 0)
 
 
 def _set_stale(project: dict, stale: dict):

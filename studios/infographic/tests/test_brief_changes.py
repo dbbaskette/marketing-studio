@@ -112,7 +112,7 @@ class FinishedWorkTests(LibraryCase):
                  replace_id=source['id'])
         self.assertEqual(history.entries(self.store, self.ident)[0]['summary'],
                          'Added or updated sources; dropped 1 fact whose source was replaced or removed; '
-                         'cleared the story, page and approval')
+                         'removed 1 story that used them; cleared the story, page and approval')
         dropped = self.current()['stale']['facts']['dropped']
         self.assertEqual([d['id'] for d in dropped], [f['id'] for f in before['facts']])
         self.assertIn('source was replaced or removed', dropped[0]['why'])

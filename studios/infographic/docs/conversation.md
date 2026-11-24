@@ -47,10 +47,13 @@ and artwork built from the earlier brief and marks each out of date in `stale`
 and clears the approval, so tell the person and ask before saving when they exist. Each
 out-of-date part is then updated (`suggest --fresh` for facts and stories,
 `refresh-page` lays the page out again locally, `art-direct` writes new art direction) or
-kept as it is (`keep-stale` with `{"part"}`, only when the person chooses it). A part is
-current again only when its content is made again (new facts, new stories, new art
-direction), when the page is laid out again (`refresh-page`, `layout`, `visual-layout`), or
-when the person keeps it; choosing another story or editing the page is neither. Approve,
+kept as it is (`keep-stale` with `{"part"}`, only when the person chooses it). A mark is
+cleared only explicitly (runner/stale.py): by Keep as it is; by making the whole part again
+(a new set of facts or stories, from Find the story or the native `facts`/`stories` actions;
+the page laid out again by `refresh-page`, `layout` or `visual-layout`; new artwork made
+after the mark and placed on the page); or when nothing of the part is left. Revising one
+story, choosing a story, a new art direction, editing a text element, placing the same image
+again, restoring a revision and every desk operation from this conversation leave it. Approve,
 export and Google delivery are refused, naming what is out of date, until no part is. A
 replaced or removed source drops only the facts that quote it, named with why under
 `stale.facts.dropped`, and the stories and page built on those facts; every other fact is

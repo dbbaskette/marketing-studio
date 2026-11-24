@@ -104,7 +104,7 @@ class Activity:
         report.said = item['lines'].append
         return item, report
 
-    def end(self, ident, item, failure=None, **shown):
+    def end(self, ident, item, failure=None, *, interrupted=False, **shown):
         """End a claimed operation: with `failure`, as failed (or stopped, when it was asked
         to stop); `shown` adds what the page reads of its outcome (result, problem, recovery)."""
         assisted = False
@@ -112,8 +112,12 @@ class Activity:
             item.update({key: value for key, value in shown.items() if value is not None})
             if failure is not None:
                 stopped = isinstance(failure, Stopped) or (item.get('stop') is not None and item['stop'].is_set())
-                item.update(state='stopped' if stopped else 'failed', ended=self.clock())
-                if stopped:
+                item.update(state='interrupted' if interrupted else 'stopped' if stopped else 'failed',
+                            ended=self.clock())
+                if interrupted:
+                    # Ended by the server stopping, not by the person: never "Stopped on request".
+                    item.pop('outcome', None)
+                elif stopped:
                     item.pop('outcome', None)
                     item['problem'] = STOPPED
                 elif isinstance(failure, AssistantFailure):

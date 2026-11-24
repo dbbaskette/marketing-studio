@@ -124,7 +124,8 @@ class Engine:
             except Invalid as failure:
                 planning_responses.rejected(self.store, ident, failure)
                 raise AssistantFailure('proposal-review') from failure
-            result = self.store.change_locked(current, changes)
+            # A newly suggested set of facts and stories makes both whole parts again (stale.py (b)).
+            result = self.store.change_locked(current, changes, remade=('facts', 'stories'))
             planning_responses.accepted(self.store, ident)
             return result
 
@@ -358,7 +359,12 @@ class Engine:
                 planned['elements'] = [layer] + content
             for region in planned['art_regions']:
                 region['asset_id'] = asset_id
-            changed = self.store.change_locked(project, {'scene': planned})
+            # New artwork, made after the artwork was marked out of date, placed on the page makes
+            # the artwork current (stale.py (b)); the same earlier image placed again does not.
+            mark = (project.get('stale') or {}).get('artwork')
+            fresh = mark is not None and any(asset_id in a['asset_ids'] and a['revision'] > mark['revision']
+                                             for a in project['attempts'] if a['state'] == 'complete')
+            changed = self.store.change_locked(project, {'scene': planned}, remade=('artwork',) if fresh else ())
         if recovery and recovery.get('state') == 'failed' and recovery['step'] == 'place-artwork' and recovery.get('next_values', {}).get('asset_id') == asset_id:
             build_recovery.keep(self.store, ident, 'place-artwork', [*recovery['completed'], 'Placed artwork'], state='complete')
         return changed
@@ -474,6 +480,8 @@ class Engine:
             manifest = self.preview(ident, expected_revision=approved['revision'], draft=False)
         except Invalid as failure:
             return {**named, 'export': None, 'problem': str(failure)}
+        except Stopped:
+            raise
         except Exception:
             return {**named, 'export': None,
                     'problem': 'The approved files could not be prepared. Your approval is kept; prepare the files again.'}
