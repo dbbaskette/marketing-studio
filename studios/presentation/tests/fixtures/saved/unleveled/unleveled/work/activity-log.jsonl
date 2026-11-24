@@ -1,0 +1,5 @@
+{"checkpoint":"accepted","unit":"","at":"2026-11-24T23:00:34Z"}
+{"checkpoint":"output-saved","unit":"intake-source","at":"2026-11-24T23:00:34Z"}
+{"checkpoint":"working","unit":"outline","at":"2026-11-24T23:00:35Z"}
+{"id":"1bc4e0d8749f","label":"Drafting the outline of your deck","step":"outline","started_at":"2026-11-24T23:00:35Z","ended_at":"2026-11-24T23:00:35Z","outcome":"finished","lines":[{"at":"2026-11-24T23:00:35Z","text":"Checking what the slides say"},{"at":"2026-11-24T23:00:35Z","text":"Handing in what the slides say"},{"at":"2026-11-24T23:00:35Z","text":"The outline was accepted"},{"at":"2026-11-24T23:00:35Z","text":"Writing its own notes on the draft"}],"dropped":0}
+{"checkpoint":"output-saved","unit":"outline","at":"2026-11-24T23:00:35Z"}

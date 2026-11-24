@@ -1,0 +1,15 @@
+{
+  "at": "2026-11-24T23:00:24Z",
+  "brand": "example",
+  "checkpoints": [
+    "Draft approval.",
+    "Look.",
+    "Final acceptance."
+  ],
+  "freshness": "current-at-start",
+  "revision": "ffffffffffffffffffffffffffffffffffffffff",
+  "runtimeVersion": "0.15.1",
+  "task": "2c624232cdd221771294dfbb310aca00",
+  "variant": "light",
+  "worker": true
+}

@@ -1,0 +1,309 @@
+{
+  "asked": null,
+  "audit": {
+    "errors": 0,
+    "messages": [
+      "Slide 2: Make the text larger, or move the detail to the notes. (warning)",
+      "Slide 3: Make the text larger, or move the detail to the notes. (warning)"
+    ],
+    "status": "WARN",
+    "warnings": 2
+  },
+  "auditNote": null,
+  "deck": "work/deck.pptx",
+  "previous": null,
+  "repair": [],
+  "repaired": 0,
+  "rounds": [
+    {
+      "at": "2026-11-24T23:00:27Z",
+      "audit": {
+        "errors": 0,
+        "messages": [
+          "Slide 2: Make the text larger, or move the detail to the notes. (warning)",
+          "Slide 3: Make the text larger, or move the detail to the notes. (warning)"
+        ],
+        "status": "WARN",
+        "warnings": 2
+      },
+      "audit_findings": [],
+      "audit_warnings": [
+        "Slide 2: Make the text larger, or move the detail to the notes.",
+        "Slide 3: Make the text larger, or move the detail to the notes."
+      ],
+      "changed": [],
+      "compiled": "work/build/whole-007983/compiled",
+      "deck": "530b5f265e1a85e8dbda1164d6cb0fc1c794e53f487ff20d32802ee737732731",
+      "file": "work/build/whole-007983/preview/deck.pptx",
+      "folder": "work/build/whole-007983",
+      "made_from": {
+        "section-1": "work/build/drawn/section-1-0-f6d956.json",
+        "section-2": "work/build/drawn/section-2-0-f6d956.json"
+      },
+      "pdf": "99890c753e7a6e73bf4a94733a8f32dd9c31caebff8ee6bfaa276d596258d69d",
+      "preview": "work/build/whole-007983/preview",
+      "preview_repair": [],
+      "questions": [
+        "After three seconds, is the main point clear, and is it the claim in the title?",
+        "Does the eye land first on the element that carries the point?",
+        "Is there exactly one emphasis?",
+        "Does every element support the title?",
+        "Is each label inside or right beside what it names?",
+        "Is the space balanced, with nothing stranded or crowded?",
+        "Is the slide consistent with its neighbours in style, and different from them in layout unless they are meant to be compared?",
+        "Does every image and icon explain something?"
+      ],
+      "render_evidence": null,
+      "review": {
+        "at": "2026-11-24T23:00:27Z",
+        "coverage": {
+          "questions": [
+            "After three seconds, is the main point clear, and is it the claim in the title?",
+            "Does the eye land first on the element that carries the point?",
+            "Is there exactly one emphasis?",
+            "Does every element support the title?",
+            "Is each label inside or right beside what it names?",
+            "Is the space balanced, with nothing stranded or crowded?",
+            "Is the slide consistent with its neighbours in style, and different from them in layout unless they are meant to be compared?",
+            "Does every image and icon explain something?"
+          ],
+          "slides": [
+            {
+              "answers": [
+                true,
+                true,
+                true,
+                true,
+                true,
+                true,
+                true,
+                true
+              ],
+              "id": "cover-restarts",
+              "image_sha256": "b41fabc0d237c5c929775ea3f297ecb6b3f07f5786d01827f967d53fb1479532",
+              "note": "Inspected native pixels and all review questions. Slide 1: Rolling restarts",
+              "number": 1
+            },
+            {
+              "answers": [
+                true,
+                true,
+                true,
+                true,
+                true,
+                true,
+                true,
+                true
+              ],
+              "id": "what-it-does",
+              "image_sha256": "a2c59345dbd8754adc4c9d77b2430e15d5f6fdf2e4bad305eeb9538ad61199ad",
+              "note": "Inspected native pixels and all review questions. Slide 2: A rolling restart replaces instances one batch at a time",
+              "number": 2
+            },
+            {
+              "answers": [
+                true,
+                true,
+                true,
+                true,
+                true,
+                true,
+                true,
+                true
+              ],
+              "id": "when-capacity-holds",
+              "image_sha256": "ec88fa6a18560c61fe0bce9e7c44004449bf6cd12d6592c83420c0a371c47f15",
+              "note": "Inspected native pixels and all review questions. Slide 3: Capacity holds only with more than one instance",
+              "number": 3
+            },
+            {
+              "answers": [
+                true,
+                true,
+                true,
+                true,
+                true,
+                true,
+                true,
+                true
+              ],
+              "id": "the-objection",
+              "image_sha256": "bbb0f9d65e88ad451959dc03eb6d4209e3242cba0394be1256fabbae1e27f86e",
+              "note": "Inspected native pixels and all review questions. Slide 4: Rolling does not always mean zero downtime",
+              "number": 4
+            },
+            {
+              "answers": [
+                true,
+                true,
+                true,
+                true,
+                true,
+                true,
+                true,
+                true
+              ],
+              "id": "check-yourself",
+              "image_sha256": "eeb35705255f2844be24a69e0dc683f3664a592f49b3dc41200dcf547c584994",
+              "note": "Inspected native pixels and all review questions. Slide 5: Check what you can now explain",
+              "number": 5
+            },
+            {
+              "answers": [
+                true,
+                true,
+                true,
+                true,
+                true,
+                true,
+                true,
+                true
+              ],
+              "id": "health-checks",
+              "image_sha256": "ca8187f9c0544dcffa1aaacc72670f9d5ab5fccc78c8088047d03a65a9c6359b",
+              "note": "Inspected native pixels and all review questions. Slide 6: Health checks start the next batch",
+              "number": 6
+            },
+            {
+              "answers": [
+                true,
+                true,
+                true,
+                true,
+                true,
+                true,
+                true,
+                true
+              ],
+              "id": "rolling-back",
+              "image_sha256": "0b607240121b03199f319534ef96225205548a4901ad3e041c0d8e31c6f9a3ef",
+              "note": "Inspected native pixels and all review questions. Slide 7: A failed batch is rolled back, not pushed on",
+              "number": 7
+            },
+            {
+              "answers": [
+                true,
+                true,
+                true,
+                true,
+                true,
+                true,
+                true,
+                true
+              ],
+              "id": "closing-practice",
+              "image_sha256": "6f31a1800e57d9f2a5633d76e50ede6d49463354e4d10380b4fc4719608c4d76",
+              "note": "Inspected native pixels and all review questions. Slide 8: Next: try it on a test app",
+              "number": 8
+            }
+          ]
+        },
+        "findings": [],
+        "weakest": []
+      },
+      "sheet": "work/build/whole-007983/preview/contact-sheet.png",
+      "slides": [
+        {
+          "findings": [],
+          "id": "cover-restarts",
+          "number": 1,
+          "sha256": "b41fabc0d237c5c929775ea3f297ecb6b3f07f5786d01827f967d53fb1479532",
+          "title": "Rolling restarts"
+        },
+        {
+          "findings": [],
+          "id": "what-it-does",
+          "number": 2,
+          "sha256": "a2c59345dbd8754adc4c9d77b2430e15d5f6fdf2e4bad305eeb9538ad61199ad",
+          "title": "A rolling restart replaces instances one batch at a time"
+        },
+        {
+          "findings": [],
+          "id": "when-capacity-holds",
+          "number": 3,
+          "sha256": "ec88fa6a18560c61fe0bce9e7c44004449bf6cd12d6592c83420c0a371c47f15",
+          "title": "Capacity holds only with more than one instance"
+        },
+        {
+          "findings": [],
+          "id": "the-objection",
+          "number": 4,
+          "sha256": "bbb0f9d65e88ad451959dc03eb6d4209e3242cba0394be1256fabbae1e27f86e",
+          "title": "Rolling does not always mean zero downtime"
+        },
+        {
+          "findings": [],
+          "id": "check-yourself",
+          "number": 5,
+          "sha256": "eeb35705255f2844be24a69e0dc683f3664a592f49b3dc41200dcf547c584994",
+          "title": "Check what you can now explain"
+        },
+        {
+          "findings": [],
+          "id": "health-checks",
+          "number": 6,
+          "sha256": "ca8187f9c0544dcffa1aaacc72670f9d5ab5fccc78c8088047d03a65a9c6359b",
+          "title": "Health checks start the next batch"
+        },
+        {
+          "findings": [],
+          "id": "rolling-back",
+          "number": 7,
+          "sha256": "0b607240121b03199f319534ef96225205548a4901ad3e041c0d8e31c6f9a3ef",
+          "title": "A failed batch is rolled back, not pushed on"
+        },
+        {
+          "findings": [],
+          "id": "closing-practice",
+          "number": 8,
+          "sha256": "6f31a1800e57d9f2a5633d76e50ede6d49463354e4d10380b4fc4719608c4d76",
+          "title": "Next: try it on a test app"
+        }
+      ]
+    }
+  ],
+  "sections": {
+    "section-1": {
+      "at": "2026-11-24T23:00:27Z",
+      "file": "work/build/drawn/section-1-0-f6d956.json",
+      "notes": "What I changed after looking: Nothing: it read well at once.",
+      "round": 0
+    },
+    "section-2": {
+      "at": "2026-11-24T23:00:27Z",
+      "file": "work/build/drawn/section-2-0-f6d956.json",
+      "notes": "What I changed after looking: Nothing: it read well at once.",
+      "round": 0
+    }
+  },
+  "start": {
+    "at": "2026-11-24T23:00:27Z",
+    "brand": "@DECK@/brand/brand-contract.json",
+    "contract": "80f9b35c424b1f8708d770995ac9724373316cfa19a09f5a3cf13305af6d5282",
+    "drawn": "f6d956",
+    "folder": "work/build/start",
+    "pictures": {},
+    "sections": [
+      {
+        "file": "section-1.json",
+        "id": "section-1",
+        "slides": [
+          "what-it-does",
+          "when-capacity-holds",
+          "the-objection"
+        ]
+      },
+      {
+        "file": "section-2.json",
+        "id": "section-2",
+        "slides": [
+          "check-yourself",
+          "health-checks",
+          "rolling-back"
+        ]
+      }
+    ],
+    "titled": {},
+    "wordless": {}
+  }
+}

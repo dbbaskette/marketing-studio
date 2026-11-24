@@ -1,0 +1,116 @@
+{
+  "schema": 1,
+  "brandRevision": "b7724ec565ef672339931c1769af447b1945281554aae6b5266ceb4f8e72ff6d",
+  "measurement": "estimated; brand font unavailable",
+  "slides": [
+    {
+      "id": "cover-restarts",
+      "nodes": 0,
+      "fills": [],
+      "edges": 0,
+      "layout": "Title Slide"
+    },
+    {
+      "id": "what-it-does",
+      "nodes": 5,
+      "fills": [
+        "canvasSecondary"
+      ],
+      "edges": 1
+    },
+    {
+      "id": "when-capacity-holds",
+      "nodes": 5,
+      "fills": [
+        "canvasSecondary"
+      ],
+      "edges": 0
+    },
+    {
+      "id": "the-objection",
+      "nodes": 5,
+      "fills": [
+        "canvasSecondary"
+      ],
+      "edges": 0
+    },
+    {
+      "id": "check-yourself",
+      "nodes": 5,
+      "fills": [
+        "canvasSecondary"
+      ],
+      "edges": 1
+    },
+    {
+      "id": "health-checks",
+      "nodes": 3,
+      "fills": [
+        "headingPrimary",
+        "canvasSecondary"
+      ],
+      "edges": 1
+    },
+    {
+      "id": "rolling-back",
+      "nodes": 3,
+      "fills": [
+        "headingPrimary",
+        "canvasSecondary"
+      ],
+      "edges": 0
+    },
+    {
+      "id": "closing-practice",
+      "nodes": 0,
+      "fills": [],
+      "edges": 0,
+      "layout": "Big Statement"
+    }
+  ],
+  "room": [
+    {
+      "slide": "what-it-does",
+      "needs": 186.6,
+      "has": 327.3
+    },
+    {
+      "slide": "when-capacity-holds",
+      "needs": 139.4,
+      "has": 323.3
+    },
+    {
+      "slide": "the-objection",
+      "needs": 139.4,
+      "has": 360
+    },
+    {
+      "slide": "check-yourself",
+      "needs": 186.6,
+      "has": 360
+    },
+    {
+      "slide": "health-checks",
+      "needs": 146.4,
+      "has": 360
+    },
+    {
+      "slide": "rolling-back",
+      "needs": 99.2,
+      "has": 360
+    }
+  ],
+  "inputs": {
+    "composition": {
+      "path": "@DECK@/work/build/whole-dc5d1b/composition.json",
+      "sha256": "da714e4fc2dacd83896d42c8d415fbe8b20b274b8633e9a3fd02fa8951705539"
+    },
+    "brand": {
+      "path": "@DECK@/brand/brand-contract.json",
+      "sha256": "0d7de7788ac37acb5558b1dfb67590a43b3b3d6fa710bfd78a6b452c63cb965e"
+    },
+    "assets": []
+  },
+  "sceneDigest": "cf015c86f9b2daa7db7dbf14e6c47e0ced1699b8242e8ef60f0db8c3204ff16d",
+  "structureDigest": "6602ff9fdc39b681cbb1fbd81b19de7375e24e747622f717e87b3b6d083f14be"
+}

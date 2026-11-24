@@ -1,0 +1,51 @@
+{
+  "basis": "work/build/start",
+  "parts": {
+    "section-1": {
+      "images": {},
+      "owner": "23aeb54a0b1a858afacf99db2b5f86cc",
+      "slides": [
+        {
+          "id": "what-it-does",
+          "number": 2,
+          "title": "A rolling restart replaces instances one batch at a time"
+        },
+        {
+          "id": "when-capacity-holds",
+          "number": 3,
+          "title": "Capacity holds only with more than one instance"
+        },
+        {
+          "id": "the-objection",
+          "number": 4,
+          "title": "Rolling does not always mean zero downtime"
+        }
+      ],
+      "started_at": "2026-11-24T23:00:30Z",
+      "status": "drawing"
+    },
+    "section-2": {
+      "images": {},
+      "owner": "8ca32f9dfabc1d473b0180c20517c9be",
+      "slides": [
+        {
+          "id": "check-yourself",
+          "number": 5,
+          "title": "Check what you can now explain"
+        },
+        {
+          "id": "health-checks",
+          "number": 6,
+          "title": "Health checks start the next batch"
+        },
+        {
+          "id": "rolling-back",
+          "number": 7,
+          "title": "A failed batch is rolled back, not pushed on"
+        }
+      ],
+      "started_at": "2026-11-24T23:00:30Z",
+      "status": "drawing"
+    }
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "tool": "harness-slides-review",
+  "source": {
+    "type": "pptx",
+    "file": "@DECK@/sources/original.pptx",
+    "sha256": "d92327c6bbd1d842eb35cbe7cd8674039af6890ec26f2dc40e0209927bde076e"
+  },
+  "revision": "d92327c6bbd1d842eb35cbe7cd8674039af6890ec26f2dc40e0209927bde076e",
+  "renderer": "LibreOffice PDF / Poppler",
+  "slides": [
+    {
+      "number": 1,
+      "id": "256",
+      "hidden": false,
+      "title": "A deck",
+      "image": "slide-1-8611ed0cdc10.png",
+      "imageSha256": "8611ed0cdc107af3a8c2a98c941f94c66c34e430a6e58a7bf46a95c51aad6e26",
+      "reused": false,
+      "finalReview": null
+    },
+    {
+      "number": 2,
+      "id": "257",
+      "hidden": false,
+      "title": "Run Acme fast",
+      "image": "slide-2-dd0ed735b498.png",
+      "imageSha256": "dd0ed735b49885e8df2e391951495b4db3cc1561c2abff85b11d1e252a037dd8",
+      "reused": false,
+      "finalReview": null
+    },
+    {
+      "number": 3,
+      "id": "258",
+      "hidden": true,
+      "title": "Backup slide",
+      "image": "slide-3-ae6dec63326c.png",
+      "imageSha256": "ae6dec63326cd11be9e20e4a089e168f80179494e6a4b19cb547f56d8bc27735",
+      "reused": false,
+      "finalReview": null
+    }
+  ],
+  "pending": [
+    1,
+    2,
+    3
+  ]
+}

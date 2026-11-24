@@ -1,0 +1,151 @@
+{
+  "version": 1,
+  "title": "Rolling restarts",
+  "direction": {
+    "focal": "headingPrimary",
+    "meanings": {
+      "accentAqua": "Example Platform: the product this deck is about"
+    },
+    "motif": "A strip on each card says what it is about.",
+    "neutral": "canvasSecondary"
+  },
+  "slides": [
+    {
+      "id": "what-it-does",
+      "title": "A rolling restart replaces instances one batch at a time",
+      "sources": [
+        "O1"
+      ],
+      "brief": {
+        "relation": "order",
+        "focal": "s1_whatitdoes_point"
+      },
+      "canvas": {
+        "type": "stack",
+        "direction": "column",
+        "gap": "tight",
+        "children": [
+          {
+            "type": "text",
+            "id": "s1_whatitdoes_point",
+            "text": "One batch at a time",
+            "textRole": "label"
+          },
+          {
+            "type": "stack",
+            "direction": "column",
+            "gap": "tight",
+            "children": [
+              {
+                "type": "box",
+                "id": "s1_whatitdoes_p1",
+                "text": "Batch: Instances are replaced one batch at a time."
+              },
+              {
+                "type": "box",
+                "id": "s1_whatitdoes_p2",
+                "text": "Traffic: The app keeps serving while it restarts."
+              }
+            ],
+            "weight": 3
+          }
+        ]
+      },
+      "connect": [
+        {
+          "id": "s1_whatitdoes_e1",
+          "from": "s1_whatitdoes_p1",
+          "to": "s1_whatitdoes_p2"
+        }
+      ],
+      "source": "Platform documentation: restarts",
+      "notes": "6 min. Walk the three-instance example."
+    },
+    {
+      "id": "when-capacity-holds",
+      "title": "Capacity holds only with more than one instance",
+      "sources": [
+        "O2"
+      ],
+      "brief": {
+        "relation": "contrast",
+        "focal": "s1_whencapacity_point"
+      },
+      "canvas": {
+        "type": "stack",
+        "direction": "column",
+        "gap": "tight",
+        "children": [
+          {
+            "type": "text",
+            "id": "s1_whencapacity_point",
+            "text": "More than one instance",
+            "textRole": "label"
+          },
+          {
+            "type": "grid",
+            "columns": 2,
+            "children": [
+              {
+                "type": "box",
+                "id": "s1_whencapacity_p1",
+                "text": "Several: The others carry the load."
+              },
+              {
+                "type": "box",
+                "id": "s1_whencapacity_p2",
+                "text": "One: Requests are dropped while it restarts."
+              }
+            ],
+            "weight": 3
+          }
+        ]
+      },
+      "caveat": "A single-instance app still drops requests while it restarts.",
+      "notes": "7 min. Health checks start the next batch."
+    },
+    {
+      "id": "the-objection",
+      "title": "Rolling does not always mean zero downtime",
+      "sources": [
+        "O3"
+      ],
+      "brief": {
+        "relation": "contrast",
+        "focal": "s1_theobjection_point",
+        "rhythm": "breathing"
+      },
+      "canvas": {
+        "type": "stack",
+        "direction": "column",
+        "gap": "tight",
+        "children": [
+          {
+            "type": "text",
+            "id": "s1_theobjection_point",
+            "text": "It depends on the instance count",
+            "textRole": "label"
+          },
+          {
+            "type": "grid",
+            "columns": 2,
+            "children": [
+              {
+                "type": "box",
+                "id": "s1_theobjection_p1",
+                "text": "Claim: Rolling always means zero downtime."
+              },
+              {
+                "type": "box",
+                "id": "s1_theobjection_p2",
+                "text": "Correction: Only with more than one instance."
+              }
+            ],
+            "weight": 3
+          }
+        ]
+      },
+      "notes": "7 min. Correct the claim without dismissing the customer."
+    }
+  ]
+}

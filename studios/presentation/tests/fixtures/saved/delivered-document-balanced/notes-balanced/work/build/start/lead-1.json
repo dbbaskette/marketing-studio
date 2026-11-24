@@ -1,0 +1,27 @@
+{
+  "direction": {
+    "focal": "headingPrimary",
+    "meanings": {
+      "accentAqua": "Example Platform: the product this deck is about"
+    },
+    "motif": "A strip on each card says what it is about.",
+    "neutral": "canvasSecondary"
+  },
+  "slides": [
+    {
+      "brief": {
+        "rhythm": "anchor"
+      },
+      "id": "cover-restarts",
+      "layout": "Title Slide",
+      "notes": "1 min. Welcome, and what is assumed.",
+      "sources": [
+        "outline"
+      ],
+      "subtitle": "What they do, and when capacity holds",
+      "title": "Rolling restarts"
+    }
+  ],
+  "title": "Rolling restarts",
+  "version": 1
+}

@@ -1,0 +1,502 @@
+{
+  "version": 2,
+  "title": "Rolling restarts",
+  "mode": "new",
+  "canvas": {
+    "width": 960,
+    "height": 540
+  },
+  "theme": {
+    "font": "Arial",
+    "background": "#FFFFFF",
+    "text": "#1F2430",
+    "accent": "#0B7A75",
+    "muted": "#E6E8EB",
+    "titleSize": 28,
+    "bodySize": 24
+  },
+  "slides": [
+    {
+      "id": "cover-restarts",
+      "title": "Rolling restarts",
+      "sources": [
+        "outline"
+      ],
+      "elements": [
+        {
+          "id": "cover-restarts_title",
+          "type": "text",
+          "x": 48,
+          "y": 36,
+          "width": 864,
+          "height": 60,
+          "text": "Rolling restarts",
+          "fontSize": 28,
+          "bold": true,
+          "color": "#1F4E8C",
+          "role": "title"
+        },
+        {
+          "id": "cover-restarts_subtitle",
+          "type": "text",
+          "x": 48,
+          "y": 120,
+          "width": 864,
+          "height": 37.2,
+          "text": "What they do, and when capacity holds",
+          "fontSize": 24,
+          "bold": false,
+          "color": "#1F2430"
+        }
+      ],
+      "notes": "1 min. Welcome, and what is assumed."
+    },
+    {
+      "id": "what-it-does",
+      "title": "A rolling restart replaces instances one batch at a time",
+      "sources": [
+        "O1"
+      ],
+      "elements": [
+        {
+          "id": "what-it-does_title",
+          "type": "text",
+          "x": 48,
+          "y": 36,
+          "width": 864,
+          "height": 60,
+          "text": "A rolling restart replaces instances one batch at a time",
+          "fontSize": 28,
+          "bold": true,
+          "color": "#1F4E8C",
+          "role": "title"
+        },
+        {
+          "id": "what-it-does_source",
+          "type": "text",
+          "x": 48,
+          "y": 455.3,
+          "width": 864,
+          "height": 24.7,
+          "text": "Platform documentation: restarts",
+          "fontSize": 14,
+          "bold": false,
+          "color": "#5A6170"
+        },
+        {
+          "id": "s1_whatitdoes_point",
+          "type": "text",
+          "x": 48,
+          "y": 120,
+          "width": 864,
+          "height": 32.2,
+          "text": "One batch at a time",
+          "fontSize": 20,
+          "bold": true,
+          "color": "#1F4E8C"
+        },
+        {
+          "id": "s1_whatitdoes_p1",
+          "type": "shape",
+          "x": 48,
+          "y": 160.2,
+          "width": 864,
+          "height": 139.55,
+          "shape": "rect",
+          "fill": "#E6E8EB",
+          "text": "Batch: Instances are replaced one batch at a time.",
+          "fontSize": 24,
+          "bold": false,
+          "color": "#1F2430"
+        },
+        {
+          "id": "s1_whatitdoes_p2",
+          "type": "shape",
+          "x": 48,
+          "y": 307.75,
+          "width": 864,
+          "height": 139.55,
+          "shape": "rect",
+          "fill": "#E6E8EB",
+          "text": "Traffic: The app keeps serving while it restarts.",
+          "fontSize": 24,
+          "bold": false,
+          "color": "#1F2430"
+        },
+        {
+          "id": "s1_whatitdoes_e1",
+          "type": "line",
+          "x": 480,
+          "y": 229.98,
+          "width": 1,
+          "height": 147.55,
+          "color": "#1F2430",
+          "weight": 2,
+          "arrow": true
+        }
+      ],
+      "notes": "6 min. Walk the three-instance example."
+    },
+    {
+      "id": "when-capacity-holds",
+      "title": "Capacity holds only with more than one instance",
+      "sources": [
+        "O2"
+      ],
+      "elements": [
+        {
+          "id": "when-capacity-holds_title",
+          "type": "text",
+          "x": 48,
+          "y": 36,
+          "width": 864,
+          "height": 60,
+          "text": "Capacity holds only with more than one instance",
+          "fontSize": 28,
+          "bold": true,
+          "color": "#1F4E8C",
+          "role": "title"
+        },
+        {
+          "id": "when-capacity-holds_caveat",
+          "type": "text",
+          "x": 48,
+          "y": 455.3,
+          "width": 864,
+          "height": 24.7,
+          "text": "A single-instance app still drops requests while it restarts.",
+          "fontSize": 14,
+          "bold": false,
+          "color": "#5A6170"
+        },
+        {
+          "id": "when-capacity-holds_caveat_rule",
+          "type": "line",
+          "x": 48,
+          "y": 452.3,
+          "width": 864,
+          "height": 1,
+          "color": "#1F2430",
+          "weight": 1,
+          "arrow": false
+        },
+        {
+          "id": "s1_whencapacity_point",
+          "type": "text",
+          "x": 48,
+          "y": 120,
+          "width": 864,
+          "height": 32.2,
+          "text": "More than one instance",
+          "fontSize": 20,
+          "bold": true,
+          "color": "#1F4E8C"
+        },
+        {
+          "id": "s1_whencapacity_p1",
+          "type": "shape",
+          "x": 48,
+          "y": 160.2,
+          "width": 424,
+          "height": 283.1,
+          "shape": "rect",
+          "fill": "#E6E8EB",
+          "text": "Several: The others carry the load.",
+          "fontSize": 24,
+          "bold": false,
+          "color": "#1F2430"
+        },
+        {
+          "id": "s1_whencapacity_p2",
+          "type": "shape",
+          "x": 488,
+          "y": 160.2,
+          "width": 424,
+          "height": 283.1,
+          "shape": "rect",
+          "fill": "#E6E8EB",
+          "text": "One: Requests are dropped while it restarts.",
+          "fontSize": 24,
+          "bold": false,
+          "color": "#1F2430"
+        }
+      ],
+      "notes": "7 min. Health checks start the next batch."
+    },
+    {
+      "id": "the-objection",
+      "title": "Rolling does not always mean zero downtime",
+      "sources": [
+        "O3"
+      ],
+      "elements": [
+        {
+          "id": "the-objection_title",
+          "type": "text",
+          "x": 48,
+          "y": 36,
+          "width": 864,
+          "height": 60,
+          "text": "Rolling does not always mean zero downtime",
+          "fontSize": 28,
+          "bold": true,
+          "color": "#1F4E8C",
+          "role": "title"
+        },
+        {
+          "id": "s1_theobjection_point",
+          "type": "text",
+          "x": 48,
+          "y": 120,
+          "width": 864,
+          "height": 32.2,
+          "text": "It depends on the instance count",
+          "fontSize": 20,
+          "bold": true,
+          "color": "#1F4E8C"
+        },
+        {
+          "id": "s1_theobjection_p1",
+          "type": "shape",
+          "x": 48,
+          "y": 160.2,
+          "width": 424,
+          "height": 319.8,
+          "shape": "rect",
+          "fill": "#E6E8EB",
+          "text": "Claim: Rolling always means zero downtime.",
+          "fontSize": 24,
+          "bold": false,
+          "color": "#1F2430"
+        },
+        {
+          "id": "s1_theobjection_p2",
+          "type": "shape",
+          "x": 488,
+          "y": 160.2,
+          "width": 424,
+          "height": 319.8,
+          "shape": "rect",
+          "fill": "#E6E8EB",
+          "text": "Correction: Only with more than one instance.",
+          "fontSize": 24,
+          "bold": false,
+          "color": "#1F2430"
+        }
+      ],
+      "notes": "7 min. Correct the claim without dismissing the customer."
+    },
+    {
+      "id": "check-yourself",
+      "title": "Check what you can now explain",
+      "sources": [
+        "O1",
+        "O2",
+        "O3"
+      ],
+      "elements": [
+        {
+          "id": "check-yourself_title",
+          "type": "text",
+          "x": 48,
+          "y": 36,
+          "width": 864,
+          "height": 60,
+          "text": "Check what you can now explain",
+          "fontSize": 28,
+          "bold": true,
+          "color": "#1F4E8C",
+          "role": "title"
+        },
+        {
+          "id": "s2_checkyoursel_point",
+          "type": "text",
+          "x": 48,
+          "y": 120,
+          "width": 864,
+          "height": 32.2,
+          "text": "Say it aloud",
+          "fontSize": 20,
+          "bold": true,
+          "color": "#1F4E8C"
+        },
+        {
+          "id": "s2_checkyoursel_p1",
+          "type": "shape",
+          "x": 48,
+          "y": 160.2,
+          "width": 864,
+          "height": 155.9,
+          "shape": "rect",
+          "fill": "#E6E8EB",
+          "text": "Describe: What happens to the instances?",
+          "fontSize": 24,
+          "bold": false,
+          "color": "#1F2430"
+        },
+        {
+          "id": "s2_checkyoursel_p2",
+          "type": "shape",
+          "x": 48,
+          "y": 324.1,
+          "width": 864,
+          "height": 155.9,
+          "shape": "rect",
+          "fill": "#E6E8EB",
+          "text": "Explain: Why does one instance lose capacity?",
+          "fontSize": 24,
+          "bold": false,
+          "color": "#1F2430"
+        },
+        {
+          "id": "s2_checkyoursel_e1",
+          "type": "line",
+          "x": 480,
+          "y": 238.15,
+          "width": 1,
+          "height": 163.9,
+          "color": "#1F2430",
+          "weight": 2,
+          "arrow": true
+        }
+      ],
+      "notes": "3 min. One question for each point."
+    },
+    {
+      "id": "health-checks",
+      "title": "Health checks start the next batch",
+      "sources": [
+        "O1"
+      ],
+      "elements": [
+        {
+          "id": "health-checks_title",
+          "type": "text",
+          "x": 48,
+          "y": 36,
+          "width": 864,
+          "height": 60,
+          "text": "Health checks start the next batch",
+          "fontSize": 28,
+          "bold": true,
+          "color": "#1F4E8C",
+          "role": "title"
+        },
+        {
+          "id": "s2_healthchecks_p1",
+          "type": "shape",
+          "x": 48,
+          "y": 120,
+          "width": 864,
+          "height": 176,
+          "shape": "rect",
+          "fill": "#1F4E8C",
+          "text": "Health first: A batch is replaced only once the last one is healthy.",
+          "fontSize": 24,
+          "bold": false,
+          "color": "#1F2430"
+        },
+        {
+          "id": "s2_healthchecks_p2",
+          "type": "shape",
+          "x": 48,
+          "y": 304,
+          "width": 864,
+          "height": 176,
+          "shape": "rect",
+          "fill": "#E6E8EB",
+          "text": "Wait: A failing check holds the restart.",
+          "fontSize": 24,
+          "bold": false,
+          "color": "#1F2430"
+        },
+        {
+          "id": "s2_healthchecks_e1",
+          "type": "line",
+          "x": 480,
+          "y": 208,
+          "width": 1,
+          "height": 184,
+          "color": "#1F2430",
+          "weight": 2,
+          "arrow": true
+        }
+      ],
+      "notes": "4 min. Show the check in the log."
+    },
+    {
+      "id": "rolling-back",
+      "title": "A failed batch is rolled back, not pushed on",
+      "sources": [
+        "O2"
+      ],
+      "elements": [
+        {
+          "id": "rolling-back_title",
+          "type": "text",
+          "x": 48,
+          "y": 36,
+          "width": 864,
+          "height": 60,
+          "text": "A failed batch is rolled back, not pushed on",
+          "fontSize": 28,
+          "bold": true,
+          "color": "#1F4E8C",
+          "role": "title"
+        },
+        {
+          "id": "s2_rollingback_p1",
+          "type": "shape",
+          "x": 48,
+          "y": 120,
+          "width": 424,
+          "height": 360,
+          "shape": "rect",
+          "fill": "#1F4E8C",
+          "text": "Roll back: The failed batch returns to the last version.",
+          "fontSize": 24,
+          "bold": false,
+          "color": "#1F2430"
+        },
+        {
+          "id": "s2_rollingback_p2",
+          "type": "shape",
+          "x": 488,
+          "y": 120,
+          "width": 424,
+          "height": 360,
+          "shape": "rect",
+          "fill": "#E6E8EB",
+          "text": "Push on: Carrying on would take capacity down.",
+          "fontSize": 24,
+          "bold": false,
+          "color": "#1F2430"
+        }
+      ],
+      "notes": "3 min. One example."
+    },
+    {
+      "id": "closing-practice",
+      "title": "Next: try it on a test app",
+      "sources": [
+        "outline"
+      ],
+      "elements": [
+        {
+          "id": "closing-practice_title",
+          "type": "text",
+          "x": 48,
+          "y": 36,
+          "width": 864,
+          "height": 60,
+          "text": "Next: try it on a test app",
+          "fontSize": 28,
+          "bold": true,
+          "color": "#1F4E8C",
+          "role": "title"
+        }
+      ],
+      "notes": "1 min. Point to the sandbox."
+    }
+  ]
+}

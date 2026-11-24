@@ -1,0 +1,182 @@
+{
+  "approval": [
+    "Continued automatically, 2026-11-24T23:00:23Z, in example (light).",
+    "Look chosen: Clear (example-clear). In their words: \"Picked Clear on the page, with no comment.\"",
+    "Continued under the saved review level."
+  ],
+  "delivery": "live",
+  "direction": {
+    "focal": "headingPrimary",
+    "meanings": {
+      "accentAqua": "Example Platform: the product this deck is about"
+    },
+    "motif": "A strip on each card says what it is about.",
+    "neutral": "canvasSecondary"
+  },
+  "house": [
+    "Fill cards: a supporting card is a solid neutral box or a bar card.",
+    "Icons: each card that names a concrete concept gets one approved icon.",
+    "A caveat and a source line go in the slide's own caveat and source fields, never in the drawing."
+  ],
+  "layouts": {
+    "closing": "Big Statement",
+    "cover": "Title Slide"
+  },
+  "minutes": 25,
+  "slides": [
+    {
+      "id": "cover-restarts",
+      "kind": "cover",
+      "notes": "1 min. Welcome, and what is assumed.",
+      "subtitle": "What they do, and when capacity holds",
+      "title": "Rolling restarts"
+    },
+    {
+      "focal": "One batch at a time",
+      "id": "what-it-does",
+      "kind": "content",
+      "notes": "6 min. Walk the three-instance example.",
+      "points": [
+        {
+          "label": "Batch",
+          "text": "Instances are replaced one batch at a time."
+        },
+        {
+          "label": "Traffic",
+          "text": "The app keeps serving while it restarts."
+        }
+      ],
+      "relation": "order",
+      "source": "Platform documentation: restarts",
+      "sources": [
+        "O1"
+      ],
+      "title": "A rolling restart replaces instances one batch at a time",
+      "understand": "Instances are replaced in batches while the app keeps serving."
+    },
+    {
+      "caveat": "A single-instance app still drops requests while it restarts.",
+      "focal": "More than one instance",
+      "id": "when-capacity-holds",
+      "kind": "content",
+      "notes": "7 min. Health checks start the next batch.",
+      "points": [
+        {
+          "label": "Several",
+          "text": "The others carry the load."
+        },
+        {
+          "label": "One",
+          "text": "Requests are dropped while it restarts."
+        }
+      ],
+      "relation": "contrast",
+      "sources": [
+        "O2"
+      ],
+      "title": "Capacity holds only with more than one instance",
+      "understand": "A single instance has nothing to hold capacity while it restarts."
+    },
+    {
+      "focal": "It depends on the instance count",
+      "id": "the-objection",
+      "kind": "content",
+      "notes": "7 min. Correct the claim without dismissing the customer.",
+      "points": [
+        {
+          "label": "Claim",
+          "text": "Rolling always means zero downtime."
+        },
+        {
+          "label": "Correction",
+          "text": "Only with more than one instance."
+        }
+      ],
+      "relation": "contrast",
+      "rhythm": "breathing",
+      "sources": [
+        "O3"
+      ],
+      "title": "Rolling does not always mean zero downtime",
+      "understand": "The claim is true only for an app with several instances."
+    },
+    {
+      "focal": "Say it aloud",
+      "id": "check-yourself",
+      "kind": "content",
+      "notes": "3 min. One question for each point.",
+      "points": [
+        {
+          "label": "Describe",
+          "text": "What happens to the instances?"
+        },
+        {
+          "label": "Explain",
+          "text": "Why does one instance lose capacity?"
+        }
+      ],
+      "relation": "order",
+      "sources": [
+        "O1",
+        "O2",
+        "O3"
+      ],
+      "title": "Check what you can now explain",
+      "understand": "Each question checks one point."
+    },
+    {
+      "focal": "Health first",
+      "id": "health-checks",
+      "kind": "content",
+      "notes": "4 min. Show the check in the log.",
+      "points": [
+        {
+          "label": "Health first",
+          "text": "A batch is replaced only once the last one is healthy."
+        },
+        {
+          "label": "Wait",
+          "text": "A failing check holds the restart."
+        }
+      ],
+      "relation": "order",
+      "rhythm": "breathing",
+      "sources": [
+        "O1"
+      ],
+      "title": "Health checks start the next batch",
+      "understand": "The next batch waits for the last one to report healthy."
+    },
+    {
+      "focal": "Roll back",
+      "id": "rolling-back",
+      "kind": "content",
+      "notes": "3 min. One example.",
+      "points": [
+        {
+          "label": "Roll back",
+          "text": "The failed batch returns to the last version."
+        },
+        {
+          "label": "Push on",
+          "text": "Carrying on would take capacity down."
+        }
+      ],
+      "relation": "contrast",
+      "rhythm": "breathing",
+      "sources": [
+        "O2"
+      ],
+      "title": "A failed batch is rolled back, not pushed on",
+      "understand": "A batch that fails its check is put back as it was."
+    },
+    {
+      "id": "closing-practice",
+      "kind": "closing",
+      "notes": "1 min. Point to the sandbox.",
+      "title": "Next: try it on a test app"
+    }
+  ],
+  "title": "Rolling restarts",
+  "version": 1
+}

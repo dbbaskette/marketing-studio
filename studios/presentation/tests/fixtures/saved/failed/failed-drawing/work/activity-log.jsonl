@@ -1,0 +1,18 @@
+{"checkpoint":"accepted","unit":"","at":"2026-11-24T23:00:29Z"}
+{"checkpoint":"output-saved","unit":"intake-source","at":"2026-11-24T23:00:29Z"}
+{"checkpoint":"working","unit":"outline","at":"2026-11-24T23:00:29Z"}
+{"id":"f790fca54f7d","label":"Drafting the outline of your deck","step":"outline","started_at":"2026-11-24T23:00:29Z","ended_at":"2026-11-24T23:00:29Z","outcome":"finished","lines":[{"at":"2026-11-24T23:00:29Z","text":"Checking what the slides say"},{"at":"2026-11-24T23:00:29Z","text":"Handing in what the slides say"},{"at":"2026-11-24T23:00:29Z","text":"The outline was accepted"},{"at":"2026-11-24T23:00:29Z","text":"Writing its own notes on the draft"}],"dropped":0}
+{"checkpoint":"output-saved","unit":"outline","at":"2026-11-24T23:00:29Z"}
+{"checkpoint":"output-saved","unit":"brand","at":"2026-11-24T23:00:29Z"}
+{"checkpoint":"output-saved","unit":"look-preview","at":"2026-11-24T23:00:29Z"}
+{"checkpoint":"output-saved","unit":"build-start","at":"2026-11-24T23:00:29Z"}
+{"checkpoint":"working","unit":"build-sections:section-1","at":"2026-11-24T23:00:29Z"}
+{"id":"b8a26e7abadd","label":"Draw section 1","step":"build-sections:section-1","started_at":"2026-11-24T23:00:29Z","ended_at":"2026-11-24T23:00:29Z","outcome":"failed","lines":[],"dropped":0,"detail":"It stopped without finishing: the model gave up."}
+{"checkpoint":"working","unit":"build-sections:section-2","at":"2026-11-24T23:00:29Z"}
+{"id":"18a7355fe2b1","label":"Draw section 2","step":"build-sections:section-2","started_at":"2026-11-24T23:00:29Z","ended_at":"2026-11-24T23:00:29Z","outcome":"failed","lines":[],"dropped":0,"detail":"It stopped without finishing: the model gave up."}
+{"checkpoint":"working","unit":"build-sections:section-1","at":"2026-11-24T23:00:30Z"}
+{"id":"71847077da76","label":"Draw section 1","step":"build-sections:section-1","started_at":"2026-11-24T23:00:30Z","ended_at":"2026-11-24T23:00:30Z","outcome":"failed","lines":[],"dropped":0,"detail":"It stopped without finishing: the model gave up."}
+{"checkpoint":"working","unit":"build-sections:section-2","at":"2026-11-24T23:00:30Z"}
+{"id":"d58b876491ae","label":"Draw section 2","step":"build-sections:section-2","started_at":"2026-11-24T23:00:30Z","ended_at":"2026-11-24T23:00:30Z","outcome":"failed","lines":[],"dropped":0,"detail":"It stopped without finishing: the model gave up."}
+{"checkpoint":"working","unit":"build-sections:section-1","at":"2026-11-24T23:00:30Z"}
+{"id":"87da66a0be76","label":"Draw section 1","step":"build-sections:section-1","started_at":"2026-11-24T23:00:30Z","ended_at":"2026-11-24T23:00:30Z","outcome":"failed","lines":[],"dropped":0,"detail":"It stopped without finishing: the model gave up."}
