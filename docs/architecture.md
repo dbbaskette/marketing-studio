@@ -84,6 +84,42 @@ bounded, link-refusing reads). Remove from library is also the Library screen's 
 library's lock, and the catalog, Select all matching, Update available and new pins
 leave a hidden document out. See [shared setup](shared-setup.md#the-document-library).
 
+Verified Harness Research is the kind `research` (`document_library/research.py`).
+A studio calls `keep_research(library, *, studio, project, case, title=None,
+author=None)` once its research passes verification. It refuses a bundle that does not
+pass `research_contract.read_bundle` and never raises: it answers `{'state': 'kept' |
+'refused' | 'failed', 'key', ...}`. The item's text is the bundle's `report.md`, so every
+Add from library takes it as a source; its original, `original.zip`, is the whole bundle
+(`output.json` and every file its manifest names). Its key is
+`<studio>:<project>:research`, which never meets a finished-work key (`<studio>:<project>`
+has no second colon). `research_bundle(library, id, revision, folder)` writes a research
+revision's bundle into a new or empty folder, checking the kept hashes, every name in the
+archive and then `read_bundle` again. Records kept before read as they did; nothing is
+migrated.
+
+Continue in another studio starts from a Document Library item. Marketing Studio's Library
+offers it in a readable document's preview: a chooser of the installed studios. It sends
+`POST /api/open` `{studio, library: {id, revision}}`; the server checks the id against the
+library's own format, the revision as a whole number, and that revision as present,
+readable and not removed, before the studio starts. It then adds `library=<id>@<revision>`
+to the studio link's fragment itself (`launcher.with_library`); nothing else from the
+request reaches the link, and `local_link` still accepts only a token fragment from a
+studio. The studio page opens its own New sheet from `library=`; nothing is created until
+the person confirms. A studio offers the same for its own kept work with
+`StudioShell.continueLink({id, revision})`: when Marketing Studio opened it, the home
+page's link `<home>/#token=<home key>&continue=<id>@<revision>`, which opens the Library on
+that document with the chooser showing; when it runs alone, null.
+
+`studio_core.source_intake.take(given, *, accepts, room, spare, taken=(), name_limit,
+seconds)` is the one entry point a studio's primary source picker calls with a folder (a
+path on this computer or a Google Drive folder link) or one uploaded file
+(`{'name', 'data'}`). It answers `{'uploads': {name: bytes}, 'documents', 'skipped',
+'said', 'next', 'report'}`: documents of the types the studio takes as files are passed on
+as they are, others with text (Google files, PowerPoint files and .xlsx workbooks, read with
+`xlsx_sheets`) as Markdown, and `said` tells the person what was added and what was not.
+It reads through `source_folders` and `research_sources`, as Training Studio's
+`desk_folder.py` does for work started in a conversation.
+
 ## Settings and launch lifecycle
 
 First run reads existing shared choices and opens setup. Continue saves only

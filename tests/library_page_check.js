@@ -79,7 +79,10 @@ async function post(route, body) {
     return answer;
   }
   if (route === 'library-hide') { if (body.hidden) hidden.add(body.id); else hidden.delete(body.id); return { document: { id: body.id, hidden: body.hidden } }; }
-  if (route === 'library-document') return { ...docs.find((d) => d.id === body.id), text: '<script>not run</script> words', truncated: false, characters: 30, gaps: [] };
+  if (route === 'library-document') {
+    if (!docs.some((d) => d.id === body.id)) throw new Error('That document is not in the library.');
+    return { ...docs.find((d) => d.id === body.id), text: '<script>not run</script> words', truncated: false, characters: 30, gaps: [] };
+  }
   if (route === 'library-matching') {
     if (body.filters.kind !== 'blog') throw new Error('30 documents match. Narrow the filters.');
     return { matching: docs.filter((d) => d.kind === 'blog').slice(0, 3).map((d) => ({ id: d.id, revision: d.revision })) };
@@ -351,5 +354,86 @@ async function post(route, body) {
   assert.equal(find(chooser, 'library-tick-kept-1').disabled, true, 'a file with no text is never chosen as a source');
   assert.equal(find(chooser, 'library-tick-doc-0').disabled, false);
   find(chooser, 'library-cancel').listeners.click(); await settle(); await choosing;
+
+  // Continue in another studio (Marketing Studio's Library): in a readable document's preview,
+  // never on the row, a chooser of the installed studios; one that cannot open says why.
+  {
+    remembered = {};
+    const opened = [];
+    let settleOpen = null;
+    const studios = [{ id: 'presentation', name: 'Presentation Studio', ready: true, note: '' },
+      { id: 'training', name: 'Training Studio', ready: true, note: '' },
+      { id: 'blog', name: 'Blog Studio', ready: false, note: 'Needs setup: Git was not found on this computer.' }];
+    const onward = new kit.Catalog({ studio: 'marketing', post, manage: true, download: () => {},
+      continueIn: { studios: () => studios, open: (doc, studio) => { opened.push([JSON.parse(JSON.stringify(doc)), studio.id]); return new Promise((resolve, reject) => { settleOpen = { resolve, reject }; }); } } });
+    await settle();
+    for (const row of all(onward.node).filter((n) => n.className === 'library-row')) {
+      assert.deepEqual(all(row).filter((n) => n.tagName === 'button').map((n) => n.textContent), ['Preview'], 'still one action a row');
+    }
+    await click(find(onward.node, 'library-preview-doc-3'));
+    assert.ok(!find(onward.node, 'library-continue-doc-3'), 'a document with no readable text is not offered');
+    await click(find(onward.node, 'library-preview-doc-0'));
+    const offer = find(onward.node, 'library-continue-doc-0');
+    assert.equal(offer.textContent, 'Continue in another studio…');
+    assert.ok(offer.className.includes('button-quiet'), 'the screen keeps its one filled action');
+    await click(offer);
+    assert.equal(document.activeElement.dataset.key, 'library-continue-heading', 'the chooser takes the focus');
+    const cards = () => all(onward.node).filter((n) => (n.dataset.key || '').startsWith('library-continue-to-'));
+    assert.deepEqual(cards().map((n) => [n.dataset.studio, n.disabled]), [['presentation', false], ['training', false], ['blog', true]]);
+    assert.ok(cards()[2].text.includes('Needs setup: Git was not found'), 'a studio that cannot open says why');
+    assert.ok(all(onward.node).some((n) => /^Choose a studio\. It opens with “Synthetic <b>document<\/b> 0” ready to use in new work\. Nothing is created until you confirm there\.$/.test(n.textContent)));
+    // Cancel gives the focus back to the offer.
+    await click(find(onward.node, 'library-continue-cancel'));
+    assert.equal(document.activeElement.dataset.key, 'library-continue-doc-0');
+    await click(find(onward.node, 'library-continue-doc-0'));
+    // A chosen studio opens with the document; every card waits meanwhile and the chosen one says so.
+    find(onward.node, 'library-continue-to-training').listeners.click(); await settle();
+    assert.deepEqual(opened, [[{ id: 'doc-0', revision: 1, title: 'Synthetic <b>document</b> 0' }, 'training']]);
+    assert.ok(cards().every((n) => n.disabled), 'one studio at a time');
+    assert.ok(find(onward.node, 'library-continue-to-training').text.includes('Opening Training Studio…'));
+    assert.ok(all(onward.node).some((n) => n.attributes.role === 'status' && n.textContent === 'Opening Training Studio…'));
+    // A refusal is said in the chooser, which stays open with every card back.
+    settleOpen.reject(new Error('This studio was not found. Install it or set its folder in Settings.')); await settle();
+    assert.ok(all(onward.node).some((n) => n.className === 'problem' && n.attributes.role === 'alert' && /was not found/.test(n.textContent)));
+    assert.deepEqual(cards().map((n) => n.disabled), [false, false, true]);
+    assert.equal(document.activeElement.dataset.key, 'library-continue-heading');
+    find(onward.node, 'library-continue-to-presentation').listeners.click(); await settle();
+    settleOpen.resolve(); await settle();
+    assert.ok(!find(onward.node, 'library-continue-heading'), 'the chooser closes once the studio opened');
+    assert.equal(document.activeElement.dataset.key, 'library-continued');
+    assert.match(find(onward.node, 'library-continued').textContent, /^Presentation Studio opened with “Synthetic <b>document<\/b> 0”\. Nothing starts there until you confirm it\.$/);
+    // A studio's link (continue=<id>@<revision>) opens that revision with the chooser showing,
+    // first in the list when the filters or the page leave it out.
+    requests.length = 0;
+    await onward.continueWith('doc-29', 2);
+    assert.deepEqual(requests.at(-1), ['library-document', { id: 'doc-29', revision: 2 }]);
+    const list = all(onward.node).find((n) => n.className === 'library-list');
+    assert.equal(list.children[0].dataset.key, 'library-row-doc-29', 'shown first');
+    assert.equal(list.children[1].className, 'library-preview-item');
+    assert.equal(document.activeElement.dataset.key, 'library-continue-heading');
+    find(onward.node, 'library-continue-to-presentation').listeners.click(); await settle();
+    assert.deepEqual(opened.at(-1), [{ id: 'doc-29', revision: 2, title: 'Synthetic <b>document</b> 29' }, 'presentation']);
+    settleOpen.resolve(); await settle();
+    await click(find(onward.node, 'library-preview-close'));
+    assert.ok(!find(onward.node, 'library-row-doc-29'), 'closed, it leaves a page that does not hold it');
+    assert.equal(document.activeElement.dataset.key, 'library-count');
+    // A document that is gone says so where the chooser would be.
+    await onward.continueWith('missing-doc', 1);
+    assert.ok(!find(onward.node, 'library-continue-heading'));
+    assert.ok(all(onward.node).some((n) => n.className === 'notice problem' && n.text.includes('That document is not in the library.')), 'said above the list');
+    assert.ok(!all(onward.node).some((n) => n.className === 'library-preview-item'), 'nothing is pinned');
+    // No studio installed: the chooser says so plainly.
+    studios.length = 0;
+    await click(find(onward.node, 'library-preview-doc-2'));
+    await click(find(onward.node, 'library-continue-doc-2'));
+    assert.ok(all(onward.node).some((n) => n.textContent === 'No studio is installed on this computer. Install one yourself, then come back.'));
+    // The Add from library sheet only chooses: it never offers Continue in another studio.
+    const sheetOnward = kit.pick({ studio: 'training', post, use: async () => true, continueIn: { studios: () => [], open: () => {} } });
+    await settle();
+    const onwardSheet = document.body.children.filter((n) => n.tagName === 'dialog').at(-1);
+    await click(find(onwardSheet, 'library-preview-doc-0'));
+    assert.ok(!find(onwardSheet, 'library-continue-doc-0'));
+    find(onwardSheet, 'library-cancel').listeners.click(); await settle(); await sheetOnward;
+  }
   console.log('library page check passed');
 })().catch((error) => { console.error(error); process.exit(1); });

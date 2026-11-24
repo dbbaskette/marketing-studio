@@ -21,6 +21,8 @@ Layout
                                                 # (`original` alone for an ending that is not
                                                 # plain letters and digits, or none)
         content.pdf                             # finished work's PDF, once it is saved
+                                                # (research: content.md is its report and
+                                                # original.zip its whole bundle; research.py)
     <library>/.state/catalog.json               # a search index, rebuilt from records
     <library>/.state/filters.json               # each studio's browsing filters
 
@@ -45,6 +47,10 @@ listed, previewed by name, type and size, downloaded and removed like any other,
 offered as a source, since it has no text. Nothing in a kept file is opened, run, rendered
 or followed, and an original leaves the library only as a download: a known type under its
 own media type, any other as `application/octet-stream`.
+
+Verified Harness Research is one more kind, `research`, with one more key form
+(`<studio>:<project>:research`) and one more record field (`research`); records written
+before read exactly as they did, and nothing is migrated.
 
 The record format is schema 1 throughout. What any type added is one more conversion
 state (`kept`), `application/octet-stream` as an original's media type and `original` as
@@ -85,7 +91,8 @@ class _NoReader(Exception):
 SCHEMA = 1
 PRODUCT = 'Studios Document Library'
 KINDS = {'upload': 'Uploaded document', 'blog': 'Blog', 'presentation': 'Presentation',
-         'training': 'Training material', 'infographic': 'Infographic'}
+         'training': 'Training material', 'infographic': 'Infographic',
+         'research': 'Research'}
 ORIGINS = {'upload': 'Upload', 'created': 'Created here', 'link': 'Link',
            'google': 'Google document', 'imported': 'Imported'}
 STUDIOS = {'marketing': 'Marketing Studio', 'blog': 'Blog Studio',
@@ -117,6 +124,10 @@ LIMITS = {'bytes': 8_000_000,       # one original, as the studios' supplied doc
           'pdf': 50_000_000}        # bytes of one finished deck's PDF
 IDENT = re.compile(r'^[a-z0-9][a-z0-9-]{0,63}$')
 KEY = re.compile(r'^(blog|presentation|training|infographic):[A-Za-z0-9][A-Za-z0-9._-]{0,159}$')
+# Verified research a studio kept (research.py): `<studio>:<project>:research`. Finished work's
+# KEY never holds a second colon, so a project's research is never its finished work.
+RESEARCH_KEY = re.compile(r'^(blog|presentation|training|infographic):[A-Za-z0-9][A-Za-z0-9._-]{0,159}:research$')
+BUNDLE_FILE = 'original.zip'    # a research revision's bundle, as one archive
 OPERATION = re.compile(r'^[a-f0-9]{32}$')
 RECORD_LIMIT = 256_000      # bytes of one revision.json
 EXCERPT = 4_000             # characters of each document's text the search index keeps
@@ -988,7 +999,8 @@ class Library:
         Returns {'document', 'revision', 'changed'}."""
         if not isinstance(key, str) or not KEY.match(key) or key.split(':', 1)[0] != studio:
             raise LibraryError('Name the finished work by its studio and project.')
-        if kind not in KINDS or kind == 'upload' or origin not in ORIGINS:
+        # Research is kept with its bundle, by retain_research, never as text alone.
+        if kind not in KINDS or kind in ('upload', 'research') or origin not in ORIGINS:
             raise LibraryError('Say what kind of finished work this is.')
         shown = _plain(title, TITLE) or 'Untitled'
         if not isinstance(text, str) or not text.strip():
@@ -1023,6 +1035,64 @@ class Library:
                 # a kept PDF that went missing or changed is kept again
                 whole = wanted.get('state') != 'saved' or self._pdf_whole(place, held_pdf)
                 if same and whole and self._state_of(place, head)[0] == 'readable':
+                    return {'document': existing, 'revision': head['revision'], 'changed': False}
+            self._tidy()
+            kept = self._write(existing, record, files)
+        return {'document': kept['id'], 'revision': kept['revision'], 'changed': True}
+
+    def retain_research(self, key, studio, title, text, bundle, project=None, author=None,
+                        research=None) -> dict:
+        """Keep verified Harness Research (see research.py, which checks it first): its report
+        as readable Markdown, so every Add from library can take it as a source, and its whole
+        bundle as the original, `original.zip`, so a studio that runs Harness Research can
+        import it. Found again by its key, `<studio>:<project>:research`: the same key reuses
+        the document, and a revision is added only when the title, the report or the bundle
+        changed, or a kept file went missing or changed. `research` is a small record of what
+        the bundle is ({'owner', 'digest', 'status', 'files'}), kept as it is given.
+        Returns {'document', 'revision', 'changed'}."""
+        if not isinstance(key, str) or not RESEARCH_KEY.match(key) or key.split(':', 1)[0] != studio:
+            raise LibraryError('Name the research by its studio and project.')
+        shown = _plain(title, TITLE) or 'Research'
+        if not isinstance(text, str) or not text.strip():
+            raise LibraryError(f'"{shown}" has no report to keep.')
+        encoded = text.encode('utf-8')
+        if len(encoded) > LIMITS['text']:
+            raise LibraryError(f'"{shown}" is longer than the library keeps for one document.')
+        if type(bundle) is not bytes or not bundle.startswith(b'PK'):
+            raise LibraryError(f'"{shown}" has no research bundle to keep.')
+        if len(bundle) > LIMITS['bytes']:
+            raise LibraryError(f'The research bundle of "{shown}" is larger than 8 MB, the most '
+                               'the library keeps for one document.')
+        try:
+            described = json.dumps(research if research is not None else {}, ensure_ascii=False)
+        except (TypeError, ValueError):
+            raise LibraryError('Describe the research with plain values.') from None
+        if not isinstance(research, (dict, type(None))) or len(described) > 8_000:
+            raise LibraryError('Describe the research in at most 8,000 characters.')
+        held = None
+        if isinstance(project, dict):
+            held = {'studio': studio, 'id': _plain(project.get('id'), 160),
+                    'title': _plain(project.get('title'), TITLE) or shown,
+                    'revision': project.get('revision') if type(project.get('revision')) in (int, str) else None}
+        part = {'file': BUNDLE_FILE, 'filename': f'{_slug(shown)}-research.zip', 'media': UNKNOWN_MEDIA,
+                'bytes': len(bundle), 'sha256': _sha(bundle)}
+        record = {'title': shown, 'kind': 'research', 'origin': 'created', 'studio': studio, 'key': key,
+                  'project': held, 'author': _plain(author, 100) if author else None,
+                  'operation': None, 'original': part, 'pdf': None,
+                  'markdown': {'file': 'content.md', 'bytes': len(encoded), 'sha256': _sha(encoded),
+                               'characters': len(text)},
+                  'research': json.loads(described) if research is not None else None,
+                  'conversion': {'method': 'harness-research-bundle-v1', 'state': 'readable',
+                                 'gaps': [], 'problem': None}}
+        files = {'content.md': encoded, BUNDLE_FILE: bundle}
+        with self.lock:
+            existing = next((row['id'] for row in self._index() if row.get('key') == key), None)
+            if existing:
+                place, head = self._record(existing)
+                same = (head.get('title') == shown
+                        and (head.get('markdown') or {}).get('sha256') == record['markdown']['sha256']
+                        and (head.get('original') or {}).get('sha256') == part['sha256'])
+                if same and self._whole(place, head):
                     return {'document': existing, 'revision': head['revision'], 'changed': False}
             self._tidy()
             kept = self._write(existing, record, files)

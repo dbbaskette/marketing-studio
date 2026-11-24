@@ -6,6 +6,8 @@
      StudioShell.track(stages, label, compact)    a project's stages as one drawn line
      StudioShell.arc(), .pulse(), .move()         a workbench's phases, its line of light, its one move
      StudioShell.appearance(), .setAppearance()   light, dark, or this computer's own
+     StudioShell.continueLink({id, revision})     Continue in another studio, for a document
+                                                  this studio kept in the Document Library
 
    Appearance is one shared setting, `appearance` in the studios config. The server writes
    it on <body data-appearance> as the page is served, so a page opens already looking as
@@ -100,6 +102,44 @@ const StudioShell = (() => {
     }
     status.textContent = text;
     for (const note of document.querySelectorAll('.shell-note')) note.textContent = text;
+  }
+
+  // --- Continue in another studio ------------------------------------------------------
+
+  // Marketing Studio opens a studio with `home=<its origin>&homeToken=<its key>` in the link's
+  // fragment. Read here as the shell loads, before a page clears its fragment; a page that
+  // cleared it first still has what its way back kept in this tab (`marketing-studio-return`).
+  const here = () => (typeof location !== 'undefined' && location) || { hash: '', protocol: '', hostname: '', port: '' };
+  const launchHash = String(here().hash || '').replace(/^#/, '');   // read once, parsed when asked
+  const KEY = /^[A-Za-z0-9_-]{8,256}$/;
+  // Marketing Studio's home: the same scheme and host as this page, on another port.
+  function homeOrigin(named) {
+    const found = /^(https?:)\/\/([^/:?#@\s]+):(\d{1,5})\/?$/.exec(String(named || ''));
+    const page = here();
+    return found && found[1] === page.protocol && found[2] === page.hostname
+      && found[3] !== page.port && Number(found[3]) > 0 && Number(found[3]) < 65536
+      ? found[1] + '//' + found[2] + ':' + found[3] : '';
+  }
+  // The home page's link that opens its Library on a document with Continue in another
+  // studio showing: `<home>/#token=<home key>&continue=<id>@<revision>`. Null when this studio
+  // runs alone (Marketing Studio did not open it), or the document is not named as the
+  // Document Library names one: its id and a revision number. `document` is accepted for the
+  // id too, as a studio's own record of what the library kept says it.
+  function continueLink(doc) {
+    const id = doc && (doc.id || doc.document), revision = doc && doc.revision;
+    if (typeof id !== 'string' || !/^[a-z0-9][a-z0-9-]{0,63}$/.test(id)
+        || !Number.isInteger(revision) || revision < 1 || revision > 1000) return null;
+    const launched = new URLSearchParams(launchHash);
+    let home = homeOrigin(launched.get('home')), key = home ? launched.get('homeToken') || '' : '';
+    if (!home || !KEY.test(key)) {
+      try {
+        const saved = JSON.parse(sessionStorage.getItem('marketing-studio-return') || 'null');
+        home = saved ? homeOrigin(saved.home) : '';
+        key = home && saved.home === home ? saved.token || '' : '';
+      } catch (_) { home = ''; key = ''; }
+    }
+    if (!home || !KEY.test(key)) return null;
+    return home + '/#token=' + encodeURIComponent(key) + '&continue=' + id + '@' + revision;
   }
 
   // --- the command palette ------------------------------------------------------------
@@ -440,6 +480,6 @@ const StudioShell = (() => {
     },
     commands(provide) { if (typeof provide === 'function') providers.push(provide); },
     appearance: () => chosen,
-    setAppearance, appearanceSwitch, palette, shortcuts, track, arc, pulse, move,
+    setAppearance, appearanceSwitch, palette, shortcuts, track, arc, pulse, move, continueLink,
   };
 })();

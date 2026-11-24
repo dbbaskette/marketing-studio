@@ -17,6 +17,9 @@ What a caller needs to know
     found.filters(studio) / made.remember(studio, filters)   # browsing, never a selection
     found.keyed(keys) / made.adopt(key=..., ...)   # existing work, added only when confirmed
 
+`research.py` keeps a project's verified Harness Research (`keep_research`, which never
+raises) as the kind `research`, its report as text and its bundle as the original, and gives
+the bundle back as files (`research_bundle`) for a studio importing it.
 `adopt.py` previews and confirms Add existing work to library over the studios' remembered
 workspaces; `blog_existing.py`, `presentation_existing.py`, `training_existing.py` and
 `infographic_existing.py` read each studio's finished work for it, changing nothing.

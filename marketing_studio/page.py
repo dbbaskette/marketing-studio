@@ -17,6 +17,7 @@ from studio_core.document_library import context as library_context
 
 from . import brand_job, brand_skill, brand_store, catalog, server, shared, state, validation, workspaces, work_overview
 from .errors import WorkspaceError
+from .launcher import library_item, with_library
 from .network import VIA_HEADER
 
 
@@ -349,12 +350,21 @@ class Home(server.Page):
                     raise WorkspaceError(problem)
                 # This computer keeps the loopback link; only a phone is given a studio's bridge.
                 remote = getattr(self.caller, 'remote', False)
-                resume = sent.get('resume')
+                resume, item = sent.get('resume'), sent.get('library')
+                if resume is not None and item is not None:
+                    raise WorkspaceError('Open saved work or a library document, not both.')
                 if resume is not None:
                     try: work_overview.check(sent.get('studio'), resume)
                     except (ValueError, KeyError) as error: raise WorkspaceError(str(error)) from None
+                # Continue in another studio: a Document Library item, checked before the
+                # studio starts. Only its checked id and revision reach the link.
+                if item is not None:
+                    if sent.get('studio') not in catalog.STUDIOS:
+                        raise WorkspaceError('Choose one of the studios shown on the home page.')
+                    item = library_item(item)
             link = self.launcher.open(sent.get('studio'), preferences, values, remote=remote)
             if resume is not None: link = work_overview.link(sent.get('studio'), resume, link)
+            if item is not None: link = with_library(link, *item)
             return server.as_json(200, {'link': link})
         if path == '/api/connect':
             with self.changes:
