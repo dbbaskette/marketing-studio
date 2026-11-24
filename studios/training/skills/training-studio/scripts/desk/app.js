@@ -7097,7 +7097,7 @@ function savedFilesPart(run) {
       try {
         const found = await ask('saved-file', { path: run.path, name });
         holder.replaceChildren(add(make('article', 'paper doc'),
-          make('h2', 'doc-title', label.replace(/^Read /, '')),
+          make('h2', 'doc-title', label.replace(/^Read (.)/, (_, first) => first.toUpperCase())),
           window.StudioMarkdown.render(found.text || ''),
           found.truncated ? make('p', 'quiet', 'This is a shortened preview. The full file '
             + 'remains in your workspace.') : null));
