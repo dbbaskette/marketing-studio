@@ -906,6 +906,10 @@ async function app(file) {
   window.navigator.clipboard.writeText = () => Promise.resolve();
   const context = vm.createContext(window);
   context.navigator = window.navigator;
+  // The desk base is the shared core's, served beside the page: the parts app.js draws and
+  // speaks with, loaded before it as index.html loads it.
+  const base = path.join(PAGE, '..', 'studio_core', 'deck_web', 'desk-base.js');
+  vm.runInContext(fs.readFileSync(base, 'utf8'), context, { filename: 'desk-base.js' });
   // The deck panels are the shared core's, served beside the page.
   const panels = path.join(PAGE, '..', 'studio_core', 'deck_web', 'deck-panels.js');
   vm.runInContext(fs.readFileSync(panels, 'utf8'), context, { filename: 'deck-panels.js' });
