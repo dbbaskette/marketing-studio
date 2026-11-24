@@ -419,8 +419,9 @@ class SharedSetupJourneyTests(PageLayoutTests):
         self.assertTrue(loaded['read']['#problem']['hidden'])
         self.assertEqual(loaded['focused'], 'person-name')
         # Load newer settings only reads; the next save sends the newer seen and only the edits.
+        # The Brand card looks up installed brands, which changes nothing, when shown and saved.
         urls = [request['url'].split('/api/')[1] for request in shots['saved']['requests']]
-        self.assertEqual(urls, ['shared', 'home', 'shared'])
+        self.assertEqual([url for url in urls if url != 'brands'], ['shared', 'home', 'shared'])
         last = [request['sent'] for request in shots['saved']['requests'] if request['url'].endswith('/api/shared')][-1]
         self.assertEqual(last['seen'], newer['shared'])
         self.assertEqual(last['changes'], {'person': {'name': 'Bea'}, 'output': 'google'})
@@ -562,15 +563,18 @@ class SharedSetupJourneyTests(PageLayoutTests):
         load = 'snapshot = ' + json.dumps(self.shown()) + '; setup = false; fill(); renderHome(); markSaved();'
         walk = "const walk = node => [node, ...(node.children || []).flatMap(walk)];"
         brands = {'skills': [{'name': 'Synthetic brand skill', 'path': '/opt/brand-skill', 'brands': [
-            {'name': 'Example', 'brand': 'example', 'variants': ['light']}]}]}
+            {'name': 'Example', 'brand': 'example', 'variants': ['light']}]},
+            {'name': 'Second brand skill', 'path': '/opt/other-skill', 'brands': [
+                {'name': 'Other', 'brand': 'other', 'variants': ['dark']}]}], 'store': None}
         shots = self.page([
             {'run': load}, {'show': 'settings'}, {'snapshot': 'shown', 'ids': ['save-state', 'research-state']},
             {'type': 'docs.other.com'}, {'click': 'add'},
             {'snapshot': 'added', 'ids': ['save-state', 'research-state']},
             {'click': 'remove', 'index': 1}, {'snapshot': 'removed', 'ids': ['save-state', 'research-state']},
             {'responses': {'brands': brands}},
-            {'run': "(async () => { $('#find-brands').fire('click'); for (let i = 0; i < 20; i += 1) await null;"
-                    + walk + " walk($('#brand-choices')).find(node => node.tagName === 'BUTTON').fire('click'); })()"},
+            # Choosing a brand only another installed skill offers fills in that skill's folder.
+            {'run': "(async () => { await lookUpBrands(); form.elements['brand.brand'].value = 'other';"
+                    " form.elements['brand.brand'].fire('change'); })()"},
             {'snapshot': 'brand', 'ids': ['save-state']},
             {'run': load + " show('settings'); form.elements['assistant.agent'].value = 'codex';"
                     " $('#confirm-profiles').fire('click');"},

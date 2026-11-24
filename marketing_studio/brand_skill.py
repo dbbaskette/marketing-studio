@@ -19,7 +19,8 @@ What a caller needs to know
   installed or changed.
 - `run` runs a command once, in a process group of its own that is ended when it finishes,
   when its time runs out or when `stop` is set (then Stopped is raised). `each` is given
-  each line it prints as text.
+  each line it prints as text, and `each_error` each line of its standard error (where
+  `rebrand run` reports its progress).
 """
 from __future__ import annotations
 
@@ -80,14 +81,18 @@ class Found:
 # --- running a command -----------------------------------------------------------------
 
 def run(command, cwd=None, env=None, seconds=120, stop=None, stdin='', each=None,
-        said='Harness Brand'):
-    """Run once: (exit code, standard output, standard error). Ends everything it started."""
+        said='Harness Brand', each_error=None, started=None):
+    """Run once: (exit code, standard output, standard error). Ends everything it started.
+    `started`, when given, is told the process as soon as it runs: its process group is
+    its own (its id is the process's), for a caller that must be able to end it later."""
     try:
         process = subprocess.Popen(command, cwd=cwd, env=env, stdin=subprocess.PIPE,
                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                    start_new_session=True)
     except OSError as failure:
         raise WorkspaceError(f'{said} could not be started ({failure}).') from failure
+    if started is not None:
+        started(process)
     printed, complained = [], []
     oversized = threading.Event()
     kept_bytes = [0]
@@ -119,13 +124,16 @@ def run(command, cwd=None, env=None, seconds=120, stop=None, stdin='', each=None
 
     threads = [threading.Thread(target=feed, daemon=True),
                threading.Thread(target=read, args=(process.stdout, printed, each), daemon=True),
-               threading.Thread(target=read, args=(process.stderr, complained, None), daemon=True)]
+               threading.Thread(target=read, args=(process.stderr, complained, each_error), daemon=True)]
     for thread in threads:
         thread.start()
-    limit, late = time.monotonic() + seconds, False
+    limit, late, stopped = time.monotonic() + seconds, False, False
     try:
         while process.poll() is None:
-            if oversized.is_set() or (stop is not None and stop.is_set()):
+            if oversized.is_set():
+                break
+            if stop is not None and stop.is_set():
+                stopped = True   # only a stop that cut the command short discards what it did
                 break
             if time.monotonic() >= limit:
                 late = True
@@ -139,7 +147,7 @@ def run(command, cwd=None, env=None, seconds=120, stop=None, stdin='', each=None
         process.wait()
         for thread in threads:
             thread.join(2)
-    if stop is not None and stop.is_set():
+    if stopped:
         raise Stopped(f'{said} was stopped before it finished.')
     if oversized.is_set():
         raise WorkspaceError(f'{said} returned too much output, so it was stopped before anything was kept.')
