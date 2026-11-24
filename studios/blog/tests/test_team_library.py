@@ -582,9 +582,15 @@ class AddTests(RunnerCase):
                 'library-add-author',
                 {'operation': 'd' * 32, 'ids': ['elsewhere'], 'author': 'X'},
             )
-        # A run that pinned one of the posts stays open when it becomes a sample.
-        found = self.create(sources=[rows[SITE + 'a/']['id']])
-        before = runner.survey(self.root, found['id'])
+        # A blog that pinned one of the posts stays open when it becomes a sample.
+        import desk
+        import desk_jobs
+
+        found = self.desk(sources=[rows[SITE + 'a/']['id']])
+        before = (
+            self.shown(found['id']),
+            desk_jobs._context(self.root, desk.read(self.root, found['id'])),
+        )
         marked = management.dispatch(self.root, 'library-add-samples', {'operation': 'd' * 32})
         self.assertEqual([len(g['samples']) for g in marked['groups']], [4, 1])
         self.assertEqual(marked['groups'][0]['learnable'], marked['groups'][0]['samples'])
@@ -601,10 +607,11 @@ class AddTests(RunnerCase):
             self.assertNotIn(
                 'voice-sample', studio.item(self.root, 'sources', ident)[1]['purposes']
             )
-        after = runner.survey(self.root, found['id'])
-        self.assertEqual(
-            (after['stages'], after['expected']), (before['stages'], before['expected'])
+        after = (
+            self.shown(found['id']),
+            desk_jobs._context(self.root, desk.read(self.root, found['id'])),
         )
+        self.assertEqual(after, before)
         self.assertEqual(
             management.dispatch(self.root, 'library-add-samples', {'operation': 'd' * 32})[
                 'changed'
@@ -1321,30 +1328,42 @@ class LibraryPickTests(RunnerCase):
         return [row['source']['id'] for row in result['files']]
 
     def test_create_pins_library_items_with_the_role_for_this_blog_only(self):
+        import desk
+        import desk_jobs
+
         example, facts = self.items()
-        found = self.create(
+        found = self.desk(
             library=[{'id': example, 'role': 'facts'}, {'id': facts, 'role': 'example'}]
         )
-        _, record, run = runner.load(self.root, found['id'])
+        _, record = studio.item(self.root, 'articles', found['id'])
         pinned = {s['source_id']: s for s in record['sources']}
         self.assertEqual(pinned[example]['purposes'], ['reference'])
         self.assertEqual(pinned[facts]['purposes'], ['reference', 'inspiration'])
         self.assertEqual(pinned[facts]['revision'], 1)
         self.assertEqual(record['material'], [])
-        payload = runner.inputs(self.root, record, run)
+        payload, _ = desk_jobs._context(self.root, desk.read(self.root, found['id']))
         self.assertEqual([s['name'] for s in payload['sources']], ['post'])
         self.assertEqual([s['name'] for s in payload['examples']], ['facts'])
         # The library records are unchanged.
         for ident, purposes in ((example, ['reference', 'inspiration']), (facts, ['reference'])):
             _, saved = studio.item(self.root, 'sources', ident)
             self.assertEqual((saved['purposes'], saved['revision']), (purposes, 1))
-        # Library items alone can start a blog from my files; the CLI reads examples too.
-        files = runner.create(
+        # Library items alone can start a blog from a topic; the CLI reads examples too.
+        files = management.dispatch(
             self.root,
-            {'mode': 'from-files', 'goal': 'A post', 'library': [{'id': facts, 'role': 'facts'}]},
-            'page',
+            'desk-create',
+            {
+                'operation': 'c' * 32,
+                'title': 'A post',
+                'way': 'topic',
+                'point': 'A post',
+                'library': [{'id': facts, 'role': 'facts'}],
+            },
         )
-        self.assertEqual(files['next'], 'angles')
+        _, record = studio.item(self.root, 'articles', files['id'])
+        self.assertEqual(
+            [(s['source_id'], s['purposes']) for s in record['sources']], [(facts, ['reference'])]
+        )
         args = studio.parser().parse_args(
             [
                 '--root',
@@ -1384,9 +1403,9 @@ class LibraryPickTests(RunnerCase):
             ([{'id': 'no-such-item', 'role': 'facts'}], 'Unknown sources ID'),
         ):
             with self.assertRaisesRegex(ValueError, pattern):
-                self.create(library=chosen)
+                self.desk(library=chosen)
         with self.assertRaisesRegex(ValueError, 'once'):
-            self.create(sources=[facts], library=[{'id': facts, 'role': 'example'}])
+            self.desk(sources=[facts], library=[{'id': facts, 'role': 'example'}])
         material = management.dispatch(
             self.root,
             'upload',
@@ -1398,12 +1417,12 @@ class LibraryPickTests(RunnerCase):
             },
         )['files'][0]['source']['id']
         with self.assertRaisesRegex(ValueError, 'not a library item'):
-            self.create(library=[{'id': material, 'role': 'facts'}])
+            self.desk(library=[{'id': material, 'role': 'facts'}])
 
     def test_a_library_item_can_be_read_as_approved_messaging(self):
         example, facts = self.items()
-        found = self.create(library=[{'id': facts, 'role': 'messaging'}])
-        _, record, _ = runner.load(self.root, found['id'])
+        found = self.desk(library=[{'id': facts, 'role': 'messaging'}])
+        _, record = studio.item(self.root, 'articles', found['id'])
         self.assertEqual(record['sources'][0]['purposes'], ['reference', 'messaging'])
         management.dispatch(self.root, 'source-role', {'id': example, 'role': 'messaging'})
         self.assertEqual(library.catalog(self.root, role='messaging')['total'], 1)
@@ -1645,23 +1664,26 @@ class HubItemTests(RunnerCase):
             self.assertEqual(row['location'], 'hub')
             hub = {'id': row['id'], 'location': 'hub'}
             # Picked for a blog: checked out here, then pinned as any library item is.
-            found = runner.create(
+            import desk
+            import desk_jobs
+
+            found = management.dispatch(
                 other,
+                'desk-create',
                 {
+                    'operation': 'f' * 32,
                     'title': 'Uses the teammate post',
-                    'audience': 'A',
-                    'goal': 'G',
-                    'research': 'none',
+                    'manuscript': self.DESK_DRAFT,
                     'library': [{**hub, 'role': 'example'}],
                 },
-                'page',
             )
-            _, record, run = runner.load(other, found['id'])
+            _, record = studio.item(other, 'articles', found['id'])
             local = record['sources'][0]['source_id']
             self.assertTrue(local.startswith('hub-' + row['id']))
             self.assertEqual(record['sources'][0]['purposes'], ['reference', 'inspiration'])
             self.assertEqual(
-                runner.inputs(other, record, run)['examples'][0]['name'], 'teammate-post'
+                desk_jobs._context(other, desk.read(other, found['id']))[0]['examples'][0]['name'],
+                'teammate-post',
             )
             # Selected on the library screen: the same checkout, never a second copy.
             blog = management.dispatch(other, 'library-selection', {'action': 'blog', 'ids': [hub]})
@@ -1744,9 +1766,43 @@ class HubSyncTests(RunnerCase):
 
 
 class FinishTests(RunnerCase):
-    """Task 2: Finish keeps the approved draft in the library, once per blog."""
+    """Task 2: Finish keeps the approved draft in the library, once per blog. On the writing
+    desk a blog is finished by marking it as published."""
+
+    def publish(self, found, url='https://example.invalid/post'):
+        shown = management.view(self.root, 'desk', {'id': [found['id']]})
+        return management.dispatch(
+            self.root,
+            'schedule',
+            {
+                'id': found['id'],
+                'expected': shown['expected'],
+                'stage': 'published',
+                'confirm_stage': True,
+                'publication_url': url,
+            },
+        )
+
+    def revise(self, found, text):
+        """A change typed into the blog's first part on the desk."""
+        shown = management.view(self.root, 'desk', {'id': [found['id']]})
+        management.dispatch(
+            self.root,
+            'desk-save',
+            {
+                'id': found['id'],
+                'seen': shown['revision'],
+                'part': shown['sections'][0]['id'],
+                'text': text,
+                'session': 'a' * 16,
+            },
+        )
+
+    def draft_of(self, found):
+        return (studio.inside(self.root, 'articles', found['id']) / 'DRAFT.md').read_text()
 
     def finish(self, found, page=False):
+        """A saved step-by-step run approved to its end (the saved flow's own Finish)."""
         while found['next']:
             found = self.approve(self.submit(found, page=page), page=page)
         return found
@@ -1759,8 +1815,8 @@ class FinishTests(RunnerCase):
         ]
 
     def test_finish_keeps_one_library_item_and_a_second_finish_updates_it(self):
-        found = self.finish(self.create(style='product-announcement', author='Avery'))
-        self.assertTrue(found['complete'])
+        found = self.desk(style='product-announcement', author='Avery')
+        result = self.publish(found)
         rows = self.kept()
         self.assertEqual(len(rows), 1)
         row = rows[0]
@@ -1779,90 +1835,76 @@ class FinishTests(RunnerCase):
         self.assertEqual(record['revision'], 1)
         self.assertEqual(record['origin'], found['id'])
         self.assertIn(row['id'], [s['id'] for s in runner.options(self.root)['sources']])
-        self.assertIn('library', found['decisions'][-1]['event'])
+        self.assertEqual(result['library']['id'], row['id'])
         # Finishing again after a change updates the same item.
-        found = runner.decide(
-            self.root, found['id'], found['expected'], 'changes', 'Tighter.', target='draft'
-        )
-        found = self.submit(found, '# draft\nTighter synthetic writing.')
-        found = self.finish(self.approve(found))
+        self.revise(found, 'Tighter synthetic writing.')
+        self.publish(found)
         rows = self.kept()
         self.assertEqual([r['id'] for r in rows], [row['id']])
         self.assertEqual(rows[0]['revision'], 2)
         _, record = studio.item(self.root, 'sources', row['id'])
-        self.assertEqual(
-            (directory / 'content.md').read_text(), '# draft\nTighter synthetic writing.'
-        )
+        self.assertEqual((directory / 'content.md').read_text(), self.draft_of(found))
+        self.assertIn('Tighter synthetic writing.', (directory / 'content.md').read_text())
         self.assertEqual(
             studio.read_json(directory / 'revisions' / '1' / 'record.json')['revision'], 1
         )
         # The same draft finished again is not a new revision.
-        found = runner.decide(
-            self.root, found['id'], found['expected'], 'changes', 'Again.', target='package'
-        )
-        found = self.finish(found)
+        self.publish(found)
         self.assertEqual(self.kept()[0]['revision'], 2)
         # Deleting the blog keeps the library item, and restoring it keeps the link.
-        management.dispatch(
-            self.root,
-            'blog-delete',
-            {'id': found['id'], 'expected': found['expected'], 'title': found['title']},
-        )
+        management.dispatch(self.root, 'blog-delete', self.shown(found['id']))
         self.assertEqual([r['id'] for r in self.kept()], [row['id']])
         management.dispatch(self.root, 'blog-restore', {'id': found['id']})
         self.assertEqual(library.written_here(self.root, found['id'])[1]['id'], row['id'])
 
     def test_a_blog_that_picked_a_finished_blog_keeps_reading_its_first_text(self):
-        first = self.finish(self.create(title='Announcing one'))
+        import desk
+        import desk_jobs
+
+        def context(found):
+            return desk_jobs._context(self.root, desk.read(self.root, found['id']))
+
+        first = self.desk(title='Announcing one')
+        self.publish(first)
+        first_text = self.draft_of(first)
         kept = self.kept()[0]['id']
-        nxt = self.create(title='Announcing two', library=[{'id': kept, 'role': 'example'}])
-        nxt = self.approve(self.submit(nxt))
-        _, record, run = runner.load(self.root, nxt['id'])
-        before = (runner.survey(self.root, nxt['id']), runner.inputs(self.root, record, run))
-        old_text = before[1]['examples'][0]['text']
+        nxt = self.desk(title='Announcing two', library=[{'id': kept, 'role': 'example'}])
+        self.revise(nxt, 'Blog two moves on.')
+        before = (self.shown(nxt['id']), context(nxt))
+        old_text = before[1][0]['examples'][0]['text']
         # Blog one is finished again with different words: its library copy gets revision 2.
-        again = runner.decide(
-            self.root, first['id'], first['expected'], 'changes', 'Tighter.', target='draft'
-        )
-        self.finish(self.approve(self.submit(again, '# draft\nA different finished text.')))
+        self.revise(first, 'A different finished text.')
+        self.publish(first)
         self.assertEqual(studio.item(self.root, 'sources', kept)[1]['revision'], 2)
         # Blog two still reads the words it picked, and nothing of it goes stale.
-        after = runner.survey(self.root, nxt['id'])
-        self.assertEqual(
-            (after['stages'], after['expected']), (before[0]['stages'], before[0]['expected'])
-        )
-        self.assertEqual(runner.inputs(self.root, record, run), before[1])
-        self.assertEqual(old_text, '# draft\nSynthetic writing.')
-        self.assertEqual(runner.engine(self.root).describe(nxt['id'])['next'], 'draft')
-        nxt = self.finish(runner.survey(self.root, nxt['id']))
-        self.assertTrue(nxt['complete'])
-        shown = runner.document(self.root, nxt['id'], 'draft')
-        self.assertEqual(shown['status'], 'approved')
-        self.assertEqual(
-            [c['label'] for c in shown['checks']][-1], 'No passage carried over from an example'
-        )
+        self.assertEqual((self.shown(nxt['id']), context(nxt)), before)
+        self.assertEqual(old_text, first_text)
+        self.assertNotIn('A different finished text.', old_text)
+        self.assertEqual(desk.read(self.root, nxt['id'])['sections'][0]['text'], 'Blog two moves on.')
         # Without the saved copy of the pinned revision it still refuses.
         directory, _ = studio.item(self.root, 'sources', kept)
         (directory / 'revisions' / '1' / 'content.md').unlink()
         with self.assertRaisesRegex(ValueError, 'selected source changed'):
-            runner.survey(self.root, nxt['id'])
+            context(nxt)
 
     def test_a_second_finish_changes_only_the_text_and_title(self):
-        found = self.finish(self.create(style='product-announcement', author='Avery'))
-        self.assertEqual(found['library'], {'id': self.kept()[0]['id'], 'revision': 1})
+        found = self.desk(style='product-announcement', author='Avery')
+        found['library'] = self.publish(found)['library']
+        self.assertEqual(
+            {key: found['library'][key] for key in ('id', 'revision')},
+            {'id': self.kept()[0]['id'], 'revision': 1},
+        )
         directory, record = studio.item(self.root, 'sources', found['library']['id'])
         # Someone changes the item in the library: its role, kind and author.
         record.update(purposes=['reference', 'voice-sample'], author='Avery Quinn')
         record['library']['kind'] = 'how-to'
         studio.persist(directory, 'sources', record)
-        again = runner.decide(
-            self.root, found['id'], found['expected'], 'changes', 'Retitle.', target='draft'
-        )
-        again = self.submit(again, '# draft\nNew finished words.')
-        self.finish(self.approve(again))
+        self.revise(found, 'New finished words.')
+        self.publish(found)
         _, record = studio.item(self.root, 'sources', found['library']['id'])
         self.assertEqual(record['revision'], 2)
-        self.assertEqual((directory / 'content.md').read_text(), '# draft\nNew finished words.')
+        self.assertEqual((directory / 'content.md').read_text(), self.draft_of(found))
+        self.assertIn('New finished words.', (directory / 'content.md').read_text())
         self.assertEqual(
             (record['purposes'], record['author'], record['library']['kind']),
             (['reference', 'voice-sample'], 'Avery Quinn', 'how-to'),
@@ -1872,29 +1914,30 @@ class FinishTests(RunnerCase):
     def test_finish_keeps_the_blog_without_a_kind_when_its_style_is_gone(self):
         import styles
 
-        found = self.create(style='product-announcement')
+        found = self.desk(style='product-announcement')
         with patch.object(styles, 'name_of', lambda root, ident: None):
-            found = self.finish(found)
-        self.assertTrue(found['complete'])
+            result = self.publish(found)
         self.assertEqual(len(self.kept()), 1)
         self.assertNotIn('kind', self.kept()[0]['library'])
-        self.assertTrue(found['decisions'][-1]['event'].endswith(' · kept in the team library'))
+        self.assertEqual(result['library']['id'], self.kept()[0]['id'], 'kept in the library')
 
     def test_finish_is_never_refused_when_the_library_cannot_take_the_blog(self):
         import blog_library
 
         noted = []
         for failure in (OSError('disk full'), RuntimeError('unexpected')):
-            found = self.create(title='Synthetic ' + type(failure).__name__)
-            while found['next'] != found['stages'][-1]['stage']:
-                found = self.approve(self.submit(found))
-            found = self.submit(found)
+            found = self.desk(title='Synthetic ' + type(failure).__name__)
             with (
                 patch.object(blog_library, 'keep_written', side_effect=failure),
                 patch.object(management, 'note_unexpected', noted.append),
             ):
-                done = self.approve(found)
-            self.assertTrue(done['complete'], 'the approval is saved')
+                done = self.publish(found)
+            _, record = studio.item(self.root, 'articles', found['id'])
+            self.assertEqual(
+                record['editorial']['publication_url'],
+                'https://example.invalid/post',
+                'the publication is saved',
+            )
             self.assertEqual(set(done['library']), {'reason'})
             self.assertIn('could not be saved', done['library']['reason'])
         self.assertEqual([type(exc).__name__ for exc in noted], ['RuntimeError'])
@@ -1908,10 +1951,13 @@ class FinishTests(RunnerCase):
         self.assertNotIn('kind', self.kept()[0]['library'])
 
     def test_a_pinned_library_item_run_reads_it_with_its_role(self):
-        self.finish(self.create())
+        import desk
+        import desk_jobs
+
+        self.publish(self.desk())
         kept = self.kept()[0]
-        again = self.create(title='The next one', sources=[kept['id']])
-        _, payload, _ = runner.job(self.root, again['id'])
+        again = self.desk(title='The next one', sources=[kept['id']])
+        payload, _ = desk_jobs._context(self.root, desk.read(self.root, again['id']))
         self.assertEqual(payload['sources'], [], 'an example is not a citable source')
         self.assertEqual([e['name'] for e in payload['examples']], ['Synthetic gateway guide'])
         self.assertEqual(payload['examples'][0]['purposes'], ['reference', 'inspiration'])
@@ -1925,7 +1971,8 @@ class FinishTests(RunnerCase):
         ident = registry.create('fixture/finished', 'Finished')['hub']
         adapter = Workspace(self.root, registry.hub(ident))
         with patch.object(hub_workspace, 'active', return_value=adapter):
-            found = self.finish(self.create(author='Avery'))
+            found = self.desk(author='Avery')
+            self.publish(found)
             graph = adapter.hub.graph()
         shared = [
             graph['revisions'][heads[0]]['data']['studio']
@@ -2110,7 +2157,7 @@ class SourceKeepTests(RunnerCase):
     def test_a_started_blog_keeps_its_sources_in_place(self):
         for keep in (False, True):
             ident = self.upload_file(keep=keep)
-            self.create(page=True, title='Pinned ' + str(keep), mode='from-files', sources=[ident])
+            self.desk(title='Pinned ' + str(keep), sources=[ident])
             with self.assertRaisesRegex(ValueError, 'A started blog read this file from'):
                 management.source_keep(self.root, {'id': ident, 'keep': not keep})
             directory, record = studio.item(self.root, 'sources', ident)
