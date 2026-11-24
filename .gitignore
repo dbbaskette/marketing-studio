@@ -6,6 +6,8 @@ __pycache__/
 .coverage
 test-results/
 *.log
+.ruff_cache/
+.impeccable/
 # Local maintenance records are not part of the application distribution.
 /docs/branch-cleanup-2026-10-15.md
 /scripts/cleanup/
