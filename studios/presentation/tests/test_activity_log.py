@@ -26,12 +26,11 @@ class ActivityLogTests(StudioCase):
                 seen['view'] = self.engine.view(found)
                 seen['log'] = self.engine.activity(found)
             seen['task'] = job.task
-            return self.workers.question(tools, job)
+            return self.workers.research_result(tools, job)
 
-        self.workers.then('question', researching)
-        root = self.saved_start(research=True)
-        self.decide(root, 'gate:research-plan')
-        self.assertEqual(self.waiting(root), 'gate:research')
+        self.workers.then('research-result', researching)
+        root = self.start(research=True)
+        self.assertEqual(self.waiting(root), 'gate:build')
         worker = next(one for one in seen['view']['workers']
                       if one['id'].startswith('research:'))
         self.assertEqual(worker['now']['text'], 'Looking at what it was given')
@@ -43,7 +42,8 @@ class ActivityLogTests(StudioCase):
         self.assertEqual((research['outcome'], research['label']), ('finished', worker['label']))
         said = [line['text'] for line in self.engine.activity(root, entry=research['id'])['lines']]
         self.assertEqual(said[0], 'Looking at what it was given')
-        self.assertIn('The finding was accepted', said)
+        # The desk's research job hands back its draft, which is accepted.
+        self.assertIn('The draft was accepted', said)
 
         written = self.log_path(root).read_text(encoding='utf-8')
         self.assertNotIn(seen['task'][:60], written)
@@ -65,7 +65,7 @@ class ActivityLogTests(StudioCase):
 
     def first_outline(self, act) -> dict:
         self.workers.then('outline', act)
-        root = self.saved_start()
+        root = self.start()
         return [job for job in self.engine.activity(root)['jobs']
                 if job['step'] == 'outline'][-1]
 
@@ -87,13 +87,13 @@ class ActivityLogTests(StudioCase):
         from workspace import WorkspaceError
         with mock.patch('studio_core.activity_log.append',
                         side_effect=WorkspaceError('The workspace is busy.')) as append:
-            root = self.saved_start()
+            root = self.start()
             self.assertTrue(append.called)
-        self.assertEqual(self.waiting(root), 'gate:outline')
+        self.assertEqual(self.waiting(root), 'gate:build')
         self.assertEqual(self.engine.activity(root)['jobs'], [])
 
     def test_a_deck_with_no_log_still_opens_and_says_so(self):
-        root = self.saved_start()
+        root = self.start()
         self.log_path(root).unlink()
         found = self.engine.activity(root)
         self.assertEqual((found['jobs'], found['empty']), ([], 'No activity recorded yet.'))
@@ -128,7 +128,7 @@ class StoppedJobTests(StudioCase):
             go.wait(30)
 
         self.workers.then('outline', working)
-        root = self.saved_start()
+        root = self.start()
         self.assertTrue(entered.wait(30))
         worker, = self.engine.view(root)['workers']
         self.assertEqual(worker['now']['text'], 'Looking at what it was given')
@@ -155,7 +155,7 @@ class StoppedJobTests(StudioCase):
         self.workers.then('outline', working)
         with mock.patch('studio_core.activity_log.append',
                         side_effect=WorkspaceError('The workspace is busy.')):
-            root = self.saved_start()
+            root = self.start()
             self.assertTrue(entered.wait(30))
             self.assertEqual(self.engine.act(root, 'stop')['state'], 'stopped')
             go.set()
