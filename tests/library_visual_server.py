@@ -49,6 +49,18 @@ def main():
                        'Launch deck', '# Launch\n\n## Slide 1\n\nOne.\n',
                        pdf={'state': 'needs-export', 'reason': 'Synthetic: no PDF exporter here.'})
         library.add_upload('scan.pdf', b'%PDF-1.4 synthetic, no text')
+        # Verified research, kept as a studio keeps it: its report readable, its bundle the original.
+        from synthesis_fixture import published_bundle
+        from studio_core.document_library import research as library_research
+        published_bundle(base / 'restart/research')
+        (base / 'restart/research/report.md').write_text('# Restart research\n\nSynthetic findings only.\n')
+        manifest = json.loads((base / 'restart/research/output.json').read_text())
+        import hashlib
+        for entry in manifest['artifacts']:
+            entry['sha256'] = hashlib.sha256((base / 'restart/research' / entry['file']).read_bytes()).hexdigest()
+        (base / 'restart/research/output.json').write_text(json.dumps(manifest))
+        library_research.keep_research(library, studio='training', project='restart-0a0a0a',
+                                       case=base / 'restart/research')
         library.add_upload('field-guide.md', b'# Field guide\n\nSynthetic words.\n', title=long)
         blogs = Workspace(base / 'writing')
         blogs.source('gateway-guide-1a2b3c4e', 'Gateway guide', '# Gateway guide\n\nRoutes.\n',

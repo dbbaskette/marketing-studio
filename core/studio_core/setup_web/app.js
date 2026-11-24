@@ -5,7 +5,23 @@ const product = document.body.dataset.product;
 const tokenHeader = document.body.dataset.tokenHeader;
 const sessionKey = standalone ? product.toLowerCase().replaceAll(' ', '-') + '-setup-token' : 'marketing-studio-token';
 const launchOptions = new URLSearchParams(location.hash.slice(1));
-const requestedView = launchOptions.get('view') === 'settings' ? 'settings' : 'home';
+// Continue in another studio, asked for by a studio (StudioShell.continueLink): `continue=
+// <id>@<revision>` opens the Library on that document with the chooser showing. Only the
+// library's own id format and a revision number are taken; the server checks them again.
+function libraryContinue(options) {
+  const found = /^([a-z0-9][a-z0-9-]{0,63})@([1-9][0-9]{0,3})$/.exec(options.get('continue') || '');
+  return found && Number(found[2]) <= 1000 ? {id: found[1], revision: Number(found[2])} : null;
+}
+let continueWanted = libraryContinue(launchOptions);
+const requestedView = launchOptions.get('view') === 'settings' ? 'settings' : continueWanted ? 'library' : 'home';
+// The screen the page opens on once its first snapshot arrives. A Continue in another studio
+// asked for meanwhile (a `continue=` link to this tab before it had loaded) opens the Library
+// then, rather than waiting for the next time the person opens it; setup, which has no
+// Library, drops it.
+function firstView() {
+  if (setup || standalone) { continueWanted = null; return 'settings'; }
+  return continueWanted ? 'library' : requestedView;
+}
 // A studio can open one part of Shared settings, such as the workspace repository a Team
 // library uses. Only a part this page lists is accepted, and only after first-run setup.
 function launchPart(options, known) {
@@ -37,7 +53,13 @@ if (typeof StudioShell !== 'undefined') StudioShell.commands(homeCommands);
 // does not reload it: after a restart the page would keep the old key. Start again with the new one.
 window.addEventListener('hashchange', () => {
   const next = linkKey(location.hash, standalone);
-  if (next && next !== token) location.reload();
+  if (next && next !== token) { location.reload(); return; }
+  // A studio's Continue in another studio, sent to this tab while it is open.
+  const wanted = standalone ? null : libraryContinue(new URLSearchParams(location.hash.slice(1)));
+  if (!wanted) return;
+  history.replaceState(null, '', location.pathname);
+  continueWanted = wanted;
+  if (snapshot && !setup) show('library');
 });
 // Studios opened from here link back to this tab by its name.
 if (!standalone) window.name = 'marketing-studio';
@@ -1362,10 +1384,44 @@ async function openLibrary() {
             setTimeout(() => URL.revokeObjectURL(link.href), 1000);
           } catch (error) { problem(error); }
         },
+        // Continue in another studio: the installed studios, each opened as its card opens it.
+        continueIn: {studios: continueStudios, open: continueInStudio},
       }, {onChange: () => libraryIntake(libraryCatalog && libraryCatalog.answer)});
       $('#library-catalog').replaceChildren(libraryCatalog.node);
     } else void libraryCatalog.load();
+    if (continueWanted) {
+      const {id, revision} = continueWanted;
+      continueWanted = null;
+      await libraryCatalog.continueWith(id, revision);
+    }
   } catch (error) { problem(error); }
+}
+// The studios Continue in another studio offers: every installed one, ready when its card
+// says it can open, else with what its card says it needs.
+function continueStudios() {
+  return (snapshot?.studios || []).filter(studio => studio.installed).map(studio => {
+    const ready = studioReadiness(studio);
+    const can = ready.state === 'done';
+    return {id: studio.id, name: studio.name, ready: can, label: can ? '' : ready.label, note: can ? '' : ready.detail};
+  });
+}
+// Opens a studio with a library document, as Open on its card does: in its own named tab on
+// a desktop, in this tab on a phone. The tab is reserved during the click so a popup blocker
+// does not lose it; the link names the document only by the id and revision the server checked.
+async function continueInStudio(doc, studio) {
+  const sameTab = inThisTab(query => window.matchMedia(query).matches);
+  const tab = sameTab ? null : window.open('about:blank', `marketing-${studio.id}`);
+  try {
+    const result = await api('open', {studio: studio.id, library: {id: doc.id, revision: doc.revision}});
+    if (sameTab) { location.href = withHome(result.link, true); return; }
+    if (tab) { tab.location.href = withHome(result.link); return; }
+    const link = element('a', `Open ${studio.name}`); link.href = withHome(result.link); link.target = `marketing-${studio.id}`;
+    const message = $('#message'); message.replaceChildren(document.createTextNode('Your browser blocked the new tab. '), link); message.hidden = false;
+    link.focus();
+  } catch (error) {
+    if (tab && tab.location.href === 'about:blank') tab.close();
+    throw error;
+  }
 }
 // The Library's two sheets. Escape and Close return focus to what opened them; neither
 // closes while its work is landing.
@@ -1577,7 +1633,7 @@ $('#refresh-models').addEventListener('click', () => loadModels(true));
 (async () => {
   try {
     if (!token) { $('#loading').hidden = true; inform(`This page needs its private link. Run ${standalone ? 'the studio command' : 'marketing-studio'} in your terminal to open it again.`, true); return; }
-    snapshot = await api('home'); setup = !snapshot.setup.done; step = setup ? resumeStep(snapshot.shared) : 0; rememberStep(); fill(); renderHome(); markSaved(); show(setup || standalone ? 'settings' : requestedView); if (snapshot.shared_problem) inform(snapshot.shared_problem, true);
+    snapshot = await api('home'); setup = !snapshot.setup.done; step = setup ? resumeStep(snapshot.shared) : 0; rememberStep(); fill(); renderHome(); markSaved(); show(firstView()); if (snapshot.shared_problem) inform(snapshot.shared_problem, true);
     const part = setup ? '' : launchPart(launchOptions, [...document.querySelectorAll('[data-part]')].map(button => button.dataset.part));
     if (part) { if (view !== 'settings') show('settings'); goToPart(part); }
   }

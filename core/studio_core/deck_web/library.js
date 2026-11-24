@@ -10,7 +10,12 @@
 //           manage (optional: Remove from library, Show hidden and Restore), said(text),
 //           noun (optional: what the studio calls one piece of work, default 'project'),
 //           unavailable(row) (optional: {label, detail} for a row that cannot be chosen,
-//           such as a studio's own kept export, else null; the server must refuse it too)}
+//           such as a studio's own kept export, else null; the server must refuse it too),
+//           continueIn (optional, browsing only: Continue in another studio) {
+//             studios() -> [{id, name, ready, label, note}]: the installed studios, `ready`
+//               when one can open now, else `label` names its state and `note` says why,
+//             open({id, revision, title}, studio) -> Promise: opens that studio with the
+//               document, as the home page opens studios; it rejects with why it did not}}
 // `post` is sent 'library', 'library-document', 'library-filters' or 'library-matching',
 // and with `manage` also 'library-hide' ({id, hidden}).
 //
@@ -19,8 +24,12 @@
 //
 // Each row has one action, Preview, which opens the document's preview just below its row;
 // the downloads (and, with `manage`, Remove from library or Restore) are in the preview, and
-// Close preview returns to the row's Preview. On a phone only the search shows, with a
-// Filters button that opens the rest and counts those set.
+// Close preview returns to the row's Preview. With `continueIn`, a readable document's
+// preview also shows Continue in another studio: a card for each installed studio, each
+// opening that studio with the document in one press. `catalog.continueWith(id, revision)`
+// opens one document's preview with those cards in view, even when the filters or the page
+// leave it out (it is then shown first). On a phone only the search shows, with a Filters button
+// that opens the rest and counts those set.
 (function () {
   'use strict';
 
@@ -53,6 +62,15 @@
     if (!node) return;
     node.focus();
     if (node.scrollIntoView) node.scrollIntoView({ block: 'nearest' });
+  };
+  // The chooser in view whole, clear of a phone's tab bar (its scroll margins), its heading
+  // taking the focus without a second jump.
+  const reveal = (root) => {
+    const part = root.querySelector('.library-continue');
+    const heading = root.querySelector('[data-key="library-continue-heading"]');
+    if (heading) heading.focus({ preventScroll: true });
+    if (part && part.scrollIntoView) part.scrollIntoView({ block: 'nearest' });
+    return Boolean(heading);
   };
   const day = (stamp) => {
     const when = stamp ? new Date(stamp) : null;
@@ -94,6 +112,8 @@
       this.typed = { query: '', author: '' };   // typed, not yet searched: kept across redraws
       this.preview = null;              // {row, found | problem | loading, confirming, failed}
       this.manage = Boolean(adapter.manage) && !this.selectable;
+      this.continueIn = !this.selectable && adapter.continueIn && typeof adapter.continueIn.open === 'function'
+        ? adapter.continueIn : null;
       this.unavailable = (row) => (this.selectable && adapter.unavailable && adapter.unavailable(row)) || null;
       this.showHidden = false;          // Marketing Studio's Show hidden
       this.filtersOpen = false;         // a phone's Filters
@@ -131,10 +151,11 @@
         this.answer = answer;
         this.problem = '';
         // A preview stays open while its document is still on this page, with its new row.
+        // One opened by continueWith stays too, shown first when this page leaves it out.
         if (this.preview) {
           const again = (answer.items || []).find((row) => row.id === this.preview.row.id);
-          if (again) this.preview.row = again;
-          else this.preview = null;
+          if (again && !this.preview.revision) this.preview.row = again;
+          else if (!again && !this.preview.pinned) this.preview = null;
         }
       } catch (error) {
         if (turn === this.turn) this.problem = message(error);
@@ -187,7 +208,117 @@
       const id = this.preview && this.preview.row.id;
       this.preview = null;
       this.render();
-      if (id) land(this.node.querySelector('[data-key="library-preview-' + id + '"]'));
+      if (id) land(this.node.querySelector('[data-key="library-preview-' + id + '"]') || this.node.querySelector('[data-key="library-count"]'));
+    }
+
+    // Continue in another studio, asked for by a link (Marketing Studio's `continue=`): that
+    // revision's preview, its studio choices in view and its heading focused, whatever the
+    // filters and the page show. One press on a studio then opens it.
+    async continueWith(id, revision) {
+      if (!this.continueIn) return;
+      const opened = { row: { id, revision, title: 'Document' }, loading: true, pinned: true, revision };
+      this.preview = opened;
+      this.render();
+      try {
+        const found = await this.a.post('library-document', { id, revision });
+        Object.assign(opened, { loading: false, found, row: found });
+      } catch (error) {
+        // Gone, or never there: said above the list, and nothing is pinned.
+        if (this.preview !== opened) return;
+        this.preview = null; this.problem = message(error);
+        this.render();
+        land(this.node.querySelector('[data-key="library-count"]'));
+        return;
+      }
+      if (this.preview !== opened) return;
+      this.render();
+      if (!reveal(this.node)) land(this.node.querySelector('[data-key="library-preview-heading"]'));
+    }
+
+    // One studio chosen: it opens as the home page opens studios. Every card waits meanwhile,
+    // the chosen one saying so; a refusal is said in the group, which stays as it was.
+    async continueTo(held, studio) {
+      if (held.opening || !studio.ready) return;
+      held.opening = studio.id; held.continueFailed = ''; held.continued = '';
+      const { id, title } = held.row;
+      const revision = held.revision || held.row.revision;
+      // open() is called within the click, before anything waits, so a tab it opens is the click's own.
+      let going;
+      try { going = Promise.resolve(this.continueIn.open({ id, revision, title }, studio)); } catch (error) { going = Promise.reject(error); }
+      this.render();
+      try {
+        await going;
+        held.continued = studio.name + ' opened with “' + title + '”. Nothing starts there until you confirm it.';
+      } catch (error) {
+        held.continueFailed = message(error);
+      }
+      held.opening = null;
+      if (this.preview !== held) return;
+      this.render();
+      land(this.node.querySelector(held.continueFailed ? '[data-key="library-continue-problem"]' : '[data-key="library-continued"]'));
+    }
+
+    // Continue in another studio, in a readable document's preview: one card for each
+    // installed studio, peers that each open their studio with the document in one press.
+    // A studio that cannot open now is still a card, marked unavailable (aria-disabled and a
+    // tag naming its state) with its reason in full-strength words, and does nothing when
+    // pressed. Only a readable document a studio can take as a source is offered; one
+    // removed from the library is not.
+    continuePart(held) {
+      const { row } = held;
+      const found = held.found || {};
+      const readable = found.readable !== undefined ? found.readable : row.readable;
+      if (!this.continueIn || held.loading || !readable || row.hidden || found.hidden) return null;
+      const part = make('section', 'library-continue');
+      const headingId = this.ns + 'continue-title';
+      part.setAttribute('aria-labelledby', headingId);
+      const heading = make('h4', 'sheet-part', 'Continue in another studio');
+      heading.id = headingId; heading.tabIndex = -1; heading.dataset.key = 'library-continue-heading';
+      const studios = (this.continueIn.studios ? this.continueIn.studios() : []) || [];
+      const revision = held.revision || row.revision;
+      const which = held.revision && found.head && found.head !== held.revision ? ' (revision ' + revision + ')' : '';
+      part.append(heading, make('p', 'quiet', !studios.length
+        ? 'No studio is installed on this computer. Install one yourself, then come back.'
+        : studios.some((one) => one.ready)
+          ? 'Choose a studio. It opens with “' + row.title + '”' + which + ' ready to use in new work. Nothing is created until you confirm there.'
+          : 'No studio can open now. Each one below says what it needs.'));
+      if (held.continued) {
+        const done = make('p', 'quiet', held.continued);
+        done.setAttribute('role', 'status'); done.tabIndex = -1; done.dataset.key = 'library-continued';
+        part.append(done);
+      }
+      if (held.continueFailed) {
+        const said = make('p', 'problem', held.continueFailed);
+        said.setAttribute('role', 'alert'); said.tabIndex = -1; said.dataset.key = 'library-continue-problem';
+        part.append(said);
+      }
+      if (!studios.length) return part;
+      const cards = make('div', 'pick-cards');
+      cards.setAttribute('aria-busy', String(Boolean(held.opening)));
+      for (const studio of studios) {
+        const card = button('', 'pick-card', () => this.continueTo(held, studio), 'library-continue-to-' + studio.id);
+        card.dataset.studio = studio.id;
+        const opening = held.opening === studio.id;
+        // Never the native disabled state, which dims the reason: unavailable is said in words.
+        if (!studio.ready || held.opening) card.setAttribute('aria-disabled', 'true');
+        add(card, make('span', 'pick-title', studio.name));
+        if (studio.ready) {
+          card.append(make('span', 'pick-says', opening ? 'Opening ' + studio.name + '…' : 'Open ' + studio.name + ' with this document'));
+          card.setAttribute('aria-label', opening ? 'Opening ' + studio.name : 'Continue in ' + studio.name);
+        } else {
+          card.append(make('span', 'tag', studio.label || 'Cannot open now'),
+            make('span', 'pick-says library-continue-why', studio.note || 'It cannot open now.'));
+          card.setAttribute('aria-label', studio.name + ', cannot open now: ' + [studio.label, studio.note].filter(Boolean).join('. '));
+        }
+        cards.append(card);
+      }
+      part.append(cards);
+      if (held.opening) {
+        const busy = make('p', 'quiet', 'Opening ' + (studios.find((one) => one.id === held.opening) || {}).name + '…');
+        busy.setAttribute('role', 'status');
+        part.append(busy);
+      }
+      return part;
     }
 
     // Remove from library (hidden) or Restore. Nothing is deleted: the server only hides the
@@ -386,6 +517,8 @@
       part.append(head);
       if (loading) part.append(make('p', 'quiet', 'Reading the document…'));
       if (problem) part.append(make('p', 'problem', problem));
+      const onward = this.continuePart(held);
+      if (onward) part.append(onward);
       if (found) {
         if (found.state === 'kept') add(part, make('p', '', fileFacts(found)), make('p', 'quiet', found.problem || ''));
         else if (!found.readable) part.append(make('p', 'problem', found.problem || 'It has no readable text.'));
@@ -484,6 +617,11 @@
       else if (answer && !answer.available) list.append(make('li', answer.problem ? 'problem' : 'quiet', answer.problem || 'Nothing has been kept in the Document Library yet. Uploads, finished blogs and delivered decks appear here.'));
       else if (answer && !items.length) list.append(make('li', 'quiet', 'No documents match these filters.'));
       const preview = this.previewPart();
+      // A document continueWith opened that this page leaves out is shown first.
+      if (preview && this.preview.pinned && !items.some((row) => row.id === this.preview.row.id)) {
+        list.prepend(add(make('li', 'library-preview-item'), preview));
+        list.prepend(this.row(this.preview.row));
+      }
       for (const row of items) {
         list.append(this.row(row));
         if (preview && this.preview.row.id === row.id) list.append(add(make('li', 'library-preview-item'), preview));

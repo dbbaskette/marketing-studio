@@ -331,3 +331,9 @@ body:has(#settings:not([hidden]) .save-bar) .toasts { bottom: calc(5.5rem + env(
    studio's own colour while it is in progress. */
 .work-summary[data-state="needs-you"] { border-left: 4px solid var(--yours-fill); background: var(--yours-wash); }
 .work-summary[data-state="in-progress"] { border-left: 4px solid var(--studio-color); }
+/* Continue in another studio, in a Library document's preview: its parts as the preview's. */
+.library-continue { scroll-margin-top: 5rem; scroll-margin-bottom: calc(var(--tab-bar-room, 0px) + 1rem); }
+.library-continue > * + * { margin-top: .6rem; }
+.library-continue .bar { flex-wrap: wrap; margin-bottom: 0; }
+/* A studio that cannot open now: its state's tag sits at the start of its card. */
+.library-continue .pick-card .tag { align-self: flex-start; }

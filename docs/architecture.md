@@ -84,6 +84,59 @@ bounded, link-refusing reads). Remove from library is also the Library screen's 
 library's lock, and the catalog, Select all matching, Update available and new pins
 leave a hidden document out. See [shared setup](shared-setup.md#the-document-library).
 
+Verified Harness Research is the kind `research` (`document_library/research.py`).
+A studio calls `keep_research(library, *, studio, project, case, title=None,
+author=None)` once its research passes verification. It never raises: it answers
+`{'state': 'kept' | 'refused' | 'failed', 'key', ...}`, `refused` for a bundle that does not
+pass `research_contract.read_bundle` and `failed` when its files cannot be read or the
+library cannot keep it. Its key is `<studio>:<project>:research`, which never meets a
+finished-work key (`<studio>:<project>` has no second colon). The item's text is the
+bundle's `report.md`, and `snapshot` gives a research item as that report alone (named
+`<title>.md`, with no original), so every studio's Add from library pins it as text. The
+bundle is kept beside it as `original.zip`: `output.json` and every file its manifest names,
+each checked against its manifest hash as it is archived, at most 16 MB zipped
+(`LIMITS['research']`, Harness Research's own import limit; every other kind keeps its 8 MB).
+Only `Library.research_archive(id, revision)` gives the archive back, checked against its
+hash, and `research_bundle(library, id, revision, folder)` writes it into a new folder (in a
+parent that is there) or an empty one, writing only output.json and the files its manifest
+names and checking the result with `read_bundle` again. Keeping the same title, report and
+output.json again adds no revision. Records kept before read as they did; nothing is
+migrated, and `retain` and `adopt` refuse the kind (research always carries its bundle).
+
+Continue in another studio starts from a Document Library item. Marketing Studio's Library
+shows it in a readable document's preview: one card for each installed studio, so a studio
+is one press after Preview, and a studio that cannot open now says why on its card. It sends
+`POST /api/open` `{studio, library: {id, revision}}`; the server checks the id against the
+library's own format, the revision as a whole number, and that revision as present,
+readable and not removed, before the studio starts. It then adds `library=<id>@<revision>`
+to the studio link's fragment itself (`launcher.with_library`); nothing else from the
+request reaches the link, and `local_link` still accepts only a token fragment from a
+studio. The studio page opens its own New sheet from `library=`; nothing is created until
+the person confirms. A studio offers the same for its own kept work with
+`StudioShell.continueLink({id, revision})`: when Marketing Studio opened it, the home
+page's link `<home>/#token=<home key>&continue=<id>@<revision>`, which opens the Library on
+that document with the studio cards in view and focused; when it runs alone, null.
+
+For `continueLink` to work, a studio page must either load `shell.js` before any script that
+clears the fragment (an earlier `<script defer>`; every studio page does so now), or write
+`marketing-studio-return` (`{home, token}`) to sessionStorage itself before clearing it. The
+shell reads `home` and `homeToken` from the fragment as it loads and, when both are valid,
+keeps them under that key at once, so the link still works after the fragment is cleared or
+the page reloads. A page must not remove `marketing-studio-return` from sessionStorage.
+
+`studio_core.source_intake.take(given, *, local, accepts, room, spare, taken=(),
+name_limit, seconds)` is the one entry point a studio's primary source picker calls with a
+folder (a path on this computer or a Google Drive folder link) or one uploaded file
+(`{'name', 'data'}`). `local` must be given: a page passes `local=not remote`, and a folder
+path on this computer is refused when it is False, so a phone on the local network cannot
+read this computer's folders. It answers `{'uploads': {name: bytes}, 'documents',
+'skipped', 'said', 'next', 'report'}`: documents of the types the studio takes as files are
+passed on as they are, others with text (Google files, PowerPoint files and .xlsx workbooks,
+read with `xlsx_sheets`) as Markdown, and `said` tells the person what was added and what was
+not. It reads through `source_folders` and `research_sources` in a source draft that never
+outlives the call, as Training Studio's `desk_folder.py` does for work started in a
+conversation.
+
 ## Settings and launch lifecycle
 
 First run reads existing shared choices and opens setup. Continue saves only
