@@ -28,7 +28,7 @@ import import_jobs
 import shared_library
 import source_curator
 from google_drive import GoogleError
-from studio_core import server as shared_server
+from studio_core.server import for_product as server_for_product
 from studio_core.server import suite_port, with_appearance, with_suite_port
 from hub_store import HubError, TransportError, AuthenticationError, encoded, sha
 
@@ -55,6 +55,11 @@ STATIC = {
         'text/javascript; charset=utf-8',
     ),
 }
+# The shared loopback server, made for Blog Studio: its name, the header its key comes in,
+# and its page. Blog Studio's page, handler and server below build on it.
+shared_server = server_for_product(
+    'blog_studio_server', 'Blog Studio', 'X-Blog-Studio-Token', ASSETS, STATIC, None, ValueError
+)
 MAX_BODY = 15 * 1024 * 1024
 HEADER_TIMEOUT = 3  # Seconds a new connection has to send its request line and headers.
 BODY_TIMEOUT = 15  # Seconds for each read or write once a request is recognized.
@@ -3190,7 +3195,7 @@ def server(root, port=0, bind=True, shared_setup=False, keep_workspace=True):
             and not opening_page(method, target, headers)
         ):
             raise ValueError('Cross-site access is unavailable.')
-        if api and not secrets.compare_digest(headers.get('X-Blog-Studio-Token', ''), token):
+        if api and not secrets.compare_digest(headers.get(shared_server.TOKEN_HEADER, ''), token):
             raise ValueError('Reopen this page’s link to reconnect.')
 
     def opening_page(method, target, headers):
@@ -3404,8 +3409,8 @@ def server(root, port=0, bind=True, shared_setup=False, keep_workspace=True):
         controller = onboarding.Controller(
             httpd.server_port,
             token,
-            'Blog Studio',
-            'X-Blog-Studio-Token',
+            shared_server.PRODUCT,
+            shared_server.TOKEN_HEADER,
             prepare,
             after=configured,
         )
