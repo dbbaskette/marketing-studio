@@ -1090,6 +1090,8 @@ def view(engine, root) -> dict:
         'sources': {'account': research_view.account(root / 'research', questions),
                     'updates': update_view(root, record),
                     'plan': questions, 'marked': marked(root, record),
+                    # How the Document Library kept the verified research, when it was asked.
+                    'library': ((record or {}).get('research') or {}).get('library'),
                     'documents': [{key: entry.get(key) for key in
                                    ('name', 'bytes', 'readable', 'problem')}
                                   for entry in listed]},

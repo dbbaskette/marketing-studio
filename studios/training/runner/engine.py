@@ -4870,7 +4870,43 @@ class Engine(Reviewing):
 
     def _report(self, root: Path, step: pipeline.Step) -> None:
         """Ask harness-research where the research stands, and save its report through
-        the core for gate 2. Research that answered nothing stops the training instead."""
+        the core for gate 2. Research that answered nothing stops the training instead.
+        Research that passed verification is kept in the Document Library too."""
+        if self._report_kept(root, step):
+            self._keep_research(root)
+
+    def _keep_research(self, root: Path) -> dict:
+        """Keep the training's verified research in the Document Library, under the
+        training's own key, and note how that went in the run record (`research.library`),
+        which the desk's Sources says. Never raises and never stops the research: a library
+        that cannot keep it is said, and the training carries on."""
+        held = library.status(root)
+        key = library._key(root, held)
+        try:
+            title = workspace.load(root).get('title') or root.name
+        except (OSError, ValueError, WorkspaceError):
+            title = root.name
+        from studio_core.document_library import research as library_research
+        kept = library_research.keep_research(
+            None, studio='training', project={'id': key.partition(':')[2], 'title': title},
+            case=root / 'research', title=f'{title}: research')
+        said = {name: kept[name] for name in ('state', 'document', 'revision', 'problem')
+                if kept.get(name) is not None}
+        try:
+            with self.files:
+                record = self._load(root)
+                if (record.get('research') or {}).get('library') != said:
+                    record['research'] = {**(record.get('research') or {}), 'library': said}
+                    self._store(root, record)
+                    self._commit(root, 'keep the research in the Document Library'
+                                 if said.get('state') == 'kept'
+                                 else 'note that the Document Library did not keep the research')
+        except (OSError, WorkspaceError):
+            pass    # the research stands; the next keep says it again
+        return said
+
+    def _report_kept(self, root: Path, step: pipeline.Step) -> bool:
+        """The report step itself: True when it kept a verified research bundle."""
         clock = time.monotonic()
         with self.files:
             record = self._load(root)
@@ -4883,7 +4919,7 @@ class Engine(Reviewing):
                     self._tried(record, step.id, home.now(), time.monotonic() - clock, 'kept')
                     self._store(root, record)
                     self._commit(root, 'keep the creator-approved research bundle')
-                    return
+                    return True
                 # Verify with the helper version that did the research, while it is retained.
                 tool = research_contract.matching(tool, record['research_contract']) or tool
                 verified = tool._json('synthesis', 'verify', '--project', str(research_parallel.case_for(root)))
@@ -4901,16 +4937,17 @@ class Engine(Reviewing):
                 self._tried(record, step.id, home.now(), time.monotonic() - clock, 'kept')
                 self._store(root, record)
                 self._commit(root, 'keep the reviewed research bundle')
-                return
+                return True
             self.research().status(root)
             found = self._survey(root, record).research
             reasons = {ident: last_error(record, f'research:{ident}')
                        for ident in found.unread}
             if len(found.unread) == len(found.verdicts):
                 why = next((reason for reason in reasons.values() if reason), '')
-                return self._problem(root, 'research', 'failed', (
+                self._problem(root, 'research', 'failed', (
                     f'None of the {len(found.verdicts)} research questions could be '
                     f'answered. {why}').strip(), 'The research plan you approved is kept.')
+                return False
             pipeline.keep_report(root, found, reasons)
             (record.get('research') or {}).pop('again', None)
             self._tried(record, step.id, home.now(), time.monotonic() - clock, 'kept')

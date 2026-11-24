@@ -955,6 +955,13 @@ async function app(file) {
       arc: () => part('ol', 'track track-arc', 'workbench-arc'),
       pulse: () => part('div', 'workbench-pulse'),
       move: () => part('section', 'move-card', 'workbench-move'),
+      // Continue in another studio: Marketing Studio's link when a plan names its home
+      // (`continueHome`), as the shell gives it when Marketing Studio opened the page; else null.
+      continueLink(doc) {
+        const id = doc && (doc.id || doc.document);
+        return plan.continueHome && id && Number.isInteger(doc.revision)
+          ? plan.continueHome + '/#token=home-key&continue=' + id + '@' + doc.revision : null;
+      },
     };
   }
   // The shared desk kit (drafting.js, linked from ui-kit), then the page, then the deck desk,

@@ -1008,8 +1008,8 @@ function deskStart() {
         + (outputs === 1 ? ' output' : ' outputs');
     },
     close:closeSheet,discarded:() => {view.draft = null;}});
-  return [add(make('div', 'sheet-heading'), sheetTitle('New training')), copiedNote(draft), form]
-    .filter(Boolean);
+  return [add(make('div', 'sheet-heading'), sheetTitle('New training')), copiedNote(draft),
+    libraryStartNote(draft), form].filter(Boolean);
 }
 
 // What Start sends: the form, as a desk training, with no review level.
@@ -3436,6 +3436,12 @@ function sourcesPart(found) {
   } else {
     add(node, make('p', 'quiet', DESK_WORDS.noResearch));
   }
+  // Research that passed verification is kept in the Document Library too: said here.
+  const kept = account && sources.library;
+  if (kept && kept.state === 'kept') {
+    add(node, make('p', 'quiet', 'Kept in the Document Library as research, revision '
+      + kept.revision + '. Other studios can start from it.'));
+  } else if (kept && kept.problem) add(node, make('p', 'quiet', kept.problem));
   const marks = sources.marked || {};
   for (const [id, mark] of Object.entries(marks)) {
     const finding = list(account && account.findings).find((one) => one.id === id);
@@ -3511,7 +3517,10 @@ function deskLibraryKept(found) {
       + kept.revision + '.' + (list(found.actions).includes('draft')
         ? ' Return to draft leaves that revision in the library.' : ''));
     line.id = headingId(found.name) + '-library';
-    return line;
+    // From the library, another studio can start from it.
+    const onward = kept.document ? continueAction({ id: kept.document, revision: kept.revision },
+      cardTitle(found)) : null;
+    return onward ? add(make('div', 'card-part'), line, add(make('div', 'bar'), onward)) : line;
   }
   // A draft again, after an edit, Undo or Return to draft: the library still has it.
   if (kept.state === 'earlier') {

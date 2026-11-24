@@ -11738,6 +11738,25 @@ class LibraryScreenTests(ScriptedPage, PageCase):
         self.assertEqual(self.posts(result), [('/api/drafts/library-keep',
                                                {'path': str(self.root), 'name': 'brief@101'})])
 
+    def test_a_kept_guide_offers_continue_in_another_studio_only_from_marketing_studio(self):
+        guide = a_card('document@101', 'ready', 'Ready.', actions=('download',))
+        kept = {'document@101': {'state': 'kept', 'revision': 2, 'document': 'restart-guide'}}
+        answers = self.on_desk(a_desk(guide, levels=('101',), running=False, library=kept),
+                               run=a_desk_run('done', 'Ready.'))
+        steps = [{'click': 'Guide · '}, {'snapshot': 'guide'}]
+        home = 'http://127.0.0.1:8900'
+        opened = self.open_desk(answers, steps, shell=True, continueHome=home)
+        shot = opened['snapshots']['guide']
+        link = next(one for one in shot['links']
+                    if one['name'] == 'Continue in another studio: Guide')
+        self.assertEqual(link['href'], home + '/#token=home-key&continue=restart-guide@2')
+        # It opens where the way back to Marketing Studio does.
+        self.assertEqual(link['target'], 'marketing-studio')
+        self.assertEqual(self.posts(opened), [])
+        # Run alone, there is no Marketing Studio to continue in: no link.
+        alone = self.open_desk(answers, steps, shell=True)
+        self.assertNotIn('Continue in another studio', str(alone['snapshots']['guide']['links']))
+
     def test_the_kept_state_is_read_only_for_a_teammate(self):
         brief = a_card('brief@101', 'ready', 'Ready.', actions=('download',))
         failed = {'brief@101': {'state': 'failed', 'problem': 'The library is busy.'}}

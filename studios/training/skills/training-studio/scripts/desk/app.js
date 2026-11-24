@@ -9811,10 +9811,82 @@ function linkToken() {
   return found ? found[1] : '';
 }
 
+// Continue in another studio: Marketing Studio opens this page with `library=<id>@<revision>`
+// in its fragment. It is read once, as the page begins, and checked here again: a Document
+// Library ID and a revision from 1 to 1000, or nothing.
+function libraryFromLink(hash) {
+  const given = new URLSearchParams(String(hash || '').replace(/^#/, '')).get('library') || '';
+  const found = /^([a-z0-9][a-z0-9-]{0,63})@([1-9][0-9]{0,3})$/.exec(given);
+  if (!found || Number(found[2]) > 1000) return null;
+  return { id: found[1], revision: Number(found[2]) };
+}
+
+// The New training sheet opened from a Document Library item: that revision picked as a
+// source, said at the top of the sheet. Nothing is made until the person presses Start. An
+// item that is hidden, missing or cannot be read is said instead, and the sheet opens as it
+// would.
+async function openFromLibrary(pick) {
+  let read = null, why = '';
+  try {
+    read = await send('library-document', { id: pick.id, revision: pick.revision });
+    if (!read || read.readable === false) why = 'it has no text that can be read';
+  } catch (failure) {
+    why = failure.message || 'it could not be found';
+  }
+  await restoreIntake();
+  if (!view.draft) view.draft = newDraft();
+  const draft = view.draft;
+  if (why) {
+    draft.libraryStart = { problem: 'The Document Library item you chose could not be opened: '
+      + String(why).replace(/[.\s]+$/, '') + '. Start as usual, or choose Add from library.' };
+  } else {
+    const title = read.title || 'Untitled';
+    draft.library = [...startPicks(draft).filter((one) => one.id !== pick.id),
+      { id: pick.id, revision: pick.revision, title }];
+    draft.libraryStart = { id: pick.id, revision: pick.revision, title };
+  }
+  show('home');
+  await openNew(undefined, true);
+}
+
+// Continue in another studio, for work this studio kept in the Document Library: the link
+// to Marketing Studio's Library on that document, with the studios to continue in. Only
+// when Marketing Studio opened this page (StudioShell.continueLink gives null otherwise); it
+// opens where the way back to Marketing Studio does.
+function continueAction(doc, name) {
+  const link = typeof StudioShell !== 'undefined' && StudioShell.continueLink
+    ? StudioShell.continueLink(doc) : null;
+  if (!link) return null;
+  const node = make('a', 'button button-quiet', 'Continue in another studio');
+  node.href = link;
+  const suite = byId('go-suite');
+  if (suite && suite.getAttribute('target')) {
+    node.target = suite.getAttribute('target');
+    node.rel = 'noopener';
+  }
+  if (name) node.setAttribute('aria-label', 'Continue in another studio: ' + name);
+  node.dataset.key = 'continue ' + (doc.id || doc.document);
+  return node;
+}
+
+// What the New training sheet says first when it was opened from the Document Library.
+function libraryStartNote(draft) {
+  const start = draft && draft.libraryStart;
+  if (!start) return null;
+  if (start.problem) return callout('', make('p', 'problem', start.problem));
+  const still = startPicks(draft).some((one) => one.id === start.id);
+  return callout('', make('p', '', 'Starting from: ' + start.title + ', from the Document '
+    + 'Library' + (still ? '' : ' (removed from the sources)') + '.'), make('p', 'quiet',
+    still ? 'It is one of the sources in step 2, revision ' + start.revision + '. Nothing is '
+      + 'made until you choose Start.' : 'Add it again from step 2, or start without it.'));
+}
+
 function begin() {
   const symbol = byId('studio-symbol');
   if (symbol) symbol.append(icon('studio'));
   view.token = linkToken();
+  // Read before anything can change the fragment.
+  const fromLibrary = libraryFromLink(window.location.hash);
   // A new link pasted into a tab that is already open changes only the fragment.
   window.addEventListener('hashchange', () => {
     const next = linkToken();
@@ -9919,7 +9991,8 @@ function begin() {
   refresh().then(async () => {
     if (!view.runner || !view.setup) return;
     const saved = await restoreIntake();
-    if(new URLSearchParams(location.hash.slice(1)).get('resume-intake')==='1'){show('home');openNew(undefined,true);}
+    if (fromLibrary) await openFromLibrary(fromLibrary);
+    else if(new URLSearchParams(location.hash.slice(1)).get('resume-intake')==='1'){show('home');openNew(undefined,true);}
     else if(view.screen==='home'&&!view.sheet){if(saved?.intakeOpen)openNew(undefined,true);else drawHome(true);}
   });
   window.addEventListener('beforeunload', event => {

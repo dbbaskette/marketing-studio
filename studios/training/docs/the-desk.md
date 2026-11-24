@@ -227,7 +227,20 @@ Its card says which revision, or that the save failed, with **Keep in library ag
 Returned to draft, by an edit, **Undo** or **Return to draft**, its card says the library
 keeps that revision until it is marked ready again; nothing is removed from the library.
 A guide or brief that was Ready before the library kept anything offers **Keep in
-library**.
+library**. When Marketing Studio opened Training Studio, a kept guide or brief also offers
+**Continue in another studio**, which opens Marketing Studio's Library on that revision with
+the studios to continue in.
+
+Research that passes its independent check is kept in the Document Library too, as research
+under the training's own key (`studio_core.document_library.research.keep_research`), and
+**Research & sources** says which revision ("Kept in the Document Library as research,
+revision N."), or why it was not kept. Keeping it never stops or delays the training.
+
+Opened from Marketing Studio's **Continue in another studio** (`library=<id>@<revision>` in
+the link), Training Studio opens **New training** with that revision already among the
+sources of step 2, and says "Starting from: <title>, from the Document Library." at the top.
+Nothing is made until you choose **Start**. An item that was removed, is missing or has no
+readable text is said there instead, and the form opens as it would.
 
 ### Choosing practice and Yoodli scenarios
 

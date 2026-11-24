@@ -394,7 +394,9 @@ def kept(root, cards) -> dict:
         if held.get('sha256') and held.get('sha256') != card.get('seen'):
             shown_[card['name']] = {'state': 'not-kept'}
         elif held.get('state') == 'kept':
-            shown_[card['name']] = {'state': 'kept', 'revision': held.get('revision')}
+            # Its library ID too, for Continue in another studio.
+            shown_[card['name']] = {'state': 'kept', 'revision': held.get('revision'),
+                                    'document': held.get('document')}
         elif held.get('state') == 'failed':
             shown_[card['name']] = {'state': 'failed', 'problem': held.get('problem') or NOT_KEPT}
         else:

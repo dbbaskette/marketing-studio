@@ -905,6 +905,13 @@ async function app(file) {
     };
     window.StudioShell = {
       connect() {},
+      // Continue in another studio: Marketing Studio's link when a plan names its home
+      // (`continueHome`), as the shell gives it when Marketing Studio opened the page; else null.
+      continueLink(doc) {
+        const id = doc && (doc.id || doc.document);
+        return plan.continueHome && id && Number.isInteger(doc.revision)
+          ? plan.continueHome + '/#token=home-key&continue=' + id + '@' + doc.revision : null;
+      },
       commands(provide) { if (typeof provide === 'function') commandLists.push(provide); },
       track(stages, label) {
         const line = part('ol', 'track');
