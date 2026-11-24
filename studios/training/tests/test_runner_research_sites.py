@@ -251,7 +251,7 @@ class RunTests(StudioCase):
         self.shared(TANZU)
         self.assertEqual(setup.shared()[0]['research'], {'sites': [TANZU]})
         # A site added for this training does not change the shared list.
-        root = self.saved_start(research_from={'documents': False, 'sites': [TANZU, DOCS + '/'],
+        root = self.start(research_from={'documents': False, 'sites': [TANZU, DOCS + '/'],
                                          'web': False})
         self.assertEqual(studios_config.read()[0]['research'], {'sites': [TANZU]})
         pinned = {'documents': False, 'sites': [TANZU, DOCS], 'web': False}
@@ -298,8 +298,7 @@ class RunTests(StudioCase):
                          said)
 
     def test_a_training_started_with_the_older_words_researches_as_before(self):
-        root = self.saved_start(source_scope='public-web')
-        self.to_gate(root, 'research')
+        root = self.start(source_scope='public-web')
         self.assertEqual(self.record(root)['research_from'], WEB)
         kind, job, spec = self.workers.jobs[1]
         self.assertEqual(spec['research'], WEB)
@@ -321,16 +320,14 @@ class RunTests(StudioCase):
             with self.subTest(chosen), \
                     mock.patch.object(research_contract, 'snapshot', return_value=contract), \
                     mock.patch.object(research_contract, 'native', native):
-                root = self.saved_start(title=f'Restarts {number}', research_from=chosen, saved_contract=contract)
+                root = self.start(title=f'Restarts {number}', research_from=chosen)
                 if documents:
                     self.send(root, 'handbook.md')
                     self.engine.supply(root, 'done')
-                self.to_gate(root, 'research-plan')
                 planned = self.workers.of('research-plan')[-1]
                 # A plan's search words hold no slash: the filter names the host.
                 self.assertIn('such as site:blogs.vmware.com.', planned.task)
                 self.assertIn('Allowed sites: blogs.vmware.com/tanzu', planned.task)
-                self.decide(root, 'research-plan')
                 task = seen[-1]
                 looks = research_sites.effective(research_sites.choice(chosen))
                 self.assertEqual(task['source_mode'], mode)
