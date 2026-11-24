@@ -14,6 +14,29 @@ Each studio keeps its own colour through `data-product` and `[data-studio]`: Mar
 Studio and Blog Studio blue, Presentation Studio warm orange, Training Studio violet and
 Infographic Studio teal. Light and dark appearances have independent tokens.
 
+## The look
+
+All five apps have one look, which began as the liquid pilot on Marketing Studio Home and
+Infographic Studio ([its history](liquid-pilot.md)): round, roomy and soft. It is the base
+of `ui-kit/style.css`; no page opts into it or out of it, and no stylesheet, page or script
+names `data-pilot` (`tests/test_ui_consistency.py`).
+
+| Part | Rule |
+| --- | --- |
+| Tokens | One set: light in `:root`, dark for this computer's dark and the same dark again when Dark is chosen (`tests/test_css_tokens.py` keeps the two equal). A neutral ground (`#f5f5f7` light, `#141519` dark), white or `#202227` paper, and `--soft-shadow`, `--control-face`, `--face-edge` and `--preview-ground` for the soft surfaces. |
+| Cards | `--card-round` 24px corners, `1.5rem` inside (`1.25rem` on a phone), a hairline edge and a very soft shadow. A `.card-title` is the card's heading: ink, `1.1rem`, semibold. |
+| Buttons | Pills (`999px`), 44px tall, `.9rem` semibold, on a near-white face with a visible `--control-line` edge. A button inside a `.dialog` keeps `10px` corners. |
+| Fields | `.input` has 14px corners and a `--control-line` edge, so its boundary keeps 3:1 against the paper. |
+| Shell | A `15.5rem` sidebar with `2rem 1rem` inside; a nav item 46px tall with 14px corners, the current page a tinted pill with an accent bar. A `4.6rem` toolbar. The page starts `2.8rem` below it (`1.6rem` on a phone). On a phone the tab bar has 22px top corners and 49px items. |
+| Headlines | `.large-title` is `clamp(2rem, 3.1vw, 2.8rem)`, bold and tight; a `.lede` is quiet with roomy lines. |
+| Transient | `.dialog` and `.sheet` have 28px corners, 24px on a phone. |
+| Tags | `.tag` is a round, borderless chip on `--well`. |
+| Motion | Only something running or waiting moves: a working bead, the arc's light, the line of light, a part being made or the waiting track stage. A status that is simply true is still, such as Infographic Studio's saved infographic, its route's step in hand and its ledger's current revision. |
+| Inset | A bordered or filled box keeps its words at least 8px from its edge, and a card or panel 12px or more; a workflow step button has `.75rem` each side. Checked by a look at the screen (`docs/testing.md`). |
+
+`tests/test_ui_consistency.py` holds these values (`test_the_look_is_the_kits_own`) and the motion rule
+(`test_only_work_under_way_moves`).
+
 ## Layout rules
 
 These rules put each screen in the order a person works. Every studio follows them.
@@ -44,6 +67,7 @@ Ctrl+K) and the Light, Dark and Auto appearance (one shared setting).
 The Home headline is the one place the shell uses the system serif: Marketing Studio's launch
 question (`.launch-intro`), a studio's greeting (a `p.large-title` first on its page) and
 Infographic Studio's Home (`[data-home]`); every other `.large-title` keeps the plain face.
+The serif changes only the face: weight and spacing are those of every `.large-title`.
 The appearance is switched by the stylesheet from `<body data-appearance>`, which the server
 writes and the shell keeps: Auto follows `prefers-color-scheme`, Light stands it aside, and
 Dark applies the same dark tokens. No script reads or rewrites a stylesheet to switch it,
@@ -72,7 +96,7 @@ assistant, and the one thing it may need from the person, is in the rail (or the
 A screen still has one filled button: the move's own action is amber. **F** on a desk reads
 the work alone at every width: the parts and the rail step aside, and a quiet
 **Show everything** button (`.reading-exit`) held at the foot of the content brings them back,
-as F and Escape do. Toasts and the finish card rise over it (`--foot-lift`).
+as F and Escape do. Toasts rise over it (`--foot-lift`).
 
 - **The arc is drawn as a route.** It is the one signature, so it carries the flair: a flat
   band tinted in the studio's colour as far as the work has come (`--arc-reach`), a numbered

@@ -1644,15 +1644,20 @@ class PageFileTests(unittest.TestCase):
             return text[at + 1:end - 1]
 
         def colours(body: str) -> dict:
-            found = {}
+            found, named = {}, {}
             for name, value in re.findall(r'--([\w-]+):\s*([^;]+);', body):
                 solid = re.fullmatch(r'#([0-9a-f]{6})', value.strip())
                 mixed = re.fullmatch(r'rgb\((\d+) (\d+) (\d+)(?: / ([\d.]+))?\)', value.strip())
+                other = re.fullmatch(r'var\(--([\w-]+)\)', value.strip())
                 if solid:
                     found[name] = (*(int(solid[1][at:at + 2], 16) for at in (0, 2, 4)), 1.0)
                 elif mixed:
                     found[name] = (int(mixed[1]), int(mixed[2]), int(mixed[3]),
                                    float(mixed[4] or 1))
+                elif other:
+                    named[name] = other[1]
+            # A token that names another colour token, such as the sheet on the paper.
+            found.update({name: found[other] for name, other in named.items() if other in found})
             return found
 
         light = colours(block(styles, ':root'))

@@ -6,15 +6,15 @@
 :root {
   color-scheme: light dark;
 
-  --ground: #f2f4f7;
+  --ground: #f5f5f7;
   --wash-1: #e0e8f2;
   --wash-2: #e8edf3;
   --wash-3: #e4eaf0;
   --wash-4: #e5edeb;
   --wash-5: #e7e7ef;
 
-  --ink: #1c1d22;
-  --quiet: #565a69;
+  --ink: #191b20;
+  --quiet: #606570;
   --link: #0a55c2;
   --accent: #0a66e4;
   --on-accent: #ffffff;
@@ -42,14 +42,14 @@
   --infographic-wash: #e5f4f3;
   --on-studio: #ffffff;
 
-  --glass: rgb(242 246 252 / 0.82);
+  --glass: rgb(250 251 253 / 0.78);
   --card: #ffffff;
-  --sheet-fill: rgb(250 251 253 / 0.96);
+  --sheet-fill: var(--paper);
   --scrim: rgb(15 20 40 / 0.35);
-  --solid: #f5f7fa;
+  --solid: #f5f5f7;
   --paper: #ffffff;
-  --paper-line: rgb(20 24 40 / 0.12);
-  --glass-line: rgb(56 70 90 / 0.16);
+  --paper-line: rgb(36 43 56 / 0.085);
+  --glass-line: rgb(36 43 56 / 0.12);
   --hair: rgb(20 24 40 / 0.1);
   --well: rgb(20 24 40 / 0.07);
   --thumb: rgb(255 255 255 / 0.95);
@@ -60,15 +60,21 @@
   --lift: 0 8px 24px rgb(40 50 70 / 0.12), 0 1px 4px rgb(40 50 70 / 0.06);
   --rest: none;
   --material-light: rgb(255 255 255 / 0.72);
-  --material-tint: rgb(103 147 213 / 0.08);
+  --material-tint: rgb(135 156 187 / 0.035);
+  /* The soft look: a card's barely-there shadow, a control's face and top edge, and the
+     ground a picture is previewed on. */
+  --soft-shadow: 0 2px 8px rgb(20 30 45 / 0.035);
+  --control-face: rgb(255 255 255 / 0.88);
+  --face-edge: inset 0 1px 0 rgb(255 255 255 / 0.82);
+  --preview-ground: #e9ebef;
 
   --plain: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
   --typed: ui-monospace, "SF Mono", monospace;
 
   --gutter: clamp(0.75rem, 3vw, 2rem);
-  --card-round: 18px;
+  --card-round: 24px;
   --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
-  /* How far toasts and the finish card rise to clear a control fixed at the foot. */
+  /* How far toasts rise to clear a control fixed at the foot. */
   --foot-lift: 0rem;
 }
 
@@ -81,15 +87,15 @@
 
 @media (prefers-color-scheme: dark) {
   :root:where(:not(:has(> body[data-appearance="light"]))) {
-    --ground: #11151c;
+    --ground: #141519;
     --wash-1: #1b2636;
     --wash-2: #292432;
     --wash-3: #1a2a2b;
     --wash-4: #30262d;
     --wash-5: #22293b;
 
-    --ink: #f3f4f8;
-    --quiet: #abb0c0;
+    --ink: #f4f5f7;
+    --quiet: #b3b7c2;
     --link: #9cc4ff;
     --accent: #6aa9ff;
     --on-accent: #051330;
@@ -116,14 +122,14 @@
     --infographic-wash: #1c383b;
     --on-studio: #151c29;
 
-    --glass: rgb(30 36 46 / 0.86);
-    --card: #1c222d;
-    --sheet-fill: rgb(32 39 50 / 0.97);
+    --glass: rgb(31 33 39 / 0.85);
+    --card: #202227;
+    --sheet-fill: var(--paper);
     --scrim: rgb(0 0 0 / 0.6);
-    --solid: #202732;
-    --paper: #191f29;
-    --paper-line: rgb(255 255 255 / 0.12);
-    --glass-line: rgb(206 221 244 / 0.16);
+    --solid: #141519;
+    --paper: #202227;
+    --paper-line: rgb(255 255 255 / 0.08);
+    --glass-line: rgb(255 255 255 / 0.14);
     --hair: rgb(255 255 255 / 0.1);
     --well: rgb(0 0 0 / 0.3);
     --thumb: rgb(104 108 128 / 0.75);
@@ -133,8 +139,12 @@
     --edge: inset 0 1px 0 rgb(255 255 255 / 0.12);
     --lift: 0 10px 28px rgb(0 0 0 / 0.35), 0 1px 5px rgb(0 0 0 / 0.2);
     --rest: none;
-    --material-light: rgb(255 255 255 / 0.07);
-    --material-tint: rgb(103 147 213 / 0.06);
+    --material-light: rgb(255 255 255 / 0.025);
+    --material-tint: rgb(135 156 187 / 0.025);
+    --soft-shadow: 0 2px 8px rgb(0 0 0 / 0.08);
+    --control-face: #30333b;
+    --face-edge: inset 0 1px 0 rgb(255 255 255 / 0.08);
+    --preview-ground: #191b20;
   }
 }
 
@@ -142,15 +152,15 @@
    (tests/test_css_tokens.py keeps the two the same). */
 :root:where(:has(> body[data-appearance="dark"])) {
   color-scheme: dark;
-  --ground: #11151c;
+  --ground: #141519;
   --wash-1: #1b2636;
   --wash-2: #292432;
   --wash-3: #1a2a2b;
   --wash-4: #30262d;
   --wash-5: #22293b;
 
-  --ink: #f3f4f8;
-  --quiet: #abb0c0;
+  --ink: #f4f5f7;
+  --quiet: #b3b7c2;
   --link: #9cc4ff;
   --accent: #6aa9ff;
   --on-accent: #051330;
@@ -177,14 +187,14 @@
   --infographic-wash: #1c383b;
   --on-studio: #151c29;
 
-  --glass: rgb(30 36 46 / 0.86);
-  --card: #1c222d;
-  --sheet-fill: rgb(32 39 50 / 0.97);
+  --glass: rgb(31 33 39 / 0.85);
+  --card: #202227;
+  --sheet-fill: var(--paper);
   --scrim: rgb(0 0 0 / 0.6);
-  --solid: #202732;
-  --paper: #191f29;
-  --paper-line: rgb(255 255 255 / 0.12);
-  --glass-line: rgb(206 221 244 / 0.16);
+  --solid: #141519;
+  --paper: #202227;
+  --paper-line: rgb(255 255 255 / 0.08);
+  --glass-line: rgb(255 255 255 / 0.14);
   --hair: rgb(255 255 255 / 0.1);
   --well: rgb(0 0 0 / 0.3);
   --thumb: rgb(104 108 128 / 0.75);
@@ -194,8 +204,12 @@
   --edge: inset 0 1px 0 rgb(255 255 255 / 0.12);
   --lift: 0 10px 28px rgb(0 0 0 / 0.35), 0 1px 5px rgb(0 0 0 / 0.2);
   --rest: none;
-  --material-light: rgb(255 255 255 / 0.07);
-  --material-tint: rgb(103 147 213 / 0.06);
+  --material-light: rgb(255 255 255 / 0.025);
+  --material-tint: rgb(135 156 187 / 0.025);
+  --soft-shadow: 0 2px 8px rgb(0 0 0 / 0.08);
+  --control-face: #30333b;
+  --face-edge: inset 0 1px 0 rgb(255 255 255 / 0.08);
+  --preview-ground: #191b20;
 }
 
 /* The colour the person chose for their Mac, where the browser will say what it is. */
@@ -325,6 +339,12 @@ summary {
   cursor: pointer;
 }
 
+details > summary {
+  min-height: 44px;
+  padding-block: 0.6rem;
+  line-height: 1.45;
+}
+
 /* A ring in two tones, so it shows on glass whatever is behind it. */
 :focus-visible {
   outline: 3px solid var(--focus);
@@ -396,11 +416,11 @@ summary {
 .card {
   position: relative;
   isolation: isolate;
-  padding: 1.15rem clamp(0.95rem, 2.5vw, 1.4rem);
+  padding: 1.5rem;
   background: var(--card);
   border: 1px solid var(--paper-line);
   border-radius: var(--card-round);
-  box-shadow: none;
+  box-shadow: var(--soft-shadow);
 }
 
 .card > * + * {
@@ -425,7 +445,7 @@ summary {
   position: relative;
   z-index: 1;
   display: grid;
-  grid-template-columns: 14.5rem minmax(0, 1fr);
+  grid-template-columns: 15.5rem minmax(0, 1fr);
   min-height: 100vh;
 }
 
@@ -435,10 +455,10 @@ summary {
   align-self: start;
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: 0.4rem;
   height: 100vh;
   margin: 0;
-  padding: 30px 18px;
+  padding: 2rem 1rem;
   border: 0;
   border-right: 1px solid var(--glass-line);
   border-radius: 0;
@@ -448,11 +468,12 @@ summary {
 .brand {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 0 12px 28px;
+  gap: 0.8rem;
+  padding: 0 0.6rem 2rem;
   color: var(--ink);
   font-size: 1rem;
   font-weight: 650;
+  letter-spacing: -0.025em;
   line-height: 1.25;
 }
 
@@ -481,12 +502,13 @@ summary {
   align-items: center;
   gap: 0.7rem;
   width: 100%;
-  min-height: 2.75rem;
-  padding: 0.4rem 0.75rem;
+  min-height: 46px;
+  padding: 0.65rem 0.8rem;
   background: none;
   border: 0;
-  border-radius: 10px;
+  border-radius: 14px;
   text-align: left;
+  font-size: 0.92rem;
   font-weight: 500;
   cursor: pointer;
   transition: background-color 160ms ease, transform 160ms var(--ease);
@@ -503,7 +525,7 @@ summary {
 .nav-item[aria-current="page"] {
   background: var(--selection);
   color: var(--link);
-  box-shadow: inset 3px 0 0 var(--accent), inset 0 0 0 1px var(--selection-line), var(--edge);
+  box-shadow: inset 3px 0 0 var(--accent), inset 0 0 0 1px var(--selection-line), var(--face-edge);
   font-weight: 650;
 }
 
@@ -545,10 +567,10 @@ summary {
   flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem 0.75rem;
-  min-height: 4.2rem;
+  min-height: 4.6rem;
   padding: 0.65rem var(--gutter);
   border: 0;
-  border-bottom: 1px solid var(--glass-line);
+  border-bottom: 1px solid var(--paper-line);
   border-radius: 0;
   box-shadow: var(--edge);
 }
@@ -608,7 +630,7 @@ summary {
 .page {
   max-width: 76rem;
   margin: 0 auto;
-  padding-top: 2rem;
+  padding-top: 2.8rem;
   scroll-margin-top: 5rem;
 }
 
@@ -641,14 +663,15 @@ summary {
   align-items: center;
   justify-content: center;
   gap: 0.45rem;
-  min-height: 2.75rem;
-  padding: 0.45rem 1.1rem;
+  min-height: 44px;
+  padding: 0.55rem 1.15rem;
   overflow: hidden;
-  background: var(--control-fill);
+  background: var(--control-face);
   color: var(--ink);
   border: 1px solid var(--control-line);
-  border-radius: 10px;
-  box-shadow: inset 0 1px 0 var(--shine), 0 1px 2px rgb(0 0 0 / 0.06);
+  border-radius: 999px;
+  box-shadow: var(--face-edge), var(--soft-shadow);
+  font-size: 0.9rem;
   font-weight: 600;
   white-space: nowrap;
   cursor: pointer;
@@ -677,7 +700,6 @@ summary {
   background: var(--accent);
   color: var(--on-accent);
   border-color: transparent;
-  box-shadow: inset 0 1px 0 var(--shine), 0 1px 3px rgb(0 0 0 / 0.12);
 }
 
 .button-quiet {
@@ -691,7 +713,14 @@ summary {
   background: var(--late);
   color: var(--paper);
   border-color: transparent;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.25), 0 6px 16px rgb(150 30 20 / 0.24);
+}
+
+/* A toggle that is on. */
+.button[aria-pressed="true"] {
+  background: var(--selection);
+  color: var(--link);
+  border-color: var(--selection-line);
+  box-shadow: none;
 }
 
 .button-round {
@@ -1005,14 +1034,15 @@ summary {
 
 .large-title {
   padding: 0.6rem 0.25rem 0.2rem;
-  font-size: clamp(1.8rem, 3vw, 2.4rem);
-  font-weight: 680;
-  letter-spacing: -0.035em;
-  line-height: 1.15;
+  font-size: clamp(2rem, 3.1vw, 2.8rem);
+  font-weight: 700;
+  letter-spacing: -0.055em;
+  line-height: 1.12;
   text-wrap: balance;
 }
 
 .intro {
+  margin-bottom: 1.8rem;
   padding: 0 0.25rem;
 }
 
@@ -1022,13 +1052,16 @@ summary {
 
 .lede {
   max-width: 62ch;
+  color: var(--quiet);
+  line-height: 1.6;
 }
 
 .card-title {
-  font-size: 0.86rem;
+  color: var(--ink);
+  font-size: 1.1rem;
   font-weight: 650;
-  color: var(--quiet);
-  letter-spacing: 0.01em;
+  letter-spacing: -0.025em;
+  line-height: 1.3;
 }
 
 .card-needs {
@@ -1415,8 +1448,8 @@ select.input {
   padding: 0.55rem 0.85rem;
   background: var(--paper);
   color: var(--ink);
-  border: 1px solid var(--quiet);
-  border-radius: 12px;
+  border: 1px solid var(--control-line);
+  border-radius: 14px;
 }
 
 textarea.input {
@@ -2005,10 +2038,11 @@ p.fact > .bead {
 }
 
 .tag {
-  padding: 0.05rem 0.55rem;
-  border: 1px solid var(--quiet);
+  padding: 0.25rem 0.65rem;
+  background: var(--well);
+  border: 1px solid transparent;
   border-radius: 999px;
-  font-size: 0.8rem;
+  font-size: 0.75rem;
   font-weight: 600;
   white-space: nowrap;
 }
@@ -2045,7 +2079,7 @@ p.fact > .bead {
   padding: 1.1rem 1.2rem 1.2rem;
   overflow-y: auto;
   background: var(--sheet-fill);
-  border-radius: 22px;
+  border-radius: 28px;
   transform-origin: top right;
   animation: drop 280ms var(--ease);
 }
@@ -2372,13 +2406,13 @@ body[data-product="Training Studio"]:has(#sheet:not([hidden])) {
     inset: auto 0 0;
     z-index: 6;
     flex-direction: row;
-    gap: 0.2rem;
+    gap: 0.4rem;
     height: auto;
     margin: 0;
-    padding: 0.35rem 0.4rem calc(0.35rem + env(safe-area-inset-bottom));
+    padding: 0.5rem 0.5rem calc(0.5rem + env(safe-area-inset-bottom));
     border: 0;
     border-top: 1px solid var(--hair);
-    border-radius: 0;
+    border-radius: 22px 22px 0 0;
     box-shadow: var(--edge);
   }
 
@@ -2392,10 +2426,9 @@ body[data-product="Training Studio"]:has(#sheet:not([hidden])) {
     flex-direction: column;
     justify-content: center;
     gap: 0.1rem;
-    min-height: 3.1rem;
-    padding: 0.3rem 0.2rem;
-    border-radius: 9px;
-    font-size: 0.72rem;
+    min-height: 49px;
+    padding: 0.35rem 0.25rem;
+    font-size: 0.73rem;
     text-align: center;
   }
 
@@ -2433,7 +2466,15 @@ body[data-product="Training Studio"]:has(#sheet:not([hidden])) {
   }
 
   .page {
-    padding-top: 1.4rem;
+    padding-top: 1.6rem;
+  }
+
+  .toolbar {
+    min-height: 4.4rem;
+  }
+
+  .card {
+    padding: 1.25rem;
   }
 
   .input, select.input, textarea.input {
@@ -2456,7 +2497,7 @@ body[data-product="Training Studio"]:has(#sheet:not([hidden])) {
     width: 100%;
     max-height: calc(100vh - 10rem);
     max-height: calc(100dvh - 10rem - env(safe-area-inset-bottom));
-    border-radius: 22px 22px 0 0;
+    border-radius: 24px;
     transform-origin: bottom center;
     animation: rise 280ms var(--ease);
     overscroll-behavior: contain;
@@ -2746,7 +2787,7 @@ a.button {
   background: var(--sheet-fill);
   color: var(--ink);
   border: 1px solid var(--glass-line);
-  border-radius: 22px;
+  border-radius: 28px;
   box-shadow: var(--edge), var(--lift);
 }
 
@@ -2850,6 +2891,10 @@ a.button {
 @media (max-width: 52rem) {
   .suite-link {
     margin-top: 0;
+  }
+
+  .dialog {
+    border-radius: 24px;
   }
 }
 
@@ -3064,11 +3109,12 @@ a.button {
   overflow-wrap: anywhere;
 }
 
-/* A launch card's tile takes its studio's wash and colour, flat on the card. */
+/* A launch card's tile is filled with its studio's colour. */
 .card[data-studio] > .studio-symbol {
-  background: var(--studio-wash);
-  color: var(--studio-color);
-  box-shadow: none;
+  background: var(--studio-color);
+  color: var(--on-studio);
+  border-radius: 13px;
+  box-shadow: var(--face-edge);
 }
 
 @media (max-width: 52rem) {
@@ -3152,6 +3198,8 @@ a.button {
     --shine: transparent;
     --material-light: transparent;
     --material-tint: transparent;
+    --control-face: var(--paper);
+    --soft-shadow: none;
   }
 
   .backdrop {
@@ -3363,7 +3411,7 @@ body[data-product="Training Studio"] .card > .training-options {
 .desk-flow-stages > li { flex: 1 1 0; min-width: 0; }
 .desk-flow-stages .desk-flow-step {
   display: flex; flex-direction: column; align-items: flex-start; justify-content: flex-start;
-  gap: .15rem; width: 100%; min-height: 5rem; padding: .5rem .4rem;
+  gap: .15rem; width: 100%; min-height: 5rem; padding: .5rem .75rem;
   border: 0; border-bottom: 3px solid transparent; border-radius: .35rem .35rem 0 0;
   text-align: left; white-space: normal; overflow-wrap: anywhere;
 }
@@ -3386,7 +3434,7 @@ body[data-product="Training Studio"] .card > .training-options {
 #desk-plan-review { scroll-margin-top: 5rem; }
 @media (max-width: 40rem) {
   .desk-flow-label { font-size: .875rem; gap: .2rem; }
-  .desk-flow-stages .desk-flow-step { padding-inline: .25rem; }
+  .desk-flow-stages .desk-flow-step { padding-inline: .5rem; }
   .desk-flow-number { display: none; }
 }
 .desk-progress {
@@ -3778,138 +3826,45 @@ input.desk-text {
   color: var(--yours);
 }
 
-/* Liquid pilot: deliberately opt-in. The other studio pages retain their tokens. */
-body[data-pilot="liquid"] {
-  --ground: #f5f5f7;
-  --solid: #f5f5f7;
-  --ink: #191b20;
-  --quiet: #606570;
-  --glass: rgb(250 251 253 / 0.78);
-  --material-light: rgb(255 255 255 / 0.72);
-  --material-tint: rgb(135 156 187 / 0.035);
-  --glass-line: rgb(36 43 56 / 0.12);
-  --paper-line: rgb(36 43 56 / 0.085);
-  --card-round: 24px;
-  --sheet-fill: var(--paper);
-  --pilot-shadow: 0 2px 8px rgb(20 30 45 / 0.035);
-  --pilot-selection: rgb(255 255 255 / 0.88);
-  --pilot-control: rgb(255 255 255 / 0.88);
-  --pilot-edge: inset 0 1px 0 rgb(255 255 255 / 0.82);
-  --pilot-preview: #e9ebef;
-}
-body[data-pilot="liquid"] .window { grid-template-columns: 15.5rem minmax(0, 1fr); }
-body[data-pilot="liquid"] .sidebar { padding: 2rem 1rem; gap: .4rem; }
-body[data-pilot="liquid"] .brand { gap: .8rem; padding: 0 .6rem 2rem; font-weight: 650; letter-spacing: -.025em; }
-body[data-pilot="liquid"] .nav-item { min-height: 46px; border-radius: 14px; padding: .65rem .8rem; font-size: .92rem; }
-body[data-pilot="liquid"] .nav-item[aria-current="page"] { background: var(--selection); box-shadow: inset 3px 0 0 var(--accent), inset 0 0 0 1px var(--selection-line), var(--pilot-edge); }
-body[data-pilot="liquid"] .toolbar { min-height: 4.6rem; border-bottom-color: var(--paper-line); }
-body[data-pilot="liquid"] .toolbar-title { font-size: 1rem; font-weight: 600; }
-body[data-pilot="liquid"] .page { max-width: 76rem; padding-top: 2.8rem; }
-/* First-run setup keeps one column: the toolbar, the notice and the form share its edges. */
-body[data-pilot="liquid"].alone .page { max-width: 46rem; }
-body[data-pilot="liquid"] .large-title { font-size: clamp(2rem, 3.1vw, 2.8rem); font-weight: 700; letter-spacing: -.055em; line-height: 1.12; }
-body[data-pilot="liquid"] .lede { color: var(--quiet); line-height: 1.6; }
-body[data-pilot="liquid"] .intro { margin-bottom: 1.8rem; }
-body[data-pilot="liquid"] .card { padding: 1.5rem; border-color: var(--paper-line); box-shadow: var(--pilot-shadow); }
-body[data-pilot="liquid"] .card-title { color: var(--ink); font-size: 1.1rem; line-height: 1.3; font-weight: 650; letter-spacing: -.025em; }
-body[data-pilot="liquid"] .button { min-height: 44px; border-radius: 999px; padding: .55rem 1.15rem; background: var(--pilot-control); box-shadow: var(--pilot-edge), var(--pilot-shadow); font-size: .9rem; font-weight: 600; }
-body[data-pilot="liquid"] .button-filled { background: var(--accent); color: var(--on-accent); border-color: transparent; }
-body[data-pilot="liquid"] .button-quiet { background: var(--control-fill); border-color: var(--control-line); box-shadow: none; }
-body[data-pilot="liquid"] .button[aria-pressed="true"] { background: var(--selection); color: var(--link); border-color: var(--selection-line); box-shadow: none; }
-body[data-pilot="liquid"] .button-danger { background: var(--late); color: var(--paper); }
-body[data-pilot="liquid"] .input { border-radius: 14px; background: var(--paper); border-color: var(--glass-line); }
-body[data-pilot="liquid"] details > summary { min-height: 44px; padding-block: .6rem; line-height: 1.45; cursor: pointer; }
-body[data-pilot="liquid"] .dialog,
-body[data-pilot="liquid"] .sheet { border-radius: 28px; }
-body[data-pilot="liquid"] .tag { border-radius: 999px; font-size: .75rem; background: var(--well); border-color: transparent; padding: .25rem .65rem; }
 /* Golden Gate 2.1: the four formats carry the launchpad's identity. The tinted
    object surfaces stay opaque; material remains on the application controls. */
 .launch-kicker { color: var(--link); font-size: .78rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
 .work-recent-heading::after { content: '+'; margin-inline-start: auto; color: var(--quiet); }
 .work-recent[open] > .work-recent-heading::after { content: '−'; }
-body[data-pilot="liquid"] .launch-intro { margin-bottom: .3rem; }
-body[data-pilot="liquid"] .studio-card { background: linear-gradient(120deg, var(--studio-wash), var(--card) 68%); border-inline-start: 3px solid var(--studio-color); }
-body[data-pilot="liquid"] .studio-card .studio-symbol { border-radius: 13px; background: var(--studio-color); color: var(--on-studio); box-shadow: var(--pilot-edge); }
-body[data-pilot="liquid"] .studio-card .studio-open.button-filled { background: var(--studio-color); color: var(--on-studio); border-color: var(--studio-color); }
-body[data-pilot="liquid"] .studio-readiness { font-size: .8rem; font-weight: 550; gap: .45rem; }
-body[data-pilot="liquid"] .studio-readiness .bead,
-body[data-pilot="liquid"] .studio-link .bead { width: .5rem; height: .5rem; box-shadow: none; vertical-align: 0; }
-body[data-pilot="liquid"] .studio-readiness .bead .icon,
-body[data-pilot="liquid"] .studio-link .bead .icon { display: none; }
-body[data-pilot="liquid"] .studio-running { font-size: .75rem; font-variant-numeric: tabular-nums; }
-body[data-pilot="liquid"] .studio-repository > summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; color: var(--quiet); }
-body[data-pilot="liquid"] .studio-repository[open] > summary { color: var(--ink); }
-body[data-pilot="liquid"] .studio-repository > summary::after { content: '+'; margin-left: .6rem; }
-body[data-pilot="liquid"] .studio-repository[open] > summary::after { content: '−'; }
-body[data-pilot="liquid"] .studio-repository .studio-link-detail { padding: .2rem 0 .5rem; overflow-wrap: anywhere; }
-body[data-pilot="liquid"] .ig-preview-scroll { padding: 1.4rem; border-radius: 18px; background: var(--pilot-preview); }
-body[data-pilot="liquid"] .ig-preview { box-shadow: 0 8px 28px rgb(10 20 40 / .12); }
-body[data-pilot="liquid"] .ig-page-tools { padding: .6rem 0 0; }
-body[data-pilot="liquid"] .ig-project-card { border-radius: 22px; }
-body[data-pilot="liquid"] .ig-work { border-radius: 18px; background: var(--paper); }
-body[data-pilot="liquid"] .ig-story-grid .card { box-shadow: none; }
-body[data-pilot="liquid"] .ig-story-grid .ig-thumbnail { height: 10rem; }
-body[data-pilot="liquid"] .ig-outline-link { stroke: var(--studio-color); stroke-width: 2; }
-body[data-pilot="liquid"] .ig-outline-node { fill: var(--paper); stroke: var(--studio-color); stroke-width: 1; }
-body[data-pilot="liquid"] .ig-outline-dot { fill: var(--studio-color); }
-body[data-pilot="liquid"] .ig-outline-value { fill: var(--studio-color); font: 20px var(--plain); }
-/* Its dark tokens follow the one appearance setting as the kit's do: this computer's dark
-   unless Light is chosen, and the same tokens again when Dark is chosen. */
-@media (prefers-color-scheme: dark) {
-  body[data-pilot="liquid"]:where(:not([data-appearance="light"])) {
-    --ground: #141519;
-    --solid: #141519;
-    --card: #202227;
-    --paper: #202227;
-    --ink: #f4f5f7;
-    --quiet: #b3b7c2;
-    --glass: rgb(31 33 39 / .85);
-    --material-light: rgb(255 255 255 / .025);
-    --material-tint: rgb(135 156 187 / .025);
-    --paper-line: rgb(255 255 255 / .08);
-    --glass-line: rgb(255 255 255 / .14);
-    --pilot-selection: #30333b;
-    --pilot-control: #30333b;
-    --pilot-edge: inset 0 1px 0 rgb(255 255 255 / .08);
-    --pilot-shadow: 0 2px 8px rgb(0 0 0 / .08);
-    --pilot-preview: #191b20;
-  }
-}
-body[data-pilot="liquid"]:where([data-appearance="dark"]) {
-  --ground: #141519;
-  --solid: #141519;
-  --card: #202227;
-  --paper: #202227;
-  --ink: #f4f5f7;
-  --quiet: #b3b7c2;
-  --glass: rgb(31 33 39 / .85);
-  --material-light: rgb(255 255 255 / .025);
-  --material-tint: rgb(135 156 187 / .025);
-  --paper-line: rgb(255 255 255 / .08);
-  --glass-line: rgb(255 255 255 / .14);
-  --pilot-selection: #30333b;
-  --pilot-control: #30333b;
-  --pilot-edge: inset 0 1px 0 rgb(255 255 255 / .08);
-  --pilot-shadow: 0 2px 8px rgb(0 0 0 / .08);
-  --pilot-preview: #191b20;
-}
+.launch-intro { margin-bottom: .3rem; }
+.studio-card { background: linear-gradient(120deg, var(--studio-wash), var(--card) 68%); border-inline-start: 3px solid var(--studio-color); }
+.studio-card .studio-open.button-filled { background: var(--studio-color); color: var(--on-studio); border-color: var(--studio-color); }
+.studio-readiness .bead,
+.studio-link .bead { width: .5rem; height: .5rem; box-shadow: none; vertical-align: 0; }
+.studio-readiness .bead .icon,
+.studio-link .bead .icon { display: none; }
+.studio-repository > summary { color: var(--quiet); }
+.studio-repository[open] > summary { color: var(--ink); }
+.studio-repository > summary::after { content: '+'; margin-left: .6rem; }
+.studio-repository[open] > summary::after { content: '−'; }
+
+/* Infographic Studio: a paper preview on its own quiet ground, and the story outline drawn
+   in the studio's colour. */
+.ig-preview-scroll { padding: 1.4rem; border-radius: 18px; background: var(--preview-ground); }
+.ig-preview { box-shadow: 0 8px 28px rgb(10 20 40 / .12); }
+.ig-page-tools { padding: .6rem 0 0; }
+.ig-project-card { border-radius: 22px; }
+.ig-work { border-radius: 18px; background: var(--paper); }
+.ig-story-grid .card { box-shadow: none; }
+.ig-story-grid .ig-thumbnail { height: 10rem; }
+.ig-outline-link { stroke: var(--studio-color); stroke-width: 2; }
+.ig-outline-node { fill: var(--paper); stroke: var(--studio-color); stroke-width: 1; }
+.ig-outline-dot { fill: var(--studio-color); }
+.ig-outline-value { fill: var(--studio-color); font: 20px var(--plain); }
 @media (max-width: 52rem) {
-  body[data-pilot="liquid"] .sidebar { padding: .5rem .5rem calc(.5rem + env(safe-area-inset-bottom)); border-radius: 22px 22px 0 0; gap: .4rem; }
-  body[data-pilot="liquid"] .nav-item { min-height: 49px; padding: .35rem .25rem; font-size: .73rem; }
-  body[data-pilot="liquid"] .page { padding-top: 1.6rem; }
-  body[data-pilot="liquid"] .toolbar { min-height: 4.4rem; }
-  body[data-pilot="liquid"] .card { padding: 1.25rem; }
-  body[data-pilot="liquid"] .ig-preview-scroll { padding: .75rem; }
-  body[data-pilot="liquid"] .dialog,
-  body[data-pilot="liquid"] .sheet { border-radius: 24px; }
+  .ig-preview-scroll { padding: .75rem; }
 }
-@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  body[data-pilot="liquid"] { --glass: var(--solid); --material-light: transparent; --material-tint: transparent; }
-}
-@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
-  body[data-pilot="liquid"] { --glass: var(--solid); --material-light: transparent; --material-tint: transparent; --paper-line: var(--quiet); --glass-line: var(--quiet); --pilot-selection: var(--paper); --pilot-control: var(--paper); --pilot-shadow: none; }
-  body[data-pilot="liquid"] .glass { backdrop-filter: none; -webkit-backdrop-filter: none; }
-}
+/* Only work under way moves. A saved infographic, the route's step in hand and the ledger's
+   current revision are statements, so their beads are still; the work line's bead and a
+   card whose infographic is being made keep moving. */
+.ig-project-card:not([data-working]) .bead[data-state="current"]::before,
+.ig-roadmap .bead[data-state="current"]::before,
+.ig-ledger-item .bead[data-state="current"]::before { animation: none; }
 
 /* Shared research source/progress component (research.js). */
 .research-sources,.research-captured,.research-progress{padding:1.2rem;background:var(--paper)}
@@ -4011,7 +3966,7 @@ body[data-pilot="liquid"]:where([data-appearance="dark"]) {
    the form itself is opaque. Side inspectors keep their existing placement. The scrim is a
    layer of the toolbar's own, under the sheet and over the toolbar and the page, so it
    covers the window at any size without a shadow larger than the screen. */
-.sheet:has(.create-flow){position:fixed;top:50%;left:50%;right:auto;bottom:auto;z-index:1;transform:translate(-50%,-50%);width:min(46rem,calc(100% - 1.5rem));max-height:calc(100dvh - 2rem);display:flex;flex-direction:column;overflow:hidden;border-radius:22px;background:var(--solid);backdrop-filter:none;box-shadow:var(--lift);animation:none}
+.sheet:has(.create-flow){position:fixed;top:50%;left:50%;right:auto;bottom:auto;z-index:1;transform:translate(-50%,-50%);width:min(46rem,calc(100% - 1.5rem));max-height:calc(100dvh - 2rem);display:flex;flex-direction:column;overflow:hidden;background:var(--solid);backdrop-filter:none;box-shadow:var(--lift);animation:none}
 .toolbar-wrap:has(> .sheet:not([hidden]) .create-flow)::after{content:'';position:fixed;inset:0;z-index:0;background:var(--scrim);pointer-events:none}
 .sheet:has(.create-flow)>.sheet-heading{flex:none;margin:0 0 .75rem;padding:0 0 .75rem;background:var(--solid)}
 .sheet>.create-flow:has(.intake-body){display:flex;flex-direction:column;min-height:0;overflow:hidden;gap:.65rem}
@@ -4027,7 +3982,7 @@ body[data-product="Training Studio"] .sheet>.create-flow:not(:has(.intake-body))
 .create-flow:has(.intake-body)>.create-foot{flex:none;margin:0;padding:.65rem 0 0;border-top:1px solid var(--hair);background:var(--solid)}
 .create-flow:has(.intake-body)>.create-foot .button{white-space:normal}
 .sheet .create-foot>.button:not(.button-filled):not(.button-danger),.dialog .create-foot>.button:not(.button-filled):not(.button-danger){background:var(--control-fill);border-color:var(--control-line);box-shadow:none;border-radius:10px}
-body[data-pilot="liquid"] .dialog .button:not(.button-round){border-radius:10px}
+.dialog .button:not(.button-round){border-radius:10px}
 @media (max-width:37.5rem){.sheet:has(.create-flow){max-height:calc(100dvh - 5rem - env(safe-area-inset-bottom));top:calc((100dvh - 4rem - env(safe-area-inset-bottom))/2);padding:1rem}.intake-progress{font-size:.8rem}.create-flow:has(.intake-body)>.create-foot{gap:.4rem}.create-flow:has(.intake-body)>.create-foot .button{flex:1 1 auto;padding-inline:.7rem}}
 .library-list{list-style:none;margin:0;padding:0;background:var(--paper);border:1px solid var(--hair);border-radius:16px}
 .library-list>li{padding:.75rem 1rem;overflow-wrap:anywhere}
@@ -4188,8 +4143,8 @@ body[data-product="Training Studio"] .cult-tab-rail > [role="tab"] {
   .cult-expandable[open]::details-content { block-size:auto; }
 }
 /* Minimal Card's layered frame adapted to the four launch surfaces. */
-.cult-launch-card { border-radius:24px; background:var(--solid); box-shadow:0 1px 1px rgb(0 0 0 / .05),inset 0 1px rgb(255 255 255 / .18),0 2px 4px rgb(17 24 28 / .06); transition:transform .2s ease,box-shadow .2s ease,border-color .2s ease; }
-.cult-launch-card:is(:hover,:focus-within) { transform:translateY(-2px); border-color:var(--studio-color,var(--accent)); box-shadow:0 2px 4px rgb(0 0 0 / .08),0 8px 18px -4px rgb(0 0 0 / .12); }
+.cult-launch-card { transition:transform .2s ease,border-color .2s ease; }
+.cult-launch-card:is(:hover,:focus-within) { transform:translateY(-2px); border-color:var(--studio-color,var(--accent)); }
 @media (prefers-reduced-motion:reduce) {
   .cult-tab-rail::before,.cult-expandable::details-content,.cult-expandable > summary::before,.cult-launch-card { transition:none !important; }
   .cult-launch-card:is(:hover,:focus-within) { transform:none; }
@@ -4201,18 +4156,17 @@ body[data-product="Training Studio"] .cult-tab-rail > [role="tab"] {
 
 /* The shell kit (studio_core/deck_web/shell.js), which the desk's styles above come before.
    Golden Gate 3: one signature, the progress track, in the studio's own colour. The
-   palette and the finish card are transient, so they take the sheet material; the track
-   is content and stays flat. */
+   palette is transient, so it takes the sheet material; the track is content and stays
+   flat. */
 
 /* The headline of a Home screen speaks in the system serif; nothing else in the shell does.
    A Home headline is Marketing Studio's launch question, a studio's greeting (the page's
    first part) and Infographic Studio's Home; every other screen's title keeps the plain
-   face. :where() keeps the weight of a plain .large-title rule. */
+   face, and every one keeps the weight and spacing of .large-title. :where() keeps the
+   weight of a plain .large-title rule. */
 :where(.launch-intro, [data-home] > .intro) > .large-title,
 :where(.page, .stack) > .large-title:where(p:first-child) {
   font-family: ui-serif, "New York", "Iowan Old Style", Georgia, serif;
-  font-weight: 600;
-  letter-spacing: -0.02em;
 }
 
 /* A project's stages as one line: filled where done, larger where it is now, amber and
@@ -4322,7 +4276,7 @@ body[data-product="Training Studio"] .cult-tab-rail > [role="tab"] {
 }
 .shell-search:hover { color: var(--ink); }
 .shell-search kbd, .shell-keys dt {
-  padding: 0.1rem 0.4rem;
+  padding: 0.1rem 0.5rem;
   border: 1px solid var(--control-line);
   border-radius: 0.4rem;
   font: inherit;
@@ -4391,42 +4345,8 @@ body[data-product="Training Studio"] .cult-tab-rail > [role="tab"] {
 .shell-keys dt { justify-self: start; }
 .shell-keys dd { margin: 0; }
 
-/* Shown once when work is finished: what was made and what comes next. */
-.finish-card {
-  position: fixed;
-  right: 1.25rem;
-  bottom: calc(1.25rem + var(--foot-lift));
-  z-index: 40;
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 0.4rem 0.9rem;
-  width: min(26rem, calc(100% - 2.5rem));
-  padding: 1.1rem 1.2rem;
-  border: 1px solid var(--glass-line);
-  border-radius: 1.1rem;
-  box-shadow: var(--edge), var(--lift);
-  animation: finish-rises 0.36s cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-.finish-seal {
-  display: grid;
-  place-items: center;
-  width: 2.2rem;
-  height: 2.2rem;
-  border-radius: 50%;
-  background: var(--done-fill);
-  color: var(--on-accent);
-  font-weight: 800;
-  animation: finish-seals 0.5s 0.12s cubic-bezier(0.3, 1.6, 0.5, 1) backwards;
-}
-.finish-title { font-size: 1.08rem; font-weight: 700; line-height: 1.3; }
-.finish-card > .bar { grid-column: 2; margin-top: 0.4rem; }
-@keyframes finish-rises { from { opacity: 0; transform: translateY(1rem); } }
-@keyframes finish-seals { from { transform: scale(0.3); opacity: 0; } }
-@media (max-width: 52rem) {
-  .finish-card { bottom: calc(5.5rem + env(safe-area-inset-bottom) + var(--foot-lift)); }
-}
 @media (prefers-reduced-motion: reduce) {
-  .track-stage[data-state="yours"] .track-mark, .finish-card, .finish-seal { animation: none; }
+  .track-stage[data-state="yours"] .track-mark { animation: none; }
 }
 
 /* The workbench: any studio's desk whose parts name their zone. On a wide screen the
@@ -4600,7 +4520,7 @@ body[data-focus="reading"] { --foot-lift: 3.6rem; }
 }
 /* The way out, while reading alone: one quiet button closing the content, held at the foot
    of the window under the work's own column, clear of the sidebar's foot and above a
-   phone's bar of screens. Toasts and the finish card rise over it (--foot-lift). */
+   phone's bar of screens. Toasts rise over it (--foot-lift). */
 .reading-exit {
   position: sticky;
   bottom: calc(1rem + env(safe-area-inset-bottom));
@@ -4613,7 +4533,7 @@ body[data-focus="reading"] { --foot-lift: 3.6rem; }
   animation: reading-exit-shows 0.24s var(--ease);
 }
 .reading-exit kbd {
-  padding: 0.05rem 0.4rem;
+  padding: 0.05rem 0.5rem;
   border: 1px solid var(--control-line);
   border-radius: 0.4rem;
   color: var(--quiet);
