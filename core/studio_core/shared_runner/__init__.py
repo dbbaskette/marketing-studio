@@ -34,4 +34,5 @@ process holds one object per module and a patch on it reaches every caller.
 
 WHOLE = ('brand_source', 'companion', 'research', 'agents', 'brand', 'team', 'gitstate',
          'documents')
-PARTS = ('page', 'settings', 'setup', 'slides', 'upkeep', 'worker_tools', 'studio')
+PARTS = ('page', 'settings', 'setup', 'slides', 'upkeep', 'worker_tools', 'studio',
+         'desk_chat', 'desk_migration')

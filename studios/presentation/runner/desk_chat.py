@@ -11,7 +11,6 @@ import os
 import stat
 from pathlib import Path
 import tempfile
-import zlib
 
 import home
 from workspace import WorkspaceError, write_atomic
@@ -21,7 +20,12 @@ from runner.steps import deliver as delivering, look as looks
 from studio_core import research_contract, research_sites
 from studio_core.sync_guard import worker_in_progress, SYNC_WAIT
 
-KINDS = ('text', 'outline', 'research', 'drawing', 'part')
+# ruff: noqa: F821  names bound from studio_core.shared_runner are unseen by a linter;
+# test_shared_runner_use checks the bound parts, and the suites call the rest.
+from studio_core import modules
+from studio_core.shared_runner import desk_chat as _shared
+modules.bind(globals(), _shared, _shared.NAMES)
+
 TEXT = ('brief', 'classification', 'research-plan')
 CHANGED = 'The deck or its inputs changed. Read desk context again before saving.'
 MAX_BYTES = 256 * 1024 * 1024
@@ -115,10 +119,6 @@ def _files(root):
                 raise WorkspaceError('This deck is too large for a bounded conversation save.')
             files[path.relative_to(root).as_posix()] = path.read_bytes()
     return files
-
-
-def _digest(value):
-    return hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
 
 def _basis(files, target, scope, extra):
@@ -279,34 +279,6 @@ def _prepare(engine, root, record, target):
                          for ident in build.to_draw(root)}}
 
 
-
-def _preview_png(data):
-    """Keep visual PNG chunks byte-for-byte; discard only text and clock metadata."""
-    signature = b'\x89PNG\r\n\x1a\n'
-    if not data.startswith(signature):
-        raise WorkspaceError('The look preview is not a complete PNG.')
-    kept, offset, image = [signature], len(signature), False
-    while offset + 12 <= len(data):
-        length = int.from_bytes(data[offset:offset + 4], 'big')
-        end = offset + length + 12
-        kind = data[offset + 4:offset + 8]
-        body = data[offset + 8:end - 4]
-        if end > len(data) or not all(65 <= b <= 90 or 97 <= b <= 122 for b in kind) \
-                or zlib.crc32(kind + body) != int.from_bytes(data[end - 4:end], 'big') \
-                or (offset == 8 and (kind != b'IHDR' or length != 13)) \
-                or (offset != 8 and kind == b'IHDR'):
-            break
-        if kind not in (b'tEXt', b'zTXt', b'iTXt', b'tIME'):
-            kept.append(data[offset:end])
-        image = image or kind == b'IDAT'
-        if kind == b'IEND':
-            if length == 0 and end == len(data) and image:
-                return b''.join(kept)
-            break
-        offset = end
-    raise WorkspaceError('The look preview is a malformed or truncated PNG.')
-
-
 def _look_context(engine, root, record):
     """Offer actual local samples without publishing them or choosing an answer."""
     if looks.chosen(root) is not None:
@@ -429,11 +401,6 @@ def _prepared(engine, path, target, change=False, owner=True):
             if _files(root) != before:
                 raise WorkspaceError(CHANGED)
         yield space, root, stage, current, before, context
-
-
-def context(engine, path, target):
-    with _prepared(engine, path, target) as prepared:
-        return prepared[-1]
 
 
 def show(engine, path):
@@ -706,25 +673,6 @@ def submit(engine, path, request):
         decks.write_run(stage, record)
         _publish(engine, space, root, stage, before)
     return show(engine, root)
-
-
-def save(engine, path, request):
-    return submit(engine, path, request)
-
-
-def prepare_migration(record, saved_inputs):
-    from runner.desk_migration import prepare_migration as prepare
-    return prepare(record, saved_inputs)
-
-
-def migration_preview(engine, path):
-    from runner.desk_migration import migration_preview as preview
-    return preview(engine, path)
-
-
-def migrate(engine, path, expected):
-    from runner.desk_migration import migrate as apply
-    return apply(engine, path, expected)
 
 
 def ready(engine, path, request):

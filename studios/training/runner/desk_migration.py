@@ -17,6 +17,12 @@ from runner import drafts, gitstate, pipeline
 from studio_core import training_migration as format, research_contract
 from studio_core.sync_guard import worker_in_progress, SYNC_WAIT
 
+# ruff: noqa: F821  names bound from studio_core.shared_runner are unseen by a linter;
+# test_shared_runner_use checks the bound parts, and the suites call the rest.
+from studio_core import modules
+from studio_core.shared_runner import desk_migration as _shared
+modules.bind(globals(), _shared, _shared.NAMES)
+
 WORKSPACE = '@training-workspace/hub.json'
 CONSEQUENCES = ('Open only the listed existing material parts for editing in conversation. '
     'Incomplete work stays incomplete; earlier approvals and inputs stay in History. '
@@ -200,7 +206,6 @@ def _snapshot(engine, path):
     return space, root, record, files, guard, blockers
 
 
-
 def _shared_basis(space, root, session, record, files):
     """Only a shared workspace needs byte-identical committed common inputs.
 
@@ -250,37 +255,6 @@ def _write(path, data):
         os.fsync(directory)
     finally:
         os.close(directory)
-
-
-def _path(space, root, name):
-    return space.root / gitstate.MARKER if name == WORKSPACE else root / name
-
-
-def _restore_index(space, root, writes, before, check=False):
-    paths = [gitstate.inside(space, _path(space, root, name)) for name in writes]
-    if not isinstance(before, str):
-        raise WorkspaceError('The saved migration index cannot be verified.')
-    entries = before.split('\0')
-    if before and (entries[-1] != '' or any(not entry for entry in entries[:-1])
-                   or entries[:-1] != sorted(entries[:-1], key=lambda entry: entry.partition('\t')[2])):
-        raise WorkspaceError('The saved migration index has an unsupported entry.')
-    seen = set()
-    for entry in entries:
-        if entry:
-            header, _, name = entry.partition('\t')
-            if name not in paths or name in seen or not re.fullmatch(r'100(?:644|755) [a-f0-9]{40,64} 0', header):
-                raise WorkspaceError('The saved migration index has an unsupported entry.')
-            seen.add(name)
-    if check:
-        return
-    removed = gitstate.hub.run(space.repo, 'update-index', '--force-remove', '--', *paths)
-    if removed.returncode:
-        raise WorkspaceError('The migration index could not be restored; keep its recovery record.')
-    if before and gitstate.hub.run(space.repo, 'update-index', '-z', '--index-info', input=before).returncode:
-        raise WorkspaceError('The migration index could not be restored; keep its recovery record.')
-    restored = gitstate.hub.git(space.repo, 'ls-files', '--stage', '-z', '--', *paths)
-    if restored != before:
-        raise WorkspaceError('The migration index could not be verified; keep its recovery record.')
 
 
 def _committed(space, root, writes):
@@ -343,17 +317,6 @@ def _prepared_index(space, root, writes):
             raise WorkspaceError('The prepared migration index cannot be verified.')
         entries.append((relative, f'100644 {result.stdout.strip()} 0\t{relative}\0'))
     return ''.join(entry for _, entry in sorted(entries))
-
-
-def _check_recovery_index(space, root, writes, before, prepared):
-    _restore_index(space, root, writes, before, check=True)
-    _restore_index(space, root, writes, prepared, check=True)
-    if prepared != _prepared_index(space, root, writes):
-        raise WorkspaceError('The prepared migration index changed. Keep its recovery record.')
-    paths = [gitstate.inside(space, _path(space, root, name)) for name in writes]
-    current = gitstate.hub.git(space.repo, 'ls-files', '--stage', '-z', '--', *paths)
-    if current not in (before, prepared):
-        raise WorkspaceError('The migration staging index changed. Nothing was replaced; keep its recovery record.')
 
 
 def _recover(space, root, expected):
