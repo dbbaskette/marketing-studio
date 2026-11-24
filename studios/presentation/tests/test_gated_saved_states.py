@@ -1,18 +1,29 @@
 """Every saved state the earlier gated flow leaves, in its original format, and what the
 explicit migration says of each: opened on the desk, kept in its saved flow, or shown as a
-read-only record. Each fixture is made by the real saved-run dispatch (`saved_start`, the
-gates decided as a person decided them), never by the migration itself."""
+read-only record. Each deck is made and driven by the real saved-run dispatch (`saved_start`,
+the gates decided and a pause taken as a person takes them), never by the migration itself.
+Where the stand-ins cannot reach a saved shape (a worker's pending question, schema 4, a
+pinned research bundle, an unreadable record), the record the dispatch saved is then edited
+into that shape, and the test says which."""
 import copy
 import json
+from pathlib import Path
 from unittest import mock
 
 import runner_support
+import test_runner_page
 from runner import decks, desk_chat, desk_migration
+from studio_core.sync_guard import SYNC_WAIT
 from studio_core import research_session
 from test_flow_routes import DECK
 
 PASTE = {'kind': 'paste', 'text': 'Notes on rolling restarts.'}
 UPLOAD = {'kind': 'upload', 'name': 'old.pptx'}
+# The shared worker scan's refusal of the whole workspace (core/studio_core/sync_guard.py). It
+# is never a deck's own reason: one record the scan does not accept stops the preview of every
+# deck in the workspace. A known limit, tracked by GitHub issue #541.
+WORKSPACE_REFUSAL = ('The repository could not be checked for running Studio steps. Check its '
+                     'saved worker records and folder permissions, then share again.')
 LEVELS = ('brand-only', 'polish', 'redesign', 'rework', 'selected')
 
 
@@ -87,13 +98,35 @@ class GatedSavedStateTests(runner_support.DeskCase):
             'Resolve the saved runner question in its saved flow before opening it on the desk.'])
         self.assertEqual(self.view(root)['question']['id'], 'q1')
 
-    def test_a_paused_run_opens_on_the_desk_with_its_pause_kept_in_history(self):
-        root = self.gated(title='Paused')
+    def test_a_pause_taken_mid_step_waits_for_its_step_then_opens_losslessly(self):
+        # A real pause: Pause on the page (`act`) while the outline step is working. The
+        # worker carries on after it, as a real one does; while it does, the step's lock is
+        # in hand and the run is busy, so the preview says to wait.
+        seen = {}
+
+        def pausing(tools, job):
+            root = next(path.parent for path in self.space.root.rglob('run.json')
+                        if json.loads(path.read_text()).get('title') == 'Paused mid-step')
+            seen['root'] = root
+            seen['shown'] = self.engine.act(root, 'pause')['state']
+            seen['locked'] = (root / self.engines.IN_HAND).is_file()
+            seen['preview'] = desk_chat.migration_preview(self.engine, root)
+            return self.workers.outline(tools, job)
+
+        self.workers.then('outline', pausing)
+        root = self.saved_start(title='Paused mid-step')
+        self.assertEqual(seen['root'], root)
+        self.assertEqual(seen['shown'], 'paused')
+        self.assertTrue(seen['locked'])
+        self.assertIn(SYNC_WAIT, seen['preview']['blockers'])
+        self.assertEqual(seen['preview']['writes'], [])
+        # The step ended: the pause is what the runner saved, with the outline it made.
         record = self.record(root)
-        halted = {'state': 'paused', 'step': 'build-render', 'why': 'You paused it.',
-                  'kept': '', 'action': 'resume', 'at': '2026-01-01T00:00:00+00:00'}
-        record['halted'] = halted
-        decks.write_run(root, record)
+        halted = record['halted']
+        self.assertEqual((halted['state'], halted['step'], halted['why']),
+                         ('paused', None, 'Paused on the page.'))
+        self.assertTrue(record['steps']['outline']['done'])
+        self.assertFalse((root / self.engines.IN_HAND).exists())
         self.assertEqual(self.view(root)['state'], 'paused')
         before = self.snapshot(root)
         found = self.preview(root)
@@ -112,9 +145,24 @@ class GatedSavedStateTests(runner_support.DeskCase):
         self.assertEqual(shown['execution'], 'conversation')
         # No approval or delivery is invented: the gates are exactly as the person left them.
         self.assertEqual(effective['gates'], record['gates'])
-        self.assertEqual(effective['gates']['gate:build']['state'], 'waiting')
+        self.assertNotEqual((effective['gates'].get('gate:outline') or {}).get('state'), 'approved')
         self.assertFalse(shown['desk']['ready'])
         self.assertFalse((root / 'deliver.json').exists())
+
+    def test_known_limit_issue_541_one_refused_record_stops_every_preview_in_its_workspace(self):
+        # Known limit, tracked by GitHub issue #541: one record the shared worker scan does not
+        # accept stops the preview of every other deck in the workspace with its generic
+        # refusal. The fix in core must change this assertion on purpose.
+        ready = self.saved_start(title='Ready to open')
+        self.waits_at(ready, 'gate:outline')
+        self.assertEqual(self.preview(ready)['blockers'], [])
+        refused = self.saved_start(title='No review level')
+        record = self.record(refused)
+        record['schema'] = 2
+        record.pop('review_policy', None)
+        decks.write_run(refused, record)
+        self.assertEqual(self.preview(ready)['blockers'], [WORKSPACE_REFUSAL])
+        self.waits_at(ready, 'gate:outline')    # it still continues in its saved flow
 
     def test_parallel_research_records_keep_their_saved_flow(self):
         root = self.saved_start(title='Parallel research', research=True)
@@ -124,12 +172,13 @@ class GatedSavedStateTests(runner_support.DeskCase):
                                           'workers': 2, 'capability': {
                                               'protocol': research_session.PROTOCOL}})
         decks.write_run(root, record)
-        # The shared worker scan reads only schemas 1 to 3 as Presentation Studio records, so
-        # it cannot vouch for this workspace; the migration's own reader refuses schema 4 too.
-        self.assertEqual(self.preview(root)['blockers'], [
-            'The repository could not be checked for running Studio steps. Check its saved '
-            'worker records and folder permissions, then share again.'])
-        self.assertFalse(desk_migration.format.supported(record))
+        # Its own reason: the migration's reader does not support schema 4.
+        files = self.snapshot(root)
+        self.assertEqual(desk_chat.prepare_migration(record, files)['blockers'],
+                         ['This saved run format is not supported. Keep using its saved flow.'])
+        # What the preview says is not that reason but the workspace-wide refusal: the shared
+        # worker scan does not accept the record. Known limit, GitHub issue #541.
+        self.assertEqual(self.preview(root)['blockers'], [WORKSPACE_REFUSAL])
         self.waits_at(root, 'gate:research-plan')
 
     def test_a_missing_pinned_research_bundle_keeps_its_saved_flow(self):
@@ -145,29 +194,44 @@ class GatedSavedStateTests(runner_support.DeskCase):
 
     # --- records the runner cannot read ------------------------------------------------------
 
+    def unleveled(self, title='Unleveled'):
+        root = self.saved_start(title=title)
+        record = self.record(root)
+        record['schema'] = 2
+        record.pop('review_policy', None)
+        decks.write_run(root, record)
+        return root
+
     def test_records_the_runner_refuses_open_as_read_only_records(self):
         corrupt = self.saved_start(title='Corrupt')
         (corrupt / 'run.json').write_text('{not json')
-        unleveled = self.saved_start(title='Unleveled')
-        record = self.record(unleveled)
-        record['schema'] = 2
-        record.pop('review_policy', None)
-        decks.write_run(unleveled, record)
-        for root, title, after in ((corrupt, 'corrupt', 'new'), (unleveled, 'Unleveled', 'copy')):
+        unleveled = self.unleveled()
+        # What the preview says of each: the record that cannot be parsed, its parser's
+        # words; the one with no review level, the workspace-wide refusal (issue #541), as
+        # its own reason, the unsupported format, comes after the shared scan.
+        self.assertEqual(self.preview(corrupt)['blockers'],
+                         ['Expecting property name enclosed in double quotes: line 1 column 2 (char 1)'])
+        self.assertEqual(self.preview(unleveled)['blockers'], [WORKSPACE_REFUSAL])
+        self.assertEqual(desk_chat.prepare_migration(self.record(unleveled), self.snapshot(unleveled))['blockers'],
+                         ['This saved run format is not supported. Keep using its saved flow.'])
+        for root, title, sentence, why, after in (
+                (corrupt, 'corrupt', self.engines.UNREAD_RECORD,
+                 'The run record in corrupt cannot be read, so the runner will not drive this deck.', 'new'),
+                (unleveled, 'Unleveled', self.engines.SAVED_RECORD,
+                 'This run is missing its saved review level. Restore its run record.', 'copy')):
             with self.subTest(root.name):
                 before = self.snapshot(self.space.root)
-                self.assertTrue(self.preview(root)['blockers'])
                 with self.assertRaises(desk_chat.WorkspaceError):
                     self.engine._load(root)     # the runner still never drives it
                 shown = self.view(root)
                 self.assertEqual(shown['title'], title)
                 self.assertEqual(shown['state'], 'saved')
-                self.assertEqual(shown['sentence'], self.engines.SAVED_RECORD)
+                self.assertEqual(shown['sentence'], sentence)
                 # Read-only: no stop to decide, no desk, nothing to continue.
                 self.assertIsNone(shown['gate'])
                 self.assertIsNone(shown['desk'])
                 record_view = shown['saved_record']
-                self.assertTrue(record_view['why'])
+                self.assertEqual(record_view['why'], why)
                 # Each saved file it holds is listed, to read as any deck's are.
                 held = [name for name in self.engines.FILES if (root / name).is_file()]
                 self.assertIn('outline.md', held)
@@ -179,6 +243,32 @@ class GatedSavedStateTests(runner_support.DeskCase):
         self.assertEqual(copied['form']['title'], 'Unleveled')
         with self.assertRaises(desk_chat.WorkspaceError):
             self.engine.copy_setup(corrupt)
+
+    def test_a_corrupt_desk_record_is_not_said_to_be_from_the_earlier_flow(self):
+        root = self.start_desk(title='Desk deck')
+        (root / 'run.json').write_text('{oops')
+        shown = self.view(root)
+        # Which flow made it cannot be known, so the earlier flow is not named.
+        self.assertEqual(shown['sentence'], self.engines.UNREAD_RECORD)
+        self.assertNotIn('step-by-step', shown['sentence'])
+        self.assertEqual(shown['saved_record']['next'], 'new')
+        self.assertIsNone(shown['desk'])
+
+    def test_a_linked_folder_is_never_listed_among_a_records_files(self):
+        import os
+        import tempfile
+        root = self.unleveled()
+        outside = Path(tempfile.mkdtemp(dir=self.base))
+        (outside / 'plan.md').write_text('# Outside the deck')
+        if (root / 'research').exists():
+            import shutil
+            shutil.rmtree(root / 'research')
+        os.symlink(outside, root / 'research')
+        (root / 'look.md').symlink_to(outside / 'plan.md')
+        files = self.view(root)['saved_record']['files']
+        self.assertNotIn('research/plan.md', files)
+        self.assertNotIn('look.md', files)
+        self.assertIn('outline.md', files)
 
     def test_a_desk_deck_or_an_interrupted_opening_is_never_shown_as_a_gated_record(self):
         root = self.gated(title='Interrupted')
@@ -201,3 +291,36 @@ class GatedSavedStateTests(runner_support.DeskCase):
         self.preview(root)
         self.assertEqual((root / 'run.json').read_bytes(), raw)
         self.assertEqual(json.loads(raw), record)
+
+
+class ReadOnlyRecordPageTests(test_runner_page.PageCase):
+    """A read-only record through the page: its listed files are served, and nothing
+    continues it."""
+
+    def test_listed_files_are_served_and_act_decide_and_drive_refuse(self):
+        root = self.saved_start(title='Unleveled')
+        record = self.record(root)
+        record['schema'] = 2
+        record.pop('review_policy', None)
+        decks.write_run(root, record)
+        path = str(root)
+        shown = self.get('run', path=path)
+        self.assertTrue(shown['saved_record']['files'])
+        for name in shown['saved_record']['files']:
+            with self.subTest(name):
+                served = self.get('file', path=path, name=name)
+                self.assertEqual(served['text'], (root / name).read_text())
+        before = self.on_disk()
+        for endpoint, sent in (('run', {'path': path, 'action': 'resume'}),
+                               ('run', {'path': path, 'action': 'pause'}),
+                               ('decide', {'path': path, 'gate': 'gate:outline', 'decision': 'approve'}),
+                               ('drive', {'path': path, 'action': 'take'})):
+            with self.subTest(endpoint=endpoint, sent=sent):
+                status, reply, _ = self.answer('POST', '/api/' + endpoint, json.dumps(sent).encode(),
+                                               origin=self.origin, kind='application/json')
+                self.assertGreaterEqual(status, 400, reply)
+                # Act and decide read the record and say why; in a workspace on this computer
+                # drive refuses before it, as there is nothing to take or hand over.
+                self.assertIn('folder on this computer' if endpoint == 'drive' else 'review level',
+                              reply['error'])
+        self.assertEqual(self.on_disk(), before)

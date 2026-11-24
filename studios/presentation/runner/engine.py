@@ -191,6 +191,8 @@ FILES = ('README.md', 'intake.md', 'classify.md', 'outline.md', 'look.md',
 SAVED_RECORD = ('This deck was saved by the earlier step-by-step flow, and its saved record '
                 'cannot be read as it is, so it can be neither continued nor opened on the desk. '
                 'Its saved files are kept as they are.')
+UNREAD_RECORD = ('This deck’s saved record cannot be read, so it can be neither continued nor '
+                 'opened on the desk. Its saved files are kept as they are.')
 
 # What the engine does for each step of the pipeline: the name of its method. Every gate is
 # opened the same way.
@@ -3562,7 +3564,8 @@ class Engine(Jobs, Researching, DeskActions):
         """The original record of a deck saved by the earlier gated flow, as it was written,
         for a deck whose record the runner refuses to read: None when there is none, when it
         is a desk deck, or when the deck has desk metadata or an interrupted opening (those
-        keep their own recovery). Only read."""
+        keep their own recovery). An empty dict when the record cannot be read at all, so
+        which flow made the deck cannot be known. Only read."""
         from studio_core import presentation_migration as migration
         if any((root / name).exists() or (root / name).is_symlink()
                for name in (migration.RECORD, migration.ORIGIN, migration.PENDING)):
@@ -3574,6 +3577,22 @@ class Engine(Jobs, Researching, DeskActions):
         if not isinstance(raw, dict):
             return {}
         return None if decks.on_desk(raw) else raw
+
+    @staticmethod
+    def _saved_files(root: Path) -> list[str]:
+        """The shared files a read-only record lists: each one that is a file inside the
+        deck's folder, so `/api/file` serves every name listed."""
+        inside = root.resolve()
+        found = []
+        for name in FILES:
+            path = root / name
+            try:
+                real = path.resolve()
+            except (OSError, RuntimeError):
+                continue
+            if not path.is_symlink() and inside in real.parents and real.is_file():
+                found.append(name)
+        return found
 
     def saved_record(self, root: Path, refusal: WorkspaceError) -> dict | None:
         """What the page shows of a deck saved by the earlier gated flow whose record the
@@ -3589,11 +3608,11 @@ class Engine(Jobs, Researching, DeskActions):
             else root.name
         return {'id': root.name, 'path': str(root), 'title': title,
                 'route': raw.get('route') if raw.get('route') in decks.ROUTES else None,
-                'execution': 'saved', 'state': 'saved', 'sentence': SAVED_RECORD,
+                'execution': 'saved', 'state': 'saved',
+                # Which flow made a record that cannot be read at all is not known.
+                'sentence': SAVED_RECORD if raw else UNREAD_RECORD,
                 'gate': None, 'desk': None, 'deliver': None,
-                'saved_record': {'why': str(refusal),
-                                 'files': [name for name in FILES if (root / name).is_file()
-                                           and not (root / name).is_symlink()],
+                'saved_record': {'why': str(refusal), 'files': self._saved_files(root),
                                  'next': 'copy' if form and raw.get('route') in decks.ROUTES
                                  else 'new'}}
 

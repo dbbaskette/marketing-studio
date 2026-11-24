@@ -80,6 +80,7 @@ provider job or reads this computer's studio settings:
 | Training Studio, a deck that stopped | `python3 studios/training/tests/ui/training_plan_fixture.py --desk --stopped-deck` |
 | A deck's slides, in either deck studio | `python3 tests/slide_review_fixture.py training --rendered` or `presentation` |
 | Presentation Studio, an empty workspace | `python3 studios/presentation/tests/ui/intake_fixture.py` |
+| Presentation Studio, a saved gated deck to open on the desk, or a saved record it cannot read | `python3 studios/presentation/tests/ui/intake_fixture.py --saved` or `--saved-read-only` |
 | Blog Studio, a draft on the desk | `python3 tests/blog_browsing_fixture.py` |
 | Infographic Studio | `python3 studios/infographic/tests/ui/fixture_server.py --renderer <headless renderer>` |
 

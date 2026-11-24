@@ -1065,8 +1065,8 @@
           : 'Work continues in conversation. Mark ready after reviewing the checked deck.'),
         found.ready_problem ? make('p', 'quiet', found.ready_problem) : null)] : null,
       found.saved_status ? ['saved-status', [found.saved_status], () => h.add(h.card('Saved runner history'),
-        make('p', '', found.saved_status.why || 'The previous runner stopped.'),
-        make('p', 'quiet', 'That stop is retained in History. Conversation editing will not resume that runner.'))] : null,
+        make('p', '', found.saved_status.why || ({ paused: 'The previous runner was paused.', failed: 'The previous runner failed.' }[found.saved_status.state] || 'The previous runner stopped.')),
+        make('p', 'quiet', 'That ' + ({ paused: 'pause', failed: 'failure' }[found.saved_status.state] || 'stop') + ' is retained in History. Conversation editing will not resume that runner.'))] : null,
       found.revision ? ['revision', [found.revision], () => make('p', 'quiet', found.revision)]
         : null,
       ['head', [tab, own, run.execution, outlineEditable], () => headPart(tab, own,
