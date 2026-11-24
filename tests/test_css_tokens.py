@@ -77,11 +77,9 @@ class DefinedTokenTests(unittest.TestCase):
         # System dark stands aside once Light is chosen; a choice is read from <body>, which the
         # server writes as the page is served, so the page opens already looking as chosen.
         self.assertIn(':root:where(:not(:has(> body[data-appearance="light"])))', system)
-        # The liquid pilot's own dark tokens follow the same choice.
-        pilot = block(kit, '@media (prefers-color-scheme: dark) {\n  body[data-pilot="liquid"]')
-        chosen_pilot = block(kit, 'body[data-pilot="liquid"]:where([data-appearance="dark"]) {')
-        self.assertEqual(tokens(pilot), tokens(chosen_pilot))
-        self.assertIn('body[data-pilot="liquid"]:where(:not([data-appearance="light"]))', pilot_head(kit))
+        # One set of tokens for all five apps: no page opts into a look with tokens of its own.
+        self.assertEqual(kit.count('prefers-color-scheme'), 1, 'one system-dark token block')
+        self.assertEqual(kit.count('[data-appearance="dark"]'), 1, 'one chosen-dark token block')
 
     def test_switching_the_appearance_never_rewrites_a_stylesheet(self):
         script = SHELL.read_text(encoding='utf-8')
@@ -107,10 +105,6 @@ class ReadingAloneTests(unittest.TestCase):
         self.assertIn("'button glass reading-exit'", script)
         self.assertIn("'Show everything'", script)
 
-
-def pilot_head(kit: str) -> str:
-    at = kit.index('@media (prefers-color-scheme: dark) {\n  body[data-pilot="liquid"]')
-    return kit[at:kit.index('{', at + 40)]
 
 
 if __name__ == '__main__':

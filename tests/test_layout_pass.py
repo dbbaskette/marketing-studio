@@ -174,12 +174,12 @@ class StaticLayoutTests(unittest.TestCase):
         self.assertNotIn("'release'", script)
 
     def test_first_run_setup_is_one_column_in_every_look(self):
-        # The liquid look widens .page; first-run setup keeps the toolbar's and notice's column.
+        # The one look widens .page; first-run setup keeps the toolbar's and notice's column,
+        # and no page opts into a second look that could widen it again.
         kit = (ROOT / 'ui-kit/style.css').read_text()
         self.assertIn('.alone .toolbar-wrap,\n.alone .notice,\n.alone .page {\n  max-width: 46rem;', kit)
-        self.assertIn('body[data-pilot="liquid"].alone .page { max-width: 46rem; }', kit)
-        self.assertLess(kit.index('body[data-pilot="liquid"] .page {'),
-                        kit.index('body[data-pilot="liquid"].alone .page'))
+        self.assertLess(kit.index('\n.page {\n  max-width: 76rem;'), kit.index('.alone .page {'))
+        self.assertNotIn('data-pilot', kit)
 
     def test_research_sites_are_a_table(self):
         html = page()

@@ -1,25 +1,17 @@
-# Marketing Studio and Infographic Studio visual pilot
+# The liquid look
 
-Scope: these two applications only. Other studio pages keep their existing appearance.
-Use the existing Python/HTML/CSS/JavaScript stack and system fonts; add no runtime libraries.
+The liquid pilot began as an opt-in look for Marketing Studio and Infographic Studio. It
+is now the one look of all five apps: Marketing Studio Home, Blog Studio, Presentation
+Studio, Training Studio and Infographic Studio. Its tokens and component rules are the
+base of `ui-kit/style.css`, and no page opts into it or out of it (`data-pilot` is gone;
+`tests/test_ui_consistency.py` keeps it gone).
 
-The launcher is a calm two-by-two collection of studio objects, with compact readiness
-indicators and expandable repository details. The sidebar and command bar form a single
-application shell. Infographic Studio uses the same shell, a clear story-selection surface
-and a paper preview on an opaque canvas. Existing workflow, permissions, saved content,
-provider disclosures and approval checkpoints are preserved.
+What it is, the rules a change keeps to and the tests that hold them are in
+[the shared UI kit](ui-kit.md#the-look).
 
-Light roles: canvas `#f5f5f7`, paper `#ffffff`, ink `#191b20`, secondary text `#606570`,
-diffused chrome near white. Dark roles: canvas `#141519`, paper `#202227`, ink `#f4f5f7`,
-secondary text `#b3b7c2`, diffused chrome near `#25272d`. Retain the existing studio accents.
-System type has distinct title, object-title, body and metadata sizes. No font downloads.
-
-Material map: diffusion on navigation, toolbars and transient controls; opaque cards,
-forms and documents. Only object cards, selected navigation and compact commands receive
-subtle depth. No wallpaper, simulated desktop controls or glass behind reading text.
-
-The `data-pilot="liquid"` opt-in is set only for Marketing Studio and Infographic Studio.
-Reduced transparency/stronger contrast use solid chrome; reduced motion removes movement.
-Verify desktop and phone, both appearances, keyboard focus, long labels, modal forms,
-status/recovery, 200% zoom and all existing actions. Render synthetic fixtures for review;
-never expose a real document or private session link in screenshots committed to Git.
+The pilot's material map still holds: diffusion only on navigation, toolbars and transient
+controls; opaque cards, forms and documents; subtle depth only on object cards, selected
+navigation and compact commands; no wallpaper, simulated desktop controls or glass behind
+reading text. Reduced transparency and stronger contrast use solid chrome; reduced motion
+removes movement. Review screenshots use synthetic fixtures; never commit a real document
+or a private session link in one.

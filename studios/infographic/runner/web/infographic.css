@@ -47,7 +47,7 @@
 /* The visual editor: revisions across the top, the page beside an opaque word inspector. */
 .ig-workbench { display: grid; gap: 1.1rem; grid-template-columns: minmax(0, 1fr); }
 .ig-ledger { display: grid; gap: .6rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr)); }
-.ig-ledger-item { display: grid; gap: .2rem; min-width: 0; padding: .6rem .8rem; border: 1px solid var(--hair); border-radius: 10px; background: var(--card); }
+.ig-ledger-item { display: grid; gap: .2rem; min-width: 0; padding: .75rem .9rem; border: 1px solid var(--hair); border-radius: 14px; background: var(--card); }
 .ig-figure { position: relative; width: min(100%, 34rem); margin: 0 auto; }
 .ig-figure .ig-preview { width: 100%; cursor: pointer; }
 .ig-figure.ig-actual { width: max-content; }
@@ -81,7 +81,7 @@
   .ig-preview-scroll { max-height: 60vh; }
   /* Three compact revision states on a phone; the page card says what each means. */
   .ig-ledger { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .4rem; }
-  .ig-ledger-item { padding: .4rem .5rem; font-size: .85rem; }
+  .ig-ledger-item { padding: .5rem; font-size: .85rem; }
   .ig-ledger-detail { display: none; }
   .ig-ledger-item .bead { display: none; }
   /* The route in one row, so the page preview starts within the first phone screen. */
