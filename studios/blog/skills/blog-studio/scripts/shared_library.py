@@ -7,6 +7,9 @@ What a caller needs to know
     shared_library.browse(route, data)     # one of them: catalog, preview, filters, matching
     shared_library.take(root, data)        # under the studio lock: chosen revisions, as files
     shared_library.keep_blog(root, record, text, source)   # a finished blog, kept there too
+    shared_library.keep_ready(root, directory, record)     # a desk blog marked ready
+    shared_library.keep_brief(root, ident, made)           # a solution brief, once made
+    shared_library.kept(ident)             # what the library holds of a blog, for the desk
     shared_library.marked(root, names)     # desk sources: when a newer revision is there
     shared_library.update(root, blog, source)              # take it, only when asked
     shared_library.keep_upload(entry, author)   # Keep in library, at upload
@@ -17,9 +20,11 @@ What a caller needs to know
   then uses it as it uses any uploaded file, so the blog's own pins, roles, limits and
   research permissions apply unchanged, and an example stays an example. It is never put
   in the team library or the Team Hub by this.
-- A finished blog is kept as Markdown under `blog:<blog id>`: finishing or publishing
-  again reuses its document and adds a revision only when the text changed. What happens
-  is reported, never raised: the blog's own Finish and publish stand either way.
+- A finished blog is kept as Markdown under `blog:<blog id>`: finishing, marking a desk
+  blog ready, making a solution brief or publishing again reuses its document and adds a
+  revision only when the text changed. No publication address is needed to keep it; an
+  empty draft is never kept. What happens is reported, never raised: the blog's own Finish,
+  decision, brief and publish stand either way.
 - A newer library revision of a document taken for a blog shows as Update available on the
   desk, and is taken only when the person presses Use revision N: the blog's file gets a new
   source revision (the one it read stays under revisions/, as Blog Studio keeps every
@@ -197,10 +202,13 @@ def take(root, data):
     return result
 
 
-def keep_blog(root, record, text, source=None):
+def keep_blog(root, record, text, source=None, pdf=None):
     """Keep a finished blog in the Document Library as Markdown: {'state': 'kept',
-    'document', 'revision'} or {'state': 'failed', 'reason'}. Never raises."""
+    'document', 'revision'} or {'state': 'failed', 'reason'}. Never raises. `pdf` is the
+    bytes of a PDF already made of exactly this work (a solution brief's), kept beside it."""
     try:
+        if not isinstance(text, str) or not text.strip():
+            return {'state': 'failed', 'reason': 'The draft is empty, so nothing was kept.'}
         library = document_library.opened(create=True)
         kept = library.retain(
             key='blog:' + record['id'],
@@ -216,6 +224,12 @@ def keep_blog(root, record, text, source=None):
             author=(record.get('author') or '').strip() or None
             if isinstance(record.get('author'), str)
             else None,
+            pdf={'state': 'saved', 'data': pdf}
+            # A PDF the library would refuse is left out; the text is kept either way.
+            if isinstance(pdf, bytes)
+            and pdf.startswith(b'%PDF-')
+            and len(pdf) <= document_library.LIMITS['pdf']
+            else None,
         )
     except Exception as error:  # the blog is finished or published either way
         known = isinstance(error, (ValueError, OSError))
@@ -225,6 +239,110 @@ def keep_blog(root, record, text, source=None):
             or 'The Document Library could not keep it. Finish or publish it again to retry.',
         }
     return {'state': 'kept', 'document': kept['document'], 'revision': kept['revision']}
+
+
+def keep_ready(root, directory, record):
+    """A desk blog marked ready, kept in the Document Library without a publication address:
+    its saved draft, as Mark as published keeps it. None for an empty draft, which is never
+    kept. Marked ready again after a change, the same document gets a new revision; marked
+    again with the same text, nothing is added."""
+    draft = directory / 'DRAFT.md'
+    try:
+        text = draft.read_text() if draft.is_file() else ''
+    except (OSError, ValueError):  # unreadable, or not UTF-8 text: the decision stands
+        return {
+            'state': 'failed',
+            'reason': 'The saved draft could not be read as text, so it was not kept.',
+        }
+    if not text.strip():
+        return None
+    return keep_blog(root, record, text)
+
+
+def keep_brief(root, ident, made):
+    """A solution brief kept in the Document Library when it is made: the draft's text, with
+    the PDF Harness Brand laid out of it. Never raises; None when its draft is empty."""
+    import desk
+
+    try:
+        _, record = studio.item(root, 'articles', ident)
+        text = desk.join(desk.read(root, ident), images=False)
+        made_pdf = ((made or {}).get('files') or {}).get('pdf') or {}
+        pdf = Path(made_pdf['path']).read_bytes() if made_pdf.get('path') else None
+    except (ValueError, OSError, KeyError, TypeError) as error:
+        return {'state': 'failed', 'reason': str(error)[:200] or 'The brief could not be read.'}
+    if not text.strip():
+        return None
+    return keep_blog(root, record, text, pdf=pdf)
+
+
+def keep_research(root, directory, ident):
+    """Harness Research that passed verification, published into a blog's `research/`, kept
+    in the Document Library too (studio_core.document_library.research), and said as a line
+    of the blog's own Activity log. Never raises and never delays the research: whatever
+    stops it is said there instead. Returns what the library said, or None."""
+    try:
+        from studio_core.document_library import research
+
+        _, record = studio.item(root, 'articles', ident)
+
+        found = research.keep_research(
+            studio='blog',
+            project={'id': record['id'], 'title': record.get('title')},
+            case=Path(directory) / 'research',
+            author=(record.get('author') or '').strip() or None
+            if isinstance(record.get('author'), str)
+            else None,
+        )
+    except Exception:  # the research stands whatever happens here
+        return None
+    try:
+        import blog_activity
+
+        said = (
+            'Research kept in the Document Library on this computer (revision '
+            + str(found.get('revision'))
+            + '), for any studio. It is not shared with your team.'
+            if found.get('state') == 'kept'
+            else 'Research not kept in the Document Library: '
+            + (found.get('problem') or 'it could not be kept.')
+        )
+        running = blog_activity.Running(root)
+        line = running.start(
+            blog_activity.blog(record['id']),
+            'Research kept in the Document Library'
+            if found.get('state') == 'kept'
+            else 'Research not kept in the Document Library',
+            'research',
+        )
+        line.say(said)
+        running.end(line, 'finished')
+    except Exception:  # the Activity log is best effort, as every line of it is
+        pass
+    return found
+
+
+def kept(ident, text=None):
+    """What the Document Library holds of this blog: {'id', 'revision', 'title', 'older'}, or
+    None when it holds nothing (or cannot be read). `older` is True when `text`, the blog's
+    text now, is not the text kept: the draft changed after it was kept, and marking it ready
+    again (or making the brief again) keeps the new text. Read only."""
+    try:
+        library = document_library.opened()
+        found = library.keyed(['blog:' + ident]).get('blog:' + ident) if library else None
+    except Exception:  # a library that cannot be read keeps nothing that can be shown
+        return None
+    if not found or found.get('hidden') or not found.get('whole', True):
+        return None
+    older = isinstance(text, str) and found.get('markdown') != hashlib.sha256(
+        text.encode('utf-8')
+    ).hexdigest()
+    return {
+        'id': found['id'],
+        'revision': found['revision'],
+        'title': found.get('title'),
+        'older': bool(older),
+    }
 
 
 def describe(found):

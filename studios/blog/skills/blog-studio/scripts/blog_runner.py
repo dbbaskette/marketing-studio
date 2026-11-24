@@ -2634,6 +2634,10 @@ class Engine:
                     research_contract.publish(
                         target / research_contract.CASE, directory / 'research'
                     )
+                    # Verified, so kept in the Document Library too; said in the Activity log.
+                    import shared_library
+
+                    shared_library.keep_research(self.root, directory, ident)
                 submit(self.root, ident, found['next'], result, found['expected'], page=True)
                 state = self.local(ident)
                 state.update(status='waiting-for-approval', error='')

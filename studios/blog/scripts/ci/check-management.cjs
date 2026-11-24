@@ -36,7 +36,7 @@ function fixture(responder=()=>({items:[],total:0})){
   const nodes=new Map();const get=id=>{if(!nodes.has(id))nodes.set(id,new Element());return nodes.get(id);};
   const document={getElementById:get,createElement:t=>new Element(t),createElementNS:(_,t)=>new Element(t),createDocumentFragment:()=>new Element('fragment'),createTextNode:text=>{const node=new Element('#text');node.textContent=text;return node;},querySelector:s=>s==='dialog[open]'?[...nodes.values()].find(n=>n.open):null,querySelectorAll:s=>[...nodes.values()].flatMap(n=>n.querySelectorAll(s))};
   const stored=new Map();let intake={revision:0,draft:null};
-  const context=vm.createContext({document,location:{hash:'#fixture',pathname:'/'},sessionStorage:{getItem:key=>stored.get(key)||'',setItem:(key,value)=>stored.set(key,value),removeItem:key=>stored.delete(key)},history:{replaceState:()=>{},pushState:()=>{}},window:{},URLSearchParams,AbortController,Uint8Array,TextEncoder,btoa,atob,clearTimeout:()=>{},FormData:class{constructor(form){this.values=descendants(form).filter(e=>e.name).map(e=>[e.name,e.value]);}[Symbol.iterator](){return this.values[Symbol.iterator]();}},confirm:message=>{throw Error('A blocking window.confirm() was used: '+message);},crypto:{getRandomValues:values=>require('node:crypto').webcrypto.getRandomValues(values)},setInterval:()=>0,setTimeout:()=>0,fetch:async(url,options)=>{if(url==='/api/intake-draft'){const sent=JSON.parse(options.body);if(sent.action!=='read'&&sent.expected!==intake.revision)return {ok:false,status:409,json:async()=>({error:'This intake changed in another tab.'})};if(sent.action==='save')intake={revision:intake.revision+1,draft:{...(intake.draft||{}),...sent.patch}};if(sent.action==='discard')intake={revision:intake.revision+1,draft:null};return {ok:true,status:200,json:async()=>JSON.parse(JSON.stringify(intake))};}const result=await responder(url,options);return result&&result.__http?{ok:false,status:result.__http,json:async()=>result}:{ok:true,status:200,json:async()=>result};},console});
+  const context=vm.createContext({document,location:{hash:'#fixture',pathname:'/'},sessionStorage:{getItem:key=>stored.get(key)||'',setItem:(key,value)=>stored.set(key,value),removeItem:key=>stored.delete(key)},history:{replaceState:()=>{},pushState:()=>{}},window:{},URLSearchParams,AbortController,Uint8Array,TextEncoder,btoa,atob,clearTimeout:()=>{},FormData:class{constructor(form){this.values=descendants(form).filter(e=>e.name).map(e=>[e.name,e.value]);}[Symbol.iterator](){return this.values[Symbol.iterator]();}},confirm:message=>{throw Error('A blocking window.confirm() was used: '+message);},crypto:{getRandomValues:values=>require('node:crypto').webcrypto.getRandomValues(values)},setInterval:()=>0,clearInterval:()=>{},setTimeout:()=>0,fetch:async(url,options)=>{if(url==='/api/intake-draft'){const sent=JSON.parse(options.body);if(sent.action!=='read'&&sent.expected!==intake.revision)return {ok:false,status:409,json:async()=>({error:'This intake changed in another tab.'})};if(sent.action==='save')intake={revision:intake.revision+1,draft:{...(intake.draft||{}),...sent.patch}};if(sent.action==='discard')intake={revision:intake.revision+1,draft:null};return {ok:true,status:200,json:async()=>JSON.parse(JSON.stringify(intake))};}const result=await responder(url,options);return result&&result.__http?{ok:false,status:result.__http,json:async()=>result}:{ok:true,status:200,json:async()=>result};},console});
   const source=fs.readFileSync('skills/blog-studio/assets/management/app.js','utf8').split("for(const b of document.querySelectorAll('[data-view]'))")[0];
   vm.runInContext(source,context);
   vm.runInContext("access={status:'local-only',message:'Local only',actions:{edit:true,memory:false,refresh:false}}",context);
@@ -104,6 +104,8 @@ async function check(){
   await filesJourney();
   await voiceLinksJourney();
   await libraryAddJourney();
+  await importJobs();
+  await documentLibraryHandoff();
   await libraryWordsAndBatches();
   await libraryScreen();
   await librarySelectAll();
@@ -716,6 +718,13 @@ async function diffOnlyForms(){
     return {form,named,box,row:box.parent,submit:()=>form.listeners.submit({preventDefault(){}})};};
   let ui=await open();
   assert.equal(ui.named.stage.value,'ready');assert.equal(ui.row.hidden,false);assert.match(ui.row.children[1].textContent,/again for the current saved draft/);
+  assert.doesNotMatch(ui.row.children[1].textContent,/Document Library/,'a blog that is not on the desk is not kept');
+  // A desk blog with a written draft is said to be kept; an empty draft, never kept, is not.
+  saved=article({stage:'ready',owner:'Morgan'},{on_desk:true});ui=await open();
+  assert.match(ui.row.children[1].textContent,/It is kept in the Document Library on this computer, for any studio\.$/);
+  saved=article({stage:'ready',owner:'Morgan'},{on_desk:true,preview:{kind:'draft',text:'  ',truncated:false}});ui=await open();
+  assert.doesNotMatch(ui.row.children[1].textContent,/Document Library/,'an empty draft is not promised');
+  saved=article({stage:'ready',owner:'Morgan'});ui=await open();
   ui.named.owner.value='Jordan';await ui.submit();
   assert.deepEqual(writes.pop(),{id:'blog',expected:'guard',owner:'Jordan'});
   // Renewing the stale decision takes the explicit checkbox.
@@ -1963,7 +1972,7 @@ async function voiceLinksJourney(){
 // the posts by byline, with rename, merge and set author; marking as samples is on by default
 // and learning a group's voice still asks for permission.
 async function libraryAddJourney(){
-  const requests=[];let marked=false,renamed=false,adds=0;
+  const requests=[];let marked=false,renamed=false,adds=0,polls=0;
   const preview={status:'ready',role:'example',author:'*each',kind:'product-announcement',kind_name:'Product announcement',items:[{key:'post.html',kind:'file',title:'An earlier post',filename:'post.html',state:'ready',chars:1200,note:'',bylines:['Avery Quinn']},{key:'https://blog.example/team/a/',kind:'link',url:'https://blog.example/team/a/',site:'blog.example/team/',state:'new',chars:null,bylines:[],note:''},{key:'https://blog.example/team/b/',kind:'link',url:'https://blog.example/team/b/',site:'blog.example/team/',title:'B',state:'in-library',chars:null,bylines:['Sam Rivera'],note:''}],sites:[{site:'blog.example',scope:'https://blog.example/team/',shown:'blog.example/team/',links:2}],in_library:1,to_fetch:2,duplicates:0,comments:0,upgraded:0,unusable:0,skipped:[],expected:'check-1',next_step:'Check the items.'};
   const item=(id,extra)=>({id,kind:'link',url:'https://blog.example/team/'+id+'/',site:'blog.example/team/',status:'imported',title:id.toUpperCase(),author:null,bylines:[],role:'example',sample:false,revision:1,text:true,...extra});
   const result=()=>{const sam=renamed?'Samantha Rivera':'Sam Rivera',groups=[{author:'Darin Zook',ids:['a','f'],samples:marked?['a','f']:[],learnable:marked?['a','f']:[],count:2},{author:sam,ids:['b'],samples:marked?['b']:[],learnable:marked?['b']:[],count:1}];
@@ -1972,7 +1981,9 @@ async function libraryAddJourney(){
     if(url.startsWith('/api/styles'))return {styles:[{id:'product-announcement',name:'Product announcement',kind:'seed',status:'confirmed',revision:1,summary:''},{id:'old',name:'Old',kind:'learned',status:'retired',revision:1,summary:''}],samples:[],candidates:[],pending:[]};
     if(url.startsWith('/api/voices'))return {profiles:[],samples:[{id:'a',name:'A',author:'Darin Zook'},{id:'f',name:'An earlier post',author:'Darin Zook'}],candidates:[],pending:[]};
     if(url==='/api/library-add-preview')return preview;
-    if(url==='/api/library-add'){adds++;return adds===1?{...result(),remaining:1,state:'importing',counts:{...result().counts,pending:1}}:result();}
+    // Adding is one request: a background job that fetches every batch itself (import_jobs.py).
+    if(url==='/api/library-add'){adds++;return {background:true,job:{id:'f'.repeat(32),kind:'import',route:'library-add',label:'Adding to the library',status:'working',progress:'Adding to the library…',stoppable:true}};}
+    if(url.startsWith('/api/tool-job?job=')){polls++;return polls===1?{id:'f'.repeat(32),kind:'import',status:'working',progress:'Added 2 of 4…',stoppable:true}:{id:'f'.repeat(32),kind:'import',status:'ready',result:result()};}
     if(url==='/api/library-add-author'){renamed=true;return result();}
     if(url==='/api/library-add-samples'){marked=true;return result();}
     return {items:[],total:0};});
@@ -2010,9 +2021,12 @@ async function libraryAddJourney(){
   assert.ok(has(/1,200 characters · byline Avery Quinn/),'a file shows its size and byline');assert.ok(has(/New · fetched from blog\.example\/team\//));assert.ok(has(/Already in the library · byline Sam Rivera/));
   assert.ok(has(/1 already in the library/));assert.ok(has(/2 new pages are fetched once from blog\.example\/team\//));
   assert.equal(requests.some(r=>r.url==='/api/library-add'),false,'checking adds nothing');
+  const progress=[];f.set('setTimeout',fn=>{progress.push(descendants(f.get('sheet')).find(e=>e.tagName==='button'&&/Add|Added/.test(e.textContent))?.textContent);Promise.resolve().then(fn);return 0;});
   await find('Add 3 items').listeners.click();
-  const sent=requests.filter(r=>r.url==='/api/library-add');assert.equal(sent.length,2,'adding continues until every link is read');
-  assert.equal(sent[0].data.expected,'check-1');assert.equal(sent[0].data.operation,sent[1].data.operation);assert.equal(sent[0].data.author,'*each');assert.equal(sent[0].data.kind,'product-announcement');
+  const sent=requests.filter(r=>r.url==='/api/library-add');assert.equal(sent.length,1,'one request: the job adds every link, with no loop on the page');
+  assert.equal(polls,2,'the page follows the job until it ends');assert.ok(progress.includes('Added 2 of 4…'),'and says how far it is: '+progress.join('|'));
+  f.set('setTimeout',()=>0);
+  assert.equal(sent[0].data.expected,'check-1');assert.equal(sent[0].data.author,'*each');assert.equal(sent[0].data.kind,'product-announcement');
   assert.ok(find('3 added · 1 already there · 0 failed'));
   assert.ok(find('Darin Zook · 2 posts'));assert.ok(find('Sam Rivera · 1 post'),'posts are grouped by author');
   assert.ok(has(/Several bylines: Avery Quinn, Jordan Lee/),'a co-authored post is held');
@@ -2041,9 +2055,171 @@ async function libraryAddJourney(){
   assert.equal(find('Try the failed links again'),undefined,'no retry without a failure');
   f.run("studio.libraryAdd.result={...studio.libraryAdd.result,counts:{...studio.libraryAdd.result.counts,failed:1},items:[...studio.libraryAdd.result.items,{kind:'link',url:'https://blog.example/team/gone/',status:'failed',reason:'Source returned HTTP 404.'}]};sLibraryAddResult(studio.libraryAdd)");
   assert.ok(has(/Not added: Source returned HTTP 404\./));
-  await find('Try the failed links again').listeners.click();
+  f.set('setTimeout',fn=>{Promise.resolve().then(fn);return 0;});
+  await find('Try the failed links again').listeners.click();f.set('setTimeout',()=>0);
   const retried=requests.filter(r=>r.url==='/api/library-add').at(-1).data;
   assert.equal(retried.retry,true);assert.equal(retried.operation,operation,'the same operation');assert.equal(retried.expected,'check-1');
+}
+
+// Slow imports and Google calls as background jobs (import_jobs.py): the caller gets what the
+// request used to answer, or its refusal with the same status, code and words; the toast says
+// what the job is doing, with Stop only where stopping is safe; a stopped job is said as such.
+async function importJobs(){
+  const requests=[],job=(extra)=>({id:'a'.repeat(32),kind:'import',label:'Reading the Google Doc',status:'working',progress:'Reading the Google Doc…',stoppable:true,...extra});
+  let answers=[];
+  const f=fixture((url,options)=>{requests.push({url,data:options?.body?JSON.parse(options.body):null});
+    if(url==='/api/google-preview'||url==='/api/desk-google-send')return {background:true,job:job(url==='/api/desk-google-send'?{label:'Sending to the Google Doc',progress:'Sending to the Google Doc…',stoppable:false}:{})};
+    if(url==='/api/import-stop')return job({status:'cancelled',error:'Stopped. Nothing was changed.',stoppable:false});
+    if(url.startsWith('/api/tool-job?'))return answers.shift();
+    return {items:[],total:0};});
+  f.loadRunner();
+  const toasts=()=>descendants(f.get('toasts'));
+  let tick=null;f.set('setTimeout',fn=>{tick=fn;return 0;});
+  const settle=async()=>{for(let n=0;n<30;n++)await Promise.resolve();};
+  const step=async()=>{await settle();const go=tick;tick=null;if(go)go();await settle();};
+  // A preview: the toast says what it does, with Stop; the answer is the request's own.
+  answers=[job({progress:'Reading the Google Doc…'}),job({status:'ready',result:{status:'preview',title:'A Doc'}})];
+  const preview=f.run("api('google-preview',{url:'https://docs.google.com/document/d/x/edit'})");
+  await step();
+  assert.ok(toasts().some(e=>e.textContent==='Reading the Google Doc…'),'the toast says what it is doing');
+  assert.equal(toasts().find(e=>e.tagName==='button'&&e.textContent==='Stop').hidden,false,'Stop is offered');
+  await step();
+  assert.deepEqual(JSON.parse(JSON.stringify(await preview)),{status:'preview',title:'A Doc'},'the answer is what the request answered');
+  assert.equal(toasts().length,0,'the toast goes when it ends');
+  // A refusal keeps its status, code and words.
+  answers=[job({status:'failed',error:'This blog changed. Reload it.',error_status:409,error_reply:{error:'This blog changed. Reload it.',code:'stale'}})];
+  const refused=f.run("api('google-preview',{url:'u'}).then(()=>null,error=>({message:error.message,status:error.status,code:error.code}))");
+  await step();
+  assert.deepEqual(JSON.parse(JSON.stringify(await refused)),{message:'This blog changed. Reload it.',status:409,code:'stale'});
+  // A send has no Stop: it changes the Doc as it goes.
+  answers=[job({label:'Sending to the Google Doc',progress:'Sending to the Google Doc…',stoppable:false}),job({status:'ready',result:{status:'verified-pending'}})];
+  const sent=f.run("api('desk-google-send',{id:'b',plan:'p',confirmed:true})");
+  await step();
+  assert.equal(toasts().find(e=>e.tagName==='button'&&e.textContent==='Stop').hidden,true,'no Stop for a send');
+  await step();assert.equal((await sent).status,'verified-pending');
+  // Over an open sheet the toast rises above the sheet's actions at its foot (the ui-kit's
+  // --foot-lift), and the lift goes with the toast.
+  f.run("window.innerHeight=800;document.body={style:{props:{},setProperty(k,v){this.props[k]=v;},removeProperty(k){delete this.props[k];}}}");
+  const sheetNode=f.get('sheet');sheetNode.hidden=false;
+  const footButton=f.run("document.createElement('button')");footButton.getBoundingClientRect=()=>({top:740,bottom:784,height:44});sheetNode.replaceChildren(footButton);
+  answers=[job({}),job({status:'ready',result:{status:'preview'}})];
+  const lifted=f.run("api('google-preview',{url:'u'})");
+  await step();
+  assert.equal(f.run("document.body.style.props['--foot-lift']"),'68px','the toast sits above the sheet’s foot');
+  await step();await lifted;
+  assert.equal(f.run("document.body.style.props['--foot-lift']"),undefined,'and comes down when it goes');
+  sheetNode.hidden=true;sheetNode.replaceChildren();
+  // Stop: the page asks the server, and the caller hears that it stopped.
+  answers=[job({}),job({status:'cancelled',error:'Stopped. Nothing was changed.'})];
+  const stopped=f.run("api('google-preview',{url:'u'}).then(()=>null,error=>({message:error.message,stopped:error.stopped}))");
+  await step();
+  await toasts().find(e=>e.tagName==='button'&&e.textContent==='Stop').listeners.click();
+  assert.deepEqual(requests.filter(r=>r.url==='/api/import-stop').map(r=>r.data),[{job:'a'.repeat(32)}]);
+  await step();
+  assert.deepEqual(JSON.parse(JSON.stringify(await stopped)),{message:'Stopped. Nothing was changed.',stopped:true});
+}
+
+// The Document Library handoff (#514): library=<id>@<revision> opens New blog with that revision
+// said in words and taken only at Start; a hidden or unreadable one is said and left out; a kept
+// blog offers Continue in another studio only when Marketing Studio gives a link; a folder or a
+// Drive folder link goes to files-intake with the header that says the page is on this computer.
+async function documentLibraryHandoff(){
+  const requests=[];let item={id:'launch-facts',revision:2,title:'Launch facts',state:'readable',hidden:false};
+  const f=fixture((url,options)=>{const data=options?.body?JSON.parse(options.body):null;requests.push({url,data,headers:options?.headers||{}});
+    if(url==='/api/run-options')return {settings:{defaults:{engine:'codex',seconds:600,research:'none',tone:'Clear',author:''}},sources:[],profiles:[],styles:[],agents:{codex:true}};
+    if(url==='/api/document-library-document')return item.missing?{__http:400,error:'That document is not in the library.'}:item;
+    if(url==='/api/document-library-take')return {files:[{filename:'Launch facts',source:{id:'lib1'},state:'ready',chars:900,role:data.picks[0].role,note:'From the Document Library, revision 2'}],state:'saved',receipts:[]};
+    if(url==='/api/desk-create')return {...deskView({id:'created'}),first_pass_problem:null};
+    if(url.startsWith('/api/desk?'))return deskView({id:'created'});
+    if(url==='/api/files-intake')return {files:[{filename:'Plans - Launch.md',source:{id:'fold1'},state:'ready',chars:400,note:''}],state:'saved',receipts:[],said:'2 documents were added from Launch.',next:null,skipped:[]};
+    return {items:[],total:0};});
+  f.loadRunner();
+  const nodes=()=>descendants(f.get('studio-page')),texts=()=>nodes().map(n=>n.textContent);
+  // Each start below is a new one: no unfinished form is left to ask about replacing.
+  const fresh=async()=>{f.run('studio.deskStart=null');await f.run('sBlogIntake().discard()');};
+  // The link's value is checked as the Document Library names a document.
+  assert.deepEqual(JSON.parse(JSON.stringify(f.run("libraryPick('#tok&library=launch-facts@2')"))),{id:'launch-facts',revision:2});
+  for(const bad of ['#tok&library=Launch@2','#tok&library=a@0','#tok&library=a@1001','#tok&library=a','#tok&library=../x@1'])assert.deepEqual(JSON.parse(JSON.stringify(f.run('libraryPick('+JSON.stringify(bad)+')'))),{invalid:true},bad);
+  assert.equal(f.run("libraryPick('#tok&resume=x')"),null);
+  // A readable revision: New blog says where it starts from, and nothing is taken or made yet.
+  await f.run("sDeskFromLibrary({id:'launch-facts',revision:2})");
+  assert.ok(texts().includes('Starting from: Launch facts, from the Document Library'),texts().join('|').slice(0,400));
+  assert.deepEqual(requests.filter(r=>r.url==='/api/document-library-document').map(r=>r.data),[{id:'launch-facts',revision:2}]);
+  assert.equal(requests.some(r=>/document-library-take|desk-create/.test(r.url)),false,'nothing is made before Start');
+  const role=nodes().find(n=>n.id==='desk-library-start-role');role.value='messaging';role.listeners.change();
+  f.run("Object.assign(studio.deskStart,{title:'Launch post',point:'What the launch changes.'})");
+  await f.run('sDeskGo(studio.deskStart)');
+  const take=requests.findIndex(r=>r.url==='/api/document-library-take'),made=requests.findIndex(r=>r.url==='/api/desk-create');
+  assert.ok(take>=0&&made>take,'taken at Start, before the blog is made');
+  assert.deepEqual(requests[take].data.picks,[{id:'launch-facts',revision:2,role:'messaging'}]);
+  assert.deepEqual(requests[made].data.sources,['lib1'],'the blog starts with it as a source');
+  // Hidden, gone or unreadable: said plainly, and New blog opens without it.
+  await fresh();item={...item,hidden:true};
+  await f.run("sDeskFromLibrary({id:'launch-facts',revision:2})");
+  assert.ok(texts().some(t=>/“Launch facts” was removed from the Document Library, so New blog opens without it\./.test(t)));
+  assert.equal(nodes().find(n=>/removed from the Document Library/.test(n.textContent||'')&&n.tagName==='p').className,'decision-notice','said at the top, as a notice');
+  assert.ok(!f.run('studio.deskStart.libraryStart'));
+  // An item that cannot be used never asks to replace an unfinished form: it opens as it is.
+  await fresh();await f.run("sDeskBegin({step:0,title:'My unfinished post'})");
+  await f.run("Object.assign(studio.deskStart,{title:'My unfinished post'});sDeskKeep(studio.deskStart,false)");
+  f.run('studio.deskStart=null');
+  await f.run("sDeskFromLibrary({id:'launch-facts',revision:2})");
+  assert.ok(!texts().some(t=>/Replace the unfinished blog form/.test(t)),'no replace question for nothing to start from');
+  assert.equal(f.run('studio.deskStart.title'),'My unfinished post','the saved form is kept');
+  assert.ok(texts().some(t=>/was removed from the Document Library/.test(t)));
+  await fresh();item={...item,hidden:false,state:'needs-text'};
+  await f.run("sDeskFromLibrary({id:'launch-facts',revision:2})");
+  assert.ok(texts().some(t=>/cannot be read in the Document Library/.test(t)));
+  await fresh();item={missing:true};
+  await f.run("sDeskFromLibrary({id:'launch-facts',revision:2})");
+  assert.ok(texts().some(t=>/not in the Document Library on this computer/.test(t)));
+  await fresh();
+  await f.run('sDeskFromLibrary({invalid:true})');
+  assert.ok(texts().some(t=>/could not be read, so New blog opens without it/.test(t)));
+  // Continue in another studio: only for a kept blog, and only with Marketing Studio's link.
+  const actions=view=>f.run('sDeskShareActions({view:'+JSON.stringify(view)+',id:"created"})').map(n=>n.textContent);
+  f.set('StudioShell',{continueLink:({id,revision})=>'http://127.0.0.1:9/#token=k&continue='+id+'@'+revision});
+  assert.ok(!actions(deskView()).includes('Continue in another studio'),'not before it is kept');
+  const kept=deskView({document_library:{id:'blog-launch',revision:3,title:'Launch post'}});
+  assert.ok(actions(kept).includes('Continue in another studio'));
+  const link=f.run('sDeskShareActions({view:'+JSON.stringify(kept)+',id:"created"})').find(n=>n.textContent==='Continue in another studio');
+  assert.equal(link.href,'http://127.0.0.1:9/#token=k&continue=blog-launch@3');
+  assert.ok(f.run('sDeskShareActions({view:'+JSON.stringify({...kept,brief:true})+',id:"created"})').some(n=>n.textContent==='Continue in another studio'),'a kept brief too');
+  // Edited after being kept: the copy is said to be older, and Continue names the revision it opens.
+  const older=deskView({document_library:{id:'blog-launch',revision:3,title:'Launch post',older:true}});
+  assert.equal(f.run('sDeskKeptWords('+JSON.stringify(older)+')'),'Kept in the Document Library · revision 3, older than the draft');
+  assert.ok(actions(older).includes('Continue in another studio with revision 3 (older than the draft)'),actions(older).join('|'));
+  f.set('StudioShell',{continueLink:()=>null});
+  assert.ok(!actions(kept).includes('Continue in another studio'),'not when Blog Studio runs alone');
+  assert.equal(f.run('sDeskKeptWords('+JSON.stringify(kept)+')'),'Kept in the Document Library · revision 3');
+  // A folder on this computer or a Google Drive folder link: one request, with the local header.
+  f.run("studio.team={joined:false};globalThis.handoffDraft={files:[],fileMethod:'files'};document.getElementById('studio-page').replaceChildren(sFilesCard(handoffDraft,document.createElement('p'),()=>{},()=>{}))");
+  const folder=nodes().find(n=>n.id==='files-folder');folder.value='/Users/someone/Launch';
+  await nodes().find(n=>n.id==='files-folder-add').listeners.click();
+  const sent=requests.filter(r=>r.url==='/api/files-intake').at(-1);
+  assert.equal(sent.data.folder,'/Users/someone/Launch');assert.equal(sent.data.room,20);assert.equal(sent.headers['X-Blog-Studio-Local'],'1');
+  assert.equal('local' in sent.data,false,'the page never says itself that it is local');
+  assert.deepEqual(JSON.parse(f.run('JSON.stringify(handoffDraft.files.map(file=>file.filename))')),['Plans - Launch.md']);
+  assert.equal(f.run('handoffDraft.problem'),'2 documents were added from Launch.');
+  assert.match(nodes().find(n=>n.id==='files-input').accept,/\.xlsx/,'a workbook can be chosen');
+  // The picker is a tablist: each tab controls its labelled panel, arrow keys, Home and End move.
+  const tablist=nodes().find(n=>n.attributes?.role==='tablist');
+  assert.equal(tablist.attributes['aria-labelledby'],'files-tabs-label');
+  const tabs=tablist.children.filter(n=>n.attributes?.role==='tab');
+  assert.deepEqual(tabs.map(t=>[t.textContent,t.attributes['aria-selected'],t.tabIndex]),[['This computer','false',-1],['Team library','false',-1],['Upload','true',0],['Paste or link','false',-1]]);
+  for(const tab of tabs){const panel=nodes().find(n=>n.id===tab.attributes['aria-controls']);assert.equal(panel.attributes.role,'tabpanel');assert.equal(panel.attributes['aria-labelledby'],tab.id);assert.equal(panel.hidden,tab.attributes['aria-selected']!=='true');}
+  const key=(tab,name)=>tab.listeners.keydown({key:name,preventDefault(){}});
+  key(tabs[2],'ArrowRight');assert.equal(tabs[3].attributes['aria-selected'],'true');assert.equal(tabs[3].focused,true,'focus moves with the choice');
+  assert.equal(nodes().find(n=>n.id==='files-panel-other').hidden,false);assert.equal(nodes().find(n=>n.id==='files-panel-files').hidden,true);
+  key(tabs[3],'ArrowRight');assert.equal(tabs[0].attributes['aria-selected'],'true','it wraps around');
+  key(tabs[0],'End');assert.equal(tabs[3].attributes['aria-selected'],'true');key(tabs[3],'Home');assert.equal(tabs[0].attributes['aria-selected'],'true');
+  key(tabs[0],'ArrowLeft');assert.equal(tabs[3].attributes['aria-selected'],'true');
+  assert.equal(f.run('handoffDraft.fileMethod'),'other','the choice is kept with the form');
+  // Before setup the item is kept for after it, and Home then opens New blog with it.
+  f.run("sessionStorage.setItem('blog-studio-library-start',JSON.stringify({id:'launch-facts',revision:2}))");
+  assert.deepEqual(JSON.parse(JSON.stringify(f.run('sLibraryWaiting()'))),{id:'launch-facts',revision:2});
+  assert.equal(f.run('sLibraryWaiting()'),null,'taken once');
+  assert.equal(requests.filter(r=>r.url==='/api/upload').some(r=>r.headers['X-Blog-Studio-Local']),false,'only the folder intake carries it');
 }
 
 // Issue 260: Add to the team library sends large sets in groups that each fit a request (the
@@ -2089,14 +2265,34 @@ async function libraryWordsAndBatches(){
   // The sources card: one library vocabulary, and one option marked as chosen.
   f.run("studio.team={joined:false};globalThis.sourcesDraft={files:[]};document.getElementById('studio-page').replaceChildren(sFilesCard(sourcesDraft,document.createElement('p'),()=>{},()=>{},{empty:'No sources yet. Later rewrites will read what you add.'}))");
   const card=descendants(f.get('studio-page'));
-  const group=card.find(n=>n.attributes?.['aria-label']==='Add a source');
-  assert.equal(group.dataset.count,'5');assert.equal(group.children.filter(n=>n.attributes?.['aria-pressed']==='true').length,1,'exactly one option is chosen');
+  const group=card.find(n=>n.attributes?.role==='tablist');
+  // One clear picker: This computer, Team library and Upload as tabs, then pasting, a Doc or a link.
+  assert.equal(group.dataset.count,'4');assert.equal(group.children.filter(n=>n.attributes?.['aria-selected']==='true').length,1,'exactly one option is chosen');
+  assert.deepEqual(group.children.filter(n=>n.tagName==='button').map(n=>n.textContent),['This computer','Team library','Upload','Paste or link']);
+  assert.equal(group.children.find(n=>n.attributes?.['aria-selected']==='true').textContent,'Upload','Upload stays the first choice shown');
   assert.ok(!group.children.some(n=>n.textContent==='Library'),'no bare library');
   assert.ok(card.some(n=>n.textContent==='No sources yet. Later rewrites will read what you add.'),'the desk sheet says desk words');
-  f.run("sourcesDraft.fileMethod='library';document.getElementById('studio-page').replaceChildren(sFilesCard(sourcesDraft,document.createElement('p'),()=>{},()=>{}))");
-  const labels=descendants(f.get('studio-page')).filter(n=>n.tagName==='button').map(n=>n.textContent);
-  assert.ok(labels.includes('From the team library')&&labels.includes('From the Document Library (this computer)'));
-  assert.ok(descendants(f.get('studio-page')).some(n=>/until you join a Team Hub it is on this computer only/.test(n.textContent||'')),'what team means without a Hub');
+  // Each tab says in one short line what is there; no long paragraph about both libraries.
+  const tabs=card.filter(n=>/\bsource-tab\b/.test(n.className||''));
+  assert.equal(tabs.length,4,'one panel per tab');assert.equal(tabs.filter(n=>!n.hidden).length,1,'only the chosen one shows');
+  for(const tab of tabs){const line=tab.children[0];assert.match(line.className,/field-hint/);assert.ok(line.textContent.length<=120,'one short line: '+line.textContent);}
+  assert.ok(!card.some(n=>/The team library holds posts your team writes from/.test(n.textContent||'')),'the long paragraph is gone');
+  // Nothing a person could add before is lost: every way is still there.
+  const ids=card.map(n=>n.id);
+  for(const id of ['files-input','files-text','files-google','files-google-add','files-link','files-link-add','files-links-file','files-document-library','files-team-library'])assert.ok(ids.includes(id),'still offered: '+id);
+  // An older choice (the libraries were one tab; paste, Doc and link three) opens its new tab.
+  for(const [was,now] of [['library','This computer'],['paste','Paste or link'],['google','Paste or link'],['link','Paste or link']]){
+    f.run("sourcesDraft.fileMethod='"+was+"';document.getElementById('studio-page').replaceChildren(sFilesCard(sourcesDraft,document.createElement('p'),()=>{},()=>{}))");
+    const chosen=descendants(f.get('studio-page')).find(n=>n.attributes?.role==='tablist').children.find(n=>n.attributes?.['aria-selected']==='true');
+    assert.equal(chosen.textContent,now,was+' opens '+now);
+  }
+  f.run("sourcesDraft.fileMethod='computer';document.getElementById('studio-page').replaceChildren(sFilesCard(sourcesDraft,document.createElement('p'),()=>{},()=>{}))");
+  const shownTab=()=>descendants(f.get('studio-page')).find(n=>/\bsource-tab\b/.test(n.className||'')&&!n.hidden);
+  assert.deepEqual(descendants(shownTab()).filter(n=>n.tagName==='button').map(n=>n.textContent),['Choose from the Document Library']);
+  assert.match(shownTab().children[0].textContent,/every studio on this computer\. Not shared with your team/);
+  f.run("sourcesDraft.fileMethod='team';document.getElementById('studio-page').replaceChildren(sFilesCard(sourcesDraft,document.createElement('p'),()=>{},()=>{}))");
+  assert.deepEqual(descendants(shownTab()).filter(n=>n.tagName==='button').map(n=>n.textContent),['Choose from the team library']);
+  assert.ok(/On this computer only until you join a Team Hub/.test(shownTab().children[0].textContent),'what team means without a Hub');
   const keep=descendants(f.get('studio-page')).find(n=>n.id==='files-document-keep');
   assert.deepEqual(descendants(keep).filter(n=>n.tagName==='button').map(n=>n.textContent),['Keep a copy in the Document Library','Only this blog']);
   // Team library rows: one status in words, never a raw state.
@@ -2229,7 +2425,7 @@ async function libraryPicker(){
   await nodes().find(e=>e.attributes['aria-label']==='Remove Sample s8').listeners.click();
   assert.equal(files().length,7,'unticking removes it');assert.equal(files().some(([id])=>id==='s8'),false);
   const sheet=()=>descendants(f.get('sheet')),inSheet=id=>sheet().find(e=>e.id===id);
-  await nodes().find(e=>e.textContent==='From the team library'&&e.tagName==='button').listeners.click();
+  await nodes().find(e=>e.textContent==='Choose from the team library'&&e.tagName==='button').listeners.click();
   assert.equal(f.get('sheet').children[0].children[0].textContent,'From the team library');
   assert.ok(inSheet('pick-role')&&inSheet('pick-kind')&&inSheet('pick-author')&&inSheet('pick-query'),'role, kind and author filters and a search box');
   assert.deepEqual(inSheet('pick-kind').children.map(o=>o.textContent),['Any kind','Product announcement','Field notes']);

@@ -463,7 +463,12 @@ def status(root, operation, sync=True, changed=(), problems=None):
     words = []
     if counts['pending']:
         words.append(
-            '%d links are still to add; continue to fetch the next batch.' % counts['pending']
+            (
+                '1 link is still to add.'
+                if counts['pending'] == 1
+                else '%d links are still to add.' % counts['pending']
+            )
+            + ' Add the rest goes on from where it stopped.'
         )
     if held:
         words.append(

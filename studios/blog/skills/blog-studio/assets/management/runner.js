@@ -108,7 +108,11 @@ function sFocusAgain(held,root){if(!held||!root||typeof root.querySelectorAll!==
 function sPage(...nodes){const page=$('studio-page'),held=sFocusHeld(page);page.replaceChildren(...nodes.filter(Boolean));sFocusAgain(held,page);}
 function sToast(message){const toast=sNode('p','toast glass',message);$('toasts').append(toast);setTimeout(()=>toast.remove(),5000);}
 async function sRoute(screen,id=null,stage=null,replace=false){if(studio.screen==='desk-start'&&screen!=='desk-start'&&studio.deskStart){if(!await sDeskKeep(studio.deskStart,false))return notice(sBlogIntake().problem,true);}const query=new URLSearchParams({screen});if(id)query.set('id',id);if(stage)query.set('stage',stage);history[replace?'replaceState':'pushState'](null,'',location.pathname+'?'+query);return studioNavigate(screen,id,stage,true);}
+// A Document Library item kept for after setup (see the first navigation) opens New blog once
+// Home is reached with setup done.
+function sLibraryWaiting(){try{const held=JSON.parse(sessionStorage.getItem('blog-studio-library-start')||'null');sessionStorage.removeItem('blog-studio-library-start');return held&&typeof held==='object'?held:null;}catch(_){return null;}}
 async function studioNavigate(screen,id=null,stage=null,intakeSaved=false){
+  if(screen==='home'&&studio.settings?.configured){const waiting=sLibraryWaiting();if(waiting&&typeof sDeskFromLibrary==='function')return sDeskFromLibrary(waiting);}
   if(!intakeSaved&&studio.screen==='desk-start'&&screen!=='desk-start'&&studio.deskStart&&!await sDeskKeep(studio.deskStart,false))return notice(sBlogIntake().problem,true);
   if(studio.screen==='desk'&&(screen!=='desk'||id!==studio.id)&&typeof sDeskShare==='function')sDeskShare(studio.desk);
   if(screen==='voices'&&studio.screen!=='voices')studio.kindsFrom=studio.screen;  // Kinds of post goes Back to where it was opened.
@@ -1066,7 +1070,7 @@ function sLibraryAddResults(parts){
   const found=parts.map(part=>part.result).filter(Boolean),first=found[0],counts={},groups=new Map();
   for(const one of found){for(const [key,value] of Object.entries(one.counts||{}))counts[key]=(counts[key]||0)+value;
     for(const group of one.groups||[]){const into=groups.get(group.author)||{author:group.author,ids:[],samples:[],learnable:[],count:0};into.ids.push(...group.ids);into.samples.push(...(group.samples||[]));into.learnable.push(...(group.learnable||[]));into.count+=group.count;groups.set(group.author,into);}}
-  return {...first,items:found.flatMap(one=>one.items||[]),counts,groups:[...groups.values()],held:found.flatMap(one=>one.held||[]),remaining:found.reduce((n,one)=>n+(one.remaining||0),0),sharing_message:found.map(one=>one.sharing_message).filter(Boolean).at(-1)||'',next_step:found.at(-1)?.next_step||''};
+  return {...first,items:found.flatMap(one=>one.items||[]),counts,groups:[...groups.values()],held:found.flatMap(one=>one.held||[]),remaining:found.reduce((n,one)=>n+(one.remaining||0),0),sharing_message:found.map(one=>one.sharing_message).filter(Boolean).at(-1)||'',next_step:found.at(-1)?.next_step||'',stopped:found.some(one=>one.stopped)};
 }
 async function sLibraryAdd(){
   const held=sLibraryAddHeld(),form=sNode('form'),problem=sNode('p','problem');problem.setAttribute('role','alert');let kinds={styles:[]};try{kinds=await api('styles');}catch(error){problem.textContent=error.message;}
@@ -1112,12 +1116,14 @@ async function sLibraryAddSave(held,button,problem,retry=false){
   await busy(button,retry?'Trying again…':'Adding…',async()=>{try{
     // Trying the failed links again sends the groups that had a failure, or the first, which
     // carries the links.
-    const failed=parts.filter(part=>part.result?.counts?.failed),due=retry?(failed.length?failed:parts.slice(0,1)):parts.filter(part=>!part.result);
+    // A group that was stopped, or that still has links to fetch, is sent again: it goes on
+    // from where it was, with the same operation.
+    const failed=parts.filter(part=>part.result?.counts?.failed),due=retry?(failed.length?failed:parts.slice(0,1)):parts.filter(part=>!part.result||part.result.remaining>0);
     for(const [index,part] of parts.entries()){
       if(!due.includes(part))continue;
-      let result=await api('library-add',{...payload(part),...(retry?{retry:true}:{})});
-      for(let turns=0;result.remaining>0&&turns<40&&studio.sheet===owner;turns++){button.textContent=(parts.length>1?'Group '+(index+1)+' of '+parts.length+': added ':'Added ')+(result.items.length-result.remaining)+' of '+result.items.length+'…';result=await api('library-add',payload(part));}
-      part.result=result;if(studio.sheet!==owner)break;
+      // One request: the job fetches every batch of links itself and says how far it is.
+      const result=await api('library-add',{...payload(part),...(retry?{retry:true}:{})},undefined,{progress:job=>{if(job.progress&&studio.sheet===owner)button.textContent=(parts.length>1?'Group '+(index+1)+' of '+parts.length+': ':'')+job.progress;}});
+      part.result=result;if(studio.sheet!==owner||result.stopped)break;
     }
     held.result=sLibraryAddResults(parts);if(studio.screen==='editorial')load().catch(()=>{});if(studio.sheet===owner)sLibraryAddResult(held);
   }catch(error){if(parts.some(part=>part.result))held.result=sLibraryAddResults(parts);problem.textContent=error.message;}});
@@ -1136,7 +1142,9 @@ function sLibraryAddResult(held){
   const unmarked=result.groups.some(group=>group.samples.length<group.count),mark=sButton('Mark as samples',()=>again('library-add-samples',{}),'filled');mark.disabled=!held.mark;
   const samples=unmarked&&sVoicesOn()?sAdd(sNode('div'),sCheck('library-add-mark','Mark the posts as voice samples by their authors',held,'mark','On, every post in a named group becomes that author’s voice sample, in a new source revision that changes no blog. Held posts stay references.',on=>{mark.disabled=!on;}),mark):null;
   const retry=result.counts.failed&&held.shown?sButton('Try the failed links again',button=>sLibraryAddSave(held,button,problem,true)):null;
-  sOpenSheet('Added to the team library',sCard(result.counts.imported+' added · '+result.counts['in-library']+' already there · '+result.counts.failed+' failed',sNode('p','quiet',result.sharing_message||''),sNode('p','',result.next_step),retry),list,result.groups.length?sNode('h3','sheet-part','By author'):null,result.groups.length&&sVoicesOn()?sAdd(sNode('div','bar'),sButton('Create voices for every author',()=>sVoicesForAuthors())):null,groups,result.held.length?sNode('h3','sheet-part','Held: no single byline'):null,held_,samples,problem,sButton('Add more',()=>{studio.libraryAdd=null;sLibraryAdd();}),sButton('Close',sCloseSheet));
+  // Stopped, or more links than one add fetches: Add the rest goes on with the same operation.
+  const rest=result.remaining&&held.shown?sButton('Add the rest',button=>sLibraryAddSave(held,button,problem),'filled'):null;
+  sOpenSheet('Added to the team library',sCard(result.counts.imported+' added · '+result.counts['in-library']+' already there · '+result.counts.failed+' failed',sNode('p','quiet',result.sharing_message||''),sNode('p','',(result.stopped?'Stopped. ':'')+result.next_step),sAdd(sNode('div','bar'),rest,retry)),list,result.groups.length?sNode('h3','sheet-part','By author'):null,result.groups.length&&sVoicesOn()?sAdd(sNode('div','bar'),sButton('Create voices for every author',()=>sVoicesForAuthors())):null,groups,result.held.length?sNode('h3','sheet-part','Held: no single byline'):null,held_,samples,problem,sButton('Add more',()=>{studio.libraryAdd=null;sLibraryAdd();}),sButton('Close',sCloseSheet));
 }
 // The library screen's selection: learn a style or a voice from the ticked items, or start a
 // blog with them as examples. Learning marks them as samples first, then opens the learn sheet,
@@ -1228,6 +1236,28 @@ function sCheck(id,label,held,key,hint,changed){const box=sNode('div','field'),r
 // The page takes at most 15 MiB a request; files are sent base64-encoded (4/3 larger), so
 // they go up in groups under 14 MiB encoded, each group its own operation.
 function sUploadGroups(files,limit=14*1024*1024){const groups=[];let current=[],size=0;for(const file of files){const encoded=Math.ceil(file.size/3)*4+512;if(current.length&&size+encoded>limit){groups.push(current);current=[];size=0;}current.push(file);size+=encoded;}if(current.length)groups.push(current);return groups;}
+// The source picker's choices: a tablist (arrow keys, Home and End move and choose), each
+// panel labelled by its tab, drawn with the ui-kit's segmented look. Choosing shows its panel in
+// place, so the focus stays on the tab.
+function sSourceTabs(methods,draft,panels){
+  const label=sNode('p','field-label','Add a source');label.id='files-tabs-label';
+  const list=sNode('div','segmented source-tabs');list.setAttribute('role','tablist');list.setAttribute('aria-labelledby',label.id);list.dataset.count=String(methods.length);list.append(sNode('span','seg-thumb'));
+  const tabs=[];
+  const choose=(key,focus)=>{
+    draft.fileMethod=key;list.dataset.at=String(Math.max(0,methods.findIndex(([value])=>value===key)));
+    for(const tab of tabs){const on=tab.dataset.key===key;tab.setAttribute('aria-selected',String(on));tab.tabIndex=on?0:-1;if(on&&focus)tab.focus();}
+    for(const [name,panel]of Object.entries(panels))panel.hidden=name!==key;
+  };
+  methods.forEach(([key,text],at)=>{
+    const tab=sNode('button','seg-option',text);tab.type='button';tab.id='files-tab-'+key;tab.dataset.key=key;tab.setAttribute('role','tab');tab.setAttribute('aria-controls','files-panel-'+key);
+    tab.addEventListener('click',()=>choose(key,false));
+    tab.addEventListener('keydown',event=>{const last=methods.length-1,next={ArrowRight:at===last?0:at+1,ArrowLeft:at===0?last:at-1,Home:0,End:last}[event.key];if(next===undefined)return;event.preventDefault();choose(methods[next][0],true);});
+    tabs.push(tab);list.append(tab);
+  });
+  for(const [key,panel]of Object.entries(panels)){panel.id='files-panel-'+key;panel.setAttribute('role','tabpanel');panel.setAttribute('aria-labelledby','files-tab-'+key);}
+  choose(draft.fileMethod,false);
+  return sAdd(sNode('div','field'),label,list);
+}
 // Your files, on the desk's start and its Add a source: every file goes up at once and is
 // listed with how much text it has and what it is for; a Google Doc or a public link can be
 // added beside them, and posts from the team library. They are saved with this blog only; one
@@ -1240,10 +1270,13 @@ function sFilesCard(draft,problem,again,lock,about={}){
   const remember=result=>{for(const row of result.files||[])if(!draft.files.some(file=>file.id===row.source.id))draft.files.push({id:row.source.id,filename:row.filename,state:row.state,chars:row.chars||0,note:row.note||'',link:row.link||'',role:draft.role,kept:!!draft.keep,documentLibrary:row.document_library||null});};
   const meaning='Facts may be quoted and cited. Approved messaging, such as a messaging document, launch brief or release notes, is stated as the product’s own claims. An example shows the shape, length and register of the post you want; nothing in it is used as a fact.';
   const roleField=sField('files-role','Add these files as',draft,'role',{options:roles});
-  const picker=sNode('input','input');picker.id='files-input';picker.type='file';picker.multiple=true;picker.accept='.md,.txt,.html,.htm,.docx,.pdf,application/pdf';
+  const picker=sNode('input','input');picker.id='files-input';picker.type='file';picker.multiple=true;picker.accept='.md,.txt,.html,.htm,.docx,.pdf,.xlsx,application/pdf';
   const label=sNode('label','field-label',draft.files.length?'Add more files':'Choose files');label.htmlFor=picker.id;
-  picker.addEventListener('change',async()=>{const chosen=[...(picker.files||[])];if(!chosen.length)return;if(chosen.some(file=>file.size>10*1024*1024)){problem.textContent='Choose files up to 10 MiB each.';return;}if(chosen.length+draft.files.length>20){problem.textContent='Use up to 20 files for one blog.';return;}picker.disabled=true;studio.busy=true;problem.textContent=chosen.length===1?'Reading the file…':'Reading '+chosen.length+' files…';
-    try{for(const group of sUploadGroups(chosen)){const files=[];for(const file of group)files.push({filename:file.name,content:await encodeImportFile(file),purpose:draft.role});remember(await api('upload',{operation:operationId(),files,purpose:'material',keep:false,analyze:false,document_library:draft.docKeep==='library'}));}studio.busy=false;const readable=ready().length;sToast(readable===draft.files.length?'Every file has text.':readable+' of '+draft.files.length+' files have text.');again();}
+  picker.addEventListener('change',async()=>{let chosen=[...(picker.files||[])];if(!chosen.length)return;if(chosen.some(file=>file.size>10*1024*1024)){problem.textContent='Choose files up to 10 MiB each.';return;}if(chosen.length+draft.files.length>20){problem.textContent='Use up to 20 files for one blog.';return;}picker.disabled=true;studio.busy=true;problem.textContent=chosen.length===1?'Reading the file…':'Reading '+chosen.length+' files…';
+    // A workbook is read as text, every sheet under its name (studio_core.source_intake).
+    const sheets=chosen.filter(file=>/\.xlsx$/i.test(file.name));chosen=chosen.filter(file=>!sheets.includes(file));
+    try{for(const sheet of sheets){const result=await api('files-intake',{operation:operationId(),file:{name:sheet.name,content:await encodeImportFile(sheet)},role:draft.role,room:Math.max(0,20-draft.files.length),taken:draft.files.map(file=>file.filename),document_library:draft.docKeep==='library'});remember(result);if(result.said)draft.problem=result.said;}
+    for(const group of sUploadGroups(chosen)){const files=[];for(const file of group)files.push({filename:file.name,content:await encodeImportFile(file),purpose:draft.role});remember(await api('upload',{operation:operationId(),files,purpose:'material',keep:false,analyze:false,document_library:draft.docKeep==='library'}));}studio.busy=false;const readable=ready().length;sToast(readable===draft.files.length?'Every file has text.':readable+' of '+draft.files.length+' files have text.');again();}
     catch(error){problem.textContent=error.message;}finally{studio.busy=false;picker.disabled=false;}});
   const list=sNode('ul','rows');list.setAttribute('aria-label','Your files');
   const where=file=>(file.kept?' · To the team library':' · Just this blog')+(file.documentLibrary?.state==='kept'?' · Also in the Document Library':file.documentLibrary?.state==='failed'?' · Not kept in the Document Library: '+file.documentLibrary.reason:'');
@@ -1279,8 +1312,10 @@ function sFilesCard(draft,problem,again,lock,about={}){
       if(added)sToast('Added '+added+' of '+fresh.length+(fresh.length===1?' link':' links')+' from '+chosen.name+'.');
       draft.problem=said.join(' ');again();});
     linkField=sAdd(sNode('div','field'),linkLabel,sAdd(sNode('div','bar'),linkInput,linkAdd),sNode('p','quiet field-hint','A public page, read once.'),manyLabel,many,manyHint);}
-  const fromLibrary=sAdd(sNode('div','field'),sAdd(sNode('div','bar'),sButton('From the team library',()=>sLibraryPicker(draft,again)),(()=>{const node=sButton('From the Document Library (this computer)',()=>sDocumentLibrary(draft,again,problem));node.id='files-document-library';return node;})()),sNode('p','quiet field-hint','The team library holds posts your team writes from, each with its role'+(studio.team?.joined?'':'; until you join a Team Hub it is on this computer only')+'. The Document Library holds uploads and finished work from every studio on this computer, and is not shared with your team; what you choose there stays with this blog.'));
-  if(draft.sourceEditor)fromLibrary.append(sButton('Use saved research',()=>sSavedResearchPicker(draft,again)));
+  // Where a source comes from, one tab each, with one short line that says what is there.
+  const computer=sAdd(sNode('div','field source-tab'),sNode('p','quiet field-hint','Uploads and finished work from every studio on this computer. Not shared with your team.'),sAdd(sNode('div','bar'),(()=>{const node=sButton('Choose from the Document Library',()=>sDocumentLibrary(draft,again,problem));node.id='files-document-library';return node;})()));
+  const team=sAdd(sNode('div','field source-tab'),sNode('p','quiet field-hint',studio.team?.joined?'Posts your team writes from, each with its role.':'Posts your team writes from, each with its role. On this computer only until you join a Team Hub.'),sAdd(sNode('div','bar'),(()=>{const node=sButton('Choose from the team library',()=>sLibraryPicker(draft,again));node.id='files-team-library';return node;})()));
+  if(draft.sourceEditor)team.append(sButton('Use saved research',()=>sSavedResearchPicker(draft,again)));
   // Keep comes before the picker: it applies to the files added next, and each row says where its file went.
   const keep=sCheck('files-keep','Keep in the team library',draft,'keep',about.keepWhen||'Ticked ones go to the team library when you start.');
   const pasted=sNode('div','stack'),notes=sField('files-text','Source text',draft,'sourceText',{long:true,max:200000}),addText=sButton('Add pasted text',async button=>{
@@ -1288,17 +1323,29 @@ function sFilesCard(draft,problem,again,lock,about={}){
     await busy(button,'Saving source…',async()=>{studio.busy=true;try{remember(await api('upload',{operation:operationId(),files:[{filename:(draft.sourceName||'Pasted notes').replace(/[^a-zA-Z0-9 _-]/g,'').slice(0,100)+'.txt',content:await encodeImportFile(new Blob([text])),purpose:draft.role}],purpose:'material',keep:false,analyze:false}));draft.sourceText='';problem.textContent='';studio.busy=false;again();}catch(error){problem.textContent=error.message;}finally{studio.busy=false;}});
   });
   pasted.append(sField('files-name','Source name',draft,'sourceName',{max:100}),notes,addText);
-  draft.fileMethod=draft.fileMethod||'files';
-  const methods=[['files','Upload files'],['paste','Paste notes'],['google','Google Doc source'],['link','Web link'],['library','Team or Document Library']];
+  // Older names for the tabs (the libraries were one tab, and pasting, a Doc and a link three).
+  draft.fileMethod={library:'computer',paste:'other',google:'other',link:'other'}[draft.fileMethod]||draft.fileMethod||'files';
+  const methods=[['computer','This computer'],['team','Team library'],['files','Upload'],['other','Paste or link']];
   // Keep in library (the default) also keeps each file sent from here in the shared Document
   // Library on this computer, for any studio; Only this blog keeps it with this blog alone.
   // Either way the file is shared exactly as chosen for it, never more.
   const docKeep=sChoice('Uploaded files',[['library','Keep a copy in the Document Library'],['blog','Only this blog']],draft,'docKeep',()=>{});docKeep.id='files-document-keep';
   docKeep.append(sNode('p','quiet field-hint','The Document Library is on this computer, for any studio to use. It is not shared with your team. Links and Google Docs stay with this blog.'));
-  const inputs={files:sAdd(sNode('div','field'),docKeep,label,picker),paste:pasted,google:docField,link:linkField,library:fromLibrary};
-  for(const [key,input]of Object.entries(inputs))input.hidden=key!==draft.fileMethod;
+  // A whole folder: one on this computer (read only from this computer), or a Google Drive folder.
+  const folderInput=sNode('input','input');folderInput.id='files-folder';folderInput.autocomplete='off';folderInput.placeholder='A folder path, or a Google Drive folder link';folderInput.setAttribute('aria-describedby','files-folder-hint');
+  const folderLabel=sNode('label','field-label','Or add a whole folder');folderLabel.htmlFor=folderInput.id;
+  const folderAdd=sButton('Add the folder',async button=>{const given=folderInput.value.trim();if(!given){problem.textContent='Give a folder on this computer or a Google Drive folder link first.';folderInput.focus();return;}if(draft.files.length>=20){problem.textContent='Use up to 20 files for one blog.';return;}
+    await busy(button,'Reading the folder…',async()=>{studio.busy=true;lock(true);try{const result=await api('files-intake',{operation:operationId(),folder:given,role:draft.role,room:20-draft.files.length,taken:draft.files.map(file=>file.filename),document_library:draft.docKeep==='library'});remember(result);folderInput.value='';studio.busy=false;draft.problem=[result.said,result.next].filter(Boolean).join(' ');again();}catch(error){problem.textContent=error.message;folderInput.focus();}finally{studio.busy=false;lock(false);}});});
+  folderAdd.id='files-folder-add';
+  const folderHint=sNode('p','quiet field-hint','Every document in it is added, up to 20 for this blog. A folder on this computer can be added only on this computer.');folderHint.id='files-folder-hint';
+  const folderField=sAdd(sNode('div','field'),folderLabel,sAdd(sNode('div','bar'),folderInput,folderAdd),folderHint);
+  const upload=sAdd(sNode('div','field source-tab'),sNode('p','quiet field-hint','Files from your computer: Markdown, text, web pages, Word, PDF or Excel, up to 10 MiB each.'),docKeep,label,picker,folderField);
+  // Paste or link: notes typed or pasted here, a Google Doc, or a public page.
+  const other=sAdd(sNode('div','stack source-tab'),sNode('p','quiet field-hint','Pasted notes, a Google Doc or a public page, saved with this blog.'),pasted,docField,linkField);
+  const inputs={computer,team,files:upload,other};
+  const tabs=sSourceTabs(methods,draft,inputs);
   let preview=null;if(draft.sourcePreview){const shown=draft.sourcePreview;preview=sCard(shown.name,sNode('p','quiet',shown.note),sNode('pre','source-excerpt',shown.text),sButton('Close source preview',()=>{draft.sourcePreview=null;again();}));}
-  return sCard('Sources for this blog',sNode('p','quiet','Add each source once. Readable sources are used by the writing and, when requested, research. Examples guide style and are never factual evidence.'),draft.files.length||reviewed.length?list:sNode('p','quiet',about.empty||'No sources yet. You can write from your idea or outline alone.'),preview,sChoice('Add a source',methods,draft,'fileMethod',again),disclosure('Role and team library options for new sources',roleField,sNode('p','quiet',meaning),keep),...Object.values(inputs));
+  return sCard('Sources for this blog',sNode('p','quiet','Add each source once. Readable sources are used by the writing and, when requested, research. Examples guide style and are never factual evidence.'),draft.files.length||reviewed.length?list:sNode('p','quiet',about.empty||'No sources yet. You can write from your idea or outline alone.'),preview,tabs,disclosure('Role and team library options for new sources',roleField,sNode('p','quiet',meaning),keep),...Object.values(inputs));
 }
 
 // The shared Document Library (library.js): chosen revisions come back as files for this
@@ -1375,7 +1422,14 @@ window.addEventListener('popstate',()=>{const query=new URLSearchParams(location
 document.addEventListener('keydown',event=>{if(!studio.sheet)return;if(event.key==='Escape'){event.preventDefault();sCloseSheet();return;}if(event.key==='Tab'){const nodes=[...$('sheet').querySelectorAll('button,input,textarea,select,[tabindex="0"]')].filter(node=>!node.disabled);if(!nodes.length){event.preventDefault();return;}const first=nodes[0],last=nodes[nodes.length-1];if(event.shiftKey&&(document.activeElement===first||document.activeElement===$('sheet'))){event.preventDefault();last.focus();}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus();}}});
 document.addEventListener('visibilitychange',sVisibilityChanged);
 setInterval(sPoll,3000);
-(async()=>{await loadCapabilities();studio.settings=await api('run-settings');sVoiceSwitchShown();const query=new URLSearchParams(location.search);await studioNavigate(query.get('screen')||(studio.settings.configured?'home':'setup'),query.get('id'),query.get('stage'));})().catch(error=>notice(error.message,true));
+(async()=>{await loadCapabilities();studio.settings=await api('run-settings');sVoiceSwitchShown();
+  // Continue in another studio: a page opened with library= opens New blog with it (app.js read it).
+  if(typeof libraryStart!=='undefined'&&libraryStart){
+    if(studio.settings.configured){await sDeskFromLibrary(libraryStart);return;}
+    try{sessionStorage.setItem('blog-studio-library-start',JSON.stringify(libraryStart));}catch(_){/* said below either way */}
+    notice('Finish setup first. Then New blog opens with the Document Library item you continued with.');
+  }
+  const query=new URLSearchParams(location.search);await studioNavigate(query.get('screen')||(studio.settings.configured?'home':'setup'),query.get('id'),query.get('stage'));})().catch(error=>notice(error.message,true));
 
 
 window.addEventListener('beforeunload',event=>{if(studio.deskStart&&(studio.deskStart._dirty||studio.deskStart._saving||studio.intake?.pending||studio.intake?.writing)){event.preventDefault();event.returnValue='';}if(Object.values(studio.editorDrafts||{}).some(draft=>draft.content!==draft.baseContent)){event.preventDefault();event.returnValue='';}});

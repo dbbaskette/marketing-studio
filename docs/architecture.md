@@ -161,8 +161,11 @@ Preparation starts no assistant job and never moves an existing workspace.
 
 `brand.brands` names the brands repository: every brand the studios use, kept apart
 from any team's storage (for example the private `dbbaskette/broadcom-brands`). It is a
-Git address or a folder on this computer. Saving it fetches nothing. The Brand card's
-Get brands action (`studio_core.brand_data.bring`) clones a Git address into Marketing
+Git address or a folder on this computer. Saving a folder on this computer that holds
+brands records it for Harness Brand as part of the save (`studio_core.brand_data.saved`);
+saving a Git address fetches nothing, and the Brand card says so from
+`studio_core.brand_data.status`, which the installed-brands lookup returns as `store`. The
+Brand card's Get brands action (`studio_core.brand_data.bring`) clones a Git address into Marketing
 Studio's data folder under `brands/`, or fast-forwards that copy, uses a folder as it is,
 and records the result in Harness Brand's `harness-brand/data` file, which Harness Brand
 and its brand shortcuts read wherever they run. Left empty, Marketing Studio reads the

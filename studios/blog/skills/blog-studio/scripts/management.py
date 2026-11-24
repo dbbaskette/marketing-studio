@@ -24,6 +24,7 @@ import studio
 import editorial
 from experience import page
 import blog_library
+import import_jobs
 import shared_library
 import source_curator
 from google_drive import GoogleError
@@ -2061,6 +2062,15 @@ def _dispatch(root, route, data):
                 else None
             )
             shared = kept.pop('document_library', None) if kept else None
+            if (
+                values.get('stage') == 'ready'
+                and values.get('confirm_stage') is True
+                and (record.get('editorial') or {}).get('stage') == 'ready'
+                and desk.on_desk(directory)
+            ):
+                # Marked ready: the saved draft is kept in the Document Library, with no
+                # publication address. Marked ready again after a change adds a revision.
+                shared = shared_library.keep_ready(root, directory, record)
             library = {
                 **({'library': kept} if kept else {}),
                 **({'document_library': shared} if shared else {}),
@@ -2362,7 +2372,7 @@ def report_google(root, data):
 
 
 INTAKE_FIELDS = frozenset(
-    'step kind style researchOn have brief title audience point angles angle angleOp outline outlineFrom outlineWay source article manuscript url link collection preview first_pass humanizeOn humanizeLevel geoReview voiceOn voiceGuide files role keep from searchSites searchWeb length tone operation upload uploaded docKeep sourceDraft sourceEntry fileData outlineFileData intakeOpen'.split()
+    'libraryStart step kind style researchOn have brief title audience point angles angle angleOp outline outlineFrom outlineWay source article manuscript url link collection preview first_pass humanizeOn humanizeLevel geoReview voiceOn voiceGuide files role keep from searchSites searchWeb length tone operation upload uploaded docKeep sourceDraft sourceEntry fileData outlineFileData intakeOpen'.split()
 )
 
 
@@ -2410,7 +2420,122 @@ def dispatch(root, route, data):
     return dispatch_managed(root, route, data)
 
 
+# A request that reached this page through Marketing Studio's phone link. The link forwards
+# only the headers it names (marketing_studio/network.py), so the page's own LOCAL header never
+# arrives through it; and a link that says a request came over the network is believed. Without
+# LOCAL, a request is taken to be from afar: a folder on this computer is then refused.
+LOCAL_HEADER = 'X-Blog-Studio-Local'
+VIA_HEADER = 'X-Marketing-Studio-Via'
+
+
+def remote_caller(headers):
+    """Marketing Studio's phone link says `X-Marketing-Studio-Via: network`: that alone makes
+    a request remote. Without the page's own header (which the link never forwards) a request
+    is taken to be remote too."""
+    return headers.get(VIA_HEADER) == 'network' or headers.get(LOCAL_HEADER) != '1'
+
+
+# A folder (on this computer, or a Google Drive folder link) or one spreadsheet, given to the
+# source picker: read by studio_core.source_intake, then saved as an ordinary files upload.
+FILES_INTAKE_FIELDS = frozenset(
+    {'operation', 'folder', 'file', 'role', 'room', 'taken', 'document_library', 'local'}
+)
+FILES_INTAKE_ACCEPTS = frozenset({'.md', '.txt', '.html', '.htm', '.docx', '.pdf'})
+
+
+def files_intake(root, data):
+    """Read a folder or a spreadsheet into files for one blog, then save them as an upload
+    does: {'files', 'state', ..., 'said', 'next', 'skipped'}. A folder path on this computer is
+    read only when `local` is True (the page server sets it). Nothing is analyzed."""
+    from studio_core import source_intake
+
+    if not isinstance(data, dict) or set(data) - FILES_INTAKE_FIELDS:
+        raise ValueError('This request has fields the page does not take.')
+    if ('folder' in data) == ('file' in data):
+        raise ValueError('Give one folder, or one spreadsheet.')
+    if type(data.get('local')) is not bool:
+        raise ValueError('Say whether the person is at this computer.')
+    role = data.get('role', 'material')
+    if role not in ('material', 'messaging', 'inspiration'):
+        raise ValueError('Choose facts, approved messaging or an example for these files.')
+    room = data.get('room', MAX_UPLOAD_FILES)
+    if type(room) is not int or not 0 <= room <= MAX_UPLOAD_FILES:
+        raise ValueError('Use up to %d files for one blog.' % MAX_UPLOAD_FILES)
+    taken = data.get('taken', [])
+    if (
+        not isinstance(taken, list)
+        or len(taken) > MAX_UPLOAD_FILES
+        or not all(isinstance(name, str) and len(name) <= 500 for name in taken)
+    ):
+        raise ValueError('Name the files this blog has already.')
+    if not isinstance(data.get('document_library', False), bool):
+        raise ValueError('Choose Keep in library or Only this blog for these files.')
+    if 'folder' in data:
+        given = data['folder']
+        if not isinstance(given, str) or not given.strip() or len(given) > 2000:
+            raise ValueError('Give a folder on this computer or a Google Drive folder link.')
+        given = given.strip()
+    else:
+        entry = data['file']
+        if not isinstance(entry, dict) or set(entry) != {'name', 'content'}:
+            raise ValueError('Choose a spreadsheet with something in it.')
+        if not str(entry['name']).lower().endswith('.xlsx'):
+            raise ValueError('Choose an Excel workbook (.xlsx).')
+        given = {'name': entry['name'], 'data': base64.b64decode(entry['content'], validate=True)}
+    with studio.locked(root):
+        authorize_write(root)  # Before anything is read from a folder or the network.
+    from studio_core.research_sources import Sources
+    import google_drive
+
+    # A Google Drive folder is read with the Google account chosen for this workspace, as
+    # every other Google read here is; the scratch store is removed with its folder.
+    with tempfile.TemporaryDirectory(prefix='blog-files-intake-') as scratch:
+        found = source_intake.take(
+            given,
+            local=data['local'],
+            accepts=FILES_INTAKE_ACCEPTS,
+            room=room,
+            spare=room * blog_library.MAX_BINARY,
+            taken=taken,
+            store=Sources(
+                Path(scratch) / 'sources', account=lambda: google_drive.account_for(root)
+            ),
+        )
+    files, skipped = [], list(found['skipped'])
+    for name, content in found['uploads'].items():
+        if len(content) > blog_library.MAX_BINARY:
+            skipped.append({'name': name, 'code': 'too-large', 'reason': 'Larger than 10 MiB.'})
+            continue
+        files.append(
+            {'filename': name, 'content': base64.b64encode(content).decode(), 'purpose': role}
+        )
+    said = {'said': found['said'], 'next': found['next'], 'skipped': skipped}
+    if not files:
+        return {'files': [], 'state': 'saved', 'receipts': [], **said}
+    operation = data.get('operation')
+    saved = dispatch_managed(
+        root,
+        'upload',
+        {
+            'operation': operation,
+            'files': files,
+            'purpose': 'material',
+            'keep': False,
+            'analyze': False,
+            'document_library': data.get('document_library', False),
+        },
+    )
+    return {**saved, **said}
+
+
 def dispatch_managed(root, route, data):
+    if route == 'files-intake':
+        return files_intake(root, data)
+    if route == 'import-stop':
+        # Stop a background import (import_jobs) where stopping is safe.
+        if set(data) != {'job'}:
+            raise ValueError('Choose an import that is running.')
+        return import_jobs.stop(root, data['job'])
     if route == 'intake-draft':
         # Authenticated local form storage; never check remote team write access.
         return intake_draft(root, data)
@@ -2652,7 +2777,9 @@ def failure(exc, writing=False):
     if isinstance(exc, CurationConflict):
         # A refused save is a conflict; a read of a reference that went away is an ordinary 400, as before.
         return (409 if writing else 400), {'error': str(exc)[:500], 'code': 'source-conflict'}
-    if isinstance(exc, Busy):
+    if isinstance(exc, (Busy, studio.WorkspaceBusy)):
+        # A background import (import_jobs) may hold the workspace lock for its Google or
+        # network call: a page request that waited its turn is answered as busy, as before.
         return 503, {
             'error': 'Another change on this page is still running. This request changed nothing; try again when it finishes.',
             'code': 'busy',
@@ -2728,6 +2855,11 @@ def activity_view(root, query):
 def view(root, name, query):
     """Read-only desk views by name. Returns None for an unknown view."""
     arg = lambda key, default=None: query.get(key, [default])[0]
+    if name == 'tool-job':
+        # An import's job is read without the workspace lock, which the import may hold.
+        found = import_jobs.view(root, arg('job'))
+        if found is not None:
+            return found
     if name == 'intake-draft':
         return intake_draft(root, {'action': 'read'})
     if name == 'desk-migration-preview':
@@ -3167,6 +3299,16 @@ def server(root, port=0, bind=True, shared_setup=False, keep_workspace=True):
                 raise ValueError('Supply a JSON object.') from None
             if not isinstance(data, dict):
                 raise ValueError('Supply a JSON object.')
+            if target[5:] == 'files-intake':
+                # Whether the person is at this computer is the server's to say, never the
+                # page's: a folder path here is read only for a request from this computer.
+                data = {key: value for key, value in data.items() if key != 'local'}
+                data['local'] = not remote_caller(headers)
+            if target[5:] in import_jobs.ROUTES:
+                # A slow import or Google call answers at once with a job that runs the same
+                # route on its own thread; the page follows it with GET tool-job.
+                with serialized():
+                    return made(200, import_jobs.start(root, target[5:], data))
             with serialized():
                 result = dispatch(root, target[5:], data)
                 if result.get('switch_workspace') and Path(result['switch_workspace']) != root:

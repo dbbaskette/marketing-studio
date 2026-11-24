@@ -504,6 +504,281 @@ class Interpret(BrandsCase):
         self.assertEqual(found, brand_job.CODEX_OFF)
 
 
+def made_pdf(words=b'BT /F1 12 Tf 72 720 Td (Example Co brand book: titles are blue.) Tj ET'):
+    """A one-page PDF of made-up words; with no words, a page with no text layer at all."""
+    objects = [b'<< /Type /Catalog /Pages 2 0 R >>', b'<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+               b'<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>',
+               b'<< /Length ' + str(len(words)).encode() + b' >>\nstream\n' + words + b'\nendstream',
+               b'<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>']
+    raw, offsets = b'%PDF-1.4\n', []
+    for number, value in enumerate(objects, 1):
+        offsets.append(len(raw))
+        raw += str(number).encode() + b' 0 obj\n' + value + b'\nendobj\n'
+    at = len(raw)
+    raw += b'xref\n0 6\n0000000000 65535 f \n' + b''.join(f'{offset:010d} 00000 n \n'.encode() for offset in offsets)
+    return raw + b'trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n' + str(at).encode() + b'\n%%EOF\n'
+
+
+def zipped(members):
+    data = io.BytesIO()
+    with zipfile.ZipFile(data, 'w') as made:
+        for name, content in members.items():
+            made.writestr(name, content)
+    return data.getvalue()
+
+
+class PdfBrandBooks(BrandsCase):
+    """An uploaded PDF brand book, alone or in a ZIP archive, reaches the assistant as text."""
+
+    def sources(self, **files):
+        folder = self.root / 'sources'
+        folder.mkdir()
+        for name, data in files.items():
+            (folder / name.replace('__', '.')).write_bytes(data)
+        return brand_job.source_texts(folder)
+
+    @unittest.skipUnless(shutil.which('pdftotext'), 'needs the pdftotext reader')
+    def test_a_pdf_and_a_pdf_in_a_zip_are_read_as_text_and_reach_the_assistant(self):
+        given, named = self.sources(book__pdf=made_pdf(), kit__zip=zipped({'guide/rules.pdf': made_pdf()}))
+        texts = {item['source']: item for item in given}
+        self.assertEqual(sorted(texts), ['book.pdf', 'kit.zip!guide/rules.pdf'])
+        for item in texts.values():
+            self.assertIn('Example Co brand book: titles are blue.', item['text'])
+            self.assertTrue(item['whole'])
+        self.assertEqual(named, [])
+        # And through the real job: the assistant is told the PDF's words.
+        key = self.new_brand()
+        self.add(key, 'brand-book.pdf', made_pdf())
+        self.extract(key)
+        seen = []
+        work = self.interpret(key, seen=seen)
+        self.assertEqual(work['task']['state'], 'done', work['task'])
+        self.assertIn('Example Co brand book: titles are blue.', seen[0]['task'])
+        self.assertIn('Reading the sources', work['task']['lines'])
+
+    @unittest.skipUnless(shutil.which('pdftotext'), 'needs the pdftotext reader')
+    def test_a_pdf_with_no_text_layer_is_named_as_unreadable_with_why(self):
+        given, named = self.sources(scan__pdf=made_pdf(b''), kit__zip=zipped({'scan.pdf': made_pdf(b'')}))
+        self.assertEqual(given, [])
+        reason = 'not readable: It has no text layer, only pictures of pages; no OCR is attempted'
+        self.assertEqual(sorted(named), [f'kit.zip!scan.pdf ({reason})', f'scan.pdf ({reason})'])
+
+    def test_without_the_reader_a_pdf_is_named_as_unreadable_with_why(self):
+        with mock.patch.object(brand_job.source_documents.shutil, 'which', return_value=None):
+            given, named = self.sources(book__pdf=made_pdf())
+        self.assertEqual(given, [])
+        self.assertEqual(len(named), 1)
+        self.assertTrue(named[0].startswith('book.pdf (not readable: PDF reading needs an explicitly installed '
+                                            'pdftotext reader'), named)
+
+    def test_a_pdf_is_held_to_the_same_per_source_and_total_budgets(self):
+        long = 'Rule. ' * 40_000                                   # 240,000 characters
+        with mock.patch.object(brand_job.source_documents, 'pdf_text', return_value=long) as read, \
+                mock.patch.object(brand_job, 'SOURCE_BUDGET', 150_000):
+            given, named = self.sources(a__pdf=made_pdf(), b__pdf=made_pdf(), c__pdf=made_pdf())
+        self.assertEqual([(item['source'], len(item['text']), item['whole']) for item in given],
+                         [('a.pdf', brand_job.ONE_SOURCE, False), ('b.pdf', 150_000 - brand_job.ONE_SOURCE, False)])
+        self.assertEqual(named, ['c.pdf (left out: the prompt had no room)'])
+        self.assertEqual(read.call_count, 2, 'a PDF with no room left is not read at all')
+
+    @staticmethod
+    def encrypted(members):
+        """A ZIP archive whose every member says it is encrypted, as a password-protected
+        archive does: its flag bit set in each local and central header."""
+        raw = bytearray(zipped(members))
+        for signature, at in ((b'PK\x03\x04', 6), (b'PK\x01\x02', 8)):
+            start = 0
+            while (found := raw.find(signature, start)) >= 0:
+                raw[found + at] |= 1
+                start = found + 4
+        return bytes(raw)
+
+    def test_an_encrypted_member_of_an_archive_is_named_unreadable_and_the_rest_is_read(self):
+        given, named = self.sources(locked__zip=self.encrypted({'book.pdf': made_pdf(), 'rules.md': '# Rules'}),
+                                    notes__md=b'# Open notes\n')
+        self.assertEqual([item['source'] for item in given], ['notes.md'])
+        self.assertEqual(len(named), 2)
+        for name in named:
+            self.assertRegex(name, r'^locked\.zip!(book\.pdf|rules\.md) \(not readable: it is encrypted or packed in a way '
+                                   r'that cannot be opened, .*encrypted.*\)$')
+
+    def test_stop_ends_reading_the_sources_before_the_next_file(self):
+        stop = threading.Event()
+        read = []
+        def slow(raw, timeout=20):
+            read.append(timeout)
+            stop.set()               # Stop is pressed while the first PDF is read
+            return 'Rule.'
+        folder = self.root / 'sources'
+        folder.mkdir()
+        for name in ('a.pdf', 'b.pdf'):
+            (folder / name).write_bytes(made_pdf())
+        with mock.patch.object(brand_job.source_documents, 'pdf_text', slow):
+            with self.assertRaises(brand_skill.Stopped):
+                brand_job.source_texts(folder, stop)
+            self.assertEqual(len(read), 1)
+            # Inside an archive too, between one member and the next.
+            stop.clear(); read.clear()
+            (folder / 'a.pdf').unlink(); (folder / 'b.pdf').unlink()
+            (folder / 'kit.zip').write_bytes(zipped({'c.pdf': made_pdf(), 'd.pdf': made_pdf()}))
+            with self.assertRaises(brand_skill.Stopped):
+                brand_job.source_texts(folder, stop)
+        self.assertEqual(len(read), 1)
+
+    def test_stop_during_the_jobs_pdf_reading_keeps_nothing(self):
+        key = self.new_brand()
+        self.add(key, 'brand-book.pdf', made_pdf())
+        self.add(key, 'second-book.pdf', made_pdf())
+        self.extract(key)
+        reading, asked = threading.Event(), []
+        def slow(raw, timeout=20):
+            reading.set()
+            time.sleep(0.5)
+            return 'Rule.'
+        def assistant(*args, **kwargs):
+            asked.append(True)
+            return json.dumps(proposal())
+        with mock.patch.object(brand_job.source_documents, 'pdf_text', slow), \
+                mock.patch.object(brand_job, 'run_assistant', assistant):
+            self.call('interpret', key=key)
+            self.assertTrue(reading.wait(10))
+            self.call('stop', key=key)
+            work = self.settle(key)
+        self.assertEqual(work['task']['state'], 'stopped')
+        self.assertEqual(asked, [], 'the assistant was asked after Stop')
+
+    def test_pdfs_are_read_up_to_a_count_and_a_time_in_all(self):
+        with mock.patch.object(brand_job.source_documents, 'pdf_text', return_value='Rule.') as read, \
+                mock.patch.object(brand_job, 'PDF_MOST', 2):
+            given, named = self.sources(a__pdf=made_pdf(), b__pdf=made_pdf(), c__pdf=made_pdf())
+        self.assertEqual([item['source'] for item in given], ['a.pdf', 'b.pdf'])
+        self.assertEqual(named, ['c.pdf (left out: only the first 2 PDFs, for at most 5 minutes in all, are read)'])
+        self.assertEqual(read.call_count, 2)
+        self.root.joinpath('sources').rename(self.root / 'old-sources')
+        with mock.patch.object(brand_job.source_documents, 'pdf_text', return_value='Rule.') as read, \
+                mock.patch.object(brand_job, 'PDF_SECONDS', 0):
+            given, named = self.sources(a__pdf=made_pdf())
+        self.assertEqual((given, read.call_count), ([], 0))
+        self.assertTrue(named[0].startswith('a.pdf (left out: only the first'))
+
+    def test_a_pdf_with_more_text_than_the_extraction_keeps_is_named_too_long_not_unreadable(self):
+        with mock.patch.object(brand_job.source_documents, 'pdf_text',
+                               side_effect=ValueError('PDF text exceeds the extraction limit.')):
+            given, named = self.sources(huge__pdf=made_pdf())
+        self.assertEqual(given, [])
+        self.assertEqual(named, ['huge.pdf (left out: its text is too long to read whole; split it into smaller PDFs)'])
+
+    def test_starting_the_job_reads_no_pdf_in_the_request(self):
+        key = self.new_brand()
+        self.extract(key)
+        started = threading.Event()
+        def assistant(*args, **kwargs):
+            started.wait(10)
+            return json.dumps(proposal())
+        with mock.patch.object(brand_job, 'source_texts', wraps=brand_job.source_texts) as read, \
+                mock.patch.object(brand_job, 'run_assistant', assistant):
+            self.call('interpret', key=key)
+            requested = read.call_count
+            started.set()
+            self.settle(key)
+        self.assertLessEqual(requested, 1)
+        self.assertEqual(read.call_count, 1)
+
+
+BRIEF = {'id': 'solution-brief', 'name': 'Solution brief', 'useWhen': 'A two-page overview of one solution.',
+         'page': 'US Letter', 'notes': 'Needs the brand fonts installed. The cover photo is a placeholder; not an official template.',
+         'file': 'templates/documents/solution-brief.dotx'}
+
+
+def brand_pack(brands: Path, ident, documents=()):
+    """A finished, made-up brand pack written straight into a brands folder."""
+    pack = brands / ident / 'pack'
+    (pack / 'assets').mkdir(parents=True)
+    (pack / 'assets/logo.svg').write_text('<svg xmlns="http://www.w3.org/2000/svg"/>')
+    (pack / 'guide.md').write_text('## Brand rules\n\nTitles are sentence case.\n')
+    brand = {'schema': 1, 'id': ident, 'name': f'{ident.title()} Co', 'aliases': [ident], 'defaultVariant': 'light',
+             'variants': {'light': {'theme': 'light', 'colors': {}}},
+             'logos': {'onLight': 'assets/logo.svg', 'onDark': 'assets/logo.svg'}, 'documents': list(documents)}
+    (pack / 'brand.json').write_text(json.dumps(brand))
+    for entry in documents:
+        (pack / entry['file']).parent.mkdir(parents=True, exist_ok=True)
+        (pack / entry['file']).write_bytes(b'PK made-up Word template ' + entry['id'].encode())
+    return pack
+
+
+class DocumentTemplates(BrandsCase):
+    def setUp(self):
+        super().setUp()
+        self.pack = brand_pack(self.brands, 'example', [BRIEF])
+        brand_pack(self.brands, 'plain')
+        brand_store._DOCUMENTS.clear()
+
+    def asked(self):
+        lines = self.calls.read_text().splitlines() if self.calls.exists() else []
+        return [json.loads(line) for line in lines if json.loads(line)[:1] == ['documents']]
+
+    def refused(self, **sent):
+        with self.assertRaises(WorkspaceError) as caught:
+            self.page.write('/api/brand-document', sent)
+        return str(caught.exception)
+
+    def test_a_brands_templates_are_listed_with_what_each_is_for_and_kept_briefly(self):
+        listed = self.call('documents', id='example')
+        self.assertEqual(listed, {'brand': 'example', 'documents': [{
+            'id': 'solution-brief', 'name': 'Solution brief', 'useWhen': 'A two-page overview of one solution.',
+            'page': 'US Letter', 'notes': BRIEF['notes'], 'file': 'solution-brief.dotx'}], 'left': 0})
+        self.assertEqual(self.asked(), [['documents', '--brand', 'example', '--json']])
+        self.call('documents', id='example')
+        self.assertEqual(len(self.asked()), 1, 'asked again within the moment it is kept')
+        brand = self.pack / 'brand.json'
+        os.utime(brand, ns=(brand.stat().st_atime_ns, brand.stat().st_mtime_ns + 1_000_000))
+        self.call('documents', id='example')
+        self.assertEqual(len(self.asked()), 2, 'a changed brand.json is asked again')
+
+    def test_a_brand_with_no_templates_says_so_and_the_list_is_asked_only_when_opened(self):
+        self.call('list')
+        self.assertEqual(self.asked(), [])
+        self.assertEqual(self.call('documents', id='plain'), {'brand': 'plain', 'documents': [], 'left': 0})
+        # One entry Harness Brand did not describe is left out on its own; the rest still show.
+        brand = json.loads((self.pack / 'brand.json').read_text())
+        brand['documents'].append({**BRIEF, 'id': 'Not A Slug'})
+        (self.pack / 'brand.json').write_text(json.dumps(brand))
+        brand_store._DOCUMENTS.clear()
+        listed = self.call('documents', id='example')
+        self.assertEqual(([each['id'] for each in listed['documents']], listed['left']), (['solution-brief'], 1))
+        self.assertIn('could not be shown', (ROOT / 'marketing_studio/web/brands.js').read_text())
+        script = (ROOT / 'marketing_studio/web/brands.js').read_text()
+        self.assertIn('has no document templates.', script)
+        self.assertIn("more.addEventListener('toggle'", script)
+
+    def test_a_listed_template_downloads_from_the_page_server(self):
+        kind, data = self.call('document', id='example', template='solution-brief')
+        self.assertEqual(kind, 'application/vnd.openxmlformats-officedocument.wordprocessingml.template')
+        self.assertEqual(data, b'PK made-up Word template solution-brief')
+
+    def test_only_the_files_the_skill_listed_for_that_brand_are_served(self):
+        # A template the listing does not name, another brand's, or a path the page sends.
+        self.assertIn('not a document template', self.refused(id='example', template='white-paper'))
+        self.assertIn('not a document template', self.refused(id='plain', template='solution-brief'))
+        self.assertIn('not a document template', self.refused(id='example', template='../brand.json',
+                                                              path=str(self.pack / 'brand.json')))
+        self.assertIn('Choose a brand', self.refused(id='../example', template='solution-brief'))
+        # A listing that names a file outside the brand's pack folder is not served.
+        outside = self.root / 'outside.dotx'
+        outside.write_bytes(b'PK private')
+        for listed in (outside, self.brands / 'plain' / 'pack' / 'guide.md', self.pack / 'brand.json'):
+            brand_store._DOCUMENTS.clear()
+            with mock.patch.dict(os.environ, {'STAND_IN_DOCUMENT_PATH': str(listed)}):
+                with self.subTest(listed=listed.name):
+                    self.assertIn('not offered', self.refused(id='example', template='solution-brief'))
+        # Nor one that reaches outside through a link.
+        brand_store._DOCUMENTS.clear()
+        template = self.pack / BRIEF['file']
+        template.unlink()
+        template.symlink_to(outside)
+        self.assertIn('symbolic links', self.refused(id='example', template='solution-brief'))
+
+
 class Save(BrandsCase):
     def test_save_waits_for_every_part_and_is_refused_until_pack_check_passes(self):
         key = self.new_brand()
@@ -1278,6 +1553,22 @@ class CommandBounds(unittest.TestCase):
         with self.assertRaisesRegex(WorkspaceError, 'did not finish'):
             brand_skill.run([sys.executable, '-c', 'import time; time.sleep(30)'], seconds=.1)
         self.assertLess(time.monotonic() - began, 3)
+
+    def test_a_stop_pressed_after_the_command_finished_keeps_what_it_did(self):
+        # The stop is set only as the command's process group is ended, after it exited by
+        # itself: the result stands. One set while it runs still stops it.
+        stop = threading.Event()
+        real = os.killpg
+        def ended(pgid, sig):
+            stop.set()
+            return real(pgid, sig)
+        with mock.patch.object(brand_skill.os, 'killpg', ended):
+            code, out, _ = brand_skill.run([sys.executable, '-c', 'print("done")'], stop=stop, seconds=10)
+        self.assertEqual((code, out.strip()), (0, 'done'))
+        early = threading.Event()
+        early.set()
+        with self.assertRaises(brand_skill.Stopped):
+            brand_skill.run([sys.executable, '-c', 'import time; time.sleep(30)'], stop=early, seconds=10)
 
 
 class Routes(unittest.TestCase):
