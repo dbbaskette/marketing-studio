@@ -1,8 +1,9 @@
 """The parts of the runner's `slides` both deck studios share. A studio binds them
 into its own module with `studio_core.modules.bind`; they read that module's names.
 
-`_new` and `Slides.turn` stay in each studio: a context manager is not a function bind
-can rebuild. TooOld and Refused name their class in `super()`.
+A context manager is not a function bind can rebuild, so `_new` and `Slides.turn` return
+one made here from a plain generator (`_made`, `_turn`), which bind rebuilds like the rest.
+TooOld and Refused name their class in `super()`.
 """
 from __future__ import annotations
 
@@ -154,6 +155,34 @@ def _bound(design, section: bool) -> list[str]:
     return ['--design-project', str(design), *(['--section'] if section else []), '--json']
 
 
+def _new(path):
+    """A file or folder a call is about to make. When the call fails, what it wrote is
+    removed; what was already there is never touched."""
+    return contextlib.contextmanager(_made)(path)
+
+
+def _made(path):
+    """What `_new` holds while the call runs."""
+    path = Path(path)
+    there = path.exists() or path.is_symlink()
+    try:
+        yield
+    except BaseException:
+        if not there and path.is_dir() and not path.is_symlink():
+            shutil.rmtree(path, ignore_errors=True)
+        elif not there:
+            path.unlink(missing_ok=True)
+        raise
+
+
+def _turn(slides, renderer: str):
+    """What `Slides.turn` holds while the render runs."""
+    held = _pooled(pool_size()) if renderer == 'drive' \
+        and slides.has('google-preview-pool') else PREVIEWING
+    with held:
+        yield
+
+
 def example(relation: str) -> str:
     """What `reading()` calls the drawn example of one relation."""
     return f'example {relation}'
@@ -272,6 +301,13 @@ class Slides:
                                  'found on this computer. Install it, then try again.')
         # Nothing is run yet: the first command asks the version, and a tool older than
         # MINIMUM is refused then, with TooOld.
+
+    def turn(self, renderer: str):
+        """This process's turn at a renderer: LibreOffice renders one at a time under one
+        profile, and so does Google Drive for a tool without a preview pool; one with
+        `google-preview-pool` renders up to `pool_size()` at once, each in a deck of its
+        pool."""
+        return contextlib.contextmanager(_turn)(self, renderer)
 
     def _fresh(self) -> None:
         """Forget what was asked of the tool when its copy has changed since (_stamp): an
@@ -608,10 +644,10 @@ class Slides:
 NAMES = ('VARIABLE', 'RENDERERS', 'CHANGED', 'PREVIEW_TRIES', 'PREVIEW_PAUSE', 'SCRIPT', 'TIMEOUT', 'LEAD', 'PROGRAMS', 'COUNTED',
          'NOISE', 'PREVIEWING', 'GUIDES', 'REFERENCES', 'GALLERY', 'READ_MOST', 'RELATIONS',
          'POOL', '_POOLS', '_POOLS_HELD', 'pool_size', '_pooled', 'locations', 'find_runtime',
-         'run_command', 'ask_command', '_stamp', '_numbers', '_blocked', '_bound', 'example',
-         'read_guidance', 'ready')
+         'run_command', 'ask_command', '_stamp', '_numbers', '_blocked', '_bound', '_new', '_made',
+         '_turn', 'example', 'read_guidance', 'ready')
 METHODS = {'TooOld': ('__init__',), 'Refused': ('__init__', 'codes', 'left'), 'Slides':
-           ('__init__', '_fresh', '_ask', '_call', '_json', 'version', 'outline_contract', 'outline_check',
+           ('__init__', 'turn', '_fresh', '_ask', '_call', '_json', 'version', 'outline_contract', 'outline_check',
            'outline_start', 'compose_contract', 'layouts', 'merge', 'preview', 'critique',
            'render', 'designs', 'sections', 'has', 'capabilities', 'assets', 'design_status',
            'design_check', 'design_respond', 'asset_icon', 'images_status', 'generate_image',

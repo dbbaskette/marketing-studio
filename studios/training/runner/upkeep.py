@@ -119,7 +119,7 @@ from studio_core.packaging import installed_commit as kept_commit, source_commit
 from workspace import WorkspaceError
 
 from runner import brand as brand_skill, brand_source, companion, settings  # noqa: F401  read by the shared parts
-from runner import research as research_tool, slides as slides_tool
+from runner import research as research_tool, slides as slides_tool  # noqa: F401  read by the shared parts
 
 from studio_core import modules
 from studio_core.shared_runner import upkeep as _shared
@@ -128,10 +128,7 @@ SOURCE_VARIABLE = 'TRAINING_STUDIO_SOURCE'   # a source repository to upgrade fr
 modules.bind(globals(), _shared, _shared.NAMES)
 
 INSTALLER = Path(__file__).resolve().parent.parent / 'installer' / 'install.py'
-UPGRADE_SECONDS = 900     # for a newer Training Studio to be checked and installed
 SELF = 'training-studio'
-TOOLS = {'harness-research': (research_tool, 'Harness Research'),
-         'harness-slides': (slides_tool, 'Harness Slides')}
 COMMANDS = {'command': 'The command that opens Training Studio',
             'helper': "The command the skill runs its helper with"}
 NO_INSTALLER = ('This copy of the runner has no installer beside it, so the skills cannot be '
@@ -528,19 +525,6 @@ class Upkeep:
         return {**row, 'state': 'current', 'target': 'main', 'says': (
             f'{having} is installed. Its main branch, at {at}, can be installed from here.')}
 
-    def _installed_brand_commit(self, repository: str) -> str | None:
-        """The commit of main last installed from here of the brand skill, from this
-        repository, or None."""
-        kept = self._saved().get('brand_installed') or {}
-        commit = kept.get('commit') if kept.get('repository') == repository else None
-        return commit if isinstance(commit, str) else None
-
-    def _remember_brand_install(self, repository: str, commit: str) -> None:
-        """Keep which commit of main was installed from here, for the brand skill's row."""
-        kept = self._saved()
-        home.data_root().mkdir(parents=True, exist_ok=True)
-        home.write_json(self.saved_path(), {'schema': 1, **kept, 'brand_installed': {
-            'repository': repository, 'commit': commit, 'at': _now()}})
 
     def _brand_offer(self, row: dict, busy: bool, brand: dict | None) -> dict:
         """What installing the brand skill would do, for the page's sheet."""
