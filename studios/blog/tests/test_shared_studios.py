@@ -320,6 +320,22 @@ class ConfigTests(unittest.TestCase):
             studios_config.update({'review': {'level': 'step_by_step'}}, guard=refuse)
         self.assertEqual(self.config.read_bytes(), before)
 
+    def test_a_write_waits_for_the_lock_another_studio_holds_and_keeps_its_sentence(self):
+        # Another studio writes under the shared module's own lock beside the file; Blog
+        # Studio's write takes that same lock its own way, so it waits, then refuses as
+        # Blog Studio does, and the file is left as it was.
+        from studio_core import studios_config as shared
+
+        self.config.write_text('{"schema":1,"person":{"name":"Kept"}}')
+        before = self.config.read_bytes()
+        with shared._locked(), patch.dict(os.environ, {'BLOG_STUDIO_LOCK_WAIT': '0.2'}):
+            with self.assertRaisesRegex(ValueError, 'Another workspace operation is running'):
+                studios_config.update({'person': {'name': 'New'}})
+        self.assertEqual(self.config.read_bytes(), before)
+        studios_config.update({'person': {'name': 'New'}})
+        self.assertEqual(studios_config.read()[0]['person']['name'], 'New')
+        self.assertEqual(self.config.stat().st_mode & 0o777, 0o600)
+
     def test_local_save_preserves_an_unsupported_assistant_and_its_model(self):
         root = self.base / 'writing'
         studio.initialize(root)
