@@ -24,6 +24,7 @@ import studio
 import editorial
 from experience import page
 import blog_library
+import import_jobs
 import shared_library
 import source_curator
 from google_drive import GoogleError
@@ -2420,6 +2421,11 @@ def dispatch(root, route, data):
 
 
 def dispatch_managed(root, route, data):
+    if route == 'import-stop':
+        # Stop a background import (import_jobs) where stopping is safe.
+        if set(data) != {'job'}:
+            raise ValueError('Choose an import that is running.')
+        return import_jobs.stop(root, data['job'])
     if route == 'intake-draft':
         # Authenticated local form storage; never check remote team write access.
         return intake_draft(root, data)
@@ -2737,6 +2743,11 @@ def activity_view(root, query):
 def view(root, name, query):
     """Read-only desk views by name. Returns None for an unknown view."""
     arg = lambda key, default=None: query.get(key, [default])[0]
+    if name == 'tool-job':
+        # An import's job is read without the workspace lock, which the import may hold.
+        found = import_jobs.view(root, arg('job'))
+        if found is not None:
+            return found
     if name == 'intake-draft':
         return intake_draft(root, {'action': 'read'})
     if name == 'desk-migration-preview':
@@ -3176,6 +3187,11 @@ def server(root, port=0, bind=True, shared_setup=False, keep_workspace=True):
                 raise ValueError('Supply a JSON object.') from None
             if not isinstance(data, dict):
                 raise ValueError('Supply a JSON object.')
+            if target[5:] in import_jobs.ROUTES:
+                # A slow import or Google call answers at once with a job that runs the same
+                # route on its own thread; the page follows it with GET tool-job.
+                with serialized():
+                    return made(200, import_jobs.start(root, target[5:], data))
             with serialized():
                 result = dispatch(root, target[5:], data)
                 if result.get('switch_workspace') and Path(result['switch_workspace']) != root:

@@ -191,7 +191,7 @@ async function loadReceipts(signal, current=()=>true) {
   for(const receipt of pending){const row=element('div');row.append(element('p',receipt.label+': '+receipt.message));if(receipt.retry&&access.actions.edit){const retry=button('Retry sync',()=>busy(retry,'Retrying…',async()=>{const saved=await api('retry-sync',{id:receipt.id});savedNotice(saved);await loadReceipts();}));row.append(retry);}$('sync-status').append(row);}
 }
 
-async function api(route, data, signal) {
+async function api(route, data, signal, options) {
   if(data)document.querySelectorAll('.dialog-notice').forEach(e=>e.hidden=true);
   const headers={'X-Blog-Studio-Token':token,...(data?{'Content-Type':'application/json'}:{})};
   let response,result;
@@ -204,7 +204,39 @@ async function api(route, data, signal) {
   try {result=await response.json();}
   catch(error) {throw new Error('Blog Studio’s page sent a reply it could not read. Reload the page.');}
   if(!response.ok){const error=new Error(result.error||'The operation could not be completed.');error.status=response.status;error.code=result.code;error.reply=result;throw error;}
+  if(data&&result&&result.background===true&&result.job)return apiJob(result.job,options||{});
   return result;
+}
+// A slow import or Google call answers at once with a job (import_jobs.py). Its answer, or its
+// refusal with the same status and words, is what the caller gets when the job ends; until
+// then a toast says what it is doing, for how long, with Stop where stopping is safe.
+// `options.progress(job)` hears each poll (adding links says how many are in).
+async function apiJob(job, options={}) {
+  const strip=jobStrip(job);let wait=600,lost=0;
+  try {
+    while(job.status==='working') {
+      await new Promise(resolve=>setTimeout(resolve,wait));wait=Math.min(2000,wait+400);
+      try{job=await api('tool-job?job='+encodeURIComponent(job.id));lost=0;}
+      catch(error){if(error.status&&error.status<500||++lost>=5)throw error;continue;}
+      strip.show(job);if(options.progress)options.progress(job);
+    }
+  } finally {strip.done();}
+  if(job.status==='ready')return job.result;
+  const error=new Error(job.error||(job.status==='cancelled'?'Stopped. Nothing was changed.':'The operation could not be completed.'));
+  error.status=job.status==='cancelled'?409:job.error_status||400;error.code=job.status==='cancelled'?'stopped':job.error_reply?.code;error.reply=job.error_reply||{error:error.message};error.stopped=job.status==='cancelled';
+  throw error;
+}
+// The toast an import shows while it runs: what it is doing and how long it has taken, and
+// Stop when stopping is safe. It goes when the job ends.
+function jobStrip(job) {
+  const holder=document.getElementById('toasts'),strip=element('div',undefined,'toast glass toast-action job-strip'),said=element('span',undefined,'job-strip-said'),clock=element('span',undefined,'quiet job-strip-clock'),started=Date.now();
+  said.setAttribute('role','status');clock.setAttribute('aria-hidden','true');
+  const stop=button('Stop',async()=>{stop.disabled=true;stop.textContent='Stopping…';try{show(await api('import-stop',{job:job.id}));}catch(error){said.textContent=error.message;}});
+  const tick=()=>{const seconds=Math.round((Date.now()-started)/1000);clock.textContent=seconds<60?seconds+' s':Math.floor(seconds/60)+' min '+String(seconds%60).padStart(2,'0')+' s';};
+  const show=found=>{job=found||job;const words=job.progress||job.label+'…';if(said.textContent!==words)said.textContent=words;stop.hidden=!job.stoppable;if(job.stopping){stop.disabled=true;stop.textContent='Stopping…';}};
+  show(job);tick();strip.append(said,clock,stop);if(holder)holder.append(strip);
+  const timer=setInterval(tick,1000);
+  return {show,done(){clearInterval(timer);strip.remove();}};
 }
 function link(url, text) {if(!/^https:\/\//.test(url||''))return element('span',text);const a=element('a',text);a.href=url;a.target='_blank';a.rel='noopener noreferrer';return a;}
 const BADGE_LABELS={'not-run':'Not run','not-checked-live':'Not checked live','local-saved-not-shared':'Saved locally','pending-review':'Awaiting review','queued-unavailable':'Waiting to sync','needs-local-check':'Needs local check'};

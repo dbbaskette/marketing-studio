@@ -384,28 +384,37 @@ class GoogleIntakeTests(unittest.TestCase):
         self.addCleanup(server.server_close)
         self.addCleanup(server.shutdown)
 
-        def post(authenticated):
+        def post(authenticated, path='/api/google-preview', data=None):
             connection = http.client.HTTPConnection('127.0.0.1', server.server_port, timeout=5)
             headers = {'Content-Type': 'application/json'}
             if authenticated:
                 headers['X-Blog-Studio-Token'] = url.split('#')[1]
-            connection.request(
-                'POST', '/api/google-preview', json.dumps({'url': 'fixture-doc'}), headers
-            )
+            if data is None:
+                connection.request('GET', path, headers=headers)
+            else:
+                connection.request('POST', path, json.dumps(data), headers)
             response = connection.getresponse()
             result = response.status, json.loads(response.read())
             connection.close()
             return result
 
-        status, _ = post(False)
+        status, _ = post(False, data={'url': 'fixture-doc'})
         self.assertEqual(status, 400)
         self.factory.assert_not_called()
         with patch.object(
             self.client, 'metadata', side_effect=drive.GoogleError('Google sign-in is unavailable.')
         ):
-            status, response = post(True)
-        self.assertEqual(status, 400)
-        self.assertIn('Google sign-in', response['error'])
+            # The preview runs as a background job (import_jobs); its refusal is kept in it.
+            status, response = post(True, data={'url': 'fixture-doc'})
+            self.assertEqual((status, response['background']), (200, True))
+            job = response['job']
+            for _ in range(500):
+                if job['status'] != 'working':
+                    break
+                threading.Event().wait(0.01)
+                job = post(True, '/api/tool-job?job=' + job['id'])[1]
+        self.assertEqual((job['status'], job['error_status']), ('failed', 400))
+        self.assertIn('Google sign-in', job['error'])
 
     def compare(self, ident):
         import manuscript_editor

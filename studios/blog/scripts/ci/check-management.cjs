@@ -36,7 +36,7 @@ function fixture(responder=()=>({items:[],total:0})){
   const nodes=new Map();const get=id=>{if(!nodes.has(id))nodes.set(id,new Element());return nodes.get(id);};
   const document={getElementById:get,createElement:t=>new Element(t),createElementNS:(_,t)=>new Element(t),createDocumentFragment:()=>new Element('fragment'),createTextNode:text=>{const node=new Element('#text');node.textContent=text;return node;},querySelector:s=>s==='dialog[open]'?[...nodes.values()].find(n=>n.open):null,querySelectorAll:s=>[...nodes.values()].flatMap(n=>n.querySelectorAll(s))};
   const stored=new Map();let intake={revision:0,draft:null};
-  const context=vm.createContext({document,location:{hash:'#fixture',pathname:'/'},sessionStorage:{getItem:key=>stored.get(key)||'',setItem:(key,value)=>stored.set(key,value),removeItem:key=>stored.delete(key)},history:{replaceState:()=>{},pushState:()=>{}},window:{},URLSearchParams,AbortController,Uint8Array,TextEncoder,btoa,atob,clearTimeout:()=>{},FormData:class{constructor(form){this.values=descendants(form).filter(e=>e.name).map(e=>[e.name,e.value]);}[Symbol.iterator](){return this.values[Symbol.iterator]();}},confirm:message=>{throw Error('A blocking window.confirm() was used: '+message);},crypto:{getRandomValues:values=>require('node:crypto').webcrypto.getRandomValues(values)},setInterval:()=>0,setTimeout:()=>0,fetch:async(url,options)=>{if(url==='/api/intake-draft'){const sent=JSON.parse(options.body);if(sent.action!=='read'&&sent.expected!==intake.revision)return {ok:false,status:409,json:async()=>({error:'This intake changed in another tab.'})};if(sent.action==='save')intake={revision:intake.revision+1,draft:{...(intake.draft||{}),...sent.patch}};if(sent.action==='discard')intake={revision:intake.revision+1,draft:null};return {ok:true,status:200,json:async()=>JSON.parse(JSON.stringify(intake))};}const result=await responder(url,options);return result&&result.__http?{ok:false,status:result.__http,json:async()=>result}:{ok:true,status:200,json:async()=>result};},console});
+  const context=vm.createContext({document,location:{hash:'#fixture',pathname:'/'},sessionStorage:{getItem:key=>stored.get(key)||'',setItem:(key,value)=>stored.set(key,value),removeItem:key=>stored.delete(key)},history:{replaceState:()=>{},pushState:()=>{}},window:{},URLSearchParams,AbortController,Uint8Array,TextEncoder,btoa,atob,clearTimeout:()=>{},FormData:class{constructor(form){this.values=descendants(form).filter(e=>e.name).map(e=>[e.name,e.value]);}[Symbol.iterator](){return this.values[Symbol.iterator]();}},confirm:message=>{throw Error('A blocking window.confirm() was used: '+message);},crypto:{getRandomValues:values=>require('node:crypto').webcrypto.getRandomValues(values)},setInterval:()=>0,clearInterval:()=>{},setTimeout:()=>0,fetch:async(url,options)=>{if(url==='/api/intake-draft'){const sent=JSON.parse(options.body);if(sent.action!=='read'&&sent.expected!==intake.revision)return {ok:false,status:409,json:async()=>({error:'This intake changed in another tab.'})};if(sent.action==='save')intake={revision:intake.revision+1,draft:{...(intake.draft||{}),...sent.patch}};if(sent.action==='discard')intake={revision:intake.revision+1,draft:null};return {ok:true,status:200,json:async()=>JSON.parse(JSON.stringify(intake))};}const result=await responder(url,options);return result&&result.__http?{ok:false,status:result.__http,json:async()=>result}:{ok:true,status:200,json:async()=>result};},console});
   const source=fs.readFileSync('skills/blog-studio/assets/management/app.js','utf8').split("for(const b of document.querySelectorAll('[data-view]'))")[0];
   vm.runInContext(source,context);
   vm.runInContext("access={status:'local-only',message:'Local only',actions:{edit:true,memory:false,refresh:false}}",context);
@@ -104,6 +104,7 @@ async function check(){
   await filesJourney();
   await voiceLinksJourney();
   await libraryAddJourney();
+  await importJobs();
   await libraryWordsAndBatches();
   await libraryScreen();
   await librarySelectAll();
@@ -1963,7 +1964,7 @@ async function voiceLinksJourney(){
 // the posts by byline, with rename, merge and set author; marking as samples is on by default
 // and learning a group's voice still asks for permission.
 async function libraryAddJourney(){
-  const requests=[];let marked=false,renamed=false,adds=0;
+  const requests=[];let marked=false,renamed=false,adds=0,polls=0;
   const preview={status:'ready',role:'example',author:'*each',kind:'product-announcement',kind_name:'Product announcement',items:[{key:'post.html',kind:'file',title:'An earlier post',filename:'post.html',state:'ready',chars:1200,note:'',bylines:['Avery Quinn']},{key:'https://blog.example/team/a/',kind:'link',url:'https://blog.example/team/a/',site:'blog.example/team/',state:'new',chars:null,bylines:[],note:''},{key:'https://blog.example/team/b/',kind:'link',url:'https://blog.example/team/b/',site:'blog.example/team/',title:'B',state:'in-library',chars:null,bylines:['Sam Rivera'],note:''}],sites:[{site:'blog.example',scope:'https://blog.example/team/',shown:'blog.example/team/',links:2}],in_library:1,to_fetch:2,duplicates:0,comments:0,upgraded:0,unusable:0,skipped:[],expected:'check-1',next_step:'Check the items.'};
   const item=(id,extra)=>({id,kind:'link',url:'https://blog.example/team/'+id+'/',site:'blog.example/team/',status:'imported',title:id.toUpperCase(),author:null,bylines:[],role:'example',sample:false,revision:1,text:true,...extra});
   const result=()=>{const sam=renamed?'Samantha Rivera':'Sam Rivera',groups=[{author:'Darin Zook',ids:['a','f'],samples:marked?['a','f']:[],learnable:marked?['a','f']:[],count:2},{author:sam,ids:['b'],samples:marked?['b']:[],learnable:marked?['b']:[],count:1}];
@@ -1972,7 +1973,9 @@ async function libraryAddJourney(){
     if(url.startsWith('/api/styles'))return {styles:[{id:'product-announcement',name:'Product announcement',kind:'seed',status:'confirmed',revision:1,summary:''},{id:'old',name:'Old',kind:'learned',status:'retired',revision:1,summary:''}],samples:[],candidates:[],pending:[]};
     if(url.startsWith('/api/voices'))return {profiles:[],samples:[{id:'a',name:'A',author:'Darin Zook'},{id:'f',name:'An earlier post',author:'Darin Zook'}],candidates:[],pending:[]};
     if(url==='/api/library-add-preview')return preview;
-    if(url==='/api/library-add'){adds++;return adds===1?{...result(),remaining:1,state:'importing',counts:{...result().counts,pending:1}}:result();}
+    // Adding is one request: a background job that fetches every batch itself (import_jobs.py).
+    if(url==='/api/library-add'){adds++;return {background:true,job:{id:'f'.repeat(32),kind:'import',route:'library-add',label:'Adding to the library',status:'working',progress:'Adding to the library…',stoppable:true}};}
+    if(url.startsWith('/api/tool-job?job=')){polls++;return polls===1?{id:'f'.repeat(32),kind:'import',status:'working',progress:'Added 2 of 4…',stoppable:true}:{id:'f'.repeat(32),kind:'import',status:'ready',result:result()};}
     if(url==='/api/library-add-author'){renamed=true;return result();}
     if(url==='/api/library-add-samples'){marked=true;return result();}
     return {items:[],total:0};});
@@ -2010,9 +2013,12 @@ async function libraryAddJourney(){
   assert.ok(has(/1,200 characters · byline Avery Quinn/),'a file shows its size and byline');assert.ok(has(/New · fetched from blog\.example\/team\//));assert.ok(has(/Already in the library · byline Sam Rivera/));
   assert.ok(has(/1 already in the library/));assert.ok(has(/2 new pages are fetched once from blog\.example\/team\//));
   assert.equal(requests.some(r=>r.url==='/api/library-add'),false,'checking adds nothing');
+  const progress=[];f.set('setTimeout',fn=>{progress.push(descendants(f.get('sheet')).find(e=>e.tagName==='button'&&/Add|Added/.test(e.textContent))?.textContent);Promise.resolve().then(fn);return 0;});
   await find('Add 3 items').listeners.click();
-  const sent=requests.filter(r=>r.url==='/api/library-add');assert.equal(sent.length,2,'adding continues until every link is read');
-  assert.equal(sent[0].data.expected,'check-1');assert.equal(sent[0].data.operation,sent[1].data.operation);assert.equal(sent[0].data.author,'*each');assert.equal(sent[0].data.kind,'product-announcement');
+  const sent=requests.filter(r=>r.url==='/api/library-add');assert.equal(sent.length,1,'one request: the job adds every link, with no loop on the page');
+  assert.equal(polls,2,'the page follows the job until it ends');assert.ok(progress.includes('Added 2 of 4…'),'and says how far it is: '+progress.join('|'));
+  f.set('setTimeout',()=>0);
+  assert.equal(sent[0].data.expected,'check-1');assert.equal(sent[0].data.author,'*each');assert.equal(sent[0].data.kind,'product-announcement');
   assert.ok(find('3 added · 1 already there · 0 failed'));
   assert.ok(find('Darin Zook · 2 posts'));assert.ok(find('Sam Rivera · 1 post'),'posts are grouped by author');
   assert.ok(has(/Several bylines: Avery Quinn, Jordan Lee/),'a co-authored post is held');
@@ -2041,9 +2047,56 @@ async function libraryAddJourney(){
   assert.equal(find('Try the failed links again'),undefined,'no retry without a failure');
   f.run("studio.libraryAdd.result={...studio.libraryAdd.result,counts:{...studio.libraryAdd.result.counts,failed:1},items:[...studio.libraryAdd.result.items,{kind:'link',url:'https://blog.example/team/gone/',status:'failed',reason:'Source returned HTTP 404.'}]};sLibraryAddResult(studio.libraryAdd)");
   assert.ok(has(/Not added: Source returned HTTP 404\./));
-  await find('Try the failed links again').listeners.click();
+  f.set('setTimeout',fn=>{Promise.resolve().then(fn);return 0;});
+  await find('Try the failed links again').listeners.click();f.set('setTimeout',()=>0);
   const retried=requests.filter(r=>r.url==='/api/library-add').at(-1).data;
   assert.equal(retried.retry,true);assert.equal(retried.operation,operation,'the same operation');assert.equal(retried.expected,'check-1');
+}
+
+// Slow imports and Google calls as background jobs (import_jobs.py): the caller gets what the
+// request used to answer, or its refusal with the same status, code and words; the toast says
+// what the job is doing, with Stop only where stopping is safe; a stopped job is said as such.
+async function importJobs(){
+  const requests=[],job=(extra)=>({id:'a'.repeat(32),kind:'import',label:'Reading the Google Doc',status:'working',progress:'Reading the Google Doc…',stoppable:true,...extra});
+  let answers=[];
+  const f=fixture((url,options)=>{requests.push({url,data:options?.body?JSON.parse(options.body):null});
+    if(url==='/api/google-preview'||url==='/api/desk-google-send')return {background:true,job:job(url==='/api/desk-google-send'?{label:'Sending to the Google Doc',progress:'Sending to the Google Doc…',stoppable:false}:{})};
+    if(url==='/api/import-stop')return job({status:'cancelled',error:'Stopped. Nothing was changed.',stoppable:false});
+    if(url.startsWith('/api/tool-job?'))return answers.shift();
+    return {items:[],total:0};});
+  f.loadRunner();
+  const toasts=()=>descendants(f.get('toasts'));
+  let tick=null;f.set('setTimeout',fn=>{tick=fn;return 0;});
+  const settle=async()=>{for(let n=0;n<30;n++)await Promise.resolve();};
+  const step=async()=>{await settle();const go=tick;tick=null;if(go)go();await settle();};
+  // A preview: the toast says what it does, with Stop; the answer is the request's own.
+  answers=[job({progress:'Reading the Google Doc…'}),job({status:'ready',result:{status:'preview',title:'A Doc'}})];
+  const preview=f.run("api('google-preview',{url:'https://docs.google.com/document/d/x/edit'})");
+  await step();
+  assert.ok(toasts().some(e=>e.textContent==='Reading the Google Doc…'),'the toast says what it is doing');
+  assert.equal(toasts().find(e=>e.tagName==='button'&&e.textContent==='Stop').hidden,false,'Stop is offered');
+  await step();
+  assert.deepEqual(JSON.parse(JSON.stringify(await preview)),{status:'preview',title:'A Doc'},'the answer is what the request answered');
+  assert.equal(toasts().length,0,'the toast goes when it ends');
+  // A refusal keeps its status, code and words.
+  answers=[job({status:'failed',error:'This blog changed. Reload it.',error_status:409,error_reply:{error:'This blog changed. Reload it.',code:'stale'}})];
+  const refused=f.run("api('google-preview',{url:'u'}).then(()=>null,error=>({message:error.message,status:error.status,code:error.code}))");
+  await step();
+  assert.deepEqual(JSON.parse(JSON.stringify(await refused)),{message:'This blog changed. Reload it.',status:409,code:'stale'});
+  // A send has no Stop: it changes the Doc as it goes.
+  answers=[job({label:'Sending to the Google Doc',progress:'Sending to the Google Doc…',stoppable:false}),job({status:'ready',result:{status:'verified-pending'}})];
+  const sent=f.run("api('desk-google-send',{id:'b',plan:'p',confirmed:true})");
+  await step();
+  assert.equal(toasts().find(e=>e.tagName==='button'&&e.textContent==='Stop').hidden,true,'no Stop for a send');
+  await step();assert.equal((await sent).status,'verified-pending');
+  // Stop: the page asks the server, and the caller hears that it stopped.
+  answers=[job({}),job({status:'cancelled',error:'Stopped. Nothing was changed.'})];
+  const stopped=f.run("api('google-preview',{url:'u'}).then(()=>null,error=>({message:error.message,stopped:error.stopped}))");
+  await step();
+  await toasts().find(e=>e.tagName==='button'&&e.textContent==='Stop').listeners.click();
+  assert.deepEqual(requests.filter(r=>r.url==='/api/import-stop').map(r=>r.data),[{job:'a'.repeat(32)}]);
+  await step();
+  assert.deepEqual(JSON.parse(JSON.stringify(await stopped)),{message:'Stopped. Nothing was changed.',stopped:true});
 }
 
 // Issue 260: Add to the team library sends large sets in groups that each fit a request (the

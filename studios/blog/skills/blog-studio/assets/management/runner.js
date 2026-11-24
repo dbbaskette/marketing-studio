@@ -1066,7 +1066,7 @@ function sLibraryAddResults(parts){
   const found=parts.map(part=>part.result).filter(Boolean),first=found[0],counts={},groups=new Map();
   for(const one of found){for(const [key,value] of Object.entries(one.counts||{}))counts[key]=(counts[key]||0)+value;
     for(const group of one.groups||[]){const into=groups.get(group.author)||{author:group.author,ids:[],samples:[],learnable:[],count:0};into.ids.push(...group.ids);into.samples.push(...(group.samples||[]));into.learnable.push(...(group.learnable||[]));into.count+=group.count;groups.set(group.author,into);}}
-  return {...first,items:found.flatMap(one=>one.items||[]),counts,groups:[...groups.values()],held:found.flatMap(one=>one.held||[]),remaining:found.reduce((n,one)=>n+(one.remaining||0),0),sharing_message:found.map(one=>one.sharing_message).filter(Boolean).at(-1)||'',next_step:found.at(-1)?.next_step||''};
+  return {...first,items:found.flatMap(one=>one.items||[]),counts,groups:[...groups.values()],held:found.flatMap(one=>one.held||[]),remaining:found.reduce((n,one)=>n+(one.remaining||0),0),sharing_message:found.map(one=>one.sharing_message).filter(Boolean).at(-1)||'',next_step:found.at(-1)?.next_step||'',stopped:found.some(one=>one.stopped)};
 }
 async function sLibraryAdd(){
   const held=sLibraryAddHeld(),form=sNode('form'),problem=sNode('p','problem');problem.setAttribute('role','alert');let kinds={styles:[]};try{kinds=await api('styles');}catch(error){problem.textContent=error.message;}
@@ -1112,12 +1112,14 @@ async function sLibraryAddSave(held,button,problem,retry=false){
   await busy(button,retry?'Trying again…':'Adding…',async()=>{try{
     // Trying the failed links again sends the groups that had a failure, or the first, which
     // carries the links.
-    const failed=parts.filter(part=>part.result?.counts?.failed),due=retry?(failed.length?failed:parts.slice(0,1)):parts.filter(part=>!part.result);
+    // A group that was stopped, or that still has links to fetch, is sent again: it goes on
+    // from where it was, with the same operation.
+    const failed=parts.filter(part=>part.result?.counts?.failed),due=retry?(failed.length?failed:parts.slice(0,1)):parts.filter(part=>!part.result||part.result.remaining>0);
     for(const [index,part] of parts.entries()){
       if(!due.includes(part))continue;
-      let result=await api('library-add',{...payload(part),...(retry?{retry:true}:{})});
-      for(let turns=0;result.remaining>0&&turns<40&&studio.sheet===owner;turns++){button.textContent=(parts.length>1?'Group '+(index+1)+' of '+parts.length+': added ':'Added ')+(result.items.length-result.remaining)+' of '+result.items.length+'…';result=await api('library-add',payload(part));}
-      part.result=result;if(studio.sheet!==owner)break;
+      // One request: the job fetches every batch of links itself and says how far it is.
+      const result=await api('library-add',{...payload(part),...(retry?{retry:true}:{})},undefined,{progress:job=>{if(job.progress&&studio.sheet===owner)button.textContent=(parts.length>1?'Group '+(index+1)+' of '+parts.length+': ':'')+job.progress;}});
+      part.result=result;if(studio.sheet!==owner||result.stopped)break;
     }
     held.result=sLibraryAddResults(parts);if(studio.screen==='editorial')load().catch(()=>{});if(studio.sheet===owner)sLibraryAddResult(held);
   }catch(error){if(parts.some(part=>part.result))held.result=sLibraryAddResults(parts);problem.textContent=error.message;}});
@@ -1136,7 +1138,9 @@ function sLibraryAddResult(held){
   const unmarked=result.groups.some(group=>group.samples.length<group.count),mark=sButton('Mark as samples',()=>again('library-add-samples',{}),'filled');mark.disabled=!held.mark;
   const samples=unmarked&&sVoicesOn()?sAdd(sNode('div'),sCheck('library-add-mark','Mark the posts as voice samples by their authors',held,'mark','On, every post in a named group becomes that author’s voice sample, in a new source revision that changes no blog. Held posts stay references.',on=>{mark.disabled=!on;}),mark):null;
   const retry=result.counts.failed&&held.shown?sButton('Try the failed links again',button=>sLibraryAddSave(held,button,problem,true)):null;
-  sOpenSheet('Added to the team library',sCard(result.counts.imported+' added · '+result.counts['in-library']+' already there · '+result.counts.failed+' failed',sNode('p','quiet',result.sharing_message||''),sNode('p','',result.next_step),retry),list,result.groups.length?sNode('h3','sheet-part','By author'):null,result.groups.length&&sVoicesOn()?sAdd(sNode('div','bar'),sButton('Create voices for every author',()=>sVoicesForAuthors())):null,groups,result.held.length?sNode('h3','sheet-part','Held: no single byline'):null,held_,samples,problem,sButton('Add more',()=>{studio.libraryAdd=null;sLibraryAdd();}),sButton('Close',sCloseSheet));
+  // Stopped, or more links than one add fetches: Add the rest goes on with the same operation.
+  const rest=result.remaining&&held.shown?sButton('Add the rest',button=>sLibraryAddSave(held,button,problem),'filled'):null;
+  sOpenSheet('Added to the team library',sCard(result.counts.imported+' added · '+result.counts['in-library']+' already there · '+result.counts.failed+' failed',sNode('p','quiet',result.sharing_message||''),sNode('p','',(result.stopped?'Stopped. ':'')+result.next_step),sAdd(sNode('div','bar'),rest,retry)),list,result.groups.length?sNode('h3','sheet-part','By author'):null,result.groups.length&&sVoicesOn()?sAdd(sNode('div','bar'),sButton('Create voices for every author',()=>sVoicesForAuthors())):null,groups,result.held.length?sNode('h3','sheet-part','Held: no single byline'):null,held_,samples,problem,sButton('Add more',()=>{studio.libraryAdd=null;sLibraryAdd();}),sButton('Close',sCloseSheet));
 }
 // The library screen's selection: learn a style or a voice from the ticked items, or start a
 // blog with them as examples. Learning marks them as samples first, then opens the learn sheet,

@@ -210,11 +210,18 @@ def _conversation_start(root, job):
 
 
 def recover(root):
+    # An import job (import_jobs) is saved here too, never queued, so the worker below never
+    # picks one up; one still working when Blog Studio stopped is said to be interrupted.
     folder = studio.inside(root, '.blog-runs', 'tools')
     for target in folder.glob('*.json'):
         try:
             value = read(root, target.stem)
-            if _conversation_start(root, value):
+            if value.get('kind') == 'import':
+                import import_jobs
+
+                if import_jobs.running(value['id']):
+                    continue  # Still running on this page's own thread.
+            elif _conversation_start(root, value):
                 continue
             if value['status'] == 'working':
                 value.update(
@@ -420,8 +427,10 @@ def listing(root, article=None):
     for target in folder.glob('*.json'):
         try:
             value = read(root, target.stem)
-            if value['kind'] in ('desk-angles', 'find-text'):
-                continue  # Work for a blog not yet made belongs to the page that asked.
+            if value['kind'] in ('desk-angles', 'find-text', 'import'):
+                # Work for a blog not yet made belongs to the page that asked, and an import
+                # (import_jobs) to the page that is following it.
+                continue
             if value['metadata'].get('article') == article:
                 values.append(
                     {key: value.get(key) for key in ('id', 'kind', 'status', 'created_at')}
