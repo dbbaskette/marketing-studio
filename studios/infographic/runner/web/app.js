@@ -276,7 +276,7 @@ function staleCard(p){
   const update={facts:['Update facts and stories',()=>action('suggest',{fresh:true}),'Your assistant reads the current sources again and proposes facts and stories. Choosing a new story replaces the page built from the earlier one.'],
     stories:['Update the story',()=>action('suggest',{fresh:true}),'Your assistant proposes stories for the current brief and sources. You choose one; the page follows the story you choose.'],
     page:['Update the page',()=>action('refresh-page'),'Lays the page out again on this computer from the current brief and story, with its artwork. No assistant or image request.'],
-    artwork:['Update the art direction',()=>action('art-direct'),'Your assistant writes art direction for the current page. Generating artwork from it is a separate step.']};
+    artwork:['Update the art direction',()=>action('art-direct'),'Your assistant writes art direction for the current page. The artwork is current once new artwork from it is made and placed on the page; a new direction alone does not change it.']};
   const rows=parts.map(part=>{
     const [label,run,help]=update[part];
     const keep=button('Keep as it is',()=>action('keep-stale',{part}));keep.setAttribute('aria-label','Keep '+STALE_WHAT[part].toLowerCase()+' as it is');
