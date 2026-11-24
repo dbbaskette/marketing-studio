@@ -76,9 +76,9 @@ class ToTheEndTests(FlowCase):
         ):
             with self.subTest(materials=materials):
                 start = len(self.workers.jobs)
-                root = self.saved_start(title='Only ' + materials[0], materials=materials)
-                self.assertEqual(self.to_end(root), ['research-plan', 'research', 'blueprint',
-                                                     *gates])
+                root = self.start(title='Only ' + materials[0], materials=materials)
+                self.assertEqual(self.to_end(root), [])
+                self.all_ready(root)
                 kinds = self.kinds(start)
                 self.assertEqual([kind for kind in kinds if kind in
                                   ('document', 'brief', 'scenario', 'yoodli')], writers)
@@ -90,11 +90,11 @@ class ToTheEndTests(FlowCase):
 
     def test_a_plain_training_goes_from_the_form_to_finished(self):
         self.engine = self.make(at_once=1)
-        root = self.saved_start()
-        self.assertEqual(self.to_end(root), PLAIN)
+        root = self.start()
+        self.assertEqual(self.to_end(root), [])
+        self.all_ready(root)
         self.assertEqual(self.kinds(), [
-            'research-plan', 'question:availability', 'question:instance-min',
-            'question:health-checks', 'question:zero-downtime', 'blueprint', 'document',
+            'research-plan', 'research-result', 'research-result', 'blueprint', 'document',
             'brief', 'scenario'])
         view = self.view(root)
         self.assertEqual((view['state'], view['sentence']), (
@@ -121,8 +121,9 @@ class ToTheEndTests(FlowCase):
         self.assertEqual(self.git('status', '--porcelain'), '')
 
     def test_a_finished_training_is_filed_under_finished_by_the_desk(self):
-        root = self.saved_start()
+        root = self.start()
         self.to_end(root)
+        self.all_ready(root)
         listed = page.RunnerPage(8765, self.engine).trainings()[0]
         self.assertEqual((listed['state'], listed['run']['state'], listed['ready']),
                          ('finished', 'done', True))
@@ -137,12 +138,10 @@ class ToTheEndTests(FlowCase):
             self.assertGreaterEqual(len(self.to_end(root)), expect)
 
     def test_with_levels_everything_after_the_blueprints_is_done_one_level_at_a_time(self):
-        root = self.saved_start(levels=['201', '101'])
-        self.assertEqual(self.to_end(root), [
-            'research-plan', 'research', 'blueprint@101', 'blueprint@201', 'document@101',
-            'brief@101', 'scenario:main@101', 'document@201', 'brief@201',
-            'scenario:main@201'])
-        self.assertEqual(self.kinds(5), ['blueprint', 'blueprint', 'document', 'brief',
+        root = self.start(levels=['201', '101'])
+        self.assertEqual(self.to_end(root), [])
+        self.all_ready(root)
+        self.assertEqual(self.kinds(3), ['blueprint', 'blueprint', 'document', 'brief',
                                          'scenario', 'document', 'brief', 'scenario'])
         first, second = self.workers.of('document')
         self.assertIn('Write the level 101 learner guide for this training.', first.task)
@@ -162,16 +161,16 @@ class ToTheEndTests(FlowCase):
         self.assertEqual(workspace.status(root)['level'], '201')
 
     def test_the_level_being_worked_on_is_recorded_through_the_core(self):
-        root = self.saved_start(levels=['101', '301'])
-        self.to_gate(root, 'document@101')
+        self.pause_after('document')
+        root = self.start(levels=['101', '301'])
         self.assertEqual(workspace.status(root)['level'], '101')
-        self.to_gate(root, 'document@301')
+        self.pause_after('document')
+        self.engine.act(root, 'resume')
         status = workspace.status(root)
         self.assertEqual((status['level'], status['stage']), ('301', 'document'))
 
     def test_earlier_levels_are_given_to_a_guide_as_what_to_assume(self):
-        root = self.saved_start(levels=['101', '201'])
-        self.to_gate(root, 'document@201')
+        root = self.start(levels=['101', '201'])
         found = pipeline.survey(root, self.record(root))
         step = next(step for step in found.steps if step.id == 'document@201')
         given = pipeline.document_work(root, found, step, None, None, []).prepared['inputs']
@@ -187,7 +186,7 @@ class WorkerTests(FlowCase):
 
     def setUp(self):
         super().setUp()
-        self.root = self.saved_start(yoodli=True)
+        self.root = self.start(yoodli=True)
         self.to_end(self.root)
         self.jobs = {kind: (job, spec) for kind, job, spec in self.workers.jobs}
 
@@ -219,7 +218,7 @@ class WorkerTests(FlowCase):
         self.assertEqual(spec['artifacts']['brief'], {
             'kind': 'brief', 'brief_kind': 'product', 'findings': {
                 'availability': 'supported', 'instance-min': 'supported',
-                'health-checks': 'supported', 'zero-downtime': 'contradicted'}})
+                'health-checks': 'supported', 'zero-downtime': 'supported'}})
         self.assertEqual(job.guidance, pipeline.briefs.guidance('brief', kind='product'))
         self.assertIn('Write the brief for this training. It is a product brief.', job.task)
 
@@ -232,20 +231,6 @@ class WorkerTests(FlowCase):
         self.assertEqual(job.guidance, pipeline.briefs.guidance('scenario'))
         self.assertIn('Scenario ID: main\nMode: roleplay\nThe practice plan says of it: '
                       'roleplay. Objectives: O1, O2, O3. A sceptical platform lead', job.task)
-
-    def test_a_yoodli_scenario_is_laid_out_from_the_approved_scenario_and_brief(self):
-        job, spec = self.jobs['yoodli']
-        self.assertEqual(self.given('yoodli'), ['scenario', 'brief', 'objectives',
-                                                'Yoodli field data', 'mode reference'])
-        about = spec['artifacts']['yoodli']
-        self.assertEqual((about['kind'], about['label'], about['scenario'],
-                          about['objectives']),
-                         ('yoodli', 'yoodli:main', SCENARIO, ['O1', 'O2', 'O3']))
-        self.assertEqual(about['profile']['limits']['context_chars']['value'], 10000)
-        self.assertEqual(job.guidance, pipeline.briefs.guidance('yoodli'))
-        self.assertIn('Lay the practice scenario out for Yoodli.', job.task)
-        self.assertIn('Scenario ID: main\nMode: roleplay\nThe copy of the brief to upload is '
-                      'its Word file, product-brief.docx.', job.task)
 
     def test_the_yoodli_facts_a_worker_reads_come_from_the_profile(self):
         profile = helpers.SKILL / 'assets' / 'profiles' / 'yoodli.json'
@@ -266,6 +251,35 @@ class WorkerTests(FlowCase):
             self.assertIn(said, facts)
         self.assertIn('# Yoodli field data', pipeline.yoodli_facts({}),
                       'a profile that cannot be read still gives the worker a page')
+
+
+class SavedYoodliWorkerTests(FlowCase):
+    """The Yoodli worker of a saved run: laid out once the brief was approved and its
+    copies made. Desk work makes copies when a material is marked ready, after the Yoodli
+    layout is written, so this stays on the saved flow (phase C)."""
+
+    def setUp(self):
+        super().setUp()
+        self.root = self.saved_start(yoodli=True)
+        self.to_end(self.root)
+        self.jobs = {kind: (job, spec) for kind, job, spec in self.workers.jobs}
+
+    def given(self, kind: str) -> list[str]:
+        return [entry['name'] for entry in self.jobs[kind][1]['inputs']]
+
+    def test_a_yoodli_scenario_is_laid_out_from_the_approved_scenario_and_brief(self):
+        job, spec = self.jobs['yoodli']
+        self.assertEqual(self.given('yoodli'), ['scenario', 'brief', 'objectives',
+                                                'Yoodli field data', 'mode reference'])
+        about = spec['artifacts']['yoodli']
+        self.assertEqual((about['kind'], about['label'], about['scenario'],
+                          about['objectives']),
+                         ('yoodli', 'yoodli:main', SCENARIO, ['O1', 'O2', 'O3']))
+        self.assertEqual(about['profile']['limits']['context_chars']['value'], 10000)
+        self.assertEqual(job.guidance, pipeline.briefs.guidance('yoodli'))
+        self.assertIn('Lay the practice scenario out for Yoodli.', job.task)
+        self.assertIn('Scenario ID: main\nMode: roleplay\nThe copy of the brief to upload is '
+                      'its Word file, product-brief.docx.', job.task)
 
 
 class ReviewTests(FlowCase):
@@ -361,9 +375,10 @@ class ReviewTests(FlowCase):
 
 class YoodliTests(FlowCase):
     def test_with_yoodli_each_approved_scenario_is_laid_out_and_put_to_the_person(self):
-        root = self.saved_start(yoodli=True)
-        self.assertEqual(self.to_end(root), PLAIN + ['yoodli:main'])
-        self.assertEqual(self.kinds(6), ['document', 'brief', 'scenario', 'yoodli'])
+        root = self.start(yoodli=True)
+        self.assertEqual(self.to_end(root), [])
+        self.all_ready(root)
+        self.assertEqual(self.kinds(4), ['document', 'brief', 'scenario', 'yoodli'])
         ids = [step['id'] for step in self.view(root)['steps']]
         self.assertEqual(ids[9:], [
             'document', 'gate:document', 'brief', 'gate:brief', 'copies:brief',
@@ -382,7 +397,7 @@ class YoodliTests(FlowCase):
         self.assertEqual(assess.run_checks(root)['practice']['basis'], 'Yoodli goals')
 
     def test_without_yoodli_no_scenario_is_laid_out(self):
-        root = self.saved_start()
+        root = self.start()
         self.to_end(root)
         self.assertEqual(self.workers.of('yoodli'), [])
         self.assertNotIn('yoodli:main', workspace.status(root)['artifacts'])
@@ -443,7 +458,7 @@ class YoodliTests(FlowCase):
 
 class DeckTests(FlowCase):
     def test_no_deck_on_the_form_leaves_the_deck_out_through_the_core(self):
-        root = self.saved_start()
+        root = self.start()
         session = workspace.load(root)
         self.assertNotIn('deck', session['settings']['stages'])
         skipped = [event for event in session['events'] if event['event'] == 'skip']
@@ -520,7 +535,7 @@ class DeckTests(FlowCase):
         self.assertTrue((root / 'README.md').is_file())
 
     def test_a_deck_that_is_there_but_not_approved_is_said_to_need_finishing(self):
-        root = self.saved_start(deck_target='pptx')
+        root = self.start(deck_target='pptx')
         self.to_end(root)
         (root / 'deck.pptx').write_bytes(b'PK\x03\x04 a deck made in a conversation\n')
         self.assertEqual(self.view(root)['deck_left']['says'], left(pipeline.DECK_AGAIN))
@@ -589,8 +604,9 @@ class LeftOutTests(FlowCase):
     def test_a_training_whose_blueprint_plans_no_practice_is_not_ready_and_says_why(self):
         self.workers.blueprint_text = BLUEPRINT.partition('## Practice plan')[0] \
             + '## Open gaps' + BLUEPRINT.partition('## Open gaps')[2]
-        root = self.saved_start()
-        self.assertEqual(self.to_end(root), PLAIN[:-1])
+        root = self.start()
+        self.assertEqual(self.to_end(root), [])
+        self.all_ready(root)
         view = self.view(root)
         self.assertEqual((view['state'], view['sentence']), (
             'done', 'Everything is made, but this training is not ready yet: 1 thing is in '
@@ -599,8 +615,7 @@ class LeftOutTests(FlowCase):
                          (False, ['No scenario file found.']))
         self.assertEqual(self.workers.of('scenario'), [], 'only a scenario the practice '
                          'plan names is drafted')
-        self.assertEqual(self.log()[-1],
-                         'Rolling restarts: write the index; the training is not ready yet')
+
 
 
 class RequestTests(FlowCase):
@@ -641,14 +656,13 @@ class RequestTests(FlowCase):
         self.assertEqual(workspace.status(root)['gate'], 'document')
 
     def test_a_worker_on_a_later_stage_can_ask_the_person_a_question(self):
-        root = self.saved_start()
         self.workers.then('brief', asks('Which product is the brief about?'))
-        self.to_gate(root, 'document')
-        self.decide(root, 'document')
+        self.pause_after('brief', later=True)
+        root = self.start()
         asked = self.view(root)['question']
         self.assertEqual(asked['from'], 'The worker writing the brief')
         self.engine.answer(root, asked['id'], 'The platform itself.')
-        self.assertEqual(workspace.status(root)['gate'], 'brief')
+        self.assertEqual(self.state(root), 'paused')
         self.assertIn('Answer: The platform itself.', self.workers.of('brief')[1].task)
 
     def test_changes_asked_of_a_finished_training_are_made_and_it_finishes_again(self):
@@ -738,7 +752,7 @@ class LaterChangeTests(FlowCase):
         self.assertEqual(workspace.status(root)['gate'], 'blueprint@101')
 
     def test_a_setting_that_changes_has_what_uses_it_made_again(self):
-        root = self.saved_start()
+        root = self.start()
         self.to_end(root)
         workspace.checkpoint(root, brief_kind='competitive')
         self.assertEqual(workspace.status(root)['artifacts']['brief'], 'not-started')
@@ -905,7 +919,7 @@ class CopiesTests(FlowCase):
         self.assertEqual(self.git('status', '--porcelain'), '')
 
     def test_a_training_that_asked_for_no_copies_has_no_copies_steps(self):
-        root = self.saved_start()
+        root = self.start()
         self.to_end(root)
         self.assertEqual((self.view(root)['copies'], self.copies.calls), ([], 0))
         self.assertEqual([step for step in self.steps(root) if step.startswith('copies:')],
@@ -915,8 +929,8 @@ class CopiesTests(FlowCase):
         self.copies.refuse.update(
             google='Google access is not set up on this computer.',
             word='This computer has no converter for Word files.')
-        root = self.saved_start(copies=['google', 'word'])
-        self.to_gate(root, 'brief')
+        root = self.start(copies=['google', 'word'])
+        self.all_ready(root)
         made = self.shown(root)
         self.assertEqual((made['document', 'google']['state'],
                           made['document', 'google']['problem'],
@@ -926,8 +940,9 @@ class CopiesTests(FlowCase):
                           'not-made', 'This computer has no converter for Word files.'))
         self.assertEqual(self.steps(root)['copies:document']['status'], 'done')
         self.assertEqual(self.record(root)['copies']['problems'],
-                         {'document': 'Google access is not set up on this computer.'})
-        self.assertEqual((self.state(root), self.view(root)['problem']), ('waiting', None))
+                         {'document': 'Google access is not set up on this computer.',
+                          'brief': 'Google access is not set up on this computer.'})
+        self.assertEqual((self.state(root), self.view(root)['problem']), ('done', None))
         calls = self.copies.calls
         self.engine.wake(root)
         self.assertEqual(self.copies.calls, calls, 'it is not tried again until asked')
@@ -939,8 +954,9 @@ class CopiesTests(FlowCase):
 
     def test_trying_the_copies_again_makes_those_that_were_not_made(self):
         self.copies.refuse['google'] = 'Google access is not set up on this computer.'
-        root = self.saved_start(copies=['google'])
+        root = self.start(copies=['google'])
         self.to_end(root)
+        self.all_ready(root)
         self.assertEqual({entry['state'] for entry in self.view(root)['copies']},
                          {'not-made'})
         self.assertNotIn('docs.example.com', (root / 'README.md').read_text())
@@ -979,7 +995,7 @@ class DocumentTests(FlowCase):
     """Research from documents the person supplies."""
 
     def test_a_training_from_the_persons_documents_waits_for_them_first(self):
-        root = self.saved_start(source_scope='supplied-only')
+        root = self.start(source_scope='supplied-only')
         view = self.view(root)
         self.assertEqual((view['state'], view['sentence'], self.workers.jobs), (
             'waiting', 'Add your documents, then say that is all of them. Nothing is '
@@ -1003,7 +1019,7 @@ class DocumentTests(FlowCase):
         self.assertEqual(self.workers.jobs, [])
 
     def test_a_training_from_the_public_web_takes_no_documents(self):
-        root = self.saved_start()
+        root = self.start()
         self.assertIsNone(self.view(root)['documents'])
         self.assertIsNone(self.record(root)['documents'])
         with self.assertRaisesRegex(WorkspaceError, engine_module.NO_DOCUMENTS):
@@ -1014,7 +1030,7 @@ class DocumentTests(FlowCase):
             self.engine.supply(self.base / 'elsewhere', 'done')
 
     def test_documents_are_added_shown_and_removed_until_the_person_says_that_is_all(self):
-        root = self.saved_start(source_scope='supplied-only')
+        root = self.start(source_scope='supplied-only')
         after = self.send(root, 'handbook.txt')
         self.assertEqual(after['documents']['added'], [
             {'name': 'handbook.txt', 'bytes': 60, 'readable': True, 'problem': None}])
@@ -1035,12 +1051,13 @@ class DocumentTests(FlowCase):
         self.assertEqual((after['documents']['waiting'], after['state'], self.workers.jobs),
                          (True, 'waiting', []))
 
+        self.pause_after('research-result')
         done = self.engine.supply(root, 'done')
         self.assertEqual((done['documents']['waiting'], done['state'], done['sentence']),
-                         (False, 'waiting', 'The research plan is waiting for your review.'))
+                         (False, 'paused', 'Paused. Nothing new starts until you resume.'))
         self.assertEqual(self.steps(root)['documents']['status'], 'done')
-        self.assertEqual(self.log()[-3],
-                         'Rolling restarts: the documents are all added: 1 to research from')
+        self.assertIn('Rolling restarts: the documents are all added: 1 to research from',
+                      self.log())
         with self.assertRaisesRegex(WorkspaceError, 'cannot be removed now'):
             self.engine.supply(root, 'remove', 'handbook.txt')
         with self.assertRaisesRegex(WorkspaceError, 'all added already'):
@@ -1054,8 +1071,9 @@ class DocumentTests(FlowCase):
         return root
 
     def test_the_writers_of_a_blueprint_are_offered_the_documents_and_a_guide_is_not(self):
-        root = self.settled()
-        self.to_gate(root, 'brief')
+        root = self.start(source_scope='supplied-only')
+        self.send(root, 'handbook.txt')
+        self.engine.supply(root, 'done')
         jobs = {kind: (job, spec) for kind, job, spec in self.workers.jobs}
         job, spec = jobs['blueprint']
         self.assertIn(pipeline.DOCUMENTS + pipeline.SPECIFICS, job.task)
@@ -1124,7 +1142,7 @@ class DocumentTests(FlowCase):
             run.workers.pop('research-plan', None)
 
     def test_a_web_only_training_still_takes_no_documents(self):
-        root = self.saved_start()
+        root = self.start()
         with self.assertRaises(WorkspaceError) as refused:
             self.send(root, 'more.txt')
         self.assertEqual(str(refused.exception), engine_module.NO_DOCUMENTS)
@@ -1215,7 +1233,7 @@ class DocumentTests(FlowCase):
         self.assertEqual(workspace.status(root)['gate'], 'research')
 
     def test_research_from_documents_alone_needs_one_that_can_be_read(self):
-        root = self.saved_start(source_scope='supplied-only')
+        root = self.start(source_scope='supplied-only')
         self.send(root, 'slides.docx')
         with self.assertRaisesRegex(WorkspaceError, 'Add at least one document that can be '
                                     'read first. This training is researched from your '
@@ -1225,10 +1243,10 @@ class DocumentTests(FlowCase):
                          (True, []))
 
     def test_with_the_web_as_well_no_document_at_all_is_an_answer(self):
-        root = self.saved_start(source_scope='both')
+        root = self.start(source_scope='both')
+        self.pause_after('research-plan')
         done = self.engine.supply(root, 'done')
-        self.assertEqual((done['documents']['waiting'], workspace.status(root)['gate']),
-                         (False, 'research-plan'))
+        self.assertEqual((done['documents']['waiting'], done['state']), (False, 'paused'))
         self.assertIn('Sources that may be used: the public web.\n',
                       self.workers.jobs[0][1].task)
         self.assertIn('Rolling restarts: no documents were added; research uses the public '
@@ -1236,7 +1254,7 @@ class DocumentTests(FlowCase):
 
     def test_a_computer_that_can_read_a_pdf_takes_one(self):
         self.documents.pdf = True
-        root = self.saved_start(source_scope='both')
+        root = self.start(source_scope='both')
         shown = self.view(root)['documents']
         self.assertIn('.pdf', shown['types'])
         self.assertNotIn('PDF', shown['note'])

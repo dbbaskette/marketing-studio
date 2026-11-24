@@ -1667,9 +1667,10 @@ class StudioCase(unittest.TestCase):
         self.addCleanup(engine.close)
         return engine
 
-    def start(self, **changes) -> Path:
+    def start(self, engine=None, **changes) -> Path:
         from runner import pipeline
-        return Path(self.engine.start(pipeline.check_form({**FORM, 'flow': 'desk', **changes}))['path'])
+        engine = engine or self.engine
+        return Path(engine.start(pipeline.check_form({**FORM, 'flow': 'desk', **changes}))['path'])
 
     def saved_start(self, engine=None, saved_contract=None, schema=None, **changes) -> Path:
         """Construct a saved queue/policy session and run, then resume real readers."""
@@ -1753,6 +1754,38 @@ class StudioCase(unittest.TestCase):
             self.decide(root, waiting)
             approved.append(waiting)
         self.fail('The training never stopped asking')
+
+    def pause_after(self, kind: str, title: str = 'rolling-restarts', engine=None,
+                    workers=None, later: bool = False, nth: int = 0) -> None:
+        """Hold desk work where a saved run waited for a decision: the next job of `kind`
+        pauses its training while it works, so that job finishes and nothing after it
+        starts until the training is resumed. What that job does is unchanged. With
+        `later`, the job after those already queued for `kind` is the one that pauses; with
+        `nth`, the one queued at that place."""
+        engine, workers = engine or self.engine, workers or self.workers
+        queued = workers.queued.setdefault(kind, [])
+        at = len(queued) if later else nth
+        act = queued.pop(at) if at < len(queued) else getattr(
+            workers, kind.partition(':')[0].replace('-', '_'))
+
+        def pausing(tools, job):
+            engine.act(engine.space().training(title), 'pause')
+            return act(tools, job)
+        queued.insert(at, pausing)
+
+    def all_ready(self, root: Path, engine=None) -> list[dict]:
+        """Desk work's own end: mark every card of each level ready, as the person does on
+        the desk, each in the version it is now. Says what each level's batch answered."""
+        import workspace
+        engine = engine or self.engine
+        session = workspace.load(root)
+        seen = {}
+        for name in workspace.artifact_names(root, session):
+            file = root / workspace.artifact(root, session, name)['file']
+            if file.is_file():
+                seen[name] = workspace.sha256_file(file)
+        return [engine.mark_level_ready(root, level, seen)
+                for level in session['levels'] or [None]]
 
     def send(self, root: Path, name: str, text: str = 'Capacity holds only when more than '
              'one instance is running.\n') -> dict:

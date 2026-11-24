@@ -88,6 +88,12 @@ class Team(TeamCase, Asking):
         with self.be(person):
             return self.saved_start(engine=person.engine, **changes)
 
+    def desk_started(self, person=None, **changes) -> Path:
+        """A training started on the desk as one person, on their own engine."""
+        person = person or self.alex
+        with self.be(person):
+            return self.start(engine=person.engine, **changes)
+
     def seen(self, person, root: Path) -> dict:
         with self.be(person):
             return person.engine.view(self.theirs(person, root))
@@ -123,7 +129,7 @@ class DriverTests(Team):
         sent = []
         self.workers.then('research-plan', lambda tools, job: (
             sent.extend(self.shared()), self.workers.research_plan(tools, job))[1])
-        root = self.started()
+        root = self.desk_started()
         self.assertEqual(sent[0], STARTED, 'the claim was shared before the first worker ran')
         driver = self.record(root)['driver']
         self.assertEqual((driver['name'], driver['computer']), ('Alex', team.computer()))
@@ -164,7 +170,7 @@ class DriverTests(Team):
         self.assertEqual(len(self.workers.jobs), 1, 'and nothing was worked on there')
 
     def test_a_second_claim_the_repository_refuses_is_dropped_and_says_who_has_it(self):
-        root = self.started()
+        root = self.desk_started()
         self.drive(self.alex, root, 'hand-over')
         self.fetch(self.blake)
         theirs, real, raced = self.theirs(self.blake, root), gitstate.commit, []
@@ -194,7 +200,7 @@ class DriverTests(Team):
         self.assertEqual(self.seen(self.alex, root)['mine'], True)
 
     def test_a_training_someone_took_since_the_page_looked_is_not_taken_over_unasked(self):
-        root = self.started()
+        root = self.desk_started()
         self.drive(self.alex, root, 'hand-over')
         self.fetch(self.blake)
         self.drive(self.alex, root)
@@ -367,7 +373,7 @@ class DriverTests(Team):
         self.assertEqual((theirs['state'], theirs['driver']), ('done', None))
 
     def test_a_training_cannot_be_taken_while_the_repository_cannot_be_reached(self):
-        root = self.started()
+        root = self.desk_started()
         self.fetch(self.blake)
         before = self.head(self.blake)
         self.remote.rename(self.base / 'moved-away.git')
@@ -379,15 +385,15 @@ class DriverTests(Team):
 
     def test_a_training_started_while_the_repository_is_away_is_still_started(self):
         self.remote.rename(self.base / 'moved-away.git')
-        root = self.started()
+        root = self.desk_started()
         self.assertEqual(self.seen(self.alex, root)['mine'], True)
         self.assertIn('could not be reached', self.as_(self.alex, self.engine.shared)['notice'])
 
     def test_two_trainings_of_one_name_started_at_once_keep_the_first(self):
-        self.started()
+        self.desk_started()
         with self.assertRaisesRegex(WorkspaceError, 'Someone else started a training in '
                                     'trainings/rolling-restarts at the same moment'):
-            self.started(self.blake)
+            self.desk_started(self.blake)
         view = self.seen(self.blake, self.alex.space.training('rolling-restarts'))
         self.assertEqual((view['mine'], view['driver']['name']), (False, 'Alex'))
         self.assertEqual(self.head(self.blake), self.git('rev-parse', 'main', repo=self.remote))
@@ -428,7 +434,7 @@ class NoDriverTests(StudioCase):
     """A workspace that is a folder on one computer has no drivers."""
 
     def test_nothing_changes_where_there_is_no_shared_repository(self):
-        root = self.saved_start()
+        root = self.start()
         view = self.view(root)
         self.assertEqual((view['mine'], view['driver'], view['taken']), (True, None, None))
         self.assertIsNone(self.record(root)['driver'])
@@ -469,8 +475,8 @@ class InStepTests(Team):
         self.ask(self.blake, 'file', path=path, artifact='intake')
 
     def test_fetching_on_a_timer_never_touches_a_training_this_computer_drives(self):
-        mine = self.started()
-        theirs = self.started(self.blake, title='Health checks')
+        mine = self.desk_started()
+        theirs = self.desk_started(self.blake, title='Health checks')
         before, head = tree(mine), self.head(self.alex)
         self.assertFalse(self.theirs(self.alex, theirs).exists())
         self.engine.serving(every=0.05, tick=0.05)
@@ -487,7 +493,7 @@ class InStepTests(Team):
         self.assertEqual(self.seen(self.alex, mine)['mine'], True)
 
     def test_the_runner_fetches_when_it_starts(self):
-        theirs = self.started(self.blake)
+        theirs = self.desk_started(self.blake)
         with self.be(self.alex):
             self.engine.resume()
         self.assertEqual(self.seen(self.alex, theirs)['driver']['name'], 'Blake')
@@ -596,7 +602,7 @@ class TurnTests(StudioCase):
 
 class StandingTests(StudioCase):
     def test_status_reads_each_run_and_its_training_once(self):
-        root = self.saved_start()
+        root = self.start()
         read_record, load, records, sessions = engines.read_record, workspace.load, [], []
 
         def record(where):
@@ -623,13 +629,13 @@ class StandingTests(StudioCase):
 
 class StatusTests(Team):
     def test_status_keeps_this_computers_runs_apart_from_those_driven_elsewhere(self):
-        mine = self.started()
-        theirs = self.started(self.blake, title='Health checks')
+        mine = self.desk_started()
+        theirs = self.desk_started(self.blake, title='Health checks')
         self.fetch(self.alex)
         found = self.ask(self.alex, 'status')
         self.assertEqual([(run['id'], run['driver']['here'], run['needs'], run['state'])
                           for run in found['runs']],
-                         [('rolling-restarts', True, False, 'waiting')])
+                         [('rolling-restarts', True, False, 'done')])
         self.assertEqual(found['runs'][0]['path'], str(mine))
         self.assertEqual(found['elsewhere'], [{
             'path': str(self.theirs(self.alex, theirs)), 'id': 'health-checks',
@@ -698,7 +704,7 @@ class NotifyTests(StudioCase, Asking):
         settings.save(replace(settings.load(), notify=True))
 
     def test_nothing_is_told_until_it_is_turned_on(self):
-        self.saved_start()
+        self.start()
         self.assertEqual((settings.load().notify, self.engine.tell(), self.notifier.sent),
                          (False, [], []))
 
@@ -720,7 +726,8 @@ class NotifyTests(StudioCase, Asking):
 
     def test_nothing_is_told_while_a_page_is_open(self):
         self.on()
-        self.saved_start()
+        self.workers.then('research-plan', asks('Which platform is this about?'))
+        self.start()
         self.engine.seen()
         self.assertEqual((self.engine.page_open(), self.engine.tell()), (True, []))
         with mock.patch.object(engines, 'PAGE_OPEN', 0):
@@ -728,7 +735,7 @@ class NotifyTests(StudioCase, Asking):
                              (False, ['Rolling restarts']))
 
     def test_what_went_wrong_in_the_background_is_said_until_it_goes_right(self):
-        self.saved_start()
+        self.start()
         tried, again, go = [], threading.Event(), threading.Event()
         self.addCleanup(go.set)
 
@@ -782,7 +789,7 @@ class TeamNotifyTests(Team):
     def test_a_teammates_training_is_never_told_here(self):
         with self.be(self.blake):
             settings.save(replace(settings.load(), notify=True))
-        self.started()
+        self.desk_started()
         self.fetch(self.blake)
         self.assertEqual(self.as_(self.blake, self.blake.engine.tell), [])
 
@@ -853,12 +860,12 @@ class SlowRemoteTests(Team):
         self.assertEqual(self.approve(self.alex, root, gate)['decided']['decision'], 'approve')
 
     def test_learning_who_drives_what_asks_git_once_for_every_training(self):
-        mine = [self.started(), self.started(title='Health checks')]
+        mine = [self.desk_started(), self.desk_started(title='Health checks')]
         self.fetch(self.blake)
         with self.be(self.alex), asked() as ran:
             self.engine.fetch()
         self.assertNotIn('merge-base', ran, 'nothing came in, so there is nothing to learn')
-        self.started(self.blake, title='Blue green')
+        self.desk_started(self.blake, title='Blue green')
         with self.be(self.alex), asked() as ran:
             self.assertEqual(self.engine.fetch()['received'], 1)
         self.assertEqual((ran.count('merge-base'), ran.count('diff')), (1, 1))
@@ -883,9 +890,10 @@ class PublishTests(Team):
                           'blue-green': True})
 
     def test_revisions_are_numbered_pushed_and_never_moved(self):
-        root = self.started()
+        root = self.desk_started()
         with self.be(self.alex):
             self.to_end(root)
+            self.all_ready(root)
         first = self.ask(self.alex, 'publish', {'path': str(root)})
         self.assertEqual(first, {'revision': 1, 'ready': True, 'shared': True, 'notice': None})
         name = 'training-studio/trainings/rolling-restarts/1'
@@ -909,9 +917,10 @@ class PublishTests(Team):
         self.assertEqual([(entry['revision'], entry['by']) for entry in listed], [(2, 'Blake')])
 
     def test_two_people_publishing_one_number_at_once_get_consecutive_revisions(self):
-        root = self.started()
+        root = self.desk_started()
         with self.be(self.alex):
             self.to_end(root)
+            self.all_ready(root)
         self.fetch(self.blake)
         real, raced = team.send_tags, []
 
@@ -943,14 +952,14 @@ class PublishTests(Team):
                          'the training has changed since that revision')
 
     def test_a_training_someone_else_drives_is_not_published_from_here(self):
-        root = self.started()
+        root = self.desk_started()
         self.fetch(self.blake)
         said = self.ask(self.blake, 'publish', {'path': str(self.theirs(self.blake, root))}, 409)
         self.assertIn('Alex has been running this training', said['error'])
         self.assertEqual(self.tags(), [])
 
     def test_a_revision_made_while_the_repository_is_away_goes_with_the_next_share(self):
-        root = self.started()
+        root = self.desk_started()
         self.remote.rename(self.base / 'moved-away.git')
         made = self.as_(self.alex, self.engine.publish, root)
         self.assertEqual((made['revision'], made['shared']), (1, False))
@@ -969,8 +978,9 @@ class PublishTests(Team):
 
 class LocalPublishTests(StudioCase):
     def test_a_workspace_on_one_computer_keeps_its_revisions_here(self):
-        root = self.saved_start()
+        root = self.start()
         self.to_end(root)
+        self.all_ready(root)
         made = self.engine.publish(root)
         self.assertEqual((made['revision'], made['ready'], made['shared']), (1, True, False))
         self.assertIn('no shared repository', made['notice'])
@@ -1064,7 +1074,7 @@ class BringTests(Team):
 
     def test_what_cannot_be_brought_in_is_refused_in_a_sentence(self):
         chat = self.chat()
-        root = self.started()
+        root = self.desk_started()
         self.assertEqual(self.ask(self.alex, 'adopt', {'path': str(root)}, 409)['error'],
                          'This training is already in the workspace.')
         self.assertEqual(self.ask(self.alex, 'adopt', {'path': str(self.base / 'unknown')},
