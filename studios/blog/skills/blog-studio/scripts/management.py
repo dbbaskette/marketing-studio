@@ -2372,7 +2372,7 @@ def report_google(root, data):
 
 
 INTAKE_FIELDS = frozenset(
-    'step kind style researchOn have brief title audience point angles angle angleOp outline outlineFrom outlineWay source article manuscript url link collection preview first_pass humanizeOn humanizeLevel geoReview voiceOn voiceGuide files role keep from searchSites searchWeb length tone operation upload uploaded docKeep sourceDraft sourceEntry fileData outlineFileData intakeOpen'.split()
+    'libraryStart step kind style researchOn have brief title audience point angles angle angleOp outline outlineFrom outlineWay source article manuscript url link collection preview first_pass humanizeOn humanizeLevel geoReview voiceOn voiceGuide files role keep from searchSites searchWeb length tone operation upload uploaded docKeep sourceDraft sourceEntry fileData outlineFileData intakeOpen'.split()
 )
 
 
@@ -2434,10 +2434,10 @@ def remote_caller(headers):
 
 # A folder (on this computer, or a Google Drive folder link) or one spreadsheet, given to the
 # source picker: read by studio_core.source_intake, then saved as an ordinary files upload.
-INTAKE_FIELDS = frozenset(
+FILES_INTAKE_FIELDS = frozenset(
     {'operation', 'folder', 'file', 'role', 'room', 'taken', 'document_library', 'local'}
 )
-INTAKE_ACCEPTS = frozenset({'.md', '.txt', '.html', '.htm', '.docx', '.pdf'})
+FILES_INTAKE_ACCEPTS = frozenset({'.md', '.txt', '.html', '.htm', '.docx', '.pdf'})
 
 
 def files_intake(root, data):
@@ -2446,7 +2446,7 @@ def files_intake(root, data):
     read only when `local` is True (the page server sets it). Nothing is analyzed."""
     from studio_core import source_intake
 
-    if not isinstance(data, dict) or set(data) - INTAKE_FIELDS:
+    if not isinstance(data, dict) or set(data) - FILES_INTAKE_FIELDS:
         raise ValueError('This request has fields the page does not take.')
     if ('folder' in data) == ('file' in data):
         raise ValueError('Give one folder, or one spreadsheet.')
@@ -2484,7 +2484,7 @@ def files_intake(root, data):
     found = source_intake.take(
         given,
         local=data['local'],
-        accepts=INTAKE_ACCEPTS,
+        accepts=FILES_INTAKE_ACCEPTS,
         room=room,
         spare=room * blog_library.MAX_BINARY,
         taken=taken,

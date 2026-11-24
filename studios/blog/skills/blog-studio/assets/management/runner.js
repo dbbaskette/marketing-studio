@@ -1306,7 +1306,7 @@ function sFilesCard(draft,problem,again,lock,about={}){
   const docKeep=sChoice('Uploaded files',[['library','Keep a copy in the Document Library'],['blog','Only this blog']],draft,'docKeep',()=>{});docKeep.id='files-document-keep';
   docKeep.append(sNode('p','quiet field-hint','The Document Library is on this computer, for any studio to use. It is not shared with your team. Links and Google Docs stay with this blog.'));
   // A whole folder: one on this computer (read only from this computer), or a Google Drive folder.
-  const folderInput=sNode('input','input');folderInput.id='files-folder';folderInput.autocomplete='off';folderInput.placeholder='/Users/you/Documents/Launch or https://drive.google.com/drive/folders/…';folderInput.setAttribute('aria-describedby','files-folder-hint');
+  const folderInput=sNode('input','input');folderInput.id='files-folder';folderInput.autocomplete='off';folderInput.placeholder='A folder path, or a Google Drive folder link';folderInput.setAttribute('aria-describedby','files-folder-hint');
   const folderLabel=sNode('label','field-label','Or add a whole folder');folderLabel.htmlFor=folderInput.id;
   const folderAdd=sButton('Add the folder',async button=>{const given=folderInput.value.trim();if(!given){problem.textContent='Give a folder on this computer or a Google Drive folder link first.';folderInput.focus();return;}if(draft.files.length>=20){problem.textContent='Use up to 20 files for one blog.';return;}
     await busy(button,'Reading the folder…',async()=>{studio.busy=true;lock(true);try{const result=await api('files-intake',{operation:operationId(),folder:given,role:draft.role,room:20-draft.files.length,taken:draft.files.map(file=>file.filename),document_library:draft.docKeep==='library'});remember(result);folderInput.value='';studio.busy=false;draft.problem=[result.said,result.next].filter(Boolean).join(' ');again();}catch(error){problem.textContent=error.message;folderInput.focus();}finally{studio.busy=false;lock(false);}});});
@@ -1396,7 +1396,10 @@ window.addEventListener('popstate',()=>{const query=new URLSearchParams(location
 document.addEventListener('keydown',event=>{if(!studio.sheet)return;if(event.key==='Escape'){event.preventDefault();sCloseSheet();return;}if(event.key==='Tab'){const nodes=[...$('sheet').querySelectorAll('button,input,textarea,select,[tabindex="0"]')].filter(node=>!node.disabled);if(!nodes.length){event.preventDefault();return;}const first=nodes[0],last=nodes[nodes.length-1];if(event.shiftKey&&(document.activeElement===first||document.activeElement===$('sheet'))){event.preventDefault();last.focus();}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus();}}});
 document.addEventListener('visibilitychange',sVisibilityChanged);
 setInterval(sPoll,3000);
-(async()=>{await loadCapabilities();studio.settings=await api('run-settings');sVoiceSwitchShown();const query=new URLSearchParams(location.search);await studioNavigate(query.get('screen')||(studio.settings.configured?'home':'setup'),query.get('id'),query.get('stage'));})().catch(error=>notice(error.message,true));
+(async()=>{await loadCapabilities();studio.settings=await api('run-settings');sVoiceSwitchShown();
+  // Continue in another studio: a page opened with library= opens New blog with it (app.js read it).
+  if(typeof libraryStart!=='undefined'&&libraryStart&&studio.settings.configured){await sDeskFromLibrary(libraryStart);return;}
+  const query=new URLSearchParams(location.search);await studioNavigate(query.get('screen')||(studio.settings.configured?'home':'setup'),query.get('id'),query.get('stage'));})().catch(error=>notice(error.message,true));
 
 
 window.addEventListener('beforeunload',event=>{if(studio.deskStart&&(studio.deskStart._dirty||studio.deskStart._saving||studio.intake?.pending||studio.intake?.writing)){event.preventDefault();event.returnValue='';}if(Object.values(studio.editorDrafts||{}).some(draft=>draft.content!==draft.baseContent)){event.preventDefault();event.returnValue='';}});

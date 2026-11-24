@@ -161,3 +161,22 @@ class RemoteCallerTests(IntakeCase):
         self.assertEqual(seen, [('https://drive.google.com/drive/folders/abc123', False)])
         self.assertEqual(done['result']['said'], '1 document was added from Plans.')
         self.assertEqual([row['filename'] for row in done['result']['files']], ['Plan.md'])
+
+
+class IntakeFieldTests(RunnerCase):
+    def test_every_field_the_page_keeps_is_one_the_server_saves(self):
+        import re
+
+        page = (
+            Path(management.__file__).resolve().parents[1] / 'assets/management/desk.js'
+        ).read_text()
+        fields = set(re.search(r"const DESK_INTAKE_FIELDS='([^']+)'", page).group(1).split())
+        self.assertIn('libraryStart', fields)
+        self.assertEqual(fields - management.INTAKE_FIELDS, set())
+        pick = {'id': 'launch-facts', 'revision': 2, 'title': 'Launch facts', 'role': 'facts'}
+        saved = management.dispatch(
+            self.root,
+            'intake-draft',
+            {'action': 'save', 'expected': 0, 'patch': {'libraryStart': pick}},
+        )
+        self.assertEqual(saved['draft']['libraryStart'], pick)

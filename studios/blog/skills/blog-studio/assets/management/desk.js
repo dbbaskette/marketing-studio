@@ -168,14 +168,16 @@ async function sDeskFromLibrary(pick){
       else found={id:pick.id,revision:pick.revision,title,role:'facts'};
     }catch(error){said='That item is not in the Document Library on this computer, so New blog opens without it. '+error.message;}
   }
-  await sDeskBegin({step:0,libraryStart:found,...(said?{problem:said}:{})});
+  await sDeskBegin({step:0,libraryStart:found,...(said?{libraryProblem:said}:{})});
 }
 function sDeskLibraryStartCard(held){
+  // An item that could not be used is said at the top, once, where the person looks first.
+  if(!held.libraryStart&&held.libraryProblem){const said=sNode('p','decision-notice',held.libraryProblem);said.setAttribute('role','alert');delete held.libraryProblem;return said;}
   const pick=held.libraryStart;if(!pick)return null;
   const said=sNode('p','','Starting from: '+pick.title+', from the Document Library');said.setAttribute('role','status');
   const roles=[['facts','Facts (may be quoted)'],['messaging','Approved messaging'],['example','Example of the kind of post']];
   const drop=sButton('Start without it',()=>{held.libraryStart=null;sDeskKeep(held,false);sDeskStartAgain(held);});
-  return sCard('Starting from',said,sNode('p','quiet','Revision '+pick.revision+'. It becomes one of this blog’s sources when you start; nothing is made before then.'),sField('desk-library-start-role','Use it as',pick,'role',{options:roles}),sAdd(sNode('div','bar'),drop));
+  return sCard('Your starting document',said,sNode('p','quiet','Revision '+pick.revision+'. It becomes one of this blog’s sources when you start; nothing is made before then.'),sField('desk-library-start-role','Use it as',pick,'role',{options:roles}),sAdd(sNode('div','bar'),drop));
 }
 // At Start: the Document Library revision the page was opened with becomes a file of this blog,
 // as Choose from the Document Library makes one.

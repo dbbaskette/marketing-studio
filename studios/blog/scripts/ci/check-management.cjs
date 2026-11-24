@@ -2138,6 +2138,7 @@ async function documentLibraryHandoff(){
   await fresh();item={...item,hidden:true};
   await f.run("sDeskFromLibrary({id:'launch-facts',revision:2})");
   assert.ok(texts().some(t=>/“Launch facts” was removed from the Document Library, so New blog opens without it\./.test(t)));
+  assert.equal(nodes().find(n=>/removed from the Document Library/.test(n.textContent||'')&&n.tagName==='p').className,'decision-notice','said at the top, as a notice');
   assert.equal(f.run('studio.deskStart.libraryStart'),null);
   await fresh();item={...item,hidden:false,state:'needs-text'};
   await f.run("sDeskFromLibrary({id:'launch-facts',revision:2})");
