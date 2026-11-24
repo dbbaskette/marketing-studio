@@ -89,7 +89,7 @@ def run_supported(run):
 
     Schema 4 is a schema 3 run that also pinned a research execution record (Harness Research
     collected it in parallel). The migration keeps the run's bytes and interprets none of that
-    record, so it is accepted exactly when Blog Studio's own run reader accepts it."""
+    record, so its shape is checked here (execution_kept), not its protocol's current name."""
     if (
         not isinstance(run, dict)
         or type(run.get('schema')) is not int
@@ -127,10 +127,29 @@ def run_supported(run):
     ):
         return False
     if run['schema'] == 4:
-        from .research_session import protocol  # Pure; imported here to keep this module light.
-
-        return protocol(run)
+        return execution_kept(run.get('research_execution'))
     return True
+
+
+def execution_kept(held):
+    """A saved research execution record of the known shape, whatever protocol it names:
+    the migration keeps it uninterpreted, so a later Harness Research protocol never makes a
+    moved blog unreadable, while a malformed record is still refused."""
+    if not isinstance(held, dict) or type(held.get('schema')) is not int or held['schema'] != 1:
+        return False
+    protocol, workers, capability = (
+        held.get('protocol'),
+        held.get('workers'),
+        held.get('capability'),
+    )
+    return (
+        isinstance(protocol, str)
+        and bool(protocol.strip())
+        and type(workers) is int
+        and 1 <= workers <= 3
+        and isinstance(capability, dict)
+        and capability.get('protocol') == protocol
+    )
 
 
 def migration_supported(value, session_bytes, run_bytes, draft, ident):

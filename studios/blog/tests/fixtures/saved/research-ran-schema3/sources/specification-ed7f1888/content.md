@@ -1,0 +1,1 @@
+Complete synthetic source context. More than one instance keeps capacity. Health checks start the next batch. This is a fictional test, not a product claim.

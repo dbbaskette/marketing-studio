@@ -6123,6 +6123,15 @@ async function unfinishedMigration(){
   t.f.set('migrated',{...found,on_desk:true,unfinished_migration:true,next:null,error:'Synthetic failure.'});
   t.f.run('sRunOnDesk(migrated)');
   assert.ok(t.nodes().some(n=>n.textContent==='Before it was opened on the desk, its last step stopped: Synthetic failure.'),'a saved failure stays in the run’s history');
+  // Finished ideas or an outline have no draft, so no finished Open on the desk: they move
+  // through the previewed migration. A finished blog with a draft keeps its own action.
+  const offered=()=>t.nodes().some(n=>n.textContent==='Keep the saved writing, or preview opening supported materials on the writing desk.');
+  t.f.set('ideas',{...found,mode:'ideas',complete:true,desk_open:false,next:null,status:'complete',stages:found.stages.map(row=>({...row,status:'approved'}))});
+  t.f.run('sRun(ideas)');
+  assert.ok(offered(),'finished ideas are offered Open on the desk');
+  t.f.set('done',{...found,mode:'write',complete:true,desk_open:true,next:null,status:'complete',stages:found.stages.map(row=>({...row,status:'approved'}))});
+  t.f.run('sRun(done)');
+  assert.ok(!offered(),'a finished blog with a draft keeps its own Open on the desk');
 }
 
 async function savedReadOnlyRecord(){

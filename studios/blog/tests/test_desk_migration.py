@@ -1113,8 +1113,9 @@ desk_chat.migrate(Path(sys.argv[1]), sys.argv[2], sys.argv[3])
                 'read-only',
                 lambda d, i: studio.write_json(d / 'run.json', {'schema': 999, 'driver': None}),
             ),
+            # A condition of the workspace is never this blog's outcome: it waits.
             'older-hub': (
-                'read-only',
+                'wait',
                 lambda d, i: studio.write_json(self.root / '.team-hub.json', {'schema': 1}),
             ),
             'pipeline': (
@@ -1172,6 +1173,112 @@ desk_chat.migrate(Path(sys.argv[1]), sys.argv[2], sys.argv[3])
         )
         studio.write_json(self.root / ident / 'run.json', {'schema': 1, 'driver': driver})
         self.assertEqual(desk_migration.classify(self.root, ident)['outcome'], 'wait')
+
+    def test_workspace_and_computer_conditions_wait_and_say_what_clears_them(self):
+        """An older Team Hub connection, a workspace needing a newer Blog Studio and an
+        unreadable computer identity belong to the workspace or this computer, not to the
+        blog: they wait, naming the condition and what clears it, never read-only."""
+        import desk_migration
+        from studio_sync import support
+
+        ident, directory = self.eligible()
+        studio.write_json(self.root / '.team-hub.json', {'schema': 1})
+        said = desk_migration.classify(self.root, ident)
+        self.assertEqual((said['outcome'], said['next']), ('wait', None))
+        self.assertIn('older Team Hub', said['reason'])
+        self.assertIn('hub leave', said['reason'])
+        (self.root / '.team-hub.json').unlink()
+        directory.rename(self.root / ident)
+        marker = {
+            'schema': 1,
+            'tool': 'blog-studio',
+            'name': 'Synthetic workspace',
+            'folder': self.root.name,
+            'branch': 'synthetic',
+            'minimum_runtime': '999.0.0',
+            'repository': None,
+        }
+        studio.write_json(self.root / 'hub.json', marker)
+        said = desk_migration.classify(self.root, ident)
+        self.assertEqual(said['outcome'], 'wait')
+        self.assertIn('Update Blog Studio', said['reason'])
+        marker['minimum_runtime'] = '4.9.0'
+        studio.write_json(self.root / 'hub.json', marker)
+        identity = support.data_root() / 'computer.json'
+        studio.write_json(identity, {'schema': 999, 'id': 'a' * 16})
+        before = self.snapshot(), identity.read_bytes()
+        said = desk_migration.classify(self.root, ident)
+        self.assertEqual(said['outcome'], 'wait')
+        self.assertIn('Take this blog', said['reason'])
+        self.assertEqual((self.snapshot(), identity.read_bytes()), before)
+
+    def test_a_run_record_that_is_not_an_object_is_read_only(self):
+
+        for value in ([], 'x', 3, None):
+            with self.subTest(value=value):
+                ident, directory = self.eligible()
+                (directory / runner.STATE).write_text(json.dumps(value))
+                with studio.locked(self.root):
+                    pass  # The page view takes the lock; its marker file is not saved work.
+                before = self.snapshot()
+                shown = self.preview(ident)
+                self.assertFalse(shown['eligible'])
+                self.assertTrue(shown['blockers'])
+                self.assertEqual((shown['outcome'], shown['next']), ('read-only', 'copy'))
+                self.assertIn('run record', shown['reason'])
+                page = management.view(self.root, 'run', {'id': [ident]})
+                self.assertEqual(page['saved_record']['why'], shown['reason'])
+                self.assertEqual(self.snapshot(), before)
+
+    def test_a_moved_research_execution_run_stays_readable_whatever_the_protocol(self):
+        """The migration keeps the run's research execution record without interpreting it,
+        so a later Harness Research protocol never makes the moved blog unreadable."""
+        import desk_migration
+        from studio_core import research_session
+        from studio_core.blog_migration import run_supported
+        from studio_core.sync_guard import worker_in_progress
+
+        ident = saved_fixtures.load(self.root, 'research-execution-drafted')
+        directory = studio.inside(self.root, 'articles', ident)
+        self.apply(ident)
+        with patch.object(research_session, 'PROTOCOL', 'harness-collection-v9'):
+            self.assertIsNotNone(desk_migration.metadata(directory))
+            self.assertFalse(worker_in_progress(self.root))
+            self.assertTrue(runner.engine(self.root).describe(ident)['on_desk'])
+            self.assertEqual(desk_migration.classify(self.root, ident)['outcome'], 'desk')
+        run = studio.read_json(directory / runner.STATE)
+        held = run['research_execution']
+        self.assertTrue(run_supported(run))
+        for broken in (
+            None,
+            [],
+            {**held, 'schema': 2},
+            {**held, 'protocol': ''},
+            {**held, 'protocol': 7},
+            {**held, 'workers': 0},
+            {**held, 'workers': 4},
+            {**held, 'workers': True},
+            {**held, 'capability': []},
+            {**held, 'capability': {'protocol': 'another-protocol'}},
+        ):
+            with self.subTest(execution=broken):
+                self.assertFalse(run_supported({**run, 'research_execution': broken}))
+        self.assertFalse(run_supported({k: v for k, v in run.items() if k != 'research_execution'}))
+
+    def test_the_read_only_files_view_serves_only_a_read_only_blog(self):
+        ident, directory = self.eligible()
+        with self.assertRaisesRegex(ValueError, 'saved file'):
+            management.view(self.root, 'saved-file', {'id': [ident], 'name': ['DRAFT.md']})
+        (directory / runner.STATE).write_text('{not json')
+        shown = management.view(self.root, 'saved-file', {'id': [ident], 'name': ['DRAFT.md']})
+        self.assertEqual(shown['text'], MANUSCRIPT)
+        # A folder that is no blog (in a team workspace any top-level folder) is refused.
+        for name in ('sources', 'profiles', 'no-such-blog'):
+            with self.subTest(folder=name):
+                (self.root / 'articles' / name).mkdir(exist_ok=True)
+                (self.root / 'articles' / name / 'DRAFT.md').write_text('Not a blog.')
+                with self.assertRaisesRegex(ValueError, 'saved file'):
+                    management.view(self.root, 'saved-file', {'id': [name], 'name': ['DRAFT.md']})
 
     def test_an_interrupted_opening_waits_and_a_damaged_one_is_read_only(self):
         import desk_migration

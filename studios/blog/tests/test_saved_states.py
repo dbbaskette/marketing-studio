@@ -131,6 +131,22 @@ class EarlyStopTests(SavedStateCase):
         found = self.submit(runner.survey(self.root, found['id']), self.ANGLES, page=True)
         self.assertEqual(found['awaits'], 'decision')
 
+    def test_new_work_from_files_without_an_angle_carries_no_placeholder(self):
+        # The run holds placeholders until an angle is chosen; they are not a point or audience.
+        found = self.saved('angles-unwritten')
+        directory, _, run = runner.load(self.root, found['id'])
+        self.assertEqual(run['brief']['audience'], 'To be chosen with the angle.')
+        said = desk_migration.classify(self.root, found['id'])
+        # The person's own note about the files is carried; the audience placeholder is not.
+        self.assertEqual(
+            said['start'], {'title': found['title'], 'point': 'A post for the team blog'}
+        )
+        # Started with no note, the run's goal is a placeholder too: no point is carried.
+        run['brief']['goal'] = 'Write a blog from the uploaded files.'
+        studio.write_json(directory / runner.STATE, run)
+        said = desk_migration.classify(self.root, found['id'])
+        self.assertEqual(said['start'], {'title': found['title']})
+
     def test_angles_waiting_for_a_choice_keep_their_saved_flow(self):
         found = self.saved('angles-waiting')
         self.refused(found['id'], 'no usable manuscript or supported outline', EARLY)
@@ -241,6 +257,18 @@ class MaterialStopTests(SavedStateCase):
         )
         self.assertEqual(meta['historical_stages']['outline']['status'], 'draft')
 
+    def test_approved_outline_notes_stay_approved_and_the_draft_is_next(self):
+        found = self.saved('unstructured-outline-approved')
+        self.assertEqual((found['next'], found['awaits']), ('draft', 'submission'))
+        result, meta, draft = self.migrates(found['id'])
+        # The person's real approval is kept; the finished outline step is not offered again.
+        self.assertEqual(meta['historical_stages']['outline']['status'], 'approved')
+        self.assertEqual((result['start']['step'], result['start']['steps']), ('draft', ['draft']))
+        self.assertEqual(result['start']['notes'], NOTES)
+        self.assertEqual(draft['sections'], [])
+        context = desk_chat.context(self.root, found['id'], 'draft')
+        self.assertEqual(context['scope'], 'draft')
+
     def test_failed_drafting_after_an_approved_outline_migrates_with_the_failure_kept(self):
         found = self.saved('outline-approved-failed')
         self.assertEqual((found['next'], found['awaits']), ('draft', 'submission'))
@@ -254,6 +282,36 @@ class MaterialStopTests(SavedStateCase):
         self.assertIsNone(result['start']['job'])
         described = runner.engine(self.root).describe(found['id'])
         self.assertEqual(described['error'], 'Synthetic failure.')
+
+    def test_research_that_ran_moves_with_its_bundle_contract_and_execution_record(self):
+        """A run whose research really ran with the pinned Harness Research stand-in, then
+        drafted: the research bundle and the contract are kept byte for byte. (A schema 4 run
+        whose parallel research ran cannot be a stable fixture: see saved_fixtures.py.)"""
+        from studio_core import research_contract
+
+        for state, schema in (('research-ran-schema3', 3),):
+            with self.subTest(schema=schema):
+                found = self.saved(state)
+                directory, _, run = runner.load(self.root, found['id'])
+                self.assertEqual(run['schema'], schema)
+                self.assertEqual(run['stages']['research']['status'], 'approved')
+                self.assertTrue(run['stages']['research'].get('hash'))
+                self.assertEqual('research_execution' in run, schema == 4)
+                research_contract.read_bundle(directory / 'research')
+                bundle = {
+                    str(p.relative_to(directory)): p.read_bytes()
+                    for p in (directory / 'research').rglob('*')
+                    if p.is_file()
+                }
+                self.assertTrue(bundle)
+                result, meta, _ = self.migrates(found['id'])  # Every original byte is checked.
+                self.assertEqual(meta['material'], 'draft')
+                self.assertEqual(meta['historical_stages']['research']['status'], 'approved')
+                kept = studio.read_json(directory / runner.STATE)
+                self.assertEqual(kept['research_contract'], run['research_contract'])
+                self.assertEqual(kept.get('research_execution'), run.get('research_execution'))
+                for name, raw in bundle.items():
+                    self.assertEqual((directory / name).read_bytes(), raw, name)
 
     def test_research_execution_run_migrates_with_its_record_kept(self):
         """A run saved with a research execution record (schema 4): its drafting reached a

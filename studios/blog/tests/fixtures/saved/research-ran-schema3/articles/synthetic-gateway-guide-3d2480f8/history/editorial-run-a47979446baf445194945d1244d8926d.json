@@ -1,0 +1,152 @@
+{
+  "schema": 3,
+  "approval": "page",
+  "engine": "codex",
+  "seconds": 900,
+  "brief": {
+    "goal": "Explain a fictional gateway",
+    "audience": "New authors"
+  },
+  "existing": false,
+  "mode": "write",
+  "pipeline": [
+    "research-plan",
+    "research",
+    "outline",
+    "draft",
+    "review",
+    "package"
+  ],
+  "stages": {
+    "research-plan": {
+      "status": "approved",
+      "hash": "76c36171b1e0d330c5bee4cab91505eb02db45b3dc009a28ff50c052c00f9cb7",
+      "basis": "6b489992327dab760d607fb2ef6a3ddae9fd7a7d72279fe7d66a2cd8ad1f2ae3",
+      "notes": "Synthetic worker judgment.",
+      "request": "",
+      "model_purpose": "research-plan",
+      "accepted_by": "page"
+    },
+    "research": {
+      "status": "approved",
+      "hash": "0af704d14281adaf6006980c3f08ab8c52446e7d5b8a023425b9ea83c8debd6b",
+      "basis": "5537542dea66d999e37d88832661ee9b483f1c70c0b6047a230acd192af9a3ff",
+      "notes": "The independent check accepted the report and the brief: it found their coverage honest and the brief fit for its use. Explicit synthetic scope and usable brief.",
+      "request": "",
+      "model_purpose": "research",
+      "accepted_by": "page"
+    },
+    "outline": {
+      "status": "approved",
+      "hash": "e8eec7723645784d50abcfa58e64b4fcc35fd075bfe5dbc4963d16274633d1f9",
+      "basis": "7be54b853dba6dd4a3fb2e0b7e5e606281b86da71432e7795915312b8718b173",
+      "notes": "Synthetic worker judgment.",
+      "request": "",
+      "model_purpose": "outline",
+      "accepted_by": "page"
+    }
+  },
+  "length": "style",
+  "research_contract": {
+    "schema": 2,
+    "version": "1.5.1",
+    "digest": "0c0203c568b3256258ad7218750b13d7b1d2e0032f3a4b8c510a082a4e5f0d46"
+  },
+  "review_policy": {
+    "schema": 1,
+    "level": "step_by_step"
+  },
+  "model_profiles": {
+    "schema": 1,
+    "policy": 3,
+    "agent": "codex",
+    "mode": "single",
+    "profiles": {
+      "quick": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "research": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "combining": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "checking": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "writing": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "fixing": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      }
+    }
+  },
+  "decisions": [
+    {
+      "event": "Created from page",
+      "at": "2026-01-05T09:30:00+00:00"
+    },
+    {
+      "event": "Submitted research-plan",
+      "at": "2026-01-05T09:30:00+00:00"
+    },
+    {
+      "event": "approve research-plan",
+      "at": "2026-01-05T09:30:00+00:00"
+    },
+    {
+      "event": "Selected model for research",
+      "at": "2026-01-05T09:30:00+00:00"
+    },
+    {
+      "event": "Submitted research",
+      "at": "2026-01-05T09:30:00+00:00"
+    },
+    {
+      "event": "approve research",
+      "at": "2026-01-05T09:30:00+00:00"
+    },
+    {
+      "event": "Submitted outline",
+      "at": "2026-01-05T09:30:00+00:00"
+    },
+    {
+      "event": "approve outline",
+      "at": "2026-01-05T09:30:00+00:00"
+    }
+  ],
+  "approved": {
+    "research-plan": "76c36171b1e0d330c5bee4cab91505eb02db45b3dc009a28ff50c052c00f9cb7",
+    "research": "0af704d14281adaf6006980c3f08ab8c52446e7d5b8a023425b9ea83c8debd6b",
+    "outline": "e8eec7723645784d50abcfa58e64b4fcc35fd075bfe5dbc4963d16274633d1f9"
+  },
+  "model_jobs": [
+    {
+      "model": null,
+      "effort": null,
+      "source": "inherit",
+      "profile": "research",
+      "purpose": "research",
+      "step": "research",
+      "product": "Blog Studio",
+      "policy": 3,
+      "actual_model": null,
+      "actual_effort": null,
+      "attempt": 1,
+      "permission": "research"
+    }
+  ]
+}

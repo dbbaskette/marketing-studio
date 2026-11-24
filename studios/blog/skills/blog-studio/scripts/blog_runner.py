@@ -568,8 +568,13 @@ def load(root, ident):
         raise ValueError('This run needs a newer Blog Studio runtime.')
     if run.get('schema') == 4:
         from studio_core import research_session
+        from studio_core.blog_migration import run_supported
 
-        if not research_session.protocol(run):
+        # A blog moved to the desk keeps this run only to read, so its record need only
+        # have the known shape; a run that still continues needs the current protocol.
+        if not research_session.protocol(run) and not (
+            run_supported(run) and (directory / 'desk' / 'migration.json').is_file()
+        ):
             raise ValueError('This research execution record is not supported.')
     if run.get('schema') == 2 and not run.get('review_policy'):
         raise ValueError('This run is missing its saved review level. Restore its run record.')

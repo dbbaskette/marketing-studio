@@ -1,0 +1,131 @@
+{
+  "owner": "harness-research-synthesis",
+  "schema": 2,
+  "dossier": {
+    "schema": 2,
+    "topic": "Synthetic gateway guide",
+    "audience": "New authors",
+    "purpose": "Inform a blog: Explain a fictional gateway. Prioritize the central argument, mechanisms and strongest objections.",
+    "scope": "Evidence, objections and qualifications for the blog goal: Explain a fictional gateway. Use the supplied documents. Any public page may be used.",
+    "source_mode": "mixed",
+    "sources": [
+      {
+        "id": "source-a",
+        "file": "sources/source-c215dc60461a.txt",
+        "origin": "input.md",
+        "title": "Synthetic source",
+        "publisher": "Synthetic publisher",
+        "permission": "selected",
+        "context": "full"
+      }
+    ],
+    "facts": [
+      {
+        "id": "fact-a",
+        "statement": "More than one instance keeps capacity.",
+        "author": "author-4e4e4755c690a7d011894638",
+        "citations": [
+          {
+            "source": "source-a",
+            "quote": "More than one instance keeps capacity."
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "instance-min",
+        "title": "A conditional choice",
+        "summary": {
+          "text": "More than one instance keeps capacity.",
+          "refs": [
+            "fact-a"
+          ],
+          "kind": "summary"
+        },
+        "support": [
+          "fact-a"
+        ],
+        "counter": [],
+        "implications": [],
+        "conditions": [
+          {
+            "text": "Only within this synthetic example.",
+            "refs": [
+              "fact-a"
+            ],
+            "kind": "inference"
+          }
+        ],
+        "gaps": []
+      },
+      {
+        "id": "health-checks",
+        "title": "A conditional choice",
+        "summary": {
+          "text": "More than one instance keeps capacity.",
+          "refs": [
+            "fact-a"
+          ],
+          "kind": "summary"
+        },
+        "support": [
+          "fact-a"
+        ],
+        "counter": [],
+        "implications": [],
+        "conditions": [
+          {
+            "text": "Only within this synthetic example.",
+            "refs": [
+              "fact-a"
+            ],
+            "kind": "inference"
+          }
+        ],
+        "gaps": []
+      }
+    ],
+    "sections": [
+      {
+        "id": "explain",
+        "title": "Explanation",
+        "blocks": [
+          {
+            "text": "More than one instance keeps capacity.",
+            "refs": [
+              "fact-a"
+            ],
+            "kind": "summary"
+          }
+        ]
+      }
+    ],
+    "brief": [
+      {
+        "id": "teaching",
+        "title": "What to explain first",
+        "blocks": [
+          {
+            "text": "Use the synthetic example within its stated bounds.",
+            "refs": [
+              "instance-min"
+            ],
+            "kind": "recommendation"
+          }
+        ]
+      }
+    ]
+  },
+  "author": "author-4e4e4755c690a7d011894638",
+  "digest": "98a4a95c29096f7d80265d1545039e3aa42eb65ba86323149453b4ca6ced9064",
+  "sources": [
+    {
+      "id": "source-a",
+      "file": "sources/source-c215dc60461a.txt",
+      "sha256": "ed83f5c41b2505e576c2bcf37f2ad39dae9fb9cbafff55b9ef0799832fc208da",
+      "snapshot": "research/sources/revisions/ed83f5c41b2505e576c2bcf37f2ad39dae9fb9cbafff55b9ef0799832fc208da.txt"
+    }
+  ],
+  "review": null
+}
