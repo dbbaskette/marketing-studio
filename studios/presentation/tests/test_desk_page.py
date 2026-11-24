@@ -1849,6 +1849,75 @@ OWN_NOTES = ('Speaker notes in your own deck are kept as they are. Selected chan
              'only the text on the slides.')
 
 
+class LeadCardTests(DeskPageCase):
+    """#516: a cover, section or closing slide's words are typed on its own card and saved a
+    second after the last key, as any card's words are (`desk-words`, with its limit and its
+    "does not fit" refusal), with no price; the Outline tab then shows the same words."""
+
+    @staticmethod
+    def card_of(view: dict, number: int) -> dict:
+        return next(card for card in cards_of(view['desk']) if card['number'] == number)
+
+    def test_a_cover_s_title_is_saved_as_it_is_typed_and_the_outline_tab_agrees(self):
+        path = self.desk_deck()
+        view = self.run_of(path)
+        title = 'Rolling restarts, plainly'
+        result = self.open_deck(path, view, [
+            to(1), {'snapshot': 'card'}, {'fill': 'Title of slide 1', 'value': title},
+            {'snapshot': 'typed'}, {'timer': 'flush'}, {'snapshot': 'saved'}],
+            **{'POST /api/desk-words': [ok(view)]})
+        card = result['snapshots']['card']
+        self.assertEqual(card['fields']['Title of slide 1'], 'Rolling restarts')
+        self.assertEqual(card['limits']['Title of slide 1'], 2000)
+        self.assertIn('Subtitle of slide 1', card['fields'])
+        # No price: a lead slide's words are put in its drawing with no assistant.
+        lead = card['text'][card['text'].index('Slide 1 · Cover'):card['text'].index('History')]
+        for priced in ('Last time', 'Its price is worked out', 'Redraw slide 1', 'Save'):
+            self.assertNotIn(priced, lead)
+        self.assertEqual(result['snapshots']['typed']['posts'], 0, 'nothing is sent while typing')
+        (address, body), = self.posts(result)
+        self.assertEqual(address, '/api/desk-words')
+        self.assertRegex(body.pop('session'), SESSION_SHAPE)
+        self.assertEqual(body, {'path': path, 'number': 1, 'field': 'title', 'text': title,
+                                'seen': view['desk']['seen']})
+        self.assertIn('Saved.', result['snapshots']['saved']['text'])
+        # What the page sends is what the server takes, and both views read the same words.
+        after = self.post('desk-words', {**body, 'session': 'a' * 16})
+        self.assertEqual(self.card_of(after, 1)['words']['title'], title)
+        self.assertEqual(after['desk']['outline']['slides'][0]['title'], title)
+        again = self.open_deck(path, after, [to(1), {'snapshot': 'card'}, {'click': 'Outline'},
+                                             {'snapshot': 'outline'}])['snapshots']
+        self.assertEqual(again['card']['fields']['Title of slide 1'], title)
+        self.assertEqual(again['outline']['fields']['Title of slide 1'], title)
+
+    def test_a_lead_slide_s_detail_is_a_box_on_its_card_saved_the_same_way(self):
+        # The slides tool's lead layouts take one line under the title, so no deck here has a
+        # lead slide with a detail: the card is shown one to see its box and what it sends.
+        path = self.desk_deck()
+        view = self.run_of(path)
+        shown = copy.deepcopy(view)
+        self.card_of(shown, 1)['words']['detail'] = 'Thirty minutes.'
+        result = self.open_deck(path, shown, [
+            to(1), {'snapshot': 'card'}, {'fill': 'Detail of slide 1', 'value': 'Twenty minutes.'},
+            {'timer': 'flush'}], **{'POST /api/desk-words': [ok(view)]})
+        self.assertEqual(result['snapshots']['card']['fields']['Detail of slide 1'],
+                         'Thirty minutes.')
+        (address, body), = self.posts(result)
+        self.assertEqual((address, body['number'], body['field'], body['text']),
+                         ('/api/desk-words', 1, 'detail', 'Twenty minutes.'))
+
+    def test_an_unsaved_outline_title_is_said_on_the_lead_card(self):
+        path = self.desk_deck()
+        view = self.run_of(path)
+        result = self.open_deck(path, view, [
+            {'click': 'Outline'}, {'fill': 'Title of slide 1', 'value': 'A cover'},
+            {'click': 'Slides'}, to(1), {'snapshot': 'card'}],
+            **{'POST /api/desk-outline-price': [ok({'says': 'No section changes.',
+                                                    'sections': []})]})
+        self.assertIn('On the Outline tab its title is “A cover”, not saved yet.',
+                      result['snapshots']['card']['text'])
+
+
 class ExistingDeskTests(DeskPageCase):
     """Task 3.4: an existing deck on the desk. Its cards show each slide as it was in your
     deck beside the slide now; at Brand only and Polish the words are read, not edited, with

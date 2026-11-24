@@ -209,8 +209,8 @@
     h.intakeStore().pages(form,{draft,steps,names:['Source','Audience','Review'],validate,summaries,
       start:go => h.startDeck(go,{ready,form:formFor}),close:h.closeSheet,
       discarded:() => {h.view.draft = null;}});
-    return [h.add(make('div', 'sheet-heading'), h.sheetTitle('New deck')), h.copiedNote(draft), form]
-      .filter(Boolean);
+    return [h.add(make('div', 'sheet-heading'), h.sheetTitle('New deck')), h.copiedNote(draft),
+      h.libraryStartNote(draft), form].filter(Boolean);
   }
 
   function kindCards(draft) {
@@ -1279,7 +1279,11 @@
     } else {
       return [];
     }
-    parts.push(make('p', 'quiet', 'Find it on Marketing Studio’s Library screen.'), problem);
+    // From the library, another studio can start from the delivered deck.
+    const onward = kept.state === 'kept' && kept.document
+      ? h.continueAction({ id: kept.document, revision: kept.revision }, 'this deck') : null;
+    parts.push(make('p', 'quiet', 'Find it on Marketing Studio’s Library screen.'),
+      onward ? bar(onward) : null, problem);
     return [h.add(make('div', 'desk-library-status'), ...parts)];
   }
 
@@ -2004,6 +2008,7 @@
   function asideKey(run) {
     const found = run.desk;
     return [found.sources, found.research, found.research_items, found.research_price,
+      found.research_library,
       found.leave_out_price, Boolean(found.working), found.expected];
   }
 
@@ -2171,6 +2176,12 @@
       h.add(node, make('p', 'quiet', account.read || ''),
         account.check ? make('p', 'quiet', account.check.said || '') : null);
     }
+    // Research that passed verification is kept in the Document Library too: said here.
+    const kept = account && found.research_library;
+    if (kept && kept.state === 'kept') {
+      h.add(node, make('p', 'quiet', 'Kept in the Document Library as research, revision '
+        + kept.revision + '. Other studios can start from it.'));
+    } else if (kept && kept.problem) h.add(node, make('p', 'quiet', kept.problem));
     const list = make('ul', 'plain');
     for (const item of items) {
       const tick = StudioLists.tick({ id: 'desk-leave-' + item.id, label: 'Leave out '

@@ -180,11 +180,14 @@ What a caller needs to know
   seen}, `/api/drafts/deck-brand-copy` {path, level, skill, seen} (Change brand: a copy of
   the deck rebranded by a rebranding skill, nothing drawn again), `/api/drafts/deck-brand`
   {path, level, brand: {brand, variant}, seen} (the decks drawn again in another brand), `/api/drafts/level-ready` {path, level, seen: {name: hash}, kind?: 'scenario' or
-  'yoodli', for those cards alone}, `/api/drafts/draft`
+  'yoodli', for those cards alone}, `/api/drafts/reviewed-ready` {path, level, scope:
+  'level' or 'training', seen: {name: hash}, kind?, unopened?: [names marked unread]} (Mark reviewed materials ready: only
+  what was opened in its current version and is not held; the rest is left and said in
+  `left`), `/api/drafts/draft`
   {path, seen: {name: hash}} (Return to draft, and Undo after Mark ready),
   `/api/drafts/update` {path, name}, `/api/drafts/keep` {path, name, reason, seen} and
   `/api/drafts/send` {path, name} each answer it after the change (`level-ready` adds
-  `marked` and `stopped`, `draft` adds `returned`, `send` adds `made` and `problems`).
+  `marked` and `stopped`, `reviewed-ready` `marked` and `left`, `draft` adds `returned`, `send` adds `made` and `problems`).
   Each is 409 with `drafts.NOT_ON_DESK` for a saved training, and a desk training is 409
   with `drafts.ON_DESK` at `/api/decide`, `/api/review`, `/api/outline`, `/api/look` and
   `GET /api/gate`. A teammate reads the desk with only
@@ -249,15 +252,16 @@ from studio_core.document_library import LibraryError
 from studio_core.document_library import context as library_context
 
 from studio_core import modules, polling
+from studio_core.shared_runner import caller
 from studio_core.shared_runner import page as _shared
 modules.bind(globals(), _shared, _shared.NAMES)
 
 DRAFTS = '/api/drafts'
 # The desk's decisions, each under DRAFTS: Mark ready, Mark this level ready, Return to draft
 # (and Undo), Update, Keep as it is, and Send to its copies.
-DECIDED = tuple(f'{DRAFTS}/{action}' for action in ('ready', 'level-ready', 'draft', 'update',
-                                                     'keep', 'send', 'update-all',
-                                                     'stop-updates'))
+DECIDED = tuple(f'{DRAFTS}/{action}' for action in ('ready', 'level-ready', 'reviewed-ready',
+                                                     'draft', 'update', 'keep', 'send',
+                                                     'update-all', 'stop-updates'))
 # Typing into a part, bringing back one of its versions, and committing what was typed.
 TYPED = tuple(f'{DRAFTS}/{action}' for action in ('save', 'restore', 'share'))
 JOBS = tuple(f'{DRAFTS}/{action}' for action in ('note', 'revise', 'selection', 'stop', 'retry', 'layout', 'write-whole'))
@@ -376,6 +380,12 @@ class RunnerPage(desk.Page):
     reads = (*desk.READS, *READS)
     writes = (*desk.WRITES, *WRITES)
     framed = ('/api/deck-draft',)   # a deck's wireframe draft, opened by its frame
+
+    # Each request is answered knowing whether the network bridge carried it
+    # (`studio_core.shared_runner.caller`): a phone may not read this computer's folders.
+    def answer(self, target, headers, method='GET', body=None):
+        with caller.answering(headers):
+            return super().answer(target, headers, method, body)
 
     # --- reads ---------------------------------------------------------------------------
 
@@ -710,7 +720,8 @@ class RunnerPage(desk.Page):
         hash}}, which adds `returned`, Update {name}, Keep as it is {name,
         reason, seen}, and Send to its copies {name}, which adds `made` and `problems`."""
         root = self.on_desk(desk.text(sent, 'path'))
-        name = None if path in (f'{DRAFTS}/level-ready', f'{DRAFTS}/draft',
+        name = None if path in (f'{DRAFTS}/level-ready', f'{DRAFTS}/reviewed-ready',
+                                f'{DRAFTS}/draft',
                                 f'{DRAFTS}/update-all', f'{DRAFTS}/stop-updates') \
             else desk.text(sent, 'name')
         added = {}
@@ -725,6 +736,24 @@ class RunnerPage(desk.Page):
                     raise desk.Refusal(HTTPStatus.BAD_REQUEST, 'Give the level as text and '
                                        'what was shown of each card by its name.')
                 added = self.engine.mark_level_ready(root, level or None, seen or {}, kind)
+            elif path == f'{DRAFTS}/reviewed-ready':
+                level, seen, kind = sent.get('level'), sent.get('seen'), sent.get('kind')
+                scope = sent.get('scope', 'level')
+                unopened = sent.get('unopened', [])
+                if level is not None and not isinstance(level, str) \
+                        or kind not in (None, 'scenario', 'yoodli') \
+                        or scope not in ('level', 'training') \
+                        or not isinstance(unopened, list) \
+                        or not all(isinstance(name, str) for name in unopened) \
+                        or not isinstance(seen, dict) or not all(
+                            isinstance(key, str) and isinstance(value, str)
+                            for key, value in seen.items()):
+                    raise desk.Refusal(HTTPStatus.BAD_REQUEST, 'Give the level as text, '
+                                       'the scope as level or training, and the version '
+                                       'you opened of each material by its name.')
+                added = self.engine.mark_reviewed_ready(root, level or None, seen, kind,
+                                                        every=scope == 'training',
+                                                        unopened=unopened)
             elif path == f'{DRAFTS}/draft':
                 seen = sent.get('seen')
                 if not isinstance(seen, dict):
@@ -986,6 +1015,10 @@ class RunnerPage(desk.Page):
                 raise desk.Refusal(HTTPStatus.BAD_REQUEST, str(error)) from None
         if path == '/api/research-sources':
             from studio_core.research_sources import Sources
+            # A phone through the network bridge may not read this computer's folders.
+            refused = caller.folder_refused(sent)
+            if refused:
+                raise desk.Refusal(HTTPStatus.FORBIDDEN, refused)
             try:
                 # With Training Studio's Keep in library for a file it captures.
                 return desk.as_json(HTTPStatus.OK, library.research_sources(

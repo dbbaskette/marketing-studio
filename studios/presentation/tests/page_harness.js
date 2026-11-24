@@ -813,7 +813,15 @@ async function app(file) {
         this.earlier.push(this.state);
         this.state = state;
       },
-      replaceState(state) { this.state = state; },
+      // A new address is kept in the report (`address`) and its fragment becomes the page's.
+      replaceState(state, title, url) {
+        this.state = state;
+        if (typeof url === 'string') {
+          report.address = url;
+          const at = url.indexOf('#');
+          window.location.hash = at < 0 ? '' : url.slice(at);
+        }
+      },
       // The browser's own way back: the state before this one, announced to the page.
       back() {
         if (!this.earlier.length) return;
@@ -955,6 +963,13 @@ async function app(file) {
       arc: () => part('ol', 'track track-arc', 'workbench-arc'),
       pulse: () => part('div', 'workbench-pulse'),
       move: () => part('section', 'move-card', 'workbench-move'),
+      // Continue in another studio: Marketing Studio's link when a plan names its home
+      // (`continueHome`), as the shell gives it when Marketing Studio opened the page; else null.
+      continueLink(doc) {
+        const id = doc && (doc.id || doc.document);
+        return plan.continueHome && id && Number.isInteger(doc.revision)
+          ? plan.continueHome + '/#token=home-key&continue=' + id + '@' + doc.revision : null;
+      },
     };
   }
   // The shared desk kit (drafting.js, linked from ui-kit), then the page, then the deck desk,

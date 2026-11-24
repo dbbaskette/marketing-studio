@@ -76,6 +76,16 @@ class Researching:
                 record['research'] = {**(record.get('research') or {}),
                                       'contract': 2, 'digest': manifest['digest']}
                 self._done(root, step, clock, 'keep the reviewed research bundle', record)
+            # Research that passed verification is kept in the Document Library too. The
+            # step is kept and committed already: nothing here may fail it.
+            try:
+                self._keep_research(root)
+            except Exception:   # noqa: BLE001  the research stands whatever happens here
+                from studio_core.document_library import research as library_research
+
+                from runner import library_keep
+                library_keep.note_research(root, {'state': 'failed',
+                                                  'problem': library_research.NOT_KEPT})
             return
         with self.files:
             self.research().status(root)
@@ -92,6 +102,26 @@ class Researching:
             write_atomic(root / REPORT, self._report_text(root, record))
             (record.get('research') or {}).pop('again', None)
             self._done(root, step, clock, 'keep the research report', record)
+
+    def _keep_research(self, root: Path) -> dict:
+        """Keep the deck's verified research in the Document Library, under the deck's own
+        key, and note how that went beside the deck's other library record
+        (`library_keep.RESEARCH`, under sources/, which is never shared: another computer has
+        its own library), which the desk's Research panel says. Never raises and never stops
+        the research: a library that cannot keep it is said, and the deck carries on."""
+        from studio_core.document_library import research as library_research
+
+        from runner import library_keep
+        record = self._load(root)
+        title = record.get('title') or root.name
+        key = library_keep._key(root, record)
+        kept = library_research.keep_research(
+            None, studio='presentation', project={'id': key.partition(':')[2], 'title': title},
+            case=root / 'research', title=f'{title}: research')
+        said = {name: kept[name] for name in ('state', 'document', 'revision', 'problem')
+                if kept.get(name) is not None}
+        library_keep.note_research(root, said)
+        return said
 
     def _keep_objections(self, root: Path, refusal, groups: list) -> None:
         """Write every objection the independent check still had, under its group, where

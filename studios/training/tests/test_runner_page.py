@@ -2990,7 +2990,7 @@ class DeskPageTests(PageCase):
         self.assertEqual((view['progress']['line'], view['progress']['minutes']), ('', None))
         self.assertEqual(view['needs'], [], 'a draft never needs the person')
         self.assertTrue(view['team']['ours'])
-        self.assertEqual(sorted(view['sources']), ['account', 'documents', 'marked', 'plan', 'updates'])
+        self.assertEqual(sorted(view['sources']), ['account', 'documents', 'library', 'marked', 'plan', 'updates'])
         self.assertEqual(len(view['sources']['plan']), 4)
         self.assertIsNone(view['job'])
         # Each deck's whole time is kept here, for the next start's estimate.

@@ -160,7 +160,7 @@ A training saves the model and reasoning level it uses for each kind of work (Qu
 
 Under the level tabs, one line says how many of the level's materials are ready, still to write, drafts to mark ready, or need attention or a decision. A material is ready on its own; a level is complete once all of its materials are, and downloads and Google Docs stay optional. The fuller readiness explanation is under **About Ready and delivery** below the material, so the material comes first. While a deck's slide text waits for you, its tab says **Needs your text approval** and **Review slide text** takes you to it; materials not written yet say **Not written yet**, never Writing, while nothing works on them. Time so far is a detail you open; elapsed time is never an estimate of what is left.
 
-**Mark ready** records your approval of a material. You can also mark a level ready: **Mark this level ready** appears only while one of the level's materials is a draft waiting for it, and it opens a sheet first. The sheet lists each material it will mark as **Opened** or **Not opened yet** (with a way to open it), says which guides and briefs go to the Document Library, and ends with its submit and **Cancel**; Cancel changes nothing and returns you to the button. The desk stops at the first material that needs attention. Settle holds, grave deck findings and other blocking checks first.
+**Mark ready** records your approval of a material. You can also mark what you have read together: **Mark this level ready** appears once every material of the level is written, or while two or more drafts wait, and it opens a sheet first. By default it marks only the drafts you opened here in the version they are now. One unticked choice in the sheet, **Also mark the N I have not opened**, names those drafts and marks them too, as Mark this level ready always did; held materials and ones still being written are left whatever is ticked, and the submit says how many it marks. A draft that changed after you opened it is marked as it is now, the version on its card. The commit and the decision kept say how many were not opened ("4 materials (3 not opened) of level 101"). The sheet lists what it will mark, then what it leaves as it is and why (**Not opened yet**, **Changed since you opened it**, **Held: update it or keep it as it is first**, **Needs your decision first** or **Still being written**, each with a way to open it where there is one), says which guides and briefs go to the Document Library, and ends with its submit and **Cancel**; Cancel changes nothing and returns you to the button. In a training with levels, **Every level** in the same sheet marks what you opened at every level at once. A version the runner finds changed since you opened it is left and said on the desk; the rest is marked in one commit. Practice scenarios and Yoodli layouts have **Mark all N ready** beside their picker, which works the same way.
 
 Ready can be taken back on purpose. The toast after Mark ready offers **Undo** while each version is the one you marked, and puts every material back exactly as it was. A Ready card has a quiet **Return to draft**, bound to the version shown. Neither removes anything from the Document Library: the card then says the library keeps revision N until you mark it ready again, and marking the same words ready again adds no revision. Return to draft is offered for work the runner drives; in a conversation, readiness is decided there.
 
@@ -227,7 +227,22 @@ Its card says which revision, or that the save failed, with **Keep in library ag
 Returned to draft, by an edit, **Undo** or **Return to draft**, its card says the library
 keeps that revision until it is marked ready again; nothing is removed from the library.
 A guide or brief that was Ready before the library kept anything offers **Keep in
-library**.
+library**. When Marketing Studio opened Training Studio, a kept guide or brief also offers
+**Continue in another studio**, which opens Marketing Studio's Library on that revision with
+the studios to continue in.
+
+Research that passes its independent check is kept in the Document Library too, as research
+under the training's own key (`studio_core.document_library.research.keep_research`), and
+**Research & sources** says which revision ("Kept in the Document Library as research,
+revision N."), or why it was not kept. Keeping it never stops or delays the training.
+
+**New training**'s sources take a folder on this computer or a Google Drive folder link (**Add a folder**) and spreadsheets (.xlsx, every sheet read as text), as research's source editor always has. Opened from a phone through Marketing Studio's network link, a folder on this computer is refused with "A folder on this computer can be added only on this computer. From a phone, add a Google Drive folder link or upload the files."; a Drive folder link and uploads are still taken.
+
+Opened from Marketing Studio's **Continue in another studio** (`library=<id>@<revision>` in
+the link), Training Studio opens **New training** with that revision already among the
+sources of step 2, and says "Starting from: <title>, from the Document Library." at the top.
+Nothing is made until you choose **Start**. An item that was removed, is missing or has no
+readable text is said there instead, and the form opens as it would.
 
 ### Choosing practice and Yoodli scenarios
 

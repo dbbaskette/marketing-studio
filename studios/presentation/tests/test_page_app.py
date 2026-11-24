@@ -100,8 +100,14 @@ class LinkTests(unittest.TestCase):
         # only from the server or a downloaded deck.
         targets = re.findall(r'\.href = ([^;]+);', script)
         # The start form has no such link: where a deck stops is chosen on it.
-        self.assertEqual(sorted(targets), sorted(['address', 'held',
+        # Continue in another studio links only to what the shell's continueLink gives: the
+        # Marketing Studio home that opened this page, on this host (#514).
+        self.assertEqual(sorted(targets), sorted(['address', 'held', 'link',
                          'suiteReturn(home, window.location.hash, window.location)', 'settingsAddress()']))
+        onward = script[script.index('function continueAction('):]
+        onward = onward[:onward.index('\n}\n')]
+        self.assertIn('StudioShell.continueLink(doc) : null;', onward)
+        self.assertIn('if (!link) return null;', onward)
         self.assertIn("return '/onboarding/#token=' + view.token;", script)
         self.assertIn('let home = suiteHome(window.location.hash, window.location)\n'
                       '    || rememberedSuiteHome(window.location) || suitePort(document.body?.dataset?.suitePort, window.location);', script)

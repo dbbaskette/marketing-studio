@@ -46,6 +46,8 @@ from runner.steps import outline as outlines
 from studio_core import document_library
 
 STATUS = Path('sources') / 'library.json'
+# How the Document Library kept the deck's verified research: this computer's alone.
+RESEARCH = Path('sources') / 'research-library.json'
 KEPT_ONLY = ' Only its slide Markdown is kept. The delivered deck itself is unchanged.'
 NO_PDF = ('There is no PDF of this delivered deck on this computer: it was delivered or '
           'previewed elsewhere.' + KEPT_ONLY)
@@ -144,6 +146,24 @@ def rendered_pdf(root, delivered: dict, run: dict | None = None
     if 'pdf' in last and last['pdf'] != hashlib.sha256(data).hexdigest():
         return None, PDF_CHANGED
     return data, None
+
+
+def note_research(root, said: dict) -> None:
+    """Note how keeping the verified research went, under sources/, which is never shared.
+    Best effort: the research stands either way."""
+    try:
+        write_atomic(Path(root) / RESEARCH, json.dumps(said, indent=2) + '\n')
+    except (OSError, WorkspaceError):
+        pass
+
+
+def research_noted(root) -> dict | None:
+    """How keeping the verified research last went on this computer, or None."""
+    try:
+        found = json.loads((Path(root) / RESEARCH).read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return None
+    return found if isinstance(found, dict) else None
 
 
 def keep(root, run: dict, delivered: dict) -> dict:

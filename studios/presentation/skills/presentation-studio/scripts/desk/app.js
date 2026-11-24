@@ -147,7 +147,7 @@ const DOCUMENT_BYTES = 8000000;      // the largest document the runner reads
 const DECK_BYTES = 85000000;         // the largest deck the page sends, as base64 it is larger
 const SOURCE_KINDS = {
   document: [['upload', 'Upload a file'], ['paste', 'Paste the text'],
-    ['google', 'A Google Docs link']],
+    ['google', 'A Google Docs link'], ['folder', 'A folder or a spreadsheet']],
   existing: [['upload', 'Upload a .pptx'], ['google', 'A Google Slides link']],
 };
 // A document is a finished script, or material to build from: the two kinds classify knows.
@@ -3112,6 +3112,13 @@ function sourceFields(draft) {
             + megabytes(DOCUMENT_BYTES) + '. It stays on this computer and is never shared.' }),
       chosen);
       paintChosenLater(chosen);
+    } else if (kind === 'folder') {
+      // Read, its one document is the uploaded file: the form shows it as chosen.
+      add(holder, ...folderFields(draft, () => {
+        draft.source = kinds.findIndex((one) => one[0] === 'upload');
+        paintNew(false);
+        focusKey('new-source ' + draft.source);
+      }));
     } else if (kind === 'paste') {
       add(holder, field('new-text', 'The text', draft, 'text', { long: true, rows: 8,
         limit: 200000, hint: 'Paste it whole. It stays on this computer and is never '
@@ -3128,6 +3135,59 @@ function sourceFields(draft) {
       draft.source = index;
       fill();
     }, 'new-source'), holder];
+}
+
+// A deck from a document, read from a folder on this computer, a Google Drive folder link or
+// a spreadsheet: the runner reads it (`/api/document-intake`, source_intake) and answers the
+// one document it holds, which becomes the uploaded file. `done` shows it as chosen. A folder
+// on this computer is refused when the page is opened from a phone.
+function folderFields(draft, done) {
+  const said = make('p', 'quiet field-hint');
+  said.id = 'new-folder-said';
+  said.setAttribute('role', 'status');
+  const use = async (sent, pressed) => {
+    pressed.disabled = true;
+    said.textContent = 'Reading it…';
+    refuse('new-folder', '');
+    try {
+      const found = await send('document-intake', sent);
+      draft.upload = { name: found.name, size: found.bytes, encoded: found.content };
+      toast('Read: ' + found.name + '. It is the document the deck is made from.');
+      done();
+    } catch (failure) {
+      said.textContent = '';
+      refuse('new-folder', failure.message);
+    }
+    pressed.disabled = false;
+  };
+  const read = capsule('Read the folder', '', () => {
+    const location = String(draft.folder || '').trim();
+    if (!location) {
+      refuse('new-folder', 'Give a folder path or a Google Drive folder link first.');
+      return;
+    }
+    use({ location }, read);
+  }, 'new-folder-read');
+  const sheet = field('new-sheet', 'Or a spreadsheet (.xlsx)', {}, 'file', { accept: '.xlsx',
+    hint: 'Every sheet is read as text, under its name.',
+    picked: async (input) => {
+      const file = Array.from(input.files || [])[0];
+      if (!file) return;
+      let encoded = '';
+      try {
+        encoded = await base64Of(file);
+      } catch (failure) {
+        refuse('new-folder', failure.message);
+        return;
+      }
+      const sheet = { name: file.name };
+      sheet.data = encoded;   // its contents, in base64
+      use({ file: sheet }, read);
+    } });
+  return [field('new-folder', 'A folder on this computer, or a Google Drive folder link', draft,
+    'folder', { hint: 'It must hold one document: a text, Markdown, Word, web page or PDF file. '
+      + 'From a phone, give a Google Drive folder link.' }), add(make('div', 'bar'), read),
+  said, sheet];
 }
 
 // The picker says what was chosen as soon as it is on the screen.
@@ -3430,6 +3490,9 @@ function missingIn(draft, name, includeResearch = true) {
         ? 'Wait a moment: the file is still being read.' : 'Choose the file first.');
     } else if (kind === 'paste') {
       need('new-text', draft.text.trim(), 'Paste the text first.');
+    } else if (kind === 'folder') {
+      need('new-folder', false, 'Read the folder or the spreadsheet first: the document it '
+        + 'holds becomes the file.');
     } else {
       need('new-link', draft.link.trim(), 'Give the link first.');
     }
@@ -7912,10 +7975,110 @@ function linkToken() {
   return found ? found[1] : '';
 }
 
+// Continue in another studio: Marketing Studio opens this page with `library=<id>@<revision>`
+// in its fragment. It is read once, as the page begins, and checked here again: a Document
+// Library ID and a revision from 1 to 1000, or nothing.
+// This page load, to tell a refusal said now from one kept with a saved form.
+const PAGE_LOAD = String(Date.now()) + '-' + String(Math.random()).slice(2);
+
+function forgetLibraryLink() {
+  try {
+    const params = new URLSearchParams(String(window.location.hash || '').replace(/^#/, ''));
+    if (!params.has('library')) return;
+    params.delete('library');
+    const kept = params.toString();
+    window.history.replaceState(window.history.state, '', (window.location.pathname || '')
+      + (window.location.search || '') + (kept ? '#' + kept : ''));
+  } catch (failure) {
+    // A browser that cannot change its address keeps it: the sheet opens once per load.
+  }
+}
+
+function libraryFromLink(hash) {
+  const given = new URLSearchParams(String(hash || '').replace(/^#/, '')).get('library') || '';
+  const found = /^([a-z0-9][a-z0-9-]{0,63})@([1-9][0-9]{0,3})$/.exec(given);
+  if (!found || Number(found[2]) > 1000) return null;
+  return { id: found[1], revision: Number(found[2]) };
+}
+
+// The New deck sheet opened from a Document Library item: a deck from an idea, researched,
+// with that revision picked as a source (the library's documents go with a researched deck),
+// said at the top of the sheet. Nothing is made until the person presses Start. An item that
+// is hidden, missing or cannot be read is said instead, and the sheet opens as it would.
+async function openFromLibrary(pick) {
+  let read = null, why = '';
+  try {
+    read = await send('library-document', { id: pick.id, revision: pick.revision });
+    if (!read || read.readable === false) why = 'it has no text that can be read';
+  } catch (failure) {
+    why = failure.message || 'it could not be found';
+  }
+  await restoreIntake();
+  if (!view.draft) view.draft = newDraft();
+  const draft = view.draft;
+  if (why) {
+    // Said in this page load only: a form kept and reopened later does not say it again.
+    draft.libraryStart = { problem: 'The Document Library item you chose could not be opened: '
+      + String(why).replace(/[.\s]+$/, '') + '. Start as usual, or choose Add from library.',
+    load: PAGE_LOAD };
+  } else {
+    const title = read.title || 'Untitled';
+    if (!draft.route) chooseRoute('scratch');
+    draft.research = true;
+    draft.library = [...libraryPicks(draft).filter((one) => one.id !== pick.id),
+      { id: pick.id, revision: pick.revision, title }];
+    draft.libraryStart = { id: pick.id, revision: pick.revision, title };
+  }
+  show('home');
+  await openNew(undefined, true);
+}
+
+// What the New deck sheet says first when it was opened from the Document Library.
+function libraryStartNote(draft) {
+  const start = draft && draft.libraryStart;
+  if (!start) return null;
+  if (start.problem) {
+    return start.load === PAGE_LOAD ? callout('', make('p', 'problem', start.problem)) : null;
+  }
+  const still = libraryPicks(draft).some((one) => one.id === start.id);
+  const read = still && draft.research && draft.route !== 'existing';
+  return callout('', make('p', '', 'Starting from: ' + start.title + ', from the Document '
+    + 'Library' + (still ? '' : ' (removed from the sources)') + '.'), make('p', 'quiet',
+    read ? 'It is one of the research sources in step 3, revision ' + start.revision
+      + '. Nothing is made until you choose Start.'
+      : still ? 'It goes with the deck only with research on, from an idea or a document.'
+        : 'Add it again from step 3, or start without it.'));
+}
+
+// Continue in another studio, for work this studio kept in the Document Library: the link
+// to Marketing Studio's Library on that document, with the studios to continue in. Only
+// when Marketing Studio opened this page (StudioShell.continueLink gives null otherwise); it
+// opens where the way back to Marketing Studio does.
+function continueAction(doc, name) {
+  const link = typeof StudioShell !== 'undefined' && StudioShell.continueLink
+    ? StudioShell.continueLink(doc) : null;
+  if (!link) return null;
+  const node = make('a', 'button button-quiet', 'Continue in another studio');
+  node.href = link;
+  const suite = byId('go-suite');
+  if (suite && suite.getAttribute('target')) {
+    node.target = suite.getAttribute('target');
+    node.rel = 'noopener';
+  }
+  if (name) node.setAttribute('aria-label', 'Continue in another studio: ' + name);
+  node.dataset.key = 'continue ' + (doc.id || doc.document);
+  return node;
+}
+
 function begin() {
   const symbol = byId('studio-symbol');
   if (symbol) symbol.append(icon('studio'));
   view.token = linkToken();
+  // Read before anything can change the fragment, then taken out of the address, so a reload
+  // of this tab does not open the New sheet from it again. The key and the way back to
+  // Marketing Studio stay; shell.js read them as it loaded.
+  const fromLibrary = libraryFromLink(window.location.hash);
+  forgetLibraryLink();
   // A new link pasted into a tab that is already open changes only the fragment.
   window.addEventListener('hashchange', () => {
     const next = linkToken();
@@ -7997,7 +8160,8 @@ function begin() {
   refresh().then(async () => {
     if (!view.setup) return;
     const saved = await restoreIntake();
-    if(new URLSearchParams(location.hash.slice(1)).get('resume-intake')==='1'){show('home');openNew(undefined,true);}
+    if (fromLibrary) await openFromLibrary(fromLibrary);
+    else if(new URLSearchParams(location.hash.slice(1)).get('resume-intake')==='1'){show('home');openNew(undefined,true);}
     else if(view.screen==='home'&&!view.sheet){if(saved?.intakeOpen)openNew(undefined,true);else drawHome(true);}
   });
   window.addEventListener('beforeunload', event => {
@@ -8013,6 +8177,7 @@ function begin() {
 function deskParts() {
   return {
     view, make, add, count, list, series, lower, capital, spoken, given, card, bullets, callout, copiedNote, intakeStore, narrow,
+    libraryStartNote, continueAction,
     state, button, capsule, field, refuse, choice, explained, segmented, pickCard, oneOf,
     moreMenu, submitButton, alertLine, problemLine, say, outLink, pageHead, focusKey, byId,
     send, ask, toast, dropToast, deckToast, notify, show, refresh, placeParts, fit, tidyPictures, pager, slideName,

@@ -248,7 +248,8 @@ class KeepTests(DeckCase):
         self.assertEqual((row['kind'], row['studio'], row['formats']), ('training', 'training', ['markdown']))
         text = self.library.preview(kept['document'])['text']
         self.assertEqual(text, '# Guide\n\n## Why\nBecause.\n')
-        self.assertEqual(self.desk(root)['library'][guide], {'state': 'kept', 'revision': 1})
+        self.assertEqual(self.desk(root)['library'][guide], {'state': 'kept', 'revision': 1,
+                                                           'document': kept['document']})
         # Nothing kept is shared: the training's record of it is local.
         self.assertFalse(any('library' in line for line in self.log()))
         self.assertIn('sources/', (root.parent / '.gitignore').read_text())
@@ -290,7 +291,10 @@ class KeepTests(DeckCase):
         plan = next(name for name, card in cards.items() if card['kind'] == 'blueprint')
         with self.assertRaisesRegex(WorkspaceError, 'learner guide or a brief'):
             self.engine.library_keep(root, plan)
-        self.assertIsNone(document_library.opened(), 'nothing was kept, so no library was made')
+        # Nothing of the training's own was kept: only its verified research is, as research.
+        found = document_library.opened()
+        self.assertEqual(found.catalog(kind='training')['total'] if found else 0, 0,
+                         'no guide, brief or plan was kept')
 
 
 class UploadTests(LibraryCase):

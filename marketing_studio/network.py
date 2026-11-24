@@ -45,7 +45,8 @@ BODY_LIMITS = {
     'marketing': {'/api/library-upload': 12_000_000, '/api/brand-source': 56_000_000},
     'presentation': {'/api/slide-text-draft': 512_000, '/api/decide': 512_000, '/api/intake-draft': 32_000_000,
                      '/api/research-sources': 12_000_000, '/api/decks': 120_000_000,
-                     '/api/desk-source': 12_000_000, '/api/picture': 28_000_000},
+                     '/api/desk-source': 12_000_000, '/api/picture': 28_000_000,
+                     '/api/document-intake': 12_000_000},
     'training': {'/api/slide-text-draft': 512_000, '/api/outline': 512_000, '/api/training-plan': 512_000, '/api/intake-draft': 32_000_000,
                  '/api/research-sources': 12_000_000, '/api/documents': 12_000_000,
                  '/api/asset': 12_000_000, '/api/drafts/source': 12_000_000,
@@ -87,6 +88,10 @@ FRAMED = {'presentation': frozenset(('/api/deck-draft',)),
 
 def upstream_timeout(identifier, method, path):
     if method == 'POST' and path == '/api/research-sources':
+        return INFOGRAPHIC_REMOTE_TIMEOUT
+    # Presentation Studio reads a Google Drive folder or a spreadsheet for a new deck in this
+    # one request, as research sources are read.
+    if identifier == 'presentation' and method == 'POST' and path == '/api/document-intake':
         return INFOGRAPHIC_REMOTE_TIMEOUT
     if identifier == 'blog' and method == 'POST' and path in BLOG_REMOTE:
         return BLOG_REMOTE_TIMEOUT

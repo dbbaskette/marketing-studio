@@ -644,6 +644,66 @@ def level_ready(root: Path, session: dict, level: str | None,
             and state.get(name) in ('draft', 'stale')]
 
 
+# Mark reviewed materials ready: why a material of the batch is left as it is.
+LEFT_WHY = ('unopened', 'held', 'writing', 'refused')
+LEFT = {'unopened': '{it} was not opened in the version it is now, so it is left as a draft.',
+        'held': '{it} is built from an earlier version of what it uses. Update it or keep it '
+                'as it is first.',
+        'writing': '{it} is still being written.'}
+
+
+def reviewed_batch(root: Path, session: dict, record: dict | None, levels, seen: dict,
+                   kind: str | None = None) -> list[tuple[str, str | None]]:
+    """What Mark reviewed materials ready would do with each material not yet Ready, in
+    ORDER, level by level: (name, None) for one to mark (a draft the person opened in the
+    version it is now: `seen` names it), or (name, why) for one left as it is, `why` one of
+    LEFT_WHY but 'refused'. `levels` is a tuple of levels, or None for every level; with
+    `kind`, only cards of that kind. A Ready material, and one left out of the training, is
+    not in it at all."""
+    state = workspace.person_statuses(root, session)
+    names = workspace.artifact_names(root, session)
+    asked = updates(record or {})
+    wanted = (session['levels'] or [None]) if levels is None else list(levels)
+    found = []
+    for level in wanted:
+        for base in ORDER:
+            for name in names:
+                own, at = workspace.split(name)
+                own = own.partition(':')[0]
+                if at != level or own != base or kind and own != kind:
+                    continue
+                status = state.get(name)
+                if status in ('approved', 'skipped', 'unavailable') or status is None:
+                    continue
+                if name in asked or status == 'not-started':
+                    found.append((name, 'writing'))
+                elif status == 'stale':
+                    found.append((name, 'held'))
+                elif isinstance(seen.get(name), str) and seen[name]:
+                    found.append((name, None))
+                else:
+                    found.append((name, 'unopened'))
+    return found
+
+
+def left_said(name: str, why: str) -> str:
+    """The sentence a material left out of the batch is said with."""
+    return LEFT[why].format(it=workspace.sentence(workspace.label(name)))
+
+
+def batch_words(level: str | None, kind: str | None, every: bool, count: int,
+                unread: int = 0) -> str:
+    """What a batch marked, in the words of its commit and its decision, the approval record:
+    "3 reviewed materials of level 101", or, when the person chose to mark some they had not
+    opened, "4 materials (3 not opened) of level 101"."""
+    what = {'scenario': 'practice scenarios', 'yoodli': 'Yoodli layouts'}.get(kind or '',
+                                                                          'materials')
+    where = ' of every level' if every else f' of level {level}' if level else ''
+    if unread:
+        return f'{count} {what} ({unread} not opened){where}'
+    return f'{count} reviewed {what}{where}'
+
+
 # --- how long the start takes here -------------------------------------------------------
 
 # The minutes each kind of step is guessed to take until this computer has times of its
@@ -1034,6 +1094,8 @@ def view(engine, root) -> dict:
         'sources': {'account': research_view.account(root / 'research', questions),
                     'updates': update_view(root, record),
                     'plan': questions, 'marked': marked(root, record),
+                    # How the Document Library kept the verified research, when it was asked.
+                    'library': kept_library.research_noted(root),
                     'documents': [{key: entry.get(key) for key in
                                    ('name', 'bytes', 'readable', 'problem')}
                                   for entry in listed]},

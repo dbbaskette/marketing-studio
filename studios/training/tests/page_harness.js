@@ -793,6 +793,12 @@ async function app(file) {
       setItem: (key, value) => { if (plan.storageFails) throw new Error('Storage full.'); storage[key] = String(value); },
       removeItem: key => { delete storage[key]; },
     },
+    // A plan with {session} gives the tab's memory what an earlier visit kept in it.
+    ...(plan.session ? { sessionStorage: {
+      getItem: key => (key in plan.session ? plan.session[key] : null),
+      setItem: (key, value) => { plan.session[key] = String(value); },
+      removeItem: key => { delete plan.session[key]; },
+    } } : {}),
     Notification,
     location: { hash: plan.hash === undefined ? '#token=the-test-key' : plan.hash,
       reload() { report.reloads += 1; } },
@@ -803,7 +809,15 @@ async function app(file) {
         this.earlier.push(this.state);
         this.state = state;
       },
-      replaceState(state) { this.state = state; },
+      // A new address is kept in the report (`address`) and its fragment becomes the page's.
+      replaceState(state, title, url) {
+        this.state = state;
+        if (typeof url === 'string') {
+          report.address = url;
+          const at = url.indexOf('#');
+          window.location.hash = at < 0 ? '' : url.slice(at);
+        }
+      },
       // The browser's own way back: the state before this one, announced to the page.
       back() {
         if (!this.earlier.length) return;
@@ -905,6 +919,13 @@ async function app(file) {
     };
     window.StudioShell = {
       connect() {},
+      // Continue in another studio: Marketing Studio's link when a plan names its home
+      // (`continueHome`), as the shell gives it when Marketing Studio opened the page; else null.
+      continueLink(doc) {
+        const id = doc && (doc.id || doc.document);
+        return plan.continueHome && id && Number.isInteger(doc.revision)
+          ? plan.continueHome + '/#token=home-key&continue=' + id + '@' + doc.revision : null;
+      },
       commands(provide) { if (typeof provide === 'function') commandLists.push(provide); },
       track(stages, label) {
         const line = part('ol', 'track');

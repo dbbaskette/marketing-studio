@@ -282,6 +282,8 @@ class DeskActions:
                 'research': research_view.account(root / 'research', questions)
                 if record.get('research_contract') else None,
                 'research_items': self._findings_shown(root, record),
+                # How the Document Library kept the verified research, when it was asked.
+                'research_library': library_keep.research_noted(root),
                 'research_price': self._research_price(root, record)['words'],
                 'leave_out_price': desk.leave_out_price(record)}
 

@@ -4870,7 +4870,40 @@ class Engine(Reviewing):
 
     def _report(self, root: Path, step: pipeline.Step) -> None:
         """Ask harness-research where the research stands, and save its report through
-        the core for gate 2. Research that answered nothing stops the training instead."""
+        the core for gate 2. Research that answered nothing stops the training instead.
+        Research that passed verification is kept in the Document Library too."""
+        if self._report_kept(root, step):
+            # The step is kept and committed already: nothing here may fail it.
+            try:
+                self._keep_research(root)
+            except Exception:   # noqa: BLE001  the research stands whatever happens here
+                from studio_core.document_library import research as library_research
+                library.note_research(root, {'state': 'failed',
+                                             'problem': library_research.NOT_KEPT})
+
+    def _keep_research(self, root: Path) -> dict:
+        """Keep the training's verified research in the Document Library, under the
+        training's own key, and note how that went beside the training's other library
+        records (`library.RESEARCH`, under sources/, which is never shared: another computer
+        has its own library), which the desk's Sources says. Never raises and never stops the
+        research: a library that cannot keep it is said, and the training carries on."""
+        held = library.status(root)
+        key = library._key(root, held)
+        try:
+            title = workspace.load(root).get('title') or root.name
+        except (OSError, ValueError, WorkspaceError):
+            title = root.name
+        from studio_core.document_library import research as library_research
+        kept = library_research.keep_research(
+            None, studio='training', project={'id': key.partition(':')[2], 'title': title},
+            case=root / 'research', title=f'{title}: research')
+        said = {name: kept[name] for name in ('state', 'document', 'revision', 'problem')
+                if kept.get(name) is not None}
+        library.note_research(root, said)
+        return said
+
+    def _report_kept(self, root: Path, step: pipeline.Step) -> bool:
+        """The report step itself: True when it kept a verified research bundle."""
         clock = time.monotonic()
         with self.files:
             record = self._load(root)
@@ -4883,7 +4916,7 @@ class Engine(Reviewing):
                     self._tried(record, step.id, home.now(), time.monotonic() - clock, 'kept')
                     self._store(root, record)
                     self._commit(root, 'keep the creator-approved research bundle')
-                    return
+                    return True
                 # Verify with the helper version that did the research, while it is retained.
                 tool = research_contract.matching(tool, record['research_contract']) or tool
                 verified = tool._json('synthesis', 'verify', '--project', str(research_parallel.case_for(root)))
@@ -4901,16 +4934,17 @@ class Engine(Reviewing):
                 self._tried(record, step.id, home.now(), time.monotonic() - clock, 'kept')
                 self._store(root, record)
                 self._commit(root, 'keep the reviewed research bundle')
-                return
+                return True
             self.research().status(root)
             found = self._survey(root, record).research
             reasons = {ident: last_error(record, f'research:{ident}')
                        for ident in found.unread}
             if len(found.unread) == len(found.verdicts):
                 why = next((reason for reason in reasons.values() if reason), '')
-                return self._problem(root, 'research', 'failed', (
+                self._problem(root, 'research', 'failed', (
                     f'None of the {len(found.verdicts)} research questions could be '
                     f'answered. {why}').strip(), 'The research plan you approved is kept.')
+                return False
             pipeline.keep_report(root, found, reasons)
             (record.get('research') or {}).pop('again', None)
             self._tried(record, step.id, home.now(), time.monotonic() - clock, 'kept')
@@ -6251,6 +6285,56 @@ class Engine(Reviewing):
         if marked:
             self.carry_on(root)
         return {'marked': marked, 'stopped': stopped}
+
+    def mark_reviewed_ready(self, path, level, seen, kind=None, every=False,
+                            unopened=()) -> dict:
+        """Mark ready, in one batch the person confirmed, every material of one level (or of
+        the whole training, `every`) that they opened in the version it is now (`seen`, by
+        name: the hash shown when it was opened) and that is not held. Nothing the person
+        did not open in its current form is marked: a material missing from `seen` is left
+        as not opened, a held one as held, one still being written or updated as such, and
+        one the core refuses (a changed version, a deck that needs the person) with the
+        sentence it was refused with. Each is checked as Mark ready checks it, and the batch
+        commits once. With `kind`, 'scenario' or 'yoodli', only cards of that kind. Returns
+        {'marked': [names], 'left': [{'name', 'why', 'said'}]}, `why` one of
+        drafts.LEFT_WHY. `unopened` names the drafts among `seen` the person chose to mark
+        without opening them (the sheet's Also mark...), and the approval record says how many."""
+        marked, left = [], []
+        with self.files:
+            # A training worked on in conversation is refused here, before anything is read.
+            root = self._on_desk(path, decided=True)[0]
+            session = workspace.load(root)
+            if not every:
+                if session['levels'] and level is None:
+                    raise WorkspaceError('Choose a level.')
+                if session['levels'] and level not in session['levels'] \
+                        or not session['levels'] and level is not None:
+                    raise WorkspaceError(f'This training has no level {level}.')
+            seen = seen if isinstance(seen, dict) else {}
+            for name, why in drafts.reviewed_batch(root, session, self._load(root), None if every
+                                                   else (level,), seen, kind):
+                if why is None:
+                    try:
+                        self._mark(root, self._load(root), name, seen[name])
+                    except WorkspaceError as refusal:
+                        left.append({'name': name, 'why': 'refused', 'said': str(refusal)})
+                        continue
+                    marked.append(name)
+                else:
+                    left.append({'name': name, 'why': why,
+                                 'said': drafts.left_said(name, why)})
+            if marked:
+                # Those the person chose to mark without opening them are said so in the
+                # approval record (`unopened`, names among `seen`).
+                which = drafts.batch_words(level, kind, every, len(marked),
+                                           len(set(marked) & set(unopened or ())))
+                self._ready_again(root)
+                self._remember_decision(root, self._load(root), which, 'approve')
+                self._commit(root, f'mark {which} ready')
+                library.keep_marked(root, marked)
+        if marked:
+            self.carry_on(root)
+        return {'marked': marked, 'left': left}
 
     def return_to_draft(self, path, seen) -> dict:
         """Return materials the person marked ready to drafts, as they asked on the desk:
