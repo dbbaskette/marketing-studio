@@ -134,6 +134,14 @@ function invalid(f, message) {
   f.wrap.append(note); f.input.setAttribute('aria-invalid', 'true'); f.input.setAttribute('aria-describedby', [...described, note.id].join(' '));
   f.input.focus(); return false;
 }
+// Document text as it reads: a Markdown document, research report or Document Library item is
+// drawn by the shared ui-kit/markdown.js (text is never parsed as markup); anything else, and
+// any page without the kit, keeps its plain text.
+const MARKDOWN_KINDS=new Set(['markdown','research','handoff','google-doc']);
+function documentText(text,kind){
+  if(MARKDOWN_KINDS.has(kind)&&window.StudioMarkdown){const node=window.StudioMarkdown.render(text);node.classList.add('ig-document');return node;}
+  return make('pre','ig-csv-preview',text);
+}
 function card(title, ...parts) { return add(make('section', 'card stack'), make('h2', 'card-title', title), ...parts); }
 function detail(title, ...parts) {
   const node = add(make('details'), make('summary', '', title), ...parts);
@@ -210,7 +218,7 @@ function paintWork() {
       // Stop waiting leaves the work running; nothing is cancelled or repeated.
       if(work.id&&!work.quiet){const stop=button('Stop waiting',()=>{closeSheet();void home();});stop.dataset.free='';stop.dataset.key='ig-work-stop-waiting';controls.append(stop);}
       // Stop ends the work itself: its assistant or image worker ends on this computer.
-      if(work.id&&work.stoppable){const end=button('Stop',()=>stopWork(work));end.dataset.free='';end.dataset.key='ig-work-stop';end.classList.add('ig-work-end');controls.append(end);}
+      if(work.id&&work.stoppable){const end=button('Stop',async()=>{if(!await Drafting.confirmInPlace(end,{message:'Stop '+work.label.charAt(0).toLowerCase()+work.label.slice(1)+'? Its assistant or image worker ends now. Saved work is kept; this step is not.',action:'Stop',keep:'Keep working'}))return;stopWork(work);});end.dataset.free='';end.dataset.key='ig-work-stop';end.classList.add('ig-work-end');controls.append(end);}
       if(work.cancel){const cancel=button('Cancel this request',()=>work.cancel());cancel.dataset.free='';cancel.dataset.key='ig-work-cancel';controls.append(cancel);}
       if(controls.childElementCount)surface.append(controls);
     }
@@ -595,7 +603,7 @@ async function newSheet() {
     for (const material of draft.materials) {
       const preview = material.preview;
       const coverage = card(preview.name,make('p','quiet',preview.characters+' readable characters · '+preview.locations.length+' located parts'),
-        detail('Preview readable text',make('pre','ig-csv-preview',preview.excerpt)),list(preview.warnings));
+        detail('Preview readable text',documentText(preview.excerpt,preview.kind)),list(preview.warnings));
       if(missingCaptures.includes(preview.id))coverage.append(make('p','problem','This saved source capture is unavailable. Remove it and add the source again; your other answers are kept.'));
       if (!preview.readable) coverage.append(make('p','problem','No readable text was found. Remove this file and supply an accessible text or Word version.'));
       if (preview.warnings.length && preview.readable) {
@@ -835,7 +843,7 @@ function workbench(p,delivery){
     if(!p.scene)view.append(make('p','','Your current work, revision '+n+', has no page yet. '+again),make('p','quiet','This is revision '+pageOf(delivery)+(delivery.draft?', a draft.':'. Its approved files stay downloadable and unchanged.')));
     else if(kept)add(view,make('p','quiet','Shows approved revision '+pageOf(delivery)+'. Prepare the approved files for revision '+n+' on this computer so they carry its title. Nothing is sent anywhere.'),primary==='Prepare approved files'?null:button('Prepare approved files',()=>action('export',{draft:false}),true));
     else view.append(make('p','quiet',delivery.current?'Shows revision '+pageOf(delivery)+'. Select words on the page to edit them.':'Shows revision '+pageOf(delivery)+'. Your current work is revision '+n+'.'));
-    if(!delivery.current&&p.scene&&!kept&&primary!=='Update preview')view.append(button('Update preview',()=>action('preview'),true));
+    if(!delivery.current&&p.scene&&!kept&&primary!=='Update preview')view.append(button('Update preview',()=>action('preview'),!p.stale));
     view.append(zooming,scroll,tools);
     if(library)view.append(library);
     showPicture(delivery,img,p.id);
@@ -1370,7 +1378,7 @@ function sourceSheet(kept=null) {
 async function sourceTextSheet(source,start=0){
   try{
     const found=await request('/api/source?id='+encodeURIComponent(held.project.id)+'&source='+encodeURIComponent(source.id)+'&start='+start);
-    sheet('Captured source: '+source.name,make('p','quiet','Saved text '+found.start+'–'+found.end+' of '+found.total+' characters. This view does not fetch a newer source.'),list(source.coverage?.warnings||[]),make('pre','ig-csv-preview',found.text),add(make('div','bar'),start?button('Previous text',()=>sourceTextSheet(source,Math.max(0,start-20000))):null,found.end<found.total?button('More text',()=>sourceTextSheet(source,found.end)):null,button('Done',closeSheet)));
+    sheet('Captured source: '+source.name,make('p','quiet','Saved text '+found.start+'–'+found.end+' of '+found.total+' characters. This view does not fetch a newer source.'),list(source.coverage?.warnings||[]),documentText(found.text,source.kind),add(make('div','bar'),start?button('Previous text',()=>sourceTextSheet(source,Math.max(0,start-20000))):null,found.end<found.total?button('More text',()=>sourceTextSheet(source,found.end)):null,button('Done',closeSheet)));
   }catch(failure){error(failure.message);}
 }
 
@@ -1476,7 +1484,7 @@ function sourceImportSheet(preview,replaceId,back='ig-research',acknowledgedBefo
   let acknowledged=acknowledgedBefore;const problem=make('p','problem'),ack=make('input');ack.type='checkbox';ack.checked=acknowledged;ack.addEventListener('change',()=>{acknowledged=ack.checked;});
   const madeFor=preview.made_for&&preview.different?add(make('section','callout stack ig-made-for'),make('strong','','This research was made for something else'),
     make('p','','It was made for '+(preview.made_for.purpose||'another purpose')+(preview.made_for.audience?', for '+preview.made_for.audience:'')+'. Its findings are used as they are; check they fit this infographic.')):null;
-  sheet('Review captured information',make('p','',preview.name+' · '+preview.characters+' readable characters'),madeFor,make('pre','ig-csv-preview',preview.excerpt),list(preview.warnings),preview.warnings.length?add(make('label','check'),ack,document.createTextNode('I reviewed these gaps. Use only readable text.')):make('p','quiet','Captured text is stored locally; import does not read the remote document again.'),problem,add(make('div','bar'),button('Import this capture',()=>{if(!preview.readable||(preview.warnings.length&&!acknowledged)){problem.textContent='Review readable coverage and acknowledge gaps before import.';return;}const sent={capture_id:preview.id,acknowledge_warnings:acknowledged,...(replaceId?{replace_id:replaceId}:{})};sourceConfirm(preview.name,replaceId||'',()=>action('source-import',sent),back,()=>sourceImportSheet(preview,replaceId,back,acknowledged));},true),button('Cancel',()=>{closeSheet();refocus(back);})));
+  sheet('Review captured information',make('p','',preview.name+' · '+preview.characters+' readable characters'),madeFor,documentText(preview.excerpt,preview.kind),list(preview.warnings),preview.warnings.length?add(make('label','check'),ack,document.createTextNode('I reviewed these gaps. Use only readable text.')):make('p','quiet','Captured text is stored locally; import does not read the remote document again.'),problem,add(make('div','bar'),button('Import this capture',()=>{if(!preview.readable||(preview.warnings.length&&!acknowledged)){problem.textContent='Review readable coverage and acknowledge gaps before import.';return;}const sent={capture_id:preview.id,acknowledge_warnings:acknowledged,...(replaceId?{replace_id:replaceId}:{})};sourceConfirm(preview.name,replaceId||'',()=>action('source-import',sent),back,()=>sourceImportSheet(preview,replaceId,back,acknowledged));},true),button('Cancel',()=>{closeSheet();refocus(back);})));
 }
 async function deliverySheet(delivery){
   try{preferences=await request('/api/preferences');}catch(f){error(f.message);return;}

@@ -20,8 +20,18 @@ actions documented in the conversation reference. Keep source permissions and pr
 Read `docs/conversation.md` beside an installed skill (or `../../docs/conversation.md`
 in a checkout) for exact action schemas and a synthetic journey. Read only the
 reference needed for the current stage. In a conversation, author located facts,
-stories and art direction directly through the native `action` command; do not
-launch the page's planning assistant again for work you are already doing.
+stories and art direction directly; do not launch the page's planning assistant again
+for work you are already doing.
+
+Desk operations are the checked way to save that work. `desk show ID` reads the desk
+and lists the targets you may write (`facts`, `stories`, `story:<id>`,
+`art-direction`, `stale:<part>`). `desk context ID --target TARGET` gives the exact
+inputs, the native instructions and an `expected_basis`. Write the payload it names,
+then `desk submit ID --file JSON` with {"kind", "target", "expected_basis",
+"payload"}. A changed infographic refuses the save: read context again. Saving never
+approves, chooses a story, builds, delivers or starts a provider; `stale:<part>` (keep
+as it is) is only for when the person chose it. Long page actions (finding the story,
+building, artwork) run in the background; the page shows their progress, with Stop.
 
 1. Offer Paste, Upload files, Google Doc/public page, selected studio material, or
    documents the person chooses from the shared Document Library (`library-browse`,
@@ -50,8 +60,10 @@ launch the page's planning assistant again for work you are already doing.
 7. Run checks and present the actual current page. Only the user can authorize the
    `approve` action; don't approve because a tool or assistant says it looks correct.
    Approval binds the exact revision, scene and input hashes. Edits/restores clear it;
-   a title-only rename carries it to the renamed revision. Before any other brief or
-   source change, say what it clears (facts, story, page, approval) and ask first.
+   a title-only rename carries it to the renamed revision. Any other brief or source
+   change keeps the facts, story, page and artwork, marks them out of date and clears
+   the approval; say so and ask first. The person then updates each part or keeps it as
+   it is; approval, export and delivery wait until nothing is out of date.
 8. Export approved PNG/PDF/editable SVG/accessible text, or an explicitly labeled
    draft. Artwork in SVG remains raster; text and chart marks stay editable. State
    the font portability limitation. Offer PDF, a new Google Doc, or both after explicit

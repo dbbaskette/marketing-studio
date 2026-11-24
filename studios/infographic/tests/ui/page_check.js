@@ -157,7 +157,8 @@ vm.runInContext('let startingFrom = "";' + cut(source, 'startFromLibrary'), page
   same(done.splice(0), [['keep-stale', { part: 'stories' }], ['refresh-page', null]]);
 
   // Running background work has Stop beside Stop waiting.
-  assert.match(source, /if\(work\.id&&work\.stoppable\)\{const end=button\('Stop',\(\)=>stopWork\(work\)\)/);
+  assert.match(source, /if\(work\.id&&work\.stoppable\)\{const end=button\('Stop',async\(\)=>\{if\(!await Drafting\.confirmInPlace\(end,/);
+  assert.match(source, /stopWork\(work\);\}\);/);
   console.log('PASS Infographic Studio page: Search and jump lists and opens its work; Use this story is quiet; '
     + 'a Document Library link opens New infographic with its item; out-of-date work has Update and Keep as it is');
 })().catch(failure => { console.error(failure); process.exit(1); });

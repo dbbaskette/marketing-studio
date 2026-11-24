@@ -41,9 +41,41 @@ the new revision, and `approval.carried` names the revision the person approved.
 earlier approved files keep the old title and stay unchanged; `export ID --expected-revision REV`
 prepares files with the new title on this computer. After a rename, export; don't run
 `check` first: no rendered page matches the renamed revision yet, so the checks would come
-back incomplete and the approval would be cleared. Any other change clears the story,
-page and approval built from the earlier brief (captured facts stay), so tell the person
-what will be cleared and ask before saving when they exist. Earlier revisions remain.
+back incomplete and the approval would be cleared. Any other change keeps the story, page
+and artwork built from the earlier brief and marks each out of date in `stale`
+(`{"stories": {"because": "brief", "revision": N}, ...}`; captured facts stay current),
+and clears the approval, so tell the person and ask before saving when they exist. Each
+out-of-date part is then updated (`suggest --fresh` for facts and stories,
+`refresh-page` lays the page out again locally, `art-direct` writes new art direction) or
+kept as it is (`keep-stale` with `{"part"}`, only when the person chooses it). Approve,
+export and Google delivery are refused, naming what is out of date, until no part is. A
+replaced source that the facts cite cannot keep them: those facts and what was built on
+them are cleared, as before. Earlier revisions remain.
+
+Page sizes: `a4`, `letter` and `digital` (1080 × 1350) are portrait; `widescreen`
+(1920 × 1080, 16:9) and `social` (1200 × 628) are landscape and laid out across the page.
+A social card holds about two short blocks at the brand's smallest readable type.
+
+## Desk operations for this conversation
+
+The checked way to save work written here (`runner/desk_chat.py`), as Presentation Studio's
+desk works: `desk show ID` reads the desk and lists `targets` (`facts`, `stories`,
+`story:<id>`, `art-direction`, `stale:<part>`) and earlier conversation `submissions`.
+`desk context ID --target TARGET` answers the exact `inputs`, the native `instructions`,
+what to `return` and an `expected_basis`. `desk submit ID --file submit.json` takes
+`{"kind", "target", "expected_basis", "payload"}` (kinds `facts`, `stories`, `story`,
+`art-direction` and `keep`); payloads are `{"facts": [...]}`, `{"stories": [...]}`,
+`{"story": {...}}` keeping its id, `{"direction": {...}}`, or `{}`. The same native checks
+as the actions below apply, and a save lands only on the inputs its context named: any
+change since is refused (read context again). Saving never approves, chooses a story,
+builds, renders, delivers or starts an assistant, research or image provider, and it is
+refused while the page's own work runs. The page answers the same at `GET /api/desk-show`,
+`POST /api/desk-context` and `POST /api/desk-submit`.
+
+Long page actions (`suggest`, `build`, `art-direct`, `image-start`, `inspect-images`,
+`revise-story`, `revise-art`, `repair`) answer the page at once and run in the
+background, one at a time per infographic, with progress and Stop; a restart shows
+interrupted work and what to do next. The CLI runs them in its own process as before.
 
 ## Author directly in this conversation
 
@@ -244,8 +276,9 @@ python3 runner/studio.py research-preview ID --case /absolute/reviewed-case --so
 When a preview names extraction gaps, inspect them before adding
 `--acknowledge-warnings` to `source-import`. Use `--replace-id SOURCE` for an explicit
 refresh. The raw and normalized capture, locations and origin revision are immutable;
-adding or replacing a source clears the facts, story, page and approval built from the
-earlier sources, so tell the person and ask first when they exist. Google Docs and Slides links use the existing default Google sign-in. `--account` is optional for a deliberate override; import and delivery do not ask for email. Shared Marketing Studio output selects the initial delivery choice. Google tab/slide selection uses repeated
+adding or replacing a source keeps the facts, story, page and artwork built from the
+earlier sources, marks them out of date and clears the approval, so tell the person and ask
+first when they exist. Google Docs and Slides links use the existing default Google sign-in. `--account` is optional for a deliberate override; import and delivery do not ask for email. Shared Marketing Studio output selects the initial delivery choice. Google tab/slide selection uses repeated
 `--tab TAB_ID`, or `--tab slide-2` for the second slide of a deck; leaving it empty includes all tabs or slides. Pasted links do not trigger a fetch.
 Google Slides decks are read through Google Drive as a PowerPoint export (titles, text,
 tables, groups and speaker notes, in presentation order), never through the Google
@@ -260,8 +293,9 @@ matching its hashes) before the infographic changes, then all are captured as `h
 sources in one new revision, or none are. The source keeps the library's readable
 Markdown and an upload's original bytes, with `provenance.library` naming the ID,
 revision and hashes, so the infographic keeps working if the library changes. Like any
-source change it clears the facts, story, page and approval built from earlier sources,
-so tell the person before adding to work that has them. A revision with extraction gaps
+source change it keeps the facts, story, page and artwork built from earlier sources,
+marks them out of date and clears the approval, so tell the person before adding to work
+that has them. A revision with extraction gaps
 is refused until the person has reviewed them and you add `--acknowledge-warnings`; the
 gaps stay with the source. A document already chosen is refused, and so is this
 infographic's own kept export (`inspect ID` names it as `library.own`): its approved

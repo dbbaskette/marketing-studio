@@ -23,10 +23,11 @@ shared = core.for_product(
      '/app.js': ('app.js', 'text/javascript; charset=utf-8'),
      '/drafting.js': ('drafting.js', 'text/javascript; charset=utf-8'),
      '/research.js': ('research.js', 'text/javascript; charset=utf-8'),
-     '/activity.js': ('activity.js', 'text/javascript; charset=utf-8')},
+     '/activity.js': ('activity.js', 'text/javascript; charset=utf-8'),
+     '/markdown.js': ('markdown.js', 'text/javascript; charset=utf-8')},
     None, Invalid, reads=('/api/intake-draft', '/api/status', '/api/projects', '/api/project', '/api/asset',
-                         '/api/desk', '/api/activity', '/api/activity-log', '/api/source', '/api/preferences', '/api/computer', '/api/download', '/api/history', '/api/history-before', '/api/image-request', '/api/team', '/api/team-download', '/api/research-task', '/api/research-status'),
-    writes=('/api/intake-draft', '/api/action-control', '/api/research-job', '/api/research-control', '/api/research-sources', '/api/projects', '/api/project', '/api/action', '/api/preferences', '/api/csv-preview', '/api/csv-selection', '/api/source-preview', '/api/source-folder', '/api/remote-preview', '/api/handoff-inventory', '/api/handoff-preview', '/api/research-preview', '/api/research-library-preview', '/api/team', '/api/brand-current', *library_context.ROUTES))
+                         '/api/desk', '/api/activity', '/api/activity-log', '/api/source', '/api/preferences', '/api/computer', '/api/download', '/api/history', '/api/history-before', '/api/image-request', '/api/team', '/api/team-download', '/api/research-task', '/api/research-status', '/api/desk-show'),
+    writes=('/api/intake-draft', '/api/action-control', '/api/desk-context', '/api/desk-submit', '/api/research-job', '/api/research-control', '/api/research-sources', '/api/projects', '/api/project', '/api/action', '/api/preferences', '/api/csv-preview', '/api/csv-selection', '/api/source-preview', '/api/source-folder', '/api/remote-preview', '/api/handoff-inventory', '/api/handoff-preview', '/api/research-preview', '/api/research-library-preview', '/api/team', '/api/brand-current', *library_context.ROUTES))
 
 
 class Page(shared.Page):
@@ -94,6 +95,9 @@ class Page(shared.Page):
         if path == '/api/team':
             from . import team
             return shared.as_json(200,{**team.status(),'workspace_owner':self.store.owner})
+        if path == '/api/desk-show':
+            from . import desk_chat
+            return shared.as_json(200, desk_chat.show(self.store, one('id')))
         if path == '/api/research-status':
             return shared.as_json(200, self.research.read(one('id')))
         if path == '/api/research-task':
@@ -204,6 +208,18 @@ class Page(shared.Page):
                     account=lambda: settings.snapshot()['google']['account']).dispatch(sent))
             except ValueError as error:
                 raise Invalid(str(error)) from None
+        if path in ('/api/desk-context', '/api/desk-submit'):
+            # The companion conversation's checked, bounded operations (desk_chat.py).
+            from . import desk_chat
+            if path == '/api/desk-context':
+                require(isinstance(sent, dict) and set(sent) == {'id', 'target'}, 'Name one infographic and one desk target.')
+                return shared.as_json(200, desk_chat.context(self.store, sent['id'], sent['target']))
+            require(isinstance(sent, dict) and set(sent) == {'id', 'kind', 'target', 'expected_basis', 'payload'},
+                    'Submit id, kind, target, expected_basis and payload together.')
+            require(sent['id'] not in self.actions.running(),
+                    'This infographic is still working. Save from the conversation once it has finished.')
+            ident = sent.pop('id')
+            return shared.as_json(200, desk_chat.submit(copy(self.engine), ident, sent))
         if path == '/api/action-control':
             require(isinstance(sent, dict) and set(sent) == {'id', 'action'} and sent['action'] in ('stop', 'dismiss'),
                     'Choose Stop for the running work of one infographic.')
