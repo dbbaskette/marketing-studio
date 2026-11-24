@@ -5861,6 +5861,9 @@ function paintDeck(fresh) {
     return;
   }
   const run = view.run;
+  // A deck the earlier gated flow saved, whose record the runner cannot read, is a read-only
+  // record: what it is, why, its saved files, and one way on.
+  if (run.saved_record) return paintSavedRecord(run, fresh);
   // A deck started on the desk is drawn by deck-desk.js: its progress until it reaches the
   // desk, and the desk from then on. Every other deck keeps the screen below.
   if (window.deckDesk.opens(run)) {
@@ -5931,6 +5934,65 @@ function paintDeck(fresh) {
     deletable(run) ? ['delete', [title], () => deleteCard()] : null,
   ], fresh);
   tidyPictures();
+}
+
+// --- a read-only record ------------------------------------------------------------------
+// A deck saved by the earlier gated flow whose record the runner refuses. Nothing on this
+// screen continues it or opens it on the desk: it is read, and new work starts from it.
+const SAVED_FILES = { 'README.md': 'Read the deck’s summary', 'intake.md': 'Read intake',
+  'classify.md': 'Read source classification', 'outline.md': 'Read saved outline',
+  'look.md': 'Read the look', 'research/plan.md': 'Read research plan',
+  'research/report.md': 'Read research report', 'research/review.md': 'Read research review' };
+
+function paintSavedRecord(run, fresh) {
+  const saved = run.saved_record;
+  const title = run.title || 'Untitled';
+  placeParts({ title, above: [make('span', '', [routeWords(run), 'Read-only'].filter(Boolean)
+    .join(' · '))], back: true, actions: [], mark: [title, saved.why, saved.next] }, [
+    ['saved-intro', [run.sentence, saved.next], () => savedRecordIntro(run)],
+    ['saved-why', [saved.why], () => add(card('Why it cannot be continued'),
+      make('p', '', saved.why),
+      make('p', 'quiet', 'Nothing here changes it. Restore its saved record from your workspace '
+        + 'history to continue it, or start new work from it.'))],
+    ['saved-files', [saved.files], () => savedFilesPart(run)],
+  ], fresh);
+}
+
+function savedRecordIntro(run) {
+  const saved = run.saved_record;
+  const copying = saved.next === 'copy';
+  const go = capsule(copying ? 'Start new work from this' : 'Start a new deck', 'filled',
+    () => (copying ? copyAsNew({ path: run.path, title: run.title }, 'saved-next', go)
+      : openNew(undefined, false, go)), 'saved-next');
+  return add(make('div', 'intro'), pageHead(make('p', 'lede run-says', run.sentence), [go]),
+    state('off', 'Read-only: it is not continued and not opened on the desk'),
+    make('p', 'quiet', copying ? 'Start new work from this opens the start form with its '
+      + 'setup and material. This saved deck is kept as it is.'
+      : 'Its start form cannot be read, so a new deck starts from an empty form. This saved '
+        + 'deck is kept as it is.'));
+}
+
+function savedFilesPart(run) {
+  const files = list(run.saved_record.files);
+  const node = card('Saved files');
+  if (!files.length) return add(node, make('p', 'quiet', 'It holds no saved files to read.'));
+  const holder = make('div', 'card-part'), problem = problemLine();
+  const bar = make('div', 'bar');
+  for (const name of files) {
+    const label = SAVED_FILES[name] || 'Read ' + name;
+    const go = capsule(label, 'quiet', async () => {
+      go.disabled = true; say(problem, '');
+      try {
+        const found = await ask('file', { path: run.path, name });
+        holder.replaceChildren(documentPart(label, found.text),
+          ...(found.truncated ? [make('p', 'quiet', 'This is a shortened preview. The full file remains in your workspace.')] : []));
+      } catch (failure) { say(problem, failure.message); }
+      finally { go.disabled = false; }
+    }, 'saved-read ' + name);
+    add(bar, go);
+  }
+  return add(node, make('p', 'quiet', 'Each file stays in the deck’s folder in your workspace.'),
+    bar, problem, holder);
 }
 
 async function drawDeck(fresh) {

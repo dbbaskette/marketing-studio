@@ -185,6 +185,12 @@ PICTURE_STARTS = (b'\x89PNG\r\n\x1a\n', b'\xff\xd8\xff')   # a PNG, a JPEG, by t
 PICTURE_MOST = 20_000_000   # bytes of one picture a person gives a slide
 PICTURE_WORDS = 300         # characters of what a picture shows, and of where it came from
 SHEET = 'contact-sheet'
+# A deck's shared files the page may read by name (`/api/file`), a read-only record's among them.
+FILES = ('README.md', 'intake.md', 'classify.md', 'outline.md', 'look.md',
+         'research/plan.md', 'research/report.md', 'research/review.md')
+SAVED_RECORD = ('This deck was saved by the earlier step-by-step flow, and its saved record '
+                'cannot be read as it is, so it can be neither continued nor opened on the desk. '
+                'Its saved files are kept as they are.')
 
 # What the engine does for each step of the pipeline: the name of its method. Every gate is
 # opened the same way.
@@ -3552,12 +3558,59 @@ class Engine(Jobs, Researching, DeskActions):
             if shown.get('contactSheet') else None
         return shown
 
+    def _saved_original(self, root: Path) -> dict | None:
+        """The original record of a deck saved by the earlier gated flow, as it was written,
+        for a deck whose record the runner refuses to read: None when there is none, when it
+        is a desk deck, or when the deck has desk metadata or an interrupted opening (those
+        keep their own recovery). Only read."""
+        from studio_core import presentation_migration as migration
+        if any((root / name).exists() or (root / name).is_symlink()
+               for name in (migration.RECORD, migration.ORIGIN, migration.PENDING)):
+            return None
+        try:
+            raw = json.loads((root / decks.RUN).read_bytes())
+        except (OSError, ValueError):
+            return {}
+        if not isinstance(raw, dict):
+            return {}
+        return None if decks.on_desk(raw) else raw
+
+    def saved_record(self, root: Path, refusal: WorkspaceError) -> dict | None:
+        """What the page shows of a deck saved by the earlier gated flow whose record the
+        runner refuses: a read-only record. It says what it is and why it can be neither
+        continued nor opened on the desk, lists the saved files it holds (read as any deck's
+        are, through `/api/file`), and offers one next action: start new work from it, or,
+        where not even its start form can be read, a new deck. None for any other deck."""
+        raw = self._saved_original(root)
+        if raw is None:
+            return None
+        form = raw.get('form') if isinstance(raw.get('form'), dict) else None
+        title = raw.get('title') if isinstance(raw.get('title'), str) and raw['title'].strip() \
+            else root.name
+        return {'id': root.name, 'path': str(root), 'title': title,
+                'route': raw.get('route') if raw.get('route') in decks.ROUTES else None,
+                'execution': 'saved', 'state': 'saved', 'sentence': SAVED_RECORD,
+                'gate': None, 'desk': None, 'deliver': None,
+                'saved_record': {'why': str(refusal),
+                                 'files': [name for name in FILES if (root / name).is_file()
+                                           and not (root / name).is_symlink()],
+                                 'next': 'copy' if form and raw.get('route') in decks.ROUTES
+                                 else 'new'}}
+
     def view(self, path) -> dict | None:
-        """Everything the page shows for one deck. None when there is no deck there."""
+        """Everything the page shows for one deck. None when there is no deck there. A deck
+        saved by the earlier gated flow whose record the runner refuses is shown as a
+        read-only record (`saved_record`)."""
         root = self.driven(path)
         if root is None:
             return None
-        record = self._load(root)
+        try:
+            record = self._load(root)
+        except WorkspaceError as refusal:
+            shown = self.saved_record(root, refusal)
+            if shown is None:
+                raise
+            return shown
         run = self._run(root)
         state, sentence = self._state(root, record, run)
         mine, who, state, sentence, last = self._whose(root, record, state, sentence)

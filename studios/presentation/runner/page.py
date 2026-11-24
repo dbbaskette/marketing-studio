@@ -226,8 +226,7 @@ DRAFT = '/api/deck-draft'   # a deck's storyboard, framed by the page and opened
 DECKS_LIMIT = 120_000_000    # bytes: a deck's form with its uploads, in base64
 PICTURE = '/api/picture'
 PICTURE_LIMIT = 28_000_000   # bytes: a picture of up to 20 MB for a slide, in base64
-FILES = ('README.md', 'intake.md', 'classify.md', 'outline.md', 'look.md',
-         'research/plan.md', 'research/report.md', 'research/review.md')
+FILES = engines.FILES   # a read-only record lists the same files
 PREVIEW_LIMIT = 1_000_000    # bytes of a file sent to the page
 NO_DECK = 'There is no deck there.'
 NO_KEEPER = ('This runner does not look after the skills on this computer. Run the installer '

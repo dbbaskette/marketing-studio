@@ -117,7 +117,15 @@ def of(engine, path) -> dict:
     if root is None:
         raise WorkspaceError('There is no deck there.')
     with engine.files:
-        record = engine._load(root)
+        try:
+            record = engine._load(root)
+        except WorkspaceError:
+            # A deck the earlier gated flow saved, whose record the runner refuses, is a
+            # read-only record: its start form is read as it was saved, where it can be.
+            record = engine._saved_original(root)
+            if not record or not isinstance(record.get('form'), dict) \
+                    or record.get('route') not in decks.ROUTES:
+                raise
     kept = record.get('form') if isinstance(record.get('form'), dict) else {}
     form = {key: kept[key] for key in FORM if key in kept}
     form.setdefault('route', record.get('route'))
