@@ -16,6 +16,7 @@ import test_desk
 from test_runner_deck import DeckCase
 
 from runner import engine as engines
+from runner import library
 
 PICKED = {'id': 'launch-post', 'revision': 2}
 READ = {'id': 'launch-post', 'revision': 2, 'title': 'Launch post', 'readable': True,
@@ -97,7 +98,7 @@ class ResearchKeptTests(DeckCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]['studio'], 'training')
         self.assertTrue(rows[0]['title'].endswith(': research'))
-        self.assertEqual(self.record(root)['research']['library']['revision'], said['revision'])
+        self.assertEqual(library.research_noted(root)['revision'], said['revision'])
         # The desk's Sources says it.
         from runner import drafts
         self.assertEqual(drafts.view(self.engine, root)['sources']['library']['state'], 'kept')
@@ -116,7 +117,7 @@ class ResearchKeptTests(DeckCase):
         self.assertEqual(said['state'], 'refused')
         self.assertIn('has not passed verification', said['problem'])
         self.assertEqual(self.kept_rows(), before)
-        self.assertEqual(self.record(root)['research']['library']['state'], 'refused')
+        self.assertEqual(library.research_noted(root)['state'], 'refused')
 
     def test_the_report_step_keeps_research_only_once_it_was_verified(self):
         root = self.training()

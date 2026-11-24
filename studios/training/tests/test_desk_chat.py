@@ -799,7 +799,7 @@ class ConversationCompletionTests(ConversationReviewFixTests):
         self.engine.library_keep(root, 'document')
         kept = library.status(root)
         self.assertEqual((kept['key'], kept['materials']['document']['state']), (key, 'kept'))
-        self.assertEqual(drafts.view(self.engine, root)['library']['document'], {'state': 'kept', 'revision': 1})
+        self.assertEqual(drafts.view(self.engine, root)['library']['document'], {'state': 'kept', 'revision': 1, 'document': kept['materials']['document']['document']})
         # Marked ready again in a conversation, the same words keep the same revision.
         library.keep_marked(root, ['document'])
         self.assertEqual(document_library.opened().catalog(kind='training')['total'], 1)

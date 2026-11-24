@@ -73,6 +73,8 @@ from studio_core.document_library import LibraryError
 from studio_core.document_library import context as library_context
 
 STATUS = Path('sources') / 'library.json'
+# How the Document Library kept the training's verified research: this computer's alone.
+RESEARCH = Path('sources') / 'research-library.json'
 # The learner's own reading: the guide and the brief, kept as Markdown.
 KEPT = ('document', 'brief')
 BUSY = ('A step is being worked on now. Add from the library, or take a newer revision, '
@@ -277,6 +279,25 @@ def status(root) -> dict:
     except (OSError, ValueError):
         return {}
     return found if isinstance(found, dict) else {}
+
+
+def note_research(root, said: dict) -> None:
+    """Note how keeping the verified research went, under sources/, which is never shared.
+    Best effort: the research stands either way."""
+    try:
+        workspace.write_atomic(Path(root) / RESEARCH,
+                               (json.dumps(said, indent=2) + '\n').encode('utf-8'))
+    except (OSError, WorkspaceError):
+        pass
+
+
+def research_noted(root) -> dict | None:
+    """How keeping the verified research last went on this computer, or None."""
+    try:
+        found = json.loads((Path(root) / RESEARCH).read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return None
+    return found if isinstance(found, dict) else None
 
 
 def _key(root: Path, held: dict) -> str:

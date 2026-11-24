@@ -187,7 +187,9 @@ class ReadyTests(ReadyCase):
         guide = self.guide()
         seen = self.seen(guide)
         self.post('drafts/ready', {'path': self.path, 'name': guide, 'seen': seen[guide]})
-        self.assertEqual(self.desk()['library'][guide], {'state': 'kept', 'revision': 1})
+        shown = self.desk()['library'][guide]
+        self.assertEqual({key: shown[key] for key in ('state', 'revision')},
+                         {'state': 'kept', 'revision': 1})
         shown = self.get('drafts/card', path=self.path, name=guide)
         part = shown['sections'][0]
         saved = self.post('drafts/save', {'path': self.path, 'name': guide, 'part': part['id'],
@@ -200,7 +202,8 @@ class ReadyTests(ReadyCase):
         # Marked ready again, the changed words are a new revision; the first is kept too.
         now = self.cards()[guide]['seen']
         ready = self.post('drafts/ready', {'path': self.path, 'name': guide, 'seen': now})
-        self.assertEqual(ready['library'][guide], {'state': 'kept', 'revision': 2})
+        self.assertEqual({key: ready['library'][guide][key] for key in ('state', 'revision')},
+                         {'state': 'kept', 'revision': 2})
         held = document_library.opened()
         kept = library.status(self.root)['materials'][guide]
         self.assertEqual(held.describe(kept['document'])['revision'], 2)

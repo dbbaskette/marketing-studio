@@ -4877,9 +4877,10 @@ class Engine(Reviewing):
 
     def _keep_research(self, root: Path) -> dict:
         """Keep the training's verified research in the Document Library, under the
-        training's own key, and note how that went in the run record (`research.library`),
-        which the desk's Sources says. Never raises and never stops the research: a library
-        that cannot keep it is said, and the training carries on."""
+        training's own key, and note how that went beside the training's other library
+        records (`library.RESEARCH`, under sources/, which is never shared: another computer
+        has its own library), which the desk's Sources says. Never raises and never stops the
+        research: a library that cannot keep it is said, and the training carries on."""
         held = library.status(root)
         key = library._key(root, held)
         try:
@@ -4892,17 +4893,7 @@ class Engine(Reviewing):
             case=root / 'research', title=f'{title}: research')
         said = {name: kept[name] for name in ('state', 'document', 'revision', 'problem')
                 if kept.get(name) is not None}
-        try:
-            with self.files:
-                record = self._load(root)
-                if (record.get('research') or {}).get('library') != said:
-                    record['research'] = {**(record.get('research') or {}), 'library': said}
-                    self._store(root, record)
-                    self._commit(root, 'keep the research in the Document Library'
-                                 if said.get('state') == 'kept'
-                                 else 'note that the Document Library did not keep the research')
-        except (OSError, WorkspaceError):
-            pass    # the research stands; the next keep says it again
+        library.note_research(root, said)
         return said
 
     def _report_kept(self, root: Path, step: pipeline.Step) -> bool:

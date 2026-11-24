@@ -97,9 +97,10 @@ class Researching:
 
     def _keep_research(self, root: Path) -> dict:
         """Keep the deck's verified research in the Document Library, under the deck's own
-        key, and note how that went in the run record (`research.library`), which the desk's
-        Research panel says. Never raises and never stops the research: a library that cannot
-        keep it is said, and the deck carries on."""
+        key, and note how that went beside the deck's other library record
+        (`library_keep.RESEARCH`, under sources/, which is never shared: another computer has
+        its own library), which the desk's Research panel says. Never raises and never stops
+        the research: a library that cannot keep it is said, and the deck carries on."""
         from studio_core.document_library import research as library_research
 
         from runner import library_keep
@@ -111,17 +112,7 @@ class Researching:
             case=root / 'research', title=f'{title}: research')
         said = {name: kept[name] for name in ('state', 'document', 'revision', 'problem')
                 if kept.get(name) is not None}
-        try:
-            with self.files:
-                record = self._load(root)
-                if (record.get('research') or {}).get('library') != said:
-                    record['research'] = {**(record.get('research') or {}), 'library': said}
-                    self._store(root, record)
-                    self._commit(root, 'keep the research in the Document Library'
-                                 if said.get('state') == 'kept'
-                                 else 'note that the Document Library did not keep the research')
-        except (OSError, WorkspaceError):
-            pass    # the research stands; the next keep says it again
+        library_keep.note_research(root, said)
         return said
 
     def _keep_objections(self, root: Path, refusal, groups: list) -> None:

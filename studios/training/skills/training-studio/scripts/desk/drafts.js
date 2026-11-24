@@ -4229,15 +4229,20 @@ function confirmLevel(level, kind, every = false) {
   const named = list(found && found.levels).filter(Boolean);
   const { mark, left } = reviewedBatch(found, opened, level, kind, every);
   const where = (one) => every && one.level ? ' · Level ' + one.level : '';
-  const open = (one) => capsule('Open ' + cardTitle(one), 'quiet', () => {
-    closeSheet();
-    held.sources = false;
-    held.level = one.level || '';
-    held.material[held.level] = one.name;
-    paintDesk(true);
-    const heading = byId(headingId(one.name));
-    if (heading) heading.focus();
-  }, 'desk-level-open ' + one.name);
+  const open = (one) => {
+    const control = capsule('Open ' + cardTitle(one), 'quiet', () => {
+      closeSheet();
+      held.sources = false;
+      held.level = one.level || '';
+      held.material[held.level] = one.name;
+      paintDesk(true);
+      const heading = byId(headingId(one.name));
+      if (heading) heading.focus();
+    }, 'desk-level-open ' + one.name);
+    // Every level lists each kind once a level: its name says which.
+    if (where(one)) control.setAttribute('aria-label', 'Open ' + cardTitle(one) + where(one));
+    return control;
+  };
   const marked = make('ul', 'rows');
   for (const one of mark) {
     marked.append(add(make('li', 'row step'), add(make('div', 'row-text'),

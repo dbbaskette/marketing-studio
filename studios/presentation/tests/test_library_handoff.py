@@ -17,6 +17,7 @@ from studio_core import document_library
 from synthesis_fixture import published_bundle
 
 from runner import engine as engines
+from runner import library_keep
 
 PICKED = {'id': 'launch-post', 'revision': 2}
 READ = {'id': 'launch-post', 'revision': 2, 'title': 'Launch post', 'readable': True,
@@ -102,7 +103,7 @@ class ResearchKeptTests(DeskCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]['studio'], 'presentation')
         self.assertTrue(rows[0]['title'].endswith(': research'))
-        self.assertEqual(self.record(root)['research']['library']['revision'], said['revision'])
+        self.assertEqual(library_keep.research_noted(root)['revision'], said['revision'])
         commits = self.log()
         self.assertEqual(self.engine._keep_research(root)['revision'], said['revision'])
         self.assertEqual(self.log(), commits)
@@ -116,7 +117,7 @@ class ResearchKeptTests(DeskCase):
         self.assertEqual(said['state'], 'refused')
         self.assertIn('has not passed verification', said['problem'])
         self.assertEqual(self.kept_rows(), before)
-        self.assertEqual(self.record(root)['research']['library']['state'], 'refused')
+        self.assertEqual(library_keep.research_noted(root)['state'], 'refused')
 
     def test_the_report_step_keeps_research_once_it_was_verified(self):
         root = self.deck()

@@ -1091,7 +1091,7 @@ def view(engine, root) -> dict:
                     'updates': update_view(root, record),
                     'plan': questions, 'marked': marked(root, record),
                     # How the Document Library kept the verified research, when it was asked.
-                    'library': ((record or {}).get('research') or {}).get('library'),
+                    'library': kept_library.research_noted(root),
                     'documents': [{key: entry.get(key) for key in
                                    ('name', 'bytes', 'readable', 'problem')}
                                   for entry in listed]},
