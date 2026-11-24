@@ -2125,6 +2125,32 @@ class ManagementTests(Fixture):
         self.assertNotIn('admin', html.lower())
 
 
+def desk_blog(root, decided=False, **extra):
+    """A blog started on the writing desk through the page route, as a person starts one
+    now: its ID, title and the version its detail shows. With `decided`, an editorial
+    decision (its owner) is saved for it too, which is when a desk blog is shared with a
+    selected Team Hub."""
+    import uuid
+
+    made = management.dispatch(
+        root,
+        'desk-create',
+        {
+            'operation': uuid.uuid4().hex,
+            'title': 'A team post',
+            'manuscript': 'An opening.\n\n## One\n\nSynthetic text.\n',
+            **extra,
+        },
+    )
+    if decided:
+        expected = management.detail(root, made['id'])['expected']
+        management.dispatch(
+            root, 'schedule', {'id': made['id'], 'expected': expected, 'owner': 'Avery'}
+        )
+    shown = management.detail(root, made['id'])
+    return {'id': made['id'], 'title': shown['title'], 'expected': shown['expected']}
+
+
 class MaterialUploadTests(Fixture):
     """Several files under one operation, as material that stays out of the library."""
 
@@ -2260,12 +2286,7 @@ class MaterialUploadTests(Fixture):
         with self.assertRaisesRegex(ValueError, 'library reference'):
             role(id=sample['id'], role='example')
         # A file a started blog pinned keeps the role that blog read it with.
-        import studios_config
-
-        studios_config.update({'review': {'level': 'step_by_step'}})
-        blog_runner.create(
-            self.root, {'mode': 'from-files', 'sources': [pinned], 'goal': 'A post'}, 'page'
-        )
+        desk_blog(self.root, sources=[pinned])
         with self.assertRaisesRegex(ValueError, 'started blog'):
             role(id=pinned, role='example')
         self.assertEqual(studio.item(self.root, 'sources', pinned)[1]['purposes'], ['material'])
@@ -2706,9 +2727,7 @@ class HubMaterialTests(Fixture):
         import blog_runner
 
         ident = self.material()
-        found = blog_runner.create(
-            self.root, {'mode': 'from-files', 'sources': [ident], 'goal': 'A team post'}, 'page'
-        )
+        found = desk_blog(self.root, decided=True, sources=[ident])
         self.addCleanup(lambda: blog_runner.ENGINES.pop(str(self.root), None))
         item = self.workspace.state['items']['articles/' + found['id']]['item']
         management.dispatch(
@@ -2733,9 +2752,8 @@ class HubMaterialTests(Fixture):
         import blog_runner
 
         ident = self.material()
-        found = blog_runner.create(
-            self.root, {'mode': 'from-files', 'sources': [ident], 'goal': 'A team post'}
-        )
+        found = desk_blog(self.root, sources=[ident])
+        self.addCleanup(lambda: blog_runner.ENGINES.pop(str(self.root), None))
         shutil.rmtree(studio.material(self.root, ident))
         directory, record = studio.item(self.root, 'articles', found['id'])
         record['title'] = 'Renamed while its files are away'
@@ -2767,9 +2785,8 @@ class HubMaterialTests(Fixture):
         )
         ident = result['files'][0]['source']['id']
         self.assertNotIn('hub_sync', result['files'][0]['source'])
-        found = blog_runner.create(
-            self.root, {'mode': 'from-files', 'sources': [ident], 'goal': 'A team post'}
-        )
+        found = desk_blog(self.root, decided=True, sources=[ident])
+        self.addCleanup(lambda: blog_runner.ENGINES.pop(str(self.root), None))
         graph = self.hub.graph()
         kinds = [revision['kind'] for revision in graph['revisions'].values()]
         self.assertIn('article', kinds)
@@ -2781,8 +2798,11 @@ class HubMaterialTests(Fixture):
         article = next(r for r in graph['revisions'].values() if r['kind'] == 'article')
         self.assertEqual(article['data']['studio'].get('sources', []), [])
         self.assertEqual(article['data']['studio'].get('material'), [ident])
-        # This computer still reads the files for the run.
-        _, payload, _ = blog_runner.job(self.root, found['id'])
+        # This computer still reads the files for the blog's writing jobs.
+        import desk
+        import desk_jobs
+
+        payload, _ = desk_jobs._context(self.root, desk.read(self.root, found['id']))
         self.assertEqual(payload['sources'][0]['text'], 'Unshared material words.')
 
 
