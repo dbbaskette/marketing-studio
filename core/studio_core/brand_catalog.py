@@ -1,12 +1,54 @@
-"""Read installed brand choices on explicit request; never install or update a skill."""
+"""Read installed brand choices on explicit request; never install or update a skill.
+
+A listing is kept for a short while so that a page asking again does not run every brand
+skill again. It is used again only within KEPT_FOR seconds of the scan that made it, and
+only while every place looked in is the same: the same folders, each resolving to the same
+folder with the same modification time and the same modification time of its `scripts`
+folder, the same Node.js, and the same brands folder (HARNESS_BRAND_DATA) with the same
+modification time. Installing, removing, updating or relinking a brand skill changes one of
+these, so it shows at once; anything else shows within KEPT_FOR seconds.
+"""
+import copy
 import json
 import os
 import re
 import shutil
 import subprocess
+import threading
+import time
 
 from studio_core import brand_skills
 from studio_core.packaging import stable_place
+
+KEPT_FOR = 15     # seconds a listing is used again while nothing it was read from changed
+MOST = 100        # skill folders looked at
+_KEPT: dict = {}  # what a listing was read from -> (when, the listing)
+_HELD = threading.Lock()
+
+
+def _looked_at(roots, env, node):
+    """What a listing is read from, as cheaply as it can be read: each folder looked in,
+    with the folder it resolves to and the modification times of it and of its `scripts`
+    folder, Node.js, and the brands folder with its modification time. Nothing is run."""
+    marks = []
+    for folder in roots[:MOST]:
+        try:
+            real = folder.resolve(strict=True)
+            made = real.stat().st_mtime_ns
+        except (OSError, RuntimeError):
+            marks.append((str(folder), None))
+            continue
+        try:
+            scripts = (real / 'scripts').stat().st_mtime_ns
+        except OSError:
+            scripts = None
+        marks.append((str(folder), str(real), made, scripts))
+    data = env.get(brand_skills.DATA)
+    try:
+        data_made = os.stat(data).st_mtime_ns if data else None
+    except OSError:
+        data_made = None
+    return tuple(marks), node, data, data_made
 
 
 def choices(skill=None, home=None, run=subprocess.run, which=shutil.which):
@@ -20,8 +62,27 @@ def choices(skill=None, home=None, run=subprocess.run, which=shutil.which):
     node = which('node')
     if not node:
         return {'skills': [], 'problem': 'Node.js is needed to list installed brands. You can keep the saved IDs or leave them blank.'}
+    key = (str(selected), str(home), run, which, _looked_at(roots, env, node))
+    now = time.monotonic()
+    with _HELD:
+        kept = _KEPT.get(key)
+        if kept is not None and 0 <= now - kept[0] < KEPT_FOR:
+            return copy.deepcopy(kept[1])
+    found = _scan(roots, env, node, run)
+    with _HELD:
+        for old in [old for old, (when, _) in _KEPT.items()
+                    if not 0 <= now - when < KEPT_FOR]:
+            del _KEPT[old]
+        if len(_KEPT) >= 32:
+            _KEPT.clear()
+        _KEPT[key] = (now, found)
+    return copy.deepcopy(found)
+
+
+def _scan(roots, env, node, run):
+    """Ask each brand skill in `roots` for its brands."""
     seen, found, problems = set(), [], []
-    for folder in roots[:100]:
+    for folder in roots[:MOST]:
         try:
             seen_as = folder.resolve(strict=True)
         except (OSError, RuntimeError):

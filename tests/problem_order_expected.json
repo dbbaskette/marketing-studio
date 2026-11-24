@@ -1,0 +1,238 @@
+{
+ "packet comparisons mode=None": [
+  [],
+  [],
+  []
+ ],
+ "packet comparisons mode=evidence": [
+  [],
+  [],
+  []
+ ],
+ "packet everything mode=None": [
+  [
+   "Source source-a: another source has the same id.",
+   "Source source-a: another source has the same id.",
+   "Source number 3: id must be lowercase letters, digits and hyphens (at most 64), such as s1; title is missing; publisher is missing: give who published it, as the source itself shows it; context is missing: use one of full, partial.",
+   "Source number 4: id must be lowercase letters, digits and hyphens (at most 64), such as s1; title is missing; publisher is missing: give who published it, as the source itself shows it; context is missing: use one of full, partial.",
+   "Fact fact-a: another fact has the same id.",
+   "Fact fact-a: another fact has the same id.",
+   "Fact source-a: its id is also a source id; give it its own; it needs at least one citation with an exact quote.",
+   "Fact number 4: id must be lowercase letters, digits and hyphens (at most 64); statement is missing; citations must be an array.",
+   "Fact number 5: return each fact as an object.",
+   "Set every fact author to synthesizer-1."
+  ],
+  [
+   0,
+   1,
+   2,
+   3
+  ],
+  [
+   0,
+   1,
+   2,
+   3,
+   4
+  ]
+ ],
+ "packet everything mode=evidence": [
+  [
+   "Source source-a: another source has the same id.",
+   "Source source-a: another source has the same id.",
+   "Source number 3: id must be lowercase letters, digits and hyphens (at most 64), such as s1; title is missing; publisher is missing: give who published it, as the source itself shows it; context is missing: use one of full, partial.",
+   "Source number 4: id must be lowercase letters, digits and hyphens (at most 64), such as s1; title is missing; publisher is missing: give who published it, as the source itself shows it; context is missing: use one of full, partial.",
+   "Fact fact-a: another fact has the same id.",
+   "Fact fact-a: another fact has the same id.",
+   "Fact source-a: its id is also a source id; give it its own; it needs at least one citation with an exact quote.",
+   "Fact number 4: id must be lowercase letters, digits and hyphens (at most 64); statement is missing; citations must be an array.",
+   "Fact number 5: return each fact as an object.",
+   "Set every fact author to synthesizer-1."
+  ],
+  [
+   0,
+   1,
+   2,
+   3
+  ],
+  [
+   0,
+   1,
+   2,
+   3,
+   4
+  ]
+ ],
+ "packet findings mode=None": [
+  [],
+  [],
+  []
+ ],
+ "packet findings mode=evidence": [
+  [],
+  [],
+  []
+ ],
+ "packet fixture mode=None": [
+  [],
+  [],
+  []
+ ],
+ "packet fixture mode=evidence": [
+  [],
+  [],
+  []
+ ],
+ "packet sections mode=None": [
+  [],
+  [],
+  []
+ ],
+ "packet sections mode=evidence": [
+  [],
+  [],
+  []
+ ],
+ "packet sources-facts mode=None": [
+  [
+   "Source source-a: another source has the same id.",
+   "Source source-a: another source has the same id.",
+   "Source number 3: id must be lowercase letters, digits and hyphens (at most 64), such as s1; title is missing; publisher is missing: give who published it, as the source itself shows it; context is missing: use one of full, partial.",
+   "Source number 4: id must be lowercase letters, digits and hyphens (at most 64), such as s1; title is missing; publisher is missing: give who published it, as the source itself shows it; context is missing: use one of full, partial.",
+   "Fact fact-a: another fact has the same id.",
+   "Fact fact-a: another fact has the same id.",
+   "Fact source-a: its id is also a source id; give it its own; it needs at least one citation with an exact quote.",
+   "Fact number 4: id must be lowercase letters, digits and hyphens (at most 64); statement is missing; citations must be an array.",
+   "Fact number 5: return each fact as an object.",
+   "Set every fact author to synthesizer-1."
+  ],
+  [
+   0,
+   1,
+   2,
+   3
+  ],
+  [
+   0,
+   1,
+   2,
+   3,
+   4
+  ]
+ ],
+ "packet sources-facts mode=evidence": [
+  [
+   "Source source-a: another source has the same id.",
+   "Source source-a: another source has the same id.",
+   "Source number 3: id must be lowercase letters, digits and hyphens (at most 64), such as s1; title is missing; publisher is missing: give who published it, as the source itself shows it; context is missing: use one of full, partial.",
+   "Source number 4: id must be lowercase letters, digits and hyphens (at most 64), such as s1; title is missing; publisher is missing: give who published it, as the source itself shows it; context is missing: use one of full, partial.",
+   "Fact fact-a: another fact has the same id.",
+   "Fact fact-a: another fact has the same id.",
+   "Fact source-a: its id is also a source id; give it its own; it needs at least one citation with an exact quote.",
+   "Fact number 4: id must be lowercase letters, digits and hyphens (at most 64); statement is missing; citations must be an array.",
+   "Fact number 5: return each fact as an object.",
+   "Set every fact author to synthesizer-1."
+  ],
+  [
+   0,
+   1,
+   2,
+   3
+  ],
+  [
+   0,
+   1,
+   2,
+   3,
+   4
+  ]
+ ],
+ "synthesis comparisons shaped=False": [
+  "Comparison 1: row 2 repeats the criterion 'Cost'; row 2 needs exactly one cell per subject, naming it; row 3 criterion must be text; row 3 needs exactly one cell per subject, naming it; row 4 needs exactly one cell per subject, naming it; row 4 cell 1 refs need at least one ID; row 4 cell 2 refs name unknown ID(s): fact-b; row 5 repeats the criterion 'Speed'; row 5 cells must be an array.",
+  "Comparison 2: subjects must be at least two distinct, nonempty names; row 1 needs exactly one cell per subject, naming it; row 2 repeats the criterion 'Fit'; row 2 needs exactly one cell per subject, naming it.",
+  "Comparison 3: subjects must be an array.",
+  "Comparison 4: return it as an object."
+ ],
+ "synthesis comparisons shaped=True": [
+  "Comparison 1: row 2 repeats the criterion 'Cost'; row 2 needs exactly one cell per subject, naming it; row 3 criterion must be text; row 3 needs exactly one cell per subject, naming it; row 4 needs exactly one cell per subject, naming it; row 4 cell 1 refs need at least one ID; row 4 cell 2 refs name unknown ID(s): fact-b; row 5 repeats the criterion 'Speed'; row 5 cells must be an array.",
+  "Comparison 2: subjects must be at least two distinct, nonempty names; row 1 needs exactly one cell per subject, naming it; row 2 repeats the criterion 'Fit'; row 2 needs exactly one cell per subject, naming it.",
+  "Comparison 3: subjects must be an array.",
+  "Comparison 4: return it as an object."
+ ],
+ "synthesis everything shaped=False": [
+  "Finding instance-min: another finding has the same id.",
+  "Finding instance-min: another finding has the same id.",
+  "Finding number 4: id must be lowercase letters, digits and hyphens (at most 64); title is empty; summary must be an object with text, kind and refs; support must be an array; counter must be an array; implications must be an array (it may be empty); conditions must be an array (it may be empty); gaps must be an array (it may be empty).",
+  "Finding number 5: id must be lowercase letters, digits and hyphens (at most 64); title is missing; summary must be an object with text, kind and refs; support must be an array; counter must be an array; implications must be an array (it may be empty); conditions must be an array (it may be empty); gaps must be an array (it may be empty).",
+  "Finding number 6: return it as an object.",
+  "Finding fact-a: its id is also a source or fact id; give it its own; summary must be an object with text, kind and refs; support must be an array; counter must be an array; implications must be an array (it may be empty); conditions must be an array (it may be empty); gaps must be an array (it may be empty).",
+  "Report section explain: another report section has the same id.",
+  "Report section explain: another report section has the same id.",
+  "Report section number 3: id must be lowercase letters, digits and hyphens (at most 64); title is missing; blocks must be a nonempty array.",
+  "Report section number 4: id must be lowercase letters, digits and hyphens (at most 64); title is missing; blocks must be a nonempty array.",
+  "Brief section teaching: another brief section has the same id.",
+  "Brief section teaching: another brief section has the same id.",
+  "Brief section teaching: another brief section has the same id.",
+  "Comparison 1: row 2 repeats the criterion 'Cost'; row 2 needs exactly one cell per subject, naming it; row 3 criterion must be text; row 3 needs exactly one cell per subject, naming it; row 4 needs exactly one cell per subject, naming it; row 4 cell 1 refs need at least one ID; row 4 cell 2 refs name unknown ID(s): fact-b; row 5 repeats the criterion 'Speed'; row 5 cells must be an array.",
+  "Comparison 2: subjects must be at least two distinct, nonempty names; row 1 needs exactly one cell per subject, naming it; row 2 repeats the criterion 'Fit'; row 2 needs exactly one cell per subject, naming it.",
+  "Comparison 3: subjects must be an array.",
+  "Comparison 4: return it as an object."
+ ],
+ "synthesis everything shaped=True": [
+  "Finding instance-min: another finding has the same id.",
+  "Finding instance-min: another finding has the same id.",
+  "Finding number 4: id must be lowercase letters, digits and hyphens (at most 64); title is empty; summary must be an object with text, kind and refs; support must be an array; counter must be an array; implications must be an array (it may be empty); conditions must be an array (it may be empty); gaps must be an array (it may be empty).",
+  "Finding number 5: id must be lowercase letters, digits and hyphens (at most 64); title is missing; summary must be an object with text, kind and refs; support must be an array; counter must be an array; implications must be an array (it may be empty); conditions must be an array (it may be empty); gaps must be an array (it may be empty).",
+  "Finding number 6: return it as an object.",
+  "Finding fact-a: its id is also a source or fact id; give it its own; summary must be an object with text, kind and refs; support must be an array; counter must be an array; implications must be an array (it may be empty); conditions must be an array (it may be empty); gaps must be an array (it may be empty).",
+  "Report section explain: another report section has the same id.",
+  "Report section explain: another report section has the same id.",
+  "Report section number 3: id must be lowercase letters, digits and hyphens (at most 64); title is missing; blocks must be a nonempty array.",
+  "Report section number 4: id must be lowercase letters, digits and hyphens (at most 64); title is missing; blocks must be a nonempty array.",
+  "Brief section teaching: another brief section has the same id.",
+  "Brief section teaching: another brief section has the same id.",
+  "Brief section teaching: another brief section has the same id.",
+  "Comparison 1: row 2 repeats the criterion 'Cost'; row 2 needs exactly one cell per subject, naming it; row 3 criterion must be text; row 3 needs exactly one cell per subject, naming it; row 4 needs exactly one cell per subject, naming it; row 4 cell 1 refs need at least one ID; row 4 cell 2 refs name unknown ID(s): fact-b; row 5 repeats the criterion 'Speed'; row 5 cells must be an array.",
+  "Comparison 2: subjects must be at least two distinct, nonempty names; row 1 needs exactly one cell per subject, naming it; row 2 repeats the criterion 'Fit'; row 2 needs exactly one cell per subject, naming it.",
+  "Comparison 3: subjects must be an array.",
+  "Comparison 4: return it as an object."
+ ],
+ "synthesis findings shaped=False": [
+  "Finding instance-min: another finding has the same id.",
+  "Finding instance-min: another finding has the same id.",
+  "Finding number 4: id must be lowercase letters, digits and hyphens (at most 64); title is empty; summary must be an object with text, kind and refs; support must be an array; counter must be an array; implications must be an array (it may be empty); conditions must be an array (it may be empty); gaps must be an array (it may be empty).",
+  "Finding number 5: id must be lowercase letters, digits and hyphens (at most 64); title is missing; summary must be an object with text, kind and refs; support must be an array; counter must be an array; implications must be an array (it may be empty); conditions must be an array (it may be empty); gaps must be an array (it may be empty).",
+  "Finding number 6: return it as an object.",
+  "Finding fact-a: its id is also a source or fact id; give it its own; summary must be an object with text, kind and refs; support must be an array; counter must be an array; implications must be an array (it may be empty); conditions must be an array (it may be empty); gaps must be an array (it may be empty)."
+ ],
+ "synthesis findings shaped=True": [
+  "Finding instance-min: another finding has the same id.",
+  "Finding instance-min: another finding has the same id.",
+  "Finding number 4: id must be lowercase letters, digits and hyphens (at most 64); title is empty; summary must be an object with text, kind and refs; support must be an array; counter must be an array; implications must be an array (it may be empty); conditions must be an array (it may be empty); gaps must be an array (it may be empty).",
+  "Finding number 5: id must be lowercase letters, digits and hyphens (at most 64); title is missing; summary must be an object with text, kind and refs; support must be an array; counter must be an array; implications must be an array (it may be empty); conditions must be an array (it may be empty); gaps must be an array (it may be empty).",
+  "Finding number 6: return it as an object.",
+  "Finding fact-a: its id is also a source or fact id; give it its own; summary must be an object with text, kind and refs; support must be an array; counter must be an array; implications must be an array (it may be empty); conditions must be an array (it may be empty); gaps must be an array (it may be empty)."
+ ],
+ "synthesis fixture shaped=False": [],
+ "synthesis fixture shaped=True": [],
+ "synthesis sections shaped=False": [
+  "Report section explain: another report section has the same id.",
+  "Report section explain: another report section has the same id.",
+  "Report section number 3: id must be lowercase letters, digits and hyphens (at most 64); title is missing; blocks must be a nonempty array.",
+  "Report section number 4: id must be lowercase letters, digits and hyphens (at most 64); title is missing; blocks must be a nonempty array.",
+  "Brief section teaching: another brief section has the same id.",
+  "Brief section teaching: another brief section has the same id.",
+  "Brief section teaching: another brief section has the same id."
+ ],
+ "synthesis sections shaped=True": [
+  "Report section explain: another report section has the same id.",
+  "Report section explain: another report section has the same id.",
+  "Report section number 3: id must be lowercase letters, digits and hyphens (at most 64); title is missing; blocks must be a nonempty array.",
+  "Report section number 4: id must be lowercase letters, digits and hyphens (at most 64); title is missing; blocks must be a nonempty array.",
+  "Brief section teaching: another brief section has the same id.",
+  "Brief section teaching: another brief section has the same id.",
+  "Brief section teaching: another brief section has the same id."
+ ],
+ "synthesis sources-facts shaped=False": [],
+ "synthesis sources-facts shaped=True": []
+}

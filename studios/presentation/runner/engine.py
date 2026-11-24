@@ -123,6 +123,7 @@ from studio_core import research_sections
 import contextvars
 import json
 import hashlib
+import inspect
 import sys
 import os
 import re
@@ -339,6 +340,15 @@ def _refs(repo: Path, branch: str) -> tuple | None:
 
 class Elsewhere(WorkspaceError):
     """This computer may not change a deck: someone else drives it, or nobody does."""
+
+
+def _takes_found(make) -> bool:
+    """Whether `make`, the brand skill's maker, takes the skills a look listed (`found=`):
+    the runner's own Brand does; a stand-in may not, and is then asked as before."""
+    try:
+        return 'found' in inspect.signature(make).parameters
+    except (TypeError, ValueError):
+        return False
 
 
 class Engine(Jobs, Researching, DeskActions):
@@ -1456,8 +1466,11 @@ class Engine(Jobs, Researching, DeskActions):
                      'runtimes': {'slides': None, 'brand': None},
                      'brand': {'found': False, 'name': None, 'brands': [], 'problem': None},
                      'skills': [], 'research': None, 'research_problem': None}
+            # One slides tool and one brand skill, each asked each question once, and the
+            # skill folders scanned once, for the whole look.
             try:
                 tool = self.slides()
+                tool.version()   # a tool too old is the slides tool's own problem
                 ready = slides_tool.ready(tool, drive=settings.load().previews != 'local')
                 found.update(version=ready['version'], local=ready['local'],
                              drive=ready['drive'], pictures=ready['pictures'],
@@ -1467,8 +1480,14 @@ class Engine(Jobs, Researching, DeskActions):
             except (WorkspaceError, OSError) as refusal:
                 found['tool'] = str(refusal)
                 found['version'] = getattr(refusal, 'version', None)
+            listed = None
             try:
-                skill = self._skill()
+                listed = [entry for entry in brand_skill.found()
+                          if isinstance(entry, dict) and entry.get('runtime')]
+            except (WorkspaceError, OSError):
+                pass
+            try:
+                skill = self._skill(listed)
                 found['runtimes']['brand'] = str(skill.runtime)
                 found['brings'] = brand_source.bootstraps(Path(skill.runtime)).get(
                     'harness-slides')
@@ -1483,11 +1502,7 @@ class Engine(Jobs, Researching, DeskActions):
                 found['fonts'] = fonts() if fonts else None
             except (WorkspaceError, OSError) as refusal:
                 found['brand']['problem'] = str(refusal)
-            try:
-                found['skills'] = [entry for entry in brand_skill.found()
-                                   if isinstance(entry, dict) and entry.get('runtime')]
-            except (WorkspaceError, OSError):
-                pass
+            found['skills'] = listed or []
             try:
                 found['research'] = str(self.research().runtime)
             except (WorkspaceError, OSError) as refusal:
@@ -1584,9 +1599,14 @@ class Engine(Jobs, Researching, DeskActions):
             return tuple(int(part) for part in re.findall(r'\d+', text)[:3])
         return parts(version) < parts(needed)
 
-    def _skill(self):
-        """The brand skill to use: the one the person named at set-up, else the first."""
+    def _skill(self, listed: list | None = None):
+        """The brand skill to use: the one the person named at set-up, else the first.
+        `listed` is what `brand_skill.found()` listed just now: the skill is then taken from
+        it, with no folder scanned or question asked again."""
         named = settings.load().brand_skill
+        if listed is not None and _takes_found(self.brand):
+            return self.brand(runtime=named, found=listed) if named \
+                else self.brand(found=listed)
         return self.brand(runtime=named) if named else self.brand()
 
     def brand_skills(self) -> list[dict]:

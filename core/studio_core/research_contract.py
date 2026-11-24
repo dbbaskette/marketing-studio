@@ -4,6 +4,7 @@ Studios supply bounded, separate author/reviewer invocations. Existing schema-1
 runs never enter this adapter. No provider, installation or shared setting is
 changed here.
 """
+from collections import Counter
 import copy
 import hashlib
 import json
@@ -15,6 +16,7 @@ import shutil
 import signal
 import subprocess
 import tempfile
+import threading
 import time
 import unicodedata
 
@@ -860,9 +862,32 @@ KEPT = ('These are the sources your previous draft cited, which this round is gi
 JS_SPACE = frozenset('\t\n\v\f\r\ufeff\u2028\u2029')
 
 
+_SCHEMAS: dict = {}            # (path, mtime_ns, size) -> the parsed schema; read-only
+_SCHEMAS_HELD = threading.Lock()
+
+
+def _schema(runtime):
+    """The pinned Harness Research synthesis schema, parsed once for each version of its
+    file: kept by its path and its (modification time, size), so a changed or replaced file
+    is read again. What is returned is shared and never changed by its callers. A file that
+    cannot be read or parsed raises as reading it always did."""
+    path = Path(runtime) / 'references/synthesis.schema.json'
+    found = path.stat()
+    key = (str(path.resolve()), found.st_mtime_ns, found.st_size)
+    with _SCHEMAS_HELD:
+        kept = _SCHEMAS.get(key)
+    if kept is None:
+        kept = json.loads(path.read_text())
+        with _SCHEMAS_HELD:
+            if len(_SCHEMAS) >= 16:
+                _SCHEMAS.clear()
+            _SCHEMAS[key] = kept
+    return kept
+
+
 def pinned(runtime):
     """The definitions of the pinned Harness Research synthesis schema."""
-    return json.loads((Path(runtime) / 'references/synthesis.schema.json').read_text())['$defs']
+    return _schema(runtime)['$defs']
 
 
 def conditions(definition):
@@ -1009,7 +1034,7 @@ def packet_problems(value, texts, runtime, worker=None, mode=None):
     required, when = set(source_rule.get('required') or ()), conditions(source_rule)
     problems, flawed_sources, flawed_facts = [], set(), set()
     rows = value.get('sources') if isinstance(value.get('sources'), list) else []
-    ids = [row.get('id') for row in rows if isinstance(row, dict)]
+    ids = repeated([row.get('id') for row in rows if isinstance(row, dict)])
     for index, source in enumerate(rows):
         if not isinstance(source, dict):
             continue
@@ -1017,7 +1042,7 @@ def packet_problems(value, texts, runtime, worker=None, mode=None):
         said = []
         if 'id' in source_fields and not identifier(source.get('id'), source_fields['id']):
             said.append('id must be lowercase letters, digits and hyphens (at most 64), such as s1')
-        elif ids.count(source.get('id')) > 1:
+        elif ids(source.get('id')):
             said.append('another source has the same id')
         for field, rule in source_fields.items():
             rule = rule if isinstance(rule, dict) else {}
@@ -1043,7 +1068,7 @@ def packet_problems(value, texts, runtime, worker=None, mode=None):
             problems.append(f'Source {name}: ' + '; '.join(said) + '.')
     known = {row['id'] for row in rows if isinstance(row, dict) and isinstance(row.get('id'), str)}
     facts = value.get('facts') if isinstance(value.get('facts'), list) else []
-    fact_ids = [fact.get('id') for fact in facts if isinstance(fact, dict)]
+    fact_ids = repeated([fact.get('id') for fact in facts if isinstance(fact, dict)])
     authored = False
     for index, fact in enumerate(facts):
         if not isinstance(fact, dict):
@@ -1057,7 +1082,7 @@ def packet_problems(value, texts, runtime, worker=None, mode=None):
             said.append('unknown field(s) ' + ', '.join(unknown))
         if 'id' in fact_fields and not identifier(fact.get('id'), fact_fields['id']):
             said.append('id must be lowercase letters, digits and hyphens (at most 64)')
-        elif fact_ids.count(fact.get('id')) > 1:
+        elif fact_ids(fact.get('id')):
             said.append('another fact has the same id')
         elif isinstance(fact.get('id'), str) and fact['id'] in known:
             said.append('its id is also a source id; give it its own')
@@ -1182,7 +1207,7 @@ ID_PATTERN = '^[a-z0-9][a-z0-9-]{0,63}$'
 
 def pinned_schema(runtime):
     """The whole pinned Harness Research synthesis schema."""
-    return json.loads((Path(runtime) / 'references/synthesis.schema.json').read_text())
+    return _schema(runtime)
 
 
 def described(rule):
@@ -1268,6 +1293,45 @@ def review_outline(runtime):
     return {'note': REVIEWED, 'fields': fields(definition), 'rules': list(REVIEW_RULES)}
 
 
+def repeated(values):
+    """A test of whether a value is in `values` more than once, as `values.count(value) > 1`
+    says, counted once for the whole list rather than once for each value asked about. A
+    value that cannot be counted by hash (a list or an object) is counted as count() does."""
+    counted = Counter()
+    for value in values:
+        try:
+            counted[value] += 1
+        except TypeError:
+            pass
+
+    def more_than_once(value):
+        try:
+            return counted[value] > 1
+        except TypeError:
+            return values.count(value) > 1
+    return more_than_once
+
+
+def within(values):
+    """A test of whether a value is among `values`, as `value in values` says, without
+    reading the list again for each value asked about."""
+    hashed, rest = set(), []
+    for value in values:
+        try:
+            hashed.add(value)
+        except TypeError:
+            rest.append(value)
+
+    def contains(value):
+        try:
+            if value in hashed:
+                return True
+        except TypeError:
+            pass
+        return value in rest
+    return contains
+
+
 def distinct(values):
     """Whether values are all different, as JavaScript's Set counts strings."""
     texts = [value for value in values if isinstance(value, str)]
@@ -1327,6 +1391,7 @@ def synthesis_problems(value, runtime, shaped=False):
             problems.append('findings must be an array.')
     named = [finding.get('id') if isinstance(finding, dict) else None for finding in findings]
     finding_ids = {ident for ident in named if isinstance(ident, str)}
+    named_twice = repeated(named)
     for index, finding in enumerate(findings):
         ident = named[index]
         name = ident if isinstance(ident, str) and ident else f'number {index + 1}'
@@ -1336,7 +1401,7 @@ def synthesis_problems(value, runtime, shaped=False):
         said = []
         if not identifier(ident, finding_id or {'pattern': ID_PATTERN}):
             said.append('id must be lowercase letters, digits and hyphens (at most 64)')
-        elif named.count(ident) > 1:
+        elif named_twice(ident):
             said.append('another finding has the same id')
         elif ident in source_ids or ident in fact_ids:
             said.append('its id is also a source or fact id; give it its own')
@@ -1372,6 +1437,7 @@ def synthesis_problems(value, runtime, shaped=False):
                                 else 'The brief needs at least one section.')
             continue
         ids = [section.get('id') if isinstance(section, dict) else None for section in sections]
+        ids_twice = repeated(ids)
         for index, section in enumerate(sections):
             ident = ids[index]
             name = f'{label} section ' + (ident if isinstance(ident, str) and ident else f'number {index + 1}')
@@ -1381,7 +1447,7 @@ def synthesis_problems(value, runtime, shaped=False):
             said = []
             if not identifier(ident, section_id or {'pattern': ID_PATTERN}):
                 said.append('id must be lowercase letters, digits and hyphens (at most 64)')
-            elif ids.count(ident) > 1:
+            elif ids_twice(ident):
                 said.append(f'another {label.lower()} section has the same id')
             wrong = wrong_text(section.get('title'))
             if wrong:
@@ -1415,11 +1481,12 @@ def synthesis_problems(value, runtime, shaped=False):
             subjects = None
         elif len(subjects) < 2 or not distinct(subjects) or any(wrong_text(s) for s in subjects):
             said.append('subjects must be at least two distinct, nonempty names')
+        among = within(subjects) if subjects is not None else None
         rows_ = comparison.get('rows')
         if not isinstance(rows_, list):
             said.append('rows must be an array')
             rows_ = []
-        criteria = []
+        criteria = set()   # each criterion so far that is text: only text is asked about
         for number, row in enumerate(rows_, start=1):
             if not isinstance(row, dict):
                 said.append(f'row {number} must be an object')
@@ -1428,16 +1495,17 @@ def synthesis_problems(value, runtime, shaped=False):
             wrong = wrong_text(criterion)
             if wrong:
                 said.append(f'row {number} criterion {wrong}')
-            elif criterion in criteria:
+            elif criterion in criteria:   # text, as wrong_text said
                 said.append(f'row {number} repeats the criterion {clipped(criterion, 60)!r}')
-            criteria.append(criterion)
+            if isinstance(criterion, str):
+                criteria.add(criterion)
             cells = row.get('cells')
             if not isinstance(cells, list):
                 said.append(f'row {number} cells must be an array')
                 continue
             named_cells = [cell.get('subject') if isinstance(cell, dict) else None for cell in cells]
             if subjects is not None and (len(cells) != len(subjects) or not distinct(named_cells)
-                                         or any(subject not in subjects for subject in named_cells)):
+                                         or any(not among(subject) for subject in named_cells)):
                 said.append(f'row {number} needs exactly one cell per subject, naming it')
             for place_, cell in enumerate(cells, start=1):
                 if not isinstance(cell, dict):

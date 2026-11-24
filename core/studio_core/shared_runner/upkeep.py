@@ -130,7 +130,10 @@ class Upkeep:
         self._update: dict | None = None     # the update in hand, or the last one
         self._upgrade: dict | None = None    # the upgrade in hand, or the one installed
         self._brand: dict | None = None      # the brand skill's install in hand, or the last
-        self._threads: list[threading.Thread] = []
+        self._threads: list[threading.Thread] = []   # running ones only; under _held
+        self._held = threading.RLock()       # guards _threads and _refreshing
+        self._refreshing: threading.Thread | None = None   # the look in hand, if any
+        self._single = threading.RLock()     # one look on this computer and online at a time
         self._stop = threading.Event()
         self.restarting: list[str] | None = None   # what `studio serve` runs once it stops
         self.leave = None                    # stops the runner; `studio serve` sets it
@@ -155,30 +158,47 @@ class Upkeep:
                 return found
         return sync_guidance.runtime_version()
 
-    def start(self) -> None:
+    def start(self) -> bool:
         """Look on this computer, putting back what is safe, then online when that is due.
         All of it in the background: the page answers meanwhile."""
-        self._background(self._first, 'looking at the skills')
+        return self._refresh('looking at the skills')
 
-    def again(self) -> None:
-        """The page's "Check again": the part on this computer now, online in the
-        background when that is due."""
-        self.check(repair=True)
-        self._background(self.look, 'looking for updates')
+    def again(self) -> bool:
+        """The page's "Check again": the same look as `start`, in the background, so the
+        page answers at once and goes on showing what was found last until the new look
+        is in. While a look is in hand no second one is started: the one in hand is what
+        the page shows next. True when this started one."""
+        return self._refresh('checking again')
+
+    def _refresh(self, name: str) -> bool:
+        """Start the look `start` and `again` take, unless one is in hand already."""
+        with self._held:
+            if self._refreshing is not None and self._refreshing.is_alive():
+                return False
+            self._refreshing = self._background(self._first, name)
+        return True
 
     def _first(self) -> None:
-        self.check(repair=True)
-        self.look()
+        with self._single:
+            self.check(repair=True)
+            self.look()
 
-    def _background(self, work, name: str) -> None:
+    def _background(self, work, name: str) -> threading.Thread:
+        """Run `work` in a thread of its own. Threads that have ended are let go, so the
+        list holds only those still running."""
         thread = threading.Thread(target=work, daemon=True, name=name)
-        self._threads.append(thread)
-        thread.start()
+        with self._held:
+            self._threads = [kept for kept in self._threads if kept.is_alive()]
+            self._threads.append(thread)
+            thread.start()
+        return thread
 
     def close(self) -> None:
         """End an update in hand. What was looked at is kept."""
         self._stop.set()
-        for thread in self._threads:
+        with self._held:
+            running = list(self._threads)
+        for thread in running:
             if thread is not threading.current_thread():
                 thread.join(timeout=10)
 
@@ -225,9 +245,11 @@ class Upkeep:
                 runtime = companion.find_runtime(places, module.SCRIPT, module.VARIABLE, name,
                                                  'it cannot be asked')
                 if module is slides_tool:
+                    # One tool, asked its version and what it can do once each.
                     tool = slides_tool.Slides(runtime)
+                    version = tool.version()
                     listed = tool.capabilities()
-                    said[name] = f'The tool in use says it is {tool.version()}' + (
+                    said[name] = f'The tool in use says it is {version}' + (
                         f", and that it can do: {', '.join(sorted(listed))}." if listed
                         else '.')
                 else:
@@ -329,7 +351,13 @@ class Upkeep:
         each companion's and the brand skill's. Only that commit is read, and nothing is run.
         When the studio's own main has moved past the guidance cache, main is fetched into
         that cache, as a new item's start fetches it, so its version and its pins can be
-        read. True when it looked."""
+        read. True when it looked. One look at a time: a second waits for the first, and
+        then finds a look is not due."""
+        with self._single:
+            return self._online()
+
+    def _online(self) -> bool:
+        """`look`, with the look to itself."""
         if not self.due():
             return False
         place = home.data_root()
@@ -878,11 +906,11 @@ class Upkeep:
 NAMES = ('SAVED', 'DAY', 'LOOK_SECONDS', 'UPDATE_SECONDS', 'COMMIT', 'UPDATING', 'NO_RESTART',
          'BRAND', 'BRAND_SECONDS', 'BRAND_INSTALLING', '_floor', '_now', '_age', '_version',
          'fetch_tree', 'install_root', '_who', '_load')
-METHODS = {'Upkeep': ('__init__', 'folder', 'checkout', 'version', 'start', 'again', '_first',
-           '_background', 'close', 'module', 'check', '_blank', '_brands', '_tools', '_current',
-           '_commands', '_main_version', 'saved_path', '_saved', 'due', '_brand_entry',
-           '_installed_commit', '_main_moved',
-           'remember_brand', 'look', '_bring', '_said', '_the_brand', '_brand_installed', '_moved',
+METHODS = {'Upkeep': ('__init__', 'folder', 'checkout', 'version', 'start', 'again', '_refresh',
+           '_first', '_background', 'close', 'module', 'check', '_blank', '_brands', '_tools',
+           '_current', '_commands', '_main_version', 'saved_path', '_saved', 'due',
+           '_brand_entry', '_installed_commit', '_main_moved', 'remember_brand', 'look',
+           '_online', '_bring', '_said', '_the_brand', '_brand_installed', '_moved',
            'dismiss', 'releases', '_target', '_link', '_main', '_branch', '_fetch_main',
            '_newest', '_on_main', 'installed_commit', '_ahead', '_refuse_busy',
            'suite_managed', 'upgrade', '_run_installer', '_opener', 'restart', 'command',

@@ -68,6 +68,15 @@ Added to the above
   draws a slide of the outline in each of its deck directions with `look_samples`, and
   records the person's pick, in their words, with `look_choose`. Both are asked of the
   skill, so an older one is used as it always was.
+- The quick questions (`brands --json`, `version`, and the usage `contracts()`, `guides()`
+  and `looks()` read) are each one process with no watcher (companion.ask). What the usage
+  says is kept for the copy of the skill it was asked of: the folder it resolves to and its
+  command's and package.json's modification time and size (_stamp). An updated or replaced
+  skill is asked again; a skill whose command is not on disk is asked every time.
+- `Brand(found=listing)` and `Brand(runtime=..., found=listing)` take the skill, and its
+  name, version and brands, from what a `found()` made just now listed, so a look that has
+  listed the skills scans no folder again and asks the chosen one nothing more. `Brand()`
+  keeps the brands the scan that chose it listed, for its first `brands()`.
 """
 from __future__ import annotations
 
@@ -195,6 +204,34 @@ def run_command(command: list[str], cwd: Path | None = None) -> tuple[int, str, 
     return companions.run_command(command, cwd, TIMEOUT, 'The brand skill', told())
 
 
+def ask_command(command: list[str], cwd: Path | None = None) -> tuple[int, str, str]:
+    """Ask the skill a quick question that writes nothing (its brands, its version, its
+    usage): one process with no watcher, and companion.QUICK seconds to answer
+    (companion.ask). The skill is told which companions to use (`told`)."""
+    return companions.ask(command, cwd, 'The brand skill', told())
+
+
+def _stamp(runtime: Path, script: Path | None) -> tuple | None:
+    """What tells one copy of a skill from another: the folder it resolves to and the
+    (modification time, size) of its command and its package.json. An update moves
+    `current` or rewrites one of them. None when its command is not on disk, so nothing
+    asked of it can be kept. Reading it runs nothing."""
+    try:
+        folder = Path(runtime).resolve()
+        command = Path(script).resolve().stat() if script else None
+    except (OSError, RuntimeError):
+        return None
+    if command is None:
+        return None
+    try:
+        package = (folder / 'package.json').stat()
+        package = (package.st_mtime_ns, package.st_size)
+    except OSError:
+        package = None
+    return (str(folder), str(Path(script).resolve()), (command.st_mtime_ns, command.st_size),
+            package)
+
+
 def _lines(err: str, code: int) -> list[str]:
     """What the skill said was wrong, without the usage it prints after."""
     lines = []
@@ -260,9 +297,10 @@ def _installed(run=None, home: Path | None = None):
                  if name != 'current'] or ['brand']
         script = None if runtime in seen else companion(runtime, *hints)
         seen.add(runtime)
-        brands = _asked(run or run_command, node, script) if script else None
+        # Two quick questions of each: one process each, with no watcher.
+        brands = _asked(run or ask_command, node, script) if script else None
         if brands:
-            yield runtime, script, _named(run or run_command, node, script, hints[0]), brands
+            yield runtime, script, _named(run or ask_command, node, script, hints[0]), brands
 
 
 def found(run=None, home: Path | None = None) -> list[dict]:
@@ -281,22 +319,32 @@ class Brand:
     """The brands, contract, icons and audit commands of one installed brand skill.
     `runtime` is the folder it is installed in, and `name` what it calls itself."""
 
-    def __init__(self, runtime: Path | None = None, run=None):
+    def __init__(self, runtime: Path | None = None, run=None, found: list | None = None):
+        """`found` is what `found()` listed just now. With no `runtime` its first skill is
+        the one used, as `Brand()` would choose it. The name, version and brands of the
+        skill used are taken from its entry, and it is asked nothing more."""
         self.run = run or run_command
+        # A quick question (its brands, its version, its usage) is one process with no
+        # watcher; a `run` given in place of the command line is asked those too.
+        self.ask = None if run else ask_command
         self.node = 'node' if run else shutil.which('node')
+        self._kept: dict = {}        # what was asked of this copy: {question: (stamp, answer)}
+        self._listed = None          # the brands the scan that found it listed, used once
         if self.node is None:
             raise WorkspaceError(NO_NODE)
+        listed = [entry for entry in found or () if isinstance(entry, dict)
+                  and entry.get('runtime')]
+        chosen = runtime is None and found is not None
+        if chosen:
+            if not listed:
+                self._none_found()
+            runtime = Path(listed[0]['runtime'])
         if runtime is None:
-            self.runtime, self.script, called, _ = next(_installed(run), [None] * 4)
+            self.runtime, self.script, called, self._listed = next(_installed(run),
+                                                                   [None] * 4)
             self.name, self.version = called or (None, None)
-            if self.runtime is None and os.environ.get(VARIABLE):
-                raise WorkspaceError(f'{VARIABLE} names {os.environ[VARIABLE]}, which does '
-                                     'not hold a brand skill. Point it at an installed '
-                                     'one, or unset it.')
             if self.runtime is None:
-                raise WorkspaceError('No brand skill was found on this computer, so a deck '
-                                     'cannot be made. Install one, or name its folder in '
-                                     f'{VARIABLE}, then try again.')
+                self._none_found()
             return
         # A folder saved earlier inside `versions/` is said through `current`: an update
         # keeps only the newest version, so the saved one may be gone.
@@ -305,17 +353,61 @@ class Brand:
         hints = [name for name in (self.runtime.name, self.runtime.parent.name)
                  if name != 'current'] or ['brand']
         self.script = companion(self.runtime, *hints)
+        if self.script is None and chosen:
+            # The scan knew its command by the name of the link it was found through, which
+            # its own folder does not say: it is chosen as Brand() chooses, by looking again.
+            type(self).__init__(self, None, run)
+            return
         if self.script is None and not run:
             raise WorkspaceError(f'{runtime} does not hold a brand skill: a skill whose own '
                                  'command lists its brands. Name the folder of an installed '
                                  'one.')
         self.script = self.script or self.runtime / 'scripts' / f'{hints[0]}.mjs'
-        self.name, self.version = _named(self.run, self.node, self.script, hints[0])
+        entry = next((entry for entry in listed if str(entry['runtime']) == str(self.runtime)
+                      and _listing(entry.get('brands')) is not None), None)
+        if entry is not None:
+            self.name = str(entry.get('name') or hints[0])
+            self.version = entry.get('version')
+            self._listed = _listing(entry['brands'])
+            return
+        self.name, self.version = _named(self.ask or self.run, self.node, self.script,
+                                         hints[0])
 
-    def _answer(self, *args: str, kind=dict, report: bool = False):
+    @staticmethod
+    def _none_found():
+        """Refuse, in a sentence, when no brand skill was found."""
+        if os.environ.get(VARIABLE):
+            raise WorkspaceError(f'{VARIABLE} names {os.environ[VARIABLE]}, which does '
+                                 'not hold a brand skill. Point it at an installed '
+                                 'one, or unset it.')
+        raise WorkspaceError('No brand skill was found on this computer, so a deck '
+                             'cannot be made. Install one, or name its folder in '
+                             f'{VARIABLE}, then try again.')
+
+    def _quick(self, *args: str) -> tuple[int, str, str]:
+        """A quick question to the skill, as `ask_command` asks it."""
+        return (self.ask or self.run)([self.node, str(self.script), *args])
+
+    def _usage(self, question: str) -> str:
+        """What the skill prints for `question` alone, its usage, as one text. Kept for this
+        copy of the skill (_stamp), so it is asked once; a skill whose command is not on
+        disk is asked each time."""
+        stamp = _stamp(self.runtime, self.script)
+        kept = self._kept.get(question)
+        if stamp is not None and kept is not None and kept[0] == stamp:
+            return kept[1]
+        _, out, err = self._quick(question)
+        said = f'{out}\n{err}'
+        if stamp is not None:
+            self._kept[question] = (stamp, said)
+        return said
+
+    def _answer(self, *args: str, kind=dict, report: bool = False, quick: bool = False):
         """The command's JSON. An audit or a readiness check that found something ends with
-        an error code and is an answer all the same."""
-        code, out, err = self.run([self.node, str(self.script), *args])
+        an error code and is an answer all the same. `quick` for a question that writes
+        nothing and answers at once."""
+        code, out, err = (self._quick(*args) if quick
+                          else self.run([self.node, str(self.script), *args]))
         try:
             answered = json.loads(out)
         except ValueError:
@@ -327,8 +419,13 @@ class Brand:
         return answered
 
     def brands(self) -> list[dict]:
-        """The brands the skill holds, each with the variants it comes in."""
-        listed = _listing(self._answer('brands', '--json', kind=list))
+        """The brands the skill holds, each with the variants it comes in. The first time,
+        the listing of the scan that found the skill just now is used, when there was one;
+        after that the skill is asked."""
+        if self._listed is not None:
+            listed, self._listed = self._listed, None
+            return [dict(entry, variants=list(entry['variants'])) for entry in listed]
+        listed = _listing(self._answer('brands', '--json', kind=list, quick=True))
         if listed is None:
             raise WorkspaceError(NOT_WHOLE)
         return listed
@@ -368,9 +465,8 @@ class Brand:
     def contracts(self) -> bool:
         """Whether the skill has the two commands a deck is made with: `contract export` and
         `contract check`. Asked with `contract` alone, which a skill that has them answers by
-        naming them and which writes nothing."""
-        _, out, err = self.run([self.node, str(self.script), 'contract'])
-        said = f'{out}\n{err}'
+        naming them and which writes nothing. Asked once for each copy (_usage)."""
+        said = self._usage('contract')
         return bool(re.search(r'\bexport\b', said) and re.search(r'\bcheck\b', said))
 
     def icons(self, words: str, limit: int = 5) -> list[dict]:
@@ -402,9 +498,9 @@ class Brand:
         """Whether the skill is the entry to slide building: 'brand' when its `guidance`
         command takes the deck's brand and answers with the brand's own block, 'plain' when
         it only fetches the slides tool's guidance, None when it has no such command. Asked
-        with `guidance` alone, which prints its usage and fetches nothing."""
-        _, out, err = self.run([self.node, str(self.script), 'guidance'])
-        said = f'{out}\n{err}'
+        with `guidance` alone, which prints its usage and fetches nothing. Asked once for
+        each copy (_usage)."""
+        said = self._usage('guidance')
         if not re.search(r'\bstart\b', said) or not re.search(r'\bresume\b', said):
             return None
         return 'brand' if '--brand' in said else 'plain'
@@ -422,9 +518,9 @@ class Brand:
     def looks(self) -> bool:
         """Whether the skill renders look samples a person can choose from. Asked with
         `look` alone, which a skill that has it answers with its actions and which renders
-        nothing. An older skill does not know the command."""
-        _, out, err = self.run([self.node, str(self.script), 'look'])
-        said = f'{out}\n{err}'
+        nothing. An older skill does not know the command. Asked once for each copy
+        (_usage)."""
+        said = self._usage('look')
         return bool(re.search(r'\bsamples\b', said) and re.search(r'\bchoose\b', said)
                     and 'Unknown command' not in said)
 
