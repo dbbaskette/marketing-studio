@@ -9194,6 +9194,33 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         shot = result['snapshots']['stopped']
         self.assertIn(said, [line.strip() for line in shot['text'].split('\n')])
 
+    def test_an_unticked_choice_also_marks_what_was_not_opened_and_never_a_held_one(self):
+        cards = [a_card(f'{base}@101') for base, _ in DESK_KINDS]
+        cards[2] = a_card('brief@101', 'held', 'Built from an earlier guide.', ('update', 'keep'))
+        cards[4] = a_card('scenario:main@101', 'writing', 'Being written.', (), seen=None)
+        answered = a_desk(*cards, levels=('101',), marked=[], left=[])
+        result = self.open_desk(self.on_desk(a_desk(*cards, levels=('101',)), **{
+            'POST /api/drafts/reviewed-ready': [answered]}),
+            [{'click': 'Deck · Draft'}, {'click': 'Mark this level ready'}, {'snapshot': 'sheet'},
+             {'tick': 'Also mark the 2 I have not opened'}, {'snapshot': 'ticked'},
+             {'click': 'Mark 3 materials ready'}])
+        sheet = result['snapshots']['sheet']
+        self.assertEqual(sheet['filled'], ['Mark 1 material ready'])
+        self.assertIn('Also mark the 2 I have not opened', sheet['sheet'])
+        self.assertIn('Not opened as they are now: Plan and Guide.', sheet['sheet'])
+        self.assertNotIn('Also mark the 2 I have not opened', sheet['ticked'])
+        ticked = result['snapshots']['ticked']
+        self.assertIn('Also mark the 2 I have not opened', ticked['ticked'])
+        self.assertEqual(ticked['filled'], ['Mark 3 materials ready'])
+        for words in ('Plan\nNot opened: marked as you chose', 'Brief\nHeld: update it or keep '
+                      'it as it is first', 'Practice\nStill being written'):
+            self.assertIn(words, ticked['sheet'])
+        # The held brief and the scenario still being written are never sent.
+        self.assertEqual(self.posts(result), [('/api/drafts/reviewed-ready', {
+            'path': str(self.root), 'level': '101', 'scope': 'level',
+            'seen': {name: seen_of(name) for name in ('blueprint@101', 'document@101',
+                                                     'deck@101')}})])
+
     def test_every_level_is_one_choice_in_the_same_sheet(self):
         answered = a_desk(marked=['deck@101', 'deck@201'], left=[])
         result = self.open_desk(self.on_desk(a_desk(), **{

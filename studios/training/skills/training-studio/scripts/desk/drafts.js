@@ -4220,14 +4220,21 @@ function markReviewed(level, mark, pressed, kind, every) {
 }
 
 // The confirmation before Mark this level ready (or every level, or every scenario): what it
-// marks, and what it leaves with why, with a way to open what was not read. Nothing is sent
-// until the person confirms; Cancel changes nothing and returns to the button.
-function confirmLevel(level, kind, every = false) {
+// marks, and what it leaves with why, with a way to open what was not read. By default only
+// what was opened as it is now is marked; one unticked choice, `also`, marks the drafts not
+// opened too, as Mark this level ready always did. Held materials and ones still being written
+// are left whatever is ticked. Nothing is sent until the person confirms; Cancel changes
+// nothing and returns to the button.
+function confirmLevel(level, kind, every = false, also = false) {
   const held = deskHeld(view.path);
   const found = held.view;
   const opened = held.opened || {};
   const named = list(found && found.levels).filter(Boolean);
-  const { mark, left } = reviewedBatch(found, opened, level, kind, every);
+  const batch = reviewedBatch(found, opened, level, kind, every);
+  const unread = batch.left.filter(({ why }) => ['unopened', 'changed'].includes(why))
+    .map(({ one }) => one);
+  const mark = also ? [...batch.mark, ...unread] : batch.mark;
+  const left = also ? batch.left.filter(({ one }) => !unread.includes(one)) : batch.left;
   const where = (one) => every && one.level ? ' · Level ' + one.level : '';
   const open = (one) => {
     const control = capsule('Open ' + cardTitle(one), 'quiet', () => {
@@ -4245,8 +4252,10 @@ function confirmLevel(level, kind, every = false) {
   };
   const marked = make('ul', 'rows');
   for (const one of mark) {
+    const read = batch.mark.includes(one);
     marked.append(add(make('li', 'row step'), add(make('div', 'row-text'),
-      make('p', 'step-name', cardTitle(one) + where(one)), make('p', 'quiet', 'Opened'))));
+      make('p', 'step-name', cardTitle(one) + where(one)), make('p', 'quiet', read ? 'Opened'
+        : 'Not opened: marked as you chose')), read ? null : open(one)));
   }
   const leftRows = make('ul', 'rows');
   for (const { one, why } of left) {
@@ -4254,6 +4263,16 @@ function confirmLevel(level, kind, every = false) {
       make('p', 'step-name', cardTitle(one) + where(one)), make('p', 'quiet', LEFT_WORDS[why])),
       ['unopened', 'changed', 'held', 'needs'].includes(why) ? open(one) : null));
   }
+  // The choice to mark what was not opened as well: unticked whenever the sheet opens.
+  const names = unread.map((one) => cardTitle(one) + where(one));
+  const choice = unread.length ? add(make('div', 'field'),
+    trainingTick(unread.length === 1 ? 'Also mark the one I have not opened'
+      : 'Also mark the ' + unread.length + ' I have not opened', also, (on) => {
+      confirmLevel(level, kind, every, on);
+      focusKey('desk-level-also');
+    }, 'desk-level-also'),
+    make('p', 'quiet field-hint', 'Not opened as they are now: ' + series(names) + '. Ticked, '
+      + (unread.length === 1 ? 'it is' : 'they are') + ' marked ready unread.')) : null;
   const kept = mark.filter((one) => ['document', 'brief'].includes(one.kind)).map(cardTitle);
   const go = mark.length ? capsule('Mark ' + count(mark.length, 'material', 'materials') + ' ready',
     'filled', async () => {
@@ -4265,12 +4284,14 @@ function confirmLevel(level, kind, every = false) {
   // A training with levels can be marked level by level or all at once.
   const scope = !kind && named.length > 1 ? segmented('Mark',
     ['Level ' + level, 'Every level'], every ? 1 : 0, (index) => {
-      confirmLevel(level, kind, index === 1);
+      confirmLevel(level, kind, index === 1, also);
       focusKey('desk-level-scope ' + index);
     }, 'desk-level-scope') : null;
-  const unread = left.filter(({ why }) => why === 'unopened').map(({ one }) => cardTitle(one) + where(one));
-  const lede = 'Ready is your approval of the version you read. Only what you opened as it is now is marked.'
-    + (unread.length ? ' Not opened yet: ' + series(unread) + '.' : mark.length && !left.length ? ' You opened each of them.' : '');
+  const lede = 'Ready is your approval of the version you read. '
+    + (also ? 'You chose to mark what you have not opened too.'
+      : 'Only what you opened as it is now is marked.')
+    + (unread.length && !also ? ' Not opened yet: ' + series(names) + '.'
+      : mark.length && !left.length && !also ? ' You opened each of them.' : '');
   const every_ = kind === 'yoodli' ? 'every Yoodli layout' : 'every practice scenario';
   DESK.kitSheet = [sheetTitle(kind ? 'Mark ' + every_ + (level ? ' of level ' + level : '') + ' ready?'
     : every ? 'Mark every level ready?' : level ? 'Mark level ' + level + ' ready?' : 'Mark every material ready?'),
@@ -4278,6 +4299,7 @@ function confirmLevel(level, kind, every = false) {
     make('p', '', lede),
     make('h3', 'sheet-part', '1. Materials to mark ready'),
     mark.length ? marked : make('p', 'quiet', 'Nothing yet: open a material to read it, then mark it ready here or on its card.'),
+    choice,
     left.length ? make('h3', 'sheet-part', '2. Left as they are') : null,
     left.length ? leftRows : null,
     make('h3', 'sheet-part', (left.length ? '3' : '2') + '. The Document Library'),
