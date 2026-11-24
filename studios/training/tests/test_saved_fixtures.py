@@ -3,9 +3,12 @@ is what the earlier gated flow writes today (GitHub issue #542).
 
 Each state below is made the only way the saved flow makes it: a saved record started with
 `saved_start`, then driven by scripted workers and decisions on the page to the stop. The
-training's folder is then compared with the stored tree. Times, digests that follow from
-times, and activity ids differ from one run to the next, so they are masked before comparing;
-every other byte, every file name and every key must match. Nothing is scrubbed: the
+training's folder is then compared with the stored tree. Only what differs from one run to
+the next is settled before comparing, each named at STAMP below; digests are matched by what
+they are the hash of, so the stored records must name the same files the flow's do. Every
+other byte, every file name and every key must match. `StoredTreeTests` also checks each
+stored tree against itself: every material and approval digest is the hash of the stored
+material, and every content-addressed file is named by its hash. Nothing is scrubbed: the
 workspace has no remote, so no driver (no computer or person name) is written, and the check
 below refuses any file that names the disposable folder or a home directory.
 
@@ -14,6 +17,7 @@ it in phase C):
 
     TRAINING_SAVED_FIXTURES_WRITE=1 python3 scripts/ci/run_tests.py test_saved_fixtures
 """
+import hashlib
 import io
 import json
 import os
@@ -131,60 +135,116 @@ DECK = {
     'level-document-gate': _gate('Waiting at its guide', 'document@101', levels=['101']),
 }
 
+# What differs from one run of the saved flow to the next, each by name, and nothing else:
+# - the time anything happened (ISO time stamps);
+# - seconds measured while it ran (the fields in SECONDS);
+# - the random id of each activity-log entry (work/activity-log.jsonl only);
+# - the random suffix of a deck's working folders (work/deck/brand-, start-, whole-, looks-,
+#   told-);
+# - the random id of a worker's question (a 12-hex `id` beside its `text`);
+# - the order in which work that runs side by side finished (each research question, each
+#   deck section: PARALLEL): their entries in a list of step entries, their lines in the
+#   activity log, and the members of a JSON object (members have no order in JSON).
+# Digests are not masked: each is replaced by the file in the same tree whose bytes it is the
+# hash of (`<sha:path>`), or, for a digest of something else, by the order it is first met,
+# so the same relations between records and files must hold on both sides.
 STAMP = re.compile(rb'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?')
-DIGEST = re.compile(rb'(?<![0-9a-f])[0-9a-f]{64}(?![0-9a-f])')
-ACTIVITY = re.compile(rb'"id": ?"[0-9a-f]{12}"')
-# Seconds measured while the flow ran.
 SECONDS = re.compile(rb'("(?:seconds|active_seconds|elapsed_seconds|duration)": ?)[0-9.e-]+')
+ACTIVITY = re.compile(rb'"id": ?"[0-9a-f]{12}"')
+WORKING = re.compile(rb'\b(brand|start|whole|looks|told)-[0-9a-f]{6}\b')
+DIGEST = re.compile(rb'(?<![0-9a-f])[0-9a-f]{64}(?![0-9a-f])')
+LOG = 'work/activity-log.jsonl'
+PARALLEL = ('research:', 'deck-sections:')
+QUESTION_ID = re.compile(r'[0-9a-f]{12}')
 
 
-# A deck's working folders carry a random suffix (work/deck/brand-1a2b3c, start-..., looks-...).
-WORKING = re.compile(rb'\b([a-z]+)-[0-9a-f]{6}\b')
+def _plain(data: bytes) -> bytes:
+    data = STAMP.sub(b'<time>', data)
+    data = SECONDS.sub(rb'\1<seconds>', data)
+    return WORKING.sub(rb'\1-<suffix>', data)
 
 
-def masked(data: bytes) -> bytes:
-    for pattern, said in ((STAMP, b'<time>'), (DIGEST, b'<digest>'), (ACTIVITY, b'"id":"<id>"'),
-                          (WORKING, rb'\1-<suffix>')):
-        data = pattern.sub(said, data)
-    return SECONDS.sub(rb'\1<seconds>', data)
+def _research(item) -> bool:
+    """Whether a step entry or an activity-log line is one of the side-by-side steps'."""
+    if not isinstance(item, dict):
+        return False
+    named = item.get('step', item.get('unit'))
+    return isinstance(named, str) and named.startswith(PARALLEL)
+
+
+def _in_turn(items: list, key) -> list:
+    """`items` with the side-by-side steps' own entries put in one order, in the places they
+    held; every other entry keeps its place, and a step's own entries keep their order."""
+    places = [index for index, item in enumerate(items) if _research(item)]
+    ordered = sorted((items[index] for index in places), key=key)
+    result = list(items)
+    for index, item in zip(places, ordered):
+        result[index] = item
+    return result
 
 
 def _settled(value):
-    """A JSON value with the order the research questions happened to finish in left out: a
-    list of entries that each name their step (a run's model jobs) is compared as a set."""
     if isinstance(value, dict):
+        if 'text' in value and QUESTION_ID.fullmatch(str(value.get('id'))):
+            value = {**value, 'id': '<question>'}
         return {key: _settled(item) for key, item in value.items()}
     if isinstance(value, list):
         items = [_settled(item) for item in value]
         if items and all(isinstance(item, dict) and 'step' in item for item in items):
-            items.sort(key=lambda item: json.dumps(item, sort_keys=True))
+            items = _in_turn(items, lambda item: str(item.get('step')))
         return items
     return value
 
 
+class Relabel:
+    """Digests by what they are the hash of, the same way for both trees compared."""
+
+    def __init__(self, files: dict):
+        self.own = {}
+        for name in sorted(files):
+            self.own.setdefault(hashlib.sha256(files[name]).hexdigest(), name)
+        self.met = {}
+
+    def name(self, name: str) -> str:
+        def label(found):
+            digest = found.group(0).decode()
+            return b'<own>' if self.own.get(digest) == name else self.digest(digest).encode()
+        return _plain(DIGEST.sub(label, name.encode())).decode()
+
+    def digest(self, digest: str) -> str:
+        if digest in self.own:
+            return '<sha:' + self.name(self.own[digest]) + '>'
+        return self.met.setdefault(digest, f'<digest:{len(self.met) + 1}>')
+
+    def text(self, data: bytes) -> bytes:
+        return _plain(DIGEST.sub(lambda found: self.digest(found.group(0).decode()).encode(), data))
+
+
 def comparable(files: dict) -> dict:
-    """A tree as it is compared: names and contents masked, an activity log's lines in order,
-    and a zip by its members."""
+    """A tree as it is compared: names and contents with the differences above settled."""
+    labels = Relabel(files)
     shown = {}
-    for name, data in files.items():
-        key = masked(name.encode()).decode()
+    for name in sorted(files, key=labels.name):
+        key, data = labels.name(name), files[name]
         value = None
         if data.startswith(b'PK\x03\x04'):
             try:
                 with zipfile.ZipFile(io.BytesIO(data)) as archive:
-                    value = sorted((item, masked(archive.read(item))) for item in archive.namelist())
+                    value = [(item, labels.text(archive.read(item))) for item in archive.namelist()]
             except zipfile.BadZipFile:
                 value = None   # the slides stand-in's deck is a few marked bytes, not a zip
         if value is not None:
             pass
-        elif name.endswith('.jsonl'):
-            value = sorted(masked(line) for line in data.splitlines())
+        elif name == LOG:
+            lines = [json.loads(line) for line in data.splitlines()]
+            lines = _in_turn(lines, lambda line: (str(line.get('step', line.get('unit'))),
+                                                  line.get('checkpoint') or ''))
+            value = [ACTIVITY.sub(b'"id":"<id>"', labels.text(json.dumps(line, sort_keys=True)
+                                                              .encode())) for line in lines]
         elif name.endswith('.json'):
-            # Research questions finish in any order, and their results are kept by
-            # question: the same keys, in the order they finished.
-            value = masked(json.dumps(_settled(json.loads(data)), sort_keys=True).encode())
+            value = labels.text(json.dumps(_settled(json.loads(data)), sort_keys=True).encode())
         else:
-            value = masked(data)
+            value = labels.text(data)
         shown.setdefault(key, []).append(value)
     return {key: sorted(values, key=repr) for key, values in shown.items()}
 
@@ -240,3 +300,58 @@ DeckCaptureTests = type('DeckCaptureTests', (Capture, DeckCase),
 class EveryStateTests(StudioCase):
     def test_every_stored_state_has_its_capture(self):
         self.assertEqual(saved_fixtures.names(), sorted({**STUDIO, **DECK}))
+
+
+class StoredTreeTests(StudioCase):
+    """Each stored tree agrees with itself, so the approvals the migration tests rely on are
+    approvals of the stored materials."""
+
+    def test_material_and_approval_digests_are_the_stored_materials(self):
+        for state in saved_fixtures.names():
+            files = saved_fixtures.tree(state)
+            session = json.loads(files[saved_fixtures.SESSION])
+            checked = 0
+            for name, entry in session['artifacts'].items():
+                with self.subTest(state=state, artifact=name):
+                    self.assertIn(entry['file'], files)
+                    made = hashlib.sha256(files[entry['file']]).hexdigest()
+                    self.assertEqual(entry['sha256'], made)
+                    if entry.get('approved'):
+                        self.assertEqual(entry['approved']['sha256'], made)
+                        checked += 1
+            # Every stored state past its intake holds at least one real approval.
+            self.assertTrue(checked, state)
+
+    def test_the_comparison_tells_a_stale_approval_and_reordered_attempts_apart(self):
+        """What the comparison settles is only what varies between runs: an approval digest
+        that no longer names its material, or a step's attempts in another order, differ."""
+        files = saved_fixtures.tree('failure-after-plan')
+        session = json.loads(files[saved_fixtures.SESSION])
+        approved = session['artifacts']['blueprint']['approved']
+        approved['sha256'] = hashlib.sha256(b'another plan').hexdigest()
+        stale = {**files, saved_fixtures.SESSION: json.dumps(session, indent=2).encode()}
+        same = {**files, saved_fixtures.SESSION: json.dumps(
+            json.loads(files[saved_fixtures.SESSION]), indent=2).encode()}
+        self.assertEqual(comparable(same), comparable(files))
+        self.assertNotEqual(comparable(stale), comparable(files))
+        # A step's own tries (its model jobs, attempt 1, 2, 3) keep their order.
+        record = json.loads(files['.training-studio/run.json'])
+        jobs = record['model_jobs']
+        places = [index for index, job in enumerate(jobs) if job['step'] == 'document']
+        self.assertEqual([jobs[index]['attempt'] for index in places], [1, 2, 3])
+        for index, job in zip(places, [jobs[index] for index in places][::-1]):
+            jobs[index] = job
+        reordered = {**files, '.training-studio/run.json': json.dumps(record).encode()}
+        self.assertNotEqual(comparable(reordered), comparable(files))
+
+    def test_content_addressed_files_are_named_by_their_bytes(self):
+        named = re.compile(r'(?:^|/)history/.+/([0-9a-f]{64})\.[a-z]+$')
+        seen = 0
+        for state in saved_fixtures.names():
+            for name, data in saved_fixtures.tree(state).items():
+                found = named.search(name)
+                if found:
+                    seen += 1
+                    with self.subTest(state=state, file=name):
+                        self.assertEqual(hashlib.sha256(data).hexdigest(), found.group(1))
+        self.assertTrue(seen)

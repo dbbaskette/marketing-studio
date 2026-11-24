@@ -446,6 +446,8 @@ CONTINUED = {'review-policy': 'Continued under the saved review level',
 SAVED_RECORD = ('This training was saved by the earlier step-by-step flow, and its saved '
                 'records cannot be read as they are, so it can be neither continued nor opened '
                 'on the desk. Its saved files are kept as they are.')
+UNREAD_RECORD = ('This training’s run record cannot be read, so it can be neither continued '
+                 'nor opened on the desk. Its saved files are kept as they are.')
 SAVED_BRIEF = ('Read-only: its saved records cannot be read, so it can be neither continued '
                'nor opened on the desk.')
 # The shared files a read-only record may list and read, by name (`Engine._saved_files`).
@@ -7672,11 +7674,12 @@ class Engine(Reviewing):
         try:
             record = self._load(root)
         except (WorkspaceError, OSError) as failure:
-            shown = self.saved_record(root, failure)
-            if shown is not None:
-                # A read-only record: nothing waits for the person and nothing runs.
+            if self.refused(root) is not None:
+                # A read-only record: nothing waits for the person and nothing runs. Said
+                # from the two small records alone, as lists and polling read it often.
+                driver, mine = self._saved_driver(root)
                 return {'state': 'saved', 'sentence': SAVED_BRIEF, 'needs': False,
-                        'question': None, 'mine': True, 'driver': None, 'last_shared': None,
+                        'question': None, 'mine': mine, 'driver': driver, 'last_shared': None,
                         'notice': None, 'busy_since': None, 'read_only': True}
             return self._unread(failure)
         return self._brief(root, record)
@@ -7822,34 +7825,72 @@ class Engine(Reviewing):
                     found.append(level + name)
         return found
 
-    def saved_record(self, root: Path, refusal: Exception | None = None) -> dict | None:
-        """What the page shows of a training the earlier gated flow saved, whose saved
-        records the runner refuses: a read-only record. It says what it is and why it can be
-        neither continued nor opened on the desk, lists the saved files it holds (read
-        through `/api/saved-file`), and offers one next action: start new work from it, or,
-        where its start form cannot be read, a new training. None for any other training,
-        and for one whose records the runner reads (it keeps its own screen). Writes
-        nothing."""
+    def refused(self, root: Path) -> tuple[str, Exception] | None:
+        """('saved' or 'unread', the runner's refusal) for a training whose records the runner
+        refuses and that is not desk work: one the earlier gated flow saved ('saved'), or
+        one whose run record is not even a JSON object, so which flow made it cannot be told
+        ('unread'). None for desk work (it keeps its own refusal and recovery) and for a
+        training whose records the runner reads. Reads only the run and session records, so
+        lists and polling may ask it."""
         from runner import desk_migration
         if (root / drafts.RECORD).is_symlink():
+            return None
+        kind = desk_migration.record_kind(root)
+        if kind == 'desk':
             return None
         try:
             read_record(root)
             workspace.load(root)
-            return None   # its records are read: the refusal is about something else
+            return None   # its records are read: a refusal is about something else
         except (WorkspaceError, OSError, ValueError) as failure:
-            refusal = refusal or failure
-        found = desk_migration.outcome(self, root)
-        if not found or found['outcome'] != 'read-only':
+            return kind, failure
+
+    def _saved_driver(self, root: Path) -> tuple[dict | None, bool]:
+        """Who drives a read-only record, as its readable run record names: (driver as the
+        page is told, whether this computer may change it). Nobody, and this computer, when
+        the record cannot be read."""
+        from studio_core import training_migration
+        try:
+            raw = json.loads((root / RECORD).read_bytes())
+            # Only a driver in the saved shape is read; anything else names nobody.
+            if isinstance(raw, dict) and training_migration.owner(raw.get('driver')):
+                record = {'driver': raw.get('driver')}
+                return team.driver(self.workspace, record), self._ours(record)
+        except (OSError, ValueError, TypeError, AttributeError, KeyError, WorkspaceError):
+            pass
+        return None, True
+
+    def saved_record(self, root: Path, refusal: Exception | None = None) -> dict | None:
+        """What the page shows of a training whose records the runner refuses and that is not
+        desk work: a read-only record. It says what it is and why it can be neither
+        continued nor opened on the desk, lists the saved files it holds (read through
+        `/api/saved-file`), and offers one next action: start new work from it, or, where its
+        start form cannot be read, a new training. A record the earlier gated flow saved
+        says so; one that cannot be read at all does not name a flow. None for desk work and
+        for a training whose records the runner reads (each keeps its own screen). Writes
+        nothing."""
+        from runner import desk_migration
+        found = self.refused(root)
+        if found is None:
             return None
+        kind, failure = found
+        refusal = refusal or failure
+        if kind == 'unread':
+            found = {'outcome': 'read-only', 'reason': desk_migration.UNREAD, 'next': 'new'}
+        else:
+            found = desk_migration.outcome(self, root)
+            if not found or found['outcome'] != 'read-only':
+                return None
         try:
             title = json.loads((root / workspace.STATE_DIR / 'session.json').read_bytes()).get('title')
         except (OSError, ValueError, AttributeError):
             title = None
         title = title if isinstance(title, str) and title.strip() else root.name
+        driver, mine = self._saved_driver(root)
         return {'path': str(root), 'title': title, 'state': 'saved', 'flow': None,
-                'execution': 'saved', 'mine': True,
-                'sentence': SAVED_RECORD, 'can_open_desk': False, 'can_migrate_desk': False,
+                'execution': 'saved', 'mine': mine, 'driver': driver,
+                'sentence': UNREAD_RECORD if kind == 'unread' else SAVED_RECORD,
+                'can_open_desk': False, 'can_migrate_desk': False,
                 'saved_record': {'why': found['reason'], 'refusal': str(refusal),
                                  'files': self._saved_files(root), 'next': found['next']}}
 

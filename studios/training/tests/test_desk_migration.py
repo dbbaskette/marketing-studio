@@ -1274,11 +1274,12 @@ class MigrationPageTests(ScriptedPage, PageCase):
 
     def test_saved_failure_and_question_are_history_on_the_desk(self):
         fixture = self.fixture()
-        desk = {**fixture['desk'], 'saved_status': {
-            'problem': {'what': 'Writing the learner guide failed three times.'},
-            'question': {'text': 'Which platform is this about?'}}}
         opened = {**fixture['opened']}
-        for narrow in (False, True):
+        # A saved failure's words end a sentence whether or not they carried a full stop.
+        for narrow, what in ((False, 'Writing the learner guide failed three times.'),
+                             (True, 'Writing the learner guide failed three times')):
+            desk = {**fixture['desk'], 'saved_status': {
+                'problem': {'what': what}, 'question': {'text': 'Which platform is this about?'}}}
             result = self.run_page(self.answers(fixture, **{
                 'GET /api/drafts': [ok(desk)], 'GET /api/run': [ok(opened)]}),
                 [{'snapshot': 'desk'}], state={'screen': 'run', 'path': fixture['path']}, narrow=narrow)

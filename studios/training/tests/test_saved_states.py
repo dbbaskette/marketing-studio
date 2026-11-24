@@ -91,6 +91,20 @@ class SavedStopTests(StudioCase):
                          {name for name, status in statuses.items() if status == 'approved'})
         self.assertEqual(len(self.workers.jobs), jobs)
         self.assertEqual(self.engine.view(root)['flow'], 'desk')
+        # No Ready mark and no delivery is invented either: the desk's Ready marks, the
+        # exports and Docs made, a delivered Google deck and the finished adoption are as
+        # the saved flow left them, and only what a person approved reads as Ready.
+        for key in ('desk_ready', 'exports', 'google_docs', 'pending_local_decks'):
+            self.assertEqual(effective.get(key), session.get(key), key)
+        original, record = json.loads(before[RUN]), self.engine._load(root)
+        for key in ('opened_on_desk', 'delivered_restore', 'copies'):
+            self.assertEqual(record.get(key), original.get(key), key)
+        from runner import drafts
+        cards = drafts.view(self.engine, root)['cards']
+        self.assertTrue(cards)
+        ready = {card['name'] for card in cards if card['state'] == 'ready'}
+        self.assertLessEqual(ready, {name for name, status in statuses.items()
+                                     if status == 'approved'})
         return shown
 
 
@@ -210,8 +224,11 @@ class UnreadableStopTests(SavedStopTests):
         self.assertEqual(native.with_run({'path': str(root)})['run']['read_only'], True)
         shown = self.engine.view(root)
         self.assertEqual(shown['title'], 'Stop blueprint')
-        self.assertEqual(shown['sentence'], engines.SAVED_RECORD)
-        self.assertEqual(shown['saved_record']['why'], desk_migration.UNREADABLE)
+        # Nobody can tell which flow wrote a record that is not even JSON: the record says
+        # so neutrally, never that the earlier flow saved it, and offers a new training.
+        self.assertEqual(shown['sentence'], engines.UNREAD_RECORD)
+        self.assertNotIn('earlier', shown['sentence'])
+        self.assertEqual(shown['saved_record']['why'], desk_migration.UNREAD)
         self.assertIn('Expecting property name', shown['saved_record']['refusal'])
         self.assertEqual(shown['saved_record']['next'], 'new')
         self.assertFalse(shown['can_migrate_desk'] or shown['can_open_desk'])
@@ -287,8 +304,9 @@ class ClassificationTests(SavedStopTests):
             with self.subTest(change=change):
                 (root / RUN).write_text(json.dumps({**record, **change}))
                 self.assert_class(root, 'read-only', desk_migration.UNREADABLE, next_action)
-        (root / RUN).write_text('{not a run record')
-        self.assert_class(root, 'read-only', desk_migration.UNREADABLE, 'new')
+        for unread in ('{not a run record', '[1, 2]'):
+            (root / RUN).write_text(unread)
+            self.assert_class(root, 'read-only', desk_migration.UNREAD, 'new')
         (root / RUN).write_bytes(original[RUN])
         (root / SESSION).write_text('{not a saved session')
         self.assert_class(root, 'read-only', desk_migration.UNREADABLE, 'new')
@@ -368,6 +386,102 @@ class ReadOnlyRecordTests(SavedStopTests):
         native = page.RunnerPage(8765, self.engine)
         with self.assertRaises(page.desk.Refusal):
             native.read('/api/saved-file', lambda key: {'path': str(root), 'name': 'document.md'}[key])
+
+    def test_a_saved_file_removed_while_it_is_read_is_a_refusal(self):
+        from unittest import mock
+        root = self.stopped_at('blueprint')
+        (root / RUN).write_text('{not a run record')
+        native = page.RunnerPage(8765, self.engine)
+        with mock.patch.object(page.desk, 'text_of', side_effect=FileNotFoundError('gone')), \
+                self.assertRaises(page.desk.Refusal):
+            native.read('/api/saved-file', lambda key: {'path': str(root), 'name': 'blueprint.md'}[key])
+
+    def test_a_list_read_reads_only_the_two_small_records(self):
+        """Lists, polling and reading one saved file decide from the run and session
+        records alone: the training's folder, however large, is not read for them."""
+        from unittest import mock
+        root = self.stopped_at('blueprint')
+        (root / 'work').mkdir(exist_ok=True)
+        (root / 'work/large-capture.bin').write_bytes(b'\0' * 4_000_000)
+        native = page.RunnerPage(8765, self.engine)
+        record = self.record(root)
+        for damage in ('{not a run record', json.dumps({**record, 'schema': 99})):
+            with self.subTest(damage=damage[:12]):
+                (root / RUN).write_text(damage)
+                with mock.patch.object(desk_chat, '_files', side_effect=AssertionError('the whole folder was read')), \
+                        mock.patch.object(desk_migration, 'classify', side_effect=AssertionError('classified')):
+                    self.assertTrue(self.engine.brief(root)['read_only'])
+                    self.assertTrue(native.with_run({'path': str(root)})['run']['read_only'])
+                    status, _, body = native.read('/api/saved-file', lambda key: {'path': str(root), 'name': 'blueprint.md'}[key])
+                    self.assertEqual(status, 200, body)
+
+
+class RefusedDeskWorkTests(SavedStopTests):
+    """Desk work the runner refuses is never a saved-flow record: it keeps the screen and
+    the refusal it had, and is never offered Start new work from this in place of it."""
+
+    def assert_desk_refusal(self, root, refusal):
+        with self.assertRaises(workspace.WorkspaceError) as caught:
+            self.engine._load(root)
+        self.assertEqual(str(caught.exception), refusal)
+        self.assertIsNone(self.engine.saved_record(root))
+        with self.assertRaisesRegex(workspace.WorkspaceError, '^' + refusal.replace('.', r'\.') + '$'):
+            self.engine.view(root)
+        brief = self.engine.brief(root)
+        self.assertNotIn('read_only', brief)
+        self.assertEqual((brief['state'], brief['sentence']), ('failed', refusal))
+        self.assertEqual(desk_migration.outcome(self.engine, root)['outcome'], 'desk')
+
+    def test_refused_desk_work_keeps_its_own_refusal(self):
+        root = self.start(title='Desk work')
+        record = self.record(root)
+        self.assertEqual(record['flow'], 'desk')
+        for change, refusal in (
+                ({'research_contract': None},
+                 'This run is missing its saved research contract. Restore its run record.'),
+                # Desk work a newer Training Studio wrote, in a form this one does not know.
+                ({'schema': 99}, f'The run record in {root.name} cannot be read, so the runner '
+                                 'will not drive this training.')):
+            with self.subTest(change=change):
+                (root / RUN).write_text(json.dumps({**record, **change}))
+                self.assert_desk_refusal(root, refusal)
+
+    def test_an_opened_training_and_an_interrupted_opening_are_desk_work(self):
+        root = self.stopped_at('blueprint')
+        shown = self.preview(root)
+        desk_chat.migrate(self.engine, root, shown['expected'])
+        self.assertEqual(desk_migration.outcome(self.engine, root)['outcome'], 'desk')
+        (root / RUN).write_text('{a changed original')
+        self.assertIsNone(self.engine.saved_record(root))
+        self.assertEqual(desk_migration.outcome(self.engine, root)['outcome'], 'desk')
+        other = self.stopped_at('research')
+        pending = other / desk_migration.format.PENDING
+        pending.parent.mkdir(parents=True, exist_ok=True)
+        pending.write_text('{interrupted')
+        (other / RUN).write_text('{not a run record')
+        self.assertIsNone(self.engine.saved_record(other))
+        self.assertEqual(desk_migration.outcome(self.engine, other)['outcome'], 'desk')
+
+
+from runner_support import TeamCase  # noqa: E402
+
+
+class ReadOnlyDriverTests(TeamCase):
+    """A read-only record in a shared workspace says who drives it, as its record names."""
+
+    def test_the_driver_a_readable_record_names_is_kept(self):
+        from test_desk_migration import MigrationTests
+        root = MigrationTests.saved(self, 'Driven elsewhere')
+        record = self.record(root)
+        record.update(schema=99, driver={'computer': 'f' * 16, 'name': 'Blake',
+                                         'since': home.now()})
+        (root / RUN).write_text(json.dumps(record))
+        brief = self.engine.brief(root)
+        self.assertTrue(brief['read_only'])
+        self.assertEqual(brief['driver']['name'], 'Blake')
+        self.assertFalse(brief['mine'])
+        item = page.RunnerPage(8765, self.engine).with_run({'path': str(root)})
+        self.assertEqual((item['driver']['name'], item['mine']), ('Blake', False))
 
 
 class ConversationTrainingTests(SavedStopTests):
@@ -521,10 +635,11 @@ class ReadOnlyPageTests(ScriptedPage, PageCase):
         unsupported = lambda root: (root / RUN).write_text(  # noqa: E731
             json.dumps({**self.record(root), 'schema': 99}))
         made = ['Read intake', 'Read research report', 'Read teaching plan']
-        for state, title, damage, action, reads in (
-                ('blueprint-gate', 'Stop blueprint', unreadable, 'Start a new training', made),
+        for state, title, damage, action, reads, why, lede in (
+                ('blueprint-gate', 'Stop blueprint', unreadable, 'Start a new training', made,
+                 desk_migration.UNREAD, engines.UNREAD_RECORD),
                 ('document-gate', 'Stop document', unsupported, 'Start new work from this',
-                 [*made, 'Read learner guide'])):
+                 [*made, 'Read learner guide'], desk_migration.UNREADABLE, engines.SAVED_RECORD)):
             fixture = self.fixture(state, damage)
             listed = next(item for item in fixture['listing']['trainings']
                           if item['path'] == fixture['path'])
@@ -540,7 +655,11 @@ class ReadOnlyPageTests(ScriptedPage, PageCase):
                     self.assertEqual(shot['filled'], [action])
                     self.assertIn('Read-only: it is not continued and not opened on the desk',
                                   shot['text'])
-                    self.assertIn(desk_migration.UNREADABLE, shot['text'])
+                    self.assertIn(why, shot['text'])
+                    self.assertIn(lede, shot['text'])
+                    # The shared state bead with its words, not a bare label over the title.
+                    self.assertIn('off', shot['beads'])
+                    self.assertEqual(shot['text'].count('Read-only'), 1, shot['text'])
                     self.assertIn('Why it cannot be continued', shot['text'])
                     for word in ('Continue', 'Open on the desk', 'Try again', 'Answer'):
                         self.assertNotIn(word, shot['buttons'])
