@@ -104,6 +104,8 @@ class ReadingAloneTests(unittest.TestCase):
         script = SHELL.read_text(encoding='utf-8')
         self.assertIn("'button glass reading-exit'", script)
         self.assertIn("'Show everything'", script)
+        # The parts of a project (StudioShell.parts) sit in the parts zone, so they step aside too.
+        self.assertIn("nav.dataset.zone = 'parts'", script)
 
 
 

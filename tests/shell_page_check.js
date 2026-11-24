@@ -200,6 +200,95 @@ async function check() {
   await settle();
   assert.equal(document.activeElement, opener, 'and put away, they give the focus back');
 
+  // The parts of a project: groups with visible headings, each part one control saying its
+  // name then its state, the one shown marked, Tab entering there and the arrow keys moving.
+  const chosen = [];
+  let shownPart = 'guide';
+  let place = new Node('main'); content.append(place);
+  const draw = () => {
+    const nav = shell.parts({ label: 'Parts of this training', key: 'training-parts', chosen: shownPart,
+      choose: (id) => { chosen.push(id); shownPart = id; draw(); },
+      groups: [{ title: 'Level 101', parts: [{ id: 'plan', name: 'Plan', state: 'Ready' },
+        { id: 'guide', name: 'Guide', state: 'Draft' }, { id: 'deck', name: 'Deck', state: 'Writing' },
+        { id: 'brief', name: 'Brief', state: 'Done at last' }] },
+      { title: 'Empty', parts: [] },
+      { title: 'Behind it', parts: [{ id: 'sources', name: 'Research & sources', count: '3 sources' }] }] });
+    place.replaceChildren(nav);
+    return nav;
+  };
+  let nav = draw();
+  const named = (node) => node.textContent;
+  const items = () => nav.querySelectorAll('.parts-item');
+  assert.equal(nav.tagName, 'NAV');
+  assert.equal(nav.getAttribute('aria-label'), 'Parts of this training');
+  assert.equal(nav.dataset.zone, 'parts', 'it sits in the workbench’s parts zone, so reading alone hides it');
+  assert.deepEqual(nav.querySelectorAll('.parts-group-title').map(named), ['Level 101', 'Behind it'],
+    'each group has a visible heading, and an empty group is left out');
+  assert.deepEqual(items().map(named), ['Plan, Ready', 'Guide, Draft', 'Deck, Writing', 'Brief',
+    'Research & sources, 3 sources'], 'a screen reader hears the name, then the state; a word '
+    + 'outside the vocabulary is not shown, and a count stands where there is no state');
+  assert.deepEqual(items().map((item) => item.type), ['button', 'button', 'button', 'button', 'button']);
+  assert.deepEqual(items().filter((item) => item.getAttribute('aria-current') === 'true').map(named), ['Guide, Draft']);
+  assert.deepEqual(items().map((item) => item.tabIndex), [-1, 0, -1, -1, -1], 'Tab enters at the part shown');
+  assert.deepEqual(items().filter((item) => item.dataset.making === 'true').map(named), ['Deck, Writing'],
+    'only the part being written moves');
+  assert.deepEqual(nav.querySelector('.parts-list').querySelectorAll('.parts-state').map((node) => node.dataset.state),
+    ['done', 'draft', 'working', 'count']);
+  const toggle = nav.querySelector('.parts-toggle');
+  assert.equal(toggle.type, 'button');
+  assert.equal(named(toggle), 'ShowingGuide, Draft', 'narrower, one control names the part shown and its state');
+  assert.equal(toggle.getAttribute('aria-expanded'), 'false');
+  assert.equal(toggle.getAttribute('aria-controls'), nav.querySelector('.parts-list').id);
+  const keyOn = (node, name) => nav.querySelector('.parts-list').dispatch('keydown', { key: name, target: node, preventDefault() {} });
+  items()[1].focus();
+  keyOn(items()[1], 'ArrowDown');
+  assert.equal(document.activeElement, items()[2], 'Down moves to the next part');
+  keyOn(items()[2], 'ArrowDown');
+  keyOn(items()[3], 'ArrowDown');
+  assert.equal(document.activeElement, items()[4], 'across a group, to the next one');
+  keyOn(items()[4], 'ArrowDown');
+  assert.equal(document.activeElement, items()[4], 'and stops at the last');
+  keyOn(items()[4], 'Home');
+  assert.equal(document.activeElement, items()[0]);
+  keyOn(items()[0], 'ArrowUp');
+  assert.equal(document.activeElement, items()[0]);
+  keyOn(items()[0], 'End');
+  assert.equal(document.activeElement, items()[4]);
+  assert.deepEqual(chosen, [], 'moving chooses nothing');
+  items()[4].click();
+  nav = place.children[0];
+  assert.deepEqual(chosen, ['sources'], 'a press (Enter or Space on the button) chooses');
+  assert.deepEqual(items().filter((item) => item.getAttribute('aria-current') === 'true').map(named),
+    ['Research & sources, 3 sources'], 'drawn again, the part chosen is the one marked');
+  assert.equal(document.activeElement, items()[4], 'the focus stays on the part chosen, drawn again');
+  // Narrower: the control opens the list at the part shown; Escape puts it away again.
+  nav.querySelector('.parts-toggle').click();
+  assert.equal(nav.querySelector('.parts-toggle').getAttribute('aria-expanded'), 'true');
+  assert.equal(document.activeElement, items()[4], 'opened, the focus is on the part shown');
+  draw(); nav = place.children[0];
+  assert.equal(nav.querySelector('.parts-toggle').getAttribute('aria-expanded'), 'true',
+    'drawn again by a refresh, an open list stays open');
+  items()[4].focus();
+  keyOn(items()[4], 'Escape');
+  assert.equal(nav.querySelector('.parts-toggle').getAttribute('aria-expanded'), 'false');
+  assert.equal(document.activeElement, nav.querySelector('.parts-toggle'), 'Escape gives the focus to the control');
+  nav.querySelector('.parts-toggle').click();
+  items()[0].click();
+  nav = place.children[0];
+  assert.deepEqual(chosen, ['sources', 'plan']);
+  assert.equal(nav.querySelector('.parts-toggle').getAttribute('aria-expanded'), 'false', 'choosing closes it');
+  assert.equal(document.activeElement, nav.querySelector('.parts-toggle'), 'and the focus is back on the control');
+  // A studio that takes the focus elsewhere when it shows a part keeps it there.
+  const heading = new Node('h2'); content.append(heading);
+  const elsewhere = shell.parts({ label: 'Parts of this infographic', chosen: 'brief', choose: () => heading.focus(),
+    groups: [{ title: 'Infographic', parts: [{ id: 'brief', name: 'Brief' }, { id: 'page', name: 'Page', state: 'Out of date' }] }] });
+  place.replaceChildren(elsewhere);
+  elsewhere.querySelectorAll('.parts-item')[1].click();
+  assert.equal(document.activeElement, heading);
+  assert.equal(elsewhere.querySelector('.parts-list').querySelectorAll('.parts-state')[0].dataset.state, 'stale');
+  assert.equal(Object.keys(shell.PART_STATES).join(', '), 'Writing, Queued, Needs you, Draft, Ready, Out of date, Left out');
+  place.remove(); heading.remove();
+
   // The deck panels, served beside the kit: two pickers of looks for one deck (a sheet over
   // the panel it came from) never share an id, and each label still names its own box.
   const panels = vm.createContext({ document, window: {} });
