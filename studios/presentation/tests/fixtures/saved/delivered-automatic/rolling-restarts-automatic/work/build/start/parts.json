@@ -1,0 +1,17 @@
+{
+  "title": "Rolling restarts",
+  "direction": {
+    "focal": "headingPrimary",
+    "meanings": {
+      "accentAqua": "Example Platform: the product this deck is about"
+    },
+    "motif": "A strip on each card says what it is about.",
+    "neutral": "canvasSecondary"
+  },
+  "parts": [
+    "lead-1.json",
+    "section-1.json",
+    "section-2.json",
+    "lead-2.json"
+  ]
+}

@@ -1,0 +1,11 @@
+{"checkpoint":"accepted","unit":"","at":"2026-11-24T23:12:37Z"}
+{"checkpoint":"output-saved","unit":"intake-source","at":"2026-11-24T23:12:37Z"}
+{"checkpoint":"output-saved","unit":"inventory","at":"2026-11-24T23:12:37Z"}
+{"checkpoint":"output-saved","unit":"brand","at":"2026-11-24T23:12:37Z"}
+{"checkpoint":"working","unit":"patch","at":"2026-11-24T23:12:37Z"}
+{"id":"05bd0acaa2c9","label":"Changing only the slides you picked","step":"patch","started_at":"2026-11-24T23:12:37Z","ended_at":"2026-11-24T23:12:37Z","outcome":"finished","lines":[{"at":"2026-11-24T23:12:37Z","text":"Handing back patch"},{"at":"2026-11-24T23:12:37Z","text":"The draft was accepted"}],"dropped":0}
+{"checkpoint":"output-saved","unit":"patch","at":"2026-11-24T23:12:37Z"}
+{"checkpoint":"output-saved","unit":"build-render","at":"2026-11-24T23:12:37Z"}
+{"checkpoint":"ready","unit":"gate:build","at":"2026-11-24T23:12:37Z"}
+{"checkpoint":"output-saved","unit":"deliver","at":"2026-11-24T23:12:38Z"}
+{"checkpoint":"ready","unit":"","at":"2026-11-24T23:12:38Z"}

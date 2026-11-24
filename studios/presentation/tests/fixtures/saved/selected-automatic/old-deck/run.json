@@ -1,0 +1,205 @@
+{
+  "schema": 2,
+  "id": "old-deck",
+  "title": "Old deck",
+  "route": "existing",
+  "form": {
+    "route": "existing",
+    "title": "Old deck",
+    "audience": "Platform teams",
+    "goal": "Show when capacity holds",
+    "minutes": 20,
+    "brand": "example",
+    "variant": "light",
+    "output": "google",
+    "research": false,
+    "delivery": "reading",
+    "notes": "",
+    "research_questions": [],
+    "level": "selected",
+    "selected": "Shorten slide 2",
+    "source": {
+      "kind": "upload",
+      "name": "old.pptx"
+    }
+  },
+  "created": "2026-11-24T23:12:25Z",
+  "driver": null,
+  "gates": {
+    "gate:classify": {
+      "state": "approved",
+      "round": 1,
+      "by": "review-policy",
+      "at": "2026-11-24T23:12:26Z",
+      "note": "Continued automatically."
+    },
+    "gate:build": {
+      "state": "waiting",
+      "round": 1
+    }
+  },
+  "steps": {
+    "intake-source": {
+      "failed": 0,
+      "tries": [
+        {
+          "started_at": "2026-11-24T23:12:25Z",
+          "ended_at": "2026-11-24T23:12:25Z",
+          "seconds": 0.0,
+          "dollars": null,
+          "tokens": null,
+          "outcome": "kept",
+          "error": null
+        }
+      ],
+      "done": true,
+      "at": "2026-11-24T23:12:25Z"
+    },
+    "inventory": {
+      "failed": 0,
+      "tries": [
+        {
+          "started_at": "2026-11-24T23:12:25Z",
+          "ended_at": "2026-11-24T23:12:25Z",
+          "seconds": 0.0,
+          "dollars": null,
+          "tokens": null,
+          "outcome": "kept",
+          "error": null
+        }
+      ],
+      "done": true,
+      "at": "2026-11-24T23:12:25Z"
+    },
+    "brand": {
+      "failed": 0,
+      "tries": [
+        {
+          "started_at": "2026-11-24T23:12:26Z",
+          "ended_at": "2026-11-24T23:12:26Z",
+          "seconds": 0.0,
+          "dollars": null,
+          "tokens": null,
+          "outcome": "kept",
+          "error": null
+        }
+      ],
+      "done": true,
+      "at": "2026-11-24T23:12:26Z"
+    },
+    "patch": {
+      "failed": 0,
+      "tries": [
+        {
+          "started_at": "2026-11-24T23:12:26Z",
+          "ended_at": "2026-11-24T23:12:26Z",
+          "seconds": 0.0,
+          "dollars": null,
+          "tokens": null,
+          "outcome": "kept",
+          "error": null
+        }
+      ],
+      "done": true,
+      "at": "2026-11-24T23:12:26Z"
+    },
+    "build-render": {
+      "failed": 0,
+      "tries": [
+        {
+          "started_at": "2026-11-24T23:12:26Z",
+          "ended_at": "2026-11-24T23:12:26Z",
+          "seconds": 0.0,
+          "dollars": null,
+          "tokens": null,
+          "outcome": "kept",
+          "error": null
+        }
+      ],
+      "done": true,
+      "at": "2026-11-24T23:12:26Z"
+    }
+  },
+  "classified": null,
+  "look": null,
+  "revisions": [],
+  "halted": null,
+  "agent": "claude",
+  "model": null,
+  "level_of_effort": null,
+  "limits": {
+    "step_seconds": 1350
+  },
+  "model_profiles": {
+    "schema": 1,
+    "policy": 3,
+    "agent": "claude",
+    "mode": "single",
+    "profiles": {
+      "quick": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "research": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "combining": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "checking": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "writing": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "fixing": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      }
+    }
+  },
+  "review_policy": {
+    "schema": 1,
+    "level": "automatic"
+  },
+  "answers": {},
+  "said": {},
+  "question": null,
+  "research": null,
+  "review_events": [
+    {
+      "gate": "gate:classify",
+      "by": "review-policy",
+      "level": "automatic",
+      "evidence": "d688f6d4362e44f8425c856c41d1d6f14b92a0eae4eff37b2cc1fcbd6325bf08",
+      "at": "2026-11-24T23:12:26Z",
+      "decision": "continued-automatically"
+    }
+  ],
+  "model_jobs": [
+    {
+      "model": null,
+      "effort": null,
+      "source": "inherit",
+      "profile": "writing",
+      "purpose": "patch",
+      "step": "patch",
+      "product": "Presentation Studio",
+      "policy": 3,
+      "actual_model": null,
+      "actual_effort": null,
+      "attempt": 1,
+      "permission": "write"
+    }
+  ]
+}

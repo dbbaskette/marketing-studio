@@ -1,0 +1,172 @@
+{
+  "schema": 2,
+  "id": "balanced",
+  "title": "Balanced",
+  "route": "scratch",
+  "form": {
+    "route": "scratch",
+    "title": "Balanced",
+    "audience": "Platform teams",
+    "goal": "Show when capacity holds",
+    "minutes": 20,
+    "brand": "example",
+    "variant": "light",
+    "output": "google",
+    "research": false,
+    "delivery": "live",
+    "notes": "",
+    "research_questions": []
+  },
+  "created": "2026-11-24T23:12:24Z",
+  "driver": null,
+  "gates": {
+    "gate:outline": {
+      "state": "waiting",
+      "round": 1
+    },
+    "gate:look": {
+      "state": "waiting",
+      "round": 1
+    }
+  },
+  "steps": {
+    "intake-source": {
+      "failed": 0,
+      "tries": [
+        {
+          "started_at": "2026-11-24T23:12:24Z",
+          "ended_at": "2026-11-24T23:12:24Z",
+          "seconds": 0.0,
+          "dollars": null,
+          "tokens": null,
+          "outcome": "kept",
+          "error": null
+        }
+      ],
+      "done": true,
+      "at": "2026-11-24T23:12:24Z"
+    },
+    "outline": {
+      "failed": 0,
+      "tries": [
+        {
+          "started_at": "2026-11-24T23:12:24Z",
+          "ended_at": "2026-11-24T23:12:24Z",
+          "seconds": 0.0,
+          "dollars": null,
+          "tokens": null,
+          "outcome": "kept",
+          "error": null
+        }
+      ],
+      "done": true,
+      "at": "2026-11-24T23:12:24Z"
+    },
+    "brand": {
+      "failed": 0,
+      "tries": [
+        {
+          "started_at": "2026-11-24T23:12:25Z",
+          "ended_at": "2026-11-24T23:12:25Z",
+          "seconds": 0.0,
+          "dollars": null,
+          "tokens": null,
+          "outcome": "kept",
+          "error": null
+        }
+      ],
+      "done": true,
+      "at": "2026-11-24T23:12:25Z"
+    },
+    "look-preview": {
+      "failed": 0,
+      "tries": [
+        {
+          "started_at": "2026-11-24T23:12:25Z",
+          "ended_at": "2026-11-24T23:12:25Z",
+          "seconds": 0.0,
+          "dollars": null,
+          "tokens": null,
+          "outcome": "kept",
+          "error": null
+        }
+      ],
+      "done": true,
+      "at": "2026-11-24T23:12:25Z"
+    }
+  },
+  "classified": null,
+  "look": null,
+  "revisions": [],
+  "halted": null,
+  "agent": "claude",
+  "model": null,
+  "level_of_effort": null,
+  "limits": {
+    "step_seconds": 1350
+  },
+  "model_profiles": {
+    "schema": 1,
+    "policy": 3,
+    "agent": "claude",
+    "mode": "single",
+    "profiles": {
+      "quick": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "research": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "combining": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "checking": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "writing": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "fixing": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      }
+    }
+  },
+  "review_policy": {
+    "schema": 1,
+    "level": "balanced"
+  },
+  "answers": {},
+  "said": {
+    "outline": "Six slides. The check slide is the one I am least sure of."
+  },
+  "question": null,
+  "research": null,
+  "model_jobs": [
+    {
+      "model": null,
+      "effort": null,
+      "source": "inherit",
+      "profile": "quick",
+      "purpose": "outline",
+      "step": "outline",
+      "product": "Presentation Studio",
+      "policy": 3,
+      "actual_model": null,
+      "actual_effort": null,
+      "attempt": 1,
+      "permission": "write"
+    }
+  ]
+}

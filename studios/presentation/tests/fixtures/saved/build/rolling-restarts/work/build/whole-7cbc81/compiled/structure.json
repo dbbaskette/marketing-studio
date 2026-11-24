@@ -1,0 +1,95 @@
+{
+  "groups": [],
+  "connectors": [
+    {
+      "slide": "what-it-does",
+      "id": "s1_whatitdoes_e1",
+      "from": "s1_whatitdoes_p1",
+      "to": "s1_whatitdoes_p2"
+    },
+    {
+      "slide": "check-yourself",
+      "id": "s2_checkyoursel_e1",
+      "from": "s2_checkyoursel_p1",
+      "to": "s2_checkyoursel_p2"
+    },
+    {
+      "slide": "health-checks",
+      "id": "s2_healthchecks_e1",
+      "from": "s2_healthchecks_p1",
+      "to": "s2_healthchecks_p2"
+    }
+  ],
+  "icons": [],
+  "layouts": [
+    {
+      "slide": "cover-restarts",
+      "layout": "Title Slide",
+      "placeholders": [
+        "cover-restarts_subtitle"
+      ]
+    },
+    {
+      "slide": "closing-practice",
+      "layout": "Big Statement",
+      "placeholders": []
+    }
+  ],
+  "adjusted": [],
+  "reading": [],
+  "unspoken": [],
+  "direction": {
+    "focal": "headingPrimary",
+    "meanings": {
+      "accentAqua": "Example Platform: the product this deck is about"
+    },
+    "motif": "A strip on each card says what it is about.",
+    "neutral": "canvasSecondary"
+  },
+  "briefs": [
+    {
+      "slide": "cover-restarts",
+      "rhythm": "anchor"
+    },
+    {
+      "slide": "what-it-does",
+      "relation": "order",
+      "focal": "s1_whatitdoes_point",
+      "rhythm": "dense"
+    },
+    {
+      "slide": "when-capacity-holds",
+      "relation": "contrast",
+      "focal": "s1_whencapacity_point",
+      "rhythm": "dense"
+    },
+    {
+      "slide": "the-objection",
+      "relation": "contrast",
+      "focal": "s1_theobjection_point",
+      "rhythm": "breathing"
+    },
+    {
+      "slide": "check-yourself",
+      "relation": "order",
+      "focal": "s2_checkyoursel_point",
+      "rhythm": "dense"
+    },
+    {
+      "slide": "health-checks",
+      "relation": "order",
+      "focal": "s2_healthchecks_p1",
+      "rhythm": "breathing"
+    },
+    {
+      "slide": "rolling-back",
+      "relation": "contrast",
+      "focal": "s2_rollingback_p1",
+      "rhythm": "breathing"
+    },
+    {
+      "slide": "closing-practice",
+      "rhythm": "anchor"
+    }
+  ]
+}

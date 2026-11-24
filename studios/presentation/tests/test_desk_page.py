@@ -2591,19 +2591,10 @@ class FinishingPageTests(DeskPageCase):
 class OpenOnDeskPageTests(DeskPageCase):
     """Task 5.1: a saved deck, delivered the gated way, opens on the desk from its screen."""
 
-    def delivered(self, **changes) -> str:
+    def delivered(self, state: str = 'delivered') -> str:
         """A deck started the gated way, approved stop by stop with the first look, and
-        delivered."""
-        path = self.saved_started(**changes)
-        for _ in range(12):
-            gate = self.run_of(path)['gate']
-            if gate is None:
-                break
-            offered = gate.get('offered') or (gate.get('look') or {}).get('offered')
-            picked = {'extra': {'look': offered['looks'][0]['id']}} \
-                if offered and not offered['chosen'] else {}
-            self.decided(path, gate['name'], **picked)
-        return path
+        delivered, as the saved flow left it (tests/fixtures/saved/<state>/)."""
+        return str(self.load_saved(state))
 
     def test_open_on_the_desk_says_what_the_deck_s_level_lets_change(self):
         path = self.delivered()
@@ -2629,7 +2620,7 @@ class OpenOnDeskPageTests(DeskPageCase):
                 self.assertNotIn('to change a slide, its words or its speaker notes', text)
 
     def test_an_opened_powerpoint_delivery_still_goes_to_google_slides(self):
-        path = self.delivered(output='pptx')
+        path = self.delivered('delivered-pptx')
         opened = self.post('desk-open', {'path': path})
         self.assertTrue(opened['deliver']['to_google'])
         result = self.open_deck(path, opened, [
@@ -3091,7 +3082,7 @@ class MigrationPageTests(DeskPageCase):
             'expected_basis': context['expected_basis'], 'seen': seen, 'response': response})])
 
     def saved(self):
-        root = runner_support.DeskCase.gated(self)
+        root = self.load_saved('build')
         return str(root), self.run_of(str(root))
 
     def test_preview_cancel_preserves_saved_screen_and_has_no_apply(self):

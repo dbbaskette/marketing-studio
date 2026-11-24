@@ -34,15 +34,33 @@ CONSEQUENCES += (' Shared work requires every retained shared file in this deck 
                  'through the existing saved flow or commit them with Git, then preview again. '
                  'Private ignored inputs stay local. Local-only migration is not a complete Git backup.')
 CHANGED = 'The deck or its saved inputs changed. Preview Open on the desk again.'
+CONTINUE = 'Continue with its saved flow first.'
 # A deck stopped before its outline was drafted has no slide parts to open on the desk.
 NO_OUTLINE = ('This deck has no outline yet. Continue it in its saved flow until its outline '
               'is drafted, then open it on the desk.')
+NOTHING_MADE = ('This deck was stopped before its outline was drafted, so nothing was made '
+                'that can be opened on the desk.')
+UNSUPPORTED = 'This saved run format is not supported.'
+UNREAD = 'This deck’s saved record cannot be read.'
 # A pause, a stop and a failure are each kept in History; none is resumed on the desk.
 HALTS = {'paused': 'The prior runner pause remains in History. Conversation editing will not '
                    'resume that runner.',
          'stopped': 'The prior runner stop or failure remains in History. Conversation editing '
                     'will not resume that runner.'}
 HALTS['failed'] = HALTS['stopped']
+# A worker's question left unanswered is kept in History too; nothing answers it on the desk.
+QUESTION = ('The saved worker question remains in History, unanswered. Conversation editing '
+            'will not answer it or resume that runner, and its step stays unfinished.')
+
+
+class Kept(ValueError):
+    """A saved deck the migration cannot open on the desk. `why` is the reason its read-only
+    record gives; the message is what the preview says while its saved flow still
+    continues it (GitHub issue #542: the read-only record serves it once the flow goes)."""
+
+    def __init__(self, why: str, said: str | None = None):
+        super().__init__(said or why)
+        self.why = why
 SHARED = ('Retained shared files in this deck and the existing workspace record must first match '
           'their committed versions and staging index. Record intended changes through the existing '
           'saved flow or commit them with Git, then preview again. Migration does not commit those edits.')
@@ -51,7 +69,7 @@ SHARED = ('Retained shared files in this deck and the existing workspace record 
 def _json(files, name, required=False):
     if name not in files:
         if required:
-            raise ValueError(f'{name} is missing. Continue with its saved flow first.')
+            raise Kept(f'{name} is missing.', f'{name} is missing. {CONTINUE}')
         return None
     return json.loads(files[name])
 
@@ -59,11 +77,12 @@ def _json(files, name, required=False):
 def materials(record, files):
     """Strictly read retained material/dependencies; no repair, conversion or acceptance."""
     if not format.supported(record):
-        raise ValueError('This saved run format is not supported. Keep using its saved flow.')
+        raise Kept(UNSUPPORTED, UNSUPPORTED + ' Keep using its saved flow.')
     format.shared_material('run.json', files.get('run.json'))
     if record['route'] == 'existing':
         if existing.SOURCE not in files or not files[existing.SOURCE].startswith(b'PK\x03\x04'):
-            raise ValueError('The original deck is missing or unreadable. Continue with its saved flow first.')
+            raise Kept('The original deck is missing or unreadable.',
+                       f'The original deck is missing or unreadable. {CONTINUE}')
         inventory = _json(files, 'classify.json', True)
         format.shared_material('classify.json', files.get('classify.json'))
         slides = inventory.get('slides') if isinstance(inventory, dict) else None
@@ -87,7 +106,7 @@ def materials(record, files):
             raise ValueError('The original deck differs from its saved inventory.')
     if not desk.selected(record):
         if 'outline.json' not in files:
-            raise ValueError(NO_OUTLINE)
+            raise Kept(NOTHING_MADE, NO_OUTLINE)
         format.shared_material('outline.json', files.get('outline.json'))
         saved = _json(files, 'outline.json', True)
         slides = saved.get('slides') if isinstance(saved, dict) else None
@@ -116,11 +135,13 @@ def materials(record, files):
                 raise ValueError('A saved source entry cannot be read.')
             text, original = documents._files(item['id'], Path(item['name']).suffix.lower())
             if original not in files or (item.get('readable') is True and text not in files):
-                raise ValueError('A required saved source is missing. Continue with its saved flow first.')
+                raise Kept('A required saved source is missing.',
+                           f'A required saved source is missing. {CONTINUE}')
             if item.get('sha256') and hashlib.sha256(files[original]).hexdigest() != item['sha256']:
-                raise ValueError('A pinned source changed. Continue with its saved flow first.')
+                raise Kept('A pinned source changed.', f'A pinned source changed. {CONTINUE}')
     if record['route'] == 'document' and not index:
-        raise ValueError('The imported source document is missing. Continue with its saved flow first.')
+        raise Kept('The imported source document is missing.',
+                   f'The imported source document is missing. {CONTINUE}')
     # Existing research's consumer validates complete captured bundles on the bounded copy.
     if record.get('research_contract') and (record['steps'].get('research-report') or {}).get('done') \
             and 'research/output.json' not in files:
@@ -131,25 +152,77 @@ def materials(record, files):
     return 'Selected changes' if desk.selected(record) else 'Outline and slide parts'
 
 
+def outcome(record, files, refusal=None) -> dict:
+    """What becomes of a deck saved by the earlier step-by-step flow: the one answer the
+    migration preview and the read-only record both use (GitHub issue #542).
+
+    `record` is its run.json as read (None when it cannot be parsed), `files` its saved
+    files by name as `desk_chat._files` reads them, and `refusal` the runner's own refusal
+    to load it, when there is one. Returns one of:
+
+    - {'outcome': 'migrates', 'by': 'migration', 'retained': [...]}: the explicit
+      migration opens it on the desk. A pause, a stop, a failure or a worker's unanswered
+      question is kept in History and its step stays unfinished.
+    - {'outcome': 'migrates', 'by': 'finished', 'retained': [...]}: delivered by the saved
+      flow, it opens through the finished Open on the desk.
+    - {'outcome': 'desk', 'retained': [...]}: desk work already, not saved-flow work.
+    - {'outcome': 'read-only', 'why', 'next', 'preview'}: nothing was made yet, or its
+      record or a file it needs cannot be read or understood. `why` is the reason its
+      read-only record gives, `next` its one next action ('copy': Start new work from this,
+      where its start form can be read; 'new': start a new deck), and `preview` what the
+      migration preview says of it while its saved flow still continues it.
+
+    What is transient (a step in hand, another computer driving, shared files not yet
+    committed, an interrupted migration's own recovery) is the preview's own check, not
+    this one. Only reads."""
+    form = record.get('form') if isinstance(record, dict) else None
+    after = 'copy' if isinstance(form, dict) and form and record.get('route') in decks.ROUTES \
+        else 'new'
+
+    def read_only(why, said=None):
+        return {'outcome': 'read-only', 'why': why, 'next': after, 'preview': said or why}
+
+    if refusal is not None:
+        return read_only(str(refusal))
+    if not isinstance(files.get('run.json'), bytes) or len(files['run.json']) > 1_000_000:
+        return read_only('The original run record is too large or cannot be read.')
+    if not isinstance(record, dict):
+        return read_only(UNREAD, UNSUPPORTED + ' Keep using its saved flow.')
+    try:
+        retained = [materials(record, files)]
+        halted = record.get('halted')
+        if halted and (not isinstance(halted, dict) or halted.get('state') not in HALTS):
+            raise Kept('This deck’s saved runner stop cannot be read.',
+                       f'This saved runner stop cannot be interpreted. {CONTINUE}')
+    except Kept as kept:
+        return read_only(kept.why, str(kept))
+    except (ValueError, KeyError, TypeError, UnicodeError) as error:
+        return read_only(str(error))
+    if record.get('flow') == 'desk':
+        return {'outcome': 'desk', 'retained': retained}
+    if 'deliver.json' in files:
+        return {'outcome': 'migrates', 'by': 'finished', 'retained': retained}
+    if halted:
+        retained.append(HALTS[halted['state']])
+    if record.get('question'):
+        retained.append(QUESTION)
+    return {'outcome': 'migrates', 'by': 'migration', 'retained': retained}
+
+
 def prepare_migration(record, saved_inputs):
     blockers, retained = [], []
-    try:
-        if not isinstance(saved_inputs.get('run.json'), bytes) or len(saved_inputs['run.json']) > 1_000_000:
-            raise ValueError('The original run record is too large or cannot be read.')
-        retained.append(materials(record, saved_inputs))
-        if record.get('flow') == 'desk' or 'deliver.json' in saved_inputs:
-            raise ValueError('Use this deck’s existing desk or finished Open on the desk action.')
+    found = outcome(record, saved_inputs)
+    if found['outcome'] == 'read-only':
+        blockers.append(found['preview'])
+    elif found['outcome'] == 'desk' or found['by'] == 'finished':
+        retained.extend(found['retained'])
+        blockers.append('Use this deck’s existing desk or finished Open on the desk action.')
+    else:
+        retained.extend(found['retained'][:1])
         if format.RECORD in saved_inputs or format.ORIGIN in saved_inputs or format.PENDING in saved_inputs:
-            raise ValueError('This deck already has desk metadata or pending recovery.')
-        halted = record.get('halted')
-        if halted:
-            if not isinstance(halted, dict) or halted.get('state') not in HALTS:
-                raise ValueError('This saved runner stop cannot be interpreted. Continue with its saved flow first.')
-            retained.append(HALTS[halted['state']])
-        if record.get('question'):
-            raise ValueError('Resolve the saved runner question in its saved flow before opening it on the desk.')
-    except (ValueError, KeyError, TypeError, UnicodeError) as error:
-        blockers.append(str(error))
+            blockers.append('This deck already has desk metadata or pending recovery.')
+        else:
+            retained.extend(found['retained'][1:])
     return {'blockers': blockers, 'retained': retained + [
         'Original files, History, source and guidance pins, Google records and earlier decisions'],
         'writes': [] if blockers else [format.ORIGIN, format.RECORD, WORKSPACE], 'scope': ['part']}
@@ -463,6 +536,11 @@ def migrate(engine, path, expected):
         if effective.get('halted'):
             effective['migration_saved_status'] = copy.deepcopy(effective['halted'])
             effective['halted'] = None
+        if effective.get('question'):
+            # Kept in History, unanswered: the desk never answers it, and its step stays
+            # as the saved flow left it.
+            effective['migration_saved_question'] = copy.deepcopy(effective['question'])
+            effective['question'] = None
         value = {'schema': 1, 'product': 'Presentation Studio', 'id': record['id'],
                  'original': hashlib.sha256(files['run.json']).hexdigest(), 'expected': expected,
                  # Replay verifies shared metadata. Private sources/drawings are checked

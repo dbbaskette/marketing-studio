@@ -205,6 +205,7 @@ class DeskActions:
             record, state, section)['says'])
         return {**shown, **ready_status(root, record), 'migrated': bool(record.get('unfinished_migration')),
                 'saved_status': record.get('migration_saved_status'),
+                'saved_question': record.get('migration_saved_question'),
                 'content_pending': deck_content.enabled(record)
                     and 'gate:outline' in {step.name for step in stages.steps(record)}
                     and gate_state(record, 'gate:outline') != 'approved',

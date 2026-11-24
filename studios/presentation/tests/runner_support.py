@@ -1051,6 +1051,13 @@ class StudioCase(unittest.TestCase):
         engine.wake(root)
         return root
 
+    def load_saved(self, state: str, title: str | None = None, engine=None) -> Path:
+        """A deck the earlier step-by-step flow saved, in its original format, copied from
+        tests/fixtures/saved/<state>/ into this workspace and committed there
+        (`saved_fixtures.load`). Nothing of the saved flow runs."""
+        import saved_fixtures
+        return saved_fixtures.load(self, state, title, engine)
+
     def view(self, root: Path) -> dict:
         return self.engine.view(root)
 

@@ -1,0 +1,8 @@
+{"checkpoint":"accepted","unit":"","at":"2026-11-24T23:12:20Z"}
+{"checkpoint":"output-saved","unit":"intake-source","at":"2026-11-24T23:12:20Z"}
+{"checkpoint":"working","unit":"classify","at":"2026-11-24T23:12:20Z"}
+{"id":"2c9fa40ed6ba","label":"Working out whether your document is a finished script or raw material","step":"classify","started_at":"2026-11-24T23:12:20Z","ended_at":"2026-11-24T23:12:20Z","outcome":"finished","lines":[{"at":"2026-11-24T23:12:20Z","text":"Handing back classification"},{"at":"2026-11-24T23:12:20Z","text":"The draft was accepted"},{"at":"2026-11-24T23:12:20Z","text":"Writing its own notes on the draft"}],"dropped":0}
+{"checkpoint":"output-saved","unit":"classify","at":"2026-11-24T23:12:20Z"}
+{"checkpoint":"working","unit":"outline","at":"2026-11-24T23:12:21Z"}
+{"id":"95ecdcc1680e","label":"Drafting the outline of your deck","step":"outline","started_at":"2026-11-24T23:12:21Z","ended_at":"2026-11-24T23:12:21Z","outcome":"finished","lines":[{"at":"2026-11-24T23:12:21Z","text":"Checking what the slides say"},{"at":"2026-11-24T23:12:21Z","text":"Handing in what the slides say"},{"at":"2026-11-24T23:12:21Z","text":"The outline was accepted"},{"at":"2026-11-24T23:12:21Z","text":"Writing its own notes on the draft"}],"dropped":0}
+{"checkpoint":"output-saved","unit":"outline","at":"2026-11-24T23:12:21Z"}

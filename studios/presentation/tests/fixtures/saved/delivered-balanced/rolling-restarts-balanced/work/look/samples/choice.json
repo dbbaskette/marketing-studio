@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "choice": "example-clear",
+  "name": "Clear",
+  "direction": {
+    "focal": "headingPrimary",
+    "neutral": "canvasSecondary",
+    "meanings": {
+      "accentAqua": "Example Platform: the product this deck is about"
+    },
+    "motif": "A strip on each card says what it is about."
+  },
+  "layouts": {
+    "cover": "Title Slide",
+    "section": "Section Header",
+    "closing": "Big Statement",
+    "thanks": "Thank You"
+  },
+  "house": [
+    "Fill cards: a supporting card is a solid neutral box or a bar card.",
+    "Icons: each card that names a concrete concept gets one approved icon."
+  ],
+  "words": "Picked Clear on the page, with no comment.",
+  "shown": "rendered"
+}

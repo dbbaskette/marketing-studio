@@ -1,0 +1,242 @@
+{
+  "schema": 1,
+  "id": "research-found",
+  "title": "Research found",
+  "route": "scratch",
+  "form": {
+    "route": "scratch",
+    "title": "Research found",
+    "audience": "Platform teams",
+    "goal": "Show when capacity holds",
+    "minutes": 20,
+    "brand": "example",
+    "variant": "light",
+    "output": "google",
+    "research": true,
+    "delivery": "live",
+    "notes": "",
+    "research_from": {
+      "documents": false,
+      "sites": [],
+      "web": true
+    },
+    "research_questions": []
+  },
+  "created": "2026-11-24T23:12:41Z",
+  "driver": null,
+  "gates": {
+    "gate:research-plan": {
+      "state": "approved",
+      "round": 1,
+      "note": null,
+      "at": "2026-11-24T23:12:42Z",
+      "by": "Alex"
+    },
+    "gate:research": {
+      "state": "waiting",
+      "round": 1
+    }
+  },
+  "steps": {
+    "intake-source": {
+      "failed": 0,
+      "tries": [
+        {
+          "started_at": "2026-11-24T23:12:41Z",
+          "ended_at": "2026-11-24T23:12:41Z",
+          "seconds": 0.0,
+          "dollars": null,
+          "tokens": null,
+          "outcome": "kept",
+          "error": null
+        }
+      ],
+      "done": true,
+      "at": "2026-11-24T23:12:41Z"
+    },
+    "research-plan": {
+      "failed": 0,
+      "tries": [
+        {
+          "started_at": "2026-11-24T23:12:41Z",
+          "ended_at": "2026-11-24T23:12:41Z",
+          "seconds": 0.0,
+          "dollars": null,
+          "tokens": null,
+          "outcome": "kept",
+          "error": null
+        }
+      ],
+      "done": true,
+      "at": "2026-11-24T23:12:41Z"
+    },
+    "research:instance-min": {
+      "failed": 0,
+      "tries": [
+        {
+          "started_at": "2026-11-24T23:12:42Z",
+          "ended_at": "2026-11-24T23:12:42Z",
+          "seconds": 0.0,
+          "dollars": null,
+          "tokens": null,
+          "outcome": "kept",
+          "error": null
+        }
+      ],
+      "done": false
+    },
+    "research:health-checks": {
+      "failed": 0,
+      "tries": [
+        {
+          "started_at": "2026-11-24T23:12:42Z",
+          "ended_at": "2026-11-24T23:12:42Z",
+          "seconds": 0.0,
+          "dollars": null,
+          "tokens": null,
+          "outcome": "kept",
+          "error": null
+        }
+      ],
+      "done": false
+    },
+    "research": {
+      "failed": 0,
+      "tries": [
+        {
+          "started_at": "2026-11-24T23:12:42Z",
+          "ended_at": "2026-11-24T23:12:42Z",
+          "seconds": 0.0,
+          "dollars": null,
+          "tokens": null,
+          "outcome": "kept",
+          "error": null,
+          "runner": true
+        }
+      ],
+      "done": true,
+      "at": "2026-11-24T23:12:42Z"
+    },
+    "research-report": {
+      "failed": 0,
+      "tries": [
+        {
+          "started_at": "2026-11-24T23:12:42Z",
+          "ended_at": "2026-11-24T23:12:42Z",
+          "seconds": 0.0,
+          "dollars": null,
+          "tokens": null,
+          "outcome": "kept",
+          "error": null
+        }
+      ],
+      "done": true,
+      "at": "2026-11-24T23:12:42Z"
+    }
+  },
+  "classified": null,
+  "look": null,
+  "revisions": [],
+  "halted": null,
+  "agent": "claude",
+  "model": null,
+  "level_of_effort": null,
+  "limits": {
+    "step_seconds": 1350
+  },
+  "model_profiles": {
+    "schema": 1,
+    "policy": 3,
+    "agent": "claude",
+    "mode": "single",
+    "profiles": {
+      "quick": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "research": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "combining": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "checking": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "writing": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "fixing": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      }
+    }
+  },
+  "review_policy": {
+    "schema": 1,
+    "level": "step_by_step"
+  },
+  "answers": {},
+  "said": {
+    "research-plan": "Two questions."
+  },
+  "question": null,
+  "research": {
+    "run": "8ee2f05c35072a740da6c4f8",
+    "plan": "d766602ced22c8a3922de9c4e48df9659aa3f3b8bf6642116689994700463833"
+  },
+  "model_jobs": [
+    {
+      "model": null,
+      "effort": null,
+      "source": "inherit",
+      "profile": "research",
+      "purpose": "research-plan",
+      "step": "research-plan",
+      "product": "Presentation Studio",
+      "policy": 3,
+      "actual_model": null,
+      "actual_effort": null,
+      "attempt": 1,
+      "permission": "write"
+    },
+    {
+      "model": null,
+      "effort": null,
+      "source": "inherit",
+      "profile": "research",
+      "purpose": "research",
+      "step": "research:instance-min",
+      "product": "Presentation Studio",
+      "policy": 3,
+      "actual_model": null,
+      "actual_effort": null,
+      "attempt": 1,
+      "permission": "research"
+    },
+    {
+      "model": null,
+      "effort": null,
+      "source": "inherit",
+      "profile": "research",
+      "purpose": "research",
+      "step": "research:health-checks",
+      "product": "Presentation Studio",
+      "policy": 3,
+      "actual_model": null,
+      "actual_effort": null,
+      "attempt": 1,
+      "permission": "research"
+    }
+  ]
+}

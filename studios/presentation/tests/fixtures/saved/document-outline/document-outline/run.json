@@ -1,0 +1,177 @@
+{
+  "schema": 1,
+  "id": "document-outline",
+  "title": "Document outline",
+  "route": "document",
+  "form": {
+    "route": "document",
+    "title": "Document outline",
+    "audience": "Platform teams",
+    "goal": "Show when capacity holds",
+    "minutes": 20,
+    "brand": "example",
+    "variant": "light",
+    "output": "google",
+    "research": false,
+    "delivery": "reading",
+    "notes": "",
+    "research_questions": [],
+    "source": {
+      "kind": "paste"
+    }
+  },
+  "created": "2026-11-24T23:12:20Z",
+  "driver": null,
+  "gates": {
+    "gate:classify": {
+      "state": "approved",
+      "round": 1,
+      "note": null,
+      "at": "2026-11-24T23:12:21Z",
+      "by": "Alex"
+    },
+    "gate:outline": {
+      "state": "waiting",
+      "round": 1
+    }
+  },
+  "steps": {
+    "intake-source": {
+      "failed": 0,
+      "tries": [
+        {
+          "started_at": "2026-11-24T23:12:20Z",
+          "ended_at": "2026-11-24T23:12:20Z",
+          "seconds": 0.0,
+          "dollars": null,
+          "tokens": null,
+          "outcome": "kept",
+          "error": null
+        }
+      ],
+      "done": true,
+      "at": "2026-11-24T23:12:20Z"
+    },
+    "classify": {
+      "failed": 0,
+      "tries": [
+        {
+          "started_at": "2026-11-24T23:12:20Z",
+          "ended_at": "2026-11-24T23:12:20Z",
+          "seconds": 0.0,
+          "dollars": null,
+          "tokens": null,
+          "outcome": "kept",
+          "error": null
+        }
+      ],
+      "done": true,
+      "at": "2026-11-24T23:12:20Z"
+    },
+    "outline": {
+      "failed": 0,
+      "tries": [
+        {
+          "started_at": "2026-11-24T23:12:21Z",
+          "ended_at": "2026-11-24T23:12:21Z",
+          "seconds": 0.0,
+          "dollars": null,
+          "tokens": null,
+          "outcome": "kept",
+          "error": null
+        }
+      ],
+      "done": true,
+      "at": "2026-11-24T23:12:21Z"
+    }
+  },
+  "classified": "material",
+  "look": null,
+  "revisions": [],
+  "halted": null,
+  "agent": "claude",
+  "model": null,
+  "level_of_effort": null,
+  "limits": {
+    "step_seconds": 1350
+  },
+  "model_profiles": {
+    "schema": 1,
+    "policy": 3,
+    "agent": "claude",
+    "mode": "single",
+    "profiles": {
+      "quick": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "research": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "combining": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "checking": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "writing": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "fixing": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      }
+    }
+  },
+  "review_policy": {
+    "schema": 1,
+    "level": "step_by_step"
+  },
+  "answers": {},
+  "said": {
+    "classify": "It reads as notes, not as slides.",
+    "outline": "Six slides. The check slide is the one I am least sure of."
+  },
+  "question": null,
+  "research": null,
+  "model_jobs": [
+    {
+      "model": null,
+      "effort": null,
+      "source": "inherit",
+      "profile": "quick",
+      "purpose": "classify",
+      "step": "classify",
+      "product": "Presentation Studio",
+      "policy": 3,
+      "actual_model": null,
+      "actual_effort": null,
+      "attempt": 1,
+      "permission": "write"
+    },
+    {
+      "model": null,
+      "effort": null,
+      "source": "inherit",
+      "profile": "quick",
+      "purpose": "outline",
+      "step": "outline",
+      "product": "Presentation Studio",
+      "policy": 3,
+      "actual_model": null,
+      "actual_effort": null,
+      "attempt": 1,
+      "permission": "write"
+    }
+  ]
+}

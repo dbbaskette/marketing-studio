@@ -1,0 +1,25 @@
+{
+  "at": "2026-11-24T23:12:33Z",
+  "by": "review-policy",
+  "choice": "example-clear",
+  "direction": {
+    "focal": "headingPrimary",
+    "meanings": {
+      "accentAqua": "Example Platform: the product this deck is about"
+    },
+    "motif": "A strip on each card says what it is about.",
+    "neutral": "canvasSecondary"
+  },
+  "house": [
+    "Fill cards: a supporting card is a solid neutral box or a bar card.",
+    "Icons: each card that names a concrete concept gets one approved icon."
+  ],
+  "layouts": {
+    "closing": "Big Statement",
+    "cover": "Title Slide",
+    "section": "Section Header"
+  },
+  "name": "Clear",
+  "shown": "rendered",
+  "words": "Automatic draft: the brand's default look, Clear, was used."
+}

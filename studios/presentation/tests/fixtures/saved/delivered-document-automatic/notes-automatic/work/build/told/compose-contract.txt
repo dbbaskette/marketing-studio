@@ -1,0 +1,7 @@
+Composition v1 (AI-owned; describe structure, never coordinates).
+{version:1,title,direction?:DIRECTION,slides:[{id,title,sources,canvas:NODE,connect?:[EDGE],brief?:BRIEF,subtitle?,caveat?,source?,notes?} | {id,title,sources,layout:TEMPLATE LAYOUT NAME,subtitle?,detail?,notes?}]}
+NODE types: stack|grid|free|box|text|icon|image|rule|spacer. EDGE: {id,from,to,label?,arrow?}.
+BRIEF: {relation:order|dependency|hierarchy|membership|contrast|parallel|overlap|quantity|none,focal?:NODE id,rhythm?:anchor|dense|breathing}.
+Sizes for example, in points.
+Content area 864 wide by 360 high. Gaps: tight 8, normal 16, wide 28. A box pads its content by 16 on each side. An icon is 48 square.
+One line of text needs: body 37.2, bodyReference 32.2, label 32.2, caption 24.7, metric 82.2, quote 44.7. Text with no textRole uses bodyReference, the size for a deck delivered for reading.

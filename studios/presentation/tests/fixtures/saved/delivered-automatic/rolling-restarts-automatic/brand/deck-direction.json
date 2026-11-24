@@ -1,0 +1,81 @@
+{
+  "schema": 1,
+  "identity": {
+    "id": "example",
+    "name": "Example Co",
+    "variant": "light"
+  },
+  "contractRevision": "c41250b89701cf659b05580e6ecadc3baae5790d75a084cc9d104156d80c84d9",
+  "default": "example-clear",
+  "direction": {
+    "focal": "headingPrimary",
+    "neutral": "canvasSecondary",
+    "meanings": {
+      "accentAqua": "Example Platform: the product this deck is about"
+    },
+    "motif": "A strip on each card says what it is about."
+  },
+  "layouts": {
+    "cover": "Title Slide",
+    "section": "Section Header",
+    "closing": "Big Statement"
+  },
+  "closing": {
+    "withWords": {
+      "layout": "Big Statement",
+      "title": true,
+      "subtitles": 0,
+      "use": "A closing whose words matter."
+    },
+    "thanks": {
+      "layout": "Thank You",
+      "title": false,
+      "subtitles": 0,
+      "use": "A closing that only thanks the audience."
+    }
+  },
+  "house": [
+    "Fill cards: a supporting card is a solid neutral box or a bar card.",
+    "Icons: each card that names a concrete concept gets one approved icon."
+  ],
+  "directions": [
+    {
+      "id": "example-clear",
+      "name": "Clear",
+      "useWhen": "Most decks: one product explained.",
+      "direction": {
+        "focal": "headingPrimary",
+        "neutral": "canvasSecondary",
+        "meanings": {
+          "accentAqua": "Example Platform: the product this deck is about"
+        },
+        "motif": "A strip on each card says what it is about."
+      },
+      "layouts": {
+        "cover": "Title Slide",
+        "section": "Section Header",
+        "closing": "Big Statement",
+        "thanks": "Thank You"
+      }
+    },
+    {
+      "id": "example-bold",
+      "name": "Bold",
+      "useWhen": "Launches and keynotes.",
+      "direction": {
+        "focal": "accentAqua",
+        "neutral": "canvasSecondary",
+        "meanings": {
+          "headingPrimary": "Example Platform"
+        },
+        "motif": "One large solid card carries the point."
+      },
+      "layouts": {
+        "cover": "Title Slide",
+        "section": "Section Header",
+        "closing": "Big Statement",
+        "thanks": "Thank You"
+      }
+    }
+  ]
+}
