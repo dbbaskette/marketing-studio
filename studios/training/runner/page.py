@@ -252,6 +252,7 @@ from studio_core.document_library import LibraryError
 from studio_core.document_library import context as library_context
 
 from studio_core import modules, polling
+from studio_core.shared_runner import caller
 from studio_core.shared_runner import page as _shared
 modules.bind(globals(), _shared, _shared.NAMES)
 
@@ -375,6 +376,12 @@ def activity_asked(one) -> dict:
 
 
 class RunnerPage(desk.Page):
+    # Each request is answered knowing whether the network bridge carried it
+    # (`studio_core.shared_runner.caller`): a phone may not read this computer's folders.
+    def answer(self, target, headers, method='GET', body=None):
+        with caller.answering(headers):
+            return super().answer(target, headers, method, body)
+
     """What the page may ask the runner, on top of what it may ask the desk."""
     reads = (*desk.READS, *READS)
     writes = (*desk.WRITES, *WRITES)
@@ -1004,6 +1011,10 @@ class RunnerPage(desk.Page):
                 raise desk.Refusal(HTTPStatus.BAD_REQUEST, str(error)) from None
         if path == '/api/research-sources':
             from studio_core.research_sources import Sources
+            # A phone through the network bridge may not read this computer's folders.
+            refused = caller.folder_refused(sent)
+            if refused:
+                raise desk.Refusal(HTTPStatus.FORBIDDEN, refused)
             try:
                 # With Training Studio's Keep in library for a file it captures.
                 return desk.as_json(HTTPStatus.OK, library.research_sources(

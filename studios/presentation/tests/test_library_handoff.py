@@ -12,6 +12,7 @@ from unittest import mock
 import helpers  # noqa: F401  puts the runner on the import path
 import test_desk
 import test_desk_page
+import runner_support
 from runner_support import DeskCase
 from studio_core import document_library
 from synthesis_fixture import published_bundle
@@ -145,3 +146,153 @@ class ResearchKeptTests(DeskCase):
                 self.assertRaises(Exception):
             self.engine._research_report(root, None, step)
         keep.assert_not_called()
+
+
+def xlsx_fixture():
+    """The repository's synthetic workbook builder (tests/xlsx_fixture.py)."""
+    import importlib.util
+    from pathlib import Path
+    place = Path(__file__).resolve().parents[3] / 'tests' / 'xlsx_fixture.py'
+    spec = importlib.util.spec_from_file_location('xlsx_fixture', place)
+    found = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(found)
+    return found
+
+
+class RemoteCallerTests(test_desk_page.DeskPageCase):
+    """#514: a request the network bridge carried says so (X-Marketing-Studio-Via: network),
+    and a phone may not read a folder on this computer: not in the shared source editor's
+    Add a folder, nor in the New deck form's folder. A Google Drive folder link and uploads
+    are still taken. A deck from a document takes a folder or a spreadsheet through
+    source_intake when it holds one document."""
+
+    def send(self, endpoint, sent, remote=False):
+        import json
+        from email.message import Message  # noqa: F401
+        import server
+        headers = self.headers(origin=self.origin, kind='application/json')
+        if remote:
+            headers['X-Marketing-Studio-Via'] = 'network'
+        try:
+            status, _, data = self.page.answer('/api/' + endpoint, headers, 'POST',
+                                               json.dumps(sent).encode())[:3]
+        except server.Refusal as refusal:
+            return int(refusal.status), {'error': str(refusal)}
+        return int(status), json.loads(data)
+
+    def folder(self, *names):
+        import tempfile
+        from pathlib import Path
+        place = Path(tempfile.mkdtemp(prefix='deck-folder-'))
+        self.addCleanup(shutil.rmtree, place, True)
+        for name in names:
+            (place / name).write_text(f'# {name}\n\nCapacity holds with two instances.\n')
+        return str(place)
+
+    def test_the_source_editor_refuses_a_folder_here_to_a_phone_only(self):
+        from studio_core import source_intake
+        status, draft = self.send('research-sources', {'action': 'create'})
+        self.assertEqual(status, 200, draft)
+        folder = self.folder('notes.md')
+        asked = {'action': 'folder', 'id': draft['id'], 'expected': draft['revision'],
+                 'location': folder}
+        status, refused = self.send('research-sources', asked, remote=True)
+        self.assertEqual((status, refused['error']), (403, source_intake.REMOTE))
+        # Nothing was read: the draft is as it was.
+        status, same = self.send('research-sources', {'action': 'read', 'id': draft['id']})
+        self.assertEqual(same['sources'], draft['sources'])
+        # At this computer the same folder is read.
+        status, added = self.send('research-sources', asked)
+        self.assertEqual(status, 200, added)
+        self.assertEqual([one['name'] for one in added['sources']], ['notes.md'])
+
+    def test_a_drive_link_or_an_upload_is_never_refused_as_a_folder_here(self):
+        from studio_core.shared_runner import caller
+        from email.message import Message
+        phone = Message()
+        phone['X-Marketing-Studio-Via'] = 'network'
+        with caller.answering(phone):
+            self.assertTrue(caller.remote())
+            for given in ('https://drive.google.com/drive/folders/abcdefghijklmnopqrstuv',
+                          'abcdefghijklmnopqrstuv'):
+                self.assertIsNone(caller.folder_refused({'action': 'folder', 'location': given}))
+            self.assertIsNone(caller.folder_refused({'action': 'capture', 'kind': 'file'}))
+            self.assertIsNotNone(caller.folder_refused({'action': 'folder', 'location': '~/x'}))
+        # Another value, or none, is this computer's own caller.
+        other = Message()
+        other['X-Marketing-Studio-Via'] = 'loopback'
+        with caller.answering(other):
+            self.assertFalse(caller.remote())
+        self.assertFalse(caller.remote())
+
+    def test_a_folder_with_one_document_is_the_deck_s_document(self):
+        import base64
+        status, found = self.send('document-intake', {'location': self.folder('talk.md')})
+        self.assertEqual(status, 200, found)
+        self.assertEqual(found['name'], 'talk.md')
+        self.assertIn(b'Capacity holds', base64.b64decode(found['content']))
+        # More than one is refused, naming them; a phone may not read a folder here.
+        status, refused = self.send('document-intake', {'location': self.folder('a.md', 'b.md')})
+        self.assertEqual(status, 409)
+        self.assertIn('This folder holds 2 documents: a.md, b.md.', refused['error'])
+        from studio_core import source_intake
+        status, refused = self.send('document-intake', {'location': self.folder('talk.md')},
+                                    remote=True)
+        self.assertEqual((status, refused['error']), (409, source_intake.REMOTE))
+        status, refused = self.send('document-intake', {'location': 1})
+        self.assertEqual(status, 400)
+
+    def test_a_spreadsheet_is_read_as_text_from_a_phone_too(self):
+        import base64
+        sheets = xlsx_fixture()
+        data = base64.b64encode(sheets.workbook(sheets.SAMPLE)).decode()
+        status, found = self.send('document-intake', {'file': {'name': 'Plan.xlsx',
+                                                               'data': data}}, remote=True)
+        self.assertEqual(status, 200, found)
+        self.assertEqual(found['name'], 'Plan.xlsx.md')
+        self.assertIn('Pipeline', base64.b64decode(found['content']).decode())
+        # The deck starts from it as its uploaded document.
+        started = self.post('decks', {'form': {**runner_support.FORM, 'flow': 'desk',
+                                               'route': 'document', 'source': {
+                                                   'kind': 'upload', 'name': found['name']}},
+                                      'uploads': {found['name']: found['content']}})
+        self.assertTrue(started['path'])
+
+
+@unittest.skipUnless(test_desk.NODE, 'Node is needed to run the page scripts without a browser')
+class DocumentFolderPageTests(test_desk_page.DeskPageCase):
+    """The New deck form's "A folder or a spreadsheet", for a deck from a document."""
+
+    def test_a_folder_read_becomes_the_chosen_document_and_starts_the_deck(self):
+        read = {'name': 'talk.md', 'content': 'IyBUYWxrCg==', 'bytes': 7, 'said': 'Added 1.'}
+        result = self.new_deck([
+            {'click': 'A document'}, {'click': 'A folder or a spreadsheet'},
+            {'snapshot': 'folder'},
+            {'click': 'Read the folder'}, {'snapshot': 'empty'},
+            {'fill': 'A folder on this computer, or a Google Drive folder link',
+             'value': '/Users/someone/talk'}, {'click': 'Read the folder'},
+            {'snapshot': 'read'}, {'fill': 'A short title', 'value': 'Synthetic deck'},
+            {'click': 'Start'}],
+            **{'POST /api/document-intake': [test_desk.ok(read)]})
+        shots = result['snapshots']
+        self.assertIn('Or a spreadsheet (.xlsx)', shots['folder']['sheet'])
+        self.assertIn('Give a folder path or a Google Drive folder link first.',
+                      shots['empty']['sheet'])
+        self.assertIn('Chosen: talk.md', shots['read']['sheet'])
+        self.assertIn('Upload a file', shots['read']['pressed'])
+        posted = self.posts(result)
+        self.assertEqual(posted[0], ('/api/document-intake', {'location': '/Users/someone/talk'}))
+        body = next(body for address, body in posted if address == '/api/decks')
+        self.assertEqual(body['form']['source'], {'kind': 'upload', 'name': 'talk.md'})
+        self.assertEqual(body['uploads'], {'talk.md': 'IyBUYWxrCg=='})
+
+    def test_a_refusal_is_said_beside_the_folder(self):
+        refused = {'status': 409, 'body': {'error': 'This folder holds 2 documents: a.md, b.md.'}}
+        result = self.new_deck([
+            {'click': 'A document'}, {'click': 'A folder or a spreadsheet'},
+            {'fill': 'A folder on this computer, or a Google Drive folder link', 'value': '/x'},
+            {'click': 'Read the folder'}, {'snapshot': 'refused'}],
+            **{'POST /api/document-intake': [refused]})
+        self.assertIn('This folder holds 2 documents: a.md, b.md.',
+                      result['snapshots']['refused']['sheet'])
+        self.assertNotIn('Chosen:', result['snapshots']['refused']['sheet'])

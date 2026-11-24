@@ -157,6 +157,7 @@ from runner import engine as engines
 from studio_core import modules, polling
 from studio_core.document_library import LibraryError
 from studio_core.document_library import context as library_context
+from studio_core.shared_runner import caller
 from studio_core.shared_runner import page as _shared
 modules.bind(globals(), _shared, _shared.NAMES)
 
@@ -208,6 +209,16 @@ COPY = '/api/deck-copy'   # a deck's setup, for the start form to make a new one
 WRITES = (*WRITES, '/api/desk-migrate', '/api/desk-ready', COPY)
 # Browsing the shared Document Library: it reads, and selects nothing for a deck.
 WRITES = (*WRITES, *library_context.ROUTES)
+# A folder on this computer, a Google Drive folder link, or a spreadsheet, read into the one
+# document a deck from a document is made from (`studio_core.source_intake`).
+DOCUMENT_INTAKE = '/api/document-intake'
+WRITES = (*WRITES, DOCUMENT_INTAKE)
+DOCUMENT_ENDINGS = ('.txt', '.md', '.html', '.htm', '.docx', '.pdf')   # the page's DOCUMENT_TYPES
+DOCUMENT_MOST = 8_000_000    # bytes: the largest document the runner reads
+INTAKE_LIMIT = 12_000_000    # bytes: a spreadsheet sent to be read, in base64
+ONE_DOCUMENT = ('This folder holds {count} documents: {names}. A deck from a document is made '
+                'from one. Choose one of them as a file, or start from an idea with research '
+                'and add the folder to its sources.')
 PPTX = 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
 DECKS = '/api/decks'
 DRAFT = '/api/deck-draft'   # a deck's storyboard, framed by the page and opened with a ticket
@@ -236,6 +247,12 @@ class RunnerPage(server.Page):
     reads = (*server.READS, *READS)
     writes = (*server.WRITES, *WRITES)
     framed = (DRAFT,)   # opened by the storyboard's frame, with a ticket
+
+    # Each request is answered knowing whether the network bridge carried it
+    # (`studio_core.shared_runner.caller`): a phone may not read this computer's folders.
+    def answer(self, target, headers, method='GET', body=None):
+        with caller.answering(headers):
+            return super().answer(target, headers, method, body)
 
     # --- reads ---------------------------------------------------------------------------
 
@@ -448,12 +465,13 @@ class RunnerPage(server.Page):
                 return super().body_limit(target, headers)
             from studio_core.intake_drafts import LIMIT
             return LIMIT if address == '/api/intake-draft' else 512_000
-        if address in (DECKS, PICTURE, SOURCE, '/api/research-sources'):
+        if address in (DECKS, PICTURE, SOURCE, '/api/research-sources', DOCUMENT_INTAKE):
             try:
                 self.check_token(headers)
             except server.Refusal:
                 return super().body_limit(target, headers)
-            return {DECKS: DECKS_LIMIT, PICTURE: PICTURE_LIMIT, SOURCE: SOURCE_LIMIT, '/api/research-sources': 12_000_000}[address]
+            return {DECKS: DECKS_LIMIT, PICTURE: PICTURE_LIMIT, SOURCE: SOURCE_LIMIT, '/api/research-sources': 12_000_000,
+                    DOCUMENT_INTAKE: INTAKE_LIMIT}[address]
         return super().body_limit(target, headers)
 
     # --- changes -------------------------------------------------------------------------
@@ -516,9 +534,15 @@ class RunnerPage(server.Page):
                 return server.as_json(HTTPStatus.OK, library_context.answer(path, sent, 'presentation'))
             except ValueError as error:
                 raise server.Refusal(HTTPStatus.BAD_REQUEST, str(error)) from None
+        if path == DOCUMENT_INTAKE:
+            return server.as_json(HTTPStatus.OK, self.document_intake(sent))
         if path == '/api/research-sources':
             from studio_core.research_sources import Sources
             from runner import source_keep
+            # A phone through the network bridge may not read this computer's folders.
+            refused = caller.folder_refused(sent)
+            if refused:
+                raise server.Refusal(HTTPStatus.FORBIDDEN, refused)
             try:
                 return server.as_json(HTTPStatus.OK, source_keep.research_sources(
                     Sources(self.engine.space().root / '.research-sources'), sent))
@@ -674,6 +698,54 @@ class RunnerPage(server.Page):
                 raise server.Refusal(HTTPStatus.BAD_REQUEST, str(refusal)) from None
         return self.engine.start(form, uploads, research_inputs=sent.get('research_inputs'),
                                  library=sent.get('library'))
+
+    @staticmethod
+    def document_intake(sent: dict) -> dict:
+        """The New deck form's folder or spreadsheet, for a deck from a document: {location}
+        (a folder on this computer or a Google Drive folder link) or {file: {name, data}} (a
+        spreadsheet, in base64), read with `source_intake.take`. A folder on this computer is
+        refused to a caller the network bridge carried. Answers the one document it holds,
+        {name, content (base64), bytes, said}; a folder with none or with more is refused,
+        saying what it held. Nothing is kept: the form sends the document when it starts."""
+        from studio_core import source_intake
+        if set(sent) not in ({'location'}, {'file'}):
+            raise server.Refusal(HTTPStatus.BAD_REQUEST, 'Give a folder, or one spreadsheet.')
+        given = sent.get('location')
+        if 'file' in sent:
+            file = sent['file']
+            if not isinstance(file, dict) or not isinstance(file.get('name'), str) \
+                    or not isinstance(file.get('data'), str):
+                raise server.Refusal(HTTPStatus.BAD_REQUEST, 'Send the spreadsheet with its '
+                                     'name and its contents.')
+            try:
+                given = {'name': file['name'], 'data': base64.b64decode(file['data'],
+                                                                        validate=True)}
+            except (binascii.Error, ValueError):
+                raise server.Refusal(HTTPStatus.BAD_REQUEST, f'"{file["name"]}" did not arrive '
+                                     'whole. Choose the file again.') from None
+        elif not isinstance(given, str):
+            raise server.Refusal(HTTPStatus.BAD_REQUEST, 'Give the folder as text.')
+        try:
+            found = source_intake.take(given, local=not caller.remote(),
+                                       accepts=DOCUMENT_ENDINGS, room=40,
+                                       spare=40 * DOCUMENT_MOST)
+        except ValueError as refusal:
+            raise server.Refusal(HTTPStatus.CONFLICT, str(refusal)) from None
+        documents = list(found['uploads'].items())
+        if not documents:
+            raise server.Refusal(HTTPStatus.CONFLICT, found['said'] or 'Nothing there can be '
+                                 'read as a document.')
+        if len(documents) > 1:
+            names = [name for name, _ in documents]
+            raise server.Refusal(HTTPStatus.CONFLICT, ONE_DOCUMENT.format(
+                count=len(names), names=', '.join(names[:5]) + (' and more' if len(names) > 5
+                                                                  else '')))
+        name, data = documents[0]
+        if len(data) > DOCUMENT_MOST:
+            raise server.Refusal(HTTPStatus.CONFLICT, f'{name} is larger than a document can '
+                                 'be. Save a smaller copy.')
+        return {'name': name, 'content': base64.b64encode(data).decode('ascii'),
+                'bytes': len(data), 'said': found['said']}
 
     def picture_given(self, sent: dict) -> dict:
         """A picture the person gives one slide at the outline stop: {"path", "slide",

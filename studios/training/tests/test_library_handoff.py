@@ -130,3 +130,43 @@ class ResearchKeptTests(DeckCase):
                 mock.patch.object(engines.Engine, '_keep_research') as keep:
             self.engine._report(root, step)
         keep.assert_not_called()
+
+
+from test_runner_deck import PageCase  # noqa: E402
+
+
+class RemoteCallerTests(PageCase):
+    """#514: a request the network bridge carried says so (X-Marketing-Studio-Via: network),
+    and the New training form's source editor refuses a phone a folder on this computer,
+    while a local caller adds the same folder. A Google Drive folder link and uploads are
+    never refused as a folder here (studio_core.shared_runner.caller)."""
+
+    def send(self, sent, remote=False):
+        import json
+        import desk
+        headers = self.headers(True, True)
+        if remote:
+            headers['X-Marketing-Studio-Via'] = 'network'
+        try:
+            status, _, data = self.page.answer('/api/research-sources', headers, 'POST',
+                                               json.dumps(sent).encode())
+        except desk.Refusal as refusal:
+            return int(refusal.status), {'error': str(refusal)}
+        return int(status), json.loads(data)
+
+    def test_a_folder_here_is_refused_to_a_phone_and_read_for_this_computer(self):
+        import tempfile
+        from pathlib import Path
+        from studio_core import source_intake
+        place = Path(tempfile.mkdtemp(prefix='training-folder-'))
+        self.addCleanup(shutil.rmtree, place, True)
+        (place / 'notes.md').write_text('# Notes\n\nCapacity holds with two instances.\n')
+        status, draft = self.send({'action': 'create'}, remote=True)
+        self.assertEqual(status, 200, draft)
+        asked = {'action': 'folder', 'id': draft['id'], 'expected': draft['revision'],
+                 'location': str(place)}
+        status, refused = self.send(asked, remote=True)
+        self.assertEqual((status, refused['error']), (403, source_intake.REMOTE))
+        status, added = self.send(asked)
+        self.assertEqual(status, 200, added)
+        self.assertEqual([one['name'] for one in added['sources']], ['notes.md'])

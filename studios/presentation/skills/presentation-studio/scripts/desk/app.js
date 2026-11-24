@@ -147,7 +147,7 @@ const DOCUMENT_BYTES = 8000000;      // the largest document the runner reads
 const DECK_BYTES = 85000000;         // the largest deck the page sends, as base64 it is larger
 const SOURCE_KINDS = {
   document: [['upload', 'Upload a file'], ['paste', 'Paste the text'],
-    ['google', 'A Google Docs link']],
+    ['google', 'A Google Docs link'], ['folder', 'A folder or a spreadsheet']],
   existing: [['upload', 'Upload a .pptx'], ['google', 'A Google Slides link']],
 };
 // A document is a finished script, or material to build from: the two kinds classify knows.
@@ -3112,6 +3112,13 @@ function sourceFields(draft) {
             + megabytes(DOCUMENT_BYTES) + '. It stays on this computer and is never shared.' }),
       chosen);
       paintChosenLater(chosen);
+    } else if (kind === 'folder') {
+      // Read, its one document is the uploaded file: the form shows it as chosen.
+      add(holder, ...folderFields(draft, () => {
+        draft.source = kinds.findIndex((one) => one[0] === 'upload');
+        paintNew(false);
+        focusKey('new-source ' + draft.source);
+      }));
     } else if (kind === 'paste') {
       add(holder, field('new-text', 'The text', draft, 'text', { long: true, rows: 8,
         limit: 200000, hint: 'Paste it whole. It stays on this computer and is never '
@@ -3128,6 +3135,57 @@ function sourceFields(draft) {
       draft.source = index;
       fill();
     }, 'new-source'), holder];
+}
+
+// A deck from a document, read from a folder on this computer, a Google Drive folder link or
+// a spreadsheet: the runner reads it (`/api/document-intake`, source_intake) and answers the
+// one document it holds, which becomes the uploaded file. `done` shows it as chosen. A folder
+// on this computer is refused when the page is opened from a phone.
+function folderFields(draft, done) {
+  const said = make('p', 'quiet field-hint');
+  said.id = 'new-folder-said';
+  said.setAttribute('role', 'status');
+  const use = async (sent, pressed) => {
+    pressed.disabled = true;
+    said.textContent = 'Reading it…';
+    refuse('new-folder', '');
+    try {
+      const found = await send('document-intake', sent);
+      draft.upload = { name: found.name, size: found.bytes, encoded: found.content };
+      toast('Read: ' + found.name + '. It is the document the deck is made from.');
+      done();
+    } catch (failure) {
+      said.textContent = '';
+      refuse('new-folder', failure.message);
+    }
+    pressed.disabled = false;
+  };
+  const read = capsule('Read the folder', '', () => {
+    const location = String(draft.folder || '').trim();
+    if (!location) {
+      refuse('new-folder', 'Give a folder path or a Google Drive folder link first.');
+      return;
+    }
+    use({ location }, read);
+  }, 'new-folder-read');
+  const sheet = field('new-sheet', 'Or a spreadsheet (.xlsx)', {}, 'file', { accept: '.xlsx',
+    hint: 'Every sheet is read as text, under its name.',
+    picked: async (input) => {
+      const file = Array.from(input.files || [])[0];
+      if (!file) return;
+      let encoded = '';
+      try {
+        encoded = await base64Of(file);
+      } catch (failure) {
+        refuse('new-folder', failure.message);
+        return;
+      }
+      use({ file: { name: file.name, data: encoded } }, read);
+    } });
+  return [field('new-folder', 'A folder on this computer, or a Google Drive folder link', draft,
+    'folder', { hint: 'It must hold one document: a text, Markdown, Word, web page or PDF file. '
+      + 'From a phone, give a Google Drive folder link.' }), add(make('div', 'bar'), read),
+  said, sheet];
 }
 
 // The picker says what was chosen as soon as it is on the screen.
@@ -3430,6 +3488,9 @@ function missingIn(draft, name, includeResearch = true) {
         ? 'Wait a moment: the file is still being read.' : 'Choose the file first.');
     } else if (kind === 'paste') {
       need('new-text', draft.text.trim(), 'Paste the text first.');
+    } else if (kind === 'folder') {
+      need('new-folder', false, 'Read the folder or the spreadsheet first: the document it '
+        + 'holds becomes the file.');
     } else {
       need('new-link', draft.link.trim(), 'Give the link first.');
     }

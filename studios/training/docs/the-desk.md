@@ -236,6 +236,8 @@ under the training's own key (`studio_core.document_library.research.keep_resear
 **Research & sources** says which revision ("Kept in the Document Library as research,
 revision N."), or why it was not kept. Keeping it never stops or delays the training.
 
+**New training**'s sources take a folder on this computer or a Google Drive folder link (**Add a folder**) and spreadsheets (.xlsx, every sheet read as text), as research's source editor always has. Opened from a phone through Marketing Studio's network link, a folder on this computer is refused with "A folder on this computer can be added only on this computer. From a phone, add a Google Drive folder link or upload the files."; a Drive folder link and uploads are still taken.
+
 Opened from Marketing Studio's **Continue in another studio** (`library=<id>@<revision>` in
 the link), Training Studio opens **New training** with that revision already among the
 sources of step 2, and says "Starting from: <title>, from the Document Library." at the top.
