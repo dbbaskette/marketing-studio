@@ -443,7 +443,7 @@ function sDeskReadingSheet(held){
   const line=sNode('p','reading-now'),steps=sNode('div','reading-steps');line.setAttribute('role','status');
   const show=at=>{
     line.textContent=at?'Opening it on the desk…':google?'Reading your Google Doc…':'Reading the page…';
-    steps.replaceChildren(...(typeof StudioShell==='undefined'?[]:[StudioShell.track(names.map((label,index)=>({label,state:index<at?'done':index===at?'current':'todo'})),'What happens now')]));
+    steps.replaceChildren(...(typeof StudioShell==='undefined'||typeof StudioShell.track!=='function'?[]:[StudioShell.track(names.map((label,index)=>({label,state:index<at?'done':index===at?'current':'todo'})),'What happens now')]));
   };
   show(0);
   sOpenSheet(google?'Bringing in your Google Doc':'Bringing in the page',line,steps,sNode('p','quiet','Nothing for you to do. '+(google?'Only the tab you linked is read, and the Doc is not changed. ':'')+'This can take up to a minute, and the desk opens by itself.'));
@@ -668,7 +668,8 @@ async function sDesk(ident){
   for(const pending of Object.values(held.pending||{}))if(pending?.timer&&typeof clearTimeout==='function')clearTimeout(pending.timer);
   const query=new URLSearchParams(location.search),reading=query.get('view');
   if(['read','edit','full'].includes(reading))held.reading=reading;
-  if(query.get('part'))held.activePart=query.get('part');
+  // `part=outline` opens the outline; any other part, the draft at that part.
+  if(query.get('part')==='outline')held.tab='outline';else if(query.get('part')){held.activePart=query.get('part');held.tab='draft';}
   held.view=view;held.pending={};held.stale=false;held.outline=null;if(held.review)held.review.editing=null;
   // Explicit manuscript links win. A fresh visit to a saved review resumes that
   // review; returning within a session keeps the view the author chose.
@@ -723,7 +724,80 @@ function sDeskCurrent(held){return studio.screen==='desk'&&studio.desk===held;}
 function sDeskWorkingIn(view,part){return DESK_KIT.workingIn(view,part);}
 function sDeskWorking(held,part){return DESK_KIT.workingIn(held.view,part);}
 function sDeskStatusWords(held){return DESK_KIT.statusWords(held);}
-function sDeskTabs(held){return sChoice('Work on',[['draft','Draft'],['outline','Outline']],held,'tab',async()=>{await sDeskFlush(held);await sDeskOutlineFlush(held);held.outline=null;sDeskRender(held);});}
+// The parts of this blog, down the left of its desk (StudioShell.parts; docs/design/ui-kit.md,
+// "The parts of a project"): the outline and the draft's own parts, the Finishing tools with
+// something open, and the sources behind it. It replaces the Draft and Outline tabs, Go to
+// section and the row of suggestions to review; Read, Edit section and Edit everything stay,
+// as views of the part shown. A part says Writing while a job changes it, and a Finishing tool
+// Needs you while its suggestions wait, Writing while it runs, Out of date when the post changed
+// since (the GEO review). The draft's parts have no other state: none is invented.
+function sDeskPartShown(held){return held.tab==='outline'?'outline':held.activePart||'opening';}
+function sDeskPartGroups(held){
+  const view=held.view,working=view.working,writing=part=>sDeskWorking(held,part)?'Writing':'';
+  const draft=[{id:'outline',name:'Outline',state:working?.kind==='desk-outline'?'Writing':''},
+    {id:'title',name:'Title',state:writing('title')},{id:'opening',name:'Opening',state:writing('opening')},
+    ...(view.sections||[]).map((section,index)=>({id:section.id,name:deskHeading(section.heading)||'Section '+(index+1),state:writing(section.id)}))];
+  const finishing=[];
+  for(const tool of DESK_TOOLS){
+    const open=(view.finishing?.[tool.key]?.items||[]).filter(item=>item.state==='open').length,geo=tool.key==='geo'?view.geo_review||{}:{};
+    const state=working?.kind==='finish-'+tool.key||geo.status==='working'?'Writing':open||geo.status==='done'&&geo.open?'Needs you':geo.status==='stale'?'Out of date':'';
+    const waiting=open||(geo.status==='done'&&geo.open)||0;
+    if(state)finishing.push({id:'finish:'+tool.key,name:tool.name+(waiting?' · '+waiting:''),state});
+  }
+  const n=(view.source_names||[]).length;
+  return [{title:'Draft',parts:draft},{title:'Finishing',parts:finishing},
+    {title:'Behind it',parts:[{id:'sources',name:'Sources',count:n?n+(n===1?' source':' sources'):view.research?'Research':'No sources'}]}];
+}
+function sDeskPartsList(held){
+  if(typeof StudioShell==='undefined'||typeof StudioShell.parts!=='function')return null;
+  const groups=sDeskPartGroups(held),chosen=sDeskPartShown(held);
+  held.partsSaid=JSON.stringify([groups,chosen]);
+  return StudioShell.parts({label:'Parts of this draft',key:'blog-parts',groups,chosen,choose:id=>sDeskPartChosen(held,id)});
+}
+// The list said again after a poll or a job, only when what it says changed; the part the
+// person is on in it keeps the focus.
+function sDeskPartsAgain(held){
+  if(!held.nav||!(held.nav.parentNode||held.nav.parentElement)||held.mode==='review')return;
+  const groups=sDeskPartGroups(held);if(JSON.stringify([groups,sDeskPartShown(held)])===held.partsSaid)return;
+  const focus=sFocusHeld(held.nav),nav=sDeskPartsList(held);if(!nav)return;
+  held.nav.replaceWith(nav);held.nav=nav;sFocusAgain(focus,nav);
+}
+function sDeskPartChosen(held,id){
+  if(id==='sources')return sDeskSourcesShown(held);
+  if(String(id).startsWith('finish:')){
+    const key=String(id).slice(7),open=(held.view.finishing?.[key]?.items||[]).filter(item=>item.state==='open');
+    // Humanize's located rewrites open Review mode, as Copy edit's fixes do: one place to accept or reject them.
+    if(key==='humanize'&&open.some(item=>item.present&&'after' in item))return sReviewHuman(held);
+    const geo=held.view.geo_review||{};
+    return sDeskFinishFrom(held,key==='geo'&&!open.length&&['stale','not-run'].includes(geo.status)?'publish':key);
+  }
+  if(id==='outline')return sDeskOutlineChosen(held);
+  return sDeskChoose(held,held.reading||'read',id,{push:true});
+}
+// The outline, chosen from the list: the draft's typing is saved first, as any change of view.
+async function sDeskOutlineChosen(held){
+  if(held.tab==='outline'){held.column?.scrollIntoView?.({block:'start',behavior:'instant'});return;}
+  await sDeskFlush(held);
+  if(held.stale||Object.keys(held.pending||{}).length){if(!held.stale)held.saved=held.status?.textContent||'Your text has not saved yet. Try again before changing views.';sDeskRender(held);return;}
+  held.selection=null;held.tab='outline';held.outline=null;sDeskViewUrl(held,true);sDeskRender(held);
+}
+// The sources behind the draft sit beside it: Sources brings them into view (Finishing, in
+// their place while it is open, is put away first; on a phone their fold is opened).
+function sDeskSourcesShown(held){
+  if(held.finish){held.finish=null;sDeskRender(held);}
+  const aside=held.aside;if(!aside)return;
+  if(aside.tagName&&String(aside.tagName).toUpperCase()==='DETAILS')aside.open=true;
+  const folded=aside.querySelector?.('.desk-aside-folded');if(folded)folded.open=true;
+  const title=aside.querySelector?.('.card-title');if(!title)return;
+  title.tabIndex=-1;title.scrollIntoView?.({block:'center',behavior:'instant'});title.focus?.({preventScroll:true});
+}
+// Back and Forward between the parts of the desk shown: the part the address names, without
+// reading the desk again, so nothing typed is lost.
+async function sDeskReturnTo(held){
+  const query=new URLSearchParams(location.search),part=query.get('part')||'opening',reading=query.get('view');
+  if(part==='outline')return sDeskOutlineChosen(held);
+  await sDeskChoose(held,['read','edit','full'].includes(reading)?reading:held.reading||'read',part);
+}
 // In a team workspace a blog has one driver. While another computer drives it, or nobody
 // does, the desk is read only and the toolbar offers Take over or Take this blog.
 function sDeskCan(held){return sCanEdit(held?.view||{});}
@@ -918,18 +992,25 @@ function sDeskToolbar(held){
 // Reading is the default; editing mounts only the selected part. The full desk remains
 // available for experienced authors. URL choices contain navigation only, never text.
 function sDeskParts(held){const parts=['title','opening',...held.view.sections.map(section=>section.id)];if(!parts.includes(held.activePart))held.activePart='opening';return held.reading==='edit'?[held.activePart]:parts;}
-function sDeskViewUrl(held){if(studio.screen!=='desk')return;const query=new URLSearchParams(location.search);query.set('screen','desk');query.set('id',held.id);query.set('view',held.reading||'read');query.set('part',held.activePart||'opening');history.replaceState(null,'',location.pathname+'?'+query);}
-async function sDeskChoose(held,reading,part=held.activePart){
-  const previousReading=held.shownReading||held.reading,previousPart=held.shownPart||held.activePart;
+// The part shown is `part=` (`outline` for the outline). A part chosen from the list adds a
+// history entry (`push`), so Back returns to the part before; a change of view replaces it.
+function sDeskViewUrl(held,push=false){if(studio.screen!=='desk')return;const query=new URLSearchParams(location.search);query.set('screen','desk');query.set('id',held.id);query.set('view',held.reading||'read');query.set('part',sDeskPartShown(held));const to=location.pathname+'?'+query;if(push&&'?'+query!==location.search)history.pushState(null,'',to);else history.replaceState(null,'',to);}
+// An address that names a part keeps naming the one shown, when a job moves the desk between
+// the outline and the draft.
+function sDeskPartUrl(held){if(studio.screen!=='desk')return;const query=new URLSearchParams(location.search);if(!query.has('part')||query.get('part')===sDeskPartShown(held))return;query.set('part',sDeskPartShown(held));history.replaceState(null,'',location.pathname+'?'+query);}
+async function sDeskChoose(held,reading,part=held.activePart,{push=false}={}){
+  const previousReading=held.shownReading||held.reading,previousPart=held.shownPart||held.activePart,previousTab=held.shownTab||held.tab;
   await sDeskFlush(held);await sDeskOutlineFlush(held);
-  if(held.stale||Object.keys(held.pending||{}).length){held.reading=previousReading;held.activePart=previousPart;if(!held.stale)held.saved=held.status?.textContent||'Your text has not saved yet. Try again before changing views.';sDeskRender(held);held.cards?.[previousPart]?.deskInput?.focus();return;}
-  held.selection=null;held.reading=reading;held.activePart=part||'opening';sDeskViewUrl(held);sDeskRender(held);
+  if(held.stale||Object.keys(held.pending||{}).length){held.reading=previousReading;held.activePart=previousPart;held.tab=previousTab;if(!held.stale)held.saved=held.status?.textContent||'Your text has not saved yet. Try again before changing views.';sDeskRender(held);sDeskPartUrl(held);held.cards?.[previousPart]?.deskInput?.focus();return;}
+  if(held.tab==='outline')held.outline=null;
+  held.selection=null;held.tab='draft';held.reading=reading;held.activePart=part||'opening';sDeskViewUrl(held,push);sDeskRender(held);
   const selected=held.cards?.[held.activePart];if(reading==='read')selected?.scrollIntoView?.({block:'start',behavior:'instant'});
   else selected?.deskInput?.focus();
 }
 // Finishing opens from the toolbar only: Polish goes to Review mode, the one place fixes are
 // accepted or rejected in the text. On a phone the view, the buttons and the page's sentence
-// fold into one bar beside Go to section, so the title and the first paragraph come first.
+// fold into one View and tools fold under the list's one control, so the title and the first
+// paragraph come first. The part shown is chosen in the list, which replaced Go to section.
 function sDeskReadingControls(held,lede,status){
   const choices=sChoice('Manuscript view',[['read','Read'],['edit','Edit section'],['full','Edit everything']],held,'reading',value=>sDeskChoose(held,value));
   const selected=['read','edit','full'].indexOf(held.reading);
@@ -937,21 +1018,14 @@ function sDeskReadingControls(held,lede,status){
   held.cultReading=selected;
   // What the chosen view is for, said under the switch, so its three names need no guessing.
   const hint=sNode('p','quiet field-hint',{read:'Read: the whole post as your reader sees it.',edit:'Edit section: one section at a time, in an editor.',full:'Edit everything: every section on one page, each with a box to ask your assistant for a rewrite.'}[held.reading]||'');
-  const picker=sField('desk-part-picker','Go to section',held,'activePart',{options:[['title','Title'],['opening','Opening'],...held.view.sections.map(section=>[section.id,deskHeading(section.heading)])],changed:value=>sDeskChoose(held,held.reading,value)});
-  const actions=sAdd(sNode('div','bar'),sButton('Sources',()=>sDeskSourcesSheet(held)),sButton('Outline',async()=>{await sDeskFlush(held);held.tab='outline';sDeskRender(held);}));
+  const actions=sAdd(sNode('div','bar'),sButton('Sources',()=>sDeskSourcesSheet(held)));
   // One row of controls, with what the chosen view is for and the save line under it.
-  if(!sNarrow())return sAdd(sNode('div','desk-reading-controls'),choices,picker,actions,sAdd(sNode('div','desk-view-foot'),hint,status));
+  if(!sNarrow())return sAdd(sNode('div','desk-reading-controls'),choices,actions,sAdd(sNode('div','desk-view-foot'),hint,status));
   choices.append(hint);
   const fold=sNode('details','desk-tools-fold');fold.open=!!held.toolsOpen;fold.addEventListener('toggle',()=>{held.toolsOpen=fold.open;});
   fold.append(sNode('summary','button','View and tools'),sAdd(sNode('div','desk-tools-list'),lede,choices,actions));
   // The save line stays in reach, empty until there is something to say.
-  return sAdd(sNode('div','desk-reading-controls desk-compact'),picker,Drafting.cultExpandable(fold),status);
-}
-function sDeskReviewQueue(held){
-  // Humanize's located rewrites open Review mode, as Copy edit's fixes do: one place to accept or reject them.
-  const rows=[];for(const tool of DESK_TOOLS){const open=(held.view.finishing?.[tool.key]?.items||[]).filter(item=>item.state==='open'),n=open.length;if(!n)continue;rows.push(sButton(tool.name+' · '+n+' to review',()=>tool.key==='humanize'&&open.some(item=>item.present&&'after' in item)?sReviewHuman(held):sDeskFinishOpen(held,tool.key)));}
-  if(!rows.length)return null;
-  return sAdd(sNode('section','desk-suggestion-summary'),sNode('p','quiet','Optional suggestions to review'),sAdd(sNode('div','bar'),...rows));
+  return sAdd(sNode('div','desk-reading-controls desk-compact'),Drafting.cultExpandable(fold),status);
 }
 function sDeskReadPart(held,part){
   const title=part==='title'?'Title':part==='opening'?'Opening':deskHeading(held.view.sections.find(row=>row.id===part)?.heading||''),text=held.pending?.[part]?.text??deskTextOf(held.view,part);
@@ -994,7 +1068,7 @@ function sDeskGeoPointer(held){
   return row;
 }
 function sDeskBench(held){
-  if(typeof StudioShell==='undefined')return null;
+  if(typeof StudioShell==='undefined'||typeof StudioShell.arc!=='function')return null;
   const view=held.view,start=view.start&&!sDeskHasText(view)?view.start:null,working=!!(view.working||start&&!start.problem);
   const hasText=sDeskHasText(view),finished=!!view.finished;
   // Reading and polishing the draft is still Make; Ship is Finishing and what follows it.
@@ -1022,7 +1096,7 @@ function sDeskBench(held){
   // With a draft to read and nothing but the standing next step, the band is one quiet row
   // and the writing starts higher.
   const quiet=(hasText&&!stopped&&!working&&!fixes)||check;  // a check has its own status box
-  const bench=sNode('div','workbench-top'+(quiet?' workbench-quiet':''));bench.append(...[StudioShell.pulse(move?'yours':working?'working':'still'),head,sDeskGeoPointer(held)].filter(Boolean));
+  const bench=sNode('div','workbench-top'+(quiet?' workbench-quiet':''));bench.dataset.zone='top';bench.append(...[StudioShell.pulse(move?'yours':working?'working':'still'),head,sDeskGeoPointer(held)].filter(Boolean));
   return bench;
 }
 function sDeskRender(held){
@@ -1040,10 +1114,9 @@ function sDeskRender(held){
     held.wholeCard=held.reading==='read'?null:sDeskWhole(held);
     for(const part of sDeskParts(held))held.cards[part]=sDeskPart(held,part);
     const whole=held.wholeCard?(held.reading==='full'?held.wholeCard:disclosure('Revise the whole draft',held.wholeCard)):null;
-    held.queueSlot=sNode('div','desk-review-queue');const queue=sDeskReviewQueue(held);if(queue)held.queueSlot.append(queue);
     // In reading order: an object keyed by part ids lists all-digit ids first, so the cards are
     // placed by the parts' own order, never by the object's.
-    column.append(held.problemSlot,...[sActivityNow(view.activity,{id:held.id})].filter(Boolean),held.queueSlot,...[whole].filter(Boolean),...sDeskParts(held).map(part=>held.cards[part]));
+    column.append(held.problemSlot,...[sActivityNow(view.activity,{id:held.id})].filter(Boolean),...[whole].filter(Boolean),...sDeskParts(held).map(part=>held.cards[part]));
     held.noSections=view.sections.length?null:sDeskNoSections();if(held.noSections)column.append(held.noSections);
   }
   held.bar=sDeskSelectionBar(held);held.aside=sDeskAside(held);
@@ -1052,8 +1125,13 @@ function sDeskRender(held){
   held.panel=finishing?sDeskPanel(held):null;held.panelKey=finishing?sDeskPanelKey(held):null;
   const lede=held.tab==='outline'?'Rename, reorder, add and remove sections and say what each must do. Write the draft from the outline, or one section at a time.':'Read your manuscript, or choose a section to edit. Polish and checks offer suggestions; nothing changes until you accept.';
   const said=sNode('p','lede',narrow?lede+' Changes save as you type.':lede);
-  held.bench=sDeskBench(held);
-  sPage(held.bench,narrow||held.bench&&held.tab!=='outline'?null:said,sDeskElsewhere(view),narrow||held.tab!=='outline'?null:status,held.tab==='outline'?sDeskTabs(held):null,held.tab==='outline'?null:sDeskReadingControls(held,said,status),sAdd(sNode('div','desk-layout'+(finishing&&!sheet?' desk-finishing':'')),column,finishing&&!sheet?held.panel:held.aside),sheet?held.panel:null,held.bar);
+  held.bench=sDeskBench(held);held.nav=sDeskPartsList(held);
+  // The workbench: the band across the top, the parts of the blog down the left, and the rest
+  // one column of work beside them. A phone's Finishing sheet stays the page's own, over it all.
+  const work=sAdd(sNode('div','stack desk-work'),...[narrow||held.bench&&held.tab!=='outline'?null:said,sDeskElsewhere(view),narrow||held.tab!=='outline'?null:status,held.tab==='outline'?null:sDeskReadingControls(held,said,status),sAdd(sNode('div','desk-layout'+(finishing&&!sheet?' desk-finishing':'')),column,finishing&&!sheet?held.panel:held.aside),held.bar].filter(Boolean));
+  if(held.nav)work.dataset.zone='work';
+  sPage(held.bench,held.nav,work,sheet?held.panel:null);
+  sDeskPartUrl(held);
   sDeskImagesLoad(held);
 }
 // After a job starts, moves on or ends: redraw only the cards it changed, so the part the
@@ -1067,6 +1145,7 @@ function sDeskRefresh(held,before){
   sActivityUpdate($('studio-page'),held.view.activity,{id:held.id});
   // The arc and the move follow every change, whatever else is drawn again.
   if(held.bench&&held.bench.parentNode){const bench=sDeskBench(held);if(bench){held.bench.replaceWith(bench);held.bench=bench;}}
+  sDeskPartsAgain(held);
   if(held.mode==='review')return sDeskReviewRefresh(held,before);
   const view=held.view,order=found=>(found?.sections||[]).map(section=>section.id).join(',');
   if(held.tab==='outline'||held.shownTab!==held.tab){if((held.outlineTimer||held.tab==='outline'&&sDeskTyping(held.column))&&sDeskCurrent(held)){if(!held.outlineTimer)held.outlineStale=true;sDeskToolbar(held);const focus=sFocusHeld(held.aside),aside=sDeskAside(held);held.aside.replaceWith(aside);held.aside=aside;sFocusAgain(focus,aside);sDeskPanelSync(held);return;}held.outline=null;return sDeskRender(held);}
@@ -1075,7 +1154,6 @@ function sDeskRefresh(held,before){
   sDeskToolbar(held);
   held.problemSlot.replaceChildren(...[sDeskProblem(held)].filter(Boolean));
   sDeskWholeState(held);
-  const queue=sDeskReviewQueue(held);held.queueSlot?.replaceChildren(...[queue].filter(Boolean));
   for(const part of Object.keys(held.cards)){
     const was=sDeskWorkingIn(before,part),now=sDeskWorking(held,part),old=held.cards[part];
     const changed=was!==now||deskTextOf(before,part)!==deskTextOf(view,part)||(before.versions||{})[part]!==(view.versions||{})[part]||sDeskCommentKey(before,part)!==sDeskCommentKey(view,part);
