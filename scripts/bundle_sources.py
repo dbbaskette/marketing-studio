@@ -1,4 +1,8 @@
-"""Resolve explicitly configured packaging sources without modifying their repositories."""
+"""Resolve explicitly configured packaging sources without modifying their repositories.
+
+Build-time only: the bundle builder and repository sync import it with core/ on
+sys.path. It lives under scripts/ so installed studios do not carry it.
+"""
 import hashlib
 import json
 import os
@@ -8,7 +12,7 @@ import shutil
 import subprocess
 from urllib.parse import urlsplit
 
-from .companions import VERSION, as_tuple, minimum_version
+from studio_core.companions import VERSION, as_tuple, minimum_version
 
 NAMES = {'harness-slides', 'harness-research', 'brand'}
 

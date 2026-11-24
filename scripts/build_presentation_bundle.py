@@ -16,7 +16,9 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'core'))
-from studio_core import bundles, distribution, bundle_sources
+from studio_core import bundles, distribution
+sys.path.insert(0, str(ROOT / 'scripts'))
+import bundle_sources
 
 TEMPLATES = ROOT / 'scripts/local_bundle'
 sys.path.insert(0, str(TEMPLATES))
