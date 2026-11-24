@@ -71,11 +71,14 @@ def answer(path: str, sent: dict, studio: str) -> dict:
                 and not any(value for value in filters.values()):
             applied = dict(remembered)
             filters = {**filters, **applied}
+        # Marketing Studio's counts of hidden and imported documents come from the same
+        # reading of the index as the page of documents.
         found = library.catalog(offset=offset, limit=limit,
-                                hidden=manage and sent.get('hidden') is True, **filters)
+                                hidden=manage and sent.get('hidden') is True, summary=manage,
+                                **filters)
         return {'available': True, **found, 'remembered': remembered,
                 **({'applied': applied} if applied is not None else {}),
-                'location': where['shown'], **(library.summary() if manage else {}), **_labels()}
+                'location': where['shown'], **_labels()}
     if library is None:
         raise LibraryError(NOT_MADE)
     if path == '/api/library-document':

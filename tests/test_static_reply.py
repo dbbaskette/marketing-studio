@@ -1,8 +1,14 @@
 """A page's scripts and styles are answered "not changed" or compressed, never stored blind."""
 import gzip
+import os
+import socket
 import sys
+import tempfile
+import threading
 import unittest
+from http.server import BaseHTTPRequestHandler
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'core'))
 from studio_core import server  # noqa: E402
@@ -43,6 +49,186 @@ class StaticReplyTests(unittest.TestCase):
         plain = server.static_reply(KIND, BODY, {})[3]['ETag']
         packed = server.static_reply(KIND, BODY, {'Accept-Encoding': 'gzip'})[3]['ETag']
         self.assertNotEqual(plain, packed)
+
+
+class StaticFileTests(unittest.TestCase):
+    """Counted, never timed: stat() calls, reads and hashes of a script asked for again."""
+
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.path = Path(folder.name) / 'page.js'
+        self.path.write_bytes(BODY)
+        server._FILES.clear()
+        self.addCleanup(server._FILES.clear)
+
+    def counted(self):
+        stats, opens, hashes = [], [], []
+        real_stat, real_hash = server.os.stat, server.hashlib.sha256
+
+        def stat(path, *args, **kwargs):
+            stats.append(path)
+            return real_stat(path, *args, **kwargs)
+
+        def opened(path, *args, **kwargs):
+            opens.append(path)
+            return open(path, *args, **kwargs)
+
+        def hashed(*args, **kwargs):
+            hashes.append(args)
+            return real_hash(*args, **kwargs)
+        patches = (mock.patch.object(server.os, 'stat', stat),
+                   mock.patch.object(server, 'open', opened, create=True),
+                   mock.patch.object(server.hashlib, 'sha256', hashed))
+        return patches, stats, opens, hashes
+
+    def test_a_current_copy_costs_one_stat_and_no_read_or_hash(self):
+        for headers in ({}, {'Accept-Encoding': 'gzip'}):
+            with self.subTest(headers=headers):
+                status, kind, body, extra = server.static_file(KIND, self.path, headers)
+                self.assertEqual(int(status), 200)
+                patches, stats, opens, hashes = self.counted()
+                with patches[0], patches[1], patches[2]:
+                    status, kind, body, again = server.static_file(
+                        KIND, self.path, {**headers, 'If-None-Match': extra['ETag']})
+                self.assertEqual((int(status), kind, body), (304, None, b''))
+                self.assertEqual(again['ETag'], extra['ETag'])
+                self.assertEqual((len(stats), opens, hashes), (1, [], []))
+
+    def test_the_same_reply_as_static_reply(self):
+        for headers in ({}, {'Accept-Encoding': 'gzip, deflate'}):
+            self.assertEqual(server.static_file(KIND, self.path, headers),
+                             server.static_reply(KIND, BODY, headers))
+
+    def test_a_changed_file_is_served_fresh_at_once(self):
+        tag = server.static_file(KIND, self.path, {})[3]['ETag']
+        changed = BODY + b'// changed\n'
+        self.path.write_bytes(changed)
+        status, _, body, extra = server.static_file(KIND, self.path, {'If-None-Match': tag})
+        self.assertEqual((int(status), body), (200, changed))
+        self.assertNotEqual(extra['ETag'], tag)
+        # The same size, written again: its times differ, so it is read again too.
+        same_size = changed.replace(b'42', b'43')
+        self.path.write_bytes(same_size)
+        later = self.path.stat().st_mtime_ns + 1_000_000
+        os.utime(self.path, ns=(later, later))
+        status, _, body, _ = server.static_file(KIND, self.path, {'If-None-Match': extra['ETag']})
+        self.assertEqual((int(status), body), (200, same_size))
+
+    def test_a_same_size_rewrite_with_its_old_mtime_is_served_fresh(self):
+        before = self.path.stat()
+        tag = server.static_file(KIND, self.path, {})[3]['ETag']
+        rewritten = BODY.replace(b'42', b'24')
+        self.path.write_bytes(rewritten)
+        os.utime(self.path, ns=(before.st_atime_ns, before.st_mtime_ns))   # the same mtime tick
+        after = self.path.stat()
+        self.assertEqual((after.st_size, after.st_mtime_ns, after.st_ino),
+                         (before.st_size, before.st_mtime_ns, before.st_ino))
+        status, _, body, _ = server.static_file(KIND, self.path, {'If-None-Match': tag})
+        self.assertEqual((int(status), body), (200, rewritten))
+
+    def test_at_most_static_files_are_held(self):
+        for number in range(server.STATIC_FILES + 10):
+            path = self.path.with_name(f'kit-{number}.js')
+            path.write_bytes(b'let n = %d;\n' % number)
+            server.static_file(KIND, path, {})
+        self.assertEqual(len(server._FILES), server.STATIC_FILES)
+        self.assertNotIn(str(self.path.with_name('kit-0.js')), server._FILES)
+        self.assertIn(str(self.path.with_name(f'kit-{server.STATIC_FILES + 9}.js')), server._FILES)
+
+    def test_a_missing_file_is_refused_as_before(self):
+        self.path.unlink()
+        with self.assertRaises(OSError):
+            server.static_file(KIND, self.path, {})
+
+
+class ServerBoundTests(unittest.TestCase):
+    """The page's server answers at most SLOTS requests at once. One past that waits up to
+    SLOT_WAIT for a slot and is otherwise answered 503 with Retry-After, never dropped."""
+
+    def serve(self, slots):
+        self.release = threading.Event()
+        self.entered = threading.Semaphore(0)
+        self.waiting = threading.Event()
+        test = self
+
+        class Held(BaseHTTPRequestHandler):
+            def do_GET(self):
+                test.entered.release()
+                test.release.wait(20)
+                self.send_response(200)
+                self.send_header('Content-Length', '2')
+                self.end_headers()
+                self.wfile.write(b'ok')
+
+            def log_message(self, *args):
+                pass
+
+        class Watched(threading.BoundedSemaphore):
+            def acquire(self, blocking=True, timeout=None):
+                if super().acquire(blocking=False):
+                    return True
+                test.waiting.set()
+                return super().acquire(blocking, timeout)
+
+        with mock.patch.object(server, 'SLOTS', slots):
+            made = server.Server(('127.0.0.1', 0), Held)
+        made.slots = Watched(slots)
+        self.addCleanup(made.server_close)
+        serving = threading.Thread(target=made.serve_forever, args=(0.05,), daemon=True)
+        serving.start()
+        self.addCleanup(serving.join, 10)
+        self.addCleanup(made.shutdown)
+        self.addCleanup(self.release.set)
+        self.port = made.server_address[1]
+        return made
+
+    def ask(self):
+        line = socket.create_connection(('127.0.0.1', self.port), timeout=20)
+        line.sendall(b'GET / HTTP/1.0\r\nHost: 127.0.0.1\r\n\r\n')
+        return line
+
+    def all_slots_free(self, made, slots):
+        for _ in range(slots):          # each slot let go exactly once: all free, no more
+            self.assertTrue(made.slots.acquire(timeout=20))
+        self.assertFalse(made.slots.acquire(blocking=False))
+        for _ in range(slots):
+            made.slots.release()
+
+    def test_a_request_past_the_bound_waits_for_a_slot_and_is_answered(self):
+        made = self.serve(1)
+        first = self.ask()
+        self.assertTrue(self.entered.acquire(timeout=20))
+        second = self.ask()
+        self.assertTrue(self.waiting.wait(20), 'the second request did not wait for a slot')
+        self.release.set()
+        for line in (first, second):
+            with line:
+                self.assertIn(b'ok', line.makefile('rb').read())
+        self.assertTrue(self.entered.acquire(timeout=20))
+        self.all_slots_free(made, 1)
+
+    def test_no_slot_in_time_is_answered_503_with_retry_after(self):
+        made = self.serve(1)
+        first = self.ask()
+        self.assertTrue(self.entered.acquire(timeout=20))
+        with mock.patch.object(server, 'SLOT_WAIT', 0.1):
+            refused = self.ask()
+            with refused:
+                said = refused.makefile('rb').read()
+        head, _, body = said.partition(b'\r\n\r\n')
+        self.assertTrue(head.startswith(b'HTTP/1.0 503 Service Unavailable'), said)
+        self.assertIn(b'\r\nRetry-After: 1', head)
+        self.assertIn(b'Content-Length: %d' % len(body), head)
+        self.assertEqual(body, b'The page is busy. Try again in a moment.\n')
+        self.release.set()
+        with first:
+            self.assertIn(b'ok', first.makefile('rb').read())
+        self.all_slots_free(made, 1)
+        later = self.ask()
+        with later:
+            self.assertTrue(self.entered.acquire(timeout=20))
+            self.assertIn(b'200', later.makefile('rb').read())
 
 
 if __name__ == '__main__':

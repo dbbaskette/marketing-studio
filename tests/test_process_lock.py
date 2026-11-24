@@ -1,4 +1,5 @@
 """Persistent workspace write locks, exercised by independent interpreters."""
+import fcntl
 import os
 from pathlib import Path
 import subprocess
@@ -6,8 +7,10 @@ import sys
 import tempfile
 import threading
 import unittest
+from unittest import mock
 
 import marketing_studio  # noqa: F401
+from studio_core import process_lock, studios_config
 from studio_core.process_lock import ProcessRLock, workspace_lock_path
 
 
@@ -168,3 +171,66 @@ with ProcessRLock(lambda: Path(sys.argv[1])):
             self.assertTrue(current[0].exists())
         with ProcessRLock(lambda: self.path, timeout=.1):
             pass
+
+
+class FakeTime:
+    """A clock that moves only when a lock waits, so the waits are counted, never timed."""
+
+    def __init__(self):
+        self.now, self.waits = 100.0, []
+
+    def monotonic(self):
+        return self.now
+
+    def sleep(self, seconds):
+        self.waits.append(round(seconds, 6))
+        self.now += seconds
+
+
+class BackoffTests(unittest.TestCase):
+    """A taken lock is asked for again after 5 ms, doubling to 50 ms, within the same total
+    wait and with the same refusal as before."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name).resolve()
+
+    def held_by_another(self, path):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        handle = os.open(path, os.O_CREAT | os.O_RDWR, 0o600)
+        self.addCleanup(os.close, handle)
+        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+    def assert_backs_off(self, waits, total):
+        self.assertEqual(waits[:5], [0.005, 0.01, 0.02, 0.04, 0.05])
+        self.assertEqual(max(waits), 0.05)
+        self.assertAlmostEqual(sum(waits), total, places=6)
+
+    def test_the_workspace_lock_backs_off_from_5_to_50_ms(self):
+        path = self.root / 'studios-write.lock'
+        self.held_by_another(path)
+        clock = FakeTime()
+        with mock.patch.object(process_lock, 'time', clock):
+            lock = ProcessRLock(lambda: path, timeout=0.3)
+            self.assertFalse(lock.acquire())
+            self.assertFalse(lock._is_owned())
+            self.assert_backs_off(clock.waits, 0.3)
+            with self.assertRaisesRegex(TimeoutError, 'Another Studio is changing this workspace'):
+                with ProcessRLock(lambda: path, timeout=0.3):
+                    pass
+
+    def test_the_studios_config_lock_backs_off_within_the_same_wait_and_refusal(self):
+        with mock.patch.dict(os.environ, {'STUDIOS_CONFIG': str(self.root / 'studios-config.json')}):
+            self.held_by_another(studios_config.lock_path())
+            clock = FakeTime()
+            with mock.patch.object(studios_config, 'time', clock), \
+                    self.assertRaisesRegex(ValueError, 'Another studio is changing'):
+                with studios_config._locked():
+                    pass
+        self.assert_backs_off(clock.waits, studios_config.WAIT)
+
+    def test_backoff_steps(self):
+        steps = process_lock.backoff()
+        self.assertEqual([next(steps) for _ in range(7)],
+                         [0.005, 0.01, 0.02, 0.04, 0.05, 0.05, 0.05])

@@ -88,6 +88,52 @@ def static_reply(kind: str, body: bytes, headers) -> tuple:
     return HTTPStatus.OK, kind, packed, {**extra, 'Content-Encoding': 'gzip'}
 
 
+# A page's scripts and styles as read from disk, by path: {path: (the file's (st_mtime_ns,
+# st_ctime_ns, st_size, st_ino), mark, bytes, gzip of them or None)}. A browser asking again
+# is answered with one stat() and no read or hash while the file is as it was; a changed
+# file, even one rewritten in place within one mtime tick, is read again at once. A page has a few dozen of them, so at most STATIC_FILES are held; past
+# that, the one used longest ago is dropped.
+STATIC_FILES = 64
+_FILES: dict = {}
+_FILES_LOCK = threading.Lock()
+
+
+def static_file(kind: str, path, headers) -> tuple:
+    """A script or style sheet served from `path`, answered as static_reply answers it but
+    without reading or hashing the file again while its stat says it has not changed.
+    Raises OSError when it cannot be read."""
+    path = str(path)
+    seen = os.stat(path)
+    key = (seen.st_mtime_ns, seen.st_ctime_ns, seen.st_size, seen.st_ino)
+    with _FILES_LOCK:
+        held = _FILES.pop(path, None)
+        if held is not None and held[0] == key:
+            _FILES[path] = held                 # the newest use goes last
+    if held is None or held[0] != key:
+        with open(path, 'rb') as stream:
+            body = stream.read()
+        held = (key, hashlib.sha256(body).hexdigest()[:32], body, None)
+        with _FILES_LOCK:
+            _FILES.pop(path, None)
+            _FILES[path] = held
+            while len(_FILES) > STATIC_FILES:
+                del _FILES[next(iter(_FILES))]
+    _, mark, body, packed = held
+    packs = 'gzip' in (headers.get('Accept-Encoding') or '').lower()
+    tag = f'"{mark}{"-gz" if packs else ""}"'
+    extra = {'Cache-Control': STATIC_CACHE, 'ETag': tag, 'Vary': 'Accept-Encoding'}
+    if tag in [one.strip() for one in (headers.get('If-None-Match') or '').split(',')]:
+        return HTTPStatus.NOT_MODIFIED, None, b'', extra
+    if not packs:
+        return HTTPStatus.OK, kind, body, extra
+    if packed is None:
+        packed = gzip.compress(body, 6, mtime=0)
+        with _FILES_LOCK:
+            if _FILES.get(path) is held:
+                _FILES[path] = (*held[:3], packed)
+    return HTTPStatus.OK, kind, packed, {**extra, 'Content-Encoding': 'gzip'}
+
+
 def suite_port(environ=None) -> int | None:
     """The Marketing Studio home port this studio was started with, if it is a valid one."""
     value = (os.environ if environ is None else environ).get(SUITE_PORT, '')
@@ -204,12 +250,57 @@ def announce(desk, to_a_person: bool, opener=show) -> dict:
 
 # --- the server ------------------------------------------------------------------------
 
+SLOTS = 24          # requests answered at once, as Marketing Studio's network bridge allows
+SLOT_WAIT = 2.0     # seconds a request past that waits for one to come free
+BUSY = (b'HTTP/1.0 503 Service Unavailable\r\nContent-Type: text/plain; charset=utf-8\r\n'
+        b'Retry-After: 1\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\n'
+        b'Content-Length: 41\r\nConnection: close\r\n\r\n'
+        b'The page is busy. Try again in a moment.\n')
+
+
 class Server(ThreadingHTTPServer):
     daemon_threads = True
     # Browsers request the shared kits together. Python 3.11–3.14 differ in their
     # default listen backlog; five pending connections can reset an initial asset
     # burst on a slower machine, leaving the page without its controls.
     request_queue_size = 32
+
+    def __init__(self, *args, **kwargs):
+        # One thread per request and never more than SLOTS of them. A request past that
+        # waits up to SLOT_WAIT seconds for one, and is otherwise answered 503 with
+        # Retry-After: never closed without an answer. Each slot is let go exactly once.
+        self.slots = threading.BoundedSemaphore(SLOTS)
+        super().__init__(*args, **kwargs)
+
+    def busy(self, request) -> None:
+        """Answer a request no slot came free for: 503, then close."""
+        try:
+            request.settimeout(1.0)
+            try:
+                request.recv(65536)     # what the request sent, so closing does not reset it
+            except OSError:
+                pass
+            request.sendall(BUSY)
+        except OSError:
+            pass
+        finally:
+            self.shutdown_request(request)
+
+    def process_request(self, request, client_address):
+        if not self.slots.acquire(timeout=SLOT_WAIT):
+            self.busy(request)
+            return
+        try:
+            super().process_request(request, client_address)
+        except BaseException:
+            self.slots.release()
+            raise
+
+    def process_request_thread(self, request, client_address):
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            self.slots.release()
 
     def handle_error(self, request, client_address):
         """A reader that hangs up early gets no traceback: the command's output stays one line."""
@@ -374,13 +465,13 @@ class Page:
         if url.path in PAGE:
             name, kind = PAGE[url.path]
             try:
+                if not kind.startswith('text/html'):
+                    return static_file(kind, PAGE_DIR / name, headers)
                 body = (PAGE_DIR / name).read_bytes()
             except OSError:
                 raise Refusal(HTTPStatus.NOT_FOUND, 'Nothing is served here.')
-            if kind.startswith('text/html'):
-                body = with_appearance(with_suite_port(body, suite_port()))
-                return HTTPStatus.OK, kind, body
-            return static_reply(kind, body, headers)
+            body = with_appearance(with_suite_port(body, suite_port()))
+            return HTTPStatus.OK, kind, body
         if url.path == '/favicon.ico':
             return HTTPStatus.NO_CONTENT, None, b''
         if url.path in self.framed:
