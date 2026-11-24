@@ -2,6 +2,7 @@
 import gzip
 import os
 import socket
+import socketserver
 import sys
 import tempfile
 import threading
@@ -194,6 +195,50 @@ class ServerBoundTests(unittest.TestCase):
         self.assertFalse(made.slots.acquire(blocking=False))
         for _ in range(slots):
             made.slots.release()
+
+    def interrupted(self, after_its_thread):
+        """Take one request on this thread, as the serving loop does, with a stop signal
+        landing while it is being handed to its thread."""
+        class Answered(BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(200)
+                self.send_header('Content-Length', '2')
+                self.end_headers()
+                self.wfile.write(b'ok')
+
+            def log_message(self, *args):
+                pass
+
+        made = server.Server(('127.0.0.1', 0), Answered)
+        self.addCleanup(made.server_close)
+        self.port = made.server_address[1]
+        hand_over = socketserver.ThreadingMixIn.process_request
+
+        def stopped(self, request, client_address):
+            if after_its_thread:
+                before = set(threading.enumerate())
+                hand_over(self, request, client_address)
+                for thread in set(threading.enumerate()) - before:
+                    thread.join(20)
+            raise KeyboardInterrupt     # what the stop signal's handler raises, on this thread
+
+        line = self.ask()
+        self.addCleanup(line.close)
+        with mock.patch.object(socketserver.ThreadingMixIn, 'process_request', stopped):
+            with self.assertRaises(KeyboardInterrupt):
+                made._handle_request_noblock()
+        self.assertEqual(made.holding, set())
+        self.all_slots_free(made, server.SLOTS)
+        return line
+
+    def test_a_stop_signal_after_the_request_was_answered_still_stops_the_server(self):
+        # Its thread has already let the slot go. Letting it go again raised in place of
+        # the interrupt, which the serving loop took for a failed request and carried on.
+        line = self.interrupted(after_its_thread=True)
+        self.assertIn(b'ok', line.makefile('rb').read())
+
+    def test_a_stop_signal_before_the_request_has_a_thread_frees_its_slot(self):
+        self.interrupted(after_its_thread=False)
 
     def test_a_request_past_the_bound_waits_for_a_slot_and_is_answered(self):
         made = self.serve(1)
