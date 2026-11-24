@@ -62,14 +62,17 @@ def training_written(record) -> bool:
             return False
     outline = record.get('outline_first')
     outline_on = schema in (7, 8) and isinstance(outline, dict) and outline.get('schema') == 1
-    if 'material_flow' in record and not (record['material_flow'] == MATERIAL_FLOW
+    flow = record.get('material_flow')
+    if 'material_flow' in record and not (isinstance(flow, dict) and flow == MATERIAL_FLOW
+                                         and type(flow.get('schema')) is int
                                          and desk and outline_on):
         return False
-    # Imported here: research_session's own imports are heavy, and the shared runner
-    # imports this module while it is itself being imported.
-    from studio_core import research_sections, research_session
-    if schema == 8 and not research_sections.enabled(record):
-        return False
+    if schema == 8:
+        # Imported only where a schema needs them: research_session's own imports are
+        # heavy, and the shared runner imports this module while it is itself being imported.
+        from studio_core import research_sections
+        if not research_sections.enabled(record):
+            return False
     if schema in (6, 7, 8) and not (desk and _training_plan(record, outline_on)):
         return False
     contract = record.get('research_contract')
@@ -78,8 +81,10 @@ def training_written(record) -> bool:
         # Runner desk records need a contract; a conversation may start without one.
         contracted = desk and (contracted or record.get('execution') == 'conversation')
     parallel = schema in (5, 7, 8) or (schema == 6 and 'research_execution' in record)
-    if parallel and not research_session.protocol(record):
-        return False
+    if parallel:
+        from studio_core import research_session
+        if not research_session.protocol(record):
+            return False
     return schema < 3 or contracted
 
 
@@ -129,8 +134,11 @@ def worker_in_progress(repo: Path, refusal=ValueError, *, recovering_presentatio
     def unknown(error, folder=None, reason=None):
         if folder is None and isinstance(error, OSError) and error.filename is not None:
             # A folder or file the walk or a check could not read names itself.
-            path = Path(os.fsdecode(error.filename))
-            folder, reason = path.parent, UNREADABLE.format(name=path.name)
+            try:
+                path = Path(os.fsdecode(error.filename))
+                folder, reason = path.parent, UNREADABLE.format(name=path.name)
+            except (TypeError, ValueError):
+                folder = reason = None
         named = where(folder) if folder is not None else None
         raise refusal(unchecked(named, reason if named is not None else None)) from error
 
@@ -165,7 +173,7 @@ def worker_in_progress(repo: Path, refusal=ValueError, *, recovering_presentatio
                     if value['status'] == 'working':
                         return True
             except OSError as error:
-                unknown(error, folder.parent, UNREADABLE.format(name=directory.name))
+                unknown(error, directory.parent, UNREADABLE.format(name=directory.name))
         return False
 
     def small_bytes(path, limit=1_000_000):
