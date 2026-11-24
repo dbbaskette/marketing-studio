@@ -301,7 +301,8 @@ class SharedLookTests(unittest.TestCase):
         for suffix in ('*.css', '*.html', '*.js'):
             for path in ROOT.rglob(suffix):
                 parts = path.relative_to(ROOT).parts
-                if {'.git', 'node_modules', 'tests'} & set(parts):
+                # .claude holds other checkouts of this repository (worktrees), not this one.
+                if {'.git', '.claude', 'node_modules', 'tests'} & set(parts):
                     continue
                 if path.is_symlink():
                     continue

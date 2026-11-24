@@ -290,22 +290,3 @@
 .stack:has(>.review-head .review-status)>.lede,.stack:has(>.review-head .review-status)>.activity-holder{display:none}
 .review-status .activity-job-head>.row-title{display:none}
 .review-status .activity-jobs{margin:0;padding:0;list-style:none}
-
-/* The source picker's choices are a tablist (runner.js sSourceTabs) drawn as the ui-kit's
-   segmented control: the chosen tab looks as a chosen segment does. */
-.source-tabs > .seg-option[aria-selected="true"] {
-  color: var(--link);
-}
-
-@media (max-width: 37.5rem) {
-  .source-tabs[data-count="4"] > .seg-option[aria-selected="true"] {
-    background: var(--selection);
-    box-shadow: var(--edge), 0 1px 3px rgb(0 0 0 / 0.1);
-  }
-}
-
-@media (max-width: 37.5rem) and (forced-colors: active) {
-  .source-tabs[data-count="4"] > .seg-option[aria-selected="true"] {
-    outline: 2px solid Highlight;
-  }
-}

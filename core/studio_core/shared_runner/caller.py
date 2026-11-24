@@ -3,7 +3,6 @@ phone or tablet through Marketing Studio's network bridge.
 
 What a caller needs to know
 ---------------------------
-    from studio_core.shared_runner import caller
     with caller.answering(headers):       # around one request's answer, in the page
         ...
     caller.remote()                       # True while answering a request the bridge carried
