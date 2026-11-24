@@ -1880,7 +1880,9 @@ class FinishTests(RunnerCase):
         self.assertEqual((self.shown(nxt['id']), context(nxt)), before)
         self.assertEqual(old_text, first_text)
         self.assertNotIn('A different finished text.', old_text)
-        self.assertEqual(desk.read(self.root, nxt['id'])['sections'][0]['text'], 'Blog two moves on.')
+        self.assertEqual(
+            desk.read(self.root, nxt['id'])['sections'][0]['text'], 'Blog two moves on.'
+        )
         # Without the saved copy of the pinned revision it still refuses.
         directory, _ = studio.item(self.root, 'sources', kept)
         (directory / 'revisions' / '1' / 'content.md').unlink()

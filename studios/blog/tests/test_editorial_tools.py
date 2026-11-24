@@ -2243,8 +2243,6 @@ class MaterialUploadTests(Fixture):
         self.assertEqual(len(list((self.root / '.uploads' / 'material').iterdir())), 2)
 
     def test_source_role_switches_a_material_file_between_facts_and_example(self):
-        import blog_runner
-
         with patch.object(library.shutil, 'which', return_value=None):
             uploaded = management.dispatch(
                 self.root,

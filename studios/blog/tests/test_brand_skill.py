@@ -330,7 +330,9 @@ class BrandSkillTests(unittest.TestCase):
         brands.installed(refresh=True)
         self.assertEqual(brands.defaults(), {'brand': 'fictional', 'variant': 'dark'})
         run = self.desk(title='Shared brand')
-        self.assertEqual(studio.item(self.root, 'articles', run['id'])[1]['brand']['variant'], 'dark')
+        self.assertEqual(
+            studio.item(self.root, 'articles', run['id'])[1]['brand']['variant'], 'dark'
+        )
         plain = self.desk(title='Plain', brand='')
         self.assertIsNone(studio.item(self.root, 'articles', plain['id'])[1].get('brand'))
 

@@ -77,7 +77,7 @@ class MigrationTests(RunnerCase):
         import blog_delete
 
         ident, directory, source = self.attached_material()
-        other = self.create(page=True, sources=[source])
+        other = self.desk(title='Another synthetic blog', sources=[source])
         before = self.snapshot(directory)
         management.dispatch(
             self.root,
@@ -105,7 +105,7 @@ class MigrationTests(RunnerCase):
         from test_blog_runner import FilesCase
 
         source = FilesCase.material(self, ('unclaimed.md', 'Synthetic file.'))[0]
-        other = self.create(page=True, sources=[source])
+        other = self.desk(title='Another synthetic blog', sources=[source])
         broken = studio.inside(self.root, 'articles', 'unreadable')
         broken.mkdir()
         for raw in (b'{', b'{"schema":999,"sources":[]}', None):
