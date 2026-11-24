@@ -17,7 +17,7 @@ from pathlib import Path
 from unittest import mock
 
 import helpers
-from runner_support import StudioCase, fails
+from runner_support import StudioCase, asks, fails
 
 import cmd_desk
 from runner import engine as engines
@@ -215,21 +215,22 @@ class ServeTests(StudioCase):
 
     def test_starting_picks_every_training_up_where_its_files_say_it_is(self):
         self.workers.then('research-plan', fails())
-        root = self.saved_start()
+        self.pause_after('research-plan', later=True)
+        root = self.start()
         self.assertEqual(len(self.workers.jobs), 2)
         (root / 'blueprint.md').write_text('# Left by a step that never finished\n')
         self.workers.then('research-plan', fails(), fails(), fails())
-        failing = self.saved_start(title='Health checks')
+        failing = self.start(title='Health checks')
         self.engine.close()
         self.engine = self.make()
         self.serve(True)
         self.assertEqual([self.state(found) for found in (root, failing)],
-                         ['waiting', 'failed'])
+                         ['paused', 'failed'])
         self.assertTrue((root / 'blueprint.md').exists(), 'a training at a gate is left be')
         self.assertEqual(len(self.workers.jobs), 5, 'nothing is done twice')
 
     def test_the_page_answers_while_the_workspace_is_still_fetched(self):
-        root = self.saved_start()
+        root = self.start()
         (root / engines.IN_HAND).write_text('research-plan\n')
         self.engine.close()
         self.engine = self.make(background=True)
@@ -261,7 +262,7 @@ class ServeTests(StudioCase):
         self.assertEqual(woken, [root], 'picked up once the fetch is done')
 
     def test_what_goes_wrong_picking_trainings_up_is_said_and_the_rest_still_carry_on(self):
-        first, second = self.saved_start(), self.saved_start(title='Health checks')
+        first, second = self.start(), self.start(title='Health checks')
         self.engine.close()
         self.engine = self.make(background=True)
         woken = []
@@ -345,8 +346,9 @@ class StatusTests(StudioCase):
 
     def test_status_is_json_for_a_script(self):
         self.workers.then('research-plan', fails(), fails(), fails())
-        failing = self.saved_start()
-        waiting = self.saved_start(title='Health checks')
+        failing = self.start()
+        self.workers.then('research-plan', asks('Which platform is this about?'))
+        waiting = self.start(title='Health checks')
         found = self.status()
         self.assertEqual(sorted(found), ['agent', 'brand', 'configured', 'limits', 'notify',
                                      'previews', 'review_level', 'shared', 'shared_notice',
@@ -364,7 +366,7 @@ class StatusTests(StudioCase):
                          (str(self.space.repo), 'trainings'))
         self.assertEqual(found['trainings'], [
             {'path': str(waiting), 'id': 'health-checks', 'state': 'waiting',
-             'sentence': 'The research plan is waiting for your review.'},
+             'sentence': 'A question is waiting for you: Which platform is this about?'},
             {'path': str(failing), 'id': 'rolling-restarts', 'state': 'failed',
              'sentence': self.view(failing)['sentence']}])
         self.assertEqual(len(self.workers.jobs), 4, 'asking starts nothing')
