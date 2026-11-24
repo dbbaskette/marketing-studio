@@ -417,6 +417,9 @@ class BridgeLimitTests(unittest.TestCase):
             self.assertEqual(network.upstream_timeout('blog', 'POST', path), 600, path)
         self.assertEqual(network.upstream_timeout('blog', 'GET', '/api/desk-google-send'), 100)
         self.assertEqual(network.upstream_timeout('presentation', 'POST', '/api/library-add'), 100)
+        # A new deck's folder or spreadsheet is read in its request, as research sources are.
+        self.assertEqual(network.upstream_timeout('presentation', 'POST', '/api/document-intake'), 240)
+        self.assertEqual(network.upstream_timeout('training', 'POST', '/api/document-intake'), 100)
 
 
 class OpenCallerTests(unittest.TestCase):
